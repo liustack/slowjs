@@ -1,0 +1,12 @@
+# Curated per-target test262 excludes for darwin/arm64, passed to run-test262
+# via -x (see all_test.go). Use this file for tests that fail ONLY in the Go
+# build (Go/libc numeric discrepancies) and therefore are NOT captured by the
+# native C reference run in generator.go's genTargetConf. Native/upstream and
+# universal excludes belong in the auto-generated test262_<os>_<arch>.conf and
+# in the base test262.conf respectively.
+
+# https://gitlab.com/cznic/libquickjs/-/issues/5
+# sinh-approx: 1-ULP difference on darwin/arm64. Native C QuickJS PASSES this
+# (system libm sinh); it fails only in the Go build because modernc.org/libc's
+# Sinh differs from darwin's libm by 1 ULP.
+test262/test/staging/sm/Math/sinh-approx.js

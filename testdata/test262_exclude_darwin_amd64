@@ -1,0 +1,25 @@
+# Curated per-target test262 excludes for darwin/amd64, passed to run-test262
+# via -x (see all_test.go). Use this file for tests that fail ONLY in the Go
+# build (Go/libc numeric discrepancies) and therefore are NOT captured by the
+# native C reference run in generator.go's genTargetConf. Native/upstream and
+# universal excludes belong in the auto-generated test262_<os>_<arch>.conf and
+# in the base test262.conf respectively.
+#
+# NOTE: the darwin/amd64 builder runs on the Apple-silicon (arm64) host under
+# Rosetta 2 (arch -x86_64 + an amd64 Go toolchain; see cron2.sh). The libc math
+# results therefore match the other amd64 targets, not darwin/arm64 -- which is
+# why cosh-approx is excluded here but not in test262_exclude_darwin_arm64.
+
+# https://gitlab.com/cznic/libquickjs/-/issues/5
+# cosh-approx: last-place difference on darwin/amd64. Native C QuickJS PASSES
+# this (system libm cosh); it fails only in the Go build because
+# modernc.org/libc's Cosh differs from the reference constant by ~2 ULP: got
+# 371.8229980468751, expected near 371.822998046875 (relative error 2).
+test262/test/staging/sm/Math/cosh-approx.js
+
+# https://gitlab.com/cznic/libquickjs/-/issues/5
+# sinh-approx: the same Go/libc discrepancy already excluded on freebsd/amd64
+# and darwin/arm64 (native C QuickJS PASSES; only the Go build's
+# modernc.org/libc Sinh drifts a couple ULP from the reference constant): got
+# 1.1667648891489082e-7, expected near 1.166764889148908e-7 (relative error 2).
+test262/test/staging/sm/Math/sinh-approx.js

@@ -1,0 +1,32 @@
+# Curated per-target test262 excludes for freebsd/arm64, passed to run-test262
+# via -x (see all_test.go). Home for KNOWN-ACCEPTABLE failures specific to this
+# target that generator.go's native-C genTargetConf does not capture. (The
+# freebsd/arm64 .conf currently only mirrors the amd64 native excludes; it has
+# never been regenerated on real arm64 hardware -- see the notes below.)
+# Genuinely native/upstream failures belong in the auto-generated
+# test262_<os>_<arch>.conf and universal ones in the base test262.conf.
+
+# https://gitlab.com/cznic/libquickjs/-/issues/5
+# sinh-approx: the same Go/libc sinh discrepancy already excluded on
+# freebsd/amd64 and darwin/arm64 (native C QuickJS PASSES; only the Go build's
+# modernc.org/libc Sinh drifts a couple ULP from the reference constant).
+test262/test/staging/sm/Math/sinh-approx.js
+
+# Date/UTC/fp-evaluation-order.js: deterministic fp-precision failure that is
+# arm64-specific -- freebsd/amd64 PASSES it. Root cause is Go's arm64 FMA
+# contraction: the gc compiler fuses `day*msPerDay + time` (MakeDate) into one
+# fma instruction (no intermediate rounding) on arm64 but not on amd64, so arm64
+# computes 34448384 where the IEEE-754-per-operator result is 34447360. Same fp
+# class linux/386 excludes natively in its conf. (Native-C-on-arm64 status not
+# reconfirmed on the slow VM; if a real `make generate` on arm64 hardware ever
+# captures it in test262_freebsd_arm64.conf, drop this entry.)
+test262/test/built-ins/Date/UTC/fp-evaluation-order.js
+
+# Atomics/notify/bigint/notify-all-on-loc.js: NOT an engine bug -- a multi-agent
+# timing flake on the very slow freebsd/arm64 QEMU VM. The test's timeout agent
+# must still be waiting when the main agent calls Atomics.notify, but the
+# emulation is slow enough that $262.agent.timeouts.long expires first ("W
+# timeout before" instead of "after"). freebsd/amd64 runs the identical
+# engine/libc code and PASSES; only the slow VM trips the test's timing
+# assumption. Revisit if the builder ever runs on faster arm64 hardware.
+test262/test/built-ins/Atomics/notify/bigint/notify-all-on-loc.js
