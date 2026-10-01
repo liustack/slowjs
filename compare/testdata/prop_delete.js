@@ -1,0 +1,54 @@
+/*
+ * Javascript Micro benchmark
+ *
+ * Copyright (c) 2017-2019 Fabrice Bellard
+ * Copyright (c) 2017-2019 Charlie Gordon
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+var global_res; /* to be sure the code is not optimized */
+
+function prop_delete(n)
+{
+    var ref, obj, j, k;
+    ref = { a:1, b:2, c:3, d:4, e:5, f:6, g:7, h:8, i:9, j:10 };
+    for(k = 0; k < 10; k++) {
+        ref[k] = k;
+    }
+    for (j = 0; j < n; j++) {
+        obj = { ...ref };
+        delete obj.a;
+        delete obj.b;
+        delete obj.c;
+        delete obj.d;
+        delete obj.e;
+        delete obj.f;
+        delete obj.g;
+        delete obj.h;
+        delete obj.i;
+        delete obj.j;
+        for(k = 0; k < 10; k++) {
+            delete obj[k];
+        }
+    }
+    return n * 20;
+}
+
+prop_delete($N);

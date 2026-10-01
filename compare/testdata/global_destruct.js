@@ -1,0 +1,46 @@
+/*
+ * Javascript Micro benchmark
+ *
+ * Copyright (c) 2017-2019 Fabrice Bellard
+ * Copyright (c) 2017-2019 Charlie Gordon
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+var global_res; /* to be sure the code is not optimized */
+
+var global_v1, global_v2, global_v3, global_v4;
+var global_a, global_b, global_c, global_d;
+
+// non strict version
+var global_destruct =
+    (1, eval)(`(function global_destruct(n)
+           {
+               var j, v1, v2, v3, v4;
+               var array = [ 1, 2, 3, 4, 5 ];
+               var o = { a:1, b:2, c:3, d:4 };
+               var a, b, c, d;
+               for(j = 0; j < n; j++) {
+                   [ global_v1, global_v2,, global_v3, ...global_v4] = array;
+                   ({ a: global_a, b: global_b, c: global_c, d: global_d } = o);
+               }
+               return n * 8;
+          })`);
+
+global_destruct($N);
