@@ -1,0 +1,10 @@
+{
+	"autogen": "darwin/(amd64|arm64)|freebsd/(amd64|arm64)|linux/(386|amd64|arm$|arm64|loong64|ppc64le|s390x|riscv64)",
+	"autoupdate": ".",
+	"autotag": ".",
+	"download": [
+		{"re": "darwin/(amd64|arm64)|freebsd/(amd64|arm64)|linux/(386|amd64|arm$|arm64|loong64|ppc64le|s390x|riscv64)|windows/(amd64|arm64)", "files": ["https://github.com/bellard/quickjs/archive/3d5e064e9dd67c70f7962836505a7fa067bf0a4e.zip"]},
+		{"re": "darwin/(amd64|arm64)|freebsd/(amd64|arm64)|linux/(386|amd64|arm$|arm64|loong64|ppc64le|s390x|riscv64)|windows/(amd64|arm64)", "files": ["https://github.com/tc39/test262/archive/5c8206929d81b2d3d727ca6aac56c18358c8d790.zip"]}
+	],
+	"test": "darwin/(amd64|arm64)|freebsd/(amd64|arm64)|linux/(386|amd64|arm$|arm64|loong64|ppc64le|s390x|riscv64)|windows/(amd64|arm64)"
+}
