@@ -81,7 +81,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..59419ad 100644
+index fa5a7a9..7e6bd1d 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,7 @@
@@ -115,7 +115,31 @@ index fa5a7a9..59419ad 100644
  {
      uintptr_t sp;
      sp = js_get_stack_pointer() - alloca_size;
-@@ -41695,7 +41698,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
+@@ -4492,8 +4495,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+             return (const char *)src;
+         }
+         str_new = js_alloc_string(ctx, len + count, 0);
+-        if (!str_new)
++        if (!str_new) {
++            JS_FreeValue(ctx, val);
+             goto fail;
++        }
+         q = str_new->u.str8;
+         for (pos = 0; pos < len; pos++) {
+             c = src[pos];
+@@ -4510,8 +4515,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+            produce 4 bytes but use 2 code points.
+          */
+         str_new = js_alloc_string(ctx, len * 3, 0);
+-        if (!str_new)
++        if (!str_new) {
++            JS_FreeValue(ctx, val);
+             goto fail;
++        }
+         q = str_new->u.str8;
+         pos = 0;
+         while (pos < len) {
+@@ -41695,7 +41702,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
      return r;
  }
  
@@ -127,7 +151,7 @@ index fa5a7a9..59419ad 100644
                             int argc, JSValueConst *argv)
  {
      JSValue obj, args[1];
-@@ -60589,6 +60595,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +60599,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -139,7 +163,7 @@ index fa5a7a9..59419ad 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +60615,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +60619,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -147,7 +171,7 @@ index fa5a7a9..59419ad 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61207,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61211,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }

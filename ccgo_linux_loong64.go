@@ -7560,6 +7560,7 @@ func XJS_ToCStringLen2(tls *libc.TLS, ctx2 uintptr, plen uintptr, val1 TJSValue,
 		}
 		str_new = _js_alloc_string(tls, ctx2, len1+count, 0)
 		if !(str_new != 0) {
+			XFreeValue(tls, ctx2, **(**TJSValue)(__ccgo_up(bp + 32)))
 			goto fail
 		}
 		q = str_new + 12
@@ -7593,6 +7594,7 @@ func XJS_ToCStringLen2(tls *libc.TLS, ctx2 uintptr, plen uintptr, val1 TJSValue,
 		*/
 		str_new = _js_alloc_string(tls, ctx2, len1*int32(3), 0)
 		if !(str_new != 0) {
+			XFreeValue(tls, ctx2, **(**TJSValue)(__ccgo_up(bp + 32)))
 			goto fail
 		}
 		q = str_new + 12
