@@ -1,3 +1,42 @@
+# quickjs (liustack fork)
+
+This repository is a fork of two modernc.org modules, merged into one Go module:
+
+| Upstream module | Upstream repository | Here |
+|---|---|---|
+| `modernc.org/quickjs` (the Go API) | https://gitlab.com/cznic/quickjs | repository root, package `github.com/liustack/quickjs` |
+| `modernc.org/libquickjs` (QuickJS transpiled to Go by ccgo) | https://gitlab.com/cznic/libquickjs | `lib/`, package `github.com/liustack/quickjs/lib` |
+
+It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
+2026-06-04, commit `3d5e064`), with these changes:
+
+- A VM that runs out of memory inside `JSON.parse`, or anything else that
+  converts a string with non-ASCII characters to UTF-8, no longer leaks that
+  string. `JS_ToCStringLen2` kept a reference to its argument when allocating
+  the UTF-8 copy failed, so the string outlived `VM.Close`. QuickJS, quickjs-ng
+  and libquickjs still had this bug when the fork was made. Test:
+  `lib/tocstring_oom_test.go`.
+- `VM.Call` and `VM.CallValue` report the exception thrown while evaluating
+  the function expression (for example out of memory, or a name that is not
+  defined) instead of `cannot call a non-function`.
+
+The engine lives in the same module so that a fix to it ships together with
+the Go API, without waiting for an upstream release of either module.
+
+```sh
+go get github.com/liustack/quickjs
+```
+
+The license files of both projects are kept: [LICENSE](LICENSE) and
+[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS) at the root, and
+[lib/LICENSE](lib/LICENSE), [lib/LICENSE-LIBQUICKJS](lib/LICENSE-LIBQUICKJS)
+and [lib/LICENSE_TEST262](lib/LICENSE_TEST262) for the engine. Maintenance
+notes are at the [end of this file](#maintaining-the-fork).
+
+The rest of this section is the upstream README.
+
+---
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/liustack/quickjs.svg)](https://pkg.go.dev/github.com/liustack/quickjs)
 [![LiberaPay](https://liberapay.com/assets/widgets/donate.svg)](https://liberapay.com/jnml/donate)
 [![receives](https://img.shields.io/liberapay/receives/jnml.svg?logo=liberapay)](https://liberapay.com/jnml/donate)
@@ -27,3 +66,83 @@ package makes it for you.
 [C QuickJS]: https://bellard.org/quickjs
 [quickjs/intl]: https://pkg.go.dev/github.com/liustack/quickjs/intl
 [ES2023]: https://tc39.es/ecma262/2023/
+
+## Maintaining the fork
+
+Branches: `main` carries the fork. `master` and the other upstream branches
+mirror gitlab.com/cznic/quickjs and get no commits of their own.
+
+Remotes, set up once in a fresh clone. The engine remotes must not fetch
+tags, because libquickjs tags (v0.13.1, ...) would clash with the tags of
+this repository:
+
+```sh
+git remote add upstream https://gitlab.com/cznic/quickjs.git
+git remote add upstream-lib https://gitlab.com/cznic/libquickjs.git
+git config remote.upstream-lib.tagOpt --no-tags
+git fetch upstream
+git fetch upstream-lib 'refs/tags/*:refs/tags/lib/*'   # engine tags as lib/v0.13.2, ...
+```
+
+### Taking a new engine release
+
+`lib/` was added with `git subtree`, so an upstream libquickjs release merges
+in with its history:
+
+```sh
+git subtree pull --prefix lib upstream-lib <libquickjs tag, e.g. v0.13.2>
+```
+
+Conflicts to expect:
+
+- `lib/ccgo_*.go`: every upstream release regenerates these files, so the
+  two lines added to `XJS_ToCStringLen2` conflict. Take the upstream version
+  of every generated file, then put the fix back:
+
+  ```sh
+  git checkout --theirs -- 'lib/ccgo_*.go'
+  go run ./internal/fixlib
+  ```
+
+  `fixlib` also rewrites `modernc.org/libquickjs` imports in hand-written
+  files under `lib/`. `go run ./internal/fixlib -check` lists files that still
+  need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
+  read the new upstream code: QuickJS may have fixed the leak itself.
+- `lib/internal/patch/quickjs.diff`: holds the same fix in C, so that a
+  regeneration keeps it. Keep the `JS_ToCStringLen2` hunk unless upstream
+  QuickJS has fixed the bug.
+- `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
+  them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
+  requirement into the root `go.mod`.
+- `lib/internal/run-test262/go.mod` is ours. Upstream has none there.
+
+This fork does not regenerate `lib/ccgo_*.go` itself. `lib/generator.go` still
+assumes it is the root of its own module.
+
+### Taking a new release of the Go API
+
+```sh
+git merge <upstream tag>
+```
+
+Upstream commits import `modernc.org/libquickjs` and `modernc.org/quickjs`.
+After the merge, drop `modernc.org/libquickjs` from `go.mod`, run
+`grep -rn 'modernc.org/quickjs\|modernc.org/libquickjs' --include='*.go' .`
+and switch what it finds to `github.com/liustack/quickjs`. The only expected
+leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/intl.go`,
+which is a runtime marker, not an import path.
+
+### Checks
+
+```sh
+go test -short ./...                                     # all packages
+go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
+go run ./internal/fixlib -check                          # fork changes present in lib/
+for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
+	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+done
+```
+
+`lib/internal/run-test262` is a module of its own, so its 69 MiB of
+transpiled test runner stay out of the module zip. `Test262` in `lib/` builds
+it with `go build -C`.
