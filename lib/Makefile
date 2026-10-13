@@ -33,7 +33,7 @@ dev: download
 	GO_GENERATE_DEV=1 go run -tags=ccgo.dmesg generator.go
 	gofmt -l -s -w .
 	go build -v -o /dev/null .
-	go build -v -o /dev/null ./internal/run-test262
+	go build -C internal/run-test262 -v -o /dev/null .
 	grep $(GREP) /tmp/ccgo.log || true
 	git status
 
@@ -42,7 +42,7 @@ dev-w64: download
 	GO_GENERATE_DEV=1 GO_GENERATE_W64=1 go run -tags=ccgo.dmesg generator.go
 	gofmt -l -s -w .
 	GOOS=windows GOARCH=amd64 go build -v -o /dev/null .
-	GOOS=windows GOARCH=amd64 go build -v -o /dev/null ./internal/run-test262
+	GOOS=windows GOARCH=amd64 go build -C internal/run-test262 -v -o /dev/null .
 	grep $(GREP) /tmp/ccgo.log || true
 	git status
 
@@ -63,7 +63,7 @@ generate: download
 	go generate
 	gofmt -l -s -w .
 	go build -v -o /dev/null .
-	go build -v -o /dev/null ./internal/run-test262
+	go build -C internal/run-test262 -v -o /dev/null .
 	git status
 
 grep:
@@ -91,7 +91,7 @@ w64: download
 	GO_GENERATE_W64=1 go run -tags=ccgo.dmesg generator.go
 	gofmt -l -s -w .
 	GOOS=windows GOARCH=amd64 go build -v -o /dev/null .
-	GOOS=windows GOARCH=amd64 go build -v -o /dev/null ./internal/run-test262
+	GOOS=windows GOARCH=amd64 go build -C internal/run-test262 -v -o /dev/null .
 	git status
 
 dbg:

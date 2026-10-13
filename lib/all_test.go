@@ -298,7 +298,13 @@ func Test262(t *testing.T) {
 	if goos == "windows" {
 		bin += ".exe"
 	}
-	shell(t, "go", "build", "-o", bin, fmt.Sprintf("-tags=%s", xtags), "./internal/run-test262")
+	if bin, err = filepath.Abs(bin); err != nil {
+		t.Fatal(err)
+	}
+
+	// internal/run-test262 is a module of its own, so the large transpiled
+	// runner stays out of the module zip users download. Build it from there.
+	shell(t, "go", "build", "-C", filepath.Join("internal", "run-test262"), "-o", bin, fmt.Sprintf("-tags=%s", xtags), ".")
 	var out []byte
 	args := []string{"-v", "-t", "-m", "-c", "test262.conf"}
 	switch {
