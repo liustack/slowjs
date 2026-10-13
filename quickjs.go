@@ -835,6 +835,12 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 
 	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
 
+	if isException(f) {
+		// Evaluating the function expression threw, eg. out of memory or an
+		// unresolvable name. Report that exception, not a non-function.
+		return nil, m.errFromException()
+	}
+
 	defer lib.XFreeValue(tls, ctx, f)
 
 	g := m.globalObject()
@@ -862,6 +868,10 @@ func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
 	m.configureInterrupt()
 
 	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
+
+	if isException(f) {
+		return r, m.errFromException()
+	}
 
 	defer lib.XFreeValue(tls, ctx, f)
 
