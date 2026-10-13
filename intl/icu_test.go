@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "modernc.org/quickjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"modernc.org/quickjs"
+	"github.com/liustack/quickjs"
 )
 
 // This is where the en-US claims in the package documentation come from. The

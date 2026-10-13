@@ -4,12 +4,12 @@
 
 // Package fmt exposes some functionality of the Go stdlib fmt package to a
 // [quickjs.VM].
-package fmt // import "modernc.org/quickjs/fmt"
+package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
 
-	"modernc.org/quickjs"
+	"github.com/liustack/quickjs"
 )
 
 const pkg = "fmt"

@@ -77,7 +77,7 @@
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports, is recovered from
 // $TZ, /etc/localtime or /etc/timezone - Go's time.Local does not carry its
 // name. [TimeZone] sets it explicitly when none of those can answer.
-package intl // import "modernc.org/quickjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	_ "embed"
@@ -89,7 +89,7 @@ import (
 	"strings"
 	"sync"
 
-	"modernc.org/quickjs"
+	"github.com/liustack/quickjs"
 )
 
 //go:embed intl.js

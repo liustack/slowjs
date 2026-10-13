@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"unsafe"
 
+	lib "github.com/liustack/quickjs/lib"
 	"modernc.org/libc"
-	lib "modernc.org/libquickjs"
 )
 
 // PromiseCapability holds a Promise along with its resolve and reject

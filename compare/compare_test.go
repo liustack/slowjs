@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package compare // import "modernc.org/quickjs/compare"
+package compare // import "github.com/liustack/quickjs/compare"
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/fastschema/qjs"
-	"modernc.org/quickjs"
+	"github.com/liustack/quickjs"
 )
 
 var (

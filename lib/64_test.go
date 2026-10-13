@@ -4,7 +4,7 @@
 
 //go:build !(386 || arm)
 
-package libquickjs // import "modernc.org/libquickjs"
+package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import (
 	"unsafe"

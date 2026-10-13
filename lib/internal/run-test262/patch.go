@@ -5,8 +5,8 @@
 package main
 
 import (
+	"github.com/liustack/quickjs/lib"
 	"modernc.org/libc"
-	"modernc.org/libquickjs"
 )
 
 func _js_check_stack_overflow(tls *libc.TLS, rt uintptr, sz libquickjs.Size_t) int32 {

@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package libquickjs // import "modernc.org/libquickjs"
+package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import (
 	"modernc.org/libc"

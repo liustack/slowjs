@@ -4,7 +4,7 @@
 
 //go:build linux
 
-package libquickjs // import "modernc.org/libquickjs"
+package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import (
 	"fmt"

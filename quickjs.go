@@ -15,7 +15,7 @@
 // The engine has no Intl. ECMA-402 is not implemented by the C library this
 // package wraps, so a page or bundle reaching for Intl.DateTimeFormat gets a
 // ReferenceError, and the toLocale* methods it ships ignore both their locale
-// and their timeZone argument. Package [modernc.org/quickjs/intl] provides
+// and their timeZone argument. Package [github.com/liustack/quickjs/intl] provides
 // Intl.DateTimeFormat and Intl.NumberFormat, en-US over Go's time zone
 // database, for a VM that opts in by calling its Register.
 //
@@ -24,7 +24,7 @@
 // Geomeans of time/op over a set of benchmarks, relative to CCGO, lower number
 // is better. Detailed results available in the testdata/benchmarks directory.
 //
-//	 CCGO: modernc.org/libquickjs@v0.13.1
+//	 CCGO: github.com/liustack/quickjs/lib
 //	 GOJA: github.com/dop251/goja@v0.0.0-20260723142020-b4aef50fa347
 //	  QJS: github.com/fastschema/qjs@v0.0.6
 //
@@ -88,9 +88,7 @@
 // [C QuickJS]: https://bellard.org/quickjs
 // [ES2023]: https://tc39.es/ecma262/2023/
 // [here]: https://modern-c.appspot.com/-/builder/?importpath=modernc.org%2fquickjs
-//
-// [modernc.org/libquickjs]: https://pkg.go.dev/modernc.org/libquickjs
-package quickjs // import "modernc.org/quickjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/json"
@@ -105,8 +103,8 @@ import (
 	"time"
 	"unsafe"
 
+	lib "github.com/liustack/quickjs/lib"
 	"modernc.org/libc"
-	lib "modernc.org/libquickjs"
 )
 
 var (

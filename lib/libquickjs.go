@@ -9,7 +9,7 @@
 // generators, proxies and BigInt.
 //
 // This package is the ccgo transpilation of [QuickJS]. The idiomatic Go
-// wrapper is available at [modernc.org/quickjs].
+// wrapper is available at [github.com/liustack/quickjs].
 //
 // # QuickJS Version
 //
@@ -43,8 +43,8 @@
 // [QuickJS]: https://bellard.org/quickjs/
 // [changelog]: https://bellard.org/quickjs/Changelog
 // [here]: https://modern-c.appspot.com/-/builder/?importpath=modernc.org%2flibquickjs
-// [modernc.org/quickjs]: https://pkg.go.dev/modernc.org/quickjs
-package libquickjs // import "modernc.org/libquickjs"
+// [github.com/liustack/quickjs]: https://pkg.go.dev/github.com/liustack/quickjs
+package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import (
 	"unsafe"

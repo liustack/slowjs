@@ -2,14 +2,14 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package fmt // import "modernc.org/quickjs/fmt"
+package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
 	"os"
 	"testing"
 
-	"modernc.org/quickjs"
+	"github.com/liustack/quickjs"
 )
 
 func TestMain(m *testing.M) {

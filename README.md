@@ -1,4 +1,4 @@
-[![Go Reference](https://pkg.go.dev/badge/modernc.org/quickjs.svg)](https://pkg.go.dev/modernc.org/quickjs)
+[![Go Reference](https://pkg.go.dev/badge/github.com/liustack/quickjs.svg)](https://pkg.go.dev/github.com/liustack/quickjs)
 [![LiberaPay](https://liberapay.com/assets/widgets/donate.svg)](https://liberapay.com/jnml/donate)
 [![receives](https://img.shields.io/liberapay/receives/jnml.svg?logo=liberapay)](https://liberapay.com/jnml/donate)
 [![patrons](https://img.shields.io/liberapay/patrons/jnml.svg?logo=liberapay)](https://liberapay.com/jnml/donate)
@@ -25,5 +25,5 @@ belongs in a program's main package rather than in a library, so neither
 package makes it for you.
 
 [C QuickJS]: https://bellard.org/quickjs
-[quickjs/intl]: https://pkg.go.dev/modernc.org/quickjs/intl
+[quickjs/intl]: https://pkg.go.dev/github.com/liustack/quickjs/intl
 [ES2023]: https://tc39.es/ecma262/2023/

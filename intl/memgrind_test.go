@@ -4,13 +4,13 @@
 
 //go:build libc.memgrind
 
-package intl // import "modernc.org/quickjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"testing"
 
+	"github.com/liustack/quickjs"
 	"modernc.org/libc"
-	"modernc.org/quickjs"
 )
 
 // TestMemgrind2 checks that registering Intl and formatting with it leaks

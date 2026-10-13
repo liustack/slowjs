@@ -42,7 +42,6 @@ work:
 	go work use .
 	go work use ./compare
 	if [ -d ../libc ]; then go work use ../libc; fi
-	if [ -d ../libquickjs ]; then go work use ../libquickjs; fi
 
 cpu:
 	make -C ./compare cpu

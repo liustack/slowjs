@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs // import "modernc.org/quickjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
+	lib "github.com/liustack/quickjs/lib"
 	_ "golang.org/x/mod/modfile" // generator.go
 	util "modernc.org/fileutil/ccgo"
-	lib "modernc.org/libquickjs"
 )
 
 var (

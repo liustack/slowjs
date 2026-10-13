@@ -4,12 +4,12 @@
 
 //go:build !(386 || arm)
 
-package quickjs // import "modernc.org/quickjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"unsafe"
 
-	lib "modernc.org/libquickjs"
+	lib "github.com/liustack/quickjs/lib"
 )
 
 const sizeofJsValue = unsafe.Sizeof(lib.TJSValue{})
@@ -53,7 +53,7 @@ func jsvToFloat64(v lib.TJSValue) (r float64) {
 // #define JS_VALUE_GET_INT(v) ((v).u.int32)
 //
 // The JSValue payload is the eight bytes wide C union JSValueUnion, which
-// modernc.org/libquickjs represents as its widest member, an uint64. The
+// the lib package (ccgo) represents as its widest member, an uint64. The
 // narrower members of that union are accessed in the value domain, not by
 // address: JS_MKVAL(tag, val) zero extends 'val' into the low 32 bits of the
 // uint64 and JS_VALUE_GET_INT truncates the uint64 back to 32 bits. Reading or

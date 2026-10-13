@@ -4,13 +4,13 @@
 
 //go:build 386 || arm
 
-package quickjs // import "modernc.org/quickjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"math"
 	"unsafe"
 
-	lib "modernc.org/libquickjs"
+	lib "github.com/liustack/quickjs/lib"
 )
 
 const sizeofJsValue = unsafe.Sizeof(lib.TJSValue(0))

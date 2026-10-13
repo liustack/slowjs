@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "modernc.org/quickjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"strings"

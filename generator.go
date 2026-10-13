@@ -155,14 +155,8 @@ func requires(fn string) (map[string]string, error) {
 // document rewrites the '# Performance' section of the docFn package
 // documentation from every results file present.
 func document() error {
-	// The measured engine comes from the root go.mod. The compare module gets
-	// this one through a 'replace' pointing at the work tree, so its own
-	// modernc.org/quickjs require records nothing about what ran.
-	root, err := requires(modFn)
-	if err != nil {
-		return err
-	}
-
+	// The measured engine is the lib package of this module. The compare
+	// module gets this one through a 'replace' pointing at the work tree.
 	compare, err := requires(path.Join("compare", "go.mod"))
 	if err != nil {
 		return err
@@ -236,7 +230,7 @@ func document() error {
 //	                        CCGO     GOJA     QJS
 //	-----------------------------------------------
 `,
-				ver("modernc.org/libquickjs", root),
+				"github.com/liustack/quickjs/lib",
 				ver("github.com/dop251/goja", compare),
 				ver("github.com/fastschema/qjs", compare),
 			)
