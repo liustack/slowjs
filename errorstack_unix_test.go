@@ -14,7 +14,8 @@ import (
 )
 
 // TestErrorStackPrint checks the stack console.log prints with an error, which
-// the engine reads without running any JS code.
+// the engine reads without running any JS code. printed is called from Go, so
+// that no top-level code is on the stack and the stack is not formatted yet.
 func TestErrorStackPrint(t *testing.T) {
 	m, err := NewVM()
 	if err != nil {
@@ -27,29 +28,28 @@ func TestErrorStackPrint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := captureStdout(t, func() {
-		if _, err := m.Eval(`function printed() {
+	if _, err := m.Eval(`function printed() {
 	var e = new Error("printed")
 	console.log(e)
 	console.log([e], { err: new TypeError("inner") })
 	e.stack
 	console.log(e)
-}
-printed()`, EvalGlobal); err != nil {
+}`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+
+	got := captureStdout(t, func() {
+		if _, err := m.Call("printed"); err != nil {
 			t.Error(err)
 		}
 	})
 	want := `Error: printed
     at printed (<eval>:2:19)
-    at <eval> (<eval>:8:8)
 [ Error: printed
-    at printed (<eval>:2:19)
-    at <eval> (<eval>:8:8) ] { err: TypeError: inner
-    at printed (<eval>:4:39)
-    at <eval> (<eval>:8:8) }
+    at printed (<eval>:2:19) ] { err: TypeError: inner
+    at printed (<eval>:4:39) }
 Error: printed
     at printed (<eval>:2:19)
-    at <eval> (<eval>:8:8)
 `
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)

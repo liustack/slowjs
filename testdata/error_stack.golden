@@ -578,6 +578,11 @@ TypeError: host failed
     at callsHost (<eval>:1:32)
     at <eval> (<eval>:2:10)
 
+== go: host function called
+TypeError: host failed
+    at hostFail (native)
+    at callsHost (<eval>:1:32)
+
 == go: host function caught
     at hostFail (native)
     at callsHost (<eval>:1:32)

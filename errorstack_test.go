@@ -11,21 +11,71 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"unsafe"
 
 	lib "github.com/liustack/quickjs/lib"
 )
 
-var updateErrorStack = flag.Bool("update-error-stack", false, "rewrite testdata/error_stack.golden")
+var updateErrorStack = flag.Bool("update-error-stack", false, "rewrite the testdata/error_stack*.golden files")
 
 func TestErrorStack(t *testing.T) { testErrorStack(t) }
 
 // testErrorStack compares the stack of errors made in many situations with
-// testdata/error_stack.golden, which holds what the engine has always
-// produced. It is also run under the memgrind allocator by TestMemgrind2, so
-// it must create and Close its own VM.
+// the golden files in testdata, which hold what the engine has always
+// produced. testdata/error_stack.js runs once as a script, and once as the
+// body of a function called from Go, so that no top-level code is on the
+// stack. It is also run under the memgrind allocator by TestMemgrind2, so it
+// must create and Close its own VMs.
 func testErrorStack(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "error_stack.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, mode := range []struct {
+		golden string
+		call   bool
+	}{
+		{"error_stack.golden", false},
+		{"error_stack_call.golden", true},
+	} {
+		got := errorStackText(t, string(src), mode.call)
+		golden := filepath.Join("testdata", mode.golden)
+		if *updateErrorStack {
+			if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		want, err := os.ReadFile(golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got != string(want) {
+			gl, wl := strings.Split(got, "\n"), strings.Split(string(want), "\n")
+			for i := 0; i < len(gl) || i < len(wl); i++ {
+				var g, w string
+				if i < len(gl) {
+					g = gl[i]
+				}
+				if i < len(wl) {
+					w = wl[i]
+				}
+				if g != w {
+					t.Fatalf("%s line %d:\ngot  %q\nwant %q", mode.golden, i+1, g, w)
+				}
+			}
+		}
+	}
+}
+
+// errorStackText runs src in a new VM, as a script or as the body of a
+// function called from Go, and returns the stacks it collects, followed by
+// stacks read through the Go API.
+func errorStackText(t *testing.T, src string, call bool) string {
 	m, err := NewVM()
 	if err != nil {
 		t.Fatal(err)
@@ -37,12 +87,15 @@ func testErrorStack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	src, err := os.ReadFile(filepath.Join("testdata", "error_stack.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	if call {
+		if _, err := m.Eval("function run() {\n"+src+"\n}", EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
 
-	if _, err := m.Eval(string(src), EvalGlobal); err != nil {
+		if _, err := m.Call("run"); err != nil {
+			t.Fatal(err)
+		}
+	} else if _, err := m.Eval(src, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 
@@ -85,6 +138,8 @@ func testErrorStack(t *testing.T) {
 
 	_, err = m.Eval("function callsHost() { hostFail() }\ncallsHost()", EvalGlobal)
 	section("host function", err)
+	_, err = m.Call("callsHost")
+	section("host function called", err)
 	v, err := m.Eval("(function () { try { callsHost() } catch (e) { return e.stack } })()", EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
@@ -101,34 +156,16 @@ func testErrorStack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got = b.String() + "\n"
-	golden := filepath.Join("testdata", "error_stack.golden")
-	if *updateErrorStack {
-		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	return b.String() + "\n"
+}
 
-	want, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got != string(want) {
-		gl, wl := strings.Split(got, "\n"), strings.Split(string(want), "\n")
-		for i := 0; i < len(gl) || i < len(wl); i++ {
-			var g, w string
-			if i < len(gl) {
-				g = gl[i]
-			}
-			if i < len(wl) {
-				w = wl[i]
-			}
-			if g != w {
-				t.Fatalf("line %d:\ngot  %q\nwant %q", i+1, g, w)
-			}
-		}
-	}
+// vmMemory runs the GC and returns the memory usage of the runtime of m.
+func vmMemory(m *VM) lib.TJSMemoryUsage {
+	tls, rt := m.runtime.tls, m.runtime.cRuntime
+	lib.XJS_RunGC(tls, rt)
+	var u lib.TJSMemoryUsage
+	lib.XJS_ComputeMemoryUsage(tls, rt, uintptr(unsafe.Pointer(&u)))
+	return u
 }
 
 // TestErrorStackMemory checks that errors whose stack is never read are freed,
@@ -142,47 +179,52 @@ func TestErrorStackMemory(t *testing.T) {
 
 	defer m.Close()
 
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
 	usage := func() (malloc, objects int64) {
-		lib.XJS_RunGC(tls, rt)
-		var u lib.TJSMemoryUsage
-		lib.XJS_ComputeMemoryUsage(tls, rt, uintptr(unsafe.Pointer(&u)))
+		u := vmMemory(m)
 		return int64(u.Fmalloc_size), int64(u.Fobj_count)
 	}
 
+	// make is called from Go, so no top-level code is on the stack of the
+	// errors, and they keep the functions on their stack until freed.
 	if _, err := m.Eval(`
 function deep(n, f) { return n == 0 ? f() : deep(n - 1, f) }
+var kept
 function make(n) {
-	var kept = []
+	kept = []
 	for (var i = 0; i < n; i++) {
 		kept.push(deep(20, function () {
-			// eval makes a function whose bytecode only the error keeps
-			var err = eval("(function inEval() { return new Error('e') })()")
+			// a function whose bytecode only the error keeps
+			var err = new Function("return new Error('e')")()
 			// the closure holds the error, and the error holds the closure's frame
 			err.self = function () { return err }
 			return err
 		}))
 	}
-	return kept
+	return kept.length
 }
-var kept
+function drop() { kept = undefined }
 `, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 
 	// One round first, so that what the first call leaves behind for good
-	// (shapes, the eval cache) is part of the baseline.
-	if _, err := m.Eval("kept = make(1); kept = undefined", EvalGlobal); err != nil {
-		t.Fatal(err)
+	// (shapes, caches) is part of the baseline.
+	for _, call := range []struct {
+		name string
+		args []any
+	}{{"make", []any{1}}, {"drop", nil}} {
+		if _, err := m.Call(call.name, call.args...); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	baseMalloc, baseObjects := usage()
-	if _, err := m.Eval("kept = make(2000); kept.length", EvalGlobal); err != nil {
+	if _, err := m.Call("make", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	heldMalloc, heldObjects := usage()
-	if _, err := m.Eval("kept = undefined", EvalGlobal); err != nil {
+	if _, err := m.Call("drop"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,5 +242,159 @@ var kept
 	// The allocator may keep a little memory for reuse.
 	if d := freedMalloc - baseMalloc; d > 64<<10 {
 		t.Errorf("%d bytes left after freeing the errors", d)
+	}
+}
+
+// TestErrorStackTopLevel checks that an error made while a script runs, and
+// kept after it ends, does not keep the code of the script alive. Libraries
+// make such errors when they load (React keeps one to signal suspense).
+func TestErrorStackTopLevel(t *testing.T) {
+	var funcs strings.Builder
+	for i := range 200 {
+		fmt.Fprintf(&funcs, "\tfunction f%d(x) { return [x, %d, 'padding to make the code larger'] }\n", i, i)
+	}
+
+	// The size of the functions kept after a script keeps the value of make.
+	kept := func(make string) int64 {
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer m.Close()
+
+		before := vmMemory(m)
+		script := "(function load() {\n" + funcs.String() + "\tfunction make() { return " + make + " }\n\tglobalThis.sentinel = make()\n})()\n"
+		if _, err := m.Eval(script, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+
+		after := vmMemory(m)
+		return after.Fjs_func_size + after.Fjs_func_code_size + after.Fjs_func_pc2line_size -
+			before.Fjs_func_size - before.Fjs_func_code_size - before.Fjs_func_pc2line_size
+	}
+
+	object, keptErr := kept(`{ message: "sentinel" }`), kept(`new Error("sentinel")`)
+	t.Logf("functions kept: %d bytes after keeping an object, %d after keeping an error", object, keptErr)
+	if keptErr != object {
+		t.Fatalf("keeping an error made by the script keeps %d bytes of functions, want %d", keptErr, object)
+	}
+}
+
+func TestErrorStackOutOfMemory(t *testing.T) { testErrorStackOutOfMemory(t) }
+
+// testErrorStackOutOfMemory reads the stack of an error when the VM has no
+// memory left. Reading it may fail with an out of memory error, after which
+// the VM works as before once memory is free again. It is also run under the
+// memgrind allocator by TestMemgrind2.
+func testErrorStackOutOfMemory(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer m.Close()
+
+	m.SetMemoryLimit(4 << 20)
+	// The error is made in a call from Go, so its stack is not formatted yet.
+	if _, err := m.Eval(`
+var e
+function deep(n) { return n ? deep(n - 1) : new Error("deep") }
+function make() { e = deep(40) }
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.Call("make"); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := m.Eval(`
+var fill = []
+function exhaust(size) {
+	try {
+		for (;;) fill.push("x".repeat(size) + fill.length)
+	} catch (x) {}
+}
+exhaust(4096)
+exhaust(64)
+exhaust(1)
+var read
+try {
+	read = typeof e.stack
+} catch (x) {
+	read = "threw " + x.message
+}
+fill = null
+read
+`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("reading the stack with no memory left: %v", v)
+	if v != "string" && v != "threw out of memory" {
+		t.Fatalf("got %v", v)
+	}
+
+	// The VM works again, and so do new stacks.
+	v, err = m.Eval(`(function f() { return new Error("after").stack })()`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if g, w := v, "    at f (<eval>:1:33)\n    at <eval> (<eval>:1:51)\n"; g != w {
+		t.Fatalf("got %q, want %q", g, w)
+	}
+}
+
+// TestErrorStackConcurrent makes and reads stacks in several VMs at once, one
+// goroutine each, and checks that every VM gets the text of its own frames.
+func TestErrorStackConcurrent(t *testing.T) {
+	const vms, rounds = 8, 200
+	var wg sync.WaitGroup
+	errs := make(chan error, vms)
+	for i := range vms {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m, err := NewVM()
+			if err != nil {
+				errs <- err
+				return
+			}
+
+			defer m.Close()
+
+			// Each VM has its own function names, so a frame recorded by
+			// another VM would show up in the text.
+			if _, err := m.Eval(fmt.Sprintf(`
+var kept = []
+function vm%[1]d_inner(n) { return new Error("e" + n) }
+function vm%[1]d_outer(n) { kept.push(vm%[1]d_inner(n)); if (kept.length > 50) kept.shift(); return kept[kept.length - 1].stack }
+`, i), EvalGlobal); err != nil {
+				errs <- err
+				return
+			}
+
+			want := fmt.Sprintf("    at vm%[1]d_inner (<eval>:3:41)\n    at vm%[1]d_outer (<eval>:4:44)\n", i)
+			for n := range rounds {
+				v, err := m.Call(fmt.Sprintf("vm%d_outer", i), n)
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				if v != want {
+					errs <- fmt.Errorf("vm %d round %d: got %q, want %q", i, n, v, want)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

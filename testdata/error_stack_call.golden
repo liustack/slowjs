@@ -1,0 +1,591 @@
+== nested
+    at c (<eval>:10:32)
+    at b (<eval>:9:16)
+    at a (<eval>:8:16)
+    at run (<eval>:11:19)
+
+== Error() call
+    at f (<eval>:12:40)
+    at run (<eval>:12:64)
+
+== native map
+    at cb (<eval>:13:62)
+    at map (native)
+    at run (<eval>:13:29)
+
+== native sort
+    at cmp (<eval>:14:87)
+    at sort (native)
+    at <anonymous> (<eval>:14:56)
+    at run (<eval>:14:120)
+
+== eval
+    at inEval (<input>:1:38)
+    at <eval> (<input>:1:46)
+    at run (<eval>:15:20)
+
+== indirect eval
+    at <eval> (<input>:1:10)
+    at eval (native)
+    at run (<eval>:16:34)
+
+== new Function
+    at anonymous (<input>:3:17)
+    at run (<eval>:17:62)
+
+== arrow
+    at <anonymous> (<eval>:18:33)
+    at run (<eval>:18:43)
+
+== method
+    at meth (<eval>:19:45)
+    at run (<eval>:19:63)
+
+== computed name
+    at comp1 (<eval>:20:60)
+    at run (<eval>:20:76)
+
+== class ctor
+    at K (<eval>:21:71)
+    at run (<eval>:21:82)
+
+== subclass
+    at MyErr (<eval>:22:28)
+    at run (<eval>:23:29)
+
+== aggregate
+    at run (<eval>:24:39)
+
+== bound
+    at bnd (<eval>:25:51)
+    at run (<eval>:25:75)
+
+== getter
+    at getg (<eval>:26:90)
+    at run (<eval>:26:101)
+
+== proxy
+    at trap (<eval>:27:72)
+    at run (<eval>:27:83)
+
+== tail
+    at t2 (<eval>:28:73)
+    at t1 (<eval>:28:33)
+    at run (<eval>:28:88)
+
+== json reviver
+    at rev (<eval>:29:106)
+    at parse (native)
+    at <anonymous> (<eval>:29:56)
+    at run (<eval>:29:139)
+
+== replace cb
+    at rcb (<eval>:30:91)
+    at [Symbol.replace] (native)
+    at replace (native)
+    at <anonymous> (<eval>:30:55)
+    at run (<eval>:30:125)
+
+== TypeError engine
+    at run (<eval>:31:11)
+
+== TypeError msg
+cannot read property 'x' of null
+== ReferenceError
+    at run (<eval>:32:7)
+
+== thrown
+    at thr (<eval>:33:45)
+    at run (<eval>:33:59)
+
+== SyntaxError eval
+    at <input>:1:3
+    at run (<eval>:34:11)
+
+== SyntaxError props
+["<input>",1,3]
+== SyntaxError Function
+    at <input>:4:2
+    at Function (native)
+    at run (<eval>:35:19)
+
+== deep
+    at rec (<eval>:36:68)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at rec (<eval>:36:49)
+    at run (<eval>:36:80)
+
+== native TypeError
+    at reduce (native)
+    at run (<eval>:37:16)
+
+== JSON SyntaxError
+    at <input>:1:2
+    at parse (native)
+    at run (<eval>:38:17)
+
+== RangeError native
+    at Array (native)
+    at run (<eval>:39:16)
+
+== Symbol TypeError
+    at run (<eval>:40:16)
+
+== renamed after
+    at renamed (<eval>:43:38)
+    at run (<eval>:44:17)
+
+== renamed before
+    at changed (<eval>:43:38)
+    at run (<eval>:47:33)
+
+== deleted name
+    at <anonymous> (<eval>:48:37)
+    at run (<eval>:50:30)
+
+== symbol name
+    at <anonymous> (<eval>:51:38)
+    at run (<eval>:53:30)
+
+== number name
+    at <anonymous> (<eval>:54:38)
+    at run (<eval>:56:30)
+
+== getter name
+    at <anonymous> (<eval>:57:38)
+    at run (<eval>:59:30)
+
+== long name
+    at xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy (<eval>:60:39)
+    at run (<eval>:62:29)
+
+== empty name
+    at <anonymous> (<eval>:63:40)
+    at run (<eval>:65:31)
+
+== desc
+{"value":"    at run (<eval>:68:18)\n","writable":true,"enumerable":false,"configurable":true}
+== keys
+[]
+== ownKeys
+["message","stack"]
+== names
+["message","stack"]
+== json
+{}
+== spread
+[]
+== hasOwn
+[true,true,true]
+== forin
+[]
+== assigned
+custom
+== defined
+[7,"{\"stack\":7}",["stack"]]
+== deleted
+[null,false]
+== frozen
+[true,"    at run (<eval>:80:19)\n",{"value":"    at run (<eval>:80:19)\n","writable":false,"enumerable":false,"configurable":false}]
+== isFrozen before
+[false,false]
+== sealed
+{"value":"    at run (<eval>:81:19)\n","writable":true,"enumerable":false,"configurable":false}
+== twice
+true
+== getter stack
+g
+== nonwritable
+    at run (<eval>:84:19)
+
+== assign returns
+5
+== assign value
+5
+== prevent
+[true,"    at run (<eval>:86:20)\n"]
+== entries
+[]
+== values
+{"message":{"value":"entries","writable":true,"enumerable":false,"configurable":true},"stack":{"value":"    at run (<eval>:87:20)\n","writable":true,"enumerable":false,"configurable":true}}
+== inherited
+[false,"    at run (<eval>:88:34)\n"]
+== toString
+Error: ts
+== gone
+    at gone (<input>:1:36)
+    at <eval> (<input>:1:47)
+    at run (<eval>:92:15)
+
+== gone fn
+    at inner (<input>:3:44)
+    at anonymous (<input>:3:1)
+    at run (<eval>:94:81)
+
+== generator
+    at gen (<eval>:99:43)
+    at next (native)
+    at run (<eval>:100:52)
+
+== cycle
+    at cyc (<eval>:113:40)
+    at run (<eval>:113:116)
+
+== many
+27
+== limit
+    at c (<eval>:10:32)
+    at b (<eval>:9:16)
+    at a (<eval>:8:16)
+    at run (<eval>:126:18)
+
+== rejected
+    at run (<eval>:104:25)
+
+== executor
+    at exec (<eval>:105:52)
+    at Promise (native)
+    at run (<eval>:105:12)
+
+== await rej
+    at aw (<eval>:108:60)
+    at run (<eval>:108:115)
+
+== then throw
+    at th (<eval>:106:59)
+
+== then engine
+    at th2 (<eval>:107:45)
+
+== async
+    at af (<eval>:101:51)
+
+== go: eval
+TypeError: eval
+    at thrower (<eval>:1:42)
+    at outer (<eval>:2:27)
+    at <eval> (<eval>:3:6)
+
+== go: call
+TypeError: call
+    at thrower (<eval>:1:42)
+
+== go: engine
+TypeError: cannot read property 'x' of undefined
+    at <eval> (<eval>:1:10)
+
+== go: host function
+TypeError: host failed
+    at hostFail (native)
+    at callsHost (<eval>:1:32)
+    at <eval> (<eval>:2:10)
+
+== go: host function called
+TypeError: host failed
+    at hostFail (native)
+    at callsHost (<eval>:1:32)
+
+== go: host function caught
+    at hostFail (native)
+    at callsHost (<eval>:1:32)
+    at <anonymous> (<eval>:1:31)
+    at <eval> (<eval>:1:67)
+
