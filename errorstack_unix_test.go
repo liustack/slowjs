@@ -9,8 +9,9 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"io"
 	"os"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestErrorStackPrint checks the stack console.log prints with an error, which
@@ -63,12 +64,12 @@ func captureStdout(t *testing.T, f func()) string {
 		t.Fatal(err)
 	}
 
-	saved, err := syscall.Dup(1)
+	saved, err := unix.Dup(1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := syscall.Dup2(int(w.Fd()), 1); err != nil {
+	if err := unix.Dup2(int(w.Fd()), 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,11 +79,11 @@ func captureStdout(t *testing.T, f func()) string {
 		done <- string(b)
 	}()
 	f()
-	if err := syscall.Dup2(saved, 1); err != nil {
+	if err := unix.Dup2(saved, 1); err != nil {
 		t.Fatal(err)
 	}
 
-	syscall.Close(saved)
+	unix.Close(saved)
 	w.Close()
 	return <-done
 }
