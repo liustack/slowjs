@@ -10,25 +10,30 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does two things:
+// It does three things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
 //     the generated form of the fix in lib/internal/patch/quickjs.diff.
+//   - In every lib/ccgo_*.go file, wire in the lazy error stacks of
+//     lib/backtrace.go, the Go form of the backtrace change in the same
+//     diff (see fixBacktrace).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //
 // It fails when a generated file no longer has the expected shape, which
-// means upstream changed JS_ToCStringLen2 and the fix needs a fresh look.
+// means upstream changed the code a fix touches and it needs a fresh look.
 package main
 
 import (
 	"bytes"
 	"flag"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -67,7 +72,13 @@ func run() (missing int, err error) {
 		return 0, fmt.Errorf("no lib/ccgo_*.go files, run from the repository root")
 	}
 	for _, fn := range generated {
-		changed, err := update(fn, fixToCString)
+		changed, err := update(fn, func(b []byte) ([]byte, error) {
+			b, err := fixToCString(b)
+			if err != nil {
+				return nil, err
+			}
+			return fixBacktrace(b)
+		})
 		if err != nil {
 			return missing, err
 		}
@@ -151,4 +162,128 @@ func fixToCString(b []byte) ([]byte, error) {
 	out.Write(body)
 	out.Write(b[end:])
 	return out.Bytes(), nil
+}
+
+var (
+	reBuildBacktrace = regexp.MustCompile(`\nfunc _build_backtrace\(tls \*libc\.TLS, (\w+) uintptr, (\w+) TJSValue, filename uintptr, line_num int32, col_num int32, backtrace_flags int32\) \{\n`)
+	reHasDebug       = regexp.MustCompile(`\n\t+if (int32\(\*\(\*uint8\)\(unsafe\.Pointer\(b \+ \d+\)\)&0x[0-9a-f]+>>\d+\)) != 0 \{\n\t+line_num1 = _find_line_num\(`)
+	reGetPropString  = regexp.MustCompile(`\nfunc _get_prop_string\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom\) \(r uintptr\) \{\n`)
+	rePropFlags      = regexp.MustCompile(`\n(\tif (int32\(\*\(\*uint32\)\(unsafe\.Pointer\(prs \+ 0\)\)&0x[0-9a-f]+>>\d+\))&\(libc\.Int32FromInt32\(3\)<<libc\.Int32FromInt32\(4\)\) != libc\.Int32FromInt32\(0\)<<libc\.Int32FromInt32\(4\) \{\n)`)
+	rePropValue      = regexp.MustCompile(`\n\tval = \*\(\*TJSValue\)\(unsafe\.Pointer\((\*\*\(\*\*uintptr\)\(__ccgo_up\(bp( \+ \d+)?\)\))\)\)\n`)
+	reTableEntry     = regexp.MustCompile(`\n\t\*\(\*uintptr\)\(unsafe\.Add\(p, (\d+)\)\) = __ccgo_fp\(_js_module_ns_autoinit\)\n\t\*\(\*uintptr\)\(unsafe\.Add\(p, (\d+)\)\) = __ccgo_fp\(_JS_InstantiateFunctionListItem2\)\n`)
+)
+
+const (
+	backtraceHelpers = "\n// Added by internal/fixlib for lib/backtrace.go.\n"
+	autoinitFree     = "\nfunc _js_autoinit_free(tls *libc.TLS, rt uintptr, pr uintptr) {\n"
+	autoinitMark     = "\nfunc _js_autoinit_mark(tls *libc.TLS, rt uintptr, pr uintptr, __ccgo_fp_mark_func uintptr) {\n"
+	autoinitTable    = "\nvar _js_autoinit_func_table = [3]uintptr{}\n"
+)
+
+// fixBacktrace wires lib/backtrace.go into a generated file:
+//
+//   - _build_backtrace leaves a stack without a file name to
+//     _js_backtrace_lazy, which records it for later.
+//   - The autoinit table gets _js_backtrace_autoinit as entry 3,
+//     JS_AUTOINIT_ID_BACKTRACE, which formats a recorded stack.
+//   - _js_autoinit_free and _js_autoinit_mark also release and mark a
+//     recorded stack.
+//   - _get_prop_string formats a recorded stack, for printing an error.
+//   - At the end, _js_backtrace_prop_flags and _js_backtrace_has_debug read
+//     the bit fields JSShapeProperty.flags and JSFunctionBytecode.has_debug,
+//     with expressions copied from _get_prop_string and _build_backtrace, as
+//     their layout differs between targets.
+func fixBacktrace(b []byte) ([]byte, error) {
+	if i := bytes.Index(b, []byte(backtraceHelpers)); i >= 0 {
+		b = b[:i] // the helpers are derived again below
+	}
+
+	body, err := funcBody(b, reBuildBacktrace, "_build_backtrace")
+	if err != nil {
+		return nil, err
+	}
+	m := reBuildBacktrace.FindSubmatch(b)
+	ctx, errorObj := string(m[1]), string(m[2])
+	hasDebug := reHasDebug.FindSubmatch(body)
+	if hasDebug == nil {
+		return nil, fmt.Errorf("_build_backtrace: cannot find the has_debug test")
+	}
+	lazy := fmt.Sprintf("\tif filename == 0 && _js_backtrace_lazy(tls, %s, %s, backtrace_flags) != 0 {\n\t\treturn\n\t}\n", ctx, errorObj)
+	if !bytes.Contains(body, []byte(lazy)) {
+		init := fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx)
+		if bytes.Count(body, []byte(init)) != 1 {
+			return nil, fmt.Errorf("_build_backtrace: want 1 call of _js_dbuf_init")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, []byte(init), []byte(lazy+init), 1), 1)
+	}
+
+	body, err = funcBody(b, reGetPropString, "_get_prop_string")
+	if err != nil {
+		return nil, err
+	}
+	ctx = string(reGetPropString.FindSubmatch(b)[1])
+	flags := rePropFlags.FindSubmatch(body)
+	value := rePropValue.FindSubmatch(body)
+	if flags == nil || value == nil {
+		return nil, fmt.Errorf("_get_prop_string: cannot find the property type test or the value")
+	}
+	pending := fmt.Sprintf("\tif pending := _js_backtrace_prop_string(tls, %s, prs, %s); pending != 0 {\n\t\treturn pending\n\t}\n", ctx, value[1])
+	if !bytes.Contains(body, []byte(pending)) {
+		b = bytes.Replace(b, body, bytes.Replace(body, flags[1], append([]byte(pending), flags[1]...), 1), 1)
+	}
+
+	for _, f := range []struct{ head, call string }{
+		{autoinitFree, "\t_js_backtrace_autoinit_free(tls, pr)\n"},
+		{autoinitMark, "\t_js_backtrace_autoinit_mark(tls, rt, pr, __ccgo_fp_mark_func)\n"},
+	} {
+		if bytes.Count(b, []byte(f.head)) != 1 {
+			return nil, fmt.Errorf("want 1 %q", strings.TrimSpace(f.head))
+		}
+		if !bytes.Contains(b, []byte(f.head+f.call)) {
+			b = bytes.Replace(b, []byte(f.head), []byte(f.head+f.call), 1)
+		}
+	}
+
+	if bytes.Contains(b, []byte(autoinitTable)) {
+		entries := reTableEntry.FindSubmatch(b)
+		if entries == nil {
+			return nil, fmt.Errorf("cannot find the entries of _js_autoinit_func_table")
+		}
+		prev, _ := strconv.Atoi(string(entries[1]))
+		last, _ := strconv.Atoi(string(entries[2]))
+		b = bytes.Replace(b, []byte(autoinitTable), []byte(strings.Replace(autoinitTable, "[3]", "[4]", 1)), 1)
+		b = bytes.Replace(b, entries[0], append(entries[0][:len(entries[0]):len(entries[0])],
+			fmt.Sprintf("\t*(*uintptr)(unsafe.Add(p, %d)) = __ccgo_fp(_js_backtrace_autoinit)\n", 2*last-prev)...), 1)
+	} else if !bytes.Contains(b, []byte("= __ccgo_fp(_js_backtrace_autoinit)\n")) {
+		return nil, fmt.Errorf("cannot find _js_autoinit_func_table")
+	}
+
+	var helpers bytes.Buffer
+	fmt.Fprintf(&helpers, "package p\n%s", backtraceHelpers)
+	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_prop_flags(tls *libc.TLS, prs uintptr) int32 {\n\treturn %s\n}\n", flags[2])
+	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_has_debug(tls *libc.TLS, b uintptr) int32 {\n\treturn %s\n}\n", hasDebug[1])
+	formatted, err := format.Source(helpers.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("backtrace helpers: %v", err)
+	}
+
+	var out bytes.Buffer
+	out.Write(bytes.TrimRight(b, "\n"))
+	out.WriteString("\n")
+	out.Write(bytes.TrimPrefix(formatted, []byte("package p\n")))
+	return out.Bytes(), nil
+}
+
+// funcBody returns the text of the function whose head re matches.
+func funcBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
+	loc := re.FindAllIndex(b, -1)
+	if len(loc) != 1 {
+		return nil, fmt.Errorf("want 1 function %s, found %d", name, len(loc))
+	}
+	start := loc[0][0]
+	end := bytes.Index(b[start:], []byte("\n}\n"))
+	if end < 0 {
+		return nil, fmt.Errorf("end of %s not found", name)
+	}
+	return b[start : start+end+3], nil
 }

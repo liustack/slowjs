@@ -81,7 +81,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..7e6bd1d 100644
+index fa5a7a9..0c03623 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,7 @@
@@ -96,7 +96,30 @@ index fa5a7a9..7e6bd1d 100644
  
  #if defined(__APPLE__)
  #define MALLOC_OVERHEAD  0
-@@ -2053,10 +2049,17 @@ static inline BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
+@@ -505,6 +501,7 @@ typedef enum {
+     JS_AUTOINIT_ID_PROTOTYPE,
+     JS_AUTOINIT_ID_MODULE_NS,
+     JS_AUTOINIT_ID_PROP,
++    JS_AUTOINIT_ID_BACKTRACE,
+ } JSAutoInitIDEnum;
+ 
+ /* must be large enough to have a negligible runtime cost and small
+@@ -1383,6 +1380,14 @@ static void remove_gc_object(JSGCObjectHeader *h);
+ static JSValue js_instantiate_prototype(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque);
+ static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
+                                  void *opaque);
++static JSValue js_backtrace_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
++                                     void *opaque);
++static void js_backtrace_free(JSContext *ctx, void *opaque);
++static void js_backtrace_mark(JSRuntime *rt, void *opaque,
++                              JS_MarkFunc *mark_func);
++static int JS_DefineAutoInitProperty(JSContext *ctx, JSValueConst this_obj,
++                                     JSAtom prop, JSAutoInitIDEnum id,
++                                     void *opaque, int flags);
+ static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
+                                                JSAtom atom, void *opaque);
+ static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
+@@ -2053,10 +2058,17 @@ static inline BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
  /* Note: OS and CPU dependent */
  static inline uintptr_t js_get_stack_pointer(void)
  {
@@ -115,7 +138,7 @@ index fa5a7a9..7e6bd1d 100644
  {
      uintptr_t sp;
      sp = js_get_stack_pointer() - alloca_size;
-@@ -4492,8 +4495,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+@@ -4492,8 +4504,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
              return (const char *)src;
          }
          str_new = js_alloc_string(ctx, len + count, 0);
@@ -127,7 +150,7 @@ index fa5a7a9..7e6bd1d 100644
          q = str_new->u.str8;
          for (pos = 0; pos < len; pos++) {
              c = src[pos];
-@@ -4510,8 +4515,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+@@ -4510,8 +4524,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
             produce 4 bytes but use 2 code points.
           */
          str_new = js_alloc_string(ctx, len * 3, 0);
@@ -139,7 +162,259 @@ index fa5a7a9..7e6bd1d 100644
          q = str_new->u.str8;
          pos = 0;
          while (pos < len) {
-@@ -41695,7 +41702,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
+@@ -6085,12 +6101,16 @@ static JSAutoInitIDEnum js_autoinit_get_id(JSProperty *pr)
+ 
+ static void js_autoinit_free(JSRuntime *rt, JSProperty *pr)
+ {
++    if (js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE)
++        js_backtrace_free(js_autoinit_get_realm(pr), pr->u.init.opaque);
+     JS_FreeContext(js_autoinit_get_realm(pr));
+ }
+ 
+ static void js_autoinit_mark(JSRuntime *rt, JSProperty *pr,
+                              JS_MarkFunc *mark_func)
+ {
++    if (js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE)
++        js_backtrace_mark(rt, pr->u.init.opaque, mark_func);
+     mark_func(rt, &js_autoinit_get_realm(pr)->header);
+ }
+ 
+@@ -7523,6 +7543,18 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
+             return NULL;
+     }
+     
++    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT &&
++        js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE) {
++        /* a backtrace not formatted yet: format it without changing
++           the object */
++        const char *str;
++        val = js_backtrace_autoinit(ctx, p, prop, pr->u.init.opaque);
++        if (JS_IsException(val))
++            return NULL;
++        str = JS_ToCString(ctx, val);
++        JS_FreeValue(ctx, val);
++        return str;
++    }
+     if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+         return NULL;
+     val = pr->u.value;
+@@ -7533,6 +7565,198 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
+ 
+ #define JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL (1 << 0)
+ 
++/* Lazy backtraces: creating an error only records each stack frame (the
++   function name, the bytecode and the pc). The 'stack' property is an
++   autoinit property that formats the text the first time it is read, with
++   the same result as formatting it at creation. */
++
++typedef struct JSBacktraceFrame {
++    JSString *func_name; /* NULL for <anonymous> */
++    JSFunctionBytecode *b; /* NULL if native */
++    uint32_t pc; /* the pc_value build_backtrace gives to find_line_num */
++} JSBacktraceFrame;
++
++typedef struct JSBacktrace {
++    int count;
++    JSBacktraceFrame frames[0];
++} JSBacktrace;
++
++/* the string get_prop_string() reads, as a new reference, or NULL where
++   it returns NULL. It never executes JS code. */
++static JSString *get_prop_string_value(JSContext *ctx, JSValueConst obj,
++                                       JSAtom prop)
++{
++    JSObject *p;
++    JSProperty *pr;
++    JSShapeProperty *prs;
++    JSValueConst val;
++
++    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
++        return NULL;
++    p = JS_VALUE_GET_OBJ(obj);
++    prs = find_own_property(&pr, p, prop);
++    if (!prs) {
++        p = p->shape->proto;
++        if (!p)
++            return NULL;
++        prs = find_own_property(&pr, p, prop);
++        if (!prs)
++            return NULL;
++    }
++    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
++        return NULL;
++    val = pr->u.value;
++    if (JS_VALUE_GET_TAG(val) != JS_TAG_STRING)
++        return NULL;
++    return JS_VALUE_GET_STRING(JS_DupValue(ctx, val));
++}
++
++static void js_backtrace_free(JSContext *ctx, void *opaque)
++{
++    JSBacktrace *bt = opaque;
++    int i;
++
++    for(i = 0; i < bt->count; i++) {
++        if (bt->frames[i].func_name)
++            JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, bt->frames[i].func_name));
++        if (bt->frames[i].b)
++            JS_FreeValue(ctx, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, bt->frames[i].b));
++    }
++    js_free(ctx, bt);
++}
++
++static void js_backtrace_mark(JSRuntime *rt, void *opaque,
++                              JS_MarkFunc *mark_func)
++{
++    JSBacktrace *bt = opaque;
++    int i;
++
++    for(i = 0; i < bt->count; i++) {
++        if (bt->frames[i].b)
++            mark_func(rt, &bt->frames[i].b->header);
++    }
++}
++
++/* record the backtrace of error_obj, to be formatted when 'stack' is
++   read. Return FALSE if it must be built now instead: when the error
++   already has a stack, when top-level code is on the stack, or when there
++   is no memory for the record. */
++static BOOL build_backtrace_lazy(JSContext *ctx, JSValueConst error_obj,
++                                 int backtrace_flags)
++{
++    JSRuntime *rt = ctx->rt;
++    JSStackFrame *sf;
++    JSBacktrace *bt;
++    JSBacktraceFrame *f;
++    JSFunctionBytecode *b;
++    int n, flags;
++
++    if (find_own_property1(JS_VALUE_GET_OBJ(error_obj), JS_ATOM_stack))
++        return FALSE;
++    n = 0;
++    flags = backtrace_flags;
++    for(sf = rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
++        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
++            break;
++        if (flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
++            flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
++            continue;
++        }
++        /* top-level code (a script, an eval or a module body) runs once,
++           so recording its bytecode would keep it, and the functions it
++           made, alive for as long as the error. Libraries keep errors
++           made when they load, so format these now. */
++        b = JS_GetFunctionBytecode(sf->cur_func);
++        if (b && b->func_name == JS_ATOM__eval_)
++            return FALSE;
++        n++;
++    }
++    bt = js_malloc_rt(rt, sizeof(*bt) + n * sizeof(bt->frames[0]));
++    if (!bt)
++        return FALSE;
++    bt->count = n;
++    f = bt->frames;
++    flags = backtrace_flags;
++    for(sf = rt->current_stack_frame; f < bt->frames + n; sf = sf->prev_frame) {
++        if (flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
++            flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
++            continue;
++        }
++        f->func_name = get_prop_string_value(ctx, sf->cur_func, JS_ATOM_name);
++        b = JS_GetFunctionBytecode(sf->cur_func);
++        if (b) {
++            js_rc(b)->ref_count++;
++            f->b = b;
++            f->pc = sf->cur_pc - b->byte_code_buf - 1;
++        } else {
++            f->b = NULL;
++            f->pc = 0;
++        }
++        f++;
++    }
++    if (JS_DefineAutoInitProperty(ctx, error_obj, JS_ATOM_stack,
++                                  JS_AUTOINIT_ID_BACKTRACE, bt,
++                                  JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0)
++        js_backtrace_free(ctx, bt);
++    return TRUE;
++}
++
++/* format the recorded backtrace as build_backtrace() does */
++static JSValue js_backtrace_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
++                                     void *opaque)
++{
++    JSBacktrace *bt = opaque;
++    JSBacktraceFrame *f;
++    DynBuf dbuf;
++    const char *func_name_str;
++    const char *str1;
++    JSValue str;
++    int i;
++
++    js_dbuf_init(ctx, &dbuf);
++    for(i = 0; i < bt->count; i++) {
++        f = &bt->frames[i];
++        if (!f->func_name)
++            func_name_str = NULL;
++        else
++            func_name_str = JS_ToCString(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name));
++        if (!func_name_str || func_name_str[0] == '\0')
++            str1 = "<anonymous>";
++        else
++            str1 = func_name_str;
++        dbuf_printf(&dbuf, "    at %s", str1);
++        JS_FreeCString(ctx, func_name_str);
++
++        if (f->b) {
++            JSFunctionBytecode *b = f->b;
++            const char *atom_str;
++            int line_num1, col_num1;
++
++            if (b->has_debug) {
++                line_num1 = find_line_num(ctx, b, f->pc, &col_num1);
++                atom_str = JS_AtomToCString(ctx, b->debug.filename);
++                dbuf_printf(&dbuf, " (%s",
++                            atom_str ? atom_str : "<null>");
++                JS_FreeCString(ctx, atom_str);
++                if (line_num1 != 0)
++                    dbuf_printf(&dbuf, ":%d:%d", line_num1, col_num1);
++                dbuf_putc(&dbuf, ')');
++            }
++        } else {
++            dbuf_printf(&dbuf, " (native)");
++        }
++        dbuf_putc(&dbuf, '\n');
++    }
++    dbuf_putc(&dbuf, '\0');
++    if (dbuf_error(&dbuf)) {
++        dbuf_free(&dbuf);
++        return JS_ThrowOutOfMemory(ctx);
++    }
++    str = JS_NewString(ctx, (char *)dbuf.buf);
++    dbuf_free(&dbuf);
++    return str;
++}
++
+ /* if filename != NULL, an additional level is added with the filename
+    and line number information (used for parse error). */
+ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
+@@ -7548,6 +7772,8 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
+ 
+     if (!JS_IsObject(error_obj))
+         return; /* protection in the out of memory case */
++    if (!filename && build_backtrace_lazy(ctx, error_obj, backtrace_flags))
++        return;
+     
+     js_dbuf_init(ctx, &dbuf);
+     if (filename) {
+@@ -8161,6 +8387,7 @@ static JSAutoInitFunc *js_autoinit_func_table[] = {
+     js_instantiate_prototype, /* JS_AUTOINIT_ID_PROTOTYPE */
+     js_module_ns_autoinit, /* JS_AUTOINIT_ID_MODULE_NS */
+     JS_InstantiateFunctionListItem2, /* JS_AUTOINIT_ID_PROP */
++    js_backtrace_autoinit, /* JS_AUTOINIT_ID_BACKTRACE */
+ };
+ 
+ /* warning: 'prs' is reallocated after it */
+@@ -41695,7 +41922,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
      return r;
  }
  
@@ -151,7 +426,7 @@ index fa5a7a9..7e6bd1d 100644
                             int argc, JSValueConst *argv)
  {
      JSValue obj, args[1];
-@@ -60589,6 +60599,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +60819,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -163,7 +438,7 @@ index fa5a7a9..7e6bd1d 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +60619,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +60839,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -171,7 +446,7 @@ index fa5a7a9..7e6bd1d 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61211,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61431,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }
