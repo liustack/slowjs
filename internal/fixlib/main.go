@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does three things:
+// It does four things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -20,6 +20,10 @@
 //     diff (see fixBacktrace).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
+//   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
+//     functions of the test262 runner call the engine in lib/ (see
+//     fixRunner), so that the runner tests that engine and not the copy ccgo
+//     linked into it.
 //
 // It fails when a generated file no longer has the expected shape, which
 // means upstream changed the code a fix touches and it needs a fresh look.
@@ -79,6 +83,33 @@ func run() (missing int, err error) {
 			}
 			return fixBacktrace(b)
 		})
+		if err != nil {
+			return missing, err
+		}
+		if changed {
+			missing++
+		}
+	}
+
+	runners, err := filepath.Glob(filepath.Join("lib", "internal", "run-test262", "ccgo_*.go"))
+	if err != nil {
+		return missing, err
+	}
+	if len(runners) != len(generated) {
+		return missing, fmt.Errorf("%d runner files for %d engine files", len(runners), len(generated))
+	}
+	for _, fn := range runners {
+		engine, err := os.ReadFile(filepath.Join("lib", filepath.Base(fn)))
+		if err != nil {
+			return missing, err
+		}
+		// lib/test262_runner.go exports what ccgo left unexported.
+		extra, err := os.ReadFile(filepath.Join("lib", "test262_runner.go"))
+		if err != nil {
+			return missing, err
+		}
+		engine = append(engine, extra...)
+		changed, err := update(fn, func(b []byte) ([]byte, error) { return fixRunner(b, engine) })
 		if err != nil {
 			return missing, err
 		}
@@ -286,4 +317,94 @@ func funcBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
 		return nil, fmt.Errorf("end of %s not found", name)
 	}
 	return b[start : start+end+3], nil
+}
+
+var reFuncHead = regexp.MustCompile(`(?m)^func ([xX]\w+)\((.*?)\)( \(r [^()]+\))? \{$`)
+
+const linkedImport = "\tlibquickjs \"github.com/liustack/quickjs/lib\"\n"
+
+// fixRunner makes the test262 runner call the engine in lib/. ccgo linked a
+// whole copy of the engine into the runner. Every exported engine function
+// of that copy (x_JS_Eval, ...) whose counterpart in lib (XJS_Eval, ...) has
+// the same parameters becomes a call of the counterpart, so the runner only
+// reaches the copy through code that nothing calls. x_init, which sets up
+// the runner's own globals, stays. The runtimes the runner creates get the
+// stack limit of MaxStackSlots TLS slots that the runner's copy used.
+func fixRunner(b, engine []byte) ([]byte, error) {
+	exported := map[string]string{} // name -> parameters and result
+	for _, m := range reFuncHead.FindAllSubmatch(engine, -1) {
+		if name := string(m[1]); name[0] == 'X' {
+			exported[name[1:]] = signature(string(m[2]), string(m[3]))
+		}
+	}
+
+	var out bytes.Buffer
+	last, n := 0, 0
+	for _, loc := range reFuncHead.FindAllSubmatchIndex(b, -1) {
+		name := string(b[loc[2]:loc[3]])
+		if name[0] != 'x' || name == "x_init" {
+			continue
+		}
+		params, result := string(b[loc[4]:loc[5]]), ""
+		if loc[6] >= 0 {
+			result = string(b[loc[6]:loc[7]])
+		}
+		sig, ok := exported[name[2:]]
+		if !ok {
+			continue
+		}
+		if sig != signature(params, result) {
+			return nil, fmt.Errorf("%s: parameters differ from X%s", name, name[2:])
+		}
+		end := bytes.Index(b[loc[1]:], []byte("\n}\n"))
+		if end < 0 {
+			return nil, fmt.Errorf("end of %s not found", name)
+		}
+		var args []string
+		for _, p := range strings.Split(params, ", ") {
+			args = append(args, strings.Fields(p)[0])
+		}
+		call := fmt.Sprintf("libquickjs.X%s(%s)", name[2:], strings.Join(args, ", "))
+		var body string
+		switch {
+		case name == "x_JS_NewRuntime" || name == "x_JS_NewRuntime2":
+			body = "\trt := " + call + "\n\tif rt != 0 {\n\t\tlibquickjs.XJS_SetMaxStackSize(tls, rt, libquickjs.MaxStackSlots)\n\t}\n\treturn rt"
+		case result != "":
+			body = "\treturn " + call
+		default:
+			body = "\t" + call
+		}
+		out.Write(b[last:loc[1]])
+		out.WriteString("\n" + body)
+		last = loc[1] + end
+		n++
+	}
+	out.Write(b[last:])
+	if n == 0 {
+		return nil, fmt.Errorf("no engine function to forward")
+	}
+
+	b = out.Bytes()
+	if !bytes.Contains(b, []byte(linkedImport)) {
+		imp := []byte("\nimport (\n")
+		if bytes.Count(b, imp) != 1 {
+			return nil, fmt.Errorf("want 1 import block")
+		}
+		b = bytes.Replace(b, imp, append(imp[:len(imp):len(imp)], linkedImport...), 1)
+	}
+	return b, nil
+}
+
+// signature drops the parameter names of a function head, keeping the
+// types.
+func signature(params, result string) string {
+	var types []string
+	for _, p := range strings.Split(params, ", ") {
+		if f := strings.Fields(p); len(f) == 2 {
+			types = append(types, f[1])
+		} else {
+			types = append(types, p)
+		}
+	}
+	return strings.Join(types, ", ") + "|" + strings.TrimPrefix(strings.TrimSpace(result), "(r ")
 }

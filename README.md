@@ -112,7 +112,7 @@ Conflicts to expect:
   of every generated file, then put the changes back:
 
   ```sh
-  git checkout --theirs -- 'lib/ccgo_*.go'
+  git checkout --theirs -- 'lib/ccgo_*.go' 'lib/internal/run-test262/ccgo_*.go'
   go run ./internal/fixlib
   ```
 
@@ -134,6 +134,12 @@ Conflicts to expect:
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
 - `lib/internal/run-test262/go.mod` is ours. Upstream has none there.
+- `lib/internal/run-test262/ccgo_*.go`: ccgo links a whole copy of the
+  engine into the test262 runner, so as generated the runner tests that copy
+  and not `lib/`. `fixlib` turns each engine API function of the runner into
+  a call of the same function in `lib/` (`lib/test262_runner.go` exports the
+  one ccgo leaves unexported). Take the upstream files and run `fixlib`, as
+  for `lib/ccgo_*.go`.
 
 This fork does not regenerate `lib/ccgo_*.go` itself. `lib/generator.go` still
 assumes it is the root of its own module.
@@ -165,4 +171,5 @@ done
 
 `lib/internal/run-test262` is a module of its own, so its 69 MiB of
 transpiled test runner stay out of the module zip. `Test262` in `lib/` builds
-it with `go build -C`.
+it with `go build -C`. The runner runs the engine in `lib/` (see `fixlib`),
+so it checks the changes made there.
