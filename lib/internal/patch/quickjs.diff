@@ -81,7 +81,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..c32bcb7 100644
+index fa5a7a9..901887a 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,7 @@
@@ -96,30 +96,21 @@ index fa5a7a9..c32bcb7 100644
  
  #if defined(__APPLE__)
  #define MALLOC_OVERHEAD  0
-@@ -505,6 +501,7 @@ typedef enum {
-     JS_AUTOINIT_ID_PROTOTYPE,
-     JS_AUTOINIT_ID_MODULE_NS,
-     JS_AUTOINIT_ID_PROP,
-+    JS_AUTOINIT_ID_BACKTRACE, /* a pending error stack, see build_backtrace() */
- } JSAutoInitIDEnum;
- 
- /* must be large enough to have a negligible runtime cost and small
-@@ -1383,6 +1380,14 @@ static void remove_gc_object(JSGCObjectHeader *h);
+@@ -1383,6 +1379,13 @@ static void remove_gc_object(JSGCObjectHeader *h);
  static JSValue js_instantiate_prototype(JSContext *ctx, JSObject *p, JSAtom atom, void *opaque);
  static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
                                   void *opaque);
 +typedef struct JSBacktrace JSBacktrace;
-+static void js_backtrace_free(JSContext *ctx, JSBacktrace *bt);
-+static void js_backtrace_mark(JSRuntime *rt, JSBacktrace *bt,
-+                              JS_MarkFunc *mark_func);
-+static int js_backtrace_instantiate(JSContext *ctx, JSObject *p,
-+                                    JSProperty *pr, JSShapeProperty *prs);
-+static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
-+                               JSProperty *pr, JSShapeProperty *prs);
++static BOOL js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
++                               int backtrace_flags);
++static int js_backtrace_settle(JSContext *ctx, JSObject *p, JSProperty *pr);
++static BOOL js_backtrace_pending(JSProperty *pr);
++static const char *js_backtrace_prop_string(JSContext *ctx, JSObject *p,
++                                             JSProperty *pr, BOOL *handled);
  static JSValue JS_InstantiateFunctionListItem2(JSContext *ctx, JSObject *p,
                                                 JSAtom atom, void *opaque);
  static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
-@@ -2053,10 +2058,17 @@ static inline BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
+@@ -2053,10 +2056,17 @@ static inline BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
  /* Note: OS and CPU dependent */
  static inline uintptr_t js_get_stack_pointer(void)
  {
@@ -138,7 +129,7 @@ index fa5a7a9..c32bcb7 100644
  {
      uintptr_t sp;
      sp = js_get_stack_pointer() - alloca_size;
-@@ -4492,8 +4504,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+@@ -4492,8 +4502,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
              return (const char *)src;
          }
          str_new = js_alloc_string(ctx, len + count, 0);
@@ -150,7 +141,7 @@ index fa5a7a9..c32bcb7 100644
          q = str_new->u.str8;
          for (pos = 0; pos < len; pos++) {
              c = src[pos];
-@@ -4510,8 +4524,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
+@@ -4510,8 +4522,10 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
             produce 4 bytes but use 2 code points.
           */
          str_new = js_alloc_string(ctx, len * 3, 0);
@@ -162,24 +153,7 @@ index fa5a7a9..c32bcb7 100644
          q = str_new->u.str8;
          pos = 0;
          while (pos < len) {
-@@ -6085,12 +6101,16 @@ static JSAutoInitIDEnum js_autoinit_get_id(JSProperty *pr)
- 
- static void js_autoinit_free(JSRuntime *rt, JSProperty *pr)
- {
-+    if (js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE)
-+        js_backtrace_free(js_autoinit_get_realm(pr), pr->u.init.opaque);
-     JS_FreeContext(js_autoinit_get_realm(pr));
- }
- 
- static void js_autoinit_mark(JSRuntime *rt, JSProperty *pr,
-                              JS_MarkFunc *mark_func)
- {
-+    if (js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE)
-+        js_backtrace_mark(rt, pr->u.init.opaque, mark_func);
-     mark_func(rt, &js_autoinit_get_realm(pr)->header);
- }
- 
-@@ -6863,6 +6883,8 @@ typedef struct JSMemoryUsage_helper {
+@@ -6863,6 +6877,8 @@ typedef struct JSMemoryUsage_helper {
  } JSMemoryUsage_helper;
  
  static void compute_value_size(JSValueConst val, JSMemoryUsage_helper *hp);
@@ -188,7 +162,7 @@ index fa5a7a9..c32bcb7 100644
  
  static void compute_jsstring_size(JSString *str, JSMemoryUsage_helper *hp)
  {
-@@ -7013,6 +7035,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
+@@ -7013,6 +7029,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                  if (prs->atom != JS_ATOM_NULL && !(prs->flags & JS_PROP_TMASK)) {
                      compute_value_size(pr->u.value, hp);
                  }
@@ -196,22 +170,20 @@ index fa5a7a9..c32bcb7 100644
                  prs++;
              }
          }
-@@ -7523,6 +7546,14 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
+@@ -7523,6 +7540,12 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
              return NULL;
      }
      
-+    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT &&
-+        js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE) {
-+        int idx = pr - p->prop;
-+        if (js_backtrace_instantiate(ctx, p, pr, prs))
-+            return NULL;
-+        pr = &p->prop[idx];
-+        prs = &get_shape_prop(p->shape)[idx];
++    if (prop == JS_ATOM_stack) {
++        BOOL handled;
++        const char *str = js_backtrace_prop_string(ctx, p, pr, &handled);
++        if (handled)
++            return str;
 +    }
      if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
          return NULL;
      val = pr->u.value;
-@@ -7533,6 +7564,482 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
+@@ -7533,6 +7556,365 @@ static const char *get_prop_string(JSContext *ctx, JSValueConst obj, JSAtom prop
  
  #define JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL (1 << 0)
  
@@ -219,22 +191,21 @@ index fa5a7a9..c32bcb7 100644
 +   function name, the bytecode and the pc), and the 'stack' text is
 +   formatted the first time it is needed, with the same bytes.
 +
-+   A pending stack is an autoinit property with the id
-+   JS_AUTOINIT_ID_BACKTRACE, writable and configurable like the string it
-+   stands for, so that every generic path that meets it stops. It does not
-+   go through the generic autoinit protocol, which formats before it knows
-+   what the caller wants and copies a shared shape for each object:
++   'stack' is an ordinary writable, configurable data property, so the error
++   has the same shape as one whose stack was formatted at once. While the
++   stack is pending its value is a marker, an object of the private class
++   js_backtrace_class_id holding the recorded frames. No path that reads a
++   property value may hand the marker to JavaScript, so the value-read paths
++   format the stack first:
 +
-+   - Reading it (get, getOwnPropertyDescriptor, get_prop_string) formats
-+     the text first. If that fails, the read throws and nothing changes, so
-+     a later read can try again. Then the property becomes the plain data
-+     property, and the object takes the hashed shape an error whose stack
-+     was formatted at once has. The record holds that shape.
-+   - Assigning or defining a new value replaces it without formatting it.
-+   - Assigning through an object that has the error as its prototype treats
-+     it as the writable data property it stands for. */
-+
-+#define JS_BACKTRACE_PROP_FLAGS (JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE)
++   - A read (get, getOwnPropertyDescriptor, get_prop_string) formats the
++     text, stores it in place of the marker, and reads that. A get or a
++     descriptor read throws on failure and leaves the stack pending, so a
++     later read can try again; get_prop_string reports no stack and restores
++     the exception state, so a print never leaves an exception.
++   - Assigning, defining or deleting 'stack' frees the marker like any
++     value, dropping the pending stack without formatting it.
++   - A raw dump prints a placeholder and does not format. */
 +
 +typedef struct JSBacktraceFrame {
 +    JSString *func_name; /* NULL for <anonymous> */
@@ -244,12 +215,10 @@ index fa5a7a9..c32bcb7 100644
 +
 +struct JSBacktrace {
 +    int count;
-+    /* the hashed shape the object had with the formatted stack when the
-+       stack was recorded, or NULL. Holding it keeps it in the shape hash
-+       table for when the stack is formatted. */
-+    JSShape *formatted;
 +    JSBacktraceFrame frames[0];
 +};
++
++static JSClassID js_backtrace_class_id;
 +
 +/* the string get_prop_string() reads for the name of 'fun', as a new
 +   reference, or NULL where it returns NULL. It runs no JS code. */
@@ -280,32 +249,34 @@ index fa5a7a9..c32bcb7 100644
 +    return JS_VALUE_GET_STRING(JS_DupValue(ctx, val));
 +}
 +
-+static void js_backtrace_free(JSContext *ctx, JSBacktrace *bt)
++static void js_backtrace_finalizer(JSRuntime *rt, JSValue val)
 +{
++    JSBacktrace *bt = JS_GetOpaque(val, js_backtrace_class_id);
 +    int i;
 +
++    if (!bt)
++        return;
 +    for(i = 0; i < bt->count; i++) {
 +        if (bt->frames[i].func_name)
-+            JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, bt->frames[i].func_name));
++            JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, bt->frames[i].func_name));
 +        if (bt->frames[i].b)
-+            JS_FreeValue(ctx, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, bt->frames[i].b));
++            JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, bt->frames[i].b));
 +    }
-+    if (bt->formatted)
-+        js_free_shape(ctx->rt, bt->formatted);
-+    js_free_rt(ctx->rt, bt);
++    js_free_rt(rt, bt);
 +}
 +
-+static void js_backtrace_mark(JSRuntime *rt, JSBacktrace *bt,
++static void js_backtrace_mark(JSRuntime *rt, JSValueConst val,
 +                              JS_MarkFunc *mark_func)
 +{
++    JSBacktrace *bt = JS_GetOpaque(val, js_backtrace_class_id);
 +    int i;
 +
++    if (!bt)
++        return;
 +    for(i = 0; i < bt->count; i++) {
 +        if (bt->frames[i].b)
 +            mark_func(rt, &bt->frames[i].b->header);
 +    }
-+    if (bt->formatted)
-+        mark_func(rt, &bt->formatted->header);
 +}
 +
 +static void js_backtrace_memory_usage(JSMemoryUsage *s, JSMemoryUsage_helper *hp,
@@ -314,144 +285,17 @@ index fa5a7a9..c32bcb7 100644
 +    JSBacktrace *bt;
 +    int i;
 +
-+    if (prs->atom == JS_ATOM_NULL ||
-+        (prs->flags & JS_PROP_TMASK) != JS_PROP_AUTOINIT ||
-+        js_autoinit_get_id(pr) != JS_AUTOINIT_ID_BACKTRACE)
++    if (prs->atom == JS_ATOM_NULL || (prs->flags & JS_PROP_TMASK) ||
++        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT ||
++        JS_VALUE_GET_OBJ(pr->u.value)->class_id != js_backtrace_class_id)
 +        return;
-+    bt = pr->u.init.opaque;
++    bt = JS_GetOpaque(pr->u.value, js_backtrace_class_id);
 +    s->memory_used_count++;
 +    s->memory_used_size += sizeof(*bt) + bt->count * sizeof(bt->frames[0]);
 +    for(i = 0; i < bt->count; i++) {
 +        if (bt->frames[i].func_name)
 +            compute_jsstring_size(bt->frames[i].func_name, hp);
 +    }
-+}
-+
-+/* the hash add_property() gives a hashed shape with the properties of
-+   'sh', where property 'idx' has the flags 'flags' */
-+static uint32_t js_backtrace_shape_hash(JSShape *sh, int idx, int flags)
-+{
-+    JSShapeProperty *prs;
-+    uint32_t h;
-+    int i;
-+
-+    h = shape_initial_hash(sh->proto);
-+    prs = get_shape_prop(sh);
-+    for(i = 0; i < sh->prop_count; i++, prs++)
-+        h = shape_hash(shape_hash(h, prs->atom), i == idx ? flags : prs->flags);
-+    return h;
-+}
-+
-+/* whether 'sh1' has the prototype and the properties of 'sh', where
-+   property 'idx' has the flags 'flags' */
-+static BOOL js_backtrace_same_shape(JSShape *sh1, JSShape *sh, int idx,
-+                                    int flags)
-+{
-+    JSShapeProperty *prs1, *prs;
-+    int i;
-+
-+    if (sh1->proto != sh->proto || sh1->prop_count != sh->prop_count)
-+        return FALSE;
-+    prs1 = get_shape_prop(sh1);
-+    prs = get_shape_prop(sh);
-+    for(i = 0; i < sh->prop_count; i++, prs1++, prs++) {
-+        if (prs1->atom != prs->atom ||
-+            prs1->flags != (i == idx ? flags : prs->flags))
-+            return FALSE;
-+    }
-+    return TRUE;
-+}
-+
-+/* a new reference to the hashed shape with the properties of the hashed
-+   shape 'sh', where property 'idx' has the flags 'flags'. It is found in
-+   the shape hash table. Otherwise, as add_property() does, 'sh' changes in
-+   place if 'in_place' is set and only one object has it, or a clone of
-+   'sh' is hashed. Return NULL if there is no memory for the clone. */
-+static JSShape *js_backtrace_hashed_shape(JSContext *ctx, JSShape *sh,
-+                                          int idx, int flags, BOOL in_place)
-+{
-+    JSRuntime *rt = ctx->rt;
-+    JSShape *sh1;
-+    uint32_t h;
-+
-+    h = js_backtrace_shape_hash(sh, idx, flags);
-+    for(sh1 = rt->shape_hash[get_shape_hash(h, rt->shape_hash_bits)];
-+        sh1 != NULL; sh1 = sh1->shape_hash_next) {
-+        if (sh1 != sh && sh1->hash == h &&
-+            js_backtrace_same_shape(sh1, sh, idx, flags))
-+            return js_dup_shape(sh1);
-+    }
-+    if (in_place && js_rc(sh)->ref_count == 1) {
-+        js_shape_hash_unlink(rt, sh);
-+        get_shape_prop(sh)[idx].flags = flags;
-+        sh->hash = h;
-+        js_shape_hash_link(rt, sh);
-+        return js_dup_shape(sh);
-+    }
-+    sh1 = js_clone_shape(ctx, sh);
-+    if (!sh1)
-+        return NULL;
-+    get_shape_prop(sh1)[idx].flags = flags;
-+    sh1->hash = h;
-+    sh1->is_hashed = TRUE;
-+    js_shape_hash_link(rt, sh1);
-+    return sh1;
-+}
-+
-+/* give 'p' the shape 'sh', taking over the reference to it, and release
-+   the shape 'p' had. Return -1, with 'sh' released and 'p' unchanged, if
-+   there is no memory to resize the property array. */
-+static int js_backtrace_set_shape(JSContext *ctx, JSObject *p, JSShape *sh)
-+{
-+    JSShape *old_sh = p->shape;
-+    JSProperty *new_prop;
-+
-+    if (sh->prop_size != old_sh->prop_size) {
-+        new_prop = js_realloc(ctx, p->prop, sizeof(p->prop[0]) * sh->prop_size);
-+        if (!new_prop) {
-+            js_free_shape(ctx->rt, sh);
-+            return -1;
-+        }
-+        p->prop = new_prop;
-+    }
-+    p->shape = sh;
-+    js_free_shape(ctx->rt, old_sh);
-+    return 0;
-+}
-+
-+/* replace the pending stack at 'prs', a property of 'p', with the data
-+   property 'val', which is freed on error. With 'shared' set, 'p' gets a
-+   hashed shape other objects can share: the one an error whose stack was
-+   formatted at once has, if 'p' has not changed since. Otherwise 'p' gets
-+   a shape of its own, as js_shape_prepare_update() gives it, for a caller
-+   that changes the property next. Return -1, with 'p' unchanged, if there
-+   is no memory for a shape. */
-+static int js_backtrace_settle(JSContext *ctx, JSObject *p,
-+                               JSShapeProperty *prs, JSValue val, BOOL shared)
-+{
-+    JSShape *sh = p->shape, *new_sh;
-+    JSProperty *pr;
-+    int idx, flags;
-+
-+    idx = prs - get_shape_prop(sh);
-+    flags = prs->flags & ~JS_PROP_TMASK;
-+    if (shared && sh->is_hashed) {
-+        new_sh = js_backtrace_hashed_shape(ctx, sh, idx, flags, TRUE);
-+        if (!new_sh || js_backtrace_set_shape(ctx, p, new_sh) < 0) {
-+            JS_FreeValue(ctx, val);
-+            return -1;
-+        }
-+    } else {
-+        if (js_shape_prepare_update(ctx, p, &prs)) {
-+            JS_FreeValue(ctx, val);
-+            return -1;
-+        }
-+        prs->flags = flags;
-+    }
-+    pr = &p->prop[idx];
-+    js_autoinit_free(ctx->rt, pr);
-+    pr->u.value = val;
-+    return 0;
 +}
 +
 +/* format a pending stack as build_backtrace() does */
@@ -470,7 +314,6 @@ index fa5a7a9..c32bcb7 100644
 +        if (!f->func_name) {
 +            dbuf_putstr(&dbuf, "<anonymous>");
 +        } else {
-+            /* NULL means there was no memory for the text */
 +            str = JS_ToCString(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name));
 +            if (!str)
 +                goto fail;
@@ -511,106 +354,111 @@ index fa5a7a9..c32bcb7 100644
 +    return JS_EXCEPTION;
 +}
 +
-+/* JS_AutoInitProperty() for a pending stack: format it and store the
-+   text. If formatting fails, return -1 and leave the stack pending. */
-+static int js_backtrace_instantiate(JSContext *ctx, JSObject *p,
-+                                    JSProperty *pr, JSShapeProperty *prs)
++/* replace the marker at pr with the formatted stack, freeing the marker.
++   Return -1, with the stack left pending and an exception set, if there is
++   no memory for the text. */
++static int js_backtrace_store(JSContext *ctx, JSProperty *pr)
 +{
-+    JSValue val;
-+
-+    val = js_backtrace_format(ctx, pr->u.init.opaque);
-+    if (JS_IsException(val))
++    JSValue val = pr->u.value;
++    JSValue str = js_backtrace_format(ctx, JS_GetOpaque(val, js_backtrace_class_id));
++    if (JS_IsException(str))
 +        return -1;
-+    return js_backtrace_settle(ctx, p, prs, val, TRUE);
++    JS_FreeValue(ctx, val);
++    pr->u.value = str;
++    return 0;
 +}
 +
-+/* JS_AutoInitProperty() for JS_SetPropertyInternal() assigning to an own
-+   property: the value is replaced, so a pending stack is dropped and not
-+   formatted. */
-+static int js_backtrace_autoinit_set(JSContext *ctx, JSObject *p, JSAtom prop,
-+                                     JSProperty *pr, JSShapeProperty *prs)
++static BOOL js_backtrace_pending(JSProperty *pr)
 +{
-+    if (js_autoinit_get_id(pr) != JS_AUTOINIT_ID_BACKTRACE)
-+        return JS_AutoInitProperty(ctx, p, prop, pr, prs);
-+    return js_backtrace_settle(ctx, p, prs, JS_UNDEFINED, TRUE);
++    JSValueConst val = pr->u.value;
++    return JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT &&
++        JS_VALUE_GET_OBJ(val)->class_id == js_backtrace_class_id;
 +}
 +
-+/* JS_AutoInitProperty() for JS_DefineProperty() with the flags 'flags'. A
-+   definition that gives a value, a getter or a setter drops a pending
-+   stack. One that keeps the value formats it. */
-+static int js_backtrace_autoinit_define(JSContext *ctx, JSObject *p,
-+                                        JSAtom prop, JSProperty *pr,
-+                                        JSShapeProperty *prs, int flags)
++/* format a pending stack at pr and store it, so the caller reads the text.
++   Return -1, with an exception set, if it cannot be formatted. Do nothing
++   if pr is not a pending stack. */
++static int js_backtrace_settle(JSContext *ctx, JSObject *p, JSProperty *pr)
 +{
-+    int cur, mask;
-+
-+    if (js_autoinit_get_id(pr) != JS_AUTOINIT_ID_BACKTRACE)
-+        return JS_AutoInitProperty(ctx, p, prop, pr, prs);
-+    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET))
-+        return js_backtrace_settle(ctx, p, prs, JS_UNDEFINED, FALSE);
-+    if (flags & JS_PROP_HAS_VALUE) {
-+        /* JS_DefineProperty() sets the value, and changes the flags in
-+           place when the shape is the object's own */
-+        cur = prs->flags & JS_PROP_C_W_E;
-+        mask = (flags >> JS_PROP_HAS_SHIFT) & JS_PROP_C_W_E;
-+        return js_backtrace_settle(ctx, p, prs, JS_UNDEFINED,
-+                                   ((cur & ~mask) | (flags & mask)) == cur);
-+    }
-+    return js_backtrace_instantiate(ctx, p, pr, prs);
++    if (!js_backtrace_pending(pr))
++        return 0;
++    return js_backtrace_store(ctx, pr);
 +}
 +
-+/* record the n frames of the stack of 'p' as a pending stack. 'p' is an
-+   extensible Error object without a 'stack' property. Return FALSE if
-+   there is no memory for that. 'p' may then have a 'stack' property
-+   holding undefined. */
-+static BOOL js_backtrace_lazy(JSContext *ctx, JSObject *p, int backtrace_flags,
-+                              int n)
++/* get_prop_string() for a pending stack: format it for a print and never
++   leave an exception. *handled is FALSE if pr is not a pending stack. */
++static const char *js_backtrace_prop_string(JSContext *ctx, JSObject *p,
++                                             JSProperty *pr, BOOL *handled)
 +{
 +    JSRuntime *rt = ctx->rt;
++    JSValue exception;
++    BOOL uncatchable;
++
++    if (!js_backtrace_pending(pr)) {
++        *handled = FALSE;
++        return NULL;
++    }
++    *handled = TRUE;
++    exception = JS_DupValue(ctx, rt->current_exception);
++    uncatchable = rt->current_exception_is_uncatchable;
++    if (js_backtrace_store(ctx, pr) < 0) {
++        JS_FreeValue(ctx, JS_GetException(ctx));
++        JS_Throw(ctx, exception);
++        JS_SetUncatchableException(ctx, uncatchable);
++        return NULL;
++    }
++    JS_FreeValue(ctx, exception);
++    return JS_ToCString(ctx, pr->u.value);
++}
++
++/* register the marker class in the runtime of ctx and return its id, or 0 if
++   there is no memory to register it. */
++static JSClassID js_backtrace_ensure_class(JSContext *ctx)
++{
++    JSRuntime *rt = ctx->rt;
++    JSClassDef def;
++
++    JS_NewClassID(&js_backtrace_class_id);
++    if (js_backtrace_class_id < rt->class_count &&
++        rt->class_array[js_backtrace_class_id].class_id == js_backtrace_class_id)
++        return js_backtrace_class_id;
++    memset(&def, 0, sizeof(def));
++    def.class_name = "QuickJSBacktrace";
++    def.finalizer = js_backtrace_finalizer;
++    def.gc_mark = js_backtrace_mark;
++    if (JS_NewClass(rt, js_backtrace_class_id, &def) < 0)
++        return 0;
++    return js_backtrace_class_id;
++}
++
++/* record the n frames of the stack of error_obj as a marker stored in a new
++   'stack' property. Return FALSE, leaving error_obj unchanged, if there is
++   no memory for that. */
++static BOOL js_backtrace_record(JSContext *ctx, JSValueConst error_obj,
++                                int backtrace_flags, int n)
++{
++    JSRuntime *rt = ctx->rt;
++    JSObject *p = JS_VALUE_GET_OBJ(error_obj);
 +    JSStackFrame *sf;
 +    JSBacktrace *bt;
 +    JSBacktraceFrame *f;
 +    JSFunctionBytecode *b;
++    JSValue marker;
 +    JSProperty *pr;
-+    JSShape *sh, *pending, *formatted;
-+    int idx;
++    JSClassID id;
 +
++    id = js_backtrace_ensure_class(ctx);
++    if (!id)
++        return FALSE;
++    marker = JS_NewObjectProtoClass(ctx, JS_NULL, id);
++    if (JS_IsException(marker))
++        return FALSE;
 +    bt = js_malloc_rt(rt, sizeof(*bt) + n * sizeof(bt->frames[0]));
-+    if (!bt)
-+        return FALSE;
-+    /* add the property as build_backtrace() does, so that the object gets
-+       the shape it has with a formatted stack, then retag it as pending */
-+    pr = add_property(ctx, p, JS_ATOM_stack, JS_BACKTRACE_PROP_FLAGS);
-+    if (!pr) {
-+        js_free_rt(rt, bt);
++    if (!bt) {
++        JS_FreeValue(ctx, marker);
 +        return FALSE;
 +    }
-+    pr->u.value = JS_UNDEFINED;
-+    sh = p->shape;
-+    idx = sh->prop_count - 1;
-+    formatted = NULL;
-+    if (sh->is_hashed) {
-+        pending = js_backtrace_hashed_shape(ctx, sh, idx,
-+                                            JS_BACKTRACE_PROP_FLAGS | JS_PROP_AUTOINIT,
-+                                            FALSE);
-+        if (!pending) {
-+            js_free_rt(rt, bt);
-+            return FALSE;
-+        }
-+        formatted = js_dup_shape(sh);
-+        if (js_backtrace_set_shape(ctx, p, pending) < 0) {
-+            js_free_shape(rt, formatted);
-+            js_free_rt(rt, bt);
-+            return FALSE;
-+        }
-+        pr = &p->prop[idx];
-+    } else {
-+        /* the object owns its shape, so the flags change in place */
-+        get_shape_prop(sh)[idx].flags = JS_BACKTRACE_PROP_FLAGS | JS_PROP_AUTOINIT;
-+    }
-+
 +    bt->count = n;
-+    bt->formatted = formatted;
 +    f = bt->frames;
 +    for(sf = rt->current_stack_frame; f < bt->frames + n; sf = sf->prev_frame) {
 +        if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
@@ -629,19 +477,26 @@ index fa5a7a9..c32bcb7 100644
 +        }
 +        f++;
 +    }
-+    pr->u.init.realm_and_id = (uintptr_t)JS_DupContext(ctx) | JS_AUTOINIT_ID_BACKTRACE;
-+    pr->u.init.opaque = bt;
++    JS_SetOpaque(marker, bt);
++    /* add_property gives the object the shape it has with a formatted stack,
++       as build_backtrace does, and the marker is the property value */
++    pr = add_property(ctx, p, JS_ATOM_stack,
++                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
++    if (!pr) {
++        JS_FreeValue(ctx, marker);
++        return FALSE;
++    }
++    pr->u.value = marker;
 +    return TRUE;
 +}
 +
 +/* build_backtrace() for a stack without a file name: record the stack of
-+   'error_obj', to be formatted when 'stack' is read. Return FALSE if it
-+   must be formatted now instead: when top-level code (a script, an eval or
-+   a module body) is on the stack, as it runs once and recording its
-+   bytecode would keep it, and the functions it made, alive for as long as
-+   the error (libraries keep errors made when they load), when 'stack'
-+   cannot simply be added to the error, or when there is no memory for the
-+   record. */
++   error_obj, to be formatted when 'stack' is read. Return FALSE if it must
++   be formatted now instead: when top-level code (a script, an eval or a
++   module body) is on the stack, as it runs once and recording its bytecode
++   would keep it, and the functions it made, alive for as long as the error
++   (libraries keep errors made when they load), when 'stack' cannot simply be
++   added to the error, or when there is no memory for the record. */
 +static BOOL js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
 +                               int backtrace_flags)
 +{
@@ -653,8 +508,8 @@ index fa5a7a9..c32bcb7 100644
 +    BOOL uncatchable, ret;
 +    int n, flags;
 +
-+    /* JS_DefineProperty() would add 'stack' with add_property() alone: an
-+       Error object has no exotic behavior */
++    /* JS_DefineProperty would add 'stack' with add_property alone: an Error
++       object has no exotic behavior */
 +    if (p->class_id != JS_CLASS_ERROR || !p->extensible ||
 +        find_own_property1(p, JS_ATOM_stack))
 +        return FALSE;
@@ -673,13 +528,13 @@ index fa5a7a9..c32bcb7 100644
 +        n++;
 +    }
 +
-+    /* 'error_obj' may be the current exception, and running out of memory
-+       throws a new one, which frees it. Keep it, and the exception to put
-+       it back: like build_backtrace(), this does not throw. */
++    /* error_obj may be the current exception, and running out of memory
++       throws a new one, which frees it. Keep it, and the exception to put it
++       back: like build_backtrace(), this does not throw. */
 +    JS_DupValue(ctx, error_obj);
 +    exception = JS_DupValue(ctx, rt->current_exception);
 +    uncatchable = rt->current_exception_is_uncatchable;
-+    ret = js_backtrace_lazy(ctx, p, backtrace_flags, n);
++    ret = js_backtrace_record(ctx, error_obj, backtrace_flags, n);
 +    if (ret) {
 +        JS_FreeValue(ctx, exception);
 +    } else {
@@ -694,7 +549,7 @@ index fa5a7a9..c32bcb7 100644
  /* if filename != NULL, an additional level is added with the filename
     and line number information (used for parse error). */
  static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
-@@ -7548,6 +8055,8 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
+@@ -7548,6 +7930,8 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
  
      if (!JS_IsObject(error_obj))
          return; /* protection in the out of memory case */
@@ -703,44 +558,82 @@ index fa5a7a9..c32bcb7 100644
      
      js_dbuf_init(ctx, &dbuf);
      if (filename) {
-@@ -8172,6 +8681,8 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
-     JSAutoInitFunc *func;
-     JSAutoInitIDEnum id;
-     
-+    if (js_autoinit_get_id(pr) == JS_AUTOINIT_ID_BACKTRACE)
-+        return js_backtrace_instantiate(ctx, p, pr, prs);
-     if (js_shape_prepare_update(ctx, p, &prs))
-         return -1;
- 
-@@ -9726,7 +10237,7 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
-             return TRUE;
-         } else if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT) {
-             /* Instantiate property and retry (potentially useless) */
--            if (JS_AutoInitProperty(ctx, p, prop, pr, prs)) {
-+            if (js_backtrace_autoinit_set(ctx, p, prop, pr, prs)) {
-                 JS_FreeValue(ctx, val);
-                 return -1;
-             }
-@@ -9841,7 +10352,8 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
+@@ -8268,6 +8652,8 @@ JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
+         prs = find_own_property(&pr, p, prop);
          if (prs) {
-             if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET) {
-                 return call_setter(ctx, pr->u.getset.setter, this_obj, val, flags);
--            } else if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT) {
-+            } else if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT &&
-+                       js_autoinit_get_id(pr) != JS_AUTOINIT_ID_BACKTRACE) {
-                 /* Instantiate property and retry (potentially useless) */
-                 if (JS_AutoInitProperty(ctx, p1, prop, pr, prs))
-                     return -1;
-@@ -10386,7 +10898,7 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
+             /* found */
++            if (prop == JS_ATOM_stack && js_backtrace_settle(ctx, p, pr) < 0)
++                return JS_EXCEPTION;
+             if (unlikely(prs->flags & JS_PROP_TMASK)) {
+                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET) {
+                     if (unlikely(!pr->u.getset.getter)) {
+@@ -8824,6 +9210,8 @@ retry:
+     prs = find_own_property(&pr, p, prop);
+     if (prs) {
+         if (desc) {
++            if (prop == JS_ATOM_stack && js_backtrace_settle(ctx, p, pr) < 0)
++                return -1;
+             desc->flags = prs->flags & JS_PROP_C_W_E;
+             desc->getter = JS_UNDEFINED;
+             desc->setter = JS_UNDEFINED;
+@@ -13988,6 +14376,28 @@ static void js_print_regexp(JSPrintValueState *s, JSObject *p1)
+     }
+ }
  
-         if ((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT) {
-             /* Instantiate property and retry */
--            if (JS_AutoInitProperty(ctx, p, prop, pr, prs))
-+            if (js_backtrace_autoinit_define(ctx, p, prop, pr, prs, flags))
-                 return -1;
-             goto redo_prop_update;
-         }
-@@ -41695,7 +42207,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
++/* a raw dump does not format a pending stack: js_print_error skips it */
++static BOOL js_backtrace_raw_stack(JSPrintValueState *s, JSObject *p)
++{
++    JSProperty *pr;
++    JSShapeProperty *prs;
++
++    if (!s->options.raw_dump)
++        return FALSE;
++    prs = find_own_property(&pr, p, JS_ATOM_stack);
++    return prs && js_backtrace_pending(pr);
++}
++
++/* print a placeholder for a marker value in a raw dump, where js_print_object
++   would otherwise print the marker object. Return TRUE if it printed. */
++static BOOL js_backtrace_print_pending(JSPrintValueState *s, JSProperty *pr)
++{
++    if (!js_backtrace_pending(pr))
++        return FALSE;
++    js_puts(s, "[stack]");
++    return TRUE;
++}
++
+ /* similar to js_error_toString() but without side effect */
+ static void js_print_error(JSPrintValueState *s, JSObject *p)
+ {
+@@ -14010,6 +14420,8 @@ static void js_print_error(JSPrintValueState *s, JSObject *p)
+     JS_FreeCString(s->ctx, str);
+ 
+     /* dump the stack if present */
++    if (js_backtrace_raw_stack(s, p))
++        return;
+     str = get_prop_string(s->ctx, JS_MKPTR(JS_TAG_OBJECT, p), JS_ATOM_stack);
+     if (str) {
+         js_putc(s, '\n');
+@@ -14225,7 +14637,7 @@ static void js_print_object(JSPrintValueState *s, JSObject *p)
+                                the iteration */
+                             js_printf(s, "[autoinit]");
+                         }
+-                    } else {
++                    } else if (!js_backtrace_print_pending(s, pr)) {
+                         js_print_value(s, pr->u.value);
+                     }
+                 }
+@@ -19154,6 +19566,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
+                             /* found */                                 \
+                             if (unlikely(prs->flags & JS_PROP_TMASK))   \
+                                     goto name ## _slow_path;            \
++                            if (atom == JS_ATOM_stack &&                \
++                                js_backtrace_pending(pr))               \
++                                    goto name ## _slow_path;            \
+                             val = JS_DupValue(ctx, pr->u.value);        \
+                             break;                                      \
+                         }                                               \
+@@ -41695,7 +42110,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
      return r;
  }
  
@@ -752,7 +645,7 @@ index fa5a7a9..c32bcb7 100644
                             int argc, JSValueConst *argv)
  {
      JSValue obj, args[1];
-@@ -60589,6 +61104,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +61007,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -764,7 +657,7 @@ index fa5a7a9..c32bcb7 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +61124,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +61027,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -772,7 +665,7 @@ index fa5a7a9..c32bcb7 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61716,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61619,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }
