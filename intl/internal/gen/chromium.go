@@ -264,9 +264,31 @@ func (c *chromiumICU) source(tree, id, path string) (bundle, alias string) {
 	}
 
 	for _, b := range c.chain(tree, id) {
-		if k := icuKey(tree, b); c.has[k][path] {
-			return b, c.links[k][path]
+		k := icuKey(tree, b)
+		// ICU walks the path key by key and follows an alias it meets on
+		// the way: root's Persian day names stand for the Gregorian ones,
+		// width by width.
+		for p := path; ; {
+			if target, ok := c.links[k][p]; ok {
+				return b, target + path[len(p):]
+			}
+
+			i := strings.LastIndexByte(p, '/')
+			if i < 0 {
+				break
+			}
+
+			p = p[:i]
 		}
+		if c.has[k][path] {
+			return b, ""
+		}
+	}
+	// A width no bundle has is filled in by ICU's code from another width,
+	// ko's wide day periods from the abbreviated ones, as cldr-json fills
+	// it in: the locale takes it from where it takes the names.
+	if parts := strings.Split(path, "/"); len(parts) > 3 && parts[0] == "calendar" {
+		return c.source(tree, id, strings.Join(parts[:3], "/"))
 	}
 	return "", ""
 }
@@ -295,21 +317,29 @@ func icuPath(key string) (tree, path string, ok bool) {
 	case "g", "b", "p":
 		cal := map[string]string{"g": "gregorian", "b": "buddhist", "p": "persian"}[cat]
 		part, rest, _ := strings.Cut(rest, "/")
+		// The names are looked up width by width: months/format/wide/1 is
+		// in monthNames/format/wide.
+		ctxWidth := func() string {
+			ctx, rest, _ := strings.Cut(rest, "/")
+			width, _, _ := strings.Cut(rest, "/")
+			return ctx + "/" + width
+		}
 		var r string
 		switch part {
 		case "months":
-			r = "monthNames"
+			r = "monthNames/" + ctxWidth()
 		case "days":
-			r = "dayNames"
+			r = "dayNames/" + ctxWidth()
 		case "eras":
-			r = "eras"
+			width, _, _ := strings.Cut(rest, "/")
+			r = "eras/" + map[string]string{"eraNames": "wide", "eraAbbr": "abbreviated", "eraNarrow": "narrow"}[width]
 		case "dayPeriods":
 			// format/abbreviated/am: am and pm are in AmPmMarkers, the
 			// others in dayPeriod.
 			ctx, rest, _ := strings.Cut(rest, "/")
 			width, period, _ := strings.Cut(rest, "/")
 			period, _, _ = strings.Cut(period, "-alt-")
-			r = "dayPeriod"
+			r = "dayPeriod/" + ctx + "/" + width
 			if ctx == "format" && (period == "am" || period == "pm") {
 				r = map[string]string{"wide": "AmPmMarkers", "abbreviated": "AmPmMarkersAbbr", "narrow": "AmPmMarkersNarrow"}[width]
 			}

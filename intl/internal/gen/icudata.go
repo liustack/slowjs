@@ -444,6 +444,25 @@ func (r *icuBundleData) resources(tree string, patterned map[string]bool) (paths
 			for _, part := range icuCalendarParts {
 				add("calendar", c, part)
 			}
+			// ICU falls back width by width for names: om_KE has its
+			// narrow stand-alone day names and root's others.
+			for _, part := range []string{"monthNames", "dayNames", "dayPeriod", "eras"} {
+				res, ok := r.get("calendar", c, part)
+				if !ok {
+					continue
+				}
+
+				for k, v := range r.table(res) {
+					if part == "eras" || v>>28 == resAlias {
+						paths = append(paths, "calendar/"+c+"/"+part+"/"+k)
+						continue
+					}
+
+					for width := range r.table(v) {
+						paths = append(paths, "calendar/"+c+"/"+part+"/"+k+"/"+width)
+					}
+				}
+			}
 		}
 		add("fields")
 		add("NumberElements", "default")

@@ -291,6 +291,10 @@ func TestChromiumFallback(t *testing.T) {
 		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "Mon"},
 		{`new Intl.DateTimeFormat('ckb-IR', {month: 'long', year: 'numeric', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "AP 1404 بەفرانبار"},
 		{`new Intl.DateTimeFormat('ckb-IR').resolvedOptions().month`, "2-digit"},
+		// om-KE has its own narrow stand-alone day names in Chromium, and
+		// root's others: om has none.
+		{`new Intl.DateTimeFormat('om-KE', {weekday: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "Sun"},
+		{`new Intl.DateTimeFormat('om-KE', {weekday: 'long', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "Sun"},
 		// kk-Arab has no unit names in Chromium, and root's long ones are
 		// its short ones.
 		{`new Intl.NumberFormat('kk-Arab', {style: 'unit', unit: 'kilometer', unitDisplay: 'long'}).format(2)`, "2 km"},
