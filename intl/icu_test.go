@@ -42,13 +42,6 @@ var icuDifferences = []struct {
 		},
 	},
 	{
-		// Older CLDR keeps the pre-1995 name as the canonical one.
-		"a time zone node's CLDR still canonicalizes to its old name",
-		func(got, want string) bool {
-			return strings.Contains(want, "Calcutta") && strings.Contains(got, "Kolkata")
-		},
-	},
-	{
 		// CLDR's spelled out zone names are not data Go ships.
 		"a spelled out time zone name, where this package falls back to the GMT offset",
 		func(got, want string) bool {

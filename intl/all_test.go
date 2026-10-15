@@ -314,6 +314,14 @@ func TestResolvedOptions(t *testing.T) {
 		{`new Intl.NumberFormat(['fr', 'de']).resolvedOptions().locale`, "en-US"},
 		{`new Intl.DateTimeFormat().resolvedOptions().timeZone`, "UTC"},
 		{`new Intl.DateTimeFormat('en', {timeZone: 'america/new_york'}).resolvedOptions().timeZone`, "America/New_York"},
+		// The case is IANA's, whatever the host's file system would accept,
+		// and every name of a zone is reported as the one CLDR (and so a
+		// browser) treats as canonical.
+		{`new Intl.DateTimeFormat('en', {timeZone: 'ASIA/CALCUTTA'}).resolvedOptions().timeZone`, "Asia/Calcutta"},
+		{`new Intl.DateTimeFormat('en', {timeZone: 'Asia/Kolkata'}).resolvedOptions().timeZone`, "Asia/Calcutta"},
+		{`new Intl.DateTimeFormat('en', {timeZone: 'US/Pacific'}).resolvedOptions().timeZone`, "America/Los_Angeles"},
+		{`new Intl.DateTimeFormat('en', {timeZone: 'america/port-au-prince'}).resolvedOptions().timeZone`, "America/Port-au-Prince"},
+		{`new Intl.DateTimeFormat('en', {timeZone: 'etc/gmt+5'}).resolvedOptions().timeZone`, "Etc/GMT+5"},
 		{`new Intl.DateTimeFormat('en', {timeZone: 'GMT'}).resolvedOptions().timeZone`, "UTC"},
 		{`new Intl.DateTimeFormat('en').resolvedOptions().calendar`, "gregory"},
 		{
@@ -358,6 +366,7 @@ func TestErrors(t *testing.T) {
 	for _, test := range []struct{ src, want string }{
 		{`new Intl.DateTimeFormat('en', {timeZone: 'Mars/Olympus'})`, "RangeError:"},
 		{`new Intl.DateTimeFormat('en', {timeZone: 'Local'})`, "RangeError:"},
+		{`new Intl.DateTimeFormat('en', {timeZone: 'Etc/Unknown'})`, "RangeError:"},
 		{`new Intl.DateTimeFormat('en', {weekday: 'wide'})`, "RangeError:"},
 		{`new Intl.DateTimeFormat('en', {dateStyle: 'full', year: 'numeric'})`, "TypeError:"},
 		{`new Date(0).toLocaleDateString('en', {timeStyle: 'short'})`, "TypeError:"},

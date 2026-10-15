@@ -88,21 +88,46 @@ func resolveTimeZone(name string) (string, *time.Location, error) {
 		return cname, time.FixedZone(cname, secs), nil
 	}
 
-	loc, err := time.LoadLocation(name)
-	if err == nil {
-		return name, loc, nil
+	cname, ok := zoneNames()[strings.ToUpper(name)]
+	if !ok {
+		return "", nil, invalid
 	}
 
-	// A last chance for a mis-cased name: browsers match IANA identifiers
-	// case-insensitively, Go's file lookup does not.
-	if cname := titleZoneName(name); cname != name {
-		if loc, err := time.LoadLocation(cname); err == nil {
-			return cname, loc, nil
+	if utcAliases[strings.ToUpper(cname)] {
+		return "UTC", time.UTC, nil
+	}
+
+	loc, err := time.LoadLocation(cname)
+	if err != nil {
+		// CLDR knows the zone but the zoneinfo database Go reads does not:
+		// the host has none, or an old one, and the program does not import
+		// time/tzdata.
+		return "", nil, rangeError("invalid time zone specified: %s (%v)", name, err)
+	}
+
+	return cname, loc, nil
+}
+
+// zoneNames maps every IANA time zone identifier CLDR knows, upper cased, to
+// the identifier CLDR treats as the canonical one of its zone. Browsers match
+// identifiers case-insensitively and report this canonical name, so
+// "asia/kolkata" is "Asia/Calcutta" - CLDR keeps the older name. Go's own
+// lookup cannot be used for the case: it opens a file of that name, and on a
+// case-insensitive file system it would accept the name as written.
+var zoneNames = sync.OnceValue(func() map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(cldr().supplemental().str("tz"), "\n") {
+		ids := strings.Fields(line)
+		if len(ids) == 0 || ids[0] == "Etc/Unknown" {
+			continue
+		}
+
+		for _, id := range ids {
+			m[strings.ToUpper(id)] = ids[0]
 		}
 	}
-
-	return "", nil, invalid
-}
+	return m
+})
 
 // parseOffset returns the number of seconds represented by an offset time zone
 // identifier: ±HH, ±HHMM or ±HH:MM.
@@ -169,22 +194,6 @@ func gmtOffset(secs int, short bool) string {
 	}
 
 	return fmt.Sprintf("GMT%s%02d:%02d", sign, h, m)
-}
-
-// titleZoneName upper cases the first letter of every word of every path
-// element of an IANA name, the shape almost all of them have.
-func titleZoneName(name string) string {
-	elems := strings.Split(name, "/")
-	for i, e := range elems {
-		words := strings.Split(strings.ToLower(e), "_")
-		for j, w := range words {
-			if w != "" {
-				words[j] = strings.ToUpper(w[:1]) + w[1:]
-			}
-		}
-		elems[i] = strings.Join(words, "_")
-	}
-	return strings.Join(elems, "/")
 }
 
 // localTimeZone returns the host's IANA time zone name.
