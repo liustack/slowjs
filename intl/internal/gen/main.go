@@ -45,6 +45,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -72,9 +73,13 @@ func main() {
 
 	av := loadAvailability()
 	g := &gen{keys: map[string]int{}}
+	if *fetch {
+		fetchFiles(supplementalFiles)
+	}
+
 	g.locales = selectLocales(av)
 	if *fetch {
-		fetchAll(g.locales)
+		fetchFiles(localeFileList(g.locales))
 	}
 
 	g.build(av)
@@ -239,6 +244,8 @@ func maximize(lang, script, region string, likely map[string]string) (string, st
 	return lang, script, region
 }
 
+var likely = sync.OnceValue(likelySubtags)
+
 func likelySubtags() map[string]string {
 	r := map[string]string{}
 	for k, v := range dig(readJSON(filepath.Join("cldr-core", "supplemental", "likelySubtags.json"), true), "supplemental", "likelySubtags").(map[string]any) {
@@ -251,9 +258,34 @@ func likelySubtags() map[string]string {
 var localeFiles = [][2]string{
 	{"cldr-dates-full", "ca-gregorian"},
 	{"cldr-dates-full", "timeZoneNames"},
+	{"cldr-dates-full", "dateFields"},
+	{"cldr-localenames-full", "territories"},
 	{"cldr-numbers-full", "numbers"},
 	{"cldr-numbers-full", "currencies"},
 	{"cldr-units-full", "units"},
+}
+
+// calendars are the calendars other than the gregorian one there is data
+// for, with the key prefix their data goes under. A locale gets the data of
+// one only when it is the default calendar of the locale's region, as the
+// buddhist one is for th: those are the dates a page formats without asking
+// for a calendar.
+var calendars = map[string]string{
+	"buddhist": "b",
+	"persian":  "p",
+}
+
+// localeCalendar returns the calendar a locale formats dates with by default,
+// from its region, explicit or likely.
+func localeCalendar(l string, likely map[string]string) string {
+	lang, script, region := splitTag(l)
+	_, _, region = maximize(lang, script, region, likely)
+	pref := dig(readJSON(filepath.Join("cldr-core", "supplemental", "calendarPreferenceData.json"), true), "supplemental", "calendarPreferenceData").(map[string]any)
+	cals, ok := pref[region].([]any)
+	if !ok {
+		cals = pref["001"].([]any)
+	}
+	return cals[0].(string)
 }
 
 var supplementalFiles = []string{
@@ -267,19 +299,28 @@ var supplementalFiles = []string{
 	"cldr-core/supplemental/dayPeriods.json",
 	"cldr-core/supplemental/currencyData.json",
 	"cldr-core/supplemental/metaZones.json",
+	"cldr-core/supplemental/primaryZones.json",
+	"cldr-core/supplemental/calendarPreferenceData.json",
 	"cldr-core/supplemental/numberingSystems.json",
 	"cldr-core/supplemental/aliases.json",
 	"cldr-bcp47/bcp47/timezone.json",
 }
 
-func fetchAll(locales []string) {
-	var files []string
-	files = append(files, supplementalFiles...)
+// localeFileList returns the per locale files of locales.
+func localeFileList(locales []string) (files []string) {
+	likely := likelySubtags()
 	for _, l := range locales {
 		for _, f := range localeFiles {
 			files = append(files, f[0]+"/main/"+l+"/"+f[1]+".json")
 		}
+		if c := localeCalendar(l, likely); calendars[c] != "" {
+			files = append(files, "cldr-cal-"+c+"-full/main/"+l+"/ca-"+c+".json")
+		}
 	}
+	return files
+}
+
+func fetchFiles(files []string) {
 	client := &http.Client{Timeout: time.Minute}
 	for _, f := range files {
 		dst := filepath.Join(*cldrDir, filepath.FromSlash(f))
@@ -313,7 +354,16 @@ func fetchAll(locales []string) {
 	}
 }
 
+// supplementalJSON caches the supplemental files, which are read once per
+// locale.
+var supplementalJSON sync.Map
+
 func readJSON(rel string, required bool) map[string]any {
+	cache := strings.Contains(rel, "supplemental")
+	if v, ok := supplementalJSON.Load(rel); ok && cache {
+		return v.(map[string]any)
+	}
+
 	b, err := os.ReadFile(filepath.Join(*cldrDir, rel))
 	if err != nil {
 		if !required && os.IsNotExist(err) {
@@ -328,6 +378,9 @@ func readJSON(rel string, required bool) map[string]any {
 		fail(fmt.Errorf("%s: %v", rel, err))
 	}
 
+	if cache {
+		supplementalJSON.Store(rel, v)
+	}
 	return v
 }
 
@@ -386,10 +439,19 @@ func (g *gen) build(av *availability) {
 		c := &g.chunks[i]
 		c.diff = c.kv
 		if c.parent >= 0 {
+			// Every chunk's kv is already resolved, so the difference is from
+			// the parent's kv alone. A key the parent has and the child does
+			// not is marked absent: en-IN has no "EST", though en does.
+			parent := g.chunks[c.parent].kv
 			c.diff = map[string]string{}
 			for k, v := range c.kv {
-				if pv, ok := g.resolved(c.parent, k); !ok || pv != v {
+				if pv, ok := parent[k]; !ok || pv != v {
 					c.diff[k] = v
+				}
+			}
+			for k := range parent {
+				if _, ok := c.kv[k]; !ok {
+					c.diff[k] = noValue
 				}
 			}
 		}
@@ -442,15 +504,13 @@ func (g *gen) build(av *availability) {
 	}
 }
 
-// resolved returns the value of k in chunk i or the closest ancestor having it.
-func (g *gen) resolved(i int, k string) (string, bool) {
-	for ; i >= 0; i = g.chunks[i].parent {
-		if v, ok := g.chunks[i].kv[k]; ok {
-			return v, true
-		}
-	}
-	return "", false
-}
+// britishIsles are the regions whose zones Chromium never names after the
+// GMT metazone.
+var britishIsles = map[string]bool{"GB": true, "IE": true, "GG": true, "JE": true, "IM": true}
+
+// noValue marks a key a locale does not have although its parent does. It
+// is CLDR's own marker for a deliberately absent value.
+const noValue = "∅∅∅"
 
 func (g *gen) encode() []byte {
 	var b []byte
@@ -524,25 +584,67 @@ func localeData(l string) map[string]string {
 		return dig(v, append([]string{"main", l}, path...)...)
 	}
 
-	greg := main("cldr-dates-full", "ca-gregorian", "dates", "calendars", "gregorian")
-	flatten(kv, "g", greg, func(p string) bool {
+	skipCalendar := func(p string) bool {
+		_, p, _ = strings.Cut(p, "/")
 		switch {
-		case strings.HasPrefix(p, "g/quarters"),
-			strings.HasPrefix(p, "g/dateSkeletons"),
-			strings.HasPrefix(p, "g/timeSkeletons"),
-			strings.HasPrefix(p, "g/dateTimeFormats-relative"),
-			strings.HasPrefix(p, "g/dateTimeFormats/intervalFormats"),
-			strings.HasSuffix(p, "-alt-ascii"),
+		case strings.HasPrefix(p, "quarters"),
+			strings.HasPrefix(p, "dateSkeletons"),
+			strings.HasPrefix(p, "timeSkeletons"),
+			strings.HasPrefix(p, "dateTimeFormats-relative"),
+			strings.HasPrefix(p, "dateTimeFormats/intervalFormats"),
+			strings.Contains(p, "-alt-"),
 			strings.Contains(p, "/availableFormats/") && strings.Contains(p, "-count-"):
 			return true
 		}
 		return false
-	})
+	}
+	greg := main("cldr-dates-full", "ca-gregorian", "dates", "calendars", "gregorian")
+	flatten(kv, "g", greg, skipCalendar)
+	if c := localeCalendar(l, likely()); calendars[c] != "" {
+		// ICU looks for the "at time" glue of another calendar in that
+		// calendar's own data only, then takes the Gregorian one. cldr-json
+		// resolves it through the generic calendar instead, so it is left out
+		// and the lookup falls back to the Gregorian glue as ICU's does.
+		flatten(kv, calendars[c], main("cldr-cal-"+c+"-full", "ca-"+c, "dates", "calendars", c), func(p string) bool {
+			_, rest, _ := strings.Cut(p, "/")
+			return skipCalendar(p) || strings.HasPrefix(rest, "dateTimeFormats-atTime")
+		})
+	}
+
+	// Field names, which the date pattern generator writes when it has to
+	// append a field no pattern has.
+	fields := main("cldr-dates-full", "dateFields", "dates", "fields")
+	for _, f := range []string{"era", "year", "quarter", "month", "week", "weekOfMonth", "weekday",
+		"dayOfYear", "weekdayOfMonth", "day", "dayperiod", "hour", "minute", "second", "zone"} {
+		if s, ok := dig(fields, f, "displayName").(string); ok {
+			kv["f/"+f] = s
+		}
+	}
 
 	tz := main("cldr-dates-full", "timeZoneNames", "dates", "timeZoneNames")
+	// Chromium's ICU data has no exemplar cities: a zone's city is always
+	// the one its id spells ("Sao Paulo"), which is what the code derives
+	// when the data has none.
 	flatten(kv, "z", tz, func(p string) bool {
-		return strings.HasSuffix(p, "/exemplarCity") || strings.HasSuffix(p, "/_type")
+		return strings.HasSuffix(p, "/_type") || strings.HasSuffix(p, "/exemplarCity")
 	})
+
+	// The names of the countries time zones are in, for names like
+	// "Japan Time".
+	regions := zoneRegions()
+	territories := main("cldr-localenames-full", "territories", "localeDisplayNames", "territories").(map[string]any)
+	for code, v := range territories {
+		if regions[code] {
+			kv["t/"+code] = v.(string)
+		}
+	}
+	// Chromium's ICU data calls Hong Kong and Macao by their short names:
+	// "Hong Kong Time", not "Hong Kong SAR China Time".
+	for _, code := range []string{"HK", "MO"} {
+		if v, ok := territories[code+"-alt-short"].(string); ok {
+			kv["t/"+code] = v
+		}
+	}
 
 	nums := main("cldr-numbers-full", "numbers", "numbers").(map[string]any)
 	systems := map[string]bool{"latn": true}
@@ -743,6 +845,17 @@ func (g *gen) supplemental(av *availability) map[string]string {
 	}
 	sort.Strings(zones)
 	kv["tz"] = strings.Join(zones, "\n")
+	for id, region := range zoneRegion() {
+		kv["zr/"+id] = region
+	}
+	for region, id := range supp("primaryZones", "primaryZones") {
+		kv["pz/"+region] = id.(string)
+	}
+	for region, v := range supp("calendarPreferenceData", "calendarPreferenceData") {
+		if c := v.([]any)[0].(string); c != "gregorian" {
+			kv["ca/"+region] = c
+		}
+	}
 	mz := supp("metaZones", "metaZones")
 	var walk func(prefix string, v any)
 	walk = func(prefix string, v any) {
@@ -761,11 +874,70 @@ func (g *gen) supplemental(av *availability) map[string]string {
 				u := dig(e, "usesMetazone").(map[string]any)
 				from, _ := u["_from"].(string)
 				to, _ := u["_to"].(string)
+				if u["_mzone"] == "GMT" && britishIsles[zoneRegion()[prefix]] {
+					// Chromium does not call the time of the British Isles
+					// by the GMT metazone's names: London in winter is
+					// "GMT+00:00", not "Greenwich Mean Time".
+					continue
+				}
 				uses = append(uses, u["_mzone"].(string)+"|"+from+"|"+to)
 			}
-			kv["mz/"+prefix] = strings.Join(uses, ";")
+			if len(uses) != 0 {
+				kv["mz/"+prefix] = strings.Join(uses, ";")
+			}
 		}
 	}
 	walk("", dig(mz, "metazoneInfo", "timezone"))
+	// The zone a metazone stands for in each territory, "001" for the rest of
+	// the world: Asia/Shanghai is China's, America/New_York the Americas'.
+	golden := map[string][]string{}
+	for _, v := range mz["metazones"].([]any) {
+		m := dig(v, "mapZone").(map[string]any)
+		mzone := m["_other"].(string)
+		golden[mzone] = append(golden[mzone], m["_territory"].(string)+":"+m["_type"].(string))
+	}
+	for mzone, l := range golden {
+		sort.Strings(l)
+		kv["mzr/"+mzone] = strings.Join(l, " ")
+	}
 	return kv
 }
+
+// zoneRegion maps every canonical time zone that is in a country to the
+// country. The country is the start of the zone's BCP 47 identifier ("usnyc"
+// is America/New_York), which CLDR builds from UN/LOCODE, except for the few
+// identifiers named otherwise.
+var zoneRegion = sync.OnceValue(func() map[string]string {
+	special := map[string]string{"jeruslm": "IL", "hebron": "PS", "gazastrp": "PS"}
+	r := map[string]string{}
+	for k, v := range dig(readJSON(filepath.Join("cldr-bcp47", "bcp47", "timezone.json"), true), "keyword", "u", "tz").(map[string]any) {
+		m, ok := v.(map[string]any)
+		if !ok || strings.HasPrefix(k, "_") || m["_deprecated"] == true {
+			continue
+		}
+
+		alias, ok := m["_alias"].(string)
+		if !ok {
+			continue
+		}
+
+		region := special[k]
+		if region == "" && len(k) >= 5 && strings.IndexFunc(k, func(c rune) bool { return c < 'a' || c > 'z' }) < 0 &&
+			!strings.HasPrefix(k, "utc") && !strings.HasPrefix(k, "gmt") && k != "unk" {
+			region = strings.ToUpper(k[:2])
+		}
+		if region != "" {
+			r[strings.Fields(alias)[0]] = region
+		}
+	}
+	return r
+})
+
+// zoneRegions is the set of countries some time zone is in.
+var zoneRegions = sync.OnceValue(func() map[string]bool {
+	r := map[string]bool{}
+	for _, region := range zoneRegion() {
+		r[region] = true
+	}
+	return r
+})
