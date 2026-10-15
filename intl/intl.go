@@ -36,13 +36,20 @@
 // has. A locale resolves as it does in Chromium: one with no data of its own
 // falls back to its parent (en-XX to en) or, failing that, to en-US. With no
 // locale argument the locale is en-US and with no timeZone option the zone is
-// UTC: the host's language and zone are never read, so a page renders the
-// same on every server.
+// UTC: Intl and the toLocale* methods never read the host's language or zone.
+// The engine's own Date still does: the local time methods (new Date(2026, 0,
+// 1), getHours, toString) use the process's zone, which the TZ environment
+// variable sets. A server that has to render the same page on every machine
+// runs with TZ=UTC.
 //
 // Dates are in the Gregorian calendar, or in the buddhist one for th and the
 // persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
-// Any other calendar asked for, with -u-ca- or the calendar option, is
-// dropped from the resolved locale and the date is Gregorian.
+// Another calendar asked for, with -u-ca- or the calendar option, such as
+// japanese or roc, is not supported: as ECMA-402 has it for a calendar an
+// implementation lacks, it is dropped from the resolved locale, the date is
+// in the locale's default calendar, and resolvedOptions().calendar says
+// which, so a page can tell. Nothing throws, which would break a page that
+// Chromium renders.
 //
 // Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
 // Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
@@ -60,7 +67,8 @@
 //   - A numbering system a locale has no symbols for, such as arab in de,
 //     takes the locale's latn symbols. ICU takes CLDR root's, which
 //     cldr-json does not publish.
-//   - A calendar other than the ones above formats as Gregorian.
+//   - A calendar other than the ones above formats in the locale's default
+//     calendar, Gregorian but for th and the persian locales.
 //
 // Where Chromium's ICU data departs from CLDR 48.2, the data here follows
 // Chromium. A language Chromium ships no dates or numbers for formats them
@@ -99,8 +107,8 @@
 // use the host's database, so this package does not import it. The default
 // zone, which is also what
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
-// [TimeZone] sets another. The host's zone is never consulted, so a page
-// renders the same on every machine.
+// [TimeZone] sets another. Intl never consults the host's zone (see Locales
+// for the engine's Date, which does).
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
@@ -208,8 +216,10 @@ type Option func(*config)
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports. The name must be
 // an IANA identifier like "Europe/Prague", "UTC", or an offset like "+05:30".
 //
-// Without it the zone is UTC. The host's zone is never read: a server would
-// otherwise render a page differently depending on where it runs.
+// Without it the zone is UTC. Intl never reads the host's zone: a server would
+// otherwise render a page differently depending on where it runs. The
+// engine's Date local time methods are not covered: they use the process's
+// zone, see the package documentation.
 func TimeZone(name string) Option { return func(c *config) { c.timeZone = name } }
 
 // Register installs Intl on vm's global object and replaces the toLocale*

@@ -167,8 +167,8 @@ func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, er
 
 	// A calendar is supported where there is data for it: the Gregorian one
 	// everywhere, buddhist and persian where they are the default. Any other
-	// is dropped from the locale and formats as Gregorian, which
-	// resolvedOptions().calendar then says.
+	// is dropped from the locale and the date is in the locale's default
+	// calendar, which resolvedOptions().calendar then says.
 	ca, caInLocale := r.unicodeKeyword("ca", caOption, func(v string) bool { return calendarFor(r.data, v).name == v })
 	nu, nuInLocale := r.unicodeKeyword("nu", nuOption, supportedNumberingSystem)
 	hcKeyword := r.keywords["hc"]

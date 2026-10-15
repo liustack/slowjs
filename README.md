@@ -122,8 +122,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.PluralRules` and the
   `toLocale*` methods, and its output is compared with Chromium 156 on about
   52,000 expressions (`intl/golden_test.go`). Without a locale argument the
-  locale is en-US, and without a `timeZone` option the zone is UTC: the
-  host's settings are never read. `Register` only puts stand-ins on the VM.
+  locale is en-US, and without a `timeZone` option the zone is UTC: `Intl`
+  and the `toLocale*` methods never read the host's settings. The engine's
+  `Date` local time methods (`new Date(2026, 0, 1)`, `getHours`, `toString`)
+  still use the process's zone, so a server that must render the same page
+  everywhere runs with `TZ=UTC`. `Register` only puts stand-ins on the VM.
   The first use of `Intl` or a `toLocale*` method installs the rest, from
   bytecode compiled once per process. The package documentation lists what
   is not implemented and where the output differs from Chromium.
