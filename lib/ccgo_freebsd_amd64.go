@@ -12548,6 +12548,7 @@ func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
 				if (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom != uint32(MJS_ATOM_NULL) && !(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0) {
 					_compute_value_size(tls, *(*TJSValue)(unsafe.Pointer(pr)), hp)
 				}
+				_js_backtrace_memory_usage(tls, s, hp, prs, pr)
 				prs += 8
 				goto _13
 			_13:
@@ -13428,6 +13429,9 @@ func _get_prop_string(tls *libc.TLS, ctx1 uintptr, _obj TJSValue, prop TJSAtom) 
 			return libc.UintptrFromInt32(0)
 		}
 	}
+	if pending, ok := _js_backtrace_prop_string(tls, ctx1, p, prs, **(**uintptr)(__ccgo_up(bp + 16))); ok {
+		return pending
+	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(0)<<libc.Int32FromInt32(4) {
 		return libc.UintptrFromInt32(0)
 	}
@@ -13464,6 +13468,9 @@ _2:
 	if !(v1 != 0) {
 		return
 	} /* protection in the out of memory case */
+	if filename == 0 && _js_backtrace_build(tls, ctx3, error_obj, backtrace_flags) != 0 {
+		return
+	}
 	_js_dbuf_init(tls, ctx3, bp)
 	if filename != 0 {
 		Xdbuf_printf(tls, bp, __ccgo_ts+1104, libc.VaList(bp+64, filename))
@@ -14569,6 +14576,11 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, _obj TJSValue, prop TJ
 	for {
 		prs = _find_own_property(tls, bp+56, p2, prop)
 		if prs != 0 {
+		if prop == uint32(EJS_ATOM_stack) {
+			if _js_backtrace_settle(tls, ctx3, p2, prs, **(**uintptr)(__ccgo_up(bp + 56))) < 0 {
+				return jsvException()
+			}
+		}
 			/* found */
 			if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 				if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(4) {
@@ -15345,7 +15357,7 @@ func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, p
 							is_enumerable = int32(EFALSE)
 							if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(5)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 								/* set the "is_enumerable" field if necessary */
-								res = _JS_GetOwnPropertyInternal(tls, ctx, bp+16, p, atom)
+								res = _js_backtrace_own_flags(tls, ctx, bp+16, p, atom)
 								if res < 0 {
 									XJS_FreePropertyEnum(tls, ctx, **(**uintptr)(__ccgo_up(bp)), **(**Tuint32_t)(__ccgo_up(bp + 8)))
 									return -int32(1)
@@ -15582,6 +15594,11 @@ retry:
 	;
 	prs = _find_own_property(tls, bp+16, p1, prop)
 	if prs != 0 {
+		if prop == uint32(EJS_ATOM_stack) && desc != 0 {
+			if _js_backtrace_settle(tls, ctx1, p1, prs, **(**uintptr)(__ccgo_up(bp + 16))) < 0 {
+				return -int32(1)
+			}
+		}
 		if desc != 0 {
 			(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fflags = int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26) & (libc.Int32FromInt32(1)<<libc.Int32FromInt32(0) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(1) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))
 			(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fgetter = TJSValue{
@@ -18664,7 +18681,7 @@ _16:
 _104:
 	;
 	/* generic case: modify the property in this_obj if it already exists */
-	ret = _JS_GetOwnPropertyInternal(tls, ctx3, bp+80, p2, prop)
+	ret = _js_backtrace_own_flags(tls, ctx3, bp+80, p2, prop)
 	if ret < 0 {
 		v1 = val1
 		*(*TJSValue)(unsafe.Pointer(bp + 8)) = v1
@@ -20242,6 +20259,9 @@ _15:
 					/* Note: JS_PROP_VARREF is always writable */
 				} else {
 					if int32(*(*uint32)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 96)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == 0 && flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(13)) != 0 {
+						if prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, ctx5, p2, **(**uintptr)(__ccgo_up(bp + 96)), **(**uintptr)(__ccgo_up(bp + 104))) < 0 {
+							return -int32(1)
+						}
 						if !(_js_same_value(tls, ctx5, val2, *(*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 104))))) != 0) {
 							goto not_configurable
 						} else {
@@ -26005,6 +26025,9 @@ func _js_print_error(tls *libc.TLS, s uintptr, p uintptr) {
 	}
 	XJS_FreeCString(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fctx, str)
 	/* dump the stack if present */
+	if _js_backtrace_raw_stack(tls, s, p) {
+		return
+	}
 	str = _get_prop_string(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fctx, TJSValue{
 		Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p})),
 		Ftag: int64(EJS_TAG_OBJECT),
@@ -26611,7 +26634,9 @@ func _js_print_object(tls *libc.TLS, s uintptr, p1 uintptr) {
 									_js_printf(tls, s, __ccgo_ts+2860, 0)
 								}
 							} else {
-								_js_print_value(tls, s, *(*TJSValue)(unsafe.Pointer(pr)))
+								if _js_backtrace_print_pending(tls, s, prs, pr) == 0 {
+									_js_print_value(tls, s, *(*TJSValue)(unsafe.Pointer(pr)))
+								}
 							}
 						}
 					}
@@ -32510,7 +32535,7 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, _sourc
 			break
 		}
 		if pexcl != 0 {
-			ret = _JS_GetOwnPropertyInternal(tls, ctx2, libc.UintptrFromInt32(0), pexcl, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
+			ret = _js_backtrace_own_flags(tls, ctx2, libc.UintptrFromInt32(0), pexcl, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
 			if ret != 0 {
 				if ret < 0 {
 					goto exception
@@ -32520,7 +32545,7 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, _sourc
 		}
 		if !(gpn_flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0) {
 			/* test if the property is enumerable */
-			ret = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, p, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
+			ret = _js_backtrace_own_flags(tls, ctx2, bp+48, p, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
 			if ret < 0 {
 				goto exception
 			}
@@ -37680,6 +37705,9 @@ restart:
 				if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 					goto get_field_slow_path
 				}
+				if atom3 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 288))) {
+					goto get_field_slow_path
+				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 288))))
 				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
@@ -37774,6 +37802,9 @@ restart:
 				if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs1 + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 					goto get_field2_slow_path
 				}
+				if atom4 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 312))) {
+					goto get_field2_slow_path
+				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 312))))
 				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
@@ -37866,6 +37897,9 @@ restart:
 			prs2 = _find_own_property(tls, bp+336, p5, atom5)
 			if prs2 != 0 { /* found */
 				if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs2 + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
+					goto get_length_slow_path
+				}
+				if atom5 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 336))) {
 					goto get_length_slow_path
 				}
 				_ = ctx10
@@ -73912,7 +73946,7 @@ _4:
 		atom = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 			/* Check if property is still enumerable */
-			res = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, p1, atom)
+			res = _js_backtrace_own_flags(tls, ctx2, bp+48, p1, atom)
 			if res < 0 {
 				goto exception
 			}
@@ -74602,7 +74636,7 @@ _2:
 		prop = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom
 		desc_flags = libc.Int32FromInt32(1)<<libc.Int32FromInt32(14) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)
 		if freeze_flag != 0 {
-			res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+48, p1, prop)
+			res = _js_backtrace_own_flags(tls, ctx1, bp+48, p1, prop)
 			if res < 0 {
 				goto exception
 			}
@@ -74693,7 +74727,7 @@ _2:
 			break
 		}
 		prop = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 16)) + uintptr(i)*8))).Fatom
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, p, prop)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+32, p, prop)
 		if res < 0 {
 			goto exception
 		}
@@ -75365,7 +75399,7 @@ _2:
 	if v1 != 0 {
 		goto exception
 	}
-	has_prop = _JS_GetOwnPropertyInternal(tls, ctx2, bp+32, *(*uintptr)(unsafe.Pointer(bp + 16)), prop)
+	has_prop = _js_backtrace_own_flags(tls, ctx2, bp+32, *(*uintptr)(unsafe.Pointer(bp + 16)), prop)
 	if has_prop < 0 {
 		goto exception
 	}
@@ -75433,7 +75467,7 @@ _2:
 		goto exception
 	}
 	for {
-		has_prop = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, *(*uintptr)(unsafe.Pointer(bp + 32)), prop)
+		has_prop = _js_backtrace_own_flags(tls, ctx2, bp+48, *(*uintptr)(unsafe.Pointer(bp + 32)), prop)
 		if has_prop < 0 {
 			goto exception
 		}
@@ -109746,7 +109780,7 @@ _16:
 	ret = _JS_ToBoolFree(tls, ctx1, ret1)
 	if !(ret != 0) {
 		p1 = *(*uintptr)(unsafe.Pointer(s))
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+64, p1, atom)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+64, p1, atom)
 		if res < 0 {
 			return -int32(1)
 		}
@@ -110607,7 +110641,7 @@ _16:
 	}
 	res = _JS_ToBoolFree(tls, ctx1, ret)
 	if res != 0 {
-		res2 = _JS_GetOwnPropertyInternal(tls, ctx1, bp+64, *(*uintptr)(unsafe.Pointer(s)), atom)
+		res2 = _js_backtrace_own_flags(tls, ctx1, bp+64, *(*uintptr)(unsafe.Pointer(s)), atom)
 		if res2 < 0 {
 			return -int32(1)
 		}
@@ -110811,7 +110845,7 @@ _4:
 			_JS_ThrowTypeErrorRevokedProxy(tls, ctx1)
 			goto fail
 		}
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+48, *(*uintptr)(unsafe.Pointer(s)), (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 40)) + uintptr(i)*8))).Fatom)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+48, *(*uintptr)(unsafe.Pointer(s)), (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 40)) + uintptr(i)*8))).Fatom)
 		if res < 0 {
 			goto fail
 		}
@@ -197815,3 +197849,21 @@ var Xlre_ctype_bits = [256]Tuint8_t{
 var __ccgo_ts = (*reflect.StringHeader)(unsafe.Pointer(&__ccgo_ts1)).Data
 
 var __ccgo_ts1 = "%20s %10s %10s\n\x00PTR\x00BLK_SIZE\x00ALLOC\x00%20p %10u %9.1f%%\n\x00\\u%04x\x00<null>\x00%d\x00JSAtom count=%d size=%d hash_size=%d:\n\x00JSAtom hash table: {\n\x00  %d:\x00 \x00\n\x00}\n\x00JSAtom table: {\n\x00  %d: { %d %08x \x00 %d }\n\x00%u\x00\x00string too long\x00%5d %3d%c %14p %5d %5d\x00 *\x00 %s\x00JSShapes: {\n\x00%5s %4s %14s %5s %5s %s\n\x00SLOT\x00REFS\x00PROTO\x00SIZE\x00COUNT\x00PROPS\x00invalid object type\x00[\x00]\x00get \x00set \x00QuickJS memory usage -- 2026-06-04 version, %d-bit, malloc limit: %ld\n\n\x00JSRuntime\x00JSContext\x00JSObject\x00JSString\x00JSFunctionBytecode\x00  %3u + %-2u  %s\n\x00  malloc_usable_size unavailable\n\x00\nJSObject classes\n\x00  %5d  %2.0d %s\n\x00none\x00other\x00%-20s %8s %8s\n\x00NAME\x00%-20s %8ld %8ld  (%0.1f per block)\n\x00memory allocated\x00%-20s %8ld %8ld  (%d overhead, %0.1f average slack)\n\x00memory used\x00%-20s %8ld %8ld  (%0.1f per atom)\n\x00atoms\x00%-20s %8ld %8ld  (%0.1f per string)\n\x00strings\x00%-20s %8ld %8ld  (%0.1f per object)\n\x00objects\x00  properties\x00%-20s %8ld %8ld  (%0.1f per shape)\n\x00  shapes\x00%-20s %8ld %8ld\n\x00bytecode functions\x00%-20s %8ld %8ld  (%0.1f per function)\n\x00  bytecode\x00  pc2line\x00%-20s %8ld\n\x00C functions\x00arrays\x00  fast arrays\x00%-20s %8ld %8ld  (%0.1f per fast array)\n\x00  elements\x00binary objects\x00    at %s\x00:%d:%d\x00<anonymous>\x00 (%s\x00 (native)\x00'%s' is read-only\x00out of memory\x00stack overflow\x00not an object\x00not a constructor\x00%s is not a constructor\x00not a symbol\x00'%s' is not defined\x00lexical variable\x00%s is not initialized\x00%s object expected\x00interrupted\x00proxy: bad prototype\x00prototype is immutable\x00object is not extensible\x00circular prototype chain\x00operand 'prototype' property is not an object\x00invalid 'instanceof' right operand\x00cannot read property '%s' of null\x00cannot read property '%s' of undefined\x00private class field '%s' does not exist\x00private class field '%s' already exists\x00private method is already present\x00expecting <brand> private field\x00null\x00undefined\x00cannot read property of %s\x00no setter for property\x00not configurable\x00invalid array length\x00cannot set property '%s' of null\x00cannot set property '%s' of undefined\x00setter is forbidden\x00cannot create numeric index in typed array\x00property is not configurable\x00module namespace properties have writable = false\x00non integer index in typed array\x00negative index in typed array\x00out-of-bound index in typed array\x00invalid descriptor flags\x00redeclaration of '%s'\x00cannot define variable '%s'\x00could not delete property\x00toPrimitive\x00BigInt is too large to allocate\x00%s: \x00 %08x\x00BigInt division by zero\x00BigInt negative exponent\x00BigInt is too large\x000\x00Infinity\x00cannot convert bigint to number\x00cannot convert symbol to number\x00invalid array index\x00[function bytecode]\x00cannot convert symbol to string\x00[unsupported type]\x00null or undefined are forbidden\x00<invalid string tag %d>\x00s\x00... %u more character%s\x00, \x00 { \x00... %u more item%s\x00[uninitialized_regexp]\x00(?:)\x00Error\x00: \x00[ \x00<%u empty item%s>\x00(%u) [ \x00%ld\x00%lu\x00[Function\x00(anonymous)\x00(%u) { \x00 => \x00{ \x00[Getter %p Setter %p]\x00[Getter/Setter]\x00[Setter]\x00[Getter]\x00[varref %p]\x00[autoinit %p %d %p]\x00[autoinit]\x00[[Closure]]: [\x00 ]\x00[[HomeObject]]: \x00 }\x00true\x00false\x00exception\x00uninitialized\x00%ldn\x00BigInt.asIntN(%d,\x000x\x00%08x\x00[rope len=%d depth=%d]\x00[bytecode \x00[circular %d]\x00 %p\x00Symbol(\x00[module]\x00[unknown tag %d]\x00%s=\x00%14s %4s %4s %14s %s\n\x00ADDRESS\x00SHRF\x00CONTENT\x00%14p %4d \x00%3d%c %14p \x00%3s  %14s \x00-\x00[shape]\x00[var_ref]\x00[async_function]\x00[js_context]\x00[unknown %d]\x00invalid bigint literal\x00cannot convert to bigint\x00bigint argument with unary +\x00bigint operands are forbidden for >>>\x00invalid 'in' operand\x00invalid property access\x00value is not iterable\x00iterator must return an object\x00invalid index for append\x00parent class must be constructor\x00parent prototype must be an object or null\x00must be called with new\x00not a function\x00derived class constructor must return an object or undefined\x00class constructors must be invoked with 'new'\x00invalid brand on object\x00unsupported reference to 'super'\x00iterator does not have a throw method\x00invalid throw var type %d\x00'this' can be initialized only once\x00invalid ret value\x00nip_catch\x00value has no property\x00invalid opcode: pc=%u opcode=0x%02x\x00not a generator\x00cannot invoke a running generator\x00not an AsyncGenerator object\x00number: %.14g\n\x00ident: '%s'\n\x00string: '%s'\n\x00template: `%s`\n\x00regexp: '%s' '%s'\n\x00eof\n\x00token: %d\n\x00token: '%c'\n\x00expecting '%c'\x00'%s' is a reserved identifier\x00invalid UTF-8 sequence\x00unexpected end of string\x00octal escape sequences are not allowed in strict mode\x00malformed escape sequence in string literal\x00unexpected end of regexp\x00unexpected line terminator in regexp\x00unexpected end of comment\x00invalid first character of private name\x00octal literals are deprecated in strict mode\x00invalid number literal\x00unexpected character\x00Bad control character in string literal\x00Bad Unicode escape\x00Bad escaped character\x00Bad UTF-8 sequence\x00Unexpected end of JSON input\x00NaN\x00Unexpected token '%c'\x00Unexpected number\x00Unterminated fractional number\x00Exponent part is missing a number\x00n\x00mport\x00f\x00xport\x00unction\x00too many local variables\x00too many arguments\x00invalid redefinition of lexical identifier\x00invalid redefinition of parameter name\x00invalid redefinition of a variable\x00invalid redefinition of global identifier\x00expected '}' after template expression\x00invalid property name\x00duplicate __proto__ property name\x00<set>\x00class statement requires a name\x00invalid method name\x00invalid field name\x00property constructor appears more than once\x00private class field is already defined\x00invalid lvalue in strict mode\x00invalid for in/of left hand-side\x00invalid increment/decrement operand\x00invalid destructuring target\x00invalid assignment left-hand side\x00unsupported keyword: %s\x00yield is a reserved identifier\x00invalid variable name in strict mode\x00invalid lexical variable name\x00duplicate parameter names not allowed in this context\x00unexpected ellipsis token\x00assignment rest property must be last\x00missing binding pattern...\x00rest element cannot have a default value\x00rest element must be the last one\x00invalid assignment syntax\x00too complicated destructuring expression\x00RegExp are not supported\x00'arguments' identifier is not allowed in class field initializer\x00expecting target\x00new.target only allowed within functions\x00super() is only valid in a derived class constructor\x00'super' is only valid in a method\x00invalid use of 'super'\x00meta expected\x00import.meta only valid in module code\x00invalid use of 'import()'\x00unexpected token in expression: '%.*s'\x00new keyword cannot be used with an optional chain\x00template literal cannot appear in an optional chain\x00Too many call arguments\x00private class field forbidden after super\x00expecting field name\x00cannot delete a direct reference in strict mode\x00cannot delete a private class field\x00unexpected 'await' keyword\x00await in default expression\x00unparenthesized unary expression can't appear on the left-hand side of '**'\x00cannot mix ?? with && or ||\x00unexpected 'yield' keyword\x00yield in default expression\x00continue must be inside loop\x00break must be inside loop or switch\x00break/continue label not found\x00'let' is not a valid lexical identifier\x00missing initializer for const variable\x00variable name expected\x00'for of' expression cannot start with 'async'\x00'for await' loop should be used with 'of'\x00of\x00in\x00a declaration in the head of a for-%s loop can't have an initializer\x00expected 'of' or 'in' in for control expression\x00duplicate label name\x00return not in a function\x00return in a static initializer block\x00line terminator not allowed after throw\x00lexical declarations can't appear in single-statement context\x00for await is only valid in asynchronous functions\x00duplicate default\x00invalid switch statement\x00identifier expected\x00expecting catch or finally\x00invalid keyword: with\x00function declarations can't appear in single-statement context\x00class declarations can't appear in single-statement context\x00duplicate exported name '%s'\x00.\x00..\x00/\x00could not load module '%s'\x00Could not find export '%s' in module '%s'\x00circular reference when looking for export '%s' in module '%s'\x00export '%s' in module '%s' is ambiguous\x00import.meta not supported in this context\x00no function filename for import()\x00options must be an object\x00options.with must be an object\x00module attribute values must be strings\x00promise is pending\x00string expected\x00duplicate with key\x00from clause expected\x00contains unpaired surrogate\x00invalid export syntax\x00invalid import binding\x00duplicate import binding\x00expecting 'as'\x00too many closure variables\x00undefined private field '%s'\x00bytecode buffer overflow (op=%d, pc=%d)\x00stack overflow (op=%d, pc=%d)\x00inconsistent stack size: %d %d (pc=%d)\x00inconsistent catch position: %d %d (pc=%d)\x00invalid opcode (op=%d, pc=%d)\x00stack underflow (op=%d, pc=%d)\x00nip_catch: no catch op (pc=%d)\x00exported variable '%s' does not exist\x00%.*s\x00use strict\x00\"use strict\" not allowed in function with default or destructuring parameter\x00invalid function name in strict code\x00invalid argument name in strict code\x00duplicate argument names not allowed in this context\x00function name expected\x00invalid redefinition of global identifier in module code\x00missing formal parameter\x00invalid number of arguments for getter or setter\x00bytecode function expected\x00eval is not supported\x00<input>\x00only value properties are supported\x00circular reference\x00unsupported object class\x00unsupported tag (%d)\x00read after the end of the buffer\x00invalid atom index (pos=%u)\x00invalid typed array\x00invalid array buffer\x00Number tag expected for date\x00object references are not allowed\x00invalid object reference (%u >= %u)\x00invalid tag (tag=%d pos=%u)\x00invalid version (%d expected=%d)\x00get %s\x00set %s\x00cannot convert to object\x00invalid getter\x00invalid setter\x00cannot have setter/getter and value or writable\x00not a prototype\x00proxy preventExtensions handler returned false\x00Null\x00Undefined\x00[object \x00create\x00getPrototypeOf\x00setPrototypeOf\x00defineProperty\x00defineProperties\x00getOwnPropertyNames\x00getOwnPropertySymbols\x00groupBy\x00keys\x00values\x00entries\x00isExtensible\x00preventExtensions\x00getOwnPropertyDescriptor\x00getOwnPropertyDescriptors\x00is\x00assign\x00seal\x00freeze\x00isSealed\x00isFrozen\x00fromEntries\x00hasOwn\x00toString\x00toLocaleString\x00valueOf\x00hasOwnProperty\x00isPrototypeOf\x00propertyIsEnumerable\x00__proto__\x00__defineGetter__\x00__defineSetter__\x00__lookupGetter__\x00__lookupSetter__\x00async \x00function\x00 anonymous(\x00\n) {\n\x00\n})\x00not a object\x00too many arguments in function call (only %d allowed)\x00bound \x00function \x00function *\x00async function \x00async function *\x00() {\n    [native code]\n}\x00call\x00apply\x00bind\x00[Symbol.hasInstance]\x00fileName\x00lineNumber\x00columnNumber\x00name\x00message\x00isError\x00isArray\x00from\x00[Symbol.species]\x00invalid array index: %ld\x00Array loo long\x00empty array\x00Array too long\x00next\x00return\x00constructor requires 'new'\x00abstract class not constructable\x00already running\x00[Symbol.toStringTag]\x00Iterator Concat\x00Iterator.from called on non-object\x00must be positive\x00empty iterator\x00Cannot assign to read only property\x00cannot invoke a running iterator\x00concat\x00drop\x00filter\x00flatMap\x00map\x00take\x00every\x00find\x00forEach\x00some\x00reduce\x00toArray\x00[Symbol.iterator]\x00Iterator Helper\x00at\x00copyWithin\x00fill\x00findIndex\x00findLast\x00findLastIndex\x00flat\x00includes\x00toReversed\x00toSorted\x00toSpliced\x00with\x00reduceRight\x00indexOf\x00lastIndexOf\x00join\x00pop\x00push\x00shift\x00unshift\x00reverse\x00sort\x00slice\x00splice\x00[Symbol.unscopables]\x00Array Iterator\x00parseInt\x00parseFloat\x00isNaN\x00isFinite\x00isInteger\x00isSafeInteger\x00MAX_VALUE\x00MIN_VALUE\x00NEGATIVE_INFINITY\x00POSITIVE_INFINITY\x00EPSILON\x00MAX_SAFE_INTEGER\x00MIN_SAFE_INTEGER\x00not a number\x00radix must be between 2 and 36\x00invalid number of digits\x00toExponential\x00toFixed\x00toPrecision\x00not a boolean\x00)\x00not a string\x00invalid code point\x00regexp not supported\x00regexp must have the 'g' flag\x00g\x00invalid string length\x00invalid repeat count\x00bad normalization form\x00a\x00big\x00blink\x00b\x00tt\x00font\x00color\x00size\x00i\x00href\x00small\x00strike\x00sub\x00sup\x00=\"\x00&quot;\x00</\x00fromCharCode\x00fromCodePoint\x00raw\x00length\x00charCodeAt\x00charAt\x00codePointAt\x00isWellFormed\x00toWellFormed\x00endsWith\x00startsWith\x00match\x00matchAll\x00search\x00split\x00substring\x00substr\x00repeat\x00replace\x00replaceAll\x00padEnd\x00padStart\x00trim\x00trimEnd\x00trimRight\x00trimStart\x00trimLeft\x00toLowerCase\x00toUpperCase\x00toLocaleLowerCase\x00toLocaleUpperCase\x00anchor\x00bold\x00fixed\x00fontcolor\x00fontsize\x00italics\x00link\x00String Iterator\x00normalize\x00localeCompare\x00min\x00max\x00abs\x00floor\x00ceil\x00round\x00sqrt\x00acos\x00asin\x00atan\x00atan2\x00cos\x00exp\x00log\x00pow\x00sin\x00tan\x00trunc\x00sign\x00cosh\x00sinh\x00tanh\x00acosh\x00asinh\x00atanh\x00expm1\x00log1p\x00log2\x00log10\x00cbrt\x00hypot\x00random\x00f16round\x00fround\x00imul\x00clz32\x00sumPrecise\x00Math\x00E\x00LN10\x00LN2\x00LOG2E\x00LOG10E\x00PI\x00SQRT1_2\x00SQRT2\x00invalid regular expression flags\x00%s\x00flags must be undefined\x00tnvfr\x00,-=<>#&!%:;@~'`\"\x00\\x%02x\x00out of memory in regexp execution\x00RegExp exec method must return an object or null\x00y\x00escape\x00flags\x00source\x00global\x00ignoreCase\x00multiline\x00dotAll\x00unicode\x00unicodeSets\x00sticky\x00hasIndices\x00exec\x00compile\x00test\x00[Symbol.replace]\x00[Symbol.match]\x00[Symbol.matchAll]\x00[Symbol.search]\x00[Symbol.split]\x00RegExp String Iterator\x00RegExp\x00expecting property name\x00unexpected token: '%.*s'\x00unexpected data at the end\x00invalid rawJSON string\x00Do not know how to serialize a BigInt\x00          \x00isRawJSON\x00parse\x00rawJSON\x00stringify\x00JSON\x00construct\x00deleteProperty\x00get\x00has\x00ownKeys\x00set\x00Reflect\x00revoked proxy\x00proxy: inconsistent prototype\x00proxy: inconsistent isExtensible\x00proxy: inconsistent preventExtensions\x00proxy: inconsistent has\x00proxy: inconsistent get\x00proxy: inconsistent set\x00proxy: cannot set property\x00proxy: inconsistent getOwnPropertyDescriptor\x00proxy: defineProperty exception\x00proxy: inconsistent defineProperty\x00proxy: inconsistent deleteProperty\x00proxy: properties must be strings or symbols\x00proxy: duplicate property\x00proxy: target property must be present in proxy ownKeys\x00proxy: property not present in target were returned by non extensible proxy\x00revocable\x00Proxy\x00[Symbol.toPrimitive]\x00Symbol\x00description\x00for\x00keyFor\x00iterator\x00toStringTag\x00isConcatSpreadable\x00hasInstance\x00species\x00unscopables\x00asyncIterator\x00set/add is not a function\x00WeakSet\x00WeakMap\x00invalid value used as %s key\x00invalid value used as WeakMap key\x00too many elements\x00.size is not a number\x00.size must be positive\x00.has is undefined\x00.has is not a function\x00.keys is undefined\x00.keys is not a function\x00getOrInsert\x00getOrInsertComputed\x00delete\x00clear\x00Map\x00Map Iterator\x00add\x00isDisjointFrom\x00isSubsetOf\x00isSupersetOf\x00intersection\x00difference\x00symmetricDifference\x00union\x00Set\x00Set Iterator\x00GeneratorFunction\x00throw\x00Generator\x00promise self resolution\x00resolving function already set\x00rejected\x00fulfilled\x00resolve\x00reject\x00all\x00allSettled\x00any\x00try\x00race\x00withResolvers\x00then\x00catch\x00finally\x00Promise\x00AsyncFunction\x00[Symbol.asyncIterator]\x00not an Async-from-Sync Iterator\x00throw is not a method\x00AsyncGeneratorFunction\x00AsyncGenerator\x00;/?:@&=+$,#\x00expecting %%\x00expecting hex digit\x00malformed UTF-8\x00-_.!~*'()\x000123456789ABCDEF\x00invalid character\x00expecting surrogate pair\x00decodeURI\x00decodeURIComponent\x00encodeURI\x00encodeURIComponent\x00unescape\x00eval\x00not a Date object\x00Date value is NaN\x00Invalid Date\x00%.3s, %02d %.3s %0*d \x00%.3s %.3s %02d %0*d\x00%04d\x00%+07d\x00-%02d-%02dT\x00%02d/%02d/%0*d\x00%02d:%02d:%02d GMT\x00%02d%02d\x00%02d:%02d:%02d.%03dZ\x00%02d:%02d:%02d %cM\x000123456789 -/(\x00PM\x00AM\x00 -/(\x00invalid hint\x00object needs toISOString method\x00now\x00UTC\x00toUTCString\x00toGMTString\x00toISOString\x00toDateString\x00toTimeString\x00toLocaleDateString\x00toLocaleTimeString\x00getTimezoneOffset\x00getTime\x00getYear\x00getFullYear\x00getUTCFullYear\x00getMonth\x00getUTCMonth\x00getDate\x00getUTCDate\x00getHours\x00getUTCHours\x00getMinutes\x00getUTCMinutes\x00getSeconds\x00getUTCSeconds\x00getMilliseconds\x00getUTCMilliseconds\x00getDay\x00getUTCDay\x00setTime\x00setMilliseconds\x00setUTCMilliseconds\x00setSeconds\x00setUTCSeconds\x00setMinutes\x00setUTCMinutes\x00setHours\x00setUTCHours\x00setDate\x00setUTCDate\x00setMonth\x00setUTCMonth\x00setYear\x00setFullYear\x00setUTCFullYear\x00toJSON\x00Date\x00cannot convert to BigInt: not an integer\x00cannot convert NaN or Infinity to BigInt\x00cannot convert to BigInt\x00not a BigInt\x00asUintN\x00asIntN\x00BigInt\x00Array\x00Object\x00Function\x00Iterator\x00Number\x00Boolean\x00String\x00resizable ArrayBuffers not supported for externally managed buffers\x00invalid array buffer length\x00invalid max array buffer length\x00invalid array buffer max length\x00isView\x00ArrayBuffer is detached\x00ArrayBuffer is detached or resized\x00detached called on SharedArrayBuffer\x00cannot transfer a SharedArrayBuffer\x00array buffer is not resizable\x00external array buffer is not resizable\x00cannot use identical ArrayBuffer\x00new ArrayBuffer is too small\x00byteLength\x00maxByteLength\x00resizable\x00detached\x00resize\x00transfer\x00transferToFixedLength\x00ArrayBuffer\x00growable\x00grow\x00SharedArrayBuffer\x00not a TypedArray\x00invalid typed array type\x00TypedArray length is too small\x00not a Uint8Array\x00expected string for alphabet\x00base64\x00base64url\x00invalid alphabet\x00expected string for lastChunkHandling\x00loose\x00strict\x00stop-before-partial\x00invalid lastChunkHandling option\x00output too large\x00expected string\x00invalid base64 string\x00invalid hex string\x00read\x00written\x00buffer\x00byteOffset\x00subarray\x00BYTES_PER_ELEMENT\x00toBase64\x00toHex\x00setFromBase64\x00setFromHex\x00fromBase64\x00fromHex\x00cannot be called\x00invalid offset\x00invalid length\x00invalid byteOffset\x00invalid byteLength\x00invalid byteOffset or byteLength\x00not a DataView\x00out of bound\x00getInt8\x00getUint8\x00getInt16\x00getUint16\x00getInt32\x00getUint32\x00getBigInt64\x00getBigUint64\x00getFloat16\x00getFloat32\x00getFloat64\x00setInt8\x00setUint8\x00setInt16\x00setUint16\x00setInt32\x00setUint32\x00setBigInt64\x00setBigUint64\x00setFloat16\x00setFloat32\x00setFloat64\x00DataView\x00integer TypedArray expected\x00not a SharedArrayBuffer TypedArray\x00out-of-bound access\x00not an integral number\x00cannot block in this thread\x00and\x00or\x00xor\x00exchange\x00compareExchange\x00load\x00store\x00isLockFree\x00pause\x00wait\x00notify\x00Atomics\x00TypedArray\x00invalid target\x00deref\x00WeakRef\x00argument must be a function\x00held value cannot be the target\x00invalid unregister token\x00register\x00unregister\x00FinalizationRegistry\x00%s= 0x\x00_\x00\\%c\x00%c\x00\\u{%04x}\x00%s:\n\x00  ranges: [\x00]\n\x00  %d/%d: '\x00'\n\x00expecting '{' after \\p\x00unknown unicode property value\x00expecting '}'\x00Script\x00sc\x00Script_Extensions\x00scx\x00unknown unicode script\x00General_Category\x00gc\x00unknown unicode general category\x00unknown unicode property name\x00expecting '{' after \\q\x00invalid escape sequence in regular expression\x00unexpected end\x00invalid class set operation in regular expression\x00invalid character in class in regular expression\x00malformed unicode char\x00too many ranges\x00invalid class range\x00invalid operation in regular expression\x00negated character class with strings in regular expression debugger eval code\x00duplicate modifier: '%c'\x00syntax error\x00nothing to repeat\x00invalid modifiers\x00invalid group name\x00duplicate group name\x00invalid group\x00too many captures\x00expecting group name\x00group name not defined\x00invalid decimal escape in regular expression\x00back reference out of range in regular expression\x00invalid repetition count\x00extraneous characters at the end\x00too many imbricated quantifiers\x00%d: 0x%04x\n\x00invalid conversion specifier in format string\x00missing argument for conversion specifier\x00rb\x00could not load '%s'\x00./\x00could not load module filename '%s' as shared library\x00js_init_module\x00could not load module filename '%s': js_init_module not found\x00could not load module filename '%s': initialization error\x00file://\x00realpath failure\x00url\x00main\x00default\x00type\x00import attribute '%s' is not supported\x00json\x00json5\x00.so\x00could not load module filename '%s'\x00.json\x00backtrace_barrier\x00async\x00<evalScript>\x00errno\x00rwa+b\x00invalid file mode\x00rw\x00rwa+\x00invalid file handle\x00read/write array buffer overflow\x00binary\x00full\x00%s '\x00curl -s -i --\x00'\\''\x00'\x00r\x00could not start curl\x00\r\n\x00response\x00responseHeaders\x00status\x00FILE\x00EINVAL\x00EIO\x00EACCES\x00EEXIST\x00ENOSPC\x00ENOSYS\x00EBUSY\x00ENOENT\x00EPERM\x00EPIPE\x00EBADF\x00exit\x00evalScript\x00loadScript\x00getenv\x00setenv\x00unsetenv\x00getenviron\x00urlGet\x00loadFile\x00strerror\x00parseExtJSON\x00open\x00popen\x00fdopen\x00tmpfile\x00puts\x00printf\x00sprintf\x00SEEK_SET\x00SEEK_CUR\x00SEEK_END\x00__printObject\x00close\x00flush\x00tell\x00tello\x00seek\x00eof\x00fileno\x00error\x00clearerr\x00write\x00getline\x00readAsString\x00getByte\x00putByte\x00out\x00err\x00signal handler can only be set in the main thread\x00invalid signal number\x00data\x00dev\x00ino\x00mode\x00nlink\x00uid\x00gid\x00rdev\x00blocks\x00atime\x00mtime\x00ctime\x00PATH\x00/bin:/usr/bin\x00stdin\x00stdout\x00stderr\x00invalid number of arguments\x00block\x00usePath\x00file\x00cwd\x00env\x00fork error\x00Worker\x00JS_NewRuntime failure\x00JS_NewContext failure\x00prototype\x00cannot create a worker inside a worker\x00could not determine calling script or module name\x00could not create worker\x00postMessage\x00onmessage\x00O_RDONLY\x00O_WRONLY\x00O_RDWR\x00O_APPEND\x00O_CREAT\x00O_EXCL\x00O_TRUNC\x00isatty\x00ttyGetWinSize\x00ttySetRaw\x00remove\x00rename\x00setReadHandler\x00setWriteHandler\x00signal\x00SIGINT\x00SIGABRT\x00SIGFPE\x00SIGILL\x00SIGSEGV\x00SIGTERM\x00SIGQUIT\x00SIGPIPE\x00SIGALRM\x00SIGUSR1\x00SIGUSR2\x00SIGCHLD\x00SIGCONT\x00SIGSTOP\x00SIGTSTP\x00SIGTTIN\x00SIGTTOU\x00setTimeout\x00clearTimeout\x00sleepAsync\x00platform\x00linux\x00getcwd\x00chdir\x00mkdir\x00readdir\x00S_IFMT\x00S_IFIFO\x00S_IFCHR\x00S_IFDIR\x00S_IFBLK\x00S_IFREG\x00S_IFSOCK\x00S_IFLNK\x00S_ISGID\x00S_ISUID\x00stat\x00utimes\x00sleep\x00realpath\x00lstat\x00symlink\x00readlink\x00getpid\x00waitpid\x00WNOHANG\x00pipe\x00kill\x00dup\x00dup2\x00parent\x00console\x00performance\x00scriptArgs\x00print\x00__loadScript\x00Could not allocate memory for the worker\x00Possibly unhandled promise rejection: \x00"
+
+// Added by internal/fixlib for lib/backtrace.go.
+
+func _js_backtrace_prop_flags(tls *libc.TLS, prs uintptr) int32 {
+	return int32(*(*uint32)(unsafe.Pointer(prs + 0)) & 0xfc000000 >> 26)
+}
+
+func _js_backtrace_uncatchable(tls *libc.TLS, ctx uintptr) TBOOL {
+	return TBOOL(*(*uint16)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + 1256)) & 0xff >> 0)
+}
+
+func _js_backtrace_has_debug(tls *libc.TLS, b uintptr) int32 {
+	return int32(*(*uint8)(unsafe.Pointer(b + 18)) & 0x4 >> 2)
+}
+
+func _js_backtrace_raw_dump(tls *libc.TLS, s uintptr) int32 {
+	return int32(*(*uint16)(unsafe.Pointer(s + 16 + 0))&0xff00>>8) << 24 >> 24
+}

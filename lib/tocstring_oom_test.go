@@ -33,9 +33,12 @@ func TestToCStringOOMReleasesArgument(t *testing.T) {
 			defer XJS_FreeContext(tls, ctx)
 
 			usage := func() TJSMemoryUsage {
-				var u TJSMemoryUsage
-				XJS_ComputeMemoryUsage(tls, rt, uintptr(unsafe.Pointer(&u)))
-				return u
+				// The engine writes the result, so it goes in C memory.
+				n := int(unsafe.Sizeof(TJSMemoryUsage{}))
+				p := tls.Alloc(n)
+				defer tls.Free(n)
+				XJS_ComputeMemoryUsage(tls, rt, p)
+				return *(*TJSMemoryUsage)(unsafe.Pointer(p))
 			}
 
 			cs, err := libc.CString(tc.s)
