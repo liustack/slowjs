@@ -119,7 +119,8 @@ type numPattern struct {
 	posHasPlus  bool
 	negHasMinus bool
 	hasCurrency bool
-	g1, g2      int // primary and secondary grouping size, 0 for none
+	noDigits    bool // the number is spelled out, as in French "mille"
+	g1, g2      int  // primary and secondary grouping size, 0 for none
 }
 
 var numPatterns sync.Map // source -> *numPattern
@@ -133,6 +134,8 @@ func parseNumPattern(src string) *numPattern {
 	pos, neg, hasNeg := splitPattern(src)
 	var groups []int
 	p.affix[0][0], groups, p.affix[0][1] = parseSubpattern(pos)
+	_, rest := parseAffix(pos)
+	p.noDigits = rest == ""
 	if hasNeg {
 		p.hasNeg = true
 		p.affix[1][0], _, p.affix[1][1] = parseSubpattern(neg)
@@ -411,8 +414,8 @@ func (c *compactData) multiplier(m int) int {
 }
 
 // pattern returns the pattern for a scaled number of magnitude m, or nil for
-// the standard one. integer is the number's value if it is a small integer,
-// else -1, and plural its plural category.
+// the standard one. integer is the number's value if it is 0 or 1, else -1,
+// and plural its plural category.
 func (c *compactData) pattern(m int, integer int64, plural string) *numPattern {
 	if m < 0 || len(c.patterns) == 0 {
 		return nil

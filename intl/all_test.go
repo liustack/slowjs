@@ -269,6 +269,22 @@ func TestNumberFormatLocales(t *testing.T) {
 	})
 }
 
+// TestCompactWithoutDigits covers compact patterns that spell the number out,
+// like French "mille" for exactly one thousand.
+func TestCompactWithoutDigits(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).format(1000)`, "mille"},
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).format(999.9)`, "mille"},
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long', signDisplay: 'always'}).format(1000)`, "+mille"},
+		{`JSON.stringify(new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).formatToParts(1000))`, `[{"type":"compact","value":"mille"}]`},
+		{`new Intl.NumberFormat('it', {notation: 'compact', compactDisplay: 'long'}).format(1000)`, "mille"},
+		// An exact pattern is for that number only, not for its negative.
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).format(-1000)`, "-1 millier"},
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).format(2000)`, "2 mille"},
+		{`new Intl.NumberFormat('fr', {notation: 'compact', compactDisplay: 'long'}).format(1000000)`, "1 million"},
+	})
+}
+
 func TestPluralRules(t *testing.T) {
 	evalTests(t, newVM(t), [][2]string{
 		{`new Intl.PluralRules('en').select(1)`, "one"},

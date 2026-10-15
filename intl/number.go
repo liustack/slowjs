@@ -563,7 +563,9 @@ func (f *numberFormat) format(v any) ([]part, error) {
 			outerCat = f.pluralOf(r, minFrac)
 		}
 		zero = r.isZero()
-		num = f.digits(r, minFrac)
+		if !pattern.noDigits {
+			num = f.digits(r, minFrac)
+		}
 		if f.Notation == "scientific" || f.Notation == "engineering" {
 			num = append(num, span{"exponentSeparator", f.sys.exponential})
 			if exponent < 0 {
@@ -603,14 +605,14 @@ func (f *numberFormat) format(v any) ([]part, error) {
 	suffix := f.affix(pattern.affixFor(true, signType), field)
 	// Currency spacing: a no-break space between a currency symbol ending or
 	// starting with a letter and the digits next to it.
-	if n := len(prefix); n != 0 && prefix[n-1].Type == "currency" {
+	if n := len(prefix); n != 0 && len(num) != 0 && prefix[n-1].Type == "currency" {
 		last, _ := utf8.DecodeLastRuneInString(prefix[n-1].Value)
 		first, _ := utf8.DecodeRuneInString(num[0].Value)
 		if currencySpaced(last, first) {
 			prefix = append(prefix, span{"", " "})
 		}
 	}
-	if len(suffix) != 0 && suffix[0].Type == "currency" {
+	if len(suffix) != 0 && len(num) != 0 && suffix[0].Type == "currency" {
 		first, _ := utf8.DecodeRuneInString(suffix[0].Value)
 		last, _ := utf8.DecodeLastRuneInString(num[len(num)-1].Value)
 		if currencySpaced(first, last) {
@@ -777,10 +779,14 @@ func (f *numberFormat) pluralOperands(d dec) pluralOperands {
 }
 
 func (f *numberFormat) compactPattern(magnitude int, r dec, minFrac int) *numPattern {
+	// ICU matches the exact patterns against the signed integer value, so
+	// -1 takes its plural category's pattern and -0 the one for 0.
 	integer := int64(-1)
 	if !r.hasFraction() && r.intDigits() == 1 {
 		ip, _ := r.render(1, 0)
-		integer = int64(ip[0] - '0')
+		if integer = int64(ip[0] - '0'); r.neg && integer != 0 {
+			integer = -1
+		}
 	}
 	return f.compact.pattern(magnitude, integer, f.pluralOf(r, minFrac))
 }
