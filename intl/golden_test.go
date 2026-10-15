@@ -38,20 +38,55 @@ var goldenDir = filepath.Join("testdata", "chromium")
 var (
 	goldenCalendar     = regexp.MustCompile(`-u-ca-(\w+)`)
 	goldenCalendarMore = regexp.MustCompile(`-u-ca-\w+-`) // with other keywords after it
+	goldenCalendarOpt  = regexp.MustCompile(`,?calendar:'(\w+)',?`)
 )
 
-// goldenDropCalendar returns expr with the calendar keyword taken out of its
-// locale tags.
+// goldenOtherCalendar reports whether expr asks for a calendar other than the
+// Gregorian one, in a locale tag or in the calendar option.
+func goldenOtherCalendar(expr string) bool {
+	for _, re := range []*regexp.Regexp{goldenCalendar, goldenCalendarOpt} {
+		for _, m := range re.FindAllStringSubmatch(expr, -1) {
+			if m[1] != "gregory" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// goldenDropCalendar returns expr without the calendars other than the
+// Gregorian one it asks for.
 func goldenDropCalendar(expr string) string {
-	return goldenCalendar.ReplaceAllString(goldenCalendarMore.ReplaceAllString(expr, "-u-"), "")
+	expr = goldenCalendarMore.ReplaceAllStringFunc(expr, func(m string) string {
+		if m == "-u-ca-gregory-" {
+			return m
+		}
+		return "-u-"
+	})
+	expr = goldenCalendar.ReplaceAllStringFunc(expr, func(m string) string {
+		if m == "-u-ca-gregory" {
+			return m
+		}
+		return ""
+	})
+	return goldenCalendarOpt.ReplaceAllStringFunc(expr, func(m string) string {
+		if strings.Contains(m, "'gregory'") {
+			return m
+		}
+		if strings.HasPrefix(m, ",") && strings.HasSuffix(m, ",") {
+			return ","
+		}
+		return ""
+	})
 }
 
 // goldenDifference is a difference from Chromium that is understood: the
 // expression, Chromium's answer and ours match a known cause. Anything else
-// fails the test. eval evaluates another expression the way the test does.
+// fails the test. recorded holds Chromium's answer to every expression of
+// the corpus.
 type goldenDifference struct {
 	why   string
-	match func(expr, got, want string, eval func(string) string) bool
+	match func(expr, got, want string, recorded map[string]string) bool
 }
 
 var goldenDifferences = []goldenDifference{
@@ -59,11 +94,12 @@ var goldenDifferences = []goldenDifference{
 		// Only the Gregorian calendar has data everywhere. buddhist and
 		// persian have it where they are the default (th, fa). Any other
 		// calendar is dropped from the locale and formats as Gregorian: the
-		// answer has to be the one for the expression without it.
+		// answer has to be Chromium's for the expression without it, which
+		// the corpus holds too.
 		why: "a calendar there is no data for formats as Gregorian",
-		match: func(expr, got, want string, eval func(string) string) bool {
-			m := goldenCalendar.FindStringSubmatch(expr)
-			return m != nil && m[1] != "gregory" && got == eval(goldenDropCalendar(expr))
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			stripped, ok := recorded[goldenDropCalendar(expr)]
+			return goldenOtherCalendar(expr) && ok && got == stripped
 		},
 	},
 }
@@ -110,6 +146,10 @@ func TestGolden(t *testing.T) {
 	}
 
 	g := readGolden(t)
+	recorded := map[string]string{}
+	for _, c := range g.Cases {
+		recorded[c[0]] = c[1]
+	}
 	if *goldenRun != "" {
 		re := regexp.MustCompile(*goldenRun)
 		cases := g.Cases[:0]
@@ -132,7 +172,7 @@ func TestGolden(t *testing.T) {
 
 		why := ""
 		for _, d := range goldenDifferences {
-			if d.match(expr, got, want, func(expr string) string { return goldenEval(t, vm, expr) }) {
+			if d.match(expr, got, want, recorded) {
 				why = d.why
 				break
 			}
@@ -412,6 +452,14 @@ func goldenExprs() (r []string) {
 		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
 	}
 
+	// An expression in a calendar there is no data for is compared with
+	// Chromium's answer without that calendar, so record that one too.
+	for _, e := range r {
+		if goldenOtherCalendar(e) {
+			r = append(r, goldenDropCalendar(e))
+		}
+	}
+
 	seen := map[string]bool{}
 	out := r[:0]
 	for _, e := range r {
@@ -538,4 +586,21 @@ func enUSExprs() (r []string) {
 		)
 	}
 	return r
+}
+
+func TestGoldenDropCalendar(t *testing.T) {
+	for _, test := range [][2]string{
+		{`new Intl.DateTimeFormat("ja-JP-u-ca-japanese",{timeZone:'UTC'})`, `new Intl.DateTimeFormat("ja-JP",{timeZone:'UTC'})`},
+		{`new Intl.DateTimeFormat("en-u-ca-buddhist-hc-h23")`, `new Intl.DateTimeFormat("en-u-hc-h23")`},
+		{`new Intl.DateTimeFormat("en-u-ca-gregory-nu-latn")`, `new Intl.DateTimeFormat("en-u-ca-gregory-nu-latn")`},
+		{`new Intl.DateTimeFormat('en',{calendar:'roc'})`, `new Intl.DateTimeFormat('en',{})`},
+		{`new Intl.DateTimeFormat('en',{calendar:'roc',year:'numeric'})`, `new Intl.DateTimeFormat('en',{year:'numeric'})`},
+		{`new Intl.DateTimeFormat('en',{year:'numeric',calendar:'roc'})`, `new Intl.DateTimeFormat('en',{year:'numeric'})`},
+		{`new Intl.DateTimeFormat('en',{year:'numeric',calendar:'roc',month:'long'})`, `new Intl.DateTimeFormat('en',{year:'numeric',month:'long'})`},
+		{`new Intl.DateTimeFormat('en',{calendar:'gregory'})`, `new Intl.DateTimeFormat('en',{calendar:'gregory'})`},
+	} {
+		if got := goldenDropCalendar(test[0]); got != test[1] {
+			t.Errorf("%s\n\tgot  %s\n\twant %s", test[0], got, test[1])
+		}
+	}
 }
