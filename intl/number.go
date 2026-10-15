@@ -276,10 +276,10 @@ func (f *numberFormat) digitOptions(o map[string]any, currencyDigits int) error 
 		f.MinimumSignificantDigits, f.MaximumSignificantDigits = &mnsd, &mxsd
 	case hasMnfd || hasMxfd || f.Notation != "compact":
 		mnfdDefault, mxfdDefault := 0, 3
-		switch f.Style {
-		case "currency":
+		switch {
+		case f.Style == "currency" && f.Notation == "standard":
 			mnfdDefault, mxfdDefault = currencyDigits, currencyDigits
-		case "percent":
+		case f.Style == "percent":
 			mxfdDefault = 0
 		}
 		if !hasMnfd {

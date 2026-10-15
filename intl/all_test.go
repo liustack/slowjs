@@ -329,6 +329,23 @@ func TestCompactWithoutDigits(t *testing.T) {
 	})
 }
 
+// TestCurrencyDigitsByNotation checks that only standard notation gives a
+// currency its own number of fraction digits: the others default to 0 to 3,
+// as ECMA-402 says.
+func TestCurrencyDigitsByNotation(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'scientific'}).format(5000)`, "€5E3"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'scientific'}).format(5432.1)`, "€5.432E3"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'JPY', notation: 'scientific'}).format(5432.1)`, "¥5.432E3"},
+		{`new Intl.NumberFormat('de', {style: 'currency', currency: 'EUR', notation: 'engineering'}).format(54321)`, "54,321E3\u00a0€"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'compact', minimumFractionDigits: 1}).format(1234)`, "€1.234K"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'compact', maximumFractionDigits: 1}).format(1234)`, "€1.2K"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'scientific'}).resolvedOptions().minimumFractionDigits`, "0"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR', notation: 'scientific'}).resolvedOptions().maximumFractionDigits`, "3"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'EUR'}).resolvedOptions().minimumFractionDigits`, "2"},
+	})
+}
+
 func TestPluralRules(t *testing.T) {
 	evalTests(t, newVM(t), [][2]string{
 		{`new Intl.PluralRules('en').select(1)`, "one"},
