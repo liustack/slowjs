@@ -478,18 +478,15 @@ func (g *gen) followChromium(c *chromiumICU) {
 		for sec, keys := range own {
 			src, alias := c.source(sec.tree, id, sec.path)
 			if alias != "" {
-				if !strings.HasPrefix(sec.path, "calendar/") {
-					// Root's accounting pattern is the currency pattern of
-					// the locale it is looked up for, its arab patterns the
-					// latn ones: cldr-json resolves these the same way.
-					continue
-				}
-
-				// Root's Persian day names are the Gregorian ones of the
-				// locale, its Persian patterns the generic calendar's,
-				// which the locale's Chromium data can have from a bundle
-				// other than the one cldr-json resolved them from: ckb-IR
-				// has root's where cldr-json has ckb's.
+				// An alias, mostly root's, stands for another resource of
+				// the locale: Persian day names for the Gregorian ones, the
+				// accounting pattern for the currency pattern, long unit
+				// names for the short ones. The locale's Chromium data can
+				// have that from a bundle other than the one cldr-json
+				// resolved it from: ckb-IR has root's Persian patterns
+				// where cldr-json has ckb's. The value is the one of the
+				// bundle that has the resource stood for, which cldr-json
+				// resolves as ICU does.
 				src = c.resolve(sec.tree, id, alias)
 			}
 			srcLocale := ""

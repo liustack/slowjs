@@ -291,6 +291,10 @@ func TestChromiumFallback(t *testing.T) {
 		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "Mon"},
 		{`new Intl.DateTimeFormat('ckb-IR', {month: 'long', year: 'numeric', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "AP 1404 بەفرانبار"},
 		{`new Intl.DateTimeFormat('ckb-IR').resolvedOptions().month`, "2-digit"},
+		// kk-Arab has no unit names in Chromium, and root's long ones are
+		// its short ones.
+		{`new Intl.NumberFormat('kk-Arab', {style: 'unit', unit: 'kilometer', unitDisplay: 'long'}).format(2)`, "2 km"},
+		{`new Intl.NumberFormat('kk-Arab', {style: 'unit', unit: 'meter-per-second', unitDisplay: 'long'}).format(2)`, "2 m/s"},
 		// Root's accounting pattern and Buddhist months stand for the
 		// locale's own.
 		{`new Intl.NumberFormat('ar', {style: 'currency', currency: 'EGP', currencySign: 'accounting'}).format(-2)`, "(؜2.00 ج.م.‏)"},
