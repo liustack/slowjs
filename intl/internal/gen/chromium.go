@@ -23,9 +23,10 @@ import (
 // icuSummary is what the generator knows of Chromium's ICU data. -icudtl
 // writes it to -icu.
 type icuSummary struct {
-	ICU     string               `json:"icu"`     // the data package name, like icudt78l
-	Paths   []string             `json:"paths"`   // the resources looked for (see icuPath)
-	Bundles map[string]icuBundle `json:"bundles"` // by tree/name; the main tree has no prefix
+	ICU        string               `json:"icu"`        // the data package name, like icudt78l
+	Currencies []string             `json:"currencies"` // the currencies some locale has names for
+	Paths      []string             `json:"paths"`      // the resources looked for (see icuPath)
+	Bundles    map[string]icuBundle `json:"bundles"`    // by tree/name; the main tree has no prefix
 }
 
 type icuBundle struct {
@@ -247,6 +248,17 @@ func defaultScript(lang, region string) string {
 // id, "" if none has it. link reports that the resource there is an alias of
 // another resource, which ICU looks up in the locale's own data.
 func (c *chromiumICU) source(tree, id, path string) (bundle string, link bool) {
+	if entry, ok := strings.CutSuffix(path, "/pattern"); ok && strings.HasPrefix(entry, "Currencies/") {
+		// The pattern is part of the currency's entry: the nearest one
+		// decides, whether it has a pattern or not.
+		b, _ := c.source(tree, id, entry)
+		if b == "" || !c.has[icuKey(tree, b)][path] {
+			return "", false
+		}
+
+		return b, false
+	}
+
 	for _, b := range c.chain(tree, id) {
 		if k := icuKey(tree, b); c.has[k][path] {
 			return b, c.links[k][path]
@@ -306,8 +318,10 @@ func icuPath(key string) (tree, path string, ok bool) {
 	case "n":
 		return numberPath(rest)
 	case "c":
-		_, field, _ := strings.Cut(rest, "/")
+		code, field, _ := strings.Cut(rest, "/")
 		switch {
+		case field == "pattern", field == "decimal", field == "group":
+			return "curr", "Currencies/" + code + "/pattern", true
 		case field == "symbol-alt-narrow":
 			return "curr", "Currencies%narrow", true
 		case strings.HasPrefix(field, "displayName-count-"):

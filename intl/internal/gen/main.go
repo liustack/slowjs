@@ -155,6 +155,24 @@ func selectLocales(av *availability) []string {
 	return r
 }
 
+// regionCurrency picks a region's currency from its list in cldr-json's
+// currencyData as ICU's ucurr_forLocale does: the first one that is legal
+// tender, else the first one.
+func regionCurrency(list []any) string {
+	first := ""
+	for _, c := range list {
+		for code, m := range c.(map[string]any) {
+			if m.(map[string]any)["_tender"] != "false" {
+				return code
+			}
+			if first == "" {
+				first = code
+			}
+		}
+	}
+	return first
+}
+
 // fullLocales are the locales cldr-json has data for.
 var fullLocales = sync.OnceValue(func() map[string]bool {
 	full := map[string]bool{}
@@ -711,10 +729,26 @@ func localeData(l string) map[string]string {
 
 	cur := main("cldr-numbers-full", "currencies", "numbers", "currencies").(map[string]any)
 	for code, v := range cur {
-		for k, s := range v.(map[string]any) {
+		m := v.(map[string]any)
+		for k, s := range m {
 			switch {
 			case k == "symbol", k == "symbol-alt-narrow", k == "displayName", strings.HasPrefix(k, "displayName-count-"):
 				kv["c/"+code+"/"+k] = s.(string)
+			}
+		}
+		// A currency with a pattern or separators of its own formats with
+		// all three, the ones it lacks being the locale's, as ICU's data
+		// spells them out.
+		if m["pattern"] != nil || m["decimal"] != nil || m["group"] != nil {
+			for k, own := range map[string]string{
+				"pattern": kv["n/currencyFormats-numberSystem-latn/standard"],
+				"decimal": kv["n/symbols-numberSystem-latn/decimal"],
+				"group":   kv["n/symbols-numberSystem-latn/group"],
+			} {
+				if s, ok := m[k].(string); ok {
+					own = s
+				}
+				kv["c/"+code+"/"+k] = own
 			}
 		}
 	}
@@ -841,6 +875,11 @@ func (g *gen) supplemental(av *availability) map[string]string {
 	}
 	for code, v := range supp("currencyData", "currencyData", "fractions") {
 		kv["cd/"+code] = v.(map[string]any)["_digits"].(string)
+	}
+	// A region's currency, as ICU's ucurr_forLocale picks it: the first one
+	// listed that is legal tender, else the first one.
+	for region, v := range supp("currencyData", "currencyData", "region") {
+		kv["rc/"+region] = regionCurrency(v.([]any))
 	}
 	for name, v := range dig(readJSON(filepath.Join("cldr-core", "supplemental", "numberingSystems.json"), true), "supplemental", "numberingSystems").(map[string]any) {
 		m := v.(map[string]any)

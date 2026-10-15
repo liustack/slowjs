@@ -165,7 +165,35 @@ const (
 	resTable32  = 4
 	resTable16  = 5
 	resStringV2 = 6
+	resArray    = 8
+	resArray16  = 9
 )
+
+// arrayLen returns the length of an array resource, -1 if res is not one.
+func (r *icuBundleData) arrayLen(res uint32) int {
+	typ, off := res>>28, int(res&0x0fffffff)
+	switch typ {
+	case resArray:
+		if off == 0 {
+			return 0
+		}
+
+		return int(binary.LittleEndian.Uint32(r.root[4*off:]))
+	case resArray16:
+		return int(binary.LittleEndian.Uint16(r.u16()[2*off:]))
+	}
+	return -1
+}
+
+// currencies returns the entries of the bundle's Currencies table.
+func (r *icuBundleData) currencies() map[string]uint32 {
+	res, ok := r.get("Currencies")
+	if !ok {
+		return nil
+	}
+
+	return r.table(res)
+}
 
 // table returns the entries of a table resource, or nil if res is not one.
 func (r *icuBundleData) table(res uint32) map[string]uint32 {
@@ -289,9 +317,11 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 	}
 
 	s := &icuSummary{ICU: p.name, Bundles: map[string]icuBundle{}}
-	paths := map[string]bool{}
-	has := map[string][]string{}
-	links := map[string][]string{}
+	type bundle struct {
+		item, tree, name string
+		r                *icuBundleData
+	}
+	var bundles []bundle
 	for item := range p.items {
 		tree, name := "", item
 		if i := strings.IndexByte(item, '/'); i >= 0 {
@@ -307,6 +337,32 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 			return nil, err
 		}
 
+		bundles = append(bundles, bundle{item, tree, name, r})
+	}
+
+	// The currencies Chromium has names for, and the ones some locale
+	// formats with a pattern and separators of their own.
+	codes, patterned := map[string]bool{}, map[string]bool{}
+	for _, b := range bundles {
+		if b.tree == "curr" {
+			for code, res := range b.r.currencies() {
+				codes[code] = true
+				if b.r.arrayLen(res) > 2 {
+					patterned[code] = true
+				}
+			}
+		}
+	}
+	for code := range codes {
+		s.Currencies = append(s.Currencies, code)
+	}
+	slices.Sort(s.Currencies)
+
+	paths := map[string]bool{}
+	has := map[string][]string{}
+	links := map[string][]string{}
+	for _, b := range bundles {
+		item, tree, name, r := b.item, b.tree, b.name, b.r
 		var bundle icuBundle
 		for k, dst := range map[string]*string{"%%ALIAS": &bundle.Alias, "%%Parent": &bundle.Parent} {
 			if res, ok := r.get(k); ok {
@@ -316,7 +372,7 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 			}
 		}
 		key := icuKey(tree, name)
-		for _, path := range r.resources(tree) {
+		for _, path := range r.resources(tree, patterned) {
 			paths[path] = true
 			has[key] = append(has[key], path)
 			if res, _ := r.get(strings.Split(path, "/")...); res>>28 == resAlias {
@@ -357,8 +413,11 @@ var (
 )
 
 // resources returns the resources of the bundle the generator maps its keys
-// to (see icuPath).
-func (r *icuBundleData) resources(tree string) (paths []string) {
+// to (see icuPath). For the currencies in patterned it adds Currencies/<code>
+// where the bundle has the currency, and Currencies/<code>/pattern where that
+// entry has a third element: a pattern, decimal separator and group
+// separator for formatting in that currency.
+func (r *icuBundleData) resources(tree string, patterned map[string]bool) (paths []string) {
 	add := func(path ...string) {
 		if _, ok := r.get(path...); ok {
 			paths = append(paths, strings.Join(path, "/"))
@@ -398,6 +457,14 @@ func (r *icuBundleData) resources(tree string) (paths []string) {
 	case "curr":
 		for _, k := range []string{"Currencies", "Currencies%narrow", "CurrencyPlurals", "CurrencyUnitPatterns"} {
 			add(k)
+		}
+		for code, res := range r.currencies() {
+			if patterned[code] {
+				paths = append(paths, "Currencies/"+code)
+			}
+			if r.arrayLen(res) > 2 {
+				paths = append(paths, "Currencies/"+code+"/pattern")
+			}
 		}
 	case "unit":
 		for _, k := range []string{"units", "unitsShort", "unitsNarrow"} {

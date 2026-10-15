@@ -50,10 +50,16 @@ type numberFormat struct {
 	// patterns from, and PluralLocale the one of its plural rules.
 	DataLocale   string `json:"_data"`
 	PluralLocale string `json:"_plural"`
+	// LocaleCurrency is the currency of the region the locale names, which
+	// can set the pattern and separators other currencies format with (see
+	// init).
+	LocaleCurrency string `json:"_localeCurrency,omitempty"`
 
 	// The compiled form of the above, built by init.
 	sys      *numberSystem
 	main     *numPattern
+	decimal  string // the decimal separator
+	group    string // the grouping separator
 	compact  *compactData
 	plurals  *pluralRules
 	currency string            // what ¤ stands for
@@ -136,6 +142,11 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 		}
 
 		f.Currency = strings.ToUpper(s)
+		if r.tag.region != "" {
+			// Only a region the locale names: ICU infers none here, so tr
+			// has no currency of its own where tr-TR has the lira.
+			f.LocaleCurrency = cldr().supplemental().str("rc/" + r.tag.region)
+		}
 		currencyDigits = currencyFractionDigits(f.Currency)
 		if f.CurrencyDisplay, err = optDefault(o, "currencyDisplay", "symbol", "code", "symbol", "narrowSymbol", "name"); err != nil {
 			return nil, err
@@ -380,6 +391,22 @@ func (f *numberFormat) init() error {
 		f.main = f.sys.pattern("currencyFormats", "standard")
 	default:
 		f.main = f.sys.pattern("decimalFormats", "standard")
+	}
+	f.decimal, f.group = f.sys.decimal, f.sys.group
+	if f.Style == "currency" {
+		f.decimal, f.group = f.sys.currencyDecimal, f.sys.currencyGroup
+		// As in ICU, the pattern and separators in a currency's entry of the
+		// locale data apply in every style and display. Those of the
+		// locale's currency apply to the other currencies too, unless they
+		// have their own: en-DE writes "-€1,234.50" and "-US$1,234.50"
+		// where de writes "-1.234,50 €".
+		for _, code := range []string{f.Currency, f.LocaleCurrency} {
+			if p, ok := data.get("c/" + code + "/pattern"); ok {
+				f.main = parseNumPattern(p)
+				f.decimal, f.group = data.str("c/"+code+"/decimal"), data.str("c/"+code+"/group")
+				break
+			}
+		}
 	}
 	switch f.UseGrouping {
 	case false:
@@ -801,10 +828,7 @@ func (f *numberFormat) pluralOf(r dec, minFrac int) string {
 // digits renders the rounded r as integer, group, decimal and fraction spans.
 func (f *numberFormat) digits(r dec, minFrac int) []span {
 	ip, fp := r.render(f.MinimumIntegerDigits, minFrac)
-	group, decimal := f.sys.group, f.sys.decimal
-	if f.Style == "currency" {
-		group, decimal = f.sys.currencyGroup, f.sys.currencyDecimal
-	}
+	group, decimal := f.group, f.decimal
 	var s []span
 	for i, g := range groupDigits(ip, f.g1, f.g2, f.minGroup) {
 		if i != 0 {

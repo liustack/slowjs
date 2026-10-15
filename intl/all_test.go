@@ -329,6 +329,49 @@ func TestCompactWithoutDigits(t *testing.T) {
 	})
 }
 
+// TestCurrencyPatterns covers the currencies a locale formats with a pattern
+// and separators of their own, as ICU does: the euro in en-150 and the
+// locales under it, the lira in tr, the escudo in pt-CV. The currency of the
+// region a locale names sets them for every currency it formats, unless the
+// one formatted has its own.
+func TestCurrencyPatterns(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR'}).format(-1234567.891)`, "-€1,234,567.89"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'USD'}).format(-1234567.891)`, "-US$1,234,567.89"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "US$2.00 US dollars"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR', currencyDisplay: 'code'}).format(-1234.5)`, "-EUR\u00a01,234.50"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR', currencySign: 'accounting'}).format(-1234.5)`, "-€1,234.50"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR', notation: 'compact'}).format(500)`, "€500"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR', notation: 'compact'}).format(5000)`, "€5K"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR', notation: 'scientific'}).format(5432.1)`, "€5.432E3"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'USD', currencySign: 'accounting'}).format(-2)`, "-US$2.00"},
+		{`new Intl.NumberFormat('en-DE', {style: 'currency', currency: 'EUR'}).formatToParts(-1234.5).map(p => p.type + ':' + p.value).join(' ')`,
+			"minusSign:- currency:€ integer:1 group:, integer:234 decimal:. fraction:50"},
+		{`new Intl.NumberFormat('en-DE').format(1234.5)`, "1.234,5"},
+		{`new Intl.NumberFormat('en-DE', {style: 'percent'}).format(12.5)`, "1.250\u00a0%"},
+		{`new Intl.NumberFormat('en-150', {style: 'currency', currency: 'EUR'}).format(-1234567.891)`, "-€1,234,567.89"},
+		{`new Intl.NumberFormat('en-150', {style: 'currency', currency: 'USD'}).format(-1234.5)`, "-1,234.50\u00a0US$"},
+		{`new Intl.NumberFormat('en-150', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2.00 US dollars"},
+		{`new Intl.NumberFormat('en-CH', {style: 'currency', currency: 'EUR'}).format(-1234567.891)`, "-€1,234,567.89"},
+		{`new Intl.NumberFormat('en-CH', {style: 'currency', currency: 'CHF'}).format(-1234.5)`, "CHF-1'234.50"},
+		{`new Intl.NumberFormat('en-AT', {style: 'currency', currency: 'USD'}).format(-1234.5)`, "-US$\u00a01.234,50"},
+		{`new Intl.NumberFormat('en-AT', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "US$\u00a02,00 US dollars"},
+		{`new Intl.NumberFormat('tr', {style: 'currency', currency: 'TRY', currencySign: 'accounting'}).format(-1234.5)`, "-₺1.234,50"},
+		{`new Intl.NumberFormat('tr', {style: 'currency', currency: 'TRY', currencyDisplay: 'name'}).format(-1234.5)`, "-₺1.234,50 Türk lirası"},
+		{`new Intl.NumberFormat('tr', {style: 'currency', currency: 'USD', currencySign: 'accounting'}).format(-1234.5)`, "($1.234,50)"},
+		{`new Intl.NumberFormat('tr-TR', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "$2,00 ABD doları"},
+		{`new Intl.NumberFormat('tr-TR', {style: 'currency', currency: 'USD', currencySign: 'accounting'}).format(-1234.5)`, "-$1.234,50"},
+		{`new Intl.NumberFormat('tr', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2,00 ABD doları"},
+		{`new Intl.NumberFormat('tr-CY', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2,00 ABD doları"},
+		{`new Intl.NumberFormat('tr-CY', {style: 'currency', currency: 'TRY', currencySign: 'accounting'}).format(-1234.5)`, "-₺1.234,50"},
+		{`new Intl.NumberFormat('pt-CV', {style: 'currency', currency: 'CVE'}).format(-1234567.891)`, "-1\u00a0234\u00a0567$89\u00a0\u200b"},
+		{`new Intl.NumberFormat('pt-CV', {style: 'currency', currency: 'EUR', currencySign: 'accounting'}).format(-1234567.891)`, "-1\u00a0234\u00a0567$89\u00a0€"},
+		{`new Intl.NumberFormat('pt-CV', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2$00\u00a0US$ dólares dos Estados Unidos"},
+		{`new Intl.NumberFormat('pt-CV').format(-1234567.891)`, "-1\u00a0234\u00a0567,891"},
+		{`new Intl.NumberFormat('pt', {style: 'currency', currency: 'CVE'}).format(-1234567.891)`, "-CVE\u00a01.234.567,89"},
+	})
+}
+
 // TestCurrencyDigitsByNotation checks that only standard notation gives a
 // currency its own number of fraction digits: the others default to 0 to 3,
 // as ECMA-402 says.
