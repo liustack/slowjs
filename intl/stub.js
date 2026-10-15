@@ -27,28 +27,63 @@
 		delete g[hostNames[i]];
 	}
 
-	let installed = false;
+	let installed = false, installing = false;
 	let userIntl, userSetIntl = false;
+	const standIns = [];
 
+	// ensure installs the shim, once it works. An install that fails, say for
+	// want of memory or stack, rolls back to the stand-ins and throws, so that
+	// this use fails and the next one tries again.
 	function ensure() {
 		if (installed) {
 			return;
 		}
-		installed = true;
-		for (let i = 0; i < hostNames.length; i++) {
-			Object.defineProperty(g, hostNames[i], {value: host[i], writable: true, enumerable: false, configurable: true});
+		if (installing) {
+			throw new Error('intl: used while being installed');
 		}
-		install();
-		if (userSetIntl) {
-			Object.defineProperty(g, 'Intl', {value: userIntl, writable: true, enumerable: false, configurable: true});
+		installing = true;
+		try {
+			for (let i = 0; i < hostNames.length; i++) {
+				Object.defineProperty(g, hostNames[i], {value: host[i], writable: true, enumerable: false, configurable: true});
+			}
+			install();
+			installed = true;
+		} catch (e) {
+			rollBack();
+			throw e;
+		} finally {
+			installing = false;
+			if (userSetIntl) {
+				Object.defineProperty(g, 'Intl', {value: userIntl, writable: true, enumerable: false, configurable: true});
+			}
 		}
 	}
 
-	Object.defineProperty(g, 'Intl', {
+	// rollBack undoes what a failed install got done: the host functions go
+	// back out of sight and the stand-ins back in place.
+	function rollBack() {
+		for (let i = 0; i < hostNames.length; i++) {
+			delete g[hostNames[i]];
+		}
+		if (!userSetIntl) {
+			Object.defineProperty(g, 'Intl', intlStandIn);
+		}
+		for (let i = 0; i < standIns.length; i++) {
+			const s = standIns[i];
+			Object.defineProperty(s.o, s.name, {value: s.f, writable: true, enumerable: false, configurable: true});
+		}
+	}
+
+	const intlStandIn = {
 		enumerable: false,
 		configurable: true,
-		get: function () {
+		get: function getIntl() {
 			ensure();
+			// Reading g.Intl through the stand-in itself would recurse.
+			const d = Object.getOwnPropertyDescriptor(g, 'Intl');
+			if (d !== undefined && d.get === getIntl) {
+				throw new Error('intl: Intl was not installed');
+			}
 			return g.Intl;
 		},
 		set: function (v) {
@@ -58,7 +93,8 @@
 			userSetIntl = true;
 			Object.defineProperty(g, 'Intl', {value: v, writable: true, enumerable: false, configurable: true});
 		}
-	});
+	};
+	Object.defineProperty(g, 'Intl', intlStandIn);
 
 	function standIn(o, name) {
 		const f = {
@@ -71,6 +107,7 @@
 				return real.apply(this, arguments);
 			}
 		}[name];
+		standIns.push({o: o, name: name, f: f});
 		Object.defineProperty(o, name, {value: f, writable: true, enumerable: false, configurable: true});
 	}
 

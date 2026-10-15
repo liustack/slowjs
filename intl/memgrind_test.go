@@ -14,7 +14,8 @@ import (
 )
 
 // TestMemgrind2 checks that registering Intl and formatting with it leaks
-// nothing, whether or not the page ever touches Intl. The formatters hold no
+// nothing, whether or not the page ever touches Intl and whether or not the first
+// install fails. The formatters hold no
 // javascript Value of their own: the shim keeps its state in javascript and
 // the host functions trade json strings. But Register hands eight Go
 // functions to the VM, and those own libc memory that only Close releases.
@@ -26,7 +27,7 @@ func TestMemgrind2(t *testing.T) {
 	tls.Close()
 
 	libc.MemAuditStart()
-	for i := range 6 {
+	for i := range 8 {
 		vm, err := quickjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
@@ -50,7 +51,7 @@ func TestMemgrind2(t *testing.T) {
 			`new Intl.DateTimeFormat('fa', {timeZoneName: 'longGeneric'}).format(0)`,
 			`new Intl.PluralRules('ru').select(21); new Intl.PluralRules('en', {type: 'ordinal'}).selectRange(1, 2)`,
 		}
-		switch i % 3 {
+		switch i % 4 {
 		case 1:
 			// A page that never touches Intl: the stand-ins and the host
 			// functions they hold are all that is there.
@@ -58,6 +59,11 @@ func TestMemgrind2(t *testing.T) {
 		case 2:
 			// A page whose first touch is a method taken beforehand.
 			srcs = []string{`const f = Date.prototype.toLocaleDateString; f.call(new Date(0), 'ja')`}
+		case 3:
+			// A page whose first uses fail for want of stack, rolling the
+			// install back, until one works.
+			vm.SetMaxStackSize(400)
+			srcs = []string{deepFirstUse}
 		}
 		for _, src := range srcs {
 			if _, err := vm.Eval(src, quickjs.EvalGlobal); err != nil {
