@@ -5,6 +5,8 @@
 package quickjs // import "github.com/liustack/quickjs"
 
 import (
+	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -151,5 +153,133 @@ func TestValueCallRearmsEvalTimeout(t *testing.T) {
 
 	if _, err := runaway.Call(UndefinedValue); err == nil {
 		t.Error("a runaway Value.Call was not interrupted — the timeout guard is gone")
+	}
+}
+
+// nestedEntries are the ways a host function can run more javascript on the
+// VM that called it.
+var nestedEntries = map[string]func(m *VM) error{
+	"Eval": func(m *VM) error {
+		_, err := m.Eval(`for (let i = 0; i < 1e5; i++) {}`, EvalGlobal)
+		return err
+	},
+	"Call": func(m *VM) error {
+		_, err := m.Call("loop")
+		return err
+	},
+	"EvalBytecode": func(m *VM) error {
+		code, err := m.Compile(`for (let i = 0; i < 1e5; i++) {}`, EvalGlobal)
+		if err != nil {
+			return err
+		}
+
+		_, err = m.EvalBytecode(code)
+		return err
+	},
+	"ExecutePendingJobs": func(m *VM) error {
+		// A job that throws rejects its promise, so the catch reports it.
+		if _, err := m.Eval(`globalThis.jobError = ''; Promise.resolve().then(loop).catch(e => { jobError = String(e) })`, EvalGlobal); err != nil {
+			return err
+		}
+
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			return err
+		}
+
+		if v, err := m.Eval(`jobError`, EvalGlobal); err != nil || v != "" {
+			return fmt.Errorf("job: %v %v", v, err)
+		}
+		return nil
+	},
+}
+
+// TestNestedEvalKeepsTimeout runs javascript from a host function after the
+// outer call's time is up. The nested call runs inside the outer call's
+// budget instead of starting a new one, so it and the outer call are
+// interrupted.
+func TestNestedEvalKeepsTimeout(t *testing.T) {
+	for name, nested := range nestedEntries {
+		t.Run(name, func(t *testing.T) {
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer m.Close()
+
+			const timeout = 300 * time.Millisecond
+			if err := m.SetEvalTimeout(timeout); err != nil {
+				t.Fatal(err)
+			}
+
+			var nestedErr error
+			mustHost(t, m, "nested", func([]any) (any, error) {
+				time.Sleep(timeout + 50*time.Millisecond)
+				nestedErr = nested(m)
+				return nil, nil
+			})
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
+			if nestedErr == nil || err == nil {
+				t.Fatalf("past the outer call's time: nested call got %v, outer call got %v, want both interrupted", nestedErr, err)
+			}
+
+			// The next outer call starts a new budget.
+			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// TestNestedEvalKeepsInterrupt calls Interrupt and then runs javascript from
+// a host function, before the engine has looked at the request. The nested
+// call leaves the request pending, so the outer call stops.
+func TestNestedEvalKeepsInterrupt(t *testing.T) {
+	for name, nested := range nestedEntries {
+		t.Run(name, func(t *testing.T) {
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer m.Close()
+
+			mustHost(t, m, "nested", func([]any) (any, error) {
+				m.Interrupt()
+				nested(m)
+				return nil, nil
+			})
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+
+			// A lost request leaves the loop below running: stop it after a
+			// while, and fail.
+			done := make(chan struct{})
+			defer close(done)
+			var lost atomic.Bool
+			go func() {
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					lost.Store(true)
+					m.Interrupt()
+				}
+			}()
+
+			_, err = m.Eval(`nested(); for (;;) {}`, EvalGlobal)
+			if err == nil || lost.Load() {
+				t.Fatalf("got %v, lost the interrupt request: %v", err, lost.Load())
+			}
+
+			// The next outer call starts afresh.
+			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

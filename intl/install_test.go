@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/liustack/quickjs"
 )
@@ -191,4 +193,37 @@ func TestCompileRetries(t *testing.T) {
 			t.Fatal("VMs starting together compiled more than once")
 		}
 	}
+}
+
+// TestInstallKeepsInterrupt makes the first use of Intl, which evaluates the
+// shim from inside the page's call, between an Interrupt and the engine's
+// next look at it. The request stays pending and stops the page.
+func TestInstallKeepsInterrupt(t *testing.T) {
+	vm := newVM(t)
+	if err := vm.RegisterHostFunc("interrupt", func([]any) (any, error) {
+		vm.Interrupt()
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A lost request leaves the loop below running: stop it after a while,
+	// and fail.
+	done := make(chan struct{})
+	defer close(done)
+	var lost atomic.Bool
+	go func() {
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			lost.Store(true)
+			vm.Interrupt()
+		}
+	}()
+
+	_, err := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US'); for (;;) {}`, quickjs.EvalGlobal)
+	if err == nil || lost.Load() {
+		t.Fatalf("got %v, lost the interrupt request: %v", err, lost.Load())
+	}
+	evalTests(t, vm, [][2]string{{`(1234.5).toLocaleString('en-US')`, "1,234.5"}})
 }
