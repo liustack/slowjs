@@ -265,7 +265,7 @@ var slotSites = map[string]slotSite{
 	},
 	"_js_proxy_define_own_property": {
 		"descriptor lookup=1",
-		"the check after the trap, a full lookup that formats",
+		"the check after the trap, through _js_backtrace_own_define",
 	},
 	"_js_proxy_delete_property": {
 		"descriptor lookup=1",
@@ -273,11 +273,15 @@ var slotSites = map[string]slotSite{
 	},
 	"_js_proxy_get": {
 		"descriptor lookup=1",
-		"the check after the trap, a full lookup that formats",
+		"the check after the trap, through _js_backtrace_own_frozen",
 	},
 	"_js_proxy_get_own_property": {
 		"descriptor lookup=2",
-		"full lookups, with or without a trap",
+		"full lookup without a trap, attributes through _js_backtrace_own_flags after one",
+	},
+	"_js_proxy_get_own_property_mode": {
+		"descriptor lookup=2",
+		"made by fixProxy, keeps the mode without a trap",
 	},
 	"_js_proxy_get_own_property_names": {
 		"descriptor lookup=1",
@@ -289,7 +293,7 @@ var slotSites = map[string]slotSite{
 	},
 	"_js_proxy_set": {
 		"descriptor lookup=1",
-		"the check after the trap, a full lookup that formats",
+		"the check after the trap, through _js_backtrace_own_frozen",
 	},
 	"_js_regexp_get_lastIndex": {
 		"slot read value=3",

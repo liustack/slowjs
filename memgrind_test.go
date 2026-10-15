@@ -94,6 +94,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("evalError", testEvalError)
 	t.Run("errorStack", testErrorStack)
 	t.Run("errorStackOOM", testErrorStackOutOfMemory)
+	t.Run("errorStackProxy", testErrorStackProxy)
 	t.Run("call1", testCall1)
 	t.Run("call2", testCall2)
 	t.Run("call3", testCall3)

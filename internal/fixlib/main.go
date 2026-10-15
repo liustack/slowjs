@@ -282,6 +282,8 @@ func ccgoUp(arg string) string {
 //   - js_print_error skips the stack of a raw dump, and js_print_object
 //     prints a placeholder for a marker instead of the marker object.
 //   - XJS_ComputeMemoryUsage counts the record of a pending stack.
+//   - The proxy lookups and trap checks keep a pending stack pending where
+//     they need only its attributes (see fixProxy).
 //
 // auditSlots then checks every use of a property slot against slotSites
 // (see slots.go), so that new or changed code upstream that uses a slot
@@ -400,6 +402,13 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		if b, err = fixOwnFlags(b, fn.name, fn.calls); err != nil {
 			return nil, err
 		}
+	}
+
+	// The proxy traps: lookups through a proxy without a
+	// getOwnPropertyDescriptor trap keep their mode, and the checks after a
+	// trap format only to compare a frozen value.
+	if b, err = fixProxy(b); err != nil {
+		return nil, err
 	}
 
 	// js_print_error: skip the stack of a raw dump.
@@ -553,6 +562,88 @@ func fixOwnFlags(b []byte, name string, calls int) ([]byte, error) {
 	fixed := bytes.ReplaceAll(body, []byte("_JS_GetOwnPropertyInternal(tls, "), []byte("_js_backtrace_own_flags(tls, "))
 	if n := bytes.Count(fixed, []byte("_js_backtrace_own_flags(tls, ")); n != calls {
 		return nil, fmt.Errorf("%s: want %d calls of JS_GetOwnPropertyInternal, found %d", name, calls, n)
+	}
+	return bytes.Replace(b, body, fixed, 1), nil
+}
+
+var (
+	reProxyOwnHead  = regexp.MustCompile(`\nfunc _js_proxy_get_own_property\(tls \*libc\.TLS, (\w+) uintptr, pdesc uintptr, obj TJSValue, prop TJSAtom\) \(r int32\) \{\n`)
+	reProxyOwnPass  = regexp.MustCompile(`\n\t+return _JS_GetOwnPropertyInternal\(tls, (\w+), pdesc, (\w+), prop\)\n`)
+	reProxyModeHead = regexp.MustCompile(`\nfunc _js_proxy_get_own_property_mode\(tls \*libc\.TLS, [^\n]*\{\n`)
+	reProxyDefHead  = regexp.MustCompile(`\nfunc _js_proxy_define_own_property\(tls \*libc\.TLS, [^\n]*, (\w+) int32\) \(r int32\) \{\n`)
+)
+
+// fixProxy wires the proxy traps to the pending stack:
+//
+//   - js_proxy_get_own_property looks up the target only for its
+//     attributes after a getOwnPropertyDescriptor trap, so that lookup
+//     calls _js_backtrace_own_flags.
+//   - _js_proxy_get_own_property_mode is a copy of it with a mode, which
+//     _js_backtrace_own_desc calls for a proxy: without a trap it looks up
+//     the target in the same mode instead of in full.
+//   - The checks after a get, set or defineProperty trap compare the value
+//     of the target's property only when it is a frozen data property, so
+//     they look it up with _js_backtrace_own_frozen or
+//     _js_backtrace_own_define.
+func fixProxy(b []byte) ([]byte, error) {
+	if body, err := funcBody(b, reProxyModeHead, "_js_proxy_get_own_property_mode"); err == nil {
+		b = bytes.Replace(b, body, nil, 1) // made again below
+	}
+	body, err := funcBody(b, reProxyOwnHead, "_js_proxy_get_own_property")
+	if err != nil {
+		return nil, err
+	}
+	target := []byte("target_desc_ret = _JS_GetOwnPropertyInternal(tls, ")
+	fixed := bytes.Replace(body, target, []byte("target_desc_ret = _js_backtrace_own_flags(tls, "), -1)
+	if n := bytes.Count(fixed, []byte("target_desc_ret = _js_backtrace_own_flags(tls, ")); n != 1 {
+		return nil, fmt.Errorf("_js_proxy_get_own_property: want 1 lookup of the target after the trap, found %d", n)
+	}
+	pass := reProxyOwnPass.FindAllSubmatchIndex(fixed, -1)
+	if len(pass) != 1 {
+		return nil, fmt.Errorf("_js_proxy_get_own_property: want 1 lookup of the target without a trap, found %d", len(pass))
+	}
+	if bytes.Count(fixed, []byte("_JS_GetOwnPropertyInternal(")) != 1 {
+		return nil, fmt.Errorf("_js_proxy_get_own_property: a lookup that is neither the one without a trap nor the one after it")
+	}
+	b = bytes.Replace(b, body, fixed, 1)
+	ctx := string(reProxyOwnHead.FindSubmatch(fixed)[1])
+	mode := bytes.Replace(fixed, []byte("\nfunc _js_proxy_get_own_property(tls *libc.TLS, "+ctx+" uintptr, pdesc uintptr, obj TJSValue, prop TJSAtom) (r int32) {\n"),
+		[]byte("\nfunc _js_proxy_get_own_property_mode(tls *libc.TLS, "+ctx+" uintptr, pdesc uintptr, obj TJSValue, prop TJSAtom, mode int32) (r int32) {\n"), 1)
+	m := reProxyOwnPass.FindSubmatchIndex(mode)
+	call := mode[m[0]:m[1]]
+	newCall := bytes.Replace(call, []byte("_JS_GetOwnPropertyInternal(tls, "), []byte("_js_backtrace_own_desc(tls, "), 1)
+	newCall = bytes.Replace(newCall, []byte(", prop)\n"), []byte(", prop, mode)\n"), 1)
+	mode = append(append(append([]byte{}, mode[:m[0]]...), newCall...), mode[m[1]:]...)
+	if !bytes.Contains(mode, []byte("_js_backtrace_own_desc(tls, ")) || !bytes.Contains(mode, []byte("func _js_proxy_get_own_property_mode(")) {
+		return nil, fmt.Errorf("_js_proxy_get_own_property: cannot make the copy with a mode")
+	}
+	end := bytes.Index(b, fixed) + len(fixed)
+	b = append(append(append([]byte{}, b[:end]...), mode...), b[end:]...)
+
+	for _, fn := range []struct{ name, helper string }{
+		{"_js_proxy_get", "_js_backtrace_own_frozen(tls, "},
+		{"_js_proxy_set", "_js_backtrace_own_frozen(tls, "},
+	} {
+		re := regexp.MustCompile(`\nfunc ` + fn.name + `\(tls \*libc\.TLS, [^\n]*\{\n`)
+		body, err := funcBody(b, re, fn.name)
+		if err != nil {
+			return nil, err
+		}
+		fixed := bytes.Replace(body, []byte("_JS_GetOwnPropertyInternal(tls, "), []byte(fn.helper), -1)
+		if n := bytes.Count(fixed, []byte(fn.helper)); n != 1 {
+			return nil, fmt.Errorf("%s: want 1 lookup of the target after the trap, found %d", fn.name, n)
+		}
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	if body, err = funcBody(b, reProxyDefHead, "_js_proxy_define_own_property"); err != nil {
+		return nil, err
+	}
+	flags := string(reProxyDefHead.FindSubmatch(body)[1])
+	helper := "_js_backtrace_own_define(tls, " + flags + ", "
+	fixed = bytes.Replace(body, []byte("_JS_GetOwnPropertyInternal(tls, "), []byte(helper), -1)
+	if n := bytes.Count(fixed, []byte(helper)); n != 1 {
+		return nil, fmt.Errorf("_js_proxy_define_own_property: want 1 lookup of the target after the trap, found %d", n)
 	}
 	return bytes.Replace(b, body, fixed, 1), nil
 }

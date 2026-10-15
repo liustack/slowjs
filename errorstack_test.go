@@ -361,6 +361,86 @@ caught === undefined ? read : "threw " + caught.message
 	}
 }
 
+func TestErrorStackProxy(t *testing.T) { testErrorStackProxy(t) }
+
+// testErrorStackProxy runs, on proxies of errors whose stacks are pending,
+// the operations that look only at attributes and the trap checks, with
+// memory to spare and with none left. The stacks read the same afterwards.
+// It is also run under the memgrind allocator by TestMemgrind2.
+func testErrorStackProxy(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer m.Close()
+
+	m.SetMemoryLimit(4 << 20)
+	if _, err := m.Eval(`
+var held = []
+function deep(n) { return n ? deep(n - 1) : new Error("deep") }
+function make() { for (var i = 0; i < 45; i++) held.push(deep(40)) }
+var ops = [
+	(e, P) => Object.keys(P(e, {})).length === 0,
+	(e, P) => Object.freeze(P(e, {})) !== undefined,
+	(e, P) => Object.prototype.__lookupGetter__.call(P(e, {}), "stack") === undefined,
+	(e, P) => Object.prototype.propertyIsEnumerable.call(P(e, {}), "stack") === false,
+	(e, P) => Object.keys(Object.assign({}, P(e, {}))).length === 0,
+	(e, P) => Object.entries(P(e, {})).length === 0,
+	(e, P) => JSON.stringify(P(e, {})) === "{}",
+	(e, P) => Reflect.get(P(e, { get() { return 17 } }), "stack") === 17,
+	(e, P) => Reflect.set(P(e, { set() { return true } }), "stack", 42),
+	(e, P) => Reflect.defineProperty(P(e, { defineProperty() { return true } }), "stack", { writable: true }),
+	(e, P) => typeof Object.getOwnPropertyDescriptor(P(e, {}), "stack").value === "string",
+]
+var wraps = [(t, h) => new Proxy(t, h), (t, h) => new Proxy(new Proxy(t, {}), h)]
+// runOps runs each operation on its own error, from held[first] on.
+function runOps(first) {
+	var out = [], i = first
+	for (var w of wraps) for (var op of ops) {
+		try { out.push(op(held[i++], w)) } catch (x) { out.push("threw") }
+	}
+	return out.join()
+}
+var fill = []
+function exhaust(size) {
+	try {
+		for (;;) fill.push("x".repeat(size) + fill.length)
+	} catch (x) {}
+}
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.Call("make"); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := m.Eval(`runOps(0)`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if w := strings.TrimSuffix(strings.Repeat("true,", 22), ","); v != w {
+		t.Fatalf("got %v, want %v", v, w)
+	}
+
+	// With no memory left the operations may fail, and the VM works again
+	// afterwards.
+	if _, err := m.Eval(`exhaust(4096); exhaust(64); exhaust(1); try { runOps(22) } catch (x) {} fill = null`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err = m.Eval(`held.every(e => e.stack === held[44].stack) && held[44].stack.split("\n").length`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if v != 43 {
+		t.Fatalf("reading the stacks gives %v", v)
+	}
+}
+
 // TestErrorStackConcurrent makes and reads stacks in several VMs at once, one
 // goroutine each, and checks that every VM gets the text of its own frames.
 func TestErrorStackConcurrent(t *testing.T) {
