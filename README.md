@@ -329,29 +329,39 @@ stops on an override CLDR has caught up with, so the list only ever holds
 live differences.
 
 To compare with a newer Chromium, record its answers again. This needs Node
-and Playwright's Chromium (`npx playwright install chromium`):
+and a Chromium that Playwright drives. Set it up once:
 
 ```sh
-node intl/testdata/chromium/record.cjs availability <cldr-json dir>   # the locales it has
-go run ./intl/internal/gen -icudtl <icudtl.dat>                      # what its ICU data holds
-go run ./intl/internal/gen -fetch                                    # data for those locales
-go test ./intl -run TestGolden -args -golden.corpus                  # writes corpus.json
-node intl/testdata/chromium/record.cjs golden                        # writes golden.json.gz
-go test ./intl
+npm install -g playwright                       # the version decides the Chromium
+npx playwright install chromium
+export PLAYWRIGHT="$(npm root -g)/playwright"   # what record.cjs loads
 ```
 
-`icudtl.dat` is Chromium's ICU data file: next to the executable on Linux,
-in the framework's `Resources` directory on macOS. The generator writes a
-summary of it to `intl/testdata/chromium/icu.json.gz` and makes every locale
-take each resource from where Chromium's ICU finds it, so a language whose
-data Chromium leaves out formats with root's or English data as it does in
-Chromium.
+Then, from the repository root:
 
-`PLAYWRIGHT` and `CHROMIUM` point `record.cjs` at another copy of
-playwright-core or another browser. Update the Chromium and ICU versions in
-the package documentation and here, and look at each new difference: fix the
-code when Chromium is right, or add the cause to `goldenDifferences` when the
-difference is in the data.
+```sh
+CLDR="$HOME/cldr-json"                                         # any directory for the downloads
+go run ./intl/internal/gen -fetch -cldr "$CLDR"                # the list of CLDR locales
+node intl/testdata/chromium/record.cjs availability "$CLDR"    # the locales Chromium has
+go run ./intl/internal/gen -icudtl "$(node intl/testdata/chromium/record.cjs icudtl)"
+go run ./intl/internal/gen -fetch -cldr "$CLDR"                # data for those locales
+go test ./intl -run TestGolden -args -golden.corpus            # writes corpus.json
+node intl/testdata/chromium/record.cjs golden                  # writes golden.json.gz
+go test ./intl
+rm -rf "$CLDR"
+```
+
+`record.cjs icudtl` prints where the browser keeps `icudtl.dat`, its ICU
+data file. The generator writes a summary of it to
+`intl/testdata/chromium/icu.json.gz` and makes every locale take each
+resource from where Chromium's ICU finds it, so a language whose data
+Chromium leaves out formats with root's or English data as it does in
+Chromium. To record another browser, set `CHROMIUM` to its executable for
+every `record.cjs` command.
+
+Update the Chromium and ICU versions in the package documentation and here,
+and look at each new difference: fix the code when Chromium is right, or add
+the cause to `goldenDifferences` when the difference is in the data.
 
 ### Checks
 

@@ -327,6 +327,7 @@ func localeCalendar(l string, likely map[string]string) string {
 
 var supplementalFiles = []string{
 	"cldr-core/availableLocales.json",
+	"cldr-core/defaultContent.json", // read by record.cjs availability, not here
 	"cldr-core/supplemental/likelySubtags.json",
 	"cldr-core/supplemental/parentLocales.json",
 	"cldr-core/supplemental/plurals.json",

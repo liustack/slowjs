@@ -12,11 +12,14 @@
 //   node record.cjs golden
 //       evaluates corpus.json (go test -run TestGolden -golden.corpus writes
 //       it) and writes golden.json.gz.
+//   node record.cjs icudtl
+//       prints the path of the browser's ICU data file, for the generator's
+//       -icudtl.
 //
-// PLAYWRIGHT names the playwright-core package to load and CHROMIUM the
-// browser executable; both default to what `npx playwright install chromium`
-// leaves behind. The page runs with time zone UTC and locale en-US, the
-// defaults intl.Register uses.
+// PLAYWRIGHT names the playwright or playwright-core package to load and
+// CHROMIUM the browser executable; both default to what `npx playwright
+// install chromium` leaves behind. The page runs with time zone UTC and
+// locale en-US, the defaults intl.Register uses.
 
 'use strict';
 
@@ -26,8 +29,12 @@ const zlib = require('zlib');
 
 const dir = __dirname;
 
+function playwright() {
+	return require(process.env.PLAYWRIGHT || 'playwright-core');
+}
+
 async function withPage(fn) {
-	const { chromium } = require(process.env.PLAYWRIGHT || 'playwright-core');
+	const { chromium } = playwright();
 	const browser = await chromium.launch({
 		headless: true,
 		executablePath: process.env.CHROMIUM || undefined,
@@ -96,8 +103,43 @@ async function golden() {
 	});
 }
 
+// icudtl prints where the browser keeps icudtl.dat: next to the executable on
+// Linux and Windows, in the framework's Resources directory on macOS.
+function icudtl() {
+	const exe = process.env.CHROMIUM || playwright().chromium.executablePath();
+	if (!fs.existsSync(exe)) {
+		throw new Error(`no browser at ${exe}: run npx playwright install chromium, or set CHROMIUM`);
+	}
+	const find = (d, depth) => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const p = path.join(d, e.name);
+			if (e.name === 'icudtl.dat') {
+				return p;
+			}
+			if (depth > 0 && e.isDirectory() && !e.isSymbolicLink()) {
+				const found = find(p, depth - 1);
+				if (found) {
+					return found;
+				}
+			}
+		}
+		return '';
+	};
+	for (let d = path.dirname(exe), up = 0; up < 3; d = path.dirname(d), up++) {
+		const found = find(d, 6);
+		if (found) {
+			console.log(found);
+			return;
+		}
+	}
+	throw new Error(`no icudtl.dat near ${exe}`);
+}
+
 (async () => {
 	switch (process.argv[2]) {
+	case 'icudtl':
+		icudtl();
+		break;
 	case 'availability':
 		await availability(process.argv[3]);
 		break;
@@ -105,7 +147,7 @@ async function golden() {
 		await golden();
 		break;
 	default:
-		console.error('usage: node record.cjs availability <cldr-json dir> | golden');
+		console.error('usage: node record.cjs availability <cldr-json dir> | golden | icudtl');
 		process.exit(2);
 	}
 })().catch((err) => {
