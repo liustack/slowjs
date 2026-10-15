@@ -129,7 +129,7 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   is not implemented and where the output differs from Chromium.
 
   What it costs, measured on darwin/arm64 against the en-US version: a
-  program that uses `intl` is 2.1 MB larger (1.6 MB of it is the locale
+  program that uses `intl` is 2.0 MB larger (1.5 MB of it is the locale
   data). `Register` takes 0.09 ms and 9 KB of the VM's memory, against
   0.85 ms and 46 KB before. The first use in a VM then takes 0.15 ms and
   42 KB more. A language is decoded into the Go heap the first time it is
@@ -330,11 +330,19 @@ and Playwright's Chromium (`npx playwright install chromium`):
 
 ```sh
 node intl/testdata/chromium/record.cjs availability <cldr-json dir>   # the locales it has
+go run ./intl/internal/gen -icudtl <icudtl.dat>                      # what its ICU data holds
 go run ./intl/internal/gen -fetch                                    # data for those locales
 go test ./intl -run TestGolden -args -golden.corpus                  # writes corpus.json
 node intl/testdata/chromium/record.cjs golden                        # writes golden.json.gz
 go test ./intl
 ```
+
+`icudtl.dat` is Chromium's ICU data file: next to the executable on Linux,
+in the framework's `Resources` directory on macOS. The generator writes a
+summary of it to `intl/testdata/chromium/icu.json.gz` and makes every locale
+take each resource from where Chromium's ICU finds it, so a language whose
+data Chromium leaves out formats with root's or English data as it does in
+Chromium.
 
 `PLAYWRIGHT` and `CHROMIUM` point `record.cjs` at another copy of
 playwright-core or another browser. Update the Chromium and ICU versions in

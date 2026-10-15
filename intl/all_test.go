@@ -272,6 +272,26 @@ func TestNumberFormatLocales(t *testing.T) {
 // TestBrowserOverrides covers the values Chromium formats with that differ
 // from CLDR (see browserOverrides in internal/gen), and a locale that inherits
 // one.
+// TestChromiumFallback covers locales whose data Chromium does not ship: the
+// dates and numbers of az and kk come from root, the currency and region
+// names of ak from English, the currency symbols of bs-Cyrl from root.
+func TestChromiumFallback(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.DateTimeFormat('az', {dateStyle: 'full', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "2026 M01 5, Mon"},
+		{`new Intl.NumberFormat('az').format(1234567.891)`, "1,234,567.891"},
+		{`new Intl.NumberFormat('kk').format(1234567.891)`, "1,234,567.891"},
+		{`new Intl.NumberFormat('ak', {style: 'currency', currency: 'GHS', currencyDisplay: 'name'}).format(2)`, "2.00 Ghanaian cedis"},
+		{`new Intl.NumberFormat('bs-Cyrl', {style: 'currency', currency: 'BAM'}).format(2)`, "2,00 BAM"},
+		{`new Intl.DateTimeFormat('bs-Cyrl', {dateStyle: 'full', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "понедјељак, 05. јануар 2026."},
+		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'long', calendar: 'gregory', timeZone: 'UTC'}).format(0)`, "Thu"},
+		{`new Intl.DateTimeFormat('ckb-IR', {dateStyle: 'medium', timeZone: 'UTC'}).format(0)`, "AP 1348 بەفرانبار 11"},
+		// Root's accounting pattern and Buddhist months stand for the
+		// locale's own.
+		{`new Intl.NumberFormat('ar', {style: 'currency', currency: 'EGP', currencySign: 'accounting'}).format(-2)`, "(؜2.00 ج.م.‏)"},
+		{`new Intl.DateTimeFormat('th-u-ca-buddhist', {dateStyle: 'long', timeZone: 'UTC'}).format(0)`, "1 มกราคม 2513"},
+	})
+}
+
 func TestBrowserOverrides(t *testing.T) {
 	zoneName := func(zone, date, style string) string {
 		return `new Intl.DateTimeFormat('ko', {timeZone: '` + zone + `', timeZoneName: '` + style + `'}).formatToParts(new Date('` + date +

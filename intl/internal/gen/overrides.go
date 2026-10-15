@@ -7,9 +7,15 @@ package main
 import "fmt"
 
 // browserOverrides are the values Chromium formats with where they differ from
-// the CLDR release in cldrTag: Chromium's ICU data either comes from an older
-// CLDR or was changed by Google. Each entry replaces one key of one locale, and
-// of every locale under it that inherits the same value.
+// the CLDR release in cldrTag in a way the summary of its ICU data does not
+// show (see chromium.go): Google changed the value itself. Each entry
+// replaces one key of one locale, and of every locale under it that inherits
+// the same value.
+//
+// Some of Chromium's departures need no entry, because the summary shows
+// them. fr-CH's group separator is one: CLDR 48.2 made it an apostrophe, but
+// Chromium's fr_CH has no group separator, so it takes fr's U+202F, as
+// Safari and Node do.
 //
 // When cldrTag or the Chromium the golden test was recorded with changes, run
 // the golden test and drop the entries Chromium no longer needs.
@@ -17,9 +23,6 @@ var browserOverrides = []struct {
 	locale, key, value string
 	source             string // what Chromium does and what CLDR says
 }{
-	{"fr-CH", "n/symbols-numberSystem-latn/group", " ",
-		"CLDR 48.2 changed the fr-CH group separator from U+202F to an apostrophe. Chromium 156 (ICU 78.2, CLDR 48.1), Safari and Node still use U+202F."},
-
 	{"ko", "z/metazone/America_Eastern/long/generic", "북미 동부 시간", koNorthAmerica},
 	{"ko", "z/metazone/America_Eastern/long/standard", "북미 동부 표준시", koNorthAmerica},
 	{"ko", "z/metazone/America_Eastern/long/daylight", "북미 동부 하계 표준시", koNorthAmerica},
@@ -57,7 +60,7 @@ func (g *gen) applyBrowserOverrides(index map[string]int) {
 		}
 
 		if cldr == o.value {
-			fail(fmt.Errorf("browser override: %s %s is %q in CLDR already, drop the override", o.locale, o.key, o.value))
+			fail(fmt.Errorf("browser override: %s %s is %q already, drop the override", o.locale, o.key, o.value))
 		}
 
 		for i := range g.chunks {

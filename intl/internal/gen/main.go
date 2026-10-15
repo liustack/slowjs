@@ -61,6 +61,8 @@ var (
 	fetch   = flag.Bool("fetch", false, "download missing cldr-json files")
 	out     = flag.String("o", "intl/cldr.bin", "output file")
 	browser = flag.String("chromium", "intl/testdata/chromium/availability.json", "the Chromium locale availability file")
+	icu     = flag.String("icu", "intl/testdata/chromium/icu.json.gz", "the summary of Chromium's ICU data")
+	icudtl  = flag.String("icudtl", "", "summarize this ICU data file of Chromium's into -icu and exit")
 )
 
 func main() {
@@ -74,13 +76,21 @@ func main() {
 		*cldrDir = filepath.Join(d, "quickjs-intl", "cldr-json-"+cldrTag)
 	}
 
+	if *icudtl != "" {
+		writeICUSummary(*icudtl, *icu)
+		return
+	}
+
 	av := loadAvailability()
 	g := &gen{keys: map[string]int{}}
 	if *fetch {
 		fetchFiles(supplementalFiles)
 	}
 
-	g.locales = selectLocales(av)
+	// Root is the parent of every language, as it is in ICU: Chromium has
+	// languages that format with nothing but root's data.
+	g.locales = append(selectLocales(av), "und")
+	slices.Sort(g.locales)
 	if *fetch {
 		fetchFiles(localeFileList(g.locales))
 	}
@@ -123,11 +133,7 @@ func loadAvailability() *availability {
 // selectLocales returns the cldr-json locales whose data a supported locale can
 // reach: the locale itself or one of its CLDR ancestors.
 func selectLocales(av *availability) []string {
-	all := readJSON(filepath.Join("cldr-core", "availableLocales.json"), true)
-	full := map[string]bool{}
-	for _, v := range dig(all, "availableLocales", "full").([]any) {
-		full[v.(string)] = true
-	}
+	full := fullLocales()
 
 	parents := map[string]string{}
 	for k, v := range dig(readJSON(filepath.Join("cldr-core", "supplemental", "parentLocales.json"), true), "supplemental", "parentLocales", "parentLocale").(map[string]any) {
@@ -148,6 +154,15 @@ func selectLocales(av *availability) []string {
 	sort.Strings(r)
 	return r
 }
+
+// fullLocales are the locales cldr-json has data for.
+var fullLocales = sync.OnceValue(func() map[string]bool {
+	full := map[string]bool{}
+	for _, v := range dig(readJSON(filepath.Join("cldr-core", "availableLocales.json"), true), "availableLocales", "full").([]any) {
+		full[v.(string)] = true
+	}
+	return full
+})
 
 // dataChain returns the cldr-json locales tag inherits from, the most specific
 // one first. It mirrors what the runtime does (see locale.go).
@@ -314,6 +329,10 @@ func localeFileList(locales []string) (files []string) {
 	likely := likelySubtags()
 	for _, l := range locales {
 		for _, f := range localeFiles {
+			if l == "und" && f[1] == "territories" {
+				continue // root names no territories
+			}
+
 			files = append(files, f[0]+"/main/"+l+"/"+f[1]+".json")
 		}
 		if c := localeCalendar(l, likely); calendars[c] != "" {
@@ -433,11 +452,16 @@ func (g *gen) build(av *availability) {
 	}
 	for _, l := range g.locales {
 		c := &g.chunks[index[l]]
-		chain := dataChain(l, full, parents, nil)
-		if len(chain) > 1 {
+		switch chain := dataChain(l, full, parents, nil); {
+		case l == "und":
+			// nop
+		case len(chain) > 1:
 			c.parent = index[chain[1]]
+		default:
+			c.parent = index["und"]
 		}
 	}
+	g.followChromium(loadChromiumICU(*icu))
 	g.applyBrowserOverrides(index)
 	for i := range g.chunks {
 		c := &g.chunks[i]
@@ -636,7 +660,10 @@ func localeData(l string) map[string]string {
 	// The names of the countries time zones are in, for names like
 	// "Japan Time".
 	regions := zoneRegions()
-	territories := main("cldr-localenames-full", "territories", "localeDisplayNames", "territories").(map[string]any)
+	territories := map[string]any{}
+	if l != "und" { // root names no territories
+		territories = main("cldr-localenames-full", "territories", "localeDisplayNames", "territories").(map[string]any)
+	}
 	for code, v := range territories {
 		if regions[code] {
 			kv["t/"+code] = v.(string)

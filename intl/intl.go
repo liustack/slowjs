@@ -63,7 +63,10 @@
 //   - A calendar other than the ones above formats as Gregorian.
 //
 // Where Chromium's ICU data departs from CLDR 48.2, the data here follows
-// Chromium: a zone's city is the one its id spells ("Sao Paulo"), Hong Kong
+// Chromium. A language Chromium ships no dates or numbers for formats them
+// with CLDR root's data, as az and kk do ("2026 M01 5, Mon"), and one it ships
+// no currency, zone, unit or region names for takes them from English. A
+// zone's city is the one its id spells ("Sao Paulo"), Hong Kong
 // and Macao go by their short names, and the zones of the British Isles are
 // never "Greenwich Mean Time". fr-CH groups digits with a narrow no-break
 // space (CLDR 48.1's), ko calls the North American zones 북미 (North
@@ -72,7 +75,7 @@
 //
 // # Cost
 //
-// The locale data is embedded in the binary, about 1.6 MB, and stays in its
+// The locale data is embedded in the binary, about 1.5 MB, and stays in its
 // read only data. A language is decoded into the Go heap the first time a
 // formatter needs it, once per process, and every VM shares it: 100 to 180
 // KB per language, and about 1 MB for the index and the data all languages
