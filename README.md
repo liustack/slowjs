@@ -26,9 +26,16 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   React (one error per JSX element), runs much faster: a server render of a
   small React app with that build went from about 240 ms to about 10 ms at
   the median, on darwin/arm64.
-  Once read, the stack is a plain string property, and the error has the
-  same shape and size as when the stack was formatted at once. Assigning or
-  defining `stack` replaces it without formatting it. What is different:
+  `stack` is an ordinary writable, configurable data property, so the error
+  has the same shape as one whose stack was formatted at once, and assigning,
+  defining or deleting `stack` costs no more than it does for any string.
+  Once read, it is the string. What is different:
+  - While the stack is pending, the value of `stack` is an internal object
+    that holds the recorded frames, so a pending error carries one extra
+    small object. A runtime that records its first lazy stack also registers
+    a private class for these objects, a fixed one-time cost of about a
+    kilobyte. No code can observe the internal object: every path that reads
+    a property value formats the stack first.
   - Until its stack is read or the error is freed, an error keeps the
     bytecode of every function on its stack alive. Most of these functions
     stay alive anyway. A function that runs once and makes an error that
@@ -45,14 +52,20 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     keeps from when it loaded does not keep that code alive. So are errors
     that cannot take new properties and errors that already have a `stack`.
   - If there is no memory left when `stack` is first read, the read throws
-    an out of memory error and the stack stays as it was, so a later read
-    can give the text.
-  - While a stack is pending, the error has a shape of its own kind, one
-    for each kind of error object, not one per error.
-    `JS_ComputeMemoryUsage` counts pending stacks and the names they hold.
+    an out of memory error and the stack stays pending, so a later read can
+    give the text. Reading the property descriptor, and freezing or sealing
+    the error, read the value the same way, so they too format the stack and
+    can throw when memory is short. Printing an error (`console.log`) reads
+    it without throwing: out of memory there leaves the error with no stack
+    and no pending exception.
+  - If the text cannot be formatted when a stack is built at once (only a
+    function name that needs more memory to convert to UTF-8 can cause this),
+    `stack` becomes `null`, in Go and in the C patch alike. The upstream
+    engine instead keeps a half-formatted stack with the name shown as
+    `<anonymous>`.
 
   Tests: `errorstack_test.go`, `errorstack_unix_test.go`,
-  `lib/backtrace_test.go`.
+  `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -143,19 +156,20 @@ Conflicts to expect:
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
   need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
   read the new upstream code: QuickJS may have fixed the leak itself. If it
-  reports that `_build_backtrace`, `_get_prop_string`, `JS_AutoInitProperty`,
-  `JS_SetPropertyInternal`, `JS_DefineProperty` or `JS_ComputeMemoryUsage`
+  reports that `_build_backtrace`, `_get_prop_string`,
+  `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
+  `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
   and must change with it.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
-  QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`,
-  `js_backtrace_build` and the `js_backtrace_*` calls in
-  `JS_AutoInitProperty`, `JS_SetPropertyInternal`, `JS_DefineProperty`,
-  `get_prop_string` and `JS_ComputeMemoryUsage`). After a regeneration that
-  includes them, `lib/backtrace.go` and its wiring in `fixlib` are no longer
-  needed.
+  QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`, the
+  marker class, `js_backtrace_build` and the `js_backtrace_*` calls in
+  `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
+  `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`, `js_print_object`
+  and `JS_ComputeMemoryUsage`). After a regeneration that includes them,
+  `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
