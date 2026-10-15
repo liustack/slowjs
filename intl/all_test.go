@@ -444,7 +444,7 @@ func TestErrors(t *testing.T) {
 }
 
 // TestDefaultTimeZone checks that a formatter with no timeZone option uses the
-// host zone, the one resolvedOptions() reports.
+// zone the TimeZone option set, the one resolvedOptions() reports.
 func TestDefaultTimeZone(t *testing.T) {
 	vm := newVM(t, TimeZone("America/New_York"))
 	evalTests(t, vm, [][2]string{
@@ -454,13 +454,25 @@ func TestDefaultTimeZone(t *testing.T) {
 	})
 }
 
-func TestLocalTimeZone(t *testing.T) {
-	tz := localTimeZone()
-	if _, _, err := timeZone(tz); err != nil {
-		t.Errorf("localTimeZone returned %q, which does not resolve: %v", tz, err)
+// TestUTCByDefault checks that without the TimeZone option the zone is UTC
+// whatever the host's is: a server renders the same page wherever it runs.
+func TestUTCByDefault(t *testing.T) {
+	t.Setenv("TZ", "Asia/Tokyo")
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	t.Logf("localTimeZone() = %q", tz)
+	defer vm.Close()
+
+	if err := Register(vm); err != nil {
+		t.Fatal(err)
+	}
+
+	evalTests(t, vm, [][2]string{
+		{`new Intl.DateTimeFormat().resolvedOptions().timeZone`, "UTC"},
+		{`new Date(0).toLocaleString('en-US')`, "1/1/1970, 12:00:00 AM"},
+	})
 }
 
 // TestRegisterPerRealm covers what an embedder giving every document its own

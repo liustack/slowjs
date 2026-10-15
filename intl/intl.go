@@ -74,9 +74,9 @@
 // links the library and takes the choice away from the ones that would rather
 // use the host's database, so this package does not import it. The default
 // zone, which is also what
-// Intl.DateTimeFormat().resolvedOptions().timeZone reports, is recovered from
-// $TZ, /etc/localtime or /etc/timezone - Go's time.Local does not carry its
-// name. [TimeZone] sets it explicitly when none of those can answer.
+// Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
+// [TimeZone] sets another. The host's zone is never consulted, so a page
+// renders the same on every machine.
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
@@ -119,8 +119,8 @@ type Option func(*config)
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports. The name must be
 // an IANA identifier like "Europe/Prague", "UTC", or an offset like "+05:30".
 //
-// Without it the host zone is used, recovered from $TZ, /etc/localtime or
-// /etc/timezone. Set it where those cannot answer, notably on Windows.
+// Without it the zone is UTC. The host's zone is never read: a server would
+// otherwise render a page differently depending on where it runs.
 func TimeZone(name string) Option { return func(c *config) { c.timeZone = name } }
 
 // Register installs Intl on vm's global object and replaces the toLocale*
@@ -150,17 +150,15 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	for _, o := range opts {
 		o(c)
 	}
-	switch c.timeZone {
-	case "":
-		c.timeZone = localTimeZone()
-	default:
-		name, _, err := timeZone(c.timeZone)
-		if err != nil {
-			return err
-		}
-
-		c.timeZone = name
+	if c.timeZone == "" {
+		c.timeZone = "UTC"
 	}
+	name, _, err := timeZone(c.timeZone)
+	if err != nil {
+		return err
+	}
+
+	c.timeZone = name
 	for i, fn := range []quickjs.HostFunc{
 		c.dtfResolve,
 		c.dtfFormat,
@@ -174,7 +172,7 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 			return err
 		}
 	}
-	_, err := vm.Eval(shim, quickjs.EvalGlobal)
+	_, err = vm.Eval(shim, quickjs.EvalGlobal)
 	return err
 }
 

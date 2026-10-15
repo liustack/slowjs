@@ -6,7 +6,6 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -194,41 +193,4 @@ func gmtOffset(secs int, short bool) string {
 	}
 
 	return fmt.Sprintf("GMT%s%02d:%02d", sign, h, m)
-}
-
-// localTimeZone returns the host's IANA time zone name.
-//
-// Go does not expose it: time.Local carries the zone data but its name is the
-// literal "Local" unless $TZ named it, so the zone has to be recovered from the
-// same places the C library looks. When none of them answers, the current UTC
-// offset is reported instead. That is an ECMA-402 offset time zone identifier,
-// so it stays a valid answer for a caller that feeds it back into
-// Intl.DateTimeFormat - it merely loses future DST transitions.
-func localTimeZone() string {
-	if s := os.Getenv("TZ"); s != "" {
-		if name, _, err := timeZone(strings.TrimPrefix(s, ":")); err == nil {
-			return name
-		}
-	}
-
-	if s, err := os.Readlink("/etc/localtime"); err == nil {
-		if _, after, ok := strings.Cut(s, "zoneinfo/"); ok {
-			if name, _, err := timeZone(after); err == nil {
-				return name
-			}
-		}
-	}
-
-	if b, err := os.ReadFile("/etc/timezone"); err == nil {
-		if name, _, err := timeZone(strings.TrimSpace(string(b))); err == nil {
-			return name
-		}
-	}
-
-	_, secs := time.Now().In(time.Local).Zone()
-	if secs == 0 {
-		return "UTC"
-	}
-
-	return offsetName(secs)
 }
