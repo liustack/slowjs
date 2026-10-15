@@ -23,49 +23,80 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
   many errors and reads few of their stacks, such as the development build of
-  React (one error per JSX element), runs much faster: a server render of a
-  small React app with that build went from about 240 ms to about 10 ms at
-  the median, on darwin/arm64.
+  React (one error per JSX element), runs much faster. On darwin/arm64, a
+  server render of a 100-item React component took 11.2 ms at the median
+  with the development build, against 42.1 ms before. The production build
+  of the same component, the production build of a four-route app and a
+  JSON and array benchmark stayed within 1% of before. Top-level code that
+  makes 500 errors per run took 1.8 ms instead of 3.2 ms.
   `stack` is an ordinary writable, configurable data property, so the error
-  has the same shape as one whose stack was formatted at once, and assigning,
-  defining or deleting `stack` costs no more than it does for any string.
-  Once read, it is the string. What is different:
+  has the same shape as one whose stack was formatted at once. Once read, it
+  is the string. What is different:
   - While the stack is pending, the value of `stack` is an internal object
-    that holds the recorded frames, so a pending error carries one extra
-    small object. A runtime that records its first lazy stack also registers
-    a private class for these objects, a fixed one-time cost of about a
-    kilobyte. No code can observe the internal object: every path that reads
-    a property value formats the stack first.
+    that holds the recorded frames. A pending error so carries three extra
+    small allocations: that object, its property list and the frame record
+    (about 150 bytes for a short stack). Assigning, defining or deleting
+    `stack` frees them like any other value. The internal object belongs to
+    a private class. The C patch makes it a built-in class of every runtime.
+    In Go, its class ID is taken when the package loads, and a runtime
+    registers the class the first time it records a lazy stack, a one-time
+    cost of about a kilobyte.
+  - No code sees the internal object. Everything that reads the value of
+    `stack` formats it first: property reads in scripts and through the C
+    API, `Object.getOwnPropertyDescriptor(s)` and `JS_GetOwnProperty`,
+    redefining a frozen `stack` with a value (the engine compares the old
+    and the new value), and the checks a proxy makes after a `get` or `set`
+    trap on a frozen `stack`. What only looks at keys or attributes leaves
+    it pending: `Object.keys`, `Object.freeze`, `Object.seal`,
+    `Object.isFrozen`, `Object.isSealed`, `propertyIsEnumerable`,
+    `__lookupGetter__`, `__lookupSetter__`, and the proxy `has`,
+    `deleteProperty` and `ownKeys` checks. `stack` is not enumerable, so
+    spreading, `Object.assign` and `Object.entries` skip it.
+  - Reading a property named `stack` whose value is an object takes the
+    slow path of the interpreter, which is where the stack gets formatted.
+    Other property reads do not change. In a loop of 160,000 reads,
+    `o.x` took 1% less time than before, `o.stack` holding a number 5%
+    more, `o[k]` 1% more, and an inherited `o.x` 9% less. A read takes
+    about 19 ns there, so no change is more than 2 ns per read.
   - Until its stack is read or the error is freed, an error keeps the
-    bytecode of every function on its stack alive. Most of these functions
-    stay alive anyway. A function that runs once and makes an error that
-    something keeps is the exception, together with every function it
-    defines: one kept error from a function that defines 2,000 others kept
-    1.30 MB where 0.30 MB stayed before. Keeping only the file name and the
-    line table would need either a copy of the line table for every frame
-    of every error, which adds work and memory to every error made, the
-    case this change is for, or a reference count of its own for the line
-    table, which changes a struct of the engine and so needs a regeneration
-    of `lib/`.
+    bytecode of every function on its stack alive, and with it the realm
+    (global object) each function was compiled in. Most of these stay alive
+    anyway. A function that runs once and makes an error that something
+    keeps is the exception, together with every function it defines: one
+    kept error from a function that defines 2,000 others kept 1.30 MB where
+    0.30 MB stayed before. An error made in one realm and kept by another
+    keeps the first realm and everything its globals hold: with a 4 MiB
+    `ArrayBuffer` in the first realm, the runtime used 4.31 MB where
+    67 KB stayed before, until the stack was read. Keeping only the file
+    name and the line table would need either a copy of the line table for
+    every frame of every error, which adds work and memory to every error
+    made, the case this change is for, or a reference count of its own for
+    the line table, which changes a struct of the engine and so needs a
+    regeneration of `lib/`.
+  - Reading a stack frees its three allocations, but the holes they leave
+    between objects that are still alive are reused only by later
+    allocations of the same sizes. After making 10,000 errors, keeping them
+    and reading every stack, the allocator held 3.60 MB, against 2.06 MB
+    when the stacks were formatted at once.
   - Errors made while top-level code (a script, an eval or a module body)
     is on the stack are still formatted at once, so that an error a library
     keeps from when it loaded does not keep that code alive. So are errors
     that cannot take new properties and errors that already have a `stack`.
   - If there is no memory left when `stack` is first read, the read throws
     an out of memory error and the stack stays pending, so a later read can
-    give the text. Reading the property descriptor, and freezing or sealing
-    the error, read the value the same way, so they too format the stack and
-    can throw when memory is short. Printing an error (`console.log`) reads
-    it without throwing: out of memory there leaves the error with no stack
-    and no pending exception.
+    give the text. Reading the property descriptor formats the stack the
+    same way and so can throw too. Printing an error (`console.log`) never
+    throws and never leaves a pending exception: out of memory there prints
+    the error without its stack, and a later read can still give it.
   - If the text cannot be formatted when a stack is built at once (only a
     function name that needs more memory to convert to UTF-8 can cause this),
     `stack` becomes `null`, in Go and in the C patch alike. The upstream
     engine instead keeps a half-formatted stack with the name shown as
-    `<anonymous>`.
+    `<anonymous>` and leaves an exception pending.
 
   Tests: `errorstack_test.go`, `errorstack_unix_test.go`,
-  `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`.
+  `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`,
+  `lib/backtrace_round3_test.go`, `internal/fixlib/main_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -162,13 +193,22 @@ Conflicts to expect:
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
   and must change with it.
+  `fixlib` also keeps a list (`slotSites`) of every engine function that
+  reaches a property value, with how often it does. A pending `stack` must
+  be formatted before any of them hands the value on. If a release adds such
+  a function or changes how often one reaches a value, `fixlib` stops and
+  names it: check whether it can see a pending `stack`, wire it to
+  `lib/backtrace.go` if so, and update the list. It does the same for any
+  new property lookup in the interpreter loop (`JS_CallInternal`).
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`, the
-  marker class, `js_backtrace_build` and the `js_backtrace_*` calls in
-  `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
-  `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`, `js_print_object`
-  and `JS_ComputeMemoryUsage`). After a regeneration that includes them,
+  built-in `JS_CLASS_BACKTRACE` class, `js_backtrace_build` and the
+  `js_backtrace_*` calls in `JS_GetPropertyInternal`,
+  `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
+  `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`,
+  `js_print_object`, `JS_ComputeMemoryUsage`, and the callers that only
+  need the attributes of a property (`js_get_own_property_flags`)). After a regeneration that includes them,
   `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
@@ -205,6 +245,7 @@ go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
+go test ./internal/fixlib                                # fixlib notices new reads of property values
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
 done
