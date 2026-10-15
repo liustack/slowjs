@@ -282,6 +282,9 @@ func TestChromiumFallback(t *testing.T) {
 		{`new Intl.NumberFormat('kk').format(1234567.891)`, "1,234,567.891"},
 		{`new Intl.NumberFormat('ak', {style: 'currency', currency: 'GHS', currencyDisplay: 'name'}).format(2)`, "2.00 Ghanaian cedis"},
 		{`new Intl.NumberFormat('bs-Cyrl', {style: 'currency', currency: 'BAM'}).format(2)`, "2,00 BAM"},
+		// oc-ES has no currency names in Chromium: they are English, plural
+		// names too, which CLDR has none of for oc.
+		{`new Intl.NumberFormat('oc-ES', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2.00 US dollars"},
 		{`new Intl.DateTimeFormat('bs-Cyrl', {dateStyle: 'full', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "понедјељак, 05. јануар 2026."},
 		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'long', calendar: 'gregory', timeZone: 'UTC'}).format(0)`, "Thu"},
 		{`new Intl.DateTimeFormat('ckb-IR', {dateStyle: 'medium', timeZone: 'UTC'}).format(0)`, "AP 1348 بەفرانبار 11"},

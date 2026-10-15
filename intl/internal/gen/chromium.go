@@ -505,6 +505,23 @@ func (g *gen) followChromium(c *chromiumICU) {
 				own[sec] = append(own[sec], k)
 			}
 		}
+		// A tree in which Chromium has no bundle of the locale's language
+		// comes whole from root or the default locale, along with what
+		// CLDR has nothing of for the locale: oc-ES takes the plural names
+		// of currencies from English.
+		lineage := map[string]bool{}
+		for j := i; j >= 0; j = g.chunks[j].parent {
+			lineage[g.chunks[j].name] = true
+		}
+		for _, tree := range icuTrees {
+			if l := g.cldrLocale(c.chain(tree, id)[0]); !lineage[l] {
+				for sec := range sourceKV(l) {
+					if _, ok := own[sec]; !ok && sec.tree == tree {
+						own[sec] = nil
+					}
+				}
+			}
+		}
 		for sec, keys := range own {
 			src, alias := c.source(sec.tree, id, sec.path)
 			if alias != "" {
