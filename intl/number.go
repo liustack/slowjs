@@ -12,7 +12,8 @@ import (
 
 // numberFormat is a resolved Intl.NumberFormat. Its json form is both what
 // resolvedOptions() reports and the state handed back to the host on every
-// format call, so the field order is the order ECMA-402 lists them in. Keys
+// format call, so the field order is the order ECMA-402's resolvedOptions table
+// lists them in, which is also the order a browser reports them in. Keys
 // starting with an underscore are internal and the shim strips them before
 // handing the object to javascript.
 type numberFormat struct {
@@ -25,18 +26,18 @@ type numberFormat struct {
 	Unit                     string `json:"unit,omitempty"`
 	UnitDisplay              string `json:"unitDisplay,omitempty"`
 	MinimumIntegerDigits     int    `json:"minimumIntegerDigits"`
-	MinimumSignificantDigits *int   `json:"minimumSignificantDigits,omitempty"`
-	MaximumSignificantDigits *int   `json:"maximumSignificantDigits,omitempty"`
 	MinimumFractionDigits    *int   `json:"minimumFractionDigits,omitempty"`
 	MaximumFractionDigits    *int   `json:"maximumFractionDigits,omitempty"`
+	MinimumSignificantDigits *int   `json:"minimumSignificantDigits,omitempty"`
+	MaximumSignificantDigits *int   `json:"maximumSignificantDigits,omitempty"`
 	UseGrouping              any    `json:"useGrouping"`
 	Notation                 string `json:"notation"`
 	CompactDisplay           string `json:"compactDisplay,omitempty"`
 	SignDisplay              string `json:"signDisplay"`
-	RoundingMode             string `json:"roundingMode"`
 	RoundingIncrement        int    `json:"roundingIncrement"`
-	TrailingZeroDisplay      string `json:"trailingZeroDisplay"`
+	RoundingMode             string `json:"roundingMode"`
 	RoundingPriority         string `json:"roundingPriority"`
+	TrailingZeroDisplay      string `json:"trailingZeroDisplay"`
 
 	// CompactRound records that no digit option was given for a compact
 	// formatter, which selects compact notation's own rounding: an integer,

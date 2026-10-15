@@ -324,8 +324,17 @@ func TestResolvedOptions(t *testing.T) {
 			`JSON.stringify(new Intl.NumberFormat('en-US').resolvedOptions())`,
 			`{"locale":"en-US","numberingSystem":"latn","style":"decimal","minimumIntegerDigits":1,` +
 				`"minimumFractionDigits":0,"maximumFractionDigits":3,"useGrouping":"auto",` +
-				`"notation":"standard","signDisplay":"auto","roundingMode":"halfExpand",` +
-				`"roundingIncrement":1,"trailingZeroDisplay":"auto","roundingPriority":"auto"}`,
+				`"notation":"standard","signDisplay":"auto","roundingIncrement":1,` +
+				`"roundingMode":"halfExpand","roundingPriority":"auto","trailingZeroDisplay":"auto"}`,
+		},
+		// ECMA-402 lists the fraction digits before the significant ones.
+		{
+			`JSON.stringify(new Intl.NumberFormat('en-US', {notation: 'compact'}).resolvedOptions())`,
+			`{"locale":"en-US","numberingSystem":"latn","style":"decimal","minimumIntegerDigits":1,` +
+				`"minimumFractionDigits":0,"maximumFractionDigits":0,"minimumSignificantDigits":1,` +
+				`"maximumSignificantDigits":2,"useGrouping":"min2","notation":"compact","compactDisplay":"short",` +
+				`"signDisplay":"auto","roundingIncrement":1,"roundingMode":"halfExpand",` +
+				`"roundingPriority":"morePrecision","trailingZeroDisplay":"auto"}`,
 		},
 		// No internal state leaks into the reported options.
 		{`Object.keys(new Intl.NumberFormat('en', {notation: 'compact'}).resolvedOptions()).filter(k => k[0] === '_').length`, "0"},
