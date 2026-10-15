@@ -18,6 +18,12 @@ package main
 // name the field (an accessor pair, a var_ref, an autoinit record).
 // "guard" is a call of a lib/backtrace.go helper with the slot, and
 // "early" marks a use that comes before the first guard of the function.
+// A slot pointer is followed through variables (=, := and var), cells,
+// arithmetic, call arguments and return values. Where it goes anywhere
+// else, that is a use too: "stored in" a place that is not a cell,
+// "offset" for arithmetic on a cell other than a constant step to the
+// next cell, "in an assignment (or declaration) of several results", or
+// "in" some other kind of expression.
 var slotSites = map[string]slotSite{
 	"XJS_ComputeMemoryUsage": {
 		"early slot compared=1 early slot read value=1 slot guard _js_backtrace_memory_usage=1",

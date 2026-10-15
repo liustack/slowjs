@@ -97,11 +97,12 @@ func TestAuditSlotsRejectsChanges(t *testing.T) {
 	if err := auditSlots(b); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct {
+	type auditCase struct {
 		name string
 		b    []byte
 		want []string
-	}{
+	}
+	cases := []auditCase{
 		{
 			// A new helper that reads the value of the slot it is given,
 			// whatever its parameter is called.
@@ -134,7 +135,28 @@ func TestAuditSlotsRejectsChanges(t *testing.T) {
 			append(append([]byte{}, b...), "\nfunc _new_reader(tls *libc.TLS, obj uintptr) TJSValue {\n\treturn *(*TJSValue)(unsafe.Pointer((*TJSObject)(unsafe.Pointer(obj)).Fprop + 16))\n}\n"...),
 			[]string{"_new_reader uses property slots and is not listed: slot read value=1"},
 		},
-	} {
+	}
+	cases = append(cases, auditCase{
+		// The slot pointer read from its cell through arithmetic on the
+		// cell's address.
+		"cell offset",
+		mutate(t, b, getPropHead, getPropSettle, "\t\t_ = (*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 56 + 0)))).Ftag\n"),
+		[]string{"XJS_GetPropertyInternal: uses changed", "cell offset=1"},
+	})
+	// The same read through a variable declared each way Go allows, in a
+	// listed function and in a new one.
+	for _, decl := range []string{"var q = ", "var q uintptr = ", "q := "} {
+		cases = append(cases, auditCase{
+			"declared with " + decl + "in a listed function",
+			mutate(t, b, getPropHead, getPropSettle, "\t\t"+decl+getPropSlot+"\n\t\t_ = (*TJSValue)(unsafe.Pointer(q)).Ftag\n"),
+			[]string{"XJS_GetPropertyInternal: uses changed", "early slot read value=1"},
+		}, auditCase{
+			"declared with " + decl + "in a new function",
+			append(append([]byte{}, b...), "\nfunc _new_reader(tls *libc.TLS, obj uintptr) TJSValue {\n\t"+decl+"(*TJSObject)(unsafe.Pointer(obj)).Fprop\n\treturn *(*TJSValue)(unsafe.Pointer(q))\n}\n"...),
+			[]string{"_new_reader uses property slots and is not listed: slot read value=1"},
+		})
+	}
+	for _, c := range cases {
 		err := auditSlots(c.b)
 		if err == nil {
 			t.Errorf("%s: no error", c.name)

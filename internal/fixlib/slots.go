@@ -20,7 +20,7 @@ import (
 var (
 	reSlotFind   = regexp.MustCompile(`\b_find_own_property1?\(`)
 	reFuncName   = regexp.MustCompile(`^func (\w+)`)
-	reDescLookup = regexp.MustCompile(`\b(?:_JS_GetOwnPropertyInternal|XJS_GetOwnProperty|_js_backtrace_own_(?:flags|frozen|define|desc))\(`)
+	reDescLookup = regexp.MustCompile(`\b(?:_JS_GetOwnPropertyInternal|XJS_GetOwnProperty|_js_backtrace_own_flags)\(`)
 )
 
 // slotSite is the expected use of property slots by one function and why
@@ -363,31 +363,45 @@ func (a *slotWalk) text(e ast.Node) string {
 func (a *slotWalk) propagate(n ast.Node) bool {
 	switch n := n.(type) {
 	case *ast.AssignStmt:
-		if len(n.Lhs) != len(n.Rhs) {
-			return true
+		a.bind(n.Lhs, n.Rhs)
+	case *ast.ValueSpec:
+		// var x = v and var x T = v bind like x := v.
+		lhs := make([]ast.Expr, len(n.Names))
+		for i, id := range n.Names {
+			lhs[i] = id
 		}
-		for i, rhs := range n.Rhs {
-			k := a.kind(rhs)
-			if k == kindNone {
-				continue
-			}
-			switch lhs := n.Lhs[i].(type) {
-			case *ast.Ident:
-				if a.vars[lhs.Name] < k {
-					a.vars[lhs.Name] = k
-				}
-			default:
-				if addr, typ, ok := a.load(lhs); ok && typ == "uintptr" && k == kindSlot && a.kind(addr) == kindNone {
-					a.cells[a.text(addr)] = true
-				}
-			}
-		}
+		a.bind(lhs, n.Values)
 	case *ast.CallExpr:
 		if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "_find_own_property" && len(n.Args) > 1 {
 			a.cells[a.text(n.Args[1])] = true
 		}
 	}
 	return true
+}
+
+// bind records the variables and cells that lhs = rhs makes slot or cell
+// pointers. An assignment of several results of one call binds nothing:
+// use reports a slot pointer there.
+func (a *slotWalk) bind(lhs, rhs []ast.Expr) {
+	if len(lhs) != len(rhs) {
+		return
+	}
+	for i, r := range rhs {
+		k := a.kind(r)
+		if k == kindNone {
+			continue
+		}
+		switch l := lhs[i].(type) {
+		case *ast.Ident:
+			if a.vars[l.Name] < k {
+				a.vars[l.Name] = k
+			}
+		default:
+			if addr, typ, ok := a.load(l); ok && typ == "uintptr" && k == kindSlot && a.kind(addr) == kindNone {
+				a.cells[a.text(addr)] = true
+			}
+		}
+	}
 }
 
 // kind tells whether e is a slot pointer or a cell pointer.
@@ -572,12 +586,22 @@ func (a *slotWalk) use(e ast.Expr, k slotKind, stack []ast.Node) {
 		a.uses[fmt.Sprintf("%s passed to %s", name, fn)]++
 	case *ast.BinaryExpr:
 		if k == kindCell && (p.Op == token.ADD || p.Op == token.SUB) {
-			return // the address of another stack cell
+			// bp+8 next to a cell at bp is another stack cell. Any other
+			// arithmetic on a cell is reported.
+			if l, ok := p.Y.(*ast.BasicLit); ok && p.X == e && l.Kind == token.INT && l.Value != "0" {
+				return
+			}
+			a.uses[fmt.Sprintf("%s offset", name)]++
+			return
 		}
 		a.uses[fmt.Sprintf("%s compared", name)]++
 	case *ast.AssignStmt:
 		for i, rhs := range p.Rhs {
-			if rhs == e && i < len(p.Lhs) {
+			if rhs == e && len(p.Lhs) != len(p.Rhs) {
+				a.uses[fmt.Sprintf("%s in an assignment of several results", name)]++
+				return
+			}
+			if rhs == e {
 				if _, ok := p.Lhs[i].(*ast.Ident); ok {
 					return // followed by propagate
 				}
@@ -589,8 +613,18 @@ func (a *slotWalk) use(e ast.Expr, k slotKind, stack []ast.Node) {
 			}
 		}
 		// e is assigned to: not a use.
-	case *ast.ValueSpec, *ast.IncDecStmt:
-		// a declaration or pointer arithmetic on a variable: not a use.
+	case *ast.ValueSpec:
+		for _, v := range p.Values {
+			if v == e {
+				if len(p.Names) != len(p.Values) {
+					a.uses[fmt.Sprintf("%s in a declaration of several results", name)]++
+				}
+				return // followed by propagate
+			}
+		}
+		// e is declared: not a use.
+	case *ast.IncDecStmt:
+		// pointer arithmetic on a variable: not a use.
 	case *ast.ReturnStmt:
 		if k == kindSlot {
 			a.ret = true
