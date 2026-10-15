@@ -66,25 +66,84 @@ func TestInterpreterRejectsUnknownLookup(t *testing.T) {
 	}
 }
 
-// A function that reaches property values and is not in slotSites, or that
-// reaches them more often than slotSites says, stops fixlib.
+// mutate inserts text before the first occurrence of at inside the
+// function whose head starts with head.
+func mutate(t *testing.T, b []byte, head, at, text string) []byte {
+	t.Helper()
+	i := bytes.Index(b, []byte("\n"+head))
+	if i < 0 {
+		t.Fatalf("no function %s", head)
+	}
+	j := bytes.Index(b[i:], []byte(at))
+	if j < 0 {
+		t.Fatalf("no %q in %s", at, head)
+	}
+	j += i
+	return append(append(append([]byte{}, b[:j]...), text...), b[j:]...)
+}
+
+// The settle in JS_GetPropertyInternal, and the slot it gets in the
+// darwin/arm64 file.
+const (
+	getPropHead   = "func XJS_GetPropertyInternal("
+	getPropSettle = "\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle("
+	getPropSlot   = "**(**uintptr)(__ccgo_up(bp + 56))"
+)
+
+// A change in how any function uses a property slot stops fixlib, whatever
+// the names of its variables and parameters are.
 func TestAuditSlotsRejectsChanges(t *testing.T) {
 	b := engineFile(t)
 	if err := auditSlots(b); err != nil {
 		t.Fatal(err)
 	}
-
-	added := append(append([]byte{}, b...), "\nfunc _new_reader(tls *libc.TLS, p uintptr) {\n\t_find_own_property(tls, 0, p, 0)\n}\n"...)
-	if err := auditSlots(added); err == nil || !strings.Contains(err.Error(), "_new_reader reaches property values and is not listed") {
-		t.Fatalf("new function: got %v", err)
-	}
-
-	body, err := funcBody(b, reGetPropString, "_get_prop_string")
-	if err != nil {
-		t.Fatal(err)
-	}
-	grown := bytes.Replace(b, body, append(body[:len(body)-2:len(body)-2], "\t_ = (*TJSObject)(unsafe.Pointer(p)).Fprop\n}\n"...), 1)
-	if err := auditSlots(grown); err == nil || !strings.Contains(err.Error(), "_get_prop_string: find, prop, own, pr are 2, 1, 0, 0") {
-		t.Fatalf("changed function: got %v", err)
+	for _, c := range []struct {
+		name string
+		b    []byte
+		want []string
+	}{
+		{
+			// A new helper that reads the value of the slot it is given,
+			// whatever its parameter is called.
+			"new helper",
+			append(mutate(t, b, getPropHead, getPropSettle, "\t\t_ = _fresh_slot_value(tls, "+getPropSlot+")\n"),
+				"\nfunc _fresh_slot_value(tls *libc.TLS, slot uintptr) TJSValue {\n\treturn *(*TJSValue)(unsafe.Pointer(slot))\n}\n"...),
+			[]string{"_fresh_slot_value uses property slots and is not listed: slot read value=1", "XJS_GetPropertyInternal: uses changed"},
+		},
+		{
+			// A read before the settle in a function that has one.
+			"read before the guard",
+			mutate(t, b, getPropHead, getPropSettle, "\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\treturn XDupValue(tls, ctx3, *(*TJSValue)(unsafe.Pointer("+getPropSlot+")))\n\t\t}\n"),
+			[]string{"XJS_GetPropertyInternal: uses changed", "early slot read value=1"},
+		},
+		{
+			// The same read through a variable and pointer arithmetic.
+			"read through a variable",
+			mutate(t, b, getPropHead, getPropSettle, "\t\tq := "+getPropSlot+" + 0\n\t\t_ = (*TJSValue)(unsafe.Pointer(q)).Ftag\n"),
+			[]string{"XJS_GetPropertyInternal: uses changed", "early slot read value=1"},
+		},
+		{
+			// A slot pointer kept somewhere the audit cannot follow.
+			"stored in a structure",
+			mutate(t, b, getPropHead, getPropSettle, "\t\t(*TJSObject)(unsafe.Pointer(p2)).Ffirst_weak_ref = "+getPropSlot+"\n"),
+			[]string{"XJS_GetPropertyInternal: uses changed", "early slot stored in (*TJSObject)(unsafe.Pointer(p2)).Ffirst_weak_ref=1"},
+		},
+		{
+			// A new function that reads the prop array of an object.
+			"new reader",
+			append(append([]byte{}, b...), "\nfunc _new_reader(tls *libc.TLS, obj uintptr) TJSValue {\n\treturn *(*TJSValue)(unsafe.Pointer((*TJSObject)(unsafe.Pointer(obj)).Fprop + 16))\n}\n"...),
+			[]string{"_new_reader uses property slots and is not listed: slot read value=1"},
+		},
+	} {
+		err := auditSlots(c.b)
+		if err == nil {
+			t.Errorf("%s: no error", c.name)
+			continue
+		}
+		for _, w := range c.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%s: error does not say %q:\n%v", c.name, w, err)
+			}
+		}
 	}
 }

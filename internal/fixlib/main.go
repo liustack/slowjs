@@ -37,7 +37,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -48,6 +47,7 @@ const (
 
 var (
 	check = flag.Bool("check", false, "report missing changes without writing files")
+	slots = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -56,6 +56,13 @@ var (
 
 func main() {
 	flag.Parse()
+	if *slots {
+		if err := printSlots(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
+			fmt.Fprintln(os.Stderr, "fixlib:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	missing, err := run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fixlib:", err)
@@ -276,9 +283,9 @@ func ccgoUp(arg string) string {
 //     prints a placeholder for a marker instead of the marker object.
 //   - XJS_ComputeMemoryUsage counts the record of a pending stack.
 //
-// auditSlots then checks that the functions that can reach a property value
-// are the ones slotSites lists, so that new code upstream that reads the
-// value of 'stack' in a new way cannot go unnoticed. At the end it adds
+// auditSlots then checks every use of a property slot against slotSites
+// (see slots.go), so that new or changed code upstream that uses a slot
+// stops fixlib until someone has reviewed it. At the end it adds
 // _js_backtrace_prop_flags, _js_backtrace_has_debug,
 // _js_backtrace_uncatchable and _js_backtrace_raw_dump, with expressions
 // copied from the generated code, as the bit fields they read differ
@@ -445,8 +452,10 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		b = bytes.Replace(b, body, fixed, 1)
 	}
 
-	if err := auditSlots(b); err != nil {
-		return nil, err
+	if !*slots {
+		if err := auditSlots(b); err != nil {
+			return nil, err
+		}
 	}
 
 	uncatchable := reUncatchable.FindSubmatch(b)
@@ -474,165 +483,6 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	out.WriteString("\n")
 	out.Write(bytes.TrimPrefix(formatted, []byte("package p\n")))
 	return out.Bytes(), nil
-}
-
-// slotSites lists every function of the generated engine that can reach the
-// value of an own property, with how often it calls _find_own_property or
-// _find_own_property1 (find), touches an object's property array (prop),
-// calls JS_GetOwnPropertyInternal, JS_GetOwnProperty or
-// _js_backtrace_own_flags, the definitions included (own), and whether it
-// takes a property pointer named pr (pr). A pending stack is a marker object
-// in the value of 'stack', so each of these must format it before handing
-// the value on, or have a reason not to. fixlib checks every generated file
-// against this list, so that a function upstream adds or changes, which may
-// read the value of 'stack' in a new way, fails the check until someone has
-// looked at it and updated the list.
-var slotSites = map[string]slotSite{
-	"_resize_properties":                       {0, 2, 0, 0, "grows the property array"},
-	"_compact_properties":                      {0, 3, 0, 0, "moves values to a smaller array"},
-	"_JS_NewObjectFromShape":                   {0, 5, 0, 0, "sets up the values of a new object"},
-	"_js_autoinit_get_realm":                   {0, 0, 0, 1, "autoinit properties only"},
-	"_js_autoinit_get_id":                      {0, 0, 0, 1, "autoinit properties only"},
-	"_js_autoinit_free":                        {0, 0, 0, 1, "autoinit properties only"},
-	"_js_autoinit_mark":                        {0, 0, 0, 1, "autoinit properties only"},
-	"_free_property":                           {0, 0, 0, 1, "frees a value: the marker's class frees the record"},
-	"_find_own_property1":                      {1, 0, 0, 0, "the lookup itself"},
-	"_find_own_property":                       {1, 1, 0, 0, "the lookup itself"},
-	"_free_object":                             {0, 3, 0, 0, "frees the values"},
-	"_mark_children":                           {0, 1, 0, 0, "marks the values: the marker's class marks the bytecode"},
-	"XJS_ComputeMemoryUsage":                   {0, 2, 0, 0, "sizes the values: hooked, counts the record"},
-	"_get_prop_string":                         {2, 0, 0, 0, "native read for a print: hooked, formats without leaving an exception"},
-	"_is_backtrace_needed":                     {1, 0, 0, 0, "whether 'stack' exists"},
-	"_JS_AutoInitProperty":                     {0, 0, 0, 1, "autoinit properties only"},
-	"XJS_GetPropertyInternal":                  {1, 0, 0, 0, "[[Get]]: hooked, formats first"},
-	"_JS_DefinePrivateField":                   {1, 0, 0, 0, "private fields, never 'stack'"},
-	"_JS_GetPrivateField":                      {1, 0, 0, 0, "private fields, never 'stack'"},
-	"_JS_SetPrivateField":                      {1, 0, 0, 0, "private fields, never 'stack'"},
-	"_JS_AddBrand":                             {2, 0, 0, 0, "private brands, never 'stack'"},
-	"_JS_CheckBrand":                           {2, 0, 0, 0, "private brands, never 'stack'"},
-	"_JS_GetOwnPropertyNamesInternal":          {0, 1, 1, 0, "names and enumerability: attributes only"},
-	"_JS_GetOwnPropertyInternal":               {1, 0, 1, 0, "descriptor: hooked, formats first"},
-	"XJS_GetOwnProperty":                       {0, 0, 2, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"XJS_HasProperty":                          {0, 0, 1, 0, "existence only"},
-	"_add_property":                            {0, 4, 0, 0, "adds a property"},
-	"_remove_global_object_property":           {0, 0, 0, 1, "global variables only"},
-	"_delete_property":                         {0, 1, 0, 0, "frees the value"},
-	"_set_array_length":                        {0, 3, 0, 0, "array length only"},
-	"_add_fast_array_element":                  {0, 3, 0, 0, "array length only"},
-	"_js_allocate_fast_array":                  {0, 1, 0, 0, "array length only"},
-	"_js_create_array":                         {0, 1, 0, 0, "array length only"},
-	"_js_create_array_free":                    {0, 1, 0, 0, "array length only"},
-	"XJS_SetPropertyInternal":                  {2, 0, 1, 0, "replaces the value with set_value: attributes only"},
-	"_JS_CreateProperty":                       {1, 1, 0, 0, "adds a property, array length only"},
-	"XJS_DefineProperty":                       {2, 0, 0, 0, "replaces the value: hooked, formats before SameValue"},
-	"_JS_DefineAutoInitProperty":               {1, 0, 0, 0, "adds an autoinit property"},
-	"_js_object_has_name":                      {1, 0, 0, 0, "'name' only"},
-	"_JS_CheckDefineGlobalVar":                 {2, 0, 0, 0, "global variables only"},
-	"_JS_GetGlobalVarRef":                      {1, 0, 0, 0, "global variables only"},
-	"_JS_DeleteGlobalVar":                      {1, 0, 0, 0, "global variables only"},
-	"_udiv1norm":                               {0, 0, 0, 1, "big number code, pr is not a property"},
-	"_js_print_array_get_length":               {1, 0, 0, 0, "'length' only"},
-	"_js_print_object":                         {0, 1, 0, 0, "prints the values: hooked, a placeholder for the marker"},
-	"_js_operator_private_in":                  {1, 0, 0, 0, "private brands, never 'stack'"},
-	"_js_for_in_next":                          {0, 0, 2, 0, "existence only"},
-	"_JS_CopyDataProperties":                   {0, 0, 2, 0, "attributes only, values read by JS_GetProperty"},
-	"_js_global_object_get_uninitialized_var":  {1, 0, 0, 0, "global variables only"},
-	"_js_global_object_find_uninitialized_var": {1, 0, 0, 0, "global variables only"},
-	"_js_closure_define_global_var":            {3, 0, 0, 0, "global variables only"},
-	"_js_closure_global_var":                   {2, 0, 0, 0, "global variables only"},
-	"_JS_CallInternal":                         {4, 3, 0, 0, "inline reads hooked (see fixInterpreter), put_field replaces with set_value, array length"},
-	"_seal_template_obj":                       {1, 0, 0, 0, "'length' attributes only"},
-	"_js_module_ns_has":                        {1, 0, 0, 0, "module namespaces only"},
-	"_JS_WriteArray":                           {2, 0, 0, 0, "arrays and template objects only"},
-	"_JS_WriteObjectTag":                       {0, 1, 0, 0, "plain objects only, an Error is never written"},
-	"_js_object_getOwnPropertyDescriptor":      {0, 0, 1, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"_JS_GetOwnPropertyNames2":                 {0, 0, 1, 0, "attributes only, values read by JS_GetProperty"},
-	"_js_object_hasOwnProperty":                {0, 0, 1, 0, "existence only"},
-	"_js_object_hasOwn":                        {0, 0, 1, 0, "existence only"},
-	"_js_object_seal":                          {0, 0, 1, 0, "attributes only"},
-	"_js_object_isSealed":                      {0, 0, 1, 0, "attributes only"},
-	"_js_object_propertyIsEnumerable":          {0, 0, 1, 0, "attributes only"},
-	"_js_object___lookupGetter__":              {0, 0, 1, 0, "attributes and accessors only"},
-	"_js_function_bind":                        {0, 0, 1, 0, "existence of 'length' only"},
-	"_js_array_push":                           {0, 3, 0, 0, "array length only"},
-	"_js_iterator_proto_set_toStringTag":       {0, 0, 1, 0, "existence only"},
-	"_js_regexp_get_lastIndex":                 {0, 3, 0, 0, "RegExp lastIndex only"},
-	"_js_regexp_set_lastIndex":                 {0, 2, 0, 0, "RegExp lastIndex only"},
-	"_find_property_regexp":                    {1, 0, 0, 0, "RegExp properties only"},
-	"_js_is_standard_regexp":                   {1, 0, 0, 0, "RegExp properties only"},
-	"_json_parse_record_init_obj":              {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_parse_record_init_array":            {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_parse_record_init_primitive":        {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_parse_record_add":                   {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_parse_record_find":                  {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_free_parse_record":                  {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_json_parse_value":                        {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"XJS_ParseJSON3":                           {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_internalize_json_property":               {0, 0, 0, 1, "JSON parse records, pr is not a property"},
-	"_js_proxy_has":                            {0, 0, 1, 0, "attributes only"},
-	"_js_proxy_get":                            {0, 0, 1, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"_js_proxy_set":                            {0, 0, 1, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"_js_proxy_get_own_property":               {0, 0, 2, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"_js_proxy_define_own_property":            {0, 0, 1, 0, "descriptor through JS_GetOwnPropertyInternal"},
-	"_js_proxy_delete_property":                {0, 0, 1, 0, "attributes only"},
-	"_js_proxy_get_own_property_names":         {0, 0, 1, 0, "attributes only"},
-	"_udiv1norm1":                              {0, 0, 0, 1, "big number code, pr is not a property"},
-}
-
-type slotSite struct {
-	find, prop, own, pr int
-	why                 string
-}
-
-var (
-	reSlotFind = regexp.MustCompile(`\b_find_own_property1?\(`)
-	reSlotProp = regexp.MustCompile(`\.Fprop\b`)
-	reSlotOwn  = regexp.MustCompile(`\b(?:_JS_GetOwnPropertyInternal|XJS_GetOwnProperty|_js_backtrace_own_flags)\(`)
-	reSlotPr   = regexp.MustCompile(`^func \w+\([^)]*\bpr\d* uintptr`)
-	reFuncName = regexp.MustCompile(`^func (\w+)`)
-)
-
-// auditSlots checks b against slotSites.
-func auditSlots(b []byte) error {
-	seen := map[string]bool{}
-	var problems []string
-	for _, fn := range bytes.Split(b, []byte("\nfunc "))[1:] {
-		fn = append([]byte("func "), fn...)
-		m := reFuncName.FindSubmatch(fn)
-		if m == nil {
-			continue
-		}
-		name := string(m[1])
-		if strings.HasPrefix(name, "_js_backtrace_") {
-			continue // the helpers fixlib adds
-		}
-		got := slotSite{find: len(reSlotFind.FindAll(fn, -1)), prop: len(reSlotProp.FindAll(fn, -1)), own: len(reSlotOwn.FindAll(fn, -1))}
-		if reSlotPr.Match(fn) {
-			got.pr = 1
-		}
-		want, ok := slotSites[name]
-		if !ok {
-			if got != (slotSite{}) {
-				problems = append(problems, fmt.Sprintf("%s reaches property values and is not listed", name))
-			}
-			continue
-		}
-		seen[name] = true
-		want.why = ""
-		if got != want {
-			problems = append(problems, fmt.Sprintf("%s: find, prop, own, pr are %d, %d, %d, %d, the list has %d, %d, %d, %d", name, got.find, got.prop, got.own, got.pr, want.find, want.prop, want.own, want.pr))
-		}
-	}
-	for name := range slotSites {
-		if !seen[name] {
-			problems = append(problems, fmt.Sprintf("%s is listed but not found", name))
-		}
-	}
-	if len(problems) != 0 {
-		sort.Strings(problems)
-		return fmt.Errorf("property value access changed, review each for the pending stack and update slotSites:\n\t%s", strings.Join(problems, "\n\t"))
-	}
-	return nil
 }
 
 // fixInterpreter puts a guard in each inline property read of
