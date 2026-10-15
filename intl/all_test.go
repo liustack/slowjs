@@ -244,6 +244,30 @@ func TestNumberFormat(t *testing.T) {
 // ICU (node's Intl) for. They are the ones no reading of the spec gives you:
 // which field widens to two digits next to which other one, where compact
 // notation stops rounding, how a currency label attaches to its amount.
+// TestNumberFormatLocales checks the CLDR data behind NumberFormat in a
+// few locales. TestGolden compares many more with a browser.
+func TestNumberFormatLocales(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('zh-CN', {style: 'currency', currency: 'CNY'}).format(1234567.891)`, "¥1,234,567.89"},
+		{`new Intl.NumberFormat('zh-CN', {notation: 'compact'}).format(123456789)`, "1.2亿"},
+		{`new Intl.NumberFormat('ja', {notation: 'compact'}).format(12345)`, "1.2万"},
+		{`new Intl.NumberFormat('de-DE', {style: 'currency', currency: 'EUR'}).format(-1234.5)`, "-1.234,50\u00a0€"},
+		{`new Intl.NumberFormat('de', {notation: 'compact', compactDisplay: 'long'}).format(1234567)`, "1,2 Millionen"},
+		{`new Intl.NumberFormat('fr', {style: 'unit', unit: 'kilometer-per-hour'}).format(1.5)`, "1,5\u202fkm/h"},
+		{`new Intl.NumberFormat('es').format(1234)`, "1234"},
+		{`new Intl.NumberFormat('es').format(12345)`, "12.345"},
+		{`new Intl.NumberFormat('hi').format(1234567.891)`, "12,34,567.891"},
+		{`new Intl.NumberFormat('ar-EG').format(-1234.5)`, "\u061c-١٬٢٣٤٫٥"},
+		{`new Intl.NumberFormat('en-US', {style: 'currency', currency: 'EUR', currencyDisplay: 'name'}).format(1)`, "1.00 euros"},
+		{`new Intl.NumberFormat('fr', {style: 'currency', currency: 'USD', currencySign: 'accounting'}).format(-1)`, "(1,00\u00a0$US)"},
+		{`new Intl.NumberFormat('ar', {style: 'unit', unit: 'day', unitDisplay: 'long'}).format(2)`, "يومان"},
+		{`JSON.stringify(new Intl.NumberFormat('ar', {style: 'percent'}).formatToParts(-1))`,
+			strings.ReplaceAll(`[{"type":"literal","value":"\u200e"},{"type":"minusSign","value":"-"},{"type":"integer","value":"100"},`+
+				`{"type":"literal","value":"\u200e"},{"type":"percentSign","value":"%"},{"type":"literal","value":"\u200e"}]`, `\u200e`, "\u200e")},
+		{`(123456789n).toLocaleString('de')`, "123.456.789"},
+	})
+}
+
 func TestICURules(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
@@ -311,7 +335,12 @@ func TestResolvedOptions(t *testing.T) {
 	evalTests(t, vm, [][2]string{
 		// The locale is reported as what was used, not as what was asked for.
 		{`new Intl.DateTimeFormat('de-DE').resolvedOptions().locale`, "en-US"},
-		{`new Intl.NumberFormat(['fr', 'de']).resolvedOptions().locale`, "en-US"},
+		{`new Intl.NumberFormat(['fr', 'de']).resolvedOptions().locale`, "fr"},
+		{`new Intl.NumberFormat(['cy', 'de']).resolvedOptions().locale`, "de"},
+		{`new Intl.NumberFormat('zh-Hans-CN').resolvedOptions().locale`, "zh-Hans-CN"},
+		{`new Intl.NumberFormat('ar-EG-u-nu-latn').resolvedOptions().locale`, "ar-EG-u-nu-latn"},
+		{`new Intl.NumberFormat('ar-EG').resolvedOptions().numberingSystem`, "arab"},
+		{`new Intl.NumberFormat('en-US-u-hc-h23').resolvedOptions().locale`, "en-US"},
 		{`new Intl.DateTimeFormat().resolvedOptions().timeZone`, "UTC"},
 		{`new Intl.DateTimeFormat('en', {timeZone: 'america/new_york'}).resolvedOptions().timeZone`, "America/New_York"},
 		// The case is IANA's, whatever the host's file system would accept,
@@ -353,7 +382,7 @@ func TestResolvedOptions(t *testing.T) {
 		// No internal state leaks into the reported options.
 		{`Object.keys(new Intl.NumberFormat('en', {notation: 'compact'}).resolvedOptions()).filter(k => k[0] === '_').length`, "0"},
 		{`Intl.getCanonicalLocales(['EN-us', 'de-de']).join(' ')`, "en-US de-DE"},
-		{`Intl.NumberFormat.supportedLocalesOf(['de', 'en-US']).join(' ')`, "en-US"},
+		{`Intl.NumberFormat.supportedLocalesOf(['de', 'en-US', 'cy']).join(' ')`, "de en-US"},
 		{`Intl.DateTimeFormat.supportedLocalesOf('en-GB').join(' ')`, "en-GB"},
 	})
 }

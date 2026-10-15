@@ -263,6 +263,20 @@ func (c *config) canonicalLocales(args []any) (any, error) {
 		return failure(err)
 	}
 
+	if svc, ok := arg(args, 1).(string); ok {
+		// supportedLocalesOf, for the constructor named by svc.
+		r, err := supportedLocales(tags, map[string]service{
+			"NumberFormat":   numberService,
+			"DateTimeFormat": dateService,
+			"PluralRules":    pluralService,
+		}[svc])
+		if err != nil {
+			return failure(err)
+		}
+
+		return marshal(r)
+	}
+
 	r := []string{}
 	for _, tag := range tags {
 		s, err := canonicalLocale(tag)
@@ -314,6 +328,12 @@ func cached[T any](args []any, c *formatCache[T]) (*T, error) {
 	f := new(T)
 	if err := json.Unmarshal([]byte(s), f); err != nil {
 		return nil, err
+	}
+
+	if i, ok := any(f).(interface{ init() error }); ok {
+		if err := i.init(); err != nil {
+			return nil, err
+		}
 	}
 
 	if c.m == nil || len(c.m) >= formatCacheLimit {

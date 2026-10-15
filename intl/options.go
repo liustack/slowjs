@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"strings"
 )
 
 // part is one element of an Intl formatToParts result.
@@ -92,52 +91,6 @@ func optBool(o map[string]any, key string) (bool, bool) {
 
 	b, ok := v.(bool)
 	return b, ok
-}
-
-// canonicalLocale returns tag in the canonical BCP-47 casing, or an error if it
-// is not structurally valid. Only the shape is checked, no registry lookup
-// happens: the result is used to answer getCanonicalLocales and to decide
-// whether a locale is supported, and both are honest with a lax parser.
-func canonicalLocale(tag string) (string, error) {
-	if tag == "" || strings.Contains(tag, "_") {
-		return "", rangeError("invalid language tag: %s", tag)
-	}
-
-	parts := strings.Split(tag, "-")
-	for i, p := range parts {
-		if p == "" || len(p) > 8 || !isAlnum(p) {
-			return "", rangeError("invalid language tag: %s", tag)
-		}
-
-		switch {
-		case i == 0:
-			if len(p) < 2 || !isAlpha(p) {
-				return "", rangeError("invalid language tag: %s", tag)
-			}
-
-			parts[i] = strings.ToLower(p)
-		case len(p) == 4 && isAlpha(p):
-			parts[i] = strings.ToUpper(p[:1]) + strings.ToLower(p[1:])
-		case len(p) == 2 && isAlpha(p), len(p) == 3 && isDigit(p):
-			parts[i] = strings.ToUpper(p)
-		default:
-			parts[i] = strings.ToLower(p)
-		}
-	}
-	return strings.Join(parts, "-"), nil
-}
-
-// resolveLocale returns the locale the formatters will actually use. Only
-// en-US data is available, so every request resolves to it - which is what
-// ECMA-402's lookup matcher does with an unavailable locale anyway, and what
-// resolvedOptions().locale then honestly reports.
-func resolveLocale(tags []string) (string, error) {
-	for _, tag := range tags {
-		if _, err := canonicalLocale(tag); err != nil {
-			return "", err
-		}
-	}
-	return "en-US", nil
 }
 
 func isAlpha(s string) bool {

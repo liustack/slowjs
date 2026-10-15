@@ -94,14 +94,10 @@
 		return o === undefined ? {} : Object(o);
 	}
 
-	function supportedLocalesOf(locales) {
-		const r = [], tags = callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
-		for (let i = 0; i < tags.length; i++) {
-			if (tags[i] === 'en' || tags[i].indexOf('en-') === 0) {
-				r.push(tags[i]);
-			}
-		}
-		return r;
+	function supportedLocalesOf(service) {
+		return function (locales) {
+			return callJSON(canonicalLocales, [JSON.stringify(localeList(locales)), service]);
+		};
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
@@ -214,7 +210,7 @@
 		return publicOptions(internal(this, 'DateTimeFormat').resolved);
 	});
 
-	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf);
+	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf('DateTimeFormat'));
 	defineTag(DateTimeFormat.prototype, 'Intl.DateTimeFormat');
 
 	// ------------------------------------------------------------ NumberFormat
@@ -294,7 +290,7 @@
 		return publicOptions(internal(this, 'NumberFormat').resolved);
 	});
 
-	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf);
+	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf('NumberFormat'));
 	defineTag(NumberFormat.prototype, 'Intl.NumberFormat');
 
 	// ------------------------------------------------------------------- Intl
@@ -375,6 +371,16 @@
 			return new NumberFormat(locales, opts);
 		}).format(v);
 	});
+
+	if (typeof BigInt === 'function') {
+		const bigintValueOf = BigInt.prototype.valueOf;
+		defineMethod(BigInt.prototype, 'toLocaleString', function (locales, opts) {
+			const v = bigintValueOf.call(this);
+			return cached(cacheKey('number', locales, opts), function () {
+				return new NumberFormat(locales, opts);
+			}).format(v);
+		});
+	}
 })(
 	globalThis.__quickjs_intl_dtfResolve__,
 	globalThis.__quickjs_intl_dtfFormat__,

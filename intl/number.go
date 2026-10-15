@@ -6,8 +6,10 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // numberFormat is a resolved Intl.NumberFormat. Its json form is both what
@@ -44,10 +46,24 @@ type numberFormat struct {
 	// but never fewer than two significant digits, so 1234 is 1.2K and 12345
 	// is 12K.
 	CompactRound bool `json:"_compactRound,omitempty"`
+	// DataLocale is the CLDR locale the formatter takes its symbols and
+	// patterns from, and PluralLocale the one of its plural rules.
+	DataLocale   string `json:"_data"`
+	PluralLocale string `json:"_plural"`
+
+	// The compiled form of the above, built by init.
+	sys      *numberSystem
+	main     *numPattern
+	compact  *compactData
+	plurals  *pluralRules
+	currency string            // what ¤ stands for
+	outer    map[string]string // plural category -> the unit or currency name pattern around the number, "{0} km"
+	g1, g2   int               // grouping sizes, 0 for none
+	minGroup int
 }
 
 func resolveNumberFormat(req request) (*numberFormat, error) {
-	locale, err := resolveLocale(req.Locales)
+	r, err := resolveLocale(req.Locales, numberService)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +76,21 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 		return nil, err
 	}
 
-	f := &numberFormat{Locale: locale, NumberingSystem: "latn", Style: "decimal"}
+	nuOption, err := numberingSystemOption(o)
+	if err != nil {
+		return nil, err
+	}
+
+	f := &numberFormat{DataLocale: r.data.name, PluralLocale: pluralLocale(r.tag)}
+	nu, inLocale := r.unicodeKeyword("nu", nuOption, supportedNumberingSystem)
+	var keywords [][2]string
+	if inLocale {
+		keywords = append(keywords, [2]string{"nu", nu})
+	}
+	if nu == "" {
+		nu = r.data.str("n/defaultNumberingSystem")
+	}
+	f.Locale, f.NumberingSystem = r.localeString(keywords), nu
 	if f.Style, err = optDefault(o, "style", "decimal", "decimal", "percent", "currency", "unit"); err != nil {
 		return nil, err
 	}
@@ -98,15 +128,15 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 	case "currency":
 		s, ok := o["currency"].(string)
 		if !ok {
-			return nil, typeError("currency must be provided when style is 'currency'")
+			return nil, typeError("Currency code is required with currency style.")
 		}
 
 		if len(s) != 3 || !isAlpha(s) {
-			return nil, rangeError("invalid currency code: %s", s)
+			return nil, rangeError("Invalid currency code : %s", s)
 		}
 
 		f.Currency = strings.ToUpper(s)
-		currencyDigits = currencyMinorUnits(f.Currency)
+		currencyDigits = currencyFractionDigits(f.Currency)
 		if f.CurrencyDisplay, err = optDefault(o, "currencyDisplay", "symbol", "code", "symbol", "narrowSymbol", "name"); err != nil {
 			return nil, err
 		}
@@ -117,7 +147,11 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 	case "unit":
 		s, ok := o["unit"].(string)
 		if !ok {
-			return nil, typeError("unit must be provided when style is 'unit'")
+			return nil, typeError("Unit is required with unit style.")
+		}
+
+		if !sanctionedUnit(s) {
+			return nil, rangeError("Invalid unit argument for Intl.NumberFormat() '%s'", s)
 		}
 
 		f.Unit = s
@@ -135,6 +169,64 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 	}
 
 	return f, nil
+}
+
+// numberingSystemOption reads the numberingSystem option, which must be a
+// well formed Unicode type even when it names a system nothing supports.
+func numberingSystemOption(o map[string]any) (string, error) {
+	v, ok := o["numberingSystem"]
+	if !ok {
+		return "", nil
+	}
+
+	s, _ := v.(string)
+	for _, p := range strings.Split(s, "-") {
+		if len(p) < 3 || len(p) > 8 || !isAlnum(p) {
+			return "", rangeError("Invalid numberingSystem : %s", s)
+		}
+	}
+	return strings.ToLower(s), nil
+}
+
+// supportedNumberingSystem reports whether nu is a decimal numbering system
+// CLDR has the digits of.
+func supportedNumberingSystem(nu string) bool {
+	_, ok := supp().digits[nu]
+	return ok
+}
+
+// sanctionedUnits are ECMA-402's simple units (IsSanctionedSingleUnitIdentifier).
+var sanctionedUnits = strings.Fields(`acre bit byte celsius centimeter day degree fahrenheit fluid-ounce foot
+	gallon gigabit gigabyte gram hectare hour inch kilobit kilobyte kilogram kilometer liter megabit
+	megabyte meter microsecond mile mile-scandinavian milliliter millimeter millisecond minute month
+	nanosecond ounce percent petabyte pound second stone terabit terabyte week yard year`)
+
+// sanctionedUnit is ECMA-402's IsWellFormedUnitIdentifier: a simple unit or
+// one simple unit per another.
+func sanctionedUnit(u string) bool {
+	if slices.Contains(sanctionedUnits, u) {
+		return true
+	}
+
+	a, b, ok := strings.Cut(u, "-per-")
+	return ok && slices.Contains(sanctionedUnits, a) && slices.Contains(sanctionedUnits, b)
+}
+
+// currencyFractionDigits returns the number of fraction digits CLDR writes a
+// currency with, which is what a browser uses, and which is not always what
+// ISO 4217 says: CLDR writes IQD with none where ISO gives it three.
+func currencyFractionDigits(code string) int {
+	s := cldr().supplemental()
+	v, ok := s.get("cd/" + code)
+	if !ok {
+		v = s.str("cd/DEFAULT")
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 2
+	}
+
+	return n
 }
 
 // digitOptions implements ECMA-402's SetNumberFormatDigitOptions.
@@ -261,45 +353,331 @@ func optDefault(o map[string]any, key, def string, allowed ...string) (string, e
 	return s, nil
 }
 
+// percentUnit reports whether the formatter writes a percent sign from the
+// locale's percent pattern: style percent, and unit percent unless spelled
+// out.
+func (f *numberFormat) percentUnit() bool {
+	return f.Style == "percent" || f.Style == "unit" && f.Unit == "percent" && f.UnitDisplay != "long" && f.Notation != "compact"
+}
+
+// init compiles the formatter's locale data, the patterns and names the
+// format calls need. It runs once per distinct formatter in the process; the
+// result is shared, read only, by every VM.
+func (f *numberFormat) init() error {
+	data := cldr().locale(f.DataLocale)
+	if data == nil {
+		return rangeError("internal error: no locale data for %s", f.DataLocale)
+	}
+
+	f.sys = numberSystemFor(data, f.NumberingSystem)
+	f.plurals = pluralRulesFor(f.PluralLocale, false)
+	switch {
+	case f.percentUnit():
+		f.main = f.sys.pattern("percentFormats", "standard")
+	case f.Style == "currency" && f.CurrencyDisplay != "name" && f.CurrencySign == "accounting":
+		f.main = f.sys.pattern("currencyFormats", "accounting")
+	case f.Style == "currency" && f.CurrencyDisplay != "name":
+		f.main = f.sys.pattern("currencyFormats", "standard")
+	default:
+		f.main = f.sys.pattern("decimalFormats", "standard")
+	}
+	switch f.UseGrouping {
+	case false:
+		// nop
+	case "always":
+		f.g1, f.g2, f.minGroup = f.main.g1, f.main.g2, 1
+		if f.g1 == 0 {
+			f.g1, f.g2 = 3, 3
+		}
+	case "min2":
+		f.g1, f.g2, f.minGroup = f.main.g1, f.main.g2, max(2, f.sys.minGrouping)
+	default:
+		f.g1, f.g2, f.minGroup = f.main.g1, f.main.g2, f.sys.minGrouping
+	}
+	if f.Notation == "compact" {
+		f.compact = f.sys.compactPatterns(f.Style == "currency" && f.CurrencyDisplay != "name", f.CompactDisplay)
+	}
+	if f.Style == "currency" {
+		f.currency = currencySymbol(data, f.Currency, f.CurrencyDisplay)
+		if f.CurrencyDisplay == "name" {
+			f.outer = currencyNamePatterns(f.sys, data, f.Currency, f.plurals)
+		}
+	}
+	if f.Style == "unit" && !f.percentUnit() {
+		f.outer = unitPatterns(data, f.Unit, f.UnitDisplay, f.plurals)
+	}
+	return nil
+}
+
+// currencySymbol returns what a single ¤ stands for.
+func currencySymbol(d *cldrData, code, display string) string {
+	switch display {
+	case "code":
+		return code
+	case "narrowSymbol":
+		if s, ok := d.get("c/" + code + "/symbol-alt-narrow"); ok {
+			return s
+		}
+	}
+	if s, ok := d.get("c/" + code + "/symbol"); ok {
+		return s
+	}
+
+	return code
+}
+
+// currencyNamePatterns returns the patterns writing an amount with the
+// currency's name, "{0} euros", by plural category.
+func currencyNamePatterns(sys *numberSystem, d *cldrData, code string, rules *pluralRules) map[string]string {
+	r := map[string]string{}
+	for _, cat := range rules.cats {
+		p := sys.lookup("currencyFormats", "unitPattern-count-"+cat)
+		if p == "" {
+			p = sys.lookup("currencyFormats", "unitPattern-count-other")
+		}
+		name, ok := d.get("c/" + code + "/displayName-count-" + cat)
+		if !ok {
+			name, ok = d.get("c/" + code + "/displayName-count-other")
+		}
+		if !ok {
+			name, ok = d.get("c/" + code + "/displayName")
+		}
+		if !ok {
+			name = code
+		}
+		r[cat] = strings.Replace(p, "{1}", name, 1)
+	}
+	return r
+}
+
+// unitPatterns returns the patterns writing an amount of unit, "{0} km", by
+// plural category, following ICU's LongNameHandler: a unit CLDR has data for
+// uses it, and a compound one without data is built from its parts.
+func unitPatterns(d *cldrData, unit, width string, rules *pluralRules) map[string]string {
+	if r := unitData(d, unit, width, rules); r != nil {
+		return r
+	}
+
+	num, den, _ := strings.Cut(unit, "-per-")
+	lead := unitData(d, num, width, rules)
+	trail := ""
+	for _, w := range widthFallback(width) {
+		if p, ok := d.get("u/" + w + "/" + den + "/perUnitPattern"); ok {
+			trail = p
+			break
+		}
+	}
+	if trail == "" {
+		per := ""
+		for _, w := range widthFallback(width) {
+			if p, ok := d.get("u/" + w + "/per"); ok {
+				per = p
+				break
+			}
+		}
+		denOne := unitData(d, den, width, rules)["one"]
+		if denOne == "" {
+			denOne = unitData(d, den, width, rules)["other"]
+		}
+		denName := strings.TrimFunc(strings.Replace(denOne, "{0}", "", 1), ignorable)
+		trail = strings.Replace(per, "{1}", denName, 1)
+	}
+	r := map[string]string{}
+	for cat, p := range lead {
+		r[cat] = strings.Replace(trail, "{0}", p, 1)
+	}
+	return r
+}
+
+// widthFallback is the order unit widths are looked up in.
+func widthFallback(width string) []string {
+	switch width {
+	case "narrow":
+		return []string{"narrow", "short", "long"}
+	case "long":
+		return []string{"long", "short"}
+	}
+	return []string{"short", "long"}
+}
+
+// unitData returns the unit patterns CLDR has for unit at width by plural
+// category, or nil if it has none.
+func unitData(d *cldrData, unit, width string, rules *pluralRules) map[string]string {
+	for _, w := range widthFallback(width) {
+		prefix := "u/" + w + "/" + unit + "/unitPattern-count-"
+		other, ok := d.get(prefix + "other")
+		if !ok {
+			continue
+		}
+
+		r := map[string]string{}
+		for _, cat := range rules.cats {
+			if p, ok := d.get(prefix + cat); ok {
+				r[cat] = p
+			} else {
+				r[cat] = other
+			}
+		}
+		r["other"] = other
+		return r
+	}
+	return nil
+}
+
 // format renders v, which is whatever the shim's Number() coercion produced, as
 // ECMA-402 parts. Joining their values yields the format() result.
 func (f *numberFormat) format(v any) ([]part, error) {
 	d, special := numberValue(v)
-	neg := d.neg || special == "-Infinity"
-	if special != "" {
-		typ, value := "nan", "NaN"
-		if special != "NaN" {
-			typ, value = "infinity", "∞"
-		}
-		return f.wrap([]part{{typ, value}}, neg, special == "NaN"), nil
-	}
-
-	if f.Style == "percent" {
+	if special == "" && f.Style == "percent" {
 		d = d.scale(2)
 	}
 
-	var exponent, compact int
-	switch f.Notation {
-	case "scientific":
-		exponent = d.magnitude()
-		d = d.scale(-exponent)
-	case "engineering":
-		exponent = d.magnitude()
-		exponent -= ((exponent % 3) + 3) % 3
-		d = d.scale(-exponent)
-	case "compact":
-		compact, d = compactScale(d, 0)
+	var (
+		num      []span
+		r        dec
+		minFrac  int
+		zero     bool
+		neg      = d.neg || special == "-Infinity"
+		pattern  = f.main
+		field    = ""
+		outerCat = "other"
+	)
+	switch special {
+	case "NaN":
+		num, zero, neg = []span{{"nan", f.sys.nan}}, true, false
+	case "Infinity", "-Infinity":
+		num = []span{{"infinity", f.sys.infinity}}
+	default:
+		exponent := 0
+		switch f.Notation {
+		case "scientific", "engineering":
+			r, minFrac, exponent = f.roundScientific(d)
+		case "compact":
+			var cp *numPattern
+			r, minFrac, outerCat, cp = f.roundCompact(d)
+			if cp != nil {
+				pattern, field = cp, "compact"
+			}
+		default:
+			r, minFrac = f.round(d)
+			outerCat = f.pluralOf(r, minFrac)
+		}
+		zero = r.isZero()
+		num = f.digits(r, minFrac)
+		if f.Notation == "scientific" || f.Notation == "engineering" {
+			num = append(num, span{"exponentSeparator", f.sys.exponential})
+			if exponent < 0 {
+				num = append(num, span{"exponentMinusSign", f.sys.minus})
+				exponent = -exponent
+			}
+			num = append(num, span{"exponentInteger", f.sys.transliterate(strconv.Itoa(exponent))})
+		}
 	}
 
+	signType := signPos
+	switch f.SignDisplay {
+	case "auto":
+		if neg {
+			signType = signNeg
+		}
+	case "always":
+		if signType = signPosSign; neg {
+			signType = signNeg
+		}
+	case "exceptZero":
+		switch {
+		case zero:
+			// nop
+		case neg:
+			signType = signNeg
+		default:
+			signType = signPosSign
+		}
+	case "negative":
+		if neg && !zero {
+			signType = signNeg
+		}
+	}
+
+	prefix := f.affix(pattern.affixFor(false, signType), field)
+	suffix := f.affix(pattern.affixFor(true, signType), field)
+	// Currency spacing: a no-break space between a currency symbol ending or
+	// starting with a letter and the digits next to it.
+	if n := len(prefix); n != 0 && prefix[n-1].Type == "currency" {
+		last, _ := utf8.DecodeLastRuneInString(prefix[n-1].Value)
+		first, _ := utf8.DecodeRuneInString(num[0].Value)
+		if currencySpaced(last, first) {
+			prefix = append(prefix, span{"", " "})
+		}
+	}
+	if len(suffix) != 0 && suffix[0].Type == "currency" {
+		first, _ := utf8.DecodeRuneInString(suffix[0].Value)
+		last, _ := utf8.DecodeLastRuneInString(num[len(num)-1].Value)
+		if currencySpaced(first, last) {
+			suffix = append([]span{{"", " "}}, suffix...)
+		}
+	}
+	out := append(append(prefix, num...), suffix...)
+	if f.outer != nil {
+		p, ok := f.outer[outerCat]
+		if !ok {
+			p = f.outer["other"]
+		}
+		typ := "unit"
+		if f.Style == "currency" {
+			typ = "currency"
+		}
+		if before, after, ok := strings.Cut(p, "{0}"); ok {
+			out = append(append([]span{{typ, before}}, out...), span{typ, after})
+		} else {
+			// Some languages spell out the amount, as Arabic does for one or
+			// two days: the pattern is the whole text.
+			out = []span{{typ, p}}
+		}
+	}
+	return toParts(out), nil
+}
+
+// affix renders pattern tokens; literal text belongs to field.
+func (f *numberFormat) affix(toks []affixTok, field string) []span {
+	var r []span
+	for _, t := range toks {
+		switch t.kind {
+		case 0:
+			r = append(r, span{field, t.text})
+		case '-':
+			r = append(r, span{"minusSign", f.sys.minus})
+		case '+':
+			r = append(r, span{"plusSign", f.sys.plus})
+		case '%':
+			typ := "percentSign"
+			if f.Style == "unit" {
+				typ = "unit"
+			}
+			r = append(r, span{typ, f.sys.percent})
+		case 'm':
+			r = append(r, span{"perMille", "‰"})
+		case 'c':
+			switch t.n {
+			case 1:
+				r = append(r, span{"currency", f.currency})
+			case 2:
+				r = append(r, span{"currency", f.Currency})
+			default:
+				r = append(r, span{"currency", "�"})
+			}
+		}
+	}
+	return r
+}
+
+// round applies the formatter's rounding to d and returns the result with
+// the number of fraction digits to show at least.
+func (f *numberFormat) round(d dec) (dec, int) {
 	minFrac := 0
 	switch {
 	case f.CompactRound:
 		d = compactRound(d, f.RoundingMode)
-		if compact != 0 && d.intDigits() > 3 {
-			// 999999 rounds up to 1000K, which is 1M.
-			compact, d = compactScale(d.scale(compact), compact+3)
-			d = compactRound(d, f.RoundingMode)
-		}
 	case f.MaximumSignificantDigits != nil:
 		d = d.roundTo(*f.MaximumSignificantDigits, f.RoundingMode)
 		// Zero has no significant digit of its own, but the "0" written for it
@@ -318,120 +696,110 @@ func (f *numberFormat) format(v any) ([]part, error) {
 	if f.TrailingZeroDisplay == "stripIfInteger" && !d.hasFraction() {
 		minFrac = 0
 	}
+	return d, minFrac
+}
+
+// roundScientific scales d to its mantissa and rounds it.
+func (f *numberFormat) roundScientific(d dec) (dec, int, int) {
+	exponent := d.magnitude()
+	if f.Notation == "engineering" {
+		exponent -= ((exponent % 3) + 3) % 3
+	}
+	d, minFrac := f.round(d.scale(-exponent))
 	// Rounding can carry the mantissa out of its notation's range: 999999 in
 	// scientific notation rounds to 10E5, which is 1E6.
-	switch mantissa := d.intDigits(); f.Notation {
-	case "scientific":
-		if mantissa > 1 {
-			d, exponent = d.scale(1-mantissa), exponent+mantissa-1
-		}
-	case "engineering":
-		if mantissa > 3 {
-			d, exponent = d.scale(-3), exponent+3
+	switch mantissa := d.intDigits(); {
+	case f.Notation == "scientific" && mantissa > 1:
+		d, exponent = d.scale(1-mantissa), exponent+mantissa-1
+	case f.Notation == "engineering" && mantissa > 3:
+		d, exponent = d.scale(-3), exponent+3
+	}
+	return d, minFrac, exponent
+}
+
+// roundCompact scales d by the power of ten its compact pattern divides by and
+// rounds it, as ICU's CompactHandler does. It returns the plural category of
+// a unit or currency name, which ICU picks before scaling, and the compact
+// pattern, nil for the standard one.
+func (f *numberFormat) roundCompact(d dec) (dec, int, string, *numPattern) {
+	unscaled, unscaledFrac := f.round(d)
+	outerCat := f.pluralOf(unscaled, unscaledFrac)
+	if d.isZero() {
+		r, minFrac := f.round(d)
+		return r, minFrac, outerCat, f.compactPattern(0, r, minFrac)
+	}
+
+	m := d.magnitude()
+	mult := f.compact.multiplier(m)
+	r, minFrac := f.round(d.scale(mult))
+	if !r.isZero() && r.magnitude() != m+mult {
+		if mult2 := f.compact.multiplier(m + 1); mult2 != mult {
+			r, minFrac = f.round(r.scale(mult2 - mult))
+			mult = mult2
 		}
 	}
-	// The sign follows the rounded value, not the original: -1e-7 written with
-	// three fraction digits is zero, and signDisplay "exceptZero" leaves it
-	// unsigned.
-	zero := d.isZero()
+	magnitude := -mult
+	if !r.isZero() {
+		magnitude += r.magnitude()
+	}
+	return r, minFrac, outerCat, f.compactPattern(magnitude, r, minFrac)
+}
 
-	ip, fp := d.render(f.MinimumIntegerDigits, minFrac)
-	var r []part
-	for i, g := range groupIntegerDigits(ip, f.UseGrouping) {
+func (f *numberFormat) compactPattern(magnitude int, r dec, minFrac int) *numPattern {
+	integer := int64(-1)
+	if !r.hasFraction() && r.intDigits() == 1 {
+		ip, _ := r.render(1, 0)
+		integer = int64(ip[0] - '0')
+	}
+	return f.compact.pattern(magnitude, integer, f.pluralOf(r, minFrac))
+}
+
+// pluralOf returns the plural category of the rounded r shown with at least
+// minFrac fraction digits.
+func (f *numberFormat) pluralOf(r dec, minFrac int) string {
+	ip, fp := r.render(1, minFrac)
+	return f.plurals.selectCategory(operandsOf(ip, fp, 0))
+}
+
+// digits renders the rounded r as integer, group, decimal and fraction spans.
+func (f *numberFormat) digits(r dec, minFrac int) []span {
+	ip, fp := r.render(f.MinimumIntegerDigits, minFrac)
+	group, decimal := f.sys.group, f.sys.decimal
+	if f.Style == "currency" {
+		group, decimal = f.sys.currencyGroup, f.sys.currencyDecimal
+	}
+	var s []span
+	for i, g := range groupDigits(ip, f.g1, f.g2, f.minGroup) {
 		if i != 0 {
-			r = append(r, part{"group", ","})
+			s = append(s, span{"group", group})
 		}
-		r = append(r, part{"integer", g})
+		s = append(s, span{"integer", f.sys.transliterate(g)})
 	}
 	if fp != "" {
-		r = append(r, part{"decimal", "."}, part{"fraction", fp})
+		s = append(s, span{"decimal", decimal}, span{"fraction", f.sys.transliterate(fp)})
 	}
-	switch f.Notation {
-	case "scientific", "engineering":
-		r = append(r, part{"exponentSeparator", "E"})
-		if exponent < 0 {
-			r = append(r, part{"exponentMinusSign", "-"})
-			exponent = -exponent
-		}
-		r = append(r, part{"exponentInteger", strconv.Itoa(exponent)})
-	case "compact":
-		if s := compactSuffix(compact, f.CompactDisplay); s != "" {
-			if f.CompactDisplay == "long" {
-				r = append(r, part{"literal", " "})
-			}
-			r = append(r, part{"compact", s})
-		}
-	}
-	return f.wrap(r, neg, zero), nil
+	return s
 }
 
-// wrap adds the sign, the currency symbol and the percent or unit marker around
-// the digits in num.
-func (f *numberFormat) wrap(num []part, neg, zero bool) (r []part) {
-	sign, signType := "", "minusSign"
-	switch f.SignDisplay {
-	case "never":
-		// nop
-	case "always":
-		if sign, signType = "+", "plusSign"; neg {
-			sign, signType = "-", "minusSign"
-		}
-	case "exceptZero":
-		if !zero {
-			if sign, signType = "+", "plusSign"; neg {
-				sign, signType = "-", "minusSign"
-			}
-		}
-	case "negative":
-		if neg && !zero {
-			sign = "-"
-		}
-	default: // auto
-		if neg {
-			sign = "-"
-		}
+// groupDigits splits the integer digits ip into groups, the last one g1
+// digits long and the others g2, as ICU's Grouper does: there are no groups
+// unless at least minGroup digits precede the last one.
+func groupDigits(ip string, g1, g2, minGroup int) []string {
+	n := len(ip)
+	if g1 <= 0 || n-g1 < minGroup {
+		return []string{ip}
 	}
-	accounting := f.Style == "currency" && f.CurrencySign == "accounting" && sign == "-"
-	if accounting {
-		sign = ""
-		r = append(r, part{"literal", "("})
+
+	var r []string
+	end := n - g1
+	r = append(r, ip[end:])
+	for end > 0 {
+		start := max(end-g2, 0)
+		r = append(r, ip[start:end])
+		end = start
 	}
-	if sign != "" {
-		r = append(r, part{signType, sign})
-	}
-	currency, currencyLast := "", false
-	if f.Style == "currency" {
-		if currency, currencyLast = currencyLabel(f.Currency, f.CurrencyDisplay); !currencyLast {
-			r = append(r, part{"currency", currency})
-			if currencySpace(currency, num[0].Value) {
-				r = append(r, part{"literal", "\u00a0"})
-			}
-		}
-	}
-	r = append(r, num...)
-	switch f.Style {
-	case "percent":
-		r = append(r, part{"percentSign", "%"})
-	case "unit":
-		label, space := unitLabel(f.Unit, f.UnitDisplay, isOne(num))
-		if space {
-			r = append(r, part{"literal", " "})
-		}
-		r = append(r, part{"unit", label})
-	}
-	if currencyLast {
-		r = append(r, part{"literal", " "}, part{"currency", currency})
-	}
-	if accounting {
-		r = append(r, part{"literal", ")"})
-	}
+	slices.Reverse(r)
 	return r
-}
-
-// isOne reports whether the digits in num read exactly "1", the only case where
-// English uses a singular unit name.
-func isOne(num []part) bool {
-	return len(num) == 1 && num[0].Type == "integer" && num[0].Value == "1"
 }
 
 // numberValue converts a value arriving from javascript to a dec. QuickJS tags
@@ -477,61 +845,8 @@ func numberValue(v any) (dec, string) {
 	return decFromFloat(f), ""
 }
 
-// compactScale divides d by the largest power of a thousand not greater than
-// it, at least min, and returns that power's exponent along with the result.
-func compactScale(d dec, min int) (int, dec) {
-	m := d.magnitude() / 3 * 3
-	switch {
-	case d.magnitude() < 3 || m < min:
-		m = min
-	case m > 12:
-		m = 12
-	}
-	return m, d.scale(-m)
-}
-
 // compactRound rounds to an integer but keeps two significant digits, which is
 // what compact notation does when no digit option overrides it.
 func compactRound(d dec, mode string) dec {
 	return d.roundTo(max(d.exp, 2), mode)
-}
-
-func compactSuffix(magnitude int, display string) string {
-	i := magnitude/3 - 1
-	if i < 0 || i > 3 {
-		return ""
-	}
-
-	if display == "long" {
-		return [...]string{"thousand", "million", "billion", "trillion"}[i]
-	}
-
-	return [...]string{"K", "M", "B", "T"}[i]
-}
-
-// groupIntegerDigits splits the integer digits into the groups en-US separates
-// with a comma. The grouping mode is ECMA-402's resolved useGrouping value.
-func groupIntegerDigits(ip string, useGrouping any) []string {
-	n := len(ip)
-	switch useGrouping {
-	case false:
-		return []string{ip}
-	case "min2":
-		if n < 5 {
-			return []string{ip}
-		}
-	default:
-		if n < 4 {
-			return []string{ip}
-		}
-	}
-	var r []string
-	if k := n % 3; k != 0 {
-		r = append(r, ip[:k])
-		ip = ip[k:]
-	}
-	for ; ip != ""; ip = ip[3:] {
-		r = append(r, ip[:3])
-	}
-	return r
 }

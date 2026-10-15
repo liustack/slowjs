@@ -49,10 +49,14 @@ var (
 )
 
 func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, error) {
-	locale, err := resolveLocale(req.Locales)
-	if err != nil {
+	// The date data is still en-US only: a locale is checked, then en-US
+	// formats it.
+	if _, err := resolveLocale(req.Locales, dateService); err != nil {
 		return nil, err
 	}
+
+	locale := defaultLocale
+	var err error
 
 	o := req.Options
 	if o == nil {
