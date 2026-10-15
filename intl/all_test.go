@@ -141,8 +141,9 @@ func TestDateTimeFormat(t *testing.T) {
 		{`new Intl.DateTimeFormat('en-US', {hour: 'numeric', minute: 'numeric', dayPeriod: 'short'}).format(new Date(12.5 * 3600 * 1000))`, "12:30 in the afternoon"},
 		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(20 * 3600 * 1000))`, "in the evening"},
 		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(22 * 3600 * 1000))`, "at night"},
-		// A date before AD 1 names its era even though none was asked for.
-		{`new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date(Date.UTC(-1, 0, 1)))`, "1/1/2 BC"},
+		// A date before AD 1 does not name its era unless asked to, as in
+		// Chromium.
+		{`new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date(Date.UTC(-1, 0, 1)))`, "1/1/2"},
 		// The bound format function survives being passed around.
 		{`[0, 86400000].map(new Intl.DateTimeFormat('en-US').format).join(' ')`, "1/1/1970 1/2/1970"},
 	})
@@ -360,11 +361,53 @@ func TestICURules(t *testing.T) {
 	})
 }
 
+// TestDateTimeFormatLocales checks dates in other languages against what
+// Chromium writes.
+func TestDateTimeFormatLocales(t *testing.T) {
+	vm := newVM(t)
+	evalTests(t, vm, [][2]string{
+		{`new Intl.DateTimeFormat('zh-CN', {dateStyle: 'full', timeStyle: 'long', timeZone: 'Asia/Shanghai'}).format(0)`, "1970年1月1日星期四 GMT+8 08:00:00"},
+		{`new Intl.DateTimeFormat('zh-TW', {hour: 'numeric', minute: 'numeric', timeZone: 'Asia/Taipei'}).format(0)`, "上午8:00"},
+		{`new Intl.DateTimeFormat('ja', {dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo'}).format(0)`, "1970/01/01 9:00"},
+		{`new Intl.DateTimeFormat('ja-JP', {hour: 'numeric', hour12: true, timeZone: 'UTC'}).format(0)`, "午前0時"},
+		{`new Intl.DateTimeFormat('de', {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Berlin'}).format(0)`, "Donnerstag, 1. Januar"},
+		{`new Intl.DateTimeFormat('ar-EG', {dateStyle: 'short', timeZone: 'Africa/Cairo'}).format(0)`, "١\u200f/١\u200f/١٩٧٠"},
+		{`new Intl.DateTimeFormat('zh-CN', {dayPeriod: 'long', hour: 'numeric', timeZone: 'UTC'}).format(0)`, "0时"},
+		{`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, "1970/1/1 08:00:00"},
+		{`new Date(0).toLocaleDateString('de-DE', {timeZone: 'UTC'})`, "1.1.1970"},
+		{`new Date(0).toLocaleTimeString('fr', {timeZone: 'UTC'})`, "00:00:00"},
+		// fa and th count years in their own calendars by default.
+		{`new Intl.DateTimeFormat('fa', {dateStyle: 'long', timeZone: 'Asia/Tehran'}).format(0)`, "۱۱ دی ۱۳۴۸"},
+		{`new Intl.DateTimeFormat('fa').resolvedOptions().calendar`, "persian"},
+		{`new Intl.DateTimeFormat('th', {dateStyle: 'long', timeZone: 'Asia/Bangkok'}).format(0)`, "1 มกราคม 2513"},
+		// A calendar there is no data for is dropped, and the date is
+		// Gregorian. Chromium keeps the keyword and formats in it.
+		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().locale`, "ja-JP"},
+		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().calendar`, "gregory"},
+		// The hour cycle keyword, and an hour12 option overriding it.
+		{`new Intl.DateTimeFormat('en-US-u-hc-h23', {hour: 'numeric', minute: 'numeric', timeZone: 'UTC'}).format(0)`, "00:00"},
+		{`new Intl.DateTimeFormat('en-US-u-hc-h23', {hour: 'numeric', hour12: true}).resolvedOptions().locale`, "en-US"},
+		// Zone names: the locale's own, a GMT offset where it has none, and
+		// the location for a generic name with no metazone name.
+		{`new Intl.DateTimeFormat('ko', {timeZoneName: 'long', timeZone: 'Asia/Seoul'}).format(0)`, "1970. 1. 1. 한국 표준시"},
+		{`new Intl.DateTimeFormat('en-IN', {timeZoneName: 'short', timeZone: 'America/New_York'}).format(0)`, "31/12/1969, GMT-5"},
+		{`new Intl.DateTimeFormat('pt-BR', {timeZoneName: 'shortGeneric', timeZone: 'America/Sao_Paulo'}).format(0)`, "31/12/1969, BRT"},
+		{`new Intl.DateTimeFormat('en', {timeZoneName: 'shortGeneric', timeZone: 'Asia/Hong_Kong'}).format(0)`, "1/1/1970, Hong Kong Time"},
+		{`new Intl.DateTimeFormat('en-US', {timeZoneName: 'shortOffset', timeZone: 'UTC'}).format(0)`, "1/1/1970, GMT+0"},
+		// Before 1970 no zone is in a metazone, and local mean time has
+		// seconds in its offset.
+		{`new Intl.DateTimeFormat('en', {timeZoneName: 'long', timeZone: 'Asia/Shanghai'}).format(-62198755200000)`, "1/1/2, GMT+08:05:43"},
+		// Chromium does not call British winter time Greenwich Mean Time.
+		{`new Intl.DateTimeFormat('en-GB', {timeZoneName: 'long', timeZone: 'Europe/London'}).format(Date.UTC(2025, 0, 15))`, "15/01/2025, GMT+00:00"},
+	})
+}
+
 func TestResolvedOptions(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
 		// The locale is reported as what was used, not as what was asked for.
-		{`new Intl.DateTimeFormat('de-DE').resolvedOptions().locale`, "en-US"},
+		{`new Intl.DateTimeFormat('cy').resolvedOptions().locale`, "en-US"},
+		{`new Intl.DateTimeFormat('de-DE').resolvedOptions().locale`, "de-DE"},
 		{`new Intl.NumberFormat(['fr', 'de']).resolvedOptions().locale`, "fr"},
 		{`new Intl.NumberFormat(['cy', 'de']).resolvedOptions().locale`, "de"},
 		{`new Intl.NumberFormat('zh-Hans-CN').resolvedOptions().locale`, "zh-Hans-CN"},

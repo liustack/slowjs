@@ -170,27 +170,3 @@ func offsetName(secs int) string {
 	}
 	return fmt.Sprintf("%s%02d:%02d", sign, secs/3600, secs%3600/60)
 }
-
-// gmtOffset renders secs the way en-US displays a GMT offset time zone name:
-// "GMT" for zero, "GMT+1" when short and "GMT+01:00" when not.
-func gmtOffset(secs int, short bool) string {
-	if secs == 0 {
-		return "GMT"
-	}
-
-	sign := "+"
-	if secs < 0 {
-		sign = "-"
-		secs = -secs
-	}
-	h, m := secs/3600, secs%3600/60
-	if short && m == 0 {
-		return fmt.Sprintf("GMT%s%d", sign, h)
-	}
-
-	if short {
-		return fmt.Sprintf("GMT%s%d:%02d", sign, h, m)
-	}
-
-	return fmt.Sprintf("GMT%s%02d:%02d", sign, h, m)
-}
