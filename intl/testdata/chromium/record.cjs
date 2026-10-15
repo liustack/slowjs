@@ -7,7 +7,7 @@
 // the files it writes, and need neither node nor a browser.
 //
 //   node record.cjs availability <cldr-json dir>
-//       writes availability.json: the locales Chromium supports for each
+//       writes availability.json: the locales Chromium has for each
 //       constructor, out of every locale cldr-json has.
 //   node record.cjs golden
 //       evaluates corpus.json (go test -run TestGolden -golden.corpus writes
@@ -66,8 +66,11 @@ async function availability(cldr) {
 	}
 	const all = JSON.stringify([...set].sort());
 	await withPage(async (page, version) => {
+		// A locale is available when a formatter asked for it resolves to it.
+		// supportedLocalesOf would not do: it also lists a locale that is
+		// only supported through a shorter one, as zh-CN is for PluralRules.
 		const [nf, dtf, pr] = await evaluate(page, ['NumberFormat', 'DateTimeFormat', 'PluralRules']
-			.map((c) => `JSON.stringify(Intl.${c}.supportedLocalesOf(${all}))`));
+			.map((c) => `JSON.stringify(${all}.filter((l) => new Intl.${c}(l).resolvedOptions().locale === l))`));
 		const out = {
 			browser: 'Chromium ' + version,
 			numberFormat: JSON.parse(nf),

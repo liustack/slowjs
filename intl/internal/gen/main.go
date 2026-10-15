@@ -174,51 +174,69 @@ func dataChain(tag string, full map[string]bool, parents map[string]string, like
 	return r
 }
 
-// firstData returns the most specific cldr-json locale holding data for tag.
+// firstData returns the most specific cldr-json locale holding data for tag:
+// the first of language-script-region, language-region, language-script and
+// language that exists, with the missing subtags filled in from the likely
+// subtags. zh-SG is zh-Hans-SG, zh-TW zh-Hant, en-GB en-GB and pt-BR pt.
 func firstData(tag string, full map[string]bool, likely map[string]string) string {
 	if full[tag] {
 		return tag
 	}
 
-	parts := strings.Split(tag, "-")
-	lang, script, region := parts[0], "", ""
-	for _, p := range parts[1:] {
-		switch {
-		case len(p) == 4 && script == "" && region == "":
-			script = p
-		case (len(p) == 2 || len(p) == 3) && region == "":
-			region = p
-		}
-	}
+	lang, script, region := splitTag(tag)
+	ml, ms, mr := maximize(lang, script, region, likely)
 	if script == "" {
-		if m, ok := likely[lang+"-"+region]; ok && region != "" {
-			script = strings.Split(m, "-")[1]
-		} else if m, ok := likely[lang]; ok {
-			script = strings.Split(m, "-")[1]
-		}
+		script = ms
 	}
-	var cands []string
-	defScript := ""
-	if m, ok := likely[lang]; ok {
-		defScript = strings.Split(m, "-")[1]
+	if region == "" {
+		region = mr
 	}
-	if script != "" && script != defScript {
-		if region != "" {
-			cands = append(cands, lang+"-"+script+"-"+region)
-		}
-		cands = append(cands, lang+"-"+script)
-	} else {
-		if region != "" {
-			cands = append(cands, lang+"-"+region)
-		}
-		cands = append(cands, lang)
-	}
-	for _, c := range cands {
+	lang = ml
+	for _, c := range []string{lang + "-" + script + "-" + region, lang + "-" + region, lang + "-" + script, lang} {
 		if full[c] {
 			return c
 		}
 	}
 	return ""
+}
+
+// splitTag returns the language, script and region of a canonical tag.
+func splitTag(tag string) (lang, script, region string) {
+	parts := strings.Split(tag, "-")
+	lang = parts[0]
+	for _, p := range parts[1:] {
+		switch {
+		case len(p) == 4 && script == "" && region == "":
+			script = p
+		case (len(p) == 2 || len(p) == 3 && p[0] >= '0' && p[0] <= '9') && region == "":
+			region = p
+		}
+	}
+	return lang, script, region
+}
+
+// maximize is CLDR's add likely subtags.
+func maximize(lang, script, region string, likely map[string]string) (string, string, string) {
+	for _, k := range []string{lang + "-" + script + "-" + region, lang + "-" + region, lang + "-" + script, lang, "und-" + script + "-" + region, "und-" + region, "und-" + script} {
+		if strings.Contains(k, "--") || strings.HasSuffix(k, "-") {
+			continue
+		}
+
+		if m, ok := likely[k]; ok {
+			ml, ms, mr := splitTag(m)
+			if lang == "und" || lang == "" {
+				lang = ml
+			}
+			if script == "" {
+				script = ms
+			}
+			if region == "" {
+				region = mr
+			}
+			return lang, script, region
+		}
+	}
+	return lang, script, region
 }
 
 func likelySubtags() map[string]string {
