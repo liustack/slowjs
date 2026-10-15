@@ -42,6 +42,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -354,7 +355,7 @@ func localeFileList(locales []string) (files []string) {
 			files = append(files, f[0]+"/main/"+l+"/"+f[1]+".json")
 		}
 		if c := localeCalendar(l, likely); calendars[c] != "" {
-			files = append(files, "cldr-cal-"+c+"-full/main/"+l+"/ca-"+c+".json")
+			files = append(files, calendarFile(l, c))
 		}
 	}
 	return files
@@ -622,6 +623,45 @@ func flatten(kv map[string]string, prefix string, v any, skip func(path string) 
 	}
 }
 
+// skipCalendar reports whether the calendar data at path p, below the
+// calendar's key prefix, is left out.
+func skipCalendar(p string) bool {
+	_, p, _ = strings.Cut(p, "/")
+	switch {
+	case strings.HasPrefix(p, "quarters"),
+		strings.HasPrefix(p, "dateSkeletons"),
+		strings.HasPrefix(p, "timeSkeletons"),
+		strings.HasPrefix(p, "dateTimeFormats-relative"),
+		strings.HasPrefix(p, "dateTimeFormats/intervalFormats"),
+		strings.Contains(p, "-alt-"),
+		strings.Contains(p, "/availableFormats/") && strings.Contains(p, "-count-"):
+		return true
+	}
+	return false
+}
+
+// calendarData returns the data of calendar c, one of calendars, in
+// cldr-json locale l as flat keys.
+func calendarData(l, c string) map[string]string {
+	kv := map[string]string{}
+	file := calendarFile(l, c)
+	v := dig(readJSON(filepath.FromSlash(file), true), "main", l, "dates", "calendars", c)
+	// ICU looks for the "at time" glue of another calendar in that
+	// calendar's own data only, then takes the Gregorian one. cldr-json
+	// resolves it through the generic calendar instead, so it is left out
+	// and the lookup falls back to the Gregorian glue as ICU's does.
+	flatten(kv, calendars[c], v, func(p string) bool {
+		_, rest, _ := strings.Cut(p, "/")
+		return skipCalendar(p) || strings.HasPrefix(rest, "dateTimeFormats-atTime")
+	})
+	return kv
+}
+
+// calendarFile returns the cldr-json file of calendar c in locale l.
+func calendarFile(l, c string) string {
+	return "cldr-cal-" + c + "-full/main/" + l + "/ca-" + c + ".json"
+}
+
 // localeData returns the data of one cldr-json locale as flat keys.
 func localeData(l string) map[string]string {
 	kv := map[string]string{}
@@ -630,31 +670,10 @@ func localeData(l string) map[string]string {
 		return dig(v, append([]string{"main", l}, path...)...)
 	}
 
-	skipCalendar := func(p string) bool {
-		_, p, _ = strings.Cut(p, "/")
-		switch {
-		case strings.HasPrefix(p, "quarters"),
-			strings.HasPrefix(p, "dateSkeletons"),
-			strings.HasPrefix(p, "timeSkeletons"),
-			strings.HasPrefix(p, "dateTimeFormats-relative"),
-			strings.HasPrefix(p, "dateTimeFormats/intervalFormats"),
-			strings.Contains(p, "-alt-"),
-			strings.Contains(p, "/availableFormats/") && strings.Contains(p, "-count-"):
-			return true
-		}
-		return false
-	}
 	greg := main("cldr-dates-full", "ca-gregorian", "dates", "calendars", "gregorian")
 	flatten(kv, "g", greg, skipCalendar)
 	if c := localeCalendar(l, likely()); calendars[c] != "" {
-		// ICU looks for the "at time" glue of another calendar in that
-		// calendar's own data only, then takes the Gregorian one. cldr-json
-		// resolves it through the generic calendar instead, so it is left out
-		// and the lookup falls back to the Gregorian glue as ICU's does.
-		flatten(kv, calendars[c], main("cldr-cal-"+c+"-full", "ca-"+c, "dates", "calendars", c), func(p string) bool {
-			_, rest, _ := strings.Cut(p, "/")
-			return skipCalendar(p) || strings.HasPrefix(rest, "dateTimeFormats-atTime")
-		})
+		maps.Copy(kv, calendarData(l, c))
 	}
 
 	// Field names, which the date pattern generator writes when it has to

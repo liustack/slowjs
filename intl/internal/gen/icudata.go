@@ -360,7 +360,7 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 
 	paths := map[string]bool{}
 	has := map[string][]string{}
-	links := map[string][]string{}
+	links := map[string]map[string]string{}
 	for _, b := range bundles {
 		item, tree, name, r := b.item, b.tree, b.name, b.r
 		var bundle icuBundle
@@ -376,7 +376,20 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 			paths[path] = true
 			has[key] = append(has[key], path)
 			if res, _ := r.get(strings.Split(path, "/")...); res>>28 == resAlias {
-				links[key] = append(links[key], path)
+				to, err := r.str(res)
+				if err != nil {
+					return nil, fmt.Errorf("%s %s: %v", item, path, err)
+				}
+
+				target, ok := strings.CutPrefix(to, "/LOCALE/")
+				if !ok {
+					return nil, fmt.Errorf("%s %s: alias %q is not to the locale's own data", item, path, to)
+				}
+
+				if links[key] == nil {
+					links[key] = map[string]string{}
+				}
+				links[key][path] = target
 			}
 		}
 		s.Bundles[key] = bundle
@@ -394,11 +407,13 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 		for _, path := range list {
 			b.Has = append(b.Has, index[path])
 		}
-		for _, path := range links[key] {
-			b.Links = append(b.Links, index[path])
+		for path, target := range links[key] {
+			if b.Links == nil {
+				b.Links = map[int]string{}
+			}
+			b.Links[index[path]] = target
 		}
 		slices.Sort(b.Has)
-		slices.Sort(b.Links)
 		s.Bundles[key] = b
 	}
 	return s, nil
@@ -407,7 +422,7 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 // icuCalendars and icuCalendarParts are the calendar resources the data
 // comes from.
 var (
-	icuCalendars     = []string{"gregorian", "buddhist", "persian"}
+	icuCalendars     = []string{"gregorian", "buddhist", "persian", "generic"}
 	icuCalendarParts = []string{"monthNames", "dayNames", "eras", "AmPmMarkers", "AmPmMarkersAbbr", "AmPmMarkersNarrow",
 		"dayPeriod", "DateTimePatterns", "DateTimePatterns%atTime", "availableFormats", "appendItems"}
 )

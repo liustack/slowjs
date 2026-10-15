@@ -285,6 +285,12 @@ func TestChromiumFallback(t *testing.T) {
 		{`new Intl.DateTimeFormat('bs-Cyrl', {dateStyle: 'full', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "понедјељак, 05. јануар 2026."},
 		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'long', calendar: 'gregory', timeZone: 'UTC'}).format(0)`, "Thu"},
 		{`new Intl.DateTimeFormat('ckb-IR', {dateStyle: 'medium', timeZone: 'UTC'}).format(0)`, "AP 1348 بەفرانبار 11"},
+		// Root's Persian day names and patterns are the ones of the locale's
+		// Gregorian and generic calendars, which ckb-IR takes from root.
+		{`new Intl.DateTimeFormat('ckb-IR', {timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "AP 1404-10-15"},
+		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "Mon"},
+		{`new Intl.DateTimeFormat('ckb-IR', {month: 'long', year: 'numeric', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "AP 1404 بەفرانبار"},
+		{`new Intl.DateTimeFormat('ckb-IR').resolvedOptions().month`, "2-digit"},
 		// Root's accounting pattern and Buddhist months stand for the
 		// locale's own.
 		{`new Intl.NumberFormat('ar', {style: 'currency', currency: 'EGP', currencySign: 'accounting'}).format(-2)`, "(؜2.00 ج.م.‏)"},

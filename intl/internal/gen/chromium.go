@@ -30,10 +30,10 @@ type icuSummary struct {
 }
 
 type icuBundle struct {
-	Alias  string `json:"alias,omitempty"`  // %%ALIAS: the bundle stands for this one
-	Parent string `json:"parent,omitempty"` // %%Parent: the explicit parent
-	Has    []int  `json:"has,omitempty"`    // indexes into Paths
-	Links  []int  `json:"links,omitempty"`  // the ones of Has that are aliases of other resources
+	Alias  string         `json:"alias,omitempty"`  // %%ALIAS: the bundle stands for this one
+	Parent string         `json:"parent,omitempty"` // %%Parent: the explicit parent
+	Has    []int          `json:"has,omitempty"`    // indexes into Paths
+	Links  map[int]string `json:"links,omitempty"`  // the ones of Has that are aliases: the resource they stand for
 }
 
 func icuKey(tree, name string) string {
@@ -86,10 +86,10 @@ func writeICUSummary(src, dst string) {
 type chromiumICU struct {
 	currencies map[string]bool
 	bundles    map[string]icuBundle
-	has        map[string]map[string]bool // bundle key -> resource paths
-	links      map[string]map[string]bool // bundle key -> resource paths that are aliases
-	parents    map[string]string          // ICU's parent locale table
-	chains     map[string][]string        // tree/locale -> chain
+	has        map[string]map[string]bool   // bundle key -> resource paths
+	links      map[string]map[string]string // bundle key -> alias -> the resource it stands for
+	parents    map[string]string            // ICU's parent locale table
+	chains     map[string][]string          // tree/locale -> chain
 }
 
 func loadChromiumICU(path string) *chromiumICU {
@@ -110,17 +110,17 @@ func loadChromiumICU(path string) *chromiumICU {
 		fail(fmt.Errorf("%s: %v", path, err))
 	}
 
-	c := &chromiumICU{currencies: map[string]bool{}, bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]bool{}, parents: map[string]string{}, chains: map[string][]string{}}
+	c := &chromiumICU{currencies: map[string]bool{}, bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]string{}, parents: map[string]string{}, chains: map[string][]string{}}
 	for _, code := range s.Currencies {
 		c.currencies[code] = true
 	}
 	for k, b := range s.Bundles {
-		c.has[k], c.links[k] = map[string]bool{}, map[string]bool{}
+		c.has[k], c.links[k] = map[string]bool{}, map[string]string{}
 		for _, i := range b.Has {
 			c.has[k][s.Paths[i]] = true
 		}
-		for _, i := range b.Links {
-			c.links[k][s.Paths[i]] = true
+		for i, target := range b.Links {
+			c.links[k][s.Paths[i]] = target
 		}
 	}
 	// ICU's parent locale table is CLDR's, with the rule that a language in
@@ -249,18 +249,18 @@ func defaultScript(lang, region string) string {
 }
 
 // source returns the bundle ICU takes resource path of tree from for locale
-// id, "" if none has it. link reports that the resource there is an alias of
-// another resource, which ICU looks up in the locale's own data.
-func (c *chromiumICU) source(tree, id, path string) (bundle string, link bool) {
+// id, "" if none has it. alias is set when the resource there is an alias:
+// the resource it stands for, which ICU looks up in the locale's own data.
+func (c *chromiumICU) source(tree, id, path string) (bundle, alias string) {
 	if entry, ok := strings.CutSuffix(path, "/pattern"); ok && strings.HasPrefix(entry, "Currencies/") {
 		// The pattern is part of the currency's entry: the nearest one
 		// decides, whether it has a pattern or not.
 		b, _ := c.source(tree, id, entry)
 		if b == "" || !c.has[icuKey(tree, b)][path] {
-			return "", false
+			return "", ""
 		}
 
-		return b, false
+		return b, ""
 	}
 
 	for _, b := range c.chain(tree, id) {
@@ -268,7 +268,22 @@ func (c *chromiumICU) source(tree, id, path string) (bundle string, link bool) {
 			return b, c.links[k][path]
 		}
 	}
-	return "", false
+	return "", ""
+}
+
+// resolve is source with aliases followed: it returns the bundle ICU takes
+// the value of resource path from.
+func (c *chromiumICU) resolve(tree, id, path string) string {
+	for range 8 {
+		b, alias := c.source(tree, id, path)
+		if alias == "" {
+			return b
+		}
+
+		path = alias
+	}
+	fail(fmt.Errorf("%s %s: aliases loop at %s", tree, id, path))
+	return ""
 }
 
 // icuPath returns the ICU resource a key of the locale data comes from, and
@@ -405,6 +420,17 @@ func (g *gen) followChromium(c *chromiumICU) {
 	// The sources are read again rather than taken from the chunks, which
 	// this changes as it goes.
 	sources := map[string]map[section]map[string]string{} // CLDR locale -> its keys by section
+	add := func(s map[section]map[string]string, kv map[string]string) {
+		for k, v := range kv {
+			if tree, path, ok := icuPath(k); ok {
+				sec := section{tree, path}
+				if s[sec] == nil {
+					s[sec] = map[string]string{}
+				}
+				s[sec][k] = v
+			}
+		}
+	}
 	sourceKV := func(l string) map[section]map[string]string {
 		if s, ok := sources[l]; ok {
 			return s
@@ -414,17 +440,26 @@ func (g *gen) followChromium(c *chromiumICU) {
 			fetchFiles(localeFileList([]string{l}))
 		}
 		s := map[section]map[string]string{}
-		for k, v := range localeData(l) {
-			if tree, path, ok := icuPath(k); ok {
-				sec := section{tree, path}
-				if s[sec] == nil {
-					s[sec] = map[string]string{}
-				}
-				s[sec][k] = v
-			}
-		}
+		add(s, localeData(l))
 		sources[l] = s
 		return s
+	}
+	// sourceSection returns the keys of section sec in CLDR locale l, with
+	// the data of a calendar l does not format with by default read for it.
+	calendarsRead := map[string]bool{} // CLDR locale/calendar
+	sourceSection := func(l string, sec section) map[string]string {
+		s := sourceKV(l)
+		if rest, ok := strings.CutPrefix(sec.path, "calendar/"); ok {
+			cal, _, _ := strings.Cut(rest, "/")
+			if calendars[cal] != "" && localeCalendar(l, likely()) != cal && !calendarsRead[l+"/"+cal] {
+				if *fetch {
+					fetchFiles([]string{calendarFile(l, cal)})
+				}
+				add(s, calendarData(l, cal))
+				calendarsRead[l+"/"+cal] = true
+			}
+		}
+		return s[sec]
 	}
 	for i := range g.chunks {
 		ch := &g.chunks[i]
@@ -441,7 +476,22 @@ func (g *gen) followChromium(c *chromiumICU) {
 			}
 		}
 		for sec, keys := range own {
-			src, link := c.source(sec.tree, id, sec.path)
+			src, alias := c.source(sec.tree, id, sec.path)
+			if alias != "" {
+				if !strings.HasPrefix(sec.path, "calendar/") {
+					// Root's accounting pattern is the currency pattern of
+					// the locale it is looked up for, its arab patterns the
+					// latn ones: cldr-json resolves these the same way.
+					continue
+				}
+
+				// Root's Persian day names are the Gregorian ones of the
+				// locale, its Persian patterns the generic calendar's,
+				// which the locale's Chromium data can have from a bundle
+				// other than the one cldr-json resolved them from: ckb-IR
+				// has root's where cldr-json has ckb's.
+				src = c.resolve(sec.tree, id, alias)
+			}
 			srcLocale := ""
 			if src != "" {
 				srcLocale = g.cldrLocale(src)
@@ -449,12 +499,7 @@ func (g *gen) followChromium(c *chromiumICU) {
 			switch {
 			case srcLocale == ch.name:
 				continue
-			case link:
-				// Root's accounting pattern is the currency pattern of the
-				// locale it is looked up for, its buddhist months the
-				// Gregorian ones: CLDR resolves such aliases the same way.
-				continue
-			case srcLocale == "und" && sourceKV("und")[sec] == nil:
+			case srcLocale == "und" && sourceSection("und", sec) == nil:
 				// cldr-json leaves some of root out, like its arab
 				// symbols. The locale has them resolved from root.
 				continue
@@ -467,7 +512,7 @@ func (g *gen) followChromium(c *chromiumICU) {
 				continue
 			}
 
-			for k, v := range sourceKV(srcLocale)[sec] {
+			for k, v := range sourceSection(srcLocale, sec) {
 				ch.kv[k] = v
 			}
 		}
