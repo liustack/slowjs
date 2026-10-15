@@ -61,7 +61,7 @@
 // # Differences from Chromium
 //
 // The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
-// 48.1) on about 52,000 expressions recorded in testdata/chromium. All
+// 48.1) on about 60,000 expressions recorded in testdata/chromium. All
 // match exactly but those in a calendar other than the ones above, which
 // format in the locale's default calendar, Gregorian but for th and the
 // persian locales.

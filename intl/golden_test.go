@@ -181,12 +181,13 @@ func goldenEval(t *testing.T, vm *quickjs.VM, expr string) string {
 
 // goldenLocales are the locales the corpus formats in: the ones tifa users
 // are likely to write, plus enough others to cover Indian grouping, other
-// digits, right to left text, a minimum grouping of two and plural rules
-// with every category.
+// digits, right to left text, a minimum grouping of two, plural rules with
+// every category, a currency with a pattern of its own (en-DE), ties between
+// date patterns (en-AU) and a language Chromium has no data for (az).
 var goldenLocales = []string{
-	"en-US", "en-GB", "en-IN", "zh-CN", "zh-TW", "zh-HK", "ja", "ko", "de", "de-CH", "fr", "fr-CA",
-	"fr-CH", "es", "es-MX", "pt-BR", "pt-PT", "it", "ru", "pl", "uk", "cs", "nl", "sv", "tr", "ar",
-	"ar-EG", "he", "fa", "hi", "bn", "th", "vi", "id",
+	"en-US", "en-GB", "en-IN", "en-AU", "en-DE", "zh-CN", "zh-TW", "zh-HK", "ja", "ko", "de", "de-CH",
+	"fr", "fr-CA", "fr-CH", "es", "es-MX", "pt-BR", "pt-PT", "it", "ru", "pl", "uk", "cs", "nl", "sv",
+	"tr", "ar", "ar-EG", "he", "fa", "hi", "bn", "th", "vi", "id", "az",
 }
 
 func jsList(s ...string) string {
@@ -236,7 +237,7 @@ func goldenExprs() (r []string) {
 		`{useGrouping:false}`, `{useGrouping:'min2'}`, `{useGrouping:'always'}`,
 		`{numberingSystem:'arab'}`, `{numberingSystem:'latn'}`, `{numberingSystem:'hanidec'}`,
 	}
-	values := []string{"0", "-0", "1", "2", "5", "21", "1.5", "-1234.5678", "1234567.891", "0.005", "999999", "12345", "1e21", "NaN", "-Infinity"}
+	values := []string{"0", "-0", "1", "2", "5", "21", "1.5", "-1234.5678", "1234567.891", "0.005", "999999", "12345", "1000", "-1000", "1000000", "1e21", "NaN", "-Infinity"}
 	for _, l := range goldenLocales {
 		for _, o := range numberOptions {
 			add(`JSON.stringify(new Intl.NumberFormat(%q,%s).resolvedOptions())`, l, o)

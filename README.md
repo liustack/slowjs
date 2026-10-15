@@ -121,7 +121,7 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   (cldr-json 48.2.3), where upstream formats en-US only. It covers
   `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.PluralRules` and the
   `toLocale*` methods, and its output is compared with Chromium 156 on about
-  52,000 expressions (`intl/golden_test.go`). Without a locale argument the
+  60,000 expressions (`intl/golden_test.go`). Without a locale argument the
   locale is en-US, and without a `timeZone` option the zone is UTC: `Intl`
   and the `toLocale*` methods never read the host's settings. The engine's
   `Date` local time methods (`new Date(2026, 0, 1)`, `getHours`, `toString`)
