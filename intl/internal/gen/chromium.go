@@ -84,11 +84,12 @@ func writeICUSummary(src, dst string) {
 
 // chromiumICU answers where ICU finds a resource for a locale.
 type chromiumICU struct {
-	bundles map[string]icuBundle
-	has     map[string]map[string]bool // bundle key -> resource paths
-	links   map[string]map[string]bool // bundle key -> resource paths that are aliases
-	parents map[string]string          // ICU's parent locale table
-	chains  map[string][]string        // tree/locale -> chain
+	currencies map[string]bool
+	bundles    map[string]icuBundle
+	has        map[string]map[string]bool // bundle key -> resource paths
+	links      map[string]map[string]bool // bundle key -> resource paths that are aliases
+	parents    map[string]string          // ICU's parent locale table
+	chains     map[string][]string        // tree/locale -> chain
 }
 
 func loadChromiumICU(path string) *chromiumICU {
@@ -109,7 +110,10 @@ func loadChromiumICU(path string) *chromiumICU {
 		fail(fmt.Errorf("%s: %v", path, err))
 	}
 
-	c := &chromiumICU{bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]bool{}, parents: map[string]string{}, chains: map[string][]string{}}
+	c := &chromiumICU{currencies: map[string]bool{}, bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]bool{}, parents: map[string]string{}, chains: map[string][]string{}}
+	for _, code := range s.Currencies {
+		c.currencies[code] = true
+	}
 	for k, b := range s.Bundles {
 		c.has[k], c.links[k] = map[string]bool{}, map[string]bool{}
 		for _, i := range b.Has {
@@ -465,6 +469,17 @@ func (g *gen) followChromium(c *chromiumICU) {
 
 			for k, v := range sourceKV(srcLocale)[sec] {
 				ch.kv[k] = v
+			}
+		}
+	}
+	// Chromium leaves out the names of most currencies no longer in use,
+	// and writes those as their codes.
+	for _, ch := range g.chunks {
+		for k := range ch.kv {
+			if rest, ok := strings.CutPrefix(k, "c/"); ok {
+				if code, _, _ := strings.Cut(rest, "/"); !c.currencies[code] {
+					delete(ch.kv, k)
+				}
 			}
 		}
 	}

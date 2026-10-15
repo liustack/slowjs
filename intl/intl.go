@@ -75,7 +75,7 @@
 //
 // # Cost
 //
-// The locale data is embedded in the binary, about 1.5 MB, and stays in its
+// The locale data is embedded in the binary, about 1.3 MB, and stays in its
 // read only data. A language is decoded into the Go heap the first time a
 // formatter needs it, once per process, and every VM shares it: 100 to 180
 // KB per language, and about 1 MB for the index and the data all languages

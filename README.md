@@ -129,7 +129,7 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   is not implemented and where the output differs from Chromium.
 
   What it costs, measured on darwin/arm64 against the en-US version: a
-  program that uses `intl` is 2.0 MB larger (1.5 MB of it is the locale
+  program that uses `intl` is 1.8 MB larger (1.3 MB of it is the locale
   data). `Register` takes 0.09 ms and 9 KB of the VM's memory, against
   0.85 ms and 46 KB before. The first use in a VM then takes 0.15 ms and
   42 KB more. A language is decoded into the Go heap the first time it is

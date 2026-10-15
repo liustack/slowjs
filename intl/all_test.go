@@ -292,6 +292,25 @@ func TestChromiumFallback(t *testing.T) {
 	})
 }
 
+// TestCurrenciesChromiumLeavesOut covers the currencies Chromium has no
+// names for, most of them no longer in use: they are written as their codes.
+func TestCurrenciesChromiumLeavesOut(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('de', {style: 'currency', currency: 'DEM'}).format(1)`, "1,00\u00a0DEM"},
+		{`new Intl.NumberFormat('de', {style: 'currency', currency: 'DEM', currencyDisplay: 'narrowSymbol'}).format(1)`, "1,00\u00a0DEM"},
+		{`new Intl.NumberFormat('de', {style: 'currency', currency: 'DEM', currencyDisplay: 'name'}).format(1)`, "1,00 DEM"},
+		{`new Intl.NumberFormat('de', {style: 'currency', currency: 'XXX', currencyDisplay: 'name'}).format(1)`, "1,00 XXX"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'VEF', currencyDisplay: 'name'}).format(1)`, "1.00 VEF"},
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'XAU', currencyDisplay: 'name'}).format(1)`, "1.00 XAU"},
+		{`new Intl.NumberFormat('ca', {style: 'currency', currency: 'ESP'}).format(-1234567.891)`, "-1.234.568\u00a0ESP"},
+		{`new Intl.NumberFormat('el', {style: 'currency', currency: 'GRD'}).format(-1234567.891)`, "-1.234.567,89\u00a0GRD"},
+		{`new Intl.NumberFormat('pt-PT', {style: 'currency', currency: 'PTE'}).format(-1234567.891)`, "-1\u00a0234\u00a0567,89\u00a0PTE"},
+		// Chromium still has the kuna.
+		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'HRK', currencyDisplay: 'name'}).format(1)`, "1.00 Croatian kunas"},
+		{`new Intl.NumberFormat('hr', {style: 'currency', currency: 'HRK'}).format(1)`, "1,00\u00a0kn"},
+	})
+}
+
 func TestBrowserOverrides(t *testing.T) {
 	zoneName := func(zone, date, style string) string {
 		return `new Intl.DateTimeFormat('ko', {timeZone: '` + zone + `', timeZoneName: '` + style + `'}).formatToParts(new Date('` + date +
