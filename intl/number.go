@@ -724,9 +724,20 @@ func (f *numberFormat) roundScientific(d dec) (dec, int, int) {
 func (f *numberFormat) roundCompact(d dec) (dec, int, string, *numPattern) {
 	unscaled, unscaledFrac := f.round(d)
 	outerCat := f.pluralOf(unscaled, unscaledFrac)
+	r, minFrac, mult := f.compactScale(d)
+	magnitude := -mult
+	if !r.isZero() {
+		magnitude += r.magnitude()
+	}
+	return r, minFrac, outerCat, f.compactPattern(magnitude, r, minFrac)
+}
+
+// compactScale returns d scaled for compact notation and rounded, and the
+// power of ten it was scaled by, zero or negative.
+func (f *numberFormat) compactScale(d dec) (dec, int, int) {
 	if d.isZero() {
 		r, minFrac := f.round(d)
-		return r, minFrac, outerCat, f.compactPattern(0, r, minFrac)
+		return r, minFrac, 0
 	}
 
 	m := d.magnitude()
@@ -738,11 +749,31 @@ func (f *numberFormat) roundCompact(d dec) (dec, int, string, *numPattern) {
 			mult = mult2
 		}
 	}
-	magnitude := -mult
-	if !r.isZero() {
-		magnitude += r.magnitude()
+	return r, minFrac, mult
+}
+
+// pluralOperands returns the plural operands of d as the formatter would
+// show it, sign aside: the rounded digits and, in compact and scientific
+// notation, the exponent.
+func (f *numberFormat) pluralOperands(d dec) pluralOperands {
+	d.neg = false
+	var (
+		r       dec
+		minFrac int
+		e       int
+	)
+	switch f.Notation {
+	case "scientific", "engineering":
+		r, minFrac, e = f.roundScientific(d)
+	case "compact":
+		var mult int
+		r, minFrac, mult = f.compactScale(d)
+		e = -mult
+	default:
+		r, minFrac = f.round(d)
 	}
-	return r, minFrac, outerCat, f.compactPattern(magnitude, r, minFrac)
+	ip, fp := r.render(1, minFrac)
+	return operandsOf(ip, fp, e)
 }
 
 func (f *numberFormat) compactPattern(magnitude int, r dec, minFrac int) *numPattern {

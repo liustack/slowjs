@@ -103,6 +103,8 @@ var hostFuncs = []string{
 	"__quickjs_intl_nfResolve__",
 	"__quickjs_intl_nfFormat__",
 	"__quickjs_intl_canonicalLocales__",
+	"__quickjs_intl_prResolve__",
+	"__quickjs_intl_prSelect__",
 }
 
 type config struct {
@@ -165,6 +167,8 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 		c.nfResolve,
 		c.nfFormat,
 		c.canonicalLocales,
+		c.prResolve,
+		c.prSelect,
 	} {
 		if err := vm.RegisterHostFunc(hostFuncs[i], fn); err != nil {
 			return err
@@ -256,6 +260,35 @@ func (c *config) nfFormat(args []any) (any, error) {
 	return formatted(parts, arg(args, 2) == true)
 }
 
+// prResolve resolves the options of a new Intl.PluralRules.
+func (c *config) prResolve(args []any) (any, error) {
+	var req request
+	if err := unmarshalArg(args, 0, &req); err != nil {
+		return failure(err)
+	}
+
+	p, err := resolvePluralRules(req)
+	if err != nil {
+		return failure(err)
+	}
+
+	return resolved(p)
+}
+
+// prSelect implements select, given one number, and selectRange, given two.
+func (c *config) prSelect(args []any) (any, error) {
+	p, err := cached(args, &pluralFormats)
+	if err != nil {
+		return failure(err)
+	}
+
+	if len(args) > 2 {
+		return p.selectRange(args[1], args[2]), nil
+	}
+
+	return p.selectNumber(arg(args, 1)), nil
+}
+
 // canonicalLocales implements Intl.getCanonicalLocales.
 func (c *config) canonicalLocales(args []any) (any, error) {
 	var tags []string
@@ -308,6 +341,7 @@ const formatCacheLimit = 256
 var (
 	dateTimeFormats formatCache[dateTimeFormat]
 	numberFormats   formatCache[numberFormat]
+	pluralFormats   formatCache[pluralFormat]
 )
 
 // cached returns the formatter the json in args[0] describes.

@@ -267,13 +267,130 @@ func (rel pluralRelation) match(o pluralOperands) bool {
 }
 
 // pluralRange returns the category of a range from start to end in lang,
-// from CLDR's plural ranges. A pair the data does not list takes the end's
-// category, which is what ICU does.
+// from CLDR's plural ranges. A pair the data does not list is "other", which
+// is what ICU does.
 func pluralRange(lang, start, end string) string {
 	d := cldr().supplemental()
 	if c, ok := d.get("pr/" + lang + "/start-" + start + "-end-" + end); ok {
 		return c
 	}
 
-	return end
+	return "other"
+}
+
+// pluralFormat is a resolved Intl.PluralRules. Like numberFormat, its json
+// form is both the resolvedOptions() result, in the order a browser reports
+// it, and the state the shim hands back on every call.
+type pluralFormat struct {
+	Locale                   string   `json:"locale"`
+	Type                     string   `json:"type"`
+	Notation                 string   `json:"notation"`
+	MinimumIntegerDigits     int      `json:"minimumIntegerDigits"`
+	MinimumFractionDigits    *int     `json:"minimumFractionDigits,omitempty"`
+	MaximumFractionDigits    *int     `json:"maximumFractionDigits,omitempty"`
+	MinimumSignificantDigits *int     `json:"minimumSignificantDigits,omitempty"`
+	MaximumSignificantDigits *int     `json:"maximumSignificantDigits,omitempty"`
+	PluralCategories         []string `json:"pluralCategories"`
+	RoundingIncrement        int      `json:"roundingIncrement"`
+	RoundingMode             string   `json:"roundingMode"`
+	RoundingPriority         string   `json:"roundingPriority"`
+	TrailingZeroDisplay      string   `json:"trailingZeroDisplay"`
+
+	CompactRound bool   `json:"_compactRound,omitempty"`
+	DataLocale   string `json:"_data"`
+	PluralLocale string `json:"_plural"`
+
+	nf    *numberFormat
+	rules *pluralRules
+}
+
+func resolvePluralRules(req request) (*pluralFormat, error) {
+	r, err := resolveLocale(req.Locales, pluralService)
+	if err != nil {
+		return nil, err
+	}
+
+	o := req.Options
+	if o == nil {
+		o = map[string]any{}
+	}
+	if _, err := optString(o, "localeMatcher", "lookup", "best fit"); err != nil {
+		return nil, err
+	}
+
+	p := &pluralFormat{Locale: r.locale, DataLocale: r.data.name, PluralLocale: pluralLocale(r.tag)}
+	if p.Type, err = optDefault(o, "type", "cardinal", "cardinal", "ordinal"); err != nil {
+		return nil, err
+	}
+
+	if p.Notation, err = optDefault(o, "notation", "standard", "standard", "scientific", "engineering", "compact"); err != nil {
+		return nil, err
+	}
+
+	nf := &numberFormat{Style: "decimal", Notation: p.Notation, RoundingIncrement: 1, RoundingPriority: "auto"}
+	if nf.RoundingMode, err = optDefault(o, "roundingMode", "halfExpand", "ceil", "floor", "expand", "trunc",
+		"halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven"); err != nil {
+		return nil, err
+	}
+
+	if nf.TrailingZeroDisplay, err = optDefault(o, "trailingZeroDisplay", "auto", "auto", "stripIfInteger"); err != nil {
+		return nil, err
+	}
+
+	if err := nf.digitOptions(o, 0); err != nil {
+		return nil, err
+	}
+
+	p.MinimumIntegerDigits = nf.MinimumIntegerDigits
+	p.MinimumFractionDigits, p.MaximumFractionDigits = nf.MinimumFractionDigits, nf.MaximumFractionDigits
+	p.MinimumSignificantDigits, p.MaximumSignificantDigits = nf.MinimumSignificantDigits, nf.MaximumSignificantDigits
+	p.RoundingIncrement, p.RoundingMode = nf.RoundingIncrement, nf.RoundingMode
+	p.RoundingPriority, p.TrailingZeroDisplay, p.CompactRound = nf.RoundingPriority, nf.TrailingZeroDisplay, nf.CompactRound
+	p.PluralCategories = pluralRulesFor(p.PluralLocale, p.Type == "ordinal").cats
+	return p, nil
+}
+
+// init compiles the rules and the number formatter whose rounding select
+// applies before picking a category.
+func (p *pluralFormat) init() error {
+	data := cldr().locale(p.DataLocale)
+	if data == nil {
+		return rangeError("internal error: no locale data for %s", p.DataLocale)
+	}
+
+	p.nf = &numberFormat{
+		Style:                    "decimal",
+		Notation:                 p.Notation,
+		CompactDisplay:           "short",
+		MinimumIntegerDigits:     p.MinimumIntegerDigits,
+		MinimumFractionDigits:    p.MinimumFractionDigits,
+		MaximumFractionDigits:    p.MaximumFractionDigits,
+		MinimumSignificantDigits: p.MinimumSignificantDigits,
+		MaximumSignificantDigits: p.MaximumSignificantDigits,
+		RoundingMode:             p.RoundingMode,
+		TrailingZeroDisplay:      p.TrailingZeroDisplay,
+		CompactRound:             p.CompactRound,
+	}
+	if p.Notation == "compact" {
+		p.nf.compact = numberSystemFor(data, "latn").compactPatterns(false, "short")
+	}
+	p.rules = pluralRulesFor(p.PluralLocale, p.Type == "ordinal")
+	return nil
+}
+
+// selectNumber implements Intl.PluralRules.prototype.select for a value the
+// shim has converted with Number().
+func (p *pluralFormat) selectNumber(v any) string {
+	d, special := numberValue(v)
+	if special != "" {
+		return "other"
+	}
+
+	return p.rules.selectCategory(p.nf.pluralOperands(d))
+}
+
+// selectRange implements Intl.PluralRules.prototype.selectRange.
+func (p *pluralFormat) selectRange(x, y any) string {
+	lang, _, _ := strings.Cut(p.Locale, "-")
+	return pluralRange(lang, p.selectNumber(x), p.selectNumber(y))
 }

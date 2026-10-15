@@ -7,7 +7,7 @@
 // spec makes observable - and leaves every formatting decision to the Go host
 // functions it is called with. See call() below for what crosses between them.
 
-(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales) {
+(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales, prResolve, prSelect) {
 	'use strict';
 
 	const g = globalThis;
@@ -293,6 +293,62 @@
 	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf('NumberFormat'));
 	defineTag(NumberFormat.prototype, 'Intl.NumberFormat');
 
+	// ------------------------------------------------------------- PluralRules
+
+	const pluralKeys = ['localeMatcher', 'type', 'notation', 'roundingMode', 'roundingPriority', 'trailingZeroDisplay'];
+
+	function readPluralOptions(o) {
+		o = options(o);
+		const r = {};
+		let i;
+		for (i = 0; i < pluralKeys.length; i++) {
+			const v = o[pluralKeys[i]];
+			if (v !== undefined) {
+				r[pluralKeys[i]] = String(v);
+			}
+		}
+		for (i = 0; i < numberDigitKeys.length; i++) {
+			const v = o[numberDigitKeys[i]];
+			if (v !== undefined) {
+				r[numberDigitKeys[i]] = Number(v);
+			}
+		}
+		return r;
+	}
+
+	function PluralRules(locales, opts) {
+		if (new.target === undefined) {
+			throw new TypeError("Constructor Intl.PluralRules requires 'new'");
+		}
+		internals.set(this, {
+			kind: 'PluralRules',
+			resolved: call(prResolve, [JSON.stringify({locales: localeList(locales), options: readPluralOptions(opts)})])
+		});
+	}
+
+	defineMethod(PluralRules.prototype, 'select', function (value) {
+		return call(prSelect, [internal(this, 'PluralRules').resolved, Number(value)]);
+	});
+
+	defineMethod(PluralRules.prototype, 'selectRange', function (start, end) {
+		const i = internal(this, 'PluralRules');
+		if (start === undefined || end === undefined) {
+			throw new TypeError('start or end is undefined');
+		}
+		const x = Number(start), y = Number(end);
+		if (x !== x || y !== y) {
+			throw new RangeError('start or end is NaN');
+		}
+		return call(prSelect, [i.resolved, x, y]);
+	});
+
+	defineMethod(PluralRules.prototype, 'resolvedOptions', function () {
+		return publicOptions(internal(this, 'PluralRules').resolved);
+	});
+
+	defineMethod(PluralRules, 'supportedLocalesOf', supportedLocalesOf('PluralRules'));
+	defineTag(PluralRules.prototype, 'Intl.PluralRules');
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = {};
@@ -303,6 +359,7 @@
 	Object.defineProperty(Intl, Symbol.for('modernc.org/quickjs/intl'), {value: true});
 	defineMethod(Intl, 'DateTimeFormat', DateTimeFormat);
 	defineMethod(Intl, 'NumberFormat', NumberFormat);
+	defineMethod(Intl, 'PluralRules', PluralRules);
 	defineMethod(Intl, 'getCanonicalLocales', function (locales) {
 		return callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
 	});
@@ -386,7 +443,9 @@
 	globalThis.__quickjs_intl_dtfFormat__,
 	globalThis.__quickjs_intl_nfResolve__,
 	globalThis.__quickjs_intl_nfFormat__,
-	globalThis.__quickjs_intl_canonicalLocales__
+	globalThis.__quickjs_intl_canonicalLocales__,
+	globalThis.__quickjs_intl_prResolve__,
+	globalThis.__quickjs_intl_prSelect__
 );
 
 delete globalThis.__quickjs_intl_dtfResolve__;
@@ -394,3 +453,5 @@ delete globalThis.__quickjs_intl_dtfFormat__;
 delete globalThis.__quickjs_intl_nfResolve__;
 delete globalThis.__quickjs_intl_nfFormat__;
 delete globalThis.__quickjs_intl_canonicalLocales__;
+delete globalThis.__quickjs_intl_prResolve__;
+delete globalThis.__quickjs_intl_prSelect__;

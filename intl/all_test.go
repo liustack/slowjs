@@ -268,6 +268,36 @@ func TestNumberFormatLocales(t *testing.T) {
 	})
 }
 
+func TestPluralRules(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.PluralRules('en').select(1)`, "one"},
+		{`new Intl.PluralRules('en').select(-1)`, "one"},
+		{`new Intl.PluralRules('en').select(1.5)`, "other"},
+		{`new Intl.PluralRules('en', {minimumFractionDigits: 1}).select(1)`, "other"},
+		{`new Intl.PluralRules('en', {type: 'ordinal'}).select(22)`, "two"},
+		{`new Intl.PluralRules('ar').select(11)`, "many"},
+		{`new Intl.PluralRules('ru').select(21)`, "one"},
+		{`new Intl.PluralRules('fr').select(1000000)`, "many"},
+		{`new Intl.PluralRules('fr', {notation: 'compact'}).select(1000)`, "one"},
+		{`new Intl.PluralRules('fr').select(1000)`, "other"},
+		{`new Intl.PluralRules('zh-CN').resolvedOptions().locale`, "zh"},
+		{`new Intl.PluralRules('pl').resolvedOptions().pluralCategories.join(' ')`, "one few many other"},
+		{`JSON.stringify(new Intl.PluralRules('en').resolvedOptions())`,
+			`{"locale":"en","type":"cardinal","notation":"standard","minimumIntegerDigits":1,"minimumFractionDigits":0,` +
+				`"maximumFractionDigits":3,"pluralCategories":["one","other"],"roundingIncrement":1,"roundingMode":"halfExpand",` +
+				`"roundingPriority":"auto","trailingZeroDisplay":"auto"}`},
+		{`new Intl.PluralRules('ru').selectRange(1, 5)`, "many"},
+		{`new Intl.PluralRules('en').selectRange(0, 1)`, "other"},
+		{`new Intl.PluralRules('en').select(NaN)`, "other"},
+		{`Intl.PluralRules.supportedLocalesOf(['cy', 'xx']).join(' ')`, "cy"},
+		{`(() => { try { Intl.PluralRules('en') } catch (e) { return e.constructor.name } })()`, "TypeError"},
+		{`(() => { try { new Intl.PluralRules('en').selectRange(1) } catch (e) { return e.constructor.name } })()`, "TypeError"},
+		{`(() => { try { new Intl.PluralRules('en').selectRange(NaN, 1) } catch (e) { return e.constructor.name } })()`, "RangeError"},
+		{`(() => { try { new Intl.PluralRules('en', {type: 'x'}) } catch (e) { return e.constructor.name } })()`, "RangeError"},
+		{`Object.prototype.toString.call(new Intl.PluralRules())`, "[object Intl.PluralRules]"},
+	})
+}
+
 func TestICURules(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
