@@ -43,15 +43,26 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     cost of about a kilobyte.
   - No code sees the internal object. Everything that reads the value of
     `stack` formats it first: property reads in scripts and through the C
-    API, `Object.getOwnPropertyDescriptor(s)` and `JS_GetOwnProperty`,
+    API, `Object.getOwnPropertyDescriptor(s)` and `JS_GetOwnProperty`, and
     redefining a frozen `stack` with a value (the engine compares the old
-    and the new value), and the checks a proxy makes after a `get` or `set`
-    trap on a frozen `stack`. What only looks at keys or attributes leaves
-    it pending: `Object.keys`, `Object.freeze`, `Object.seal`,
+    and the new value). What only looks at keys or attributes leaves it
+    pending: `Object.keys`, `Object.freeze`, `Object.seal`,
     `Object.isFrozen`, `Object.isSealed`, `propertyIsEnumerable`,
     `__lookupGetter__`, `__lookupSetter__`, and the proxy `has`,
     `deleteProperty` and `ownKeys` checks. `stack` is not enumerable, so
-    spreading, `Object.assign` and `Object.entries` skip it.
+    spreading, `Object.assign`, `Object.entries` and `JSON.stringify` skip
+    it.
+  - The same holds through a proxy, or a chain of proxies, that has no
+    `getOwnPropertyDescriptor` trap: the attribute lookups pass through to
+    the error and leave its stack pending. The checks a proxy makes after a
+    `get`, `set` or `defineProperty` trap look only at the attributes of
+    the error's `stack`, and format it only when it is frozen
+    (non-writable and non-configurable) and the check has to compare
+    values. A proxy with a `getOwnPropertyDescriptor` trap calls it as
+    before. The engine then checks the trap's result against the
+    attributes of the error's `stack` only, and `Object.getOwnPropertyDescriptor`
+    through a proxy without the trap formats the stack, since it returns
+    the value.
   - Reading a property named `stack` whose value is an object takes the
     slow path of the interpreter, which is where the stack gets formatted.
     Other property reads do not change. In a loop of 160,000 reads,
@@ -85,18 +96,23 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   - If there is no memory left when `stack` is first read, the read throws
     an out of memory error and the stack stays pending, so a later read can
     give the text. Reading the property descriptor formats the stack the
-    same way and so can throw too. Printing an error (`console.log`) never
-    throws and never leaves a pending exception: out of memory there prints
-    the error without its stack, and a later read can still give it.
-  - If the text cannot be formatted when a stack is built at once (only a
-    function name that needs more memory to convert to UTF-8 can cause this),
-    `stack` becomes `null`, in Go and in the C patch alike. The upstream
+    same way and so can throw too. Printing an error whose stack is still
+    pending (`console.log`, `JS_PrintValue`) never throws and never leaves
+    a pending exception: out of memory there prints the error without its
+    stack, and a later read can still give it. Printing an error whose stack
+    is already a string works as it did before.
+  - If the text cannot be formatted when a stack is built at once (any
+    allocation of the formatting can fail: growing the text buffer,
+    converting a function or file name to UTF-8, making the final string),
+    `stack` becomes `null` and no exception is left, in Go and in the C
+    patch alike. The upstream
     engine instead keeps a half-formatted stack with the name shown as
     `<anonymous>` and leaves an exception pending.
 
   Tests: `errorstack_test.go`, `errorstack_unix_test.go`,
   `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`,
-  `lib/backtrace_round3_test.go`, `internal/fixlib/main_test.go`.
+  `lib/backtrace_round3_test.go`, `lib/backtrace_proxy_test.go`,
+  `internal/fixlib/main_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -193,13 +209,34 @@ Conflicts to expect:
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
   and must change with it.
-  `fixlib` also keeps a list (`slotSites`) of every engine function that
-  reaches a property value, with how often it does. A pending `stack` must
-  be formatted before any of them hands the value on. If a release adds such
-  a function or changes how often one reaches a value, `fixlib` stops and
-  names it: check whether it can see a pending `stack`, wire it to
-  `lib/backtrace.go` if so, and update the list. It does the same for any
-  new property lookup in the interpreter loop (`JS_CallInternal`).
+  `fixlib` also audits how the engine uses property slots (the `JSProperty`
+  that holds a value), because a pending `stack` must be formatted before
+  anything hands the value on. It parses each generated function and
+  follows slot pointers from where they are made (an object's property
+  array, the slot `find_own_property` returns) through variables, stack
+  cells, pointer arithmetic, call arguments and return values, whatever
+  their names. For every function they reach it lists each use: reads and
+  writes of the value or of another field, calls the pointer is passed to,
+  stores, and which uses come before the function's first call into
+  `lib/backtrace.go`. It also counts each function's descriptor lookups.
+  `internal/fixlib/slotsites.go` holds the expected list with the reason
+  each function is safe. When a release adds a function that uses slots,
+  or changes how one does, `fixlib` stops and prints the difference: check
+  whether the change can see a pending `stack`, wire it to
+  `lib/backtrace.go` if so, and update the list
+  (`go run ./internal/fixlib -slots` prints it). It also requires every
+  property lookup in the interpreter loop (`JS_CallInternal`) to be a
+  known guarded read or the `put_field` write.
+  What the audit does not see: a slot pointer stored into a structure is
+  listed as a use where it is stored, but not followed to where it is
+  loaded again. Indirect calls are not followed. A function that no one
+  passes a slot pointer to is not audited, so a new helper only shows up
+  once something calls it with one. The allocator functions that resize
+  or free the property array are listed as uses but not looked into. The
+  order check only compares positions in the source with the first guard
+  of the function. And slot addresses made some other way than from the
+  property array, such as a raw offset into the object, are not
+  recognized. So a change in these places needs a review by hand.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`, the
@@ -207,8 +244,10 @@ Conflicts to expect:
   `js_backtrace_*` calls in `JS_GetPropertyInternal`,
   `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
   `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`,
-  `js_print_object`, `JS_ComputeMemoryUsage`, and the callers that only
-  need the attributes of a property (`js_get_own_property_flags`)). After a regeneration that includes them,
+  `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need
+  the attributes of a property (`js_get_own_property_flags`), and the proxy
+  lookups and trap checks (`js_get_own_property_mode`,
+  `js_proxy_get_own_property_mode`)). After a regeneration that includes them,
   `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
