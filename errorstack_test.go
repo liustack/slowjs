@@ -163,9 +163,12 @@ func errorStackText(t *testing.T, src string, call bool) string {
 func vmMemory(m *VM) lib.TJSMemoryUsage {
 	tls, rt := m.runtime.tls, m.runtime.cRuntime
 	lib.XJS_RunGC(tls, rt)
-	var u lib.TJSMemoryUsage
-	lib.XJS_ComputeMemoryUsage(tls, rt, uintptr(unsafe.Pointer(&u)))
-	return u
+	// The engine writes the result, so it goes in C memory.
+	n := int(unsafe.Sizeof(lib.TJSMemoryUsage{}))
+	p := tls.Alloc(n)
+	defer tls.Free(n)
+	lib.XJS_ComputeMemoryUsage(tls, rt, p)
+	return *(*lib.TJSMemoryUsage)(unsafe.Pointer(p))
 }
 
 // TestErrorStackMemory checks that errors whose stack is never read are freed,
