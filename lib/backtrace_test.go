@@ -119,6 +119,14 @@ function deep(n) { return n ? deep(n - 1) : new Error("deep") }
 function make() { return deep(40) }
 `
 
+// pendingErr makes an error in a call from Go, so its stack stays pending,
+// and returns it. The caller frees it.
+func (v *btVM) pendingErr() TJSValue {
+	v.t.Helper()
+	XFreeValue(v.tls, v.ctx, v.eval(deepError))
+	return v.call("make")
+}
+
 var rooms = []int64{0, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384}
 
 // Reading the stacks of errors kept alive must not give each error a shape

@@ -15,14 +15,6 @@ import (
 	"modernc.org/libc"
 )
 
-// pendingErr makes an error in a call from Go, so its stack stays pending,
-// and returns it. The caller frees it.
-func (v *btVM) pendingErr() TJSValue {
-	v.t.Helper()
-	XFreeValue(v.tls, v.ctx, v.eval(deepError))
-	return v.call("make")
-}
-
 // Printing an error whose stack cannot be formatted for lack of memory
 // must not leave an exception behind: a native read reports no stack and
 // restores the exception state from before the read. This is round-2

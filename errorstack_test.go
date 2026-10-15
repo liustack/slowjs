@@ -411,3 +411,64 @@ function vm%[1]d_outer(n) { kept.push(vm%[1]d_inner(n)); if (kept.length > 50) k
 		t.Error(err)
 	}
 }
+
+// TestErrorStackFirstUseRace has one VM make the first pending stack of the
+// process while other VMs read the 'stack' property of plain objects, which
+// checks for a pending stack. Under -race it fails if the first use sets up
+// anything those reads look at. Run it on its own (-run) so that no other
+// test has made a stack first.
+func TestErrorStackFirstUseRace(t *testing.T) {
+	const vms = 8
+	ms := make([]*VM, vms)
+	for i := range ms {
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer m.Close()
+
+		if _, err := m.Eval(`
+var plain = { stack: 17 }
+function read() { let s = 0; for (let i = 0; i < 1000; i++) s += plain.stack; return s }
+function create() { return new Error("first") }
+`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+
+		ms[i] = m
+	}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, vms)
+	for i, m := range ms {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if i == 0 {
+				v, err := m.CallValue("create")
+				if err != nil {
+					errs <- err
+					return
+				}
+
+				v.Free()
+				return
+			}
+
+			for range 50 {
+				if _, err := m.Call("read"); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+}

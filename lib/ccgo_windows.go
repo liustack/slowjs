@@ -14396,7 +14396,7 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, _obj TJSValue, prop TJ
 		prs = _find_own_property(tls, bp+56, p2, prop)
 		if prs != 0 {
 		if prop == uint32(EJS_ATOM_stack) {
-			if _js_backtrace_settle(tls, ctx3, p2, **(**uintptr)(__ccgo_up(bp + 56))) < 0 {
+			if _js_backtrace_settle(tls, ctx3, p2, prs, **(**uintptr)(__ccgo_up(bp + 56))) < 0 {
 				return jsvException()
 			}
 		}
@@ -15176,7 +15176,7 @@ func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, p
 							is_enumerable = int32(EFALSE)
 							if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(5)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 								/* set the "is_enumerable" field if necessary */
-								res = _JS_GetOwnPropertyInternal(tls, ctx, bp+16, p, atom)
+								res = _js_backtrace_own_flags(tls, ctx, bp+16, p, atom)
 								if res < 0 {
 									XJS_FreePropertyEnum(tls, ctx, **(**uintptr)(__ccgo_up(bp)), **(**Tuint32_t)(__ccgo_up(bp + 8)))
 									return -int32(1)
@@ -15414,7 +15414,7 @@ retry:
 	prs = _find_own_property(tls, bp+16, p1, prop)
 	if prs != 0 {
 		if prop == uint32(EJS_ATOM_stack) && desc != 0 {
-			if _js_backtrace_settle(tls, ctx1, p1, **(**uintptr)(__ccgo_up(bp + 16))) < 0 {
+			if _js_backtrace_settle(tls, ctx1, p1, prs, **(**uintptr)(__ccgo_up(bp + 16))) < 0 {
 				return -int32(1)
 			}
 		}
@@ -18500,7 +18500,7 @@ _16:
 _104:
 	;
 	/* generic case: modify the property in this_obj if it already exists */
-	ret = _JS_GetOwnPropertyInternal(tls, ctx3, bp+80, p2, prop)
+	ret = _js_backtrace_own_flags(tls, ctx3, bp+80, p2, prop)
 	if ret < 0 {
 		v1 = val1
 		*(*TJSValue)(unsafe.Pointer(bp + 8)) = v1
@@ -20078,6 +20078,9 @@ _15:
 					/* Note: JS_PROP_VARREF is always writable */
 				} else {
 					if int32(*(*uint32)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 96)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == 0 && flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(13)) != 0 {
+						if prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, ctx5, p2, **(**uintptr)(__ccgo_up(bp + 96)), **(**uintptr)(__ccgo_up(bp + 104))) < 0 {
+							return -int32(1)
+						}
 						if !(_js_same_value(tls, ctx5, val2, *(*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 104))))) != 0) {
 							goto not_configurable
 						} else {
@@ -26604,7 +26607,7 @@ func _js_print_object(tls *libc.TLS, s uintptr, p1 uintptr) {
 									_js_printf(tls, s, __ccgo_ts+2882, 0)
 								}
 							} else {
-								if _js_backtrace_print_pending(tls, s, pr) == 0 {
+								if _js_backtrace_print_pending(tls, s, prs, pr) == 0 {
 									_js_print_value(tls, s, *(*TJSValue)(unsafe.Pointer(pr)))
 								}
 							}
@@ -32604,7 +32607,7 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, _sourc
 			break
 		}
 		if pexcl != 0 {
-			ret = _JS_GetOwnPropertyInternal(tls, ctx2, libc.UintptrFromInt32(0), pexcl, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
+			ret = _js_backtrace_own_flags(tls, ctx2, libc.UintptrFromInt32(0), pexcl, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
 			if ret != 0 {
 				if ret < 0 {
 					goto exception
@@ -32614,7 +32617,7 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, _sourc
 		}
 		if !(gpn_flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0) {
 			/* test if the property is enumerable */
-			ret = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, p, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
+			ret = _js_backtrace_own_flags(tls, ctx2, bp+48, p, (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom)
 			if ret < 0 {
 				goto exception
 			}
@@ -37774,7 +37777,7 @@ restart:
 				if libc.BoolInt32(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 					goto get_field_slow_path
 				}
-				if atom3 == uint32(EJS_ATOM_stack) && _js_backtrace_pending(tls, **(**uintptr)(__ccgo_up(bp + 288))) {
+				if atom3 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 288))) {
 					goto get_field_slow_path
 				}
 				_ = ctx10
@@ -37871,6 +37874,9 @@ restart:
 				if libc.BoolInt32(!!(int32(*(*uint32)(unsafe.Pointer(prs1 + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 					goto get_field2_slow_path
 				}
+				if atom4 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 312))) {
+					goto get_field2_slow_path
+				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 312))))
 				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
@@ -37963,6 +37969,9 @@ restart:
 			prs2 = _find_own_property(tls, bp+336, p5, atom5)
 			if prs2 != 0 { /* found */
 				if libc.BoolInt32(!!(int32(*(*uint32)(unsafe.Pointer(prs2 + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
+					goto get_length_slow_path
+				}
+				if atom5 == uint32(EJS_ATOM_stack) && _js_backtrace_object(**(**uintptr)(__ccgo_up(bp + 336))) {
 					goto get_length_slow_path
 				}
 				_ = ctx10
@@ -74059,7 +74068,7 @@ _4:
 		atom = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 			/* Check if property is still enumerable */
-			res = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, p1, atom)
+			res = _js_backtrace_own_flags(tls, ctx2, bp+48, p1, atom)
 			if res < 0 {
 				goto exception
 			}
@@ -74749,7 +74758,7 @@ _2:
 		prop = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 32)) + uintptr(i)*8))).Fatom
 		desc_flags = libc.Int32FromInt32(1)<<libc.Int32FromInt32(14) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)
 		if freeze_flag != 0 {
-			res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+48, p1, prop)
+			res = _js_backtrace_own_flags(tls, ctx1, bp+48, p1, prop)
 			if res < 0 {
 				goto exception
 			}
@@ -74840,7 +74849,7 @@ _2:
 			break
 		}
 		prop = (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 16)) + uintptr(i)*8))).Fatom
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, p, prop)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+32, p, prop)
 		if res < 0 {
 			goto exception
 		}
@@ -75512,7 +75521,7 @@ _2:
 	if v1 != 0 {
 		goto exception
 	}
-	has_prop = _JS_GetOwnPropertyInternal(tls, ctx2, bp+32, *(*uintptr)(unsafe.Pointer(bp + 16)), prop)
+	has_prop = _js_backtrace_own_flags(tls, ctx2, bp+32, *(*uintptr)(unsafe.Pointer(bp + 16)), prop)
 	if has_prop < 0 {
 		goto exception
 	}
@@ -75580,7 +75589,7 @@ _2:
 		goto exception
 	}
 	for {
-		has_prop = _JS_GetOwnPropertyInternal(tls, ctx2, bp+48, *(*uintptr)(unsafe.Pointer(bp + 32)), prop)
+		has_prop = _js_backtrace_own_flags(tls, ctx2, bp+48, *(*uintptr)(unsafe.Pointer(bp + 32)), prop)
 		if has_prop < 0 {
 			goto exception
 		}
@@ -110146,7 +110155,7 @@ _16:
 	ret = _JS_ToBoolFree(tls, ctx1, ret1)
 	if !(ret != 0) {
 		p1 = *(*uintptr)(unsafe.Pointer(s))
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+64, p1, atom)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+64, p1, atom)
 		if res < 0 {
 			return -int32(1)
 		}
@@ -111007,7 +111016,7 @@ _16:
 	}
 	res = _JS_ToBoolFree(tls, ctx1, ret)
 	if res != 0 {
-		res2 = _JS_GetOwnPropertyInternal(tls, ctx1, bp+64, *(*uintptr)(unsafe.Pointer(s)), atom)
+		res2 = _js_backtrace_own_flags(tls, ctx1, bp+64, *(*uintptr)(unsafe.Pointer(s)), atom)
 		if res2 < 0 {
 			return -int32(1)
 		}
@@ -111211,7 +111220,7 @@ _4:
 			_JS_ThrowTypeErrorRevokedProxy(tls, ctx1)
 			goto fail
 		}
-		res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+48, *(*uintptr)(unsafe.Pointer(s)), (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 40)) + uintptr(i)*8))).Fatom)
+		res = _js_backtrace_own_flags(tls, ctx1, bp+48, *(*uintptr)(unsafe.Pointer(s)), (**(**TJSPropertyEnum)(__ccgo_up(**(**uintptr)(__ccgo_up(bp + 40)) + uintptr(i)*8))).Fatom)
 		if res < 0 {
 			goto fail
 		}

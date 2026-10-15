@@ -18,8 +18,8 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 // never gets a shape of its own and keeps no shape. While the stack is
 // pending its value is a marker: an object of a class private to this file,
 // JS_CLASS not among the engine's, holding the recorded frames. No path
-// that reads a property value may hand the marker to JavaScript, so the few
-// value-read paths format the stack first:
+// that hands a property value on may hand the marker to JavaScript, so
+// those paths format the stack first:
 //
 //   - A read (get, getOwnPropertyDescriptor, a native print through
 //     get_prop_string) formats the text, stores it in place of the marker,
@@ -27,6 +27,11 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 //     descriptor read throws and the stack stays pending, so a later read
 //     can try again. A native print reports no stack and restores the
 //     exception state it found, so printing never leaves an exception.
+//   - Redefining a non-writable, non-configurable 'stack' compares the new
+//     value with the text, so it formats the stack first.
+//   - Operations that look only at the attributes of 'stack' (Object.keys,
+//     freeze, isFrozen, __lookupGetter__, proxy checks, ...) leave it
+//     pending.
 //   - Assigning, defining or deleting 'stack' frees the marker like any
 //     value, which drops the pending stack without formatting it. Assigning
 //     through an object that has the error as its prototype makes an own
@@ -37,18 +42,22 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 // The marker's class frees the record and marks the bytecode it holds, so
 // the generic free and mark paths need no change. internal/fixlib wires the
 // rest into every ccgo_*.go file: _build_backtrace calls _js_backtrace_build,
-// JS_GetPropertyInternal and JS_GetOwnPropertyInternal call
-// _js_backtrace_settle, the interpreter's get_field bails to the slow path
-// on a pending stack, _get_prop_string calls _js_backtrace_prop_string,
-// js_print_error skips the stack of a raw dump, js_print_object prints a
-// placeholder for a marker, and JS_ComputeMemoryUsage counts the record.
-// fixlib also adds _js_backtrace_has_debug, _js_backtrace_uncatchable and
+// JS_GetPropertyInternal, JS_GetOwnPropertyInternal and the SameValue test
+// of JS_DefineProperty call _js_backtrace_settle, every inline property
+// read of the interpreter sends a 'stack' holding an object to the slow
+// path, the callers of JS_GetOwnPropertyInternal that only read attributes
+// call _js_backtrace_own_flags, _get_prop_string calls
+// _js_backtrace_prop_string, js_print_error skips the stack of a raw dump,
+// js_print_object prints a placeholder for a marker, and
+// JS_ComputeMemoryUsage counts the record.
+// It also checks that no other function of the engine can reach a property
+// value (see slotSites there). fixlib also adds _js_backtrace_has_debug,
+// _js_backtrace_uncatchable, _js_backtrace_prop_flags and
 // _js_backtrace_raw_dump, copied from code ccgo generated, as the bit fields
 // they touch are laid out differently on some targets.
 
 import (
 	"strconv"
-	"sync"
 	"unsafe"
 
 	"modernc.org/libc"
@@ -89,12 +98,17 @@ const (
 	jsBacktraceFlagSkipFirstLevel = 1 << 0 // JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL
 )
 
-// backtraceClassID is the class of a marker, allocated once for the process
-// and registered in each runtime that records a pending stack.
-var (
-	backtraceClassID   TJSClassID
-	backtraceClassOnce sync.Once
-)
+// backtraceClassID is the class of a marker. It is one number for the whole
+// process, set before any runtime exists so that reading it never races
+// with setting it, and registered in each runtime that records a pending
+// stack.
+var backtraceClassID TJSClassID
+
+func init() {
+	tls := libc.NewTLS()
+	XJS_NewClassID(tls, uintptr(unsafe.Pointer(&backtraceClassID)))
+	tls.Close()
+}
 
 // backtracePlaceholder is printed in place of a marker in a raw dump.
 var backtracePlaceholder = [...]byte{'[', 's', 't', 'a', 'c', 'k', ']'}
@@ -102,13 +116,6 @@ var backtracePlaceholder = [...]byte{'[', 's', 't', 'a', 'c', 'k', ']'}
 // backtraceEnsureClass registers the marker class in the runtime of ctx and
 // returns its id, or 0 if there is no memory to register it.
 func backtraceEnsureClass(tls *libc.TLS, ctx uintptr) TJSClassID {
-	// The id is one number for the whole process, so allocate it once.
-	backtraceClassOnce.Do(func() {
-		XJS_NewClassID(tls, uintptr(unsafe.Pointer(&backtraceClassID)))
-	})
-	if backtraceClassID == 0 {
-		return 0
-	}
 	rt := (*TJSContext)(unsafe.Pointer(ctx)).Frt
 	r := (*TJSRuntime)(unsafe.Pointer(rt))
 	if backtraceClassID < uint32(r.Fclass_count) {
@@ -119,7 +126,9 @@ func backtraceEnsureClass(tls *libc.TLS, ctx uintptr) TJSClassID {
 	}
 	// JS_NewClass copies the name into an atom, so a C string that lives for
 	// the call is enough. Its definition goes in C memory, as JS_NewClass
-	// reads it through C pointer arithmetic.
+	// reads it through C pointer arithmetic, and starts zeroed, as TLS
+	// memory holds whatever was there before: the class has no call or
+	// exotic handler.
 	name, err := libc.CString("QuickJSBacktrace")
 	if err != nil {
 		return 0
@@ -129,6 +138,7 @@ func backtraceEnsureClass(tls *libc.TLS, ctx uintptr) TJSClassID {
 	def := tls.Alloc(defSize)
 	defer tls.Free(defSize)
 	d := (*TJSClassDef)(unsafe.Pointer(def))
+	*d = TJSClassDef{}
 	d.Fclass_name = name
 	d.Ffinalizer = __ccgo_fp(_js_backtrace_finalizer)
 	d.Fgc_mark = __ccgo_fp(_js_backtrace_gc_mark)
@@ -140,8 +150,18 @@ func backtraceEnsureClass(tls *libc.TLS, ctx uintptr) TJSClassID {
 
 // backtraceMarker reports whether val is a pending-stack marker.
 func backtraceMarker(val TJSValue) bool {
-	return backtraceClassID != 0 && jsvTag(val) == EJS_TAG_OBJECT &&
+	return jsvTag(val) == EJS_TAG_OBJECT &&
 		uint32((*TJSObject)(unsafe.Pointer(jsvPtr(val))).Fclass_id) == backtraceClassID
+}
+
+// backtracePending reports whether the property at prs and pr holds a
+// pending stack: a plain data property whose value is a marker. The kind
+// is tested first, as only a plain data property holds a JSValue: an
+// accessor holds two object pointers, a global variable a pointer to its
+// reference followed by whatever bytes were there before.
+func backtracePending(tls *libc.TLS, prs uintptr, pr uintptr) bool {
+	return _js_backtrace_prop_flags(tls, prs)&MJS_PROP_TMASK == MJS_PROP_NORMAL &&
+		backtraceMarker(*(*TJSValue)(unsafe.Pointer(pr)))
 }
 
 // backtraceCount returns the number of frames build_backtrace prints, and
@@ -337,18 +357,23 @@ func backtraceStore(tls *libc.TLS, ctx uintptr, pr uintptr) int32 {
 	return 0
 }
 
-// _js_backtrace_pending reports whether the property pr holds a pending
-// stack. The interpreter's get_field uses it to take the slow path.
-func _js_backtrace_pending(tls *libc.TLS, pr uintptr) bool {
-	return backtraceMarker(*(*TJSValue)(unsafe.Pointer(pr)))
+// _js_backtrace_object reports whether the property value at pr is an
+// object, as a pending stack is. The interpreter's inline reads send a
+// 'stack' whose value is an object to the slow path, which formats a pending
+// stack. It is small enough for the compiler to inline, so the inline reads
+// of other properties cost what they did.
+func _js_backtrace_object(pr uintptr) bool {
+	return jsvTag(*(*TJSValue)(unsafe.Pointer(pr))) == EJS_TAG_OBJECT
 }
 
-// _js_backtrace_settle formats a pending stack at pr, a property of p, and
-// stores it, so the caller reads the text. It returns -1, with an exception
+// _js_backtrace_settle formats a pending stack at prs and pr, a property of
+// p, and stores it, so the caller reads the text. It returns -1, with an exception
 // set, if the stack cannot be formatted. It does nothing if pr is not a
-// pending stack.
-func _js_backtrace_settle(tls *libc.TLS, ctx uintptr, p uintptr, pr uintptr) int32 {
-	if !backtraceMarker(*(*TJSValue)(unsafe.Pointer(pr))) {
+// pending stack. JS_GetPropertyInternal and JS_GetOwnPropertyInternal call
+// it before they read the value of 'stack', and JS_DefineProperty before it
+// compares that value with a new one.
+func _js_backtrace_settle(tls *libc.TLS, ctx uintptr, p uintptr, prs uintptr, pr uintptr) int32 {
+	if !backtracePending(tls, prs, pr) {
 		return 0
 	}
 	return backtraceStore(tls, ctx, pr)
@@ -356,24 +381,49 @@ func _js_backtrace_settle(tls *libc.TLS, ctx uintptr, p uintptr, pr uintptr) int
 
 // _js_backtrace_prop_string is the part of get_prop_string for a pending
 // stack, which prints an error: it formats the stack and stores it, like a
-// read, then returns the text. On failure it restores the exception state
-// from before the call and reports no stack, so printing never leaves an
-// exception. ok is false if pr is not a pending stack.
+// read, then returns the text as a C string. If either step runs out of
+// memory, it restores the exception state from before the call and reports
+// no stack, so printing never leaves an exception. ok is false if pr is not
+// a pending stack.
 func _js_backtrace_prop_string(tls *libc.TLS, ctx uintptr, p uintptr, prs uintptr, pr uintptr) (s uintptr, ok bool) {
-	if !backtraceMarker(*(*TJSValue)(unsafe.Pointer(pr))) {
+	if !backtracePending(tls, prs, pr) {
 		return 0, false
 	}
 	rt := (*TJSContext)(unsafe.Pointer(ctx)).Frt
 	exception := XDupValue(tls, ctx, (*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception)
 	uncatchable := _js_backtrace_uncatchable(tls, ctx)
-	if backtraceStore(tls, ctx, pr) < 0 {
-		XFreeValue(tls, ctx, XJS_GetException(tls, ctx))
-		XJS_Throw(tls, ctx, exception)
-		XJS_SetUncatchableException(tls, ctx, uncatchable)
-		return 0, true
+	if backtraceStore(tls, ctx, pr) == 0 {
+		if s = XJS_ToCStringLen2(tls, ctx, 0, *(*TJSValue)(unsafe.Pointer(pr)), 0); s != 0 {
+			XFreeValue(tls, ctx, exception)
+			return s, true
+		}
 	}
-	XFreeValue(tls, ctx, exception)
-	return XJS_ToCStringLen2(tls, ctx, 0, *(*TJSValue)(unsafe.Pointer(pr)), 0), true
+	XFreeValue(tls, ctx, XJS_GetException(tls, ctx))
+	XJS_Throw(tls, ctx, exception)
+	XJS_SetUncatchableException(tls, ctx, uncatchable)
+	return 0, true
+}
+
+// _js_backtrace_own_flags is JS_GetOwnPropertyInternal for callers that only
+// look at the attributes of the property in desc, never at its value: for a
+// pending stack it fills in the attributes and an undefined value without
+// formatting the stack, which leaves it pending and cannot run out of
+// memory. internal/fixlib makes those callers call it instead.
+func _js_backtrace_own_flags(tls *libc.TLS, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom) int32 {
+	if desc != 0 && prop == uint32(EJS_ATOM_stack) {
+		ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
+		defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
+		if prs := _find_own_property(tls, ppr, p, prop); prs != 0 &&
+			backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr))) {
+			d := (*TJSPropertyDescriptor)(unsafe.Pointer(desc))
+			d.Fflags = _js_backtrace_prop_flags(tls, prs) & MJS_PROP_C_W_E
+			d.Fvalue = jsUndefined()
+			d.Fgetter = jsUndefined()
+			d.Fsetter = jsUndefined()
+			return 1
+		}
+	}
+	return _JS_GetOwnPropertyInternal(tls, ctx, desc, p, prop)
 }
 
 // _js_backtrace_raw_stack reports whether js_print_error should skip the
@@ -385,17 +435,14 @@ func _js_backtrace_raw_stack(tls *libc.TLS, s uintptr, p uintptr) bool {
 	ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
 	defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
 	prs := _find_own_property(tls, ppr, p, uint32(EJS_ATOM_stack))
-	if prs == 0 {
-		return false
-	}
-	return backtraceMarker(*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(ppr)))))
+	return prs != 0 && backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr)))
 }
 
-// _js_backtrace_print_pending prints a placeholder for a marker at pr in a
-// raw dump, where js_print_object would otherwise print the marker object.
-// It returns 1 if it printed, 0 if pr is not a pending stack.
-func _js_backtrace_print_pending(tls *libc.TLS, s uintptr, pr uintptr) int32 {
-	if !backtraceMarker(*(*TJSValue)(unsafe.Pointer(pr))) {
+// _js_backtrace_print_pending prints a placeholder for a marker at prs and
+// pr in a raw dump, where js_print_object would otherwise print the marker
+// object. It returns 1 if it printed, 0 if pr is not a pending stack.
+func _js_backtrace_print_pending(tls *libc.TLS, s uintptr, prs uintptr, pr uintptr) int32 {
+	if !backtracePending(tls, prs, pr) {
 		return 0
 	}
 	write := (*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func
@@ -409,14 +456,10 @@ func _js_backtrace_print_pending(tls *libc.TLS, s uintptr, pr uintptr) int32 {
 // property at prs and pr: it counts the record of a pending stack and the
 // function names it holds. The marker object is counted by the normal walk.
 func _js_backtrace_memory_usage(tls *libc.TLS, s uintptr, hp uintptr, prs uintptr, pr uintptr) {
-	if (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom == uint32(MJS_ATOM_NULL) {
+	if (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom == uint32(MJS_ATOM_NULL) || !backtracePending(tls, prs, pr) {
 		return
 	}
-	val := *(*TJSValue)(unsafe.Pointer(pr))
-	if !backtraceMarker(val) {
-		return
-	}
-	bt := XJS_GetOpaque(tls, val, backtraceClassID)
+	bt := XJS_GetOpaque(tls, *(*TJSValue)(unsafe.Pointer(pr)), backtraceClassID)
 	u := (*TJSMemoryUsage)(unsafe.Pointer(s))
 	u.Fmemory_used_count++
 	u.Fmemory_used_size += int64(backtraceSize((*backtrace)(unsafe.Pointer(bt)).count))
