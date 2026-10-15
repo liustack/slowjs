@@ -492,6 +492,13 @@ func (r *icuBundleData) resources(tree string, patterned map[string]bool) (paths
 		for _, k := range []string{"Currencies", "Currencies%narrow", "CurrencyPlurals", "CurrencyUnitPatterns"} {
 			add(k)
 		}
+		// Plural names are looked up currency by currency: a locale
+		// without them for a currency writes its name from Currencies.
+		if res, ok := r.get("CurrencyPlurals"); ok {
+			for code := range r.table(res) {
+				paths = append(paths, "CurrencyPlurals/"+code)
+			}
+		}
 		for code, res := range r.currencies() {
 			if patterned[code] {
 				paths = append(paths, "Currencies/"+code)

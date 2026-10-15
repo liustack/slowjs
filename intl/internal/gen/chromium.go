@@ -374,7 +374,7 @@ func icuPath(key string) (tree, path string, ok bool) {
 		case field == "symbol-alt-narrow":
 			return "curr", "Currencies%narrow", true
 		case strings.HasPrefix(field, "displayName-count-"):
-			return "curr", "CurrencyPlurals", true
+			return "curr", "CurrencyPlurals/" + code, true
 		default:
 			return "curr", "Currencies", true
 		}

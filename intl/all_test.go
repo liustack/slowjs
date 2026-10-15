@@ -285,6 +285,9 @@ func TestChromiumFallback(t *testing.T) {
 		// oc-ES has no currency names in Chromium: they are English, plural
 		// names too, which CLDR has none of for oc.
 		{`new Intl.NumberFormat('oc-ES', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "2.00 US dollars"},
+		// fa has no plural names for the dollar in Chromium, so fa-AF writes
+		// its own name for it.
+		{`new Intl.NumberFormat('fa-AF', {style: 'currency', currency: 'USD', currencyDisplay: 'name'}).format(2)`, "۲٫۰۰ دالر امریکا"},
 		{`new Intl.DateTimeFormat('bs-Cyrl', {dateStyle: 'full', timeZone: 'UTC'}).format(Date.UTC(2026, 0, 5))`, "понедјељак, 05. јануар 2026."},
 		{`new Intl.DateTimeFormat('ckb-IR', {weekday: 'long', calendar: 'gregory', timeZone: 'UTC'}).format(0)`, "Thu"},
 		{`new Intl.DateTimeFormat('ckb-IR', {dateStyle: 'medium', timeZone: 'UTC'}).format(0)`, "AP 1348 بەفرانبار 11"},
