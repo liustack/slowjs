@@ -48,21 +48,21 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     and the new value). What only looks at keys or attributes leaves it
     pending: `Object.keys`, `Object.freeze`, `Object.seal`,
     `Object.isFrozen`, `Object.isSealed`, `propertyIsEnumerable`,
-    `__lookupGetter__`, `__lookupSetter__`, and the proxy `has`,
-    `deleteProperty` and `ownKeys` checks. `stack` is not enumerable, so
+    `__lookupGetter__`, `__lookupSetter__`, and the checks a proxy whose
+    target is the error makes after a `has`, `deleteProperty` or `ownKeys`
+    trap. `stack` is not enumerable, so
     spreading, `Object.assign`, `Object.entries` and `JSON.stringify` skip
     it.
-  - The same holds through a proxy, or a chain of proxies, that has no
-    `getOwnPropertyDescriptor` trap: the attribute lookups pass through to
-    the error and leave its stack pending. The checks a proxy makes after a
-    `get`, `set` or `defineProperty` trap look only at the attributes of
-    the error's `stack`, and format it only when it is frozen
-    (non-writable and non-configurable) and the check has to compare
-    values. A proxy with a `getOwnPropertyDescriptor` trap calls it as
-    before. The engine then checks the trap's result against the
-    attributes of the error's `stack` only, and `Object.getOwnPropertyDescriptor`
-    through a proxy without the trap formats the stack, since it returns
-    the value.
+  - Through a proxy, apart from those three checks, `stack` is formatted
+    as before. A lookup of the attributes through a proxy (`Object.keys`,
+    `Object.freeze` or `propertyIsEnumerable` on the proxy, for example)
+    and the checks a proxy makes after a `get`, `set`,
+    `defineProperty` or `getOwnPropertyDescriptor` trap read the error's
+    full descriptor, which formats the stack. Results, trap calls and their
+    order are the same as when the stack was formatted at once. The cost is
+    memory: with almost none left, such an operation can fail with out of
+    memory, where the upstream engine had already formatted the stack when
+    the error was made.
   - Reading a property named `stack` whose value is an object takes the
     slow path of the interpreter, which is where the stack gets formatted.
     Other property reads do not change. In a loop of 160,000 reads,
@@ -96,18 +96,22 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   - If there is no memory left when `stack` is first read, the read throws
     an out of memory error and the stack stays pending, so a later read can
     give the text. Reading the property descriptor formats the stack the
-    same way and so can throw too. Printing an error whose stack is still
-    pending (`console.log`, `JS_PrintValue`) never throws and never leaves
-    a pending exception: out of memory there prints the error without its
-    stack, and a later read can still give it. Printing an error whose stack
-    is already a string works as it did before.
+    same way and so can throw too. When an error whose stack is still
+    pending is printed (`console.log`, `JS_PrintValue`), formatting the
+    stack never throws and never leaves a pending exception: out of memory
+    there prints the error without its stack, and a later read can still
+    give it. This covers the stack only. The rest of the print, such as the
+    message, can run out of memory and leave an exception, as in the
+    upstream engine. Printing an error whose stack is already a string works
+    as it did before.
   - If the text cannot be formatted when a stack is built at once (any
     allocation of the formatting can fail: growing the text buffer,
     converting a function or file name to UTF-8, making the final string),
     `stack` becomes `null` and no exception is left, in Go and in the C
-    patch alike. The upstream
-    engine instead keeps a half-formatted stack with the name shown as
-    `<anonymous>` and leaves an exception pending.
+    patch alike. The upstream engine also gives `null` when the text buffer
+    cannot grow. When converting a function name fails, it instead keeps a
+    half-formatted stack with the name shown as `<anonymous>` and leaves an
+    exception pending.
 
   Tests: `errorstack_test.go`, `errorstack_unix_test.go`,
   `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`,
@@ -213,9 +217,12 @@ Conflicts to expect:
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
   follows slot pointers from where they are made (an object's property
-  array, the slot `find_own_property` returns) through variables, stack
-  cells, pointer arithmetic, call arguments and return values, whatever
-  their names. For every function they reach it lists each use: reads and
+  array, the slot `find_own_property` returns) through variables (`=`,
+  `:=` and `var`), stack cells, pointer arithmetic, call arguments and
+  return values, whatever their names. A slot pointer that goes anywhere
+  else (stored into a structure, in an assignment of several results,
+  arithmetic on a stack cell other than a step to the next cell) is
+  listed as a use there. For every function they reach it lists each use: reads and
   writes of the value or of another field, calls the pointer is passed to,
   stores, and which uses come before the function's first call into
   `lib/backtrace.go`. It also counts each function's descriptor lookups.
@@ -245,9 +252,8 @@ Conflicts to expect:
   `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
   `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`,
   `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need
-  the attributes of a property (`js_get_own_property_flags`), and the proxy
-  lookups and trap checks (`js_get_own_property_mode`,
-  `js_proxy_get_own_property_mode`)). After a regeneration that includes them,
+  the attributes of a property (`js_get_own_property_flags`)). After a
+  regeneration that includes them,
   `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
