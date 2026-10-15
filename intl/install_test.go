@@ -7,6 +7,7 @@ package intl // import "github.com/liustack/quickjs/intl"
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/liustack/quickjs"
@@ -128,5 +129,66 @@ func TestInstallFailsOnDeepStack(t *testing.T) {
 	evalTests(t, vm, afterFailedInstall[2:])
 	if n := shimInstalls.Load() - before; n < 2 {
 		t.Fatalf("the shim was installed %d times, want a failed install before the one that worked", n)
+	}
+}
+
+// TestCompileOnDeepStack makes the first use of Intl in the process deep in
+// the stack. The compile does not depend on the stack of the VM that needs it,
+// and the process is left with a working shim.
+func TestCompileOnDeepStack(t *testing.T) {
+	saved := shimScript.code
+	shimScript.code = nil
+	t.Cleanup(func() { shimScript.code = saved })
+
+	vm := newVM(t)
+	vm.SetMaxStackSize(400)
+	evalTests(t, vm, [][2]string{{deepFirstUse, "1,234.5 true"}})
+	evalTests(t, newVM(t), [][2]string{{firstUse, "1,234.5"}})
+}
+
+// TestCompileRetries checks that a failed compile is not kept: the next eval
+// compiles again. A good one is kept, and VMs starting together share it.
+func TestCompileRetries(t *testing.T) {
+	src := `syntax error(`
+	s := &script{src: &src}
+	vm := newVM(t)
+	if err := s.eval(vm); err == nil {
+		t.Fatal("a script with a syntax error evaluated")
+	}
+
+	src = `globalThis.evaluated = (globalThis.evaluated || 0) + 1`
+	if err := s.eval(vm); err != nil {
+		t.Fatalf("the compile was not retried: %v", err)
+	}
+
+	code := s.code
+	if err := s.eval(vm); err != nil {
+		t.Fatal(err)
+	}
+	if &s.code[0] != &code[0] {
+		t.Fatal("a good compile was not kept")
+	}
+	evalTests(t, vm, [][2]string{{`evaluated`, "2"}})
+
+	src2 := `globalThis.evaluated = 1`
+	s2 := &script{src: &src2}
+	var wg sync.WaitGroup
+	codes := make([][]byte, 8)
+	for i := range codes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			code, err := s2.bytecode()
+			if err != nil {
+				t.Error(err)
+			}
+			codes[i] = code
+		}()
+	}
+	wg.Wait()
+	for _, code := range codes[1:] {
+		if &code[0] != &codes[0][0] {
+			t.Fatal("VMs starting together compiled more than once")
+		}
 	}
 }

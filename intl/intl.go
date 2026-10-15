@@ -122,24 +122,54 @@ var shim string
 //go:embed stub.js
 var stub string
 
-// script is javascript compiled to bytecode once per process, by the first VM
-// that needs it, and evaluated from there on every VM: the bytecode does not
-// depend on the VM that made it.
+// script is javascript compiled to bytecode once per process and evaluated
+// from there on every VM: the bytecode does not depend on the VM that made it.
 type script struct {
-	src  *string
-	once sync.Once
-	code []byte
-	err  error
+	src *string
+
+	mu   sync.Mutex
+	code []byte // nil until a compile works
 }
 
 func (s *script) eval(vm *quickjs.VM) error {
-	s.once.Do(func() { s.code, s.err = vm.Compile(*s.src, quickjs.EvalGlobal) })
-	if s.err != nil {
-		return s.err
+	code, err := s.bytecode()
+	if err != nil {
+		return err
 	}
 
-	_, err := vm.EvalBytecode(s.code)
+	_, err = vm.EvalBytecode(code)
 	return err
+}
+
+// bytecode returns s compiled. A compile that fails is not kept, the next
+// call tries again.
+func (s *script) bytecode() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.code == nil {
+		code, err := compile(*s.src)
+		if err != nil {
+			return nil, err
+		}
+
+		s.code = code
+	}
+	return s.code, nil
+}
+
+// compile compiles src on a VM of its own. The VM that needs the bytecode may
+// be short of memory, stack or time, and a compile there would fail for
+// reasons that have nothing to do with src.
+func compile(src string) ([]byte, error) {
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		return nil, err
+	}
+
+	defer vm.Close()
+
+	return vm.Compile(src, quickjs.EvalGlobal)
 }
 
 var (
