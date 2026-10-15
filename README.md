@@ -117,6 +117,26 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`,
   `lib/backtrace_round3_test.go`, `lib/backtrace_proxy_test.go`,
   `internal/fixlib/main_test.go`.
+- Package `intl` formats in every locale Chromium has, from CLDR 48.2
+  (cldr-json 48.2.3), where upstream formats en-US only. It covers
+  `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.PluralRules` and the
+  `toLocale*` methods, and its output is compared with Chromium 156 on about
+  52,000 expressions (`intl/golden_test.go`). Without a locale argument the
+  locale is en-US, and without a `timeZone` option the zone is UTC: the
+  host's settings are never read. `Register` only puts stand-ins on the VM.
+  The first use of `Intl` or a `toLocale*` method installs the rest, from
+  bytecode compiled once per process. The package documentation lists what
+  is not implemented and where the output differs from Chromium.
+
+  What it costs, measured on darwin/arm64 against the en-US version: a
+  program that uses `intl` is 2.1 MB larger (1.6 MB of it is the locale
+  data). `Register` takes 0.09 ms and 9 KB of the VM's memory, against
+  0.85 ms and 46 KB before. The first use in a VM then takes 0.15 ms and
+  42 KB more. A language is decoded into the Go heap the first time it is
+  used, once per process, in about 0.3 ms and 100 to 180 KB. The first use
+  of any language also decodes about 1 MB of shared data. Formatting a date
+  takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
+  2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -151,10 +171,11 @@ generators, proxies and BigInt.
 See also the original [C QuickJS] library.
 
 The engine has no `Intl`: ECMA-402 is not implemented by the C library this
-package wraps. Package [quickjs/intl] adds `Intl.DateTimeFormat` and
-`Intl.NumberFormat`, en-US over Go's time zone database, for a VM that opts in
-by calling its `Register` — once per VM, including one created to replace
-another, because `Intl` lives on that VM's global object.
+package wraps. Package [quickjs/intl] adds `Intl.DateTimeFormat`,
+`Intl.NumberFormat` and `Intl.PluralRules`, in every locale Chromium has and
+over Go's time zone database, for a VM that opts in by calling its `Register`
+— once per VM, including one created to replace another, because `Intl` lives
+on that VM's global object.
 
 Resolving IANA time zone names needs a zoneinfo database. Go reads the
 operating system's, or the copy `time/tzdata` embeds in the binary. That import
@@ -279,8 +300,45 @@ Upstream commits import `modernc.org/libquickjs` and `modernc.org/quickjs`.
 After the merge, drop `modernc.org/libquickjs` from `go.mod`, run
 `grep -rn 'modernc.org/quickjs\|modernc.org/libquickjs' --include='*.go' .`
 and switch what it finds to `github.com/liustack/quickjs`. The only expected
-leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/intl.go`,
+leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/stub.js`,
 which is a runtime marker, not an import path.
+
+`intl/` has been rewritten here, so an upstream change to it conflicts.
+Keep this fork's version and bring over only what the upstream change fixes,
+checked with the golden test below.
+
+### Updating the intl locale data
+
+`intl/cldr.bin` is generated from cldr-json and checked in, so neither a
+build nor `go test` needs the network or Node. To generate it again:
+
+```sh
+go run ./intl/internal/gen -fetch    # downloads what is missing into a cache directory
+go test ./intl                       # includes the golden test against Chromium
+```
+
+To move to a new CLDR release, set `cldrTag` in `intl/internal/gen/main.go`
+to the cldr-json tag and run the two commands. The golden test then shows
+every expression whose output changed. A change the new CLDR explains goes
+into `goldenDifferences` in `intl/golden_test.go` with the reason, until
+Chromium has the same CLDR. fr-CH's grouping separator is such a change now.
+
+To compare with a newer Chromium, record its answers again. This needs Node
+and Playwright's Chromium (`npx playwright install chromium`):
+
+```sh
+node intl/testdata/chromium/record.cjs availability <cldr-json dir>   # the locales it has
+go run ./intl/internal/gen -fetch                                    # data for those locales
+go test ./intl -run TestGolden -args -golden.corpus                  # writes corpus.json
+node intl/testdata/chromium/record.cjs golden                        # writes golden.json.gz
+go test ./intl
+```
+
+`PLAYWRIGHT` and `CHROMIUM` point `record.cjs` at another copy of
+playwright-core or another browser. Update the Chromium and ICU versions in
+the package documentation and here, and look at each new difference: fix the
+code when Chromium is right, or add the cause to `goldenDifferences` when the
+difference is in the data.
 
 ### Checks
 

@@ -8,57 +8,80 @@
 // QuickJS has no Intl. It is not a disabled build option: neither Bellard's
 // engine nor quickjs-ng implements ECMA-402, so a page or bundle that reaches
 // for Intl.DateTimeFormat gets a ReferenceError. [Register] installs a Go
-// backed implementation of the two parts of the API code actually depends on:
+// backed implementation of the parts of the API pages depend on:
 //
-//   - Intl.DateTimeFormat, with the IANA time zone database behind its
-//     timeZone option.
-//   - Intl.NumberFormat, with grouping, fraction and significant digits,
-//     percent, currency, unit, and compact and scientific notation.
+//   - Intl.DateTimeFormat: date and time styles, the component options,
+//     hour cycles, day periods, time zone names, and the IANA time zone
+//     database behind the timeZone option.
+//   - Intl.NumberFormat: grouping, fraction and significant digits, rounding
+//     modes, percent, currency, unit, compact and scientific notation, and
+//     numbering systems.
+//   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
+//   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
-// toLocaleTimeString along with Number.prototype.toLocaleString, which ECMA-402
-// redefines in terms of those two constructors. QuickJS ships fallbacks for
-// them that ignore their arguments, so
+// toLocaleTimeString along with Number.prototype.toLocaleString and
+// BigInt.prototype.toLocaleString, which ECMA-402 redefines in terms of those
+// constructors. QuickJS ships fallbacks for them that ignore their arguments,
+// so
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //
 // answers in the host's own zone before Register - a wrong time, silently -
 // and "12/31/1969, 7:00:00 PM" after it.
 //
-// # Locale data
+// # Locales
 //
-// Go's standard library ships the time zone database but no CLDR, so the
-// locale data here is en-US and only en-US. Any locale argument is accepted
-// and resolves to en-US, which resolvedOptions().locale then reports instead of
-// echoing what was asked for. Within en-US the output is meant to match a
-// browser exactly. Where the data does not exist the code falls back to
-// something it can derive rather than to a guess:
+// The locale data is CLDR 48.2 (cldr-json 48.2.3), for every locale Chromium
+// has. A locale resolves as it does in Chromium: one with no data of its own
+// falls back to its parent (en-XX to en) or, failing that, to en-US. With no
+// locale argument the locale is en-US and with no timeZone option the zone is
+// UTC: the host's language and zone are never read, so a page renders the
+// same on every server.
 //
-//   - A long time zone name formats as the GMT offset, "GMT+01:00", since
-//     CLDR's "Eastern Standard Time" is not available. UTC is spelled out.
-//   - currencyDisplay "name" formats as the currency code.
-//   - A currency with no symbol here formats as its code and a unit with no
-//     name as its identifier, which are CLDR's own fallbacks.
+// Dates are in the Gregorian calendar, or in the buddhist one for th and the
+// persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
+// Any other calendar asked for, with -u-ca- or the calendar option, is
+// dropped from the resolved locale and the date is Gregorian.
 //
-// Not implemented: Intl.Collator, Intl.PluralRules, Intl.RelativeTimeFormat,
-// Intl.ListFormat, Intl.DisplayNames, Intl.Segmenter, Intl.DurationFormat and
-// Intl.supportedValuesOf. String.prototype.localeCompare keeps QuickJS's code
-// point ordering. NumberFormat accepts roundingIncrement and roundingPriority
-// but only implements their defaults, which is what resolvedOptions reports.
+// Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
+// Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
+// Intl.supportedValuesOf and formatRange. String.prototype.localeCompare keeps
+// QuickJS's code point ordering. NumberFormat accepts roundingIncrement and
+// roundingPriority but only implements their defaults, which is what
+// resolvedOptions reports.
 //
-// # Differences from a browser
+// # Differences from Chromium
 //
-// The en-US output is checked expression by expression against a full ICU -
-// node's Intl - over a few thousand combinations of options, values, instants
-// and time zones by TestAgainstICU, which runs whenever node is installed. It
-// agrees except where the data is missing (above) or where ICU disagrees with
-// itself:
+// The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
+// 48.1) on about 52,000 expressions recorded in testdata/chromium. All but
+// these match exactly:
 //
-//   - The space before AM or PM is an ordinary one. V8 writes U+202F there in
-//     formatToParts but an ordinary space in format, and one separator has to
-//     be picked for both.
-//   - hourCycle "h23" is reported for hour12: false. V8 reports "h24" while
-//     still formatting midnight as 00, which is the value ECMA-402 asks for.
+//   - fr-CH groups digits with an apostrophe, CLDR 48.2's separator, where
+//     Chromium has a narrow no-break space.
+//   - A numbering system a locale has no symbols for, such as arab in de,
+//     takes the locale's latn symbols. ICU takes CLDR root's, which
+//     cldr-json does not publish.
+//   - A calendar other than the ones above formats as Gregorian.
+//   - ko calls the North American zones 미 (America) where Chromium has
+//     북미 (North America).
+//
+// Where Chromium's ICU data departs from CLDR, the data here follows
+// Chromium: a zone's city is the one its id spells ("Sao Paulo"), Hong Kong
+// and Macao go by their short names, and the zones of the British Isles are
+// never "Greenwich Mean Time". As in Chromium, narrow and thin spaces in dates
+// are written as plain spaces.
+//
+// # Cost
+//
+// The locale data is embedded in the binary, about 1.6 MB, and stays in its
+// read only data. A language is decoded into the Go heap the first time a
+// formatter needs it, once per process, and every VM shares it: 100 to 180
+// KB per language, and about 1 MB for the index and the data all languages
+// share on the first use of any. Register itself only puts stand-ins on the
+// VM. The javascript half is installed the first time a page touches Intl or
+// a toLocale* method, from bytecode compiled once per process, so a VM that
+// never formats anything does not carry it.
 //
 // # Time zones
 //

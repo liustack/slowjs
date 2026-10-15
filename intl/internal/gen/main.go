@@ -28,7 +28,10 @@
 //	sorted by key index
 //
 // Chunk "@" holds the supplemental data, every other chunk one locale, stored
-// as the difference from its parent's resolved data.
+// as the difference from its parent's data: the keys whose value differs, and
+// "∅∅∅" for a key the parent has and the locale does not.
+//
+// The README of the module says how to move to a new CLDR or Chromium.
 package main
 
 import (
