@@ -70,7 +70,7 @@ func (c *calendarData) str(key string) string {
 // availableFormats entry of the calendar, in key order.
 func (c *calendarData) eachAvailableFormat(f func(skel, pattern string)) {
 	prefix := c.prefix + "/dateTimeFormats/availableFormats/"
-	c.data.each(prefix, func(k, v string) { f(strings.TrimPrefix(k, prefix), v) })
+	c.data.eachNearestFirst(prefix, func(k, v string) { f(strings.TrimPrefix(k, prefix), v) })
 }
 
 // dateFields are the calendar fields of an instant in a time zone.

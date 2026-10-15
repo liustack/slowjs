@@ -204,6 +204,33 @@ func (d *cldrData) str(key string) string {
 	return s
 }
 
+// eachNearestFirst is each in the order ICU reads a table with fallback:
+// the keys d sets itself first, then those its parent sets, and so on, each
+// in key order.
+func (d *cldrData) eachNearestFirst(prefix string, f func(key, value string)) {
+	x := cldr()
+	lo := sort.SearchStrings(x.keys, prefix)
+	hi := lo
+	for hi < len(x.keys) && strings.HasPrefix(x.keys[hi], prefix) {
+		hi++
+	}
+	seen := map[uint32]bool{}
+	for level := d; level != nil; level = level.parent {
+		i := sort.Search(len(level.keys), func(i int) bool { return level.keys[i] >= uint32(lo) })
+		for ; i < len(level.keys) && level.keys[i] < uint32(hi); i++ {
+			k := level.keys[i]
+			if seen[k] {
+				continue
+			}
+
+			seen[k] = true
+			if v, ok := d.get(x.keys[k]); ok {
+				f(x.keys[k], v)
+			}
+		}
+	}
+}
+
 // each calls f with every key starting with prefix that d or an ancestor sets,
 // the value being the one d resolves it to, in key order.
 func (d *cldrData) each(prefix string, f func(key, value string)) {

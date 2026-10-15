@@ -538,6 +538,20 @@ func TestStyleTimeGenerated(t *testing.T) {
 	})
 }
 
+// TestPatternTies covers skeletons two available formats match equally
+// well. ICU keeps the one it added first, and it adds a locale's own formats
+// before its parent's: en-AU's "EEEE d MMMM" wins over en-001's "E, d MMM".
+func TestPatternTies(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.DateTimeFormat('en-AU', {weekday: 'short', month: 'long', day: 'numeric', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "Sun 5 July"},
+		{`new Intl.DateTimeFormat('en-ZA', {month: 'numeric', day: '2-digit', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "07/05"},
+		{`new Intl.DateTimeFormat('en-ZA', {month: '2-digit', day: 'numeric', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "07/05"},
+		{`new Intl.DateTimeFormat('es-MX', {month: 'long', day: '2-digit', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "05-julio"},
+		{`new Intl.DateTimeFormat('es-US', {month: 'long', day: '2-digit', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "05-julio"},
+		{`new Intl.DateTimeFormat('es-CO', {month: 'long', day: '2-digit', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5))`, "5 de julio"},
+	})
+}
+
 func TestDateTimeFormatLocales(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
