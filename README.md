@@ -319,9 +319,11 @@ go test ./intl                       # includes the golden test against Chromium
 
 To move to a new CLDR release, set `cldrTag` in `intl/internal/gen/main.go`
 to the cldr-json tag and run the two commands. The golden test then shows
-every expression whose output changed. A change the new CLDR explains goes
-into `goldenDifferences` in `intl/golden_test.go` with the reason, until
-Chromium has the same CLDR. fr-CH's grouping separator is such a change now.
+every expression whose output changed. Where the new CLDR changed a value
+Chromium does not have yet, add the value Chromium has to `browserOverrides`
+in `intl/internal/gen/overrides.go`, with where it comes from. The generator
+stops on an override CLDR has caught up with, so the list only ever holds
+live differences.
 
 To compare with a newer Chromium, record its answers again. This needs Node
 and Playwright's Chromium (`npx playwright install chromium`):

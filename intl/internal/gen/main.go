@@ -438,6 +438,7 @@ func (g *gen) build(av *availability) {
 			c.parent = index[chain[1]]
 		}
 	}
+	g.applyBrowserOverrides(index)
 	for i := range g.chunks {
 		c := &g.chunks[i]
 		c.diff = c.kv

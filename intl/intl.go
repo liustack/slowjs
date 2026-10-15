@@ -57,20 +57,18 @@
 // 48.1) on about 52,000 expressions recorded in testdata/chromium. All but
 // these match exactly:
 //
-//   - fr-CH groups digits with an apostrophe, CLDR 48.2's separator, where
-//     Chromium has a narrow no-break space.
 //   - A numbering system a locale has no symbols for, such as arab in de,
 //     takes the locale's latn symbols. ICU takes CLDR root's, which
 //     cldr-json does not publish.
 //   - A calendar other than the ones above formats as Gregorian.
-//   - ko calls the North American zones 미 (America) where Chromium has
-//     북미 (North America).
 //
-// Where Chromium's ICU data departs from CLDR, the data here follows
+// Where Chromium's ICU data departs from CLDR 48.2, the data here follows
 // Chromium: a zone's city is the one its id spells ("Sao Paulo"), Hong Kong
 // and Macao go by their short names, and the zones of the British Isles are
-// never "Greenwich Mean Time". As in Chromium, narrow and thin spaces in dates
-// are written as plain spaces.
+// never "Greenwich Mean Time". fr-CH groups digits with a narrow no-break
+// space (CLDR 48.1's), ko calls the North American zones 북미 (North
+// America), and uk and ru write the hryvnia as грн and грн. As in Chromium,
+// narrow and thin spaces in dates are written as plain spaces.
 //
 // # Cost
 //

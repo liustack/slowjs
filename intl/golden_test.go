@@ -47,14 +47,6 @@ type goldenDifference struct {
 
 var goldenDifferences = []goldenDifference{
 	{
-		// CLDR 48.2 changed the grouping separator of fr-CH from U+202F to an
-		// apostrophe. Chromium 156 is on CLDR 48.1.
-		why: "fr-CH groups with ' in CLDR 48.2, Chromium has 48.1",
-		match: func(expr, got, want string) bool {
-			return strings.Contains(expr, `"fr-CH"`) && strings.ReplaceAll(got, "'", "\u202f") == want
-		},
-	},
-	{
 		// ICU takes the symbols of a numbering system a locale has no data
 		// for from CLDR root, which defines them for arab. cldr-json publishes
 		// root's latn symbols only, so the latn ones are used here.
@@ -71,14 +63,6 @@ var goldenDifferences = []goldenDifference{
 		match: func(expr, got, want string) bool {
 			m := goldenCalendar.FindStringSubmatch(expr)
 			return m != nil && m[1] != "gregory"
-		},
-	},
-	{
-		// CLDR has 미 (America) where Chromium's ICU data has 북미 (North
-		// America), and 미 산지 where it has 북미 로키 산맥 (Rocky Mountain).
-		why: "ko names the North American zones 미, Chromium has 북미",
-		match: func(expr, got, want string) bool {
-			return strings.Contains(expr, `"ko"`) && strings.Contains(want, "북미") && !strings.Contains(got, "북미")
 		},
 	},
 }

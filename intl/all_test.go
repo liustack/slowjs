@@ -269,6 +269,30 @@ func TestNumberFormatLocales(t *testing.T) {
 	})
 }
 
+// TestBrowserOverrides covers the values Chromium formats with that differ
+// from CLDR (see browserOverrides in internal/gen), and a locale that inherits
+// one.
+func TestBrowserOverrides(t *testing.T) {
+	zoneName := func(zone, date, style string) string {
+		return `new Intl.DateTimeFormat('ko', {timeZone: '` + zone + `', timeZoneName: '` + style + `'}).formatToParts(new Date('` + date +
+			`')).find(p => p.type === 'timeZoneName').value`
+	}
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('fr-CH').format(1234567.891)`, "1\u202f234\u202f567,891"},
+		{`new Intl.NumberFormat('fr-CH', {style: 'currency', currency: 'CHF'}).format(-1234567.891)`, "-1\u202f234\u202f567.89\u00a0CHF"},
+		{`new Intl.NumberFormat('uk', {style: 'currency', currency: 'UAH'}).format(-1234.5)`, "-1\u00a0234,50\u00a0грн"},
+		{`new Intl.NumberFormat('uk', {style: 'currency', currency: 'UAH', currencyDisplay: 'narrowSymbol'}).format(-1234.5)`, "-1\u00a0234,50\u00a0₴"},
+		{`new Intl.NumberFormat('ru', {style: 'currency', currency: 'UAH'}).format(-1234.5)`, "-1\u00a0234,50\u00a0грн."},
+		{`new Intl.NumberFormat('ru-UA', {style: 'currency', currency: 'UAH'}).format(-1234.5)`, "-1234,50\u00a0грн."},
+		{zoneName("America/New_York", "2026-01-15T12:00Z", "long"), "북미 동부 표준시"},
+		{zoneName("America/Chicago", "2026-07-15T12:00Z", "long"), "북미 중부 하계 표준시"},
+		{zoneName("America/Denver", "2026-01-15T12:00Z", "long"), "북미 로키 산맥 표준시"},
+		{zoneName("America/Denver", "2026-07-15T12:00Z", "long"), "북미 로키 산맥 하계 표준시"},
+		{zoneName("America/Phoenix", "2026-07-15T12:00Z", "longGeneric"), "북미 로키 산맥 표준시"},
+		{zoneName("America/Los_Angeles", "2026-07-15T12:00Z", "longGeneric"), "북미 태평양 시간"},
+	})
+}
+
 // TestCompactWithoutDigits covers compact patterns that spell the number out,
 // like French "mille" for exactly one thousand.
 func TestCompactWithoutDigits(t *testing.T) {
