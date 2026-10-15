@@ -288,8 +288,8 @@ func TestErrorStackOutOfMemory(t *testing.T) { testErrorStackOutOfMemory(t) }
 
 // testErrorStackOutOfMemory reads the stack of an error when the VM has no
 // memory left. Reading it may fail with an out of memory error, after which
-// the VM works as before once memory is free again. It is also run under the
-// memgrind allocator by TestMemgrind2.
+// the VM works as before once memory is free again, and the stack can be
+// read. It is also run under the memgrind allocator by TestMemgrind2.
 func testErrorStackOutOfMemory(t *testing.T) {
 	m, err := NewVM()
 	if err != nil {
@@ -301,9 +301,9 @@ func testErrorStackOutOfMemory(t *testing.T) {
 	m.SetMemoryLimit(4 << 20)
 	// The error is made in a call from Go, so its stack is not formatted yet.
 	if _, err := m.Eval(`
-var e
+var e = []
 function deep(n) { return n ? deep(n - 1) : new Error("deep") }
-function make() { e = deep(40) }
+function make() { for (var i = 0; i < 2; i++) e.push(deep(40)) }
 `, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -322,14 +322,14 @@ function exhaust(size) {
 exhaust(4096)
 exhaust(64)
 exhaust(1)
-var read
+var read, caught
 try {
-	read = typeof e.stack
+	read = typeof e[0].stack
 } catch (x) {
-	read = "threw " + x.message
+	caught = x
 }
 fill = null
-read
+caught === undefined ? read : "threw " + caught.message
 `, EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
@@ -338,6 +338,16 @@ read
 	t.Logf("reading the stack with no memory left: %v", v)
 	if v != "string" && v != "threw out of memory" {
 		t.Fatalf("got %v", v)
+	}
+
+	// The stack reads as the stack of the same error made the same way.
+	v, err = m.Eval(`e[0].stack === e[1].stack && e[0].stack.split("\n").length`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if v != 43 {
+		t.Fatalf("reading the stack again gives %v", v)
 	}
 
 	// The VM works again, and so do new stacks.

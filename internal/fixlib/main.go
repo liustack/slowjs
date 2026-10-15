@@ -37,7 +37,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -201,29 +200,64 @@ var (
 	reGetPropString  = regexp.MustCompile(`\nfunc _get_prop_string\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom\) \(r uintptr\) \{\n`)
 	rePropFlags      = regexp.MustCompile(`\n(\tif (int32\(\*\(\*uint32\)\(unsafe\.Pointer\(prs \+ 0\)\)&0x[0-9a-f]+>>\d+\))&\(libc\.Int32FromInt32\(3\)<<libc\.Int32FromInt32\(4\)\) != libc\.Int32FromInt32\(0\)<<libc\.Int32FromInt32\(4\) \{\n)`)
 	rePropValue      = regexp.MustCompile(`\n\tval = \*\(\*TJSValue\)\(unsafe\.Pointer\((\*\*\(\*\*uintptr\)\(__ccgo_up\(bp( \+ \d+)?\)\))\)\)\n`)
-	reTableEntry     = regexp.MustCompile(`\n\t\*\(\*uintptr\)\(unsafe\.Add\(p, (\d+)\)\) = __ccgo_fp\(_js_module_ns_autoinit\)\n\t\*\(\*uintptr\)\(unsafe\.Add\(p, (\d+)\)\) = __ccgo_fp\(_JS_InstantiateFunctionListItem2\)\n`)
+	rePropObject     = regexp.MustCompile(`\n\tprs = _find_own_property\(tls, [^,]+, (\w+), prop\)\n`)
+	reUncatchable    = regexp.MustCompile(`\nfunc XJS_SetUncatchableException\(tls \*libc\.TLS, ctx uintptr, flag TBOOL\) \{\n\tlibc\.SetBitFieldPtr16Int32\(\(\*TJSContext\)\(unsafe\.Pointer\(ctx\)\)\.Frt\+(\d+), flag, (\d+), (0x[0-9a-f]+)\)\n\}\n`)
+	reRawDump        = regexp.MustCompile(`int32\(\*\(\*uint16\)\(unsafe\.Pointer\((s \+ \d+ \+ 0)\)\)&(0x[0-9a-f]+)>>(\d+)\)<<24>>24`)
+	reMemoryHead     = regexp.MustCompile(`\nfunc XJS_ComputeMemoryUsage\(tls \*libc\.TLS, rt uintptr, s uintptr\) \{\n`)
+	reMemoryProp     = regexp.MustCompile(`\n(\t+)if \(\*TJSShapeProperty\)\(unsafe\.Pointer\(prs\)\)\.Fatom != uint32\(MJS_ATOM_NULL\) && [^\n]*\{\n\t+_compute_value_size\(tls, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\), hp\)\n\t+\}\n`)
+
+	// The read of a property value in JS_GetPropertyInternal and
+	// JS_GetOwnPropertyInternal, where a pending stack must be formatted
+	// first. The first argument of find_own_property is the room for the
+	// JSProperty pointer, the second the object.
+	reGetPropHead = regexp.MustCompile(`\nfunc XJS_GetPropertyInternal\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom, \w+ TJSValue, \w+ TBOOL\) \(r TJSValue\) \{\n`)
+	reGetPropFind = regexp.MustCompile(`(\n[ \t]*prs = _find_own_property\(tls, (bp(?:\+\d+)?), (\w+), prop\)\n[ \t]*if prs != 0 \{\n)`)
+	reGetOwnHead  = regexp.MustCompile(`\nfunc _JS_GetOwnPropertyInternal\(tls \*libc\.TLS, (\w+) uintptr, desc uintptr, (\w+) uintptr, prop TJSAtom\) \(r int32\) \{\n`)
+	reGetOwnFind  = regexp.MustCompile(`(\n[ \t]*prs = _find_own_property\(tls, (bp(?:\+\d+)?), \w+, prop\)\n[ \t]*if prs != 0 \{\n)`)
+
+	// The found-and-normal branch of the interpreter's get_field inlines,
+	// which must take the slow path for a pending stack.
+	reInterpField = regexp.MustCompile(`_find_own_property\(tls, (bp(?:\+\d+)?), \w+, (\w+)\)\n([ \t]+)if prs != 0 \{ /\* found \*/\n[ \t]+if [^\n]+\{\n[ \t]+goto (\w+_slow_path)\n[ \t]+\}\n`)
+
+	// The two printer sites: js_print_error reads the stack, js_print_object
+	// prints a normal property value.
+	rePrintErrorHead  = regexp.MustCompile(`\nfunc _js_print_error\(tls \*libc\.TLS, s uintptr, p uintptr\) \{\n`)
+	rePrintObjectHead = regexp.MustCompile(`\nfunc _js_print_object\(tls \*libc\.TLS, s uintptr, \w+ uintptr\) \{\n`)
+	rePrintObjectVal  = regexp.MustCompile(`\n(\t+)_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n`)
 )
 
 const (
 	backtraceHelpers = "\n// Added by internal/fixlib for lib/backtrace.go.\n"
-	autoinitFree     = "\nfunc _js_autoinit_free(tls *libc.TLS, rt uintptr, pr uintptr) {\n"
-	autoinitMark     = "\nfunc _js_autoinit_mark(tls *libc.TLS, rt uintptr, pr uintptr, __ccgo_fp_mark_func uintptr) {\n"
-	autoinitTable    = "\nvar _js_autoinit_func_table = [3]uintptr{}\n"
+	memoryUsage      = "_js_backtrace_memory_usage(tls, s, hp, prs, pr)\n"
 )
 
-// fixBacktrace wires lib/backtrace.go into a generated file:
+// fixBacktrace wires lib/backtrace.go into a generated file. 'stack' is an
+// ordinary data property whose value, while pending, is a marker object, so
+// the paths that read a property value must format the stack first:
 //
 //   - _build_backtrace leaves a stack without a file name to
-//     _js_backtrace_lazy, which records it for later.
-//   - The autoinit table gets _js_backtrace_autoinit as entry 3,
-//     JS_AUTOINIT_ID_BACKTRACE, which formats a recorded stack.
-//   - _js_autoinit_free and _js_autoinit_mark also release and mark a
-//     recorded stack.
-//   - _get_prop_string formats a recorded stack, for printing an error.
-//   - At the end, _js_backtrace_prop_flags and _js_backtrace_has_debug read
-//     the bit fields JSShapeProperty.flags and JSFunctionBytecode.has_debug,
-//     with expressions copied from _get_prop_string and _build_backtrace, as
-//     their layout differs between targets.
+//     _js_backtrace_build, which records it as a marker or formats it.
+//   - JS_GetPropertyInternal and JS_GetOwnPropertyInternal call
+//     _js_backtrace_settle on the stack property, which formats a pending
+//     stack and stores the text.
+//   - the interpreter's get_field inlines take the slow path, that is
+//     JS_GetPropertyInternal, when the stack is pending.
+//   - _get_prop_string calls _js_backtrace_prop_string, which formats a
+//     pending stack for a print and never leaves an exception.
+//   - js_print_error skips the stack of a raw dump, and js_print_object
+//     prints a placeholder for a marker instead of the marker object.
+//   - XJS_ComputeMemoryUsage counts the record of a pending stack.
+//
+// At the end it adds _js_backtrace_prop_flags, _js_backtrace_has_debug,
+// _js_backtrace_uncatchable and _js_backtrace_raw_dump, with expressions
+// copied from the generated code, as the bit fields they read differ
+// between targets.
+// ccgoUp renders an __ccgo_up deref of a find_own_property storage slot,
+// which the generated code writes as "bp" or "bp+NN".
+func ccgoUp(arg string) string {
+	return "**(**uintptr)(__ccgo_up(" + strings.Replace(arg, "+", " + ", 1) + "))"
+}
+
 func fixBacktrace(b []byte) ([]byte, error) {
 	if i := bytes.Index(b, []byte(backtraceHelpers)); i >= 0 {
 		b = b[:i] // the helpers are derived again below
@@ -239,7 +273,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if hasDebug == nil {
 		return nil, fmt.Errorf("_build_backtrace: cannot find the has_debug test")
 	}
-	lazy := fmt.Sprintf("\tif filename == 0 && _js_backtrace_lazy(tls, %s, %s, backtrace_flags) != 0 {\n\t\treturn\n\t}\n", ctx, errorObj)
+	lazy := fmt.Sprintf("\tif filename == 0 && _js_backtrace_build(tls, %s, %s, backtrace_flags) != 0 {\n\t\treturn\n\t}\n", ctx, errorObj)
 	if !bytes.Contains(body, []byte(lazy)) {
 		init := fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx)
 		if bytes.Count(body, []byte(init)) != 1 {
@@ -248,51 +282,138 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		b = bytes.Replace(b, body, bytes.Replace(body, []byte(init), []byte(lazy+init), 1), 1)
 	}
 
+	// get_prop_string: format a pending stack for a print.
 	body, err = funcBody(b, reGetPropString, "_get_prop_string")
 	if err != nil {
 		return nil, err
 	}
-	ctx = string(reGetPropString.FindSubmatch(b)[1])
+	gpsCtx := string(reGetPropString.FindSubmatch(b)[1])
 	flags := rePropFlags.FindSubmatch(body)
 	value := rePropValue.FindSubmatch(body)
-	if flags == nil || value == nil {
-		return nil, fmt.Errorf("_get_prop_string: cannot find the property type test or the value")
+	object := rePropObject.FindSubmatch(body)
+	if flags == nil || value == nil || object == nil {
+		return nil, fmt.Errorf("_get_prop_string: cannot find the property type test, the value or the object")
 	}
-	pending := fmt.Sprintf("\tif pending := _js_backtrace_prop_string(tls, %s, prs, %s); pending != 0 {\n\t\treturn pending\n\t}\n", ctx, value[1])
+	pending := fmt.Sprintf("\tif pending, ok := _js_backtrace_prop_string(tls, %s, %s, prs, %s); ok {\n\t\treturn pending\n\t}\n", gpsCtx, object[1], value[1])
 	if !bytes.Contains(body, []byte(pending)) {
 		b = bytes.Replace(b, body, bytes.Replace(body, flags[1], append([]byte(pending), flags[1]...), 1), 1)
 	}
 
-	for _, f := range []struct{ head, call string }{
-		{autoinitFree, "\t_js_backtrace_autoinit_free(tls, pr)\n"},
-		{autoinitMark, "\t_js_backtrace_autoinit_mark(tls, rt, pr, __ccgo_fp_mark_func)\n"},
-	} {
-		if bytes.Count(b, []byte(f.head)) != 1 {
-			return nil, fmt.Errorf("want 1 %q", strings.TrimSpace(f.head))
+	// JS_GetPropertyInternal: settle the stack before the flag dispatch.
+	if body, err = funcBody(b, reGetPropHead, "XJS_GetPropertyInternal"); err != nil {
+		return nil, err
+	}
+	getCtx := string(reGetPropHead.FindSubmatch(b)[1])
+	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
+		fm := reGetPropFind.FindSubmatch(body)
+		if fm == nil {
+			return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
 		}
-		if !bytes.Contains(b, []byte(f.head+f.call)) {
-			b = bytes.Replace(b, []byte(f.head), []byte(f.head+f.call), 1)
-		}
+		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), ccgoUp(string(fm[2])))
+		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
 	}
 
-	if bytes.Contains(b, []byte(autoinitTable)) {
-		entries := reTableEntry.FindSubmatch(b)
-		if entries == nil {
-			return nil, fmt.Errorf("cannot find the entries of _js_autoinit_func_table")
+	// JS_GetOwnPropertyInternal: settle the stack before reading the value.
+	if body, err = funcBody(b, reGetOwnHead, "_JS_GetOwnPropertyInternal"); err != nil {
+		return nil, err
+	}
+	om := reGetOwnHead.FindSubmatch(b)
+	ownCtx, ownObj := string(om[1]), string(om[2])
+	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
+		fm := reGetOwnFind.FindSubmatch(body)
+		if fm == nil {
+			return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
 		}
-		prev, _ := strconv.Atoi(string(entries[1]))
-		last, _ := strconv.Atoi(string(entries[2]))
-		b = bytes.Replace(b, []byte(autoinitTable), []byte(strings.Replace(autoinitTable, "[3]", "[4]", 1)), 1)
-		b = bytes.Replace(b, entries[0], append(entries[0][:len(entries[0]):len(entries[0])],
-			fmt.Sprintf("\t*(*uintptr)(unsafe.Add(p, %d)) = __ccgo_fp(_js_backtrace_autoinit)\n", 2*last-prev)...), 1)
-	} else if !bytes.Contains(b, []byte("= __ccgo_fp(_js_backtrace_autoinit)\n")) {
-		return nil, fmt.Errorf("cannot find _js_autoinit_func_table")
+		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, ccgoUp(string(fm[2])))
+		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
+	}
+
+	// The interpreter's get_field inlines: bail to the slow path.
+	if !bytes.Contains(b, []byte("_js_backtrace_pending")) {
+		sites := reInterpField.FindAllSubmatchIndex(b, -1)
+		if len(sites) == 0 {
+			return nil, fmt.Errorf("interpreter: no get_field inline found")
+		}
+		var out bytes.Buffer
+		last := 0
+		for _, s := range sites {
+			prBP := string(b[s[2]:s[3]])
+			atom := string(b[s[4]:s[5]])
+			indent := string(b[s[6]:s[7]])
+			slow := string(b[s[8]:s[9]])
+			out.Write(b[last:s[1]])
+			fmt.Fprintf(&out, "%s\tif %s == uint32(EJS_ATOM_stack) && _js_backtrace_pending(tls, %s) {\n%s\t\tgoto %s\n%s\t}\n", indent, atom, ccgoUp(prBP), indent, slow, indent)
+			last = s[1]
+		}
+		out.Write(b[last:])
+		b = out.Bytes()
+	}
+
+	// js_print_error: skip the stack of a raw dump.
+	if body, err = funcBody(b, rePrintErrorHead, "_js_print_error"); err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte("_js_backtrace_raw_stack")) {
+		end := bytes.Index(body, []byte(", uint32(EJS_ATOM_stack))"))
+		if end < 0 {
+			return nil, fmt.Errorf("_js_print_error: cannot find the stack read")
+		}
+		start := bytes.LastIndex(body[:end], []byte("str = _get_prop_string(tls,"))
+		if start < 0 {
+			return nil, fmt.Errorf("_js_print_error: cannot find the stack read start")
+		}
+		ls := bytes.LastIndexByte(body[:start], '\n') + 1
+		indent := string(body[ls:start])
+		guard := fmt.Sprintf("%sif _js_backtrace_raw_stack(tls, s, p) {\n%s\treturn\n%s}\n", indent, indent, indent)
+		fixed := append(append(append([]byte{}, body[:ls]...), guard...), body[ls:]...)
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	// js_print_object: a placeholder for a marker value.
+	if body, err = funcBody(b, rePrintObjectHead, "_js_print_object"); err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte("_js_backtrace_print_pending")) {
+		loc := rePrintObjectVal.FindSubmatchIndex(body)
+		if loc == nil {
+			return nil, fmt.Errorf("_js_print_object: cannot find the value print")
+		}
+		indent := string(body[loc[2]:loc[3]])
+		call := string(body[loc[0]+1 : loc[1]-1]) // the _js_print_value(...) line, no surrounding newlines
+		repl := fmt.Sprintf("\n%sif _js_backtrace_print_pending(tls, s, pr) == 0 {\n%s\t%s\n%s}\n", indent, indent, strings.TrimSpace(call), indent)
+		fixed := append(append(append([]byte{}, body[:loc[0]]...), repl...), body[loc[1]:]...)
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	// JS_ComputeMemoryUsage: count the record of a pending stack.
+	if body, err = funcBody(b, reMemoryHead, "XJS_ComputeMemoryUsage"); err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte(memoryUsage)) {
+		loc := reMemoryProp.FindAllSubmatchIndex(body, -1)
+		if len(loc) != 1 {
+			return nil, fmt.Errorf("XJS_ComputeMemoryUsage: want 1 size of a property value, found %d", len(loc))
+		}
+		indent := body[loc[0][2]:loc[0][3]]
+		fixed := append(append(append(body[:loc[0][1]:loc[0][1]], indent...), memoryUsage...), body[loc[0][1]:]...)
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	uncatchable := reUncatchable.FindSubmatch(b)
+	if uncatchable == nil {
+		return nil, fmt.Errorf("XJS_SetUncatchableException: cannot find the flag assignment")
+	}
+	rawDump := reRawDump.FindSubmatch(b)
+	if rawDump == nil {
+		return nil, fmt.Errorf("cannot find the raw_dump field")
 	}
 
 	var helpers bytes.Buffer
 	fmt.Fprintf(&helpers, "package p\n%s", backtraceHelpers)
 	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_prop_flags(tls *libc.TLS, prs uintptr) int32 {\n\treturn %s\n}\n", flags[2])
+	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_uncatchable(tls *libc.TLS, ctx uintptr) TBOOL {\n\treturn TBOOL(*(*uint16)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + %s)) & %s >> %s)\n}\n", uncatchable[1], uncatchable[3], uncatchable[2])
 	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_has_debug(tls *libc.TLS, b uintptr) int32 {\n\treturn %s\n}\n", hasDebug[1])
+	fmt.Fprintf(&helpers, "\nfunc _js_backtrace_raw_dump(tls *libc.TLS, s uintptr) int32 {\n\treturn int32(*(*uint16)(unsafe.Pointer(%s))&%s>>%s) << 24 >> 24\n}\n", rawDump[1], rawDump[2], rawDump[3])
 	formatted, err := format.Source(helpers.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("backtrace helpers: %v", err)

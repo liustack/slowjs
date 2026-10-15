@@ -11034,12 +11034,10 @@ func _js_autoinit_get_id(tls *libc.TLS, pr uintptr) (r TJSAutoInitIDEnum) {
 }
 
 func _js_autoinit_free(tls *libc.TLS, rt uintptr, pr uintptr) {
-	_js_backtrace_autoinit_free(tls, pr)
 	XJS_FreeContext(tls, _js_autoinit_get_realm(tls, pr))
 }
 
 func _js_autoinit_mark(tls *libc.TLS, rt uintptr, pr uintptr, __ccgo_fp_mark_func uintptr) {
-	_js_backtrace_autoinit_mark(tls, rt, pr, __ccgo_fp_mark_func)
 	(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{__ccgo_fp_mark_func})))(tls, rt, _js_autoinit_get_realm(tls, pr))
 }
 
@@ -12557,6 +12555,7 @@ func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
 				if (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom != uint32(MJS_ATOM_NULL) && !(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0) {
 					_compute_value_size(tls, *(*TJSValue)(unsafe.Pointer(pr)), hp)
 				}
+				_js_backtrace_memory_usage(tls, s, hp, prs, pr)
 				prs += 8
 				goto _13
 			_13:
@@ -13437,7 +13436,7 @@ func _get_prop_string(tls *libc.TLS, ctx1 uintptr, _obj TJSValue, prop TJSAtom) 
 			return libc.UintptrFromInt32(0)
 		}
 	}
-	if pending := _js_backtrace_prop_string(tls, ctx1, prs, **(**uintptr)(__ccgo_up(bp + 16))); pending != 0 {
+	if pending, ok := _js_backtrace_prop_string(tls, ctx1, p, prs, **(**uintptr)(__ccgo_up(bp + 16))); ok {
 		return pending
 	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(0)<<libc.Int32FromInt32(4) {
@@ -13476,7 +13475,7 @@ _2:
 	if !(v1 != 0) {
 		return
 	} /* protection in the out of memory case */
-	if filename == 0 && _js_backtrace_lazy(tls, ctx3, error_obj, backtrace_flags) != 0 {
+	if filename == 0 && _js_backtrace_build(tls, ctx3, error_obj, backtrace_flags) != 0 {
 		return
 	}
 	_js_dbuf_init(tls, ctx3, bp)
@@ -14439,14 +14438,13 @@ _13:
 	return _JS_OrdinaryIsInstanceOf(tls, ctx1, **(**TJSValue)(__ccgo_up(bp)), obj)
 }
 
-var _js_autoinit_func_table = [4]uintptr{}
+var _js_autoinit_func_table = [3]uintptr{}
 
 func init() {
 	p := unsafe.Pointer(&_js_autoinit_func_table)
 	*(*uintptr)(unsafe.Add(p, 0)) = __ccgo_fp(_js_instantiate_prototype)
 	*(*uintptr)(unsafe.Add(p, 8)) = __ccgo_fp(_js_module_ns_autoinit)
 	*(*uintptr)(unsafe.Add(p, 16)) = __ccgo_fp(_JS_InstantiateFunctionListItem2)
-	*(*uintptr)(unsafe.Add(p, 24)) = __ccgo_fp(_js_backtrace_autoinit)
 }
 
 // C documentation
@@ -14585,6 +14583,11 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, _obj TJSValue, prop TJ
 	for {
 		prs = _find_own_property(tls, bp+56, p2, prop)
 		if prs != 0 {
+		if prop == uint32(EJS_ATOM_stack) {
+			if _js_backtrace_settle(tls, ctx3, p2, **(**uintptr)(__ccgo_up(bp + 56))) < 0 {
+				return jsvException()
+			}
+		}
 			/* found */
 			if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
 				if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(4) {
@@ -15598,6 +15601,11 @@ retry:
 	;
 	prs = _find_own_property(tls, bp+16, p1, prop)
 	if prs != 0 {
+		if prop == uint32(EJS_ATOM_stack) && desc != 0 {
+			if _js_backtrace_settle(tls, ctx1, p1, **(**uintptr)(__ccgo_up(bp + 16))) < 0 {
+				return -int32(1)
+			}
+		}
 		if desc != 0 {
 			(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fflags = int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26) & (libc.Int32FromInt32(1)<<libc.Int32FromInt32(0) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(1) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))
 			(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fgetter = TJSValue{
@@ -26021,6 +26029,9 @@ func _js_print_error(tls *libc.TLS, s uintptr, p uintptr) {
 	}
 	XJS_FreeCString(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fctx, str)
 	/* dump the stack if present */
+	if _js_backtrace_raw_stack(tls, s, p) {
+		return
+	}
 	str = _get_prop_string(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fctx, TJSValue{
 		Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p})),
 		Ftag: int64(EJS_TAG_OBJECT),
@@ -26627,7 +26638,9 @@ func _js_print_object(tls *libc.TLS, s uintptr, p1 uintptr) {
 									_js_printf(tls, s, __ccgo_ts+2860, 0)
 								}
 							} else {
-								_js_print_value(tls, s, *(*TJSValue)(unsafe.Pointer(pr)))
+								if _js_backtrace_print_pending(tls, s, pr) == 0 {
+									_js_print_value(tls, s, *(*TJSValue)(unsafe.Pointer(pr)))
+								}
 							}
 						}
 					}
@@ -37694,6 +37707,9 @@ restart:
 			prs = _find_own_property(tls, bp+288, p3, atom3)
 			if prs != 0 { /* found */
 				if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != 0)) != 0 {
+					goto get_field_slow_path
+				}
+				if atom3 == uint32(EJS_ATOM_stack) && _js_backtrace_pending(tls, **(**uintptr)(__ccgo_up(bp + 288))) {
 					goto get_field_slow_path
 				}
 				_ = ctx10
@@ -197808,6 +197824,14 @@ func _js_backtrace_prop_flags(tls *libc.TLS, prs uintptr) int32 {
 	return int32(*(*uint32)(unsafe.Pointer(prs + 0)) & 0xfc000000 >> 26)
 }
 
+func _js_backtrace_uncatchable(tls *libc.TLS, ctx uintptr) TBOOL {
+	return TBOOL(*(*uint16)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + 1256)) & 0xff >> 0)
+}
+
 func _js_backtrace_has_debug(tls *libc.TLS, b uintptr) int32 {
 	return int32(*(*uint8)(unsafe.Pointer(b + 18)) & 0x4 >> 2)
+}
+
+func _js_backtrace_raw_dump(tls *libc.TLS, s uintptr) int32 {
+	return int32(*(*uint16)(unsafe.Pointer(s + 16 + 0))&0xff00>>8) << 24 >> 24
 }

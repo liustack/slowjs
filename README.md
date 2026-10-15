@@ -24,12 +24,35 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   first time `stack` is read, with the same result as before. Code that makes
   many errors and reads few of their stacks, such as the development build of
   React (one error per JSX element), runs much faster: a server render of a
-  small React app with that build went from about 480 ms to about 23 ms.
-  Errors made while top-level code (a script, an eval or a module body) is on
-  the stack are still formatted at once, so that an error a library keeps
-  from when it loaded does not keep that code alive. If there is no memory left when
-  `stack` is first read, the read throws an out of memory error. Tests:
-  `errorstack_test.go`, `errorstack_unix_test.go`.
+  small React app with that build went from about 240 ms to about 10 ms at
+  the median, on darwin/arm64.
+  Once read, the stack is a plain string property, and the error has the
+  same shape and size as when the stack was formatted at once. Assigning or
+  defining `stack` replaces it without formatting it. What is different:
+  - Until its stack is read or the error is freed, an error keeps the
+    bytecode of every function on its stack alive. Most of these functions
+    stay alive anyway. A function that runs once and makes an error that
+    something keeps is the exception, together with every function it
+    defines: one kept error from a function that defines 2,000 others kept
+    1.30 MB where 0.30 MB stayed before. Keeping only the file name and the
+    line table would need either a copy of the line table for every frame
+    of every error, which adds work and memory to every error made, the
+    case this change is for, or a reference count of its own for the line
+    table, which changes a struct of the engine and so needs a regeneration
+    of `lib/`.
+  - Errors made while top-level code (a script, an eval or a module body)
+    is on the stack are still formatted at once, so that an error a library
+    keeps from when it loaded does not keep that code alive. So are errors
+    that cannot take new properties and errors that already have a `stack`.
+  - If there is no memory left when `stack` is first read, the read throws
+    an out of memory error and the stack stays as it was, so a later read
+    can give the text.
+  - While a stack is pending, the error has a shape of its own kind, one
+    for each kind of error object, not one per error.
+    `JS_ComputeMemoryUsage` counts pending stacks and the names they hold.
+
+  Tests: `errorstack_test.go`, `errorstack_unix_test.go`,
+  `lib/backtrace_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -120,14 +143,17 @@ Conflicts to expect:
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
   need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
   read the new upstream code: QuickJS may have fixed the leak itself. If it
-  reports that `_build_backtrace`, `_get_prop_string` or the autoinit table
+  reports that `_build_backtrace`, `_get_prop_string`, `JS_AutoInitProperty`,
+  `JS_SetPropertyInternal`, `JS_DefineProperty` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
   and must change with it.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`,
-  `build_backtrace_lazy`, `js_backtrace_autoinit`). After a regeneration that
+  `js_backtrace_build` and the `js_backtrace_*` calls in
+  `JS_AutoInitProperty`, `JS_SetPropertyInternal`, `JS_DefineProperty`,
+  `get_prop_string` and `JS_ComputeMemoryUsage`). After a regeneration that
   includes them, `lib/backtrace.go` and its wiring in `fixlib` are no longer
   needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -163,6 +189,7 @@ which is a runtime marker, not an import path.
 go test -short ./...                                     # all packages
 go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
+go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
