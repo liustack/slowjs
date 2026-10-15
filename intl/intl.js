@@ -317,10 +317,6 @@
 
 	const Intl = {};
 	defineTag(Intl, 'Intl');
-	// How the host recognizes its own installation, so that a second Register
-	// on the same VM can say so instead of failing on a duplicate host function
-	// name. Keyed by the import path, invisible to enumeration and to JSON.
-	Object.defineProperty(Intl, Symbol.for('modernc.org/quickjs/intl'), {value: true});
 	defineMethod(Intl, 'DateTimeFormat', DateTimeFormat);
 	defineMethod(Intl, 'NumberFormat', NumberFormat);
 	defineMethod(Intl, 'PluralRules', PluralRules);

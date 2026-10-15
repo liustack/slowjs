@@ -88,6 +88,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/liustack/quickjs"
 )
@@ -95,8 +96,42 @@ import (
 //go:embed intl.js
 var shim string
 
-// hostFuncs are the names the shim reads its host functions from. It deletes
-// them from the global object once it has them.
+//go:embed stub.js
+var stub string
+
+// script is javascript compiled to bytecode once per process, by the first VM
+// that needs it, and evaluated from there on every VM: the bytecode does not
+// depend on the VM that made it.
+type script struct {
+	src  *string
+	once sync.Once
+	code []byte
+	err  error
+}
+
+func (s *script) eval(vm *quickjs.VM) error {
+	s.once.Do(func() { s.code, s.err = vm.Compile(*s.src, quickjs.EvalGlobal) })
+	if s.err != nil {
+		return s.err
+	}
+
+	_, err := vm.EvalBytecode(s.code)
+	return err
+}
+
+var (
+	shimScript = script{src: &shim}
+	stubScript = script{src: &stub}
+
+	// shimInstalls counts the VMs the shim has been installed on, for the
+	// tests.
+	shimInstalls atomic.Int64
+)
+
+// hostFuncs are the names the shim reads its host functions from. stub.js
+// takes them off the global object as soon as Register has put them there,
+// and puts them back only for the moment the shim takes them for good. Both
+// scripts list the same names.
 var hostFuncs = []string{
 	"__quickjs_intl_dtfResolve__",
 	"__quickjs_intl_dtfFormat__",
@@ -172,17 +207,27 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 			return err
 		}
 	}
-	_, err = vm.Eval(shim, quickjs.EvalGlobal)
-	return err
+	// The shim is installed the first time the page touches Intl or a
+	// toLocale* method, from inside that call. Until then the VM carries only
+	// the stand-ins stub.js defines.
+	install := func([]any) (any, error) {
+		shimInstalls.Add(1)
+		return nil, shimScript.eval(vm)
+	}
+	if err := vm.RegisterHostFunc("__quickjs_intl_install__", install); err != nil {
+		return err
+	}
+
+	return stubScript.eval(vm)
 }
 
-// marker is the well known symbol the shim stamps on the Intl object it
-// installs, keyed by this package's import path.
+// marker is the well known symbol stub.js stamps on the global object of a VM
+// it registers, keyed by this package's import path.
 const marker = "modernc.org/quickjs/intl"
 
 // registered reports whether this package has already installed Intl on vm.
 func registered(vm *quickjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis.Intl !== undefined && globalThis.Intl[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}

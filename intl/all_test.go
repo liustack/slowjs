@@ -19,8 +19,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// newVM returns a VM with Intl registered. The default time zone is pinned so
-// that the expected values do not depend on the host's.
+// newVM returns a VM with Intl registered, in UTC unless opts say otherwise.
 func newVM(tb testing.TB, opts ...Option) *quickjs.VM {
 	tb.Helper()
 	vm, err := quickjs.NewVM()
@@ -554,6 +553,38 @@ func TestRegisterPerRealm(t *testing.T) {
 		{`new Intl.DateTimeFormat('en-US').format(new Date(0))`, "1/1/1970"},
 		{`new Date(0).toLocaleString('en-US', {timeZone: 'America/New_York'})`, "12/31/1969, 7:00:00 PM"},
 		{`(1234.5).toLocaleString('en-US')`, "1,234.5"},
+	})
+}
+
+// TestInstallOnUse checks that Register only puts stand-ins on the VM, and
+// that the shim is installed the first time a page touches one of them.
+func TestInstallOnUse(t *testing.T) {
+	before := shimInstalls.Load()
+	vm := newVM(t)
+	evalTests(t, vm, [][2]string{
+		{`typeof Object.getOwnPropertyDescriptor(globalThis, 'Intl').get`, "function"},
+		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+	})
+	if n := shimInstalls.Load() - before; n != 0 {
+		t.Fatalf("Register installed the shim %d times, want 0", n)
+	}
+
+	evalTests(t, vm, [][2]string{
+		// A method taken before the shim is there still works.
+		{`const f = Date.prototype.toLocaleDateString; f.call(new Date(0), 'en-US', {timeZone: 'UTC'})`, "1/1/1970"},
+		{`'value' in Object.getOwnPropertyDescriptor(globalThis, 'Intl')`, "true"},
+		{`Date.prototype.toLocaleDateString === f`, "false"},
+		{`f.call(new Date(0), 'de', {timeZone: 'UTC'})`, "1.1.1970"},
+		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+	})
+	if n := shimInstalls.Load() - before; n != 1 {
+		t.Fatalf("the shim was installed %d times, want 1", n)
+	}
+
+	// A page that assigns its own Intl keeps it.
+	vm2 := newVM(t)
+	evalTests(t, vm2, [][2]string{
+		{`Intl = 42; (1234.5).toLocaleString('en-US') + ' ' + Intl`, "1,234.5 42"},
 	})
 }
 
