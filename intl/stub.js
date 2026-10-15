@@ -18,7 +18,9 @@
 
 	const g = globalThis;
 	const install = g.__quickjs_intl_install__;
+	const installRunning = g.__quickjs_intl_installRunning__;
 	delete g.__quickjs_intl_install__;
+	delete g.__quickjs_intl_installRunning__;
 
 	// The host functions wait out of sight until intl.js comes to take them.
 	const host = [];
@@ -34,12 +36,21 @@
 	// ensure installs the shim, once it works. An install that fails, say for
 	// want of memory or stack, rolls back to the stand-ins and throws, so that
 	// this use fails and the next one tries again.
+	//
+	// An interrupt, from vm.Interrupt or a timeout, is no exception a catch or
+	// finally sees: one that lands here leaves installing set with nothing
+	// rolled back, and the host functions possibly in sight. The host knows
+	// whether an install is running, so the next use tells a nested call
+	// from an install cut short, rolls the latter back and starts over.
 	function ensure() {
 		if (installed) {
 			return;
 		}
 		if (installing) {
-			throw new Error('intl: used while being installed');
+			if (installRunning()) {
+				throw new Error('intl: used while being installed');
+			}
+			rollBack();
 		}
 		installing = true;
 		try {
@@ -47,31 +58,38 @@
 				Object.defineProperty(g, hostNames[i], {value: host[i], writable: true, enumerable: false, configurable: true});
 			}
 			install();
-			installed = true;
 		} catch (e) {
 			rollBack();
-			throw e;
-		} finally {
 			installing = false;
-			if (userSetIntl) {
-				Object.defineProperty(g, 'Intl', {value: userIntl, writable: true, enumerable: false, configurable: true});
-			}
+			throw e;
 		}
+		if (userSetIntl) {
+			setIntl(userIntl);
+		}
+		installed = true;
+		installing = false;
 	}
 
 	// rollBack undoes what a failed install got done: the host functions go
-	// back out of sight and the stand-ins back in place.
+	// back out of sight and the stand-ins, or the page's own Intl, back in
+	// place.
 	function rollBack() {
 		for (let i = 0; i < hostNames.length; i++) {
 			delete g[hostNames[i]];
 		}
-		if (!userSetIntl) {
+		if (userSetIntl) {
+			setIntl(userIntl);
+		} else {
 			Object.defineProperty(g, 'Intl', intlStandIn);
 		}
 		for (let i = 0; i < standIns.length; i++) {
 			const s = standIns[i];
 			Object.defineProperty(s.o, s.name, {value: s.f, writable: true, enumerable: false, configurable: true});
 		}
+	}
+
+	function setIntl(v) {
+		Object.defineProperty(g, 'Intl', {value: v, writable: true, enumerable: false, configurable: true});
 	}
 
 	const intlStandIn = {
@@ -91,7 +109,7 @@
 			// real one is installed.
 			userIntl = v;
 			userSetIntl = true;
-			Object.defineProperty(g, 'Intl', {value: v, writable: true, enumerable: false, configurable: true});
+			setIntl(v);
 		}
 	};
 	Object.defineProperty(g, 'Intl', intlStandIn);

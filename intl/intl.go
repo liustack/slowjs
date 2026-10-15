@@ -195,6 +195,10 @@ var (
 	// shimInstalls counts the VMs the shim has been installed on, for the
 	// tests.
 	shimInstalls atomic.Int64
+
+	// interruptedInstalls counts the installs stub.js found cut short by an
+	// interrupt, for the tests.
+	interruptedInstalls atomic.Int64
 )
 
 // hostFuncs are the names the shim reads its host functions from. stub.js
@@ -281,11 +285,27 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	// The shim is installed the first time the page touches Intl or a
 	// toLocale* method, from inside that call. Until then the VM carries only
 	// the stand-ins stub.js defines.
+	// stub.js asks whether an install is running when it finds one started
+	// and not finished: the shim's own code may use Intl while it installs,
+	// otherwise an interrupt cut that install short.
+	running := false
 	install := func([]any) (any, error) {
 		shimInstalls.Add(1)
+		running = true
+		defer func() { running = false }()
 		return nil, shimScript.eval(vm)
 	}
+	installRunning := func([]any) (any, error) {
+		if !running {
+			interruptedInstalls.Add(1)
+		}
+		return running, nil
+	}
 	if err := vm.RegisterHostFunc("__quickjs_intl_install__", install); err != nil {
+		return err
+	}
+
+	if err := vm.RegisterHostFunc("__quickjs_intl_installRunning__", installRunning); err != nil {
 		return err
 	}
 

@@ -227,3 +227,54 @@ func TestInstallKeepsInterrupt(t *testing.T) {
 	}
 	evalTests(t, vm, [][2]string{{`(1234.5).toLocaleString('en-US')`, "1,234.5"}})
 }
+
+// TestInstallInterrupted interrupts the first use of Intl at every point of a
+// whole period of the engine's interrupt checks, a fresh VM for each. An
+// interrupt is no exception a catch or finally sees, so one that lands in
+// stub.js's own code cuts the install short with nothing rolled back, the
+// host functions possibly in sight: the next use has to notice, clear up and
+// start over.
+func TestInstallInterrupted(t *testing.T) {
+	const period = 10100 // a little over the engine's 10000 between checks
+	step := 1
+	if raceEnabled {
+		// stub.js's code between the checks spans about 20 points, so a
+		// coarser scan still lands in it, in well under a minute.
+		step = 11
+	}
+	before := interruptedInstalls.Load()
+	for k := 0; k <= period; k += step {
+		vm, err := quickjs.NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := Register(vm, TimeZone("UTC")); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := vm.RegisterHostFunc("interrupt", func([]any) (any, error) {
+			vm.Interrupt()
+			return nil, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		// Spend k checks' worth of the engine's countdown, so that the
+		// interrupt below lands k instructions later.
+		if _, err := vm.Eval(fmt.Sprintf(`for (let i = 0; i < %d; i++) {}`, k), quickjs.EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+
+		vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, quickjs.EvalGlobal)
+		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+hostFuncsSeen+`].join(' ')`, quickjs.EvalGlobal)
+		vm.Close()
+		if got := fmt.Sprint(v); err != nil || got != "1,234.5 1.234,5 0" {
+			t.Fatalf("interrupted %d instructions later: got %q, %v", k, got, err)
+		}
+	}
+	t.Logf("%d interrupts landed in stub.js", interruptedInstalls.Load()-before)
+	if interruptedInstalls.Load() == before {
+		t.Fatal("no interrupt landed in stub.js")
+	}
+}
