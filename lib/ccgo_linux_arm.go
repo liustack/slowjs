@@ -105479,7 +105479,7 @@ _16:
 	if v1 != 0 {
 		return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	}
-	res = _js_backtrace_own_frozen(tls, ctx1, bp+32, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
+	res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
 	if res < 0 {
 		v5 = ret
 		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -105629,7 +105629,7 @@ _21:
 	}
 	ret = _JS_ToBoolFree(tls, ctx2, ret1)
 	if ret != 0 {
-		res = _js_backtrace_own_frozen(tls, ctx2, bp+40, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
+		res = _JS_GetOwnPropertyInternal(tls, ctx2, bp+40, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
 		if res < 0 {
 			return -int32(1)
 		}
@@ -105843,225 +105843,7 @@ _18:
 		}
 		goto fail
 	}
-	target_desc_ret = _js_backtrace_own_flags(tls, ctx1, bp+56, p1, prop)
-	if target_desc_ret < 0 {
-		v5 = trap_result_obj
-		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-			goto _29
-		_29:
-			p = v6
-			v9 = p
-			*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-			v1 = *(*int32)(unsafe.Pointer(v9))
-			if v1 <= libc.Int32FromInt32(0) {
-				x__JS_FreeValue(tls, ctx1, v5)
-			}
-		}
-		return -int32(1)
-	}
-	if target_desc_ret != 0 {
-		_js_free_desc(tls, ctx1, bp+56)
-	}
-	v1 = libc.BoolInt32(libc.Int32FromUint64(trap_result_obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
-	goto _35
-_35:
-	if !(v1 != 0) {
-		goto _32
-	}
-	if target_desc_ret != 0 {
-		if !((**(**TJSPropertyDescriptor)(__ccgo_up(bp + 56))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0) || !(int32(*(*uint8)(unsafe.Pointer(p1 + 8))&0x2>>1) != 0) {
-			goto fail
-		}
-	}
-	ret = int32(EFALSE)
-	goto _33
-_32:
-	;
-	extensible_target = XJS_IsExtensible(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
-	if extensible_target < 0 {
-		v5 = trap_result_obj
-		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-			goto _38
-		_38:
-			p = v6
-			v9 = p
-			*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-			v1 = *(*int32)(unsafe.Pointer(v9))
-			if v1 <= libc.Int32FromInt32(0) {
-				x__JS_FreeValue(tls, ctx1, v5)
-			}
-		}
-		return -int32(1)
-	}
-	res = _js_obj_to_desc(tls, ctx1, bp+24, trap_result_obj)
-	v5 = trap_result_obj
-	if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-		goto _43
-	_43:
-		p = v6
-		v9 = p
-		*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-		v1 = *(*int32)(unsafe.Pointer(v9))
-		if v1 <= libc.Int32FromInt32(0) {
-			x__JS_FreeValue(tls, ctx1, v5)
-		}
-	}
-	if res < 0 {
-		return -int32(1)
-	}
-	/* convert the result_desc.flags to property flags */
-	if (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)) != 0 {
-		(**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags |= libc.Int32FromInt32(1) << libc.Int32FromInt32(4)
-	} else {
-		(**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags |= libc.Int32FromInt32(0) << libc.Int32FromInt32(4)
-	}
-	(**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags &= libc.Int32FromInt32(1)<<libc.Int32FromInt32(0) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(1) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(2) | libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)
-	if target_desc_ret != 0 {
-		/* convert result_desc.flags to defineProperty flags */
-		flags1 = (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags | libc.Int32FromInt32(1)<<libc.Int32FromInt32(8) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(10)
-		if (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
-			flags1 = flags1 | (libc.Int32FromInt32(1)<<libc.Int32FromInt32(11) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(12))
-		} else {
-			flags1 = flags1 | (libc.Int32FromInt32(1)<<libc.Int32FromInt32(13) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(9))
-		}
-		/* XXX: not complete check: need to compare value &
-		   getter/setter as in defineproperty */
-		if !(_check_define_prop_flags(tls, (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 56))).Fflags, flags1) != 0) {
-			goto fail1
-		}
-	} else {
-		if !(extensible_target != 0) {
-			goto fail1
-		}
-	}
-	if !!((**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0) {
-		goto _46
-	}
-	if !(target_desc_ret != 0) || (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 56))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
-		goto fail1
-	}
-	if !((**(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == 0 && target_desc_ret != 0 && (**(**TJSPropertyDescriptor)(__ccgo_up(bp + 56))).Fflags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != 0) {
-		goto _47
-	}
-	/* proxy-missing-checks */
-	goto fail1
-fail1:
-	;
-	_js_free_desc(tls, ctx1, bp+24)
-	goto fail
-fail:
-	;
-	XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12866, 0)
-	return -int32(1)
-_47:
-	;
-_46:
-	;
-	ret = int32(ETRUE)
-	if pdesc != 0 {
-		**(**TJSPropertyDescriptor)(__ccgo_up(pdesc)) = **(**TJSPropertyDescriptor)(__ccgo_up(bp + 24))
-	} else {
-		_js_free_desc(tls, ctx1, bp+24)
-	}
-_33:
-	;
-	return ret
-}
-
-func _js_proxy_get_own_property_mode(tls *libc.TLS, ctx1 uintptr, pdesc uintptr, obj TJSValue, prop TJSAtom, mode int32) (r int32) {
-	bp := tls.Alloc(96)
-	defer tls.Free(96)
-	var extensible_target, flags1, res, ret, target_desc_ret, v1, v3, v8 int32
-	var p, p1, s, v6, v9 uintptr
-	var prop_val, trap_result_obj, v5 TJSValue
-	var v21 bool
-	var _ /* args at bp+8 */ [2]TJSValue
-	var _ /* method at bp+0 */ TJSValue
-	var _ /* result_desc at bp+24 */ TJSPropertyDescriptor
-	var _ /* target_desc at bp+56 */ TJSPropertyDescriptor
-	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = extensible_target, flags1, p, p1, prop_val, res, ret, s, target_desc_ret, trap_result_obj, v1, v21, v3, v5, v6, v8, v9
-	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_getOwnPropertyDescriptor))
-	if !(s != 0) {
-		return -int32(1)
-	}
-	p1 = uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget))
-	v1 = libc.BoolInt32(libc.Int32FromUint64(**(**TJSValue)(__ccgo_up(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
-	goto _2
-_2:
-	if v1 != 0 {
-		return _js_backtrace_own_desc(tls, ctx1, pdesc, p1, prop, mode)
-	}
-	prop_val = XJS_AtomToValue(tls, ctx1, prop)
-	v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(prop_val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
-	goto _4
-_4:
-	if v1 != 0 {
-		v5 = **(**TJSValue)(__ccgo_up(bp))
-		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-			goto _7
-		_7:
-			p = v6
-			v9 = p
-			*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-			v3 = *(*int32)(unsafe.Pointer(v9))
-			if v3 <= libc.Int32FromInt32(0) {
-				x__JS_FreeValue(tls, ctx1, v5)
-			}
-		}
-		return -int32(1)
-	}
-	(**(**[2]TJSValue)(__ccgo_up(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
-	(**(**[2]TJSValue)(__ccgo_up(bp + 8)))[int32(1)] = prop_val
-	trap_result_obj = _JS_CallFree(tls, ctx1, **(**TJSValue)(__ccgo_up(bp)), (*TJSProxyData)(unsafe.Pointer(s)).Fhandler, int32(2), bp+8)
-	v5 = prop_val
-	if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-		goto _12
-	_12:
-		p = v6
-		v9 = p
-		*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-		v1 = *(*int32)(unsafe.Pointer(v9))
-		if v1 <= libc.Int32FromInt32(0) {
-			x__JS_FreeValue(tls, ctx1, v5)
-		}
-	}
-	v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(trap_result_obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
-	goto _16
-_16:
-	if v1 != 0 {
-		return -int32(1)
-	}
-	v1 = libc.BoolInt32(libc.Int32FromUint64(trap_result_obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT))
-	goto _18
-_18:
-	;
-	if v21 = !(v1 != 0); v21 {
-		v3 = libc.BoolInt32(libc.Int32FromUint64(trap_result_obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
-		goto _20
-	_20:
-	}
-	if v21 && !(v3 != 0) {
-		v5 = trap_result_obj
-		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = uintptr(libc.Int32FromUint64(v5)) - libc.UintptrFromInt32(1)*4
-			goto _24
-		_24:
-			p = v6
-			v9 = p
-			*(*int32)(unsafe.Pointer(v9)) = *(*int32)(unsafe.Pointer(v9)) - 1
-			v8 = *(*int32)(unsafe.Pointer(v9))
-			if v8 <= libc.Int32FromInt32(0) {
-				x__JS_FreeValue(tls, ctx1, v5)
-			}
-		}
-		goto fail
-	}
-	target_desc_ret = _js_backtrace_own_flags(tls, ctx1, bp+56, p1, prop)
+	target_desc_ret = _JS_GetOwnPropertyInternal(tls, ctx1, bp+56, p1, prop)
 	if target_desc_ret < 0 {
 		v5 = trap_result_obj
 		if libc.Uint32FromInt32(libc.Int32FromUint64(v5>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -106309,7 +106091,7 @@ _33:
 		}
 	}
 	p1 = uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget))
-	res = _js_backtrace_own_define(tls, flags, ctx1, bp+32, p1, prop)
+	res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, p1, prop)
 	if res < 0 {
 		return -int32(1)
 	}

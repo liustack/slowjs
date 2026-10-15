@@ -26,14 +26,15 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 //     and reads that. If formatting fails for lack of memory, a get or a
 //     descriptor read throws and the stack stays pending, so a later read
 //     can try again. A native print reports no stack and restores the
-//     exception state it found, so printing never leaves an exception.
+//     exception state it found, so the stack step of a print never leaves
+//     an exception (the message step can, as on main).
 //   - Redefining a non-writable, non-configurable 'stack' compares the new
 //     value with the text, so it formats the stack first.
-//   - Operations that look only at the attributes of 'stack' (Object.keys,
-//     freeze, isFrozen, __lookupGetter__, proxy checks, ...) leave it
-//     pending, also through proxies without a getOwnPropertyDescriptor
-//     trap. The checks after a proxy get, set or defineProperty trap
-//     format it only to compare the value of a frozen 'stack'.
+//   - Operations on the error that look only at the attributes of 'stack'
+//     (Object.keys, freeze, isFrozen, __lookupGetter__, the has, delete and
+//     ownKeys checks of a proxy whose target is the error, ...) leave it
+//     pending. Any other lookup through a proxy formats it, as a lookup of
+//     the descriptor does.
 //   - Assigning, defining or deleting 'stack' frees the marker like any
 //     value, which drops the pending stack without formatting it. Assigning
 //     through an object that has the error as its prototype makes an own
@@ -48,10 +49,7 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 // of JS_DefineProperty call _js_backtrace_settle, every inline property
 // read of the interpreter sends a 'stack' holding an object to the slow
 // path, the callers of JS_GetOwnPropertyInternal that only read attributes
-// call _js_backtrace_own_flags, the proxy trap checks call
-// _js_backtrace_own_frozen or _js_backtrace_own_define, a copy of
-// js_proxy_get_own_property with a mode lets attribute lookups pass through
-// proxies, _get_prop_string calls
+// call _js_backtrace_own_flags, _get_prop_string calls
 // _js_backtrace_prop_string, js_print_error skips the stack of a raw dump,
 // js_print_object prints a placeholder for a marker, and
 // JS_ComputeMemoryUsage counts the record.
@@ -409,71 +407,23 @@ func _js_backtrace_prop_string(tls *libc.TLS, ctx uintptr, p uintptr, prs uintpt
 	return 0, true
 }
 
-// Modes of _js_backtrace_own_desc.
-const (
-	backtraceOwnFlags  = 1 // the attributes only
-	backtraceOwnFrozen = 2 // the attributes, and the value of a frozen data property
-)
-
 // _js_backtrace_own_flags is JS_GetOwnPropertyInternal for callers that only
 // look at the attributes of the property in desc, never at its value: for a
 // pending stack it fills in the attributes and an undefined value without
 // formatting the stack, which leaves it pending and cannot run out of
 // memory. internal/fixlib makes those callers call it instead.
 func _js_backtrace_own_flags(tls *libc.TLS, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom) int32 {
-	return _js_backtrace_own_desc(tls, ctx, desc, p, prop, backtraceOwnFlags)
-}
-
-// _js_backtrace_own_frozen is JS_GetOwnPropertyInternal for the checks a
-// proxy makes after a get or set trap, which compare the value only when
-// the target's property is a frozen data property.
-func _js_backtrace_own_frozen(tls *libc.TLS, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom) int32 {
-	return _js_backtrace_own_desc(tls, ctx, desc, p, prop, backtraceOwnFrozen)
-}
-
-// _js_backtrace_own_define is JS_GetOwnPropertyInternal for the check a
-// proxy makes after a defineProperty trap, which compares the value only
-// when flags has one and the target's property is a frozen data property.
-func _js_backtrace_own_define(tls *libc.TLS, flags int32, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom) int32 {
-	mode := int32(backtraceOwnFlags)
-	if flags&MJS_PROP_HAS_VALUE != 0 {
-		mode = backtraceOwnFrozen
-	}
-	return _js_backtrace_own_desc(tls, ctx, desc, p, prop, mode)
-}
-
-// _js_backtrace_own_desc looks up the own property prop of p in desc, as
-// JS_GetOwnPropertyInternal does, except for a pending stack: mode
-// backtraceOwnFlags leaves its value undefined and the stack pending, and
-// backtraceOwnFrozen does too unless the property is frozen, when the stack
-// is formatted for its value. A proxy without a getOwnPropertyDescriptor
-// trap hands the lookup to its target in the same mode
-// (_js_proxy_get_own_property_mode, which fixlib makes from
-// js_proxy_get_own_property), so a chain of such proxies does not format
-// either. A proxy with the trap calls it as before.
-func _js_backtrace_own_desc(tls *libc.TLS, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom, mode int32) int32 {
 	if desc != 0 && prop == uint32(EJS_ATOM_stack) {
-		if int32((*TJSObject)(unsafe.Pointer(p)).Fclass_id) == EJS_CLASS_PROXY {
-			return _js_proxy_get_own_property_mode(tls, ctx, desc, jsvMkPtr(EJS_TAG_OBJECT, p), prop, mode)
-		}
 		ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
 		defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
-		if prs := _find_own_property(tls, ppr, p, prop); prs != 0 {
-			pr := *(*uintptr)(unsafe.Pointer(ppr))
-			if backtracePending(tls, prs, pr) {
-				flags := _js_backtrace_prop_flags(tls, prs) & MJS_PROP_C_W_E
-				if mode == backtraceOwnFlags || flags&(MJS_PROP_CONFIGURABLE|MJS_PROP_WRITABLE) != 0 {
-					d := (*TJSPropertyDescriptor)(unsafe.Pointer(desc))
-					d.Fflags = flags
-					d.Fvalue = jsUndefined()
-					d.Fgetter = jsUndefined()
-					d.Fsetter = jsUndefined()
-					return 1
-				}
-				if _js_backtrace_settle(tls, ctx, p, prs, pr) < 0 {
-					return -1
-				}
-			}
+		if prs := _find_own_property(tls, ppr, p, prop); prs != 0 &&
+			backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr))) {
+			d := (*TJSPropertyDescriptor)(unsafe.Pointer(desc))
+			d.Fflags = _js_backtrace_prop_flags(tls, prs) & MJS_PROP_C_W_E
+			d.Fvalue = jsUndefined()
+			d.Fgetter = jsUndefined()
+			d.Fsetter = jsUndefined()
+			return 1
 		}
 	}
 	return _JS_GetOwnPropertyInternal(tls, ctx, desc, p, prop)

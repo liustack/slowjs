@@ -5,103 +5,52 @@
 package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import (
-	"fmt"
 	"testing"
+	"unsafe"
 
 	"modernc.org/libc"
 )
 
-// Operations on a proxy of an error that only look at keys or attributes,
-// or whose trap checks only need the attributes of the target's 'stack',
-// leave the stack pending, so they cannot run out of memory formatting it.
-// The proxy may have no trap for the lookup, or wrap another such proxy.
-//
-// Making the first pending error registers a class and allocates, which
-// changes which small allocations still find a free block. So when an
-// operation runs out of memory, the same operation on a property other than
-// 'stack' (control) must run out at that room too: the failure is then the
-// cost of the proxies, not of the stack.
-func TestBacktraceProxyChecksDoNotFormat(t *testing.T) {
-	ops := []struct{ expr, check, control string }{
-		{`Object.keys(P(held, {}))`, `Array.isArray(res) && res.length === 0`, ""},
-		{`Object.freeze(P(held, {}))`, `typeof res === "object" && Object.isFrozen(held)`, ""},
-		{`Object.prototype.__lookupGetter__.call(P(held, {}), "stack")`, `res === undefined`, ""},
-		{`Object.prototype.propertyIsEnumerable.call(P(held, {}), "stack")`, `res === false`, ""},
-		{`Object.assign({}, P(held, {}))`, `Object.keys(res).length === 0`, ""},
-		{`Object.entries(P(held, {}))`, `Array.isArray(res) && res.length === 0`, ""},
-		{`JSON.stringify(P(held, {}))`, `res === "{}"`, ""},
-		{`Reflect.get(P(held, { get() { return 17 } }), "stack")`, `res === 17`, ""},
-		{`Reflect.set(P(held, { set() { return true } }), "stack", 42)`, `res === true`, ""},
-		{`Reflect.defineProperty(P(held, { defineProperty() { return true } }), "stack", { writable: true })`, `res === true`,
-			`Reflect.defineProperty(P(held, { defineProperty() { return true } }), "x", { writable: true })`},
-	}
-	wraps := map[string]string{
-		"proxy":  `function P(t, h) { return new Proxy(t, h) }`,
-		"nested": `function P(t, h) { return new Proxy(new Proxy(t, {}), h) }`,
-	}
-	for _, op := range ops {
-		for wrap, def := range wraps {
-			for _, room := range []int64{-1, 0, 256, 512, 1024, 2048} {
-				name := fmt.Sprintf("%s %s, room %d", wrap, op.expr, room)
-				r := proxyOp(t, def, op.expr, op.check, room)
-				if r.failed != "" && op.control != "" && wrap == "nested" && proxyOp(t, def, op.control, "true", room).failed != "" {
-					r.failed = ""
-				}
-				if r.failed != "" {
-					t.Errorf("%s: %s", name, r.failed)
-				}
-				if r.formatted {
-					t.Errorf("%s: formatted the stack", name)
-				}
-				if r.stack != r.want {
-					t.Errorf("%s: read after gave %q, want %q", name, r.stack, r.want)
-				}
-			}
+// A property the host puts on the proxy itself, with
+// JS_SetPropertyFunctionList, is an own property of the proxy: lookups of
+// it, full or of the attributes only, find it before the handler and never
+// call a trap, as on main. Revoking the proxy changes nothing.
+func TestBacktraceProxyOwnProperty(t *testing.T) {
+	for _, revoke := range []bool{false, true} {
+		v := newBtVM(t)
+		XFreeValue(v.tls, v.ctx, v.eval(`var log = []
+var r = Proxy.revocable({}, { getOwnPropertyDescriptor(t, k) { log.push(k); return undefined } })
+var p = r.proxy`))
+		p := v.eval("p")
+		e := (*TJSCFunctionListEntry)(unsafe.Pointer(v.tls.Alloc(int(unsafe.Sizeof(TJSCFunctionListEntry{})))))
+		name, _ := libc.CString("stack")
+		str, _ := libc.CString("host value")
+		*e = TJSCFunctionListEntry{Fname: name, Fprop_flags: MJS_PROP_C_W_E, Fdef_type: MJS_DEF_PROP_STRING}
+		*(*uintptr)(unsafe.Pointer(&e.Fu)) = str
+		if XJS_SetPropertyFunctionList(v.tls, v.ctx, p, uintptr(unsafe.Pointer(e)), 1) < 0 {
+			t.Fatal(v.exception())
+		}
+		XFreeValue(v.tls, v.ctx, p)
+		if revoke {
+			XFreeValue(v.tls, v.ctx, v.eval("r.revoke()"))
+		}
+		got := v.text(v.eval(`JSON.stringify([
+	Object.getOwnPropertyDescriptor(p, "stack").value,
+	(() => { try { return Object.prototype.propertyIsEnumerable.call(p, "stack") } catch (e) { return String(e) } })(),
+	log])`))
+		v.tls.Free(int(unsafe.Sizeof(TJSCFunctionListEntry{})))
+		libc.Xfree(v.tls, str)
+		libc.Xfree(v.tls, name)
+		if want := `["host value",true,[]]`; got != want {
+			t.Errorf("revoked %v: got %s, want %s", revoke, got, want)
 		}
 	}
 }
 
-type proxyResult struct {
-	failed      string // why the operation failed, or ""
-	formatted   bool   // whether it formatted the stack
-	stack, want string // the stack read after it, and the stack of another error
-}
-
-// proxyOp runs expr, which may use P, defined by def, and held, an error
-// whose stack is pending, with room bytes of memory left (any if room < 0),
-// then checks the result res with check.
-func proxyOp(t *testing.T, def, expr, check string, room int64) (r proxyResult) {
-	v := newBtVM(t)
-	ref := v.pendingErr()
-	r.want = v.stack(ref)
-	XFreeValue(v.tls, v.ctx, ref)
-
-	e := v.pendingErr()
-	defer XFreeValue(v.tls, v.ctx, e)
-	XFreeValue(v.tls, v.ctx, v.eval(def+`; var held, res; function op() { res = `+expr+` }`))
-	v.setGlobal("held", XDupValue(v.tls, v.ctx, e))
-	f := v.eval("op")
-	g := XJS_GetGlobalObject(v.tls, v.ctx)
-	v.limit(room)
-	res := XJS_Call(v.tls, v.ctx, f, g, 0, 0)
-	v.limit(-1)
-	XFreeValue(v.tls, v.ctx, g)
-	XFreeValue(v.tls, v.ctx, f)
-	if tag(res) == EJS_TAG_EXCEPTION {
-		r.failed = v.exception()
-	} else if ok := v.text(v.eval(`String(` + check + `)`)); ok != "true" {
-		r.failed = "result fails " + check
-	}
-	XFreeValue(v.tls, v.ctx, res)
-	r.formatted = !v.stackPending(e)
-	r.stack = v.stack(e)
-	return r
-}
-
-// A proxy trap check that does need the value of the target's 'stack' (a
-// frozen data property) formats it and compares the text, as the engine
-// did when the stack was formatted at once. Traps are called as often and
-// in the same order as before. The expected result is what main gives.
+// Lookups and trap checks through a proxy format the target's stack and
+// compare the text, as the engine did when the stack was formatted at once.
+// Traps are called as often and in the same order as before. The expected
+// result is what main gives.
 func TestBacktraceProxyChecksCompareText(t *testing.T) {
 	v := newBtVM(t)
 	XFreeValue(v.tls, v.ctx, v.eval(proxyTextJS))
