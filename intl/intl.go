@@ -61,19 +61,17 @@
 // # Differences from Chromium
 //
 // The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
-// 48.1) on about 52,000 expressions recorded in testdata/chromium. All but
-// these match exactly:
-//
-//   - A numbering system a locale has no symbols for, such as arab in de,
-//     takes the locale's latn symbols. ICU takes CLDR root's, which
-//     cldr-json does not publish.
-//   - A calendar other than the ones above formats in the locale's default
-//     calendar, Gregorian but for th and the persian locales.
+// 48.1) on about 52,000 expressions recorded in testdata/chromium. All
+// match exactly but those in a calendar other than the ones above, which
+// format in the locale's default calendar, Gregorian but for th and the
+// persian locales.
 //
 // Where Chromium's ICU data departs from CLDR 48.2, the data here follows
 // Chromium. A language Chromium ships no dates or numbers for formats them
 // with CLDR root's data, as az and kk do ("2026 M01 5, Mon"), and one it ships
-// no currency, zone, unit or region names for takes them from English. A
+// no currency, zone, unit or region names for takes them from English. Digits
+// a locale does not use by default, such as arab in de, take the symbols and
+// patterns Chromium has for them, which cldr-json leaves out. A
 // zone's city is the one its id spells ("Sao Paulo"), Hong Kong
 // and Macao go by their short names, and the zones of the British Isles are
 // never "Greenwich Mean Time". fr-CH groups digits with a narrow no-break

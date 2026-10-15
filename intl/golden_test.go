@@ -47,15 +47,6 @@ type goldenDifference struct {
 
 var goldenDifferences = []goldenDifference{
 	{
-		// ICU takes the symbols of a numbering system a locale has no data
-		// for from CLDR root, which defines them for arab. cldr-json publishes
-		// root's latn symbols only, so the latn ones are used here.
-		why: "arab digits in a locale without arab symbols: root's symbols are not in cldr-json",
-		match: func(expr, got, want string) bool {
-			return strings.Contains(expr, "numberingSystem:'arab'") && !strings.Contains(expr, `"ar`)
-		},
-	},
-	{
 		// Only the Gregorian calendar has data everywhere; buddhist and
 		// persian have it where they are the default (th, fa). Any other
 		// calendar is dropped from the locale and formats as Gregorian.

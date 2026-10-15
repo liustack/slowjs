@@ -394,6 +394,19 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 		}
 		s.Bundles[key] = bundle
 	}
+	s.Numbers = map[string]map[string]string{}
+	for _, b := range bundles {
+		if b.tree == "" {
+			m, err := b.r.numbers()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %v", b.item, err)
+			}
+
+			if len(m) > 0 {
+				s.Numbers[b.name] = m
+			}
+		}
+	}
 	for path := range paths {
 		s.Paths = append(s.Paths, path)
 	}
@@ -518,4 +531,52 @@ func (r *icuBundleData) resources(tree string, patterned map[string]bool) (paths
 		add("Countries%short")
 	}
 	return paths
+}
+
+// icuNumberNames are the symbols and patterns of a numbering system the
+// runtime reads.
+var icuNumberNames = map[string]bool{
+	"symbols/decimal": true, "symbols/group": true, "symbols/minusSign": true, "symbols/plusSign": true,
+	"symbols/percentSign": true, "symbols/exponential": true, "symbols/infinity": true, "symbols/nan": true,
+	"symbols/currencyDecimal": true, "symbols/currencyGroup": true,
+	"patterns/decimalFormat": true, "patterns/percentFormat": true, "patterns/scientificFormat": true,
+	"patterns/currencyFormat": true, "patterns/accountingFormat": true,
+}
+
+// numbers returns the bundle's own symbols and patterns of numbering systems
+// other than latn, by <system>/<symbols|patterns>/<name>. cldr-json leaves
+// most of them out. An alias is kept as its target, which starts with
+// /LOCALE/NumberElements/.
+func (r *icuBundleData) numbers() (map[string]string, error) {
+	res, ok := r.get("NumberElements")
+	if !ok {
+		return nil, nil
+	}
+
+	m := map[string]string{}
+	for ns, nsRes := range r.table(res) {
+		if ns == "latn" {
+			continue
+		}
+
+		for _, part := range []string{"symbols", "patterns"} {
+			for name, v := range r.table(r.table(nsRes)[part]) {
+				if !icuNumberNames[part+"/"+name] {
+					continue
+				}
+
+				str, err := r.str(v)
+				if err != nil {
+					return nil, fmt.Errorf("NumberElements/%s/%s/%s: %v", ns, part, name, err)
+				}
+
+				if v>>28 == resAlias && !strings.HasPrefix(str, "/LOCALE/NumberElements/") {
+					return nil, fmt.Errorf("NumberElements/%s/%s/%s: alias %q is not to the locale's own numbers", ns, part, name, str)
+				}
+
+				m[ns+"/"+part+"/"+name] = str
+			}
+		}
+	}
+	return m, nil
 }

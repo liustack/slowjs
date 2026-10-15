@@ -27,6 +27,10 @@ type icuSummary struct {
 	Currencies []string             `json:"currencies"` // the currencies some locale has names for
 	Paths      []string             `json:"paths"`      // the resources looked for (see icuPath)
 	Bundles    map[string]icuBundle `json:"bundles"`    // by tree/name; the main tree has no prefix
+
+	// Numbers are the main tree bundles' symbols and patterns of numbering
+	// systems other than latn, by name (see numbers).
+	Numbers map[string]map[string]string `json:"numbers"`
 }
 
 type icuBundle struct {
@@ -85,6 +89,7 @@ func writeICUSummary(src, dst string) {
 // chromiumICU answers where ICU finds a resource for a locale.
 type chromiumICU struct {
 	currencies map[string]bool
+	numbers    map[string]map[string]string // bundle -> numbering system resources
 	bundles    map[string]icuBundle
 	has        map[string]map[string]bool   // bundle key -> resource paths
 	links      map[string]map[string]string // bundle key -> alias -> the resource it stands for
@@ -110,7 +115,7 @@ func loadChromiumICU(path string) *chromiumICU {
 		fail(fmt.Errorf("%s: %v", path, err))
 	}
 
-	c := &chromiumICU{currencies: map[string]bool{}, bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]string{}, parents: map[string]string{}, chains: map[string][]string{}}
+	c := &chromiumICU{currencies: map[string]bool{}, numbers: s.Numbers, bundles: s.Bundles, has: map[string]map[string]bool{}, links: map[string]map[string]string{}, parents: map[string]string{}, chains: map[string][]string{}}
 	for _, code := range s.Currencies {
 		c.currencies[code] = true
 	}
@@ -600,6 +605,85 @@ func (g *gen) markGeneratedTimes(c *chromiumICU, av *availability) {
 		vlang, _, vregion := splitTag(strings.ReplaceAll(valid, "_", "-"))
 		if region != "" && region != vregion || lang != vlang {
 			supp["gt/"+l] = "1"
+		}
+	}
+}
+
+// icuNumberKeys maps the pattern names of numbers to the keys of the locale
+// data, with %s for the numbering system.
+var icuNumberKeys = map[string]string{
+	"patterns/decimalFormat":    "n/decimalFormats-numberSystem-%s/standard",
+	"patterns/percentFormat":    "n/percentFormats-numberSystem-%s/standard",
+	"patterns/scientificFormat": "n/scientificFormats-numberSystem-%s/standard",
+	"patterns/currencyFormat":   "n/currencyFormats-numberSystem-%s/standard",
+	"patterns/accountingFormat": "n/currencyFormats-numberSystem-%s/accounting",
+}
+
+// numberKey returns the key of the locale data for <system>/<part>/<name>.
+func numberKey(k string) string {
+	ns, rest, _ := strings.Cut(k, "/")
+	if name, ok := strings.CutPrefix(rest, "symbols/"); ok {
+		return "n/symbols-numberSystem-" + ns + "/" + name
+	}
+
+	return fmt.Sprintf(icuNumberKeys[rest], ns)
+}
+
+// followChromiumNumbers gives each locale the symbols and patterns of
+// numbering systems other than latn that ICU finds for it in Chromium.
+// cldr-json has them only for the systems a locale uses, so sv has none for
+// arab digits where Chromium's sv has a group separator and minus sign, and
+// root has all of arab's. A resource that is an alias to latn data is left
+// out, as the runtime then takes the locale's latn data, as ICU does.
+func (g *gen) followChromiumNumbers(c *chromiumICU) {
+	if len(c.numbers["root"]) == 0 {
+		fail(fmt.Errorf("the summary of Chromium's ICU data has no numbering systems: run the generator with -icudtl"))
+	}
+
+	names := map[string]bool{}
+	for _, m := range c.numbers {
+		for k := range m {
+			names[k] = true
+		}
+	}
+	for i := range g.chunks {
+		ch := &g.chunks[i]
+		if ch.name == "@" {
+			continue
+		}
+
+		chain := c.chain("", icuID(ch.name))
+		// find returns what ICU finds for k along the chain, following the
+		// aliases into the locale's own data.
+		find := func(k string) (string, bool) {
+			for range 8 {
+				v, found := "", false
+				for _, b := range chain {
+					if v, found = c.numbers[b][k]; found {
+						break
+					}
+				}
+				rest, alias := strings.CutPrefix(v, "/LOCALE/NumberElements/")
+				if !found || !alias {
+					return v, found
+				}
+
+				if ns, _, _ := strings.Cut(k, "/"); !strings.HasPrefix(rest, ns+"/") {
+					return "", false
+				}
+
+				k = rest
+			}
+			fail(fmt.Errorf("%s: aliases of %s go round", ch.name, k))
+			return "", false
+		}
+		for k := range names {
+			key := numberKey(k)
+			if v, ok := find(k); ok {
+				ch.kv[key] = v
+			} else {
+				delete(ch.kv, key)
+			}
 		}
 	}
 }

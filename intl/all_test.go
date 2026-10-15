@@ -368,6 +368,26 @@ func TestCompactWithoutDigits(t *testing.T) {
 	})
 }
 
+// TestOtherNumberingSystems covers digits a locale does not use by default.
+// ICU takes their symbols and patterns from the locale's data for them, then
+// from root's, which has them for arab and arabext, and only then from the
+// locale's latn data. cldr-json has none of these for de, fr, en or sv.
+func TestOtherNumberingSystems(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('de-u-nu-arab').format(-1234.5)`, "\u061c-\u0661\u066c\u0662\u0663\u0664\u066b\u0665"},
+		{`new Intl.NumberFormat('fr', {numberingSystem: 'arab'}).format(-1234.5)`, "\u061c-\u0661\u066c\u0662\u0663\u0664\u066b\u0665"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arab', style: 'percent'}).format(0.5)`, "\u0665\u0660\u066a\u061c"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arab', notation: 'scientific'}).format(12345)`, "\u0661\u066b\u0662\u0663\u0665\u0627\u0633\u0664"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arab', signDisplay: 'always'}).format(5)`, "\u061c+\u0665"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arab', style: 'currency', currency: 'USD'}).format(-1234.5)`, "\u061c-\u0661\u066c\u0662\u0663\u0664\u066b\u0665\u0660\u00a0$"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arabext'}).format(-1234.5)`, "\u200e-\u200e\u06f1\u066c\u06f2\u06f3\u06f4\u066b\u06f5"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'arabext', style: 'percent'}).format(0.5)`, "\u06f5\u06f0\u066a"},
+		{`new Intl.NumberFormat('en', {numberingSystem: 'beng'}).format(-1234.5)`, "-\u09e7,\u09e8\u09e9\u09ea.\u09eb"},
+		{`new Intl.NumberFormat('sv', {numberingSystem: 'arab'}).format(-1234.5)`, "\u061c\u2212\u0661\u00a0\u0662\u0663\u0664\u066b\u0665"},
+		{`new Intl.NumberFormat('fa', {numberingSystem: 'arab'}).format(NaN)`, "\u0646\u0627\u0639\u062f\u062f"},
+	})
+}
+
 // TestCurrencyPatterns covers the currencies a locale formats with a pattern
 // and separators of their own, as ICU does: the euro in en-150 and the
 // locales under it, the lira in tr, the escudo in pt-CV. The currency of the
