@@ -522,6 +522,22 @@ func TestICURules(t *testing.T) {
 
 // TestDateTimeFormatLocales checks dates in other languages against what
 // Chromium writes.
+// TestStyleTimeGenerated covers locales whose ICU data is found under
+// another region or language: ICU generates their timeStyle pattern for the
+// hour cycle of the region instead of taking the data's. kok-IN finds its
+// data in kok_Deva and zh-MY in zh_Hans, kok-Deva-IN in a bundle of its own.
+func TestStyleTimeGenerated(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.DateTimeFormat('kok-IN', {timeStyle: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "3:07 AM"},
+		{`new Intl.DateTimeFormat('kok-IN', {dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "2026 M07 5 3:07 AM"},
+		{`new Intl.DateTimeFormat('kok-Deva-IN', {dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "2026 M07 5 03:07 AM"},
+		{`new Intl.DateTimeFormat('kok', {timeStyle: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "03:07 AM"},
+		{`new Intl.DateTimeFormat('zh-MY', {dateStyle: 'full', timeStyle: 'long', timeZone: 'America/New_York'}).format(Date.UTC(2026, 0, 5, 15, 7, 9))`, "2026年1月5日星期一 GMT-5上午10:07:09"},
+		{`new Intl.DateTimeFormat('de', {timeStyle: 'short', hourCycle: 'h12', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "03:07 AM"},
+		{`new Intl.DateTimeFormat('de-u-hc-h12', {timeStyle: 'short', timeZone: 'UTC'}).format(Date.UTC(2026, 6, 5, 3, 7))`, "3:07 AM"},
+	})
+}
+
 func TestDateTimeFormatLocales(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{

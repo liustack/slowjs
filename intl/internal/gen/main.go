@@ -480,7 +480,9 @@ func (g *gen) build(av *availability) {
 			c.parent = index["und"]
 		}
 	}
-	g.followChromium(loadChromiumICU(*icu))
+	chromium := loadChromiumICU(*icu)
+	g.followChromium(chromium)
+	g.markGeneratedTimes(chromium, av)
 	g.applyBrowserOverrides(index)
 	for i := range g.chunks {
 		c := &g.chunks[i]

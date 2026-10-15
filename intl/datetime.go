@@ -276,7 +276,8 @@ func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, er
 			return nil, typeError("Invalid option : dateStyle")
 		}
 
-		f.Pattern = stylePattern(f.DateStyle, f.TimeStyle, cal, g, lang, r.region, hcKeyword, ns.decimal, dtfHourCycle)
+		_, generated := cldr().supplemental().get("gt/" + r.locale)
+		f.Pattern = stylePattern(f.DateStyle, f.TimeStyle, cal, g, lang, r.region, hcKeyword, generated, ns.decimal, dtfHourCycle)
 	} else {
 		needDefaults := true
 		if required == "date" || required == "any" {
@@ -354,15 +355,18 @@ func (f *dateTimeFormat) readComponents() {
 }
 
 // stylePattern is the pattern of dateStyle and timeStyle, V8's
-// DateTimeStylePattern over ICU's SimpleDateFormat::construct.
-func stylePattern(dateStyle, timeStyle string, cal *calendarData, g *dtpg, lang, region, hcKeyword, decimal, hc string) string {
+// DateTimeStylePattern over ICU's SimpleDateFormat::construct. generated
+// reports a locale ICU finds its data for under another region or language,
+// which has its time pattern generated.
+func stylePattern(dateStyle, timeStyle string, cal *calendarData, g *dtpg, lang, region, hcKeyword string, generated bool, decimal, hc string) string {
 	if timeStyle == "" {
 		return cal.str("dateFormats/" + dateStyle)
 	}
 
 	var pattern string
-	if hcKeyword != "" {
-		// A locale asking for an hour cycle has its time pattern generated.
+	if hcKeyword != "" || generated {
+		// A locale asking for an hour cycle has its time pattern generated,
+		// and so does one whose data is another region's or language's.
 		pattern = generatorFor(cal, lang, region, hcKeyword, decimal, false).bestPattern(timeSkeletons[styleIndex[timeStyle]])
 	}
 	if pattern == "" {

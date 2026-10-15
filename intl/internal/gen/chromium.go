@@ -587,3 +587,19 @@ func (g *gen) cldrLocale(name string) string {
 
 	return l
 }
+
+// markGeneratedTimes marks the DateTimeFormat locales whose data ICU finds
+// under another region or language, kok-IN in kok_Deva: ICU's
+// SimpleDateFormat then generates their timeStyle patterns for the hour cycle
+// of the region instead of taking the data's.
+func (g *gen) markGeneratedTimes(c *chromiumICU, av *availability) {
+	supp := g.chunks[0].kv
+	for _, l := range av.DateTimeFormat {
+		valid, _ := c.findFirst("", icuID(l))
+		lang, _, region := splitTag(l)
+		vlang, _, vregion := splitTag(strings.ReplaceAll(valid, "_", "-"))
+		if region != "" && region != vregion || lang != vlang {
+			supp["gt/"+l] = "1"
+		}
+	}
+}
