@@ -63,8 +63,23 @@
 // The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
 // 48.1) on about 60,000 expressions recorded in testdata/chromium. All
 // match exactly but those in a calendar other than the ones above, which
-// format in the locale's default calendar, Gregorian but for th and the
-// persian locales.
+// format as Chromium does without that calendar: in the locale's default
+// calendar, Gregorian but for th and the persian locales.
+//
+// Checks over every locale beyond those expressions found these other
+// differences, all in rare locales or options:
+//
+//   - sr-Cyrl-ME names currencies, units and time zones in Cyrillic, where
+//     Chromium writes them in Latin ("1 литар" for "1 litar").
+//   - uz-AF and uz-Arab-AF put an era, "AP", before the year of a date with
+//     time, which Chromium leaves out, and do not pad the hour of a time
+//     with a long zone name ("۵:۳۰" for "۰۵:۳۰").
+//   - en-IE and fr-MA with hourCycle h11 write the day period "am" and "AM"
+//     where Chromium writes "a.m.".
+//   - om-KE's short era is "BA" where Chromium's is "CE".
+//
+// Error messages are worded differently, though the errors thrown are the
+// same.
 //
 // Where Chromium's ICU data departs from CLDR 48.2, the data here follows
 // Chromium. A language Chromium ships no dates or numbers for formats them
