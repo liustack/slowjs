@@ -132,7 +132,7 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   is not implemented and where the output differs from Chromium.
 
   What it costs, measured on darwin/arm64 against the en-US version: a
-  program that uses `intl` is 1.8 MB larger (1.3 MB of it is the locale
+  program that uses `intl` is 1.7 MB larger (1.3 MB of it is the locale
   data). `Register` takes 0.09 ms and 9 KB of the VM's memory, against
   0.85 ms and 46 KB before. The first use in a VM then takes 0.15 ms and
   42 KB more. A language is decoded into the Go heap the first time it is
@@ -336,10 +336,13 @@ To compare with a newer Chromium, record its answers again. This needs Node
 and a Chromium that Playwright drives. Set it up once:
 
 ```sh
-npm install -g playwright                       # the version decides the Chromium
-npx playwright install chromium
+npm install -g playwright@1.64.0                # Chromium 156.0.8078.4, as recorded here
+npx playwright@1.64.0 install chromium
 export PLAYWRIGHT="$(npm root -g)/playwright"   # what record.cjs loads
 ```
+
+Each Playwright release drives one Chromium build, so a newer Chromium needs a
+newer Playwright: its `browsers.json` names the build.
 
 Then, from the repository root:
 
@@ -356,7 +359,17 @@ rm -rf "$CLDR"
 ```
 
 `record.cjs icudtl` prints where the browser keeps `icudtl.dat`, its ICU
-data file. The generator writes a summary of it to
+data file. The same file, byte for byte, is `common/icudtl.dat` in Chromium's
+copy of ICU, at the commit Chromium's `DEPS` pins for `src/third_party/icu`
+(5aa52620 for 156.0.8078.4), so summarizing it needs no browser:
+
+```sh
+curl -s 'https://chromium.googlesource.com/chromium/deps/icu/+/5aa526207171ecadf31597f0980a7b7ad8872f33/common/icudtl.dat?format=TEXT' |
+	base64 -d > icudtl.dat
+go run ./intl/internal/gen -icudtl icudtl.dat
+```
+
+The generator writes a summary of it to
 `intl/testdata/chromium/icu.json.gz` and makes every locale take each
 resource from where Chromium's ICU finds it, so a language whose data
 Chromium leaves out formats with root's or English data as it does in
