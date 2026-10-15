@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/liustack/quickjs"
@@ -586,6 +587,63 @@ func TestInstallOnUse(t *testing.T) {
 	evalTests(t, vm2, [][2]string{
 		{`Intl = 42; (1234.5).toLocaleString('en-US') + ' ' + Intl`, "1,234.5 42"},
 	})
+}
+
+// TestConcurrentVMs formats on several VMs at once. The locale data, pattern
+// generators and formatters they share are built by whichever gets there
+// first, so the VMs start together and are checked against a lone one after.
+// Run it with -race.
+func TestConcurrentVMs(t *testing.T) {
+	exprs := []string{
+		`new Intl.DateTimeFormat('zh-CN', {dateStyle: 'full', timeStyle: 'long', timeZone: 'Asia/Shanghai'}).format(0)`,
+		`new Intl.DateTimeFormat('ja', {hour: 'numeric', minute: 'numeric', hour12: true}).format(0)`,
+		`new Intl.DateTimeFormat('fa', {dateStyle: 'medium', timeStyle: 'short'}).format(0)`,
+		`new Intl.DateTimeFormat('de', {timeZoneName: 'long', timeZone: 'Europe/Berlin'}).format(0)`,
+		`new Intl.NumberFormat('hi', {style: 'currency', currency: 'INR'}).format(1234567.891)`,
+		`new Intl.NumberFormat('ar-EG', {notation: 'compact'}).format(1234567)`,
+		`new Intl.PluralRules('ru').select(21)`,
+		`new Date(0).toLocaleString('ko')`,
+	}
+	const workers = 4
+	var results [workers][]string
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			vm, err := quickjs.NewVM()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+
+			defer vm.Close()
+
+			if err := Register(vm, TimeZone("UTC")); err != nil {
+				t.Error(err)
+				return
+			}
+
+			for _, e := range exprs {
+				v, err := vm.Eval(e, quickjs.EvalGlobal)
+				if err != nil {
+					t.Errorf("%s: %v", e, err)
+				}
+				results[w] = append(results[w], fmt.Sprint(v))
+			}
+		}()
+	}
+	wg.Wait()
+
+	vm := newVM(t)
+	for i, e := range exprs {
+		want := fmt.Sprint(eval(t, vm, e))
+		for w := range workers {
+			if i < len(results[w]) && results[w][i] != want {
+				t.Errorf("%s: VM %d got %q, want %q", e, w, results[w][i], want)
+			}
+		}
+	}
 }
 
 func TestRegisterOnManyVMs(t *testing.T) {
