@@ -28,7 +28,7 @@ func parsePattern(p string) (r []patternItem) {
 	var lit strings.Builder
 	flush := func() {
 		if lit.Len() != 0 {
-			r = append(r, patternItem{lit: lit.String()})
+			r = append(r, patternItem{lit: plainSpaces.Replace(lit.String())})
 			lit.Reset()
 		}
 	}
@@ -116,8 +116,7 @@ func (f *dateFormatter) format(ms float64) []part {
 		}
 
 		typ, s := f.field(it.ch, it.n, &d)
-		// Browsers revert ICU's narrow spaces to plain ones (crbug.com/1414292).
-		s = strings.NewReplacer(" ", " ", " ", " ").Replace(s)
+		s = plainSpaces.Replace(s)
 		if typ == "literal" {
 			r = appendLiteral(r, s)
 			continue
@@ -125,13 +124,13 @@ func (f *dateFormatter) format(ms float64) []part {
 
 		r = append(r, part{typ, s})
 	}
-	for i := range r {
-		if r[i].Type == "literal" {
-			r[i].Value = strings.NewReplacer(" ", " ", " ", " ").Replace(r[i].Value)
-		}
-	}
 	return r
 }
+
+// plainSpaces turns ICU's narrow and thin spaces into plain ones, as browsers
+// do (crbug.com/1414292). The literals of a pattern get it once, when the
+// pattern is parsed, and field values on every format.
+var plainSpaces = strings.NewReplacer("\u202f", " ", "\u2009", " ")
 
 func appendLiteral(r []part, s string) []part {
 	if s == "" {
