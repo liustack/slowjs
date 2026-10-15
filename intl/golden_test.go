@@ -35,25 +35,35 @@ var (
 
 var goldenDir = filepath.Join("testdata", "chromium")
 
-var goldenCalendar = regexp.MustCompile(`-u-ca-(\w+)`)
+var (
+	goldenCalendar     = regexp.MustCompile(`-u-ca-(\w+)`)
+	goldenCalendarMore = regexp.MustCompile(`-u-ca-\w+-`) // with other keywords after it
+)
+
+// goldenDropCalendar returns expr with the calendar keyword taken out of its
+// locale tags.
+func goldenDropCalendar(expr string) string {
+	return goldenCalendar.ReplaceAllString(goldenCalendarMore.ReplaceAllString(expr, "-u-"), "")
+}
 
 // goldenDifference is a difference from Chromium that is understood: the
 // expression, Chromium's answer and ours match a known cause. Anything else
-// fails the test.
+// fails the test. eval evaluates another expression the way the test does.
 type goldenDifference struct {
 	why   string
-	match func(expr, got, want string) bool
+	match func(expr, got, want string, eval func(string) string) bool
 }
 
 var goldenDifferences = []goldenDifference{
 	{
-		// Only the Gregorian calendar has data everywhere; buddhist and
+		// Only the Gregorian calendar has data everywhere. buddhist and
 		// persian have it where they are the default (th, fa). Any other
-		// calendar is dropped from the locale and formats as Gregorian.
+		// calendar is dropped from the locale and formats as Gregorian: the
+		// answer has to be the one for the expression without it.
 		why: "a calendar there is no data for formats as Gregorian",
-		match: func(expr, got, want string) bool {
+		match: func(expr, got, want string, eval func(string) string) bool {
 			m := goldenCalendar.FindStringSubmatch(expr)
-			return m != nil && m[1] != "gregory"
+			return m != nil && m[1] != "gregory" && got == eval(goldenDropCalendar(expr))
 		},
 	},
 }
@@ -122,7 +132,7 @@ func TestGolden(t *testing.T) {
 
 		why := ""
 		for _, d := range goldenDifferences {
-			if d.match(expr, got, want) {
+			if d.match(expr, got, want, func(expr string) string { return goldenEval(t, vm, expr) }) {
 				why = d.why
 				break
 			}
