@@ -132,9 +132,15 @@ func TestDateTimeFormat(t *testing.T) {
 		{`new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Kolkata', timeZoneName: 'longOffset'}).format(new Date(0))`, "1/1/1970, GMT+05:30"},
 		{`new Intl.DateTimeFormat('en-US', {timeZone: '+05:30'}).format(new Date(0))`, "1/1/1970"},
 		{`new Intl.DateTimeFormat('en-US', {hour: 'numeric', minute: 'numeric', second: 'numeric', fractionalSecondDigits: 3}).format(new Date(1500))`, "12:00:01.500 AM"},
-		// en has no midnight: 00:00 falls in the night, and only noon is named.
-		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(0))`, "at night"},
+		// en's morning starts at midnight, and ICU does not name midnight
+		// itself. Noon is named only when no minute or second says otherwise.
+		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(0))`, "in the morning"},
+		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(3600 * 1000))`, "in the morning"},
 		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(9 * 3600 * 1000))`, "in the morning"},
+		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(12.5 * 3600 * 1000))`, "noon"},
+		{`new Intl.DateTimeFormat('en-US', {hour: 'numeric', minute: 'numeric', dayPeriod: 'short'}).format(new Date(12.5 * 3600 * 1000))`, "12:30 in the afternoon"},
+		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(20 * 3600 * 1000))`, "in the evening"},
+		{`new Intl.DateTimeFormat('en-US', {dayPeriod: 'short'}).format(new Date(22 * 3600 * 1000))`, "at night"},
 		// A date before AD 1 names its era even though none was asked for.
 		{`new Intl.DateTimeFormat('en-US', {timeZone: 'UTC'}).format(new Date(Date.UTC(-1, 0, 1)))`, "1/1/2 BC"},
 		// The bound format function survives being passed around.

@@ -340,7 +340,7 @@ func (f *dateTimeFormat) timeParts(c components, t time.Time) (r []part) {
 		r = appendFractionalSecond(r, c, t)
 		switch {
 		case c.dayPeriod != "":
-			r = append(r, lit(" "), part{"dayPeriod", dayPeriodName(t.Hour())})
+			r = append(r, lit(" "), part{"dayPeriod", dayPeriodName(t.Hour(), t.Minute(), t.Second(), c.minute != "", c.second != "")})
 		case period != "":
 			r = append(r, lit(" "), part{"dayPeriod", period})
 		}
@@ -359,7 +359,7 @@ func (f *dateTimeFormat) timeParts(c components, t time.Time) (r []part) {
 			if len(r) != 0 {
 				r = append(r, lit(" "))
 			}
-			r = append(r, part{"dayPeriod", dayPeriodName(t.Hour())})
+			r = append(r, part{"dayPeriod", dayPeriodName(t.Hour(), t.Minute(), t.Second(), c.minute != "", c.second != "")})
 		}
 	}
 	if c.timeZoneName != "" {

@@ -36,16 +36,16 @@ var (
 	}
 )
 
-// dayPeriodName returns the en day period covering hour, the strings CLDR uses
-// for the dayPeriod option. English has no distinct narrow or short forms worth
-// a table, so the width is ignored. Midnight is not among them: en puts 00:00
-// in the night, and only the noon hour gets a name of its own.
-func dayPeriodName(hour int) string {
+// dayPeriodName returns the en day period CLDR's rules put a time in, the strings
+// the dayPeriod option writes. English has no distinct narrow or short forms
+// worth a table, so the width is ignored. The rules are CLDR's: the morning
+// runs from midnight to noon. Midnight has a name in the data, but ICU does
+// not use it, and noon is named only when the minute and second, if they are
+// shown, are zero.
+func dayPeriodName(hour, minute, second int, hasMinute, hasSecond bool) string {
 	switch {
-	case hour == 12:
+	case hour == 12 && (!hasMinute || minute == 0) && (!hasSecond || second == 0):
 		return "noon"
-	case hour < 6:
-		return "at night"
 	case hour < 12:
 		return "in the morning"
 	case hour < 18:
