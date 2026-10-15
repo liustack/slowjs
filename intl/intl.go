@@ -90,6 +90,15 @@
 // a toLocale* method, from bytecode compiled once per process, so a VM that
 // never formats anything does not carry it.
 //
+// # License of the data
+//
+// The embedded locale data comes from Unicode CLDR and from the ICU data
+// Chromium ships, which are under the Unicode License V3, with changes
+// Chromium made to it under Chromium's BSD license. A program that imports
+// this package distributes that data, and has to include the notices in
+// LICENSE-DATA, in this package's directory, in its documentation or with
+// its copies.
+//
 // # Time zones
 //
 // Resolving an IANA name needs the zoneinfo database, which Go reads from the

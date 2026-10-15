@@ -151,8 +151,12 @@ go get github.com/liustack/quickjs
 The license files of both projects are kept: [LICENSE](LICENSE) and
 [LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS) at the root, and
 [lib/LICENSE](lib/LICENSE), [lib/LICENSE-LIBQUICKJS](lib/LICENSE-LIBQUICKJS)
-and [lib/LICENSE_TEST262](lib/LICENSE_TEST262) for the engine. Maintenance
-notes are at the [end of this file](#maintaining-the-fork).
+and [lib/LICENSE_TEST262](lib/LICENSE_TEST262) for the engine.
+[intl/LICENSE-DATA](intl/LICENSE-DATA) holds the notices of the locale data
+`intl` embeds, from Unicode CLDR and Chromium's ICU data: a program that
+imports `intl` distributes that data and has to include those notices in its
+documentation or with its copies. Maintenance notes are at the
+[end of this file](#maintaining-the-fork).
 
 The rest of this section is the upstream README.
 
