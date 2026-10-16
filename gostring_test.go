@@ -216,3 +216,53 @@ func TestBigIntToStringThrows(t *testing.T) {
 		})
 	}
 }
+
+// ErrorFromValue reads properties of the thrown value. A getter that throws
+// leaves that field empty and its exception must not stay pending.
+func TestErrorFromValueGetterThrows(t *testing.T) {
+	for _, prop := range []string{"stack", "lineNumber"} {
+		t.Run(prop, func(t *testing.T) {
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer m.Close()
+
+			_, err = m.Eval(`var e = new Error("thrown"); Object.defineProperty(e, "`+prop+`", {get() { throw new Error("from the getter") }}); throw e`, EvalGlobal)
+			var e *Error
+			if !errors.As(err, &e) || e.Message != "thrown" {
+				t.Fatalf("got error %v, want Error: thrown", err)
+			}
+
+			if prop == "stack" && e.Stack != "" {
+				t.Fatalf("got stack %q, want none", e.Stack)
+			}
+
+			wantNoPendingException(t, m)
+		})
+	}
+}
+
+// A thrown value that is not an object has no name or message to read, and
+// reading them must not leave an exception in the context. Near the memory
+// limit the engine throws null.
+func TestThrownPrimitiveLeavesNoException(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer m.Close()
+
+	for _, src := range []string{"throw null", "throw undefined", "throw Symbol('x')"} {
+		if _, err := m.Eval(src, EvalGlobal); err == nil {
+			t.Fatalf("%s: no error", src)
+		}
+
+		wantNoPendingException(t, m)
+		if v, err := m.Eval("1 + 1", EvalGlobal); err != nil || v != 2 {
+			t.Fatalf("after %s: got %v, %v, want 2", src, v, err)
+		}
+	}
+}

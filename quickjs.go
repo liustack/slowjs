@@ -1270,10 +1270,15 @@ func (m *VM) value(v lib.TJSValue, free bool) (r any, err error) {
 }
 
 // errStrProp reads the string-valued property 'name' from error value 'v',
-// returning "" when the property is absent or not a string, or when there is
-// no memory to convert it (see errString). 'v' is borrowed.
+// returning "" when the property is absent or not a string, when reading it
+// throws, or when there is no memory to convert it. Like errString it drops
+// the exception, see there. 'v' is borrowed.
 func errStrProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r string) {
 	vr := lib.XJS_GetPropertyStr(tls, ctx, v, name)
+	if isException(vr) {
+		dropException(tls, ctx)
+		return ""
+	}
 
 	defer lib.XFreeValue(tls, ctx, vr)
 
@@ -1285,9 +1290,14 @@ func errStrProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r str
 }
 
 // errIntProp reads the integer-valued property 'name' from error value 'v',
-// returning 0 when the property is absent or not numeric. 'v' is borrowed.
+// returning 0 when the property is absent or not numeric, or when reading it
+// throws. Like errString it drops the exception, see there. 'v' is borrowed.
 func errIntProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r int) {
 	vr := lib.XJS_GetPropertyStr(tls, ctx, v, name)
+	if isException(vr) {
+		dropException(tls, ctx)
+		return 0
+	}
 
 	defer lib.XFreeValue(tls, ctx, vr)
 
@@ -1308,10 +1318,11 @@ func errIntProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r int
 // responsible for its lifetime. Like all VM operations it must be called from
 // the VM's own goroutine. See [Error] for which fields are populated.
 //
-// A field whose string cannot be made is left empty: the string form of 'v'
-// (the result of Error) when its toString throws, and any string field when
-// there is no memory for its UTF-8 copy. The exception that conversion throws
-// is dropped, so ErrorFromValue leaves no exception pending.
+// A field that cannot be read is left empty: the string form of 'v' (the
+// result of Error) when its toString throws, a property whose getter throws,
+// and any string field when there is no memory for its UTF-8 copy. The
+// exception that reading throws is dropped, so ErrorFromValue leaves no
+// exception pending.
 func ErrorFromValue(v Value) *Error {
 	tls := v.vm.runtime.tls
 	ctx := v.vm.cContext
