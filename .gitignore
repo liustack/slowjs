@@ -1,3 +1,5 @@
 
 mem.out
 *.test
+
+.DS_Store
