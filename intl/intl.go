@@ -37,10 +37,7 @@
 // falls back to its parent (en-XX to en) or, failing that, to en-US. With no
 // locale argument the locale is en-US and with no timeZone option the zone is
 // UTC: Intl and the toLocale* methods never read the host's language or zone.
-// The engine's own Date still does: the local time methods (new Date(2026, 0,
-// 1), getHours, toString) use the process's zone, which the TZ environment
-// variable sets. A server that has to render the same page on every machine
-// runs with TZ=UTC.
+// Neither does the engine's own Date, whose local time is UTC in every VM.
 //
 // Dates are in the Gregorian calendar, or in the buddhist one for th and the
 // persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
@@ -244,8 +241,8 @@ type Option func(*config)
 //
 // Without it the zone is UTC. Intl never reads the host's zone: a server would
 // otherwise render a page differently depending on where it runs. The
-// engine's Date local time methods are not covered: they use the process's
-// zone, see the package documentation.
+// engine's Date local time methods do not follow this option: their local
+// time is always UTC.
 func TimeZone(name string) Option { return func(c *config) { c.timeZone = name } }
 
 // Register installs Intl on vm's global object and replaces the toLocale*

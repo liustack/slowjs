@@ -100799,51 +100799,8 @@ var _js_math_obj = [1]TJSCFunctionListEntry{
 //	/* OS dependent. d = argv[0] is in ms from 1970. Return the difference
 //	   between UTC time and local time 'd' in minutes */
 func _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
-	var gm_ti, loc_ti Ttime_t
-	var res int32
-	var tm uintptr
-	var _ /* ti at bp+0 */ Ttime_t
-	_, _, _, _ = gm_ti, loc_ti, res, tm
-	time = time / int64(1000) /* convert to seconds */
-	if uint64(8) == uint64(4) {
-		/* on 32-bit systems, we need to clamp the time value to the
-		   range of `time_t`. This is better than truncating values to
-		   32 bits and hopefully provides the same result as 64-bit
-		   implementation of localtime_r.
-		*/
-		if int64(-libc.Int32FromInt32(1)) < 0 {
-			if time < int64(-libc.Int32FromInt32(2147483647)-libc.Int32FromInt32(1)) {
-				time = int64(-libc.Int32FromInt32(2147483647) - libc.Int32FromInt32(1))
-			} else {
-				if time > int64(2147483647) {
-					time = int64(2147483647)
-				}
-			}
-		} else {
-			if time < 0 {
-				time = 0
-			} else {
-				if time > libc.Int64FromUint32(4294967295) {
-					time = libc.Int64FromUint32(4294967295)
-				}
-			}
-		}
-	}
-	**(**Ttime_t)(__ccgo_up(bp)) = time
-	tm = libc.Xgmtime(tls, bp)
-	if !(tm != 0) {
-		return 0
-	}
-	gm_ti = libc.Xmktime(tls, tm)
-	tm = libc.Xlocaltime(tls, bp)
-	if !(tm != 0) {
-		return 0
-	}
-	loc_ti = libc.Xmktime(tls, tm)
-	res = int32((gm_ti - loc_ti) / int64(60))
-	return res
+	// Changed by internal/fixlib: local time is UTC, see lib/internal/patch/quickjs.diff.
+	return 0
 }
 
 /* RegExp */

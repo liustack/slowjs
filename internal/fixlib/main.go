@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does four things:
+// It does five things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -18,6 +18,10 @@
 //   - In every lib/ccgo_*.go file, wire in the lazy error stacks of
 //     lib/backtrace.go, the Go form of the backtrace change in the same
 //     diff (see fixBacktrace).
+//   - In every lib/ccgo_*.go file, make getTimezoneOffset answer 0, so that
+//     javascript's local time is UTC whatever zone the process has, as the
+//     same change in lib/internal/patch/quickjs.diff does (see
+//     fixTimezone).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -86,6 +90,9 @@ func run() (missing int, err error) {
 		changed, err := update(fn, func(b []byte) ([]byte, error) {
 			b, err := fixToCString(b)
 			if err != nil {
+				return nil, err
+			}
+			if b, err = fixTimezone(b); err != nil {
 				return nil, err
 			}
 			return fixBacktrace(b)
@@ -200,6 +207,38 @@ func fixToCString(b []byte) ([]byte, error) {
 	out.Write(body)
 	out.Write(b[end:])
 	return out.Bytes(), nil
+}
+
+var (
+	reTimezoneOffset = regexp.MustCompile(`\nfunc _getTimezoneOffset\(tls \*libc\.TLS, time Tint64_t\) \(r int32\) \{\n`)
+	reLocalTime      = regexp.MustCompile(`libc\.X(localtime(_r)?|tzset|mktime|strftime|ctime(_r)?|tzname|timezone|daylight)\b`)
+)
+
+const utcOffset = "\nfunc _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {\n" +
+	"\t// Changed by internal/fixlib: local time is UTC, see lib/internal/patch/quickjs.diff.\n" +
+	"\treturn 0\n}\n"
+
+// fixTimezone makes getTimezoneOffset, the engine's only way to the local
+// zone, answer 0: javascript's local time is then UTC in every VM, while Go
+// and the rest of libc keep the process's zone. The function as generated
+// asks libc's localtime (gmtime, mktime and localtime on Windows). Any other
+// shape, or a call of libc's local time functions anywhere else in the file,
+// means upstream reads the zone some new way and stops fixlib.
+func fixTimezone(b []byte) ([]byte, error) {
+	body, err := funcBody(b, reTimezoneOffset, "_getTimezoneOffset")
+	if err != nil {
+		return nil, err
+	}
+	if string(body) != utcOffset {
+		if !bytes.Contains(body, []byte("libc.Xlocaltime")) {
+			return nil, fmt.Errorf("_getTimezoneOffset changed shape: it no longer calls libc's localtime")
+		}
+		b = bytes.Replace(b, body, []byte(utcOffset), 1)
+	}
+	if m := reLocalTime.Find(b); m != nil {
+		return nil, fmt.Errorf("%s outside _getTimezoneOffset: the engine reads the local zone some new way", m)
+	}
+	return b, nil
 }
 
 var (

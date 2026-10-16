@@ -117,16 +117,39 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `lib/backtrace_test.go`, `lib/backtrace_round2_test.go`,
   `lib/backtrace_round3_test.go`, `lib/backtrace_proxy_test.go`,
   `internal/fixlib/main_test.go`.
+- A script's local time is UTC in every VM, whatever zone the process has.
+  The engine used to take the zone from libc's `localtime`, which reads
+  `TZ`. The process shares that libc and that variable with Go's
+  `time.Local`, its logs and SQLite (through modernc.org/libc), so setting
+  `TZ=UTC` to make server rendered pages the same on every machine changed
+  all of those too. Now the engine's offset from UTC is always 0 and the
+  process's zone is left alone. `Intl`, from package `intl`, defaults to UTC
+  as well. What this changes for scripts:
+  - `getTimezoneOffset()` is 0, and `getHours`, `getDate`, `getDay` and the
+    other local getters give the same values as their `getUTC*`
+    counterparts. The local setters (`setHours`, ...) set UTC fields.
+  - `new Date(2026, 0, 1)`, `Date.parse` of a date and time without an
+    offset (`'2026-01-01T13:05:00'`) and the other local forms read the
+    fields as UTC.
+  - `toString`, `toDateString` and `toTimeString` print UTC with
+    `GMT+0000`. The engine's own `toLocaleString`, `toLocaleDateString` and
+    `toLocaleTimeString` print UTC too. Package `intl` replaces those three,
+    and its versions print UTC unless given a `timeZone`.
+
+  A script that needs another zone names it to `Intl`, with package
+  `intl` registered: `d.toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`
+  or `new Intl.DateTimeFormat('en-US', {timeZone: 'America/New_York',
+  hour: 'numeric'}).formatToParts(d)`. Without `intl` the engine has no way
+  to show another zone. Tests: `dateutc_unix_test.go`,
+  `internal/fixlib/main_test.go`.
 - Package `intl` formats in every locale Chromium has, from CLDR 48.2
   (cldr-json 48.2.3), where upstream formats en-US only. It covers
   `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.PluralRules` and the
   `toLocale*` methods, and its output is compared with Chromium 156 on about
   60,000 expressions (`intl/golden_test.go`). Without a locale argument the
   locale is en-US, and without a `timeZone` option the zone is UTC: `Intl`
-  and the `toLocale*` methods never read the host's settings. The engine's
-  `Date` local time methods (`new Date(2026, 0, 1)`, `getHours`, `toString`)
-  still use the process's zone, so a server that must render the same page
-  everywhere runs with `TZ=UTC`. `Register` only puts stand-ins on the VM.
+  and the `toLocale*` methods never read the host's settings, and neither
+  does the engine's `Date` (see above). `Register` only puts stand-ins on the VM.
   The first use of `Intl` or a `toLocale*` method installs the rest, from
   bytecode compiled once per process. The package documentation lists what
   is not implemented and where the output differs from Chromium.
@@ -222,8 +245,9 @@ git subtree pull --prefix lib upstream-lib <libquickjs tag, e.g. v0.13.2>
 Conflicts to expect:
 
 - `lib/ccgo_*.go`: every upstream release regenerates these files, so the
-  two lines added to `XJS_ToCStringLen2` and the calls into
-  `lib/backtrace.go` (lazy error stacks) conflict. Take the upstream version
+  two lines added to `XJS_ToCStringLen2`, the calls into
+  `lib/backtrace.go` (lazy error stacks) and the `getTimezoneOffset` that
+  answers 0 (local time is UTC) conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -235,6 +259,10 @@ Conflicts to expect:
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
   need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
   read the new upstream code: QuickJS may have fixed the leak itself. If it
+  reports that `_getTimezoneOffset` changed shape, or that the engine calls
+  libc's local time functions (`localtime`, `mktime`, `tzset`, ...)
+  somewhere else, upstream reads the local zone some new way: make that
+  answer UTC too and teach `fixTimezone` about it. If it
   reports that `_build_backtrace`, `_get_prop_string`,
   `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
@@ -274,7 +302,7 @@ Conflicts to expect:
   recognized. So a change in these places needs a review by hand.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
-  QuickJS has fixed the bug, and the lazy stack hunks (`JSBacktrace`, the
+  QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
   built-in `JS_CLASS_BACKTRACE` class, `js_backtrace_build` and the
   `js_backtrace_*` calls in `JS_GetPropertyInternal`,
   `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
