@@ -293,16 +293,16 @@ func (f *numberFormat) digitOptions(o map[string]any, currencyDigits int) error 
 		case f.Style == "percent":
 			mxfdDefault = 0
 		}
-		if !hasMnfd {
-			mnfd = mnfdDefault
-		}
-		if !hasMxfd {
-			mxfd = mxfdDefault
-			if mxfd < mnfd {
-				mxfd = mnfd
-			}
-		}
-		if mnfd > mxfd {
+		// A given bound pulls the default of the other one to itself, and
+		// only two given bounds can cross.
+		switch {
+		case !hasMnfd && !hasMxfd:
+			mnfd, mxfd = mnfdDefault, mxfdDefault
+		case !hasMnfd:
+			mnfd = min(mnfdDefault, mxfd)
+		case !hasMxfd:
+			mxfd = max(mxfdDefault, mnfd)
+		case mnfd > mxfd:
 			return rangeError("minimumFractionDigits is greater than maximumFractionDigits")
 		}
 

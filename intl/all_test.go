@@ -448,6 +448,18 @@ func TestCurrencyDigitsByNotation(t *testing.T) {
 	})
 }
 
+// A maximum below a currency's default minimum lowers the minimum, as
+// ECMA-402 has said since 2021, instead of throwing.
+func TestMaximumFractionDigitsAlone(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('zh-CN', {style: 'currency', currency: 'CNY', maximumFractionDigits: 0}).format(428.5)`, "¥429"},
+		{`new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 1}).format(1.25)`, "$1.3"},
+		{`new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 1}).resolvedOptions().minimumFractionDigits`, "1"},
+		{`new Intl.NumberFormat('en-US', {style: 'currency', currency: 'JPY', maximumFractionDigits: 0}).format(5.5)`, "¥6"},
+		{`(() => { try { new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', minimumFractionDigits: 3, maximumFractionDigits: 1}) } catch (e) { return e.constructor.name } })()`, "RangeError"},
+	})
+}
+
 func TestPluralRules(t *testing.T) {
 	evalTests(t, newVM(t), [][2]string{
 		{`new Intl.PluralRules('en').select(1)`, "one"},
