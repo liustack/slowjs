@@ -115,10 +115,13 @@ handed out by the `staticMagic` atomic counter. Custom module loaders live in `c
 
 Each `VM` owns an `interruptData` struct (allocated in libc memory) holding `interrupt int32` and
 `timeLimit int64`. Every eval-family entry point (`Eval`, `EvalValue`, `Call`, `CallValue`,
-`ExecutePendingJobs`, …) calls `configureInterrupt()` **first** to re-arm the deadline from
-`m.timeout`; the C-side `interruptHandler` polls both fields. `SetEvalTimeout` sets the duration;
-`Interrupt()` sets the flag atomically for async cancellation from another goroutine. When adding a new
-entry point that runs JS, remember to call `configureInterrupt()` or the timeout won't apply.
+`ExecutePendingJobs`, …) calls `m.enter()` / `defer m.leave()` **before** running JS. `enter` counts
+the nesting depth and only the outermost call runs `configureInterrupt()`, which re-arms the deadline
+from `m.timeout` and clears the interrupt flag; a host function that evaluates more JS on the same VM
+stays inside the outer call's budget and keeps a pending `Interrupt()`. The C-side `interruptHandler`
+polls both fields. `SetEvalTimeout` sets the duration; `Interrupt()` sets the flag atomically for async
+cancellation from another goroutine. When adding a new entry point that runs JS, remember the
+`enter`/`leave` pair or the timeout won't apply.
 
 ## Sub-packages and generated assets
 

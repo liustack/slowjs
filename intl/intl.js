@@ -7,7 +7,7 @@
 // spec makes observable - and leaves every formatting decision to the Go host
 // functions it is called with. See call() below for what crosses between them.
 
-(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales) {
+(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales, prResolve, prSelect) {
 	'use strict';
 
 	const g = globalThis;
@@ -94,14 +94,10 @@
 		return o === undefined ? {} : Object(o);
 	}
 
-	function supportedLocalesOf(locales) {
-		const r = [], tags = callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
-		for (let i = 0; i < tags.length; i++) {
-			if (tags[i] === 'en' || tags[i].indexOf('en-') === 0) {
-				r.push(tags[i]);
-			}
-		}
-		return r;
+	function supportedLocalesOf(service) {
+		return function (locales) {
+			return callJSON(canonicalLocales, [JSON.stringify(localeList(locales)), service]);
+		};
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
@@ -112,55 +108,14 @@
 		'dateStyle', 'timeStyle'
 	];
 
-	// dateTimeOptions is ECMA-402's ToDateTimeOptions. It is what makes
-	// toLocaleDateString a date and toLocaleTimeString a time, and what gives a
-	// formatter with no options at all a numeric year, month and day.
-	function dateTimeOptions(o, required, defaults) {
-		o = o === undefined ? {} : Object.create(options(o));
-		let needDefaults = true;
-		let i;
-		if (required === 'date' || required === 'any') {
-			const keys = ['weekday', 'year', 'month', 'day'];
-			for (i = 0; i < keys.length; i++) {
-				if (o[keys[i]] !== undefined) {
-					needDefaults = false;
-				}
-			}
-		}
-		if (required === 'time' || required === 'any') {
-			const keys = ['dayPeriod', 'hour', 'minute', 'second', 'fractionalSecondDigits'];
-			for (i = 0; i < keys.length; i++) {
-				if (o[keys[i]] !== undefined) {
-					needDefaults = false;
-				}
-			}
-		}
-		const dateStyle = o.dateStyle, timeStyle = o.timeStyle;
-		if (dateStyle !== undefined || timeStyle !== undefined) {
-			needDefaults = false;
-		}
-		if (required === 'date' && timeStyle !== undefined) {
-			throw new TypeError('Option timeStyle is not usable when formatting a date');
-		}
-		if (required === 'time' && dateStyle !== undefined) {
-			throw new TypeError('Option dateStyle is not usable when formatting a time');
-		}
-		if (needDefaults && (defaults === 'date' || defaults === 'all')) {
-			o.year = 'numeric';
-			o.month = 'numeric';
-			o.day = 'numeric';
-		}
-		if (needDefaults && (defaults === 'time' || defaults === 'all')) {
-			o.hour = 'numeric';
-			o.minute = 'numeric';
-			o.second = 'numeric';
-		}
-		return o;
-	}
-
-	function readDateTimeOptions(o) {
-		o = dateTimeOptions(o, 'any', 'date');
-		const r = {};
+	// readDateTimeOptions copies the options a DateTimeFormat reads. required
+	// and defaults are ECMA-402's ToDateTimeOptions arguments: they are what
+	// make toLocaleDateString a date and toLocaleTimeString a time. The host
+	// applies them, because the defaults it adds depend on the locale's hour
+	// cycle.
+	function readDateTimeOptions(o, required, defaults) {
+		o = o === undefined ? {} : options(o);
+		const r = {_required: required, _defaults: defaults};
 		for (let i = 0; i < dateTimeKeys.length; i++) {
 			const v = o[dateTimeKeys[i]];
 			if (v !== undefined) {
@@ -176,14 +131,19 @@
 		return r;
 	}
 
+	function initDateTimeFormat(f, locales, opts, required, defaults) {
+		internals.set(f, {
+			kind: 'DateTimeFormat',
+			resolved: call(dtfResolve, [JSON.stringify({locales: localeList(locales), options: readDateTimeOptions(opts, required, defaults)})])
+		});
+		return f;
+	}
+
 	function DateTimeFormat(locales, opts) {
 		if (!(this instanceof DateTimeFormat)) {
 			return new DateTimeFormat(locales, opts);
 		}
-		internals.set(this, {
-			kind: 'DateTimeFormat',
-			resolved: call(dtfResolve, [JSON.stringify({locales: localeList(locales), options: readDateTimeOptions(opts)})])
-		});
+		initDateTimeFormat(this, locales, opts, 'any', 'date');
 	}
 
 	function timeValue(date) {
@@ -214,7 +174,7 @@
 		return publicOptions(internal(this, 'DateTimeFormat').resolved);
 	});
 
-	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf);
+	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf('DateTimeFormat'));
 	defineTag(DateTimeFormat.prototype, 'Intl.DateTimeFormat');
 
 	// ------------------------------------------------------------ NumberFormat
@@ -294,19 +254,72 @@
 		return publicOptions(internal(this, 'NumberFormat').resolved);
 	});
 
-	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf);
+	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf('NumberFormat'));
 	defineTag(NumberFormat.prototype, 'Intl.NumberFormat');
+
+	// ------------------------------------------------------------- PluralRules
+
+	const pluralKeys = ['localeMatcher', 'type', 'notation', 'roundingMode', 'roundingPriority', 'trailingZeroDisplay'];
+
+	function readPluralOptions(o) {
+		o = options(o);
+		const r = {};
+		let i;
+		for (i = 0; i < pluralKeys.length; i++) {
+			const v = o[pluralKeys[i]];
+			if (v !== undefined) {
+				r[pluralKeys[i]] = String(v);
+			}
+		}
+		for (i = 0; i < numberDigitKeys.length; i++) {
+			const v = o[numberDigitKeys[i]];
+			if (v !== undefined) {
+				r[numberDigitKeys[i]] = Number(v);
+			}
+		}
+		return r;
+	}
+
+	function PluralRules(locales, opts) {
+		if (new.target === undefined) {
+			throw new TypeError("Constructor Intl.PluralRules requires 'new'");
+		}
+		internals.set(this, {
+			kind: 'PluralRules',
+			resolved: call(prResolve, [JSON.stringify({locales: localeList(locales), options: readPluralOptions(opts)})])
+		});
+	}
+
+	defineMethod(PluralRules.prototype, 'select', function (value) {
+		return call(prSelect, [internal(this, 'PluralRules').resolved, Number(value)]);
+	});
+
+	defineMethod(PluralRules.prototype, 'selectRange', function (start, end) {
+		const i = internal(this, 'PluralRules');
+		if (start === undefined || end === undefined) {
+			throw new TypeError('start or end is undefined');
+		}
+		const x = Number(start), y = Number(end);
+		if (x !== x || y !== y) {
+			throw new RangeError('start or end is NaN');
+		}
+		return call(prSelect, [i.resolved, x, y]);
+	});
+
+	defineMethod(PluralRules.prototype, 'resolvedOptions', function () {
+		return publicOptions(internal(this, 'PluralRules').resolved);
+	});
+
+	defineMethod(PluralRules, 'supportedLocalesOf', supportedLocalesOf('PluralRules'));
+	defineTag(PluralRules.prototype, 'Intl.PluralRules');
 
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = {};
 	defineTag(Intl, 'Intl');
-	// How the host recognizes its own installation, so that a second Register
-	// on the same VM can say so instead of failing on a duplicate host function
-	// name. Keyed by the import path, invisible to enumeration and to JSON.
-	Object.defineProperty(Intl, Symbol.for('modernc.org/quickjs/intl'), {value: true});
 	defineMethod(Intl, 'DateTimeFormat', DateTimeFormat);
 	defineMethod(Intl, 'NumberFormat', NumberFormat);
+	defineMethod(Intl, 'PluralRules', PluralRules);
 	defineMethod(Intl, 'getCanonicalLocales', function (locales) {
 		return callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
 	});
@@ -350,7 +363,7 @@
 
 	function dateFormatter(locales, opts, required, defaults) {
 		return cached(cacheKey(required, locales, opts), function () {
-			return new DateTimeFormat(locales, dateTimeOptions(opts, required, defaults));
+			return initDateTimeFormat(Object.create(DateTimeFormat.prototype), locales, opts, required, defaults);
 		});
 	}
 
@@ -375,12 +388,24 @@
 			return new NumberFormat(locales, opts);
 		}).format(v);
 	});
+
+	if (typeof BigInt === 'function') {
+		const bigintValueOf = BigInt.prototype.valueOf;
+		defineMethod(BigInt.prototype, 'toLocaleString', function (locales, opts) {
+			const v = bigintValueOf.call(this);
+			return cached(cacheKey('number', locales, opts), function () {
+				return new NumberFormat(locales, opts);
+			}).format(v);
+		});
+	}
 })(
 	globalThis.__quickjs_intl_dtfResolve__,
 	globalThis.__quickjs_intl_dtfFormat__,
 	globalThis.__quickjs_intl_nfResolve__,
 	globalThis.__quickjs_intl_nfFormat__,
-	globalThis.__quickjs_intl_canonicalLocales__
+	globalThis.__quickjs_intl_canonicalLocales__,
+	globalThis.__quickjs_intl_prResolve__,
+	globalThis.__quickjs_intl_prSelect__
 );
 
 delete globalThis.__quickjs_intl_dtfResolve__;
@@ -388,3 +413,5 @@ delete globalThis.__quickjs_intl_dtfFormat__;
 delete globalThis.__quickjs_intl_nfResolve__;
 delete globalThis.__quickjs_intl_nfFormat__;
 delete globalThis.__quickjs_intl_canonicalLocales__;
+delete globalThis.__quickjs_intl_prResolve__;
+delete globalThis.__quickjs_intl_prSelect__;

@@ -6,7 +6,6 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,21 +87,46 @@ func resolveTimeZone(name string) (string, *time.Location, error) {
 		return cname, time.FixedZone(cname, secs), nil
 	}
 
-	loc, err := time.LoadLocation(name)
-	if err == nil {
-		return name, loc, nil
+	cname, ok := zoneNames()[strings.ToUpper(name)]
+	if !ok {
+		return "", nil, invalid
 	}
 
-	// A last chance for a mis-cased name: browsers match IANA identifiers
-	// case-insensitively, Go's file lookup does not.
-	if cname := titleZoneName(name); cname != name {
-		if loc, err := time.LoadLocation(cname); err == nil {
-			return cname, loc, nil
+	if utcAliases[strings.ToUpper(cname)] {
+		return "UTC", time.UTC, nil
+	}
+
+	loc, err := time.LoadLocation(cname)
+	if err != nil {
+		// CLDR knows the zone but the zoneinfo database Go reads does not:
+		// the host has none, or an old one, and the program does not import
+		// time/tzdata.
+		return "", nil, rangeError("invalid time zone specified: %s (%v)", name, err)
+	}
+
+	return cname, loc, nil
+}
+
+// zoneNames maps every IANA time zone identifier CLDR knows, upper cased, to
+// the identifier CLDR treats as the canonical one of its zone. Browsers match
+// identifiers case-insensitively and report this canonical name, so
+// "asia/kolkata" is "Asia/Calcutta" - CLDR keeps the older name. Go's own
+// lookup cannot be used for the case: it opens a file of that name, and on a
+// case-insensitive file system it would accept the name as written.
+var zoneNames = sync.OnceValue(func() map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(cldr().supplemental().str("tz"), "\n") {
+		ids := strings.Fields(line)
+		if len(ids) == 0 || ids[0] == "Etc/Unknown" {
+			continue
+		}
+
+		for _, id := range ids {
+			m[strings.ToUpper(id)] = ids[0]
 		}
 	}
-
-	return "", nil, invalid
-}
+	return m
+})
 
 // parseOffset returns the number of seconds represented by an offset time zone
 // identifier: ±HH, ±HHMM or ±HH:MM.
@@ -145,81 +169,4 @@ func offsetName(secs int) string {
 		secs = -secs
 	}
 	return fmt.Sprintf("%s%02d:%02d", sign, secs/3600, secs%3600/60)
-}
-
-// gmtOffset renders secs the way en-US displays a GMT offset time zone name:
-// "GMT" for zero, "GMT+1" when short and "GMT+01:00" when not.
-func gmtOffset(secs int, short bool) string {
-	if secs == 0 {
-		return "GMT"
-	}
-
-	sign := "+"
-	if secs < 0 {
-		sign = "-"
-		secs = -secs
-	}
-	h, m := secs/3600, secs%3600/60
-	if short && m == 0 {
-		return fmt.Sprintf("GMT%s%d", sign, h)
-	}
-
-	if short {
-		return fmt.Sprintf("GMT%s%d:%02d", sign, h, m)
-	}
-
-	return fmt.Sprintf("GMT%s%02d:%02d", sign, h, m)
-}
-
-// titleZoneName upper cases the first letter of every word of every path
-// element of an IANA name, the shape almost all of them have.
-func titleZoneName(name string) string {
-	elems := strings.Split(name, "/")
-	for i, e := range elems {
-		words := strings.Split(strings.ToLower(e), "_")
-		for j, w := range words {
-			if w != "" {
-				words[j] = strings.ToUpper(w[:1]) + w[1:]
-			}
-		}
-		elems[i] = strings.Join(words, "_")
-	}
-	return strings.Join(elems, "/")
-}
-
-// localTimeZone returns the host's IANA time zone name.
-//
-// Go does not expose it: time.Local carries the zone data but its name is the
-// literal "Local" unless $TZ named it, so the zone has to be recovered from the
-// same places the C library looks. When none of them answers, the current UTC
-// offset is reported instead. That is an ECMA-402 offset time zone identifier,
-// so it stays a valid answer for a caller that feeds it back into
-// Intl.DateTimeFormat - it merely loses future DST transitions.
-func localTimeZone() string {
-	if s := os.Getenv("TZ"); s != "" {
-		if name, _, err := timeZone(strings.TrimPrefix(s, ":")); err == nil {
-			return name
-		}
-	}
-
-	if s, err := os.Readlink("/etc/localtime"); err == nil {
-		if _, after, ok := strings.Cut(s, "zoneinfo/"); ok {
-			if name, _, err := timeZone(after); err == nil {
-				return name
-			}
-		}
-	}
-
-	if b, err := os.ReadFile("/etc/timezone"); err == nil {
-		if name, _, err := timeZone(strings.TrimSpace(string(b))); err == nil {
-			return name
-		}
-	}
-
-	_, secs := time.Now().In(time.Local).Zone()
-	if secs == 0 {
-		return "UTC"
-	}
-
-	return offsetName(secs)
 }

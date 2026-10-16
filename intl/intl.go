@@ -8,57 +8,111 @@
 // QuickJS has no Intl. It is not a disabled build option: neither Bellard's
 // engine nor quickjs-ng implements ECMA-402, so a page or bundle that reaches
 // for Intl.DateTimeFormat gets a ReferenceError. [Register] installs a Go
-// backed implementation of the two parts of the API code actually depends on:
+// backed implementation of the parts of the API pages depend on:
 //
-//   - Intl.DateTimeFormat, with the IANA time zone database behind its
-//     timeZone option.
-//   - Intl.NumberFormat, with grouping, fraction and significant digits,
-//     percent, currency, unit, and compact and scientific notation.
+//   - Intl.DateTimeFormat: date and time styles, the component options,
+//     hour cycles, day periods, time zone names, and the IANA time zone
+//     database behind the timeZone option.
+//   - Intl.NumberFormat: grouping, fraction and significant digits, rounding
+//     modes, percent, currency, unit, compact and scientific notation, and
+//     numbering systems.
+//   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
+//   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
-// toLocaleTimeString along with Number.prototype.toLocaleString, which ECMA-402
-// redefines in terms of those two constructors. QuickJS ships fallbacks for
-// them that ignore their arguments, so
+// toLocaleTimeString along with Number.prototype.toLocaleString and
+// BigInt.prototype.toLocaleString, which ECMA-402 redefines in terms of those
+// constructors. QuickJS ships fallbacks for them that ignore their arguments,
+// so
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //
 // answers in the host's own zone before Register - a wrong time, silently -
 // and "12/31/1969, 7:00:00 PM" after it.
 //
-// # Locale data
+// # Locales
 //
-// Go's standard library ships the time zone database but no CLDR, so the
-// locale data here is en-US and only en-US. Any locale argument is accepted
-// and resolves to en-US, which resolvedOptions().locale then reports instead of
-// echoing what was asked for. Within en-US the output is meant to match a
-// browser exactly. Where the data does not exist the code falls back to
-// something it can derive rather than to a guess:
+// The locale data is CLDR 48.2 (cldr-json 48.2.3), for every locale Chromium
+// has. A locale resolves as it does in Chromium: one with no data of its own
+// falls back to its parent (en-XX to en) or, failing that, to en-US. With no
+// locale argument the locale is en-US and with no timeZone option the zone is
+// UTC: Intl and the toLocale* methods never read the host's language or zone.
+// The engine's own Date still does: the local time methods (new Date(2026, 0,
+// 1), getHours, toString) use the process's zone, which the TZ environment
+// variable sets. A server that has to render the same page on every machine
+// runs with TZ=UTC.
 //
-//   - A long time zone name formats as the GMT offset, "GMT+01:00", since
-//     CLDR's "Eastern Standard Time" is not available. UTC is spelled out.
-//   - currencyDisplay "name" formats as the currency code.
-//   - A currency with no symbol here formats as its code and a unit with no
-//     name as its identifier, which are CLDR's own fallbacks.
+// Dates are in the Gregorian calendar, or in the buddhist one for th and the
+// persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
+// Another calendar asked for, with -u-ca- or the calendar option, such as
+// japanese or roc, is not supported: as ECMA-402 has it for a calendar an
+// implementation lacks, it is dropped from the resolved locale, the date is
+// in the locale's default calendar, and resolvedOptions().calendar says
+// which, so a page can tell. Nothing throws, which would break a page that
+// Chromium renders.
 //
-// Not implemented: Intl.Collator, Intl.PluralRules, Intl.RelativeTimeFormat,
-// Intl.ListFormat, Intl.DisplayNames, Intl.Segmenter, Intl.DurationFormat and
-// Intl.supportedValuesOf. String.prototype.localeCompare keeps QuickJS's code
-// point ordering. NumberFormat accepts roundingIncrement and roundingPriority
-// but only implements their defaults, which is what resolvedOptions reports.
+// Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
+// Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
+// Intl.supportedValuesOf and formatRange. String.prototype.localeCompare keeps
+// QuickJS's code point ordering. NumberFormat accepts roundingIncrement and
+// roundingPriority but only implements their defaults, which is what
+// resolvedOptions reports.
 //
-// # Differences from a browser
+// # Differences from Chromium
 //
-// The en-US output is checked expression by expression against a full ICU -
-// node's Intl - over a few thousand combinations of options, values, instants
-// and time zones by TestAgainstICU, which runs whenever node is installed. It
-// agrees except where the data is missing (above) or where ICU disagrees with
-// itself:
+// The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
+// 48.1) on about 60,000 expressions recorded in testdata/chromium. All
+// match exactly but those in a calendar other than the ones above, which
+// format as Chromium does without that calendar: in the locale's default
+// calendar, Gregorian but for th and the persian locales.
 //
-//   - The space before AM or PM is an ordinary one. V8 writes U+202F there in
-//     formatToParts but an ordinary space in format, and one separator has to
-//     be picked for both.
-//   - hourCycle "h23" is reported for hour12: false. V8 reports "h24" while
-//     still formatting midnight as 00, which is the value ECMA-402 asks for.
+// Checks over every locale beyond those expressions found these other
+// differences, all in rare locales or options:
+//
+//   - sr-Cyrl-ME names currencies, units and time zones in Cyrillic, where
+//     Chromium writes them in Latin ("1 литар" for "1 litar").
+//   - uz-AF and uz-Arab-AF put an era, "AP", before the year of a date with
+//     time, which Chromium leaves out, and do not pad the hour of a time
+//     with a long zone name ("۵:۳۰" for "۰۵:۳۰").
+//   - en-IE and fr-MA with hourCycle h11 write the day period "am" and "AM"
+//     where Chromium writes "a.m.".
+//   - om-KE's short era is "BA" where Chromium's is "CE".
+//
+// Error messages are worded differently, though the errors thrown are the
+// same.
+//
+// Where Chromium's ICU data departs from CLDR 48.2, the data here follows
+// Chromium. A language Chromium ships no dates or numbers for formats them
+// with CLDR root's data, as az and kk do ("2026 M01 5, Mon"), and one it ships
+// no currency, zone, unit or region names for takes them from English. Digits
+// a locale does not use by default, such as arab in de, take the symbols and
+// patterns Chromium has for them, which cldr-json leaves out. A
+// zone's city is the one its id spells ("Sao Paulo"), Hong Kong
+// and Macao go by their short names, and the zones of the British Isles are
+// never "Greenwich Mean Time". fr-CH groups digits with a narrow no-break
+// space (CLDR 48.1's), ko calls the North American zones 북미 (North
+// America), and uk and ru write the hryvnia as грн and грн. As in Chromium,
+// narrow and thin spaces in dates are written as plain spaces.
+//
+// # Cost
+//
+// The locale data is embedded in the binary, about 1.3 MB, and stays in its
+// read only data. A language is decoded into the Go heap the first time a
+// formatter needs it, once per process, and every VM shares it: 100 to 180
+// KB per language, and about 1 MB for the index and the data all languages
+// share on the first use of any. Register itself only puts stand-ins on the
+// VM. The javascript half is installed the first time a page touches Intl or
+// a toLocale* method, from bytecode compiled once per process, so a VM that
+// never formats anything does not carry it.
+//
+// # License of the data
+//
+// The embedded locale data comes from Unicode CLDR and from the ICU data
+// Chromium ships, which are under the Unicode License V3, with changes
+// Chromium made to it under Chromium's BSD license. A program that imports
+// this package distributes that data, and has to include the notices in
+// LICENSE-DATA, in this package's directory, in its documentation or with
+// its copies.
 //
 // # Time zones
 //
@@ -74,9 +128,9 @@
 // links the library and takes the choice away from the ones that would rather
 // use the host's database, so this package does not import it. The default
 // zone, which is also what
-// Intl.DateTimeFormat().resolvedOptions().timeZone reports, is recovered from
-// $TZ, /etc/localtime or /etc/timezone - Go's time.Local does not carry its
-// name. [TimeZone] sets it explicitly when none of those can answer.
+// Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
+// [TimeZone] sets another. Intl never consults the host's zone (see Locales
+// for the engine's Date, which does).
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
@@ -88,6 +142,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/liustack/quickjs"
 )
@@ -95,14 +150,84 @@ import (
 //go:embed intl.js
 var shim string
 
-// hostFuncs are the names the shim reads its host functions from. It deletes
-// them from the global object once it has them.
+//go:embed stub.js
+var stub string
+
+// script is javascript compiled to bytecode once per process and evaluated
+// from there on every VM: the bytecode does not depend on the VM that made it.
+type script struct {
+	src *string
+
+	mu   sync.Mutex
+	code []byte // nil until a compile works
+}
+
+func (s *script) eval(vm *quickjs.VM) error {
+	code, err := s.bytecode()
+	if err != nil {
+		return err
+	}
+
+	_, err = vm.EvalBytecode(code)
+	return err
+}
+
+// bytecode returns s compiled. A compile that fails is not kept, the next
+// call tries again.
+func (s *script) bytecode() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.code == nil {
+		code, err := compile(*s.src)
+		if err != nil {
+			return nil, err
+		}
+
+		s.code = code
+	}
+	return s.code, nil
+}
+
+// compile compiles src on a VM of its own. The VM that needs the bytecode may
+// be short of memory, stack or time, and a compile there would fail for
+// reasons that have nothing to do with src.
+func compile(src string) ([]byte, error) {
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		return nil, err
+	}
+
+	defer vm.Close()
+
+	return vm.Compile(src, quickjs.EvalGlobal)
+}
+
+var (
+	shimScript = script{src: &shim}
+	stubScript = script{src: &stub}
+
+	// shimInstalls counts the VMs the shim has been installed on, for the
+	// tests.
+	shimInstalls atomic.Int64
+
+	// interruptedInstalls counts the installs stub.js found cut short by an
+	// interrupt, for the tests.
+	interruptedInstalls atomic.Int64
+)
+
+// hostFuncs are the names the shim reads its host functions from. stub.js
+// takes them off the global object as soon as Register has put them there,
+// and puts them back only for the moment the shim takes them for good. Both
+// scripts list the same names.
 var hostFuncs = []string{
 	"__quickjs_intl_dtfResolve__",
 	"__quickjs_intl_dtfFormat__",
 	"__quickjs_intl_nfResolve__",
 	"__quickjs_intl_nfFormat__",
 	"__quickjs_intl_canonicalLocales__",
+	"__quickjs_intl_prResolve__",
+	"__quickjs_intl_prSelect__",
 }
 
 type config struct {
@@ -117,8 +242,10 @@ type Option func(*config)
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports. The name must be
 // an IANA identifier like "Europe/Prague", "UTC", or an offset like "+05:30".
 //
-// Without it the host zone is used, recovered from $TZ, /etc/localtime or
-// /etc/timezone. Set it where those cannot answer, notably on Windows.
+// Without it the zone is UTC. Intl never reads the host's zone: a server would
+// otherwise render a page differently depending on where it runs. The
+// engine's Date local time methods are not covered: they use the process's
+// zone, see the package documentation.
 func TimeZone(name string) Option { return func(c *config) { c.timeZone = name } }
 
 // Register installs Intl on vm's global object and replaces the toLocale*
@@ -148,39 +275,65 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	for _, o := range opts {
 		o(c)
 	}
-	switch c.timeZone {
-	case "":
-		c.timeZone = localTimeZone()
-	default:
-		name, _, err := timeZone(c.timeZone)
-		if err != nil {
-			return err
-		}
-
-		c.timeZone = name
+	if c.timeZone == "" {
+		c.timeZone = "UTC"
 	}
+	name, _, err := timeZone(c.timeZone)
+	if err != nil {
+		return err
+	}
+
+	c.timeZone = name
 	for i, fn := range []quickjs.HostFunc{
 		c.dtfResolve,
 		c.dtfFormat,
 		c.nfResolve,
 		c.nfFormat,
 		c.canonicalLocales,
+		c.prResolve,
+		c.prSelect,
 	} {
 		if err := vm.RegisterHostFunc(hostFuncs[i], fn); err != nil {
 			return err
 		}
 	}
-	_, err := vm.Eval(shim, quickjs.EvalGlobal)
-	return err
+	// The shim is installed the first time the page touches Intl or a
+	// toLocale* method, from inside that call. Until then the VM carries only
+	// the stand-ins stub.js defines.
+	// stub.js asks whether an install is running when it finds one started
+	// and not finished: the shim's own code may use Intl while it installs,
+	// otherwise an interrupt cut that install short.
+	running := false
+	install := func([]any) (any, error) {
+		shimInstalls.Add(1)
+		running = true
+		defer func() { running = false }()
+		return nil, shimScript.eval(vm)
+	}
+	installRunning := func([]any) (any, error) {
+		if !running {
+			interruptedInstalls.Add(1)
+		}
+		return running, nil
+	}
+	if err := vm.RegisterHostFunc("__quickjs_intl_install__", install); err != nil {
+		return err
+	}
+
+	if err := vm.RegisterHostFunc("__quickjs_intl_installRunning__", installRunning); err != nil {
+		return err
+	}
+
+	return stubScript.eval(vm)
 }
 
-// marker is the well known symbol the shim stamps on the Intl object it
-// installs, keyed by this package's import path.
+// marker is the well known symbol stub.js stamps on the global object of a VM
+// it registers, keyed by this package's import path.
 const marker = "modernc.org/quickjs/intl"
 
 // registered reports whether this package has already installed Intl on vm.
 func registered(vm *quickjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis.Intl !== undefined && globalThis.Intl[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}
@@ -256,11 +409,54 @@ func (c *config) nfFormat(args []any) (any, error) {
 	return formatted(parts, arg(args, 2) == true)
 }
 
+// prResolve resolves the options of a new Intl.PluralRules.
+func (c *config) prResolve(args []any) (any, error) {
+	var req request
+	if err := unmarshalArg(args, 0, &req); err != nil {
+		return failure(err)
+	}
+
+	p, err := resolvePluralRules(req)
+	if err != nil {
+		return failure(err)
+	}
+
+	return resolved(p)
+}
+
+// prSelect implements select, given one number, and selectRange, given two.
+func (c *config) prSelect(args []any) (any, error) {
+	p, err := cached(args, &pluralFormats)
+	if err != nil {
+		return failure(err)
+	}
+
+	if len(args) > 2 {
+		return p.selectRange(args[1], args[2]), nil
+	}
+
+	return p.selectNumber(arg(args, 1)), nil
+}
+
 // canonicalLocales implements Intl.getCanonicalLocales.
 func (c *config) canonicalLocales(args []any) (any, error) {
 	var tags []string
 	if err := unmarshalArg(args, 0, &tags); err != nil {
 		return failure(err)
+	}
+
+	if svc, ok := arg(args, 1).(string); ok {
+		// supportedLocalesOf, for the constructor named by svc.
+		r, err := supportedLocales(tags, map[string]service{
+			"NumberFormat":   numberService,
+			"DateTimeFormat": dateService,
+			"PluralRules":    pluralService,
+		}[svc])
+		if err != nil {
+			return failure(err)
+		}
+
+		return marshal(r)
 	}
 
 	r := []string{}
@@ -294,6 +490,7 @@ const formatCacheLimit = 256
 var (
 	dateTimeFormats formatCache[dateTimeFormat]
 	numberFormats   formatCache[numberFormat]
+	pluralFormats   formatCache[pluralFormat]
 )
 
 // cached returns the formatter the json in args[0] describes.
@@ -314,6 +511,12 @@ func cached[T any](args []any, c *formatCache[T]) (*T, error) {
 	f := new(T)
 	if err := json.Unmarshal([]byte(s), f); err != nil {
 		return nil, err
+	}
+
+	if i, ok := any(f).(interface{ init() error }); ok {
+		if err := i.init(); err != nil {
+			return nil, err
+		}
 	}
 
 	if c.m == nil || len(c.m) >= formatCacheLimit {

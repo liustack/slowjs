@@ -396,6 +396,9 @@ type VM struct {
 	timeout       time.Duration
 	interruptData uintptr
 	toStringArgv  uintptr
+	// depth counts the calls into javascript in progress: a host function
+	// that evaluates more javascript is one level down.
+	depth int
 }
 
 // NewVM returns a newly created VM.
@@ -416,17 +419,34 @@ func NewVM() (*VM, error) {
 }
 
 // SetEvalTimeout sets the timeout for the various eval functions. Passing
-// zero 'd' disables timeouts.
+// zero 'd' disables timeouts. The timeout starts with the outermost call into
+// javascript: a host function that evaluates more javascript on m runs inside
+// the time left to the call that got it there.
 func (m *VM) SetEvalTimeout(d time.Duration) error {
 	m.timeout = d
 	return nil
 }
 
 // Interrupt requests 'm' to interrupt Javascript evaluation. Interrupt
-// can be called asynchronously at any time m is evaluating a script.
+// can be called asynchronously at any time m is evaluating a script. The
+// request stays pending until the outermost call into javascript returns, so
+// javascript a host function evaluates on m meanwhile does not clear it.
 func (m *VM) Interrupt() {
 	atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt, 1)
 }
+
+// enter marks the start of a call into javascript, leave its end. Only the
+// outermost call arms the eval timeout and clears a pending Interrupt. A host
+// function evaluating more javascript runs inside the budget of the call that
+// got it there, and an Interrupt requested meanwhile stays pending.
+func (m *VM) enter() {
+	if m.depth == 0 {
+		m.configureInterrupt()
+	}
+	m.depth++
+}
+
+func (m *VM) leave() { m.depth-- }
 
 func (m *VM) configureInterrupt() {
 	if m.interruptData != 0 {
@@ -543,7 +563,8 @@ func (m *VM) Eval(javascript string, flags int) (r any, err error) {
 
 	defer libc.Xfree(tls, ps)
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	return m.value(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), true)
 }
 
@@ -572,7 +593,8 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 	// (Promise reactions and async continuations), so without this the whole drain
 	// inherits a stale wall-clock deadline from the last Eval — one that has kept
 	// ticking through idle time — and is spuriously interrupted.
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 
 	const maxJobs = 1 << 20 // bound a self-feeding microtask loop so it cannot hang the host
 	for n < maxJobs {
@@ -608,7 +630,8 @@ func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error
 
 	defer libc.Xfree(tls, ps)
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	return m.value(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), true)
 }
 
@@ -632,7 +655,8 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 
 	defer libc.Xfree(tls, ps)
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	v := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
@@ -655,7 +679,8 @@ func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, er
 
 	defer libc.Xfree(tls, ps)
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	v := lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
@@ -705,7 +730,8 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 		return r, m.errFromException()
 	}
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 
 	var v lib.TJSValue
 	if tag(obj) == lib.EJS_TAG_MODULE {
@@ -784,7 +810,8 @@ func (m *VM) eval(js string, flags int) (r lib.TJSValue, err error) {
 
 	defer libc.Xfree(tls, ps)
 
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	return lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(js)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), nil
 }
 
@@ -831,7 +858,8 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 	// evaluates the function reference and invokes it), so without this the wall-clock
 	// deadline set by the last Eval keeps ticking through idle time and interrupts a
 	// later Call that has not itself run long.
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 
 	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
 
@@ -865,7 +893,8 @@ func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
 	defer libc.Xfree(tls, ps)
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see Call).
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 
 	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
 
@@ -2107,7 +2136,8 @@ func (v Value) Call(this Value, args ...any) (r any, err error) {
 	}
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	v.vm.configureInterrupt()
+	v.vm.enter()
+	defer v.vm.leave()
 	return v.vm.call(v.v, this.v, args...)
 }
 
@@ -2269,7 +2299,8 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	// fetching and invoking .then runs Javascript (a then getter or a
 	// user-overridden then), so without this the deadline from the last Eval
 	// keeps ticking through idle time and could interrupt this call.
-	m.configureInterrupt()
+	m.enter()
+	defer m.leave()
 	thenFn := lib.XGetProperty(tls, ctx, v.v, lib.EJS_ATOM_then)
 	result := lib.XJS_Call(tls, ctx, thenFn, v.v, 2, jsArgsPtr)
 	lib.XFreeValue(tls, ctx, thenFn)
@@ -2293,7 +2324,8 @@ func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
 	}
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	v.vm.configureInterrupt()
+	v.vm.enter()
+	defer v.vm.leave()
 	return v.vm.callValue(v.v, this.v, args...)
 }
 
