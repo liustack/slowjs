@@ -19,6 +19,18 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating
   the function expression (for example out of memory, or a name that is not
   defined) instead of `cannot call a non-function`.
+- A string that cannot be converted to Go comes back as the error, not as
+  `""`. Converting needs memory for a string with non-ASCII characters and
+  for one built by concatenation, so near the memory limit `Eval`, `Call`,
+  the JSON of an `Object`, `Value.MarshalJSON` and host function arguments
+  used to get an empty string, and the out of memory exception stayed in
+  the context. A BigInt whose `toString` throws now reports that exception
+  instead of a made-up error. `ErrorFromValue` has no error result: a field
+  it cannot read stays empty, and the exception is dropped. Reading the
+  name and message of a thrown value that is not an object (`throw null`,
+  which the engine throws near the memory limit, `throw undefined`, a
+  symbol) no longer leaves a TypeError in the context. Test:
+  `gostring_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes

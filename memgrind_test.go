@@ -117,6 +117,12 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("mapValueResult", TestRegisterFuncMapValueResult)
 	t.Run("then", TestThenLeak)
 	t.Run("nul", TestStringNUL)
+	t.Run("goStringOOM", TestGoStringOutOfMemory)
+	t.Run("objectJSONOOM", TestObjectJSONOutOfMemory)
+	t.Run("hostFuncArgOOM", TestHostFuncArgumentOutOfMemory)
+	t.Run("errorToStringThrows", TestErrorFromValueToStringThrows)
+	t.Run("bigIntToStringThrows", TestBigIntToStringThrows)
+	t.Run("errorGetterThrows", TestErrorFromValueGetterThrows)
 	t.Run("customLoader", TestCustomModuleLoader)
 	t.Run("closeLoader", TestCloseReleasesModuleLoader)
 
