@@ -169,3 +169,55 @@ func TestAuditSlotsRejectsChanges(t *testing.T) {
 		}
 	}
 }
+
+// getTimezoneOffset answers 0 in every generated file, and fixTimezone
+// leaves a fixed file as it is.
+func TestTimezoneOffsetIsUTC(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "lib", "ccgo_*.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatal(files, err)
+	}
+	for _, fn := range files {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := fixTimezone(b)
+		if err != nil {
+			t.Fatalf("%s: %v", fn, err)
+		}
+		body, err := funcBody(out, reTimezoneOffset, "_getTimezoneOffset")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(string(body), "\treturn 0\n}\n") || bytes.Contains(out, []byte("libc.Xlocaltime")) {
+			t.Fatalf("%s: getTimezoneOffset still reads the zone:\n%s", fn, body)
+		}
+		again, err := fixTimezone(out)
+		if err != nil || !bytes.Equal(again, out) {
+			t.Fatalf("%s: fixTimezone changed a fixed file: %v", fn, err)
+		}
+	}
+}
+
+// A read of libc's local time anywhere else, or a getTimezoneOffset that
+// reads the zone some new way, stops fixlib.
+func TestTimezoneRejectsLocalTime(t *testing.T) {
+	b, err := fixTimezone(engineFile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte("\nfunc _other(tls *libc.TLS) {\n\tlibc.Xlocaltime_r(tls, 0, 0)\n}\n\nfunc _js_regexp_finalizer("), 1)
+	if _, err := fixTimezone(elsewhere); err == nil {
+		t.Error("a new libc.Xlocaltime_r call went through")
+	}
+
+	body, err := funcBody(b, reTimezoneOffset, "_getTimezoneOffset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := bytes.Replace(b, body, []byte("\nfunc _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {\n\treturn int32(libc.Xtime(tls, 0))\n}\n"), 1)
+	if _, err := fixTimezone(changed); err == nil {
+		t.Error("a getTimezoneOffset of a new shape went through")
+	}
+}

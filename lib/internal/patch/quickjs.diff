@@ -81,7 +81,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..6d33774 100644
+index fa5a7a9..54eeff1 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,7 @@
@@ -857,7 +857,72 @@ index fa5a7a9..6d33774 100644
                             int argc, JSValueConst *argv)
  {
      JSValue obj, args[1];
-@@ -50564,7 +51085,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
+@@ -47224,58 +47745,14 @@ static const JSCFunctionListEntry js_math_obj[] = {
+ 
+ /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
+    between UTC time and local time 'd' in minutes */
++/* quickjs-go: local time is UTC in every VM, whatever zone TZ or the host
++   gives the process, so that a script computes the same dates on every
++   machine. The process's own zone, which Go and the rest of libc keep
++   using, is left alone. A script that wants a zone names it with Intl's
++   timeZone option. */
+ static int getTimezoneOffset(int64_t time)
+ {
+-    time_t ti;
+-    int res;
+-
+-    time /= 1000; /* convert to seconds */
+-    if (sizeof(time_t) == 4) {
+-        /* on 32-bit systems, we need to clamp the time value to the
+-           range of `time_t`. This is better than truncating values to
+-           32 bits and hopefully provides the same result as 64-bit
+-           implementation of localtime_r.
+-         */
+-        if ((time_t)-1 < 0) {
+-            if (time < INT32_MIN) {
+-                time = INT32_MIN;
+-            } else if (time > INT32_MAX) {
+-                time = INT32_MAX;
+-            }
+-        } else {
+-            if (time < 0) {
+-                time = 0;
+-            } else if (time > UINT32_MAX) {
+-                time = UINT32_MAX;
+-            }
+-        }
+-    }
+-    ti = time;
+-#if defined(_WIN32)
+-    {
+-        struct tm *tm;
+-        time_t gm_ti, loc_ti;
+-
+-        tm = gmtime(&ti);
+-        if (!tm)
+-            return 0;
+-        gm_ti = mktime(tm);
+-
+-        tm = localtime(&ti);
+-        if (!tm)
+-            return 0;
+-        loc_ti = mktime(tm);
+-
+-        res = (gm_ti - loc_ti) / 60;
+-    }
+-#else
+-    {
+-        struct tm tm;
+-        localtime_r(&ti, &tm);
+-        res = -tm.tm_gmtoff / 60;
+-    }
+-#endif
+-    return res;
++    return 0;
+ }
+ 
+ #if 0
+@@ -50564,7 +51041,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
      if (!ret) {
          JSPropertyDescriptor desc;
          p = JS_VALUE_GET_OBJ(s->target);
@@ -866,7 +931,7 @@ index fa5a7a9..6d33774 100644
          if (res < 0)
              return -1;
          if (res) {
-@@ -50955,7 +51476,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
+@@ -50955,7 +51432,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
      res = JS_ToBoolFree(ctx, ret);
      if (res) {
          JSPropertyDescriptor desc;
@@ -875,7 +940,7 @@ index fa5a7a9..6d33774 100644
          if (res2 < 0)
              return -1;
          if (res2) {
-@@ -51067,7 +51588,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -51067,7 +51544,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
              JS_ThrowTypeErrorRevokedProxy(ctx);
              goto fail;
          }
@@ -884,7 +949,7 @@ index fa5a7a9..6d33774 100644
                                  tab2[i].atom);
          if (res < 0)
              goto fail;
-@@ -60589,6 +61110,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +61066,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -896,7 +961,7 @@ index fa5a7a9..6d33774 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +61130,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +61086,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -904,7 +969,7 @@ index fa5a7a9..6d33774 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61722,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61678,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }
