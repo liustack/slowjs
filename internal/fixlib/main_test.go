@@ -207,9 +207,11 @@ func TestTimezoneRejectsLocalTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	elsewhere := bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte("\nfunc _other(tls *libc.TLS) {\n\tlibc.Xlocaltime_r(tls, 0, 0)\n}\n\nfunc _js_regexp_finalizer("), 1)
-	if _, err := fixTimezone(elsewhere); err == nil {
-		t.Error("a new libc.Xlocaltime_r call went through")
+	for _, call := range []string{"Xlocaltime_r(tls, 0, 0)", "Xstrftime(tls, 0, 0, 0, 0)", "Xctime_r(tls, 0, 0)", "Xctime(tls, 0)"} {
+		elsewhere := bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte("\nfunc _other(tls *libc.TLS) {\n\tlibc."+call+"\n}\n\nfunc _js_regexp_finalizer("), 1)
+		if _, err := fixTimezone(elsewhere); err == nil {
+			t.Errorf("a new libc.%s call went through", call)
+		}
 	}
 
 	body, err := funcBody(b, reTimezoneOffset, "_getTimezoneOffset")

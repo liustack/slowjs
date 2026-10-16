@@ -211,7 +211,7 @@ func fixToCString(b []byte) ([]byte, error) {
 
 var (
 	reTimezoneOffset = regexp.MustCompile(`\nfunc _getTimezoneOffset\(tls \*libc\.TLS, time Tint64_t\) \(r int32\) \{\n`)
-	reLocalTime      = regexp.MustCompile(`libc\.X(localtime(_r)?|tzset|mktime|tzname|timezone|daylight)\b`)
+	reLocalTime      = regexp.MustCompile(`libc\.X(localtime(_r)?|tzset|mktime|strftime|ctime(_r)?|tzname|timezone|daylight)\b`)
 )
 
 const utcOffset = "\nfunc _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {\n" +
