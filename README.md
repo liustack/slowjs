@@ -51,6 +51,25 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   fails. `ExecutePendingJobs` stops at the job that failed with an
   interrupt and leaves the rest queued, where it used to run them all.
   Tests: `uncatchable_test.go`, `internal/fixlib/uncatchable_test.go`.
+- Running out of memory is uncatchable too, like an interrupt, and the call
+  returns `*Error{Name: "InternalError", Message: "out of memory"}`. Page
+  code used to catch it, so a framework catching every error to show a
+  fallback reported it as an error of the page, and a `finally` block or a
+  rejection handler ran with no memory left. Every way the engine runs out
+  of memory now ends this way: the engine's own out of memory error, the
+  regexp engine running out of memory (it used to throw
+  `InternalError: out of memory in regexp execution`, or a `SyntaxError`
+  when compiling a pattern), and an error the engine could not build. That
+  last case used to throw a catchable `null`, and an error whose message
+  could not be allocated got the exception marker as its message, which
+  read back as nonsense. Now the engine builds the message first, and if
+  the message, the error object or setting the message fails, it throws
+  `null`, uncatchable, which the VM reports as the same out of memory
+  error. A script that throws `null` itself still gets `null`. Page code
+  cannot fill memory on purpose and catch the failure any more: allocating
+  until it fails ends the call. The VM stays usable after the call, and
+  `Close` frees everything. Tests: `uncatchable_test.go`,
+  `lib/outofmemory_test.go`, `internal/fixlib/outofmemory_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -126,8 +145,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     keeps from when it loaded does not keep that code alive. So are errors
     that cannot take new properties and errors that already have a `stack`.
   - If there is no memory left when `stack` is first read, the read throws
-    an out of memory error and the stack stays pending, so a later read can
-    give the text. Reading the property descriptor formats the stack the
+    the out of memory error, which ends the call, and the stack stays
+    pending, so a later read can give the text. Reading the property descriptor formats the stack the
     same way and so can throw too. When an error whose stack is still
     pending is printed (`console.log`, `JS_PrintValue`), formatting the
     stack never throws and never leaves a pending exception: out of memory
@@ -280,7 +299,8 @@ Conflicts to expect:
   two lines added to `XJS_ToCStringLen2`, the calls into
   `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
-  (uncatchable exceptions) conflict. Take the upstream version
+  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory)
+  conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -304,6 +324,10 @@ Conflicts to expect:
   and must change with it. If it reports that `XJS_Throw`,
   `_JS_CallInternal` or `_JS_IteratorClose` changed shape, put the
   uncatchable check of `lib/uncatchable.go` back where the C change has it.
+  If it reports that `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp
+  functions or the string table changed shape, compare the new upstream
+  code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
+  `JS_ThrowError2` and must build the same error.
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
@@ -351,10 +375,11 @@ Conflicts to expect:
   the attributes of a property (`js_get_own_property_flags`)), and the
   uncatchable exception hunks (`js_uncatchable_pending`, `js_get_exception`
   and its callers, `JS_IsUncatchableException`, and the checks in
-  `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`). After a
-  regeneration that includes them,
-  `lib/backtrace.go`, `lib/uncatchable.go` and their wiring in `fixlib` are
-  no longer needed.
+  `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`), and the out of
+  memory hunks (`JS_ThrowOutOfMemory`, `JS_ThrowError2`, the regexp
+  callers of `JS_ThrowOutOfMemory`). After a regeneration that includes
+  them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
+  their wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.

@@ -1354,7 +1354,8 @@ func (m *VM) errFromException() error {
 }
 
 // takeException takes the pending exception out of the context and returns
-// it as an *Error, and whether it was uncatchable (an interrupt).
+// it as an *Error, and whether it was uncatchable (an interrupt, or running
+// out of memory).
 func (m *VM) takeException() (err *Error, uncatchable bool) {
 	tls := m.runtime.tls
 	ctx := m.cContext
@@ -1366,7 +1367,18 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 
 	defer lib.XFreeValue(tls, ctx, e)
 
+	if uncatchable && tag(e) == lib.EJS_TAG_NULL {
+		// The engine throws null when it runs out of memory building an
+		// error.
+		return outOfMemoryError(), true
+	}
 	return ErrorFromValue(Value{vm: m, v: e}), uncatchable
+}
+
+// outOfMemoryError is the error the engine throws when it runs out of
+// memory.
+func outOfMemoryError() *Error {
+	return &Error{raw: "InternalError: out of memory", Name: "InternalError", Message: "out of memory"}
 }
 
 // uncatchablePending reports whether an uncatchable exception (an

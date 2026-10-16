@@ -7,6 +7,8 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"errors"
 	"testing"
+
+	lib "github.com/liustack/quickjs/lib"
 )
 
 // uncatchableCases run fail(), which throws an error page code must not be
@@ -92,6 +94,75 @@ func TestInterruptUncatchable(t *testing.T) {
 			wantError(t, err, "InternalError", "interrupted")
 			if seen != "" {
 				t.Fatalf("page code saw the interrupt: %s", seen)
+			}
+		})
+	}
+}
+
+// growForever is a fail() that runs out of memory.
+const growForever = `globalThis.fail = () => { const a = []; for (;;) a.push('x'.repeat(256) + a.length) }`
+
+// Running out of memory ends the call like an interrupt: page code cannot
+// catch it, and the call returns the engine's out of memory error.
+func TestOutOfMemoryUncatchable(t *testing.T) {
+	for _, c := range uncatchableCases {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			if _, err := m.Eval(`globalThis.seen = []; `+growForever, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+
+			m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20)
+			err, seen := runUncatchable(t, m, c.js)
+			wantError(t, err, "InternalError", "out of memory")
+			if seen != "" {
+				t.Fatalf("page code saw the out of memory error: %s", seen)
+			}
+			wantNoPendingException(t, m)
+		})
+	}
+}
+
+// The engine throws null, uncatchable, when it runs out of memory building
+// an error (lib/outofmemory_test.go), and the VM reports it as the out of
+// memory error.
+func TestUncatchableNullIsOutOfMemory(t *testing.T) {
+	m := newTestVM(t)
+	tls, ctx := m.runtime.tls, m.cContext
+	lib.XJS_Throw(tls, ctx, null)
+	lib.XJS_SetUncatchableException(tls, ctx, 1)
+	err := m.errFromException()
+	wantError(t, err, "InternalError", "out of memory")
+	if err.Error() != "InternalError: out of memory" {
+		t.Fatalf("got %q", err.Error())
+	}
+	wantNoPendingException(t, m)
+
+	// A script throwing null is not running out of memory.
+	_, err = m.Eval(`throw null`, EvalGlobal)
+	if err == nil || err.Error() != "null" {
+		t.Fatalf("throw null: got %v", err)
+	}
+}
+
+// The regexp engine running out of memory, compiling a pattern or running
+// it, is the out of memory error.
+func TestRegexpOutOfMemory(t *testing.T) {
+	for _, c := range []struct{ name, js string }{
+		{"exec", `/(a)+$/.exec(s)`},
+		{"compile", `new RegExp(s)`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			if _, err := m.Eval(`globalThis.seen = []; globalThis.s = 'a'.repeat(1e6) + 'x'`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+
+			m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 64<<10)
+			err, seen := runUncatchable(t, m, `try { `+c.js+` } catch (e) { seen.push(e.message) }`)
+			wantError(t, err, "InternalError", "out of memory")
+			if seen != "" {
+				t.Fatalf("page code saw the out of memory error: %s", seen)
 			}
 		})
 	}

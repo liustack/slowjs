@@ -12644,25 +12644,7 @@ func _JS_ThrowError2(tls *libc.TLS, ctx1 uintptr, error_num TJSErrorEnum, fmt ui
 	var _ /* buf at bp+0 */ [256]uint8
 	_, _, _, _, _ = obj, ret, v1, v3, v4
 	libc.X__builtin_vsnprintf(tls, bp, uint32(256), fmt, ap)
-	obj = XJS_NewObjectProtoClass(tls, ctx1, **(**TJSValue)(__ccgo_up(ctx1 + 96 + uintptr(error_num)*8)), uint32(EJS_CLASS_ERROR))
-	v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
-	goto _2
-_2:
-	if libc.BoolInt32(!!(v1 != 0)) != 0 {
-		/* out of memory: throw JS_NULL to avoid recursing */
-		obj = libc.Uint64FromInt32(int32(EJS_TAG_NULL))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	} else {
-		v3 = bp
-		v4 = XJS_NewStringLen(tls, ctx1, v3, libc.Xstrlen(tls, v3))
-		goto _5
-	_5:
-		XJS_DefinePropertyValue(tls, ctx1, obj, uint32(EJS_ATOM_message), v4, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
-		if add_backtrace != 0 {
-			_build_backtrace(tls, ctx1, obj, libc.UintptrFromInt32(0), 0, 0, 0)
-		}
-	}
-	ret = XJS_Throw(tls, ctx1, obj)
-	return ret
+	return _js_throw_error2(tls, ctx1, error_num, bp, add_backtrace)
 }
 
 func _JS_ThrowError(tls *libc.TLS, ctx uintptr, error_num TJSErrorEnum, fmt uintptr, ap Tva_list) (r TJSValue) {
@@ -12782,6 +12764,7 @@ func XJS_ThrowOutOfMemory(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 	if !(TBOOL(*(*uint16)(unsafe.Pointer(rt + 648))&0xff00>>8)<<24>>24 != 0) {
 		libc.SetBitFieldPtr16Int32(rt+648, int32(ETRUE), 8, 0xff00)
 		XJS_ThrowInternalError(tls, ctx, __ccgo_ts+1186, 0)
+		XJS_SetUncatchableException(tls, ctx, int32(MTRUE))
 		libc.SetBitFieldPtr16Int32(rt+648, int32(EFALSE), 8, 0xff00)
 	}
 	return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -96782,7 +96765,11 @@ _9:
 	re_bytecode_buf = Xlre_compile(tls, bp+4, bp+8, int32(64), str, **(**Tsize_t)(__ccgo_up(bp)), re_flags, ctx1)
 	XJS_FreeCString(tls, ctx1, str)
 	if !(re_bytecode_buf != 0) {
-		XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12048, libc.VaList(bp+80, bp+8))
+		if _js_regexp_out_of_memory(bp+8) {
+			XJS_ThrowOutOfMemory(tls, ctx1)
+		} else {
+			XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12048, libc.VaList(bp+80, bp+8))
+		}
 		return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	}
 	ret = _js_new_string8_len(tls, ctx1, re_bytecode_buf, **(**int32)(__ccgo_up(bp + 4)))
@@ -97924,7 +97911,7 @@ _2:
 			if rc == -int32(2) {
 				_JS_ThrowInterrupted(tls, ctx3)
 			} else {
-				XJS_ThrowInternalError(tls, ctx3, __ccgo_ts+12105, 0)
+				XJS_ThrowOutOfMemory(tls, ctx3)
 			}
 			goto fail
 		}
@@ -98342,7 +98329,7 @@ _2:
 				if ret == -int32(2) {
 					_JS_ThrowInterrupted(tls, ctx1)
 				} else {
-					XJS_ThrowInternalError(tls, ctx1, __ccgo_ts+12105, 0)
+					XJS_ThrowOutOfMemory(tls, ctx1)
 				}
 				goto fail
 			}

@@ -13497,28 +13497,7 @@ func _JS_ThrowError2(tls *libc.TLS, ctx1 uintptr, error_num TJSErrorEnum, fmt ui
 	goto _1
 _1:
 	;
-	obj = XJS_NewObjectProtoClass(tls, ctx1, **(**TJSValue)(__ccgo_up(ctx1 + 176 + uintptr(error_num)*16)), uint32(EJS_CLASS_ERROR))
-	v2 = int32(libc.BoolInt32(!!(int32(obj.Ftag) == int32(EJS_TAG_EXCEPTION))))
-	goto _3
-_3:
-	if libc.BoolInt32(!!(v2 != 0)) != 0 {
-		/* out of memory: throw JS_NULL to avoid recursing */
-		obj = TJSValue{
-			Fu:   TJSValueUnion{},
-			Ftag: int64(EJS_TAG_NULL),
-		}
-	} else {
-		v4 = bp
-		v5 = XJS_NewStringLen(tls, ctx1, v4, libc.Xstrlen(tls, v4))
-		goto _6
-	_6:
-		XJS_DefinePropertyValue(tls, ctx1, obj, uint32(EJS_ATOM_message), v5, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
-		if add_backtrace != 0 {
-			_build_backtrace(tls, ctx1, obj, libc.UintptrFromInt32(0), 0, 0, 0)
-		}
-	}
-	ret = XJS_Throw(tls, ctx1, obj)
-	return ret
+	return _js_throw_error2(tls, ctx1, error_num, bp, add_backtrace)
 }
 
 func _JS_ThrowError(tls *libc.TLS, ctx uintptr, error_num TJSErrorEnum, fmt uintptr, ap Tva_list) (r TJSValue) {
@@ -13638,6 +13617,7 @@ func XJS_ThrowOutOfMemory(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 	if !(TBOOL(*(*uint16)(unsafe.Pointer(rt + 1256))&0xff00>>8)<<24>>24 != 0) {
 		libc.SetBitFieldPtr16Int32(rt+1256, int32(ETRUE), 8, 0xff00)
 		XJS_ThrowInternalError(tls, ctx, __ccgo_ts+1186, 0)
+		XJS_SetUncatchableException(tls, ctx, int32(MTRUE))
 		libc.SetBitFieldPtr16Int32(rt+1256, int32(EFALSE), 8, 0xff00)
 	}
 	return TJSValue{
@@ -100962,7 +100942,11 @@ _9:
 	re_bytecode_buf = Xlre_compile(tls, bp+8, bp+12, int32(64), str, **(**Tsize_t)(__ccgo_up(bp)), re_flags, ctx1)
 	XJS_FreeCString(tls, ctx1, str)
 	if !(re_bytecode_buf != 0) {
-		XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12048, libc.VaList(bp+88, bp+12))
+		if _js_regexp_out_of_memory(bp+12) {
+			XJS_ThrowOutOfMemory(tls, ctx1)
+		} else {
+			XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12048, libc.VaList(bp+88, bp+12))
+		}
 		return TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_EXCEPTION),
@@ -102257,7 +102241,7 @@ _2:
 			if rc == -int32(2) {
 				_JS_ThrowInterrupted(tls, ctx3)
 			} else {
-				XJS_ThrowInternalError(tls, ctx3, __ccgo_ts+12105, 0)
+				XJS_ThrowOutOfMemory(tls, ctx3)
 			}
 			goto fail
 		}
@@ -102727,7 +102711,7 @@ _2:
 				if ret == -int32(2) {
 					_JS_ThrowInterrupted(tls, ctx1)
 				} else {
-					XJS_ThrowInternalError(tls, ctx1, __ccgo_ts+12105, 0)
+					XJS_ThrowOutOfMemory(tls, ctx1)
 				}
 				goto fail
 			}
