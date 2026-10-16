@@ -18,6 +18,7 @@ const sizeofJsValue = unsafe.Sizeof(lib.TJSValue(0))
 var (
 	null      = uint64(lib.EJS_TAG_NULL << 32)
 	undefined = uint64(lib.EJS_TAG_UNDEFINED << 32)
+	exception = uint64(lib.EJS_TAG_EXCEPTION << 32)
 )
 
 // #define JS_FLOAT64_TAG_ADDEND (0x7ff80000 - JS_TAG_FIRST + 1) /* quiet NaN encoding */

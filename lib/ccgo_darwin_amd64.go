@@ -19165,6 +19165,10 @@ func XJS_Throw(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSValue) {
 	var v4 int32
 	_, _, _, _, _, _ = p, rt, v1, v2, v4, v5
 	rt = (*TJSContext)(unsafe.Pointer(ctx1)).Frt
+	if _js_uncatchable_pending(tls, ctx1) {
+		XFreeValue(tls, ctx1, obj)
+		return jsvException()
+	}
 	v1 = (*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception
 	*(*TJSValue)(unsafe.Pointer(bp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -37865,6 +37869,9 @@ func _JS_IteratorClose(tls *libc.TLS, ctx2 uintptr, enum_obj TJSValue, is_except
 	var v10 bool
 	_, _, _, _, _, _, _, _, _, _, _, _ = ex_obj, method, p, res, ret, v1, v10, v16, v19, v2, v4, v6
 	if is_exception_pending != 0 {
+		if _js_uncatchable_pending(tls, ctx2) {
+			return -int32(1)
+		}
 		ex_obj = (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx2)).Frt)).Fcurrent_exception
 		(*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx2)).Frt)).Fcurrent_exception = TJSValue{
 			Fu:   TJSValueUnion{},
@@ -40106,6 +40113,9 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, thi
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_EXCEPTION),
 		}
+	}
+	if _js_uncatchable_pending(tls, caller_ctx) {
+		return jsvException()
 	}
 	if libc.BoolInt64(!!(int32((**(**TJSValue)(__ccgo_up(bp + 80))).Ftag) != int32(EJS_TAG_OBJECT))) != 0 {
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)) != 0 {
@@ -47881,7 +47891,7 @@ _6:
 	goto fail
 fail:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 32)) = XJS_GetException(tls, ctx1)
+	**(**TJSValue)(__ccgo_up(bp + 32)) = _js_get_exception(tls, ctx1)
 	ret2 = XJS_Call(tls, ctx1, **(**TJSValue)(__ccgo_up(s + 48 + 1*16)), TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -48621,7 +48631,7 @@ func _js_async_generator_completed_return(tls *libc.TLS, ctx1 uintptr, s uintptr
 _2:
 	if v1 != 0 {
 		*(*TJSValue)(unsafe.Pointer(bp + 96)) = TJSValue{}
-		*(*TJSValue)(unsafe.Pointer(bp + 96)) = XJS_GetException(tls, ctx1)
+		*(*TJSValue)(unsafe.Pointer(bp + 96)) = _js_get_exception(tls, ctx1)
 		promise = _js_promise_resolve(tls, ctx1, (*TJSContext)(unsafe.Pointer(ctx1)).Fpromise_ctor, int32(1), bp+96, int32(1))
 		v3 = **(**TJSValue)(__ccgo_up(bp + 96))
 		*(*TJSValue)(unsafe.Pointer(bp)) = v3
@@ -48836,7 +48846,7 @@ func _js_async_generator_resume_next(tls *libc.TLS, ctx3 uintptr, s uintptr) {
 			goto _23
 		_23:
 			if v3 != 0 {
-				value = XJS_GetException(tls, ctx3)
+				value = _js_get_exception(tls, ctx3)
 				_js_async_generator_complete(tls, ctx3, s)
 				_js_async_generator_reject(tls, ctx3, s, value)
 				v13 = value
@@ -49031,7 +49041,7 @@ _2:
 	}
 	if !(s != 0) {
 		XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+3991, 0)
-		**(**TJSValue)(__ccgo_up(bp + 64)) = XJS_GetException(tls, ctx2)
+		**(**TJSValue)(__ccgo_up(bp + 64)) = _js_get_exception(tls, ctx2)
 		res2 = XJS_Call(tls, ctx2, (**(**[2]TJSValue)(__ccgo_up(bp + 32)))[int32(1)], TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_UNDEFINED),
@@ -62744,7 +62754,7 @@ func _js_load_module_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 _2:
 	if v1 != 0 {
 		*(*TJSValue)(unsafe.Pointer(bp + 32)) = TJSValue{}
-		*(*TJSValue)(unsafe.Pointer(bp + 32)) = XJS_GetException(tls, ctx1)
+		*(*TJSValue)(unsafe.Pointer(bp + 32)) = _js_get_exception(tls, ctx1)
 		_js_load_module_rejected(tls, ctx1, TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_UNDEFINED),
@@ -62822,7 +62832,7 @@ _3:
 	goto fail
 fail:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 16)) = XJS_GetException(tls, ctx1)
+	**(**TJSValue)(__ccgo_up(bp + 16)) = _js_get_exception(tls, ctx1)
 	ret = XJS_Call(tls, ctx1, **(**TJSValue)(__ccgo_up(resolving_funcs + 1*16)), TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -63039,7 +63049,7 @@ _7:
 	goto exception
 exception:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 16)) = XJS_GetException(tls, ctx2)
+	**(**TJSValue)(__ccgo_up(bp + 16)) = _js_get_exception(tls, ctx2)
 	ret = XJS_Call(tls, ctx2, **(**TJSValue)(__ccgo_up(resolving_funcs + 1*16)), TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -63368,7 +63378,7 @@ exception:
 			x__JS_FreeValue(tls, ctx2, v5)
 		}
 	}
-	**(**TJSValue)(__ccgo_up(bp + 48)) = XJS_GetException(tls, ctx2)
+	**(**TJSValue)(__ccgo_up(bp + 48)) = _js_get_exception(tls, ctx2)
 	ret = XJS_Call(tls, ctx2, (**(**[2]TJSValue)(__ccgo_up(bp + 16)))[int32(1)], TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -63900,7 +63910,7 @@ _12:
 	goto fail
 fail:
 	;
-	**(**TJSValue)(__ccgo_up(pvalue)) = XJS_GetException(tls, ctx1)
+	**(**TJSValue)(__ccgo_up(pvalue)) = _js_get_exception(tls, ctx1)
 	return -int32(1)
 _13:
 	;
@@ -63929,7 +63939,7 @@ func _js_inner_module_evaluation(tls *libc.TLS, ctx1 uintptr, m uintptr, index i
 	_, _, _, _, _, _, _, _, _, _, _ = i, m1, p, rme, v1, v18, v2, v4, v7, v8, v9
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, uint64(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, ctx1)
-		**(**TJSValue)(__ccgo_up(pvalue)) = XJS_GetException(tls, ctx1)
+		**(**TJSValue)(__ccgo_up(pvalue)) = _js_get_exception(tls, ctx1)
 		return -int32(1)
 	}
 	if TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 144))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATING_ASYNC) || TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 144))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATED) {
@@ -64018,7 +64028,7 @@ func _js_inner_module_evaluation(tls *libc.TLS, ctx1 uintptr, m uintptr, index i
 		if (*TJSModuleDef)(unsafe.Pointer(m1)).Fasync_evaluation != 0 {
 			(*TJSModuleDef)(unsafe.Pointer(m)).Fpending_async_dependencies = (*TJSModuleDef)(unsafe.Pointer(m)).Fpending_async_dependencies + 1
 			if _js_resize_array(tls, ctx1, m1+168, int32(8), m1+180, (*TJSModuleDef)(unsafe.Pointer(m1)).Fasync_parent_modules_count+int32(1)) != 0 {
-				**(**TJSValue)(__ccgo_up(pvalue)) = XJS_GetException(tls, ctx1)
+				**(**TJSValue)(__ccgo_up(pvalue)) = _js_get_exception(tls, ctx1)
 				return -int32(1)
 			}
 			v2 = m1 + 176
@@ -124437,7 +124447,7 @@ _2:
 _14:
 	is_reject = v1
 	if is_reject != 0 {
-		**(**TJSValue)(__ccgo_up(bp + 48)) = XJS_GetException(tls, ctx2)
+		**(**TJSValue)(__ccgo_up(bp + 48)) = _js_get_exception(tls, ctx2)
 	}
 	func1 = **(**TJSValue)(__ccgo_up(argv + uintptr(is_reject)*16))
 	/* as an extension, we support undefined as value to avoid
@@ -124604,7 +124614,7 @@ func _js_promise_resolve_thenable_job(tls *libc.TLS, ctx1 uintptr, argc int32, a
 _2:
 	if v1 != 0 {
 		*(*TJSValue)(unsafe.Pointer(bp + 48)) = TJSValue{}
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = XJS_GetException(tls, ctx1)
+		*(*TJSValue)(unsafe.Pointer(bp + 48)) = _js_get_exception(tls, ctx1)
 		res = XJS_Call(tls, ctx1, (**(**[2]TJSValue)(__ccgo_up(bp + 16)))[int32(1)], TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_UNDEFINED),
@@ -124863,7 +124873,7 @@ _10:
 	goto fail_reject
 fail_reject:
 	;
-	error1 = XJS_GetException(tls, ctx2)
+	error1 = _js_get_exception(tls, ctx2)
 	_reject_promise(tls, ctx2, (*TJSPromiseFunctionData)(unsafe.Pointer(s)).Fpromise, error1)
 	v4 = error1
 	*(*TJSValue)(unsafe.Pointer(bp)) = v4
@@ -125082,7 +125092,7 @@ _2:
 	goto _6
 _6:
 	if v1 != 0 {
-		**(**TJSValue)(__ccgo_up(bp + 48)) = XJS_GetException(tls, ctx1)
+		**(**TJSValue)(__ccgo_up(bp + 48)) = _js_get_exception(tls, ctx1)
 		ret2 = XJS_Call(tls, ctx1, (**(**[2]TJSValue)(__ccgo_up(bp + 16)))[int32(1)], TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_UNDEFINED),
@@ -125683,7 +125693,7 @@ _4:
 _6:
 	if v1 != 0 {
 		is_reject = int32(1)
-		**(**TJSValue)(__ccgo_up(bp + 48)) = XJS_GetException(tls, ctx1)
+		**(**TJSValue)(__ccgo_up(bp + 48)) = _js_get_exception(tls, ctx1)
 	}
 	ret2 = XJS_Call(tls, ctx1, (**(**[2]TJSValue)(__ccgo_up(bp + 16)))[is_reject], TJSValue{
 		Fu:   TJSValueUnion{},
@@ -126077,7 +126087,7 @@ _13:
 	goto fail_reject
 fail_reject:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 216)) = XJS_GetException(tls, ctx5)
+	**(**TJSValue)(__ccgo_up(bp + 216)) = _js_get_exception(tls, ctx5)
 	ret = XJS_Call(tls, ctx5, (**(**[2]TJSValue)(__ccgo_up(bp + 32)))[int32(1)], TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -126609,7 +126619,7 @@ _13:
 	goto fail_reject
 fail_reject:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 72)) = XJS_GetException(tls, ctx2)
+	**(**TJSValue)(__ccgo_up(bp + 72)) = _js_get_exception(tls, ctx2)
 	ret = XJS_Call(tls, ctx2, (**(**[2]TJSValue)(__ccgo_up(bp + 16)))[int32(1)], TJSValue{
 		Fu:   TJSValueUnion{},
 		Ftag: int64(EJS_TAG_UNDEFINED),
@@ -128265,7 +128275,7 @@ _43:
 	goto reject
 reject:
 	;
-	**(**TJSValue)(__ccgo_up(bp + 80)) = XJS_GetException(tls, ctx3)
+	**(**TJSValue)(__ccgo_up(bp + 80)) = _js_get_exception(tls, ctx3)
 	is_reject = int32(1)
 	goto done_resolve
 done_resolve:

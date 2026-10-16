@@ -565,7 +565,7 @@ func (m *VM) Eval(javascript string, flags int) (r any, err error) {
 
 	m.enter()
 	defer m.leave()
-	return m.value(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), true)
+	return m.value(m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), true)
 }
 
 // ExecutePendingJobs runs queued Javascript jobs — Promise reactions (the
@@ -604,8 +604,17 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 		}
 
 		n++
+		if r > 0 && m.uncatchablePending() {
+			r = -1 // the job stopped at an uncatchable exception without failing
+		}
 		if r < 0 {
-			if e := m.errFromException(); e != nil && err == nil {
+			e, uncatchable := m.takeException()
+			if uncatchable {
+				// An interrupt or out of memory ends the drain: the
+				// jobs left are page code that must not run now.
+				return n, e
+			}
+			if err == nil {
 				err = e // report the first failure, keep draining the rest
 			}
 		}
@@ -632,7 +641,7 @@ func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error
 
 	m.enter()
 	defer m.leave()
-	return m.value(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), true)
+	return m.value(m.settled(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), true)
 }
 
 // EvalValue evaluates a script or module source in 'javascript' and returns
@@ -657,7 +666,7 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 
 	m.enter()
 	defer m.leave()
-	v := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))
+	v := m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)))
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
 		return r, m.errFromException()
@@ -681,7 +690,7 @@ func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, er
 
 	m.enter()
 	defer m.leave()
-	v := lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))
+	v := m.settled(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)))
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
 		return r, m.errFromException()
@@ -748,6 +757,7 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 	} else {
 		v = lib.XJS_EvalFunction(tls, ctx, obj)
 	}
+	v = m.settled(v)
 
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
@@ -812,7 +822,7 @@ func (m *VM) eval(js string, flags int) (r lib.TJSValue, err error) {
 
 	m.enter()
 	defer m.leave()
-	return lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(js)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)), nil
+	return m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(js)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), nil
 }
 
 // GlobalObject returns m's global object.
@@ -861,7 +871,7 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 	m.enter()
 	defer m.leave()
 
-	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
+	f := m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal)))
 
 	if isException(f) {
 		// Evaluating the function expression threw, eg. out of memory or an
@@ -896,7 +906,7 @@ func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
 	m.enter()
 	defer m.leave()
 
-	f := lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal))
+	f := m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(function)), uintptr(unsafe.Pointer(&evalFN)), int32(EvalGlobal)))
 
 	if isException(f) {
 		return r, m.errFromException()
@@ -1059,7 +1069,7 @@ func (m *VM) callValue(f, this lib.TJSValue, args ...any) (r Value, err error) {
 		}
 
 	}
-	v := lib.XJS_Call(tls, ctx, f, this, int32(len(jsArgs)), argv)
+	v := m.settled(lib.XJS_Call(tls, ctx, f, this, int32(len(jsArgs)), argv))
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
 		return r, m.errFromException()
@@ -1099,7 +1109,7 @@ func (m *VM) call(f, this lib.TJSValue, args ...any) (r any, err error) {
 		}
 
 	}
-	return m.value(lib.XJS_Call(tls, ctx, f, this, int32(len(jsArgs)), argv), true)
+	return m.value(m.settled(lib.XJS_Call(tls, ctx, f, this, int32(len(jsArgs)), argv)), true)
 }
 
 // goString converts the JS value 'v' to a Go string; the JS -> Go half of the
@@ -1339,13 +1349,46 @@ func ErrorFromValue(v Value) *Error {
 }
 
 func (m *VM) errFromException() error {
+	err, _ := m.takeException()
+	return err
+}
+
+// takeException takes the pending exception out of the context and returns
+// it as an *Error, and whether it was uncatchable (an interrupt).
+func (m *VM) takeException() (err *Error, uncatchable bool) {
 	tls := m.runtime.tls
 	ctx := m.cContext
+	uncatchable = m.uncatchablePending()
 	e := lib.XJS_GetException(tls, ctx)
+	// The flag outlives the exception. Clear it, so that it does not stay
+	// with the next exception the engine fails to throw.
+	lib.XJS_SetUncatchableException(tls, ctx, 0)
 
 	defer lib.XFreeValue(tls, ctx, e)
 
-	return ErrorFromValue(Value{vm: m, v: e})
+	return ErrorFromValue(Value{vm: m, v: e}), uncatchable
+}
+
+// uncatchablePending reports whether an uncatchable exception (an
+// interrupt) is pending in m's context. Every call into javascript fails
+// while one is.
+func (m *VM) uncatchablePending() bool {
+	return lib.XJS_IsUncatchableException(m.runtime.tls, m.cContext) != 0
+}
+
+// settled returns v, the result of a call into javascript, or the exception
+// value when an uncatchable exception is still pending after the call. A
+// built-in that only records an error, such as a promise resolve function
+// that rejects its promise when reading 'then' throws, returns as if it had
+// not failed, and the code that called it can go on until its next call,
+// which fails. The call that ran it fails all the same.
+func (m *VM) settled(v lib.TJSValue) lib.TJSValue {
+	if isException(v) || !m.uncatchablePending() {
+		return v
+	}
+
+	lib.XFreeValue(m.runtime.tls, m.cContext, v)
+	return exception
 }
 
 // StdAddHelpers adds the 'print' and 'console' global objects to 'm'.
@@ -2375,7 +2418,7 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	m.enter()
 	defer m.leave()
 	thenFn := lib.XGetProperty(tls, ctx, v.v, lib.EJS_ATOM_then)
-	result := lib.XJS_Call(tls, ctx, thenFn, v.v, 2, jsArgsPtr)
+	result := m.settled(lib.XJS_Call(tls, ctx, thenFn, v.v, 2, jsArgsPtr))
 	lib.XFreeValue(tls, ctx, thenFn)
 	if isException(result) {
 		lib.XFreeValue(tls, ctx, result)

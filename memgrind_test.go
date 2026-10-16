@@ -125,6 +125,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("errorGetterThrows", TestErrorFromValueGetterThrows)
 	t.Run("customLoader", TestCustomModuleLoader)
 	t.Run("closeLoader", TestCloseReleasesModuleLoader)
+	t.Run("interruptUncatchable", TestInterruptUncatchable)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)

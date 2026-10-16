@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does five things:
+// It does six things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -22,6 +22,9 @@
 //     javascript's local time is UTC whatever zone the process has, as the
 //     same change in lib/internal/patch/quickjs.diff does (see
 //     fixTimezone).
+//   - In every lib/ccgo_*.go file, keep an uncatchable exception pending
+//     until the embedder takes it, so that a script cannot catch it in a
+//     promise or an iterator either (see fixUncatchable).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -93,6 +96,9 @@ func run() (missing int, err error) {
 				return nil, err
 			}
 			if b, err = fixTimezone(b); err != nil {
+				return nil, err
+			}
+			if b, err = fixUncatchable(b); err != nil {
 				return nil, err
 			}
 			return fixBacktrace(b)

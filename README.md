@@ -31,6 +31,26 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   which the engine throws near the memory limit, `throw undefined`, a
   symbol) no longer leaves a TypeError in the context. Test:
   `gostring_test.go`.
+- Page code can no longer catch an interrupt (`VM.Interrupt` or the eval
+  timeout) through a promise or an iterator. The engine already skipped
+  every `catch` and `finally` block for an interrupt, but its own handlers
+  of an exception went on with it: an async function and a promise job
+  turned it into a rejection, which an `await`, a `.catch` or a `.then`
+  handler then received, and so did the `Promise` constructor,
+  `Promise.try`, `Promise.all` and the other combinators, async generators
+  and modules. A built-in that runs an iterator's `return` method on an
+  error (`Array.from`, ...) ran it, then threw the interrupt again as an
+  error a `catch` could take, and any later error replaced it. Now an
+  uncatchable exception stays pending until the Go call that ran the script
+  takes it, and while it is pending every call into javascript fails at
+  once. So no `catch`, `finally`, iterator `return`, generator `finally` or
+  rejection handler runs, and the call returns the interrupt, as it does
+  for a script without promises. Where a built-in only records the error,
+  such as a resolve function that rejects its promise when reading `then`
+  throws, the code after it runs on until its next function call, which
+  fails. `ExecutePendingJobs` stops at the job that failed with an
+  interrupt and leaves the rest queued, where it used to run them all.
+  Tests: `uncatchable_test.go`, `internal/fixlib/uncatchable_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -258,8 +278,9 @@ Conflicts to expect:
 
 - `lib/ccgo_*.go`: every upstream release regenerates these files, so the
   two lines added to `XJS_ToCStringLen2`, the calls into
-  `lib/backtrace.go` (lazy error stacks) and the `getTimezoneOffset` that
-  answers 0 (local time is UTC) conflict. Take the upstream version
+  `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
+  answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
+  (uncatchable exceptions) conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -280,7 +301,14 @@ Conflicts to expect:
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
-  and must change with it.
+  and must change with it. If it reports that `XJS_Throw`,
+  `_JS_CallInternal` or `_JS_IteratorClose` changed shape, put the
+  uncatchable check of `lib/uncatchable.go` back where the C change has it.
+  If it reports a call of `XJS_GetException` that is not in
+  `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
+  read the new caller: if it hands the exception to a script (a rejection,
+  a handler call, a new throw), add it to `exceptionHandlers`, so that it
+  gets `_js_get_exception`.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
@@ -320,9 +348,13 @@ Conflicts to expect:
   `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
   `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`,
   `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need
-  the attributes of a property (`js_get_own_property_flags`)). After a
+  the attributes of a property (`js_get_own_property_flags`)), and the
+  uncatchable exception hunks (`js_uncatchable_pending`, `js_get_exception`
+  and its callers, `JS_IsUncatchableException`, and the checks in
+  `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`). After a
   regeneration that includes them,
-  `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
+  `lib/backtrace.go`, `lib/uncatchable.go` and their wiring in `fixlib` are
+  no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
