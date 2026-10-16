@@ -460,6 +460,17 @@ func TestMaximumFractionDigitsAlone(t *testing.T) {
 	})
 }
 
+// Significant digits leave the fraction digits unread, so a fraction digit
+// out of range does not throw next to them.
+func TestFractionDigitsUnreadNextToSignificant(t *testing.T) {
+	evalTests(t, newVM(t), [][2]string{
+		{`new Intl.NumberFormat('en', {maximumSignificantDigits: 3, maximumFractionDigits: 200}).format(1.2345)`, "1.23"},
+		{`new Intl.NumberFormat('en', {notation: 'compact', minimumSignificantDigits: 2, minimumFractionDigits: -1}).format(1234)`, "1.234K"},
+		{`new Intl.PluralRules('en', {maximumSignificantDigits: 3, maximumFractionDigits: 200}).select(1)`, "one"},
+		{`(() => { try { new Intl.NumberFormat('en', {maximumFractionDigits: 200}) } catch (e) { return e.constructor.name } })()`, "RangeError"},
+	})
+}
+
 func TestPluralRules(t *testing.T) {
 	evalTests(t, newVM(t), [][2]string{
 		{`new Intl.PluralRules('en').select(1)`, "one"},

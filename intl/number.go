@@ -252,15 +252,10 @@ func (f *numberFormat) digitOptions(o map[string]any, currencyDigits int) error 
 		f.MinimumIntegerDigits = mnid
 	}
 
-	mnfd, hasMnfd, err := optInt(o, "minimumFractionDigits", 0, 100)
-	if err != nil {
-		return err
-	}
-
-	mxfd, hasMxfd, err := optInt(o, "maximumFractionDigits", 0, 100)
-	if err != nil {
-		return err
-	}
+	// The fraction digits are checked only where they are used, which they
+	// are not next to significant digits.
+	_, hasMnfd := o["minimumFractionDigits"]
+	_, hasMxfd := o["maximumFractionDigits"]
 
 	mnsd, hasMnsd, err := optInt(o, "minimumSignificantDigits", 1, 21)
 	if err != nil {
@@ -286,6 +281,15 @@ func (f *numberFormat) digitOptions(o map[string]any, currencyDigits int) error 
 
 		f.MinimumSignificantDigits, f.MaximumSignificantDigits = &mnsd, &mxsd
 	case hasMnfd || hasMxfd || f.Notation != "compact":
+		mnfd, _, err := optInt(o, "minimumFractionDigits", 0, 100)
+		if err != nil {
+			return err
+		}
+		mxfd, _, err := optInt(o, "maximumFractionDigits", 0, 100)
+		if err != nil {
+			return err
+		}
+
 		mnfdDefault, mxfdDefault := 0, 3
 		switch {
 		case f.Style == "currency" && f.Notation == "standard":
