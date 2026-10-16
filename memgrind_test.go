@@ -121,6 +121,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("objectJSONOOM", TestObjectJSONOutOfMemory)
 	t.Run("hostFuncArgOOM", TestHostFuncArgumentOutOfMemory)
 	t.Run("errorToStringThrows", TestErrorFromValueToStringThrows)
+	t.Run("bigIntToStringThrows", TestBigIntToStringThrows)
 	t.Run("customLoader", TestCustomModuleLoader)
 	t.Run("closeLoader", TestCloseReleasesModuleLoader)
 

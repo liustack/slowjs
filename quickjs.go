@@ -1216,14 +1216,21 @@ func (m *VM) value(v lib.TJSValue, free bool) (r any, err error) {
 		lib.EJS_TAG_SHORT_BIG_INT: // 7,
 
 		ps := lib.XJS_GetPropertyStr(tls, ctx, v, toString)
-		if tag(ps) != lib.EJS_TAG_OBJECT {
-			return nil, fmt.Errorf("failed to get BigInt.toString()")
+		if isException(ps) {
+			return nil, m.errFromException()
 		}
 
 		defer lib.XFreeValue(tls, ctx, ps)
 
+		if tag(ps) != lib.EJS_TAG_OBJECT {
+			return nil, fmt.Errorf("failed to get BigInt.toString()")
+		}
+
 		*(*lib.TJSValue)(unsafe.Pointer(m.toStringArgv)) = m.int32_16
 		jsString := lib.XJS_Call(tls, ctx, ps, v, 1, m.toStringArgv)
+		if isException(jsString) {
+			return nil, m.errFromException()
+		}
 
 		defer lib.XFreeValue(tls, ctx, jsString)
 

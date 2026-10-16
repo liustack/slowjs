@@ -186,3 +186,33 @@ func TestErrorFromValueToStringThrows(t *testing.T) {
 		t.Fatalf("1 + 1 after the failed read: %v, %v", v, err)
 	}
 }
+
+// A BigInt is read through its toString. When looking toString up or calling
+// it throws, that exception is the error, and it does not stay pending.
+func TestBigIntToStringThrows(t *testing.T) {
+	for _, tc := range []struct{ name, setup, message string }{
+		{"lookup", `Object.defineProperty(BigInt.prototype, "toString", {get() { throw new Error("from the getter") }})`, "from the getter"},
+		{"call", `BigInt.prototype.toString = function() { throw new Error("from toString") }`, "from toString"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer m.Close()
+
+			if _, err := m.Eval(tc.setup, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = m.Eval("1n", EvalGlobal)
+			var e *Error
+			if !errors.As(err, &e) || e.Name != "Error" || e.Message != tc.message {
+				t.Fatalf("got error %v, want Error: %s", err, tc.message)
+			}
+
+			wantNoPendingException(t, m)
+		})
+	}
+}
