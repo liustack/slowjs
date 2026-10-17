@@ -67249,7 +67249,7 @@ func _js_create_function(tls *libc.TLS, ctx uintptr, fd uintptr) (r TJSValue) {
 		//DynBuf pc2line;
 		//compute_pc2line_info(fd, &pc2line);
 		//js_free(ctx, fd->line_number_slots)
-		(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf = Xjs_realloc(tls, ctx, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fpc2line.Fbuf, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fpc2line.Fsize)
+		(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf = Xjs_realloc_rt(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fpc2line.Fbuf, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fpc2line.Fsize)
 		if !((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf != 0) {
 			(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fpc2line.Fbuf
 		}

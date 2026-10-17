@@ -50,6 +50,8 @@ func TestCompileEveryFile(t *testing.T) {
 			{`\n\tif \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fcur_func != 0 && [^\n]*\n\t\tXJS_ThrowOutOfMemory\([^\n]*\n\t\treturn -int32\(1\)\n\t\}\n\t_free_token\(`, 1},
 			{`\.Ffields_init_fd\)\)\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n\t\t\tgoto fail\n`, 1},
 			{`\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| Xdbuf_claim\(tls, bc, `, 2},
+			{`\.Fdebug\.Fpc2line_buf = Xjs_realloc_rt\(tls, `, 1},
+			{`\.Fdebug\.Fpc2line_buf = Xjs_realloc\(`, 0},
 			{`\.Fbyte_code\.Ferror1 = int32\(MTRUE\)\n\t+return -int32\(1\)\n`, 2},
 			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\treturn\n`, 1},
 		} {
@@ -78,6 +80,7 @@ func TestCompileFromUpstream(t *testing.T) {
 	up = bytes.Replace(up, []byte("\t\t\t(*TDynBuf)(unsafe.Pointer(s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(s)).Fsize\n"), nil, 1)
 	up = regexp.MustCompile(`\n\t+if pos_next < 0 \{\n\t+goto fail\n\t+\}`).ReplaceAll(up, nil)
 	up = undoParserStops(t, up)
+	up = regexp.MustCompile(`(\.Fdebug\.Fpc2line_buf = )Xjs_realloc_rt\(tls, \(\*TJSContext\)\(unsafe\.Pointer\((\w+)\)\)\.Frt, `).ReplaceAll(up, []byte("${1}Xjs_realloc(tls, $2, "))
 
 	out, err := fixCompile(up)
 	if err != nil {

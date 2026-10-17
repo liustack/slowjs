@@ -135,7 +135,10 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   with the out of memory error: the pop after a failed push used to take off
   the scope around it, until a pop read before the scope array. The pass
   that resolves jumps frees, when it fails, the jump records of the labels
-  it has not reached yet, which used to leak. Tests: `compileoom_test.go`,
+  it has not reached yet, which used to leak. When shrinking the line table
+  of a function fails, the compile keeps the table and leaves no error
+  behind: it used to work and leave the out of memory error pending, for
+  the next call to report. Tests: `compileoom_test.go`,
   `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the

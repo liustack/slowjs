@@ -44,7 +44,10 @@ const parserOutOfMemory = "XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Poi
 //     buffer holds a run of whole writes and never a later short write
 //     after a failed one.
 //   - _js_create_function fails with the out of memory error on code whose
-//     buffer failed.
+//     buffer failed. It shrinks the line table of a function with
+//     Xjs_realloc_rt rather than Xjs_realloc, which throws the out of
+//     memory error: it keeps the table when that fails, and the compile
+//     used to work and leave the error behind.
 //   - _resolve_variables stops when _resolve_scope_var fails. It used to
 //     take the -1 as the next position, read before the code and copy it
 //     again from the start without taking its atoms.
@@ -111,6 +114,19 @@ func fixCompile(b []byte) ([]byte, error) {
 			return nil, fmt.Errorf("_js_create_function: cannot find the start or the fail label")
 		}
 		b = bytes.Replace(b, body, bytes.Replace(body, anchor, append([]byte(check), anchor...), 1), 1)
+	}
+
+	// The line table js_create_function shrinks.
+	if body, err = funcBody(b, reCreateFunction, "_js_create_function"); err != nil {
+		return nil, err
+	}
+	shrink := fmt.Sprintf(".Fdebug.Fpc2line_buf = Xjs_realloc_rt(tls, (*TJSContext)(unsafe.Pointer(%s)).Frt, (*TJSFunctionDef)(unsafe.Pointer(%s)).Fpc2line.Fbuf, ", ctx, fd)
+	if !bytes.Contains(body, []byte(shrink)) {
+		old := fmt.Sprintf(".Fdebug.Fpc2line_buf = Xjs_realloc(tls, %s, (*TJSFunctionDef)(unsafe.Pointer(%s)).Fpc2line.Fbuf, ", ctx, fd)
+		if bytes.Count(body, []byte(old)) != 1 {
+			return nil, fmt.Errorf("_js_create_function: cannot find where it shrinks the line table")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, []byte(old), []byte(shrink), 1), 1)
 	}
 
 	// resolve_variables.
