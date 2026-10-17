@@ -283,6 +283,9 @@ func TestCompileOneFailure(t *testing.T) {
 		strings.Repeat(`{ let a = 1; `, 300)+strings.Repeat(`} `, 300)+`1`,
 		`class A { #m() { return 1 } `+strings.Repeat(`x = 1; `, 200)+`y() { return this.#m() } }; new A().y()`,
 		`switch (2) { `+strings.Repeat(`case 1: break; `, 300)+`default: 3 }`,
+		// Private methods and no fields: the code that adds the brand is
+		// made and patched at the end of the class, with no token between.
+		`class A { #m() { return 1 } y() { return this.#m() } }; new A().y()`,
 	)
 	for i, js := range scripts {
 		what := fmt.Sprintf("script %d", i)
@@ -302,5 +305,44 @@ func TestCompileOneFailure(t *testing.T) {
 		if failures == 0 {
 			t.Fatalf("script %d: no compile of its %d allocations failed", i, n)
 		}
+	}
+}
+
+// Once growing a buffer failed, it takes no more bytes, not even those that
+// still fit in its memory, so that what it holds is a run of whole writes.
+func TestBufferAfterFailure(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	var b lib.TDynBuf
+	p := uintptr(unsafe.Pointer(&b))
+	lib.Xdbuf_init2(tls, p, 0, fp(func(tls *libc.TLS, opaque, ptr uintptr, size lib.Tsize_t) uintptr {
+		if failing() {
+			return 0
+		}
+		return libc.Xrealloc(tls, ptr, libc.Tsize_t(size))
+	}))
+	defer lib.Xdbuf_free(tls, p)
+	data := make([]byte, 4096)
+	d := uintptr(unsafe.Pointer(&data[0]))
+
+	// Writes of 64, 64 and 1 bytes leave room for more in the buffer's
+	// memory, as it grows by half.
+	allocs, failAt = 0, 0
+	defer func() { failAt = 0 }()
+	for _, n := range []lib.Tsize_t{64, 64, 1} {
+		if lib.Xdbuf_put(tls, p, d, n) != 0 {
+			t.Fatal("a write fails")
+		}
+	}
+	if b.Fallocated_size <= b.Fsize {
+		t.Fatalf("the buffer holds %d bytes in %d, want room for more", b.Fsize, b.Fallocated_size)
+	}
+	failAt = allocs + 1
+	if lib.Xdbuf_put(tls, p, d, 4096) == 0 {
+		t.Fatal("a write past the memory of the buffer did not fail")
+	}
+	failAt = allocs + 1
+	if lib.Xdbuf_put(tls, p, d, 1) == 0 || b.Fsize != 129 || b.Ferror1 == 0 {
+		t.Fatalf("a write that fits after a failed one: size %d, error %d, want it to fail", b.Fsize, b.Ferror1)
 	}
 }
