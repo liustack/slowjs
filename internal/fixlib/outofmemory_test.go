@@ -61,7 +61,7 @@ func TestOutOfMemoryFromUpstream(t *testing.T) {
 	}
 
 	// Undo the change in XJS_ThrowOutOfMemory and the regexp functions.
-	up := bytes.Replace(b, []byte("\t\tXJS_SetUncatchableException(tls, ctx, int32(MTRUE))\n"), nil, 1)
+	up := bytes.Replace(b, []byte("\t\tXJS_SetUncatchableException(tls, ctx, int32(1))\n"), nil, 1)
 	exec := []byte("XJS_ThrowInternalError(tls, ctx3, __ccgo_ts+" + strconv.Itoa(strs["out of memory in regexp execution"]) + ", 0)")
 	re := regexp.MustCompile(`\nfunc _js_regexp_exec\(`)
 	body, err := funcBody(up, re, "_js_regexp_exec")

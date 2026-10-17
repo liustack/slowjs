@@ -51,7 +51,7 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 	}
 	ctx := string(reThrowOutOfMemory.FindSubmatch(b)[1])
 	throw := fmt.Sprintf("\t\tXJS_ThrowInternalError(tls, %s, __ccgo_ts+%d, 0)\n", ctx, strs["out of memory"])
-	mark := fmt.Sprintf("\t\tXJS_SetUncatchableException(tls, %s, int32(MTRUE))\n", ctx)
+	mark := fmt.Sprintf("\t\tXJS_SetUncatchableException(tls, %s, int32(1))\n", ctx)
 	if !bytes.Contains(body, []byte(throw+mark)) {
 		if bytes.Count(body, []byte(throw)) != 1 || bytes.Count(body, []byte("XJS_Throw")) != 2 { // its name and the call
 			return nil, fmt.Errorf("XJS_ThrowOutOfMemory: want 1 call, of XJS_ThrowInternalError with \"out of memory\"")
