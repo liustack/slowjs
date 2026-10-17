@@ -31,6 +31,14 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   which the engine throws near the memory limit, `throw undefined`, a
   symbol) no longer leaves a TypeError in the context. Test:
   `gostring_test.go`.
+- A Go string made from a JS string is valid UTF-8. A JS string can hold a
+  lone surrogate, half of a surrogate pair without the other half, which
+  code makes when it cuts a string inside an emoji. `JS_ToCStringLen2`
+  wrote it as the three bytes of its code point, which is not UTF-8, so a
+  page rendered to Go had bytes a browser shows as three replacement
+  characters. Now each lone surrogate becomes U+FFFD, as Go's
+  `utf16.Decode`, `TextEncoder` and Node's `Buffer` make it. Test:
+  `surrogate_test.go`.
 - Page code can no longer catch an interrupt (`VM.Interrupt` or the eval
   timeout) through a promise or an iterator. The engine already skipped
   every `catch` and `finally` block for an interrupt, but its own handlers

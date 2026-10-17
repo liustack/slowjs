@@ -91,6 +91,7 @@
 package quickjs // import "github.com/liustack/quickjs"
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1205,7 +1206,42 @@ func cString(tls *libc.TLS, ctx uintptr, v lib.TJSValue) (s string, ok bool) {
 
 	defer lib.XJS_FreeCString(tls, ctx, p)
 
-	return string(unsafe.Slice((*byte)(unsafe.Pointer(p)), *(*libc.Tsize_t)(unsafe.Pointer(plen)))), true
+	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), *(*libc.Tsize_t)(unsafe.Pointer(plen)))), true
+}
+
+// wellFormed returns the UTF-8 b as a Go string with U+FFFD for each lone
+// surrogate, as Go's utf16.Decode, TextEncoder and Node's Buffer make a string
+// of UTF-16 valid. JS_ToCStringLen2 joins the halves of a surrogate pair into
+// one character, but writes a lone surrogate as the three bytes of its code
+// point, 0xED then 0xA0 to 0xBF, which is not UTF-8. They are the only bytes
+// it writes in that form, and U+FFFD takes three bytes too.
+func wellFormed(b []byte) string {
+	var fixed []byte
+	for i := 0; i < len(b); {
+		j := bytes.IndexByte(b[i:], 0xED)
+		if j < 0 {
+			break
+		}
+		i += j
+		if i+2 < len(b) && b[i+1] >= 0xA0 {
+			if fixed == nil {
+				fixed = bytes.Clone(b)
+			}
+			copy(fixed[i:], "\uFFFD")
+		}
+		i++
+	}
+	if fixed == nil {
+		return string(b)
+	}
+	return unsafe.String(unsafe.SliceData(fixed), len(fixed))
+}
+
+// cGoString returns the NUL-terminated C string p, which the engine wrote
+// from a JS string, as a Go string with U+FFFD for each lone surrogate, like
+// cString.
+func cGoString(tls *libc.TLS, p uintptr) string {
+	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), libc.Xstrlen(tls, p)))
 }
 
 // goString converts the JS value 'v' to a Go string. When the conversion
@@ -2760,11 +2796,11 @@ func customModuleNormalize(tls *libc.TLS, ctx uintptr, module_base_name, module_
 
 	baseName := ""
 	if module_base_name != 0 {
-		baseName = libc.GoString(module_base_name)
+		baseName = cGoString(tls, module_base_name)
 	}
 	name := ""
 	if module_name != 0 {
-		name = libc.GoString(module_name)
+		name = cGoString(tls, module_name)
 	}
 
 	var normName string
@@ -2793,7 +2829,7 @@ func customModuleLoader(tls *libc.TLS, ctx uintptr, module_name uintptr, opaque 
 
 	name := ""
 	if module_name != 0 {
-		name = libc.GoString(module_name)
+		name = cGoString(tls, module_name)
 	}
 
 	var source string
