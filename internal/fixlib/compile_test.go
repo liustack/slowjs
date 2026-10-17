@@ -52,6 +52,7 @@ func TestCompileEveryFile(t *testing.T) {
 			{`\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| Xdbuf_claim\(tls, bc, `, 2},
 			{`\.Fdebug\.Fpc2line_buf = Xjs_realloc_rt\(tls, `, 1},
 			{`\.Fdebug\.Fpc2line_buf = Xjs_realloc\(`, 0},
+			{`\t\tif _bc_atom_to_idx\(tls, s, bp, atom\) != 0 \{\n\t\t\t\(\*TBCWriterState\)\(unsafe\.Pointer\(s\)\)\.Fdbuf\.Ferror1 = int32\(MTRUE\)\n`, 1},
 			{`\.Fbyte_code\.Ferror1 = int32\(MTRUE\)\n\t+return -int32\(1\)\n`, 2},
 			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\treturn\n`, 1},
 		} {
@@ -80,6 +81,7 @@ func TestCompileFromUpstream(t *testing.T) {
 	up = bytes.Replace(up, []byte("\t\t\t(*TDynBuf)(unsafe.Pointer(s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(s)).Fsize\n"), nil, 1)
 	up = regexp.MustCompile(`\n\t+if pos_next < 0 \{\n\t+goto fail\n\t+\}`).ReplaceAll(up, nil)
 	up = undoParserStops(t, up)
+	up = bytes.Replace(up, []byte("\t\t\t(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(MTRUE)\n"), nil, 1)
 	up = regexp.MustCompile(`(\.Fdebug\.Fpc2line_buf = )Xjs_realloc_rt\(tls, \(\*TJSContext\)\(unsafe\.Pointer\((\w+)\)\)\.Frt, `).ReplaceAll(up, []byte("${1}Xjs_realloc(tls, $2, "))
 
 	out, err := fixCompile(up)

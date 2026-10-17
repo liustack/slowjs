@@ -111,7 +111,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..7b96c20 100644
+index fa5a7a9..6fc8696 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,7 @@
@@ -1301,7 +1301,20 @@ index fa5a7a9..7b96c20 100644
          if (!b->debug.pc2line_buf)
              b->debug.pc2line_buf = fd->pc2line.buf;
          b->debug.pc2line_len = fd->pc2line.size;
-@@ -38171,14 +38816,15 @@ static int JS_WriteObjectAtoms(BCWriterState *s)
+@@ -37529,8 +38174,11 @@ static int bc_put_atom(BCWriterState *s, JSAtom atom)
+     if (__JS_AtomIsTaggedInt(atom)) {
+         v = (__JS_AtomToUInt32(atom) << 1) | 1;
+     } else {
+-        if (bc_atom_to_idx(s, &v, atom))
++        if (bc_atom_to_idx(s, &v, atom)) {
++            /* most callers go on: what the writer writes is not whole */
++            s->dbuf.error = TRUE;
+             return -1;
++        }
+         v <<= 1;
+     }
+     bc_put_leb128(s, v);
+@@ -38171,14 +38819,15 @@ static int JS_WriteObjectAtoms(BCWriterState *s)
          JSAtomStruct *p = rt->atom_array[s->idx_to_atom[i]];
          JS_WriteString(s, p);
      }
@@ -1319,7 +1332,7 @@ index fa5a7a9..7b96c20 100644
      memmove(dbuf1.buf + atoms_size, dbuf1.buf, dbuf1.size);
      memcpy(dbuf1.buf, s->dbuf.buf, atoms_size);
      dbuf1.size += atoms_size;
-@@ -38210,6 +38856,11 @@ uint8_t *JS_WriteObject2(JSContext *ctx, size_t *psize, JSValueConst obj,
+@@ -38210,6 +38859,11 @@ uint8_t *JS_WriteObject2(JSContext *ctx, size_t *psize, JSValueConst obj,
  
      if (JS_WriteObjectRec(s, obj))
          goto fail;
@@ -1331,7 +1344,7 @@ index fa5a7a9..7b96c20 100644
      if (JS_WriteObjectAtoms(s))
          goto fail;
      js_object_list_end(ctx, &s->object_list);
-@@ -40280,7 +40931,7 @@ static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
+@@ -40280,7 +40934,7 @@ static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
              int res;
  
              /* Check if property is still enumerable */
@@ -1340,7 +1353,7 @@ index fa5a7a9..7b96c20 100644
              if (res < 0)
                  goto exception;
              if (!res)
-@@ -40576,7 +41227,7 @@ static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
+@@ -40576,7 +41230,7 @@ static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
  
          desc_flags = JS_PROP_THROW | JS_PROP_HAS_CONFIGURABLE;
          if (freeze_flag) {
@@ -1349,7 +1362,7 @@ index fa5a7a9..7b96c20 100644
              if (res < 0)
                  goto exception;
              if (res) {
-@@ -40618,7 +41269,7 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
+@@ -40618,7 +41272,7 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
          JSPropertyDescriptor desc;
          JSAtom prop = props[i].atom;
  
@@ -1358,7 +1371,7 @@ index fa5a7a9..7b96c20 100644
          if (res < 0)
              goto exception;
          if (res) {
-@@ -40825,7 +41476,7 @@ static JSValue js_object_propertyIsEnumerable(JSContext *ctx, JSValueConst this_
+@@ -40825,7 +41479,7 @@ static JSValue js_object_propertyIsEnumerable(JSContext *ctx, JSValueConst this_
      if (JS_IsException(obj))
          goto exception;
  
@@ -1367,7 +1380,7 @@ index fa5a7a9..7b96c20 100644
      if (has_prop < 0)
          goto exception;
      if (has_prop) {
-@@ -40857,7 +41508,7 @@ static JSValue js_object___lookupGetter__(JSContext *ctx, JSValueConst this_val,
+@@ -40857,7 +41511,7 @@ static JSValue js_object___lookupGetter__(JSContext *ctx, JSValueConst this_val,
          goto exception;
  
      for (;;) {
@@ -1376,7 +1389,7 @@ index fa5a7a9..7b96c20 100644
          if (has_prop < 0)
              goto exception;
          if (has_prop) {
-@@ -41695,7 +42346,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
+@@ -41695,7 +42349,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
      return r;
  }
  
@@ -1388,7 +1401,7 @@ index fa5a7a9..7b96c20 100644
                             int argc, JSValueConst *argv)
  {
      JSValue obj, args[1];
-@@ -47224,58 +47878,14 @@ static const JSCFunctionListEntry js_math_obj[] = {
+@@ -47224,58 +47881,14 @@ static const JSCFunctionListEntry js_math_obj[] = {
  
  /* OS dependent. d = argv[0] is in ms from 1970. Return the difference
     between UTC time and local time 'd' in minutes */
@@ -1453,7 +1466,7 @@ index fa5a7a9..7b96c20 100644
  }
  
  #if 0
-@@ -47404,7 +48014,10 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
+@@ -47404,7 +48017,10 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                    sizeof(error_msg), str, len, re_flags, ctx);
      JS_FreeCString(ctx, str);
      if (!re_bytecode_buf) {
@@ -1465,7 +1478,7 @@ index fa5a7a9..7b96c20 100644
          return JS_EXCEPTION;
      }
  
-@@ -47943,7 +48556,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
+@@ -47943,7 +48559,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
              if (rc == LRE_RET_TIMEOUT) {
                  JS_ThrowInterrupted(ctx);
              } else {
@@ -1474,7 +1487,7 @@ index fa5a7a9..7b96c20 100644
              }
              goto fail;
          }
-@@ -48169,7 +48782,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
+@@ -48169,7 +48785,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
                  if (ret == LRE_RET_TIMEOUT) {
                      JS_ThrowInterrupted(ctx);
                  } else {
@@ -1483,7 +1496,7 @@ index fa5a7a9..7b96c20 100644
                  }
                  goto fail;
              }
-@@ -50564,7 +51177,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
+@@ -50564,7 +51180,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
      if (!ret) {
          JSPropertyDescriptor desc;
          p = JS_VALUE_GET_OBJ(s->target);
@@ -1492,7 +1505,7 @@ index fa5a7a9..7b96c20 100644
          if (res < 0)
              return -1;
          if (res) {
-@@ -50955,7 +51568,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
+@@ -50955,7 +51571,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
      res = JS_ToBoolFree(ctx, ret);
      if (res) {
          JSPropertyDescriptor desc;
@@ -1501,7 +1514,7 @@ index fa5a7a9..7b96c20 100644
          if (res2 < 0)
              return -1;
          if (res2) {
-@@ -51067,7 +51680,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -51067,7 +51683,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
              JS_ThrowTypeErrorRevokedProxy(ctx);
              goto fail;
          }
@@ -1510,7 +1523,7 @@ index fa5a7a9..7b96c20 100644
                                  tab2[i].atom);
          if (res < 0)
              goto fail;
-@@ -53182,7 +53795,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
+@@ -53182,7 +53798,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
      }
      is_reject = JS_IsException(res);
      if (is_reject)
@@ -1519,7 +1532,7 @@ index fa5a7a9..7b96c20 100644
      func = argv[is_reject];
      /* as an extension, we support undefined as value to avoid
         creating a dummy promise in the 'await' implementation of async
-@@ -53271,7 +53884,7 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
+@@ -53271,7 +53887,7 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
          return JS_EXCEPTION;
      res = JS_Call(ctx, then, thenable, 2, (JSValueConst *)args);
      if (JS_IsException(res)) {
@@ -1528,7 +1541,7 @@ index fa5a7a9..7b96c20 100644
          res = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
      }
-@@ -53385,7 +53998,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
+@@ -53385,7 +54001,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
      if (JS_IsException(then)) {
          JSValue error;
      fail_reject:
@@ -1537,7 +1550,7 @@ index fa5a7a9..7b96c20 100644
          reject_promise(ctx, s->promise, error);
          JS_FreeValue(ctx, error);
      } else if (!JS_IsFunction(ctx, then)) {
-@@ -53471,7 +54084,7 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
+@@ -53471,7 +54087,7 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
      ret = JS_Call(ctx, executor, JS_UNDEFINED, 2, (JSValueConst *)args);
      if (JS_IsException(ret)) {
          JSValue ret2, error;
@@ -1546,7 +1559,7 @@ index fa5a7a9..7b96c20 100644
          ret2 = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
          if (JS_IsException(ret2))
-@@ -53639,7 +54252,7 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
+@@ -53639,7 +54255,7 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
      ret = JS_Call(ctx, argv[0], JS_UNDEFINED, argc - 1, argv + 1);
      if (JS_IsException(ret)) {
          is_reject = 1;
@@ -1555,7 +1568,7 @@ index fa5a7a9..7b96c20 100644
      }
      ret2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, (JSValueConst *)&ret);
      JS_FreeValue(ctx, resolving_funcs[0]);
-@@ -53771,7 +54384,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
+@@ -53771,7 +54387,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
      if (JS_IsException(iter)) {
          JSValue error;
      fail_reject:
@@ -1564,7 +1577,7 @@ index fa5a7a9..7b96c20 100644
          ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                         (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
-@@ -53913,7 +54526,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
+@@ -53913,7 +54529,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
      if (JS_IsException(iter)) {
          JSValue error;
      fail_reject:
@@ -1573,7 +1586,7 @@ index fa5a7a9..7b96c20 100644
          ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                         (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
-@@ -54321,7 +54934,7 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
+@@ -54321,7 +54937,7 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
                  JS_IteratorClose(ctx, s->sync_iter, TRUE);
              }
          reject:
@@ -1582,7 +1595,7 @@ index fa5a7a9..7b96c20 100644
              is_reject = 1;
          done_resolve:
              res2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED,
-@@ -60589,6 +61202,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +61205,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -1594,7 +1607,7 @@ index fa5a7a9..7b96c20 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +61222,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +61225,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -1602,7 +1615,7 @@ index fa5a7a9..7b96c20 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61814,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61817,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }

@@ -81,7 +81,9 @@ const parserOutOfMemory = "XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Poi
 //   - XJS_WriteObject2 and _JS_WriteObjectAtoms fail with the out of memory
 //     error when the buffer they write to failed. They used to return the
 //     bytecode cut short as if it were whole, or fail without an
-//     exception.
+//     exception. _bc_put_atom marks that buffer failed when it cannot add
+//     an atom to the atom table, as most of its callers write on: the
+//     bytecode came out with the error left pending.
 //   - Xlre_compile reports running out of memory when the regexp parser
 //     failed without a message, or after writing its code failed.
 func fixCompile(b []byte) ([]byte, error) {
@@ -312,6 +314,19 @@ func fixWriteObject(b []byte) ([]byte, error) {
 		fixed := splice(body, loc[0][1]-len("\t\tgoto fail\n"), throw)
 		fixed = splice(fixed, loc[0][2], fmt.Sprintf("(*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 || ", init[1]))
 		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	re := regexp.MustCompile(`\nfunc _bc_put_atom\(tls \*libc\.TLS, s uintptr, atom TJSAtom\) \(r int32\) \{\n`)
+	if body, err = funcBody(b, re, "_bc_put_atom"); err != nil {
+		return nil, err
+	}
+	mark := "\t\t\t(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(MTRUE)\n"
+	if !bytes.Contains(body, []byte(mark)) {
+		failed := []byte("\t\tif _bc_atom_to_idx(tls, s, bp, atom) != 0 {\n")
+		if bytes.Count(body, failed) != 1 {
+			return nil, fmt.Errorf("_bc_put_atom: cannot find where adding the atom fails")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, failed, append(append([]byte{}, failed...), mark...), 1), 1)
 	}
 
 	if body, err = funcBody(b, reWriteObject2, "XJS_WriteObject2"); err != nil {

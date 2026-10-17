@@ -62,6 +62,9 @@ var compileFineScripts = []string{
 	// put it in place at the end of the code anyway, after the bytes the
 	// buffer holds.
 	`class B { constructor() {} }; class A extends B { constructor(a = 1) { super(); this.a = a } }; new A().a`,
+	// When adding an atom to the atom table of the bytecode failed, the
+	// writer wrote on and gave the bytecode, with the error left pending.
+	`for (var [a = 1] of [[]]) ; a`,
 }
 
 // TestCompileOutOfMemoryFine is TestCompileOutOfMemory in steps of 4 bytes,

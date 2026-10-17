@@ -68464,6 +68464,7 @@ func _bc_put_atom(tls *libc.TLS, s uintptr, atom TJSAtom) (r int32) {
 		**(**Tuint32_t)(__ccgo_up(bp)) = ___JS_AtomToUInt32(tls, atom)<<libc.Int32FromInt32(1) | uint32(1)
 	} else {
 		if _bc_atom_to_idx(tls, s, bp, atom) != 0 {
+			(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(MTRUE)
 			return -int32(1)
 		}
 		**(**Tuint32_t)(__ccgo_up(bp)) = **(**Tuint32_t)(__ccgo_up(bp)) << uint32(1)

@@ -122,24 +122,24 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   memory left fails with the same out of memory error. The engine used to
   crash there (a Go panic on a write before or past the code buffer, or a
   double free), report a `SyntaxError` the script does not have, or, in
-  `Compile`, return bytecode cut short or `errors.New("OOM")`. The parser
-  went on after its code buffer failed to grow and patched code in place at
-  positions it had noted, past what the buffer held (a Go panic on an empty
-  buffer, or a write past the end of a full one), and the passes after it
-  assumed the buffer was whole. Now the parser stops at the next token once
-  the code buffer of the function it parses failed, and checks it before
-  each patch that does not wait for a token, the buffer takes no more bytes
-  once it failed, and each pass that reads it back stops with the out of
-  memory error. A scope the parser fails to push marks the function's code
-  lost too, and its scopes then stay as they are, each later push failing
-  with the out of memory error: the pop after a failed push used to take off
-  the scope around it, until a pop read before the scope array. The pass
-  that resolves jumps frees, when it fails, the jump records of the labels
-  it has not reached yet, which used to leak. When shrinking the line table
-  of a function fails, the compile keeps the table and leaves no error
-  behind: it used to work and leave the out of memory error pending, for
-  the next call to report. Tests: `compileoom_test.go`,
-  `internal/fixlib/compile_test.go`.
+  `Compile`, return bytecode cut short, bytecode with the out of memory
+  error left pending, or `errors.New("OOM")`. The parser went on after its
+  code buffer failed to grow and patched code in place at positions it had
+  noted, past what the buffer held (a Go panic on an empty buffer, or a
+  write past the end of a full one), and the passes after it assumed the
+  buffer was whole. Now the parser stops at the next token once the code
+  buffer of the function it parses failed, and checks it before each patch
+  that does not wait for a token, the buffer takes no more bytes once it
+  failed, and each pass that reads it back stops with the out of memory
+  error. A scope the parser fails to push marks the function's code lost
+  too, and its scopes then stay as they are, each later push failing with
+  the out of memory error: the pop after a failed push used to take off the
+  scope around it, until a pop read before the scope array. The pass that
+  resolves jumps frees, when it fails, the jump records of the labels it has
+  not reached yet, which used to leak. When shrinking the line table of a
+  function fails, the compile keeps the table and leaves no error behind: it
+  used to work and leave the out of memory error pending, for the next call
+  to report. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
