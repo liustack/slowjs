@@ -43032,6 +43032,10 @@ func _js_parse_error_v(tls *libc.TLS, s uintptr, ptr uintptr, fmt uintptr, ap Tv
 	var _ /* col_num at bp+0 */ int32
 	_, _ = ctx, line_num
 	ctx = (*TJSParseState)(unsafe.Pointer(s)).Fctx
+	if (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
+		XJS_ThrowOutOfMemory(tls, ctx)
+		return -int32(1)
+	}
 	line_num = _get_line_col(tls, bp, (*TJSParseState)(unsafe.Pointer(s)).Fbuf_start, libc.Uint32FromInt32(int32(ptr)-int32((*TJSParseState)(unsafe.Pointer(s)).Fbuf_start)))
 	_JS_ThrowError2(tls, ctx, int32(EJS_SYNTAX_ERROR), fmt, ap, int32(EFALSE))
 	_build_backtrace(tls, ctx, (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt)).Fcurrent_exception, (*TJSParseState)(unsafe.Pointer(s)).Ffilename, line_num+int32(1), **(**int32)(__ccgo_up(bp))+int32(1), 0)
@@ -51715,6 +51719,7 @@ _5:
 		chunk_size = pos_expr - pos_next
 		offset = libc.Int32FromUint32((*TDynBuf)(unsafe.Pointer(bc)).Fsize - libc.Uint32FromInt32(pos_next))
 		if Xdbuf_claim(tls, bc, libc.Uint32FromInt32(chunk_size)) != 0 {
+			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			return -int32(1)
 		}
 		Xdbuf_put(tls, bc, (*TDynBuf)(unsafe.Pointer(bc)).Fbuf+uintptr(pos_next), libc.Uint32FromInt32(chunk_size))
@@ -52178,6 +52183,7 @@ _12:
 		chunk_size = pos_body - pos_cont
 		offset = libc.Int32FromUint32((*TDynBuf)(unsafe.Pointer(bc)).Fsize - libc.Uint32FromInt32(pos_cont))
 		if Xdbuf_claim(tls, bc, libc.Uint32FromInt32(chunk_size)) != 0 {
+			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			goto fail
 		}
 		Xdbuf_put(tls, bc, (*TDynBuf)(unsafe.Pointer(bc)).Fbuf+uintptr(pos_cont), libc.Uint32FromInt32(chunk_size))
@@ -60546,6 +60552,9 @@ func _resolve_variables(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 	_89:
 		scope = libc.Int32FromUint32(v11)
 		pos_next = _resolve_scope_var(tls, ctx, s4, var_name, scope, op, bp, libc.UintptrFromInt32(0), libc.UintptrFromInt32(0), pos_next)
+		if pos_next < 0 {
+			goto fail
+		}
 		XJS_FreeAtom(tls, ctx, var_name)
 		goto _58
 	_29:
@@ -60565,6 +60574,9 @@ func _resolve_variables(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 		ls = (*TJSFunctionDef)(unsafe.Pointer(s4)).Flabel_slots + uintptr(label)*20
 		(*TLabelSlot)(unsafe.Pointer(ls)).Fref_count = (*TLabelSlot)(unsafe.Pointer(ls)).Fref_count - 1 /* always remove label reference */
 		pos_next = _resolve_scope_var(tls, ctx, s4, var_name, scope, op, bp, bc_buf, ls, pos_next)
+		if pos_next < 0 {
+			goto fail
+		}
 		XJS_FreeAtom(tls, ctx, var_name)
 		goto _58
 	_33:
@@ -62232,6 +62244,9 @@ func _resolve_labels(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 		if !(pos < bc_len) {
 			break
 		}
+		if (*TDynBuf)(unsafe.Pointer(bp+8)).Ferror1 != 0 {
+			goto out_of_memory
+		}
 		op = libc.Int32FromUint8(**(**Tuint8_t)(__ccgo_up(bc_buf + uintptr(pos))))
 		len1 = libc.Int32FromUint8(_opcode_info[op].Fsize)
 		pos_next = pos + len1
@@ -63789,6 +63804,9 @@ func _resolve_labels(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 		;
 		pos = pos_next
 	}
+	if (*TDynBuf)(unsafe.Pointer(bp+8)).Ferror1 != 0 {
+		goto out_of_memory
+	}
 	/* check that there were no missing labels */
 	i = 0
 	for {
@@ -63972,10 +63990,14 @@ _427:
 	}
 	return 0
 	goto fail
+out_of_memory:
+	;
+	XJS_ThrowOutOfMemory(tls, ctx)
 fail:
 	;
-	/* XXX: not safe */
-	Xdbuf_free(tls, bp+8)
+	Xdbuf_free(tls, s4+256)
+	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fbyte_code = **(**TDynBuf)(__ccgo_up(bp + 8))
+	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fuse_short_opcodes = int32(ETRUE)
 	return -int32(1)
 }
 
@@ -64485,6 +64507,10 @@ func _js_create_function(tls *libc.TLS, ctx uintptr, fd uintptr) (r TJSValue) {
 	var strip_var_debug TBOOL
 	var _ /* stack_size at bp+0 */ int32
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = b, byte_code_offset, closure_var_offset, cpool_idx, cpool_offset, cv, el1, el11, fd1, func_obj, function_size, i, i1, idx, next, prev, scope, sd, strip_var_debug, vardefs_offset, vd, vd1, vd11, vd12, vd2, vd3, v11, v6
+	if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {
+		XJS_ThrowOutOfMemory(tls, ctx)
+		goto fail
+	}
 	/* recompute scope linkage */
 	scope = 0
 	for {
@@ -67417,7 +67443,8 @@ func _JS_WriteObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 	/* XXX: could just append dbuf1 data, but it uses more memory if
 	   dbuf1 is larger than dbuf */
 	atoms_size = libc.Int32FromUint32((*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Fsize)
-	if Xdbuf_claim(tls, bp, libc.Uint32FromInt32(atoms_size)) != 0 {
+	if (*TDynBuf)(unsafe.Pointer(s+4)).Ferror1 != 0 || Xdbuf_claim(tls, bp, libc.Uint32FromInt32(atoms_size)) != 0 {
+		XJS_ThrowOutOfMemory(tls, (*TBCWriterState)(unsafe.Pointer(s)).Fctx)
 		goto fail
 	}
 	libc.Xmemmove(tls, (**(**TDynBuf)(__ccgo_up(bp))).Fbuf+uintptr(atoms_size), (**(**TDynBuf)(__ccgo_up(bp))).Fbuf, (**(**TDynBuf)(__ccgo_up(bp))).Fsize)
@@ -67454,6 +67481,10 @@ func XJS_WriteObject2(tls *libc.TLS, ctx uintptr, psize uintptr, obj TJSValue, f
 	_js_dbuf_init(tls, ctx, s+4)
 	_js_object_list_init(tls, s+68)
 	if _JS_WriteObjectRec(tls, s, obj) != 0 {
+		goto fail
+	}
+	if (*TDynBuf)(unsafe.Pointer(s+4)).Ferror1 != 0 {
+		XJS_ThrowOutOfMemory(tls, ctx)
 		goto fail
 	}
 	if _JS_WriteObjectAtoms(tls, s) != 0 {
@@ -143938,6 +143969,9 @@ _16:
 	goto error
 error:
 	;
+	if *(*byte)(unsafe.Pointer(s4+104)) == 0 || (*TDynBuf)(unsafe.Pointer(s4)).Ferror1 != 0 {
+		_re_parse_out_of_memory(tls, s4)
+	}
 	Xdbuf_free(tls, s4)
 	Xdbuf_free(tls, s4+80)
 	Xpstrcpy(tls, error_msg, error_msg_size, s4+104)
@@ -178815,6 +178849,7 @@ func Xdbuf_claim(tls *libc.TLS, s uintptr, len1 Tsize_t) (r int32) {
 		new_buf = (*(*func(*libc.TLS, uintptr, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TDynBuf)(unsafe.Pointer(s)).Frealloc_func})))(tls, (*TDynBuf)(unsafe.Pointer(s)).Fopaque, (*TDynBuf)(unsafe.Pointer(s)).Fbuf, new_size)
 		if !(new_buf != 0) {
 			(*TDynBuf)(unsafe.Pointer(s)).Ferror1 = int32(ETRUE)
+			(*TDynBuf)(unsafe.Pointer(s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(s)).Fsize
 			return -int32(1)
 		}
 		(*TDynBuf)(unsafe.Pointer(s)).Fbuf = new_buf

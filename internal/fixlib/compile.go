@@ -1,0 +1,244 @@
+// Copyright 2026 The quickjs-go Authors. All rights reserved.
+// Use of the source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"regexp"
+)
+
+var (
+	reDbufClaim      = regexp.MustCompile(`\nfunc Xdbuf_claim\(tls \*libc\.TLS, (\w+) uintptr, len1 Tsize_t\) \(r int32\) \{\n`)
+	reCreateFunction = regexp.MustCompile(`\nfunc _js_create_function\(tls \*libc\.TLS, (\w+) uintptr, (\w+) uintptr\) \(r TJSValue\) \{\n`)
+	reResolveVars    = regexp.MustCompile(`\nfunc _resolve_variables\(tls \*libc\.TLS, \w+ uintptr, \w+ uintptr\) \(r int32\) \{\n`)
+	reResolveLabels  = regexp.MustCompile(`\nfunc _resolve_labels\(tls \*libc\.TLS, (\w+) uintptr, (\w+) uintptr\) \(r int32\) \{\n`)
+	reParseErrorV    = regexp.MustCompile(`\nfunc _js_parse_error_v\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
+	reLreCompile     = regexp.MustCompile(`\nfunc Xlre_compile\(tls \*libc\.TLS, [^\n]*\{\n`)
+	reScopeVarCall   = regexp.MustCompile(`\n(\t+)pos_next = _resolve_scope_var\(tls, [^\n]*\)\n(\t+XJS_FreeAtom\(tls, \w+, var_name\)\n)`)
+	reWriteAtoms     = regexp.MustCompile(`\nfunc _JS_WriteObjectAtoms\(tls \*libc\.TLS, (\w+) uintptr\) \(r int32\) \{\n`)
+	reWriteObject2   = regexp.MustCompile(`\nfunc XJS_WriteObject2\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
+	reCodeMove       = regexp.MustCompile(`\n(\t+)if Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n\t+(return -int32\(1\)|goto fail)\n`)
+)
+
+// fixCompile lets the compiler run out of memory safely, the Go form of the
+// same change in lib/internal/patch/quickjs.diff. The parser does not stop
+// when the buffer it emits code into fails to grow, and the passes after it
+// did not expect that buffer, or their own, to fail:
+//
+//   - Xdbuf_claim takes no more bytes once growing failed, so that a
+//     buffer holds a run of whole writes and never a later short write
+//     after a failed one.
+//   - _js_create_function fails with the out of memory error on code whose
+//     buffer failed.
+//   - _resolve_variables stops when _resolve_scope_var fails. It used to
+//     take the -1 as the next position, read before the code and copy it
+//     again from the start without taking its atoms.
+//   - _resolve_labels stops at the first write that failed. It used to go
+//     on and patch jumps at offsets past the end of the buffer. When it
+//     fails, it keeps the new code, whose atoms it owns, rather than the
+//     old code, some of whose atoms it already freed.
+//   - The parser throws the out of memory error when moving the code of a
+//     loop fails, where it failed without an exception.
+//   - _js_parse_error_v reports the out of memory error when the code
+//     buffer failed: what the parser reads back of the code is wrong then,
+//     and it finds syntax errors the script does not have.
+//   - XJS_WriteObject2 and _JS_WriteObjectAtoms fail with the out of memory
+//     error when the buffer they write to failed. They used to return the
+//     bytecode cut short as if it were whole, or fail without an
+//     exception.
+//   - Xlre_compile reports running out of memory when the regexp parser
+//     failed without a message, or after writing its code failed.
+func fixCompile(b []byte) ([]byte, error) {
+	// dbuf_claim.
+	body, err := funcBody(b, reDbufClaim, "Xdbuf_claim")
+	if err != nil {
+		return nil, err
+	}
+	s := string(reDbufClaim.FindSubmatch(b)[1])
+	keep := fmt.Sprintf("\t\t\t(*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(%[1]s)).Fsize\n", s)
+	if !bytes.Contains(body, []byte(keep)) {
+		re := regexp.MustCompile(`\n\t\tif !\(new_buf != 0\) \{\n\t\t\t\(\*TDynBuf\)\(unsafe\.Pointer\(` + s + `\)\)\.Ferror1 = int32\(\w+\)\n`)
+		loc := re.FindAllIndex(body, -1)
+		if len(loc) != 1 {
+			return nil, fmt.Errorf("Xdbuf_claim: cannot find the failed realloc")
+		}
+		b = bytes.Replace(b, body, splice(body, loc[0][1], keep), 1)
+	}
+
+	// js_create_function.
+	if body, err = funcBody(b, reCreateFunction, "_js_create_function"); err != nil {
+		return nil, err
+	}
+	m := reCreateFunction.FindSubmatch(b)
+	ctx, fd := string(m[1]), string(m[2])
+	check := fmt.Sprintf("\tif (*TJSFunctionDef)(unsafe.Pointer(%s)).Fbyte_code.Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\tgoto fail\n\t}\n", fd, ctx)
+	if !bytes.Contains(body, []byte(check)) {
+		anchor := []byte("\t/* recompute scope linkage */\n")
+		if bytes.Count(body, anchor) != 1 || !bytes.Contains(body, []byte("\nfail:\n")) {
+			return nil, fmt.Errorf("_js_create_function: cannot find the start or the fail label")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, anchor, append([]byte(check), anchor...), 1), 1)
+	}
+
+	// resolve_variables.
+	if body, err = funcBody(b, reResolveVars, "_resolve_variables"); err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte("if pos_next < 0 {")) {
+		if n := len(reScopeVarCall.FindAllIndex(body, -1)); n != 2 || !bytes.Contains(body, []byte("\nfail:\n")) {
+			return nil, fmt.Errorf("_resolve_variables: want 2 calls of _resolve_scope_var and a fail label, found %d calls", n)
+		}
+		fixed := reScopeVarCall.ReplaceAllFunc(body, func(call []byte) []byte {
+			sm := reScopeVarCall.FindSubmatch(call)
+			indent := string(sm[1])
+			line := call[:len(call)-len(sm[2])] // "\n", the call and its newline
+			return append(append([]byte{}, line...), indent+"if pos_next < 0 {\n"+indent+"\tgoto fail\n"+indent+"}\n"+string(sm[2])...)
+		})
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	// resolve_labels.
+	if b, err = fixResolveLabels(b); err != nil {
+		return nil, err
+	}
+
+	// The loops whose code the parser moves.
+	for _, name := range []string{"_js_parse_for_in_of", "_js_parse_statement_or_decl"} {
+		re := regexp.MustCompile(`\nfunc ` + name + `\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
+		if body, err = funcBody(b, re, name); err != nil {
+			return nil, err
+		}
+		ps := string(re.FindSubmatch(b)[1])
+		throw := fmt.Sprintf("XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(%s)).Fctx)\n", ps)
+		if bytes.Contains(body, []byte(throw)) {
+			continue
+		}
+		loc := reCodeMove.FindAllSubmatchIndex(body, -1)
+		if len(loc) != 1 {
+			return nil, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
+		}
+		indent := string(body[loc[0][2]:loc[0][3]])
+		at := loc[0][4] - len(indent) - 1 // the start of the return or goto
+		b = bytes.Replace(b, body, splice(body, at, indent+"\t"+throw), 1)
+	}
+
+	// js_parse_error_v.
+	if body, err = funcBody(b, reParseErrorV, "_js_parse_error_v"); err != nil {
+		return nil, err
+	}
+	ps := string(reParseErrorV.FindSubmatch(b)[1])
+	check = fmt.Sprintf("\tif (*TJSParseState)(unsafe.Pointer(%[1]s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(%[1]s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, ctx)\n\t\treturn -int32(1)\n\t}\n", ps)
+	if !bytes.Contains(body, []byte(check)) {
+		anchor := []byte(fmt.Sprintf("\tctx = (*TJSParseState)(unsafe.Pointer(%s)).Fctx\n", ps))
+		if bytes.Count(body, anchor) != 1 || !bytes.Contains(body, []byte("\t_JS_ThrowError2(tls, ctx, ")) {
+			return nil, fmt.Errorf("_js_parse_error_v: cannot find where it reads the context")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, anchor, append(anchor, check...), 1), 1)
+	}
+
+	// The bytecode writer.
+	if b, err = fixWriteObject(b); err != nil {
+		return nil, err
+	}
+
+	// lre_compile.
+	if body, err = funcBody(b, reLreCompile, "Xlre_compile"); err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte("\nerror:\n\t;\n\tif *(*byte)(unsafe.Pointer(")) {
+		// The first buffer it frees is the code, the state's first field.
+		re := regexp.MustCompile(`\nerror:\n\t;\n(\tXdbuf_free\(tls, (\w+)\)\n\tXdbuf_free\(tls, \w+\+\d+\)\n)\tXpstrcpy\(tls, error_msg, error_msg_size, (\w+\+\d+)\)\n`)
+		loc := re.FindAllSubmatchIndex(body, -1)
+		if len(loc) != 1 {
+			return nil, fmt.Errorf("Xlre_compile: cannot find the error label")
+		}
+		state, msg := string(body[loc[0][4]:loc[0][5]]), string(body[loc[0][6]:loc[0][7]])
+		add := fmt.Sprintf("\tif *(*byte)(unsafe.Pointer(%s)) == 0 || (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\t_re_parse_out_of_memory(tls, %s)\n\t}\n", msg, state, state)
+		b = bytes.Replace(b, body, splice(body, loc[0][2], add), 1)
+	}
+	return b, nil
+}
+
+// fixResolveLabels makes _resolve_labels stop at a failed write, and keep
+// the new code when it fails.
+func fixResolveLabels(b []byte) ([]byte, error) {
+	body, err := funcBody(b, reResolveLabels, "_resolve_labels")
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Contains(body, []byte("\nout_of_memory:\n")) {
+		return b, nil
+	}
+	m := reResolveLabels.FindSubmatch(b)
+	ctx := string(m[1])
+	bc := regexp.MustCompile(`/\* bc_out at (bp\+\d+) \*/`).FindSubmatch(body)
+	if bc == nil {
+		return nil, fmt.Errorf("_resolve_labels: cannot find bc_out")
+	}
+	failed := fmt.Sprintf("if (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n", bc[1])
+
+	// The new code, as the end sets it.
+	set := regexp.MustCompile(`\t/\* set the new byte code \*/\n(\tXdbuf_free\(tls, [^\n]*\)\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbyte_code = [^\n]*\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fuse_short_opcodes = int32\(\w+\)\n)`).FindSubmatch(body)
+	if set == nil {
+		return nil, fmt.Errorf("_resolve_labels: cannot find where it sets the new code")
+	}
+
+	head := []byte("\tpos = 0\n\tfor {\n\t\tif !(pos < bc_len) {\n\t\t\tbreak\n\t\t}\n")
+	after := []byte("\t/* check that there were no missing labels */\n")
+	fail := []byte(fmt.Sprintf("fail:\n\t;\n\t/* XXX: not safe */\n\tXdbuf_free(tls, %s)\n\treturn -int32(1)\n}\n", bc[1]))
+	if bytes.Count(body, head) != 1 || bytes.Count(body, after) != 1 || !bytes.HasSuffix(body, fail) {
+		return nil, fmt.Errorf("_resolve_labels: cannot find the loop over the code, its end or the fail label")
+	}
+	fixed := bytes.Replace(body, head, append(append([]byte{}, head...), "\t\t"+failed+"\t\t\tgoto out_of_memory\n\t\t}\n"...), 1)
+	fixed = bytes.Replace(fixed, after, append([]byte("\t"+failed+"\t\tgoto out_of_memory\n\t}\n"), after...), 1)
+	end := fmt.Sprintf("out_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory(tls, %s)\nfail:\n\t;\n%s\treturn -int32(1)\n}\n", ctx, set[1])
+	fixed = append(bytes.TrimSuffix(fixed, fail), end...)
+	return bytes.Replace(b, body, fixed, 1), nil
+}
+
+// splice inserts s into b at i.
+func splice(b []byte, i int, s string) []byte {
+	return append(append(append([]byte{}, b[:i]...), s...), b[i:]...)
+}
+
+// fixWriteObject makes the bytecode writer check its buffer.
+func fixWriteObject(b []byte) ([]byte, error) {
+	body, err := funcBody(b, reWriteAtoms, "_JS_WriteObjectAtoms")
+	if err != nil {
+		return nil, err
+	}
+	s := string(reWriteAtoms.FindSubmatch(b)[1])
+	throw := fmt.Sprintf("\t\tXJS_ThrowOutOfMemory(tls, (*TBCWriterState)(unsafe.Pointer(%s)).Fctx)\n", s)
+	if !bytes.Contains(body, []byte(throw)) {
+		init := regexp.MustCompile(`\n\t_js_dbuf_init\(tls, \(\*TBCWriterState\)\(unsafe\.Pointer\(` + s + `\)\)\.Fctx, (` + s + `\+\d+)\)\n`).FindSubmatch(body)
+		claim := regexp.MustCompile(`\n\tif (Xdbuf_claim\(tls, bp, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(atoms_size\)\) != 0) \{\n\t\tgoto fail\n`)
+		loc := claim.FindAllSubmatchIndex(body, -1)
+		if init == nil || len(loc) != 1 {
+			return nil, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the atoms buffer or the claim that moves the atoms")
+		}
+		fixed := splice(body, loc[0][1]-len("\t\tgoto fail\n"), throw)
+		fixed = splice(fixed, loc[0][2], fmt.Sprintf("(*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 || ", init[1]))
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	if body, err = funcBody(b, reWriteObject2, "XJS_WriteObject2"); err != nil {
+		return nil, err
+	}
+	ctx := string(reWriteObject2.FindSubmatch(b)[1])
+	init := regexp.MustCompile(`\n\t_js_dbuf_init\(tls, ` + ctx + `, (s\+\d+)\)\n`).FindSubmatch(body)
+	if init == nil {
+		return nil, fmt.Errorf("XJS_WriteObject2: cannot find the buffer")
+	}
+	check := fmt.Sprintf("\tif (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\tgoto fail\n\t}\n", init[1], ctx)
+	if !bytes.Contains(body, []byte(check)) {
+		rec := []byte("\tif _JS_WriteObjectRec(tls, s, obj) != 0 {\n\t\tgoto fail\n\t}\n")
+		if bytes.Count(body, rec) != 1 {
+			return nil, fmt.Errorf("XJS_WriteObject2: cannot find the call of _JS_WriteObjectRec")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, rec, append(append([]byte{}, rec...), check...), 1), 1)
+	}
+	return b, nil
+}

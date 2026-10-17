@@ -790,6 +790,13 @@ func (m *VM) Compile(javascript string, flags int) ([]byte, error) {
 		return nil, m.errFromException()
 	}
 
+	return m.writeBytecode(v)
+}
+
+// writeBytecode returns the bytecode of the compiled script v.
+func (m *VM) writeBytecode(v lib.TJSValue) ([]byte, error) {
+	tls := m.runtime.tls
+	ctx := m.cContext
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/qjsc.c#L193
 	flags2 := int32(lib.MJS_WRITE_OBJ_BYTECODE)
 	usize := int(unsafe.Sizeof(libc.Tsize_t(0)))
@@ -798,7 +805,7 @@ func (m *VM) Compile(javascript string, flags int) ([]byte, error) {
 
 	p := lib.XJS_WriteObject(tls, ctx, plen, v, flags2)
 	if p == 0 {
-		return nil, fmt.Errorf("OOM")
+		return nil, m.errFromException()
 	}
 
 	plen2 := int(*(*libc.Tsize_t)(unsafe.Pointer(plen)))

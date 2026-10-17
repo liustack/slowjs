@@ -70,6 +70,15 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   until it fails ends the call. The VM stays usable after the call, and
   `Close` frees everything. Tests: `uncatchable_test.go`,
   `lib/outofmemory_test.go`, `internal/fixlib/outofmemory_test.go`.
+- Compiling a script, a function body, `eval` code or a regexp with little
+  memory left fails with the same out of memory error. The engine used to
+  crash there (a Go panic on a write before or past the code buffer, or a
+  double free), report a `SyntaxError` the script does not have, or, in
+  `Compile`, return bytecode cut short or `errors.New("OOM")`. The parser
+  goes on after its code buffer fails to grow, and the passes after it
+  assumed the buffer was whole: now the buffer takes no more bytes once it
+  failed, and each pass that reads it back stops with the out of memory
+  error. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -299,8 +308,8 @@ Conflicts to expect:
   two lines added to `XJS_ToCStringLen2`, the calls into
   `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
-  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory)
-  conflict. Take the upstream version
+  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), and
+  the compiler's out of memory checks conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -328,6 +337,12 @@ Conflicts to expect:
   functions or the string table changed shape, compare the new upstream
   code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
   `JS_ThrowError2` and must build the same error.
+  If it reports that `Xdbuf_claim`, `_js_create_function`,
+  `_resolve_variables`, `_resolve_labels`, the loops whose code the parser
+  moves, `_js_parse_error_v`, the bytecode writer or `Xlre_compile` changed
+  shape, read the new upstream code against the C change: every pass that
+  reads back a code buffer must stop when that buffer failed
+  (`internal/fixlib/compile.go` lists each place).
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
@@ -377,7 +392,11 @@ Conflicts to expect:
   and its callers, `JS_IsUncatchableException`, and the checks in
   `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`), and the out of
   memory hunks (`JS_ThrowOutOfMemory`, `JS_ThrowError2`, the regexp
-  callers of `JS_ThrowOutOfMemory`). After a regeneration that includes
+  callers of `JS_ThrowOutOfMemory`), and the compiler hunks (`dbuf_claim`
+  in `cutils.c`, `js_create_function`, `resolve_variables`,
+  `resolve_labels`, the two code moves of the parser, `js_parse_error_v`,
+  `JS_WriteObjectAtoms`, `JS_WriteObject2` and the error label of
+  `lre_compile` in `libregexp.c`). After a regeneration that includes
   them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
