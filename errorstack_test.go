@@ -171,6 +171,40 @@ func vmMemory(m *VM) lib.TJSMemoryUsage {
 	return *(*lib.TJSMemoryUsage)(unsafe.Pointer(p))
 }
 
+// registerExhaust gives page code exhaust(), which leaves m no memory: it
+// lowers the limit to what m uses and takes every free block the engine's
+// arenas have left. Running out of memory is uncatchable, so page code
+// cannot fill memory itself and go on. The returned release frees the blocks
+// and restores limit, and does nothing if exhaust did not run.
+func registerExhaust(t *testing.T, m *VM, limit uintptr) (release func()) {
+	t.Helper()
+	tls, rt := m.runtime.tls, m.runtime.cRuntime
+	var blocks []uintptr
+	exhaust := func() {
+		lib.XJS_SetMemoryLimit(tls, rt, (*lib.TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
+		for size := lib.Tsize_t(4096); size >= 8; size -= 8 {
+			for {
+				p := lib.Xjs_malloc_rt(tls, rt, size)
+				if p == 0 {
+					break
+				}
+				blocks = append(blocks, p)
+			}
+		}
+	}
+	if err := m.RegisterFunc("exhaust", exhaust, false); err != nil {
+		t.Fatal(err)
+	}
+
+	return func() {
+		for _, p := range blocks {
+			lib.Xjs_free_rt(tls, rt, p)
+		}
+		blocks = nil
+		m.SetMemoryLimit(limit)
+	}
+}
+
 // TestErrorStackMemory checks that errors whose stack is never read are freed,
 // with the functions in their stack, including when an error and a closure
 // from its own stack reference each other.
@@ -312,31 +346,13 @@ function make() { for (var i = 0; i < 2; i++) e.push(deep(40)) }
 		t.Fatal(err)
 	}
 
-	v, err := m.Eval(`
-var fill = []
-function exhaust(size) {
-	try {
-		for (;;) fill.push("x".repeat(size) + fill.length)
-	} catch (x) {}
-}
-exhaust(4096)
-exhaust(64)
-exhaust(1)
-var read, caught
-try {
-	read = typeof e[0].stack
-} catch (x) {
-	caught = x
-}
-fill = null
-caught === undefined ? read : "threw " + caught.message
-`, EvalGlobal)
+	release := registerExhaust(t, m, 4<<20)
+	v, err := m.Eval(`exhaust(); typeof e[0].stack`, EvalGlobal)
+	release()
+	t.Logf("reading the stack with no memory left: %v, %v", v, err)
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("reading the stack with no memory left: %v", v)
-	if v != "string" && v != "threw out of memory" {
+		wantOutOfMemory(t, "reading the stack", err)
+	} else if v != "string" {
 		t.Fatalf("got %v", v)
 	}
 
@@ -402,11 +418,9 @@ function runOps(first) {
 	}
 	return out.join()
 }
-var fill = []
-function exhaust(size) {
-	try {
-		for (;;) fill.push("x".repeat(size) + fill.length)
-	} catch (x) {}
+// runOp runs operation k on held[first + k].
+function runOp(first, k) {
+	return ops[k % ops.length](held[first + k], wraps[Math.floor(k / ops.length)])
 }
 `, EvalGlobal); err != nil {
 		t.Fatal(err)
@@ -427,8 +441,13 @@ function exhaust(size) {
 
 	// With no memory left the operations may fail, and the VM works again
 	// afterwards.
-	if _, err := m.Eval(`exhaust(4096); exhaust(64); exhaust(1); try { runOps(22) } catch (x) {} fill = null`, EvalGlobal); err != nil {
-		t.Fatal(err)
+	release := registerExhaust(t, m, 4<<20)
+	for k := range 22 {
+		_, err := m.Eval(fmt.Sprintf(`exhaust(); runOp(22, %d)`, k), EvalGlobal)
+		release()
+		if err != nil {
+			wantOutOfMemory(t, fmt.Sprintf("operation %d", k), err)
+		}
 	}
 
 	v, err = m.Eval(`held.every(e => e.stack === held[44].stack) && held[44].stack.split("\n").length`, EvalGlobal)

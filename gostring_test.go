@@ -142,7 +142,8 @@ func TestObjectJSONOutOfMemory(t *testing.T) {
 }
 
 // A host function whose string argument has no room for its UTF-8 copy must
-// not be called with "".
+// not be called with "". Running out of memory there ends the call: page code
+// cannot catch it.
 func TestHostFuncArgumentOutOfMemory(t *testing.T) {
 	// The UTF-8 copy needs stringOOMSize*2 bytes.
 	m := newStringOOMVM(t, "é", stringOOMSize/2)
@@ -151,10 +152,14 @@ func TestHostFuncArgumentOutOfMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := m.Eval("take(s)", EvalGlobal)
+	_, err := m.Eval("try { take(s) } catch (e) { globalThis.caught = true } finally { globalThis.finished = true }", EvalGlobal)
 	var e *Error
-	if !errors.As(err, &e) || e.Name != "TypeError" || e.Message != "calling take: argument conversion error: InternalError: out of memory" {
-		t.Fatalf("got error %v, want the argument conversion error", err)
+	if !errors.As(err, &e) || e.Name != "InternalError" || e.Message != "out of memory" {
+		t.Fatalf("got error %v, want the out of memory error", err)
+	}
+	m.SetMemoryLimit(^uintptr(0))
+	if v, err := m.Eval("typeof caught + typeof finished", EvalGlobal); err != nil || v != "undefinedundefined" {
+		t.Fatalf("page code saw the out of memory error: %v, %v", v, err)
 	}
 
 	if called {

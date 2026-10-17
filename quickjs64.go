@@ -17,6 +17,7 @@ const sizeofJsValue = unsafe.Sizeof(lib.TJSValue{})
 var (
 	null      = lib.TJSValue{Ftag: lib.EJS_TAG_NULL}
 	undefined = lib.TJSValue{Ftag: lib.EJS_TAG_UNDEFINED}
+	exception = lib.TJSValue{Ftag: lib.EJS_TAG_EXCEPTION}
 )
 
 func newFloat(n float64) (r lib.TJSValue) {

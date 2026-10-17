@@ -58,8 +58,13 @@ func init() {
 
 const (
 	// MaxStackSlots defines the default maximum allowed number of libc.TLS stack
-	// slots before a stack overflow is detected.
-	MaxStackSlots = 1000
+	// slots before a stack overflow is detected. A runtime starts with it
+	// (internal/fixlib's fixStack). A javascript call takes at least one
+	// slot, and about 6 to 13 KB of goroutine stack per slot on
+	// darwin/arm64, so the default needs at most 128 MB of goroutine stack,
+	// well within Go's limit, and the React render of a page of
+	// examples/shop in github.com/liustack/tifa takes about 470 slots.
+	MaxStackSlots = 10000
 	// 1, 2, 4, 8, 16: linux/amd64: nothing works
 	// 32: linux/amd64: Some simple tests work
 	// 64, 128: linux/amd64: Simple tests pass, some test262 tests work

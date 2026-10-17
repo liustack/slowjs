@@ -41,8 +41,10 @@ var afterFailedInstall = [][2]string{
 }
 
 // TestInstallFailsOnLowMemory runs out of memory during the first use of
-// Intl. That use fails with a javascript exception, and once memory is back
-// the next use installs.
+// Intl. That use fails, and once memory is back the next use installs.
+// Running out of memory is no exception stub.js sees, like an interrupt
+// (TestInstallInterrupted): an install it cuts short is rolled back by the
+// next use, so the checks start there.
 func TestInstallFailsOnLowMemory(t *testing.T) {
 	// firstUseWith reports what the first use answers on a fresh VM limited to limit
 	// bytes, and how many installs it started.
@@ -91,7 +93,7 @@ func TestInstallFailsOnLowMemory(t *testing.T) {
 			failedInstalls++
 		}
 		vm.SetMemoryLimit(1 << 30)
-		t.Run(fmt.Sprint(limit), func(t *testing.T) { evalTests(t, vm, afterFailedInstall) })
+		t.Run(fmt.Sprint(limit), func(t *testing.T) { evalTests(t, vm, afterFailedInstall[2:]) })
 	}
 	if failedInstalls == 0 {
 		t.Fatal("no first use failed inside the install")

@@ -398,20 +398,21 @@
 			}).format(v);
 		});
 	}
-})(
-	globalThis.__quickjs_intl_dtfResolve__,
-	globalThis.__quickjs_intl_dtfFormat__,
-	globalThis.__quickjs_intl_nfResolve__,
-	globalThis.__quickjs_intl_nfFormat__,
-	globalThis.__quickjs_intl_canonicalLocales__,
-	globalThis.__quickjs_intl_prResolve__,
-	globalThis.__quickjs_intl_prSelect__
-);
-
-delete globalThis.__quickjs_intl_dtfResolve__;
-delete globalThis.__quickjs_intl_dtfFormat__;
-delete globalThis.__quickjs_intl_nfResolve__;
-delete globalThis.__quickjs_intl_nfFormat__;
-delete globalThis.__quickjs_intl_canonicalLocales__;
-delete globalThis.__quickjs_intl_prResolve__;
-delete globalThis.__quickjs_intl_prSelect__;
+})(...(function () {
+	// Take the host functions out of sight before the body puts anything in
+	// place. An interrupt or running out of memory can cut the install short
+	// anywhere, and the next use must find none of them left behind (see
+	// ensure in stub.js).
+	const g = globalThis;
+	const names = [
+		'__quickjs_intl_dtfResolve__', '__quickjs_intl_dtfFormat__', '__quickjs_intl_nfResolve__',
+		'__quickjs_intl_nfFormat__', '__quickjs_intl_canonicalLocales__', '__quickjs_intl_prResolve__',
+		'__quickjs_intl_prSelect__'
+	];
+	const host = [];
+	for (let i = 0; i < names.length; i++) {
+		host.push(g[names[i]]);
+		delete g[names[i]];
+	}
+	return host;
+})());

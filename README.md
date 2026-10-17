@@ -31,6 +31,115 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   which the engine throws near the memory limit, `throw undefined`, a
   symbol) no longer leaves a TypeError in the context. Test:
   `gostring_test.go`.
+- Page code can no longer catch an interrupt (`VM.Interrupt` or the eval
+  timeout) through a promise or an iterator. The engine already skipped
+  every `catch` and `finally` block for an interrupt, but its own handlers
+  of an exception went on with it: an async function and a promise job
+  turned it into a rejection, which an `await`, a `.catch` or a `.then`
+  handler then received, and so did the `Promise` constructor,
+  `Promise.try`, `Promise.all` and the other combinators, async generators
+  and modules. A built-in that runs an iterator's `return` method on an
+  error (`Array.from`, ...) ran it, then threw the interrupt again as an
+  error a `catch` could take, and any later error replaced it. Now an
+  uncatchable exception stays pending until the Go call that ran the script
+  takes it, and while it is pending every call into javascript fails at
+  once. So no `catch`, `finally`, iterator `return`, generator `finally` or
+  rejection handler runs, and the call returns the interrupt, as it does
+  for a script without promises. Where a built-in only records the error,
+  such as a resolve function that rejects its promise when reading `then`
+  throws, the code after it runs on until its next function call, which
+  fails. `ExecutePendingJobs` stops at the job that failed with an
+  interrupt and leaves the rest queued, where it used to run them all.
+  Tests: `uncatchable_test.go`, `internal/fixlib/uncatchable_test.go`.
+- Running out of memory is uncatchable too, like an interrupt, and the call
+  returns `*Error{Name: "InternalError", Message: "out of memory"}`. Page
+  code used to catch it, so a framework catching every error to show a
+  fallback reported it as an error of the page, and a `finally` block or a
+  rejection handler ran with no memory left. Every way the engine runs out
+  of memory now ends this way: the engine's own out of memory error, the
+  regexp engine running out of memory (it used to throw
+  `InternalError: out of memory in regexp execution`, or a `SyntaxError`
+  when compiling a pattern), and an error the engine could not build. That
+  last case used to throw a catchable `null`, and an error whose message
+  could not be allocated got the exception marker as its message, which
+  read back as nonsense. Now the engine builds the message first, and if
+  the message, the error object or setting the message fails, it throws
+  `null`, uncatchable, which the VM reports as the same out of memory
+  error. A script that throws `null` itself still gets `null`. Page code
+  cannot fill memory on purpose and catch the failure any more: allocating
+  until it fails ends the call. The VM stays usable after the call, and
+  `Close` frees everything. Tests: `uncatchable_test.go`,
+  `lib/outofmemory_test.go`, `internal/fixlib/outofmemory_test.go`.
+- An interrupt or running out of memory inside a Go function that
+  javascript called ends the whole call too. That covers converting the
+  function's arguments or result, and javascript the function evaluates on
+  the same VM (`Eval`, `Call` and the like), from a function registered
+  with `RegisterFunc` or `RegisterHostFunc`, a `Then` callback, or the
+  module loader and normalizer. The Go function still gets the error, but
+  the exception stays pending until it returns, so further calls into
+  javascript fail at once. Whatever the function returns, the script that
+  called it gets the original uncatchable exception. It used to get a
+  catchable `TypeError` wrapping the message (for example
+  `calling take: argument conversion error: InternalError: out of memory`),
+  or the function's own result when it dropped the error, so a timeout in
+  nested javascript could be caught or lost and the script ran on. The
+  `intl` package now takes its host functions off the global object before
+  its install changes anything, so that an install cut short this way
+  leaves none of them in sight once the next use has installed.
+  Tests: `hostuncatchable_test.go`, `intl/install_test.go`.
+- Recursing without end throws `RangeError: Maximum call stack size
+  exceeded`, worded as in V8, which a script can catch, with the default
+  settings. It used to kill the
+  process with a Go stack overflow: the engine sets a new runtime's stack
+  size to 1 MB, meant as bytes, but the Go port's stack check counts TLS
+  stack slots, so the limit was a million slots, far more than a
+  goroutine's stack holds. A new runtime now starts with the port's own
+  default, `lib.MaxStackSlots`, as `SetMaxStackSize` already said, and that
+  default is 10000 slots rather than 1000: a React render of a page of
+  tifa's example shop takes about 470. At the default, recursing without
+  end takes up to 128 MB of goroutine stack before it throws. Running out
+  of stack used to be `InternalError: stack overflow`. The parser and
+  `JSON.parse` now report nesting too deep for the stack with the same
+  `RangeError`, as V8's parser does, rather than `SyntaxError: stack
+  overflow`. A regular expression nested too deep still fails to compile
+  with `SyntaxError: stack overflow`. Tests:
+  `stackoverflow_test.go`, `internal/fixlib/stack_test.go`.
+- A panic in a Go function that javascript called (`RegisterFunc`,
+  `RegisterHostFunc`, a `Then` callback, the module loader or normalizer)
+  no longer unwinds through the engine. The VM recovers it, ends the
+  javascript with an uncatchable `InternalError` (`panic in Go function
+  <name>: <value>`) as for an interrupt, and panics again with the same
+  value in the Go code that called javascript: in `Eval` or the like, or in
+  the Go function one level up when a Go function called the javascript.
+  Page code sees no catch or finally run for it. The panic used
+  to unwind through the engine, which kept pointing at stack frames that
+  were gone. The VM looked fine after a recover, but the next error it
+  made walked those frames, forever when a new frame took the place of an
+  old one, so the eval timeout of that VM never fired again. The panic
+  value is the same, but its stack trace now starts where the VM panics
+  again. Tests: `hostpanic_test.go`.
+- Compiling a script, a function body, `eval` code or a regexp with little
+  memory left fails with the same out of memory error. The engine used to
+  crash there (a Go panic on a write before or past the code buffer, or a
+  double free), report a `SyntaxError` the script does not have, or, in
+  `Compile`, return bytecode cut short, bytecode with the out of memory
+  error left pending, or `errors.New("OOM")`. The parser went on after its
+  code buffer failed to grow and patched code in place at positions it had
+  noted, past what the buffer held (a Go panic on an empty buffer, or a
+  write past the end of a full one), and the passes after it assumed the
+  buffer was whole. Now the parser stops at the next token once the code
+  buffer of the function it parses failed, and checks it before each patch
+  that does not wait for a token, the buffer takes no more bytes once it
+  failed, and each pass that reads it back stops with the out of memory
+  error. A scope the parser fails to push marks the function's code lost
+  too, and its scopes then stay as they are, each later push failing with
+  the out of memory error: the pop after a failed push used to take off the
+  scope around it, until a pop read before the scope array. The pass that
+  resolves jumps frees, when it fails, the jump records of the labels it has
+  not reached yet, which used to leak. When shrinking the line table of a
+  function fails, the compile keeps the table and leaves no error behind: it
+  used to work and leave the out of memory error pending, for the next call
+  to report. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -106,8 +215,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     keeps from when it loaded does not keep that code alive. So are errors
     that cannot take new properties and errors that already have a `stack`.
   - If there is no memory left when `stack` is first read, the read throws
-    an out of memory error and the stack stays pending, so a later read can
-    give the text. Reading the property descriptor formats the stack the
+    the out of memory error, which ends the call, and the stack stays
+    pending, so a later read can give the text. Reading the property descriptor formats the stack the
     same way and so can throw too. When an error whose stack is still
     pending is printed (`console.log`, `JS_PrintValue`), formatting the
     stack never throws and never leaves a pending exception: out of memory
@@ -258,8 +367,11 @@ Conflicts to expect:
 
 - `lib/ccgo_*.go`: every upstream release regenerates these files, so the
   two lines added to `XJS_ToCStringLen2`, the calls into
-  `lib/backtrace.go` (lazy error stacks) and the `getTimezoneOffset` that
-  answers 0 (local time is UTC) conflict. Take the upstream version
+  `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
+  answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
+  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
+  compiler's out of memory checks, and the stack limit of a new runtime
+  conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -280,7 +392,33 @@ Conflicts to expect:
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
-  and must change with it.
+  and must change with it. If it reports that `XJS_Throw`,
+  `_JS_CallInternal` or `_JS_IteratorClose` changed shape, put the
+  uncatchable check of `lib/uncatchable.go` back where the C change has it.
+  If it reports that `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp
+  functions or the string table changed shape, compare the new upstream
+  code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
+  `JS_ThrowError2` and must build the same error.
+  If it reports that `Xdbuf_claim`, `_push_scope`, `_pop_scope`,
+  `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the
+  loops whose code the parser moves, `_js_parse_error_v`, `_next_token`,
+  `_js_parse_class`, `_js_parse_destructuring_element`, the bytecode
+  writer or `Xlre_compile` changed shape, read the new upstream code
+  against the C change: the parser must stop once a code buffer failed and
+  patch no code in place after that, and every pass that reads back a code
+  buffer must stop when that buffer failed (`internal/fixlib/compile.go`
+  lists each place).
+  If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
+  shape, a new runtime must still start with a stack size of 0 (the port's
+  `MaxStackSlots`), and running out of stack must still throw a
+  `RangeError` (`internal/fixlib/stack.go`). The same holds when it reports
+  that the stack check of `_next_token` or `_json_next_token` changed
+  shape: the tokenizers must throw that `RangeError` too.
+  If it reports a call of `XJS_GetException` that is not in
+  `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
+  read the new caller: if it hands the exception to a script (a rejection,
+  a handler call, a new throw), add it to `exceptionHandlers`, so that it
+  gets `_js_get_exception`.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
@@ -320,9 +458,21 @@ Conflicts to expect:
   `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's
   `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`,
   `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need
-  the attributes of a property (`js_get_own_property_flags`)). After a
-  regeneration that includes them,
-  `lib/backtrace.go` and its wiring in `fixlib` are no longer needed.
+  the attributes of a property (`js_get_own_property_flags`)), and the
+  uncatchable exception hunks (`js_uncatchable_pending`, `js_get_exception`
+  and its callers, `JS_IsUncatchableException`, and the checks in
+  `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`), and the out of
+  memory hunks (`JS_ThrowOutOfMemory`, `JS_ThrowError2`, the regexp
+  callers of `JS_ThrowOutOfMemory`), and the compiler hunks (`dbuf_claim`
+  in `cutils.c`, `push_scope`, `pop_scope`, `js_create_function`,
+  `resolve_variables`, `resolve_labels`, the two code moves of the parser,
+  `js_parse_error_v`, `next_token`, the two patches in `js_parse_class`,
+  the test removal in `js_parse_destructuring_element`,
+  `JS_WriteObjectAtoms`, `JS_WriteObject2` and the error label of
+  `lre_compile` in `libregexp.c`), and the stack hunks (the stack size
+  `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a
+  regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
+  their wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.

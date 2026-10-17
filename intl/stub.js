@@ -34,12 +34,13 @@
 	const standIns = [];
 
 	// ensure installs the shim, once it works. An install that fails, say for
-	// want of memory or stack, rolls back to the stand-ins and throws, so that
-	// this use fails and the next one tries again.
+	// want of stack, rolls back to the stand-ins and throws, so that this use
+	// fails and the next one tries again.
 	//
-	// An interrupt, from vm.Interrupt or a timeout, is no exception a catch or
-	// finally sees: one that lands here leaves installing set with nothing
-	// rolled back, and the host functions possibly in sight. The host knows
+	// An interrupt, from vm.Interrupt or a timeout, and running out of memory
+	// are no exception a catch or finally sees: one that lands here leaves
+	// installing set with nothing rolled back, and the host functions
+	// possibly in sight. The host knows
 	// whether an install is running, so the next use tells a nested call
 	// from an install cut short, rolls the latter back and starts over.
 	function ensure() {
