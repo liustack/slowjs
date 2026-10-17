@@ -21,7 +21,7 @@ make test          # go test -failfast -v -timeout 24h -count=1 ./...
 make shorttest     # same, adds -short (skips long-running cases)
 make leak          # go test -v -run TestMemgrind2 -tags=libc.memgrind  (leak detection)
 make benchmark     # delegates to ./compare (see below)
-make build_all_targets   # cross-build + compile test binary for all 14 GOOS/GOARCH, ±libc.memgrind
+make build_all_targets   # cross-build + compile the tests of every package for all 14 GOOS/GOARCH, ±libc.memgrind
 ```
 
 Run a single test / subtest:
