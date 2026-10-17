@@ -109,7 +109,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   goes on after its code buffer fails to grow, and the passes after it
   assumed the buffer was whole: now the buffer takes no more bytes once it
   failed, and each pass that reads it back stops with the out of memory
-  error. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
+  error. A scope the parser fails to push marks the function's code lost
+  too, and its scopes then stay as they are, each later push failing with
+  the out of memory error: the pop after a failed push used to take off
+  the scope around it, until a pop read before the scope array. The pass that resolves jumps frees, when it fails, the jump
+  records of the labels it has not reached yet, which used to leak. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -368,8 +372,8 @@ Conflicts to expect:
   functions or the string table changed shape, compare the new upstream
   code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
   `JS_ThrowError2` and must build the same error.
-  If it reports that `Xdbuf_claim`, `_js_create_function`,
-  `_resolve_variables`, `_resolve_labels`, the loops whose code the parser
+  If it reports that `Xdbuf_claim`, `_push_scope`, `_pop_scope`,
+  `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the loops whose code the parser
   moves, `_js_parse_error_v`, the bytecode writer or `Xlre_compile` changed
   shape, read the new upstream code against the C change: every pass that
   reads back a code buffer must stop when that buffer failed
@@ -424,7 +428,7 @@ Conflicts to expect:
   `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`), and the out of
   memory hunks (`JS_ThrowOutOfMemory`, `JS_ThrowError2`, the regexp
   callers of `JS_ThrowOutOfMemory`), and the compiler hunks (`dbuf_claim`
-  in `cutils.c`, `js_create_function`, `resolve_variables`,
+  in `cutils.c`, `push_scope`, `pop_scope`, `js_create_function`, `resolve_variables`,
   `resolve_labels`, the two code moves of the parser, `js_parse_error_v`,
   `JS_WriteObjectAtoms`, `JS_WriteObject2` and the error label of
   `lre_compile` in `libregexp.c`). After a regeneration that includes

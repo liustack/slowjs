@@ -40,11 +40,15 @@ func TestCompileEveryFile(t *testing.T) {
 			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\tXJS_ThrowOutOfMemory\(tls, \w+\)\n\t\tgoto fail\n`, 1},
 			{`\n\t+if pos_next < 0 \{\n\t+goto fail\n`, 2},
 			{`\nout_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory\(`, 1},
-			{`\t+XJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(\w+\)\)\.Fctx\)\n`, 2},
+			{`\nfail:\n\t;\n\t/\* free the relocations of the labels not reached \*/\n`, 1},
+			{`\t+XJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(\w+\)\)\.Fctx\)\n`, 3},
 			{`\.Fcur_func\)\)\.Fbyte_code\.Ferror1 != 0 \{`, 1},
 			{`\.Ferror1 != 0 \|\| Xdbuf_claim\(tls, bp, `, 1},
 			{`\tif _JS_WriteObjectRec\(tls, s, obj\) != 0 \{\n\t\tgoto fail\n\t\}\n\tif \(\*TDynBuf\)\(unsafe\.Pointer\(s\+\d+\)\)\.Ferror1 != 0 \{\n\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n`, 1},
 			{`\.Ferror1 != 0 \{\n\t\t_re_parse_out_of_memory\(tls, \w+\)\n`, 1},
+			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\n\t\t\treturn -int32\(1\)\n`, 1},
+			{`\.Fbyte_code\.Ferror1 = int32\(MTRUE\)\n\t+return -int32\(1\)\n`, 2},
+			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\treturn\n`, 1},
 		} {
 			if n := len(regexp.MustCompile(c.re).FindAllIndex(out, -1)); n != c.n {
 				t.Errorf("%s: %d of %q, want %d", fn, n, c.re, c.n)

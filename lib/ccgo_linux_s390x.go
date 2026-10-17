@@ -47909,6 +47909,10 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 	if (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 {
 		fd = (*TJSParseState)(unsafe.Pointer(s)).Fcur_func
 		scope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count
+		if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {
+			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
+			return -int32(1)
+		}
 		/* XXX: should check for scope overflow */
 		if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count+int32(1) > (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_size {
 			/* XXX: potential arithmetic overflow */
@@ -47926,12 +47930,14 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 			if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes == fd+248 {
 				new_buf = Xjs_realloc2(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, libc.UintptrFromInt32(0), libc.Uint64FromInt32(new_size)*uint64(8), bp)
 				if !(new_buf != 0) {
+					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(MTRUE)
 					return -int32(1)
 				}
 				libc.Xmemcpy(tls, new_buf, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes, libc.Uint64FromInt32((*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count)*uint64(8))
 			} else {
 				new_buf = Xjs_realloc2(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes, libc.Uint64FromInt32(new_size)*uint64(8), bp)
 				if !(new_buf != 0) {
+					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(MTRUE)
 					return -int32(1)
 				}
 			}
@@ -47972,6 +47978,9 @@ func _pop_scope(tls *libc.TLS, s uintptr) {
 		/* disable scoped variables */
 		fd = (*TJSParseState)(unsafe.Pointer(s)).Fcur_func
 		scope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level
+		if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {
+			return
+		}
 		_emit_op(tls, s, uint8(EOP_leave_scope))
 		_emit_u16(tls, s, libc.Uint16FromInt32(scope))
 		(*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level = (**(**TJSVarScope)(__ccgo_up((*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes + uintptr(scope)*8))).Fparent
@@ -65872,6 +65881,16 @@ out_of_memory:
 	XJS_ThrowOutOfMemory(tls, ctx)
 fail:
 	;
+	/* free the relocations of the labels not reached */
+	i = 0
+	for ; i < (*TJSFunctionDef)(unsafe.Pointer(s4)).Flabel_count; i++ {
+		ls = label_slots + uintptr(i)*uintptr(unsafe.Sizeof(TLabelSlot{}))
+		for re = (*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc; re != 0; re = re_next {
+			re_next = (*TRelocEntry)(unsafe.Pointer(re)).Fnext
+			Xjs_free(tls, ctx, re)
+		}
+		(*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc = 0
+	}
 	Xdbuf_free(tls, s4+304)
 	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fbyte_code = **(**TDynBuf)(__ccgo_up(bp + 8))
 	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fuse_short_opcodes = int32(ETRUE)

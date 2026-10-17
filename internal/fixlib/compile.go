@@ -39,7 +39,15 @@ var (
 //   - _resolve_labels stops at the first write that failed. It used to go
 //     on and patch jumps at offsets past the end of the buffer. When it
 //     fails, it keeps the new code, whose atoms it owns, rather than the
-//     old code, some of whose atoms it already freed.
+//     old code, some of whose atoms it already freed, and it frees the
+//     relocations of the labels it did not reach, which used to leak.
+//   - _push_scope marks the code of the function lost when growing its
+//     scope array fails, and from then on _push_scope and _pop_scope leave
+//     the scopes as they are, and _push_scope fails with the out of memory
+//     error. Most callers go on after a failed push, and the pop after it
+//     took off the scope around it instead, until a pop read before the
+//     scope array. The callers that stop return the failure as it is, so
+//     a push that failed without an exception ended the compile with none.
 //   - The parser throws the out of memory error when moving the code of a
 //     loop fails, where it failed without an exception.
 //   - _js_parse_error_v reports the out of memory error when the code
@@ -105,6 +113,11 @@ func fixCompile(b []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// push_scope and pop_scope.
+	if b, err = fixScopes(b); err != nil {
+		return nil, err
+	}
+
 	// The loops whose code the parser moves.
 	for _, name := range []string{"_js_parse_for_in_of", "_js_parse_statement_or_decl"} {
 		re := regexp.MustCompile(`\nfunc ` + name + `\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
@@ -162,15 +175,16 @@ func fixCompile(b []byte) ([]byte, error) {
 	return b, nil
 }
 
-// fixResolveLabels makes _resolve_labels stop at a failed write, and keep
-// the new code when it fails.
+// fixResolveLabels makes _resolve_labels stop at a failed write, keep the
+// new code when it fails, and free the relocations of the labels it did not
+// reach then.
 func fixResolveLabels(b []byte) ([]byte, error) {
 	body, err := funcBody(b, reResolveLabels, "_resolve_labels")
 	if err != nil {
 		return nil, err
 	}
 	if bytes.Contains(body, []byte("\nout_of_memory:\n")) {
-		return b, nil
+		return fixResolveLabelsRelocs(b)
 	}
 	m := reResolveLabels.FindSubmatch(b)
 	ctx := string(m[1])
@@ -196,7 +210,35 @@ func fixResolveLabels(b []byte) ([]byte, error) {
 	fixed = bytes.Replace(fixed, after, append([]byte("\t"+failed+"\t\tgoto out_of_memory\n\t}\n"), after...), 1)
 	end := fmt.Sprintf("out_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory(tls, %s)\nfail:\n\t;\n%s\treturn -int32(1)\n}\n", ctx, set[1])
 	fixed = append(bytes.TrimSuffix(fixed, fail), end...)
-	return bytes.Replace(b, body, fixed, 1), nil
+	return fixResolveLabelsRelocs(bytes.Replace(b, body, fixed, 1))
+}
+
+// fixResolveLabelsRelocs makes the fail path of _resolve_labels free the
+// relocations of the labels it did not reach. They used to leak.
+func fixResolveLabelsRelocs(b []byte) ([]byte, error) {
+	const marker = "\t/* free the relocations of the labels not reached */\n"
+	body, err := funcBody(b, reResolveLabels, "_resolve_labels")
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Contains(body, []byte(marker)) {
+		return b, nil
+	}
+	m := reResolveLabels.FindSubmatch(b)
+	ctx, fd := string(m[1]), string(m[2])
+	fail := []byte("\nfail:\n\t;\n")
+	next := []byte("\t\t\tre_next = (*TRelocEntry)(unsafe.Pointer(re)).Fnext\n")
+	slots := []byte(fmt.Sprintf("\tlabel_slots = (*TJSFunctionDef)(unsafe.Pointer(%s)).Flabel_slots\n", fd))
+	if bytes.Count(body, fail) != 1 || !bytes.Contains(body, next) || bytes.Count(body, slots) != 1 {
+		return nil, fmt.Errorf("_resolve_labels: cannot find the fail label, label_slots or how it frees a relocation")
+	}
+	free := marker + fmt.Sprintf("\ti = 0\n\tfor ; i < (*TJSFunctionDef)(unsafe.Pointer(%[2]s)).Flabel_count; i++ {\n"+
+		"\t\tls = label_slots + uintptr(i)*uintptr(unsafe.Sizeof(TLabelSlot{}))\n"+
+		"\t\tfor re = (*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc; re != 0; re = re_next {\n"+
+		"\t\t\tre_next = (*TRelocEntry)(unsafe.Pointer(re)).Fnext\n"+
+		"\t\t\tXjs_free(tls, %[1]s, re)\n\t\t}\n"+
+		"\t\t(*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc = 0\n\t}\n", ctx, fd)
+	return bytes.Replace(b, body, bytes.Replace(body, fail, append(append([]byte{}, fail...), free...), 1), 1), nil
 }
 
 // splice inserts s into b at i.
@@ -239,6 +281,49 @@ func fixWriteObject(b []byte) ([]byte, error) {
 			return nil, fmt.Errorf("XJS_WriteObject2: cannot find the call of _JS_WriteObjectRec")
 		}
 		b = bytes.Replace(b, body, bytes.Replace(body, rec, append(append([]byte{}, rec...), check...), 1), 1)
+	}
+	return b, nil
+}
+
+// fixScopes makes _push_scope and _pop_scope leave the scopes as they are
+// once the function's code is lost.
+func fixScopes(b []byte) ([]byte, error) {
+	const lost = "(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1"
+	re := regexp.MustCompile(`\nfunc _push_scope\(tls \*libc\.TLS, s uintptr\) \(r int32\) \{\n`)
+	body, err := funcBody(b, re, "_push_scope")
+	if err != nil {
+		return nil, err
+	}
+	check := "\t\tif " + lost + " != 0 {\n\t\t\tXJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)\n\t\t\treturn -int32(1)\n\t\t}\n"
+	failed := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\treturn -int32(1)\n")
+	marked := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\t" + lost + " = int32(MTRUE)\n\t\t\t\t\treturn -int32(1)\n")
+	fixed := body
+	if bytes.Count(fixed, marked) != 2 {
+		if bytes.Count(fixed, failed) != 2 {
+			return nil, fmt.Errorf("_push_scope: want 2 failed reallocs")
+		}
+		fixed = bytes.ReplaceAll(fixed, failed, marked)
+	}
+	if !bytes.Contains(fixed, []byte(check)) {
+		scope := []byte("\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count\n")
+		if bytes.Count(fixed, scope) != 1 {
+			return nil, fmt.Errorf("_push_scope: cannot find where it reads the scope count")
+		}
+		fixed = bytes.Replace(fixed, scope, append(append([]byte{}, scope...), check...), 1)
+	}
+	b = bytes.Replace(b, body, fixed, 1)
+
+	re = regexp.MustCompile(`\nfunc _pop_scope\(tls \*libc\.TLS, s uintptr\) \{\n`)
+	if body, err = funcBody(b, re, "_pop_scope"); err != nil {
+		return nil, err
+	}
+	check = "\t\tif " + lost + " != 0 {\n\t\t\treturn\n\t\t}\n"
+	if !bytes.Contains(body, []byte(check)) {
+		level := []byte("\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level\n")
+		if bytes.Count(body, level) != 1 {
+			return nil, fmt.Errorf("_pop_scope: cannot find where it reads the scope level")
+		}
+		b = bytes.Replace(b, body, bytes.Replace(body, level, append(append([]byte{}, level...), check...), 1), 1)
 	}
 	return b, nil
 }
