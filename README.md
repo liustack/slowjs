@@ -87,6 +87,20 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   its install changes anything, so that an install cut short this way
   leaves none of them in sight once the next use has installed.
   Tests: `hostuncatchable_test.go`, `intl/install_test.go`.
+- A panic in a Go function that javascript called (`RegisterFunc`,
+  `RegisterHostFunc`, a `Then` callback, the module loader or normalizer)
+  no longer unwinds through the engine. The VM recovers it, ends the
+  javascript with an uncatchable `InternalError` (`panic in Go function
+  <name>: <value>`) as for an interrupt, and panics again with the same
+  value in the Go code that called javascript: in `Eval` or the like, or in
+  the Go function one level up when a Go function called the javascript.
+  Page code sees no catch or finally run for it. The panic used
+  to unwind through the engine, which kept pointing at stack frames that
+  were gone. The VM looked fine after a recover, but the next error it
+  made walked those frames, forever when a new frame took the place of an
+  old one, so the eval timeout of that VM never fired again. The panic
+  value is the same, but its stack trace now starts where the VM panics
+  again. Tests: `hostpanic_test.go`.
 - Compiling a script, a function body, `eval` code or a regexp with little
   memory left fails with the same out of memory error. The engine used to
   crash there (a Go panic on a write before or past the code buffer, or a

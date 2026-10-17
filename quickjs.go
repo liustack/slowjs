@@ -401,6 +401,10 @@ type VM struct {
 	depth int
 	// host counts the calls of Go functions from javascript in progress.
 	host int
+	// panicked holds what a Go function called from javascript panicked
+	// with, until the panic goes on in the Go code that called javascript
+	// (see hostPanicked).
+	panicked any
 }
 
 // NewVM returns a newly created VM.
@@ -448,7 +452,10 @@ func (m *VM) enter() {
 	m.depth++
 }
 
-func (m *VM) leave() { m.depth-- }
+func (m *VM) leave() {
+	m.depth--
+	m.repanic()
+}
 
 func (m *VM) configureInterrupt() {
 	if m.interruptData != 0 {
@@ -1383,6 +1390,7 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 	} else {
 		err = ErrorFromValue(Value{vm: m, v: e})
 	}
+	defer m.repanic()
 	if uncatchable && m.host > 0 {
 		// Inside a Go function called from javascript, the exception ends
 		// that javascript too: it stays pending, so that every call into
@@ -1393,11 +1401,40 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 	return err, uncatchable
 }
 
-// inHost runs f, Go code that javascript called, counted in m.host.
-func (m *VM) inHost(f func()) {
+// inHost runs f, Go code that javascript called, counted in m.host. A
+// panic in f does not go through the engine (see hostPanicked).
+func (m *VM) inHost(name string, f func()) {
 	m.host++
-	defer func() { m.host-- }()
+	defer func() {
+		if p := recover(); p != nil {
+			m.hostPanicked(name, p)
+		}
+		m.host--
+	}()
 	f()
+}
+
+// hostPanicked keeps p, what the Go function name called from javascript
+// panicked with, and throws an uncatchable error in its place. A panic must
+// not unwind through the engine: the engine would keep pointing at stack
+// frames that are gone, and the next error it made would walk them, forever
+// when the new frame took the old one's place. The javascript ends as for an
+// interrupt, and the panic goes on when the Go code that called javascript
+// takes the exception or returns (repanic).
+func (m *VM) hostPanicked(name string, p any) {
+	m.panicked = p
+	tls := m.runtime.tls
+	ctx := m.cContext
+	throwInternalError(tls, ctx, fmt.Sprintf("panic in Go function %s: %v", name, p))
+	lib.XJS_SetUncatchableException(tls, ctx, 1)
+}
+
+// repanic goes on with the panic hostPanicked kept.
+func (m *VM) repanic() {
+	if p := m.panicked; p != nil {
+		m.panicked = nil
+		panic(p)
+	}
 }
 
 // outOfMemoryError is the error the engine throws when it runs out of
@@ -1712,6 +1749,9 @@ func callGo(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uint
 	m := info.vm
 	m.host++
 	defer func() {
+		if p := recover(); p != nil {
+			m.hostPanicked(info.name, p)
+		}
 		m.host--
 		// An interrupt or running out of memory in converting the
 		// arguments, in the Go function or in converting its result stays
@@ -2603,7 +2643,7 @@ func customModuleNormalize(tls *libc.TLS, ctx uintptr, module_base_name, module_
 
 	var normName string
 	var err error
-	state.vm.inHost(func() { normName, err = state.normalize(state.vm, baseName, name) })
+	state.vm.inHost("module normalizer", func() { normName, err = state.normalize(state.vm, baseName, name) })
 	if state.vm.uncatchablePending() {
 		// See callGo.
 		return 0
@@ -2632,7 +2672,7 @@ func customModuleLoader(tls *libc.TLS, ctx uintptr, module_name uintptr, opaque 
 
 	var source string
 	var err error
-	state.vm.inHost(func() { source, err = state.loader(state.vm, name) })
+	state.vm.inHost("module loader", func() { source, err = state.loader(state.vm, name) })
 	if state.vm.uncatchablePending() {
 		// See callGo.
 		return 0

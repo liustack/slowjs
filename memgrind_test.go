@@ -133,6 +133,9 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("writeBytecodeOOM", TestWriteBytecodeOutOfMemory)
 	t.Run("hostUncatchable", TestUncatchableThroughHostFunc)
 	t.Run("moduleLoaderUncatchable", TestUncatchableThroughModuleLoader)
+	t.Run("hostPanic", TestHostPanic)
+	t.Run("hostPanicNested", TestHostPanicNested)
+	t.Run("moduleLoaderPanic", TestModuleLoaderPanic)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
