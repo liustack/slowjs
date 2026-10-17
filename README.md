@@ -377,6 +377,47 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   is a string too: the function lists read `"[Symbol.iterator]"` as that
   symbol and aborted on other names in brackets. Test:
   `register_test.go`.
+- Calls cost less. A call of a javascript function, of a native function,
+  of a bound function or of a native function with data used to take the
+  room for its arguments, locals and stack with `alloca`, which the Go
+  port implements with malloc, and on darwin, freebsd and windows also
+  with Go memory: a closure and a slice entry per call, 1 to 4 Go
+  allocations. Up to 768 bytes, that room is now the end of the
+  function's TLS frame. A larger one, and any in `js_c_function_data_call`
+  and, on 32-bit targets, in `js_call_bound_function`, which have no
+  frame, is malloc'd and freed on return. Either way a call allocates no
+  Go memory. And 14 hot small functions, such as `set_value`,
+  `free_property` and `__JS_FreeValueRT`, used their TLS frame only to
+  read a `JSValue` as a pointer or a float as bits: they now keep those
+  bytes in a Go array, and skip `tls.Alloc`, `tls.Free` and the `defer`.
+  The stack check counts the same TLS stack slots as before at every
+  point, so a script recurses exactly as deep as it used to. A server
+  render of a page of tifa's example shop takes about 11% less time on
+  linux/amd64 (AMD EPYC) and 14% less on darwin/arm64 (Apple M4), with
+  the same HTML, and loading the shop's bytecode into a VM about 11% less
+  on linux.
+
+  The 768 bytes bound what this costs in TLS memory on linux. Linux's
+  libc keeps the TLS block of every call depth a VM has reached until the
+  VM is closed, grown to the largest frame used at that depth and rounded
+  up to a power of two, and neither `JS_ComputeMemoryUsage` nor the VM's
+  memory limit counts it. The frame of `JS_CallInternal` is 1280 bytes on
+  64-bit targets, so it takes a 2 KB block with or without the room, and
+  no block grows past 2 KB. The worst case is the same as before: a
+  recursion to the default limit of 10000 slots holds about 20.7 MB of
+  TLS blocks on linux/amd64, whatever its functions (without the limit, a
+  function with 500 locals made that 164 MB). Smaller frames can grow up
+  to 1 KB: those of `js_call_bound_function` (16 bytes) and
+  `js_call_c_function` (160 bytes). A recursion through bound functions
+  can so hold up to about 1 KB more per level: 1000 levels through a
+  function bound to 44 arguments hold 5.13 MB rather than 4.14 MB. On
+  32-bit targets a block can take up to 1 KB where it took 256 bytes, so
+  up to 10 MB in the worst case. Elsewhere the TLS stack frees its pages
+  as before. These are
+  changes to the generated Go only (`internal/fixlib/alloca.go`,
+  `internal/fixlib/frames.go`), with no C hunk. Tests:
+  `calldepth_test.go`, `callbench_test.go`,
+  `internal/fixlib/alloca_test.go`, `internal/fixlib/frames_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -463,7 +504,8 @@ Conflicts to expect:
   `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
-  compiler's out of memory checks, and the stack limit of a new runtime
+  compiler's out of memory checks, the stack limit of a new runtime, the
+  call paths without `alloca` and the functions without a TLS frame
   conflict. Take the upstream version
   of every generated file, then put the changes back:
 
@@ -543,6 +585,28 @@ Conflicts to expect:
   of the function. And slot addresses made some other way than from the
   property array, such as a raw offset into the object, are not
   recognized. So a change in these places needs a review by hand.
+  If it reports that the `alloca` of `_JS_CallInternal`,
+  `_js_call_c_function`, `_js_call_bound_function` or
+  `_js_c_function_data_call` changed shape, or that there are no longer
+  exactly four, read the new function (`internal/fixlib/alloca.go`
+  describes the rewrite). The room must still come from the end of the
+  frame, allocated again right before the stack check, so that the TLS
+  stack slots stay what they were at every point: `calldepth_test.go` pins
+  the depth each kind of recursion reaches and that the slots balance.
+  An alloca larger than `allocaMax` (768 bytes) stays a malloc, so that no
+  TLS block linux keeps grows past the 2 KB the frame of
+  `JS_CallInternal` takes. If that frame changes size, set the constant
+  again (`TestTLSStackResidentNearLimit` checks both, and the blocks on
+  linux).
+  If it reports that a function of `internal/fixlib/framesites.go` changed
+  its TLS frame (size, number of cell uses), uses `bp` some other way, or
+  can now reach a stack check, read the new function. Its frame may only
+  hold values read back where they are written, and the function must not
+  be on a call chain that checks the stack, or it would take a slot out of
+  the count. Update the entry or remove the function from the list.
+  `go run ./internal/fixlib -frames` prints every TLS frame of
+  `lib/ccgo_darwin_arm64.go` and why it must stay: a line without a reason
+  is a function that could join the list, after a review.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
@@ -565,7 +629,10 @@ Conflicts to expect:
   `lre_compile` in `libregexp.c`), and the stack hunks (the stack size
   `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
-  their wiring in `fixlib` are no longer needed.
+  their wiring in `fixlib` are no longer needed. The calls without
+  `alloca` and the functions without a TLS frame have no C form: they are
+  changes to what ccgo generates, so `fixlib` applies them after every
+  regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
@@ -688,6 +755,8 @@ go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and w
 go run ./internal/fixlib -check                          # fork changes present in lib/
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
 go test ./internal/fixlib                                # fixlib notices new reads of property values
+go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
+go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
 done
