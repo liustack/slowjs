@@ -131,6 +131,8 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("regexpOOM", TestRegexpOutOfMemory)
 	t.Run("compileOOM", TestCompileOutOfMemory)
 	t.Run("writeBytecodeOOM", TestWriteBytecodeOutOfMemory)
+	t.Run("hostUncatchable", TestUncatchableThroughHostFunc)
+	t.Run("moduleLoaderUncatchable", TestUncatchableThroughModuleLoader)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)

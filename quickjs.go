@@ -399,6 +399,8 @@ type VM struct {
 	// depth counts the calls into javascript in progress: a host function
 	// that evaluates more javascript is one level down.
 	depth int
+	// host counts the calls of Go functions from javascript in progress.
+	host int
 }
 
 // NewVM returns a newly created VM.
@@ -1377,9 +1379,25 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 	if uncatchable && tag(e) == lib.EJS_TAG_NULL {
 		// The engine throws null when it runs out of memory building an
 		// error.
-		return outOfMemoryError(), true
+		err = outOfMemoryError()
+	} else {
+		err = ErrorFromValue(Value{vm: m, v: e})
 	}
-	return ErrorFromValue(Value{vm: m, v: e}), uncatchable
+	if uncatchable && m.host > 0 {
+		// Inside a Go function called from javascript, the exception ends
+		// that javascript too: it stays pending, so that every call into
+		// javascript fails until callGo returns it to the engine.
+		lib.XJS_Throw(tls, ctx, lib.XDupValue(tls, ctx, e))
+		lib.XJS_SetUncatchableException(tls, ctx, 1)
+	}
+	return err, uncatchable
+}
+
+// inHost runs f, Go code that javascript called, counted in m.host.
+func (m *VM) inHost(f func()) {
+	m.host++
+	defer func() { m.host-- }()
+	f()
 }
 
 // outOfMemoryError is the error the engine throws when it runs out of
@@ -1692,6 +1710,21 @@ func callGo(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uint
 	}
 
 	m := info.vm
+	m.host++
+	defer func() {
+		m.host--
+		// An interrupt or running out of memory in converting the
+		// arguments, in the Go function or in converting its result stays
+		// pending (see takeException). It is the result whatever the Go
+		// function returned, and no error callGo threw replaced it.
+		if m.uncatchablePending() {
+			if !isException(r) {
+				lib.XFreeValue(tls, ctx, r)
+			}
+			r = exception
+		}
+	}()
+
 	haveArgs := int(argc)
 	if haveArgs < info.minArgs {
 		return throwTypeError(tls, ctx, fmt.Sprintf("not enough arguments in call to %s", info.name))
@@ -2568,7 +2601,13 @@ func customModuleNormalize(tls *libc.TLS, ctx uintptr, module_base_name, module_
 		name = libc.GoString(module_name)
 	}
 
-	normName, err := state.normalize(state.vm, baseName, name)
+	var normName string
+	var err error
+	state.vm.inHost(func() { normName, err = state.normalize(state.vm, baseName, name) })
+	if state.vm.uncatchablePending() {
+		// See callGo.
+		return 0
+	}
 	if err != nil {
 		throwTypeError(tls, ctx, fmt.Sprintf("module normalization failed: %v", err))
 		return 0
@@ -2591,7 +2630,13 @@ func customModuleLoader(tls *libc.TLS, ctx uintptr, module_name uintptr, opaque 
 		name = libc.GoString(module_name)
 	}
 
-	source, err := state.loader(state.vm, name)
+	var source string
+	var err error
+	state.vm.inHost(func() { source, err = state.loader(state.vm, name) })
+	if state.vm.uncatchablePending() {
+		// See callGo.
+		return 0
+	}
 	if err != nil {
 		throwTypeError(tls, ctx, fmt.Sprintf("module load failed: %v", err))
 		return 0

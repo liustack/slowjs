@@ -70,6 +70,23 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   until it fails ends the call. The VM stays usable after the call, and
   `Close` frees everything. Tests: `uncatchable_test.go`,
   `lib/outofmemory_test.go`, `internal/fixlib/outofmemory_test.go`.
+- An interrupt or running out of memory inside a Go function that
+  javascript called ends the whole call too. That covers converting the
+  function's arguments or result, and javascript the function evaluates on
+  the same VM (`Eval`, `Call` and the like), from a function registered
+  with `RegisterFunc` or `RegisterHostFunc`, a `Then` callback, or the
+  module loader and normalizer. The Go function still gets the error, but
+  the exception stays pending until it returns, so further calls into
+  javascript fail at once. Whatever the function returns, the script that
+  called it gets the original uncatchable exception. It used to get a
+  catchable `TypeError` wrapping the message (for example
+  `calling take: argument conversion error: InternalError: out of memory`),
+  or the function's own result when it dropped the error, so a timeout in
+  nested javascript could be caught or lost and the script ran on. The
+  `intl` package now takes its host functions off the global object before
+  its install changes anything, so that an install cut short this way
+  leaves none of them in sight once the next use has installed.
+  Tests: `hostuncatchable_test.go`, `intl/install_test.go`.
 - Compiling a script, a function body, `eval` code or a regexp with little
   memory left fails with the same out of memory error. The engine used to
   crash there (a Go panic on a write before or past the code buffer, or a
