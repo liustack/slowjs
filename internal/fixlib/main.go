@@ -30,6 +30,9 @@
 //     the out of memory error (see fixOutOfMemory).
 //   - In every lib/ccgo_*.go file, let the compiler run out of memory
 //     without crashing or reporting a syntax error (see fixCompile).
+//   - In every lib/ccgo_*.go file, give a new runtime the Go port's stack
+//     limit, and make running out of stack a RangeError worded as in V8,
+//     in the parser too (see fixStack).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -110,6 +113,9 @@ func run() (missing int, err error) {
 				return nil, err
 			}
 			if b, err = fixCompile(b); err != nil {
+				return nil, err
+			}
+			if b, err = fixStack(b); err != nil {
 				return nil, err
 			}
 			return fixBacktrace(b)

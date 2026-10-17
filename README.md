@@ -87,6 +87,23 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   its install changes anything, so that an install cut short this way
   leaves none of them in sight once the next use has installed.
   Tests: `hostuncatchable_test.go`, `intl/install_test.go`.
+- Recursing without end throws `RangeError: Maximum call stack size
+  exceeded`, worded as in V8, which a script can catch, with the default
+  settings. It used to kill the
+  process with a Go stack overflow: the engine sets a new runtime's stack
+  size to 1 MB, meant as bytes, but the Go port's stack check counts TLS
+  stack slots, so the limit was a million slots, far more than a
+  goroutine's stack holds. A new runtime now starts with the port's own
+  default, `lib.MaxStackSlots`, as `SetMaxStackSize` already said, and that
+  default is 10000 slots rather than 1000: a React render of a page of
+  tifa's example shop takes about 470. At the default, recursing without
+  end takes up to 128 MB of goroutine stack before it throws. Running out
+  of stack used to be `InternalError: stack overflow`. The parser and
+  `JSON.parse` now report nesting too deep for the stack with the same
+  `RangeError`, as V8's parser does, rather than `SyntaxError: stack
+  overflow`. A regular expression nested too deep still fails to compile
+  with `SyntaxError: stack overflow`. Tests:
+  `stackoverflow_test.go`, `internal/fixlib/stack_test.go`.
 - A panic in a Go function that javascript called (`RegisterFunc`,
   `RegisterHostFunc`, a `Then` callback, the module loader or normalizer)
   no longer unwinds through the engine. The VM recovers it, ends the
@@ -343,8 +360,9 @@ Conflicts to expect:
   two lines added to `XJS_ToCStringLen2`, the calls into
   `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
-  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), and
-  the compiler's out of memory checks conflict. Take the upstream version
+  (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
+  compiler's out of memory checks, and the stack limit of a new runtime
+  conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -378,6 +396,12 @@ Conflicts to expect:
   shape, read the new upstream code against the C change: every pass that
   reads back a code buffer must stop when that buffer failed
   (`internal/fixlib/compile.go` lists each place).
+  If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
+  shape, a new runtime must still start with a stack size of 0 (the port's
+  `MaxStackSlots`), and running out of stack must still throw a
+  `RangeError` (`internal/fixlib/stack.go`). The same holds when it reports
+  that the stack check of `_next_token` or `_json_next_token` changed
+  shape: the tokenizers must throw that `RangeError` too.
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
@@ -431,8 +455,9 @@ Conflicts to expect:
   in `cutils.c`, `push_scope`, `pop_scope`, `js_create_function`, `resolve_variables`,
   `resolve_labels`, the two code moves of the parser, `js_parse_error_v`,
   `JS_WriteObjectAtoms`, `JS_WriteObject2` and the error label of
-  `lre_compile` in `libregexp.c`). After a regeneration that includes
-  them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
+  `lre_compile` in `libregexp.c`), and the stack hunks (the stack size
+  `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a
+  regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
