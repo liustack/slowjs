@@ -129,6 +129,8 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("outOfMemoryUncatchable", TestOutOfMemoryUncatchable)
 	t.Run("uncatchableNull", TestUncatchableNullIsOutOfMemory)
 	t.Run("regexpOOM", TestRegexpOutOfMemory)
+	t.Run("thrownNotUncatchable", TestThrownIsNotUncatchable)
+	t.Run("uncatchableRunsNoPageCode", TestUncatchableRunsNoPageCode)
 	t.Run("compileOOM", TestCompileOutOfMemory)
 	t.Run("compileOOMFine", TestCompileOutOfMemoryFine)
 	t.Run("compileOneFailure", TestCompileOneFailure)

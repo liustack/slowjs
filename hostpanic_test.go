@@ -33,6 +33,7 @@ func wantTimeoutWorks(t *testing.T, m *VM) {
 	select {
 	case err := <-done:
 		wantError(t, err, "InternalError", "interrupted")
+		wantKind(t, err, interrupted)
 	case <-time.After(5 * time.Second):
 		t.Fatal("the timeout did not stop the script")
 	}
@@ -86,8 +87,11 @@ func TestHostPanicNested(t *testing.T) {
 		t.Fatal(err)
 	}
 	var inner any
+	var again error
 	if err := m.RegisterHostFunc("outer", func([]any) (any, error) {
 		inner = evalRecover(m, `try { boom() } finally { globalThis.finished = true }`)
+		// The javascript the panic ended is still ending: more fails at once.
+		_, again = m.Eval(`globalThis.again = true`, EvalGlobal)
 		return "outer done", nil
 	}); err != nil {
 		t.Fatal(err)
@@ -97,8 +101,11 @@ func TestHostPanicNested(t *testing.T) {
 	if inner != "boom" {
 		t.Fatalf("outer recovered %v, want the inner panic", inner)
 	}
+	wantError(t, again, "InternalError", "panic in Go function boom: boom")
+	wantKind(t, again, goPanic)
 	wantError(t, err, "InternalError", "panic in Go function boom: boom")
-	if v, err := m.Eval(`typeof finished + typeof caught`, EvalGlobal); err != nil || v != "undefinedundefined" {
+	wantKind(t, err, goPanic)
+	if v, err := m.Eval(`typeof finished + typeof caught + typeof again`, EvalGlobal); err != nil || v != "undefinedundefinedundefined" {
 		t.Fatalf("page code saw the panic: %v, %v", v, err)
 	}
 	wantNoPendingException(t, m)

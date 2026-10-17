@@ -294,6 +294,23 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   timeout too long for the clock, up to `math.MaxInt64`, never fires: the
   deadline used to wrap around to the past and interrupt the call at once.
   Test: `clock_test.go`.
+- `*Error` says whether the call ended with an exception no script could
+  catch, and why, so that an embedder need not compare names and messages,
+  which a script can copy. `Uncatchable` is true when the VM ran out of
+  memory (`OutOfMemory`, also when the engine could not build the error and
+  threw `null`), when `Interrupt` or the eval timeout stopped the script
+  (`Interrupted`), and when a Go function that javascript called panicked
+  (neither of the two). The same holds for the error a Go function gets
+  from javascript it evaluates. What a script throws is never uncatchable,
+  even `new InternalError('interrupted')` or `{name: 'InternalError',
+  message: 'out of memory'}`, which used to look exactly like the real
+  thing. Taking an uncatchable error runs no page code: `Name` is
+  `InternalError`, `Message` and `Stack` are the error's own properties,
+  and `Error()` is `InternalError: <message>`. It used to call an
+  `Error.prototype.toString` or a `name` getter that page code installed,
+  which could rewrite the message. An interrupt that runs out of memory
+  building its error counts as `OutOfMemory`. Tests: `uncatchable_test.go`,
+  `hostuncatchable_test.go`, `hostpanic_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.

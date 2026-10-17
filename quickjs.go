@@ -322,6 +322,14 @@ func (u Undefined) String() string {
 // Only parse/syntax errors carry the FileName, LineNumber and ColumnNumber
 // properties. For runtime errors those fields are zero and the source location
 // is available only from Stack.
+//
+// Uncatchable, OutOfMemory and Interrupted tell an error the engine ended the
+// call with from one the script threw, without comparing names or messages,
+// which a script can copy:
+//
+//	if errors.As(err, &e) && e.OutOfMemory {
+//		// the script needs a higher SetMemoryLimit
+//	}
 type Error struct {
 	raw string
 
@@ -331,6 +339,16 @@ type Error struct {
 	LineNumber   int    // line where the error occurred (parse errors only)
 	ColumnNumber int    // column where the error occurred (parse errors only)
 	FileName     string // file name where the error occurred (parse errors only)
+
+	// Uncatchable reports that the call ended with an exception no catch
+	// or finally block of the script ran for: the VM ran out of memory
+	// (OutOfMemory), Interrupt or the eval timeout stopped it
+	// (Interrupted), or a Go function that javascript called panicked
+	// (neither of the two). Whatever a script throws itself is never
+	// uncatchable, whatever its name and message.
+	Uncatchable bool
+	OutOfMemory bool // the VM ran out of memory (Uncatchable is true)
+	Interrupted bool // Interrupt or the eval timeout stopped the script (Uncatchable is true)
 }
 
 // Error implements the error interface. It returns the same string the engine
@@ -1398,8 +1416,8 @@ func (m *VM) errFromException() error {
 }
 
 // takeException takes the pending exception out of the context and returns
-// it as an *Error, and whether it was uncatchable (an interrupt, or running
-// out of memory).
+// it as an *Error, and whether it was uncatchable (an interrupt, running out
+// of memory, or a panic in a Go function).
 func (m *VM) takeException() (err *Error, uncatchable bool) {
 	tls := m.runtime.tls
 	ctx := m.cContext
@@ -1411,12 +1429,29 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 
 	defer lib.XFreeValue(tls, ctx, e)
 
-	if uncatchable && tag(e) == lib.EJS_TAG_NULL {
+	switch {
+	case uncatchable && tag(e) == lib.EJS_TAG_NULL:
 		// The engine throws null when it runs out of memory building an
 		// error.
 		err = outOfMemoryError()
-	} else {
+	case uncatchable:
+		err = uncatchableError(tls, ctx, e)
+	default:
 		err = ErrorFromValue(Value{vm: m, v: e})
+	}
+	if uncatchable {
+		// No script can throw an uncatchable exception, and none runs
+		// between the engine making it and here (uncatchableError runs
+		// none either), so this is one of the errors the engine or the VM
+		// ends a call with, with the message it was made with: an interrupt,
+		// running out of memory, or a panic in a Go function (hostPanicked).
+		err.Uncatchable = true
+		switch err.Message {
+		case "out of memory":
+			err.OutOfMemory = true
+		case "interrupted":
+			err.Interrupted = true
+		}
 	}
 	defer m.repanic()
 	if uncatchable && m.host > 0 {
@@ -1463,6 +1498,69 @@ func (m *VM) repanic() {
 		m.panicked = nil
 		panic(p)
 	}
+}
+
+// uncatchableError returns e, an uncatchable error the engine or the VM
+// made, without running javascript. Once the exception is out of the
+// context, javascript can run again, and ErrorFromValue would run what page
+// code installed with e as 'this': Error.prototype.toString for the string
+// form, and a getter for the name, which comes from the prototype. Either
+// could rewrite the message, which tells the errors apart. So only the own
+// data properties message and stack are read, the name is InternalError,
+// the class the engine and hostPanicked make all of them with, and the
+// string form is the one Error.prototype.toString makes of the two.
+func uncatchableError(tls *libc.TLS, ctx uintptr, e lib.TJSValue) *Error {
+	message := ownString(tls, ctx, e, lib.EJS_ATOM_message)
+	raw := "InternalError"
+	if message != "" {
+		raw += ": " + message
+	}
+	return &Error{raw: raw, Name: "InternalError", Message: message, Stack: ownString(tls, ctx, e, lib.EJS_ATOM_stack)}
+}
+
+// ownString returns the own property atom of v, an error the engine or the
+// VM made, when it is a string, and "" otherwise. It runs no javascript: the
+// engine defined message and stack on v as data properties, and nothing ran
+// since, so the read finds them on v and calls nothing, and a property v
+// lacks is not looked up on the prototype, where page code could have put a
+// getter. Reading a stack the engine has not formatted yet formats it, and
+// making the Go string of a string built by concatenation needs memory:
+// running out of memory there is dropped, uncatchable flag and all.
+func ownString(tls *libc.TLS, ctx uintptr, v lib.TJSValue, atom lib.TJSAtom) string {
+	switch lib.XJS_GetOwnProperty(tls, ctx, 0, v, atom) {
+	case 0:
+		return ""
+	case 1:
+	default:
+		dropUncatchable(tls, ctx)
+		return ""
+	}
+
+	p := lib.XJS_GetPropertyInternal(tls, ctx, v, atom, v, 0)
+	if isException(p) {
+		dropUncatchable(tls, ctx)
+		return ""
+	}
+
+	defer lib.XFreeValue(tls, ctx, p)
+
+	if tag(p) != lib.EJS_TAG_STRING && tag(p) != lib.EJS_TAG_STRING_ROPE {
+		return ""
+	}
+
+	str, ok := cString(tls, ctx, p)
+	if !ok {
+		dropUncatchable(tls, ctx)
+	}
+	return str
+}
+
+// dropUncatchable drops the exception pending in ctx and clears the
+// uncatchable flag running out of memory sets, so that it does not stay
+// with the next exception thrown (see takeException).
+func dropUncatchable(tls *libc.TLS, ctx uintptr) {
+	dropException(tls, ctx)
+	lib.XJS_SetUncatchableException(tls, ctx, 0)
 }
 
 // outOfMemoryError is the error the engine throws when it runs out of
