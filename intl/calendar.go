@@ -99,7 +99,7 @@ func fields(t time.Time, ca string) dateFields {
 	f := dateFields{
 		weekday: int(t.Weekday()),
 		hour:    t.Hour(), minute: t.Minute(), second: t.Second(), milli: t.Nanosecond() / 1e6,
-		offset: offset, dst: t.IsDST(), t: t,
+		offset: offset, dst: isDST(t), t: t,
 	}
 	y, m, d := t.Date()
 	switch ca {

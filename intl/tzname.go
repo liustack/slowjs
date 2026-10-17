@@ -174,7 +174,7 @@ func (z *zoneNamer) specific(id string, t time.Time, long bool) string {
 	if long {
 		kind = "long/"
 	}
-	if t.IsDST() {
+	if isDST(t) {
 		kind += "daylight"
 	} else {
 		kind += "standard"
@@ -225,7 +225,7 @@ func (z *zoneNamer) genericNonLocation(id string, t time.Time, long bool) string
 	}
 
 	var name string
-	if !t.IsDST() && !dstNear(t) {
+	if !isDST(t) && !dstNear(t) {
 		// A zone without daylight saving time around t is named by its
 		// standard time, unless that reads the same as the generic name.
 		if std := z.displayName(id, width+"standard", t); std != "" && !strings.EqualFold(std, z.metazoneName(mz, width+"generic")) {
@@ -251,7 +251,7 @@ func (z *zoneNamer) genericNonLocation(id string, t time.Time, long bool) string
 	if loc, err := time.LoadLocation(golden); err == nil {
 		_, off := t.Zone()
 		gt := t.In(loc)
-		if _, goff := gt.Zone(); goff == off && gt.IsDST() == t.IsDST() {
+		if _, goff := gt.Zone(); goff == off && isDST(gt) == isDST(t) {
 			return mzName
 		}
 	}
@@ -260,14 +260,42 @@ func (z *zoneNamer) genericNonLocation(id string, t time.Time, long bool) string
 }
 
 // dstNear reports whether t's zone observes daylight saving time in a
-// transition less than dstCheckRange away.
+// transition less than dstCheckRange away: the time just before t's offset
+// and flag began or just after they end. A transition where neither changes,
+// which the data Go reads can have, is passed over.
 func dstNear(t time.Time) bool {
-	start, end := t.ZoneBounds()
-	if !start.IsZero() && t.Sub(start) < dstCheckRange && start.Add(-time.Nanosecond).IsDST() {
-		return true
+	_, offset := t.Zone()
+	dst := isDST(t)
+	same := func(u time.Time) bool {
+		_, o := u.Zone()
+		return o == offset && isDST(u) == dst
 	}
 
-	return !end.IsZero() && end.Sub(t) < dstCheckRange && end.IsDST()
+	for c := t; ; {
+		start, _ := periodBounds(c)
+		if start.IsZero() || t.Sub(start) >= dstCheckRange {
+			break
+		}
+		before := start.Add(-time.Nanosecond)
+		if !same(before) {
+			if isDST(before) {
+				return true
+			}
+			break
+		}
+		c = before
+	}
+
+	for c := t; ; {
+		_, end := periodBounds(c)
+		if end.IsZero() || end.Sub(t) >= dstCheckRange {
+			return false
+		}
+		if !same(end) {
+			return isDST(end)
+		}
+		c = end
+	}
 }
 
 // partialLocation is ICU's getPartialLocationName: "Mountain Time

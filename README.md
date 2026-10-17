@@ -292,6 +292,22 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of any language also decodes about 1 MB of shared data. Formatting a date
   takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
   2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
+- Package `intl` tells daylight saving time from standard time as ICU does,
+  whichever form of the tz data Go reads. In the main form, which Linux
+  distributions and Go's `time/tzdata` ship, Europe/Dublin's summer time
+  is its standard time and its winter time is daylight saving time, an
+  hour behind. Africa/Casablanca, Africa/El_Aaiun, Africa/Windhoek and
+  Europe/Prague (1946 to 1947) have such negative daylight saving time
+  too. ICU builds from the rearguard form, where daylight saving time is
+  always ahead of standard time, and macOS ships that form. Go's `IsDST`
+  says what the data says, so on Linux the names of these zones came out
+  swapped: Dublin in winter was `Irish Standard Time`, the name Chromium
+  gives its summer. For these zones and their links the flag now comes
+  from a table of the rearguard form of tzdb 2026d, the release in
+  Chromium 156's ICU (`intl/tzdst_table.go`, see "Updating the intl locale
+  data"). When Go reads another release and the table has another offset
+  for a time, or the time is past 2037, the flag is the one of the zone's
+  last period with the same offset. Tests: `intl/tzdst_test.go`.
 - The eval timeout (`SetEvalTimeout`) runs on the monotonic clock. It used
   to run on the wall clock, so setting the system clock while a script ran
   (NTP, a person, a machine waking from sleep) moved the deadline: set
@@ -541,13 +557,28 @@ checked with the golden test below.
 
 ### Updating the intl locale data
 
-`intl/cldr.bin` is generated from cldr-json and checked in, so neither a
-build nor `go test` needs the network or Node. To generate it again:
+`intl/cldr.bin` is generated from cldr-json and `intl/tzdst_table.go` from
+tzdb, and both are checked in, so neither a build nor `go test` needs the
+network or Node. To generate them again:
 
 ```sh
 go run ./intl/internal/gen -fetch    # downloads what is missing into a cache directory
 go test ./intl                       # includes the golden test against Chromium
 ```
+
+The tzdb step needs `make`, `awk` and `zic` (`-zic` names another zic). It
+unpacks the release in `tzdbVersion` in `intl/internal/gen/tzdb.go`,
+after checking its SHA-256 against `tzdbSHA256`, makes `main.zi` and
+`rearguard.zi` with the release's Makefile and compiles both. The table
+lists the zones and links whose daylight saving flag differs between the
+two forms before 2038, with their periods in the rearguard form, which is
+what ICU builds from. The generator also copies a few zones in both forms
+to `intl/testdata/tzdata` for the tests. To move to a new release, take
+the one in the ICU data of the Chromium the golden test records with: the
+`TZVersion` of `zoneinfo64.res` in its `icudtl.dat` (see below for where to
+get that file). Set `tzdbVersion` and `tzdbSHA256` (the SHA-256 of
+`tzdata<version>.tar.gz` from https://data.iana.org/time-zones/releases/,
+whose signature is the `.asc` next to it) and run the two commands.
 
 To move to a new CLDR release, set `cldrTag` in `intl/internal/gen/main.go`
 to the cldr-json tag and run the two commands. The golden test then shows
@@ -613,6 +644,7 @@ go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
+go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
 go test ./internal/fixlib                                # fixlib notices new reads of property values
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

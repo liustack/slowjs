@@ -11,7 +11,9 @@
 //
 // -fetch downloads the files it needs for the CLDR version in cldrTag into
 // -cldr (a cache directory by default) and skips files already there. Without
-// it the directory has to hold a cldr-json checkout or the same files.
+// it the directory has to hold a cldr-json checkout or the same files. It
+// also downloads the tzdb release in tzdbVersion to -tzdb (in the cache
+// directory by default), whose SHA-256 is checked on every run.
 //
 // Which locales get data is decided by intl/testdata/chromium/availability.json, the
 // locales a Chromium build reports as supported. It is written by the golden
@@ -19,7 +21,13 @@
 // formats is one the browser formats too, and one the browser falls back from
 // falls back here as well.
 //
-// The output is a single file. Its layout:
+// It also writes intl/tzdst_table.go, which says when a few zones are in
+// daylight saving time as ICU says it (see tzdb.go), and the zones the tests
+// of that table read, from the tzdb release in tzdbVersion. That step needs
+// make, awk and zic (-zic). -check writes nothing and fails if cldr.bin or
+// the table is not what the inputs give.
+//
+// The layout of cldr.bin:
 //
 //	"QJI1"
 //	uvarint count, then that many key strings (uvarint length + bytes)
@@ -64,6 +72,12 @@ var (
 	browser = flag.String("chromium", "intl/testdata/chromium/availability.json", "the Chromium locale availability file")
 	icu     = flag.String("icu", "intl/testdata/chromium/icu.json.gz", "the summary of Chromium's ICU data")
 	icudtl  = flag.String("icudtl", "", "summarize this ICU data file of Chromium's into -icu and exit")
+
+	dstOut   = flag.String("dst", "intl/tzdst_table.go", "output file of the daylight saving table")
+	tzdata   = flag.String("tzdata", "intl/testdata/tzdata", "output directory of the test zones")
+	tzdbPath = flag.String("tzdb", "", "tzdata tarball (default: in the cache directory)")
+	zic      = flag.String("zic", "zic", "the tz compiler")
+	check    = flag.Bool("check", false, "write nothing, fail if an output is not what the inputs give")
 )
 
 func main() {
@@ -86,6 +100,7 @@ func main() {
 	g := &gen{keys: map[string]int{}}
 	if *fetch {
 		fetchFiles(supplementalFiles)
+		fetchTZDB()
 	}
 
 	// Root is the parent of every language, as it is in ICU: Chromium has
@@ -97,11 +112,40 @@ func main() {
 	}
 
 	g.build(av)
-	if err := os.WriteFile(*out, g.encode(), 0o644); err != nil {
+	output(*out, g.encode())
+	g.report()
+
+	db, dir := buildTZDB()
+	defer os.RemoveAll(dir)
+
+	table, names := dstTable(db)
+	output(*dstOut, table)
+	if !*check {
+		writeTestZones(db, *tzdata)
+	}
+	fmt.Printf("tzdb %s: %d of %d zones and links take the rearguard daylight saving flag: %s\n",
+		tzdbVersion, len(names), len(db.names), strings.Join(names, " "))
+}
+
+// output writes b to the file at path, or with -check fails if the file
+// holds something else.
+func output(path string, b []byte) {
+	if !*check {
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			fail(err)
+		}
+
+		return
+	}
+
+	old, err := os.ReadFile(path)
+	if err != nil {
 		fail(err)
 	}
 
-	g.report()
+	if !bytes.Equal(old, b) {
+		fail(fmt.Errorf("%s is not what the generator makes of its inputs: run it without -check", path))
+	}
 }
 
 func fail(err error) {
