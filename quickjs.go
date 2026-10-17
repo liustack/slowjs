@@ -102,6 +102,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	lib "github.com/liustack/quickjs/lib"
@@ -244,6 +245,7 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 func (m *VM) newString(s string) (r lib.TJSValue, err error) {
 	tls := m.runtime.tls
 	ctx := m.cContext
+	s = validUTF8(s)
 	p, err := libc.CString(s)
 	if err != nil {
 		return r, err
@@ -1092,6 +1094,7 @@ func (m *VM) convertArgs(goArgs ...any) (jsArgs, free []lib.TJSValue, err error)
 		case bool:
 			jsArgs = append(jsArgs, newBool(x))
 		case string:
+			x = validUTF8(x)
 			p, err := libc.CString(x)
 			if err != nil {
 				return nil, free, err
@@ -1268,6 +1271,28 @@ func wellFormed(b []byte) string {
 		return string(b)
 	}
 	return unsafe.String(unsafe.SliceData(fixed), len(fixed))
+}
+
+// validUTF8 returns s with U+FFFD for each byte that does not start a valid
+// UTF-8 sequence, the Go -> JS counterpart of wellFormed. That is how Go
+// itself decodes a string (for range, []rune, utf16.Encode) and how
+// encoding/json writes one, so a Go string reaches javascript the same way
+// whether it is passed as it is or inside a struct, which goes as JSON. The
+// engine's JS_NewStringLen skipped the bytes after an invalid one, ASCII
+// included ("\x80a" became a lone U+FFFD), and took the three bytes of a
+// surrogate (0xED 0xA0 to 0xBF) as that surrogate. A sequence cut short
+// ("\xe4\xb8") gives one U+FFFD per byte here, where a browser's TextDecoder
+// gives one for the sequence.
+func validUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+
+	b := make([]byte, 0, len(s)+2*utf8.UTFMax)
+	for _, r := range s {
+		b = utf8.AppendRune(b, r) // an invalid byte comes as utf8.RuneError
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 // cGoString returns the NUL-terminated C string p, which the engine wrote
@@ -1677,7 +1702,7 @@ var (
 )
 
 func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(msg)
+	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
 		return lib.XJS_ThrowTypeError(tls, ctx, 0, 0)
 	}
@@ -1692,7 +1717,7 @@ func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
 }
 
 func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(msg)
+	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
 		return lib.XJS_ThrowInternalError(tls, ctx, 0, 0)
 	}
@@ -1845,7 +1870,7 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 	}
 	m.goFuncs[name] = magic
 
-	cName, err := libc.CString(name)
+	cName, err := libc.CString(validUTF8(name))
 	if err != nil {
 		return err
 	}
@@ -2234,7 +2259,7 @@ func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
 			}
 		}
 
-		p, err2 := libc.CString(kv.key)
+		p, err2 := libc.CString(validUTF8(kv.key))
 		if err2 != nil {
 			lib.XFreeValue(tls, ctx, jv)
 			lib.XFreeValue(tls, ctx, obj)
@@ -2308,7 +2333,7 @@ type Atom = lib.TJSAtom
 func (m *VM) NewAtom(s string) (r Atom, err error) {
 	tls := m.runtime.tls
 	ctx := m.cContext
-	p, err := libc.CString(s)
+	p, err := libc.CString(validUTF8(s))
 	if err != nil {
 		return lib.MJS_ATOM_NULL, fmt.Errorf("OOM")
 	}
@@ -2773,7 +2798,7 @@ type moduleLoaderState struct {
 // can safely call js_free() on it. We use lib.Xjs_strdup to let the C side handle
 // the 32-bit/64-bit memory tracking alignment natively.
 func jsMallocString(tls *libc.TLS, ctx uintptr, s string) uintptr {
-	temp, err := libc.CString(s)
+	temp, err := libc.CString(validUTF8(s))
 	if err != nil {
 		return 0
 	}
