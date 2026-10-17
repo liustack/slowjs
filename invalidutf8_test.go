@@ -124,6 +124,19 @@ func TestGoInvalidUTF8(t *testing.T) {
 		if _, err := m.Eval(`for (const k of Object.keys(globalThis)) if (globalThis[k] === 1) delete globalThis[k]`, EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
+
+		// So is the name of a Go function.
+		if _, err := m.Eval(`Object.defineProperty(globalThis, 'before', {value: new Set(Object.getOwnPropertyNames(globalThis)), configurable: true, writable: true})`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.RegisterFunc(s, func() int { return 2 }, false); err != nil {
+			t.Fatal(err)
+		}
+		got, err = m.Eval(`units(Object.getOwnPropertyNames(globalThis).find(k => !before.has(k) && k !== 'before'))`, EvalGlobal)
+		check("function name", got, err)
+		if _, err := m.Eval(`for (const k of Object.getOwnPropertyNames(globalThis)) if (!before.has(k) && k !== 'before') delete globalThis[k]`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
