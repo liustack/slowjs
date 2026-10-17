@@ -270,8 +270,10 @@ func TestBacktracePendingNeedsDataProperty(t *testing.T) {
 		t.Fatal("no stack")
 	}
 	marker := XDupValue(v.tls, v.ctx, *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(ppr)))))
-	fake := v.tls.Alloc(int(unsafe.Sizeof(TJSValue{})))
-	defer v.tls.Free(int(unsafe.Sizeof(TJSValue{})))
+	// TJSValue is a struct on 64-bit platforms and a uint64 on 32-bit ones,
+	// so take its size from a value rather than a composite literal.
+	fake := v.tls.Alloc(int(unsafe.Sizeof(marker)))
+	defer v.tls.Free(int(unsafe.Sizeof(marker)))
 	*(*TJSValue)(unsafe.Pointer(fake)) = marker
 	// The fake holds the reference taken above; settle would replace it.
 	defer func() { XFreeValue(v.tls, v.ctx, *(*TJSValue)(unsafe.Pointer(fake))) }()

@@ -102,6 +102,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	lib "github.com/liustack/quickjs/lib"
@@ -179,12 +180,15 @@ func (r *runtime) newVM() (*VM, error) {
 	}
 
 	return &VM{
-		cContext:      c,
-		int32_16:      lib.XNewInt32(r.tls, c, 16),
-		int32_2:       lib.XNewInt32(r.tls, c, 2),
-		interruptData: interruptData,
-		runtime:       r,
-		toStringArgv:  argv,
+		intr: &interrupter{flag: interruptData},
+		vmState: vmState{
+			cContext:      c,
+			int32_16:      lib.XNewInt32(r.tls, c, 16),
+			int32_2:       lib.XNewInt32(r.tls, c, 2),
+			interruptData: interruptData,
+			runtime:       r,
+			toStringArgv:  argv,
+		},
 	}, nil
 }
 
@@ -241,6 +245,7 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 func (m *VM) newString(s string) (r lib.TJSValue, err error) {
 	tls := m.runtime.tls
 	ctx := m.cContext
+	s = validUTF8(s)
 	p, err := libc.CString(s)
 	if err != nil {
 		return r, err
@@ -430,8 +435,26 @@ type interruptData struct {
 // VM represents a Javascript context (or Realm). Each VM has its
 // own global objects and system objects.
 //
-// Note: VM is not safe for concurrent use by multiple goroutines.
+// Note: VM is not safe for concurrent use by multiple goroutines, except
+// for [VM.Interrupt].
 type VM struct {
+	// intr is set when the VM is made and never written again, Close
+	// included, so that Interrupt can read it from any goroutine.
+	intr *interrupter
+	vmState
+}
+
+// interrupter is how Interrupt reaches the interrupt flag, which lives in C
+// memory that Close frees. It lives in Go memory, so it stays valid after
+// Close, and its mutex orders Interrupt and Close: the race detector does not
+// see the atomic operations on the flag itself, which is outside Go's heap.
+type interrupter struct {
+	mu   sync.Mutex
+	flag uintptr // the interruptData, 0 once Close has started
+}
+
+// vmState is the state of a VM that Close clears.
+type vmState struct {
 	cContext uintptr // lib.TJSContext
 	goFuncs  map[string]int32
 	// Safe to share, not reference counted
@@ -481,11 +504,18 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 }
 
 // Interrupt requests 'm' to interrupt Javascript evaluation. Interrupt
-// can be called asynchronously at any time m is evaluating a script. The
-// request stays pending until the outermost call into javascript returns, so
-// javascript a host function evaluates on m meanwhile does not clear it.
+// can be called asynchronously, from any goroutine, at any time m is
+// evaluating a script. The request stays pending until the outermost call
+// into javascript returns, so javascript a host function evaluates on m
+// meanwhile does not clear it. Interrupt is also safe while m closes and after
+// Close, where it does nothing, so a watchdog need not know whether the
+// script it guards has finished.
 func (m *VM) Interrupt() {
-	atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt, 1)
+	m.intr.mu.Lock()
+	if m.intr.flag != 0 {
+		atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.intr.flag)).interrupt, 1)
+	}
+	m.intr.mu.Unlock()
 }
 
 // enter marks the start of a call into javascript, leave its end. Only the
@@ -506,7 +536,7 @@ func (m *VM) leave() {
 
 func (m *VM) configureInterrupt() {
 	if m.interruptData != 0 {
-		(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt = 0
+		atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt, 0)
 		if m.timeout != 0 {
 			(*interruptData)(unsafe.Pointer(m.interruptData)).timeLimit = monoDeadline(m.timeout)
 		} else {
@@ -579,11 +609,16 @@ func (m *VM) Close() error {
 		libc.Xfree(tls, gf.tab)
 	}
 
+	// Interrupt can run concurrently: let it see the flag gone before it
+	// is freed.
+	m.intr.mu.Lock()
+	m.intr.flag = 0
+	m.intr.mu.Unlock()
 	libc.Xfree(tls, m.interruptData)
 	libc.Xfree(tls, m.toStringArgv)
 	lib.XJS_FreeContext(tls, ctx)
 	r := m.runtime
-	*m = VM{}
+	m.vmState = vmState{}
 	return r.close()
 }
 
@@ -1059,6 +1094,7 @@ func (m *VM) convertArgs(goArgs ...any) (jsArgs, free []lib.TJSValue, err error)
 		case bool:
 			jsArgs = append(jsArgs, newBool(x))
 		case string:
+			x = validUTF8(x)
 			p, err := libc.CString(x)
 			if err != nil {
 				return nil, free, err
@@ -1235,6 +1271,28 @@ func wellFormed(b []byte) string {
 		return string(b)
 	}
 	return unsafe.String(unsafe.SliceData(fixed), len(fixed))
+}
+
+// validUTF8 returns s with U+FFFD for each byte that does not start a valid
+// UTF-8 sequence, the Go -> JS counterpart of wellFormed. That is how Go
+// itself decodes a string (for range, []rune, utf16.Encode) and how
+// encoding/json writes one, so a Go string reaches javascript the same way
+// whether it is passed as it is or inside a struct, which goes as JSON. The
+// engine's JS_NewStringLen skipped the bytes after an invalid one, ASCII
+// included ("\x80a" became a lone U+FFFD), and took the three bytes of a
+// surrogate (0xED 0xA0 to 0xBF) as that surrogate. A sequence cut short
+// ("\xe4\xb8") gives one U+FFFD per byte here, where a browser's TextDecoder
+// gives one for the sequence.
+func validUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+
+	b := make([]byte, 0, len(s)+2*utf8.UTFMax)
+	for _, r := range s {
+		b = utf8.AppendRune(b, r) // an invalid byte comes as utf8.RuneError
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 // cGoString returns the NUL-terminated C string p, which the engine wrote
@@ -1644,7 +1702,7 @@ var (
 )
 
 func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(msg)
+	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
 		return lib.XJS_ThrowTypeError(tls, ctx, 0, 0)
 	}
@@ -1659,7 +1717,7 @@ func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
 }
 
 func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(msg)
+	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
 		return lib.XJS_ThrowInternalError(tls, ctx, 0, 0)
 	}
@@ -1812,7 +1870,7 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 	}
 	m.goFuncs[name] = magic
 
-	cName, err := libc.CString(name)
+	cName, err := libc.CString(validUTF8(name))
 	if err != nil {
 		return err
 	}
@@ -2201,7 +2259,7 @@ func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
 			}
 		}
 
-		p, err2 := libc.CString(kv.key)
+		p, err2 := libc.CString(validUTF8(kv.key))
 		if err2 != nil {
 			lib.XFreeValue(tls, ctx, jv)
 			lib.XFreeValue(tls, ctx, obj)
@@ -2275,7 +2333,7 @@ type Atom = lib.TJSAtom
 func (m *VM) NewAtom(s string) (r Atom, err error) {
 	tls := m.runtime.tls
 	ctx := m.cContext
-	p, err := libc.CString(s)
+	p, err := libc.CString(validUTF8(s))
 	if err != nil {
 		return lib.MJS_ATOM_NULL, fmt.Errorf("OOM")
 	}
@@ -2740,7 +2798,7 @@ type moduleLoaderState struct {
 // can safely call js_free() on it. We use lib.Xjs_strdup to let the C side handle
 // the 32-bit/64-bit memory tracking alignment natively.
 func jsMallocString(tls *libc.TLS, ctx uintptr, s string) uintptr {
-	temp, err := libc.CString(s)
+	temp, err := libc.CString(validUTF8(s))
 	if err != nil {
 		return 0
 	}

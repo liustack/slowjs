@@ -39,6 +39,22 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   characters. Now each lone surrogate becomes U+FFFD, as Go's
   `utf16.Decode`, `TextEncoder` and Node's `Buffer` make it. Test:
   `surrogate_test.go`.
+- A Go string that is not valid UTF-8 becomes a JS string with U+FFFD for
+  each byte that does not start a valid sequence, as Go decodes it
+  (`for range`, `[]rune`, `utf16.Encode`) and as `encoding/json` writes it,
+  so a string passed as it is and one inside a struct, which goes as JSON,
+  arrive the same. This covers arguments of `Call`, results of Go
+  functions, map keys and values, `NewString`, `NewAtom`, the message of an
+  error a Go function returns, function names and module names. The engine
+  used to skip the bytes after an invalid one, ASCII included: `"\x80a"`
+  became a single U+FFFD and lost the `a`, `"\xc0\x80"` gave one U+FFFD
+  instead of two, and the three-byte form of a surrogate (CESU-8, `0xED 0xA0`
+  and on) became that surrogate, so two of them made an emoji. A sequence cut
+  short, such as `"\xe4\xb8"`, now gives one U+FFFD per byte, where a
+  browser's `TextDecoder` gives one for the sequence. Source code is not
+  changed: the parser still reports invalid UTF-8 as a `SyntaxError`, and
+  still takes a surrogate in the three-byte form. Test:
+  `invalidutf8_test.go`.
 - Page code can no longer catch an interrupt (`VM.Interrupt` or the eval
   timeout) through a promise or an iterator. The engine already skipped
   every `catch` and `finally` block for an interrupt, but its own handlers
@@ -318,6 +334,16 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   timeout too long for the clock, up to `math.MaxInt64`, never fires: the
   deadline used to wrap around to the past and interrupt the call at once.
   Test: `clock_test.go`.
+- `VM.Interrupt` can be called from any goroutine while the VM closes and
+  after `Close`, where it does nothing. It used to read the address of the
+  interrupt flag, which `Close` frees and then clears, so a watchdog firing
+  just as the script finished could write to freed memory or panic on a nil
+  pointer. The race detector also reported a race when `Interrupt` stopped a
+  script and the VM was closed after the call returned. That one was not
+  real: the two goroutines are ordered by the atomic flag, but the flag is in
+  C memory, outside Go's heap, where the race detector ignores atomic
+  operations. `Interrupt` and `Close` now meet at a mutex in Go memory that
+  `Close` never clears. Test: `interrupt_test.go`.
 - `*Error` says whether the call ended with an exception no script could
   catch, and why, so that an embedder need not compare names and messages,
   which a script can copy. `Uncatchable` is true when the VM ran out of

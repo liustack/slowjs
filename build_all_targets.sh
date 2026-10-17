@@ -1,47 +1,19 @@
 set -e
+targets="darwin/amd64 darwin/arm64 freebsd/amd64 freebsd/arm64 linux/386 linux/amd64 linux/arm linux/arm64 linux/loong64 linux/ppc64le linux/riscv64 linux/s390x windows/amd64 windows/arm64"
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
 for tag in none libc.memgrind
 do
 	echo "-tags=$tag"
-	echo "GOOS=darwin GOARCH=amd64"
-	GOOS=darwin GOARCH=amd64 go build -tags=$tag -v ./...
-	GOOS=darwin GOARCH=amd64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=darwin GOARCH=arm64"
-	GOOS=darwin GOARCH=arm64 go build -tags=$tag -v ./...
-	GOOS=darwin GOARCH=arm64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=freebsd GOARCH=amd64"
-	GOOS=freebsd GOARCH=amd64 go build -tags=$tag -v ./...
-	GOOS=freebsd GOARCH=amd64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=freebsd GOARCH=arm64"
-	GOOS=freebsd GOARCH=arm64 go build -tags=$tag -v ./...
-	GOOS=freebsd GOARCH=arm64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=386"
-	GOOS=linux GOARCH=386 go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=386 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=amd64"
-	GOOS=linux GOARCH=amd64 go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=amd64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=arm"
-	GOOS=linux GOARCH=arm go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=arm go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=arm64"
-	GOOS=linux GOARCH=arm64 go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=arm64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=loong64"
-	GOOS=linux GOARCH=loong64 go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=loong64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=ppc64le"
-	GOOS=linux GOARCH=ppc64le go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=ppc64le go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=riscv64"
-	GOOS=linux GOARCH=riscv64 go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=riscv64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=linux GOARCH=s390x"
-	GOOS=linux GOARCH=s390x go build -tags=$tag -v ./...
-	GOOS=linux GOARCH=s390x go test -tags=$tag -c -o /dev/null
-	echo "GOOS=windows GOARCH=amd64"
-	GOOS=windows GOARCH=amd64 go build -tags=$tag -v ./...
-	GOOS=windows GOARCH=amd64 go test -tags=$tag -c -o /dev/null
-	echo "GOOS=windows GOARCH=arm64"
-	GOOS=windows GOARCH=arm64 go build -tags=$tag -v ./...
-	GOOS=windows GOARCH=arm64 go test -tags=$tag -c -o /dev/null
+	for target in $targets
+	do
+		goos=${target%/*}
+		goarch=${target#*/}
+		echo "GOOS=$goos GOARCH=$goarch"
+		GOOS=$goos GOARCH=$goarch go build -tags=$tag -v ./...
+		# The tests of every package, not only the root one: the tests of
+		# lib/ use the value representation, which is not a struct on 32-bit
+		# targets.
+		GOOS=$goos GOARCH=$goarch go test -tags=$tag -c -o "$out/" ./...
+	done
 done
