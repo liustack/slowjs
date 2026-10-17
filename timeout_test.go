@@ -12,7 +12,7 @@ import (
 )
 
 // TestCallRearmsEvalTimeout is the regression test for a spurious "InternalError:
-// interrupted" after an idle period. The eval-timeout deadline is absolute wall-clock
+// interrupted" after an idle period. The eval-timeout deadline is absolute
 // and was re-armed only by the Eval* functions, not Call/CallValue/ExecutePendingJobs.
 // So once the timeout elapsed after the last Eval — even while nothing ran — the next
 // Call was interrupted, and stayed interrupted. Those entry points now re-arm the
@@ -25,7 +25,7 @@ func TestCallRearmsEvalTimeout(t *testing.T) {
 	}
 	defer m.Close()
 
-	// quick loops enough to reach an interrupt check, so the wall-clock deadline is
+	// quick loops enough to reach an interrupt check, so the deadline is
 	// actually consulted while it runs. Its absolute runtime is deliberately kept out
 	// of the pass/fail decision below (see the widen step): on a slow emulated builder
 	// the loop alone can take >100ms, which must not be confused with a stale deadline.
@@ -79,7 +79,7 @@ func TestCallRearmsEvalTimeout(t *testing.T) {
 
 // TestValueCallRearmsEvalTimeout is the [Value.Call]/[Value.CallValue] analog of
 // TestCallRearmsEvalTimeout. Those methods run JS just like VM.Call does, so they
-// have to re-arm the absolute wall-clock deadline too. Without that they inherit
+// have to re-arm the absolute deadline too. Without that they inherit
 // whatever deadline the last Eval left behind — after an idle period typically one
 // already in the past — and every callee reaching an interrupt check is interrupted
 // before doing any work. Only the trivial ones, finishing before the first check,

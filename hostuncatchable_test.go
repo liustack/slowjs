@@ -16,12 +16,14 @@ var hostCases = []struct {
 	nested           string
 	ignore           bool
 	errName, message string
+	kind             errorKind
 	setup            func(m *VM)
 }{
-	{"timeout", `for (;;);`, false, "InternalError", "interrupted", func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
-	{"timeout dropped", `for (;;);`, true, "InternalError", "interrupted", func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
-	{"out of memory", `grow()`, false, "InternalError", "out of memory", func(m *VM) { m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20) }},
-	{"out of memory dropped", `grow()`, true, "InternalError", "out of memory", func(m *VM) { m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20) }},
+	{"timeout", `for (;;);`, false, "InternalError", "interrupted", interrupted, func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
+	{"timeout dropped", `for (;;);`, true, "InternalError", "interrupted", interrupted, func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
+	{"interrupt", `stop(); for (;;);`, false, "InternalError", "interrupted", interrupted, func(m *VM) { m.RegisterFunc("stop", m.Interrupt, false) }},
+	{"out of memory", `grow()`, false, "InternalError", "out of memory", outOfMemory, func(m *VM) { m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20) }},
+	{"out of memory dropped", `grow()`, true, "InternalError", "out of memory", outOfMemory, func(m *VM) { m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20) }},
 }
 
 // An interrupt or running out of memory in javascript that a host function
@@ -33,8 +35,10 @@ func TestUncatchableThroughHostFunc(t *testing.T) {
 		for _, c := range uncatchableCases {
 			t.Run(h.name+"/"+c.name, func(t *testing.T) {
 				m := newTestVM(t)
+				var nestedErr error
 				if err := m.RegisterHostFunc("host", func(args []any) (any, error) {
 					_, err := m.Eval(h.nested, EvalGlobal)
+					nestedErr = err
 					if h.ignore {
 						return "fine", nil
 					}
@@ -52,6 +56,8 @@ func TestUncatchableThroughHostFunc(t *testing.T) {
 				h.setup(m)
 				err, seen := runUncatchable(t, m, js)
 				wantError(t, err, h.errName, h.message)
+				wantKind(t, err, h.kind)
+				wantKind(t, nestedErr, h.kind)
 				if seen != "" {
 					t.Fatalf("page code saw the error: %s", seen)
 				}
@@ -89,6 +95,7 @@ func TestUncatchableThroughModuleLoader(t *testing.T) {
 			m.SetEvalTimeout(50 * time.Millisecond)
 			err, seen := runUncatchable(t, m, `import('m').then(() => seen.push('loaded'), () => seen.push('rejection'))`)
 			wantError(t, err, "InternalError", "interrupted")
+			wantKind(t, err, interrupted)
 			if seen != "" {
 				t.Fatalf("page code saw the error: %s", seen)
 			}
