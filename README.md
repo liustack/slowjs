@@ -318,6 +318,16 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   timeout too long for the clock, up to `math.MaxInt64`, never fires: the
   deadline used to wrap around to the past and interrupt the call at once.
   Test: `clock_test.go`.
+- `VM.Interrupt` can be called from any goroutine while the VM closes and
+  after `Close`, where it does nothing. It used to read the address of the
+  interrupt flag, which `Close` frees and then clears, so a watchdog firing
+  just as the script finished could write to freed memory or panic on a nil
+  pointer. The race detector also reported a race when `Interrupt` stopped a
+  script and the VM was closed after the call returned. That one was not
+  real: the two goroutines are ordered by the atomic flag, but the flag is in
+  C memory, outside Go's heap, where the race detector ignores atomic
+  operations. `Interrupt` and `Close` now meet at a mutex in Go memory that
+  `Close` never clears. Test: `interrupt_test.go`.
 - `*Error` says whether the call ended with an exception no script could
   catch, and why, so that an embedder need not compare names and messages,
   which a script can copy. `Uncatchable` is true when the VM ran out of

@@ -120,7 +120,9 @@ the nesting depth and only the outermost call runs `configureInterrupt()`, which
 from `m.timeout` and clears the interrupt flag; a host function that evaluates more JS on the same VM
 stays inside the outer call's budget and keeps a pending `Interrupt()`. The C-side `interruptHandler`
 polls both fields. `SetEvalTimeout` sets the duration; `Interrupt()` sets the flag atomically for async
-cancellation from another goroutine. When adding a new entry point that runs JS, remember the
+cancellation from another goroutine. It reaches the flag through `VM.intr`, a Go-heap struct whose mutex
+orders it with `Close` (which frees the flag): `Close` clears only the embedded `vmState`, never `intr`, so
+`Interrupt` is safe from any goroutine during and after `Close`. Keep new VM fields in `vmState`. When adding a new entry point that runs JS, remember the
 `enter`/`leave` pair or the timeout won't apply.
 
 ## Sub-packages and generated assets

@@ -179,12 +179,15 @@ func (r *runtime) newVM() (*VM, error) {
 	}
 
 	return &VM{
-		cContext:      c,
-		int32_16:      lib.XNewInt32(r.tls, c, 16),
-		int32_2:       lib.XNewInt32(r.tls, c, 2),
-		interruptData: interruptData,
-		runtime:       r,
-		toStringArgv:  argv,
+		intr: &interrupter{flag: interruptData},
+		vmState: vmState{
+			cContext:      c,
+			int32_16:      lib.XNewInt32(r.tls, c, 16),
+			int32_2:       lib.XNewInt32(r.tls, c, 2),
+			interruptData: interruptData,
+			runtime:       r,
+			toStringArgv:  argv,
+		},
 	}, nil
 }
 
@@ -430,8 +433,26 @@ type interruptData struct {
 // VM represents a Javascript context (or Realm). Each VM has its
 // own global objects and system objects.
 //
-// Note: VM is not safe for concurrent use by multiple goroutines.
+// Note: VM is not safe for concurrent use by multiple goroutines, except
+// for [VM.Interrupt].
 type VM struct {
+	// intr is set when the VM is made and never written again, Close
+	// included, so that Interrupt can read it from any goroutine.
+	intr *interrupter
+	vmState
+}
+
+// interrupter is how Interrupt reaches the interrupt flag, which lives in C
+// memory that Close frees. It lives in Go memory, so it stays valid after
+// Close, and its mutex orders Interrupt and Close: the race detector does not
+// see the atomic operations on the flag itself, which is outside Go's heap.
+type interrupter struct {
+	mu   sync.Mutex
+	flag uintptr // the interruptData, 0 once Close has started
+}
+
+// vmState is the state of a VM that Close clears.
+type vmState struct {
 	cContext uintptr // lib.TJSContext
 	goFuncs  map[string]int32
 	// Safe to share, not reference counted
@@ -481,11 +502,18 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 }
 
 // Interrupt requests 'm' to interrupt Javascript evaluation. Interrupt
-// can be called asynchronously at any time m is evaluating a script. The
-// request stays pending until the outermost call into javascript returns, so
-// javascript a host function evaluates on m meanwhile does not clear it.
+// can be called asynchronously, from any goroutine, at any time m is
+// evaluating a script. The request stays pending until the outermost call
+// into javascript returns, so javascript a host function evaluates on m
+// meanwhile does not clear it. Interrupt is also safe while m closes and after
+// Close, where it does nothing, so a watchdog need not know whether the
+// script it guards has finished.
 func (m *VM) Interrupt() {
-	atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt, 1)
+	m.intr.mu.Lock()
+	if m.intr.flag != 0 {
+		atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.intr.flag)).interrupt, 1)
+	}
+	m.intr.mu.Unlock()
 }
 
 // enter marks the start of a call into javascript, leave its end. Only the
@@ -506,7 +534,7 @@ func (m *VM) leave() {
 
 func (m *VM) configureInterrupt() {
 	if m.interruptData != 0 {
-		(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt = 0
+		atomic.StoreInt32(&(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt, 0)
 		if m.timeout != 0 {
 			(*interruptData)(unsafe.Pointer(m.interruptData)).timeLimit = monoDeadline(m.timeout)
 		} else {
@@ -579,11 +607,16 @@ func (m *VM) Close() error {
 		libc.Xfree(tls, gf.tab)
 	}
 
+	// Interrupt can run concurrently: let it see the flag gone before it
+	// is freed.
+	m.intr.mu.Lock()
+	m.intr.flag = 0
+	m.intr.mu.Unlock()
 	libc.Xfree(tls, m.interruptData)
 	libc.Xfree(tls, m.toStringArgv)
 	lib.XJS_FreeContext(tls, ctx)
 	r := m.runtime
-	*m = VM{}
+	m.vmState = vmState{}
 	return r.close()
 }
 
