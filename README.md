@@ -123,14 +123,20 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   crash there (a Go panic on a write before or past the code buffer, or a
   double free), report a `SyntaxError` the script does not have, or, in
   `Compile`, return bytecode cut short or `errors.New("OOM")`. The parser
-  goes on after its code buffer fails to grow, and the passes after it
-  assumed the buffer was whole: now the buffer takes no more bytes once it
-  failed, and each pass that reads it back stops with the out of memory
-  error. A scope the parser fails to push marks the function's code lost
-  too, and its scopes then stay as they are, each later push failing with
-  the out of memory error: the pop after a failed push used to take off
-  the scope around it, until a pop read before the scope array. The pass that resolves jumps frees, when it fails, the jump
-  records of the labels it has not reached yet, which used to leak. Tests: `compileoom_test.go`, `internal/fixlib/compile_test.go`.
+  went on after its code buffer failed to grow and patched code in place at
+  positions it had noted, past what the buffer held (a Go panic on an empty
+  buffer, or a write past the end of a full one), and the passes after it
+  assumed the buffer was whole. Now the parser stops at the next token once
+  the code buffer of the function it parses failed, and checks it before
+  each patch that does not wait for a token, the buffer takes no more bytes
+  once it failed, and each pass that reads it back stops with the out of
+  memory error. A scope the parser fails to push marks the function's code
+  lost too, and its scopes then stay as they are, each later push failing
+  with the out of memory error: the pop after a failed push used to take off
+  the scope around it, until a pop read before the scope array. The pass
+  that resolves jumps frees, when it fails, the jump records of the labels
+  it has not reached yet, which used to leak. Tests: `compileoom_test.go`,
+  `internal/fixlib/compile_test.go`.
 - Making an error no longer formats its `stack`. The engine records the
   frames (function name, bytecode and position) and formats the text the
   first time `stack` is read, with the same result as before. Code that makes
@@ -391,11 +397,14 @@ Conflicts to expect:
   code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
   `JS_ThrowError2` and must build the same error.
   If it reports that `Xdbuf_claim`, `_push_scope`, `_pop_scope`,
-  `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the loops whose code the parser
-  moves, `_js_parse_error_v`, the bytecode writer or `Xlre_compile` changed
-  shape, read the new upstream code against the C change: every pass that
-  reads back a code buffer must stop when that buffer failed
-  (`internal/fixlib/compile.go` lists each place).
+  `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the
+  loops whose code the parser moves, `_js_parse_error_v`, `_next_token`,
+  `_js_parse_class`, `_js_parse_destructuring_element`, the bytecode
+  writer or `Xlre_compile` changed shape, read the new upstream code
+  against the C change: the parser must stop once a code buffer failed and
+  patch no code in place after that, and every pass that reads back a code
+  buffer must stop when that buffer failed (`internal/fixlib/compile.go`
+  lists each place).
   If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
   shape, a new runtime must still start with a stack size of 0 (the port's
   `MaxStackSlots`), and running out of stack must still throw a
@@ -452,8 +461,10 @@ Conflicts to expect:
   `JS_Throw`, `JS_CallInternal` and `JS_IteratorClose`), and the out of
   memory hunks (`JS_ThrowOutOfMemory`, `JS_ThrowError2`, the regexp
   callers of `JS_ThrowOutOfMemory`), and the compiler hunks (`dbuf_claim`
-  in `cutils.c`, `push_scope`, `pop_scope`, `js_create_function`, `resolve_variables`,
-  `resolve_labels`, the two code moves of the parser, `js_parse_error_v`,
+  in `cutils.c`, `push_scope`, `pop_scope`, `js_create_function`,
+  `resolve_variables`, `resolve_labels`, the two code moves of the parser,
+  `js_parse_error_v`, `next_token`, the two patches in `js_parse_class`,
+  the test removal in `js_parse_destructuring_element`,
   `JS_WriteObjectAtoms`, `JS_WriteObject2` and the error label of
   `lre_compile` in `libregexp.c`), and the stack hunks (the stack size
   `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a

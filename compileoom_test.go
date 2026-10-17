@@ -55,6 +55,11 @@ var compileFineScripts = []string{
 	// the code of the fields failed, opening the scope of the parameters
 	// failed without an exception.
 	`class A { x = 1; constructor(a = 1) { this.a = a } }; new A().a`,
+	// A derived class constructor with a parameter with a default. When
+	// writing the constant pool index of the constructor failed, the parser
+	// put it in place at the end of the code anyway, after the bytes the
+	// buffer holds.
+	`class B { constructor() {} }; class A extends B { constructor(a = 1) { super(); this.a = a } }; new A().a`,
 }
 
 // TestCompileOutOfMemoryFine is TestCompileOutOfMemory in steps of 4 bytes,

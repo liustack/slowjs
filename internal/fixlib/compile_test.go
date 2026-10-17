@@ -37,16 +37,19 @@ func TestCompileEveryFile(t *testing.T) {
 			n  int
 		}{
 			{`\)\)\.Fallocated_size = \(\*TDynBuf\)`, 1},
-			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\tXJS_ThrowOutOfMemory\(tls, \w+\)\n\t\tgoto fail\n`, 1},
+			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\tXJS_ThrowOutOfMemory\(tls, \w+\)\n\t\tgoto fail\n`, 2},
 			{`\n\t+if pos_next < 0 \{\n\t+goto fail\n`, 2},
 			{`\nout_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory\(`, 1},
 			{`\nfail:\n\t;\n\t/\* free the relocations of the labels not reached \*/\n`, 1},
-			{`\t+XJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(\w+\)\)\.Fctx\)\n`, 3},
-			{`\.Fcur_func\)\)\.Fbyte_code\.Ferror1 != 0 \{`, 1},
+			{`\t+XJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(\w+\)\)\.Fctx\)\n`, 5},
+			{`\.Fcur_func\)\)\.Fbyte_code\.Ferror1 != 0 \{`, 3},
 			{`\.Ferror1 != 0 \|\| Xdbuf_claim\(tls, bp, `, 1},
 			{`\tif _JS_WriteObjectRec\(tls, s, obj\) != 0 \{\n\t\tgoto fail\n\t\}\n\tif \(\*TDynBuf\)\(unsafe\.Pointer\(s\+\d+\)\)\.Ferror1 != 0 \{\n\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n`, 1},
 			{`\.Ferror1 != 0 \{\n\t\t_re_parse_out_of_memory\(tls, \w+\)\n`, 1},
-			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\n\t\t\treturn -int32\(1\)\n`, 1},
+			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\n\t\t\treturn -int32\(1\)\n`, 2},
+			{`\n\tif \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fcur_func != 0 && [^\n]*\n\t\tXJS_ThrowOutOfMemory\([^\n]*\n\t\treturn -int32\(1\)\n\t\}\n\t_free_token\(`, 1},
+			{`\.Ffields_init_fd\)\)\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n\t\t\tgoto fail\n`, 1},
+			{`\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| Xdbuf_claim\(tls, bc, `, 2},
 			{`\.Fbyte_code\.Ferror1 = int32\(MTRUE\)\n\t+return -int32\(1\)\n`, 2},
 			{`\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\treturn\n`, 1},
 		} {
@@ -74,6 +77,7 @@ func TestCompileFromUpstream(t *testing.T) {
 	up := undoWriter(t, b)
 	up = bytes.Replace(up, []byte("\t\t\t(*TDynBuf)(unsafe.Pointer(s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(s)).Fsize\n"), nil, 1)
 	up = regexp.MustCompile(`\n\t+if pos_next < 0 \{\n\t+goto fail\n\t+\}`).ReplaceAll(up, nil)
+	up = undoParserStops(t, up)
 
 	out, err := fixCompile(up)
 	if err != nil {
@@ -95,4 +99,20 @@ func TestCompileRejectsNewWriter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "XJS_WriteObject2") {
 		t.Fatalf("got %v, want XJS_WriteObject2 named", err)
 	}
+}
+
+// undoParserStops takes out of b the checks that stop the parser once the
+// code is lost.
+func undoParserStops(t *testing.T, b []byte) []byte {
+	t.Helper()
+	n := len(b)
+	b = regexp.MustCompile(`\n\tif \(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fcur_func != 0 && [^\n]*\n\t\tXJS_ThrowOutOfMemory\([^\n]*\n\t\treturn -int32\(1\)\n\t\}(\n\t_free_token\()`).ReplaceAll(b, []byte("$1"))
+	b = regexp.MustCompile(`(\n\t/\* patch the constant pool index for the constructor \*/)\n\tif [^\n]*\n\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n\t\tgoto fail\n\t\}`).ReplaceAll(b, []byte("$1"))
+	b = regexp.MustCompile(`\n\t\tif [^\n]*\.Ffields_init_fd\)\)\.Fbyte_code\.Ferror1 != 0 \{\n\t\t\tXJS_ThrowOutOfMemory\(tls, ctx\)\n\t\t\tgoto fail\n\t\t\}`).ReplaceAll(b, nil)
+	b = regexp.MustCompile(`(\n\t\t/\* remove test and decrement label ref count \*/)\n\t\tif [^\n]*\n\t\t\tXJS_ThrowOutOfMemory\([^\n]*\n\t\t\treturn -int32\(1\)\n\t\t\}`).ReplaceAll(b, []byte("$1"))
+	b = bytes.ReplaceAll(b, []byte("(*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || Xdbuf_claim("), []byte("Xdbuf_claim("))
+	if n-len(b) < 5*40 {
+		t.Fatal("not all undone")
+	}
+	return b
 }

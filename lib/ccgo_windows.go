@@ -45973,6 +45973,10 @@ func _next_token(tls *libc.TLS, s uintptr) (r int32) {
 		_JS_ThrowStackOverflow(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 		return -1
 	}
+	if (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
+		XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
+		return -int32(1)
+	}
 	_free_token(tls, s, s+16)
 	v1 = (*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr
 	(*TJSParseState)(unsafe.Pointer(s)).Flast_ptr = v1
@@ -50357,6 +50361,10 @@ func _js_parse_class(tls *libc.TLS, s uintptr, is_class_expr TBOOL, export_flag 
 		}
 	}
 	/* patch the constant pool index for the constructor */
+	if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {
+		XJS_ThrowOutOfMemory(tls, ctx)
+		goto fail
+	}
 	(*Tpacked_u32)(unsafe.Pointer((*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Fbuf + uintptr(ctor_cpool_offset))).Fv = uint32((*TJSFunctionDef)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 16)))).Fparent_cpool_idx)
 	/* store the class source code in the constructor. */
 	if !(TBOOL(*(*uint8)(unsafe.Pointer(fd + 472))&0x2>>1)<<31>>31 != 0) {
@@ -50386,6 +50394,10 @@ func _js_parse_class(tls *libc.TLS, s uintptr, is_class_expr TBOOL, export_flag 
 		}
 		/* patch the start of the function to enable the
 		   OP_add_brand_instance code */
+		if (*TJSFunctionDef)(unsafe.Pointer((*TClassFieldsDef)(unsafe.Pointer(cf3)).Ffields_init_fd)).Fbyte_code.Ferror1 != 0 {
+			XJS_ThrowOutOfMemory(tls, ctx)
+			goto fail
+		}
 		**(**Tuint8_t)(__ccgo_up((*TJSFunctionDef)(unsafe.Pointer((*TClassFieldsDef)(unsafe.Pointer(cf3)).Ffields_init_fd)).Fbyte_code.Fbuf + uintptr((*TClassFieldsDef)(unsafe.Pointer(cf3)).Fbrand_push_pos))) = uint8(EOP_push_true)
 	}
 	/* store the function to initialize the fields to that it can be
@@ -51578,6 +51590,10 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 			return -int32(1)
 		}
 		/* remove test and decrement label ref count */
+		if (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
+			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
+			return -int32(1)
+		}
 		libc.Xmemset(tls, (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Fbuf+uintptr(start_addr), int32(EOP_nop), uint64(assign_addr-start_addr))
 		(**(**TLabelSlot)(__ccgo_up((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Flabel_slots + uintptr(label_parse)*24))).Fref_count = (**(**TLabelSlot)(__ccgo_up((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Flabel_slots + uintptr(label_parse)*24))).Fref_count - 1
 		has_initializer = int32(EFALSE)
@@ -53933,7 +53949,7 @@ _5:
 		bc = (*TJSParseState)(unsafe.Pointer(s)).Fcur_func + 304
 		chunk_size = pos_expr - pos_next
 		offset = int32((*TDynBuf)(unsafe.Pointer(bc)).Fsize - uint64(pos_next))
-		if Xdbuf_claim(tls, bc, uint64(chunk_size)) != 0 {
+		if (*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || Xdbuf_claim(tls, bc, uint64(chunk_size)) != 0 {
 			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			return -int32(1)
 		}
@@ -54397,7 +54413,7 @@ _12:
 		bc = (*TJSParseState)(unsafe.Pointer(s)).Fcur_func + 304
 		chunk_size = pos_body - pos_cont
 		offset = int32((*TDynBuf)(unsafe.Pointer(bc)).Fsize - uint64(pos_cont))
-		if Xdbuf_claim(tls, bc, uint64(chunk_size)) != 0 {
+		if (*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || Xdbuf_claim(tls, bc, uint64(chunk_size)) != 0 {
 			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			goto fail
 		}

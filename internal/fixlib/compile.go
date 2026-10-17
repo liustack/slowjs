@@ -20,8 +20,20 @@ var (
 	reScopeVarCall   = regexp.MustCompile(`\n(\t+)pos_next = _resolve_scope_var\(tls, [^\n]*\)\n(\t+XJS_FreeAtom\(tls, \w+, var_name\)\n)`)
 	reWriteAtoms     = regexp.MustCompile(`\nfunc _JS_WriteObjectAtoms\(tls \*libc\.TLS, (\w+) uintptr\) \(r int32\) \{\n`)
 	reWriteObject2   = regexp.MustCompile(`\nfunc XJS_WriteObject2\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
-	reCodeMove       = regexp.MustCompile(`\n(\t+)if Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n\t+(return -int32\(1\)|goto fail)\n`)
+	reCodeMove       = regexp.MustCompile(`\n(\t+)if (?:\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| )?Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n(?:\t+XJS_ThrowOutOfMemory\([^\n]*\n)?\t+(return -int32\(1\)|goto fail)\n`)
+	reNextTokenFree  = regexp.MustCompile(`\n\t_free_token\(tls, s, s\+\d+\)\n`)
+	reParseClass     = regexp.MustCompile(`\nfunc _js_parse_class\(tls \*libc\.TLS, s uintptr, [^\n]*\{\n`)
+	reBrandPatch     = regexp.MustCompile(`\n\t\t\*\*\(\*\*Tuint8_t\)\(__ccgo_up\(\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\((\w+)\)\)\.Ffields_init_fd\)\)\.Fbyte_code\.Fbuf \+ uintptr\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbrand_push_pos\)\)\) = uint8\(EOP_push_true\)\n`)
+	reDestructElem   = regexp.MustCompile(`\nfunc _js_parse_destructuring_element\(tls \*libc\.TLS, s uintptr, [^\n]*\{\n`)
+	reTestRemoval    = regexp.MustCompile(`\n\t\tlibc\.(?:X__builtin___memset_chk|Xmemset)\(tls, \(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fcur_func\)\)\.Fbyte_code\.Fbuf\+uintptr\(start_addr\), int32\(EOP_nop\), `)
 )
+
+// curFuncLost is true in a parser function when the code of the function
+// being parsed is lost.
+const curFuncLost = "(*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0"
+
+// parserOutOfMemory throws the out of memory error in a parser function.
+const parserOutOfMemory = "XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)\n"
 
 // fixCompile lets the compiler run out of memory safely, the Go form of the
 // same change in lib/internal/patch/quickjs.diff. The parser does not stop
@@ -49,7 +61,17 @@ var (
 //     scope array. The callers that stop return the failure as it is, so
 //     a push that failed without an exception ended the compile with none.
 //   - The parser throws the out of memory error when moving the code of a
-//     loop fails, where it failed without an exception.
+//     loop fails, where it failed without an exception, and does not move
+//     code whose buffer already failed.
+//   - The parser stops with the out of memory error once the code of the
+//     function it parses is lost: _next_token checks it before each token,
+//     and so do the places that patch code in place before reading
+//     another token, the constant pool index of a class constructor and
+//     the brand of its fields in _js_parse_class, and the test that
+//     _js_parse_destructuring_element removes. The parser goes on after a
+//     failed emit and patches code at positions it noted, which may then be
+//     past what the buffer holds: a Go panic on an empty buffer, or a
+//     write past the end of a full one.
 //   - _js_parse_error_v reports the out of memory error when the code
 //     buffer failed: what the parser reads back of the code is wrong then,
 //     and it finds syntax errors the script does not have.
@@ -126,16 +148,26 @@ func fixCompile(b []byte) ([]byte, error) {
 		}
 		ps := string(re.FindSubmatch(b)[1])
 		throw := fmt.Sprintf("XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(%s)).Fctx)\n", ps)
-		if bytes.Contains(body, []byte(throw)) {
-			continue
-		}
 		loc := reCodeMove.FindAllSubmatchIndex(body, -1)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
 		}
+		fixed := body
 		indent := string(body[loc[0][2]:loc[0][3]])
-		at := loc[0][4] - len(indent) - 1 // the start of the return or goto
-		b = bytes.Replace(b, body, splice(body, at, indent+"\t"+throw), 1)
+		if !bytes.Contains(body, []byte(throw)) {
+			at := loc[0][4] - len(indent) - 1 // the start of the return or goto
+			fixed = splice(fixed, at, indent+"\t"+throw)
+		}
+		lost := "(*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || "
+		if claim := loc[0][3] + len("if "); string(fixed[claim:claim+len(lost)]) != lost {
+			fixed = splice(fixed, claim, lost)
+		}
+		b = bytes.Replace(b, body, fixed, 1)
+	}
+
+	// The parser stops once the code is lost.
+	if b, err = fixParserStops(b); err != nil {
+		return nil, err
 	}
 
 	// js_parse_error_v.
@@ -326,4 +358,72 @@ func fixScopes(b []byte) ([]byte, error) {
 		b = bytes.Replace(b, body, bytes.Replace(body, level, append(append([]byte{}, level...), check...), 1), 1)
 	}
 	return b, nil
+}
+
+// fixParserStops makes the parser stop with the out of memory error once
+// the code of the function it parses is lost: before each token, and before
+// each patch of the code in place that does not wait for the next token.
+func fixParserStops(b []byte) ([]byte, error) {
+	check := "\tif (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 && " + curFuncLost + " {\n\t\t" + parserOutOfMemory + "\t\treturn -int32(1)\n\t}\n"
+	b, err := guard(b, reNextToken, "_next_token", reNextTokenFree, check)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := funcBody(b, reParseClass, "_js_parse_class")
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Contains(body, []byte("\tctx = (*TJSParseState)(unsafe.Pointer(s)).Fctx\n")) || !bytes.Contains(body, []byte("\tfd = (*TJSParseState)(unsafe.Pointer(s)).Fcur_func\n")) || !bytes.Contains(body, []byte("\nfail:\n")) {
+		return nil, fmt.Errorf("_js_parse_class: cannot find ctx, fd or the fail label")
+	}
+	ctor := regexp.MustCompile(`\n\t/\* patch the constant pool index for the constructor \*/\n\t\(\*Tpacked_u32\)\(unsafe\.Pointer\(\(\*TJSFunctionDef\)\(unsafe\.Pointer\(fd\)\)\.Fbyte_code\.Fbuf \+ uintptr\(ctor_cpool_offset\)\)\)\.Fv = `)
+	if b, err = guardAfterComment(b, reParseClass, "_js_parse_class", ctor, "\tif (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, ctx)\n\t\tgoto fail\n\t}\n"); err != nil {
+		return nil, err
+	}
+	m := reBrandPatch.FindSubmatch(body)
+	if m == nil {
+		return nil, fmt.Errorf("_js_parse_class: cannot find where it patches the brand")
+	}
+	brand := fmt.Sprintf("\t\tif (*TJSFunctionDef)(unsafe.Pointer((*TClassFieldsDef)(unsafe.Pointer(%s)).Ffields_init_fd)).Fbyte_code.Ferror1 != 0 {\n\t\t\tXJS_ThrowOutOfMemory(tls, ctx)\n\t\t\tgoto fail\n\t\t}\n", m[1])
+	if b, err = guard(b, reParseClass, "_js_parse_class", reBrandPatch, brand); err != nil {
+		return nil, err
+	}
+
+	return guard(b, reDestructElem, "_js_parse_destructuring_element", reTestRemoval, "\t\tif "+curFuncLost+" {\n\t\t\t"+parserOutOfMemory+"\t\t\treturn -int32(1)\n\t\t}\n")
+}
+
+// guard inserts check in the function that head starts, before the one
+// place that at matches, unless it is there. at starts with a newline.
+func guard(b []byte, head *regexp.Regexp, name string, at *regexp.Regexp, check string) ([]byte, error) {
+	body, err := funcBody(b, head, name)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Contains(body, []byte(check)) {
+		return b, nil
+	}
+	loc := at.FindAllIndex(body, -1)
+	if len(loc) != 1 {
+		return nil, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
+	}
+	return bytes.Replace(b, body, splice(body, loc[0][0]+1, check), 1), nil
+}
+
+// guardAfterComment is guard for a place that at matches from the line of
+// the comment before it: check goes after the comment.
+func guardAfterComment(b []byte, head *regexp.Regexp, name string, at *regexp.Regexp, check string) ([]byte, error) {
+	body, err := funcBody(b, head, name)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Contains(body, []byte(check)) {
+		return b, nil
+	}
+	loc := at.FindAllIndex(body, -1)
+	if len(loc) != 1 {
+		return nil, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
+	}
+	line := bytes.IndexByte(body[loc[0][0]+1:], '\n') + loc[0][0] + 2 // after the comment
+	return bytes.Replace(b, body, splice(body, line, check), 1), nil
 }
