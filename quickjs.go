@@ -99,6 +99,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -590,24 +591,14 @@ func (m *VM) Close() error {
 	delete(customLoaders, m.runtime.cRuntime)
 	customLoadersMu.Unlock()
 
-	var freed []*goFunc
 	goFuncsMu.Lock()
 	for _, magic := range m.goFuncs {
-		if gf := goFuncs[magic]; gf != nil {
+		if goFuncs[magic] != nil {
 			delete(goFuncs, magic)
 			freeMagic = append(freeMagic, magic)
-			freed = append(freed, gf)
 		}
 	}
 	goFuncsMu.Unlock()
-
-	// Free outside the lock: goFuncsMu is process-global and taken by callGo on
-	// every JS->Go call, and callbackFinalizer re-enters it, so keep libc calls
-	// and anything that can run JS out of its critical section.
-	for _, gf := range freed {
-		libc.Xfree(tls, gf.cName)
-		libc.Xfree(tls, gf.tab)
-	}
 
 	// Interrupt can run concurrently: let it see the flag gone before it
 	// is freed.
@@ -1732,12 +1723,10 @@ func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue)
 }
 
 type goFunc struct {
-	cName        uintptr
 	f            reflect.Value
 	in           []reflect.Type
 	name         string
 	out          []reflect.Type
-	tab          uintptr
 	variadicType reflect.Type
 	vm           *VM
 
@@ -1771,6 +1760,18 @@ type goFunc struct {
 // There is a limit on the total number of currently registered Go
 // functions.
 //
+// The function becomes the property 'name' of the global object: writable,
+// configurable and not enumerable. A configurable property already there,
+// such as one a script assigned or a built-in like Array, is replaced. A
+// property that is not configurable, such as undefined, NaN, Infinity or one
+// a script declared with var or function, is kept and RegisterFunc returns an
+// error, as it does when the global object is not extensible. Registering a
+// name a Go function of this VM already has returns an error too, even when
+// a script has since deleted or replaced that function. The name is the one
+// javascript sees: invalid UTF-8 is replaced as Go decodes it (see Eval), so
+// two Go strings can be the same name, and a NUL byte, which would end the
+// name, is an error.
+//
 // Note: The 'name' argument should be a valid Javascript identifier. It is not
 // currently enforced but this may change later.
 //
@@ -1797,6 +1798,9 @@ type HostFunc func(args []any) (any, error)
 // value (so a (value, error) pair becomes the array [value, error] rather than a
 // value-or-throw). RegisterHostFunc is the better fit for binding host objects;
 // RegisterFunc remains for direct, typed Go calls.
+//
+// The name is handled as by RegisterFunc, including when the global object
+// already has it.
 func (m *VM) RegisterHostFunc(name string, fn HostFunc) error {
 	if fn == nil {
 		return fmt.Errorf("host func %q cannot be nil", name)
@@ -1813,12 +1817,15 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 		return fmt.Errorf("func name cannot be empty")
 	}
 
-	if _, ok := m.goFuncs[name]; ok {
+	jsName := validUTF8(name)
+	if strings.IndexByte(jsName, 0) >= 0 {
+		return fmt.Errorf("func name cannot contain a NUL byte: %q", name)
+	}
+
+	if _, ok := m.goFuncs[jsName]; ok {
 		return fmt.Errorf("func already registered: %s", name)
 	}
 
-	tls := m.runtime.tls
-	ctx := m.cContext
 	val := reflect.ValueOf(f)
 	typ := reflect.TypeOf(f)
 	if typ.Kind() != reflect.Func {
@@ -1865,36 +1872,62 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 	if err != nil {
 		return err
 	}
-	if m.goFuncs == nil {
-		m.goFuncs = map[string]int32{}
-	}
-	m.goFuncs[name] = magic
 
-	cName, err := libc.CString(validUTF8(name))
-	if err != nil {
-		return err
-	}
-
-	info.cName = cName
 	argc := int32(typ.NumIn()) - 1
 	if argc < 0 {
 		argc = 0
 	}
-	tab := libc.Xcalloc(tls, 1, libc.Tsize_t(unsafe.Sizeof(lib.TJSCFunctionListEntry{})))
-	info.tab = tab
+	if err := m.defineGoFunc(jsName, magic, argc); err != nil {
+		releaseMagic(magic)
+		return fmt.Errorf("cannot register func %s: %w", name, err)
+	}
+
+	if m.goFuncs == nil {
+		m.goFuncs = map[string]int32{}
+	}
+	m.goFuncs[jsName] = magic
+	return nil
+}
+
+// defineGoFunc defines the global property name, a valid UTF-8 string without
+// NUL bytes, as a javascript function of length 'length' that calls the Go
+// function registered as magic. The property is writable, configurable and
+// not enumerable, and it replaces a configurable property of that name. It
+// does not use JS_SetPropertyFunctionList, which is meant for new objects:
+// it aborts the process when the property already exists.
+func (m *VM) defineGoFunc(name string, magic, length int32) error {
+	tls := m.runtime.tls
+	ctx := m.cContext
+	cName, err := libc.CString(name)
+	if err != nil {
+		return err
+	}
+
+	// Both the function's name and the atom copy the string.
+	defer libc.Xfree(tls, cName)
+
+	f := lib.XJS_NewCFunction2(tls, ctx, fp(callGo), cName, length, lib.EJS_CFUNC_generic_magic, magic)
+	if isException(f) {
+		return m.errFromException()
+	}
+
+	atom := lib.XJS_NewAtom(tls, ctx, cName)
+	if atom == lib.MJS_ATOM_NULL {
+		lib.XFreeValue(tls, ctx, f)
+		return m.errFromException()
+	}
+
+	defer lib.XJS_FreeAtom(tls, ctx, atom)
 
 	g := m.globalObject()
 
 	defer lib.XFreeValue(tls, ctx, g)
 
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fname = cName
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fprop_flags = lib.MJS_PROP_WRITABLE | lib.MJS_PROP_CONFIGURABLE
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fdef_type = lib.MJS_DEF_CFUNC
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fmagic = int16(magic)
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fu.Ffunc1.Flength = uint8(argc)
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fu.Ffunc1.Fcproto = lib.EJS_CFUNC_generic_magic
-	(*lib.TJSCFunctionListEntry)(unsafe.Pointer(tab)).Fu.Ffunc1.Fcfunc.Fgeneric = fp(callGo)
-	lib.XJS_SetPropertyFunctionList(tls, ctx, g, tab, 1)
+	// JS_DefinePropertyValue takes f, also when it fails.
+	if lib.XJS_DefinePropertyValue(tls, ctx, g, atom, f, lib.MJS_PROP_WRITABLE|lib.MJS_PROP_CONFIGURABLE|lib.MJS_PROP_THROW) < 0 {
+		return m.errFromException()
+	}
+
 	return nil
 }
 

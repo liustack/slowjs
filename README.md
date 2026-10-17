@@ -361,6 +361,22 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   which could rewrite the message. An interrupt that runs out of memory
   building its error counts as `OutOfMemory`. Tests: `uncatchable_test.go`,
   `hostuncatchable_test.go`, `hostpanic_test.go`.
+- `RegisterFunc` and `RegisterHostFunc` no longer abort the process when
+  the global object already has the name, for example after `globalThis.g =
+  1`, or for `Array` or `undefined`. They installed the function with
+  `JS_SetPropertyFunctionList`, which is meant for new objects and aborts
+  when the property exists. Now the function replaces a configurable
+  property, as `Object.defineProperty` would, and stays writable,
+  configurable and not enumerable. A property that is not configurable
+  (`undefined`, `NaN`, `Infinity`, a script's `var` or `function`) is kept,
+  and so is a global object that is not extensible: the call returns an
+  error. A name is now taken once per VM as javascript sees it, after
+  invalid UTF-8 is replaced, so `"\xc0\x80"` after `"\xe4\xb8"` (both two
+  U+FFFD) is `func already registered` rather than an abort, and a name
+  with a NUL byte, which ended the name, is an error. A name in brackets
+  is a string too: the function lists read `"[Symbol.iterator]"` as that
+  symbol and aborted on other names in brackets. Test:
+  `register_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.

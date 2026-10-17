@@ -113,6 +113,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("valueCallPromise", TestValueCallPromise)
 	t.Run("nullArg", TestRegisterFuncNullArg)
 	t.Run("nullArgHost", TestRegisterHostFuncNullArg)
+	t.Run("registerExisting", testRegisterExistingName)
 	t.Run("mapResult", TestRegisterFuncMapResult)
 	t.Run("mapValueResult", TestRegisterFuncMapValueResult)
 	t.Run("then", TestThenLeak)
