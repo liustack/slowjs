@@ -292,6 +292,22 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of any language also decodes about 1 MB of shared data. Formatting a date
   takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
   2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
+- Package `intl` tells daylight saving time from standard time as ICU does,
+  whichever form of the tz data Go reads. In the main form, which Linux
+  distributions and Go's `time/tzdata` ship, Europe/Dublin's summer time
+  is its standard time and its winter time is daylight saving time, an
+  hour behind. Africa/Casablanca, Africa/El_Aaiun, Africa/Windhoek and
+  Europe/Prague (1946 to 1947) have such negative daylight saving time
+  too. ICU builds from the rearguard form, where daylight saving time is
+  always ahead of standard time, and macOS ships that form. Go's `IsDST`
+  says what the data says, so on Linux the names of these zones came out
+  swapped: Dublin in winter was `Irish Standard Time`, the name Chromium
+  gives its summer. For these zones and their links the flag now comes
+  from a table of the rearguard form of tzdb 2026d, the release in
+  Chromium 156's ICU (`intl/tzdst_table.go`, see "Updating the intl locale
+  data"). When Go reads another release and the table has another offset
+  for a time, or the time is past 2037, the flag is the one of the zone's
+  last period with the same offset. Tests: `intl/tzdst_test.go`.
 - The eval timeout (`SetEvalTimeout`) runs on the monotonic clock. It used
   to run on the wall clock, so setting the system clock while a script ran
   (NTP, a person, a machine waking from sleep) moved the deadline: set

@@ -123,8 +123,16 @@
 // import - and it belongs in that binary's main package, not in a library.
 // Importing it from a library adds a few hundred KB to every program that
 // links the library and takes the choice away from the ones that would rather
-// use the host's database, so this package does not import it. The default
-// zone, which is also what
+// use the host's database, so this package does not import it.
+//
+// Offsets come from that database. Whether a time is daylight saving time,
+// which picks a zone's daylight or standard name, is what the rearguard form
+// of the tz data says, as in ICU: Linux and time/tzdata ship the main form,
+// where Europe/Dublin's winter time is daylight saving time, and macOS the
+// rearguard one. For the few zones whose two forms differ, the answer comes
+// from a table of tzdb 2026d, the release in Chromium 156's ICU.
+//
+// The default zone, which is also what
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
 // [TimeZone] sets another. Intl never consults the host's zone (see Locales
 // for the engine's Date, which does).
