@@ -370,16 +370,42 @@ func interruptHandler(tls *libc.TLS, rt, opaque uintptr) int32 {
 		return 1
 	}
 
-	if timeLimit := (*interruptData)(unsafe.Pointer(opaque)).timeLimit; timeLimit != 0 && time.Now().UnixNano() >= timeLimit {
+	if timeLimit := (*interruptData)(unsafe.Pointer(opaque)).timeLimit; timeLimit != 0 && monoNow() >= timeLimit {
 		return 1
 	}
 
 	return 0
 }
 
+// The eval timeout runs on the monotonic clock, which only goes forward. The
+// wall clock can be set back or forward while a script runs (NTP, a person, a
+// machine resumed from sleep): set back, a deadline on it fired that much
+// later or never, and set forward, at once.
+var (
+	monoStart = time.Now()
+	timeNow   = time.Now // tests replace it
+)
+
+// monoNow returns the time since monoStart in nanoseconds, from the
+// monotonic readings of time.Now.
+func monoNow() int64 {
+	return int64(timeNow().Sub(monoStart))
+}
+
+// monoDeadline returns the time d from now on the clock of monoNow. A d
+// further away than that clock reaches gives its end, which comes after
+// 292 years: without the cap the deadline wrapped around to the past.
+func monoDeadline(d time.Duration) int64 {
+	now := monoNow()
+	if int64(d) > math.MaxInt64-now {
+		return math.MaxInt64
+	}
+	return now + int64(d)
+}
+
 type interruptData struct {
 	interrupt int32 // Interrupt() pending
-	timeLimit int64 // stop when time.Now().UnixNano() > timeLimit
+	timeLimit int64 // stop when monoNow() >= timeLimit, 0 for no limit
 }
 
 // VM represents a Javascript context (or Realm). Each VM has its
@@ -427,7 +453,9 @@ func NewVM() (*VM, error) {
 // SetEvalTimeout sets the timeout for the various eval functions. Passing
 // zero 'd' disables timeouts. The timeout starts with the outermost call into
 // javascript: a host function that evaluates more javascript on m runs inside
-// the time left to the call that got it there.
+// the time left to the call that got it there. The timeout runs on the
+// monotonic clock, so setting the system clock does not move it. A timeout
+// too long for that clock (about 292 years) never fires.
 func (m *VM) SetEvalTimeout(d time.Duration) error {
 	m.timeout = d
 	return nil
@@ -461,7 +489,7 @@ func (m *VM) configureInterrupt() {
 	if m.interruptData != 0 {
 		(*interruptData)(unsafe.Pointer(m.interruptData)).interrupt = 0
 		if m.timeout != 0 {
-			(*interruptData)(unsafe.Pointer(m.interruptData)).timeLimit = time.Now().Add(m.timeout).UnixNano()
+			(*interruptData)(unsafe.Pointer(m.interruptData)).timeLimit = monoDeadline(m.timeout)
 		} else {
 			(*interruptData)(unsafe.Pointer(m.interruptData)).timeLimit = 0
 		}
@@ -600,7 +628,7 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do. Draining runs JS
 	// (Promise reactions and async continuations), so without this the whole drain
-	// inherits a stale wall-clock deadline from the last Eval — one that has kept
+	// inherits a stale deadline from the last Eval — one that has kept
 	// ticking through idle time — and is spuriously interrupted.
 	m.enter()
 	defer m.leave()
@@ -881,7 +909,7 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 	defer libc.Xfree(tls, ps)
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do: Call runs JS (it
-	// evaluates the function reference and invokes it), so without this the wall-clock
+	// evaluates the function reference and invokes it), so without this the
 	// deadline set by the last Eval keeps ticking through idle time and interrupts a
 	// later Call that has not itself run long.
 	m.enter()

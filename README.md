@@ -284,6 +284,16 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of any language also decodes about 1 MB of shared data. Formatting a date
   takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
   2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
+- The eval timeout (`SetEvalTimeout`) runs on the monotonic clock. It used
+  to run on the wall clock, so setting the system clock while a script ran
+  (NTP, a person, a machine waking from sleep) moved the deadline: set
+  back, the timeout fired that much later or never, and set forward, at
+  once. Even without a jump the two clocks drift apart by a few
+  microseconds per 100 ms, so a server that keeps its own deadline on Go's
+  monotonic clock could see the engine interrupt before that deadline. A
+  timeout too long for the clock, up to `math.MaxInt64`, never fires: the
+  deadline used to wrap around to the past and interrupt the call at once.
+  Test: `clock_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
