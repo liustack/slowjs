@@ -217,13 +217,18 @@ func compileFailing(t *testing.T, what, js string, fail int) (result string, fai
 	t.Helper()
 	tls := libc.NewTLS()
 	defer tls.Close()
-	mf := lib.TJSMallocFunctions{
+	// The engine takes C pointers, so the functions are in C memory, not
+	// in a Go variable: the pointer arithmetic of the transpiled code on Go
+	// memory fails checkptr, which -race turns on.
+	mf := tls.Alloc(int(unsafe.Sizeof(lib.TJSMallocFunctions{})))
+	defer tls.Free(int(unsafe.Sizeof(lib.TJSMallocFunctions{})))
+	*(*lib.TJSMallocFunctions)(unsafe.Pointer(mf)) = lib.TJSMallocFunctions{
 		Fjs_malloc:             fp(failingMalloc),
 		Fjs_free:               fp(failingFree),
 		Fjs_realloc:            fp(failingRealloc),
 		Fjs_malloc_usable_size: fp(failingUsableSize),
 	}
-	rt := lib.XJS_NewRuntime2(tls, uintptr(unsafe.Pointer(&mf)), 0)
+	rt := lib.XJS_NewRuntime2(tls, mf, 0)
 	ctx := lib.XJS_NewContext(tls, rt)
 	if rt == 0 || ctx == 0 {
 		t.Fatal("cannot make a runtime")
@@ -313,8 +318,9 @@ func TestCompileOneFailure(t *testing.T) {
 func TestBufferAfterFailure(t *testing.T) {
 	tls := libc.NewTLS()
 	defer tls.Close()
-	var b lib.TDynBuf
-	p := uintptr(unsafe.Pointer(&b))
+	p := tls.Alloc(int(unsafe.Sizeof(lib.TDynBuf{})))
+	defer tls.Free(int(unsafe.Sizeof(lib.TDynBuf{})))
+	b := (*lib.TDynBuf)(unsafe.Pointer(p))
 	lib.Xdbuf_init2(tls, p, 0, fp(func(tls *libc.TLS, opaque, ptr uintptr, size lib.Tsize_t) uintptr {
 		if failing() {
 			return 0
@@ -322,8 +328,8 @@ func TestBufferAfterFailure(t *testing.T) {
 		return libc.Xrealloc(tls, ptr, libc.Tsize_t(size))
 	}))
 	defer lib.Xdbuf_free(tls, p)
-	data := make([]byte, 4096)
-	d := uintptr(unsafe.Pointer(&data[0]))
+	d := tls.Alloc(4096)
+	defer tls.Free(4096)
 
 	// Writes of 64, 64 and 1 bytes leave room for more in the buffer's
 	// memory, as it grows by half.

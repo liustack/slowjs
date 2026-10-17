@@ -12764,7 +12764,7 @@ func XJS_ThrowOutOfMemory(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 	if !(TBOOL(*(*uint16)(unsafe.Pointer(rt + 648))&0xff00>>8)<<24>>24 != 0) {
 		libc.SetBitFieldPtr16Int32(rt+648, int32(ETRUE), 8, 0xff00)
 		XJS_ThrowInternalError(tls, ctx, __ccgo_ts+1186, 0)
-		XJS_SetUncatchableException(tls, ctx, int32(MTRUE))
+		XJS_SetUncatchableException(tls, ctx, int32(1))
 		libc.SetBitFieldPtr16Int32(rt+648, int32(EFALSE), 8, 0xff00)
 	}
 	return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -46378,14 +46378,14 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 			if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes == fd+208 {
 				new_buf = Xjs_realloc2(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, libc.UintptrFromInt32(0), libc.Uint32FromInt32(new_size)*uint32(8), bp)
 				if !(new_buf != 0) {
-					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(MTRUE)
+					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(1)
 					return -int32(1)
 				}
 				libc.Xmemcpy(tls, new_buf, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes, libc.Uint32FromInt32((*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count)*uint32(8))
 			} else {
 				new_buf = Xjs_realloc2(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes, libc.Uint32FromInt32(new_size)*uint32(8), bp)
 				if !(new_buf != 0) {
-					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(MTRUE)
+					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(1)
 					return -int32(1)
 				}
 			}
@@ -66436,7 +66436,7 @@ func _bc_put_atom(tls *libc.TLS, s uintptr, atom TJSAtom) (r int32) {
 		**(**Tuint32_t)(__ccgo_up(bp)) = ___JS_AtomToUInt32(tls, atom)<<libc.Int32FromInt32(1) | uint32(1)
 	} else {
 		if _bc_atom_to_idx(tls, s, bp, atom) != 0 {
-			(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(MTRUE)
+			(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(1)
 			return -int32(1)
 		}
 		**(**Tuint32_t)(__ccgo_up(bp)) = **(**Tuint32_t)(__ccgo_up(bp)) << uint32(1)

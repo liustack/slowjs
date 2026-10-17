@@ -60,7 +60,7 @@ func _js_throw_error2(tls *libc.TLS, ctx uintptr, error_num TJSErrorEnum, buf ui
 // engine ran out of memory building. Throwing null does not allocate.
 func _js_throw_out_of_memory_null(tls *libc.TLS, ctx uintptr) TJSValue {
 	XJS_Throw(tls, ctx, jsvMkPtr(EJS_TAG_NULL, 0))
-	XJS_SetUncatchableException(tls, ctx, MTRUE)
+	XJS_SetUncatchableException(tls, ctx, 1)
 	return jsvException()
 }
 

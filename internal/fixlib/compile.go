@@ -320,7 +320,7 @@ func fixWriteObject(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, re, "_bc_put_atom"); err != nil {
 		return nil, err
 	}
-	mark := "\t\t\t(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(MTRUE)\n"
+	mark := "\t\t\t(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(1)\n"
 	if !bytes.Contains(body, []byte(mark)) {
 		failed := []byte("\t\tif _bc_atom_to_idx(tls, s, bp, atom) != 0 {\n")
 		if bytes.Count(body, failed) != 1 {
@@ -359,7 +359,7 @@ func fixScopes(b []byte) ([]byte, error) {
 	}
 	check := "\t\tif " + lost + " != 0 {\n\t\t\tXJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)\n\t\t\treturn -int32(1)\n\t\t}\n"
 	failed := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\treturn -int32(1)\n")
-	marked := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\t" + lost + " = int32(MTRUE)\n\t\t\t\t\treturn -int32(1)\n")
+	marked := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\t" + lost + " = int32(1)\n\t\t\t\t\treturn -int32(1)\n")
 	fixed := body
 	if bytes.Count(fixed, marked) != 2 {
 		if bytes.Count(fixed, failed) != 2 {
