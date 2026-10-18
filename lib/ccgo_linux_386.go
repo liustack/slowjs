@@ -9923,12 +9923,12 @@ func _js_c_function_data_call(tls *libc.TLS, ctx uintptr, func_obj TJSValue, thi
 	var arg_buf, s uintptr
 	var i int32
 	_, _, _ = arg_buf, i, s
-	tls.AllocaEntry()
-	defer tls.AllocaExit()
 	s = XJS_GetOpaque(tls, func_obj, uint32(EJS_CLASS_C_FUNCTION_DATA))
 	/* XXX: could add the function on the stack for debug */
 	if libc.BoolInt32(!!(argc < libc.Int32FromUint8((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))) != 0 {
-		arg_buf = libc.X__builtin_alloca(tls, uint32(8)*uint32((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))
+		// Changed by internal/fixlib: alloca is malloc, freed on return (see fixAlloca).
+		arg_buf = libc.Xmalloc(tls, uint32(8)*uint32((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))
+		defer libc.Xfree(tls, arg_buf)
 		i = 0
 		for {
 			if !(i < argc) {
@@ -19906,8 +19906,8 @@ func _JS_IsHTMLDDA(tls *libc.TLS, ctx uintptr, obj TJSValue) (r TBOOL) {
 }
 
 func _JS_ToBoolFree(tls *libc.TLS, ctx1 uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var d, v22 float64
 	var i, v4 int32
 	var p, p1, p2, v2, v5 uintptr
@@ -20023,14 +20023,14 @@ func _JS_ToBoolFree(tls *libc.TLS, ctx1 uintptr, val TJSValue) (r int32) {
 		return ret3
 	default:
 		if tag-libc.Uint32FromInt32(EJS_TAG_FIRST) >= libc.Uint32FromInt32(int32(EJS_TAG_FLOAT64)-int32(EJS_TAG_FIRST)) {
-			*(*TJSValue)(unsafe.Pointer(bp + 8)) = val
-			*(*TJSValue)(unsafe.Pointer(bp + 8)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
-			v22 = *(*float64)(unsafe.Pointer(bp + 8))
+			*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) = val
+			*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
+			v22 = *(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 8))
 			goto _23
 		_23:
 			d = v22
-			*(*float64)(unsafe.Pointer(bp)) = d
-			v24 = *(*uint64)(unsafe.Pointer(bp))
+			*(*float64)(unsafe.Pointer(&localbp)) = d
+			v24 = *(*uint64)(unsafe.Pointer(&localbp))
 			goto _25
 		_25:
 			;
@@ -31892,8 +31892,15 @@ func _close_lexical_var(tls *libc.TLS, ctx uintptr, b uintptr, sf uintptr, var_i
 }
 
 func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
-	bp := tls.Alloc(96)
-	defer tls.Free(96)
+	frame_size := 96
+	var frame_malloc uintptr
+	bp := tls.Alloc(frame_size)
+	defer func() {
+		if frame_malloc != 0 {
+			libc.Xfree(tls, frame_malloc)
+		}
+		tls.Free(frame_size)
+	}()
 	var arg_buf, p, prev_sf, rt, sf uintptr
 	var arg_count, i, v31 int32
 	var cproto TJSCFunctionEnum
@@ -31919,8 +31926,6 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_ob
 		Fd float64
 	}
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = arg_buf, arg_count, cproto, func1, i, p, prev_sf, ret_val, rt, sf, v, val, v21, v22, v24, v31
-	tls.AllocaEntry()
-	defer tls.AllocaExit()
 	rt = (*TJSContext)(unsafe.Pointer(ctx2)).Frt
 	sf = bp + 24
 	p = uintptr(libc.Int32FromUint64(func_obj))
@@ -31939,6 +31944,13 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_ob
 		Fmagic      Tint16_t
 	})(unsafe.Pointer(p + 24))).Flength)
 	/* better to always check stack overflow */
+	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
+	if libc.BoolInt32(!!(argc < arg_count)) != 0 && uint32(8)*libc.Uint32FromInt32(arg_count) <= 768 {
+		tls.Free(frame_size)
+		frame_size = 96 + int(uint32(8)*libc.Uint32FromInt32(arg_count))
+		bp = tls.Alloc(frame_size)
+		sf = bp + 24
+	}
 	if _js_check_stack_overflow(tls, rt, uint32(8)*libc.Uint32FromInt32(arg_count)) != 0 {
 		return _JS_ThrowStackOverflow(tls, ctx2)
 	}
@@ -31958,7 +31970,12 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_ob
 	arg_buf = argv
 	if libc.BoolInt32(!!(argc < arg_count)) != 0 {
 		/* ensure that at least argc_count arguments are readable */
-		arg_buf = libc.X__builtin_alloca(tls, uint32(8)*libc.Uint32FromInt32(arg_count))
+		if uint32(8)*libc.Uint32FromInt32(arg_count) <= 768 {
+			arg_buf = bp + uintptr(96)
+		} else {
+			arg_buf = libc.Xmalloc(tls, uint32(8)*libc.Uint32FromInt32(arg_count))
+			frame_malloc = arg_buf
+		}
 		i = 0
 		for {
 			if !(i < argc) {
@@ -32198,15 +32215,15 @@ func _js_call_bound_function(tls *libc.TLS, ctx uintptr, func_obj TJSValue, this
 	var arg_count, i int32
 	var new_target TJSValue
 	_, _, _, _, _, _ = arg_buf, arg_count, bf, i, new_target, p
-	tls.AllocaEntry()
-	defer tls.AllocaExit()
 	p = uintptr(libc.Int32FromUint64(func_obj))
 	bf = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
 	arg_count = (*TJSBoundFunction)(unsafe.Pointer(bf)).Fargc + argc
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, uint32(8)*libc.Uint32FromInt32(arg_count)) != 0 {
 		return _JS_ThrowStackOverflow(tls, ctx)
 	}
-	arg_buf = libc.X__builtin_alloca(tls, uint32(8)*libc.Uint32FromInt32(arg_count))
+	// Changed by internal/fixlib: alloca is malloc, freed on return (see fixAlloca).
+	arg_buf = libc.Xmalloc(tls, uint32(8)*libc.Uint32FromInt32(arg_count))
+	defer libc.Xfree(tls, arg_buf)
 	i = 0
 	for {
 		if !(i < (*TJSBoundFunction)(unsafe.Pointer(bf)).Fargc) {
@@ -32258,8 +32275,15 @@ const EOP_SPECIAL_OBJECT_IMPORT_META = 6
 //
 //	/* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, func_obj TJSValue, this_obj1 TJSValue, new_target TJSValue, argc int32, argv uintptr, flags int32) (r5 TJSValue) {
-	bp := tls.Alloc(160)
-	defer tls.Free(160)
+	frame_size := 160
+	var frame_malloc uintptr
+	bp := tls.Alloc(frame_size)
+	defer func() {
+		if frame_malloc != 0 {
+			libc.Xfree(tls, frame_malloc)
+		}
+		tls.Free(frame_size)
+	}()
 	var alloca_size Tsize_t
 	var arg, arg_allocated_size, call_argc, class_flags, first, flags1, flags2, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_with, magic, mask, n, offset, op_flags, opcode, pos1, r4, res, res1, res2, res3, res4, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret5, ret6, ret7, ret8, ret9, scope_idx, scope_idx1, type1, v12, v13, v22, v23, val20, val21, val22, val23, val24, val25, val26, v4, v5, v6 int32
 	var arg_buf, b1, call_argv, call_func, ctx10, cv, cv1, local_buf, p, p1, p10, p11, p2, p3, p4, p5, p6, p7, p8, p9, pc, pr, prs, prs1, prs2, prs3, pv, pval, rt, s, sf, sp, stack_buf, tab4, var_buf, var_ref, var_ref1, var_refs, v15, v10, v19 uintptr
@@ -32297,8 +32321,6 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, func_obj TJSValue, this
 		Fd   float64
 	}
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = alloca_size, arg, arg_allocated_size, arg_buf, array_len, atom, atom1, atom10, atom11, atom12, atom13, atom14, atom15, atom16, atom17, atom18, atom2, atom3, atom4, atom5, atom6, atom7, atom8, atom9, b1, bfunc, call_argc, call_argv, call_func, class_flags, ctx10, cv, cv1, d11, d12, d13, d21, d22, d23, d3, d4, diff, diff1, diff2, first, flags1, flags2, getter, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx22, idx23, idx24, idx25, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_computed, is_with, local_buf, magic, mask, method, n, new_len, obj, obj1, obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, offset, op1, op11, op110, op111, op112, op113, op114, op115, op116, op119, op12, op120, op121, op122, op123, op124, op125, op126, op127, op128, op129, op13, op130, op131, op132, op133, op134, op14, op15, op16, op17, op18, op19, op2, op21, op210, op211, op212, op213, op214, op215, op216, op217, op218, op219, op22, op23, op24, op25, op26, op27, op28, op29, op_flags, opcode, p, p1, p10, p11, p2, p3, p4, p5, p6, p7, p8, p9, pc, pos, pos1, pr, prop1, prop2, proto, proto1, prs, prs1, prs2, prs3, pv, pval, r, r1, r2, r3, r4, res, res1, res2, res3, res4, ret, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret_flag, ret_val, ret_val1, rt, s, scope_idx, scope_idx1, setter, sf, sp, stack_buf, super, tab4, tag, tag1, tag2, tmp, tmp1, tmp11, tmp2, tmp21, tmp3, tmp4, tmp5, tmp6, tmp7, type1, v1, v11, v12, v13, v14, v2, v21, v22, v23, v24, v25, v26, val10, val11, val12, val13, val14, val15, val16, val17, val18, val19, val20, val21, val22, val23, val24, val25, val26, val27, val28, val4, val5, val6, val7, val8, val9, value, var_buf, var_ref, var_ref1, var_refs, v15, v10, v121, v1242, v1244, v19, v267, v269, v288, v4, v5, v6, v9, v958
-	tls.AllocaEntry()
-	defer tls.AllocaExit()
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 32
 	if _js_poll_interrupts(tls, caller_ctx) != 0 {
@@ -32372,6 +32394,13 @@ _2:
 		arg_allocated_size = 0
 	}
 	alloca_size = uint32(8)*libc.Uint32FromInt32(arg_allocated_size+libc.Int32FromUint16((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_count)+libc.Int32FromUint16((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fstack_size)) + uint32(4)*uint32((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_ref_count)
+	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
+	if alloca_size <= 768 {
+		tls.Free(frame_size)
+		frame_size = 160 + int(alloca_size)
+		bp = tls.Alloc(frame_size)
+		sf = bp + 32
+	}
 	if _js_check_stack_overflow(tls, rt, alloca_size) != 0 {
 		return _JS_ThrowStackOverflow(tls, caller_ctx)
 	}
@@ -32384,7 +32413,12 @@ _2:
 		Fvar_refs          uintptr
 		Fhome_object       uintptr
 	})(unsafe.Pointer(p2 + 24))).Fvar_refs
-	local_buf = libc.X__builtin_alloca(tls, alloca_size)
+	if alloca_size <= 768 {
+		local_buf = bp + uintptr(160)
+	} else {
+		local_buf = libc.Xmalloc(tls, alloca_size)
+		frame_malloc = local_buf
+	}
 	if libc.BoolInt32(!!(arg_allocated_size != 0)) != 0 {
 		v4 = argc
 		v5 = libc.Int32FromUint16((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Farg_count)
@@ -107643,8 +107677,8 @@ fail:
 //
 //	/* XXX: could normalize strings to speed up comparison */
 func _map_normalize_key(tls *libc.TLS, ctx1 uintptr, key TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var tag Tuint32_t
 	var v1 float64
 	var v3 bool
@@ -107657,9 +107691,9 @@ func _map_normalize_key(tls *libc.TLS, ctx1 uintptr, key TJSValue) (r TJSValue) 
 	tag = libc.Uint32FromInt32(libc.Int32FromUint64(key >> libc.Int32FromInt32(32)))
 	/* convert -0.0 to +0.0 */
 	if v3 = tag-libc.Uint32FromInt32(EJS_TAG_FIRST) >= libc.Uint32FromInt32(int32(EJS_TAG_FLOAT64)-int32(EJS_TAG_FIRST)); v3 {
-		*(*TJSValue)(unsafe.Pointer(bp)) = key
-		*(*TJSValue)(unsafe.Pointer(bp)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
-		v1 = *(*float64)(unsafe.Pointer(bp))
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = key
+		*(*TJSValue)(unsafe.Pointer(&localbp)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
+		v1 = *(*float64)(unsafe.Pointer(&localbp))
 		goto _2
 	_2:
 	}
