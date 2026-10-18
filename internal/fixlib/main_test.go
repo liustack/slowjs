@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -292,5 +293,47 @@ func TestBacktraceSites(t *testing.T) {
 		if err := checkBacktraceSites(changed, "ccgo_darwin_arm64.go"); err == nil {
 			t.Errorf("a change to %s went through", c.head)
 		}
+	}
+}
+
+// A caller of _js_backtrace_own_flags that reads the value of the
+// descriptor, or hands it to another function, stops fixlib: it would get
+// undefined for a pending stack.
+func TestOwnFlagsRejectsValueRead(t *testing.T) {
+	b := engineFile(t)
+	if _, err := fixBacktrace(b); err != nil {
+		t.Fatal(err)
+	}
+	head := "func _JS_CopyDataProperties("
+	at := "\t\t\t_js_free_desc(tls, ctx2, bp+48)\n"
+	for _, text := range []string{
+		"\t\t\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp + 48))).Fvalue\n",
+		"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 48 + 8))\n",
+		"\t\t\t_js_other(tls, bp+48)\n",
+	} {
+		if _, err := fixBacktrace(mutate(t, b, head, at, text)); err == nil {
+			t.Errorf("%q went through", text)
+		}
+	}
+}
+
+// descUses reads both forms of a field access, before and after fixUp.
+func TestDescUsesBothForms(t *testing.T) {
+	body := "\nfunc f(tls *libc.TLS) {\n\tbp := tls.Alloc(56)\n\tdefer tls.Free(56)\n" +
+		"\t_js_backtrace_own_flags(tls, 0, bp, 0, 0)\n" +
+		"\t_ = (**(**TJSPropertyDescriptor)(__ccgo_up(bp))).Fflags\n" +
+		"\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fflags\n" +
+		"\t_ = (**(**TJSPropertyDescriptor)(__ccgo_up(bp))).Fvalue\n" +
+		"\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fvalue\n" +
+		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 40))\n" +
+		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 8))\n" +
+		"\t_js_free_desc(tls, 0, bp)\n}\n"
+	uses, err := descUses("f", []byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"call _js_backtrace_own_flags": 1, "call _js_free_desc": 1, "value": 2, "raw": 1}
+	if fmt.Sprint(uses) != fmt.Sprint(want) {
+		t.Fatalf("got %v, want %v", uses, want)
 	}
 }

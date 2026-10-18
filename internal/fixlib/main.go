@@ -74,6 +74,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -636,7 +637,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	// The callers of JS_GetOwnPropertyInternal that only look at the
 	// attributes call _js_backtrace_own_flags, which does not format.
 	for _, fn := range ownFlagsCallers {
-		if b, err = fixOwnFlags(b, fn.name, fn.calls); err != nil {
+		if b, err = fixOwnFlags(b, fn.name, fn.calls, fn.values); err != nil {
 			return nil, err
 		}
 	}
@@ -765,25 +766,29 @@ func fixInterpreter(b []byte) ([]byte, error) {
 // with a descriptor only to read its attributes (or a getter or setter),
 // never its value, and how many calls each has. They call
 // _js_backtrace_own_flags instead, so that they do not format a pending
-// stack.
+// stack. values is the number of reads of the value of such a descriptor:
+// those of XJS_SetPropertyInternal free it (JS_FreeValue inlined). Any other
+// use of the descriptor than reading its attributes, freeing it or passing
+// it to the exotic get_own_property stops fixlib (see descUses).
 var ownFlagsCallers = []struct {
-	name  string
-	calls int
+	name   string
+	calls  int
+	values int
 }{
-	{"_JS_GetOwnPropertyNamesInternal", 1},  // enumerability of exotic keys
-	{"XJS_SetPropertyInternal", 1},          // writable before a redefine
-	{"_JS_CopyDataProperties", 2},           // enumerability, values read by JS_GetProperty
-	{"_JS_GetOwnPropertyNames2", 1},         // enumerability, values read by JS_GetProperty
-	{"_js_object_seal", 1},                  // writable, for freeze
-	{"_js_object_isSealed", 1},              // configurable and writable
-	{"_js_object_propertyIsEnumerable", 1},  // enumerable
-	{"_js_object___lookupGetter__", 1},      // getter or setter
-	{"_js_proxy_has", 1},                    // configurable
-	{"_js_proxy_delete_property", 1},        // configurable
-	{"_js_proxy_get_own_property_names", 1}, // configurable
+	{"_JS_GetOwnPropertyNamesInternal", 1, 0},  // enumerability of exotic keys
+	{"XJS_SetPropertyInternal", 1, 2},          // writable before a redefine
+	{"_JS_CopyDataProperties", 2, 0},           // enumerability, values read by JS_GetProperty
+	{"_JS_GetOwnPropertyNames2", 1, 0},         // enumerability, values read by JS_GetProperty
+	{"_js_object_seal", 1, 0},                  // writable, for freeze
+	{"_js_object_isSealed", 1, 0},              // configurable and writable
+	{"_js_object_propertyIsEnumerable", 1, 0},  // enumerable
+	{"_js_object___lookupGetter__", 1, 0},      // getter or setter
+	{"_js_proxy_has", 1, 0},                    // configurable
+	{"_js_proxy_delete_property", 1, 0},        // configurable
+	{"_js_proxy_get_own_property_names", 1, 0}, // configurable
 }
 
-func fixOwnFlags(b []byte, name string, calls int) ([]byte, error) {
+func fixOwnFlags(b []byte, name string, calls, values int) ([]byte, error) {
 	re := regexp.MustCompile(`\nfunc ` + regexp.QuoteMeta(name) + `\(tls \*libc\.TLS, [^\n]*\{\n`)
 	body, err := funcBody(b, re, name)
 	if err != nil {
@@ -793,7 +798,167 @@ func fixOwnFlags(b []byte, name string, calls int) ([]byte, error) {
 	if n := bytes.Count(fixed, []byte("_js_backtrace_own_flags(tls, ")); n != calls {
 		return nil, fmt.Errorf("%s: want %d calls of JS_GetOwnPropertyInternal, found %d", name, calls, n)
 	}
+	uses, err := descUses(name, fixed)
+	if err != nil {
+		return nil, err
+	}
+	for use, n := range uses {
+		switch use {
+		case "call _js_backtrace_own_flags", "call _js_free_desc", "call indirect":
+		case "value":
+			if n != values {
+				return nil, fmt.Errorf("%s: %d reads of the value of a descriptor from JS_GetOwnPropertyInternal, want %d: a caller that reads the value must not get _js_backtrace_own_flags", name, n, values)
+			}
+		default:
+			return nil, fmt.Errorf("%s: a descriptor from JS_GetOwnPropertyInternal is used some other way (%s): a caller that reads the value must not get _js_backtrace_own_flags", name, use)
+		}
+	}
+	if uses["value"] != values {
+		return nil, fmt.Errorf("%s: %d reads of the value of a descriptor from JS_GetOwnPropertyInternal, want %d", name, uses["value"], values)
+	}
 	return bytes.Replace(b, body, fixed, 1), nil
+}
+
+// descUses counts how the function in body uses the descriptors it passes
+// to _js_backtrace_own_flags, cells bp+K of its TLS frame: "value" for a
+// read of the value field, "raw" for an address in the cell (bp + K + N,
+// or bp + N up to where the value ends),
+// "call f" for a call it is passed to, and "other" for anything else. Reads
+// of the flags, the getter and the setter are not counted.
+func descUses(name string, body []byte) (map[string]int, error) {
+	f, err := parseFunc(name, body)
+	if err != nil {
+		return nil, err
+	}
+	cells := map[int]bool{}
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok && isIdent(c.Fun, "_js_backtrace_own_flags") && len(c.Args) == 5 {
+			if k, ok := bpOffset(c.Args[2]); ok {
+				cells[k] = true
+			}
+		}
+		return true
+	})
+	uses := map[string]int{}
+	var stack []ast.Node
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
+		e, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		k, ok := bpOffset(e)
+		if !ok {
+			return true
+		}
+		if a, ok := stack[len(stack)-2].(*ast.AssignStmt); ok && a.Tok == token.DEFINE {
+			return false // bp := tls.Alloc(N)
+		}
+		if cells[k] {
+			if use := descUse(stack); use != "" {
+				uses[use]++
+			}
+			return false
+		}
+		for c := range cells {
+			if c < k && k < c+16 { // the flags and the value
+				uses["raw"]++
+			}
+		}
+		return false
+	})
+	return uses, nil
+}
+
+// bpOffset returns K for bp or bp + K.
+func bpOffset(e ast.Expr) (int, bool) {
+	if isIdent(e, "bp") {
+		return 0, true
+	}
+	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == token.ADD && isIdent(be.X, "bp") {
+		return intLit(be.Y)
+	}
+	return 0, false
+}
+
+// descUse names the use of the descriptor at the top of stack for descUses.
+func descUse(stack []ast.Node) string {
+	parent := func(i int) ast.Node {
+		if i < 0 {
+			return nil
+		}
+		return stack[i]
+	}
+	i := len(stack) - 2
+	switch p := parent(i).(type) {
+	case *ast.BinaryExpr:
+		if n, ok := intLit(p.Y); ok && n >= 16 {
+			return "" // the getter or the setter
+		}
+		return "raw"
+	case *ast.CallExpr:
+		if up := isIdent(p.Fun, "__ccgo_up"); up || isSelector(p.Fun, "unsafe", "Pointer") {
+			// (*(*TJSPropertyDescriptor)(unsafe.Pointer(d))).F, before fixUp
+			// (**(**TJSPropertyDescriptor)(__ccgo_up(d))).F, or either
+			// without the outer parentheses.
+			stars := 1
+			if up {
+				stars = 2
+			}
+			conv, ok := parent(i - 1).(*ast.CallExpr)
+			if !ok {
+				return "other"
+			}
+			typ, ok := conv.Fun.(*ast.ParenExpr)
+			if !ok {
+				return "other"
+			}
+			t := typ.X
+			for range stars {
+				st, ok := t.(*ast.StarExpr)
+				if !ok {
+					return "other"
+				}
+				t = st.X
+			}
+			if !isIdent(t, "TJSPropertyDescriptor") {
+				return "other"
+			}
+			j := i - 2
+			for range stars {
+				if _, ok := parent(j).(*ast.StarExpr); !ok {
+					return "other"
+				}
+				j--
+			}
+			if _, ok := parent(j).(*ast.ParenExpr); ok {
+				j--
+			}
+			sel, ok := parent(j).(*ast.SelectorExpr)
+			if !ok {
+				return "other"
+			}
+			switch sel.Sel.Name {
+			case "Fflags", "Fgetter", "Fsetter":
+				return ""
+			case "Fvalue":
+				return "value"
+			}
+			return "other"
+		}
+		switch fun := p.Fun.(type) {
+		case *ast.Ident:
+			return "call " + fun.Name
+		case *ast.ParenExpr:
+			return "call indirect"
+		}
+		return "other"
+	}
+	return "other"
 }
 
 // funcBody returns the text of the function whose head re matches.

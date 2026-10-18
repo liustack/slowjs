@@ -632,6 +632,11 @@ Conflicts to expect:
   that the uses of `"stack overflow"` differ from `stackOverflowUses`, a
   new place throws that message: make it call `_JS_ThrowStackOverflow`
   (teach `fixStack` to), or add it to the list if it is the regexp parser.
+  If it reports that a function of `ownFlagsCallers`
+  (`internal/fixlib/main.go`) reads the value of the descriptor it gets, or
+  uses it another way, read the function: if it now needs the value, it
+  must call `_JS_GetOwnPropertyInternal` again, so take it off the list.
+  Otherwise fix the count there.
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
