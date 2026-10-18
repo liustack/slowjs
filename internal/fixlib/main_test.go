@@ -337,3 +337,26 @@ func TestDescUsesBothForms(t *testing.T) {
 		t.Fatalf("got %v, want %v", uses, want)
 	}
 }
+
+// A change of fixBacktrace counts as made only as the whole text fixlib
+// writes, where fixlib writes it.
+func TestBacktraceRejectsTextElsewhere(t *testing.T) {
+	b := engineFile(t)
+	for _, c := range []struct {
+		head, first string
+		n           int
+	}{
+		{"_build_backtrace", "if filename == 0 && _js_backtrace_build(", 3},
+		{"_get_prop_string", "if pending, ok := _js_backtrace_prop_string(", 3},
+		{"XJS_GetPropertyInternal", "if prop == uint32(EJS_ATOM_stack) {", 5},
+		{"_JS_GetOwnPropertyInternal", "if prop == uint32(EJS_ATOM_stack) && desc != 0 {", 5},
+		{"XJS_DefineProperty", "if prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(", 3},
+		{"_js_print_error", "if _js_backtrace_raw_stack(tls, s, p) {", 3},
+		{"_js_print_object", "if _js_backtrace_print_pending(", 3},
+		{"XJS_ComputeMemoryUsage", "_js_backtrace_memory_usage(", 1},
+	} {
+		if _, err := fixBacktrace(moveLines(t, b, c.head, c.first, c.n)); err == nil {
+			t.Errorf("%s: %q elsewhere went through", c.head, c.first)
+		}
+	}
+}

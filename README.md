@@ -623,12 +623,12 @@ Conflicts to expect:
   test only moved and a failed buffer still fails at once, teach
   `fixCompile` the new place. If it is gone, make `fixCompile` add it.
   Do not edit the generated code by hand.
-  `fixCompile` takes a change as made only when its whole text is where it
-  puts it. If it reports that a text of its own is somewhere else, is there
-  twice, or that `_resolve_labels` has a label `out_of_memory` or part of
-  the change, upstream has likely written part of the change itself: read
-  the new code, then drop that part of `fixCompile` or teach it the new
-  place.
+  fixlib takes a change of its own as made only when its whole text is
+  where it puts it. If it reports that such a text is somewhere else, is
+  there twice, or that `_resolve_labels` has a label `out_of_memory` or
+  part of the change, upstream has likely written part of the change
+  itself: read the new code, then drop that part of fixlib or teach it the
+  new place.
   If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
   shape, a new runtime must still start with a stack size of 0 (the port's
   `MaxStackSlots`), and running out of stack must still throw a

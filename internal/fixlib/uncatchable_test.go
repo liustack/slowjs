@@ -82,3 +82,21 @@ func TestUncatchableRejectsNewTake(t *testing.T) {
 		t.Fatal("a JS_Throw that replaces the exception before the guard went through")
 	}
 }
+
+// A change of fixUncatchable counts as made only as the whole text fixlib
+// writes, where fixlib writes it.
+func TestUncatchableRejectsTextElsewhere(t *testing.T) {
+	b := engineFile(t)
+	for _, c := range []struct {
+		head, first string
+		n           int
+	}{
+		{"XJS_Throw", "if _js_uncatchable_pending(", 4},
+		{"_JS_CallInternal", "if _js_uncatchable_pending(", 3},
+		{"_JS_IteratorClose", "if _js_uncatchable_pending(", 3},
+	} {
+		if _, err := fixUncatchable(moveLines(t, b, c.head, c.first, c.n)); err == nil {
+			t.Errorf("%s: %q elsewhere went through", c.head, c.first)
+		}
+	}
+}

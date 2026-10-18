@@ -191,3 +191,21 @@ func TestOutOfMemoryChecksFixedFile(t *testing.T) {
 		}
 	}
 }
+
+// _js_compile_regexp counts as fixed only with fixlib's whole test of the
+// message: the name of the helper elsewhere in it is not enough.
+func TestOutOfMemoryRejectsRegexpTextElsewhere(t *testing.T) {
+	b := engineFile(t)
+	wrapped := "\t\tif _js_regexp_out_of_memory(bp+12) {\n\t\t\tXJS_ThrowOutOfMemory(tls, ctx1)\n\t\t} else {\n\t\t\tXJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12059, libc.VaList(bp+88, bp+12))\n\t\t}\n"
+	if bytes.Count(b, []byte(wrapped)) != 1 {
+		t.Fatal("no fixed test of the message in _js_compile_regexp")
+	}
+	b = bytes.Replace(b, []byte(wrapped), []byte("\t\tXJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12059, libc.VaList(bp+88, bp+12))\n"), 1)
+	if _, err := fixOutOfMemory(bytes.Clone(b)); err != nil {
+		t.Fatalf("the file with the test taken out: %v", err)
+	}
+	b = mutate(t, b, "func _js_compile_regexp(", "\tre_bytecode_buf = ", "\t// _js_regexp_out_of_memory(bp+12)\n")
+	if _, err := fixOutOfMemory(b); err == nil {
+		t.Error("the name of the helper in a comment counted as the test")
+	}
+}

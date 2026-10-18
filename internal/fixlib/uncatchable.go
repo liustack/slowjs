@@ -86,15 +86,15 @@ func fixUncatchable(b []byte) ([]byte, error) {
 	m := reThrowHead.FindSubmatch(b)
 	ctx, obj := string(m[1]), string(m[2])
 	guard := fmt.Sprintf("\tif _js_uncatchable_pending(tls, %s) {\n\t\tXFreeValue(tls, %s, %s)\n\t\treturn jsvException()\n\t}\n", ctx, ctx, obj)
-	if !bytes.Contains(body, []byte(guard)) {
-		anchor := fmt.Sprintf("\trt = (*TJSContext)(unsafe.Pointer(%s)).Frt\n", ctx)
-		if bytes.Count(body, []byte(anchor)) != 1 {
-			return nil, fmt.Errorf("XJS_Throw: want 1 read of the runtime")
-		}
-		fixed := bytes.Replace(body, []byte(anchor), []byte(anchor+guard), 1)
-		b = bytes.Replace(b, body, fixed, 1)
-		body = fixed
+	anchor := fmt.Sprintf("\trt = (*TJSContext)(unsafe.Pointer(%s)).Frt\n", ctx)
+	fixed, err := insertAt("XJS_Throw", body, guard, func(body []byte) (int, error) {
+		return after(body, anchor, anchor, "XJS_Throw: want 1 read of the runtime")
+	})
+	if err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
+	body = fixed
 	if err := guardFirst(body, guard, "XJS_Throw"); err != nil {
 		return nil, err
 	}
@@ -113,17 +113,19 @@ func fixUncatchable(b []byte) ([]byte, error) {
 	}
 	ctx = string(reCallInternalCtx.FindSubmatch(b)[1])
 	guard = fmt.Sprintf("\tif _js_uncatchable_pending(tls, %s) {\n\t\treturn jsvException()\n\t}\n", ctx)
-	if !bytes.Contains(body, []byte(guard)) {
+	if fixed, err = insertAt("_JS_CallInternal", body, guard, func(body []byte) (int, error) {
 		loc := reEntryPoll.FindSubmatchIndex(body)
 		if loc == nil || string(body[loc[2]:loc[3]]) != ctx {
-			return nil, fmt.Errorf("_JS_CallInternal: cannot find the interrupt check")
+			return 0, fmt.Errorf("_JS_CallInternal: cannot find the interrupt check")
 		}
 		if before := body[:loc[0]]; bytes.Contains(before, []byte("\n\tfor {")) || !bytes.Contains(before, []byte("tls.Alloc(")) {
-			return nil, fmt.Errorf("_JS_CallInternal: the first interrupt check is not at the entry")
+			return 0, fmt.Errorf("_JS_CallInternal: the first interrupt check is not at the entry")
 		}
-		fixed := append(append(append([]byte{}, body[:loc[1]]...), guard...), body[loc[1]:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return loc[1], nil
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// JS_IteratorClose: no 'return' for one.
 	if body, err = funcBody(b, reIteratorClose, "_JS_IteratorClose"); err != nil {
@@ -131,18 +133,17 @@ func fixUncatchable(b []byte) ([]byte, error) {
 	}
 	ctx = string(reIteratorClose.FindSubmatch(b)[1])
 	guard = fmt.Sprintf("\t\tif _js_uncatchable_pending(tls, %s) {\n\t\t\treturn -int32(1)\n\t\t}\n", ctx)
-	if !bytes.Contains(body, []byte(guard)) {
-		// The test that takes the exception out, not the one that throws
-		// it again at the end.
-		anchor := "\n\tif is_exception_pending != 0 {\n"
-		take := anchor + "\t\tex_obj = "
-		if bytes.Count(body, []byte(take)) != 1 {
-			return nil, fmt.Errorf("_JS_IteratorClose: want 1 test of is_exception_pending that takes the exception")
-		}
-		fixed := bytes.Replace(body, []byte(take), []byte(anchor+guard+"\t\tex_obj = "), 1)
-		b = bytes.Replace(b, body, fixed, 1)
-		body = fixed
+	// The test that takes the exception out, not the one that throws it
+	// again at the end.
+	take := "\n\tif is_exception_pending != 0 {\n\t\tex_obj = "
+	if fixed, err = insertAt("_JS_IteratorClose", body, guard, func(body []byte) (int, error) {
+		i, err := before(body, take, take, "_JS_IteratorClose: want 1 test of is_exception_pending that takes the exception")
+		return i + len("\n\tif is_exception_pending != 0 {\n"), err
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
+	body = fixed
 	if err := guardFirst(body, guard, "_JS_IteratorClose"); err != nil {
 		return nil, err
 	}

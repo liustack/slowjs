@@ -90,13 +90,21 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	ctx = string(reCompileRegexp.FindSubmatch(b)[1])
-	if !bytes.Contains(body, []byte("_js_regexp_out_of_memory(")) {
-		m := regexp.MustCompile(`/\* error_msg at (bp\+\d+) \*/`).FindSubmatch(body)
-		if m == nil {
-			return nil, fmt.Errorf("_js_compile_regexp: cannot find error_msg")
-		}
-		msg := string(m[1])
-		re := regexp.MustCompile(`\n\tif !\(re_bytecode_buf != 0\) \{\n\t\t(XJS_ThrowSyntaxError\(tls, ` + ctx + fmt.Sprintf(`, __ccgo_ts\+%d, libc\.VaList\(bp\+\d+, `, strs["%s"]) + regexp.QuoteMeta(msg) + `\)\))\n`)
+	m := regexp.MustCompile(`/\* error_msg at (bp\+\d+) \*/`).FindSubmatch(body)
+	if m == nil {
+		return nil, fmt.Errorf("_js_compile_regexp: cannot find error_msg")
+	}
+	msg := string(m[1])
+	syntax := `(XJS_ThrowSyntaxError\(tls, ` + ctx + fmt.Sprintf(`, __ccgo_ts\+%d, libc\.VaList\(bp\+\d+, `, strs["%s"]) + regexp.QuoteMeta(msg) + `\)\))`
+	test := regexp.QuoteMeta("\n\tif !(re_bytecode_buf != 0) {\n\t\t")
+	// Fixed only with fixlib's whole test around the SyntaxError.
+	wrapped := regexp.MustCompile(test + regexp.QuoteMeta(fmt.Sprintf("if _js_regexp_out_of_memory(%s) {\n\t\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\t} else {\n\t\t\t", msg, ctx)) + syntax + `\n\t\t\}\n`)
+	switch n := bytes.Count(body, []byte("_js_regexp_out_of_memory(")); {
+	case n == 1 && len(wrapped.FindAllIndex(body, -1)) == 1:
+	case n != 0:
+		return nil, fmt.Errorf("_js_compile_regexp: _js_regexp_out_of_memory is not where fixlib puts it")
+	default:
+		re := regexp.MustCompile(test + syntax + `\n`)
 		loc := re.FindAllSubmatchIndex(body, -1)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("_js_compile_regexp: want 1 SyntaxError with the message of lre_compile")

@@ -412,16 +412,19 @@ var (
 
 	// The SameValue test of JS_DefineProperty on a non-writable,
 	// non-configurable data property, which must compare the text of a
-	// pending stack.
+	// pending stack. Its value pointer is the pr of the lookup: a local, or
+	// its frame slot read before or after fixUp. The test of a VARREF
+	// property reads Fpvalue instead, and after fixUp has the same form.
 	reDefineHead = regexp.MustCompile(`\nfunc XJS_DefineProperty\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom, \w+ TJSValue, \w+ TJSValue, \w+ TJSValue, flags int32\) \(r int32\) \{\n`)
 	reDefineFind = regexp.MustCompile(`\n[ \t]+([^\n=]+?) = _find_own_property\(tls, [^,\n]+, (\w+), prop\)\n`)
-	reDefineSame = regexp.MustCompile(`\n([ \t]+)if !\(_js_same_value\(tls, \w+, \w+, \*\(\*TJSValue\)\(unsafe\.Pointer\(([^\n]+?)\)\)\) != 0\) \{\n`)
+	reDefineSame = regexp.MustCompile(`\n([ \t]+)if !\(_js_same_value\(tls, \w+, \w+, \*\(\*TJSValue\)\(unsafe\.Pointer\((\w+|\*\*\(\*\*uintptr\)\(__ccgo_up\(bp \+ \d+\)\)|\*\(\*uintptr\)\(unsafe\.Pointer\(bp \+ \d+\)\))\)\)\) != 0\) \{\n`)
 
 	// The two printer sites: js_print_error reads the stack, js_print_object
 	// prints a normal property value.
-	rePrintErrorHead  = regexp.MustCompile(`\nfunc _js_print_error\(tls \*libc\.TLS, s uintptr, p uintptr\) \{\n`)
-	rePrintObjectHead = regexp.MustCompile(`\nfunc _js_print_object\(tls \*libc\.TLS, s uintptr, \w+ uintptr\) \{\n`)
-	rePrintObjectVal  = regexp.MustCompile(`\n(\t+)_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n`)
+	rePrintErrorHead     = regexp.MustCompile(`\nfunc _js_print_error\(tls \*libc\.TLS, s uintptr, p uintptr\) \{\n`)
+	rePrintObjectHead    = regexp.MustCompile(`\nfunc _js_print_object\(tls \*libc\.TLS, s uintptr, \w+ uintptr\) \{\n`)
+	rePrintObjectWrapped = regexp.MustCompile(`\n(\t+)if _js_backtrace_print_pending\(tls, s, prs, pr\) == 0 \{\n\t+_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n\t+\}\n`)
+	rePrintObjectVal     = regexp.MustCompile(`\n(\t+)_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n`)
 )
 
 const (
@@ -501,6 +504,17 @@ func checkBacktraceSites(b []byte, file string) error {
 	return nil
 }
 
+// afterFirst is a place for insertAt: right after the first match of re.
+func afterFirst(re *regexp.Regexp, msg string) func([]byte) (int, error) {
+	return func(body []byte) (int, error) {
+		loc := re.FindIndex(body)
+		if loc == nil {
+			return 0, fmt.Errorf("%s", msg)
+		}
+		return loc[1], nil
+	}
+}
+
 // fixBacktrace wires lib/backtrace.go into a generated file. 'stack' is an
 // ordinary data property whose value, while pending, is a marker object, so
 // every path that hands a property value on must format the stack first:
@@ -546,13 +560,13 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_build_backtrace: cannot find the has_debug test")
 	}
 	lazy := fmt.Sprintf("\tif filename == 0 && _js_backtrace_build(tls, %s, %s, backtrace_flags) != 0 {\n\t\treturn\n\t}\n", ctx, errorObj)
-	if !bytes.Contains(body, []byte(lazy)) {
-		init := fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx)
-		if bytes.Count(body, []byte(init)) != 1 {
-			return nil, fmt.Errorf("_build_backtrace: want 1 call of _js_dbuf_init")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, []byte(init), []byte(lazy+init), 1), 1)
+	fixed, err := insertAt("_build_backtrace", body, lazy, func(body []byte) (int, error) {
+		return before(body, fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx), "", "_build_backtrace: want 1 call of _js_dbuf_init")
+	})
+	if err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// get_prop_string: format a pending stack for a print.
 	body, err = funcBody(b, reGetPropString, "_get_prop_string")
@@ -567,23 +581,31 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_get_prop_string: cannot find the property type test, the value or the object")
 	}
 	pending := fmt.Sprintf("\tif pending, ok := _js_backtrace_prop_string(tls, %s, %s, prs, %s); ok {\n\t\treturn pending\n\t}\n", gpsCtx, object[1], value[1])
-	if !bytes.Contains(body, []byte(pending)) {
-		b = bytes.Replace(b, body, bytes.Replace(body, flags[1], append([]byte(pending), flags[1]...), 1), 1)
+	if fixed, err = insertAt("_get_prop_string", body, pending, func(body []byte) (int, error) {
+		loc := rePropFlags.FindSubmatchIndex(body)
+		if loc == nil {
+			return 0, fmt.Errorf("_get_prop_string: cannot find the property type test")
+		}
+		return loc[2], nil
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// JS_GetPropertyInternal: settle the stack before the flag dispatch.
 	if body, err = funcBody(b, reGetPropHead, "XJS_GetPropertyInternal"); err != nil {
 		return nil, err
 	}
 	getCtx := string(reGetPropHead.FindSubmatch(b)[1])
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		fm := reGetPropFind.FindSubmatch(body)
-		if fm == nil {
-			return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
-		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), slotDeref(string(fm[2])))
-		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
+	fm := reGetPropFind.FindSubmatch(body)
+	if fm == nil {
+		return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
 	}
+	ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), slotDeref(string(fm[2])))
+	if fixed, err = insertAt("XJS_GetPropertyInternal", body, ins, afterFirst(reGetPropFind, "XJS_GetPropertyInternal: cannot find the property lookup")); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// JS_GetOwnPropertyInternal: settle the stack before reading the value.
 	if body, err = funcBody(b, reGetOwnHead, "_JS_GetOwnPropertyInternal"); err != nil {
@@ -591,14 +613,14 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	}
 	om := reGetOwnHead.FindSubmatch(b)
 	ownCtx, ownObj := string(om[1]), string(om[2])
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		fm := reGetOwnFind.FindSubmatch(body)
-		if fm == nil {
-			return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
-		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, slotDeref(string(fm[2])))
-		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
+	if fm = reGetOwnFind.FindSubmatch(body); fm == nil {
+		return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
 	}
+	ins = fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, slotDeref(string(fm[2])))
+	if fixed, err = insertAt("_JS_GetOwnPropertyInternal", body, ins, afterFirst(reGetOwnFind, "_JS_GetOwnPropertyInternal: cannot find the property lookup")); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The interpreter: every inline read sends a pending 'stack' to the
 	// slow path, and every _find_own_property call of JS_CallInternal is
@@ -612,27 +634,40 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, reDefineHead, "XJS_DefineProperty"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		defCtx := string(reDefineHead.FindSubmatch(b)[1])
-		objs := reDefineFind.FindAllSubmatch(body, -1)
-		if len(objs) == 0 {
-			return nil, fmt.Errorf("XJS_DefineProperty: cannot find the property lookup")
+	defCtx := string(reDefineHead.FindSubmatch(b)[1])
+	objs := reDefineFind.FindAllSubmatch(body, -1)
+	if len(objs) == 0 {
+		return nil, fmt.Errorf("XJS_DefineProperty: cannot find the property lookup")
+	}
+	for _, o := range objs[1:] {
+		if !bytes.Equal(o[1], objs[0][1]) || !bytes.Equal(o[2], objs[0][2]) {
+			return nil, fmt.Errorf("XJS_DefineProperty: lookups on different objects")
 		}
-		for _, o := range objs[1:] {
-			if !bytes.Equal(o[1], objs[0][1]) || !bytes.Equal(o[2], objs[0][2]) {
-				return nil, fmt.Errorf("XJS_DefineProperty: lookups on different objects")
-			}
-		}
+	}
+	sameAt := func(body []byte) ([]int, error) {
 		same := reDefineSame.FindAllSubmatchIndex(body, -1)
 		if len(same) != 1 {
 			return nil, fmt.Errorf("XJS_DefineProperty: want 1 SameValue test of a data property, found %d", len(same))
 		}
-		indent := string(body[same[0][2]:same[0][3]])
-		pr := string(body[same[0][4]:same[0][5]])
-		ins := fmt.Sprintf("\n%sif prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, %s, %s, %s, %s) < 0 {\n%s\treturn -int32(1)\n%s}", indent, defCtx, objs[0][2], objs[0][1], pr, indent, indent)
-		fixed := append(append(append([]byte{}, body[:same[0][0]]...), ins...), body[same[0][0]:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return same[0], nil
 	}
+	same, err := sameAt(body)
+	if err != nil {
+		return nil, err
+	}
+	indent := string(body[same[2]:same[3]])
+	pr := string(body[same[4]:same[5]])
+	ins = fmt.Sprintf("\n%sif prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, %s, %s, %s, %s) < 0 {\n%s\treturn -int32(1)\n%s}", indent, defCtx, objs[0][2], objs[0][1], pr, indent, indent)
+	if fixed, err = insertAt("XJS_DefineProperty", body, ins, func(body []byte) (int, error) {
+		same, err := sameAt(body)
+		if err != nil {
+			return 0, err
+		}
+		return same[0], nil
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The callers of JS_GetOwnPropertyInternal that only look at the
 	// attributes call _js_backtrace_own_flags, which does not format.
@@ -646,27 +681,41 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, rePrintErrorHead, "_js_print_error"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_raw_stack")) {
+	// The line that reads the stack, and its indent.
+	stackRead := func(body []byte) (int, string, error) {
 		end := bytes.Index(body, []byte(", uint32(EJS_ATOM_stack))"))
 		if end < 0 {
-			return nil, fmt.Errorf("_js_print_error: cannot find the stack read")
+			return 0, "", fmt.Errorf("_js_print_error: cannot find the stack read")
 		}
 		start := bytes.LastIndex(body[:end], []byte("str = _get_prop_string(tls,"))
 		if start < 0 {
-			return nil, fmt.Errorf("_js_print_error: cannot find the stack read start")
+			return 0, "", fmt.Errorf("_js_print_error: cannot find the stack read start")
 		}
 		ls := bytes.LastIndexByte(body[:start], '\n') + 1
-		indent := string(body[ls:start])
-		guard := fmt.Sprintf("%sif _js_backtrace_raw_stack(tls, s, p) {\n%s\treturn\n%s}\n", indent, indent, indent)
-		fixed := append(append(append([]byte{}, body[:ls]...), guard...), body[ls:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return ls, string(body[ls:start]), nil
 	}
+	_, indent, err = stackRead(body)
+	if err != nil {
+		return nil, err
+	}
+	guard := fmt.Sprintf("%sif _js_backtrace_raw_stack(tls, s, p) {\n%s\treturn\n%s}\n", indent, indent, indent)
+	if fixed, err = insertAt("_js_print_error", body, guard, func(body []byte) (int, error) {
+		ls, _, err := stackRead(body)
+		return ls, err
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// js_print_object: a placeholder for a marker value.
 	if body, err = funcBody(b, rePrintObjectHead, "_js_print_object"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_print_pending")) {
+	if n := bytes.Count(body, []byte("_js_backtrace_print_pending")); n != 0 {
+		if n != 1 || len(rePrintObjectWrapped.FindAllIndex(body, -1)) != 1 {
+			return nil, fmt.Errorf("_js_print_object: the call of _js_backtrace_print_pending is not around the value print")
+		}
+	} else {
 		loc := rePrintObjectVal.FindSubmatchIndex(body)
 		if loc == nil {
 			return nil, fmt.Errorf("_js_print_object: cannot find the value print")
@@ -682,15 +731,27 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, reMemoryHead, "XJS_ComputeMemoryUsage"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte(memoryUsage)) {
+	propSize := func(body []byte) ([]int, error) {
 		loc := reMemoryProp.FindAllSubmatchIndex(body, -1)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("XJS_ComputeMemoryUsage: want 1 size of a property value, found %d", len(loc))
 		}
-		indent := body[loc[0][2]:loc[0][3]]
-		fixed := append(append(append(body[:loc[0][1]:loc[0][1]], indent...), memoryUsage...), body[loc[0][1]:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return loc[0], nil
 	}
+	loc, err := propSize(body)
+	if err != nil {
+		return nil, err
+	}
+	if fixed, err = insertAt("XJS_ComputeMemoryUsage", body, string(body[loc[2]:loc[3]])+memoryUsage, func(body []byte) (int, error) {
+		loc, err := propSize(body)
+		if err != nil {
+			return 0, err
+		}
+		return loc[1], nil
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	if !*slots {
 		if err := auditSlots(b); err != nil {
