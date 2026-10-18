@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does nine things:
+// It does ten things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -37,6 +37,9 @@
 //     into the TLS frame of their function, or malloc it where the function
 //     has no frame, so that a call allocates no Go memory and takes as many
 //     TLS stack slots as before (see fixAlloca).
+//   - In every lib/ccgo_*.go file, replace the TLS frame of the hot small
+//     functions of frameSites, which only use it to reinterpret values,
+//     with a Go array (see fixFrames).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -65,8 +68,9 @@ const (
 )
 
 var (
-	check = flag.Bool("check", false, "report missing changes without writing files")
-	slots = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	check  = flag.Bool("check", false, "report missing changes without writing files")
+	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -77,6 +81,13 @@ func main() {
 	flag.Parse()
 	if *slots {
 		if err := printSlots(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
+			fmt.Fprintln(os.Stderr, "fixlib:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *frames {
+		if err := frameReport(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
 			os.Exit(1)
 		}
@@ -101,7 +112,12 @@ func run() (missing int, err error) {
 	if len(generated) == 0 {
 		return 0, fmt.Errorf("no lib/ccgo_*.go files, run from the repository root")
 	}
+	hw, err := handWritten("lib")
+	if err != nil {
+		return 0, err
+	}
 	for _, fn := range generated {
+		pin := filepath.Base(fn) == "ccgo_darwin_arm64.go"
 		changed, err := update(fn, func(b []byte) ([]byte, error) {
 			b, err := fixToCString(b)
 			if err != nil {
@@ -126,6 +142,9 @@ func run() (missing int, err error) {
 				return nil, err
 			}
 			if b, err = fixAlloca(b); err != nil {
+				return nil, err
+			}
+			if b, err = fixFrames(b, hw, frameSites, pin); err != nil {
 				return nil, err
 			}
 			// The changes to frames leave the property slots as they were.

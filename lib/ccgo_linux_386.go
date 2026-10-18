@@ -19906,8 +19906,8 @@ func _JS_IsHTMLDDA(tls *libc.TLS, ctx uintptr, obj TJSValue) (r TBOOL) {
 }
 
 func _JS_ToBoolFree(tls *libc.TLS, ctx1 uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var d, v22 float64
 	var i, v4 int32
 	var p, p1, p2, v2, v5 uintptr
@@ -20023,14 +20023,14 @@ func _JS_ToBoolFree(tls *libc.TLS, ctx1 uintptr, val TJSValue) (r int32) {
 		return ret3
 	default:
 		if tag-libc.Uint32FromInt32(EJS_TAG_FIRST) >= libc.Uint32FromInt32(int32(EJS_TAG_FLOAT64)-int32(EJS_TAG_FIRST)) {
-			*(*TJSValue)(unsafe.Pointer(bp + 8)) = val
-			*(*TJSValue)(unsafe.Pointer(bp + 8)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
-			v22 = *(*float64)(unsafe.Pointer(bp + 8))
+			*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) = val
+			*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
+			v22 = *(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 8))
 			goto _23
 		_23:
 			d = v22
-			*(*float64)(unsafe.Pointer(bp)) = d
-			v24 = *(*uint64)(unsafe.Pointer(bp))
+			*(*float64)(unsafe.Pointer(&localbp)) = d
+			v24 = *(*uint64)(unsafe.Pointer(&localbp))
 			goto _25
 		_25:
 			;
@@ -107677,8 +107677,8 @@ fail:
 //
 //	/* XXX: could normalize strings to speed up comparison */
 func _map_normalize_key(tls *libc.TLS, ctx1 uintptr, key TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var tag Tuint32_t
 	var v1 float64
 	var v3 bool
@@ -107691,9 +107691,9 @@ func _map_normalize_key(tls *libc.TLS, ctx1 uintptr, key TJSValue) (r TJSValue) 
 	tag = libc.Uint32FromInt32(libc.Int32FromUint64(key >> libc.Int32FromInt32(32)))
 	/* convert -0.0 to +0.0 */
 	if v3 = tag-libc.Uint32FromInt32(EJS_TAG_FIRST) >= libc.Uint32FromInt32(int32(EJS_TAG_FLOAT64)-int32(EJS_TAG_FIRST)); v3 {
-		*(*TJSValue)(unsafe.Pointer(bp)) = key
-		*(*TJSValue)(unsafe.Pointer(bp)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
-		v1 = *(*float64)(unsafe.Pointer(bp))
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = key
+		*(*TJSValue)(unsafe.Pointer(&localbp)) += libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1)) << libc.Int32FromInt32(32)
+		v1 = *(*float64)(unsafe.Pointer(&localbp))
 		goto _2
 	_2:
 	}
