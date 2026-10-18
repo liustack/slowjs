@@ -1,0 +1,48 @@
+plain => a:number=1:wec,b:string=x1:wec,c:object=null:wec,d:undefined=undefined:wec
+dup keys => a:number=3:wec,b:number=2:wec
+numeric keys => 0:string=zero:wec,1:string=one:wec,2:string=two:wec,b:number=1:wec,-1:string=neg:wec
+proto literal => a:number=1:wec inh=1
+proto null => a:number=1:wec,b:number=2:wec proto=null
+computed => z:number=1:wec,a:number=2:wec,zz:number=3:wec
+getter in literal => a:number=1:wec,b:get/set:ec,c:number=3:wec
+method => a:number=1:wec,m:function=m() { return this.a; }:wec m=1
+spread getters => a:number=1:wec,b:number=2:wec,c:number=3:wec n=1
+spread over existing => a:number=2:wec,b:number=4:wec
+setter on proto not called => zz:number=1:wec called=0
+readonly on proto ignored => ro:number=1:wec
+class fields => x:number=1:wec,y:string=x1:wec | length:number=0:c,name:string=A:c,z:number=3:wec
+class field on non-extensible !! TypeError: object is not extensible
+class field on frozen base !! TypeError: object is not extensible
+class field redefines => f:number=1:wec
+class field on non-configurable !! TypeError: property is not configurable
+class field on array => 0:number=5:wec,length:number=1:w,f:number=1:wec
+class field index on array => 0:string=z:wec,length:number=1:w len=1
+class field on proxy this => f:number=1:wec,g:number=2:wec trap=fg
+class field on typed array => 0:number=0:wec,1:number=0:wec,f:number=1:wec
+class field on string object => 0:string=a:e,1:string=b:e,2:string=q:wec,length:number=2:,f:number=1:wec | TypeError: property is not configurable
+class field on global => v:number=7:wec
+class field private => q:number=2:wec p=1
+json => 0:number=0:wec,a:number=3:wec,b:string=s:wec,__proto__:number=5:wec
+json reviver => b:number=2:wec
+fromEntries => a:number=3:wec,b:number=2:wec
+iterator result => value:number=1:wec,done:boolean=false:wec
+function props => length:number=2:c,name:string=f:c,prototype:object=[obj]:w | length:number=1:c,name:string=h:c
+bound => length:number=1:c,name:string=bound named:c
+regexp exec => 0:string=a:wec,1:string=a:wec,length:number=2:w,index:number=0:wec,groups:object=[obj]:wec
+groupBy => odd:object=[obj]:wec,even:object=[obj]:wec
+promise withResolvers => promise,resolve,reject
+error => cause,message,stack
+literal stack key => stack:number=1:wec,message:number=2:wec
+arguments => 0:number=1:wec,1:number=2:wec,length:number=2:wc,callee:function=function () { return d(arguments); }:wc,Symbol(Symbol.iterator):function=function values() {
+    [native code]
+}:wc
+getOwnPropertyDescriptors => value:number=1:wec,writable:boolean=true:wec,enumerable:boolean=true:wec,configurable:boolean=true:wec
+many keys => 40 39
+literal 20 keys => a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19
+for-in order after literal => 1,b,a
+symbols => a:number=2:wec,Symbol(s):number=1:wec
+shape sharing => y:number=2:wec | x:number=3:wec,y:number=4:wec,z:number=5:wec
+object freeze after literal => a:number=1:e ext=false
+template object => 0:string=a:e,1:string=b:e,length:number=2:,raw:object=[obj]:
+defineProperties => a:number=1:e,b:get/set:
+structured via assign => a:number=1:wec,b:number=2:wec

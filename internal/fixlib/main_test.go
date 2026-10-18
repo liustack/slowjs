@@ -87,7 +87,7 @@ func mutate(t *testing.T, b []byte, head, at, text string) []byte {
 const (
 	getPropHead   = "func XJS_GetPropertyInternal("
 	getPropSettle = "\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle("
-	getPropSlot   = "**(**uintptr)(__ccgo_up(bp + 56))"
+	getPropSlot   = "*(*uintptr)(unsafe.Pointer(bp + 56))"
 )
 
 // A change in how any function uses a property slot stops fixlib, whatever
@@ -138,7 +138,7 @@ func TestAuditSlotsRejectsChanges(t *testing.T) {
 	}
 	cases = append(cases, auditCase{
 		// The slot pointer read from its cell through arithmetic on the
-		// cell's address.
+		// cell's address, in the form ccgo writes it.
 		"cell offset",
 		mutate(t, b, getPropHead, getPropSettle, "\t\t_ = (*TJSValue)(unsafe.Pointer(**(**uintptr)(__ccgo_up(bp + 56 + 0)))).Ftag\n"),
 		[]string{"XJS_GetPropertyInternal: uses changed", "cell offset=1"},

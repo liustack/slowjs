@@ -23,7 +23,7 @@ var (
 	reCodeMove       = regexp.MustCompile(`\n(\t+)if (?:\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| )?Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n(?:\t+XJS_ThrowOutOfMemory\([^\n]*\n)?\t+(return -int32\(1\)|goto fail)\n`)
 	reNextTokenFree  = regexp.MustCompile(`\n\t_free_token\(tls, s, s\+\d+\)\n`)
 	reParseClass     = regexp.MustCompile(`\nfunc _js_parse_class\(tls \*libc\.TLS, s uintptr, [^\n]*\{\n`)
-	reBrandPatch     = regexp.MustCompile(`\n\t\t\*\*\(\*\*Tuint8_t\)\(__ccgo_up\(\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\((\w+)\)\)\.Ffields_init_fd\)\)\.Fbyte_code\.Fbuf \+ uintptr\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbrand_push_pos\)\)\) = uint8\(EOP_push_true\)\n`)
+	reBrandPatch     = regexp.MustCompile(`\n\t\t` + reDeref(`Tuint8_t`, `\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\((\w+)\)\)\.Ffields_init_fd\)\)\.Fbyte_code\.Fbuf \+ uintptr\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbrand_push_pos\)`) + ` = uint8\(EOP_push_true\)\n`)
 	reDestructElem   = regexp.MustCompile(`\nfunc _js_parse_destructuring_element\(tls \*libc\.TLS, s uintptr, [^\n]*\{\n`)
 	reTestRemoval    = regexp.MustCompile(`\n\t\tlibc\.(?:X__builtin___memset_chk|Xmemset)\(tls, \(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fcur_func\)\)\.Fbyte_code\.Fbuf\+uintptr\(start_addr\), int32\(EOP_nop\), `)
 )

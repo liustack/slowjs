@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does ten things:
+// It does fourteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -40,6 +40,19 @@
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot small
 //     functions of frameSites, which only use it to reinterpret values,
 //     with a Go array (see fixFrames).
+//   - In every lib/ccgo_*.go file, write each conversion ccgo makes
+//     through __ccgo_up as a plain unsafe.Pointer conversion, which keeps
+//     the stack frames of the big functions small (see fixUp).
+//   - In the lib/ccgo_*.go files of 64-bit targets, keep the JSValue that
+//     the interpreter's inlined JS_DupValue and JS_FreeValue go through in
+//     a Go variable instead of the TLS frame (see fixCells).
+//   - In the lib/ccgo_*.go files of amd64 targets and windows, keep the
+//     values the interpreter's loop holds for the whole call in its stack
+//     frame, out of the register allocator (see fixPin).
+//   - In every lib/ccgo_*.go file, let JS_DefinePropertyValue add a new
+//     data property of an ordinary object through objlitDefine of
+//     lib/objlit.go, without the three calls of the generic path (see
+//     fixDefine).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -55,6 +68,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"os"
 	"path/filepath"
@@ -70,6 +84,7 @@ const (
 var (
 	check  = flag.Bool("check", false, "report missing changes without writing files")
 	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	define = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
 	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -88,6 +103,21 @@ func main() {
 	}
 	if *frames {
 		if err := frameReport(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
+			fmt.Fprintln(os.Stderr, "fixlib:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *define {
+		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
+		var hw []*ast.File
+		if err == nil {
+			hw, err = handWritten("lib")
+		}
+		if err == nil {
+			err = defineReport(files, hw)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
 			os.Exit(1)
 		}
@@ -117,39 +147,7 @@ func run() (missing int, err error) {
 		return 0, err
 	}
 	for _, fn := range generated {
-		pin := filepath.Base(fn) == "ccgo_darwin_arm64.go"
-		changed, err := update(fn, func(b []byte) ([]byte, error) {
-			b, err := fixToCString(b)
-			if err != nil {
-				return nil, err
-			}
-			if b, err = fixTimezone(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixUncatchable(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixOutOfMemory(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixCompile(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixStack(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixBacktrace(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixAlloca(b); err != nil {
-				return nil, err
-			}
-			if b, err = fixFrames(b, hw, frameSites, pin); err != nil {
-				return nil, err
-			}
-			// The changes to frames leave the property slots as they were.
-			return b, auditSlots(b)
-		})
+		changed, err := update(fn, func(b []byte) ([]byte, error) { return fixEngine(b, hw, filepath.Base(fn)) })
 		if err != nil {
 			return missing, err
 		}
@@ -200,6 +198,58 @@ func run() (missing int, err error) {
 	return missing, err
 }
 
+// fixEngine applies every change to the generated file of lib/ named
+// name.
+func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	b, err := fixToCString(b)
+	if err != nil {
+		return nil, err
+	}
+	if b, err = fixTimezone(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixUncatchable(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixOutOfMemory(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixCompile(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixStack(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixBacktrace(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixAlloca(b); err != nil {
+		return nil, err
+	}
+	// The TLS frames of darwin/arm64 are checked against frameSites.
+	if b, err = fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go"); err != nil {
+		return nil, err
+	}
+	// The changes above accept both forms of a conversion, so this one
+	// goes after them.
+	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixCells(b, cellFiles[name]); err != nil {
+		return nil, err
+	}
+	if b, err = fixPin(b, pinFiles[name]); err != nil {
+		return nil, err
+	}
+	// The fingerprints of fixDefine are of the text the changes above
+	// leave, so it goes after them.
+	if b, err = fixDefine(b, name); err != nil {
+		return nil, err
+	}
+	// None of the changes after fixBacktrace moves a property slot.
+	return b, auditSlots(b)
+}
+
 // update rewrites fn with f, unless -check is set. It reports whether the
 // content differs from what f returns.
 func update(fn string, f func([]byte) ([]byte, error)) (changed bool, err error) {
@@ -240,7 +290,7 @@ func fixToCString(b []byte) ([]byte, error) {
 	// a Go variable on the 32-bit ones.
 	val := "val"
 	if bytes.Contains(body, []byte("/* val at bp+32 */")) {
-		val = "**(**TJSValue)(__ccgo_up(bp + 32))"
+		val = "*(*TJSValue)(unsafe.Pointer(bp + 32))"
 	} else if !bytes.Contains(body, []byte("\tvar val, ")) {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: cannot locate the local 'val'")
 	}
@@ -299,7 +349,7 @@ var (
 	reHasDebug       = regexp.MustCompile(`\n\t+if (int32\(\*\(\*uint8\)\(unsafe\.Pointer\(b \+ \d+\)\)&0x[0-9a-f]+>>\d+\)) != 0 \{\n\t+line_num1 = _find_line_num\(`)
 	reGetPropString  = regexp.MustCompile(`\nfunc _get_prop_string\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom\) \(r uintptr\) \{\n`)
 	rePropFlags      = regexp.MustCompile(`\n(\tif (int32\(\*\(\*uint32\)\(unsafe\.Pointer\(prs \+ 0\)\)&0x[0-9a-f]+>>\d+\))&\(libc\.Int32FromInt32\(3\)<<libc\.Int32FromInt32\(4\)\) != libc\.Int32FromInt32\(0\)<<libc\.Int32FromInt32\(4\) \{\n)`)
-	rePropValue      = regexp.MustCompile(`\n\tval = \*\(\*TJSValue\)\(unsafe\.Pointer\((\*\*\(\*\*uintptr\)\(__ccgo_up\(bp( \+ \d+)?\)\))\)\)\n`)
+	rePropValue      = regexp.MustCompile(`\n\tval = \*\(\*TJSValue\)\(unsafe\.Pointer\((` + reDeref(`uintptr`, `bp(?: \+ \d+)?`) + `)\)\)\n`)
 	rePropObject     = regexp.MustCompile(`\n\tprs = _find_own_property\(tls, [^,]+, (\w+), prop\)\n`)
 	reUncatchable    = regexp.MustCompile(`\nfunc XJS_SetUncatchableException\(tls \*libc\.TLS, ctx uintptr, flag TBOOL\) \{\n\tlibc\.SetBitFieldPtr16Int32\(\(\*TJSContext\)\(unsafe\.Pointer\(ctx\)\)\.Frt\+(\d+), flag, (\d+), (0x[0-9a-f]+)\)\n\}\n`)
 	reRawDump        = regexp.MustCompile(`int32\(\*\(\*uint16\)\(unsafe\.Pointer\((s \+ \d+ \+ 0)\)\)&(0x[0-9a-f]+)>>(\d+)\)<<24>>24`)
@@ -347,10 +397,17 @@ const (
 	memoryUsage      = "_js_backtrace_memory_usage(tls, s, hp, prs, pr)\n"
 )
 
-// ccgoUp renders an __ccgo_up deref of a find_own_property storage slot,
-// which the generated code writes as "bp" or "bp+NN".
-func ccgoUp(arg string) string {
-	return "**(**uintptr)(__ccgo_up(" + strings.Replace(arg, "+", " + ", 1) + "))"
+// slotDeref renders the load of a find_own_property storage slot, which
+// the generated code writes as "bp" or "bp+NN", in the form fixUp leaves.
+func slotDeref(arg string) string {
+	return "*(*uintptr)(unsafe.Pointer(" + strings.Replace(arg, "+", " + ", 1) + "))"
+}
+
+// reDeref is a regular expression for the load of a typ at the address
+// that arg matches, in either form of the conversion (see fixUp). It adds
+// no capturing group to those of arg.
+func reDeref(typ, arg string) string {
+	return `(?:\*\*\(\*\*` + typ + `\)\(__ccgo_up|\*\(\*` + typ + `\)\(unsafe\.Pointer)\(` + arg + `\)\)`
 }
 
 // fixBacktrace wires lib/backtrace.go into a generated file. 'stack' is an
@@ -433,7 +490,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		if fm == nil {
 			return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
 		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), ccgoUp(string(fm[2])))
+		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), slotDeref(string(fm[2])))
 		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
 	}
 
@@ -448,7 +505,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		if fm == nil {
 			return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
 		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, ccgoUp(string(fm[2])))
+		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, slotDeref(string(fm[2])))
 		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
 	}
 
@@ -602,7 +659,7 @@ func fixInterpreter(b []byte) ([]byte, error) {
 		if !bytes.Equal(fixed[s[2]:s[3]], fixed[s[8]:s[9]]) {
 			return nil, fmt.Errorf("_JS_CallInternal: inline read tests another variable")
 		}
-		pr := ccgoUp(string(fixed[s[4]:s[5]]))
+		pr := slotDeref(string(fixed[s[4]:s[5]]))
 		atom := string(fixed[s[6]:s[7]])
 		indent := string(fixed[s[10]:s[11]])
 		slow := string(fixed[s[12]:s[13]])
