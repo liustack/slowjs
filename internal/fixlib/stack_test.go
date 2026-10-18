@@ -112,3 +112,46 @@ func TestStackRejectsOtherDefault(t *testing.T) {
 		t.Fatalf("got %v, want the other default named", err)
 	}
 }
+
+// A second setting of the stack size right after the first stops fixlib:
+// the last one wins, and fixStack would only set the first to 0.
+func TestStackRejectsSecondDefault(t *testing.T) {
+	line := []byte("\t(*TJSRuntime)(unsafe.Pointer(rt)).Fstack_size = 0\n")
+	b := bytes.Replace(engineFile(t), line, append(append([]byte{}, line...), "\t(*TJSRuntime)(unsafe.Pointer(rt)).Fstack_size = uint64(1024 * 1024)\n"...), 1)
+	if _, err := fixStack(b); err == nil {
+		t.Fatal("a second setting of the stack size went through")
+	}
+}
+
+// A new use of the "stack overflow" message outside the regexp parser stops
+// fixlib: it would throw something other than the RangeError.
+func TestStackRejectsNewOverflowError(t *testing.T) {
+	b := engineFile(t)
+	strs, err := stringTable(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := fmt.Sprintf("\nfunc _js_new_check(tls *libc.TLS, ctx uintptr) {\n\tXJS_ThrowInternalError(tls, ctx, __ccgo_ts+%d, 0)\n}\n\nfunc _js_regexp_finalizer(", strs["stack overflow"])
+	_, err = fixStack(bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte(f), 1))
+	if err == nil || !strings.Contains(err.Error(), "_js_new_check") {
+		t.Fatalf("got %v, want the new function named", err)
+	}
+}
+
+// A tokenizer whose stack check is gone, with a throw of the RangeError
+// left for some other test, stops fixlib: only the whole check counts as
+// made.
+func TestStackRejectsOtherCheck(t *testing.T) {
+	b := engineFile(t)
+	body, err := funcBody(b, reNextToken, "_next_token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := regexp.MustCompile(`if _js_check_stack_overflow\([^\n]*\) != 0 \{\n\t\t_JS_ThrowStackOverflow`).ReplaceAll(body, []byte("if _other_check(tls) != 0 {\n\t\t_JS_ThrowStackOverflow"))
+	if bytes.Equal(other, body) {
+		t.Fatal("cannot find the stack check")
+	}
+	if _, err := fixStack(bytes.Replace(b, body, other, 1)); err == nil {
+		t.Fatal("a tokenizer without its stack check went through")
+	}
+}

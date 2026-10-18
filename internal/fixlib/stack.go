@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -17,6 +18,7 @@ var (
 	reStackOverflow    = regexp.MustCompile(`\nfunc _JS_ThrowStackOverflow\(tls \*libc\.TLS, ctx uintptr\) \(r TJSValue\) \{\n\treturn (XJS_Throw\w+Error)\(tls, ctx, (__ccgo_ts\+\d+), 0\)\n\}\n`)
 	reNextToken        = regexp.MustCompile(`\nfunc _next_token\(tls \*libc\.TLS, s uintptr\) \(r int32\) \{\n`)
 	reJSONNextToken    = regexp.MustCompile(`\nfunc _json_next_token\(tls \*libc\.TLS, s uintptr\) \(r int32\) \{\n`)
+	reParseStackFixed  = regexp.MustCompile(`\n\tif _js_check_stack_overflow\(tls, \(\*TJSContext\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\)\.Frt, uint(?:32|64)\(0\)\) != 0 \{\n` + regexp.QuoteMeta(parseStackOverflow) + `\t\}\n`)
 	reParseStackError  = regexp.MustCompile(`\n\tif _js_check_stack_overflow\(tls, \(\*TJSContext\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\)\.Frt, uint(?:32|64)\(0\)\) != 0 \{\n(\t\treturn _js_parse_error\(tls, s, __ccgo_ts\+(\d+), 0\)\n)\t\}\n`)
 )
 
@@ -51,7 +53,7 @@ func fixStack(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := reDefaultStackSize.FindAllSubmatchIndex(body, -1)
+	m := findAll(reDefaultStackSize, body)
 	if len(m) != 1 {
 		return nil, fmt.Errorf("XJS_NewRuntime2: want 1 setting of the stack size, found %d", len(m))
 	}
@@ -81,7 +83,7 @@ func fixStack(b []byte) ([]byte, error) {
 	}
 	want := fmt.Sprintf("__ccgo_ts+%d", msg)
 
-	loc := reStackOverflow.FindAllSubmatchIndex(b, -1)
+	loc := findAll(reStackOverflow, b)
 	if len(loc) != 1 {
 		return nil, fmt.Errorf("_JS_ThrowStackOverflow: cannot find it as one throw of a message")
 	}
@@ -101,12 +103,12 @@ func fixStack(b []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		m := reParseStackError.FindAllSubmatchIndex(body, -1)
+		m := findAll(reParseStackError, body)
 		if len(m) > 1 {
 			return nil, fmt.Errorf("%s: want 1 stack check, found %d", fn.name, len(m))
 		}
 		if len(m) == 0 {
-			if !bytes.Contains(body, []byte(" != 0 {\n"+parseStackOverflow+"\t}\n")) {
+			if len(findAll(reParseStackFixed, body)) != 1 || bytes.Count(body, []byte(parseStackOverflow)) != 1 {
 				return nil, fmt.Errorf("%s: cannot find the stack check", fn.name)
 			}
 			continue
@@ -117,7 +119,21 @@ func fixStack(b []byte) ([]byte, error) {
 		fixed := append(append(append([]byte{}, body[:m[0][2]]...), parseStackOverflow...), body[m[0][3]:]...)
 		b = bytes.Replace(b, body, fixed, 1)
 	}
+
+	// Only the regexp parser still says "stack overflow".
+	use := regexp.MustCompile(fmt.Sprintf(`__ccgo_ts\+%d\b`, old))
+	if diff := diffCounts(countPerFunc(b, use), stackOverflowUses); len(diff) != 0 {
+		return nil, fmt.Errorf("uses of %q differ from stackOverflowUses: %s: running out of stack there must call _JS_ThrowStackOverflow", "stack overflow", strings.Join(diff, ", "))
+	}
 	return b, nil
+}
+
+// stackOverflowUses are the functions left with the message "stack
+// overflow" once fixStack is done: the regexp parser's errors, which are
+// syntax errors of the pattern.
+var stackOverflowUses = map[string]int{
+	"_re_parse_nested_class": 1,
+	"_re_parse_disjunction":  1,
 }
 
 // appendString adds a C string to the end of __ccgo_ts1, where it moves no

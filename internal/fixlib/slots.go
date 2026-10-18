@@ -252,7 +252,7 @@ func auditSlotUses(b []byte) (map[string]string, error) {
 	}
 	out := map[string]string{}
 	for name, f := range fns {
-		if n := len(reDescLookup.FindAll(f.text, -1)); n != 0 {
+		if n := len(findAll(reDescLookup, f.text)); n != 0 {
 			if f.uses == nil {
 				f.uses = map[string]int{}
 			}

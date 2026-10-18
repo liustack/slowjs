@@ -177,6 +177,7 @@ func (r *runtime) newVM() (*VM, error) {
 	c := lib.XJS_NewContext(tls, r.cRuntime)
 	if c == 0 {
 		libc.Xfree(tls, interruptData)
+		libc.Xfree(tls, argv)
 		return nil, fmt.Errorf("failed to create a new Javascript context")
 	}
 

@@ -429,7 +429,9 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     2608 on linux/amd64. Every use is now `*(*T)(unsafe.Pointer(x))`, the
     same pointer, in all 13 files. Without the call, Go no longer reads `x`
     before the other calls in the same statement. C does not fix that
-    order either, and no statement in the 13 files depends on it. With the
+    order either, and no statement in the 13 files depends on it: `fixlib`
+    lists the 23 statements of each file where the order goes away, and
+    stops at a new one. With the
     next two changes, the frame of `JS_CallInternal` is now 944 and 896
     bytes. `go vet`'s `unsafeptr`
     check reports more lines of `lib/` than before. Nothing runs it there.
@@ -571,24 +573,47 @@ Conflicts to expect:
 
   `fixlib` also rewrites `modernc.org/libquickjs` imports in hand-written
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
-  need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
-  read the new upstream code: QuickJS may have fixed the leak itself. If it
-  reports that `_getTimezoneOffset` changed shape, or that the engine calls
-  libc's local time functions (`localtime`, `mktime`, `tzset`, ...)
-  somewhere else, upstream reads the local zone some new way: make that
-  answer UTC too and teach `fixTimezone` about it. If it
-  reports that `_build_backtrace`, `_get_prop_string`,
+  need changes. Some steps check the code against a list kept in
+  `internal/fixlib`, and a flag prints the list as the files have it. Each
+  report runs the steps before its own, so it fails while an earlier list
+  is out of date. Update them in the order `fixlib` checks them: `-frames`,
+  then `-up` (on the files as taken from upstream), then `-cells`, then
+  the fingerprints, `-define` and `-backtrace`, and last `-slots`. Read
+  every new line before you put it in. If `fixlib` reports that
+  `XJS_ToCStringLen2` changed shape, read the new upstream code: QuickJS
+  may have fixed the leak itself. If the fail label now frees `val`, drop
+  `fixToCString` and the `JS_ToCStringLen2` hunk, or the added calls free
+  it twice. If there is a new jump to the label, check that `val` is freed
+  on that path. If it reports that `_getTimezoneOffset` changed shape, or
+  that the engine calls libc's local time functions (`localtime`,
+  `mktime`, `tzset`, ...) somewhere else, upstream reads the local zone
+  some new way: make that answer UTC too and teach `fixTimezone` about it.
+  If it reports that `_build_backtrace`, `_get_prop_string`,
   `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
-  and must change with it. If it reports that `XJS_Throw`,
+  and must change with it. If it reports that `_build_backtrace`,
+  `_get_prop_string` or `_JS_GetFunctionBytecode` changed (a fingerprint
+  other than the one in `internal/fixlib/backtracesites.go`), the same
+  holds: a pending stack must still come out with the bytes
+  `_build_backtrace` writes. Once `lib/backtrace.go` matches, put the new
+  fingerprints in (`go run ./internal/fixlib -backtrace` prints them). A
+  change to the C strings they use counts, a string moving in the table
+  does not. If it reports that `XJS_Throw`,
   `_JS_CallInternal` or `_JS_IteratorClose` changed shape, put the
   uncatchable check of `lib/uncatchable.go` back where the C change has it.
   If it reports that `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp
   functions or the string table changed shape, compare the new upstream
   code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
-  `JS_ThrowError2` and must build the same error.
+  `JS_ThrowError2` and must build the same error. That includes the end
+  not matching one of the calls `fixThrowError2` expects (the property
+  flags of `message`, the backtrace flags, a call made more than once).
+  If it reports that the uses of the regexp out of memory error, of the
+  `"out of memory"` message, of `lre_exec` or of `lre_compile` differ,
+  read the new function: running out of memory there must throw with
+  `XJS_ThrowOutOfMemory`, as in `_js_regexp_exec`. Then wire it in
+  `fixOutOfMemory` and add it to `checkOutOfMemoryUses`.
   If it reports that `Xdbuf_claim`, `_push_scope`, `_pop_scope`,
   `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the
   loops whose code the parser moves, `_js_parse_error_v`, `_next_token`,
@@ -597,18 +622,52 @@ Conflicts to expect:
   against the C change: the parser must stop once a code buffer failed and
   patch no code in place after that, and every pass that reads back a code
   buffer must stop when that buffer failed (`internal/fixlib/compile.go`
-  lists each place).
+  lists each place). If it reports that growing a buffer in `Xdbuf_claim`
+  no longer starts with the test of a failed buffer, read the new
+  `Xdbuf_claim`: `fixCompile` marks a buffer that failed as full, and only
+  an early return for a failed buffer keeps the next write out. If the
+  test only moved and a failed buffer still fails at once, teach
+  `fixCompile` the new place. If it is gone, make `fixCompile` add it.
+  Do not edit the generated code by hand.
+  If it reports a new jump to the fail label of `_resolve_labels`, read
+  where it comes from: the end that `fixCompile` writes keeps the new code
+  and frees the relocations left, which is right only after a failed
+  `_add_reloc`. Make the end right for the new path, then fix the count.
+  fixlib takes a change of its own as made only when its whole text is
+  where it puts it. If it reports that such a text is somewhere else, is
+  there twice, or that `_resolve_labels` has a label `out_of_memory` or
+  part of the change, upstream has likely written part of the change
+  itself: read the new code, then drop that part of fixlib or teach it the
+  new place.
   If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
   shape, a new runtime must still start with a stack size of 0 (the port's
   `MaxStackSlots`), and running out of stack must still throw a
   `RangeError` (`internal/fixlib/stack.go`). The same holds when it reports
   that the stack check of `_next_token` or `_json_next_token` changed
-  shape: the tokenizers must throw that `RangeError` too.
+  shape: the tokenizers must throw that `RangeError` too. If it reports
+  that the uses of `"stack overflow"` differ from `stackOverflowUses`, a
+  new place throws that message: make it call `_JS_ThrowStackOverflow`
+  (teach `fixStack` to), or add it to the list if it is the regexp parser.
+  If it reports that a function of `ownFlagsCallers`
+  (`internal/fixlib/main.go`) reads the value of the descriptor it gets, or
+  uses it another way, read the function: if it now needs the value, it
+  must call `_JS_GetOwnPropertyInternal` again, so take it off the list.
+  Otherwise fix the count there.
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
   a handler call, a new throw), add it to `exceptionHandlers`, so that it
-  gets `_js_get_exception`.
+  gets `_js_get_exception`. If it reports a store of the runtime's
+  exception (`current_exception`) in a function that is not in
+  `exceptionWriters`, read it the same way: code that takes the exception
+  out by hand must leave an uncatchable one pending, as `_JS_IteratorClose`
+  does. The same goes when it reports a use of the exception's address
+  (`rt` plus its offset, or `&` of the field): a store through it does not
+  look like one. fixlib sees the address only on a runtime named `rt`,
+  `rt1` and so on, or `Frt`, with the offset written out: a store through
+  a runtime under another name goes through unseen. If it reports that
+  `XJS_Throw` or `_JS_IteratorClose` uses the exception before the
+  uncatchable check, move the check up to before that use.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
@@ -669,12 +728,39 @@ Conflicts to expect:
   (`reDeref` in `internal/fixlib/main.go` gives both). If it reports that
   `__ccgo_up` is used some other way or that its definition changed, read
   what ccgo now writes (`internal/fixlib/up.go`).
+  The call made Go read the memory in `x` before the calls to the right of
+  it in the same statement, and the new form does not. `upSites`
+  (`internal/fixlib/upsites.go`) lists each statement where that order
+  goes away, by its function, the addresses that read memory and the
+  functions called after them. If it reports a statement that is not
+  listed, or a count that differs, read the statement and the functions it
+  names. If one of them can change what the address reads, as `f` can in
+  `s->buf[i] = f(s)` when it grows `buf`, `fixUp` must leave that
+  statement as ccgo wrote it, which it cannot do yet. Otherwise run
+  `go run ./internal/fixlib -up` on the files as taken from upstream, put
+  its output into `upsites.go` and say why each new statement is safe. On
+  files `fixlib` has changed, `-up` fails: no `__ccgo_up` is left to find
+  the statements by.
   If it reports that `_JS_CallInternal` has other cells than the two of
   `JS_DupValue` and `JS_FreeValue`, a use of one other than a store of a
   whole value or a load of its pointer, or that `JSValue` has another
   layout, read the new interpreter against `internal/fixlib/cells.go`: a
   cell may only become a Go variable if nothing else reads or writes its
   bytes. `TestCellsEveryFile` counts the stores and loads of each.
+  Every other use of `bp` there must be a read or a write through
+  `(*T)(unsafe.Pointer(bp + K))` that stays out of the cells, or a use
+  listed in `cellsFrameUses`. If it reports an address in the frame that is
+  not `bp + K` (such as `bp + 32 + 16` or `bp + uintptr(48)`), a read or
+  write that reaches into a cell, a type whose size it does not know, a use
+  of `bp` that is not listed (such as `libc.Xmemset(tls, bp, 0, 80)`) or a
+  listed one that is gone, read that line. A new local in the interpreter
+  moves the offsets and is the usual cause: `go run ./internal/fixlib
+  -cells` prints the uses as the files have them, each with the named
+  local it starts in. If the use cannot touch the bytes of a cell, put it
+  into `cellsFrameUses` with the reason, or fix the count, or add the type
+  to `valueSizes`. If it can, the cells must stay in
+  the frame. In a fixed file, any use of the bytes where the cells were is
+  an error too: nothing writes them any more.
   If it reports that a value of `pinVars` (`internal/fixlib/pin.go`) is
   gone, find what the interpreter now calls it and update the list.
   If it reports that `JS_DefinePropertyValue`, `JS_DefineProperty`,

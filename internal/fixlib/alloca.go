@@ -85,7 +85,7 @@ var reAllocaRegister = regexp.MustCompile(`tls\.(FreeAlloca\(\)\(\)|AllocaEntry\
 // with a frame tests the size against allocaMax twice.
 func fixAlloca(b []byte) ([]byte, error) {
 	allocas := bytes.Count(b, []byte("libc.X__builtin_alloca("))
-	regs := len(reAllocaRegister.FindAll(b, -1))
+	regs := len(findAll(reAllocaRegister, b))
 	if allocas == 0 && regs == 0 {
 		for _, name := range allocaFuncs {
 			body, err := funcBody(b, funcHead(name), name)
@@ -576,7 +576,7 @@ func allocaFunc(name string, body []byte) ([]byte, error) {
 	if regs != 1 {
 		return nil, fmt.Errorf("%s: %d registrations of alloca before it, want 1", name, regs)
 	}
-	if n := len(reAllocaRegister.FindAll(body, -1)); n != 1 && n != 2 {
+	if n := len(findAll(reAllocaRegister, body)); n != 1 && n != 2 {
 		return nil, fmt.Errorf("%s: registrations of alloca after it", name)
 	}
 

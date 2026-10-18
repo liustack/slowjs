@@ -8,6 +8,8 @@ import (
 	goruntime "runtime"
 	"testing"
 	"weak"
+
+	lib "github.com/liustack/quickjs/lib"
 )
 
 // loaderHost stands in for whatever a module loader closes over. In a browser
@@ -89,5 +91,22 @@ func TestCloseReleasesModuleLoader(t *testing.T) {
 		if wp.Value() != nil {
 			t.Fatalf("%s: the host the module loader closed over is still reachable", tc.name)
 		}
+	}
+}
+
+// TestNewVMContextFailure pins that a VM whose context cannot be made
+// frees what newVM allocated before: the argv of toString and the
+// interrupt flag. The leak shows under the memgrind allocator
+// (TestMemgrind2).
+func TestNewVMContextFailure(t *testing.T) {
+	rt, err := newRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.close()
+	// No allocation of the runtime succeeds from here on.
+	lib.XJS_SetMemoryLimit(rt.tls, rt.cRuntime, 1)
+	if _, err := rt.newVM(); err == nil {
+		t.Fatal("newVM made a context with no memory to make it in")
 	}
 }

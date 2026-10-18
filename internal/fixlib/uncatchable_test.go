@@ -54,3 +54,92 @@ func TestUncatchableRejectsNewHandler(t *testing.T) {
 		t.Fatalf("got %v, want the new caller named", err)
 	}
 }
+
+// A new function that takes the exception out of the runtime itself, or a
+// JS_Throw that replaces the exception before the place of the guard, stops
+// fixlib.
+func TestUncatchableRejectsNewTake(t *testing.T) {
+	b := engineFile(t)
+	take := "\nfunc _js_new_take(tls *libc.TLS, ctx uintptr) {\n\t(*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt)).Fcurrent_exception = TJSValue{}\n}\n\nfunc _js_regexp_finalizer("
+	_, err := fixUncatchable(bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte(take), 1))
+	if err == nil || !strings.Contains(err.Error(), "_js_new_take (1)") {
+		t.Fatalf("got %v, want the new function named", err)
+	}
+
+	body, err := funcBody(b, reThrowHead, "XJS_Throw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := "\nfunc XJS_Throw(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSValue) {\n" +
+		"\tvar rt uintptr\n" +
+		"\t_ = rt\n" +
+		"\tXFreeValue(tls, ctx1, (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fcurrent_exception)\n" +
+		"\t(*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fcurrent_exception = obj\n" +
+		"\trt = (*TJSContext)(unsafe.Pointer(ctx1)).Frt\n" +
+		"\tlibc.SetBitFieldPtr16Int32(rt+1256, libc.Int32FromInt32(MFALSE), 0, 0xff)\n" +
+		"\treturn jsvException()\n}\n"
+	if _, err := fixUncatchable(bytes.Replace(b, body, []byte(late), 1)); err == nil {
+		t.Fatal("a JS_Throw that replaces the exception before the guard went through")
+	}
+}
+
+// A change of fixUncatchable counts as made only as the whole text fixlib
+// writes, where fixlib writes it.
+func TestUncatchableRejectsTextElsewhere(t *testing.T) {
+	b := engineFile(t)
+	for _, c := range []struct {
+		head, first string
+		n           int
+	}{
+		{"XJS_Throw", "if _js_uncatchable_pending(", 4},
+		{"_JS_CallInternal", "if _js_uncatchable_pending(", 3},
+		{"_JS_IteratorClose", "if _js_uncatchable_pending(", 3},
+	} {
+		if _, err := fixUncatchable(moveLines(t, b, c.head, c.first, c.n)); err == nil {
+			t.Errorf("%s: %q elsewhere went through", c.head, c.first)
+		}
+	}
+}
+
+// A use of the address of the runtime's exception stops fixlib, as a store
+// through it would not show as a store of the field: rt + its offset in
+// TJSRuntime (1240 on 64-bit targets, 636 on linux/386), unsafe.Add, & of
+// the field, and a store of a part of it.
+func TestUncatchableRejectsExceptionAddress(t *testing.T) {
+	head := "func XJS_RunGC(tls *libc.TLS, rt uintptr) {\n"
+	insert := func(b []byte, text string) []byte {
+		i := bytes.Index(b, []byte("\n"+head))
+		if i < 0 {
+			t.Fatal("no XJS_RunGC")
+		}
+		i += 1 + len(head)
+		return append(append(append([]byte{}, b[:i]...), text...), b[i:]...)
+	}
+	for _, c := range []struct {
+		file, text string
+		ok         bool
+	}{
+		{"ccgo_darwin_arm64.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 1240)) = TJSValue{}\n", false},
+		{"ccgo_darwin_arm64.go", "\t_set_value(tls, ctx, rt+1248, v)\n", false},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + 1240))\n", false},
+		{"ccgo_darwin_arm64.go", "\t*(*TJSValue)(unsafe.Add(unsafe.Pointer(rt), 1240)) = TJSValue{}\n", false},
+		{"ccgo_darwin_arm64.go", "\tp := &(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception\n", false},
+		{"ccgo_darwin_arm64.go", "\t(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception.Ftag = 0\n", false},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1256))\n", true},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 636))\n", true},
+		{"ccgo_linux_386.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 636)) = 0\n", false},
+		{"ccgo_linux_386.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1240))\n", true},
+	} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "lib", c.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = checkExceptionWriters(insert(b, c.text))
+		if c.ok && err != nil {
+			t.Errorf("%s: %q: %v", c.file, c.text, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s: %q went through", c.file, c.text)
+		}
+	}
+}

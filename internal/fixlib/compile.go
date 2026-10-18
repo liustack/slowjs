@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 var (
@@ -17,10 +18,10 @@ var (
 	reResolveLabels  = regexp.MustCompile(`\nfunc _resolve_labels\(tls \*libc\.TLS, (\w+) uintptr, (\w+) uintptr\) \(r int32\) \{\n`)
 	reParseErrorV    = regexp.MustCompile(`\nfunc _js_parse_error_v\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
 	reLreCompile     = regexp.MustCompile(`\nfunc Xlre_compile\(tls \*libc\.TLS, [^\n]*\{\n`)
-	reScopeVarCall   = regexp.MustCompile(`\n(\t+)pos_next = _resolve_scope_var\(tls, [^\n]*\)\n(\t+XJS_FreeAtom\(tls, \w+, var_name\)\n)`)
+	reScopeVarCall   = regexp.MustCompile(`(\n(\t+)pos_next = _resolve_scope_var\(tls, [^\n]*\)\n)(\t+if pos_next < 0 \{\n\t+goto fail\n\t+\}\n)?\t+XJS_FreeAtom\(tls, \w+, var_name\)\n`)
 	reWriteAtoms     = regexp.MustCompile(`\nfunc _JS_WriteObjectAtoms\(tls \*libc\.TLS, (\w+) uintptr\) \(r int32\) \{\n`)
 	reWriteObject2   = regexp.MustCompile(`\nfunc XJS_WriteObject2\(tls \*libc\.TLS, (\w+) uintptr, [^\n]*\{\n`)
-	reCodeMove       = regexp.MustCompile(`\n(\t+)if (?:\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| )?Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n(?:\t+XJS_ThrowOutOfMemory\([^\n]*\n)?\t+(return -int32\(1\)|goto fail)\n`)
+	reCodeMove       = regexp.MustCompile(`\n(\t+)if (?:\(\*TDynBuf\)\(unsafe\.Pointer\(bc\)\)\.Ferror1 != 0 \|\| )?Xdbuf_claim\(tls, bc, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(chunk_size\)\) != 0 \{\n(?:\t+XJS_ThrowOutOfMemory\(tls, \(\*TJSParseState\)\(unsafe\.Pointer\(\w+\)\)\.Fctx\)\n)?\t+(return -int32\(1\)|goto fail)\n`)
 	reNextTokenFree  = regexp.MustCompile(`\n\t_free_token\(tls, s, s\+\d+\)\n`)
 	reParseClass     = regexp.MustCompile(`\nfunc _js_parse_class\(tls \*libc\.TLS, s uintptr, [^\n]*\{\n`)
 	reBrandPatch     = regexp.MustCompile(`\n\t\t` + reDeref(`Tuint8_t`, `\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\((\w+)\)\)\.Ffields_init_fd\)\)\.Fbyte_code\.Fbuf \+ uintptr\(\(\*TClassFieldsDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbrand_push_pos\)`) + ` = uint8\(EOP_push_true\)\n`)
@@ -93,15 +94,25 @@ func fixCompile(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	s := string(reDbufClaim.FindSubmatch(b)[1])
-	keep := fmt.Sprintf("\t\t\t(*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(%[1]s)).Fsize\n", s)
-	if !bytes.Contains(body, []byte(keep)) {
-		re := regexp.MustCompile(`\n\t\tif !\(new_buf != 0\) \{\n\t\t\t\(\*TDynBuf\)\(unsafe\.Pointer\(` + s + `\)\)\.Ferror1 = int32\(\w+\)\n`)
-		loc := re.FindAllIndex(body, -1)
-		if len(loc) != 1 {
-			return nil, fmt.Errorf("Xdbuf_claim: cannot find the failed realloc")
-		}
-		b = bytes.Replace(b, body, splice(body, loc[0][1], keep), 1)
+	// The size it keeps only stops later writes if growing fails at once on
+	// a failed buffer.
+	grow := fmt.Sprintf("\tif new_size > (*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size {\n\t\tif (*TDynBuf)(unsafe.Pointer(%[1]s)).Ferror1 != 0 {\n\t\t\treturn -int32(1)\n\t\t}\n", s)
+	if bytes.Count(body, []byte(grow)) != 1 {
+		return nil, fmt.Errorf("Xdbuf_claim: growing the buffer no longer starts with the test of a failed buffer")
 	}
+	keep := fmt.Sprintf("\t\t\t(*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(%[1]s)).Fsize\n", s)
+	failed := regexp.MustCompile(`\n\t\tif !\(new_buf != 0\) \{\n\t\t\t\(\*TDynBuf\)\(unsafe\.Pointer\(` + s + `\)\)\.Ferror1 = int32\(\w+\)\n`)
+	fixed, err := insertAt("Xdbuf_claim", body, keep, func(body []byte) (int, error) {
+		loc := findAll(failed, body)
+		if len(loc) != 1 {
+			return 0, fmt.Errorf("Xdbuf_claim: cannot find the failed realloc")
+		}
+		return loc[0][1], nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// js_create_function.
 	if body, err = funcBody(b, reCreateFunction, "_js_create_function"); err != nil {
@@ -110,43 +121,48 @@ func fixCompile(b []byte) ([]byte, error) {
 	m := reCreateFunction.FindSubmatch(b)
 	ctx, fd := string(m[1]), string(m[2])
 	check := fmt.Sprintf("\tif (*TJSFunctionDef)(unsafe.Pointer(%s)).Fbyte_code.Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\tgoto fail\n\t}\n", fd, ctx)
-	if !bytes.Contains(body, []byte(check)) {
-		anchor := []byte("\t/* recompute scope linkage */\n")
-		if bytes.Count(body, anchor) != 1 || !bytes.Contains(body, []byte("\nfail:\n")) {
-			return nil, fmt.Errorf("_js_create_function: cannot find the start or the fail label")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, anchor, append([]byte(check), anchor...), 1), 1)
+	fixed, err = insertAt("_js_create_function", body, check, func(body []byte) (int, error) {
+		return before(body, "\t/* recompute scope linkage */\n", "\nfail:\n", "_js_create_function: cannot find the start or the fail label")
+	})
+	if err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The line table js_create_function shrinks.
 	if body, err = funcBody(b, reCreateFunction, "_js_create_function"); err != nil {
 		return nil, err
 	}
 	shrink := fmt.Sprintf(".Fdebug.Fpc2line_buf = Xjs_realloc_rt(tls, (*TJSContext)(unsafe.Pointer(%s)).Frt, (*TJSFunctionDef)(unsafe.Pointer(%s)).Fpc2line.Fbuf, ", ctx, fd)
-	if !bytes.Contains(body, []byte(shrink)) {
-		old := fmt.Sprintf(".Fdebug.Fpc2line_buf = Xjs_realloc(tls, %s, (*TJSFunctionDef)(unsafe.Pointer(%s)).Fpc2line.Fbuf, ", ctx, fd)
-		if bytes.Count(body, []byte(old)) != 1 {
-			return nil, fmt.Errorf("_js_create_function: cannot find where it shrinks the line table")
-		}
+	old := fmt.Sprintf(".Fdebug.Fpc2line_buf = Xjs_realloc(tls, %s, (*TJSFunctionDef)(unsafe.Pointer(%s)).Fpc2line.Fbuf, ", ctx, fd)
+	switch olds, news := bytes.Count(body, []byte(old)), bytes.Count(body, []byte(shrink)); {
+	case olds == 1 && news == 0:
 		b = bytes.Replace(b, body, bytes.Replace(body, []byte(old), []byte(shrink), 1), 1)
+	case olds != 0 || news != 1:
+		return nil, fmt.Errorf("_js_create_function: want 1 place that shrinks the line table, found %d with Xjs_realloc and %d with Xjs_realloc_rt", olds, news)
 	}
 
 	// resolve_variables.
 	if body, err = funcBody(b, reResolveVars, "_resolve_variables"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("if pos_next < 0 {")) {
-		if n := len(reScopeVarCall.FindAllIndex(body, -1)); n != 2 || !bytes.Contains(body, []byte("\nfail:\n")) {
-			return nil, fmt.Errorf("_resolve_variables: want 2 calls of _resolve_scope_var and a fail label, found %d calls", n)
-		}
-		fixed := reScopeVarCall.ReplaceAllFunc(body, func(call []byte) []byte {
-			sm := reScopeVarCall.FindSubmatch(call)
-			indent := string(sm[1])
-			line := call[:len(call)-len(sm[2])] // "\n", the call and its newline
-			return append(append([]byte{}, line...), indent+"if pos_next < 0 {\n"+indent+"\tgoto fail\n"+indent+"}\n"+string(sm[2])...)
-		})
-		b = bytes.Replace(b, body, fixed, 1)
+	// Each call of _resolve_scope_var is followed by the check or, as
+	// generated, by the free of the name.
+	calls := findAll(reScopeVarCall, body)
+	if len(calls) != 2 || !bytes.Contains(body, []byte("\nfail:\n")) {
+		return nil, fmt.Errorf("_resolve_variables: want 2 calls of _resolve_scope_var and a fail label, found %d calls", len(calls))
 	}
+	fixed = body
+	for i := len(calls) - 1; i >= 0; i-- {
+		indent := string(body[calls[i][4]:calls[i][5]])
+		if calls[i][6] < 0 {
+			fixed = splice(fixed, calls[i][3], indent+"if pos_next < 0 {\n"+indent+"\tgoto fail\n"+indent+"}\n")
+		}
+	}
+	if n := bytes.Count(fixed, []byte("if pos_next < 0 {")); n != len(calls) {
+		return nil, fmt.Errorf("_resolve_variables: %d tests of pos_next for %d calls of _resolve_scope_var", n, len(calls))
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// resolve_labels.
 	if b, err = fixResolveLabels(b); err != nil {
@@ -166,15 +182,20 @@ func fixCompile(b []byte) ([]byte, error) {
 		}
 		ps := string(re.FindSubmatch(b)[1])
 		throw := fmt.Sprintf("XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(%s)).Fctx)\n", ps)
-		loc := reCodeMove.FindAllSubmatchIndex(body, -1)
+		loc := findAll(reCodeMove, body)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
 		}
-		fixed := body
 		indent := string(body[loc[0][2]:loc[0][3]])
-		if !bytes.Contains(body, []byte(throw)) {
-			at := loc[0][4] - len(indent) - 1 // the start of the return or goto
-			fixed = splice(fixed, at, indent+"\t"+throw)
+		fixed, err := insertAt(name, body, indent+"\t"+throw, func(body []byte) (int, error) {
+			loc := findAll(reCodeMove, body)
+			if len(loc) != 1 {
+				return 0, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
+			}
+			return loc[0][4] - len(indent) - 1, nil // the start of the return or goto
+		})
+		if err != nil {
+			return nil, err
 		}
 		lost := "(*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || "
 		if claim := loc[0][3] + len("if "); string(fixed[claim:claim+len(lost)]) != lost {
@@ -194,13 +215,12 @@ func fixCompile(b []byte) ([]byte, error) {
 	}
 	ps := string(reParseErrorV.FindSubmatch(b)[1])
 	check = fmt.Sprintf("\tif (*TJSParseState)(unsafe.Pointer(%[1]s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(%[1]s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, ctx)\n\t\treturn -int32(1)\n\t}\n", ps)
-	if !bytes.Contains(body, []byte(check)) {
-		anchor := []byte(fmt.Sprintf("\tctx = (*TJSParseState)(unsafe.Pointer(%s)).Fctx\n", ps))
-		if bytes.Count(body, anchor) != 1 || !bytes.Contains(body, []byte("\t_JS_ThrowError2(tls, ctx, ")) {
-			return nil, fmt.Errorf("_js_parse_error_v: cannot find where it reads the context")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, anchor, append(anchor, check...), 1), 1)
+	if fixed, err = insertAt("_js_parse_error_v", body, check, func(body []byte) (int, error) {
+		return after(body, fmt.Sprintf("\tctx = (*TJSParseState)(unsafe.Pointer(%s)).Fctx\n", ps), "\t_JS_ThrowError2(tls, ctx, ", "_js_parse_error_v: cannot find where it reads the context")
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The bytecode writer.
 	if b, err = fixWriteObject(b); err != nil {
@@ -211,18 +231,24 @@ func fixCompile(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, reLreCompile, "Xlre_compile"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("\nerror:\n\t;\n\tif *(*byte)(unsafe.Pointer(")) {
-		// The first buffer it frees is the code, the state's first field.
-		re := regexp.MustCompile(`\nerror:\n\t;\n(\tXdbuf_free\(tls, (\w+)\)\n\tXdbuf_free\(tls, \w+\+\d+\)\n)\tXpstrcpy\(tls, error_msg, error_msg_size, (\w+\+\d+)\)\n`)
-		loc := re.FindAllSubmatchIndex(body, -1)
-		if len(loc) != 1 {
-			return nil, fmt.Errorf("Xlre_compile: cannot find the error label")
-		}
-		state, msg := string(body[loc[0][4]:loc[0][5]]), string(body[loc[0][6]:loc[0][7]])
-		add := fmt.Sprintf("\tif *(*byte)(unsafe.Pointer(%s)) == 0 || (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\t_re_parse_out_of_memory(tls, %s)\n\t}\n", msg, state, state)
-		b = bytes.Replace(b, body, splice(body, loc[0][2], add), 1)
+	// The first buffer it frees is the code, the state's first field.
+	re := regexp.MustCompile(`\nerror:\n\t;\n(?:\tif [^\n]*\n\t\t_re_parse_out_of_memory\(tls, \w+\)\n\t\}\n)?(\tXdbuf_free\(tls, (\w+)\)\n\tXdbuf_free\(tls, \w+\+\d+\)\n)\tXpstrcpy\(tls, error_msg, error_msg_size, (\w+\+\d+)\)\n`)
+	loc := findAll(re, body)
+	if len(loc) != 1 {
+		return nil, fmt.Errorf("Xlre_compile: cannot find the error label")
 	}
-	return b, nil
+	state, msg := string(body[loc[0][4]:loc[0][5]]), string(body[loc[0][6]:loc[0][7]])
+	add := fmt.Sprintf("\tif *(*byte)(unsafe.Pointer(%s)) == 0 || (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\t_re_parse_out_of_memory(tls, %s)\n\t}\n", msg, state, state)
+	if fixed, err = insertAt("Xlre_compile", body, add, func(body []byte) (int, error) {
+		loc := findAll(re, body)
+		if len(loc) != 1 {
+			return 0, fmt.Errorf("Xlre_compile: cannot find the error label")
+		}
+		return loc[0][2], nil
+	}); err != nil {
+		return nil, err
+	}
+	return bytes.Replace(b, body, fixed, 1), nil
 }
 
 // fixResolveLabels makes _resolve_labels stop at a failed write, keep the
@@ -233,9 +259,6 @@ func fixResolveLabels(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Contains(body, []byte("\nout_of_memory:\n")) {
-		return fixResolveLabelsRelocs(b)
-	}
 	m := reResolveLabels.FindSubmatch(b)
 	ctx := string(m[1])
 	bc := regexp.MustCompile(`/\* bc_out at (bp\+\d+) \*/`).FindSubmatch(body)
@@ -243,6 +266,13 @@ func fixResolveLabels(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_resolve_labels: cannot find bc_out")
 	}
 	failed := fmt.Sprintf("if (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n", bc[1])
+	// The end that fixlib writes keeps the new code and frees the
+	// relocations left. That is right for the four failed calls of
+	// _add_reloc, and the jump ccgo puts after the last return: a new way
+	// to the label needs a look.
+	if n := bytes.Count(body, []byte("goto fail\n")); n != 5 {
+		return nil, fmt.Errorf("_resolve_labels: want 5 jumps to the fail label, found %d: check that the end fixlib writes is right for the new one", n)
+	}
 
 	// The new code, as the end sets it.
 	set := regexp.MustCompile(`\t/\* set the new byte code \*/\n(\tXdbuf_free\(tls, [^\n]*\)\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbyte_code = [^\n]*\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fuse_short_opcodes = int32\(\w+\)\n)`).FindSubmatch(body)
@@ -253,12 +283,37 @@ func fixResolveLabels(b []byte) ([]byte, error) {
 	head := []byte("\tpos = 0\n\tfor {\n\t\tif !(pos < bc_len) {\n\t\t\tbreak\n\t\t}\n")
 	after := []byte("\t/* check that there were no missing labels */\n")
 	fail := []byte(fmt.Sprintf("fail:\n\t;\n\t/* XXX: not safe */\n\tXdbuf_free(tls, %s)\n\treturn -int32(1)\n}\n", bc[1]))
+	// The three parts of the change, whole: the test at the head of the
+	// loop, the test after it, and the end. A file has all or none.
+	inLoop := append(append([]byte{}, head...), "\t\t"+failed+"\t\t\tgoto out_of_memory\n\t\t}\n"...)
+	afterLoop := append([]byte("\t"+failed+"\t\tgoto out_of_memory\n\t}\n"), after...)
+	endHead := fmt.Sprintf("\nout_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory(tls, %s)\nfail:\n\t;\n", ctx)
+	endTail := string(set[1]) + "\treturn -int32(1)\n}\n"
+	end := endHead[1:] + endTail
+	parts := 0
+	if bytes.Count(body, inLoop) == 1 {
+		parts++
+	}
+	if bytes.Count(body, afterLoop) == 1 {
+		parts++
+	}
+	// fixResolveLabelsRelocs puts its frees between the two.
+	if i := bytes.Index(body, []byte(endHead)); i >= 0 && bytes.HasSuffix(body, []byte(endTail)) {
+		if between := body[i+len(endHead) : len(body)-len(endTail)]; len(between) == 0 || bytes.HasPrefix(between, []byte("\t/* free the relocations of the labels not reached */\n")) {
+			parts++
+		}
+	}
+	if parts == 3 && bytes.Count(body, []byte("goto out_of_memory\n")) == 2 && bytes.Count(body, []byte("\nout_of_memory:\n")) == 1 {
+		return fixResolveLabelsRelocs(b)
+	}
+	if parts != 0 || bytes.Contains(body, []byte("out_of_memory")) {
+		return nil, fmt.Errorf("_resolve_labels: has out_of_memory or part of the change of fixlib: read the new code, upstream may have made part of the change")
+	}
 	if bytes.Count(body, head) != 1 || bytes.Count(body, after) != 1 || !bytes.HasSuffix(body, fail) {
 		return nil, fmt.Errorf("_resolve_labels: cannot find the loop over the code, its end or the fail label")
 	}
-	fixed := bytes.Replace(body, head, append(append([]byte{}, head...), "\t\t"+failed+"\t\t\tgoto out_of_memory\n\t\t}\n"...), 1)
-	fixed = bytes.Replace(fixed, after, append([]byte("\t"+failed+"\t\tgoto out_of_memory\n\t}\n"), after...), 1)
-	end := fmt.Sprintf("out_of_memory:\n\t;\n\tXJS_ThrowOutOfMemory(tls, %s)\nfail:\n\t;\n%s\treturn -int32(1)\n}\n", ctx, set[1])
+	fixed := bytes.Replace(body, head, inLoop, 1)
+	fixed = bytes.Replace(fixed, after, afterLoop, 1)
 	fixed = append(bytes.TrimSuffix(fixed, fail), end...)
 	return fixResolveLabelsRelocs(bytes.Replace(b, body, fixed, 1))
 }
@@ -271,29 +326,85 @@ func fixResolveLabelsRelocs(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Contains(body, []byte(marker)) {
-		return b, nil
-	}
 	m := reResolveLabels.FindSubmatch(b)
 	ctx, fd := string(m[1]), string(m[2])
 	fail := []byte("\nfail:\n\t;\n")
 	next := []byte("\t\t\tre_next = (*TRelocEntry)(unsafe.Pointer(re)).Fnext\n")
 	slots := []byte(fmt.Sprintf("\tlabel_slots = (*TJSFunctionDef)(unsafe.Pointer(%s)).Flabel_slots\n", fd))
-	if bytes.Count(body, fail) != 1 || !bytes.Contains(body, next) || bytes.Count(body, slots) != 1 {
-		return nil, fmt.Errorf("_resolve_labels: cannot find the fail label, label_slots or how it frees a relocation")
-	}
 	free := marker + fmt.Sprintf("\ti = 0\n\tfor ; i < (*TJSFunctionDef)(unsafe.Pointer(%[2]s)).Flabel_count; i++ {\n"+
 		"\t\tls = label_slots + uintptr(i)*uintptr(unsafe.Sizeof(TLabelSlot{}))\n"+
 		"\t\tfor re = (*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc; re != 0; re = re_next {\n"+
 		"\t\t\tre_next = (*TRelocEntry)(unsafe.Pointer(re)).Fnext\n"+
 		"\t\t\tXjs_free(tls, %[1]s, re)\n\t\t}\n"+
 		"\t\t(*TLabelSlot)(unsafe.Pointer(ls)).Ffirst_reloc = 0\n\t}\n", ctx, fd)
-	return bytes.Replace(b, body, bytes.Replace(body, fail, append(append([]byte{}, fail...), free...), 1), 1), nil
+	if bytes.Contains(body, []byte(marker)) && !bytes.Contains(body, []byte(free)) {
+		return nil, fmt.Errorf("_resolve_labels: the comment of fixlib without what it frees")
+	}
+	fixed, err := insertAt("_resolve_labels", body, free, func(body []byte) (int, error) {
+		if bytes.Count(body, fail) != 1 || !bytes.Contains(body, next) || bytes.Count(body, slots) != 1 {
+			return 0, fmt.Errorf("_resolve_labels: cannot find the fail label, label_slots or how it frees a relocation")
+		}
+		return bytes.Index(body, fail) + len(fail), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return bytes.Replace(b, body, fixed, 1), nil
 }
 
 // splice inserts s into b at i.
 func splice(b []byte, i int, s string) []byte {
 	return append(append(append([]byte{}, b[:i]...), s...), b[i:]...)
+}
+
+// insertAt inserts text into body, the text of the function name, at the
+// place where returns, or checks that it is there already. where gets the
+// body without text, so that a body fixlib changed is checked against the
+// place fixlib would pick for it. The text somewhere else, or more than
+// once, stops fixlib: upstream may have written part of the change itself.
+func insertAt(name string, body []byte, text string, where func([]byte) (int, error)) ([]byte, error) {
+	switch n := bytes.Count(body, []byte(text)); n {
+	case 0:
+		i, err := where(body)
+		if err != nil {
+			return nil, err
+		}
+		return splice(body, i, text), nil
+	case 1:
+		i := bytes.Index(body, []byte(text))
+		j, err := where(append(append([]byte{}, body[:i]...), body[i+len(text):]...))
+		if err != nil {
+			return nil, err
+		}
+		if j != i {
+			return nil, fmt.Errorf("%s: %q is not where fixlib puts it: read the new code, upstream may have made part of the change", name, firstLine(text))
+		}
+		return body, nil
+	default:
+		return nil, fmt.Errorf("%s: %q %d times, want once: read the new code, upstream may have made part of the change", name, firstLine(text), n)
+	}
+}
+
+// firstLine returns the first line of s, without its indent.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(s, "\n")
+	return strings.TrimSpace(line)
+}
+
+// before returns the place of anchor, which body must have once, and
+// requires need in body too.
+func before(body []byte, anchor, need, msg string) (int, error) {
+	if bytes.Count(body, []byte(anchor)) != 1 || !bytes.Contains(body, []byte(need)) {
+		return 0, fmt.Errorf("%s", msg)
+	}
+	return bytes.Index(body, []byte(anchor)), nil
+}
+
+// after returns the place after anchor, which body must have once, and
+// requires need in body too.
+func after(body []byte, anchor, need, msg string) (int, error) {
+	i, err := before(body, anchor, need, msg)
+	return i + len(anchor), err
 }
 
 // fixWriteObject makes the bytecode writer check its buffer.
@@ -304,30 +415,44 @@ func fixWriteObject(b []byte) ([]byte, error) {
 	}
 	s := string(reWriteAtoms.FindSubmatch(b)[1])
 	throw := fmt.Sprintf("\t\tXJS_ThrowOutOfMemory(tls, (*TBCWriterState)(unsafe.Pointer(%s)).Fctx)\n", s)
-	if !bytes.Contains(body, []byte(throw)) {
-		init := regexp.MustCompile(`\n\t_js_dbuf_init\(tls, \(\*TBCWriterState\)\(unsafe\.Pointer\(` + s + `\)\)\.Fctx, (` + s + `\+\d+)\)\n`).FindSubmatch(body)
-		claim := regexp.MustCompile(`\n\tif (Xdbuf_claim\(tls, bp, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(atoms_size\)\) != 0) \{\n\t\tgoto fail\n`)
-		loc := claim.FindAllSubmatchIndex(body, -1)
-		if init == nil || len(loc) != 1 {
-			return nil, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the atoms buffer or the claim that moves the atoms")
-		}
-		fixed := splice(body, loc[0][1]-len("\t\tgoto fail\n"), throw)
-		fixed = splice(fixed, loc[0][2], fmt.Sprintf("(*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 || ", init[1]))
-		b = bytes.Replace(b, body, fixed, 1)
+	atoms := regexp.MustCompile(`\n\t_js_dbuf_init\(tls, \(\*TBCWriterState\)\(unsafe\.Pointer\(` + s + `\)\)\.Fctx, (` + s + `\+\d+)\)\n`).FindSubmatch(body)
+	if atoms == nil {
+		return nil, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the atoms buffer")
 	}
+	lost := fmt.Sprintf("(*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 || ", atoms[1])
+	claim := regexp.MustCompile(`\n\tif (` + regexp.QuoteMeta(lost) + `)?(Xdbuf_claim\(tls, bp, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(atoms_size\)\) != 0) \{\n\t\tgoto fail\n`)
+	fixed, err := insertAt("_JS_WriteObjectAtoms", body, throw, func(body []byte) (int, error) {
+		loc := findAll(claim, body)
+		if len(loc) != 1 {
+			return 0, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the claim that moves the atoms")
+		}
+		return loc[0][1] - len("\t\tgoto fail\n"), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// The claim, followed by the throw now, also tests the buffer.
+	thrown := regexp.MustCompile(`\n\tif (` + regexp.QuoteMeta(lost) + `)?Xdbuf_claim\(tls, bp, [^\n]*\(atoms_size\)\) != 0 \{\n` + regexp.QuoteMeta(throw))
+	m := findAll(thrown, fixed)
+	if len(m) != 1 {
+		return nil, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the claim that moves the atoms")
+	}
+	if m[0][2] < 0 {
+		fixed = splice(fixed, m[0][0]+len("\n\tif "), lost)
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	re := regexp.MustCompile(`\nfunc _bc_put_atom\(tls \*libc\.TLS, s uintptr, atom TJSAtom\) \(r int32\) \{\n`)
 	if body, err = funcBody(b, re, "_bc_put_atom"); err != nil {
 		return nil, err
 	}
 	mark := "\t\t\t(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(1)\n"
-	if !bytes.Contains(body, []byte(mark)) {
-		failed := []byte("\t\tif _bc_atom_to_idx(tls, s, bp, atom) != 0 {\n")
-		if bytes.Count(body, failed) != 1 {
-			return nil, fmt.Errorf("_bc_put_atom: cannot find where adding the atom fails")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, failed, append(append([]byte{}, failed...), mark...), 1), 1)
+	if fixed, err = insertAt("_bc_put_atom", body, mark, func(body []byte) (int, error) {
+		return after(body, "\t\tif _bc_atom_to_idx(tls, s, bp, atom) != 0 {\n", "", "_bc_put_atom: cannot find where adding the atom fails")
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	if body, err = funcBody(b, reWriteObject2, "XJS_WriteObject2"); err != nil {
 		return nil, err
@@ -338,14 +463,12 @@ func fixWriteObject(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("XJS_WriteObject2: cannot find the buffer")
 	}
 	check := fmt.Sprintf("\tif (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\tgoto fail\n\t}\n", init[1], ctx)
-	if !bytes.Contains(body, []byte(check)) {
-		rec := []byte("\tif _JS_WriteObjectRec(tls, s, obj) != 0 {\n\t\tgoto fail\n\t}\n")
-		if bytes.Count(body, rec) != 1 {
-			return nil, fmt.Errorf("XJS_WriteObject2: cannot find the call of _JS_WriteObjectRec")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, rec, append(append([]byte{}, rec...), check...), 1), 1)
+	if fixed, err = insertAt("XJS_WriteObject2", body, check, func(body []byte) (int, error) {
+		return after(body, "\tif _JS_WriteObjectRec(tls, s, obj) != 0 {\n\t\tgoto fail\n\t}\n", "", "XJS_WriteObject2: cannot find the call of _JS_WriteObjectRec")
+	}); err != nil {
+		return nil, err
 	}
-	return b, nil
+	return bytes.Replace(b, body, fixed, 1), nil
 }
 
 // fixScopes makes _push_scope and _pop_scope leave the scopes as they are
@@ -360,19 +483,14 @@ func fixScopes(b []byte) ([]byte, error) {
 	check := "\t\tif " + lost + " != 0 {\n\t\t\tXJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)\n\t\t\treturn -int32(1)\n\t\t}\n"
 	failed := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\treturn -int32(1)\n")
 	marked := []byte("\t\t\t\tif !(new_buf != 0) {\n\t\t\t\t\t" + lost + " = int32(1)\n\t\t\t\t\treturn -int32(1)\n")
-	fixed := body
-	if bytes.Count(fixed, marked) != 2 {
-		if bytes.Count(fixed, failed) != 2 {
-			return nil, fmt.Errorf("_push_scope: want 2 failed reallocs")
-		}
-		fixed = bytes.ReplaceAll(fixed, failed, marked)
+	if bytes.Count(body, marked)+bytes.Count(body, failed) != 2 {
+		return nil, fmt.Errorf("_push_scope: want 2 failed reallocs")
 	}
-	if !bytes.Contains(fixed, []byte(check)) {
-		scope := []byte("\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count\n")
-		if bytes.Count(fixed, scope) != 1 {
-			return nil, fmt.Errorf("_push_scope: cannot find where it reads the scope count")
-		}
-		fixed = bytes.Replace(fixed, scope, append(append([]byte{}, scope...), check...), 1)
+	fixed, err := insertAt("_push_scope", bytes.ReplaceAll(body, failed, marked), check, func(body []byte) (int, error) {
+		return after(body, "\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count\n", "", "_push_scope: cannot find where it reads the scope count")
+	})
+	if err != nil {
+		return nil, err
 	}
 	b = bytes.Replace(b, body, fixed, 1)
 
@@ -381,14 +499,12 @@ func fixScopes(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	check = "\t\tif " + lost + " != 0 {\n\t\t\treturn\n\t\t}\n"
-	if !bytes.Contains(body, []byte(check)) {
-		level := []byte("\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level\n")
-		if bytes.Count(body, level) != 1 {
-			return nil, fmt.Errorf("_pop_scope: cannot find where it reads the scope level")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, level, append(append([]byte{}, level...), check...), 1), 1)
+	if fixed, err = insertAt("_pop_scope", body, check, func(body []byte) (int, error) {
+		return after(body, "\t\tscope = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level\n", "", "_pop_scope: cannot find where it reads the scope level")
+	}); err != nil {
+		return nil, err
 	}
-	return b, nil
+	return bytes.Replace(b, body, fixed, 1), nil
 }
 
 // fixParserStops makes the parser stop with the out of memory error once
@@ -431,14 +547,17 @@ func guard(b []byte, head *regexp.Regexp, name string, at *regexp.Regexp, check 
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Contains(body, []byte(check)) {
-		return b, nil
+	fixed, err := insertAt(name, body, check, func(body []byte) (int, error) {
+		loc := findAll(at, body)
+		if len(loc) != 1 {
+			return 0, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
+		}
+		return loc[0][0] + 1, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	loc := at.FindAllIndex(body, -1)
-	if len(loc) != 1 {
-		return nil, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
-	}
-	return bytes.Replace(b, body, splice(body, loc[0][0]+1, check), 1), nil
+	return bytes.Replace(b, body, fixed, 1), nil
 }
 
 // guardAfterComment is guard for a place that at matches from the line of
@@ -448,13 +567,15 @@ func guardAfterComment(b []byte, head *regexp.Regexp, name string, at *regexp.Re
 	if err != nil {
 		return nil, err
 	}
-	if bytes.Contains(body, []byte(check)) {
-		return b, nil
+	fixed, err := insertAt(name, body, check, func(body []byte) (int, error) {
+		loc := findAll(at, body)
+		if len(loc) != 1 {
+			return 0, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
+		}
+		return bytes.IndexByte(body[loc[0][0]+1:], '\n') + loc[0][0] + 2, nil // after the comment
+	})
+	if err != nil {
+		return nil, err
 	}
-	loc := at.FindAllIndex(body, -1)
-	if len(loc) != 1 {
-		return nil, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
-	}
-	line := bytes.IndexByte(body[loc[0][0]+1:], '\n') + loc[0][0] + 2 // after the comment
-	return bytes.Replace(b, body, splice(body, line, check), 1), nil
+	return bytes.Replace(b, body, fixed, 1), nil
 }

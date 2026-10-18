@@ -6,8 +6,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -221,5 +223,235 @@ func TestTimezoneRejectsLocalTime(t *testing.T) {
 	changed := bytes.Replace(b, body, []byte("\nfunc _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {\n\treturn int32(libc.Xtime(tls, 0))\n}\n"), 1)
 	if _, err := fixTimezone(changed); err == nil {
 		t.Error("a getTimezoneOffset of a new shape went through")
+	}
+}
+
+// fixToCString leaves a fixed file as it is, and stops when upstream frees
+// val at the fail label, frees something else in a failure branch, or adds
+// a new way to fail: the free it adds would then free val twice, or miss a
+// path.
+func TestToCStringRejects(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := fixToCString(b)
+		if err != nil || !bytes.Equal(out, b) {
+			t.Fatalf("%s: fixToCString changed a fixed file: %v", fn, err)
+		}
+		// The label as upstream writes it, before fixUp.
+		raw := bytes.ReplaceAll(b, []byte("*(*Tsize_t)(unsafe.Pointer(plen)) = uint"), []byte("**(**Tsize_t)(__ccgo_up(plen)) = uint"))
+		if _, err := fixToCString(raw); err != nil {
+			t.Fatalf("%s: %v", fn, err)
+		}
+	}
+	head := "func XJS_ToCStringLen2("
+	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_386.go"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "lib", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		val := "val"
+		if name == "ccgo_darwin_arm64.go" {
+			val = "*(*TJSValue)(unsafe.Pointer(bp + 32))"
+		}
+		for _, c := range []struct{ name, at, text string }{
+			{"free at the label", "\tif plen != 0 {\n\t\t*(*Tsize_t)(unsafe.Pointer(plen)) = uint", "\tXFreeValue(tls, ctx2, " + val + ")\n"},
+			{"a new way to fail", "\tlen1 = ", "\tif plen == 0 {\n\t\tgoto fail\n\t}\n"},
+		} {
+			if _, err := fixToCString(mutate(t, b, head, c.at, c.text)); err == nil {
+				t.Errorf("%s: %s went through", name, c.name)
+			}
+		}
+		// A free of some other value in the branch is not fixlib's.
+		free := []byte("\t\t\tXFreeValue(tls, ctx2, " + val + ")\n")
+		i := bytes.Index(b, []byte("\n"+head))
+		j := bytes.Index(b[i:], free)
+		other := append(append(append([]byte{}, b[:i+j]...), "\t\t\tXFreeValue(tls, ctx2, str)\n"...), b[i+j+len(free):]...)
+		if _, err := fixToCString(other); err == nil {
+			t.Errorf("%s: a free of another value went through", name)
+		}
+	}
+}
+
+// Every generated file has the _build_backtrace that lib/backtrace.go was
+// checked against, and a change to it, or to the functions whose work
+// lib/backtrace.go repeats, stops fixlib.
+func TestBacktraceSites(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := checkBacktraceSites(b, filepath.Base(fn)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := engineFile(t)
+	for _, c := range []struct{ head, old, new string }{
+		{"func _build_backtrace(", "if (*TJSStackFrame)(unsafe.Pointer(sf)).Fjs_mode&", "if false && (*TJSStackFrame)(unsafe.Pointer(sf)).Fjs_mode&"},
+		{"func _get_prop_string(", "p = (*TJSShape)(unsafe.Pointer((*TJSObject)(unsafe.Pointer(p)).Fshape)).Fproto\n", "p = 0\n"},
+		{"func _JS_GetFunctionBytecode(", "\treturn (*(*struct {", "\treturn 8 + (*(*struct {"},
+	} {
+		i := bytes.Index(b, []byte("\n"+c.head))
+		j := bytes.Index(b[i:], []byte(c.old))
+		if i < 0 || j < 0 {
+			t.Fatalf("no %q in %s", c.old, c.head)
+		}
+		changed := append(append(append([]byte{}, b[:i+j]...), c.new...), b[i+j+len(c.old):]...)
+		if err := checkBacktraceSites(changed, "ccgo_darwin_arm64.go"); err == nil {
+			t.Errorf("a change to %s went through", c.head)
+		}
+	}
+}
+
+// A caller of _js_backtrace_own_flags that reads the value of the
+// descriptor, or hands it to another function, stops fixlib: it would get
+// undefined for a pending stack.
+func TestOwnFlagsRejectsValueRead(t *testing.T) {
+	b := engineFile(t)
+	if _, err := fixBacktrace(b); err != nil {
+		t.Fatal(err)
+	}
+	head := "func _JS_CopyDataProperties("
+	at := "\t\t\t_js_free_desc(tls, ctx2, bp+48)\n"
+	for _, text := range []string{
+		"\t\t\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp + 48))).Fvalue\n",
+		"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 48 + 8))\n",
+		// The tag of the value: on 64-bit targets the value is bytes 8 to 24.
+		"\t\t\t_ = *(*int64)(unsafe.Pointer(bp + 48 + 16))\n",
+		"\t\t\t_ = *(*int64)(unsafe.Pointer(bp + 64))\n",
+		"\t\t\t_js_other(tls, bp+48)\n",
+	} {
+		if _, err := fixBacktrace(mutate(t, b, head, at, text)); err == nil {
+			t.Errorf("%q went through", text)
+		}
+	}
+
+	// A descriptor that is neither a cell of the frame nor 0 cannot be
+	// followed.
+	call := []byte("_js_backtrace_own_flags(tls, ctx2, bp+48,")
+	i := bytes.Index(b, []byte("\n"+head))
+	j := bytes.Index(b[i:], call)
+	other := append(append(append([]byte{}, b[:i+j]...), "_js_backtrace_own_flags(tls, ctx2, pdesc,"...), b[i+j+len(call):]...)
+	if _, err := fixBacktrace(other); err == nil {
+		t.Error("a descriptor pdesc went through")
+	}
+
+	// On linux/386 the value is bytes 4 to 12 and the getter starts at 12.
+	b32, err := os.ReadFile(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at32 := "\t\t\t_js_free_desc(tls, ctx2, bp+8)\n"
+	for _, c := range []struct {
+		text string
+		ok   bool
+	}{
+		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 8 + 8))\n", false},
+		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 16))\n", false},
+		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 8 + 12))\n", true},
+		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 20))\n", true},
+	} {
+		_, err := fixBacktrace(mutate(t, b32, head, at32, c.text))
+		if c.ok && err != nil {
+			t.Errorf("linux/386: %q: %v", c.text, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("linux/386: %q went through", c.text)
+		}
+	}
+}
+
+// descUses reads both forms of a field access, before and after fixUp.
+func TestDescUsesBothForms(t *testing.T) {
+	body := "\nfunc f(tls *libc.TLS) {\n\tbp := tls.Alloc(56)\n\tdefer tls.Free(56)\n" +
+		"\t_js_backtrace_own_flags(tls, 0, bp, 0, 0)\n" +
+		"\t_ = (**(**TJSPropertyDescriptor)(__ccgo_up(bp))).Fflags\n" +
+		"\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fflags\n" +
+		"\t_ = (**(**TJSPropertyDescriptor)(__ccgo_up(bp))).Fvalue\n" +
+		"\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fvalue\n" +
+		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 40))\n" +
+		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 8))\n" +
+		"\t_js_free_desc(tls, 0, bp)\n}\n"
+	uses, err := descUses("f", []byte(body), descLayout{valueEnd: 24, size: 56})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"call _js_backtrace_own_flags": 1, "call _js_free_desc": 1, "value": 2, "raw": 1}
+	if fmt.Sprint(uses) != fmt.Sprint(want) {
+		t.Fatalf("got %v, want %v", uses, want)
+	}
+}
+
+// A change of fixBacktrace counts as made only as the whole text fixlib
+// writes, where fixlib writes it.
+func TestBacktraceRejectsTextElsewhere(t *testing.T) {
+	b := engineFile(t)
+	for _, c := range []struct {
+		head, first string
+		n           int
+	}{
+		{"_build_backtrace", "if filename == 0 && _js_backtrace_build(", 3},
+		{"_get_prop_string", "if pending, ok := _js_backtrace_prop_string(", 3},
+		{"XJS_GetPropertyInternal", "if prop == uint32(EJS_ATOM_stack) {", 5},
+		{"_JS_GetOwnPropertyInternal", "if prop == uint32(EJS_ATOM_stack) && desc != 0 {", 5},
+		{"XJS_DefineProperty", "if prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(", 3},
+		{"_js_print_error", "if _js_backtrace_raw_stack(tls, s, p) {", 3},
+		{"_js_print_object", "if _js_backtrace_print_pending(", 3},
+		{"XJS_ComputeMemoryUsage", "_js_backtrace_memory_usage(", 1},
+	} {
+		if _, err := fixBacktrace(moveLines(t, b, c.head, c.first, c.n)); err == nil {
+			t.Errorf("%s: %q elsewhere went through", c.head, c.first)
+		}
+	}
+}
+
+// The value of a descriptor ends at byte 24 of 56 on 64-bit targets, 12 of
+// 28 on linux/386, which aligns a uint64 to 4, and 16 of 32 on linux/arm.
+func TestDescLayout(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := descLayoutOf(b)
+		if err != nil {
+			t.Fatalf("%s: %v", fn, err)
+		}
+		want := descLayout{valueEnd: 24, size: 56}
+		switch filepath.Base(fn) {
+		case "ccgo_linux_386.go":
+			want = descLayout{valueEnd: 12, size: 28}
+		case "ccgo_linux_arm.go":
+			want = descLayout{valueEnd: 16, size: 32}
+		}
+		if got != want {
+			t.Errorf("%s: %+v, want %+v", fn, got, want)
+		}
+	}
+}
+
+// findAll finds each match of a pattern of whole lines, also when a match
+// starts on the line right after the last one.
+func TestFindAllAdjacentLines(t *testing.T) {
+	re := regexp.MustCompile(`\n\tx = (\d+)\n`)
+	b := []byte("\n\tx = 1\n\tx = 2\n\ty = 3\n\tx = 4\n")
+	var got []string
+	for _, m := range findAll(re, b) {
+		got = append(got, string(b[m[2]:m[3]]))
+	}
+	if strings.Join(got, " ") != "1 2 4" {
+		t.Fatalf("got %v, want 1 2 4", got)
+	}
+}
+
+// findAll moves on after a match of a lone newline instead of finding it
+// again forever.
+func TestFindAllLoneNewline(t *testing.T) {
+	re := regexp.MustCompile(`x?\n`)
+	if got := len(findAll(re, []byte("\n\n"))); got != 2 {
+		t.Fatalf("got %d matches, want 2", got)
 	}
 }

@@ -10,6 +10,9 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
+// -slots, -frames, -define, -backtrace and -up print the lists that some
+// changes are checked against, to update them after a review.
+//
 // It does fourteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
@@ -66,13 +69,16 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -82,14 +88,19 @@ const (
 )
 
 var (
-	check  = flag.Bool("check", false, "report missing changes without writing files")
-	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
-	define = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
-	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
+	check     = flag.Bool("check", false, "report missing changes without writing files")
+	slots     = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	define    = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
+	frames    = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
+	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
+	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
+	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
 	reAlloc = regexp.MustCompile(`(\t\tstr_new = _js_alloc_string\(tls, ctx2, [^\n]*, 0\)\n\t\tif !\(str_new != 0\) \{\n)(\t\t\tXFreeValue\(tls, ctx2, [^\n]*\)\n)?(\t\t\tgoto fail\n)`)
+	// The fail label of XJS_ToCStringLen2 as generated: it does not free val.
+	reToCStringFail = regexp.MustCompile(`\nfail:\n\t;\n\tif plen != 0 \{\n\t\t` + reDeref(`Tsize_t`, `plen`) + ` = uint(32|64)\(0\)\n\t\}\n\treturn libc\.UintptrFromInt32\(0\)$`)
 )
 
 func main() {
@@ -108,14 +119,23 @@ func main() {
 		}
 		return
 	}
-	if *define {
+	if *define || *backtrace || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
 			hw, err = handWritten("lib")
 		}
-		if err == nil {
-			err = defineReport(files, hw)
+		if err == nil && *define {
+			err = fingerprintReport(files, hw, "defineSites", defineFingerprint)
+		} else if err == nil && *backtrace {
+			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
+		} else if err == nil && *cells {
+			var report string
+			if report, err = cellsReport(files, hw); err == nil {
+				fmt.Print(report)
+			}
+		} else if err == nil {
+			err = upReport(files, hw)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
@@ -201,6 +221,35 @@ func run() (missing int, err error) {
 // fixEngine applies every change to the generated file of lib/ named
 // name.
 func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	b, err := fixBeforeUp(b, hw, name)
+	if err != nil {
+		return nil, err
+	}
+	// The changes before fixUp accept both forms of a conversion, so it
+	// goes after them.
+	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixCells(b, cellFiles[name]); err != nil {
+		return nil, err
+	}
+	if b, err = fixPin(b, pinFiles[name]); err != nil {
+		return nil, err
+	}
+	// The fingerprints of fixDefine are of the text the changes above
+	// leave, so it goes after them.
+	if b, err = fixDefine(b, name); err != nil {
+		return nil, err
+	}
+	if err = checkBacktraceSites(b, name); err != nil {
+		return nil, err
+	}
+	// None of the changes after fixBacktrace moves a property slot.
+	return b, auditSlots(b)
+}
+
+// fixBeforeUp applies the changes that come before fixUp.
+func fixBeforeUp(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	b, err := fixToCString(b)
 	if err != nil {
 		return nil, err
@@ -227,27 +276,7 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	// The TLS frames of darwin/arm64 are checked against frameSites.
-	if b, err = fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go"); err != nil {
-		return nil, err
-	}
-	// The changes above accept both forms of a conversion, so this one
-	// goes after them.
-	if b, err = fixUp(b); err != nil {
-		return nil, err
-	}
-	if b, err = fixCells(b, cellFiles[name]); err != nil {
-		return nil, err
-	}
-	if b, err = fixPin(b, pinFiles[name]); err != nil {
-		return nil, err
-	}
-	// The fingerprints of fixDefine are of the text the changes above
-	// leave, so it goes after them.
-	if b, err = fixDefine(b, name); err != nil {
-		return nil, err
-	}
-	// None of the changes after fixBacktrace moves a property slot.
-	return b, auditSlots(b)
+	return fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go")
 }
 
 // update rewrites fn with f, unless -check is set. It reports whether the
@@ -273,7 +302,10 @@ func update(fn string, f func([]byte) ([]byte, error)) (changed bool, err error)
 }
 
 // fixToCString inserts the XFreeValue call into both allocation failure
-// branches of XJS_ToCStringLen2.
+// branches of XJS_ToCStringLen2. It relies on upstream not freeing val at
+// the fail label, which would make the added call a double free, and on
+// four jumps to the label: the failed ToString, the two branches, and the
+// one ccgo puts before the label. A change in either stops fixlib.
 func fixToCString(b []byte) ([]byte, error) {
 	start := bytes.Index(b, []byte("\nfunc XJS_ToCStringLen2("))
 	if start < 0 {
@@ -295,14 +327,28 @@ func fixToCString(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: cannot locate the local 'val'")
 	}
 
-	n := 0
+	// A branch that already frees is fixed only when it frees val.
+	free := "\t\t\tXFreeValue(tls, ctx2, " + val + ")\n"
+	n, other := 0, false
 	body = reAlloc.ReplaceAllFunc(body, func(m []byte) []byte {
 		n++
 		sub := reAlloc.FindSubmatch(m)
-		return []byte(string(sub[1]) + "\t\t\tXFreeValue(tls, ctx2, " + val + ")\n" + string(sub[3]))
+		if len(sub[2]) != 0 && string(sub[2]) != free {
+			other = true
+		}
+		return []byte(string(sub[1]) + free + string(sub[3]))
 	})
 	if n != 2 {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: want 2 allocation failure branches, found %d", n)
+	}
+	if other {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: an allocation failure branch frees something other than val")
+	}
+	if !reToCStringFail.Match(body) {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: the fail label changed: if it now frees val, drop fixToCString")
+	}
+	if n := bytes.Count(body, []byte("goto fail\n")); n != 4 {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: want 4 jumps to the fail label, found %d: check that val is freed on the new path", n)
 	}
 
 	var out bytes.Buffer
@@ -380,16 +426,19 @@ var (
 
 	// The SameValue test of JS_DefineProperty on a non-writable,
 	// non-configurable data property, which must compare the text of a
-	// pending stack.
+	// pending stack. Its value pointer is the pr of the lookup: a local, or
+	// its frame slot read before or after fixUp. The test of a VARREF
+	// property reads Fpvalue instead, and after fixUp has the same form.
 	reDefineHead = regexp.MustCompile(`\nfunc XJS_DefineProperty\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, prop TJSAtom, \w+ TJSValue, \w+ TJSValue, \w+ TJSValue, flags int32\) \(r int32\) \{\n`)
 	reDefineFind = regexp.MustCompile(`\n[ \t]+([^\n=]+?) = _find_own_property\(tls, [^,\n]+, (\w+), prop\)\n`)
-	reDefineSame = regexp.MustCompile(`\n([ \t]+)if !\(_js_same_value\(tls, \w+, \w+, \*\(\*TJSValue\)\(unsafe\.Pointer\(([^\n]+?)\)\)\) != 0\) \{\n`)
+	reDefineSame = regexp.MustCompile(`\n([ \t]+)if !\(_js_same_value\(tls, \w+, \w+, \*\(\*TJSValue\)\(unsafe\.Pointer\((\w+|\*\*\(\*\*uintptr\)\(__ccgo_up\(bp \+ \d+\)\)|\*\(\*uintptr\)\(unsafe\.Pointer\(bp \+ \d+\)\))\)\)\) != 0\) \{\n`)
 
 	// The two printer sites: js_print_error reads the stack, js_print_object
 	// prints a normal property value.
-	rePrintErrorHead  = regexp.MustCompile(`\nfunc _js_print_error\(tls \*libc\.TLS, s uintptr, p uintptr\) \{\n`)
-	rePrintObjectHead = regexp.MustCompile(`\nfunc _js_print_object\(tls \*libc\.TLS, s uintptr, \w+ uintptr\) \{\n`)
-	rePrintObjectVal  = regexp.MustCompile(`\n(\t+)_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n`)
+	rePrintErrorHead     = regexp.MustCompile(`\nfunc _js_print_error\(tls \*libc\.TLS, s uintptr, p uintptr\) \{\n`)
+	rePrintObjectHead    = regexp.MustCompile(`\nfunc _js_print_object\(tls \*libc\.TLS, s uintptr, \w+ uintptr\) \{\n`)
+	rePrintObjectWrapped = regexp.MustCompile(`\n(\t+)if _js_backtrace_print_pending\(tls, s, prs, pr\) == 0 \{\n\t+_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n\t+\}\n`)
+	rePrintObjectVal     = regexp.MustCompile(`\n(\t+)_js_print_value\(tls, s, \*\(\*TJSValue\)\(unsafe\.Pointer\(pr\)\)\)\n`)
 )
 
 const (
@@ -408,6 +457,76 @@ func slotDeref(arg string) string {
 // no capturing group to those of arg.
 func reDeref(typ, arg string) string {
 	return `(?:\*\*\(\*\*` + typ + `\)\(__ccgo_up|\*\(\*` + typ + `\)\(unsafe\.Pointer)\(` + arg + `\)\)`
+}
+
+// backtraceFuncs are the functions whose work lib/backtrace.go repeats for
+// a pending stack: _build_backtrace walks the frames and formats the text
+// (backtraceCount, backtraceRecord, backtraceFormat), _get_prop_string
+// reads a function's name (backtraceFuncName) and _JS_GetFunctionBytecode
+// finds its bytecode.
+var backtraceFuncs = []string{"_build_backtrace", "_get_prop_string", "_JS_GetFunctionBytecode"}
+
+var (
+	reLazyBacktrace   = regexp.MustCompile(`\tif filename == 0 && _js_backtrace_build\(tls, [^\n]*\{\n\t\treturn\n\t\}\n`)
+	reStringUse       = regexp.MustCompile(`__ccgo_ts\+(\d+)\b`)
+	rePendingPropText = regexp.MustCompile(`\tif pending, ok := _js_backtrace_prop_string\(tls, [^\n]*\{\n\t\treturn pending\n\t\}\n`)
+)
+
+// backtraceFingerprint hashes backtraceFuncs, without the calls
+// fixBacktrace adds, with each C string written out in place of its
+// offset, which a new string anywhere before it moves.
+func backtraceFingerprint(b []byte) (string, error) {
+	m := reStringTable.FindSubmatch(b)
+	if m == nil {
+		return "", fmt.Errorf("cannot find __ccgo_ts1")
+	}
+	table, err := strconv.Unquote(string(m[1]))
+	if err != nil {
+		return "", fmt.Errorf("__ccgo_ts1: %v", err)
+	}
+	h := sha256.New()
+	for _, name := range backtraceFuncs {
+		text, err := funcBody(b, funcHead(name), name)
+		if err != nil {
+			return "", err
+		}
+		text = reLazyBacktrace.ReplaceAll(text, nil)
+		text = rePendingPropText.ReplaceAll(text, nil)
+		text = reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
+			off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
+			if off >= len(table) {
+				return use
+			}
+			str, _, _ := strings.Cut(table[off:], "\x00")
+			return []byte(strconv.Quote(str))
+		})
+		h.Write(text)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
+}
+
+// checkBacktraceSites checks backtraceFuncs against backtraceSites. The
+// fingerprints are of the text after every other change.
+func checkBacktraceSites(b []byte, file string) error {
+	got, err := backtraceFingerprint(b)
+	if err != nil {
+		return err
+	}
+	if want := backtraceSites[file]; got != want && !reporting() {
+		return fmt.Errorf("%s: %s changed (fingerprint %s, want %s): read them against lib/backtrace.go, which must format a pending stack with the same bytes, then update backtraceSites (go run ./internal/fixlib -backtrace)", file, strings.Join(backtraceFuncs, ", "), got, want)
+	}
+	return nil
+}
+
+// afterFirst is a place for insertAt: right after the first match of re.
+func afterFirst(re *regexp.Regexp, msg string) func([]byte) (int, error) {
+	return func(body []byte) (int, error) {
+		loc := re.FindIndex(body)
+		if loc == nil {
+			return 0, fmt.Errorf("%s", msg)
+		}
+		return loc[1], nil
+	}
 }
 
 // fixBacktrace wires lib/backtrace.go into a generated file. 'stack' is an
@@ -455,13 +574,13 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_build_backtrace: cannot find the has_debug test")
 	}
 	lazy := fmt.Sprintf("\tif filename == 0 && _js_backtrace_build(tls, %s, %s, backtrace_flags) != 0 {\n\t\treturn\n\t}\n", ctx, errorObj)
-	if !bytes.Contains(body, []byte(lazy)) {
-		init := fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx)
-		if bytes.Count(body, []byte(init)) != 1 {
-			return nil, fmt.Errorf("_build_backtrace: want 1 call of _js_dbuf_init")
-		}
-		b = bytes.Replace(b, body, bytes.Replace(body, []byte(init), []byte(lazy+init), 1), 1)
+	fixed, err := insertAt("_build_backtrace", body, lazy, func(body []byte) (int, error) {
+		return before(body, fmt.Sprintf("\t_js_dbuf_init(tls, %s, bp)\n", ctx), "", "_build_backtrace: want 1 call of _js_dbuf_init")
+	})
+	if err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// get_prop_string: format a pending stack for a print.
 	body, err = funcBody(b, reGetPropString, "_get_prop_string")
@@ -476,23 +595,31 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_get_prop_string: cannot find the property type test, the value or the object")
 	}
 	pending := fmt.Sprintf("\tif pending, ok := _js_backtrace_prop_string(tls, %s, %s, prs, %s); ok {\n\t\treturn pending\n\t}\n", gpsCtx, object[1], value[1])
-	if !bytes.Contains(body, []byte(pending)) {
-		b = bytes.Replace(b, body, bytes.Replace(body, flags[1], append([]byte(pending), flags[1]...), 1), 1)
+	if fixed, err = insertAt("_get_prop_string", body, pending, func(body []byte) (int, error) {
+		loc := rePropFlags.FindSubmatchIndex(body)
+		if loc == nil {
+			return 0, fmt.Errorf("_get_prop_string: cannot find the property type test")
+		}
+		return loc[2], nil
+	}); err != nil {
+		return nil, err
 	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// JS_GetPropertyInternal: settle the stack before the flag dispatch.
 	if body, err = funcBody(b, reGetPropHead, "XJS_GetPropertyInternal"); err != nil {
 		return nil, err
 	}
 	getCtx := string(reGetPropHead.FindSubmatch(b)[1])
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		fm := reGetPropFind.FindSubmatch(body)
-		if fm == nil {
-			return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
-		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), slotDeref(string(fm[2])))
-		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
+	fm := reGetPropFind.FindSubmatch(body)
+	if fm == nil {
+		return nil, fmt.Errorf("XJS_GetPropertyInternal: cannot find the property lookup")
 	}
+	ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn jsvException()\n\t\t\t}\n\t\t}\n", getCtx, string(fm[3]), slotDeref(string(fm[2])))
+	if fixed, err = insertAt("XJS_GetPropertyInternal", body, ins, afterFirst(reGetPropFind, "XJS_GetPropertyInternal: cannot find the property lookup")); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// JS_GetOwnPropertyInternal: settle the stack before reading the value.
 	if body, err = funcBody(b, reGetOwnHead, "_JS_GetOwnPropertyInternal"); err != nil {
@@ -500,14 +627,14 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	}
 	om := reGetOwnHead.FindSubmatch(b)
 	ownCtx, ownObj := string(om[1]), string(om[2])
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		fm := reGetOwnFind.FindSubmatch(body)
-		if fm == nil {
-			return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
-		}
-		ins := fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, slotDeref(string(fm[2])))
-		b = bytes.Replace(b, body, bytes.Replace(body, fm[1], append(fm[1][:len(fm[1]):len(fm[1])], ins...), 1), 1)
+	if fm = reGetOwnFind.FindSubmatch(body); fm == nil {
+		return nil, fmt.Errorf("_JS_GetOwnPropertyInternal: cannot find the property lookup")
 	}
+	ins = fmt.Sprintf("\t\tif prop == uint32(EJS_ATOM_stack) && desc != 0 {\n\t\t\tif _js_backtrace_settle(tls, %s, %s, prs, %s) < 0 {\n\t\t\t\treturn -int32(1)\n\t\t\t}\n\t\t}\n", ownCtx, ownObj, slotDeref(string(fm[2])))
+	if fixed, err = insertAt("_JS_GetOwnPropertyInternal", body, ins, afterFirst(reGetOwnFind, "_JS_GetOwnPropertyInternal: cannot find the property lookup")); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The interpreter: every inline read sends a pending 'stack' to the
 	// slow path, and every _find_own_property call of JS_CallInternal is
@@ -521,32 +648,49 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, reDefineHead, "XJS_DefineProperty"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_settle")) {
-		defCtx := string(reDefineHead.FindSubmatch(b)[1])
-		objs := reDefineFind.FindAllSubmatch(body, -1)
-		if len(objs) == 0 {
-			return nil, fmt.Errorf("XJS_DefineProperty: cannot find the property lookup")
+	defCtx := string(reDefineHead.FindSubmatch(b)[1])
+	objs := findAllSubmatch(reDefineFind, body)
+	if len(objs) == 0 {
+		return nil, fmt.Errorf("XJS_DefineProperty: cannot find the property lookup")
+	}
+	for _, o := range objs[1:] {
+		if !bytes.Equal(o[1], objs[0][1]) || !bytes.Equal(o[2], objs[0][2]) {
+			return nil, fmt.Errorf("XJS_DefineProperty: lookups on different objects")
 		}
-		for _, o := range objs[1:] {
-			if !bytes.Equal(o[1], objs[0][1]) || !bytes.Equal(o[2], objs[0][2]) {
-				return nil, fmt.Errorf("XJS_DefineProperty: lookups on different objects")
-			}
-		}
-		same := reDefineSame.FindAllSubmatchIndex(body, -1)
+	}
+	sameAt := func(body []byte) ([]int, error) {
+		same := findAll(reDefineSame, body)
 		if len(same) != 1 {
 			return nil, fmt.Errorf("XJS_DefineProperty: want 1 SameValue test of a data property, found %d", len(same))
 		}
-		indent := string(body[same[0][2]:same[0][3]])
-		pr := string(body[same[0][4]:same[0][5]])
-		ins := fmt.Sprintf("\n%sif prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, %s, %s, %s, %s) < 0 {\n%s\treturn -int32(1)\n%s}", indent, defCtx, objs[0][2], objs[0][1], pr, indent, indent)
-		fixed := append(append(append([]byte{}, body[:same[0][0]]...), ins...), body[same[0][0]:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return same[0], nil
 	}
+	same, err := sameAt(body)
+	if err != nil {
+		return nil, err
+	}
+	indent := string(body[same[2]:same[3]])
+	pr := string(body[same[4]:same[5]])
+	ins = fmt.Sprintf("\n%sif prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, %s, %s, %s, %s) < 0 {\n%s\treturn -int32(1)\n%s}", indent, defCtx, objs[0][2], objs[0][1], pr, indent, indent)
+	if fixed, err = insertAt("XJS_DefineProperty", body, ins, func(body []byte) (int, error) {
+		same, err := sameAt(body)
+		if err != nil {
+			return 0, err
+		}
+		return same[0], nil
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// The callers of JS_GetOwnPropertyInternal that only look at the
 	// attributes call _js_backtrace_own_flags, which does not format.
+	layout, err := descLayoutOf(b)
+	if err != nil {
+		return nil, err
+	}
 	for _, fn := range ownFlagsCallers {
-		if b, err = fixOwnFlags(b, fn.name, fn.calls); err != nil {
+		if b, err = fixOwnFlags(b, layout, fn.name, fn.calls, fn.values); err != nil {
 			return nil, err
 		}
 	}
@@ -555,27 +699,41 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, rePrintErrorHead, "_js_print_error"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_raw_stack")) {
+	// The line that reads the stack, and its indent.
+	stackRead := func(body []byte) (int, string, error) {
 		end := bytes.Index(body, []byte(", uint32(EJS_ATOM_stack))"))
 		if end < 0 {
-			return nil, fmt.Errorf("_js_print_error: cannot find the stack read")
+			return 0, "", fmt.Errorf("_js_print_error: cannot find the stack read")
 		}
 		start := bytes.LastIndex(body[:end], []byte("str = _get_prop_string(tls,"))
 		if start < 0 {
-			return nil, fmt.Errorf("_js_print_error: cannot find the stack read start")
+			return 0, "", fmt.Errorf("_js_print_error: cannot find the stack read start")
 		}
 		ls := bytes.LastIndexByte(body[:start], '\n') + 1
-		indent := string(body[ls:start])
-		guard := fmt.Sprintf("%sif _js_backtrace_raw_stack(tls, s, p) {\n%s\treturn\n%s}\n", indent, indent, indent)
-		fixed := append(append(append([]byte{}, body[:ls]...), guard...), body[ls:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return ls, string(body[ls:start]), nil
 	}
+	_, indent, err = stackRead(body)
+	if err != nil {
+		return nil, err
+	}
+	guard := fmt.Sprintf("%sif _js_backtrace_raw_stack(tls, s, p) {\n%s\treturn\n%s}\n", indent, indent, indent)
+	if fixed, err = insertAt("_js_print_error", body, guard, func(body []byte) (int, error) {
+		ls, _, err := stackRead(body)
+		return ls, err
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	// js_print_object: a placeholder for a marker value.
 	if body, err = funcBody(b, rePrintObjectHead, "_js_print_object"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte("_js_backtrace_print_pending")) {
+	if n := bytes.Count(body, []byte("_js_backtrace_print_pending")); n != 0 {
+		if n != 1 || len(findAll(rePrintObjectWrapped, body)) != 1 {
+			return nil, fmt.Errorf("_js_print_object: the call of _js_backtrace_print_pending is not around the value print")
+		}
+	} else {
 		loc := rePrintObjectVal.FindSubmatchIndex(body)
 		if loc == nil {
 			return nil, fmt.Errorf("_js_print_object: cannot find the value print")
@@ -591,15 +749,27 @@ func fixBacktrace(b []byte) ([]byte, error) {
 	if body, err = funcBody(b, reMemoryHead, "XJS_ComputeMemoryUsage"); err != nil {
 		return nil, err
 	}
-	if !bytes.Contains(body, []byte(memoryUsage)) {
-		loc := reMemoryProp.FindAllSubmatchIndex(body, -1)
+	propSize := func(body []byte) ([]int, error) {
+		loc := findAll(reMemoryProp, body)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("XJS_ComputeMemoryUsage: want 1 size of a property value, found %d", len(loc))
 		}
-		indent := body[loc[0][2]:loc[0][3]]
-		fixed := append(append(append(body[:loc[0][1]:loc[0][1]], indent...), memoryUsage...), body[loc[0][1]:]...)
-		b = bytes.Replace(b, body, fixed, 1)
+		return loc[0], nil
 	}
+	loc, err := propSize(body)
+	if err != nil {
+		return nil, err
+	}
+	if fixed, err = insertAt("XJS_ComputeMemoryUsage", body, string(body[loc[2]:loc[3]])+memoryUsage, func(body []byte) (int, error) {
+		loc, err := propSize(body)
+		if err != nil {
+			return 0, err
+		}
+		return loc[1], nil
+	}); err != nil {
+		return nil, err
+	}
+	b = bytes.Replace(b, body, fixed, 1)
 
 	if !*slots {
 		if err := auditSlots(b); err != nil {
@@ -645,8 +815,8 @@ func fixInterpreter(b []byte) ([]byte, error) {
 	}
 	fixed := reInterpGuard.ReplaceAll(body, nil)
 	finds := bytes.Count(fixed, []byte("_find_own_property("))
-	puts := len(reInterpPut.FindAll(fixed, -1))
-	sites := reInterpField.FindAllSubmatchIndex(fixed, -1)
+	puts := len(findAll(reInterpPut, fixed))
+	sites := findAll(reInterpField, fixed)
 	if len(sites) == 0 {
 		return nil, fmt.Errorf("_JS_CallInternal: no inline property read found")
 	}
@@ -675,25 +845,29 @@ func fixInterpreter(b []byte) ([]byte, error) {
 // with a descriptor only to read its attributes (or a getter or setter),
 // never its value, and how many calls each has. They call
 // _js_backtrace_own_flags instead, so that they do not format a pending
-// stack.
+// stack. values is the number of reads of the value of such a descriptor:
+// those of XJS_SetPropertyInternal free it (JS_FreeValue inlined). Any other
+// use of the descriptor than reading its attributes, freeing it or passing
+// it to the exotic get_own_property stops fixlib (see descUses).
 var ownFlagsCallers = []struct {
-	name  string
-	calls int
+	name   string
+	calls  int
+	values int
 }{
-	{"_JS_GetOwnPropertyNamesInternal", 1},  // enumerability of exotic keys
-	{"XJS_SetPropertyInternal", 1},          // writable before a redefine
-	{"_JS_CopyDataProperties", 2},           // enumerability, values read by JS_GetProperty
-	{"_JS_GetOwnPropertyNames2", 1},         // enumerability, values read by JS_GetProperty
-	{"_js_object_seal", 1},                  // writable, for freeze
-	{"_js_object_isSealed", 1},              // configurable and writable
-	{"_js_object_propertyIsEnumerable", 1},  // enumerable
-	{"_js_object___lookupGetter__", 1},      // getter or setter
-	{"_js_proxy_has", 1},                    // configurable
-	{"_js_proxy_delete_property", 1},        // configurable
-	{"_js_proxy_get_own_property_names", 1}, // configurable
+	{"_JS_GetOwnPropertyNamesInternal", 1, 0},  // enumerability of exotic keys
+	{"XJS_SetPropertyInternal", 1, 2},          // writable before a redefine
+	{"_JS_CopyDataProperties", 2, 0},           // enumerability, values read by JS_GetProperty
+	{"_JS_GetOwnPropertyNames2", 1, 0},         // enumerability, values read by JS_GetProperty
+	{"_js_object_seal", 1, 0},                  // writable, for freeze
+	{"_js_object_isSealed", 1, 0},              // configurable and writable
+	{"_js_object_propertyIsEnumerable", 1, 0},  // enumerable
+	{"_js_object___lookupGetter__", 1, 0},      // getter or setter
+	{"_js_proxy_has", 1, 0},                    // configurable
+	{"_js_proxy_delete_property", 1, 0},        // configurable
+	{"_js_proxy_get_own_property_names", 1, 0}, // configurable
 }
 
-func fixOwnFlags(b []byte, name string, calls int) ([]byte, error) {
+func fixOwnFlags(b []byte, layout descLayout, name string, calls, values int) ([]byte, error) {
 	re := regexp.MustCompile(`\nfunc ` + regexp.QuoteMeta(name) + `\(tls \*libc\.TLS, [^\n]*\{\n`)
 	body, err := funcBody(b, re, name)
 	if err != nil {
@@ -703,12 +877,307 @@ func fixOwnFlags(b []byte, name string, calls int) ([]byte, error) {
 	if n := bytes.Count(fixed, []byte("_js_backtrace_own_flags(tls, ")); n != calls {
 		return nil, fmt.Errorf("%s: want %d calls of JS_GetOwnPropertyInternal, found %d", name, calls, n)
 	}
+	uses, err := descUses(name, fixed, layout)
+	if err != nil {
+		return nil, err
+	}
+	for use, n := range uses {
+		switch use {
+		case "call _js_backtrace_own_flags", "call _js_free_desc", "call indirect":
+		case "value":
+			if n != values {
+				return nil, fmt.Errorf("%s: %d reads of the value of a descriptor from JS_GetOwnPropertyInternal, want %d: a caller that reads the value must not get _js_backtrace_own_flags", name, n, values)
+			}
+		default:
+			return nil, fmt.Errorf("%s: a descriptor from JS_GetOwnPropertyInternal is used some other way (%s): a caller that reads the value must not get _js_backtrace_own_flags", name, use)
+		}
+	}
+	if uses["value"] != values {
+		return nil, fmt.Errorf("%s: %d reads of the value of a descriptor from JS_GetOwnPropertyInternal, want %d", name, uses["value"], values)
+	}
 	return bytes.Replace(b, body, fixed, 1), nil
+}
+
+// descLayout is where the value of a JSPropertyDescriptor ends, and its
+// size, in the file's target: the flags come first, then the value, the
+// getter and the setter.
+type descLayout struct {
+	valueEnd, size int
+}
+
+var reDescType = regexp.MustCompile(`\ntype TJSPropertyDescriptor = struct \{\n((?:\t\w+ +[^\n]+\n)+)\}\n`)
+
+// descLayoutOf reads the layout of JSPropertyDescriptor from the Go type
+// ccgo wrote, which has the layout of the C type: ccgo adds a padding
+// field where Go would align a field otherwise (linux/arm). A JSValue is a
+// struct of 16 bytes on 64-bit targets and a uint64 on 32-bit ones, which
+// Go aligns to 4 there.
+func descLayoutOf(b []byte) (descLayout, error) {
+	var word int
+	switch {
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint64\n")):
+		word = 8
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint32\n")):
+		word = 4
+	default:
+		return descLayout{}, fmt.Errorf("cannot tell the word size from Tsize_t")
+	}
+	var value [2]int // size and alignment of a JSValue
+	switch {
+	case bytes.Contains(b, []byte(cellsValue)) && word == 8:
+		value = [2]int{16, 8}
+	case bytes.Contains(b, []byte("\ntype TJSValue = uint64\n")):
+		value = [2]int{8, min(8, word)}
+	default:
+		return descLayout{}, fmt.Errorf("TJSValue is neither a struct of 16 bytes on a 64-bit target nor a uint64")
+	}
+	m := findAllSubmatch(reDescType, b)
+	if len(m) != 1 {
+		return descLayout{}, fmt.Errorf("want 1 type TJSPropertyDescriptor, found %d", len(m))
+	}
+	var l descLayout
+	off, align, names := 0, 1, []string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(m[0][1]), "\n"), "\n") {
+		f := strings.Fields(line)
+		var size, a int
+		switch t := f[1]; {
+		case t == "int32":
+			size, a = 4, 4
+		case t == "TJSValue":
+			size, a = value[0], value[1]
+		case t == "[0]uint32":
+			size, a = 0, 4
+		case strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]byte"):
+			n, err := strconv.Atoi(t[1 : len(t)-len("]byte")])
+			if err != nil {
+				return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: field %s: %v", f[0], err)
+			}
+			size, a = n, 1
+		default:
+			return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: field %s of type %s", f[0], t)
+		}
+		off = (off + a - 1) / a * a
+		align = max(align, a)
+		off += size
+		if f[0] == "Fvalue" {
+			l.valueEnd = off
+		}
+		if !strings.HasPrefix(f[0], "F__ccgo_align") {
+			names = append(names, f[0])
+		}
+	}
+	if strings.Join(names, " ") != "Fflags Fvalue Fgetter Fsetter" {
+		return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: fields %s, want Fflags Fvalue Fgetter Fsetter", strings.Join(names, " "))
+	}
+	l.size = (off + align - 1) / align * align
+	return l, nil
+}
+
+// descUses counts how the function in body uses the descriptors it passes
+// to _js_backtrace_own_flags, cells bp+K of its TLS frame: "value" for a
+// read of the value field, "raw" for an address in the cell up to where
+// the value ends (bp + K + N, or bp + N), or past its end, "call f" for a
+// call it is passed to, and "other" for anything else. Reads of the flags,
+// the getter and the setter are not counted.
+func descUses(name string, body []byte, layout descLayout) (map[string]int, error) {
+	f, err := parseFunc(name, body)
+	if err != nil {
+		return nil, err
+	}
+	// The descriptors: cells bp+K, or none (libc.UintptrFromInt32(0)).
+	// Any other descriptor cannot be followed.
+	cells := map[int]bool{}
+	var bad string
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok && isIdent(c.Fun, "_js_backtrace_own_flags") && len(c.Args) == 5 {
+			if k, ok := bpOffset(c.Args[2]); ok {
+				cells[k] = true
+			} else if z, ok := c.Args[2].(*ast.CallExpr); !ok || !isSelector(z.Fun, "libc", "UintptrFromInt32") || len(z.Args) != 1 || !isZero(z.Args[0]) {
+				bad = f.text(c.Args[2])
+			}
+		}
+		return true
+	})
+	if bad != "" {
+		return nil, fmt.Errorf("%s: the descriptor %s is neither a cell of the TLS frame nor 0", name, bad)
+	}
+	uses := map[string]int{}
+	var stack []ast.Node
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
+		e, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		k, ok := bpOffset(e)
+		if !ok {
+			return true
+		}
+		if a, ok := stack[len(stack)-2].(*ast.AssignStmt); ok && a.Tok == token.DEFINE {
+			return false // bp := tls.Alloc(N)
+		}
+		if cells[k] {
+			if use := descUse(stack, layout); use != "" {
+				uses[use]++
+			}
+			return false
+		}
+		for c := range cells {
+			if c < k && k < c+layout.valueEnd { // the flags and the value
+				uses["raw"]++
+			}
+		}
+		return false
+	})
+	return uses, nil
+}
+
+// isZero reports whether e is the literal 0.
+func isZero(e ast.Expr) bool {
+	n, ok := intLit(e)
+	return ok && n == 0
+}
+
+// bpOffset returns K for bp or bp + K.
+func bpOffset(e ast.Expr) (int, bool) {
+	if isIdent(e, "bp") {
+		return 0, true
+	}
+	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == token.ADD && isIdent(be.X, "bp") {
+		return intLit(be.Y)
+	}
+	return 0, false
+}
+
+// descUse names the use of the descriptor at the top of stack for descUses.
+func descUse(stack []ast.Node, layout descLayout) string {
+	parent := func(i int) ast.Node {
+		if i < 0 {
+			return nil
+		}
+		return stack[i]
+	}
+	i := len(stack) - 2
+	switch p := parent(i).(type) {
+	case *ast.BinaryExpr:
+		if n, ok := intLit(p.Y); ok && layout.valueEnd <= n && n < layout.size {
+			return "" // the getter or the setter
+		}
+		return "raw"
+	case *ast.CallExpr:
+		if up := isIdent(p.Fun, "__ccgo_up"); up || isSelector(p.Fun, "unsafe", "Pointer") {
+			// (*(*TJSPropertyDescriptor)(unsafe.Pointer(d))).F, before fixUp
+			// (**(**TJSPropertyDescriptor)(__ccgo_up(d))).F, or either
+			// without the outer parentheses.
+			stars := 1
+			if up {
+				stars = 2
+			}
+			conv, ok := parent(i - 1).(*ast.CallExpr)
+			if !ok {
+				return "other"
+			}
+			typ, ok := conv.Fun.(*ast.ParenExpr)
+			if !ok {
+				return "other"
+			}
+			t := typ.X
+			for range stars {
+				st, ok := t.(*ast.StarExpr)
+				if !ok {
+					return "other"
+				}
+				t = st.X
+			}
+			if !isIdent(t, "TJSPropertyDescriptor") {
+				return "other"
+			}
+			j := i - 2
+			for range stars {
+				if _, ok := parent(j).(*ast.StarExpr); !ok {
+					return "other"
+				}
+				j--
+			}
+			if _, ok := parent(j).(*ast.ParenExpr); ok {
+				j--
+			}
+			sel, ok := parent(j).(*ast.SelectorExpr)
+			if !ok {
+				return "other"
+			}
+			switch sel.Sel.Name {
+			case "Fflags", "Fgetter", "Fsetter":
+				return ""
+			case "Fvalue":
+				return "value"
+			}
+			return "other"
+		}
+		switch fun := p.Fun.(type) {
+		case *ast.Ident:
+			return "call " + fun.Name
+		case *ast.ParenExpr:
+			return "call indirect"
+		}
+		return "other"
+	}
+	return "other"
+}
+
+// findAll is FindAllSubmatchIndex, except that for a pattern that ends
+// with a newline a match may start with the newline the last one ends
+// with: a pattern of whole lines then finds a line right after a match.
+func findAll(re *regexp.Regexp, b []byte) [][]int {
+	if !strings.HasSuffix(re.String(), `\n`) {
+		return re.FindAllSubmatchIndex(b, -1)
+	}
+	var all [][]int
+	for pos := 0; pos <= len(b); {
+		loc := re.FindSubmatchIndex(b[pos:])
+		if loc == nil {
+			break
+		}
+		for i := range loc {
+			if loc[i] >= 0 {
+				loc[i] += pos
+			}
+		}
+		all = append(all, loc)
+		switch {
+		case loc[1] == loc[0]:
+			pos = loc[1] + 1
+		case b[loc[1]-1] == '\n':
+			pos = max(loc[1]-1, loc[0]+1)
+		default:
+			pos = loc[1]
+		}
+	}
+	return all
+}
+
+// findAllSubmatch is findAll with the text of each submatch.
+func findAllSubmatch(re *regexp.Regexp, b []byte) [][][]byte {
+	var all [][][]byte
+	for _, loc := range findAll(re, b) {
+		m := make([][]byte, len(loc)/2)
+		for i := range m {
+			if loc[2*i] >= 0 {
+				m[i] = b[loc[2*i]:loc[2*i+1]]
+			}
+		}
+		all = append(all, m)
+	}
+	return all
 }
 
 // funcBody returns the text of the function whose head re matches.
 func funcBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
-	loc := re.FindAllIndex(b, -1)
+	loc := findAll(re, b)
 	if len(loc) != 1 {
 		return nil, fmt.Errorf("want 1 function %s, found %d", name, len(loc))
 	}
@@ -733,7 +1202,7 @@ const linkedImport = "\tlibquickjs \"github.com/liustack/quickjs/lib\"\n"
 // stack limit of MaxStackSlots TLS slots that the runner's copy used.
 func fixRunner(b, engine []byte) ([]byte, error) {
 	exported := map[string]string{} // name -> parameters and result
-	for _, m := range reFuncHead.FindAllSubmatch(engine, -1) {
+	for _, m := range findAllSubmatch(reFuncHead, engine) {
 		if name := string(m[1]); name[0] == 'X' {
 			exported[name[1:]] = signature(string(m[2]), string(m[3]))
 		}
@@ -741,7 +1210,7 @@ func fixRunner(b, engine []byte) ([]byte, error) {
 
 	var out bytes.Buffer
 	last, n := 0, 0
-	for _, loc := range reFuncHead.FindAllSubmatchIndex(b, -1) {
+	for _, loc := range findAll(reFuncHead, b) {
 		name := string(b[loc[2]:loc[3]])
 		if name[0] != 'x' || name == "x_init" {
 			continue
