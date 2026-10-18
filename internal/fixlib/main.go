@@ -679,8 +679,12 @@ func fixBacktrace(b []byte) ([]byte, error) {
 
 	// The callers of JS_GetOwnPropertyInternal that only look at the
 	// attributes call _js_backtrace_own_flags, which does not format.
+	layout, err := descLayoutOf(b)
+	if err != nil {
+		return nil, err
+	}
 	for _, fn := range ownFlagsCallers {
-		if b, err = fixOwnFlags(b, fn.name, fn.calls, fn.values); err != nil {
+		if b, err = fixOwnFlags(b, layout, fn.name, fn.calls, fn.values); err != nil {
 			return nil, err
 		}
 	}
@@ -857,7 +861,7 @@ var ownFlagsCallers = []struct {
 	{"_js_proxy_get_own_property_names", 1, 0}, // configurable
 }
 
-func fixOwnFlags(b []byte, name string, calls, values int) ([]byte, error) {
+func fixOwnFlags(b []byte, layout descLayout, name string, calls, values int) ([]byte, error) {
 	re := regexp.MustCompile(`\nfunc ` + regexp.QuoteMeta(name) + `\(tls \*libc\.TLS, [^\n]*\{\n`)
 	body, err := funcBody(b, re, name)
 	if err != nil {
@@ -867,7 +871,7 @@ func fixOwnFlags(b []byte, name string, calls, values int) ([]byte, error) {
 	if n := bytes.Count(fixed, []byte("_js_backtrace_own_flags(tls, ")); n != calls {
 		return nil, fmt.Errorf("%s: want %d calls of JS_GetOwnPropertyInternal, found %d", name, calls, n)
 	}
-	uses, err := descUses(name, fixed)
+	uses, err := descUses(name, fixed, layout)
 	if err != nil {
 		return nil, err
 	}
@@ -888,13 +892,88 @@ func fixOwnFlags(b []byte, name string, calls, values int) ([]byte, error) {
 	return bytes.Replace(b, body, fixed, 1), nil
 }
 
+// descLayout is where the value of a JSPropertyDescriptor ends, and its
+// size, in the file's target: the flags come first, then the value, the
+// getter and the setter.
+type descLayout struct {
+	valueEnd, size int
+}
+
+var reDescType = regexp.MustCompile(`\ntype TJSPropertyDescriptor = struct \{\n((?:\t\w+ +[^\n]+\n)+)\}\n`)
+
+// descLayoutOf reads the layout of JSPropertyDescriptor from the Go type
+// ccgo wrote, which has the layout of the C type: ccgo adds a padding
+// field where Go would align a field otherwise (linux/arm). A JSValue is a
+// struct of 16 bytes on 64-bit targets and a uint64 on 32-bit ones, which
+// Go aligns to 4 there.
+func descLayoutOf(b []byte) (descLayout, error) {
+	var word int
+	switch {
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint64\n")):
+		word = 8
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint32\n")):
+		word = 4
+	default:
+		return descLayout{}, fmt.Errorf("cannot tell the word size from Tsize_t")
+	}
+	var value [2]int // size and alignment of a JSValue
+	switch {
+	case bytes.Contains(b, []byte(cellsValue)) && word == 8:
+		value = [2]int{16, 8}
+	case bytes.Contains(b, []byte("\ntype TJSValue = uint64\n")):
+		value = [2]int{8, min(8, word)}
+	default:
+		return descLayout{}, fmt.Errorf("TJSValue is neither a struct of 16 bytes on a 64-bit target nor a uint64")
+	}
+	m := reDescType.FindAllSubmatch(b, -1)
+	if len(m) != 1 {
+		return descLayout{}, fmt.Errorf("want 1 type TJSPropertyDescriptor, found %d", len(m))
+	}
+	var l descLayout
+	off, align, names := 0, 1, []string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(m[0][1]), "\n"), "\n") {
+		f := strings.Fields(line)
+		var size, a int
+		switch t := f[1]; {
+		case t == "int32":
+			size, a = 4, 4
+		case t == "TJSValue":
+			size, a = value[0], value[1]
+		case t == "[0]uint32":
+			size, a = 0, 4
+		case strings.HasPrefix(t, "[") && strings.HasSuffix(t, "]byte"):
+			n, err := strconv.Atoi(t[1 : len(t)-len("]byte")])
+			if err != nil {
+				return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: field %s: %v", f[0], err)
+			}
+			size, a = n, 1
+		default:
+			return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: field %s of type %s", f[0], t)
+		}
+		off = (off + a - 1) / a * a
+		align = max(align, a)
+		off += size
+		if f[0] == "Fvalue" {
+			l.valueEnd = off
+		}
+		if !strings.HasPrefix(f[0], "F__ccgo_align") {
+			names = append(names, f[0])
+		}
+	}
+	if strings.Join(names, " ") != "Fflags Fvalue Fgetter Fsetter" {
+		return descLayout{}, fmt.Errorf("TJSPropertyDescriptor: fields %s, want Fflags Fvalue Fgetter Fsetter", strings.Join(names, " "))
+	}
+	l.size = (off + align - 1) / align * align
+	return l, nil
+}
+
 // descUses counts how the function in body uses the descriptors it passes
 // to _js_backtrace_own_flags, cells bp+K of its TLS frame: "value" for a
-// read of the value field, "raw" for an address in the cell (bp + K + N,
-// or bp + N up to where the value ends),
-// "call f" for a call it is passed to, and "other" for anything else. Reads
-// of the flags, the getter and the setter are not counted.
-func descUses(name string, body []byte) (map[string]int, error) {
+// read of the value field, "raw" for an address in the cell up to where
+// the value ends (bp + K + N, or bp + N), or past its end, "call f" for a
+// call it is passed to, and "other" for anything else. Reads of the flags,
+// the getter and the setter are not counted.
+func descUses(name string, body []byte, layout descLayout) (map[string]int, error) {
 	f, err := parseFunc(name, body)
 	if err != nil {
 		return nil, err
@@ -928,13 +1007,13 @@ func descUses(name string, body []byte) (map[string]int, error) {
 			return false // bp := tls.Alloc(N)
 		}
 		if cells[k] {
-			if use := descUse(stack); use != "" {
+			if use := descUse(stack, layout); use != "" {
 				uses[use]++
 			}
 			return false
 		}
 		for c := range cells {
-			if c < k && k < c+16 { // the flags and the value
+			if c < k && k < c+layout.valueEnd { // the flags and the value
 				uses["raw"]++
 			}
 		}
@@ -955,7 +1034,7 @@ func bpOffset(e ast.Expr) (int, bool) {
 }
 
 // descUse names the use of the descriptor at the top of stack for descUses.
-func descUse(stack []ast.Node) string {
+func descUse(stack []ast.Node, layout descLayout) string {
 	parent := func(i int) ast.Node {
 		if i < 0 {
 			return nil
@@ -965,7 +1044,7 @@ func descUse(stack []ast.Node) string {
 	i := len(stack) - 2
 	switch p := parent(i).(type) {
 	case *ast.BinaryExpr:
-		if n, ok := intLit(p.Y); ok && n >= 16 {
+		if n, ok := intLit(p.Y); ok && layout.valueEnd <= n && n < layout.size {
 			return "" // the getter or the setter
 		}
 		return "raw"

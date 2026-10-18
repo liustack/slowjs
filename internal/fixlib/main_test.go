@@ -318,10 +318,37 @@ func TestOwnFlagsRejectsValueRead(t *testing.T) {
 	for _, text := range []string{
 		"\t\t\t_ = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp + 48))).Fvalue\n",
 		"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 48 + 8))\n",
+		// The tag of the value: on 64-bit targets the value is bytes 8 to 24.
+		"\t\t\t_ = *(*int64)(unsafe.Pointer(bp + 48 + 16))\n",
+		"\t\t\t_ = *(*int64)(unsafe.Pointer(bp + 64))\n",
 		"\t\t\t_js_other(tls, bp+48)\n",
 	} {
 		if _, err := fixBacktrace(mutate(t, b, head, at, text)); err == nil {
 			t.Errorf("%q went through", text)
+		}
+	}
+
+	// On linux/386 the value is bytes 4 to 12 and the getter starts at 12.
+	b32, err := os.ReadFile(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	at32 := "\t\t\t_js_free_desc(tls, ctx2, bp+8)\n"
+	for _, c := range []struct {
+		text string
+		ok   bool
+	}{
+		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 8 + 8))\n", false},
+		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 16))\n", false},
+		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 8 + 12))\n", true},
+		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 20))\n", true},
+	} {
+		_, err := fixBacktrace(mutate(t, b32, head, at32, c.text))
+		if c.ok && err != nil {
+			t.Errorf("linux/386: %q: %v", c.text, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("linux/386: %q went through", c.text)
 		}
 	}
 }
@@ -337,7 +364,7 @@ func TestDescUsesBothForms(t *testing.T) {
 		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 40))\n" +
 		"\t_ = *(*uintptr)(unsafe.Pointer(bp + 8))\n" +
 		"\t_js_free_desc(tls, 0, bp)\n}\n"
-	uses, err := descUses("f", []byte(body))
+	uses, err := descUses("f", []byte(body), descLayout{valueEnd: 24, size: 56})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,6 +393,31 @@ func TestBacktraceRejectsTextElsewhere(t *testing.T) {
 	} {
 		if _, err := fixBacktrace(moveLines(t, b, c.head, c.first, c.n)); err == nil {
 			t.Errorf("%s: %q elsewhere went through", c.head, c.first)
+		}
+	}
+}
+
+// The value of a descriptor ends at byte 24 of 56 on 64-bit targets, 12 of
+// 28 on linux/386, which aligns a uint64 to 4, and 16 of 32 on linux/arm.
+func TestDescLayout(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := descLayoutOf(b)
+		if err != nil {
+			t.Fatalf("%s: %v", fn, err)
+		}
+		want := descLayout{valueEnd: 24, size: 56}
+		switch filepath.Base(fn) {
+		case "ccgo_linux_386.go":
+			want = descLayout{valueEnd: 12, size: 28}
+		case "ccgo_linux_arm.go":
+			want = descLayout{valueEnd: 16, size: 32}
+		}
+		if got != want {
+			t.Errorf("%s: %+v, want %+v", fn, got, want)
 		}
 	}
 }
