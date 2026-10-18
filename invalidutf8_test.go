@@ -68,7 +68,7 @@ func TestGoInvalidUTF8(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, s := range invalidUTF8 {
+	for i, s := range invalidUTF8 {
 		cur = s
 		var want []string
 		for _, c := range utf16.Encode([]rune(s)) {
@@ -125,14 +125,17 @@ func TestGoInvalidUTF8(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// So is the name of a Go function.
+		// So is the name of a Go function. A VM takes a name once, and some
+		// of the strings are the same name in javascript ("\xff" and "\uFFFD"
+		// are both U+FFFD), so each gets a prefix of its own.
 		if _, err := m.Eval(`Object.defineProperty(globalThis, 'before', {value: new Set(Object.getOwnPropertyNames(globalThis)), configurable: true, writable: true})`, EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
-		if err := m.RegisterFunc(s, func() int { return 2 }, false); err != nil {
+		prefix := fmt.Sprintf("f%d_", i)
+		if err := m.RegisterFunc(prefix+s, func() int { return 2 }, false); err != nil {
 			t.Fatal(err)
 		}
-		got, err = m.Eval(`units(Object.getOwnPropertyNames(globalThis).find(k => !before.has(k) && k !== 'before'))`, EvalGlobal)
+		got, err = m.Eval(fmt.Sprintf(`units(Object.getOwnPropertyNames(globalThis).find(k => !before.has(k) && k !== 'before').slice(%d))`, len(prefix)), EvalGlobal)
 		check("function name", got, err)
 		if _, err := m.Eval(`for (const k of Object.getOwnPropertyNames(globalThis)) if (!before.has(k) && k !== 'before') delete globalThis[k]`, EvalGlobal); err != nil {
 			t.Fatal(err)
