@@ -978,15 +978,23 @@ func descUses(name string, body []byte, layout descLayout) (map[string]int, erro
 	if err != nil {
 		return nil, err
 	}
+	// The descriptors: cells bp+K, or none (libc.UintptrFromInt32(0)).
+	// Any other descriptor cannot be followed.
 	cells := map[int]bool{}
+	var bad string
 	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
 		if c, ok := n.(*ast.CallExpr); ok && isIdent(c.Fun, "_js_backtrace_own_flags") && len(c.Args) == 5 {
 			if k, ok := bpOffset(c.Args[2]); ok {
 				cells[k] = true
+			} else if z, ok := c.Args[2].(*ast.CallExpr); !ok || !isSelector(z.Fun, "libc", "UintptrFromInt32") || len(z.Args) != 1 || !isZero(z.Args[0]) {
+				bad = f.text(c.Args[2])
 			}
 		}
 		return true
 	})
+	if bad != "" {
+		return nil, fmt.Errorf("%s: the descriptor %s is neither a cell of the TLS frame nor 0", name, bad)
+	}
 	uses := map[string]int{}
 	var stack []ast.Node
 	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
@@ -1020,6 +1028,12 @@ func descUses(name string, body []byte, layout descLayout) (map[string]int, erro
 		return false
 	})
 	return uses, nil
+}
+
+// isZero reports whether e is the literal 0.
+func isZero(e ast.Expr) bool {
+	n, ok := intLit(e)
+	return ok && n == 0
 }
 
 // bpOffset returns K for bp or bp + K.

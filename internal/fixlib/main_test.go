@@ -328,6 +328,16 @@ func TestOwnFlagsRejectsValueRead(t *testing.T) {
 		}
 	}
 
+	// A descriptor that is neither a cell of the frame nor 0 cannot be
+	// followed.
+	call := []byte("_js_backtrace_own_flags(tls, ctx2, bp+48,")
+	i := bytes.Index(b, []byte("\n"+head))
+	j := bytes.Index(b[i:], call)
+	other := append(append(append([]byte{}, b[:i+j]...), "_js_backtrace_own_flags(tls, ctx2, pdesc,"...), b[i+j+len(call):]...)
+	if _, err := fixBacktrace(other); err == nil {
+		t.Error("a descriptor pdesc went through")
+	}
+
 	// On linux/386 the value is bytes 4 to 12 and the getter starts at 12.
 	b32, err := os.ReadFile(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
 	if err != nil {
