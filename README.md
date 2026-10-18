@@ -748,9 +748,11 @@ Conflicts to expect:
   write that reaches into a cell, a type whose size it does not know, a use
   of `bp` that is not listed (such as `libc.Xmemset(tls, bp, 0, 80)`) or a
   listed one that is gone, read that line. A new local in the interpreter
-  moves the offsets and is the usual cause. If the use cannot touch the
-  bytes of a cell, add it to `cellsFrameUses` with the reason, or fix the
-  count, or add the type to `valueSizes`. If it can, the cells must stay in
+  moves the offsets and is the usual cause: `go run ./internal/fixlib
+  -cells` prints the uses as the files have them, each with the named
+  local it starts in. If the use cannot touch the bytes of a cell, put it
+  into `cellsFrameUses` with the reason, or fix the count, or add the type
+  to `valueSizes`. If it can, the cells must stay in
   the frame. In a fixed file, any use of the bytes where the cells were is
   an error too: nothing writes them any more.
   If it reports that a value of `pinVars` (`internal/fixlib/pin.go`) is

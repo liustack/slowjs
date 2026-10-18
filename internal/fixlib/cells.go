@@ -9,10 +9,14 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // The interpreter inlines JS_DupValue and JS_FreeValue, and ccgo gives the
@@ -56,7 +60,10 @@ var cellFiles = map[string]bool{
 
 // cellsFrameUses are the uses of bp in _JS_CallInternal other than a read
 // or a write through unsafe.Pointer(bp + K), and how many times each comes
-// in every file of cellFiles. None of them may reach a cell.
+// in every file of cellFiles. None of them may reach a cell. A new local
+// in the interpreter moves the offsets: go run ./internal/fixlib -cells
+// prints the map as the files have it, with the named local each use
+// starts in.
 var cellsFrameUses = map[string]int{
 	"_find_own_property(bp+288)":                 1, // pr, a named local: the property found goes there
 	"_find_own_property(bp+312)":                 1, // pr
@@ -80,6 +87,7 @@ const (
 
 var (
 	reNamedCell  = regexp.MustCompile(`/\* \w+ at bp\+(\d+) \*/`)
+	reNamedLocal = regexp.MustCompile(`(?m)^\tvar _ /\* (\w+) at bp\+(\d+) \*/ (.+)$`)
 	reNamedType  = regexp.MustCompile(`\n\tvar _ /\* \w+ at bp\+(\d+) \*/ ([^\n]+)\n`)
 	reCellsLine  = regexp.MustCompile(`\n\tvar cell(\d+), cell(\d+) TJSValue ` + regexp.QuoteMeta(cellsInGo))
 	reCellsUnion = regexp.MustCompile(`\ntype TJSValueUnion = struct \{\n(?:\t\w+ +\[0\]\w+\n)*\tFuint641 +Tuint64_t\n\}\n`)
@@ -341,7 +349,7 @@ func checkFrameUses(f *parsedFunc, others []bpUse, cells []int) error {
 			}
 		}
 		if found[u.key] == cellsFrameUses[u.key] {
-			return fmt.Errorf("_JS_CallInternal: %s: a use of bp that cellsFrameUses does not list, or more of it: check that it cannot reach a cell: %s", u.key, f.lineOf(u.node))
+			return fmt.Errorf("_JS_CallInternal: %s: a use of bp that cellsFrameUses does not list, or more of it: check that it cannot reach a cell (go run ./internal/fixlib -cells prints the uses): %s", u.key, f.lineOf(u.node))
 		}
 		found[u.key]++
 	}
@@ -352,10 +360,127 @@ func checkFrameUses(f *parsedFunc, others []bpUse, cells []int) error {
 	sort.Strings(keys)
 	for _, key := range keys {
 		if n := cellsFrameUses[key]; found[key] != n {
-			return fmt.Errorf("_JS_CallInternal: %s: listed in cellsFrameUses %d times, found %d", key, n, found[key])
+			return fmt.Errorf("_JS_CallInternal: %s: listed in cellsFrameUses %d times, found %d (go run ./internal/fixlib -cells prints the uses)", key, n, found[key])
 		}
 	}
 	return nil
+}
+
+// cellsReport returns the uses of bp in _JS_CallInternal that
+// cellsFrameUses lists, in its form, for the files of cellFiles among
+// files, with fixlib's changes before fixCells made in memory. Each line
+// says which named local the use starts in. Every file must have the same
+// uses.
+func cellsReport(files []string, hw []*ast.File) (string, error) {
+	sort.Strings(files)
+	var report, first string
+	for _, fn := range files {
+		name := filepath.Base(fn)
+		if !cellFiles[name] {
+			continue
+		}
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			return "", err
+		}
+		if b, err = fixBeforeUp(b, hw, name); err != nil {
+			return "", fmt.Errorf("%s: %v", fn, err)
+		}
+		if b, err = fixUp(b); err != nil {
+			return "", fmt.Errorf("%s: %v", fn, err)
+		}
+		got, err := frameUsesOf(b)
+		if err != nil {
+			return "", fmt.Errorf("%s: %v", fn, err)
+		}
+		if first == "" {
+			report, first = got, name
+		} else if got != report {
+			return "", fmt.Errorf("%s and %s use the frame of _JS_CallInternal differently:\n%s\n%s", first, name, report, got)
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("none of the files is in cellFiles")
+	}
+	return report, nil
+}
+
+// frameUsesOf prints the uses of bp of _JS_CallInternal in b for
+// cellsReport.
+func frameUsesOf(b []byte) (string, error) {
+	body, err := funcBody(b, reCallInternal, "_JS_CallInternal")
+	if err != nil {
+		return "", err
+	}
+	f, err := parseFunc("_JS_CallInternal", body)
+	if err != nil {
+		return "", err
+	}
+	_, others, err := bpUses(f)
+	if err != nil {
+		return "", err
+	}
+	type local struct {
+		name string
+		k    int
+		size int // 0 if not known
+	}
+	var locals []local
+	for _, m := range reNamedLocal.FindAllSubmatch(body, -1) {
+		k, _ := strconv.Atoi(string(m[2]))
+		l := local{name: string(m[1]), k: k}
+		if e, err := parser.ParseExpr(string(m[3])); err == nil {
+			l.size, _ = typeSize(e)
+		}
+		locals = append(locals, l)
+	}
+	sort.Slice(locals, func(i, j int) bool { return locals[i].k < locals[j].k })
+	where := func(e ast.Expr) string {
+		k, ok := baseOffset(e)
+		if be, isSum := e.(*ast.BinaryExpr); isSum && be.Op == token.ADD && isIdent(be.X, "bp") {
+			if c, isCall := be.Y.(*ast.CallExpr); isCall && isIdent(c.Fun, "uintptr") && len(c.Args) == 1 {
+				k, ok = intLit(c.Args[0])
+			}
+		}
+		if !ok {
+			return "not a constant offset"
+		}
+		var at *local
+		for i := range locals {
+			if locals[i].k <= k {
+				at = &locals[i]
+			}
+		}
+		switch {
+		case at == nil:
+			return fmt.Sprintf("before the named locals, at bp+%d", k)
+		case at.k == k:
+			return fmt.Sprintf("%s at bp+%d", at.name, at.k)
+		case at.size == 0:
+			return fmt.Sprintf("%d bytes into %s at bp+%d, of a size not known", k-at.k, at.name, at.k)
+		case k < at.k+at.size:
+			return fmt.Sprintf("in %s at bp+%d", at.name, at.k)
+		}
+		return fmt.Sprintf("%d bytes past %s at bp+%d", k-at.k-at.size, at.name, at.k)
+	}
+	counts := map[string]int{}
+	notes := map[string]string{}
+	for _, u := range others {
+		counts[u.key]++
+		notes[u.key] = where(u.node)
+	}
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var out strings.Builder
+	out.WriteString("var cellsFrameUses = map[string]int{\n")
+	for _, key := range keys {
+		fmt.Fprintf(&out, "\t%q: %d, // %s\n", key, counts[key], notes[key])
+	}
+	out.WriteString("}\n")
+	return out.String(), nil
 }
 
 // baseOffset returns K of the sum bp + K that a use starts with.

@@ -93,6 +93,7 @@ var (
 	define    = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
 	frames    = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
 	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
+	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
 	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -118,7 +119,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *up {
+	if *define || *backtrace || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -128,6 +129,11 @@ func main() {
 			err = fingerprintReport(files, hw, "defineSites", defineFingerprint)
 		} else if err == nil && *backtrace {
 			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
+		} else if err == nil && *cells {
+			var report string
+			if report, err = cellsReport(files, hw); err == nil {
+				fmt.Print(report)
+			}
 		} else if err == nil {
 			err = upReport(files, hw)
 		}

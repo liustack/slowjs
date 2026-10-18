@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -272,5 +273,54 @@ func TestCellsRejectsFixed(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
 		}
+	}
+}
+
+// -cells prints cellsFrameUses as the files have it, with the named local
+// each use starts in, so that a new local in the interpreter is an update
+// to read and paste.
+func TestCellsReport(t *testing.T) {
+	hw, err := handWritten(filepath.Join("..", "..", "lib"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cellsReport(libFiles(t), hw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, n := range cellsFrameUses {
+		if !strings.Contains(out, fmt.Sprintf("\t%q: %d,", key, n)) {
+			t.Errorf("no %q: %d in\n%s", key, n, out)
+		}
+	}
+	for _, want := range []string{
+		`"_find_own_property(bp+288)": 1, // pr at bp+288`,
+		`"_js_add_slow(bp+480+uintptr(2)*16)": 1, // ops at bp+480`,
+		`"libc.VaList(bp+1256)": 2, // 8 bytes past val at bp+1232`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no %s in\n%s", want, out)
+		}
+	}
+
+	// A use that differs between the files stops it.
+	dir := t.TempDir()
+	var files []string
+	for i, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_amd64.go"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "lib", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			b = bytes.Replace(b, []byte("libc.VaList(bp+1256"), []byte("libc.VaList(bp+1264"), 1)
+		}
+		fn := filepath.Join(dir, name)
+		if err := os.WriteFile(fn, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, fn)
+	}
+	if _, err := cellsReport(files, hw); err == nil {
+		t.Error("files with other uses went through")
 	}
 }
