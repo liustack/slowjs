@@ -587,7 +587,14 @@ Conflicts to expect:
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
   `lib/backtrace.go`, which formats the same text from the recorded frames
-  and must change with it. If it reports that `XJS_Throw`,
+  and must change with it. If it reports that `_build_backtrace`,
+  `_get_prop_string` or `_JS_GetFunctionBytecode` changed (a fingerprint
+  other than the one in `internal/fixlib/backtracesites.go`), the same
+  holds: a pending stack must still come out with the bytes
+  `_build_backtrace` writes. Once `lib/backtrace.go` matches, put the new
+  fingerprints in (`go run ./internal/fixlib -backtrace` prints them). A
+  change to the C strings they use counts, a string moving in the table
+  does not. If it reports that `XJS_Throw`,
   `_JS_CallInternal` or `_JS_IteratorClose` changed shape, put the
   uncatchable check of `lib/uncatchable.go` back where the C change has it.
   If it reports that `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp

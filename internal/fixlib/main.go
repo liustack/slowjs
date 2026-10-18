@@ -10,8 +10,8 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define and -up print the lists that some changes are
-// checked against, to update them after a review.
+// -slots, -frames, -define, -backtrace and -up print the lists that some
+// changes are checked against, to update them after a review.
 //
 // It does fourteen things:
 //
@@ -69,6 +69,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -76,6 +77,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -85,11 +87,12 @@ const (
 )
 
 var (
-	check  = flag.Bool("check", false, "report missing changes without writing files")
-	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
-	define = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
-	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
-	up     = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
+	check     = flag.Bool("check", false, "report missing changes without writing files")
+	slots     = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	define    = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
+	frames    = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
+	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
+	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -114,14 +117,16 @@ func main() {
 		}
 		return
 	}
-	if *define || *up {
+	if *define || *backtrace || *up {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
 			hw, err = handWritten("lib")
 		}
 		if err == nil && *define {
-			err = defineReport(files, hw)
+			err = fingerprintReport(files, hw, "defineSites", defineFingerprint)
+		} else if err == nil && *backtrace {
+			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
 		} else if err == nil {
 			err = upReport(files, hw)
 		}
@@ -227,6 +232,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	// The fingerprints of fixDefine are of the text the changes above
 	// leave, so it goes after them.
 	if b, err = fixDefine(b, name); err != nil {
+		return nil, err
+	}
+	if err = checkBacktraceSites(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
@@ -431,6 +439,65 @@ func slotDeref(arg string) string {
 // no capturing group to those of arg.
 func reDeref(typ, arg string) string {
 	return `(?:\*\*\(\*\*` + typ + `\)\(__ccgo_up|\*\(\*` + typ + `\)\(unsafe\.Pointer)\(` + arg + `\)\)`
+}
+
+// backtraceFuncs are the functions whose work lib/backtrace.go repeats for
+// a pending stack: _build_backtrace walks the frames and formats the text
+// (backtraceCount, backtraceRecord, backtraceFormat), _get_prop_string
+// reads a function's name (backtraceFuncName) and _JS_GetFunctionBytecode
+// finds its bytecode.
+var backtraceFuncs = []string{"_build_backtrace", "_get_prop_string", "_JS_GetFunctionBytecode"}
+
+var (
+	reLazyBacktrace   = regexp.MustCompile(`\tif filename == 0 && _js_backtrace_build\(tls, [^\n]*\{\n\t\treturn\n\t\}\n`)
+	reStringUse       = regexp.MustCompile(`__ccgo_ts\+(\d+)\b`)
+	rePendingPropText = regexp.MustCompile(`\tif pending, ok := _js_backtrace_prop_string\(tls, [^\n]*\{\n\t\treturn pending\n\t\}\n`)
+)
+
+// backtraceFingerprint hashes backtraceFuncs, without the calls
+// fixBacktrace adds, with each C string written out in place of its
+// offset, which a new string anywhere before it moves.
+func backtraceFingerprint(b []byte) (string, error) {
+	m := reStringTable.FindSubmatch(b)
+	if m == nil {
+		return "", fmt.Errorf("cannot find __ccgo_ts1")
+	}
+	table, err := strconv.Unquote(string(m[1]))
+	if err != nil {
+		return "", fmt.Errorf("__ccgo_ts1: %v", err)
+	}
+	h := sha256.New()
+	for _, name := range backtraceFuncs {
+		text, err := funcBody(b, funcHead(name), name)
+		if err != nil {
+			return "", err
+		}
+		text = reLazyBacktrace.ReplaceAll(text, nil)
+		text = rePendingPropText.ReplaceAll(text, nil)
+		text = reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
+			off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
+			if off >= len(table) {
+				return use
+			}
+			str, _, _ := strings.Cut(table[off:], "\x00")
+			return []byte(strconv.Quote(str))
+		})
+		h.Write(text)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
+}
+
+// checkBacktraceSites checks backtraceFuncs against backtraceSites. The
+// fingerprints are of the text after every other change.
+func checkBacktraceSites(b []byte, file string) error {
+	got, err := backtraceFingerprint(b)
+	if err != nil {
+		return err
+	}
+	if want := backtraceSites[file]; got != want && !reporting() {
+		return fmt.Errorf("%s: %s changed (fingerprint %s, want %s): read them against lib/backtrace.go, which must format a pending stack with the same bytes, then update backtraceSites (go run ./internal/fixlib -backtrace)", file, strings.Join(backtraceFuncs, ", "), got, want)
+	}
+	return nil
 }
 
 // fixBacktrace wires lib/backtrace.go into a generated file. 'stack' is an

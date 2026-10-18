@@ -263,3 +263,34 @@ func TestToCStringRejects(t *testing.T) {
 		}
 	}
 }
+
+// Every generated file has the _build_backtrace that lib/backtrace.go was
+// checked against, and a change to it, or to the functions whose work
+// lib/backtrace.go repeats, stops fixlib.
+func TestBacktraceSites(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := checkBacktraceSites(b, filepath.Base(fn)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := engineFile(t)
+	for _, c := range []struct{ head, old, new string }{
+		{"func _build_backtrace(", "if (*TJSStackFrame)(unsafe.Pointer(sf)).Fjs_mode&", "if false && (*TJSStackFrame)(unsafe.Pointer(sf)).Fjs_mode&"},
+		{"func _get_prop_string(", "p = (*TJSShape)(unsafe.Pointer((*TJSObject)(unsafe.Pointer(p)).Fshape)).Fproto\n", "p = 0\n"},
+		{"func _JS_GetFunctionBytecode(", "\treturn (*(*struct {", "\treturn 8 + (*(*struct {"},
+	} {
+		i := bytes.Index(b, []byte("\n"+c.head))
+		j := bytes.Index(b[i:], []byte(c.old))
+		if i < 0 || j < 0 {
+			t.Fatalf("no %q in %s", c.old, c.head)
+		}
+		changed := append(append(append([]byte{}, b[:i+j]...), c.new...), b[i+j+len(c.old):]...)
+		if err := checkBacktraceSites(changed, "ccgo_darwin_arm64.go"); err == nil {
+			t.Errorf("a change to %s went through", c.head)
+		}
+	}
+}

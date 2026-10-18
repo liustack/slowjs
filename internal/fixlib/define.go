@@ -52,7 +52,7 @@ func fixDefine(b []byte, file string) ([]byte, error) {
 		return nil, err
 	}
 	// -define reports the fingerprints instead (see defineReport).
-	if want := defineSites[file]; got != want && !*define {
+	if want := defineSites[file]; got != want && !reporting() {
 		return nil, fmt.Errorf("%s: JS_DefinePropertyValue, JS_DefineProperty, JS_CreateProperty, add_property, find_own_property or find_own_property1 changed (fingerprint %s, want %s): read them against lib/objlit.go, then update defineSites", file, got, want)
 	}
 
@@ -175,12 +175,16 @@ func defineFingerprint(b []byte) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
 }
 
-// defineReport prints defineSites for the generated files as they are
-// after all of fixlib's changes, made in memory, so that it also works on
-// files just taken from upstream.
-func defineReport(files []string, hw []*ast.File) error {
+// reporting reports whether fixlib prints fingerprints (-define or
+// -backtrace) rather than checking them.
+func reporting() bool { return *define || *backtrace }
+
+// fingerprintReport prints the map name of fingerprints fp gives for the
+// generated files as they are after all of fixlib's changes, made in
+// memory, so that it also works on files just taken from upstream.
+func fingerprintReport(files []string, hw []*ast.File, name string, fp func([]byte) (string, error)) error {
 	sort.Strings(files)
-	fmt.Println("var defineSites = map[string]string{")
+	fmt.Printf("var %s = map[string]string{\n", name)
 	for _, fn := range files {
 		b, err := os.ReadFile(fn)
 		if err != nil {
@@ -189,7 +193,7 @@ func defineReport(files []string, hw []*ast.File) error {
 		if b, err = fixEngine(b, hw, filepath.Base(fn)); err != nil {
 			return fmt.Errorf("%s: %v", fn, err)
 		}
-		got, err := defineFingerprint(b)
+		got, err := fp(b)
 		if err != nil {
 			return err
 		}
