@@ -75,6 +75,15 @@ var (
 	// them: is_std_array_prototype, extensible, free_mark, is_exotic,
 	// fast_array, ...
 	reObjectBits = regexp.MustCompile(`libc\.SetBitFieldPtr8Uint8\(p\+(\d+), [^\n]*?, (\d+), (0x[0-9a-f]+)\)\n`)
+	// The bit tests of the generic path, each giving the offset, the mask
+	// and the shift: is_exotic, the first test of JS_CreateProperty;
+	// extensible, the test before its jump to not_extensible for the
+	// objects that are not exotic; fast_array, the first test of
+	// JS_DefineProperty for a property the object does not have.
+	reBitTest        = `int32\(\*\(\*uint8\)\(unsafe\.Pointer\(\w+ \+ (\d+)\)\)&(0x[0-9a-f]+)>>(\d+)\) != 0`
+	reExoticTest     = regexp.MustCompile(`/\* add a new property or modify an existing exotic one \*/\n\tif ` + reBitTest + ` \{\n`)
+	reExtensibleTest = regexp.MustCompile(`\n\tif !!\(` + reBitTest + `\) \{\n\t\tgoto _\d+\n\t\}\n\tgoto not_extensible\n`)
+	reFastArrayTest  = regexp.MustCompile(`/\* handle modification of fast array elements \*/\n\tif ` + reBitTest + ` \{\n`)
 )
 
 const (
@@ -84,7 +93,12 @@ const (
 )
 
 // objectBits returns the constants of the JSObject bit fields objlitDefine
-// reads, from the first five bit fields JS_NewObjectFromShape sets.
+// reads. They are the first five bit fields JS_NewObjectFromShape sets
+// (is_std_array_prototype, extensible, free_mark, is_exotic, fast_array),
+// and they must be the bits the generic path tests, in the text the
+// fingerprint pins: is_exotic and extensible in JS_CreateProperty,
+// fast_array in JS_DefineProperty. So a layout that changes in one place and
+// not in the other stops fixDefine.
 func objectBits(b []byte) ([]byte, error) {
 	body, err := funcBody(b, funcHead("_JS_NewObjectFromShape"), "_JS_NewObjectFromShape")
 	if err != nil {
@@ -96,14 +110,49 @@ func objectBits(b []byte) ([]byte, error) {
 	}
 	off := string(all[0][1])
 	for i, f := range all {
-		shift, _ := strconv.Atoi(string(f[2]))
-		mask, _ := strconv.ParseUint(string(f[3]), 0, 8)
-		if string(f[1]) != off || mask != 1<<shift {
+		if string(f[1]) != off || !isBit(f[2], f[3]) {
 			return nil, fmt.Errorf("JS_NewObjectFromShape changed shape: bit field %d is at p+%s, bit %s, mask %s", i, f[1], f[2], f[3])
 		}
 	}
+	extensible, exotic, fastArray := string(all[1][3]), string(all[3][3]), string(all[4][3])
+
+	create, err := funcBody(b, funcHead("_JS_CreateProperty"), "_JS_CreateProperty")
+	if err != nil {
+		return nil, err
+	}
+	define, err := funcBody(b, funcHead("XJS_DefineProperty"), "XJS_DefineProperty")
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range []struct {
+		field, fn, mask string
+		body            []byte
+		re              *regexp.Regexp
+	}{
+		{"is_exotic", "JS_CreateProperty", exotic, create, reExoticTest},
+		{"extensible", "JS_CreateProperty", extensible, create, reExtensibleTest},
+		{"fast_array", "JS_DefineProperty", fastArray, define, reFastArrayTest},
+	} {
+		m := c.re.FindAllSubmatch(c.body, -1)
+		if len(m) != 1 {
+			return nil, fmt.Errorf("%s changed shape: want one test of %s, found %d", c.fn, c.field, len(m))
+		}
+		if got := m[0]; string(got[1]) != off || string(got[2]) != c.mask || !isBit(got[3], got[2]) {
+			return nil, fmt.Errorf("%s tests %s at +%s with mask %s, but JS_NewObjectFromShape puts it at +%s with mask %s", c.fn, c.field, got[1], got[2], off, c.mask)
+		}
+	}
 	return []byte(fmt.Sprintf("%sconst (\n\tobjlitFlagsOff   = %s\n\tobjlitExtensible = %s\n\tobjlitExotic     = %s\n\tobjlitFastArray  = %s\n)\n",
-		layoutMark, off, all[1][3], all[3][3], all[4][3])), nil
+		layoutMark, off, extensible, exotic, fastArray)), nil
+}
+
+// isBit reports whether mask is the bit shift selects.
+func isBit(shift, mask []byte) bool {
+	n, err := strconv.Atoi(string(shift))
+	if err != nil {
+		return false
+	}
+	m, err := strconv.ParseUint(string(mask), 0, 8)
+	return err == nil && m == 1<<n
 }
 
 // defineFingerprint hashes the functions objlitDefine stands for, without

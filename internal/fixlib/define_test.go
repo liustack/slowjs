@@ -65,6 +65,12 @@ func TestDefineRejects(t *testing.T) {
 		{"a changed add_property", "/* try to find an existing shape */", "/* changed */", "changed (fingerprint"},
 		{"a new signature", "func XJS_DefinePropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, flags int32) (r int32) {", "func XJS_DefinePropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, flags uint32) (r int32) {", "signature"},
 		{"moved bit fields", "libc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(MTRUE), 1, 0x2)", "libc.SetBitFieldPtr8Uint8(p+17, libc.Uint8FromInt32(MTRUE), 1, 0x2)", "bit field 1"},
+		// The two lines keep their bits, so JS_NewObjectFromShape alone
+		// would make extensible 0x4.
+		{"swapped bit fields",
+			"\tlibc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(MTRUE), 1, 0x2)\n\tlibc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(0), 2, 0x4)\n",
+			"\tlibc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(0), 2, 0x4)\n\tlibc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(MTRUE), 1, 0x2)\n",
+			"extensible"},
 	} {
 		if bytes.Count(b, []byte(c.old)) != 1 {
 			t.Fatalf("%s: want %q once in the file", c.name, c.old)

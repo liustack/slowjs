@@ -464,8 +464,9 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   linux/amd64 (AMD EPYC), and a server render of a page of tifa's example
   shop about 6% less, with the same HTML. `fixlib` puts the call into all
   13 files and takes the object bit fields `objlitDefine` checks from each
-  file's `JS_NewObjectFromShape`, so 32-bit and big-endian targets get
-  their own layout. A change to the generated Go only, with no C hunk
+  file's `JS_NewObjectFromShape`, checked against the tests of the same
+  bits in the old path, so 32-bit and big-endian targets get their own
+  layout. A change to the generated Go only, with no C hunk
   (`internal/fixlib/define.go`). Tests: `lib/objlit_test.go`,
   `internal/fixlib/define_test.go`.
 
@@ -687,11 +688,15 @@ Conflicts to expect:
   does not matter here, and so does a change to another `fixlib` step that
   touches them (`fixUp` does). If it reports that `JS_DefinePropertyValue`
   has a new signature, update the call (`defineCall`) and
-  `reDefineValueHead` in `internal/fixlib/define.go`. If it reports that
-  the bit fields of `JS_NewObjectFromShape` changed, the layout of
-  `JSObject` moved: check that `extensible`, `is_exotic` and `fast_array`
-  are still the second, fourth and fifth bit fields it sets, all in one
-  byte, and update `objectBits` if not.
+  `reDefineValueHead` in `internal/fixlib/define.go`. `objlitDefine` reads
+  `extensible`, `is_exotic` and `fast_array` through constants that
+  `fixlib` takes from the bit fields `JS_NewObjectFromShape` sets (the
+  second, fourth and fifth, all in one byte), and checks against the tests
+  of those bits in `JS_CreateProperty` and `JS_DefineProperty`. If it
+  reports that `JS_NewObjectFromShape` changed shape, that one of those
+  tests is gone, or that a test disagrees with `JS_NewObjectFromShape`,
+  the layout of `JSObject` moved: find where the three bits are now and
+  update `objectBits` and its patterns in `internal/fixlib/define.go`.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
