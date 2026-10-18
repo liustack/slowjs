@@ -674,7 +674,8 @@ Conflicts to expect:
   If it reports that a value of `pinVars` (`internal/fixlib/pin.go`) is
   gone, find what the interpreter now calls it and update the list.
   If it reports that `JS_DefinePropertyValue`, `JS_DefineProperty`,
-  `JS_CreateProperty`, `add_property` or `find_own_property1` changed (a
+  `JS_CreateProperty`, `add_property`, `find_own_property` or
+  `find_own_property1` changed (a
   fingerprint other than the one in `internal/fixlib/definesites.go`),
   read the new code against `objlitDefine` in `lib/objlit.go`. For a new
   data property of an extensible object that is not exotic, not a fast

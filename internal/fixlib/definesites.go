@@ -5,21 +5,21 @@
 package main
 
 // defineSites are the fingerprints of JS_DefinePropertyValue (without the
-// call fixDefine adds), JS_DefineProperty, JS_CreateProperty, add_property
-// and find_own_property1 in each generated file, as reviewed against
-// objlitDefine in lib/objlit.go (see fixDefine).
+// call fixDefine adds), JS_DefineProperty, JS_CreateProperty, add_property,
+// find_own_property and find_own_property1 in each generated file, as
+// reviewed against objlitDefine in lib/objlit.go (see fixDefine).
 var defineSites = map[string]string{
-	"ccgo_darwin_amd64.go":  "02cac81a137e5663",
-	"ccgo_darwin_arm64.go":  "02cac81a137e5663",
-	"ccgo_freebsd_amd64.go": "b3aadfdcf99f13b0",
-	"ccgo_freebsd_arm64.go": "b3aadfdcf99f13b0",
-	"ccgo_linux_386.go":     "897b3d31535a9392",
-	"ccgo_linux_amd64.go":   "97b21d99b9669aea",
-	"ccgo_linux_arm.go":     "3e4615208020ff1e",
-	"ccgo_linux_arm64.go":   "97b21d99b9669aea",
-	"ccgo_linux_loong64.go": "97b21d99b9669aea",
-	"ccgo_linux_ppc64le.go": "97b21d99b9669aea",
-	"ccgo_linux_riscv64.go": "97b21d99b9669aea",
-	"ccgo_linux_s390x.go":   "5af562b181965e40",
-	"ccgo_windows.go":       "e2832e5d77a64102",
+	"ccgo_darwin_amd64.go":  "6faf839eab0d4a14",
+	"ccgo_darwin_arm64.go":  "6faf839eab0d4a14",
+	"ccgo_freebsd_amd64.go": "9f26021de19f574d",
+	"ccgo_freebsd_arm64.go": "9f26021de19f574d",
+	"ccgo_linux_386.go":     "94d3cb397ef4234c",
+	"ccgo_linux_amd64.go":   "0b0f8e65a0a090f1",
+	"ccgo_linux_arm.go":     "a3013360e4f2ed0b",
+	"ccgo_linux_arm64.go":   "0b0f8e65a0a090f1",
+	"ccgo_linux_loong64.go": "0b0f8e65a0a090f1",
+	"ccgo_linux_ppc64le.go": "0b0f8e65a0a090f1",
+	"ccgo_linux_riscv64.go": "0b0f8e65a0a090f1",
+	"ccgo_linux_s390x.go":   "69758fb7413389dd",
+	"ccgo_windows.go":       "833016d750cc844b",
 }

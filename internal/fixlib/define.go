@@ -24,11 +24,12 @@ import (
 //
 // objlitDefine repeats what JS_DefinePropertyValue, JS_DefineProperty,
 // JS_CreateProperty and add_property do for a new data property of an
-// ordinary object. So the generated text of those functions, and of
-// find_own_property1, which it calls, is pinned in defineSites: when a
-// release changes one of them, fixDefine stops, and the new code must be read
-// against objlitDefine before the fingerprints are updated (go run
-// ./internal/fixlib -define prints them). The fingerprints are of the text
+// ordinary object. So the generated text of those functions, of
+// find_own_property, which JS_DefineProperty calls, and of
+// find_own_property1, which objlitDefine calls instead, is pinned in
+// defineSites: when a release changes one of them, fixDefine stops, and the
+// new code must be read against objlitDefine before the fingerprints are
+// updated (go run ./internal/fixlib -define prints them). The fingerprints are of the text
 // after every other change, so fixDefine runs after them.
 func fixDefine(b []byte, file string) ([]byte, error) {
 	all := reDefineValueHead.FindAllSubmatchIndex(b, -1)
@@ -52,7 +53,7 @@ func fixDefine(b []byte, file string) ([]byte, error) {
 	}
 	// -define reports the fingerprints instead (see defineReport).
 	if want := defineSites[file]; got != want && !*define {
-		return nil, fmt.Errorf("%s: JS_DefinePropertyValue, JS_DefineProperty, JS_CreateProperty, add_property or find_own_property1 changed (fingerprint %s, want %s): read them against lib/objlit.go, then update defineSites", file, got, want)
+		return nil, fmt.Errorf("%s: JS_DefinePropertyValue, JS_DefineProperty, JS_CreateProperty, add_property, find_own_property or find_own_property1 changed (fingerprint %s, want %s): read them against lib/objlit.go, then update defineSites", file, got, want)
 	}
 
 	layout, err := objectBits(b)
@@ -159,7 +160,7 @@ func isBit(shift, mask []byte) bool {
 // the call fixDefine adds.
 func defineFingerprint(b []byte) (string, error) {
 	h := sha256.New()
-	for _, name := range []string{"XJS_DefinePropertyValue", "XJS_DefineProperty", "_JS_CreateProperty", "_add_property", "_find_own_property1"} {
+	for _, name := range []string{"XJS_DefinePropertyValue", "XJS_DefineProperty", "_JS_CreateProperty", "_add_property", "_find_own_property", "_find_own_property1"} {
 		text, err := funcBody(b, funcHead(name), name)
 		if err != nil {
 			return "", err

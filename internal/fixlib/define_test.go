@@ -63,6 +63,7 @@ func TestDefineRejects(t *testing.T) {
 	for _, c := range []struct{ name, old, new, want string }{
 		{"a changed JS_CreateProperty", "/* add a new property or modify an existing exotic one */", "/* changed */", "changed (fingerprint"},
 		{"a changed add_property", "/* try to find an existing shape */", "/* changed */", "changed (fingerprint"},
+		{"a changed find_own_property", "func _find_own_property(tls *libc.TLS, ppr uintptr, p uintptr, atom TJSAtom) (r uintptr) {\n", "func _find_own_property(tls *libc.TLS, ppr uintptr, p uintptr, atom TJSAtom) (r uintptr) {\n\t// changed\n", "changed (fingerprint"},
 		{"a new signature", "func XJS_DefinePropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, flags int32) (r int32) {", "func XJS_DefinePropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, flags uint32) (r int32) {", "signature"},
 		{"moved bit fields", "libc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(MTRUE), 1, 0x2)", "libc.SetBitFieldPtr8Uint8(p+17, libc.Uint8FromInt32(MTRUE), 1, 0x2)", "bit field 1"},
 		// The two lines keep their bits, so JS_NewObjectFromShape alone
