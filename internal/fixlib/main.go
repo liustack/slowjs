@@ -94,6 +94,8 @@ var (
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
 	reAlloc = regexp.MustCompile(`(\t\tstr_new = _js_alloc_string\(tls, ctx2, [^\n]*, 0\)\n\t\tif !\(str_new != 0\) \{\n)(\t\t\tXFreeValue\(tls, ctx2, [^\n]*\)\n)?(\t\t\tgoto fail\n)`)
+	// The fail label of XJS_ToCStringLen2 as generated: it does not free val.
+	reToCStringFail = regexp.MustCompile(`\nfail:\n\t;\n\tif plen != 0 \{\n\t\t` + reDeref(`Tsize_t`, `plen`) + ` = uint(32|64)\(0\)\n\t\}\n\treturn libc\.UintptrFromInt32\(0\)$`)
 )
 
 func main() {
@@ -285,7 +287,10 @@ func update(fn string, f func([]byte) ([]byte, error)) (changed bool, err error)
 }
 
 // fixToCString inserts the XFreeValue call into both allocation failure
-// branches of XJS_ToCStringLen2.
+// branches of XJS_ToCStringLen2. It relies on upstream not freeing val at
+// the fail label, which would make the added call a double free, and on
+// four jumps to the label: the failed ToString, the two branches, and the
+// one ccgo puts before the label. A change in either stops fixlib.
 func fixToCString(b []byte) ([]byte, error) {
 	start := bytes.Index(b, []byte("\nfunc XJS_ToCStringLen2("))
 	if start < 0 {
@@ -315,6 +320,12 @@ func fixToCString(b []byte) ([]byte, error) {
 	})
 	if n != 2 {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: want 2 allocation failure branches, found %d", n)
+	}
+	if !reToCStringFail.Match(body) {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: the fail label changed: if it now frees val, drop fixToCString")
+	}
+	if n := bytes.Count(body, []byte("goto fail\n")); n != 4 {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: want 4 jumps to the fail label, found %d: check that val is freed on the new path", n)
 	}
 
 	var out bytes.Buffer

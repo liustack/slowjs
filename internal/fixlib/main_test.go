@@ -223,3 +223,43 @@ func TestTimezoneRejectsLocalTime(t *testing.T) {
 		t.Error("a getTimezoneOffset of a new shape went through")
 	}
 }
+
+// fixToCString leaves a fixed file as it is, and stops when upstream frees
+// val at the fail label or adds a new way to fail: the free it adds would
+// then free val twice, or miss a path.
+func TestToCStringRejects(t *testing.T) {
+	for _, fn := range libFiles(t) {
+		b, err := os.ReadFile(fn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := fixToCString(b)
+		if err != nil || !bytes.Equal(out, b) {
+			t.Fatalf("%s: fixToCString changed a fixed file: %v", fn, err)
+		}
+		// The label as upstream writes it, before fixUp.
+		raw := bytes.ReplaceAll(b, []byte("*(*Tsize_t)(unsafe.Pointer(plen)) = uint"), []byte("**(**Tsize_t)(__ccgo_up(plen)) = uint"))
+		if _, err := fixToCString(raw); err != nil {
+			t.Fatalf("%s: %v", fn, err)
+		}
+	}
+	head := "func XJS_ToCStringLen2("
+	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_386.go"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "lib", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		val := "val"
+		if name == "ccgo_darwin_arm64.go" {
+			val = "*(*TJSValue)(unsafe.Pointer(bp + 32))"
+		}
+		for _, c := range []struct{ name, at, text string }{
+			{"free at the label", "\tif plen != 0 {\n\t\t*(*Tsize_t)(unsafe.Pointer(plen)) = uint", "\tXFreeValue(tls, ctx2, " + val + ")\n"},
+			{"a new way to fail", "\tlen1 = ", "\tif plen == 0 {\n\t\tgoto fail\n\t}\n"},
+		} {
+			if _, err := fixToCString(mutate(t, b, head, c.at, c.text)); err == nil {
+				t.Errorf("%s: %s went through", name, c.name)
+			}
+		}
+	}
+}

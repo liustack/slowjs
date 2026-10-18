@@ -574,7 +574,10 @@ Conflicts to expect:
   `fixlib` also rewrites `modernc.org/libquickjs` imports in hand-written
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
   need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
-  read the new upstream code: QuickJS may have fixed the leak itself. If it
+  read the new upstream code: QuickJS may have fixed the leak itself. If
+  the fail label now frees `val`, drop `fixToCString` and the
+  `JS_ToCStringLen2` hunk, or the added calls free it twice. If there is a
+  new jump to the label, check that `val` is freed on that path. If it
   reports that `_getTimezoneOffset` changed shape, or that the engine calls
   libc's local time functions (`localtime`, `mktime`, `tzset`, ...)
   somewhere else, upstream reads the local zone some new way: make that
