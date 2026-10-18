@@ -127,3 +127,21 @@ func TestStackRejectsNewOverflowError(t *testing.T) {
 		t.Fatalf("got %v, want the new function named", err)
 	}
 }
+
+// A tokenizer whose stack check is gone, with a throw of the RangeError
+// left for some other test, stops fixlib: only the whole check counts as
+// made.
+func TestStackRejectsOtherCheck(t *testing.T) {
+	b := engineFile(t)
+	body, err := funcBody(b, reNextToken, "_next_token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := regexp.MustCompile(`if _js_check_stack_overflow\([^\n]*\) != 0 \{\n\t\t_JS_ThrowStackOverflow`).ReplaceAll(body, []byte("if _other_check(tls) != 0 {\n\t\t_JS_ThrowStackOverflow"))
+	if bytes.Equal(other, body) {
+		t.Fatal("cannot find the stack check")
+	}
+	if _, err := fixStack(bytes.Replace(b, body, other, 1)); err == nil {
+		t.Fatal("a tokenizer without its stack check went through")
+	}
+}

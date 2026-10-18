@@ -18,6 +18,7 @@ var (
 	reStackOverflow    = regexp.MustCompile(`\nfunc _JS_ThrowStackOverflow\(tls \*libc\.TLS, ctx uintptr\) \(r TJSValue\) \{\n\treturn (XJS_Throw\w+Error)\(tls, ctx, (__ccgo_ts\+\d+), 0\)\n\}\n`)
 	reNextToken        = regexp.MustCompile(`\nfunc _next_token\(tls \*libc\.TLS, s uintptr\) \(r int32\) \{\n`)
 	reJSONNextToken    = regexp.MustCompile(`\nfunc _json_next_token\(tls \*libc\.TLS, s uintptr\) \(r int32\) \{\n`)
+	reParseStackFixed  = regexp.MustCompile(`\n\tif _js_check_stack_overflow\(tls, \(\*TJSContext\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\)\.Frt, uint(?:32|64)\(0\)\) != 0 \{\n` + regexp.QuoteMeta(parseStackOverflow) + `\t\}\n`)
 	reParseStackError  = regexp.MustCompile(`\n\tif _js_check_stack_overflow\(tls, \(\*TJSContext\)\(unsafe\.Pointer\(\(\*TJSParseState\)\(unsafe\.Pointer\(s\)\)\.Fctx\)\)\.Frt, uint(?:32|64)\(0\)\) != 0 \{\n(\t\treturn _js_parse_error\(tls, s, __ccgo_ts\+(\d+), 0\)\n)\t\}\n`)
 )
 
@@ -107,7 +108,7 @@ func fixStack(b []byte) ([]byte, error) {
 			return nil, fmt.Errorf("%s: want 1 stack check, found %d", fn.name, len(m))
 		}
 		if len(m) == 0 {
-			if !bytes.Contains(body, []byte(" != 0 {\n"+parseStackOverflow+"\t}\n")) {
+			if len(reParseStackFixed.FindAllIndex(body, -1)) != 1 || bytes.Count(body, []byte(parseStackOverflow)) != 1 {
 				return nil, fmt.Errorf("%s: cannot find the stack check", fn.name)
 			}
 			continue

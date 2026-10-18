@@ -176,3 +176,18 @@ func TestOutOfMemoryRejectsNewUse(t *testing.T) {
 		}
 	}
 }
+
+// The checks of fixOutOfMemory hold for a fixed file too: a second throw
+// in JS_ThrowOutOfMemory, or a second out of memory error in a regexp
+// function, stops fixlib.
+func TestOutOfMemoryChecksFixedFile(t *testing.T) {
+	b := engineFile(t)
+	for _, c := range []struct{ head, at, text string }{
+		{"func XJS_ThrowOutOfMemory(", "\treturn TJSValue{", "\tXJS_ThrowRangeError(tls, ctx, 0, 0)\n"},
+		{"func _js_regexp_exec(", "\t\t\t\tXJS_ThrowOutOfMemory(tls, ctx3)\n", "\t\t\t\tXJS_ThrowOutOfMemory(tls, ctx3)\n"},
+	} {
+		if _, err := fixOutOfMemory(mutate(t, b, c.head, c.at, c.text)); err == nil {
+			t.Errorf("%s: %q more went through", c.head, strings.TrimSpace(c.text))
+		}
+	}
+}

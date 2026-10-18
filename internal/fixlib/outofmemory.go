@@ -53,11 +53,14 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 	ctx := string(reThrowOutOfMemory.FindSubmatch(b)[1])
 	throw := fmt.Sprintf("\t\tXJS_ThrowInternalError(tls, %s, __ccgo_ts+%d, 0)\n", ctx, strs["out of memory"])
 	mark := fmt.Sprintf("\t\tXJS_SetUncatchableException(tls, %s, int32(1))\n", ctx)
-	if !bytes.Contains(body, []byte(throw+mark)) {
-		if bytes.Count(body, []byte(throw)) != 1 || bytes.Count(body, []byte("XJS_Throw")) != 2 { // its name and the call
-			return nil, fmt.Errorf("XJS_ThrowOutOfMemory: want 1 call, of XJS_ThrowInternalError with \"out of memory\"")
-		}
+	if bytes.Count(body, []byte(throw)) != 1 || bytes.Count(body, []byte("XJS_Throw")) != 2 { // its name and the call
+		return nil, fmt.Errorf("XJS_ThrowOutOfMemory: want 1 call, of XJS_ThrowInternalError with \"out of memory\"")
+	}
+	switch n := bytes.Count(body, []byte(mark)); {
+	case n == 0:
 		b = bytes.Replace(b, body, bytes.Replace(body, []byte(throw), []byte(throw+mark), 1), 1)
+	case n != 1 || !bytes.Contains(body, []byte(throw+mark)):
+		return nil, fmt.Errorf("XJS_ThrowOutOfMemory: marks the error uncatchable elsewhere than right after the throw")
 	}
 
 	// JS_ThrowError2: the end in Go.
@@ -74,10 +77,11 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 		}
 		ctx := string(re.FindSubmatch(b)[1])
 		old := "XJS_ThrowInternalError(tls, " + ctx + exec
-		switch n := bytes.Count(body, []byte(old)); {
-		case n == 1:
-			b = bytes.Replace(b, body, bytes.Replace(body, []byte(old), []byte("XJS_ThrowOutOfMemory(tls, "+ctx+")"), 1), 1)
-		case n > 1 || !bytes.Contains(body, []byte("XJS_ThrowOutOfMemory(tls, "+ctx+")")):
+		oom := "XJS_ThrowOutOfMemory(tls, " + ctx + ")"
+		switch n, m := bytes.Count(body, []byte(old)), bytes.Count(body, []byte(oom)); {
+		case n == 1 && m == 0:
+			b = bytes.Replace(b, body, bytes.Replace(body, []byte(old), []byte(oom), 1), 1)
+		case n != 0 || m != 1:
 			return nil, fmt.Errorf("%s: want 1 out of memory error in regexp execution", name)
 		}
 	}
