@@ -226,8 +226,9 @@ func TestTimezoneRejectsLocalTime(t *testing.T) {
 }
 
 // fixToCString leaves a fixed file as it is, and stops when upstream frees
-// val at the fail label or adds a new way to fail: the free it adds would
-// then free val twice, or miss a path.
+// val at the fail label, frees something else in a failure branch, or adds
+// a new way to fail: the free it adds would then free val twice, or miss a
+// path.
 func TestToCStringRejects(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		b, err := os.ReadFile(fn)
@@ -261,6 +262,14 @@ func TestToCStringRejects(t *testing.T) {
 			if _, err := fixToCString(mutate(t, b, head, c.at, c.text)); err == nil {
 				t.Errorf("%s: %s went through", name, c.name)
 			}
+		}
+		// A free of some other value in the branch is not fixlib's.
+		free := []byte("\t\t\tXFreeValue(tls, ctx2, " + val + ")\n")
+		i := bytes.Index(b, []byte("\n"+head))
+		j := bytes.Index(b[i:], free)
+		other := append(append(append([]byte{}, b[:i+j]...), "\t\t\tXFreeValue(tls, ctx2, str)\n"...), b[i+j+len(free):]...)
+		if _, err := fixToCString(other); err == nil {
+			t.Errorf("%s: a free of another value went through", name)
 		}
 	}
 }

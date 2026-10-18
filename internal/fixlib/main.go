@@ -321,14 +321,22 @@ func fixToCString(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: cannot locate the local 'val'")
 	}
 
-	n := 0
+	// A branch that already frees is fixed only when it frees val.
+	free := "\t\t\tXFreeValue(tls, ctx2, " + val + ")\n"
+	n, other := 0, false
 	body = reAlloc.ReplaceAllFunc(body, func(m []byte) []byte {
 		n++
 		sub := reAlloc.FindSubmatch(m)
-		return []byte(string(sub[1]) + "\t\t\tXFreeValue(tls, ctx2, " + val + ")\n" + string(sub[3]))
+		if len(sub[2]) != 0 && string(sub[2]) != free {
+			other = true
+		}
+		return []byte(string(sub[1]) + free + string(sub[3]))
 	})
 	if n != 2 {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: want 2 allocation failure branches, found %d", n)
+	}
+	if other {
+		return nil, fmt.Errorf("XJS_ToCStringLen2: an allocation failure branch frees something other than val")
 	}
 	if !reToCStringFail.Match(body) {
 		return nil, fmt.Errorf("XJS_ToCStringLen2: the fail label changed: if it now frees val, drop fixToCString")
