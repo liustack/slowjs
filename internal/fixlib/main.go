@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does eleven things:
+// It does twelve things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -43,6 +43,9 @@
 //   - In every lib/ccgo_*.go file, write each conversion ccgo makes
 //     through __ccgo_up as a plain unsafe.Pointer conversion, which keeps
 //     the stack frames of the big functions small (see fixUp).
+//   - In the lib/ccgo_*.go files of 64-bit targets, keep the JSValue that
+//     the interpreter's inlined JS_DupValue and JS_FreeValue go through in
+//     a Go variable instead of the TLS frame (see fixCells).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -121,8 +124,7 @@ func run() (missing int, err error) {
 		return 0, err
 	}
 	for _, fn := range generated {
-		pin := filepath.Base(fn) == "ccgo_darwin_arm64.go"
-		changed, err := update(fn, func(b []byte) ([]byte, error) { return fixEngine(b, hw, pin) })
+		changed, err := update(fn, func(b []byte) ([]byte, error) { return fixEngine(b, hw, filepath.Base(fn)) })
 		if err != nil {
 			return missing, err
 		}
@@ -173,9 +175,9 @@ func run() (missing int, err error) {
 	return missing, err
 }
 
-// fixEngine applies every change to a generated file of lib/. pin says
-// whether its TLS frames are checked against frameSites.
-func fixEngine(b []byte, hw []*ast.File, pin bool) ([]byte, error) {
+// fixEngine applies every change to the generated file of lib/ named
+// name.
+func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	b, err := fixToCString(b)
 	if err != nil {
 		return nil, err
@@ -201,12 +203,16 @@ func fixEngine(b []byte, hw []*ast.File, pin bool) ([]byte, error) {
 	if b, err = fixAlloca(b); err != nil {
 		return nil, err
 	}
-	if b, err = fixFrames(b, hw, frameSites, pin); err != nil {
+	// The TLS frames of darwin/arm64 are checked against frameSites.
+	if b, err = fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go"); err != nil {
 		return nil, err
 	}
 	// The changes above accept both forms of a conversion, so this one
-	// goes last.
+	// goes after them.
 	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixCells(b, cellFiles[name]); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.

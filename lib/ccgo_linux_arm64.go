@@ -33576,6 +33576,7 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, thi
 	var _ /* v at bp+0 */ TJSValue
 	var _ /* v at bp+16 */ TJSValue
 	var _ /* val at bp+1232 */ TJSValue
+	var cell48, cell64 TJSValue // Changed by internal/fixlib: the cells of JS_DupValue and JS_FreeValue (see fixCells).
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = alloca_size, arg, arg_allocated_size, arg_buf, array_len, atom, atom1, atom10, atom11, atom12, atom13, atom14, atom15, atom16, atom17, atom18, atom2, atom3, atom4, atom5, atom6, atom7, atom8, atom9, b1, bfunc, call_argc, call_argv, call_func, class_flags, ctx10, cv, cv1, d11, d12, d13, d21, d22, d23, d3, d4, diff, diff1, diff2, first, flags1, flags2, getter, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx22, idx23, idx24, idx25, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_computed, is_with, local_buf, magic, mask, method, n, new_len, obj, obj1, obj6, obj9, offset, op134, op_flags, opcode, p, p1, p10, p11, p2, p3, p4, p5, p6, p7, p8, p9, pc, pos, pos1, pr, proto, proto1, prs, prs1, prs2, prs3, pv, pval, r, r1, r2, r3, r4, res, res1, res2, res3, res4, ret, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret_flag, ret_val, ret_val1, rt, s, scope_idx, scope_idx1, setter, sf, sp, stack_buf, super, tab4, tag, tag1, tag2, tmp, tmp1, tmp11, tmp2, tmp21, tmp3, tmp4, tmp5, tmp6, tmp7, type1, v11, v12, v13, v14, v2, v21, v22, v23, v24, v25, v26, val10, val11, val12, val13, val14, val15, val16, val17, val18, val19, val20, val21, val22, val23, val24, val25, val26, val27, val4, val5, val6, val7, val8, val9, value, var_buf, var_ref, var_ref1, var_refs, v1, v10, v121, v1292, v19, v267, v269, v288, v4, v5, v6, v9, v958
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 96
@@ -33699,9 +33700,9 @@ _2:
 			}
 			_ = caller_ctx
 			v9 = *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+			cell64 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _11
 			_11:
 				p1 = v1
@@ -34308,9 +34309,9 @@ restart:
 	_278:
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fcpool + uintptr(v267)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _281
 		_281:
 			p1 = v10
@@ -34390,9 +34391,9 @@ restart:
 		pc = pc + 1
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fcpool + uintptr(*(*Tuint8_t)(unsafe.Pointer(v10)))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v19 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v19 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _301
 		_301:
 			p1 = v19
@@ -34411,9 +34412,9 @@ restart:
 		pc = pc + 1
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fcpool + uintptr(*(*Tuint8_t)(unsafe.Pointer(v10)))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v19 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v19 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _308
 		_308:
 			p1 = v19
@@ -34477,9 +34478,9 @@ restart:
 		if tag == uint32(EJS_TAG_NULL) || tag == uint32(EJS_TAG_UNDEFINED) {
 			_ = ctx10
 			v9 = (*TJSContext)(unsafe.Pointer(ctx10)).Fglobal_obj
-			*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+			cell64 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _323
 			_323:
 				p1 = v1
@@ -34506,9 +34507,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = this_obj1
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _330
 		_330:
 			p1 = v1
@@ -34595,9 +34596,9 @@ restart:
 			sp += 16
 			_ = ctx10
 			v9 = (*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_func
-			*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+			cell64 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+				v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _353
 			_353:
 				p1 = v10
@@ -34612,9 +34613,9 @@ restart:
 			sp += 16
 			_ = ctx10
 			v9 = new_target
-			*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+			cell64 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+				v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _359
 			_359:
 				p1 = v10
@@ -34645,9 +34646,9 @@ restart:
 					Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p11})),
 					Ftag: int64(EJS_TAG_OBJECT),
 				}
-				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+				cell64 = v9
 				if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+					v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto _366
 				_366:
 					p1 = v10
@@ -34716,9 +34717,9 @@ restart:
 	_46:
 		;
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _386
 		_386:
 			p = v1
@@ -34734,9 +34735,9 @@ restart:
 	_47:
 		;
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _391
 		_391:
 			p = v1
@@ -34753,9 +34754,9 @@ restart:
 	_48:
 		; /* a b c -> b c */
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _396
 		_396:
 			p = v1
@@ -34774,9 +34775,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _401
 		_401:
 			p1 = v1
@@ -34792,9 +34793,9 @@ restart:
 		; /* a b -> a b a b */
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _406
 		_406:
 			p1 = v1
@@ -34806,9 +34807,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp)) = v121
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _411
 		_411:
 			p1 = v1
@@ -34824,9 +34825,9 @@ restart:
 		; /* a b c -> a b c a b c */
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _416
 		_416:
 			p1 = v1
@@ -34838,9 +34839,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp)) = v121
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _421
 		_421:
 			p1 = v1
@@ -34852,9 +34853,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp + 1*16)) = v121
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _426
 		_426:
 			p1 = v1
@@ -34871,9 +34872,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _431
 		_431:
 			p1 = v1
@@ -34891,9 +34892,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _436
 		_436:
 			p1 = v1
@@ -34912,9 +34913,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _441
 		_441:
 			p1 = v1
@@ -34934,9 +34935,9 @@ restart:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(4))*16))
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _446
 		_446:
 			p1 = v1
@@ -35022,9 +35023,9 @@ restart:
 	_450:
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fcpool + uintptr(v267)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _453
 		_453:
 			p1 = v1
@@ -35092,9 +35093,9 @@ restart:
 				break
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(call_argv + uintptr(i)*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _466
 			_466:
 				p = v1
@@ -35137,9 +35138,9 @@ restart:
 				break
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(call_argv + uintptr(i)*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _477
 			_477:
 				p = v1
@@ -35190,9 +35191,9 @@ restart:
 				break
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(call_argv + uintptr(i)*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _488
 			_488:
 				p = v1
@@ -35248,9 +35249,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _503
 		_503:
 			p = v1
@@ -35262,9 +35263,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _508
 		_508:
 			p = v1
@@ -35276,9 +35277,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _513
 		_513:
 			p = v1
@@ -35367,9 +35368,9 @@ restart:
 		}
 		ret = XJS_CallConstructor2(tls, ctx10, super, new_target, argc, argv)
 		v9 = super
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _531
 		_531:
 			p = v1
@@ -35407,9 +35408,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _539
 		_539:
 			p = v1
@@ -35421,9 +35422,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _544
 		_544:
 			p = v1
@@ -35519,9 +35520,9 @@ restart:
 				break
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(call_argv + uintptr(i)*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _559
 			_559:
 				p = v1
@@ -35582,9 +35583,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _569
 		_569:
 			p = v1
@@ -35596,9 +35597,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _574
 		_574:
 			p = v1
@@ -35636,9 +35637,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _584
 		_584:
 			p = v1
@@ -35662,9 +35663,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _591
 		_591:
 			p = v1
@@ -35676,9 +35677,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _596
 		_596:
 			p = v1
@@ -35723,9 +35724,9 @@ restart:
 		} else {
 			_ = ctx10
 			v9 = val7
-			*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+			cell64 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _607
 			_607:
 				p1 = v1
@@ -35805,9 +35806,9 @@ restart:
 		pc = pc + uintptr(2)
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + uintptr(idx2)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _622
 		_622:
 			p1 = v1
@@ -35838,9 +35839,9 @@ restart:
 		pc = pc + uintptr(2)
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _631
 		_631:
 			p1 = v1
@@ -35860,9 +35861,9 @@ restart:
 		pc = pc + uintptr(2)
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(arg_buf + uintptr(idx5)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _638
 		_638:
 			p1 = v1
@@ -35893,9 +35894,9 @@ restart:
 		pc = pc + uintptr(2)
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _647
 		_647:
 			p1 = v1
@@ -35914,9 +35915,9 @@ restart:
 		pc = pc + 1
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + uintptr(*(*Tuint8_t)(unsafe.Pointer(v10)))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v19 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v19 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _654
 		_654:
 			p1 = v19
@@ -35941,9 +35942,9 @@ restart:
 		pc = pc + 1
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _662
 		_662:
 			p1 = v10
@@ -35960,9 +35961,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _668
 		_668:
 			p1 = v10
@@ -35979,9 +35980,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + 1*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _674
 		_674:
 			p1 = v10
@@ -35998,9 +35999,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + 2*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _680
 		_680:
 			p1 = v10
@@ -36017,9 +36018,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + 3*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _686
 		_686:
 			p1 = v10
@@ -36058,9 +36059,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _695
 		_695:
 			p1 = v1
@@ -36075,9 +36076,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _700
 		_700:
 			p1 = v1
@@ -36092,9 +36093,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _705
 		_705:
 			p1 = v1
@@ -36109,9 +36110,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _710
 		_710:
 			p1 = v1
@@ -36128,9 +36129,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(arg_buf))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _716
 		_716:
 			p1 = v10
@@ -36147,9 +36148,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(arg_buf + 1*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _722
 		_722:
 			p1 = v10
@@ -36166,9 +36167,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(arg_buf + 2*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _728
 		_728:
 			p1 = v10
@@ -36185,9 +36186,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(arg_buf + 3*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _734
 		_734:
 			p1 = v10
@@ -36226,9 +36227,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _743
 		_743:
 			p1 = v1
@@ -36243,9 +36244,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _748
 		_748:
 			p1 = v1
@@ -36260,9 +36261,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _753
 		_753:
 			p1 = v1
@@ -36277,9 +36278,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _758
 		_758:
 			p1 = v1
@@ -36296,9 +36297,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs)))).Fpvalue))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _764
 		_764:
 			p1 = v10
@@ -36315,9 +36316,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 1*8)))).Fpvalue))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _770
 		_770:
 			p1 = v10
@@ -36334,9 +36335,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 2*8)))).Fpvalue))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _776
 		_776:
 			p1 = v10
@@ -36353,9 +36354,9 @@ restart:
 		sp += 16
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 3*8)))).Fpvalue))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _782
 		_782:
 			p1 = v10
@@ -36394,9 +36395,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _791
 		_791:
 			p1 = v1
@@ -36411,9 +36412,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _796
 		_796:
 			p1 = v1
@@ -36428,9 +36429,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _801
 		_801:
 			p1 = v1
@@ -36445,9 +36446,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _806
 		_806:
 			p1 = v1
@@ -36468,9 +36469,9 @@ restart:
 		val8 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx8)*8)))).Fpvalue))
 		_ = ctx10
 		v9 = val8
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _813
 		_813:
 			p1 = v1
@@ -36501,9 +36502,9 @@ restart:
 		pc = pc + uintptr(2)
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _822
 		_822:
 			p1 = v1
@@ -36531,9 +36532,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = val9
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _831
 		_831:
 			p1 = v1
@@ -36607,9 +36608,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + uintptr(idx15)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _850
 		_850:
 			p1 = v1
@@ -36637,9 +36638,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(var_buf + uintptr(idx16)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _859
 		_859:
 			p1 = v1
@@ -36684,9 +36685,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _872
 		_872:
 			p1 = v1
@@ -37030,9 +37031,9 @@ restart:
 		/* iter_obj next catch_offset -> */
 		sp -= 16 /* drop the catch offset to avoid getting caught by exception */
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _918
 		_918:
 			p = v1
@@ -37053,9 +37054,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _925
 			_925:
 				p = v1
@@ -37079,9 +37080,9 @@ restart:
 			sp -= 16
 			v1 = sp
 			v9 = *(*TJSValue)(unsafe.Pointer(v1))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v10 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v10 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _932
 			_932:
 				p = v10
@@ -37096,9 +37097,9 @@ restart:
 		if libc.BoolInt64(!!(sp == stack_buf)) != 0 {
 			XJS_ThrowInternalError(tls, ctx10, __ccgo_ts+3839, 0)
 			v9 = ret_val1
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _937
 			_937:
 				p = v1
@@ -37125,9 +37126,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _944
 		_944:
 			p = v1
@@ -37188,9 +37189,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _963
 			_963:
 				p = v1
@@ -37258,9 +37259,9 @@ restart:
 				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 288))))
-				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+				cell64 = v9
 				if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+					v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto _977
 				_977:
 					p1 = v1
@@ -37312,9 +37313,9 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(v1)) = val10
 		} else {
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _985
 			_985:
 				p = v1
@@ -37355,9 +37356,9 @@ restart:
 				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 312))))
-				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+				cell64 = v9
 				if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+					v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto _995
 				_995:
 					p1 = v1
@@ -37409,9 +37410,9 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(v1)) = val11
 		} else {
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1003
 			_1003:
 				p = v1
@@ -37452,9 +37453,9 @@ restart:
 				}
 				_ = ctx10
 				v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 336))))
-				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+				cell64 = v9
 				if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+					v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto _1013
 				_1013:
 					p1 = v1
@@ -37506,9 +37507,9 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(v1)) = val12
 		} else {
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1021
 			_1021:
 				p = v1
@@ -37545,9 +37546,9 @@ restart:
 			goto put_field_slow_path
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(bp + 344))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1030
 		_1030:
 			p = v1
@@ -37568,9 +37569,9 @@ restart:
 		(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
 		ret5 = XJS_SetPropertyInternal(tls, ctx10, *(*TJSValue)(unsafe.Pointer(bp + 344)), atom6, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)), *(*TJSValue)(unsafe.Pointer(bp + 344)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(15))
 		v9 = *(*TJSValue)(unsafe.Pointer(bp + 344))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1035
 		_1035:
 			p = v1
@@ -37610,9 +37611,9 @@ restart:
 		;
 		val14 = _JS_GetPrivateField(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)))
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1045
 		_1045:
 			p = v1
@@ -37624,9 +37625,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1050
 		_1050:
 			p = v1
@@ -37650,9 +37651,9 @@ restart:
 		;
 		ret6 = _JS_SetPrivateField(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)))
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1057
 		_1057:
 			p = v1
@@ -37664,9 +37665,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1062
 		_1062:
 			p = v1
@@ -37686,9 +37687,9 @@ restart:
 		;
 		ret7 = _JS_DefinePrivateField(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)))
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1067
 		_1067:
 			p = v1
@@ -37755,9 +37756,9 @@ restart:
 			}
 		}
 		v9 = proto1
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1081
 		_1081:
 			p = v1
@@ -37830,9 +37831,9 @@ restart:
 			ret11 = XJS_DefineProperty(tls, ctx10, obj6, atom10, value, getter, setter, flags2)
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1089
 		_1089:
 			p = v1
@@ -37846,9 +37847,9 @@ restart:
 		if is_computed != 0 {
 			XJS_FreeAtom(tls, ctx10, atom10)
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1094
 			_1094:
 				p = v1
@@ -37919,9 +37920,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p7 + 40 + 8)) + uintptr(idx22)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1103
 		_1103:
 			p1 = v1
@@ -37959,9 +37960,9 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)) = val15
 		} else {
 			v9 = *(*TJSValue)(unsafe.Pointer(bp + 368))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1110
 			_1110:
 				p = v1
@@ -38016,9 +38017,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p8 + 40 + 8)) + uintptr(idx23)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1117
 		_1117:
 			p1 = v1
@@ -38056,9 +38057,9 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)) = val16
 		} else {
 			v9 = *(*TJSValue)(unsafe.Pointer(bp + 400))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1124
 			_1124:
 				p = v1
@@ -38111,9 +38112,9 @@ restart:
 		}
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p9 + 40 + 8)) + uintptr(idx24)*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1131
 		_1131:
 			p1 = v1
@@ -38160,9 +38161,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1143
 			_1143:
 				p = v1
@@ -38179,9 +38180,9 @@ restart:
 		(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1148
 		_1148:
 			p1 = v1
@@ -38266,9 +38267,9 @@ restart:
 			goto exception
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1165
 		_1165:
 			p = v1
@@ -38280,9 +38281,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1170
 		_1170:
 			p = v1
@@ -38294,9 +38295,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1175
 		_1175:
 			p = v1
@@ -38443,9 +38444,9 @@ restart:
 			_set_value(tls, ctx10, *(*uintptr)(unsafe.Pointer(p10 + 40 + 8))+uintptr(idx25)*16, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)))
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1184
 		_1184:
 			p = v1
@@ -38466,9 +38467,9 @@ restart:
 		(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
 		ret13 = _JS_SetPropertyValue(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(15))
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1189
 		_1189:
 			p = v1
@@ -38504,9 +38505,9 @@ restart:
 			} else {
 				_ = ctx10
 				v9 = (*TJSContext)(unsafe.Pointer(ctx10)).Fglobal_obj
-				*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+				cell64 = v9
 				if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+					v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto _1196
 				_1196:
 					p1 = v1
@@ -38533,9 +38534,9 @@ restart:
 		ret14 = XJS_SetPropertyInternal(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), atom14, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(15))
 		XJS_FreeAtom(tls, ctx10, atom14)
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1201
 		_1201:
 			p = v1
@@ -38547,9 +38548,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1206
 		_1206:
 			p = v1
@@ -38579,9 +38580,9 @@ restart:
 		ret15 = XJS_SetPropertyInternal(tls, ctx10, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16)), atom15, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16)), *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(4))*16)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(15))
 		XJS_FreeAtom(tls, ctx10, atom15)
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(4))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1211
 		_1211:
 			p = v1
@@ -38593,9 +38594,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(3))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1216
 		_1216:
 			p = v1
@@ -38607,9 +38608,9 @@ restart:
 			}
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1221
 		_1221:
 			p = v1
@@ -38629,9 +38630,9 @@ restart:
 		;
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1226
 		_1226:
 			p1 = v1
@@ -38655,9 +38656,9 @@ restart:
 		sp -= 16
 		v1 = sp
 		v9 = *(*TJSValue)(unsafe.Pointer(v1))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v10 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v10 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1232
 		_1232:
 			p = v10
@@ -38816,9 +38817,9 @@ restart:
 					(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
 					if _JS_ConcatStringInPlace(tls, ctx10, *(*uintptr)(unsafe.Pointer(pv)), *(*TJSValue)(unsafe.Pointer(bp + 464))) != 0 {
 						v9 = *(*TJSValue)(unsafe.Pointer(bp + 464))
-						*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+						cell48 = v9
 						if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-							v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+							v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 							goto _1263
 						_1263:
 							p = v1
@@ -38832,9 +38833,9 @@ restart:
 					} else {
 						_ = ctx10
 						v9 = *(*TJSValue)(unsafe.Pointer(pv))
-						*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+						cell64 = v9
 						if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-							v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+							v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 							goto _1268
 						_1268:
 							p1 = v1
@@ -38858,9 +38859,9 @@ restart:
 					(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
 					_ = ctx10
 					v9 = *(*TJSValue)(unsafe.Pointer(pv))
-					*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+					cell64 = v9
 					if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-						v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+						v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 						goto _1275
 					_1275:
 						p1 = v1
@@ -39306,9 +39307,9 @@ restart:
 		   be destroyed before JS code accesses it */
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(bp + 736))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1331
 		_1331:
 			p1 = v1
@@ -39355,9 +39356,9 @@ restart:
 		   be destroyed before JS code accesses it */
 		_ = ctx10
 		v9 = *(*TJSValue)(unsafe.Pointer(bp + 752))
-		*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9
+		cell64 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 64)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell64.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1340
 		_1340:
 			p1 = v1
@@ -39746,9 +39747,9 @@ restart:
 		op134 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 		atom16 = libc.Uint32FromInt32(_js_operator_typeof(tls, ctx10, op134))
 		v9 = op134
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1381
 		_1381:
 			p = v1
@@ -39804,9 +39805,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1393
 			_1393:
 				p = v1
@@ -39838,9 +39839,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1400
 			_1400:
 				p = v1
@@ -39937,9 +39938,9 @@ restart:
 			}
 			ret18 = XJS_SetPropertyInternal(tls, ctx10, obj9, atom18, *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)), obj9, libc.Int32FromInt32(1)<<libc.Int32FromInt32(15))
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1416
 			_1416:
 				p = v1
@@ -39960,9 +39961,9 @@ restart:
 				goto exception
 			}
 			v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1421
 			_1421:
 				p = v1
@@ -40025,9 +40026,9 @@ restart:
 		;
 		/* if not jumping, drop the object argument */
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1435
 		_1435:
 			p = v1
@@ -40135,9 +40136,9 @@ restart:
 	free_and_set_true:
 		;
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1448
 		_1448:
 			p = v1
@@ -40160,9 +40161,9 @@ restart:
 	free_and_set_false:
 		;
 		v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1453
 		_1453:
 			p = v1
@@ -40206,9 +40207,9 @@ exception:
 			*(*TJSValue)(unsafe.Pointer(bp + 1232)) = TJSValue{}
 			*(*TJSValue)(unsafe.Pointer(bp + 1232)) = *(*TJSValue)(unsafe.Pointer(v1))
 			v9 = *(*TJSValue)(unsafe.Pointer(bp + 1232))
-			*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+			cell48 = v9
 			if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v10 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+				v10 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto _1459
 			_1459:
 				p = v10
@@ -40224,9 +40225,9 @@ exception:
 				if pos1 == 0 {
 					/* enumerator: close it with a throw */
 					v9 = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-					*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+					cell48 = v9
 					if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-						v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+						v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 						goto _1464
 					_1464:
 						p = v1
@@ -40285,9 +40286,9 @@ done:
 			break
 		}
 		v9 = *(*TJSValue)(unsafe.Pointer(pval))
-		*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9
+		cell48 = v9
 		if libc.Uint32FromInt32(int32(v9.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v1 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4
+			v1 = uintptr(cell48.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 			goto _1473
 		_1473:
 			p = v1

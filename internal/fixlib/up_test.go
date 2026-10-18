@@ -112,7 +112,7 @@ func TestEngineFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := fixEngine(b, hw, strings.HasSuffix(fn, "ccgo_darwin_arm64.go"))
+		out, err := fixEngine(b, hw, filepath.Base(fn))
 		if err != nil {
 			t.Fatalf("%s: %v", fn, err)
 		}
