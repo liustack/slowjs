@@ -24,6 +24,12 @@ package main
 // "offset" for arithmetic on a cell other than a constant step to the
 // next cell, "in an assignment (or declaration) of several results", or
 // "in" some other kind of expression.
+//
+// The audit reads only the generated files, so it does not see
+// objlitDefine of lib/objlit.go, which JS_DefinePropertyValue calls first
+// (see fixDefine). objlitDefine writes only the value of the new slot
+// add_property returns, as JS_CreateProperty does, and reads no slot, so a
+// pending stack never passes through it.
 var slotSites = map[string]slotSite{
 	"XJS_ComputeMemoryUsage": {
 		"early slot compared=1 early slot read value=1 slot guard _js_backtrace_memory_usage=1",

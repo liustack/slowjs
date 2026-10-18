@@ -20472,6 +20472,10 @@ func _JS_DefineAutoInitProperty(tls *libc.TLS, ctx uintptr, _this_obj TJSValue, 
 //
 //	/* shortcut to add or redefine a new property value */
 func XJS_DefinePropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, flags int32) (r int32) {
+	// Changed by internal/fixlib: a new data property of an ordinary object (see fixDefine).
+	if r, ok := objlitDefine(tls, ctx1, this_obj, prop, val, flags); ok {
+		return r
+	}
 	bp := tls.Alloc(16)
 	defer tls.Free(16)
 	var p, v2, v5 uintptr
@@ -256160,3 +256164,11 @@ func _js_backtrace_has_debug(tls *libc.TLS, b uintptr) int32 {
 func _js_backtrace_raw_dump(tls *libc.TLS, s uintptr) int32 {
 	return int32(*(*uint16)(unsafe.Pointer(s + 16 + 0))&0xff00>>8) << 24 >> 24
 }
+
+// Changed by internal/fixlib: the JSObject bit fields lib/objlit.go reads (see fixDefine).
+const (
+	objlitFlagsOff   = 16
+	objlitExtensible = 0x2
+	objlitExotic     = 0x8
+	objlitFastArray  = 0x10
+)

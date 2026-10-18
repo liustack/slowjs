@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does thirteen things:
+// It does fourteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -49,6 +49,10 @@
 //   - In the lib/ccgo_*.go files of amd64 targets and windows, keep the
 //     values the interpreter's loop holds for the whole call in its stack
 //     frame, out of the register allocator (see fixPin).
+//   - In every lib/ccgo_*.go file, let JS_DefinePropertyValue add a new
+//     data property of an ordinary object through objlitDefine of
+//     lib/objlit.go, without the three calls of the generic path (see
+//     fixDefine).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -80,6 +84,7 @@ const (
 var (
 	check  = flag.Bool("check", false, "report missing changes without writing files")
 	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	define = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
 	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -98,6 +103,21 @@ func main() {
 	}
 	if *frames {
 		if err := frameReport(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
+			fmt.Fprintln(os.Stderr, "fixlib:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *define {
+		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
+		var hw []*ast.File
+		if err == nil {
+			hw, err = handWritten("lib")
+		}
+		if err == nil {
+			err = defineReport(files, hw)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
 			os.Exit(1)
 		}
@@ -219,6 +239,11 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixPin(b, pinFiles[name]); err != nil {
+		return nil, err
+	}
+	// The fingerprints of fixDefine are of the text the changes above
+	// leave, so it goes after them.
+	if b, err = fixDefine(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
