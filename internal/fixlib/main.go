@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does twelve things:
+// It does thirteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -46,6 +46,9 @@
 //   - In the lib/ccgo_*.go files of 64-bit targets, keep the JSValue that
 //     the interpreter's inlined JS_DupValue and JS_FreeValue go through in
 //     a Go variable instead of the TLS frame (see fixCells).
+//   - In the lib/ccgo_*.go files of amd64 targets and windows, keep the
+//     values the interpreter's loop holds for the whole call in its stack
+//     frame, out of the register allocator (see fixPin).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -213,6 +216,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixCells(b, cellFiles[name]); err != nil {
+		return nil, err
+	}
+	if b, err = fixPin(b, pinFiles[name]); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
