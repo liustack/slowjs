@@ -10716,11 +10716,12 @@ func _js_c_function_data_call(tls *libc.TLS, ctx uintptr, func_obj TJSValue, thi
 	var arg_buf, s uintptr
 	var i int32
 	_, _, _ = arg_buf, i, s
-	defer tls.FreeAlloca()()
 	s = XJS_GetOpaque(tls, func_obj, uint32(EJS_CLASS_C_FUNCTION_DATA))
 	/* XXX: could add the function on the stack for debug */
 	if libc.BoolInt32(!!(argc < int32((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))) != 0 {
-		arg_buf = libc.X__builtin_alloca(tls, uint64(16)*uint64((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))
+		// Changed by internal/fixlib: alloca is malloc, freed on return (see fixAlloca).
+		arg_buf = libc.Xmalloc(tls, uint64(16)*uint64((*TJSCFunctionDataRecord)(unsafe.Pointer(s)).Flength))
+		defer libc.Xfree(tls, arg_buf)
 		i = 0
 		for {
 			if !(i < argc) {
@@ -33629,8 +33630,15 @@ func _close_lexical_var(tls *libc.TLS, ctx uintptr, b uintptr, sf uintptr, var_i
 }
 
 func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, _func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
-	bp := tls.Alloc(160)
-	defer tls.Free(160)
+	frame_size := 160
+	var frame_malloc uintptr
+	bp := tls.Alloc(frame_size)
+	defer func() {
+		if frame_malloc != 0 {
+			libc.Xfree(tls, frame_malloc)
+		}
+		tls.Free(frame_size)
+	}()
 	*(*TJSValue)(unsafe.Pointer(bp + 32)) = _func_obj
 	var arg_buf, p, prev_sf, rt, sf uintptr
 	var arg_count, i, v31 int32
@@ -33654,7 +33662,6 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, _func_obj TJSValue, this_o
 	}
 	var _ /* v at bp+0 */ TJSValue
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = arg_buf, arg_count, cproto, func1, i, p, prev_sf, ret_val, rt, sf, val, v21, v22, v24, v31
-	defer tls.FreeAlloca()()
 	rt = (*TJSContext)(unsafe.Pointer(ctx2)).Frt
 	sf = bp + 48
 	p = *(*uintptr)(unsafe.Pointer(bp + 32))
@@ -33673,6 +33680,14 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, _func_obj TJSValue, this_o
 		Fmagic      Tint16_t
 	})(unsafe.Pointer(p + 40))).Flength)
 	/* better to always check stack overflow */
+	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
+	if libc.BoolInt32(!!(argc < arg_count)) != 0 && uint64(16)*uint64(arg_count) <= 768 {
+		tls.Free(frame_size)
+		frame_size = 160 + int(uint64(16)*uint64(arg_count))
+		bp = tls.Alloc(frame_size)
+		*(*TJSValue)(unsafe.Pointer(bp + 32)) = _func_obj
+		sf = bp + 48
+	}
 	if _js_check_stack_overflow(tls, rt, uint64(16)*uint64(arg_count)) != 0 {
 		return _JS_ThrowStackOverflow(tls, ctx2)
 	}
@@ -33692,7 +33707,12 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, _func_obj TJSValue, this_o
 	arg_buf = argv
 	if libc.BoolInt32(!!(argc < arg_count)) != 0 {
 		/* ensure that at least argc_count arguments are readable */
-		arg_buf = libc.X__builtin_alloca(tls, uint64(16)*uint64(arg_count))
+		if uint64(16)*uint64(arg_count) <= 768 {
+			arg_buf = bp + uintptr(160)
+		} else {
+			arg_buf = libc.Xmalloc(tls, uint64(16)*uint64(arg_count))
+			frame_malloc = arg_buf
+		}
 		i = 0
 		for {
 			if !(i < argc) {
@@ -33942,21 +33962,39 @@ _17:
 }
 
 func _js_call_bound_function(tls *libc.TLS, ctx uintptr, _func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
-	bp := tls.Alloc(16)
-	defer tls.Free(16)
+	frame_size := 16
+	var frame_malloc uintptr
+	bp := tls.Alloc(frame_size)
+	defer func() {
+		if frame_malloc != 0 {
+			libc.Xfree(tls, frame_malloc)
+		}
+		tls.Free(frame_size)
+	}()
 	*(*TJSValue)(unsafe.Pointer(bp)) = _func_obj
 	var arg_buf, bf, p uintptr
 	var arg_count, i int32
 	var new_target TJSValue
 	_, _, _, _, _, _ = arg_buf, arg_count, bf, i, new_target, p
-	defer tls.FreeAlloca()()
 	p = *(*uintptr)(unsafe.Pointer(bp))
 	bf = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
 	arg_count = (*TJSBoundFunction)(unsafe.Pointer(bf)).Fargc + argc
+	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
+	if uint64(16)*uint64(arg_count) <= 768 {
+		tls.Free(frame_size)
+		frame_size = 16 + int(uint64(16)*uint64(arg_count))
+		bp = tls.Alloc(frame_size)
+		*(*TJSValue)(unsafe.Pointer(bp)) = _func_obj
+	}
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, uint64(16)*uint64(arg_count)) != 0 {
 		return _JS_ThrowStackOverflow(tls, ctx)
 	}
-	arg_buf = libc.X__builtin_alloca(tls, uint64(16)*uint64(arg_count))
+	if uint64(16)*uint64(arg_count) <= 768 {
+		arg_buf = bp + uintptr(16)
+	} else {
+		arg_buf = libc.Xmalloc(tls, uint64(16)*uint64(arg_count))
+		frame_malloc = arg_buf
+	}
 	i = 0
 	for {
 		if !(i < (*TJSBoundFunction)(unsafe.Pointer(bf)).Fargc) {
@@ -34008,8 +34046,15 @@ const EOP_SPECIAL_OBJECT_IMPORT_META = 6
 //
 //	/* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, this_obj1 TJSValue, new_target TJSValue, argc int32, argv uintptr, flags int32) (r5 TJSValue) {
-	bp := tls.Alloc(1280)
-	defer tls.Free(1280)
+	frame_size := 1280
+	var frame_malloc uintptr
+	bp := tls.Alloc(frame_size)
+	defer func() {
+		if frame_malloc != 0 {
+			libc.Xfree(tls, frame_malloc)
+		}
+		tls.Free(frame_size)
+	}()
 	*(*TJSValue)(unsafe.Pointer(bp + 80)) = _func_obj
 	var alloca_size Tsize_t
 	var arg, arg_allocated_size, call_argc, class_flags, first, flags1, flags2, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_with, magic, mask, n, offset, op_flags, opcode, pos1, r4, res, res1, res2, res3, res4, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret5, ret6, ret7, ret8, ret9, scope_idx, scope_idx1, type1, v12, v13, v22, v23, val20, val21, val22, val23, val24, val25, val26, v4, v5, v6 int32
@@ -34103,7 +34148,6 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, thi
 	var _ /* v at bp+16 */ TJSValue
 	var _ /* val at bp+1232 */ TJSValue
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = alloca_size, arg, arg_allocated_size, arg_buf, array_len, atom, atom1, atom10, atom11, atom12, atom13, atom14, atom15, atom16, atom17, atom18, atom2, atom3, atom4, atom5, atom6, atom7, atom8, atom9, b1, bfunc, call_argc, call_argv, call_func, class_flags, ctx10, cv, cv1, d11, d12, d13, d21, d22, d23, d3, d4, diff, diff1, diff2, first, flags1, flags2, getter, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx22, idx23, idx24, idx25, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_computed, is_with, local_buf, magic, mask, method, n, new_len, obj, obj1, obj6, obj9, offset, op134, op_flags, opcode, p, p1, p10, p11, p2, p3, p4, p5, p6, p7, p8, p9, pc, pos, pos1, pr, proto, proto1, prs, prs1, prs2, prs3, pv, pval, r, r1, r2, r3, r4, res, res1, res2, res3, res4, ret, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret_flag, ret_val, ret_val1, rt, s, scope_idx, scope_idx1, setter, sf, sp, stack_buf, super, tab4, tag, tag1, tag2, tmp, tmp1, tmp11, tmp2, tmp21, tmp3, tmp4, tmp5, tmp6, tmp7, type1, v11, v12, v13, v14, v2, v21, v22, v23, v24, v25, v26, val10, val11, val12, val13, val14, val15, val16, val17, val18, val19, val20, val21, val22, val23, val24, val25, val26, val27, val4, val5, val6, val7, val8, val9, value, var_buf, var_ref, var_ref1, var_refs, v1, v10, v121, v1292, v19, v267, v269, v288, v4, v5, v6, v9, v958
-	defer tls.FreeAlloca()()
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 96
 	if _js_poll_interrupts(tls, caller_ctx) != 0 {
@@ -34180,6 +34224,14 @@ _2:
 		arg_allocated_size = 0
 	}
 	alloca_size = uint64(16)*uint64(arg_allocated_size+int32((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_count)+int32((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fstack_size)) + uint64(8)*uint64((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_ref_count)
+	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
+	if alloca_size <= 768 {
+		tls.Free(frame_size)
+		frame_size = 1280 + int(alloca_size)
+		bp = tls.Alloc(frame_size)
+		*(*TJSValue)(unsafe.Pointer(bp + 80)) = _func_obj
+		sf = bp + 96
+	}
 	if _js_check_stack_overflow(tls, rt, alloca_size) != 0 {
 		return _JS_ThrowStackOverflow(tls, caller_ctx)
 	}
@@ -34192,7 +34244,12 @@ _2:
 		Fvar_refs          uintptr
 		Fhome_object       uintptr
 	})(unsafe.Pointer(p2 + 40))).Fvar_refs
-	local_buf = libc.X__builtin_alloca(tls, alloca_size)
+	if alloca_size <= 768 {
+		local_buf = bp + uintptr(1280)
+	} else {
+		local_buf = libc.Xmalloc(tls, alloca_size)
+		frame_malloc = local_buf
+	}
 	if libc.BoolInt32(!!(arg_allocated_size != 0)) != 0 {
 		v4 = argc
 		v5 = int32((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Farg_count)

@@ -6,12 +6,20 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"fmt"
+	"math/bits"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	goruntime "runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 	"unsafe"
+
+	lib "github.com/liustack/quickjs/lib"
 )
 
 // depthCases recurse without end, each in another way javascript calls
@@ -183,6 +191,74 @@ func TestTLSStackResident(t *testing.T) {
 			t.Errorf("%s: %d bytes of TLS blocks after the recursion, want at most %d (%d without)", c.name, large, limit, small)
 		}
 	}
+}
+
+// The room of a JS_CallInternal frame for its arguments, locals and stack
+// goes into the frame up to allocaMax bytes (internal/fixlib/alloca.go),
+// and the frame with that room stays in the power of two block the frame
+// takes alone, the block linux's libc keeps per depth. So a recursion
+// through functions with any number of locals near that limit leaves the
+// TLS blocks as large as one through functions with none. The frame size
+// and the limit are read from the generated code, and the number of
+// locals runs from a little under the limit to twice it: a larger frame or
+// a higher limit grows the blocks. On 32-bit targets the frame, 160 bytes,
+// may grow from a 256 byte block to a 1 KB one. Smaller frames do grow
+// with room under the limit: a level through a bound function, whose frame
+// is 16 bytes on 64-bit targets, may take up to about 1 KB more.
+func TestTLSStackResidentNearLimit(t *testing.T) {
+	frame, limit := callInternalFrame(t)
+	var v lib.TJSValue // a struct on 64-bit targets, an integer on 32-bit ones
+	value := int(unsafe.Sizeof(v))
+	wide := unsafe.Sizeof(uintptr(0)) == 8
+	if block := 1 << bits.Len(uint(frame-1)); wide && frame+limit > block {
+		t.Errorf("a frame of %d bytes with up to %d of room takes more than its block of %d", frame, limit, block)
+	}
+	recursion := func(n int) string {
+		var b strings.Builder
+		for i := range n {
+			fmt.Fprintf(&b, "var v%d = %d; ", i, i)
+		}
+		return `function f(k) { ` + b.String() + `if (k) f(k - 1) } f(1000)`
+	}
+	small, blocks := tlsResident(t, recursion(0))
+	want := small + 64<<10
+	if !wide {
+		want = blocks << 10
+	}
+	for n := limit/value - 8; n <= 2*limit/value; n++ {
+		if size, _ := tlsResident(t, recursion(n)); size > want {
+			t.Errorf("%d locals: %d bytes of TLS blocks after the recursion, want at most %d (%d without)", n, size, want, small)
+		}
+	}
+}
+
+// callInternalFrame returns the size of the TLS frame of JS_CallInternal
+// and the largest room for its arguments, locals and stack that goes into
+// it, from the generated code of this target.
+func callInternalFrame(t *testing.T) (frame, limit int) {
+	t.Helper()
+	fn := filepath.Join("lib", "ccgo_"+goruntime.GOOS+"_"+goruntime.GOARCH+".go")
+	if goruntime.GOOS == "windows" {
+		fn = filepath.Join("lib", "ccgo_windows.go")
+	}
+	b, err := os.ReadFile(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := strings.Index(string(b), "\nfunc _JS_CallInternal(")
+	if i < 0 {
+		t.Fatalf("%s: no _JS_CallInternal", fn)
+	}
+	body := string(b[i:])
+	body = body[:strings.Index(body, "\n}\n")]
+	f := regexp.MustCompile(`\n\tframe_size := (\d+)\n`).FindStringSubmatch(body)
+	l := regexp.MustCompile(`\n\tif alloca_size <= (\d+) \{\n`).FindStringSubmatch(body)
+	if f == nil || l == nil {
+		t.Fatalf("%s: _JS_CallInternal has no frame size or no limit for its room", fn)
+	}
+	frame, _ = strconv.Atoi(f[1])
+	limit, _ = strconv.Atoi(l[1])
+	return frame, limit
 }
 
 // tlsResident returns the size of the TLS blocks linux's libc keeps after

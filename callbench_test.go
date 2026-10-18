@@ -56,3 +56,21 @@ func BenchmarkCall(b *testing.B) {
 		})
 	}
 }
+
+// A call of any kind allocates no Go memory: its TLS frame and the room
+// for its arguments and locals are libc memory.
+func TestCallAllocs(t *testing.T) {
+	for _, k := range callKinds {
+		m := newCallVM(t, k.setup, k.call)
+		run := func(n int) float64 {
+			return testing.AllocsPerRun(20, func() {
+				if _, err := m.Call("loop", n); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+		if per := (run(2000) - run(1000)) / 1000; per != 0 {
+			t.Errorf("%s: %.2f Go allocations per call, want 0", k.name, per)
+		}
+	}
+}

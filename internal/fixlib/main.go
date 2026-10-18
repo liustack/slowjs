@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// It does eight things:
+// It does nine things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -33,6 +33,10 @@
 //   - In every lib/ccgo_*.go file, give a new runtime the Go port's stack
 //     limit, and make running out of stack a RangeError worded as in V8,
 //     in the parser too (see fixStack).
+//   - In every lib/ccgo_*.go file, put the room of the four calls of alloca
+//     into the TLS frame of their function, or malloc it where the function
+//     has no frame, so that a call allocates no Go memory and takes as many
+//     TLS stack slots as before (see fixAlloca).
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -118,7 +122,14 @@ func run() (missing int, err error) {
 			if b, err = fixStack(b); err != nil {
 				return nil, err
 			}
-			return fixBacktrace(b)
+			if b, err = fixBacktrace(b); err != nil {
+				return nil, err
+			}
+			if b, err = fixAlloca(b); err != nil {
+				return nil, err
+			}
+			// The changes to frames leave the property slots as they were.
+			return b, auditSlots(b)
 		})
 		if err != nil {
 			return missing, err
