@@ -23,11 +23,13 @@ import (
 // on every target the slots make the frames of the big functions much
 // larger (JS_CallInternal on darwin/arm64: 7744 bytes, 944 without them).
 //
-// fixUp writes each of these as (*T)(unsafe.Pointer(x)), the same pointer
-// made at the same point, so **(**T)(__ccgo_up(x)) becomes
-// *(*T)(unsafe.Pointer(x)). The definition of __ccgo_up stays, unused. Any
-// other use of __ccgo_up, or a definition that does something else, stops
-// fixlib. It runs after the other changes, which accept both forms.
+// fixUp writes each of these as (*T)(unsafe.Pointer(x)), the same pointer,
+// so **(**T)(__ccgo_up(x)) becomes *(*T)(unsafe.Pointer(x)). Without the
+// call, Go no longer reads x before the other calls in the same statement.
+// C does not fix that order either, and no statement in lib depends on it.
+// The definition of __ccgo_up stays, unused. Any other use of __ccgo_up, or
+// a definition that does something else, stops fixlib. The changes before
+// it accept both forms, and the ones after it only the new one.
 
 const upDefinition = "func __ccgo_up(n uintptr) unsafe.Pointer {\n\treturn unsafe.Pointer(&n)\n}"
 

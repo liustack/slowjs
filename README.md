@@ -427,8 +427,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     loads it back, which arm64 does not optimize away, and the slots made
     the Go stack frame of `JS_CallInternal` 7744 bytes on darwin/arm64 and
     2608 on linux/amd64. Every use is now `*(*T)(unsafe.Pointer(x))`, the
-    same pointer made at the same point, in all 13 files. The frame of
-    `JS_CallInternal` is now 944 and 896 bytes. `go vet`'s `unsafeptr`
+    same pointer, in all 13 files. Without the call, Go no longer reads `x`
+    before the other calls in the same statement. C does not fix that
+    order either, and no statement in the 13 files depends on it. With the
+    next two changes, the frame of `JS_CallInternal` is now 944 and 896
+    bytes. `go vet`'s `unsafeptr`
     check reports more lines of `lib/` than before. Nothing runs it there.
   - The interpreter inlines `JS_DupValue` and `JS_FreeValue`, and each
     expansion stored the value into a cell of the TLS frame to read its
@@ -660,8 +663,9 @@ Conflicts to expect:
   `lib/ccgo_darwin_arm64.go` and why it must stay: a line without a reason
   is a function that could join the list, after a review.
   `fixlib` writes every `*(**T)(__ccgo_up(x))` as
-  `*(*T)(unsafe.Pointer(x))` after the other changes, which take both
-  forms, so a match that only knows the upstream form must learn the other
+  `*(*T)(unsafe.Pointer(x))` (`fixUp`). The changes before it take both
+  forms and the ones after it (`fixCells`, `fixPin`, `fixDefine`) only the
+  new one, so a match that only knows the upstream form must learn the other
   (`reDeref` in `internal/fixlib/main.go` gives both). If it reports that
   `__ccgo_up` is used some other way or that its definition changed, read
   what ccgo now writes (`internal/fixlib/up.go`).
