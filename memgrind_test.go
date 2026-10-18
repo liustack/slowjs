@@ -143,6 +143,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("hostPanicNested", TestHostPanicNested)
 	t.Run("moduleLoaderPanic", TestModuleLoaderPanic)
 	t.Run("defaultStackLimit", TestDefaultStackLimit)
+	t.Run("newVMContextFailure", TestNewVMContextFailure)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
