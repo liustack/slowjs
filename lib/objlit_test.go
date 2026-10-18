@@ -219,3 +219,68 @@ func TestObjlitDefineRefuses(t *testing.T) {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
+
+// When add_property runs out of memory, objlitDefine releases the
+// reference it was given, returns -1 and leaves the error pending, and the
+// object stays as it was. Each case needs memory for the new property: a
+// copy of a shape other objects share, or a larger property array.
+func TestObjlitDefineOutOfMemory(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	rt := XJS_NewRuntime(tls)
+	defer XJS_FreeRuntime(tls, rt)
+	ctx := XJS_NewContext(tls, rt)
+	defer XJS_FreeContext(tls, ctx)
+
+	name, err := libc.CString("objlitOutOfMemory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer libc.Xfree(tls, name)
+	prop := XJS_NewAtom(tls, ctx, name)
+	defer XJS_FreeAtom(tls, ctx, prop)
+
+	val := eval0(t, tls, ctx, "({})")
+	defer XFreeValue(tls, ctx, val)
+	rc := func() int32 { return (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, jsvPtr(val)))).Fref_count }
+	before := rc()
+	for _, c := range []struct{ name, js string }{
+		{"shared shape", "({})"},
+		{"larger property array", "({x: 1, y: 2})"},
+	} {
+		obj := eval0(t, tls, ctx, c.js)
+		ref := XDupValue(tls, ctx, val)
+		blocks := fillMemory(tls, rt)
+		r, ok := objlitDefine(tls, ctx, obj, prop, ref, MJS_PROP_C_W_E)
+		for _, list := range blocks {
+			for _, p := range list {
+				Xjs_free_rt(tls, rt, p)
+			}
+		}
+		XJS_SetMemoryLimit(tls, rt, ^Tsize_t(0))
+
+		if r != -1 || !ok {
+			t.Errorf("%s: objlitDefine = %d, %v, want -1, true", c.name, r, ok)
+		}
+		if got := rc(); got != before {
+			t.Errorf("%s: the value has %d references, want %d", c.name, got, before)
+		}
+		if XJS_HasException(tls, ctx) == 0 {
+			t.Errorf("%s: no pending exception", c.name)
+		}
+		XJS_SetUncatchableException(tls, ctx, 0)
+		XFreeValue(tls, ctx, XJS_GetException(tls, ctx))
+		if _find_own_property1(tls, jsvPtr(obj), prop) != 0 {
+			t.Errorf("%s: the object has the property", c.name)
+		}
+
+		// With memory again, the same definition works.
+		if r, ok := objlitDefine(tls, ctx, obj, prop, XDupValue(tls, ctx, val), MJS_PROP_C_W_E); r != 1 || !ok {
+			t.Errorf("%s: objlitDefine = %d, %v after the memory came back, want 1, true", c.name, r, ok)
+		}
+		XFreeValue(tls, ctx, obj)
+		if got := rc(); got != before {
+			t.Errorf("%s: the value has %d references after the object went, want %d", c.name, got, before)
+		}
+	}
+}
