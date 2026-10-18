@@ -48,8 +48,8 @@ func TestObjlitSemantics(t *testing.T) {
 
 // A new data property of an ordinary object skips the generic path of
 // JS_DefinePropertyValue, JS_DefineProperty and JS_CreateProperty. Their
-// TLS frames are how the test tells: the fast path writes nothing to the
-// TLS stack in these cases, the generic path always does. The cases that
+// TLS frames are how the test tells: in these cases the fast path writes
+// nothing to the TLS stack, while the generic path writes its frames there. The cases that
 // the fast path leaves to the generic path show that the test sees it.
 func TestObjlitFastPath(t *testing.T) {
 	tls := libc.NewTLS()
@@ -107,20 +107,43 @@ func TestObjlitFastPath(t *testing.T) {
 	}
 }
 
-// touchesTLS reports whether f writes to the TLS stack above its top.
+// touchesTLS reports whether f writes to the TLS stack above its top. It
+// fills room above the top, frees it, and after f looks at it again. That
+// works when the next frame anyone takes starts at that room, which holds
+// for both of libc's TLS stacks, as long as the room stays:
+//   - On linux each depth has its own block, kept and reused, so the next
+//     frame gets the block of the room.
+//   - Elsewhere the stack is a list of pages, and a page is freed or left
+//     once the stack above it is empty, so the next frame could come from
+//     another page. A guard frame holds the page, and the room must fit on
+//     it.
+//
+// The test checks that the next frame starts at the room before it relies
+// on it.
 func touchesTLS(t *testing.T, tls *libc.TLS, f func()) bool {
-	const n, fill = 1024, 0xa5
+	const n, fill, guard, frame = 1024, 0xa5, 16, 16
+	tls.Alloc(guard)
+	defer tls.Free(guard)
 	p := tls.Alloc(n)
+	tls.Free(n)
+	if q := tls.Alloc(frame); q != p {
+		t.Fatalf("the next frame is at %#x, not at the room at %#x", q, p)
+	}
+	tls.Free(frame)
+	if q := tls.Alloc(n); q != p {
+		t.Fatalf("the room moved from %#x to %#x", p, q)
+	}
 	b := unsafe.Slice((*byte)(unsafe.Pointer(p)), n)
 	for i := range b {
 		b[i] = fill
 	}
 	tls.Free(n)
 	f()
-	if q := tls.Alloc(n); q != p {
-		t.Fatalf("the TLS stack top moved from %#x to %#x", p, q)
-	}
+	q := tls.Alloc(n)
 	defer tls.Free(n)
+	if q != p {
+		t.Fatalf("the room moved from %#x to %#x", p, q)
+	}
 	for _, c := range b {
 		if c != fill {
 			return true
