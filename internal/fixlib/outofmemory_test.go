@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -94,5 +95,84 @@ func TestOutOfMemoryRejectsNewThrowError2(t *testing.T) {
 	_, err := fixOutOfMemory(bytes.Replace(b, call, end, 1))
 	if err == nil || !strings.Contains(err.Error(), "_js_new_call") {
 		t.Fatalf("got %v, want the new call named", err)
+	}
+}
+
+// The end of JS_ThrowError2 in lib/ccgo_darwin_arm64.go as generated.
+const throwError2End = "\tobj = XJS_NewObjectProtoClass(tls, ctx1, **(**TJSValue)(__ccgo_up(ctx1 + 176 + uintptr(error_num)*16)), uint32(EJS_CLASS_ERROR))\n" +
+	"\tv1 = int32(libc.BoolInt64(!!(int32(obj.Ftag) == int32(EJS_TAG_EXCEPTION))))\n" +
+	"\tgoto _2\n" +
+	"_2:\n" +
+	"\tif libc.BoolInt64(!!(v1 != 0)) != 0 {\n" +
+	"\t\t/* out of memory: throw JS_NULL to avoid recursing */\n" +
+	"\t\tobj = TJSValue{\n" +
+	"\t\t\tFu:   TJSValueUnion{},\n" +
+	"\t\t\tFtag: int64(EJS_TAG_NULL),\n" +
+	"\t\t}\n" +
+	"\t} else {\n" +
+	"\t\tv3 = bp\n" +
+	"\t\tv4 = XJS_NewStringLen(tls, ctx1, v3, libc.Xstrlen(tls, v3))\n" +
+	"\t\tgoto _5\n" +
+	"\t_5:\n" +
+	"\t\tXJS_DefinePropertyValue(tls, ctx1, obj, uint32(EJS_ATOM_message), v4, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))\n" +
+	"\t\tif add_backtrace != 0 {\n" +
+	"\t\t\t_build_backtrace(tls, ctx1, obj, libc.UintptrFromInt32(0), 0, 0, 0)\n" +
+	"\t\t}\n" +
+	"\t}\n" +
+	"\tret = XJS_Throw(tls, ctx1, obj)\n" +
+	"\treturn ret\n}\n"
+
+// fixThrowError2 takes the end as generated, and stops when the end builds
+// an error that _js_throw_error2 does not: other property flags, another
+// message, other backtrace flags, a call more or less.
+func TestOutOfMemoryRejectsOtherError(t *testing.T) {
+	b := engineFile(t)
+	call := "\treturn _js_throw_error2(tls, ctx1, error_num, bp, add_backtrace)\n}\n"
+	if bytes.Count(b, []byte(call)) != 1 {
+		t.Fatal("cannot find the call of _js_throw_error2")
+	}
+	up := strings.Replace(string(b), call, throwError2End, 1)
+	out, err := fixThrowError2([]byte(up))
+	if err != nil || !bytes.Equal(out, b) {
+		t.Fatalf("fixThrowError2 does not give the fixed file back: %v", err)
+	}
+	for _, c := range []struct{ name, old, new string }{
+		{"other flags", "libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))\n", "libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))\n"},
+		{"another message", "\t\tv3 = bp\n", "\t\tv3 = fmt\n"},
+		{"other backtrace flags", "libc.UintptrFromInt32(0), 0, 0, 0)", "libc.UintptrFromInt32(0), 0, 0, 1)"},
+		{"another class", "uint32(EJS_CLASS_ERROR))\n", "uint32(EJS_CLASS_OBJECT))\n"},
+		{"a second property", "\t\tif add_backtrace != 0 {\n", "\t\tXJS_DefinePropertyValue(tls, ctx1, obj, uint32(EJS_ATOM_name), v4, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))\n\t\tif add_backtrace != 0 {\n"},
+		{"no backtrace", "\t\t\t_build_backtrace(tls, ctx1, obj, libc.UintptrFromInt32(0), 0, 0, 0)\n", ""},
+	} {
+		if !strings.Contains(throwError2End, c.old) {
+			t.Fatalf("%s: no %q", c.name, c.old)
+		}
+		changed := strings.Replace(up, throwError2End, strings.Replace(throwError2End, c.old, c.new, 1), 1)
+		if _, err := fixThrowError2([]byte(changed)); err == nil {
+			t.Errorf("%s went through", c.name)
+		}
+	}
+}
+
+// A new place that throws the regexp engine's out of memory error, uses the
+// "out of memory" message or calls the regexp engine stops fixlib: it would
+// throw a catchable error for running out of memory.
+func TestOutOfMemoryRejectsNewUse(t *testing.T) {
+	b := engineFile(t)
+	strs, err := stringTable(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, body string }{
+		{"regexp error", fmt.Sprintf("\tXJS_ThrowInternalError(tls, ctx, __ccgo_ts+%d, 0)\n", strs["out of memory in regexp execution"])},
+		{"message", fmt.Sprintf("\tXJS_ThrowRangeError(tls, ctx, __ccgo_ts+%d, 0)\n", strs["out of memory"])},
+		{"lre_exec", "\tXlre_exec(tls, 0, 0, 0, 0, 0, 0)\n"},
+		{"lre_compile", "\tXlre_compile(tls, 0, 0, 0, 0, 0, 0)\n"},
+	} {
+		f := "\nfunc _js_new_use(tls *libc.TLS, ctx uintptr) {\n" + c.body + "}\n\nfunc _js_regexp_finalizer("
+		_, err := fixOutOfMemory(bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte(f), 1))
+		if err == nil || !strings.Contains(err.Error(), "_js_new_use") {
+			t.Errorf("%s: got %v, want the new function named", c.name, err)
+		}
 	}
 }

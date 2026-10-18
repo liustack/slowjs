@@ -24,6 +24,7 @@ var (
 // throwError2Calls are the functions the end of JS_ThrowError2 calls, from
 // building the error object to throwing it, which _js_throw_error2 does in
 // the same way.
+// The first five are called once each.
 var throwError2Calls = []string{
 	"XJS_NewObjectProtoClass", "XJS_NewStringLen", "XJS_DefinePropertyValue", "XJS_Throw",
 	"_build_backtrace", "__ccgo_up", "int32", "int64", "uint32", "uintptr", "uint64",
@@ -101,7 +102,36 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 		out := append(append(append([]byte{}, body[:loc[0][0]]...), fixed...), body[loc[0][1]:]...)
 		b = bytes.Replace(b, body, out, 1)
 	}
+	if err := checkOutOfMemoryUses(b, strs); err != nil {
+		return nil, err
+	}
 	return b, nil
+}
+
+// checkOutOfMemoryUses checks that no other function throws the regexp
+// engine's out of memory error, uses the "out of memory" message or calls
+// the regexp engine: each would throw a catchable error for running out of
+// memory. _re_parse_out_of_memory gives lre_compile the message
+// _js_regexp_out_of_memory looks for.
+func checkOutOfMemoryUses(b []byte, strs map[string]int) error {
+	str := func(s string) *regexp.Regexp {
+		return regexp.MustCompile(fmt.Sprintf(`__ccgo_ts\+%d\b`, strs[s]))
+	}
+	for _, c := range []struct {
+		what string
+		re   *regexp.Regexp
+		want map[string]int
+	}{
+		{"the out of memory error of regexp execution", str("out of memory in regexp execution"), nil},
+		{`the "out of memory" message`, str("out of memory"), map[string]int{"XJS_ThrowOutOfMemory": 1, "_re_parse_out_of_memory": 1}},
+		{"lre_exec", regexp.MustCompile(`\bXlre_exec\(`), map[string]int{"_js_regexp_exec": 1, "_js_regexp_replace": 1}},
+		{"lre_compile", regexp.MustCompile(`\bXlre_compile\(`), map[string]int{"_js_compile_regexp": 1}},
+	} {
+		if diff := diffCounts(countPerFunc(b, c.re), c.want); len(diff) != 0 {
+			return fmt.Errorf("uses of %s differ: %s: running out of memory there must throw XJS_ThrowOutOfMemory", c.what, strings.Join(diff, ", "))
+		}
+	}
+	return nil
 }
 
 // fixThrowError2 replaces the end of _JS_ThrowError2, from building the
@@ -133,9 +163,31 @@ func fixThrowError2(b []byte) ([]byte, error) {
 			return nil, fmt.Errorf("_JS_ThrowError2: the end calls %s", m[1])
 		}
 	}
-	for _, want := range []string{"XJS_NewStringLen(", "uint32(EJS_ATOM_message)", "uint32(EJS_CLASS_ERROR)", "/* out of memory: throw JS_NULL to avoid recursing */", "if add_backtrace != 0 {"} {
-		if !bytes.Contains(tail, []byte(want)) {
-			return nil, fmt.Errorf("_JS_ThrowError2: the end has no %s", want)
+	calls := map[string]int{}
+	for _, m := range reCallName.FindAllSubmatch(tail, -1) {
+		calls[string(m[1])]++
+	}
+	for _, name := range throwError2Calls[:5] {
+		if calls[name] != 1 {
+			return nil, fmt.Errorf("_JS_ThrowError2: the end calls %s %d times, want once", name, calls[name])
+		}
+	}
+	// Each call as _js_throw_error2 makes it: an Error of the context's
+	// prototype for error_num, the message from buf, writable and
+	// configurable, and a backtrace without a file name.
+	c := regexp.QuoteMeta(ctx)
+	msg := regexp.MustCompile(`\n\t+(\w+) = bp\n\t+(\w+) = XJS_NewStringLen\(tls, ` + c + `, (\w+), libc\.Xstrlen\(tls, (\w+)\)\)\n`).FindSubmatch(tail)
+	if msg == nil || string(msg[1]) != string(msg[3]) || string(msg[1]) != string(msg[4]) {
+		return nil, fmt.Errorf("_JS_ThrowError2: the end makes the message some other way than from buf")
+	}
+	for _, want := range []string{
+		`\tobj = XJS_NewObjectProtoClass\(tls, ` + c + `, ` + reDeref(`TJSValue`, c+` \+ \d+ \+ uintptr\(error_num\)\*\d+`) + `, uint32\(EJS_CLASS_ERROR\)\)\n`,
+		`\n\t+/\* out of memory: throw JS_NULL to avoid recursing \*/\n`,
+		`\n\t+XJS_DefinePropertyValue\(tls, ` + c + `, obj, uint32\(EJS_ATOM_message\), ` + string(msg[2]) + `, libc\.Int32FromInt32\(1\)<<libc\.Int32FromInt32\(1\)\|libc\.Int32FromInt32\(1\)<<libc\.Int32FromInt32\(0\)\)\n`,
+		`\n\t+if add_backtrace != 0 \{\n\t+_build_backtrace\(tls, ` + c + `, obj, libc\.UintptrFromInt32\(0\), 0, 0, 0\)\n\t+\}\n`,
+	} {
+		if !regexp.MustCompile(want).Match(tail) {
+			return nil, fmt.Errorf("_JS_ThrowError2: the end does not match %s: compare it with _js_throw_error2", want)
 		}
 	}
 	fixed := append(append([]byte{}, body[:start]...), call...)

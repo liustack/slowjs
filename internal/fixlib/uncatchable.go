@@ -159,8 +159,8 @@ func guardFirst(body []byte, guard, name string) error {
 	return nil
 }
 
-// countPerFunc counts the occurrences of s in each function of b.
-func countPerFunc(b []byte, s string) map[string]int {
+// countPerFunc counts the matches of re in each function of b.
+func countPerFunc(b []byte, re *regexp.Regexp) map[string]int {
 	counts := map[string]int{}
 	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
 	for i, h := range heads {
@@ -168,7 +168,7 @@ func countPerFunc(b []byte, s string) map[string]int {
 		if i+1 < len(heads) {
 			end = heads[i+1][0]
 		}
-		if n := bytes.Count(b[h[1]:end], []byte(s)); n != 0 {
+		if n := len(re.FindAllIndex(b[h[1]:end], -1)); n != 0 {
 			counts[string(b[h[2]:h[3]])] = n
 		}
 	}
@@ -195,7 +195,7 @@ func diffCounts(got, want map[string]int) []string {
 // checkExceptionWriters checks that the functions storing the runtime's
 // exception are those of exceptionWriters.
 func checkExceptionWriters(b []byte) error {
-	if diff := diffCounts(countPerFunc(b, ".Fcurrent_exception = "), exceptionWriters); len(diff) != 0 {
+	if diff := diffCounts(countPerFunc(b, regexp.MustCompile(`\.Fcurrent_exception = `)), exceptionWriters); len(diff) != 0 {
 		return fmt.Errorf("stores of the runtime's exception not in exceptionWriters: %s: check whether each one takes an uncatchable exception where a script can catch it", strings.Join(diff, ", "))
 	}
 	return nil
@@ -219,7 +219,7 @@ func fixExceptionHandlers(b []byte) ([]byte, error) {
 		b = bytes.Replace(b, body, fixed, 1)
 	}
 
-	if unknown := diffCounts(countPerFunc(b, get), exceptionReaders); len(unknown) != 0 {
+	if unknown := diffCounts(countPerFunc(b, regexp.MustCompile(regexp.QuoteMeta(get))), exceptionReaders); len(unknown) != 0 {
 		return nil, fmt.Errorf("calls of JS_GetException not in exceptionHandlers or exceptionReaders: %s: check whether each one hands an uncatchable exception to a script", strings.Join(unknown, ", "))
 	}
 	return b, nil

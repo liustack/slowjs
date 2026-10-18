@@ -593,7 +593,14 @@ Conflicts to expect:
   If it reports that `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp
   functions or the string table changed shape, compare the new upstream
   code with `lib/outofmemory.go`: `_js_throw_error2` replaces the end of
-  `JS_ThrowError2` and must build the same error.
+  `JS_ThrowError2` and must build the same error. That includes the end
+  not matching one of the calls `fixThrowError2` expects (the property
+  flags of `message`, the backtrace flags, a call made more than once).
+  If it reports that the uses of the regexp out of memory error, of the
+  `"out of memory"` message, of `lre_exec` or of `lre_compile` differ,
+  read the new function: running out of memory there must throw with
+  `XJS_ThrowOutOfMemory`, as in `_js_regexp_exec`. Then wire it in
+  `fixOutOfMemory` and add it to `checkOutOfMemoryUses`.
   If it reports that `Xdbuf_claim`, `_push_scope`, `_pop_scope`,
   `_js_create_function`, `_resolve_variables`, `_resolve_labels`, the
   loops whose code the parser moves, `_js_parse_error_v`, `_next_token`,
