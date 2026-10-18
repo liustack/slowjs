@@ -19,7 +19,7 @@ class field on array => 0:number=5:wec,length:number=1:w,f:number=1:wec
 class field index on array => 0:string=z:wec,length:number=1:w len=1
 class field on proxy this => f:number=1:wec,g:number=2:wec trap=fg
 class field on typed array => 0:number=0:wec,1:number=0:wec,f:number=1:wec
-class field on string object => x
+class field on string object => 0:string=a:e,1:string=b:e,2:string=q:wec,length:number=2:,f:number=1:wec | TypeError: property is not configurable
 class field on global => v:number=7:wec
 class field private => q:number=2:wec p=1
 json => 0:number=0:wec,a:number=3:wec,b:string=s:wec,__proto__:number=5:wec
