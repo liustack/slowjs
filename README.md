@@ -418,6 +418,37 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `internal/fixlib/frames.go`), with no C hunk. Tests:
   `calldepth_test.go`, `callbench_test.go`,
   `internal/fixlib/alloca_test.go`, `internal/fixlib/frames_test.go`.
+- The interpreter loop does less work with the stack. Three changes to the
+  generated Go, with no C hunk:
+  - ccgo writes every use of an address held in a `uintptr` as
+    `*(**T)(__ccgo_up(x))`, where `__ccgo_up` returns the address of a
+    copy of `x`. It is there only so that `go vet` does not report the
+    conversion. Once inlined, each use stores `x` into a stack slot and
+    loads it back, which arm64 does not optimize away, and the slots made
+    the Go stack frame of `JS_CallInternal` 7744 bytes on darwin/arm64 and
+    2608 on linux/amd64. Every use is now `*(*T)(unsafe.Pointer(x))`, the
+    same pointer made at the same point, in all 13 files. The frame of
+    `JS_CallInternal` is now 944 and 896 bytes. `go vet`'s `unsafeptr`
+    check reports more lines of `lib/` than before. Nothing runs it there.
+  - The interpreter inlines `JS_DupValue` and `JS_FreeValue`, and each
+    expansion stored the value into a cell of the TLS frame to read its
+    pointer back. On the 11 files of 64-bit targets the two cells are Go
+    variables. The TLS frame keeps its size, so the stack check counts the
+    same slots. The 32-bit targets keep the cells: a value is a NaN-boxed
+    `uint64` there.
+  - On amd64, Go's register allocator makes every opcode handler put back
+    the registers of the values the loop keeps for the whole call, mostly
+    as loads from the stack. In the files of darwin, freebsd and linux on
+    amd64 and of windows, the interpreter takes the address of 15 of them
+    (the arguments, the runtime, the context, the bytecode, the frame and
+    its buffers), so they stay in their stack slots and are read where they
+    are used. Nothing escapes. The windows file also serves windows/arm64:
+    the same change, tried on darwin/arm64, was not slower.
+
+  A server render of a page of tifa's example shop takes about 12% less
+  time on linux/amd64 (AMD EPYC) and 17% less on darwin/arm64 (Apple M4),
+  with the same HTML. Tests: `internal/fixlib/up_test.go`,
+  `internal/fixlib/cells_test.go`, `internal/fixlib/pin_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -505,8 +536,8 @@ Conflicts to expect:
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
   compiler's out of memory checks, the stack limit of a new runtime, the
-  call paths without `alloca` and the functions without a TLS frame
-  conflict. Take the upstream version
+  call paths without `alloca`, the functions without a TLS frame and the
+  changes to the interpreter loop conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -607,6 +638,20 @@ Conflicts to expect:
   `go run ./internal/fixlib -frames` prints every TLS frame of
   `lib/ccgo_darwin_arm64.go` and why it must stay: a line without a reason
   is a function that could join the list, after a review.
+  `fixlib` writes every `*(**T)(__ccgo_up(x))` as
+  `*(*T)(unsafe.Pointer(x))` after the other changes, which take both
+  forms, so a match that only knows the upstream form must learn the other
+  (`reDeref` in `internal/fixlib/main.go` gives both). If it reports that
+  `__ccgo_up` is used some other way or that its definition changed, read
+  what ccgo now writes (`internal/fixlib/up.go`).
+  If it reports that `_JS_CallInternal` has other cells than the two of
+  `JS_DupValue` and `JS_FreeValue`, a use of one other than a store of a
+  whole value or a load of its pointer, or that `JSValue` has another
+  layout, read the new interpreter against `internal/fixlib/cells.go`: a
+  cell may only become a Go variable if nothing else reads or writes its
+  bytes. `TestCellsEveryFile` counts the stores and loads of each.
+  If it reports that a value of `pinVars` (`internal/fixlib/pin.go`) is
+  gone, find what the interpreter now calls it and update the list.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
@@ -630,9 +675,9 @@ Conflicts to expect:
   `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed. The calls without
-  `alloca` and the functions without a TLS frame have no C form: they are
-  changes to what ccgo generates, so `fixlib` applies them after every
-  regeneration.
+  `alloca`, the functions without a TLS frame and the changes to the
+  interpreter loop have no C form: they are changes to what ccgo
+  generates, so `fixlib` applies them after every regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
@@ -754,7 +799,7 @@ go test -run 'TestErrorStack' .                          # stack text and memory
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
-go test ./internal/fixlib                                # fixlib notices new reads of property values
+go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
