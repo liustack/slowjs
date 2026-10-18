@@ -269,3 +269,21 @@ func undoResolveLabels(t *testing.T, b []byte) []byte {
 	}
 	return out
 }
+
+// A new jump to the fail label of _resolve_labels stops fixlib, in the form
+// ccgo writes and in a fixed file: the end fixlib writes keeps the new code,
+// which is right only for the four failed relocations it was checked for.
+func TestCompileRejectsNewFailJump(t *testing.T) {
+	fixed := engineFile(t)
+	for name, b := range map[string][]byte{"upstream": undoResolveLabels(t, fixed), "fixed": fixed} {
+		body, err := funcBody(b, funcHead("_resolve_labels"), "_resolve_labels")
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := bytes.Index(body, []byte("\tpos = 0\n\tfor {\n"))
+		changed := append(append(append([]byte{}, body[:at]...), "\tif bc_len == 0 {\n\t\tgoto fail\n\t}\n"...), body[at:]...)
+		if _, err := fixCompile(bytes.Replace(b, body, changed, 1)); err == nil {
+			t.Errorf("%s: a new goto fail went through", name)
+		}
+	}
+}

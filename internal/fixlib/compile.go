@@ -266,6 +266,13 @@ func fixResolveLabels(b []byte) ([]byte, error) {
 		return nil, fmt.Errorf("_resolve_labels: cannot find bc_out")
 	}
 	failed := fmt.Sprintf("if (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n", bc[1])
+	// The end that fixlib writes keeps the new code and frees the
+	// relocations left. That is right for the four failed calls of
+	// _add_reloc, and the jump ccgo puts after the last return: a new way
+	// to the label needs a look.
+	if n := bytes.Count(body, []byte("goto fail\n")); n != 5 {
+		return nil, fmt.Errorf("_resolve_labels: want 5 jumps to the fail label, found %d: check that the end fixlib writes is right for the new one", n)
+	}
 
 	// The new code, as the end sets it.
 	set := regexp.MustCompile(`\t/\* set the new byte code \*/\n(\tXdbuf_free\(tls, [^\n]*\)\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fbyte_code = [^\n]*\n\t\(\*TJSFunctionDef\)\(unsafe\.Pointer\(\w+\)\)\.Fuse_short_opcodes = int32\(\w+\)\n)`).FindSubmatch(body)

@@ -623,6 +623,10 @@ Conflicts to expect:
   test only moved and a failed buffer still fails at once, teach
   `fixCompile` the new place. If it is gone, make `fixCompile` add it.
   Do not edit the generated code by hand.
+  If it reports a new jump to the fail label of `_resolve_labels`, read
+  where it comes from: the end that `fixCompile` writes keeps the new code
+  and frees the relocations left, which is right only after a failed
+  `_add_reloc`. Make the end right for the new path, then fix the count.
   fixlib takes a change of its own as made only when its whole text is
   where it puts it. If it reports that such a text is somewhere else, is
   there twice, or that `_resolve_labels` has a label `out_of_memory` or
