@@ -464,11 +464,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   linux/amd64 (AMD EPYC), and a server render of a page of tifa's example
   shop about 6% less, with the same HTML. `fixlib` puts the call into all
   13 files and takes the object bit fields `objlitDefine` checks from each
-  file's `JS_NewObjectFromShape`, checked against the tests of the same
+  file's `JS_NewObjectFromShape`, checked against the checks of the same
   bits in the old path, so 32-bit and big-endian targets get their own
-  layout. A change to the generated Go only, with no C hunk
+  layout. This changes only the generated Go, with no C hunk
   (`internal/fixlib/define.go`). Tests: `lib/objlit_test.go`,
-  `internal/fixlib/define_test.go`.
+  `lib/objlit_memgrind_test.go`, `internal/fixlib/define_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -558,8 +558,8 @@ Conflicts to expect:
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
   changes to the interpreter loop and the call into `lib/objlit.go`
-  conflict. Take the upstream version
-  of every generated file, then put the changes back:
+  conflict. Take the upstream version of every generated file, then put
+  the changes back:
 
   ```sh
   git checkout --theirs -- 'lib/ccgo_*.go' 'lib/internal/run-test262/ccgo_*.go'
@@ -675,8 +675,8 @@ Conflicts to expect:
   gone, find what the interpreter now calls it and update the list.
   If it reports that `JS_DefinePropertyValue`, `JS_DefineProperty`,
   `JS_CreateProperty`, `add_property`, `find_own_property` or
-  `find_own_property1` changed (a
-  fingerprint other than the one in `internal/fixlib/definesites.go`),
+  `find_own_property1` changed (a fingerprint other than the one in
+  `internal/fixlib/definesites.go`),
   read the new code against `objlitDefine` in `lib/objlit.go`. For a new
   data property of an extensible object that is not exotic, not a fast
   array and not the global object, the old path must still end in
@@ -692,12 +692,13 @@ Conflicts to expect:
   `reDefineValueHead` in `internal/fixlib/define.go`. `objlitDefine` reads
   `extensible`, `is_exotic` and `fast_array` through constants that
   `fixlib` takes from the bit fields `JS_NewObjectFromShape` sets (the
-  second, fourth and fifth, all in one byte), and checks against the tests
-  of those bits in `JS_CreateProperty` and `JS_DefineProperty`. If it
-  reports that `JS_NewObjectFromShape` changed shape, that one of those
-  tests is gone, or that a test disagrees with `JS_NewObjectFromShape`,
-  the layout of `JSObject` moved: find where the three bits are now and
-  update `objectBits` and its patterns in `internal/fixlib/define.go`.
+  second, fourth and fifth, all in one byte), and checks against the
+  checks of those bits in `JS_CreateProperty` and `JS_DefineProperty`. If
+  it reports that `JS_NewObjectFromShape` changed shape, that one of those
+  checks is gone, or that a check disagrees with `JS_NewObjectFromShape`,
+  then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
+  fields in another order: find where the three bits are now and update
+  `objectBits` and its patterns in `internal/fixlib/define.go`.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
