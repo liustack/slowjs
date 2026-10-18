@@ -655,7 +655,11 @@ Conflicts to expect:
   exception (`current_exception`) in a function that is not in
   `exceptionWriters`, read it the same way: code that takes the exception
   out by hand must leave an uncatchable one pending, as `_JS_IteratorClose`
-  does. If it reports that `XJS_Throw` or `_JS_IteratorClose` uses the
+  does. The same goes when it reports a use of the exception's address
+  (`rt` plus its offset, or `&` of the field): a store through it does not
+  look like one. fixlib sees the address only on a runtime named `rt`,
+  `rt1` and so on, or `Frt`, with the offset written out: a store through
+  a runtime under another name goes through unseen. If it reports that `XJS_Throw` or `_JS_IteratorClose` uses the
   exception before the uncatchable check, move the check up to before that
   use.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`

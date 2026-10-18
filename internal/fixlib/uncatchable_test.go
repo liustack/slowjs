@@ -100,3 +100,46 @@ func TestUncatchableRejectsTextElsewhere(t *testing.T) {
 		}
 	}
 }
+
+// A use of the address of the runtime's exception stops fixlib, as a store
+// through it would not show as a store of the field: rt + its offset in
+// TJSRuntime (1240 on 64-bit targets, 636 on linux/386), unsafe.Add, & of
+// the field, and a store of a part of it.
+func TestUncatchableRejectsExceptionAddress(t *testing.T) {
+	head := "func XJS_RunGC(tls *libc.TLS, rt uintptr) {\n"
+	insert := func(b []byte, text string) []byte {
+		i := bytes.Index(b, []byte("\n"+head))
+		if i < 0 {
+			t.Fatal("no XJS_RunGC")
+		}
+		i += 1 + len(head)
+		return append(append(append([]byte{}, b[:i]...), text...), b[i:]...)
+	}
+	for _, c := range []struct {
+		file, text string
+		ok         bool
+	}{
+		{"ccgo_darwin_arm64.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 1240)) = TJSValue{}\n", false},
+		{"ccgo_darwin_arm64.go", "\t_set_value(tls, ctx, rt+1248, v)\n", false},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + 1240))\n", false},
+		{"ccgo_darwin_arm64.go", "\t*(*TJSValue)(unsafe.Add(unsafe.Pointer(rt), 1240)) = TJSValue{}\n", false},
+		{"ccgo_darwin_arm64.go", "\tp := &(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception\n", false},
+		{"ccgo_darwin_arm64.go", "\t(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception.Ftag = 0\n", false},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1256))\n", true},
+		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 636))\n", true},
+		{"ccgo_linux_386.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 636)) = 0\n", false},
+		{"ccgo_linux_386.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1240))\n", true},
+	} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "lib", c.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = checkExceptionWriters(insert(b, c.text))
+		if c.ok && err != nil {
+			t.Errorf("%s: %q: %v", c.file, c.text, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s: %q went through", c.file, c.text)
+		}
+	}
+}

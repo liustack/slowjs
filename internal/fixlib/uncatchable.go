@@ -7,8 +7,13 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -176,6 +181,25 @@ func countPerFunc(b []byte, re *regexp.Regexp) map[string]int {
 	return counts
 }
 
+// countPerFuncIf counts the matches of re for which ok holds in each
+// function of b.
+func countPerFuncIf(b []byte, re *regexp.Regexp, ok func([][]byte) bool) map[string]int {
+	counts := map[string]int{}
+	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
+	for i, h := range heads {
+		end := len(b)
+		if i+1 < len(heads) {
+			end = heads[i+1][0]
+		}
+		for _, m := range re.FindAllSubmatch(b[h[1]:end], -1) {
+			if ok(m) {
+				counts[string(b[h[2]:h[3]])]++
+			}
+		}
+	}
+	return counts
+}
+
 // diffCounts lists the functions whose count differs from want.
 func diffCounts(got, want map[string]int) []string {
 	var diff []string
@@ -193,13 +217,120 @@ func diffCounts(got, want map[string]int) []string {
 	return diff
 }
 
+var (
+	reExceptionStore = regexp.MustCompile(`\.Fcurrent_exception(?:\.\w+)* = `)
+	// &(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception, and the
+	// address of a runtime plus an offset: rt + N, or rt + N in
+	// unsafe.Add, with rt a variable rt, rt1, ... or a field Frt.
+	reExceptionAddr = regexp.MustCompile(`&\(\*TJSRuntime\)\([^\n]*?\.Fcurrent_exception\b`)
+	reRuntimePlus   = regexp.MustCompile(`(?:\brt\d*|\.Frt) ?\+ ?(?:uintptr\()?(\d+)\b`)
+	reRuntimeAdd    = regexp.MustCompile(`unsafe\.Add\((?:unsafe\.Pointer\()?(?:rt\d*|[^\n,]*?\.Frt)\)?, (\d+)\)`)
+)
+
 // checkExceptionWriters checks that the functions storing the runtime's
-// exception are those of exceptionWriters.
+// exception, whole or a part of it, are those of exceptionWriters, and
+// that no function takes its address, through which it could store it
+// unseen. A store through an address checkExceptionWriters cannot see
+// still goes through: a runtime in a variable not named rt or Frt, or an
+// offset computed at run time.
 func checkExceptionWriters(b []byte) error {
-	if diff := diffCounts(countPerFunc(b, regexp.MustCompile(`\.Fcurrent_exception = `)), exceptionWriters); len(diff) != 0 {
+	if diff := diffCounts(countPerFunc(b, reExceptionStore), exceptionWriters); len(diff) != 0 {
 		return fmt.Errorf("stores of the runtime's exception not in exceptionWriters: %s: check whether each one takes an uncatchable exception where a script can catch it", strings.Join(diff, ", "))
 	}
+	off, size, err := runtimeField(b, "Fcurrent_exception")
+	if err != nil {
+		return err
+	}
+	in := func(m [][]byte) bool {
+		n, err := strconv.Atoi(string(m[1]))
+		return err == nil && off <= n && n < off+size
+	}
+	addrs := countPerFunc(b, reExceptionAddr)
+	for _, re := range []*regexp.Regexp{reRuntimePlus, reRuntimeAdd} {
+		for name, n := range countPerFuncIf(b, re, in) {
+			addrs[name] += n
+		}
+	}
+	if diff := diffCounts(addrs, nil); len(diff) != 0 {
+		return fmt.Errorf("uses of the address of the runtime's exception (bytes %d to %d of TJSRuntime): %s: a store through it would not show as one, check whether it takes an uncatchable exception where a script can catch it", off, off+size, strings.Join(diff, ", "))
+	}
 	return nil
+}
+
+// runtimeField returns the offset and size of a field of TJSRuntime in the
+// target of b. The Go types ccgo wrote have the layout of the C ones, with
+// the alignment of Go for the word size of the target (Tsize_t).
+func runtimeField(b []byte, field string) (int, int, error) {
+	arch := ""
+	switch {
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint64\n")):
+		arch = "amd64"
+	case bytes.Contains(b, []byte("\ntype Tsize_t = uint32\n")):
+		arch = "386"
+	default:
+		return 0, 0, fmt.Errorf("cannot tell the word size from Tsize_t")
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", b, parser.SkipObjectResolution)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Only the types: the rest needs libc.
+	file := &ast.File{Name: ast.NewIdent("p")}
+	for _, d := range f.Decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.TYPE {
+			file.Decls = append(file.Decls, g)
+		}
+	}
+	conf := types.Config{Error: func(error) {}, Sizes: types.SizesFor("gc", arch)}
+	pkg, _ := conf.Check("p", fset, []*ast.File{file}, nil)
+	obj := pkg.Scope().Lookup("TJSRuntime")
+	if obj == nil {
+		return 0, 0, fmt.Errorf("no type TJSRuntime")
+	}
+	st, ok := obj.Type().Underlying().(*types.Struct)
+	if !ok {
+		return 0, 0, fmt.Errorf("TJSRuntime is not a struct")
+	}
+	var fields []*types.Var
+	for i := range st.NumFields() {
+		fields = append(fields, st.Field(i))
+	}
+	for i, v := range fields {
+		if !validType(v.Type(), map[types.Type]bool{}) {
+			return 0, 0, fmt.Errorf("TJSRuntime: the type of %s is not known without libc", v.Name())
+		}
+		if v.Name() == field {
+			return int(conf.Sizes.Offsetsof(fields)[i]), int(conf.Sizes.Sizeof(v.Type())), nil
+		}
+	}
+	return 0, 0, fmt.Errorf("TJSRuntime has no field %s", field)
+}
+
+// validType reports whether t, and what its size depends on, type-checked.
+func validType(t types.Type, seen map[types.Type]bool) bool {
+	if seen[t] {
+		return true
+	}
+	seen[t] = true
+	switch t := t.(type) {
+	case *types.Basic:
+		return t.Kind() != types.Invalid
+	case *types.Alias:
+		return validType(types.Unalias(t), seen)
+	case *types.Named:
+		return validType(t.Underlying(), seen)
+	case *types.Array:
+		return validType(t.Elem(), seen)
+	case *types.Struct:
+		for i := range t.NumFields() {
+			if !validType(t.Field(i).Type(), seen) {
+				return false
+			}
+		}
+		return true
+	}
+	return true // pointers, functions, maps and the like: one word
 }
 
 // fixExceptionHandlers makes the functions of exceptionHandlers call
