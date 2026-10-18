@@ -1152,7 +1152,7 @@ func findAll(re *regexp.Regexp, b []byte) [][]int {
 		case loc[1] == loc[0]:
 			pos = loc[1] + 1
 		case b[loc[1]-1] == '\n':
-			pos = loc[1] - 1
+			pos = max(loc[1]-1, loc[0]+1)
 		default:
 			pos = loc[1]
 		}

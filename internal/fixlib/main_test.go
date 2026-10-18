@@ -446,3 +446,12 @@ func TestFindAllAdjacentLines(t *testing.T) {
 		t.Fatalf("got %v, want 1 2 4", got)
 	}
 }
+
+// findAll moves on after a match of a lone newline instead of finding it
+// again forever.
+func TestFindAllLoneNewline(t *testing.T) {
+	re := regexp.MustCompile(`x?\n`)
+	if got := len(findAll(re, []byte("\n\n"))); got != 2 {
+		t.Fatalf("got %d matches, want 2", got)
+	}
+}
