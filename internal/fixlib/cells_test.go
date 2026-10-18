@@ -70,6 +70,8 @@ func TestCellsEveryFile(t *testing.T) {
 }
 
 const cellsTypes = `
+type Tuint64_t = uint64
+
 type TJSValueUnion = struct {
 	Ffloat641      [0]float64
 	Fptr           [0]uintptr
@@ -153,6 +155,7 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, arg
 // leaves named locals and parameter copies alone, and a second run changes
 // nothing. A file that is not listed is left as it is.
 func TestCellsShape(t *testing.T) {
+	withFrameUses(t, map[string]int{})
 	out, err := fixCells([]byte(cellsBefore), true)
 	if err != nil {
 		t.Fatal(err)
@@ -170,29 +173,102 @@ func TestCellsShape(t *testing.T) {
 	}
 }
 
+// withFrameUses makes uses the other uses of bp that fixCells accepts for
+// the length of a test.
+func withFrameUses(t *testing.T, uses map[string]int) {
+	t.Helper()
+	saved := cellsFrameUses
+	cellsFrameUses = uses
+	t.Cleanup(func() { cellsFrameUses = saved })
+}
+
 // A use of a cell other than a store of a whole JSValue or a load of its
-// first word, a third unnamed cell, a missing one, or a JSValue of another
-// layout stops fixlib.
+// first word, a third unnamed cell, a missing one, a JSValue of another
+// layout, or a use of the frame that may reach a cell some other way stops
+// fixlib.
 func TestCellsRejects(t *testing.T) {
+	withFrameUses(t, map[string]int{})
 	store := "\t*(*TJSValue)(unsafe.Pointer(bp + 48)) = v9\n"
 	for _, c := range []struct{ name, old, new, want string }{
-		{"address passed", store, store + "\t_js_free(tls, bp+48)\n", "bp+48: a use other than"},
-		{"address kept", store, store + "\tp1 = bp + 48\n", "bp+48: a use other than"},
+		{"address passed", store, store + "\t_js_free(tls, bp+48)\n", "_js_free(bp+48): inside the cell bp+48"},
+		{"address kept", store, store + "\tp1 = bp + 48\n", "p1 = bp + 48: inside the cell bp+48"},
 		{"other load", store, store + "\tv1 = uintptr(*(*int32)(unsafe.Pointer(bp + 48)))\n", "bp+48: a use other than"},
 		{"field read", store, store + "\tv1 = uintptr((*(*TJSValue)(unsafe.Pointer(bp + 48))).Ftag)\n", "bp+48: a use other than"},
 		{"other store", store, store + "\t*(*uintptr)(unsafe.Pointer(bp + 48)) = v1\n", "bp+48: a use other than"},
 		{"store of a load", store, store + "\t*(*TJSValue)(unsafe.Pointer(bp + 48)) = *(*TJSValue)(unsafe.Pointer(bp + 48))\n", "bp+48: a use other than"},
 		{"inside a cell", store, store + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + 56))\n", "bp+56 inside the cell bp+48"},
-		{"third cell", store, store + "\t*(*TJSValue)(unsafe.Pointer(bp + 88)) = v9\n\tv1 = *(*uintptr)(unsafe.Pointer(bp + 88))\n", "3 cells"},
+		{"third cell", store, store + "\t*(*TJSValue)(unsafe.Pointer(bp + 16)) = v9\n\tv1 = *(*uintptr)(unsafe.Pointer(bp + 16))\n", "3 cells"},
 		{"one cell", "bp + 64)", "bp + 48)", "1 cells"},
 		{"no load", "\t\tv10 = *(*uintptr)(unsafe.Pointer(bp + 48)) - libc.UintptrFromInt32(1)*4\n", "", "bp+48: 1 stores and 0 loads"},
 		{"name taken", "\tvar v9 TJSValue\n", "\tvar v9, cell48 TJSValue\n", "cell48 already used"},
 		{"other layout", "\tFtag Tint64_t\n", "\tFtag Tint32_t\n", "JSValue is not"},
+		{"wider union", "\tFptr           [0]uintptr\n", "\tFptr           uintptr\n", "JSValue is not"},
+		{"sum of offsets", store, store + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + 32 + 16))\n", "bp + 32 + 16: an address in the frame"},
+		{"converted offset", store, store + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + uintptr(48)))\n", "bp + uintptr(48): an address in the frame"},
+		{"frame passed", store, store + "\tlibc.Xmemset(tls, bp, 0, 80)\n", "libc.Xmemset(bp): a use of bp"},
+		{"offset passed", store, store + "\t_g(tls, bp+uintptr(48))\n", "_g(bp+uintptr(48)): a use of bp"},
+		{"frame kept", store, store + "\tv1 = bp\n", "v1 = bp: a use of bp"},
+		{"wide read", store, store + "\tv9 = *(*TJSValue)(unsafe.Pointer(bp + 40))\n", "bp+40 reaches into the cell bp+48"},
+		{"wide read of a local", "\t*(*float64)(unsafe.Pointer(bp + 32)) = 1\n", "\t*(*[3]TJSValue)(unsafe.Pointer(bp + 32)) = [3]TJSValue{}\n", "bp+32 reaches into the cell bp+48"},
+		{"pointer of unknown size", store, store + "\tv1 = uintptr((*TFoo)(unsafe.Pointer(bp + 40)).Fx)\n", "bp+40: a TFoo, whose size is not known"},
+		{"not a pointer", store, store + "\tv1 = uintptr(unsafe.Pointer(bp + 40))\n", "bp + 40: an address in the frame"},
 	} {
 		if !strings.Contains(cellsBefore, c.old) {
 			t.Fatalf("%s: %q not in the input", c.name, c.old)
 		}
 		_, err := fixCells([]byte(strings.ReplaceAll(cellsBefore, c.old, c.new)), true)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+// A use of bp that cellsFrameUses lists is accepted as many times as it
+// lists it: one more, one less or one it does not list stops fixlib.
+func TestCellsFrameUses(t *testing.T) {
+	use := "\t_g(tls, bp+16)\n"
+	in := strings.Replace(cellsBefore, "\treturn v9\n", use+"\treturn v9\n", 1)
+	withFrameUses(t, map[string]int{"_g(bp+16)": 1})
+	if _, err := fixCells([]byte(in), true); err != nil {
+		t.Fatalf("listed use: %v", err)
+	}
+	for _, c := range []struct {
+		name string
+		uses map[string]int
+		in   string
+		want string
+	}{
+		{"not listed", map[string]int{}, in, "_g(bp+16): a use of bp"},
+		{"once more", map[string]int{"_g(bp+16)": 1}, strings.Replace(in, use, use+use, 1), "_g(bp+16): a use of bp"},
+		{"gone", map[string]int{"_g(bp+16)": 1, "_h(bp+16)": 1}, in, "_h(bp+16): listed in cellsFrameUses 1 times, found 0"},
+		{"inside a cell", map[string]int{"_g(bp+56)": 1}, strings.Replace(in, "bp+16", "bp+56", 1), "_g(bp+56): inside the cell bp+48"},
+	} {
+		withFrameUses(t, c.uses)
+		_, err := fixCells([]byte(c.in), true)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+// In a fixed file, any use of the frame where the cells were stops fixlib:
+// it would read or write bytes nothing writes or reads any more.
+func TestCellsRejectsFixed(t *testing.T) {
+	withFrameUses(t, map[string]int{})
+	at := "\tcell48 = v9\n"
+	for _, c := range []struct{ name, new, want string }{
+		{"load left", at + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + 48))\n", "bp+48: the cell bp+48 is a Go variable"},
+		{"store left", at + "\t*(*TJSValue)(unsafe.Pointer(bp + 64)) = v9\n", "cells declared and others [64] still in the frame"},
+		{"inside", at + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + 72))\n", "bp+72: the cell bp+64 is a Go variable"},
+		{"wide read", at + "\tv9 = *(*TJSValue)(unsafe.Pointer(bp + 40))\n", "bp+40: the cell bp+48 is a Go variable"},
+		{"sum of offsets", at + "\tv1 = *(*uintptr)(unsafe.Pointer(bp + 32 + 16))\n", "bp + 32 + 16: an address in the frame"},
+		{"frame passed", at + "\tlibc.Xmemset(tls, bp, 0, 80)\n", "libc.Xmemset(bp): a use of bp"},
+		{"new cell", at + "\t*(*TJSValue)(unsafe.Pointer(bp + 16)) = v9\n\tv1 = *(*uintptr)(unsafe.Pointer(bp + 16))\n", "cells declared and others [16] still in the frame"},
+	} {
+		if !strings.Contains(cellsAfter, at) {
+			t.Fatalf("%s: %q not in the fixed input", c.name, at)
+		}
+		_, err := fixCells([]byte(strings.Replace(cellsAfter, at, c.new, 1)), true)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
 		}
