@@ -578,17 +578,17 @@ Conflicts to expect:
   report runs the steps before its own, so it fails while an earlier list
   is out of date. Update them in the order `fixlib` checks them: `-frames`,
   then `-up` (on the files as taken from upstream), then `-cells`, then
-  the fingerprints, `-define` and `-backtrace`. Read every new line before
-  you put it in. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
-  read the new upstream code: QuickJS may have fixed the leak itself. If
-  the fail label now frees `val`, drop `fixToCString` and the
-  `JS_ToCStringLen2` hunk, or the added calls free it twice. If there is a
-  new jump to the label, check that `val` is freed on that path. If it
-  reports that `_getTimezoneOffset` changed shape, or that the engine calls
-  libc's local time functions (`localtime`, `mktime`, `tzset`, ...)
-  somewhere else, upstream reads the local zone some new way: make that
-  answer UTC too and teach `fixTimezone` about it. If it
-  reports that `_build_backtrace`, `_get_prop_string`,
+  the fingerprints, `-define` and `-backtrace`, and last `-slots`. Read
+  every new line before you put it in. If `fixlib` reports that
+  `XJS_ToCStringLen2` changed shape, read the new upstream code: QuickJS
+  may have fixed the leak itself. If the fail label now frees `val`, drop
+  `fixToCString` and the `JS_ToCStringLen2` hunk, or the added calls free
+  it twice. If there is a new jump to the label, check that `val` is freed
+  on that path. If it reports that `_getTimezoneOffset` changed shape, or
+  that the engine calls libc's local time functions (`localtime`,
+  `mktime`, `tzset`, ...) somewhere else, upstream reads the local zone
+  some new way: make that answer UTC too and teach `fixTimezone` about it.
+  If it reports that `_build_backtrace`, `_get_prop_string`,
   `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, the interpreter's
   `get_field`, `js_print_error`, `js_print_object` or `JS_ComputeMemoryUsage`
   changed shape, compare the new upstream `build_backtrace` with
@@ -665,9 +665,9 @@ Conflicts to expect:
   (`rt` plus its offset, or `&` of the field): a store through it does not
   look like one. fixlib sees the address only on a runtime named `rt`,
   `rt1` and so on, or `Frt`, with the offset written out: a store through
-  a runtime under another name goes through unseen. If it reports that `XJS_Throw` or `_JS_IteratorClose` uses the
-  exception before the uncatchable check, move the check up to before that
-  use.
+  a runtime under another name goes through unseen. If it reports that
+  `XJS_Throw` or `_JS_IteratorClose` uses the exception before the
+  uncatchable check, move the check up to before that use.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
