@@ -449,6 +449,25 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   time on linux/amd64 (AMD EPYC) and 17% less on darwin/arm64 (Apple M4),
   with the same HTML. Tests: `internal/fixlib/up_test.go`,
   `internal/fixlib/cells_test.go`, `internal/fixlib/pin_test.go`.
+- Defining a new property on a plain object costs less. Object literals,
+  spread, class fields, `JSON.parse` and every new function go through
+  `JS_DefinePropertyValue`, which handed each property on to
+  `JS_DefineProperty` and `JS_CreateProperty` before `add_property` did the
+  work, with a TLS frame and a deferred free at each step. Now
+  `JS_DefinePropertyValue` first calls `objlitDefine` (`lib/objlit.go`),
+  which calls `add_property` itself when the object is extensible and not
+  exotic, not a fast array and not the global object, the property has no
+  getter or setter, and the object does not have it yet. Every other case
+  takes the old path, and so does assignment (`o.x = v`,
+  `Object.assign`). Nothing is cached, so memory use is the same. A
+  property of an object literal takes about 55 ns rather than 95 on
+  linux/amd64 (AMD EPYC), and a server render of a page of tifa's example
+  shop about 6% less, with the same HTML. `fixlib` puts the call into all
+  13 files and takes the object bit fields `objlitDefine` checks from each
+  file's `JS_NewObjectFromShape`, so 32-bit and big-endian targets get
+  their own layout. A change to the generated Go only, with no C hunk
+  (`internal/fixlib/define.go`). Tests: `lib/objlit_test.go`,
+  `internal/fixlib/define_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -536,8 +555,9 @@ Conflicts to expect:
   answers 0 (local time is UTC) and the calls into `lib/uncatchable.go`
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
   compiler's out of memory checks, the stack limit of a new runtime, the
-  call paths without `alloca`, the functions without a TLS frame and the
-  changes to the interpreter loop conflict. Take the upstream version
+  call paths without `alloca`, the functions without a TLS frame, the
+  changes to the interpreter loop and the call into `lib/objlit.go`
+  conflict. Take the upstream version
   of every generated file, then put the changes back:
 
   ```sh
@@ -652,6 +672,26 @@ Conflicts to expect:
   bytes. `TestCellsEveryFile` counts the stores and loads of each.
   If it reports that a value of `pinVars` (`internal/fixlib/pin.go`) is
   gone, find what the interpreter now calls it and update the list.
+  If it reports that `JS_DefinePropertyValue`, `JS_DefineProperty`,
+  `JS_CreateProperty`, `add_property` or `find_own_property1` changed (a
+  fingerprint other than the one in `internal/fixlib/definesites.go`),
+  read the new code against `objlitDefine` in `lib/objlit.go`. For a new
+  data property of an extensible object that is not exotic, not a fast
+  array and not the global object, the old path must still end in
+  `add_property` with the `C_W_E` bits of the flags and then store the
+  value, and every other case must still fail one of the checks of
+  `objlitDefine`. Change `objlitDefine` if it no longer matches, then put
+  the new fingerprints into `definesites.go`: `go run ./internal/fixlib
+  -define` prints them, for the files with all of `fixlib`'s other changes
+  made. Any edit to those functions changes the fingerprint, even one that
+  does not matter here, and so does a change to another `fixlib` step that
+  touches them (`fixUp` does). If it reports that `JS_DefinePropertyValue`
+  has a new signature, update the call (`defineCall`) and
+  `reDefineValueHead` in `internal/fixlib/define.go`. If it reports that
+  the bit fields of `JS_NewObjectFromShape` changed, the layout of
+  `JSObject` moved: check that `extensible`, `is_exotic` and `fast_array`
+  are still the second, fourth and fifth bit fields it sets, all in one
+  byte, and update `objectBits` if not.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
@@ -675,9 +715,10 @@ Conflicts to expect:
   `JS_NewRuntime2` sets, and `JS_ThrowStackOverflow`). After a
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed. The calls without
-  `alloca`, the functions without a TLS frame and the changes to the
-  interpreter loop have no C form: they are changes to what ccgo
-  generates, so `fixlib` applies them after every regeneration.
+  `alloca`, the functions without a TLS frame, the changes to the
+  interpreter loop and the call into `lib/objlit.go` have no C form: they
+  are changes to what ccgo generates, so `fixlib` applies them after every
+  regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
   them, delete them again (`git rm lib/go.mod lib/go.sum`) and bring any newer
   requirement into the root `go.mod`.
