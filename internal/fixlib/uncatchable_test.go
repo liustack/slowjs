@@ -54,3 +54,31 @@ func TestUncatchableRejectsNewHandler(t *testing.T) {
 		t.Fatalf("got %v, want the new caller named", err)
 	}
 }
+
+// A new function that takes the exception out of the runtime itself, or a
+// JS_Throw that replaces the exception before the place of the guard, stops
+// fixlib.
+func TestUncatchableRejectsNewTake(t *testing.T) {
+	b := engineFile(t)
+	take := "\nfunc _js_new_take(tls *libc.TLS, ctx uintptr) {\n\t(*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt)).Fcurrent_exception = TJSValue{}\n}\n\nfunc _js_regexp_finalizer("
+	_, err := fixUncatchable(bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte(take), 1))
+	if err == nil || !strings.Contains(err.Error(), "_js_new_take (1)") {
+		t.Fatalf("got %v, want the new function named", err)
+	}
+
+	body, err := funcBody(b, reThrowHead, "XJS_Throw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := "\nfunc XJS_Throw(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSValue) {\n" +
+		"\tvar rt uintptr\n" +
+		"\t_ = rt\n" +
+		"\tXFreeValue(tls, ctx1, (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fcurrent_exception)\n" +
+		"\t(*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fcurrent_exception = obj\n" +
+		"\trt = (*TJSContext)(unsafe.Pointer(ctx1)).Frt\n" +
+		"\tlibc.SetBitFieldPtr16Int32(rt+1256, libc.Int32FromInt32(MFALSE), 0, 0xff)\n" +
+		"\treturn jsvException()\n}\n"
+	if _, err := fixUncatchable(bytes.Replace(b, body, []byte(late), 1)); err == nil {
+		t.Fatal("a JS_Throw that replaces the exception before the guard went through")
+	}
+}

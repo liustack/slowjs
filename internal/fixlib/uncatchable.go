@@ -43,6 +43,20 @@ var exceptionReaders = map[string]int{
 	"Xjs_std_dump_error": 1,
 }
 
+// exceptionWriters are the functions that store the runtime's exception,
+// and how many times: the one way in (XJS_Throw), the takes
+// (XJS_GetException, and the inline ones of _JS_CallInternal, which checks
+// the uncatchable flag before a catch, and of _JS_IteratorClose, which
+// fixUncatchable guards) and the start of a runtime. A new one may take an
+// uncatchable exception out where a script can catch it.
+var exceptionWriters = map[string]int{
+	"XJS_Throw":         1,
+	"XJS_GetException":  1,
+	"XJS_NewRuntime2":   1,
+	"_JS_CallInternal":  1,
+	"_JS_IteratorClose": 1,
+}
+
 var (
 	reThrowHead       = regexp.MustCompile(`\nfunc XJS_Throw\(tls \*libc\.TLS, (\w+) uintptr, (\w+) TJSValue\) \(r TJSValue\) \{\n`)
 	reIteratorClose   = regexp.MustCompile(`\nfunc _JS_IteratorClose\(tls \*libc\.TLS, (\w+) uintptr, \w+ TJSValue, is_exception_pending TBOOL\) \(r int32\) \{\n`)
@@ -77,11 +91,19 @@ func fixUncatchable(b []byte) ([]byte, error) {
 		if bytes.Count(body, []byte(anchor)) != 1 {
 			return nil, fmt.Errorf("XJS_Throw: want 1 read of the runtime")
 		}
-		b = bytes.Replace(b, body, bytes.Replace(body, []byte(anchor), []byte(anchor+guard), 1), 1)
+		fixed := bytes.Replace(body, []byte(anchor), []byte(anchor+guard), 1)
+		b = bytes.Replace(b, body, fixed, 1)
+		body = fixed
+	}
+	if err := guardFirst(body, guard, "XJS_Throw"); err != nil {
+		return nil, err
 	}
 
 	// The engine's handlers of an exception.
 	if b, err = fixExceptionHandlers(b); err != nil {
+		return nil, err
+	}
+	if err := checkExceptionWriters(b); err != nil {
 		return nil, err
 	}
 
@@ -117,9 +139,66 @@ func fixUncatchable(b []byte) ([]byte, error) {
 		if bytes.Count(body, []byte(take)) != 1 {
 			return nil, fmt.Errorf("_JS_IteratorClose: want 1 test of is_exception_pending that takes the exception")
 		}
-		b = bytes.Replace(b, body, bytes.Replace(body, []byte(take), []byte(anchor+guard+"\t\tex_obj = "), 1), 1)
+		fixed := bytes.Replace(body, []byte(take), []byte(anchor+guard+"\t\tex_obj = "), 1)
+		b = bytes.Replace(b, body, fixed, 1)
+		body = fixed
+	}
+	if err := guardFirst(body, guard, "_JS_IteratorClose"); err != nil {
+		return nil, err
 	}
 	return b, nil
+}
+
+// guardFirst checks that guard comes before the function's first use of the
+// runtime's exception.
+func guardFirst(body []byte, guard, name string) error {
+	i := bytes.Index(body, []byte(guard))
+	if j := bytes.Index(body, []byte(".Fcurrent_exception")); i < 0 || j < i {
+		return fmt.Errorf("%s: the exception is used before the uncatchable check", name)
+	}
+	return nil
+}
+
+// countPerFunc counts the occurrences of s in each function of b.
+func countPerFunc(b []byte, s string) map[string]int {
+	counts := map[string]int{}
+	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
+	for i, h := range heads {
+		end := len(b)
+		if i+1 < len(heads) {
+			end = heads[i+1][0]
+		}
+		if n := bytes.Count(b[h[1]:end], []byte(s)); n != 0 {
+			counts[string(b[h[2]:h[3]])] = n
+		}
+	}
+	return counts
+}
+
+// diffCounts lists the functions whose count differs from want.
+func diffCounts(got, want map[string]int) []string {
+	var diff []string
+	for name, n := range got {
+		if want[name] != n {
+			diff = append(diff, fmt.Sprintf("%s (%d)", name, n))
+		}
+	}
+	for name, n := range want {
+		if got[name] != n {
+			diff = append(diff, fmt.Sprintf("%s (%d, want %d)", name, got[name], n))
+		}
+	}
+	sort.Strings(diff)
+	return diff
+}
+
+// checkExceptionWriters checks that the functions storing the runtime's
+// exception are those of exceptionWriters.
+func checkExceptionWriters(b []byte) error {
+	if diff := diffCounts(countPerFunc(b, ".Fcurrent_exception = "), exceptionWriters); len(diff) != 0 {
+		return fmt.Errorf("stores of the runtime's exception not in exceptionWriters: %s: check whether each one takes an uncatchable exception where a script can catch it", strings.Join(diff, ", "))
+	}
+	return nil
 }
 
 // fixExceptionHandlers makes the functions of exceptionHandlers call
@@ -140,30 +219,7 @@ func fixExceptionHandlers(b []byte) ([]byte, error) {
 		b = bytes.Replace(b, body, fixed, 1)
 	}
 
-	callers := map[string]int{}
-	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
-	for i, h := range heads {
-		end := len(b)
-		if i+1 < len(heads) {
-			end = heads[i+1][0]
-		}
-		if n := bytes.Count(b[h[1]:end], []byte(get)); n != 0 {
-			callers[string(b[h[2]:h[3]])] = n
-		}
-	}
-	var unknown []string
-	for name, n := range callers {
-		if exceptionReaders[name] != n {
-			unknown = append(unknown, fmt.Sprintf("%s (%d)", name, n))
-		}
-	}
-	for name, n := range exceptionReaders {
-		if callers[name] != n {
-			unknown = append(unknown, fmt.Sprintf("%s (%d, want %d)", name, callers[name], n))
-		}
-	}
-	if len(unknown) != 0 {
-		sort.Strings(unknown)
+	if unknown := diffCounts(countPerFunc(b, get), exceptionReaders); len(unknown) != 0 {
 		return nil, fmt.Errorf("calls of JS_GetException not in exceptionHandlers or exceptionReaders: %s: check whether each one hands an uncatchable exception to a script", strings.Join(unknown, ", "))
 	}
 	return b, nil

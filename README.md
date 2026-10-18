@@ -613,7 +613,13 @@ Conflicts to expect:
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,
   a handler call, a new throw), add it to `exceptionHandlers`, so that it
-  gets `_js_get_exception`.
+  gets `_js_get_exception`. If it reports a store of the runtime's
+  exception (`current_exception`) in a function that is not in
+  `exceptionWriters`, read it the same way: code that takes the exception
+  out by hand must leave an uncatchable one pending, as `_JS_IteratorClose`
+  does. If it reports that `XJS_Throw` or `_JS_IteratorClose` uses the
+  exception before the uncatchable check, move the check up to before that
+  use.
   `fixlib` also audits how the engine uses property slots (the `JSProperty`
   that holds a value), because a pending `stack` must be formatted before
   anything hands the value on. It parses each generated function and
