@@ -32,7 +32,7 @@ import (
 // updated (go run ./internal/fixlib -define prints them). The fingerprints are of the text
 // after every other change, so fixDefine runs after them.
 func fixDefine(b []byte, file string) ([]byte, error) {
-	all := reDefineValueHead.FindAllSubmatchIndex(b, -1)
+	all := findAll(reDefineValueHead, b)
 	if len(all) == 0 {
 		return nil, fmt.Errorf("JS_DefinePropertyValue changed shape: its signature is not the expected one")
 	}
@@ -134,7 +134,7 @@ func objectBits(b []byte) ([]byte, error) {
 		{"extensible", "JS_CreateProperty", extensible, create, reExtensibleTest},
 		{"fast_array", "JS_DefineProperty", fastArray, define, reFastArrayTest},
 	} {
-		m := c.re.FindAllSubmatch(c.body, -1)
+		m := findAllSubmatch(c.re, c.body)
 		if len(m) != 1 {
 			return nil, fmt.Errorf("%s changed shape: want one test of %s, found %d", c.fn, c.field, len(m))
 		}

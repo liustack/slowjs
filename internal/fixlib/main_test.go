@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -429,5 +430,19 @@ func TestDescLayout(t *testing.T) {
 		if got != want {
 			t.Errorf("%s: %+v, want %+v", fn, got, want)
 		}
+	}
+}
+
+// findAll finds each match of a pattern of whole lines, also when a match
+// starts on the line right after the last one.
+func TestFindAllAdjacentLines(t *testing.T) {
+	re := regexp.MustCompile(`\n\tx = (\d+)\n`)
+	b := []byte("\n\tx = 1\n\tx = 2\n\ty = 3\n\tx = 4\n")
+	var got []string
+	for _, m := range findAll(re, b) {
+		got = append(got, string(b[m[2]:m[3]]))
+	}
+	if strings.Join(got, " ") != "1 2 4" {
+		t.Fatalf("got %v, want 1 2 4", got)
 	}
 }

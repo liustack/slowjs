@@ -649,7 +649,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	defCtx := string(reDefineHead.FindSubmatch(b)[1])
-	objs := reDefineFind.FindAllSubmatch(body, -1)
+	objs := findAllSubmatch(reDefineFind, body)
 	if len(objs) == 0 {
 		return nil, fmt.Errorf("XJS_DefineProperty: cannot find the property lookup")
 	}
@@ -659,7 +659,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		}
 	}
 	sameAt := func(body []byte) ([]int, error) {
-		same := reDefineSame.FindAllSubmatchIndex(body, -1)
+		same := findAll(reDefineSame, body)
 		if len(same) != 1 {
 			return nil, fmt.Errorf("XJS_DefineProperty: want 1 SameValue test of a data property, found %d", len(same))
 		}
@@ -730,7 +730,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	if n := bytes.Count(body, []byte("_js_backtrace_print_pending")); n != 0 {
-		if n != 1 || len(rePrintObjectWrapped.FindAllIndex(body, -1)) != 1 {
+		if n != 1 || len(findAll(rePrintObjectWrapped, body)) != 1 {
 			return nil, fmt.Errorf("_js_print_object: the call of _js_backtrace_print_pending is not around the value print")
 		}
 	} else {
@@ -750,7 +750,7 @@ func fixBacktrace(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	propSize := func(body []byte) ([]int, error) {
-		loc := reMemoryProp.FindAllSubmatchIndex(body, -1)
+		loc := findAll(reMemoryProp, body)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("XJS_ComputeMemoryUsage: want 1 size of a property value, found %d", len(loc))
 		}
@@ -815,8 +815,8 @@ func fixInterpreter(b []byte) ([]byte, error) {
 	}
 	fixed := reInterpGuard.ReplaceAll(body, nil)
 	finds := bytes.Count(fixed, []byte("_find_own_property("))
-	puts := len(reInterpPut.FindAll(fixed, -1))
-	sites := reInterpField.FindAllSubmatchIndex(fixed, -1)
+	puts := len(findAll(reInterpPut, fixed))
+	sites := findAll(reInterpField, fixed)
 	if len(sites) == 0 {
 		return nil, fmt.Errorf("_JS_CallInternal: no inline property read found")
 	}
@@ -931,7 +931,7 @@ func descLayoutOf(b []byte) (descLayout, error) {
 	default:
 		return descLayout{}, fmt.Errorf("TJSValue is neither a struct of 16 bytes on a 64-bit target nor a uint64")
 	}
-	m := reDescType.FindAllSubmatch(b, -1)
+	m := findAllSubmatch(reDescType, b)
 	if len(m) != 1 {
 		return descLayout{}, fmt.Errorf("want 1 type TJSPropertyDescriptor, found %d", len(m))
 	}
@@ -1129,9 +1129,55 @@ func descUse(stack []ast.Node, layout descLayout) string {
 	return "other"
 }
 
+// findAll is FindAllSubmatchIndex, except that for a pattern that ends
+// with a newline a match may start with the newline the last one ends
+// with: a pattern of whole lines then finds a line right after a match.
+func findAll(re *regexp.Regexp, b []byte) [][]int {
+	if !strings.HasSuffix(re.String(), `\n`) {
+		return re.FindAllSubmatchIndex(b, -1)
+	}
+	var all [][]int
+	for pos := 0; pos <= len(b); {
+		loc := re.FindSubmatchIndex(b[pos:])
+		if loc == nil {
+			break
+		}
+		for i := range loc {
+			if loc[i] >= 0 {
+				loc[i] += pos
+			}
+		}
+		all = append(all, loc)
+		switch {
+		case loc[1] == loc[0]:
+			pos = loc[1] + 1
+		case b[loc[1]-1] == '\n':
+			pos = loc[1] - 1
+		default:
+			pos = loc[1]
+		}
+	}
+	return all
+}
+
+// findAllSubmatch is findAll with the text of each submatch.
+func findAllSubmatch(re *regexp.Regexp, b []byte) [][][]byte {
+	var all [][][]byte
+	for _, loc := range findAll(re, b) {
+		m := make([][]byte, len(loc)/2)
+		for i := range m {
+			if loc[2*i] >= 0 {
+				m[i] = b[loc[2*i]:loc[2*i+1]]
+			}
+		}
+		all = append(all, m)
+	}
+	return all
+}
+
 // funcBody returns the text of the function whose head re matches.
 func funcBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
-	loc := re.FindAllIndex(b, -1)
+	loc := findAll(re, b)
 	if len(loc) != 1 {
 		return nil, fmt.Errorf("want 1 function %s, found %d", name, len(loc))
 	}
@@ -1156,7 +1202,7 @@ const linkedImport = "\tlibquickjs \"github.com/liustack/quickjs/lib\"\n"
 // stack limit of MaxStackSlots TLS slots that the runner's copy used.
 func fixRunner(b, engine []byte) ([]byte, error) {
 	exported := map[string]string{} // name -> parameters and result
-	for _, m := range reFuncHead.FindAllSubmatch(engine, -1) {
+	for _, m := range findAllSubmatch(reFuncHead, engine) {
 		if name := string(m[1]); name[0] == 'X' {
 			exported[name[1:]] = signature(string(m[2]), string(m[3]))
 		}
@@ -1164,7 +1210,7 @@ func fixRunner(b, engine []byte) ([]byte, error) {
 
 	var out bytes.Buffer
 	last, n := 0, 0
-	for _, loc := range reFuncHead.FindAllSubmatchIndex(b, -1) {
+	for _, loc := range findAll(reFuncHead, b) {
 		name := string(b[loc[2]:loc[3]])
 		if name[0] != 'x' || name == "x_init" {
 			continue

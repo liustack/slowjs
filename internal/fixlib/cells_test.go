@@ -324,3 +324,15 @@ func TestCellsReport(t *testing.T) {
 		t.Error("files with other uses went through")
 	}
 }
+
+// A read of a type of unknown size at a named local of that type is
+// accepted for every named local, not only every other one.
+func TestCellsNamedLocalsOfUnknownSize(t *testing.T) {
+	withFrameUses(t, map[string]int{})
+	in := strings.Replace(cellsBefore, "\tvar _ /* v at bp+0 */ TJSValue\n",
+		"\tvar _ /* a at bp+16 */ TFoo\n\tvar _ /* b at bp+24 */ TFoo\n\tvar _ /* v at bp+0 */ TJSValue\n", 1)
+	in = strings.Replace(in, "\treturn v9\n", "\tv1 = uintptr((*TFoo)(unsafe.Pointer(bp + 16)).Fx)\n\tv1 = uintptr((*TFoo)(unsafe.Pointer(bp + 24)).Fx)\n\treturn v9\n", 1)
+	if _, err := fixCells([]byte(in), true); err != nil {
+		t.Fatal(err)
+	}
+}

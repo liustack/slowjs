@@ -318,7 +318,7 @@ type frameUse struct {
 // one.
 func frameUses(b []byte) (map[string]frameUse, error) {
 	out := map[string]frameUse{}
-	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
+	heads := findAll(reAnyFunc, b)
 	for i, h := range heads {
 		end := len(b)
 		if i+1 < len(heads) {

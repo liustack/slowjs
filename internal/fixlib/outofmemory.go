@@ -100,12 +100,12 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 	// Fixed only with fixlib's whole test around the SyntaxError.
 	wrapped := regexp.MustCompile(test + regexp.QuoteMeta(fmt.Sprintf("if _js_regexp_out_of_memory(%s) {\n\t\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\t} else {\n\t\t\t", msg, ctx)) + syntax + `\n\t\t\}\n`)
 	switch n := bytes.Count(body, []byte("_js_regexp_out_of_memory(")); {
-	case n == 1 && len(wrapped.FindAllIndex(body, -1)) == 1:
+	case n == 1 && len(findAll(wrapped, body)) == 1:
 	case n != 0:
 		return nil, fmt.Errorf("_js_compile_regexp: _js_regexp_out_of_memory is not where fixlib puts it")
 	default:
 		re := regexp.MustCompile(test + syntax + `\n`)
-		loc := re.FindAllSubmatchIndex(body, -1)
+		loc := findAll(re, body)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("_js_compile_regexp: want 1 SyntaxError with the message of lre_compile")
 		}
@@ -170,13 +170,13 @@ func fixThrowError2(b []byte) ([]byte, error) {
 	tail := body[start:]
 	// The end does what _js_throw_error2 does: no call more, and the
 	// fallback for an object it cannot build.
-	for _, m := range reCallName.FindAllSubmatch(tail, -1) {
+	for _, m := range findAllSubmatch(reCallName, tail) {
 		if !slices.Contains(throwError2Calls, string(m[1])) && !strings.HasPrefix(string(m[1]), "libc.") {
 			return nil, fmt.Errorf("_JS_ThrowError2: the end calls %s", m[1])
 		}
 	}
 	calls := map[string]int{}
-	for _, m := range reCallName.FindAllSubmatch(tail, -1) {
+	for _, m := range findAllSubmatch(reCallName, tail) {
 		calls[string(m[1])]++
 	}
 	for _, name := range throwError2Calls[:5] {

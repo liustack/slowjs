@@ -53,7 +53,7 @@ func fixStack(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := reDefaultStackSize.FindAllSubmatchIndex(body, -1)
+	m := findAll(reDefaultStackSize, body)
 	if len(m) != 1 {
 		return nil, fmt.Errorf("XJS_NewRuntime2: want 1 setting of the stack size, found %d", len(m))
 	}
@@ -83,7 +83,7 @@ func fixStack(b []byte) ([]byte, error) {
 	}
 	want := fmt.Sprintf("__ccgo_ts+%d", msg)
 
-	loc := reStackOverflow.FindAllSubmatchIndex(b, -1)
+	loc := findAll(reStackOverflow, b)
 	if len(loc) != 1 {
 		return nil, fmt.Errorf("_JS_ThrowStackOverflow: cannot find it as one throw of a message")
 	}
@@ -103,12 +103,12 @@ func fixStack(b []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		m := reParseStackError.FindAllSubmatchIndex(body, -1)
+		m := findAll(reParseStackError, body)
 		if len(m) > 1 {
 			return nil, fmt.Errorf("%s: want 1 stack check, found %d", fn.name, len(m))
 		}
 		if len(m) == 0 {
-			if len(reParseStackFixed.FindAllIndex(body, -1)) != 1 || bytes.Count(body, []byte(parseStackOverflow)) != 1 {
+			if len(findAll(reParseStackFixed, body)) != 1 || bytes.Count(body, []byte(parseStackOverflow)) != 1 {
 				return nil, fmt.Errorf("%s: cannot find the stack check", fn.name)
 			}
 			continue

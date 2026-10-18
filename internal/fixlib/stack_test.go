@@ -113,6 +113,16 @@ func TestStackRejectsOtherDefault(t *testing.T) {
 	}
 }
 
+// A second setting of the stack size right after the first stops fixlib:
+// the last one wins, and fixStack would only set the first to 0.
+func TestStackRejectsSecondDefault(t *testing.T) {
+	line := []byte("\t(*TJSRuntime)(unsafe.Pointer(rt)).Fstack_size = 0\n")
+	b := bytes.Replace(engineFile(t), line, append(append([]byte{}, line...), "\t(*TJSRuntime)(unsafe.Pointer(rt)).Fstack_size = uint64(1024 * 1024)\n"...), 1)
+	if _, err := fixStack(b); err == nil {
+		t.Fatal("a second setting of the stack size went through")
+	}
+}
+
 // A new use of the "stack overflow" message outside the regexp parser stops
 // fixlib: it would throw something other than the RangeError.
 func TestStackRejectsNewOverflowError(t *testing.T) {

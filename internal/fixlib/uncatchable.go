@@ -168,13 +168,13 @@ func guardFirst(body []byte, guard, name string) error {
 // countPerFunc counts the matches of re in each function of b.
 func countPerFunc(b []byte, re *regexp.Regexp) map[string]int {
 	counts := map[string]int{}
-	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
+	heads := findAll(reAnyFunc, b)
 	for i, h := range heads {
 		end := len(b)
 		if i+1 < len(heads) {
 			end = heads[i+1][0]
 		}
-		if n := len(re.FindAllIndex(b[h[1]:end], -1)); n != 0 {
+		if n := len(findAll(re, b[h[1]:end])); n != 0 {
 			counts[string(b[h[2]:h[3]])] = n
 		}
 	}
@@ -185,13 +185,13 @@ func countPerFunc(b []byte, re *regexp.Regexp) map[string]int {
 // function of b.
 func countPerFuncIf(b []byte, re *regexp.Regexp, ok func([][]byte) bool) map[string]int {
 	counts := map[string]int{}
-	heads := reAnyFunc.FindAllSubmatchIndex(b, -1)
+	heads := findAll(reAnyFunc, b)
 	for i, h := range heads {
 		end := len(b)
 		if i+1 < len(heads) {
 			end = heads[i+1][0]
 		}
-		for _, m := range re.FindAllSubmatch(b[h[1]:end], -1) {
+		for _, m := range findAllSubmatch(re, b[h[1]:end]) {
 			if ok(m) {
 				counts[string(b[h[2]:h[3]])]++
 			}

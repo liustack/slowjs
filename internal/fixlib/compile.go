@@ -103,7 +103,7 @@ func fixCompile(b []byte) ([]byte, error) {
 	keep := fmt.Sprintf("\t\t\t(*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(%[1]s)).Fsize\n", s)
 	failed := regexp.MustCompile(`\n\t\tif !\(new_buf != 0\) \{\n\t\t\t\(\*TDynBuf\)\(unsafe\.Pointer\(` + s + `\)\)\.Ferror1 = int32\(\w+\)\n`)
 	fixed, err := insertAt("Xdbuf_claim", body, keep, func(body []byte) (int, error) {
-		loc := failed.FindAllIndex(body, -1)
+		loc := findAll(failed, body)
 		if len(loc) != 1 {
 			return 0, fmt.Errorf("Xdbuf_claim: cannot find the failed realloc")
 		}
@@ -148,7 +148,7 @@ func fixCompile(b []byte) ([]byte, error) {
 	}
 	// Each call of _resolve_scope_var is followed by the check or, as
 	// generated, by the free of the name.
-	calls := reScopeVarCall.FindAllSubmatchIndex(body, -1)
+	calls := findAll(reScopeVarCall, body)
 	if len(calls) != 2 || !bytes.Contains(body, []byte("\nfail:\n")) {
 		return nil, fmt.Errorf("_resolve_variables: want 2 calls of _resolve_scope_var and a fail label, found %d calls", len(calls))
 	}
@@ -182,13 +182,13 @@ func fixCompile(b []byte) ([]byte, error) {
 		}
 		ps := string(re.FindSubmatch(b)[1])
 		throw := fmt.Sprintf("XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(%s)).Fctx)\n", ps)
-		loc := reCodeMove.FindAllSubmatchIndex(body, -1)
+		loc := findAll(reCodeMove, body)
 		if len(loc) != 1 {
 			return nil, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
 		}
 		indent := string(body[loc[0][2]:loc[0][3]])
 		fixed, err := insertAt(name, body, indent+"\t"+throw, func(body []byte) (int, error) {
-			loc := reCodeMove.FindAllSubmatchIndex(body, -1)
+			loc := findAll(reCodeMove, body)
 			if len(loc) != 1 {
 				return 0, fmt.Errorf("%s: want 1 claim for moving code, found %d", name, len(loc))
 			}
@@ -233,14 +233,14 @@ func fixCompile(b []byte) ([]byte, error) {
 	}
 	// The first buffer it frees is the code, the state's first field.
 	re := regexp.MustCompile(`\nerror:\n\t;\n(?:\tif [^\n]*\n\t\t_re_parse_out_of_memory\(tls, \w+\)\n\t\}\n)?(\tXdbuf_free\(tls, (\w+)\)\n\tXdbuf_free\(tls, \w+\+\d+\)\n)\tXpstrcpy\(tls, error_msg, error_msg_size, (\w+\+\d+)\)\n`)
-	loc := re.FindAllSubmatchIndex(body, -1)
+	loc := findAll(re, body)
 	if len(loc) != 1 {
 		return nil, fmt.Errorf("Xlre_compile: cannot find the error label")
 	}
 	state, msg := string(body[loc[0][4]:loc[0][5]]), string(body[loc[0][6]:loc[0][7]])
 	add := fmt.Sprintf("\tif *(*byte)(unsafe.Pointer(%s)) == 0 || (*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 {\n\t\t_re_parse_out_of_memory(tls, %s)\n\t}\n", msg, state, state)
 	if fixed, err = insertAt("Xlre_compile", body, add, func(body []byte) (int, error) {
-		loc := re.FindAllSubmatchIndex(body, -1)
+		loc := findAll(re, body)
 		if len(loc) != 1 {
 			return 0, fmt.Errorf("Xlre_compile: cannot find the error label")
 		}
@@ -422,7 +422,7 @@ func fixWriteObject(b []byte) ([]byte, error) {
 	lost := fmt.Sprintf("(*TDynBuf)(unsafe.Pointer(%s)).Ferror1 != 0 || ", atoms[1])
 	claim := regexp.MustCompile(`\n\tif (` + regexp.QuoteMeta(lost) + `)?(Xdbuf_claim\(tls, bp, (?:libc\.Uint(?:32|64)FromInt32|uint64)\(atoms_size\)\) != 0) \{\n\t\tgoto fail\n`)
 	fixed, err := insertAt("_JS_WriteObjectAtoms", body, throw, func(body []byte) (int, error) {
-		loc := claim.FindAllIndex(body, -1)
+		loc := findAll(claim, body)
 		if len(loc) != 1 {
 			return 0, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the claim that moves the atoms")
 		}
@@ -433,7 +433,7 @@ func fixWriteObject(b []byte) ([]byte, error) {
 	}
 	// The claim, followed by the throw now, also tests the buffer.
 	thrown := regexp.MustCompile(`\n\tif (` + regexp.QuoteMeta(lost) + `)?Xdbuf_claim\(tls, bp, [^\n]*\(atoms_size\)\) != 0 \{\n` + regexp.QuoteMeta(throw))
-	m := thrown.FindAllSubmatchIndex(fixed, -1)
+	m := findAll(thrown, fixed)
 	if len(m) != 1 {
 		return nil, fmt.Errorf("_JS_WriteObjectAtoms: cannot find the claim that moves the atoms")
 	}
@@ -548,7 +548,7 @@ func guard(b []byte, head *regexp.Regexp, name string, at *regexp.Regexp, check 
 		return nil, err
 	}
 	fixed, err := insertAt(name, body, check, func(body []byte) (int, error) {
-		loc := at.FindAllIndex(body, -1)
+		loc := findAll(at, body)
 		if len(loc) != 1 {
 			return 0, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
 		}
@@ -568,7 +568,7 @@ func guardAfterComment(b []byte, head *regexp.Regexp, name string, at *regexp.Re
 		return nil, err
 	}
 	fixed, err := insertAt(name, body, check, func(body []byte) (int, error) {
-		loc := at.FindAllIndex(body, -1)
+		loc := findAll(at, body)
 		if len(loc) != 1 {
 			return 0, fmt.Errorf("%s: want 1 place to check that the code is not lost, found %d", name, len(loc))
 		}

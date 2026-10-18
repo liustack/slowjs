@@ -88,7 +88,7 @@ const (
 var (
 	reNamedCell  = regexp.MustCompile(`/\* \w+ at bp\+(\d+) \*/`)
 	reNamedLocal = regexp.MustCompile(`(?m)^\tvar _ /\* (\w+) at bp\+(\d+) \*/ (.+)$`)
-	reNamedType  = regexp.MustCompile(`\n\tvar _ /\* \w+ at bp\+(\d+) \*/ ([^\n]+)\n`)
+	reNamedType  = regexp.MustCompile(`(?m)^\tvar _ /\* \w+ at bp\+(\d+) \*/ (.+)$`)
 	reCellsLine  = regexp.MustCompile(`\n\tvar cell(\d+), cell(\d+) TJSValue ` + regexp.QuoteMeta(cellsInGo))
 	reCellsUnion = regexp.MustCompile(`\ntype TJSValueUnion = struct \{\n(?:\t\w+ +\[0\]\w+\n)*\tFuint641 +Tuint64_t\n\}\n`)
 )
@@ -131,12 +131,12 @@ func fixCells(b []byte, listed bool) ([]byte, error) {
 
 	// Offsets of named locals and of parameter copies are not cells.
 	skip := map[int]bool{}
-	for _, m := range reNamedCell.FindAllSubmatch(body, -1) {
+	for _, m := range findAllSubmatch(reNamedCell, body) {
 		k, _ := strconv.Atoi(string(m[1]))
 		skip[k] = true
 	}
 	named := map[int]string{}
-	for _, m := range reNamedType.FindAllSubmatch(body, -1) {
+	for _, m := range findAllSubmatch(reNamedType, body) {
 		k, _ := strconv.Atoi(string(m[1]))
 		named[k] = string(m[2])
 	}
@@ -426,7 +426,7 @@ func frameUsesOf(b []byte) (string, error) {
 		size int // 0 if not known
 	}
 	var locals []local
-	for _, m := range reNamedLocal.FindAllSubmatch(body, -1) {
+	for _, m := range findAllSubmatch(reNamedLocal, body) {
 		k, _ := strconv.Atoi(string(m[2]))
 		l := local{name: string(m[1]), k: k}
 		if e, err := parser.ParseExpr(string(m[3])); err == nil {
