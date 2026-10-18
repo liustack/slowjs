@@ -573,7 +573,13 @@ Conflicts to expect:
 
   `fixlib` also rewrites `modernc.org/libquickjs` imports in hand-written
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
-  need changes. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
+  need changes. Some steps check the code against a list kept in
+  `internal/fixlib`, and a flag prints the list as the files have it. Each
+  report runs the steps before its own, so it fails while an earlier list
+  is out of date. Update them in the order `fixlib` checks them: `-frames`,
+  then `-up` (on the files as taken from upstream), then `-cells`, then
+  the fingerprints, `-define` and `-backtrace`. Read every new line before
+  you put it in. If `fixlib` reports that `XJS_ToCStringLen2` changed shape,
   read the new upstream code: QuickJS may have fixed the leak itself. If
   the fail label now frees `val`, drop `fixToCString` and the
   `JS_ToCStringLen2` hunk, or the added calls free it twice. If there is a
