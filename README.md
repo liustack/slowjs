@@ -429,7 +429,9 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
     2608 on linux/amd64. Every use is now `*(*T)(unsafe.Pointer(x))`, the
     same pointer, in all 13 files. Without the call, Go no longer reads `x`
     before the other calls in the same statement. C does not fix that
-    order either, and no statement in the 13 files depends on it. With the
+    order either, and no statement in the 13 files depends on it: `fixlib`
+    lists the 23 statements of each file where the order goes away, and
+    stops at a new one. With the
     next two changes, the frame of `JS_CallInternal` is now 944 and 896
     bytes. `go vet`'s `unsafeptr`
     check reports more lines of `lib/` than before. Nothing runs it there.
@@ -669,6 +671,19 @@ Conflicts to expect:
   (`reDeref` in `internal/fixlib/main.go` gives both). If it reports that
   `__ccgo_up` is used some other way or that its definition changed, read
   what ccgo now writes (`internal/fixlib/up.go`).
+  The call made Go read the memory in `x` before the calls to the right of
+  it in the same statement, and the new form does not. `upSites`
+  (`internal/fixlib/upsites.go`) lists each statement where that order
+  goes away, by its function, the addresses that read memory and the
+  functions called after them. If it reports a statement that is not
+  listed, or a count that differs, read the statement and the functions it
+  names. If one of them can change what the address reads, as `f` can in
+  `s->buf[i] = f(s)` when it grows `buf`, `fixUp` must leave that
+  statement as ccgo wrote it, which it cannot do yet. Otherwise run
+  `go run ./internal/fixlib -up` on the files as taken from upstream, put
+  its output into `upsites.go` and say why each new statement is safe. On
+  files `fixlib` has changed, `-up` fails: no `__ccgo_up` is left to find
+  the statements by.
   If it reports that `_JS_CallInternal` has other cells than the two of
   `JS_DupValue` and `JS_FreeValue`, a use of one other than a store of a
   whole value or a load of its pointer, or that `JSValue` has another

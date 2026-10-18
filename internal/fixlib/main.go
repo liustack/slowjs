@@ -10,6 +10,9 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
+// -slots, -frames, -define and -up print the lists that some changes are
+// checked against, to update them after a review.
+//
 // It does fourteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
@@ -86,6 +89,7 @@ var (
 	slots  = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
 	define = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
 	frames = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
+	up     = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -108,14 +112,16 @@ func main() {
 		}
 		return
 	}
-	if *define {
+	if *define || *up {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
 			hw, err = handWritten("lib")
 		}
-		if err == nil {
+		if err == nil && *define {
 			err = defineReport(files, hw)
+		} else if err == nil {
+			err = upReport(files, hw)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
@@ -201,6 +207,32 @@ func run() (missing int, err error) {
 // fixEngine applies every change to the generated file of lib/ named
 // name.
 func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	b, err := fixBeforeUp(b, hw, name)
+	if err != nil {
+		return nil, err
+	}
+	// The changes before fixUp accept both forms of a conversion, so it
+	// goes after them.
+	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixCells(b, cellFiles[name]); err != nil {
+		return nil, err
+	}
+	if b, err = fixPin(b, pinFiles[name]); err != nil {
+		return nil, err
+	}
+	// The fingerprints of fixDefine are of the text the changes above
+	// leave, so it goes after them.
+	if b, err = fixDefine(b, name); err != nil {
+		return nil, err
+	}
+	// None of the changes after fixBacktrace moves a property slot.
+	return b, auditSlots(b)
+}
+
+// fixBeforeUp applies the changes that come before fixUp.
+func fixBeforeUp(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	b, err := fixToCString(b)
 	if err != nil {
 		return nil, err
@@ -227,27 +259,7 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	// The TLS frames of darwin/arm64 are checked against frameSites.
-	if b, err = fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go"); err != nil {
-		return nil, err
-	}
-	// The changes above accept both forms of a conversion, so this one
-	// goes after them.
-	if b, err = fixUp(b); err != nil {
-		return nil, err
-	}
-	if b, err = fixCells(b, cellFiles[name]); err != nil {
-		return nil, err
-	}
-	if b, err = fixPin(b, pinFiles[name]); err != nil {
-		return nil, err
-	}
-	// The fingerprints of fixDefine are of the text the changes above
-	// leave, so it goes after them.
-	if b, err = fixDefine(b, name); err != nil {
-		return nil, err
-	}
-	// None of the changes after fixBacktrace moves a property slot.
-	return b, auditSlots(b)
+	return fixFrames(b, hw, frameSites, name == "ccgo_darwin_arm64.go")
 }
 
 // update rewrites fn with f, unless -check is set. It reports whether the
