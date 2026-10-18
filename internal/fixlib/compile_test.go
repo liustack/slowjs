@@ -121,3 +121,22 @@ func undoParserStops(t *testing.T, b []byte) []byte {
 	}
 	return b
 }
+
+// A dbuf_claim that no longer fails at once on a failed buffer stops
+// fixlib: the full buffer fixCompile leaves would grow again, and a later
+// write would follow the one that failed.
+func TestCompileRejectsClaimAfterFailure(t *testing.T) {
+	b := engineFile(t)
+	test := "\t\tif (*TDynBuf)(unsafe.Pointer(s)).Ferror1 != 0 {\n\t\t\treturn -int32(1)\n\t\t}\n"
+	body, err := funcBody(b, reDbufClaim, "Xdbuf_claim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Count(body, []byte(test)) != 1 {
+		t.Fatal("cannot find the test of a failed buffer")
+	}
+	changed := bytes.Replace(b, body, bytes.Replace(body, []byte(test), nil, 1), 1)
+	if _, err := fixCompile(changed); err == nil {
+		t.Fatal("a dbuf_claim without the test went through")
+	}
+}

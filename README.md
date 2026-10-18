@@ -609,7 +609,13 @@ Conflicts to expect:
   against the C change: the parser must stop once a code buffer failed and
   patch no code in place after that, and every pass that reads back a code
   buffer must stop when that buffer failed (`internal/fixlib/compile.go`
-  lists each place).
+  lists each place). If it reports that growing a buffer in `Xdbuf_claim`
+  no longer starts with the test of a failed buffer, read the new
+  `Xdbuf_claim`: `fixCompile` marks a buffer that failed as full, and only
+  an early return for a failed buffer keeps the next write out. If the
+  test only moved and a failed buffer still fails at once, teach
+  `fixCompile` the new place. If it is gone, make `fixCompile` add it.
+  Do not edit the generated code by hand.
   If it reports that `XJS_NewRuntime2` or `_JS_ThrowStackOverflow` changed
   shape, a new runtime must still start with a stack size of 0 (the port's
   `MaxStackSlots`), and running out of stack must still throw a

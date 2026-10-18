@@ -93,6 +93,12 @@ func fixCompile(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	s := string(reDbufClaim.FindSubmatch(b)[1])
+	// The size it keeps only stops later writes if growing fails at once on
+	// a failed buffer.
+	grow := fmt.Sprintf("\tif new_size > (*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size {\n\t\tif (*TDynBuf)(unsafe.Pointer(%[1]s)).Ferror1 != 0 {\n\t\t\treturn -int32(1)\n\t\t}\n", s)
+	if bytes.Count(body, []byte(grow)) != 1 {
+		return nil, fmt.Errorf("Xdbuf_claim: growing the buffer no longer starts with the test of a failed buffer")
+	}
 	keep := fmt.Sprintf("\t\t\t(*TDynBuf)(unsafe.Pointer(%[1]s)).Fallocated_size = (*TDynBuf)(unsafe.Pointer(%[1]s)).Fsize\n", s)
 	if !bytes.Contains(body, []byte(keep)) {
 		re := regexp.MustCompile(`\n\t\tif !\(new_buf != 0\) \{\n\t\t\t\(\*TDynBuf\)\(unsafe\.Pointer\(` + s + `\)\)\.Ferror1 = int32\(\w+\)\n`)
