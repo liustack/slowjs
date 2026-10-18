@@ -615,7 +615,10 @@ Conflicts to expect:
   `MaxStackSlots`), and running out of stack must still throw a
   `RangeError` (`internal/fixlib/stack.go`). The same holds when it reports
   that the stack check of `_next_token` or `_json_next_token` changed
-  shape: the tokenizers must throw that `RangeError` too.
+  shape: the tokenizers must throw that `RangeError` too. If it reports
+  that the uses of `"stack overflow"` differ from `stackOverflowUses`, a
+  new place throws that message: make it call `_JS_ThrowStackOverflow`
+  (teach `fixStack` to), or add it to the list if it is the regexp parser.
   If it reports a call of `XJS_GetException` that is not in
   `exceptionHandlers` or `exceptionReaders` (`internal/fixlib/uncatchable.go`),
   read the new caller: if it hands the exception to a script (a rejection,

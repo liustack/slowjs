@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -117,7 +118,21 @@ func fixStack(b []byte) ([]byte, error) {
 		fixed := append(append(append([]byte{}, body[:m[0][2]]...), parseStackOverflow...), body[m[0][3]:]...)
 		b = bytes.Replace(b, body, fixed, 1)
 	}
+
+	// Only the regexp parser still says "stack overflow".
+	use := regexp.MustCompile(fmt.Sprintf(`__ccgo_ts\+%d\b`, old))
+	if diff := diffCounts(countPerFunc(b, use), stackOverflowUses); len(diff) != 0 {
+		return nil, fmt.Errorf("uses of %q differ from stackOverflowUses: %s: running out of stack there must call _JS_ThrowStackOverflow", "stack overflow", strings.Join(diff, ", "))
+	}
 	return b, nil
+}
+
+// stackOverflowUses are the functions left with the message "stack
+// overflow" once fixStack is done: the regexp parser's errors, which are
+// syntax errors of the pattern.
+var stackOverflowUses = map[string]int{
+	"_re_parse_nested_class": 1,
+	"_re_parse_disjunction":  1,
 }
 
 // appendString adds a C string to the end of __ccgo_ts1, where it moves no

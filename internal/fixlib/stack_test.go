@@ -112,3 +112,18 @@ func TestStackRejectsOtherDefault(t *testing.T) {
 		t.Fatalf("got %v, want the other default named", err)
 	}
 }
+
+// A new use of the "stack overflow" message outside the regexp parser stops
+// fixlib: it would throw something other than the RangeError.
+func TestStackRejectsNewOverflowError(t *testing.T) {
+	b := engineFile(t)
+	strs, err := stringTable(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := fmt.Sprintf("\nfunc _js_new_check(tls *libc.TLS, ctx uintptr) {\n\tXJS_ThrowInternalError(tls, ctx, __ccgo_ts+%d, 0)\n}\n\nfunc _js_regexp_finalizer(", strs["stack overflow"])
+	_, err = fixStack(bytes.Replace(b, []byte("\nfunc _js_regexp_finalizer("), []byte(f), 1))
+	if err == nil || !strings.Contains(err.Error(), "_js_new_check") {
+		t.Fatalf("got %v, want the new function named", err)
+	}
+}
