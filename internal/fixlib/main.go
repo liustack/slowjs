@@ -63,7 +63,7 @@
 //   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
 //     the string where the regexp cannot start to match, through lreSkip
 //     of lib/regexskip.go (see fixRegexSkip).
-//   - In lib/ccgo_linux_amd64.go, replace the TLS frame of the hot
+//   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement
 //     that passes an address in the frame on or can reach a stack check a
 //     TLS frame of its own, so that the usual path takes none (see

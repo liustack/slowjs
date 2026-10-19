@@ -82,11 +82,11 @@ func lazyHead(body []byte) (int, bool) {
 // fixLazyFrames comes last, before fixNoDefer, and restoreLazy, its exact
 // inverse, comes first. fixLazyFrames checks that restoreLazy gives its
 // input back. The frame sizes, cell uses, wrapped statements and out
-// parameters of lib/ccgo_linux_amd64.go are pinned in lazySites.
+// parameters of lib/ccgo_darwin_arm64.go are pinned in lazySites. On
+// 32-bit targets, where a JSValue is a uint64, _JS_ToObject and
+// js_array_finalizer have no TLS frame and are left as they are, and the
+// frames of the others are smaller.
 func fixLazyFrames(b []byte, hw []*ast.File, name string) ([]byte, error) {
-	if !lazyFiles[name] {
-		return b, nil
-	}
 	out, err := lazyFrames(b, hw, lazySites, name == lazyPinFile)
 	if err != nil {
 		return nil, err
@@ -101,13 +101,8 @@ func fixLazyFrames(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	return out, nil
 }
 
-// lazyFiles are the generated files fixLazyFrames changes.
-var lazyFiles = map[string]bool{
-	"ccgo_linux_amd64.go": true,
-}
-
 // lazyPinFile is the file whose counts must be those of lazySites.
-const lazyPinFile = "ccgo_linux_amd64.go"
+const lazyPinFile = "ccgo_darwin_arm64.go"
 
 // lazySite is a function of lazySites, as in lazyPinFile.
 type lazySite struct {
@@ -158,12 +153,14 @@ func lazyCloneMark(orig string) string {
 var reLazyClone = regexp.MustCompile(`\n// Changed by internal/fixlib: (\w+) with its out parameter as a Go pointer, for the functions fixLazyFrames changes\.\nfunc (\w+)\(`)
 
 // lazyFrames changes the functions of sites in b. pin checks the counts
-// of sites.
+// of sites. A function without a TLS frame is left as it is on 32-bit
+// targets.
 func lazyFrames(b []byte, hw []*ast.File, sites map[string]lazySite, pin bool) ([]byte, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), "", b, parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}
+	wide := !bytes.Contains(b, []byte("\ntype TJSValue = uint64\n"))
 	all := append(hw[:len(hw):len(hw)], file)
 	reach := reaching(callGraph(all))
 	imports := map[string]bool{"tls": true}
@@ -188,6 +185,9 @@ func lazyFrames(b []byte, hw []*ast.File, sites map[string]lazySite, pin bool) (
 		body, err := funcBody(b, funcHead(name), name)
 		if err != nil {
 			return nil, err
+		}
+		if !wide && !bytes.Contains(body, []byte("\n\tbp := tls.Alloc(")) {
+			continue
 		}
 		fixed, got, outs, err := lazyFunc(name, body, reach, imports)
 		if err != nil {

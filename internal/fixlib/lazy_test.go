@@ -29,20 +29,23 @@ func lazyInput(t *testing.T, name string) ([]byte, []*ast.File) {
 	return b, hw
 }
 
-// The generated files have the functions of lazySites changed, readEngine
+// Every generated file has the functions of lazySites changed, readEngine
 // gives them back as ccgo wrote them, and fixLazyFrames makes them again.
 func TestLazyFramesFixedFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		name := filepath.Base(fn)
-		if !lazyFiles[name] {
-			continue
-		}
 		raw, err := os.ReadFile(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n := bytes.Count(raw, []byte("each statement that needs a TLS frame takes one of its own")); n == 0 {
-			t.Errorf("%s: no function changed by fixLazyFrames", name)
+		// _JS_ToObject and js_array_finalizer have no TLS frame on 32-bit
+		// targets.
+		want := len(lazySites)
+		if strings.HasSuffix(name, "_386.go") || strings.HasSuffix(name, "_arm.go") {
+			want -= 2
+		}
+		if n := bytes.Count(raw, []byte("each statement that needs a TLS frame takes one of its own")); n != want {
+			t.Errorf("%s: %d functions changed by fixLazyFrames, want %d", name, n, want)
 		}
 		b, hw := lazyInput(t, name)
 		if bytes.Contains(b, []byte("fixLazyFrames")) || bytes.Contains(b, []byte("_lazy(")) {
@@ -129,8 +132,8 @@ func TestLazyFramesRejects(t *testing.T) {
 	}, {
 		name: "va_list to an unknown callee",
 		site: "XJS_GetPropertyInternal",
-		old:  "\t\t\treturn ___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1529, libc.VaList(bp+128, __ccgo_ts+189))\n",
-		new:  "\t\t\treturn XJS_ThrowSyntaxError(tls, ctx3, __ccgo_ts+1529, libc.VaList(bp+128, __ccgo_ts+189))\n",
+		old:  "\t\t\treturn ___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1560, libc.VaList(bp+128, __ccgo_ts+346))\n",
+		new:  "\t\t\treturn XJS_ThrowSyntaxError(tls, ctx3, __ccgo_ts+1560, libc.VaList(bp+128, __ccgo_ts+346))\n",
 		want: "the result of libc.VaList passed to XJS_ThrowSyntaxError",
 	}, {
 		name: "stack check in an else if",
