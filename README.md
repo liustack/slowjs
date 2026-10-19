@@ -510,9 +510,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   more than 768 bytes of it (see `fixAlloca`), which the defer freed. The
   Go code written by hand that calls the engine (`lib/backtrace.go`,
   `quickjs.go`) frees its TLS frames before it returns as well: a defer
-  would free the frames a panic left in place of its own. These are changes to the generated Go only
-  (`internal/fixlib/nodefer.go`), with no C hunk, and the other changes of
-  `fixlib` see the defers as ccgo writes them. Tests:
+  would free the frames a panic left in place of its own. A Go function
+  that calls `runtime.Goexit`, as `t.Fatal` does, also leaves the VM good
+  only for `Close`, where v0.26.14 kept it usable. The generated Go is
+  changed by `internal/fixlib/nodefer.go`, with no C hunk, and the other
+  changes of `fixlib` see the defers as ccgo writes them. Tests:
   `enginepanic_test.go`, `memgrind_test.go`,
   `internal/fixlib/nodefer_test.go`.
 - A regexp that is not sticky no longer tries every position of the string
@@ -553,8 +555,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   reach a stack check only through their cold functions, so the TLS stack
   a stack check sees is the same. A server render of a page of tifa's
   example shop takes 0.7% (with PGO) to 2% (without) less time on
-  linux/amd64 (AMD EPYC), with the same HTML. This changes only the generated Go,
-  with no C hunk (`internal/fixlib/cold.go`). Tests:
+  linux/amd64 (AMD EPYC), with the same HTML. This changes only the
+  generated Go, with no C hunk (`internal/fixlib/cold.go`). Tests:
   `lib/coldpath_test.go`, whose `testdata/coldpath.txt` is what the engine
   gave before the change (Node gives the same), and
   `internal/fixlib/cold_test.go`.
