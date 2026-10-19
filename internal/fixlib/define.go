@@ -176,7 +176,7 @@ func defineFingerprint(b []byte) (string, error) {
 
 // reporting reports whether fixlib prints fingerprints (-define, -backtrace
 // or -regex) rather than checking them.
-func reporting() bool { return *define || *backtrace || *regex }
+func reporting() bool { return *define || *backtrace || *regex || *lazyAddr }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
 // generated files as they are after all of fixlib's changes, made in

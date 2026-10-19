@@ -10,7 +10,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
 // It does eighteen things:
@@ -114,6 +114,7 @@ var (
 	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
 	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
 	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
+	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -138,7 +139,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -150,6 +151,8 @@ func main() {
 			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
 		} else if err == nil && *regex {
 			err = fingerprintReport(files, hw, "regexSites", regexFingerprint)
+		} else if err == nil && *lazyAddr {
+			err = fingerprintReport(files, hw, "lazyAddrSites", lazyAddrFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {

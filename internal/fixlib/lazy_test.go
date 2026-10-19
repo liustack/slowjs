@@ -198,3 +198,35 @@ func TestRestoreLazyRejects(t *testing.T) {
 		}
 	}
 }
+
+// A change to a callee that gets an address in the frame, or a new class
+// with a get_own_property method, stops fixLazyFrames until lazyAddrSites
+// is updated after a review.
+func TestLazyAddrSites(t *testing.T) {
+	b, hw := lazyInput(t, lazyPinFile)
+	if _, err := fixLazyFrames(bytes.Clone(b), hw, lazyPinFile); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, old, new string }{{
+		name: "a callee changed",
+		old:  "\tlen1 = libc.Uint64FromInt64(int64(bp+uintptr(10)) - int64(q))\n",
+		new:  "\tlen1 = libc.Uint64FromInt64(int64(bp+uintptr(10)) - int64(q))\n\tsaved = buf\n",
+	}, {
+		name: "the va_list passed on",
+		old:  "\treturn _JS_ThrowError2(tls, ctx, error_num, fmt, ap, add_backtrace)\n",
+		new:  "\tsaved = ap\n\treturn _JS_ThrowError2(tls, ctx, error_num, fmt, ap, add_backtrace)\n",
+	}, {
+		name: "a new get_own_property",
+		old:  "\tp := unsafe.Pointer(&_js_arguments_exotic_methods)\n",
+		new:  "\tp := unsafe.Pointer(&_js_arguments_exotic_methods)\n\t*(*uintptr)(unsafe.Add(p, 0)) = __ccgo_fp(_js_string_get_own_property)\n",
+	}} {
+		if bytes.Count(b, []byte(c.old)) != 1 {
+			t.Fatalf("%s: %q not found once", c.name, c.old)
+		}
+		m := bytes.Replace(bytes.Clone(b), []byte(c.old), []byte(c.new), 1)
+		_, err := fixLazyFrames(m, hw, lazyPinFile)
+		if err == nil || !strings.Contains(err.Error(), "update lazyAddrSites") {
+			t.Errorf("%s: got %v", c.name, err)
+		}
+	}
+}

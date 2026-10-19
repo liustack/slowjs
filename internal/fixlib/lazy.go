@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -87,6 +88,13 @@ func lazyHead(body []byte) (int, bool) {
 // js_array_finalizer have no TLS frame and are left as they are, and the
 // frames of the others are smaller.
 func fixLazyFrames(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	got, err := lazyAddrFingerprint(b)
+	if err != nil {
+		return nil, err
+	}
+	if want := lazyAddrSites[name]; got != want && !reporting() {
+		return nil, fmt.Errorf("%s: %s or a get_own_property method changed (fingerprint %s, want %s): check that none keeps an address it is given after it returns, nor returns it, then update lazyAddrSites (go run ./internal/fixlib -lazyaddr)", name, strings.Join(lazyAddrFuncs, ", "), got, want)
+	}
 	out, err := lazyFrames(b, hw, lazySites, name == lazyPinFile)
 	if err != nil {
 		return nil, err
@@ -136,6 +144,9 @@ var outParams = map[string]outParam{
 }
 
 // addrCallees may be given an address in the frame in a wrapped statement.
+// What each does with it was read in lazyAddrFuncs and in the
+// get_own_property methods of the engine's classes, whose fingerprints are
+// pinned in lazyAddrSites.
 var addrCallees = map[string]string{
 	"libc.VaList":              "writes its arguments at the address and returns it, checked to be an argument of a callee below",
 	"___JS_ThrowTypeErrorAtom": "formats the message from the va_list and returns",
@@ -143,6 +154,52 @@ var addrCallees = map[string]string{
 	"Xi32toa":                  "writes the digits and returns their count",
 	"_js_new_string8_len":      "copies the digits into a new string",
 	"(*TJSClassExoticMethods).Fget_own_property": "fills the property descriptor (the class API)",
+}
+
+// lazyAddrFuncs are the functions that get an address in the frame from
+// the calls addrCallees allows, directly or passed on: the va_list goes
+// from JS_ThrowTypeError through JS_ThrowError to vsnprintf in
+// JS_ThrowError2, and i32toa writes through u32toa.
+var lazyAddrFuncs = []string{
+	"___JS_ThrowTypeErrorAtom",
+	"XJS_ThrowTypeError",
+	"_JS_ThrowError",
+	"_JS_ThrowError2",
+	"Xi32toa",
+	"Xu32toa",
+	"_js_new_string8_len",
+}
+
+var (
+	reExoticType     = regexp.MustCompile(`\ntype TJSClassExoticMethods = struct \{\n\tFget_own_property +uintptr\n[^}]*\}\n`)
+	reExoticTable    = regexp.MustCompile(`\nvar \w+ = TJSClassExoticMethods\{\}\n\nfunc init\(\) \{\n\tp := unsafe\.Pointer\(&\w+\)\n((?:\t\*\(\*uintptr\)\(unsafe\.Add\(p, \d+\)\) = __ccgo_fp\(\w+\)\n)+)\}\n`)
+	reExoticGetOwn   = regexp.MustCompile(`\t\*\(\*uintptr\)\(unsafe\.Add\(p, 0\)\) = __ccgo_fp\((\w+)\)\n`)
+	exoticTableCount = []byte("= TJSClassExoticMethods{}")
+)
+
+// lazyAddrFingerprint hashes the type of the exotic methods of a class,
+// lazyAddrFuncs and the get_own_property methods the engine's classes set.
+func lazyAddrFingerprint(b []byte) (string, error) {
+	typ := reExoticType.Find(b)
+	if typ == nil {
+		return "", fmt.Errorf("TJSClassExoticMethods without get_own_property first")
+	}
+	tables := findAllSubmatch(reExoticTable, b)
+	if n := bytes.Count(b, exoticTableCount); len(tables) != n {
+		return "", fmt.Errorf("%d tables of exotic methods, %d set in an init function as fixLazyFrames reads them", n, len(tables))
+	}
+	names := append([]string{}, lazyAddrFuncs...)
+	for _, t := range tables {
+		if m := reExoticGetOwn.FindSubmatch(t[1]); m != nil {
+			names = append(names, string(m[1]))
+		}
+	}
+	fp, err := funcsFingerprint(b, names, func(text []byte) []byte { return text })
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256([]byte(string(typ) + strings.Join(names, "\n") + "\n" + fp))
+	return fmt.Sprintf("%x", h)[:16], nil
 }
 
 // lazyCloneMark is the mark above the copy of the callee orig of outParams.
