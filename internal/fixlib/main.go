@@ -13,7 +13,7 @@
 // -slots, -frames, -define, -backtrace, -regex and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does seventeen things:
+// It does eighteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -63,6 +63,12 @@
 //   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
 //     the string where the regexp cannot start to match, through lreSkip
 //     of lib/regexskip.go (see fixRegexSkip).
+//   - In lib/ccgo_linux_amd64.go, replace the TLS frame of the hot
+//     functions of lazySites with a Go array, and give each statement
+//     that passes an address in the frame on or can reach a stack check a
+//     TLS frame of its own, so that the usual path takes none (see
+//     fixLazyFrames). The first step undoes it, as the other changes match
+//     these functions as ccgo writes them.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -242,6 +248,11 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Other changes match the functions fixLazyFrames changes as ccgo
+	// writes them: undo it first, and make it again last.
+	if b, err = restoreLazy(b); err != nil {
+		return nil, err
+	}
 	if b, err = fixBeforeUp(b, hw, name); err != nil {
 		return nil, err
 	}
@@ -273,6 +284,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	}
 	// None of the changes after fixBacktrace moves a property slot.
 	if err = auditSlots(b); err != nil {
+		return nil, err
+	}
+	if b, err = fixLazyFrames(b, hw, name); err != nil {
 		return nil, err
 	}
 	return dropDefers(b)

@@ -206,7 +206,10 @@ func reportedFingerprint(fn string, hw []*ast.File, fp func([]byte) (string, err
 	if b, err = fixEngine(b, hw, filepath.Base(fn)); err != nil {
 		return "", fmt.Errorf("%s: %v", fn, err)
 	}
-	if b, err = restoreDefer(b); err != nil {
+	if b, err = restoreDefer(b); err == nil {
+		b, err = restoreLazy(b)
+	}
+	if err != nil {
 		return "", fmt.Errorf("%s: %v", fn, err)
 	}
 	return fp(b)
