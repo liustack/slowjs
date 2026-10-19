@@ -139,13 +139,14 @@ func backtraceEnsureClass(tls *libc.TLS, ctx uintptr) TJSClassID {
 	defer libc.Xfree(tls, name)
 	defSize := int(unsafe.Sizeof(TJSClassDef{}))
 	def := tls.Alloc(defSize)
-	defer tls.Free(defSize)
 	d := (*TJSClassDef)(unsafe.Pointer(def))
 	*d = TJSClassDef{}
 	d.Fclass_name = name
 	d.Ffinalizer = __ccgo_fp(_js_backtrace_finalizer)
 	d.Fgc_mark = __ccgo_fp(_js_backtrace_gc_mark)
-	if XJS_NewClass(tls, rt, backtraceClassID, def) != 0 {
+	failed := XJS_NewClass(tls, rt, backtraceClassID, def) != 0
+	tls.Free(defSize)
+	if failed {
 		return 0
 	}
 	return backtraceClassID
@@ -191,7 +192,6 @@ func backtraceCount(tls *libc.TLS, rt uintptr, backtrace_flags int32) (n int32, 
 // hold set, each frame holds its bytecode, so the record outlives the call.
 func backtraceRecord(tls *libc.TLS, ctx uintptr, frames []backtraceFrame, backtrace_flags int32, hold bool) {
 	ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
-	defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
 	flags := backtrace_flags
 	sf := (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt)).Fcurrent_stack_frame
 	for i := 0; i < len(frames); sf = (*TJSStackFrame)(unsafe.Pointer(sf)).Fprev_frame {
@@ -214,6 +214,7 @@ func backtraceRecord(tls *libc.TLS, ctx uintptr, frames []backtraceFrame, backtr
 		}
 		i++
 	}
+	tls.Free(int(unsafe.Sizeof(uintptr(0))))
 }
 
 // backtraceCanAdd reports whether JS_DefineProperty would add 'stack' to
@@ -302,7 +303,6 @@ func backtraceLazy(tls *libc.TLS, ctx uintptr, error_obj TJSValue, backtrace_fla
 func backtraceNow(tls *libc.TLS, ctx uintptr, error_obj TJSValue, backtrace_flags int32, n int32) bool {
 	size := int(backtraceSize(n))
 	bt := tls.Alloc(size)
-	defer tls.Free(size)
 	(*backtrace)(unsafe.Pointer(bt)).count = n
 	frames := backtraceFrames(bt)
 	backtraceRecord(tls, ctx, frames, backtrace_flags, false)
@@ -312,6 +312,7 @@ func backtraceNow(tls *libc.TLS, ctx uintptr, error_obj TJSValue, backtrace_flag
 			XFreeValue(tls, ctx, jsvMkPtr(EJS_TAG_STRING, f.name))
 		}
 	}
+	tls.Free(size)
 	ok := jsvTag(str) != EJS_TAG_EXCEPTION
 	if !ok {
 		str = jsvMkPtr(EJS_TAG_NULL, 0)
@@ -415,9 +416,10 @@ func _js_backtrace_prop_string(tls *libc.TLS, ctx uintptr, p uintptr, prs uintpt
 func _js_backtrace_own_flags(tls *libc.TLS, ctx uintptr, desc uintptr, p uintptr, prop TJSAtom) int32 {
 	if desc != 0 && prop == uint32(EJS_ATOM_stack) {
 		ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
-		defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
-		if prs := _find_own_property(tls, ppr, p, prop); prs != 0 &&
-			backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr))) {
+		prs := _find_own_property(tls, ppr, p, prop)
+		pending := prs != 0 && backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr)))
+		tls.Free(int(unsafe.Sizeof(uintptr(0))))
+		if pending {
 			d := (*TJSPropertyDescriptor)(unsafe.Pointer(desc))
 			d.Fflags = _js_backtrace_prop_flags(tls, prs) & MJS_PROP_C_W_E
 			d.Fvalue = jsUndefined()
@@ -436,9 +438,10 @@ func _js_backtrace_raw_stack(tls *libc.TLS, s uintptr, p uintptr) bool {
 		return false
 	}
 	ppr := tls.Alloc(int(unsafe.Sizeof(uintptr(0))))
-	defer tls.Free(int(unsafe.Sizeof(uintptr(0))))
 	prs := _find_own_property(tls, ppr, p, uint32(EJS_ATOM_stack))
-	return prs != 0 && backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr)))
+	pending := prs != 0 && backtracePending(tls, prs, *(*uintptr)(unsafe.Pointer(ppr)))
+	tls.Free(int(unsafe.Sizeof(uintptr(0))))
+	return pending
 }
 
 // _js_backtrace_print_pending prints a placeholder for a marker at prs and
@@ -519,14 +522,29 @@ func _js_backtrace_gc_mark(tls *libc.TLS, rt uintptr, val TJSValue, mark_func ui
 
 // backtraceFormat formats a pending stack as build_backtrace does. It
 // returns an exception if there is no memory for the text.
+//
+// Like the engine, the Go code under lib/ frees its TLS frames before it
+// returns and not in a defer: a Go panic that goes up through the engine
+// leaves the engine's frames on the TLS stack, which a defer would free in
+// place of its own (see tlsMark in the quickjs package).
 func backtraceFormat(tls *libc.TLS, ctx uintptr, bt uintptr) TJSValue {
-	const scratchSize = 64
-
 	dbufSize := int(unsafe.Sizeof(TDynBuf{}))
 	dbuf := tls.Alloc(dbufSize)
-	defer tls.Free(dbufSize)
-	scratch := tls.Alloc(scratchSize)
-	defer tls.Free(scratchSize)
+	scratch := tls.Alloc(backtraceScratchSize)
+	str := backtraceFormatIn(tls, ctx, bt, dbuf, scratch)
+	tls.Free(backtraceScratchSize)
+	tls.Free(dbufSize)
+	return str
+}
+
+// backtraceScratchSize is the size of the room backtraceFormatIn writes
+// short strings and the column number to.
+const backtraceScratchSize = 64
+
+// backtraceFormatIn is backtraceFormat with dbuf, room for a DynBuf, and
+// scratch, backtraceScratchSize bytes, in its TLS frame.
+func backtraceFormatIn(tls *libc.TLS, ctx uintptr, bt, dbuf, scratch uintptr) TJSValue {
+	const scratchSize = backtraceScratchSize
 
 	put := func(s string) {
 		copy(unsafe.Slice((*byte)(unsafe.Pointer(scratch)), scratchSize), s)

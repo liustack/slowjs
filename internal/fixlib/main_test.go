@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -16,7 +15,7 @@ import (
 
 func engineFile(t *testing.T) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go"))
+	b, err := readEngine(filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +179,7 @@ func TestTimezoneOffsetIsUTC(t *testing.T) {
 		t.Fatal(files, err)
 	}
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -232,7 +231,7 @@ func TestTimezoneRejectsLocalTime(t *testing.T) {
 // path.
 func TestToCStringRejects(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -248,7 +247,7 @@ func TestToCStringRejects(t *testing.T) {
 	}
 	head := "func XJS_ToCStringLen2("
 	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_386.go"} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "lib", name))
+		b, err := readEngine(filepath.Join("..", "..", "lib", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,7 +279,7 @@ func TestToCStringRejects(t *testing.T) {
 // lib/backtrace.go repeats, stops fixlib.
 func TestBacktraceSites(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -340,7 +339,7 @@ func TestOwnFlagsRejectsValueRead(t *testing.T) {
 	}
 
 	// On linux/386 the value is bytes 4 to 12 and the getter starts at 12.
-	b32, err := os.ReadFile(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
+	b32, err := readEngine(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +411,7 @@ func TestBacktraceRejectsTextElsewhere(t *testing.T) {
 // 28 on linux/386, which aligns a uint64 to 4, and 16 of 32 on linux/arm.
 func TestDescLayout(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

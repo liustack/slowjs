@@ -475,6 +475,47 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   (`internal/fixlib/define.go`). Tests: `lib/objlit_test.go`,
   `lib/objlit_memgrind_test.go`, `internal/fixlib/define_test.go`.
 
+- Engine functions with a TLS frame no longer free it in a `defer`. ccgo
+  frees the frame of a function (`bp := tls.Alloc(N)`) with
+  `defer tls.Free(N)`, and Go does not inline a function with a defer, with
+  or without PGO, so hundreds of small engine functions stayed calls.
+  `fixlib` now frees the frame before each return, after the value is
+  computed, and at the end of a function that can run off it, in all 13
+  files: 969 functions on darwin/arm64, among them the three call functions
+  that `fixAlloca` changed (see below). Go then inlines many of them, and
+  a server render of a page of tifa's example shop takes about 10% less
+  time on linux/amd64 (AMD EPYC), with or without PGO, with the same HTML.
+  A PGO profile taken before this change no longer matches many of the
+  call sites: take it again. What changes is a Go panic that goes
+  up through the engine: a defer freed the frames on the way, and now they
+  stay on the TLS stack. The VM puts the stack back where it was when the
+  call into javascript started, and when javascript called a Go function,
+  so `Close` frees all of it, and libc's memgrind check of the TLS stack
+  holds. A panic of a Go function that javascript called is recovered there
+  as before: no engine frame is between them. A panic in the engine itself
+  (a bug, such as a nil pointer, or libc running out of memory) goes on to
+  the Go code that called javascript, also when the javascript was
+  evaluated by a Go function. That Go function used to recover it and
+  throw an error, which walked stack frames the panic had dropped and could
+  crash the process (it did, with a fatal fault, in
+  `TestEnginePanicTLS/nested`). The engine's state after a panic in it is
+  not known, so the VM is good only for `Close`, as in tifa: every later
+  call into javascript panics. A Go function that recovers such a panic
+  itself does not save the VM: the VM panics where the Go function
+  returns, as it does when a call returns with engine frames left on the
+  TLS stack, which means a frame was not freed (outside linux such a frame
+  can break the TLS stack before the call returns). The values held by the
+  javascript frames the panic went through are not freed, with or without
+  the defer, and neither is the room that `alloca` mallocs for a call with
+  more than 768 bytes of it (see `fixAlloca`), which the defer freed. The
+  Go code written by hand that calls the engine (`lib/backtrace.go`,
+  `quickjs.go`) frees its TLS frames before it returns as well: a defer
+  would free the frames a panic left in place of its own. These are changes to the generated Go only
+  (`internal/fixlib/nodefer.go`), with no C hunk, and the other changes of
+  `fixlib` see the defers as ccgo writes them. Tests:
+  `enginepanic_test.go`, `memgrind_test.go`,
+  `internal/fixlib/nodefer_test.go`.
+
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
 
@@ -562,8 +603,8 @@ Conflicts to expect:
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
-  changes to the interpreter loop and the call into `lib/objlit.go`
-  conflict. Take the upstream version of every generated file, then put
+  changes to the interpreter loop, the call into `lib/objlit.go` and the
+  frames freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -789,6 +830,23 @@ Conflicts to expect:
   then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
   fields in another order: find where the three bits are now and update
   `objectBits` and its patterns in `internal/fixlib/define.go`.
+  `fixlib` frees every TLS frame before each return instead of in a
+  defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
+  It first puts the defers back (`restoreDefer`), so every other change,
+  check and report (`-frames`, `-slots`, ...) works on the frames as ccgo
+  writes them, and it checks that putting them back gives the file it was
+  given, byte for byte. If it reports a frame that is not freed by
+  `defer tls.Free(N)` right after `tls.Alloc(N)` (or by the closure of
+  `fixAlloca`), a `tls.Alloc` or `tls.Free` somewhere else, a `defer`
+  that is not in `keptDefers`, a function literal, a bare `return` or a
+  local with the name of the result, read the function: a defer that frees
+  anything on the TLS stack, or a return the rewrite cannot see, would
+  leave the stack wrong on some path. Teach `fixNoDefer` the new form, or
+  add a defer that only frees malloc'd memory to `keptDefers`. The VM puts
+  the TLS stack back after a panic (`tlsstack_linux.go`,
+  `tlsstack_other.go`), which knows how libc keeps that stack: one block per
+  slot on linux, bytes in segments elsewhere. After a libc release, run
+  `go test -run EnginePanic .` with and without `-tags=libc.memgrind`.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
@@ -813,7 +871,8 @@ Conflicts to expect:
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed. The calls without
   `alloca`, the functions without a TLS frame, the changes to the
-  interpreter loop and the call into `lib/objlit.go` have no C form: they
+  interpreter loop, the call into `lib/objlit.go` and the frames freed
+  without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -939,6 +998,7 @@ go run ./internal/fixlib -check                          # fork changes present 
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
 go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
+go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

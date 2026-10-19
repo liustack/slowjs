@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -62,7 +61,7 @@ func auditSlots(b []byte) error {
 // printSlots prints the slot uses of the generated file fn, with the fork's
 // changes made, as slotSites entries, keeping the reasons already listed.
 func printSlots(fn string) error {
-	b, err := os.ReadFile(fn)
+	b, err := readEngine(fn)
 	if err != nil {
 		return err
 	}

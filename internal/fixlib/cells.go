@@ -11,7 +11,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -379,7 +378,7 @@ func cellsReport(files []string, hw []*ast.File) (string, error) {
 		if !cellFiles[name] {
 			continue
 		}
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			return "", err
 		}

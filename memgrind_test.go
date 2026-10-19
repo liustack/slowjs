@@ -9,6 +9,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	util "modernc.org/fileutil/ccgo"
@@ -144,8 +145,66 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("moduleLoaderPanic", TestModuleLoaderPanic)
 	t.Run("defaultStackLimit", TestDefaultStackLimit)
 	t.Run("newVMContextFailure", TestNewVMContextFailure)
+	t.Run("enginePanicCall", testEnginePanicCall)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// testEnginePanicCall panics in the engine right below Call, where no
+// javascript frame holds a value: Close frees everything, the frames the
+// panic left on the TLS stack too.
+func testEnginePanicCall(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	addRawPanic(t, m)
+	runEnginePanic(t, m, enginePanicCases[0].run)
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// After a panic deeper in the engine, Close frees the TLS stack and the VM
+// (libc's memgrind TLS.Close panics on a stack it did not free). What it
+// leaks are values that the javascript frames the panic went through held,
+// which the engine frees on return only, with a defer as without: 69 blocks
+// in the deep case either way.
+func TestMemgrindEnginePanic(t *testing.T) {
+	tls := libc.NewTLS()
+	tls.Close()
+	for _, c := range enginePanicCases {
+		t.Run(c.name, func(t *testing.T) {
+			libc.MemAuditStart()
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+			addRawPanic(t, m)
+			runEnginePanic(t, m, c.run)
+			if err := m.Close(); err != nil {
+				t.Fatal(err)
+			}
+			err = libc.MemAuditReport()
+			if err == nil {
+				return
+			}
+			n := 0
+			for _, line := range strings.Split(err.Error(), "\n")[1:] {
+				switch {
+				case strings.TrimSpace(line) == "":
+				case strings.Contains(line, "_js_def_malloc: ") || strings.Contains(line, "_js_def_realloc: "):
+					n++
+				default:
+					t.Errorf("a leak other than an engine value: %s", line)
+				}
+			}
+			if c.name == "call" {
+				t.Errorf("%d blocks leaked", n)
+			}
+			t.Logf("%d engine blocks leaked", n)
+		})
 	}
 }

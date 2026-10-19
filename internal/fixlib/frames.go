@@ -490,7 +490,7 @@ func cellAccess(f *parsedFunc, stack []ast.Node) (cellUse, string) {
 // A line with no reason is a function fixFrames could take: add it to
 // frameSites after reading it.
 func frameReport(fn string) error {
-	b, err := os.ReadFile(fn)
+	b, err := readEngine(fn)
 	if err != nil {
 		return err
 	}

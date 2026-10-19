@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -57,7 +56,7 @@ func TestFramesEveryFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

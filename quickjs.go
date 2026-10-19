@@ -143,11 +143,14 @@ type runtime struct {
 	cRuntime          uintptr // lib.TJSRuntime
 	tls               *libc.TLS
 	callbackClassInit bool
+	// base is where the TLS stack is between calls (see tlsMark).
+	base tlsMark
 }
 
 // newRuntime returns a newly create Runtime
 func newRuntime() (*runtime, error) {
 	tls := libc.NewTLS()
+	base := markTLS(tls)
 	r := lib.XJS_NewRuntime(tls)
 	if r == 0 {
 		tls.Close()
@@ -157,6 +160,7 @@ func newRuntime() (*runtime, error) {
 	return &runtime{
 		cRuntime: r,
 		tls:      tls,
+		base:     base,
 	}, nil
 }
 
@@ -475,6 +479,12 @@ type vmState struct {
 	// with, until the panic goes on in the Go code that called javascript
 	// (see hostPanicked).
 	panicked any
+	// entry is where the TLS stack was when the outermost call into
+	// javascript started (see tlsMark).
+	entry tlsMark
+	// broken is set once a Go panic went up through the engine, after
+	// which a call into javascript panics with brokenPanic.
+	broken bool
 }
 
 // NewVM returns a newly created VM.
@@ -524,8 +534,18 @@ func (m *VM) Interrupt() {
 // outermost call arms the eval timeout and clears a pending Interrupt. A host
 // function evaluating more javascript runs inside the budget of the call that
 // got it there, and an Interrupt requested meanwhile stays pending.
+//
+// A Go panic that went up through the engine left its TLS frames on the
+// stack: leave puts the stack back where enter found it, and enter panics
+// from then on (see hostEnded). When the outermost call returned and left
+// frames, an engine function did not free its frame: leave panics with
+// framesLeftPanic.
 func (m *VM) enter() {
+	if m.broken {
+		panic(brokenPanic)
+	}
 	if m.depth == 0 {
+		m.entry = markTLS(m.runtime.tls)
 		m.configureInterrupt()
 	}
 	m.depth++
@@ -533,6 +553,24 @@ func (m *VM) enter() {
 
 func (m *VM) leave() {
 	m.depth--
+	if m.depth == 0 {
+		// leave recovers only to tell a return from a panic: a panic goes
+		// on with the same value, and the stack trace still holds where it
+		// started, as leave panics again before it returns.
+		p := recover()
+		if m.entry.restore(m.runtime.tls) {
+			// A Goexit that went up through the engine set broken in
+			// the Go function that called it.
+			if p == nil && !m.broken {
+				p = framesLeftPanic
+			}
+			m.broken = true
+		}
+		if p != nil {
+			m.panicked = nil
+			panic(p)
+		}
+	}
 	m.repanic()
 }
 
@@ -583,6 +621,9 @@ func (m *VM) SetCanBlock(value bool) {
 func (m *VM) Close() error {
 	tls := m.runtime.tls
 	ctx := m.cContext
+	// A Go panic in the engine outside a call into javascript (see
+	// tlsMark) left its frames on the TLS stack.
+	m.runtime.base.restore(tls)
 
 	// SetModuleLoader files the loader process-wide under the runtime
 	// pointer, which is freed below and may be reused by a later runtime.
@@ -883,15 +924,15 @@ func (m *VM) writeBytecode(v lib.TJSValue) ([]byte, error) {
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/qjsc.c#L193
 	flags2 := int32(lib.MJS_WRITE_OBJ_BYTECODE)
 	usize := int(unsafe.Sizeof(libc.Tsize_t(0)))
+	// Freed before it returns, not in a defer (see tlsMark).
 	plen := tls.Alloc(usize)
-	defer tls.Free(usize)
-
 	p := lib.XJS_WriteObject(tls, ctx, plen, v, flags2)
+	plen2 := int(*(*libc.Tsize_t)(unsafe.Pointer(plen)))
+	tls.Free(usize)
 	if p == 0 {
 		return nil, m.errFromException()
 	}
 
-	plen2 := int(*(*libc.Tsize_t)(unsafe.Pointer(plen)))
 	b := libc.GoBytes(p, plen2)
 	bcopy := make([]byte, len(b))
 	copy(bcopy, b)
@@ -1221,20 +1262,20 @@ func (m *VM) call(f, this lib.TJSValue, args ...any) (r any, err error) {
 func cString(tls *libc.TLS, ctx uintptr, v lib.TJSValue) (s string, ok bool) {
 	// The out-parameter lives on the emulated C stack, never the Go stack: the
 	// transpiled callee holds it as a uintptr, which a Go stack move would leave
-	// dangling.
+	// dangling. It is freed before cString returns, not in a defer (see
+	// tlsMark).
 	usize := int(unsafe.Sizeof(libc.Tsize_t(0)))
 	plen := tls.Alloc(usize)
-
-	defer tls.Free(usize)
-
 	p := lib.XJS_ToCStringLen2(tls, ctx, plen, v, 0)
+	n := *(*libc.Tsize_t)(unsafe.Pointer(plen))
+	tls.Free(usize)
 	if p == 0 {
 		return "", false
 	}
 
 	defer lib.XJS_FreeCString(tls, ctx, p)
 
-	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), *(*libc.Tsize_t)(unsafe.Pointer(plen)))), true
+	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), n)), true
 }
 
 // wellFormed returns the UTF-8 b as a Go string with U+FFFD for each lone
@@ -1554,14 +1595,58 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 // panic in f does not go through the engine (see hostPanicked).
 func (m *VM) inHost(name string, f func()) {
 	m.host++
+	mark := markTLS(m.runtime.tls)
+	returned := false
 	defer func() {
-		if p := recover(); p != nil {
-			m.hostPanicked(name, p)
-		}
 		m.host--
+		if m.hostEnded(mark, returned) {
+			return
+		}
+		switch p := recover(); {
+		case p != nil:
+			m.hostPanicked(name, p)
+		case !returned:
+			m.broken = true // runtime.Goexit, which goes on up through the engine
+		}
 	}()
 	f()
+	returned = true
 }
+
+// hostEnded puts the TLS stack back at mark, taken where javascript called
+// a Go function that has now ended, and reports whether engine frames were
+// left above it. The engine below the Go function goes on, and must not
+// free such a frame as its own (see tlsMark).
+//
+// When the Go function did not return, a Go panic or runtime.Goexit went
+// up through engine functions, javascript that the Go function evaluated,
+// and left the engine in a state that is not known. The engine's stack, for
+// one, still points at the frames that were dropped. So the panic is not
+// recovered there: it goes on up through the engine, which frees nothing on
+// the way, to the Go code that called javascript. When the Go function
+// returned, either it recovered such a panic, or an engine function did
+// not free its frame, and hostEnded panics with framesLeftPanic, which goes
+// up the same way. Either way the VM is then good only for Close: every
+// later call into javascript panics with brokenPanic.
+func (m *VM) hostEnded(mark tlsMark, returned bool) bool {
+	if !mark.restore(m.runtime.tls) {
+		return false
+	}
+	m.broken = true
+	if returned {
+		panic(framesLeftPanic)
+	}
+	return true
+}
+
+const (
+	// framesLeftPanic is what the VM panics with when engine frames are
+	// left on the TLS stack after javascript returned to Go.
+	framesLeftPanic = "quickjs: the engine returned with frames left on its TLS stack: a frame was not freed, or a Go function recovered a panic that went up through the engine"
+	// brokenPanic is what a call into javascript panics with after a Go
+	// panic went up through the engine.
+	brokenPanic = "quickjs: a Go panic went up through the engine of this VM, which is good only for Close"
+)
 
 // hostPanicked keeps p, what the Go function name called from javascript
 // panicked with, and throws an uncatchable error in its place. A panic must
@@ -1701,11 +1786,11 @@ func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
 
 	defer libc.Xfree(tls, p)
 
+	// Freed before it returns, not in a defer (see tlsMark).
 	bp := tls.Alloc(16)
-
-	defer tls.Free(16)
-
-	return lib.XJS_ThrowTypeError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	r = lib.XJS_ThrowTypeError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	tls.Free(16)
+	return r
 }
 
 func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
@@ -1716,11 +1801,11 @@ func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue)
 
 	defer libc.Xfree(tls, p)
 
+	// Freed before it returns, not in a defer (see tlsMark).
 	bp := tls.Alloc(16)
-
-	defer tls.Free(16)
-
-	return lib.XJS_ThrowInternalError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	r = lib.XJS_ThrowInternalError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	tls.Free(16)
+	return r
 }
 
 type goFunc struct {
@@ -2002,11 +2087,19 @@ func callGo(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uint
 
 	m := info.vm
 	m.host++
+	mark := markTLS(tls)
+	returned := false
 	defer func() {
-		if p := recover(); p != nil {
-			m.hostPanicked(info.name, p)
-		}
 		m.host--
+		if m.hostEnded(mark, returned) {
+			return
+		}
+		switch p := recover(); {
+		case p != nil:
+			m.hostPanicked(info.name, p)
+		case !returned:
+			m.broken = true // runtime.Goexit, which goes on up through the engine
+		}
 		// An interrupt or running out of memory in converting the
 		// arguments, in the Go function or in converting its result stays
 		// pending (see takeException). It is the result whatever the Go
@@ -2018,7 +2111,16 @@ func callGo(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uint
 			r = exception
 		}
 	}()
+	r = m.callGoFunc(info, this, argc, argv)
+	returned = true
+	return r
+}
 
+// callGoFunc converts the arguments of a call of info from javascript,
+// calls it and converts its results.
+func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintptr) (r lib.TJSValue) {
+	tls := m.runtime.tls
+	ctx := m.cContext
 	haveArgs := int(argc)
 	if haveArgs < info.minArgs {
 		return throwTypeError(tls, ctx, fmt.Sprintf("not enough arguments in call to %s", info.name))

@@ -6,7 +6,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -21,7 +20,7 @@ func TestCompileEveryFile(t *testing.T) {
 		t.Fatal(files, err)
 	}
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

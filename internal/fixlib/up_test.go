@@ -16,7 +16,7 @@ import (
 // __ccgo_up left is its definition, and fixUp leaves a fixed file as it is.
 func TestUpEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,7 +201,7 @@ func TestUpOrder(t *testing.T) {
 // them, so upOrder runs on them when fixlib takes a new release.
 func TestUpSitesInEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

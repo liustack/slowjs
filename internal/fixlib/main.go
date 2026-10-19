@@ -13,7 +13,7 @@
 // -slots, -frames, -define, -backtrace and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does fourteen things:
+// It does fifteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -56,6 +56,11 @@
 //     data property of an ordinary object through objlitDefine of
 //     lib/objlit.go, without the three calls of the generic path (see
 //     fixDefine).
+//   - In every lib/ccgo_*.go file, free each TLS frame before every
+//     return instead of in a defer, which keeps Go from inlining the
+//     function (see fixNoDefer). This is the last change, and the first
+//     step undoes it, so that the others see the defers as ccgo writes
+//     them.
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -221,8 +226,13 @@ func run() (missing int, err error) {
 // fixEngine applies every change to the generated file of lib/ named
 // name.
 func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
-	b, err := fixBeforeUp(b, hw, name)
+	// Every change and check below sees the defers that free the TLS
+	// frames, as ccgo writes them: fixNoDefer drops them last.
+	b, err := restoreDefer(b)
 	if err != nil {
+		return nil, err
+	}
+	if b, err = fixBeforeUp(b, hw, name); err != nil {
 		return nil, err
 	}
 	// The changes before fixUp accept both forms of a conversion, so it
@@ -245,7 +255,10 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
-	return b, auditSlots(b)
+	if err = auditSlots(b); err != nil {
+		return nil, err
+	}
+	return dropDefers(b)
 }
 
 // fixBeforeUp applies the changes that come before fixUp.

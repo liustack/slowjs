@@ -6,7 +6,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ func TestUncatchableEveryFile(t *testing.T) {
 		t.Fatal(files, err)
 	}
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +129,7 @@ func TestUncatchableRejectsExceptionAddress(t *testing.T) {
 		{"ccgo_linux_386.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 636)) = 0\n", false},
 		{"ccgo_linux_386.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1240))\n", true},
 	} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "lib", c.file))
+		b, err := readEngine(filepath.Join("..", "..", "lib", c.file))
 		if err != nil {
 			t.Fatal(err)
 		}
