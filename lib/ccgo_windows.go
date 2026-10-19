@@ -6392,18 +6392,16 @@ func _JS_AtomGetStr(tls *libc.TLS, ctx uintptr, buf uintptr, buf_size int32, ato
 }
 
 func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string TBOOL) (r TJSValue) {
-	bp := tls.Alloc(80)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [10]uint64
 	var len1 Tsize_t
 	var p, p1, rt, v6 uintptr
 	var v5, v8 TJSValue
 	var _ /* buf at bp+16 */ [64]int8
 	_, _, _, _, _, _, _ = len1, p, p1, rt, v5, v6, v8
 	if ___JS_AtomIsTaggedInt(tls, atom) != 0 {
-		len1 = Xu32toa(tls, bp+16, ___JS_AtomToUInt32(tls, atom))
-		r = _js_new_string8_len(tls, ctx1, bp+16, int32(len1))
-		tls.Free(80)
-		return
+		// Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
+		return ___JS_AtomToValue_cold(tls, ctx1, atom)
 	} else {
 		rt = (*TJSContext)(unsafe.Pointer(ctx1)).Frt
 		p1 = *(*uintptr)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer(rt)).Fatom_array + uintptr(atom)*8))
@@ -6429,9 +6427,9 @@ func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string T
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p1})),
 			Ftag: int64(EJS_TAG_STRING),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v5
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v5
 		if uint32(int32(v5.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v6 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _7
 		_7:
 			p = v6
@@ -6440,9 +6438,7 @@ func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string T
 		v8 = v5
 		goto _9
 	_9:
-		r = v8
-		tls.Free(80)
-		return
+		return v8
 		goto _4
 	_3:
 		;
@@ -6451,9 +6447,9 @@ func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string T
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p1})),
 			Ftag: int64(EJS_TAG_SYMBOL),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v5
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v5
 		if uint32(int32(v5.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v6 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v6 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _12
 		_12:
 			p = v6
@@ -6462,15 +6458,23 @@ func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string T
 		v8 = v5
 		goto _14
 	_14:
-		r = v8
-		tls.Free(80)
-		return
+		return v8
 	_4:
 		;
 	_2:
 	}
-	tls.Free(80)
 	return r
+}
+
+// Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
+func ___JS_AtomToValue_cold(tls *libc.TLS, ctx1 uintptr, atom TJSAtom) (r TJSValue) {
+	bp := tls.Alloc(80)
+	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	var len1 Tsize_t
+	len1 = Xu32toa(tls, bp+16, ___JS_AtomToUInt32(tls, atom))
+	r = _js_new_string8_len(tls, ctx1, bp+16, int32(len1))
+	tls.Free(80)
+	return
 }
 
 func XJS_AtomToValue(tls *libc.TLS, ctx uintptr, atom TJSAtom) (r TJSValue) {
@@ -31092,10 +31096,10 @@ exception:
 //
 //	/* XXX: Should take JSValueConst arguments */
 func _js_strict_eq2(tls *libc.TLS, ctx1 uintptr, _op1 TJSValue, _op2 TJSValue, eq_mode TJSStrictEqModeEnum) (r TBOOL) {
-	bp := tls.Alloc(96)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp + 24)) = _op1
-	*(*TJSValue)(unsafe.Pointer(bp + 40)) = _op2
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [12]uint64
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 24)) = _op1
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 40)) = _op2
 	var d1, d2 float64
 	var h, l uint32
 	var p, p1, p11, p2, p21, v24, v27 uintptr
@@ -31109,8 +31113,8 @@ func _js_strict_eq2(tls *libc.TLS, ctx1 uintptr, _op1 TJSValue, _op2 TJSValue, e
 	var _ /* u1 at bp+56 */ TJSFloat64Union
 	var _ /* u2 at bp+64 */ TJSFloat64Union
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = d1, d2, h, l, p, p1, p11, p2, p21, res, tag1, tag2, v14, v16, v18, v19, v21, v23, v24, v27
-	tag1 = int32((*(*TJSValue)(unsafe.Pointer(bp + 24))).Ftag)
-	tag2 = int32((*(*TJSValue)(unsafe.Pointer(bp + 40))).Ftag)
+	tag1 = int32((*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 24))).Ftag)
+	tag2 = int32((*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 40))).Ftag)
 	switch tag1 {
 	case int32(EJS_TAG_BOOL):
 		goto _1
@@ -31143,7 +31147,7 @@ _1:
 	if tag1 != tag2 {
 		res = int32(EFALSE)
 	} else {
-		res = libc.BoolInt32(int32(*(*Tuint64_t)(unsafe.Pointer(bp + 24))) == int32(*(*Tuint64_t)(unsafe.Pointer(bp + 40))))
+		res = libc.BoolInt32(int32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 24))) == int32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 40))))
 		goto done_no_free
 	}
 	goto _13
@@ -31161,9 +31165,9 @@ _4:
 		res = int32(EFALSE)
 	} else {
 		if tag1 == int32(EJS_TAG_STRING) && tag2 == int32(EJS_TAG_STRING) {
-			res = _js_string_eq(tls, ctx1, *(*uintptr)(unsafe.Pointer(bp + 24)), *(*uintptr)(unsafe.Pointer(bp + 40)))
+			res = _js_string_eq(tls, ctx1, *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 24)), *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 40)))
 		} else {
-			res = libc.BoolInt32(_js_string_rope_compare(tls, ctx1, *(*TJSValue)(unsafe.Pointer(bp + 24)), *(*TJSValue)(unsafe.Pointer(bp + 40)), int32(ETRUE)) == libc.Int32FromInt32(0))
+			res = libc.BoolInt32(_js_string_rope_compare(tls, ctx1, *(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 24)), *(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 40)), int32(ETRUE)) == libc.Int32FromInt32(0))
 		}
 	}
 	goto _13
@@ -31172,8 +31176,8 @@ _6:
 	if tag1 != tag2 {
 		res = int32(EFALSE)
 	} else {
-		p1 = *(*uintptr)(unsafe.Pointer(bp + 24))
-		p2 = *(*uintptr)(unsafe.Pointer(bp + 40))
+		p1 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 24))
+		p2 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 40))
 		res = libc.BoolInt32(p1 == p2)
 	}
 	goto _13
@@ -31182,18 +31186,18 @@ _7:
 	if tag1 != tag2 {
 		res = int32(EFALSE)
 	} else {
-		res = libc.BoolInt32(*(*uintptr)(unsafe.Pointer(bp + 24)) == *(*uintptr)(unsafe.Pointer(bp + 40)))
+		res = libc.BoolInt32(*(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 24)) == *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 40)))
 	}
 	goto _13
 _8:
 	;
-	d1 = float64(int32(*(*Tuint64_t)(unsafe.Pointer(bp + 24))))
+	d1 = float64(int32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 24))))
 	if tag2 == int32(EJS_TAG_INT) {
-		d2 = float64(int32(*(*Tuint64_t)(unsafe.Pointer(bp + 40))))
+		d2 = float64(int32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 40))))
 		goto number_test
 	} else {
 		if tag2 == int32(EJS_TAG_FLOAT64) {
-			d2 = *(*float64)(unsafe.Pointer(bp + 40))
+			d2 = *(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 40))
 			goto number_test
 		} else {
 			res = int32(EFALSE)
@@ -31202,12 +31206,12 @@ _8:
 	goto _13
 _9:
 	;
-	d1 = *(*float64)(unsafe.Pointer(bp + 24))
+	d1 = *(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 24))
 	if tag2 == int32(EJS_TAG_FLOAT64) {
-		d2 = *(*float64)(unsafe.Pointer(bp + 40))
+		d2 = *(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 40))
 	} else {
 		if tag2 == int32(EJS_TAG_INT) {
-			d2 = float64(int32(*(*Tuint64_t)(unsafe.Pointer(bp + 40))))
+			d2 = float64(int32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 40))))
 		} else {
 			res = int32(EFALSE)
 			goto _13
@@ -31218,15 +31222,15 @@ number_test:
 	;
 	if libc.BoolInt32(!!(eq_mode >= int32(EJS_EQ_SAME_VALUE))) != 0 {
 		/* NaN is not always normalized, so this test is necessary */
-		*(*float64)(unsafe.Pointer(bp)) = d1
+		*(*float64)(unsafe.Pointer(&localbp)) = d1
 		l = (*(*struct {
 			Flow  uint32
 			Fhigh uint32
-		})(unsafe.Pointer(bp))).Flow
+		})(unsafe.Pointer(&localbp))).Flow
 		h = (*(*struct {
 			Flow  uint32
 			Fhigh uint32
-		})(unsafe.Pointer(bp))).Fhigh & uint32(0x7fffffff)
+		})(unsafe.Pointer(&localbp))).Fhigh & uint32(0x7fffffff)
 		h = h | (l|-l)>>int32(31)
 		h = uint32(0x7ff00000) - h
 		v14 = int32(h) >> int32(31)
@@ -31234,15 +31238,15 @@ number_test:
 	_15:
 		;
 		if v18 = v14 != 0; !v18 {
-			*(*float64)(unsafe.Pointer(bp)) = d2
+			*(*float64)(unsafe.Pointer(&localbp)) = d2
 			l = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Flow
+			})(unsafe.Pointer(&localbp))).Flow
 			h = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Fhigh & uint32(0x7fffffff)
+			})(unsafe.Pointer(&localbp))).Fhigh & uint32(0x7fffffff)
 			h = h | (l|-l)>>int32(31)
 			h = uint32(0x7ff00000) - h
 			v16 = int32(h) >> int32(31)
@@ -31250,29 +31254,29 @@ number_test:
 		_17:
 		}
 		if v18 || v16 != 0 {
-			*(*float64)(unsafe.Pointer(bp)) = d1
+			*(*float64)(unsafe.Pointer(&localbp)) = d1
 			l = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Flow
+			})(unsafe.Pointer(&localbp))).Flow
 			h = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Fhigh & uint32(0x7fffffff)
+			})(unsafe.Pointer(&localbp))).Fhigh & uint32(0x7fffffff)
 			h = h | (l|-l)>>int32(31)
 			h = uint32(0x7ff00000) - h
 			v19 = int32(h) >> int32(31)
 			goto _20
 		_20:
-			*(*float64)(unsafe.Pointer(bp)) = d2
+			*(*float64)(unsafe.Pointer(&localbp)) = d2
 			l = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Flow
+			})(unsafe.Pointer(&localbp))).Flow
 			h = (*(*struct {
 				Flow  uint32
 				Fhigh uint32
-			})(unsafe.Pointer(bp))).Fhigh & uint32(0x7fffffff)
+			})(unsafe.Pointer(&localbp))).Fhigh & uint32(0x7fffffff)
 			h = h | (l|-l)>>int32(31)
 			h = uint32(0x7ff00000) - h
 			v21 = int32(h) >> int32(31)
@@ -31283,9 +31287,9 @@ number_test:
 			if eq_mode == int32(EJS_EQ_SAME_VALUE_ZERO) {
 				res = libc.BoolInt32(d1 == d2) /* +0 == -0 */
 			} else {
-				*(*float64)(unsafe.Pointer(bp + 56)) = d1
-				*(*float64)(unsafe.Pointer(bp + 64)) = d2
-				res = libc.BoolInt32(*(*Tuint64_t)(unsafe.Pointer(bp + 56)) == *(*Tuint64_t)(unsafe.Pointer(bp + 64))) /* +0 != -0 */
+				*(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 56)) = d1
+				*(*float64)(unsafe.Add(unsafe.Pointer(&localbp), 64)) = d2
+				res = libc.BoolInt32(*(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 56)) == *(*Tuint64_t)(unsafe.Add(unsafe.Pointer(&localbp), 64))) /* +0 != -0 */
 			}
 		}
 	} else {
@@ -31300,17 +31304,8 @@ _10:
 		res = int32(EFALSE)
 		goto _13
 	}
-	if int32((*(*TJSValue)(unsafe.Pointer(bp + 24))).Ftag) == int32(EJS_TAG_SHORT_BIG_INT) {
-		p11 = _js_bigint_set_short(tls, bp+72, *(*TJSValue)(unsafe.Pointer(bp + 24)))
-	} else {
-		p11 = *(*uintptr)(unsafe.Pointer(bp + 24))
-	}
-	if int32((*(*TJSValue)(unsafe.Pointer(bp + 40))).Ftag) == int32(EJS_TAG_SHORT_BIG_INT) {
-		p21 = _js_bigint_set_short(tls, bp+84, *(*TJSValue)(unsafe.Pointer(bp + 40)))
-	} else {
-		p21 = *(*uintptr)(unsafe.Pointer(bp + 40))
-	}
-	res = libc.BoolInt32(_js_bigint_cmp(tls, ctx1, p11, p21) == libc.Int32FromInt32(0))
+	// Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
+	res = _js_strict_eq2_cold(tls, ctx1, _op1, _op2)
 	goto _13
 _12:
 	;
@@ -31318,10 +31313,10 @@ _12:
 	goto _13
 _13:
 	;
-	v23 = *(*TJSValue)(unsafe.Pointer(bp + 24))
-	*(*TJSValue)(unsafe.Pointer(bp + 8)) = v23
+	v23 = *(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 24))
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) = v23
 	if uint32(int32(v23.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v24 = *(*uintptr)(unsafe.Pointer(bp + 8)) - libc.UintptrFromInt32(1)*4
+		v24 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 8)) - libc.UintptrFromInt32(1)*4
 		goto _25
 	_25:
 		p = v24
@@ -31332,10 +31327,10 @@ _13:
 			x__JS_FreeValue(tls, ctx1, v23)
 		}
 	}
-	v23 = *(*TJSValue)(unsafe.Pointer(bp + 40))
-	*(*TJSValue)(unsafe.Pointer(bp + 8)) = v23
+	v23 = *(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 40))
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 8)) = v23
 	if uint32(int32(v23.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v24 = *(*uintptr)(unsafe.Pointer(bp + 8)) - libc.UintptrFromInt32(1)*4
+		v24 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 8)) - libc.UintptrFromInt32(1)*4
 		goto _30
 	_30:
 		p = v24
@@ -31349,11 +31344,30 @@ _13:
 	goto done_no_free
 done_no_free:
 	;
-	r = res
+	return res
+	return r
+}
+
+// Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
+func _js_strict_eq2_cold(tls *libc.TLS, ctx1 uintptr, _op1 TJSValue, _op2 TJSValue) (r TBOOL) {
+	bp := tls.Alloc(96)
+	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	*(*TJSValue)(unsafe.Pointer(bp + 24)) = _op1
+	*(*TJSValue)(unsafe.Pointer(bp + 40)) = _op2
+	var p11, p21 uintptr
+	if int32((*(*TJSValue)(unsafe.Pointer(bp + 24))).Ftag) == int32(EJS_TAG_SHORT_BIG_INT) {
+		p11 = _js_bigint_set_short(tls, bp+72, *(*TJSValue)(unsafe.Pointer(bp + 24)))
+	} else {
+		p11 = *(*uintptr)(unsafe.Pointer(bp + 24))
+	}
+	if int32((*(*TJSValue)(unsafe.Pointer(bp + 40))).Ftag) == int32(EJS_TAG_SHORT_BIG_INT) {
+		p21 = _js_bigint_set_short(tls, bp+84, *(*TJSValue)(unsafe.Pointer(bp + 40)))
+	} else {
+		p21 = *(*uintptr)(unsafe.Pointer(bp + 40))
+	}
+	r = libc.BoolInt32(_js_bigint_cmp(tls, ctx1, p11, p21) == libc.Int32FromInt32(0))
 	tls.Free(96)
 	return
-	tls.Free(96)
-	return r
 }
 
 func _js_strict_eq(tls *libc.TLS, ctx1 uintptr, op1 TJSValue, op2 TJSValue) (r TBOOL) {

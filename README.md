@@ -539,6 +539,25 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   regexps give on 47 strings through every API that runs one, from the
   engine before the change, `internal/fixlib/regexskip_test.go`, and
   `TestRegexScanStops` in `timeout_test.go`.
+- `===` and the names of keys take no TLS frame on their usual paths.
+  `js_strict_eq2` (`===`, `Object.is`, `includes`, `Map` keys) and
+  `__JS_AtomToValue` (the name of a key as a value, as `Object.keys` and
+  `for in` need it) allocated a TLS frame on every call, though only the
+  comparison of two BigInts and the name of an integer key pass the
+  address of a part of it on. `fixlib` moves those two paths into
+  functions of their own, `_js_strict_eq2_cold` and
+  `___JS_AtomToValue_cold`, which take the same frame, and the rest of the
+  frame becomes a Go array, as for the functions of `frameSites` (see
+  below). The paths are matched as ccgo writes them, every other use of
+  the frame must be a load or a store of a cell, and the two functions can
+  reach a stack check only through their cold functions, so the TLS stack
+  a stack check sees is the same. A server render of a page of tifa's
+  example shop takes 0.7% (with PGO) to 2% (without) less time on
+  linux/amd64 (AMD EPYC), with the same HTML. This changes only the generated Go,
+  with no C hunk (`internal/fixlib/cold.go`). Tests:
+  `lib/coldpath_test.go`, whose `testdata/coldpath.txt` is what the engine
+  gave before the change (Node gives the same), and
+  `internal/fixlib/cold_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -628,8 +647,8 @@ Conflicts to expect:
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
   changes to the interpreter loop, the call into `lib/objlit.go`, the
-  call into `lib/regexskip.go` and the frames freed without a defer
-  conflict. Take the upstream version of every generated file, then put
+  call into `lib/regexskip.go`, the cold paths moved out and the frames
+  freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -866,6 +885,13 @@ Conflicts to expect:
   `lre_check_timeout` asks it to stop.
   Then put the new fingerprints in (`go run ./internal/fixlib -regex`
   prints them) and run `go test -run Regex ./lib`.
+  If it reports that the cold paths of `coldSites` changed, read the new
+  `js_strict_eq2` or `__JS_AtomToValue`: the cold path must still be the
+  only code that passes the address of a part of the frame on, and it must
+  still read only the parameters, from the cells the function stores them
+  in at its entry. Then update the shapes in `coldShapes`
+  (`internal/fixlib/cold.go`), or the frame size and cell count in
+  `internal/fixlib/coldsites.go`, and run `go test -run ColdPath ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -908,8 +934,8 @@ Conflicts to expect:
   their wiring in `fixlib` are no longer needed. The calls without
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
-  `lib/regexskip.go` and the frames freed without a defer have no C form:
-  they
+  `lib/regexskip.go`, the cold paths moved out and the frames freed
+  without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -1038,6 +1064,7 @@ go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS bal
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
 go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
 go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
+go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

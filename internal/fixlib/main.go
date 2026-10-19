@@ -13,7 +13,7 @@
 // -slots, -frames, -define, -backtrace, -regex and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does sixteen things:
+// It does seventeen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -43,6 +43,10 @@
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot small
 //     functions of frameSites, which only use it to reinterpret values,
 //     with a Go array (see fixFrames).
+//   - In every lib/ccgo_*.go file, move the cold paths of the functions of
+//     coldSites, which pass the address of a part of the TLS frame on, into
+//     functions of their own, and replace the rest of the frame with a Go
+//     array (see fixColdFrames).
 //   - In every lib/ccgo_*.go file, write each conversion ccgo makes
 //     through __ccgo_up as a plain unsafe.Pointer conversion, which keeps
 //     the stack frames of the big functions small (see fixUp).
@@ -244,6 +248,10 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	// The changes before fixUp accept both forms of a conversion, so it
 	// goes after them.
 	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	// fixColdFrames reads the conversions as fixUp leaves them.
+	if b, err = fixColdFrames(b, hw, name == "ccgo_darwin_arm64.go"); err != nil {
 		return nil, err
 	}
 	if b, err = fixCells(b, cellFiles[name]); err != nil {
