@@ -22,7 +22,7 @@ var reCellsDecl = regexp.MustCompile(`\n\tvar (cell\d+), (cell\d+) TJSValue ` + 
 // keep them.
 func TestCellsEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -307,7 +307,7 @@ func TestCellsReport(t *testing.T) {
 	dir := t.TempDir()
 	var files []string
 	for i, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_amd64.go"} {
-		b, err := os.ReadFile(filepath.Join("..", "..", "lib", name))
+		b, err := readEngine(filepath.Join("..", "..", "lib", name))
 		if err != nil {
 			t.Fatal(err)
 		}

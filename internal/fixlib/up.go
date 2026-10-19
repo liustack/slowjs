@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"maps"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -403,7 +402,7 @@ func upReport(files []string, hw []*ast.File) error {
 	sort.Strings(files)
 	var sites map[string]int
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			return err
 		}

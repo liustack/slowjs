@@ -6,7 +6,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,7 +16,7 @@ import (
 // are not changed.
 func TestPinEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

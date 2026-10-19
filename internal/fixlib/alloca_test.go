@@ -6,7 +6,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,7 +19,7 @@ func TestAllocaEveryFile(t *testing.T) {
 		t.Fatal(files, err)
 	}
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

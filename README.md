@@ -412,8 +412,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   can so hold up to about 1 KB more per level: 1000 levels through a
   function bound to 44 arguments hold 5.13 MB rather than 4.14 MB. On
   32-bit targets a block can take up to 1 KB where it took 256 bytes, so
-  up to 10 MB in the worst case. Elsewhere the TLS stack frees its pages
-  as before. These are
+  up to 10 MB in the worst case. Elsewhere the TLS stack keeps one block
+  of about 1 MiB (see below) and frees the pages past it as before. These are
   changes to the generated Go only (`internal/fixlib/alloca.go`,
   `internal/fixlib/frames.go`), with no C hunk. Tests:
   `calldepth_test.go`, `callbench_test.go`,
@@ -474,6 +474,119 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   layout. This changes only the generated Go, with no C hunk
   (`internal/fixlib/define.go`). Tests: `lib/objlit_test.go`,
   `lib/objlit_memgrind_test.go`, `internal/fixlib/define_test.go`.
+
+- Engine functions with a TLS frame no longer free it in a `defer`. ccgo
+  frees the frame of a function (`bp := tls.Alloc(N)`) with
+  `defer tls.Free(N)`, and Go does not inline a function with a defer, with
+  or without PGO, so hundreds of small engine functions stayed calls.
+  `fixlib` now frees the frame before each return, after the value is
+  computed, and at the end of a function that can run off it, in all 13
+  files: 969 functions on darwin/arm64, among them the three call functions
+  that `fixAlloca` changed (see below). Go then inlines many of them, and
+  a server render of a page of tifa's example shop takes about 10% less
+  time on linux/amd64 (AMD EPYC), with or without PGO, with the same HTML.
+  A PGO profile taken before this change no longer matches many of the
+  call sites: take it again. What changes is a Go panic that goes
+  up through the engine: a defer freed the frames on the way, and now they
+  stay on the TLS stack. The VM puts the stack back where it was when the
+  call into javascript started, and when javascript called a Go function,
+  so `Close` frees all of it, and libc's memgrind check of the TLS stack
+  holds. A panic of a Go function that javascript called is recovered there
+  as before: no engine frame is between them. A panic in the engine itself
+  (a bug, such as a nil pointer, or libc running out of memory) goes on to
+  the Go code that called javascript, also when the javascript was
+  evaluated by a Go function. That Go function used to recover it and
+  throw an error, which walked stack frames the panic had dropped and could
+  crash the process (it did, with a fatal fault, in
+  `TestEnginePanicTLS/nested`). The engine's state after a panic in it is
+  not known, so the VM is good only for `Close`, as in tifa: every later
+  call into javascript panics. A Go function that recovers such a panic
+  itself does not save the VM: the VM panics where the Go function
+  returns, as it does when a call returns with engine frames left on the
+  TLS stack, which means a frame was not freed (outside linux such a frame
+  can break the TLS stack before the call returns). The values held by the
+  javascript frames the panic went through are not freed, with or without
+  the defer, and neither is the room that `alloca` mallocs for a call with
+  more than 768 bytes of it (see `fixAlloca`), which the defer freed. The
+  Go code written by hand that calls the engine (`lib/backtrace.go`,
+  `quickjs.go`) frees its TLS frames before it returns as well: a defer
+  would free the frames a panic left in place of its own. A Go function
+  that calls `runtime.Goexit`, as `t.Fatal` does, also leaves the VM good
+  only for `Close`, where v0.26.14 kept it usable. The generated Go is
+  changed by `internal/fixlib/nodefer.go`, with no C hunk, and the other
+  changes of `fixlib` see the defers as ccgo writes them. Tests:
+  `enginepanic_test.go`, `memgrind_test.go`,
+  `internal/fixlib/nodefer_test.go`.
+- A regexp that is not sticky no longer tries every position of the string
+  in the backtracking machine. Its bytecode starts with a loop that tries
+  the match at one position, steps over one character and tries again.
+  `lre_exec` now first calls `lreSkip` (`lib/regexskip.go`): when the
+  regexp starts with one character or one class of characters, such as
+  `/["&<>]/` or `/\d+/`, it finds the first position that holds one in a
+  plain Go loop and starts there, and when there is none it answers no
+  match without running the bytecode. A regexp that starts with `^`
+  outside multiline mode is run at position 0 only. Unicode regexps (`u`,
+  `v`), regexps that ignore case or are multiline (`i`, `m`), and every
+  other first op take the old path. `lreSkip` checks for an interrupt
+  after every 65,536 characters it looks at, as the backtracking machine
+  does every 10,000 steps, so the eval timeout and `Interrupt` stop a
+  regexp that runs again and again on a long string as before. A server
+  render of a page of tifa's example shop takes about 3% less time on
+  linux/amd64 (AMD EPYC), with the same HTML. `fixlib` puts the call into
+  all 13 files, and checks the text of
+  `lre_compile`, `lre_exec` and `lre_exec_backtrack`, whose bytecode and
+  ops `lreSkip` reads, against fingerprints. This changes only the
+  generated Go, with no C hunk (`internal/fixlib/regexskip.go`). Tests:
+  `lib/regexskip_test.go`, whose `testdata/regex.txt` holds what 61
+  regexps give on 47 strings through every API that runs one, from the
+  engine before the change, `internal/fixlib/regexskip_test.go`, and
+  `TestRegexScanStops` in `timeout_test.go`.
+- `===` and the names of keys take no TLS frame on their usual paths.
+  `js_strict_eq2` (`===`, `Object.is`, `includes`, `Map` keys) and
+  `__JS_AtomToValue` (the name of a key as a value, as `Object.keys` and
+  `for in` need it) allocated a TLS frame on every call, though only the
+  comparison of two BigInts and the name of an integer key pass the
+  address of a part of it on. `fixlib` moves those two paths into
+  functions of their own, `_js_strict_eq2_cold` and
+  `___JS_AtomToValue_cold`, which take the same frame, and the rest of the
+  frame becomes a Go array, as for the functions of `frameSites` (see
+  below). The paths are matched as ccgo writes them, every other use of
+  the frame must be a load or a store of a cell, and the two functions can
+  reach a stack check only through their cold functions, so the TLS stack
+  a stack check sees is the same. A server render of a page of tifa's
+  example shop takes 0.7% (with PGO) to 2% (without) less time on
+  linux/amd64 (AMD EPYC), with the same HTML. This changes only the
+  generated Go, with no C hunk (`internal/fixlib/cold.go`). Tests:
+  `lib/coldpath_test.go`, whose `testdata/coldpath.txt` is what the engine
+  gave before the change (Node gives the same), and
+  `internal/fixlib/cold_test.go`.
+- Outside linux, VMs on several goroutines no longer wait for each other
+  on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
+  each malloc'd under the one lock of libc's allocator, and frees a segment
+  once the stack is two segments below it. A render that goes a few calls
+  up and down past the end of a segment so mallocs and frees segments
+  again and again. Each runtime now allocates and frees one block of 255
+  segments (about 1 MiB) right after it creates its TLS (`warmTLS` in
+  `tlsstack_other.go`), and libc keeps the block as the segment after the
+  first, so every frame up to that depth goes on it and no call mallocs a
+  segment. Memory: each VM keeps that block until it is closed. libc's
+  allocator maps it as a region of 1 MiB, and only the pages the TLS stack
+  has reached are written, so it holds about as much memory as the deepest
+  call of the VM took, at most 1 MiB, where it used to free those
+  segments. On windows the allocator commits the whole region when it maps
+  it, so each VM takes 1 MiB of the commit limit, though only the pages the
+  stack reached are in memory. After `Close` the allocator keeps the region
+  to hand out again, as it keeps every region it frees: the 4 MiB of
+  regions of one size it freed last keep their written pages in memory,
+  and older ones give their pages back to the system. A single frame
+  larger than the block, far larger than any frame of the engine, would
+  make libc free the block and malloc a segment of that size in its place. A render of tifa's example shop with 10 VMs on darwin/arm64
+  (Apple M4, `GOMAXPROCS=10`) went from 215 to 281 renders a second to 331
+  to 390, 1.4 to 1.55 times as many in each pair of runs, and the time the
+  render goroutines spent waiting for a lock from 3.8% to 5.3% of it to
+  about 0.5%. One VM renders as fast as before. Linux is not changed:
+  libc keeps one block per slot there and never frees it. Test:
+  `tlswarm_other_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -562,8 +675,9 @@ Conflicts to expect:
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
-  changes to the interpreter loop and the call into `lib/objlit.go`
-  conflict. Take the upstream version of every generated file, then put
+  changes to the interpreter loop, the call into `lib/objlit.go`, the
+  call into `lib/regexskip.go`, the cold paths moved out and the frames
+  freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -578,7 +692,8 @@ Conflicts to expect:
   report runs the steps before its own, so it fails while an earlier list
   is out of date. Update them in the order `fixlib` checks them: `-frames`,
   then `-up` (on the files as taken from upstream), then `-cells`, then
-  the fingerprints, `-define` and `-backtrace`, and last `-slots`. Read
+  the fingerprints, `-define`, `-backtrace` and `-regex`, and last
+  `-slots`. Read
   every new line before you put it in. If `fixlib` reports that
   `XJS_ToCStringLen2` changed shape, read the new upstream code: QuickJS
   may have fixed the leak itself. If the fail label now frees `val`, drop
@@ -789,6 +904,40 @@ Conflicts to expect:
   then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
   fields in another order: find where the three bits are now and update
   `objectBits` and its patterns in `internal/fixlib/define.go`.
+  If it reports that `Xlre_compile`, `Xlre_exec` or
+  `_lre_exec_backtrack` changed (a fingerprint other than the one in
+  `internal/fixlib/regexsites.go`), read the new code against
+  `lib/regexskip.go`: the loop and `save_start 0` at the start of the
+  bytecode, the header fields it reads, and what `char`, `range` and
+  `line_start` match at a position must still be what `lreSkip` assumes,
+  and `lre_exec` must still return `LRE_RET_TIMEOUT` when
+  `lre_check_timeout` asks it to stop.
+  Then put the new fingerprints in (`go run ./internal/fixlib -regex`
+  prints them) and run `go test -run Regex ./lib`.
+  If it reports that the cold paths of `coldSites` changed, read the new
+  `js_strict_eq2` or `__JS_AtomToValue`: the cold path must still be the
+  only code that passes the address of a part of the frame on, and it must
+  still read only the parameters, from the cells the function stores them
+  in at its entry. Then update the shapes in `coldShapes`
+  (`internal/fixlib/cold.go`), or the frame size and cell count in
+  `internal/fixlib/coldsites.go`, and run `go test -run ColdPath ./lib`.
+  `fixlib` frees every TLS frame before each return instead of in a
+  defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
+  It first puts the defers back (`restoreDefer`), so every other change,
+  check and report (`-frames`, `-slots`, ...) works on the frames as ccgo
+  writes them, and it checks that putting them back gives the file it was
+  given, byte for byte. If it reports a frame that is not freed by
+  `defer tls.Free(N)` right after `tls.Alloc(N)` (or by the closure of
+  `fixAlloca`), a `tls.Alloc` or `tls.Free` somewhere else, a `defer`
+  that is not in `keptDefers`, a function literal, a bare `return` or a
+  local with the name of the result, read the function: a defer that frees
+  anything on the TLS stack, or a return the rewrite cannot see, would
+  leave the stack wrong on some path. Teach `fixNoDefer` the new form, or
+  add a defer that only frees malloc'd memory to `keptDefers`. The VM puts
+  the TLS stack back after a panic (`tlsstack_linux.go`,
+  `tlsstack_other.go`), which knows how libc keeps that stack: one block per
+  slot on linux, bytes in segments elsewhere. After a libc release, run
+  `go test -run EnginePanic .` with and without `-tags=libc.memgrind`.
 - `lib/internal/patch/quickjs.diff`: holds the same changes in C, so that a
   regeneration keeps them. Keep the `JS_ToCStringLen2` hunk unless upstream
   QuickJS has fixed the bug, the `getTimezoneOffset` hunk, and the lazy stack hunks (`JSBacktrace`, the
@@ -813,7 +962,9 @@ Conflicts to expect:
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed. The calls without
   `alloca`, the functions without a TLS frame, the changes to the
-  interpreter loop and the call into `lib/objlit.go` have no C form: they
+  interpreter loop, the calls into `lib/objlit.go` and
+  `lib/regexskip.go`, the cold paths moved out and the frames freed
+  without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -939,6 +1090,10 @@ go run ./internal/fixlib -check                          # fork changes present 
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
 go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
+go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
+go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
+go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
+go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

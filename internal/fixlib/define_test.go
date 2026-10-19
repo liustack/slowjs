@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,7 +20,7 @@ func TestDefineIdempotent(t *testing.T) {
 		t.Fatalf("%d generated files, want 13", len(files))
 	}
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +55,7 @@ func TestDefineIdempotent(t *testing.T) {
 // fixDefine stops when what objlitDefine stands for changes.
 func TestDefineRejects(t *testing.T) {
 	fn := filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go")
-	b, err := os.ReadFile(fn)
+	b, err := readEngine(fn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +78,35 @@ func TestDefineRejects(t *testing.T) {
 		_, err := fixDefine(bytes.Replace(bytes.Clone(b), []byte(c.old), []byte(c.new), 1), filepath.Base(fn))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+// -define, -backtrace and -regex print the fingerprints the checks compare
+// with defineSites, backtraceSites and regexSites, so that a table updated
+// from them passes.
+func TestFingerprintReportMatchesSites(t *testing.T) {
+	hw, err := handWritten(filepath.Join("..", "..", "lib"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go")
+	name := filepath.Base(fn)
+	for _, c := range []struct {
+		table string
+		fp    func([]byte) (string, error)
+		want  string
+	}{
+		{"defineSites", defineFingerprint, defineSites[name]},
+		{"backtraceSites", backtraceFingerprint, backtraceSites[name]},
+		{"regexSites", regexFingerprint, regexSites[name]},
+	} {
+		got, err := reportedFingerprint(fn, hw, c.fp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != c.want {
+			t.Errorf("%s: the report gives %s, the table has %s", c.table, got, c.want)
 		}
 	}
 }

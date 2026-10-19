@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does fourteen things:
+// It does seventeen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -43,6 +43,10 @@
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot small
 //     functions of frameSites, which only use it to reinterpret values,
 //     with a Go array (see fixFrames).
+//   - In every lib/ccgo_*.go file, move the cold paths of the functions of
+//     coldSites, which pass the address of a part of the TLS frame on, into
+//     functions of their own, and replace the rest of the frame with a Go
+//     array (see fixColdFrames).
 //   - In every lib/ccgo_*.go file, write each conversion ccgo makes
 //     through __ccgo_up as a plain unsafe.Pointer conversion, which keeps
 //     the stack frames of the big functions small (see fixUp).
@@ -56,6 +60,14 @@
 //     data property of an ordinary object through objlitDefine of
 //     lib/objlit.go, without the three calls of the generic path (see
 //     fixDefine).
+//   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
+//     the string where the regexp cannot start to match, through lreSkip
+//     of lib/regexskip.go (see fixRegexSkip).
+//   - In every lib/ccgo_*.go file, free each TLS frame before every
+//     return instead of in a defer, which keeps Go from inlining the
+//     function (see fixNoDefer). This is the last change, and the first
+//     step undoes it, so that the others see the defers as ccgo writes
+//     them.
 //   - In the hand-written Go files under lib/, replace the import path
 //     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
@@ -95,6 +107,7 @@ var (
 	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
 	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
 	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
+	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -119,7 +132,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *up || *cells {
+	if *define || *backtrace || *regex || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -129,6 +142,8 @@ func main() {
 			err = fingerprintReport(files, hw, "defineSites", defineFingerprint)
 		} else if err == nil && *backtrace {
 			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
+		} else if err == nil && *regex {
+			err = fingerprintReport(files, hw, "regexSites", regexFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -221,13 +236,22 @@ func run() (missing int, err error) {
 // fixEngine applies every change to the generated file of lib/ named
 // name.
 func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
-	b, err := fixBeforeUp(b, hw, name)
+	// Every change and check below sees the defers that free the TLS
+	// frames, as ccgo writes them: fixNoDefer drops them last.
+	b, err := restoreDefer(b)
 	if err != nil {
+		return nil, err
+	}
+	if b, err = fixBeforeUp(b, hw, name); err != nil {
 		return nil, err
 	}
 	// The changes before fixUp accept both forms of a conversion, so it
 	// goes after them.
 	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	// fixColdFrames reads the conversions as fixUp leaves them.
+	if b, err = fixColdFrames(b, hw, name == "ccgo_darwin_arm64.go"); err != nil {
 		return nil, err
 	}
 	if b, err = fixCells(b, cellFiles[name]); err != nil {
@@ -244,8 +268,14 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if err = checkBacktraceSites(b, name); err != nil {
 		return nil, err
 	}
+	if b, err = fixRegexSkip(b, name); err != nil {
+		return nil, err
+	}
 	// None of the changes after fixBacktrace moves a property slot.
-	return b, auditSlots(b)
+	if err = auditSlots(b); err != nil {
+		return nil, err
+	}
+	return dropDefers(b)
 }
 
 // fixBeforeUp applies the changes that come before fixUp.
@@ -473,9 +503,18 @@ var (
 )
 
 // backtraceFingerprint hashes backtraceFuncs, without the calls
-// fixBacktrace adds, with each C string written out in place of its
-// offset, which a new string anywhere before it moves.
+// fixBacktrace adds.
 func backtraceFingerprint(b []byte) (string, error) {
+	return funcsFingerprint(b, backtraceFuncs, func(text []byte) []byte {
+		text = reLazyBacktrace.ReplaceAll(text, nil)
+		return rePendingPropText.ReplaceAll(text, nil)
+	})
+}
+
+// funcsFingerprint hashes the functions names of b, each as strip leaves
+// it, with each C string written out in place of its offset, which a new
+// string anywhere before it moves.
+func funcsFingerprint(b []byte, names []string, strip func([]byte) []byte) (string, error) {
 	m := reStringTable.FindSubmatch(b)
 	if m == nil {
 		return "", fmt.Errorf("cannot find __ccgo_ts1")
@@ -485,13 +524,12 @@ func backtraceFingerprint(b []byte) (string, error) {
 		return "", fmt.Errorf("__ccgo_ts1: %v", err)
 	}
 	h := sha256.New()
-	for _, name := range backtraceFuncs {
+	for _, name := range names {
 		text, err := funcBody(b, funcHead(name), name)
 		if err != nil {
 			return "", err
 		}
-		text = reLazyBacktrace.ReplaceAll(text, nil)
-		text = rePendingPropText.ReplaceAll(text, nil)
+		text = strip(bytes.Clone(text))
 		text = reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
 			off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
 			if off >= len(table) {

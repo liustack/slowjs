@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -49,15 +48,16 @@ func unfixFrames(t *testing.T, b []byte) []byte {
 
 // Every generated file has the functions of frameSites changed (on 32-bit
 // targets, the two that have a frame there), fixFrames leaves a fixed file
-// as it is and makes it again from the file with the frames given back,
-// and the property slot audit sees the same uses in both.
+// as it is and makes it again from the file with the frames given back
+// (with fixColdFrames for the functions of coldSites), and the property
+// slot audit sees the same uses in both.
 func TestFramesEveryFile(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readEngine(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,9 +69,12 @@ func TestFramesEveryFile(t *testing.T) {
 		if !bytes.Equal(out, b) {
 			t.Fatalf("%s: fixFrames changed a fixed file", fn)
 		}
-		want := len(frameSites)
+		// The functions of coldSites have the rest of their frame changed
+		// too, except __JS_AtomToValue on 32-bit targets, which has none
+		// left.
+		want := len(frameSites) + len(coldSites)
 		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			want = 2
+			want = 2 + 1
 		}
 		if n := bytes.Count(b, []byte(framesInGo)); n != want {
 			t.Errorf("%s: %d frames changed, want %d", fn, n, want)
@@ -82,6 +85,9 @@ func TestFramesEveryFile(t *testing.T) {
 			t.Fatalf("%s: nothing to undo", fn)
 		}
 		again, err := fixFrames(before, hw, frameSites, pin)
+		if err == nil {
+			again, err = fixColdFrames(again, hw, pin)
+		}
 		if err != nil {
 			t.Fatalf("%s: %v", fn, err)
 		}
