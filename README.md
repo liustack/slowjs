@@ -560,6 +560,48 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `lib/coldpath_test.go`, whose `testdata/coldpath.txt` is what the engine
   gave before the change (Node gives the same), and
   `internal/fixlib/cold_test.go`.
+- Reading a property, `==`, turning a value into a string or an object,
+  and freeing an array take no TLS frame on their usual paths.
+  `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`,
+  `JS_AtomIsArrayIndex`, `JS_NewAtomStr`, `js_eq_slow`,
+  `JS_ToStringInternal`, `JS_ToObject` and `js_array_finalizer` allocated
+  a TLS frame on every call, though only a few of their statements need
+  one: those that pass the address of a part of the frame to a callee, and
+  those that can reach a stack check. `fixlib` makes the frame a Go array,
+  as for the functions of `frameSites`, and gives each of those statements
+  a TLS frame of the same size for itself: right before the statement it
+  allocates the frame and copies the array into it, and right after it
+  copies the frame back and frees it. The statement reads and writes the
+  same bytes as before, and a stack check it reaches sees the same TLS
+  stack: one more slot, with the frame at the same place. The out
+  parameter of `find_own_property` and `is_num_string` gets a Go pointer
+  into the array instead, through copies of the two functions that take
+  one (`_find_own_property_lazy`, `_is_num_string_lazy`), which only load
+  and store through it and reach no stack check. Why this is safe: a
+  function is changed only when every other use of its frame is a load or
+  a store of a cell, every address a statement passes on goes to a callee
+  that was read and does not keep it after it returns nor return it
+  (`addrCallees` in `internal/fixlib/lazy.go`), and every call that can
+  reach a stack check is in such a statement. The text of those callees,
+  of the functions the `va_list` goes on to, and of the
+  `get_own_property` methods of the engine's classes is pinned by
+  fingerprints (`lazyAddrSites`), so an upstream change to one stops
+  `fixlib` until it is read again, and the frame size, cell uses and
+  statements of each function are pinned in `lazySites`. A class
+  registered through `JS_NewClass` with a `get_own_property` method of its
+  own must not keep the descriptor it is given either, as in C (neither
+  `quickjs.go` nor `lib/backtrace.go` registers one). Other changes of
+  `fixlib` match these functions as ccgo writes them, so `fixlib` undoes
+  this change first (`restoreLazy`) and makes it again last, and checks
+  that undoing it gives back the text it was given, byte for byte. On
+  32-bit targets `JS_ToObject` and `js_array_finalizer` have no TLS frame
+  and stay as they are. A server render of a page of tifa's example shop
+  takes 1.6% (with PGO) and 1.1% (without) less time on linux/amd64 (AMD
+  EPYC), and 2.6% less on darwin/arm64 (Apple M4, with PGO), with the same
+  HTML. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:
+  `internal/fixlib/lazy_test.go` and `internal/fixlib/nodefer_test.go`,
+  with test262 and the tests of the root package for what the engine
+  gives.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -921,6 +963,19 @@ Conflicts to expect:
   in at its entry. Then update the shapes in `coldShapes`
   (`internal/fixlib/cold.go`), or the frame size and cell count in
   `internal/fixlib/coldsites.go`, and run `go test -run ColdPath ./lib`.
+  If it reports that a function of `lazySites` changed (a frame size, a
+  number of cell uses, of statements with a frame of their own or of out
+  parameters other than the one in `internal/fixlib/lazy.go`), or a use of
+  its frame that `fixLazyFrames` cannot show is safe, read the function:
+  each statement that passes an address in the frame on or can reach a
+  stack check must still be an expression, an assignment, a return of one
+  value or the condition of an if, and each address must still go to a
+  callee of `addrCallees`. Then update `lazySites`. If it reports that the
+  functions of `lazyAddrFuncs` or a `get_own_property` method changed (a
+  fingerprint other than the one in `internal/fixlib/lazyaddrsites.go`),
+  read them: none may keep an address it is given after it returns, nor
+  return it. Then put the new fingerprints in (`go run ./internal/fixlib
+  -lazyaddr` prints them).
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -963,8 +1018,8 @@ Conflicts to expect:
   their wiring in `fixlib` are no longer needed. The calls without
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
-  `lib/regexskip.go`, the cold paths moved out and the frames freed
-  without a defer have no C form: they
+  `lib/regexskip.go`, the cold paths moved out, the frames taken by
+  statement and the frames freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
