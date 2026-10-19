@@ -150,6 +150,7 @@ type runtime struct {
 // newRuntime returns a newly create Runtime
 func newRuntime() (*runtime, error) {
 	tls := libc.NewTLS()
+	warmTLS(tls)
 	base := markTLS(tls)
 	r := lib.XJS_NewRuntime(tls)
 	if r == 0 {

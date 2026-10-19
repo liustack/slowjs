@@ -412,8 +412,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   can so hold up to about 1 KB more per level: 1000 levels through a
   function bound to 44 arguments hold 5.13 MB rather than 4.14 MB. On
   32-bit targets a block can take up to 1 KB where it took 256 bytes, so
-  up to 10 MB in the worst case. Elsewhere the TLS stack frees its pages
-  as before. These are
+  up to 10 MB in the worst case. Elsewhere the TLS stack keeps one block
+  of about 1 MiB (see below) and frees the pages past it as before. These are
   changes to the generated Go only (`internal/fixlib/alloca.go`,
   `internal/fixlib/frames.go`), with no C hunk. Tests:
   `calldepth_test.go`, `callbench_test.go`,
@@ -558,6 +558,33 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `lib/coldpath_test.go`, whose `testdata/coldpath.txt` is what the engine
   gave before the change (Node gives the same), and
   `internal/fixlib/cold_test.go`.
+- Outside linux, VMs on several goroutines no longer wait for each other
+  on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
+  each malloc'd under the one lock of libc's allocator, and frees a segment
+  once the stack is two segments below it. A render that goes a few calls
+  up and down past the end of a segment so mallocs and frees segments
+  again and again. Each runtime now allocates and frees one block of 255
+  segments (about 1 MiB) right after it creates its TLS (`warmTLS` in
+  `tlsstack_other.go`), and libc keeps the block as the segment after the
+  first, so every frame up to that depth goes on it and no call mallocs a
+  segment. Memory: each VM keeps that block until it is closed. libc's
+  allocator maps it as a region of 1 MiB, and only the pages the TLS stack
+  has reached are written, so it holds about as much memory as the deepest
+  call of the VM took, at most 1 MiB, where it used to free those
+  segments. On windows the allocator commits the whole region when it maps
+  it, so each VM takes 1 MiB of the commit limit, though only the pages the
+  stack reached are in memory. After `Close` the allocator keeps the region
+  to hand out again, as it keeps every region it frees: the 4 MiB of
+  regions of one size it freed last keep their written pages in memory,
+  and older ones give their pages back to the system. A single frame
+  larger than the block, far larger than any frame of the engine, would
+  make libc free the block and malloc a segment of that size in its place. A render of tifa's example shop with 10 VMs on darwin/arm64
+  (Apple M4, `GOMAXPROCS=10`) went from 215 to 281 renders a second to 331
+  to 390, 1.4 to 1.55 times as many in each pair of runs, and the time the
+  render goroutines spent waiting for a lock from 3.8% to 5.3% of it to
+  about 0.5%. One VM renders as fast as before. Linux is not changed:
+  libc keeps one block per slot there and never frees it. Test:
+  `tlswarm_other_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.

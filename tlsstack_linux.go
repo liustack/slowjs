@@ -12,6 +12,10 @@ import (
 	"modernc.org/libc"
 )
 
+// warmTLS does nothing on linux, where libc keeps one block per slot of the
+// TLS stack and does not free it when the stack shrinks.
+func warmTLS(tls *libc.TLS) {}
+
 // tlsMark is where the TLS stack of a runtime is. The engine frees its TLS
 // frames before it returns, not in a defer (see fixNoDefer in
 // internal/fixlib), so a Go panic that goes up through engine functions
