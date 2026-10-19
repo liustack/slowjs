@@ -174,9 +174,9 @@ func defineFingerprint(b []byte) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
 }
 
-// reporting reports whether fixlib prints fingerprints (-define or
-// -backtrace) rather than checking them.
-func reporting() bool { return *define || *backtrace }
+// reporting reports whether fixlib prints fingerprints (-define, -backtrace
+// or -regex) rather than checking them.
+func reporting() bool { return *define || *backtrace || *regex }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
 // generated files as they are after all of fixlib's changes, made in

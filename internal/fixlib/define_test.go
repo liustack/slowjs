@@ -82,8 +82,9 @@ func TestDefineRejects(t *testing.T) {
 	}
 }
 
-// -define and -backtrace print the fingerprints the checks compare with
-// defineSites and backtraceSites, so that a table updated from them passes.
+// -define, -backtrace and -regex print the fingerprints the checks compare
+// with defineSites, backtraceSites and regexSites, so that a table updated
+// from them passes.
 func TestFingerprintReportMatchesSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -98,6 +99,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 	}{
 		{"defineSites", defineFingerprint, defineSites[name]},
 		{"backtraceSites", backtraceFingerprint, backtraceSites[name]},
+		{"regexSites", regexFingerprint, regexSites[name]},
 	} {
 		got, err := reportedFingerprint(fn, hw, c.fp)
 		if err != nil {

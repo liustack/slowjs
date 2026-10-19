@@ -6,6 +6,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -281,5 +282,45 @@ func TestNestedEvalKeepsInterrupt(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// The eval timeout and Interrupt stop a loop of regexps that find nothing
+// in a long string as soon as they fire. lreSkip looks for where a match
+// can start in Go, not in the backtracking machine, and must check for an
+// interrupt as the machine does.
+func TestRegexScanStops(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		arm  func(m *VM) (stop func())
+	}{
+		{"timeout", func(m *VM) func() {
+			m.SetEvalTimeout(10 * time.Millisecond)
+			return func() {}
+		}},
+		{"interrupt", func(m *VM) func() {
+			timer := time.AfterFunc(10*time.Millisecond, m.Interrupt)
+			return func() { timer.Stop() }
+		}},
+	} {
+		for _, w := range []struct{ name, s string }{{"8bit", `'a'`}, {"16bit", `'中'`}} {
+			t.Run(c.name+"/"+w.name, func(t *testing.T) {
+				m := newTestVM(t)
+				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 22); var re = /["&<>]/; 0`, EvalGlobal); err != nil {
+					t.Fatal(err)
+				}
+				stop := c.arm(m)
+				defer stop()
+				start := time.Now()
+				_, err := m.Eval(`for (;;) re.test(s)`, EvalGlobal)
+				took := time.Since(start)
+				if err == nil || !strings.Contains(err.Error(), "interrupted") {
+					t.Fatalf("got %v, want interrupted", err)
+				}
+				if took > 500*time.Millisecond {
+					t.Errorf("stopped %v after the call started, want about 10ms", took)
+				}
+			})
+		}
 	}
 }

@@ -157056,6 +157056,11 @@ func _lre_exec_backtrack(tls *libc.TLS, s uintptr, capture uintptr, pc uintptr, 
 //	   starting position of the match and must be such as 0 <= cindex <=
 //	   clen. */
 func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cindex int32, clen int32, cbuf_type int32, opaque uintptr) (r int32) {
+	// Changed by internal/fixlib: start where a match can start (see fixRegexSkip).
+	cindex, skipPC := lreSkip(tls, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque)
+	if skipPC == 0 {
+		return cindex
+	}
 	bp := tls.Alloc(320)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cptr, p, s uintptr
@@ -157105,7 +157110,7 @@ func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cin
 			cptr = p - libc.UintptrFromInt32(1)*2
 		}
 	}
-	ret = int32(_lre_exec_backtrack(tls, s, capture, bc_buf+uintptr(MRE_HEADER_LEN), cptr))
+	ret = int32(_lre_exec_backtrack(tls, s, capture, bc_buf+skipPC, cptr))
 	if (*TREExecContext)(unsafe.Pointer(s)).Fstack_buf != s+56 {
 		Xlre_realloc(tls, (*TREExecContext)(unsafe.Pointer(s)).Fopaque, (*TREExecContext)(unsafe.Pointer(s)).Fstack_buf, uint64(0))
 	}

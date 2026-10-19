@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does fifteen things:
+// It does sixteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -56,6 +56,9 @@
 //     data property of an ordinary object through objlitDefine of
 //     lib/objlit.go, without the three calls of the generic path (see
 //     fixDefine).
+//   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
+//     the string where the regexp cannot start to match, through lreSkip
+//     of lib/regexskip.go (see fixRegexSkip).
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -100,6 +103,7 @@ var (
 	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
 	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
 	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
+	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -124,7 +128,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *up || *cells {
+	if *define || *backtrace || *regex || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -134,6 +138,8 @@ func main() {
 			err = fingerprintReport(files, hw, "defineSites", defineFingerprint)
 		} else if err == nil && *backtrace {
 			err = fingerprintReport(files, hw, "backtraceSites", backtraceFingerprint)
+		} else if err == nil && *regex {
+			err = fingerprintReport(files, hw, "regexSites", regexFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -252,6 +258,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if err = checkBacktraceSites(b, name); err != nil {
+		return nil, err
+	}
+	if b, err = fixRegexSkip(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.

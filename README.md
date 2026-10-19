@@ -515,6 +515,30 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `fixlib` see the defers as ccgo writes them. Tests:
   `enginepanic_test.go`, `memgrind_test.go`,
   `internal/fixlib/nodefer_test.go`.
+- A regexp that is not sticky no longer tries every position of the string
+  in the backtracking machine. Its bytecode starts with a loop that tries
+  the match at one position, steps over one character and tries again.
+  `lre_exec` now first calls `lreSkip` (`lib/regexskip.go`): when the
+  regexp starts with one character or one class of characters, such as
+  `/["&<>]/` or `/\d+/`, it finds the first position that holds one in a
+  plain Go loop and starts there, and when there is none it answers no
+  match without running the bytecode. A regexp that starts with `^`
+  outside multiline mode is run at position 0 only. Unicode regexps (`u`,
+  `v`), regexps that ignore case or are multiline (`i`, `m`), and every
+  other first op take the old path. `lreSkip` checks for an interrupt
+  after every 65,536 characters it looks at, as the backtracking machine
+  does every 10,000 steps, so the eval timeout and `Interrupt` stop a
+  regexp that runs again and again on a long string as before. A server
+  render of a page of tifa's example shop takes about 3% less time on
+  linux/amd64 (AMD EPYC), with the same HTML. `fixlib` puts the call into
+  all 13 files, and checks the text of
+  `lre_compile`, `lre_exec` and `lre_exec_backtrack`, whose bytecode and
+  ops `lreSkip` reads, against fingerprints. This changes only the
+  generated Go, with no C hunk (`internal/fixlib/regexskip.go`). Tests:
+  `lib/regexskip_test.go`, whose `testdata/regex.txt` holds what 61
+  regexps give on 47 strings through every API that runs one, from the
+  engine before the change, `internal/fixlib/regexskip_test.go`, and
+  `TestRegexScanStops` in `timeout_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -603,8 +627,9 @@ Conflicts to expect:
   (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
-  changes to the interpreter loop, the call into `lib/objlit.go` and the
-  frames freed without a defer conflict. Take the upstream version of every generated file, then put
+  changes to the interpreter loop, the call into `lib/objlit.go`, the
+  call into `lib/regexskip.go` and the frames freed without a defer
+  conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -619,7 +644,8 @@ Conflicts to expect:
   report runs the steps before its own, so it fails while an earlier list
   is out of date. Update them in the order `fixlib` checks them: `-frames`,
   then `-up` (on the files as taken from upstream), then `-cells`, then
-  the fingerprints, `-define` and `-backtrace`, and last `-slots`. Read
+  the fingerprints, `-define`, `-backtrace` and `-regex`, and last
+  `-slots`. Read
   every new line before you put it in. If `fixlib` reports that
   `XJS_ToCStringLen2` changed shape, read the new upstream code: QuickJS
   may have fixed the leak itself. If the fail label now frees `val`, drop
@@ -830,6 +856,16 @@ Conflicts to expect:
   then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
   fields in another order: find where the three bits are now and update
   `objectBits` and its patterns in `internal/fixlib/define.go`.
+  If it reports that `Xlre_compile`, `Xlre_exec` or
+  `_lre_exec_backtrack` changed (a fingerprint other than the one in
+  `internal/fixlib/regexsites.go`), read the new code against
+  `lib/regexskip.go`: the loop and `save_start 0` at the start of the
+  bytecode, the header fields it reads, and what `char`, `range` and
+  `line_start` match at a position must still be what `lreSkip` assumes,
+  and `lre_exec` must still return `LRE_RET_TIMEOUT` when
+  `lre_check_timeout` asks it to stop.
+  Then put the new fingerprints in (`go run ./internal/fixlib -regex`
+  prints them) and run `go test -run Regex ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -871,8 +907,9 @@ Conflicts to expect:
   regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and
   their wiring in `fixlib` are no longer needed. The calls without
   `alloca`, the functions without a TLS frame, the changes to the
-  interpreter loop, the call into `lib/objlit.go` and the frames freed
-  without a defer have no C form: they
+  interpreter loop, the calls into `lib/objlit.go` and
+  `lib/regexskip.go` and the frames freed without a defer have no C form:
+  they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -999,6 +1036,8 @@ go run ./intl/internal/gen -fetch -check                 # intl data is what the
 go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
+go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
+go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
