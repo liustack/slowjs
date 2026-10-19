@@ -486,9 +486,18 @@ var (
 )
 
 // backtraceFingerprint hashes backtraceFuncs, without the calls
-// fixBacktrace adds, with each C string written out in place of its
-// offset, which a new string anywhere before it moves.
+// fixBacktrace adds.
 func backtraceFingerprint(b []byte) (string, error) {
+	return funcsFingerprint(b, backtraceFuncs, func(text []byte) []byte {
+		text = reLazyBacktrace.ReplaceAll(text, nil)
+		return rePendingPropText.ReplaceAll(text, nil)
+	})
+}
+
+// funcsFingerprint hashes the functions names of b, each as strip leaves
+// it, with each C string written out in place of its offset, which a new
+// string anywhere before it moves.
+func funcsFingerprint(b []byte, names []string, strip func([]byte) []byte) (string, error) {
 	m := reStringTable.FindSubmatch(b)
 	if m == nil {
 		return "", fmt.Errorf("cannot find __ccgo_ts1")
@@ -498,13 +507,12 @@ func backtraceFingerprint(b []byte) (string, error) {
 		return "", fmt.Errorf("__ccgo_ts1: %v", err)
 	}
 	h := sha256.New()
-	for _, name := range backtraceFuncs {
+	for _, name := range names {
 		text, err := funcBody(b, funcHead(name), name)
 		if err != nil {
 			return "", err
 		}
-		text = reLazyBacktrace.ReplaceAll(text, nil)
-		text = rePendingPropText.ReplaceAll(text, nil)
+		text = strip(bytes.Clone(text))
 		text = reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
 			off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
 			if off >= len(table) {
