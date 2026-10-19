@@ -36,9 +36,11 @@ import (
 //	}
 //
 // The locals of the callee are declared in the block, after the
-// arguments, so they cannot change what an argument reads. JS_FreeAtom
-// and is_strict_mode were written out too, and gained nothing that could
-// be told from noise, so they stay calls.
+// arguments, so they cannot change what an argument reads. The TLS frame
+// that fixFrames gives set_value holds one JSValue, and becomes a Go
+// JSValue in each copy (see inlineFrameUse). JS_FreeAtom and
+// is_strict_mode were written out too, and gained nothing that could be
+// told from noise, so they stay calls.
 //
 // fixInline stops when a callee has a result, returns early or takes a
 // TLS frame, when a name the callee uses is a local of JS_CallInternal (it
@@ -116,15 +118,22 @@ type inlineCallee struct {
 	idents []inlineIdent
 }
 
-// inlineIdent is a parameter (param >= 0) or a label of a callee.
+// inlineIdent is a parameter (param >= 0) or a label of a callee, or
+// text that its copies have in place of the callee's (text != "").
 type inlineIdent struct {
 	start, end int
 	param      int
 	label      string
+	text       string
 }
 
-// newInlineCallee reads the callee name, whose text is body.
-func newInlineCallee(name string, body []byte) (*inlineCallee, error) {
+// inlineCell is the Go variable that the TLS frame of a callee becomes in
+// its copies, when the frame holds one JSValue (see inlineFrameUse).
+const inlineCell = "cell"
+
+// newInlineCallee reads the callee name, whose text is body. cells says
+// whether a JSValue is 8 bytes of a union then a tag of 8 bytes.
+func newInlineCallee(name string, body []byte, cells bool) (*inlineCallee, error) {
 	f, err := parseFunc(name, body)
 	if err != nil {
 		return nil, err
@@ -192,6 +201,20 @@ func newInlineCallee(name string, body []byte) (*inlineCallee, error) {
 			if reInlineName.MatchString(x.Name) {
 				problem = fmt.Sprintf("%s: a name %s", name, x.Name)
 			}
+			if x.Name == localFrame && !inlineField(stack) {
+				at, ok := inlineFrameUse(f, stack)
+				if !ok {
+					problem = fmt.Sprintf("%s: %s used other than as one JSValue: %s", name, localFrame, f.lineOf(x))
+				} else if !cells {
+					problem = fmt.Sprintf("%s: %s holds a JSValue, and JSValue is not a union of 8 bytes and a tag of 8 bytes", name, localFrame)
+				} else if locals[inlineCell] {
+					problem = fmt.Sprintf("%s: a local named %s", name, inlineCell)
+				}
+				at.start -= start
+				at.end -= start
+				c.idents = append(c.idents, at)
+				return problem == ""
+			}
 			at := inlineIdent{start: f.off(x.Pos()) - start, end: f.off(x.End()) - start, param: -1}
 			switch parent := stack[len(stack)-2].(type) {
 			case *ast.LabeledStmt:
@@ -215,7 +238,85 @@ func newInlineCallee(name string, body []byte) (*inlineCallee, error) {
 	if problem != "" {
 		return nil, fmt.Errorf("%s", problem)
 	}
+	if c.free[inlineCell] {
+		return nil, fmt.Errorf("%s: a name %s", name, inlineCell)
+	}
+	sort.Slice(c.idents, func(i, j int) bool { return c.idents[i].start < c.idents[j].start })
 	return c, nil
+}
+
+// inlineFrameUse reads a use of localbp, the TLS frame fixFrames gives a
+// callee, at the top of stack. Where the frame is one JSValue cell, as in
+// set_value:
+//
+//	var localbp [2]uint64
+//	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+//	v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - ...
+//
+// a copy has a Go JSValue in its place, which the compiler can keep in
+// registers, and reads the pointer from its first 8 bytes as fixCells
+// does:
+//
+//	var cell TJSValue
+//	cell = v1
+//	v2 = uintptr(cell.Fu.Fuint641) - ...
+//
+// inlineFrameUse returns the text of the copy for the declaration, the store
+// or the load, and false for any other use.
+func inlineFrameUse(f *parsedFunc, stack []ast.Node) (inlineIdent, bool) {
+	n := len(stack)
+	id := stack[n-1]
+	if spec, ok := stack[n-2].(*ast.ValueSpec); ok {
+		if len(spec.Names) != 1 || spec.Values != nil || f.text(spec.Type) != "[2]uint64" {
+			return inlineIdent{}, false
+		}
+		return inlineIdent{start: f.off(id.Pos()), end: f.off(spec.Type.End()), param: -1, text: inlineCell + " TJSValue"}, true
+	}
+	// &localbp in unsafe.Pointer(...) in (*T)(...) under a *.
+	if n < 7 {
+		return inlineIdent{}, false
+	}
+	addr, ok := stack[n-2].(*ast.UnaryExpr)
+	if !ok || addr.Op != token.AND {
+		return inlineIdent{}, false
+	}
+	ptr, ok := stack[n-3].(*ast.CallExpr)
+	if !ok || !isSelector(ptr.Fun, "unsafe", "Pointer") || len(ptr.Args) != 1 {
+		return inlineIdent{}, false
+	}
+	conv, ok := stack[n-4].(*ast.CallExpr)
+	if !ok || len(conv.Args) != 1 {
+		return inlineIdent{}, false
+	}
+	typ, ok := conv.Fun.(*ast.ParenExpr)
+	if !ok {
+		return inlineIdent{}, false
+	}
+	deref, ok := stack[n-5].(*ast.StarExpr)
+	if !ok {
+		return inlineIdent{}, false
+	}
+	at := inlineIdent{start: f.off(deref.Pos()), end: f.off(deref.End()), param: -1}
+	assign, _ := stack[n-6].(*ast.AssignStmt)
+	stored := assign != nil && len(assign.Lhs) == 1 && assign.Lhs[0] == deref
+	switch f.text(typ.X) {
+	case "*TJSValue":
+		if !stored || assign.Tok != token.ASSIGN || len(assign.Rhs) != 1 {
+			return inlineIdent{}, false
+		}
+		at.text = inlineCell
+	case "*uintptr":
+		if stored {
+			return inlineIdent{}, false
+		}
+		if u, ok := stack[n-6].(*ast.UnaryExpr); ok && u.Op == token.AND {
+			return inlineIdent{}, false
+		}
+		at.text = "uintptr(" + inlineCell + ".Fu.Fuint641)"
+	default:
+		return inlineIdent{}, false
+	}
+	return at, true
 }
 
 // inlineField reports whether the identifier at the top of stack names a
@@ -243,7 +344,9 @@ func (c *inlineCallee) block(in string, args []string, k int) string {
 	last := 0
 	for _, id := range c.idents {
 		body.WriteString(c.body[last:id.start])
-		if id.label != "" {
+		if id.text != "" {
+			body.WriteString(id.text)
+		} else if id.label != "" {
 			fmt.Fprintf(&body, "inl%d_%s", k, id.label)
 		} else {
 			fmt.Fprintf(&body, "inl%d", id.param+1)
@@ -289,6 +392,7 @@ func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
 		return nil, fmt.Errorf("%s", problem)
 	}
 	locals := localNames(f.decl)
+	cells := bytes.Contains(b, []byte(cellsValue)) && reCellsUnion.Match(b) && bytes.Contains(b, []byte("\ntype Tuint64_t = uint64\n"))
 	names := make([]string, 0, len(callees))
 	for name := range callees {
 		names = append(names, name)
@@ -300,7 +404,7 @@ func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		c, err := newInlineCallee(name, cb)
+		c, err := newInlineCallee(name, cb, cells)
 		if err != nil {
 			return nil, err
 		}

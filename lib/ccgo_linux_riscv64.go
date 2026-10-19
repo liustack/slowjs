@@ -37604,7 +37604,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(var_ref)).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37612,9 +37612,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl1__3
 			inl1__3:
 				p = v2
@@ -37665,7 +37665,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx3)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37673,9 +37673,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl2__3
 			inl2__3:
 				p = v2
@@ -37714,7 +37714,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx4)*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37722,9 +37722,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl3__3
 			inl3__3:
 				p = v2
@@ -37772,7 +37772,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+uintptr(idx6)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37780,9 +37780,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl4__3
 			inl4__3:
 				p = v2
@@ -37821,7 +37821,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+uintptr(idx7)*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37829,9 +37829,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl5__3
 			inl5__3:
 				p = v2
@@ -37876,7 +37876,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(*(*Tuint8_t)(unsafe.Pointer(v1)))*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v10))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37884,9 +37884,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl6__3
 			inl6__3:
 				p = v2
@@ -37921,7 +37921,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(*(*Tuint8_t)(unsafe.Pointer(v1)))*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -37929,9 +37929,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl7__3
 			inl7__3:
 				p = v2
@@ -38029,7 +38029,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38037,9 +38037,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl8__3
 			inl8__3:
 				p = v2
@@ -38061,7 +38061,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+1*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38069,9 +38069,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl9__3
 			inl9__3:
 				p = v2
@@ -38093,7 +38093,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+2*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38101,9 +38101,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl10__3
 			inl10__3:
 				p = v2
@@ -38125,7 +38125,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+3*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38133,9 +38133,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl11__3
 			inl11__3:
 				p = v2
@@ -38168,7 +38168,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38176,9 +38176,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl12__3
 			inl12__3:
 				p = v2
@@ -38211,7 +38211,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+1*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38219,9 +38219,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl13__3
 			inl13__3:
 				p = v2
@@ -38254,7 +38254,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+2*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38262,9 +38262,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl14__3
 			inl14__3:
 				p = v2
@@ -38297,7 +38297,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+3*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38305,9 +38305,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl15__3
 			inl15__3:
 				p = v2
@@ -38405,7 +38405,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38413,9 +38413,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl16__3
 			inl16__3:
 				p = v2
@@ -38437,7 +38437,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+1*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38445,9 +38445,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl17__3
 			inl17__3:
 				p = v2
@@ -38469,7 +38469,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+2*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38477,9 +38477,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl18__3
 			inl18__3:
 				p = v2
@@ -38501,7 +38501,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+3*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38509,9 +38509,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl19__3
 			inl19__3:
 				p = v2
@@ -38544,7 +38544,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38552,9 +38552,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl20__3
 			inl20__3:
 				p = v2
@@ -38587,7 +38587,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+1*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38595,9 +38595,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl21__3
 			inl21__3:
 				p = v2
@@ -38630,7 +38630,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+2*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38638,9 +38638,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl22__3
 			inl22__3:
 				p = v2
@@ -38673,7 +38673,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = arg_buf+3*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38681,9 +38681,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl23__3
 			inl23__3:
 				p = v2
@@ -38781,7 +38781,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38789,9 +38789,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl24__3
 			inl24__3:
 				p = v2
@@ -38813,7 +38813,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 1*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38821,9 +38821,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl25__3
 			inl25__3:
 				p = v2
@@ -38845,7 +38845,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 2*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38853,9 +38853,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl26__3
 			inl26__3:
 				p = v2
@@ -38877,7 +38877,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 3*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38885,9 +38885,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl27__3
 			inl27__3:
 				p = v2
@@ -38920,7 +38920,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs)))).Fpvalue
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38928,9 +38928,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl28__3
 			inl28__3:
 				p = v2
@@ -38963,7 +38963,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 1*8)))).Fpvalue
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -38971,9 +38971,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl29__3
 			inl29__3:
 				p = v2
@@ -39006,7 +39006,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 2*8)))).Fpvalue
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39014,9 +39014,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl30__3
 			inl30__3:
 				p = v2
@@ -39049,7 +39049,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 3*8)))).Fpvalue
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39057,9 +39057,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl31__3
 			inl31__3:
 				p = v2
@@ -39108,7 +39108,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx9)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39116,9 +39116,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl32__3
 			inl32__3:
 				p = v2
@@ -39157,7 +39157,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx10)*8)))).Fpvalue
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39165,9 +39165,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl33__3
 			inl33__3:
 				p = v2
@@ -39230,7 +39230,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx12)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39238,9 +39238,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl34__3
 			inl34__3:
 				p = v2
@@ -39273,7 +39273,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx13)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39281,9 +39281,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl35__3
 			inl35__3:
 				p = v2
@@ -39312,7 +39312,7 @@ restart:
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_UNINITIALIZED),
 		}
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39320,9 +39320,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl36__3
 			inl36__3:
 				p = v2
@@ -39414,7 +39414,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx17)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39422,9 +39422,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl37__3
 			inl37__3:
 				p = v2
@@ -39470,7 +39470,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx18)*16
 			var inl3 TJSValue = v121
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39478,9 +39478,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl38__3
 			inl38__3:
 				p = v2
@@ -39512,7 +39512,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx19)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -39520,9 +39520,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl39__3
 			inl39__3:
 				p = v2
@@ -40367,7 +40367,7 @@ restart:
 				var inl1 uintptr = ctx10
 				var inl2 uintptr = *(*uintptr)(unsafe.Pointer(bp + 360))
 				var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-				var localbp [2]uint64
+				var cell TJSValue
 				var old_val, v1 TJSValue
 				var p, v2, v5 uintptr
 				var v4 int32
@@ -40375,9 +40375,9 @@ restart:
 				old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 				*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 				v1 = old_val
-				*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+				cell = v1
 				if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+					v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto inl40__3
 				inl40__3:
 					p = v2
@@ -41293,7 +41293,7 @@ restart:
 				var inl1 uintptr = ctx10
 				var inl2 uintptr = *(*uintptr)(unsafe.Pointer(p10 + 40 + 8))+uintptr(idx25)*16
 				var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
-				var localbp [2]uint64
+				var cell TJSValue
 				var old_val, v1 TJSValue
 				var p, v2, v5 uintptr
 				var v4 int32
@@ -41301,9 +41301,9 @@ restart:
 				old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 				*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 				v1 = old_val
-				*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+				cell = v1
 				if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+					v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto inl41__3
 				inl41__3:
 					p = v2
@@ -41729,7 +41729,7 @@ restart:
 							var inl1 uintptr = ctx10
 							var inl2 uintptr = pv
 							var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 464))
-							var localbp [2]uint64
+							var cell TJSValue
 							var old_val, v1 TJSValue
 							var p, v2, v5 uintptr
 							var v4 int32
@@ -41737,9 +41737,9 @@ restart:
 							old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 							*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 							v1 = old_val
-							*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+							cell = v1
 							if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-								v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+								v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 								goto inl42__3
 							inl42__3:
 								p = v2
@@ -41780,7 +41780,7 @@ restart:
 						var inl1 uintptr = ctx10
 						var inl2 uintptr = pv
 						var inl3 TJSValue = (*(*[2]TJSValue)(unsafe.Pointer(bp + 480)))[0]
-						var localbp [2]uint64
+						var cell TJSValue
 						var old_val, v1 TJSValue
 						var p, v2, v5 uintptr
 						var v4 int32
@@ -41788,9 +41788,9 @@ restart:
 						old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 						*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 						v1 = old_val
-						*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+						cell = v1
 						if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-							v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+							v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 							goto inl43__3
 						inl43__3:
 							p = v2
@@ -42252,7 +42252,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx27)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 736))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -42260,9 +42260,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl44__3
 			inl44__3:
 				p = v2
@@ -42327,7 +42327,7 @@ restart:
 			var inl1 uintptr = ctx10
 			var inl2 uintptr = var_buf+uintptr(idx28)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 752))
-			var localbp [2]uint64
+			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
@@ -42335,9 +42335,9 @@ restart:
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 			v1 = old_val
-			*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-				v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+				v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 				goto inl45__3
 			inl45__3:
 				p = v2
@@ -42905,7 +42905,7 @@ restart:
 				var inl1 uintptr = ctx10
 				var inl2 uintptr = sp+uintptr(-libc.Int32FromInt32(1))*16
 				var inl3 TJSValue = val27
-				var localbp [2]uint64
+				var cell TJSValue
 				var old_val, v1 TJSValue
 				var p, v2, v5 uintptr
 				var v4 int32
@@ -42913,9 +42913,9 @@ restart:
 				old_val = *(*TJSValue)(unsafe.Pointer(inl2))
 				*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
 				v1 = old_val
-				*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
+				cell = v1
 				if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-					v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
+					v2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4
 					goto inl46__3
 				inl46__3:
 					p = v2

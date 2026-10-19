@@ -94,8 +94,10 @@ func TestInlineShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"\t\t{\n\t\t\t// Changed by internal/fixlib: _set_value written out (see fixInline).\n\t\t\tvar inl1 uintptr = ctx10\n\t\t\tvar inl2 uintptr = var_buf+uintptr(idx3)*16\n\t\t\tvar inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))\n\t\t\tvar localbp [2]uint64\n\t\t\tvar old_val, v1 TJSValue\n",
+		"\t\t{\n\t\t\t// Changed by internal/fixlib: _set_value written out (see fixInline).\n\t\t\tvar inl1 uintptr = ctx10\n\t\t\tvar inl2 uintptr = var_buf+uintptr(idx3)*16\n\t\t\tvar inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))\n\t\t\tvar cell TJSValue\n\t\t\tvar old_val, v1 TJSValue\n",
 		"\t\t\told_val = *(*TJSValue)(unsafe.Pointer(inl2))\n\t\t\t*(*TJSValue)(unsafe.Pointer(inl2)) = inl3\n",
+		"\t\t\tcell = v1\n",
+		"\t\t\t\tv2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4\n",
 		"\t\t\t\tx__JS_FreeValue(tls, inl1, v1)\n",
 	} {
 		if !bytes.Contains(body, []byte(want)) {
@@ -109,6 +111,10 @@ func TestInlineShapes(t *testing.T) {
 	}
 	if bytes.Contains(body, []byte(framesInGo)) {
 		t.Error("the mark of fixFrames copied")
+	}
+	// The frame of set_value, one JSValue, is a Go variable in each copy.
+	if bytes.Contains(body, []byte("localbp")) {
+		t.Error("the frame of set_value copied")
 	}
 	for name := range inlineCallees {
 		if n, m := bytes.Count(body, []byte(name+"(tls")), bytes.Count(body, []byte(": "+name+"(tls")); n != m {
@@ -164,6 +170,30 @@ func TestInlineRejects(t *testing.T) {
 		old:  "new_val TJSValue) {",
 		new:  "new_val TJSValue) (r int32) {",
 		want: "_set_value: a result",
+	}, {
+		name: "a frame used another way",
+		fn:   "_set_value",
+		old:  "\t\tv2 = *(*uintptr)(unsafe.Pointer(&localbp))",
+		new:  "\t\tv2 = uintptr(unsafe.Pointer(&localbp))",
+		want: "_set_value: localbp used other than as one JSValue",
+	}, {
+		name: "a frame of another size",
+		fn:   "_set_value",
+		old:  "\tvar localbp [2]uint64\n",
+		new:  "\tvar localbp [3]uint64\n",
+		want: "_set_value: localbp used other than as one JSValue",
+	}, {
+		name: "a frame of a value written another way",
+		fn:   "_set_value",
+		old:  "\t*(*TJSValue)(unsafe.Pointer(&localbp)) = v1\n",
+		new:  "\t*(*uintptr)(unsafe.Pointer(&localbp)) = 0\n",
+		want: "_set_value: localbp used other than as one JSValue",
+	}, {
+		name: "a local named like the cell",
+		fn:   "_set_value",
+		old:  "\tvar old_val, v1 TJSValue\n",
+		new:  "\tvar old_val, v1, cell TJSValue\n",
+		want: "_set_value: a local named cell",
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			m := editFunc(t, b, c.fn, c.old, c.new)
@@ -172,6 +202,19 @@ func TestInlineRejects(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, c.want)
 			}
 		})
+	}
+}
+
+// The frame of set_value becomes a Go JSValue only where a JSValue is
+// 8 bytes of a union then a tag.
+func TestInlineFrameLayout(t *testing.T) {
+	b := inlineInput(t, lazyPinFile)
+	m := bytes.Replace(b, []byte("\tFuint641       Tuint64_t\n"), []byte("\tFuint641       Tuint32_t\n"), 1)
+	if bytes.Equal(m, b) {
+		t.Fatal("no union to change")
+	}
+	if _, err := inlineCalls(m, inlineCallees); err == nil || !strings.Contains(err.Error(), "JSValue is not a union of 8 bytes and a tag of 8 bytes") {
+		t.Fatalf("got %v", err)
 	}
 }
 
