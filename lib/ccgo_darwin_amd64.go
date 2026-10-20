@@ -49148,11 +49148,51 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)) = v9
 			sp -= 16
 		} else {
-			(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
-			if _js_eq_slow(tls, ctx10, sp, 0) != 0 {
-				goto exception
+			// Changed by internal/fixlib: the usual pairs of == without a call (see fixEq).
+			eqA, eqB := (*TJSValue)(unsafe.Pointer(sp-32)), (*TJSValue)(unsafe.Pointer(sp-16))
+			eqTA, eqTB := eqA.Ftag, eqB.Ftag
+			eqPA, eqPB := *(*uintptr)(unsafe.Pointer(&eqA.Fu)), *(*uintptr)(unsafe.Pointer(&eqB.Fu))
+			eqDone, eqRes := true, false
+			switch {
+			case (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED) && (eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED):
+				eqRes = true
+			case eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED:
+				eqRes = eqTB == EJS_TAG_OBJECT && *(*uint8)(unsafe.Pointer(eqPB + 17))&0x1 != 0
+			case eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED:
+				eqRes = eqTA == EJS_TAG_OBJECT && *(*uint8)(unsafe.Pointer(eqPA + 17))&0x1 != 0
+			case eqTA == eqTB && (eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL):
+				eqRes = eqPA == eqPB
+			case eqTA == eqTB && eqTA == EJS_TAG_BOOL:
+				eqRes = int32(*(*uint64)(unsafe.Pointer(&eqA.Fu))) == int32(*(*uint64)(unsafe.Pointer(&eqB.Fu)))
+			case eqTA == eqTB && eqTA == EJS_TAG_STRING && (eqPA == eqPB || *(*uint32)(unsafe.Pointer(eqPA))&0x7fffffff>>0 != *(*uint32)(unsafe.Pointer(eqPB))&0x7fffffff>>0 || *(*uint32)(unsafe.Pointer(eqPA + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING && *(*uint32)(unsafe.Pointer(eqPB + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING):
+				eqRes = eqPA == eqPB
+			default:
+				eqDone = false
 			}
-			sp -= 16
+			if eqDone {
+				eqZA := libc.Uint32FromInt32(int32(eqTA)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZA {
+					*(*int32)(unsafe.Pointer(eqPA - 4))--
+					eqZA = *(*int32)(unsafe.Pointer(eqPA - 4)) <= 0
+				}
+				eqZB := libc.Uint32FromInt32(int32(eqTB)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZB {
+					*(*int32)(unsafe.Pointer(eqPB - 4))--
+					eqZB = *(*int32)(unsafe.Pointer(eqPB - 4)) <= 0
+				}
+				if eqZA || eqZB {
+					eqFree(tls, ctx10, sp, eqZA, eqZB)
+				}
+				*(*uint64)(unsafe.Pointer(sp - 32)) = uint64(libc.BoolUint32(eqRes))
+				(*TJSValue)(unsafe.Pointer(sp - 32)).Ftag = int64(EJS_TAG_BOOL)
+				sp -= 16
+			} else {
+				(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
+				if _js_eq_slow(tls, ctx10, sp, 0) != 0 {
+					goto exception
+				}
+				sp -= 16
+			}
 		}
 		goto _265
 	_235:
@@ -49170,11 +49210,51 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)) = v9
 			sp -= 16
 		} else {
-			(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
-			if _js_eq_slow(tls, ctx10, sp, int32(1)) != 0 {
-				goto exception
+			// Changed by internal/fixlib: the usual pairs of != without a call (see fixEq).
+			eqA, eqB := (*TJSValue)(unsafe.Pointer(sp-32)), (*TJSValue)(unsafe.Pointer(sp-16))
+			eqTA, eqTB := eqA.Ftag, eqB.Ftag
+			eqPA, eqPB := *(*uintptr)(unsafe.Pointer(&eqA.Fu)), *(*uintptr)(unsafe.Pointer(&eqB.Fu))
+			eqDone, eqRes := true, false
+			switch {
+			case (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED) && (eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED):
+				eqRes = true
+			case eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED:
+				eqRes = eqTB == EJS_TAG_OBJECT && *(*uint8)(unsafe.Pointer(eqPB + 17))&0x1 != 0
+			case eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED:
+				eqRes = eqTA == EJS_TAG_OBJECT && *(*uint8)(unsafe.Pointer(eqPA + 17))&0x1 != 0
+			case eqTA == eqTB && (eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL):
+				eqRes = eqPA == eqPB
+			case eqTA == eqTB && eqTA == EJS_TAG_BOOL:
+				eqRes = int32(*(*uint64)(unsafe.Pointer(&eqA.Fu))) == int32(*(*uint64)(unsafe.Pointer(&eqB.Fu)))
+			case eqTA == eqTB && eqTA == EJS_TAG_STRING && (eqPA == eqPB || *(*uint32)(unsafe.Pointer(eqPA))&0x7fffffff>>0 != *(*uint32)(unsafe.Pointer(eqPB))&0x7fffffff>>0 || *(*uint32)(unsafe.Pointer(eqPA + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING && *(*uint32)(unsafe.Pointer(eqPB + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING):
+				eqRes = eqPA == eqPB
+			default:
+				eqDone = false
 			}
-			sp -= 16
+			if eqDone {
+				eqZA := libc.Uint32FromInt32(int32(eqTA)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZA {
+					*(*int32)(unsafe.Pointer(eqPA - 4))--
+					eqZA = *(*int32)(unsafe.Pointer(eqPA - 4)) <= 0
+				}
+				eqZB := libc.Uint32FromInt32(int32(eqTB)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZB {
+					*(*int32)(unsafe.Pointer(eqPB - 4))--
+					eqZB = *(*int32)(unsafe.Pointer(eqPB - 4)) <= 0
+				}
+				if eqZA || eqZB {
+					eqFree(tls, ctx10, sp, eqZA, eqZB)
+				}
+				*(*uint64)(unsafe.Pointer(sp - 32)) = uint64(libc.BoolUint32(!eqRes))
+				(*TJSValue)(unsafe.Pointer(sp - 32)).Ftag = int64(EJS_TAG_BOOL)
+				sp -= 16
+			} else {
+				(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
+				if _js_eq_slow(tls, ctx10, sp, int32(1)) != 0 {
+					goto exception
+				}
+				sp -= 16
+			}
 		}
 		goto _265
 	_236:
@@ -49192,11 +49272,49 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)) = v9
 			sp -= 16
 		} else {
-			(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
-			if _js_strict_eq_slow(tls, ctx10, sp, 0) != 0 {
-				goto exception
+			// Changed by internal/fixlib: the usual pairs of === without a call (see fixEq).
+			eqA, eqB := (*TJSValue)(unsafe.Pointer(sp-32)), (*TJSValue)(unsafe.Pointer(sp-16))
+			eqTA, eqTB := eqA.Ftag, eqB.Ftag
+			eqPA, eqPB := *(*uintptr)(unsafe.Pointer(&eqA.Fu)), *(*uintptr)(unsafe.Pointer(&eqB.Fu))
+			eqDone, eqRes := true, false
+			switch {
+			case eqTA == eqTB && (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED):
+				eqRes = true
+			case eqTA == eqTB && (eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL):
+				eqRes = eqPA == eqPB
+			case eqTA == eqTB && eqTA == EJS_TAG_BOOL:
+				eqRes = int32(*(*uint64)(unsafe.Pointer(&eqA.Fu))) == int32(*(*uint64)(unsafe.Pointer(&eqB.Fu)))
+			case eqTA == eqTB && eqTA == EJS_TAG_STRING && (eqPA == eqPB || *(*uint32)(unsafe.Pointer(eqPA))&0x7fffffff>>0 != *(*uint32)(unsafe.Pointer(eqPB))&0x7fffffff>>0 || *(*uint32)(unsafe.Pointer(eqPA + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING && *(*uint32)(unsafe.Pointer(eqPB + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING):
+				eqRes = eqPA == eqPB
+			case eqTA != eqTB && (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED || eqTA == EJS_TAG_BOOL || eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL ||
+				eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED || eqTB == EJS_TAG_BOOL || eqTB == EJS_TAG_OBJECT || eqTB == EJS_TAG_SYMBOL):
+			default:
+				eqDone = false
 			}
-			sp -= 16
+			if eqDone {
+				eqZA := libc.Uint32FromInt32(int32(eqTA)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZA {
+					*(*int32)(unsafe.Pointer(eqPA - 4))--
+					eqZA = *(*int32)(unsafe.Pointer(eqPA - 4)) <= 0
+				}
+				eqZB := libc.Uint32FromInt32(int32(eqTB)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZB {
+					*(*int32)(unsafe.Pointer(eqPB - 4))--
+					eqZB = *(*int32)(unsafe.Pointer(eqPB - 4)) <= 0
+				}
+				if eqZA || eqZB {
+					eqFree(tls, ctx10, sp, eqZA, eqZB)
+				}
+				*(*uint64)(unsafe.Pointer(sp - 32)) = uint64(libc.BoolUint32(eqRes))
+				(*TJSValue)(unsafe.Pointer(sp - 32)).Ftag = int64(EJS_TAG_BOOL)
+				sp -= 16
+			} else {
+				(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
+				if _js_strict_eq_slow(tls, ctx10, sp, 0) != 0 {
+					goto exception
+				}
+				sp -= 16
+			}
 		}
 		goto _265
 	_237:
@@ -49214,11 +49332,49 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*16)) = v9
 			sp -= 16
 		} else {
-			(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
-			if _js_strict_eq_slow(tls, ctx10, sp, int32(1)) != 0 {
-				goto exception
+			// Changed by internal/fixlib: the usual pairs of !== without a call (see fixEq).
+			eqA, eqB := (*TJSValue)(unsafe.Pointer(sp-32)), (*TJSValue)(unsafe.Pointer(sp-16))
+			eqTA, eqTB := eqA.Ftag, eqB.Ftag
+			eqPA, eqPB := *(*uintptr)(unsafe.Pointer(&eqA.Fu)), *(*uintptr)(unsafe.Pointer(&eqB.Fu))
+			eqDone, eqRes := true, false
+			switch {
+			case eqTA == eqTB && (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED):
+				eqRes = true
+			case eqTA == eqTB && (eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL):
+				eqRes = eqPA == eqPB
+			case eqTA == eqTB && eqTA == EJS_TAG_BOOL:
+				eqRes = int32(*(*uint64)(unsafe.Pointer(&eqA.Fu))) == int32(*(*uint64)(unsafe.Pointer(&eqB.Fu)))
+			case eqTA == eqTB && eqTA == EJS_TAG_STRING && (eqPA == eqPB || *(*uint32)(unsafe.Pointer(eqPA))&0x7fffffff>>0 != *(*uint32)(unsafe.Pointer(eqPB))&0x7fffffff>>0 || *(*uint32)(unsafe.Pointer(eqPA + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING && *(*uint32)(unsafe.Pointer(eqPB + 4))&0xc0000000>>30 == EJS_ATOM_TYPE_STRING):
+				eqRes = eqPA == eqPB
+			case eqTA != eqTB && (eqTA == EJS_TAG_NULL || eqTA == EJS_TAG_UNDEFINED || eqTA == EJS_TAG_BOOL || eqTA == EJS_TAG_OBJECT || eqTA == EJS_TAG_SYMBOL ||
+				eqTB == EJS_TAG_NULL || eqTB == EJS_TAG_UNDEFINED || eqTB == EJS_TAG_BOOL || eqTB == EJS_TAG_OBJECT || eqTB == EJS_TAG_SYMBOL):
+			default:
+				eqDone = false
 			}
-			sp -= 16
+			if eqDone {
+				eqZA := libc.Uint32FromInt32(int32(eqTA)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZA {
+					*(*int32)(unsafe.Pointer(eqPA - 4))--
+					eqZA = *(*int32)(unsafe.Pointer(eqPA - 4)) <= 0
+				}
+				eqZB := libc.Uint32FromInt32(int32(eqTB)) >= libc.Uint32FromInt32(EJS_TAG_FIRST)
+				if eqZB {
+					*(*int32)(unsafe.Pointer(eqPB - 4))--
+					eqZB = *(*int32)(unsafe.Pointer(eqPB - 4)) <= 0
+				}
+				if eqZA || eqZB {
+					eqFree(tls, ctx10, sp, eqZA, eqZB)
+				}
+				*(*uint64)(unsafe.Pointer(sp - 32)) = uint64(libc.BoolUint32(!eqRes))
+				(*TJSValue)(unsafe.Pointer(sp - 32)).Ftag = int64(EJS_TAG_BOOL)
+				sp -= 16
+			} else {
+				(*TJSStackFrame)(unsafe.Pointer(sf)).Fcur_pc = pc
+				if _js_strict_eq_slow(tls, ctx10, sp, int32(1)) != 0 {
+					goto exception
+				}
+				sp -= 16
+			}
 		}
 		goto _265
 	_238:

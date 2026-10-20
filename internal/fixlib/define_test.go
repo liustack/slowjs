@@ -115,3 +115,35 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		}
 	}
 }
+
+// -forin, -bitwise and -eq print the fingerprints even when the table
+// does not match the files, which is when they are needed: the check of
+// the table must not stop the report.
+func TestFingerprintReportIgnoresSites(t *testing.T) {
+	hw, err := handWritten(filepath.Join("..", "..", "lib"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go")
+	name := filepath.Base(fn)
+	for _, c := range []struct {
+		name  string
+		flag  *bool
+		table map[string]string
+		fp    func([]byte) (string, error)
+	}{
+		{"-forin", forIn, forInSites, forInFingerprint},
+		{"-bitwise", bitwise, bitwiseSites, bitwiseFingerprint},
+		{"-eq", eq, eqSites, eqFingerprint},
+	} {
+		want := c.table[name]
+		*c.flag, c.table[name] = true, "0"
+		got, err := reportedFingerprint(fn, hw, c.fp)
+		*c.flag, c.table[name] = false, want
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		} else if got != want {
+			t.Errorf("%s: the report gives %s, want %s", c.name, got, want)
+		}
+	}
+}

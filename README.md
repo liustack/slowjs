@@ -707,6 +707,48 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of numbers against `ToInt32` of the specification (which the engine's
   `JS_ToInt32Free` must also give) and the operator done in Go, and
   `internal/fixlib/bitwise_test.go`.
+- `===`, `!==`, `==` and `!=` no longer call the slow path for the usual
+  pairs. The interpreter compared two ints itself and called
+  `js_strict_eq_slow` or `js_eq_slow` for everything else, which for `===`
+  went on to `js_strict_eq2`. React compares with `null` and `undefined`
+  (minified as `null != x` and `void 0 === x`, which the compiler does not
+  turn into `is_null` or `is_undefined`), compares types, symbols and
+  objects by identity, and switches over strings. The interpreter now
+  answers these itself: objects and symbols by pointer, `null`, `undefined`
+  and booleans by tag and value, strings when they are the same string,
+  have different lengths or are both string atoms (the atom table holds
+  each text once), for `===` and `!==` values of different tags when one
+  is `null`, `undefined`, a boolean, an object or a symbol, and for `==`
+  and `!=` `null` or `undefined` beside anything (equal only to `null`,
+  `undefined` or an `IsHTMLDDA` object). Other pairs of different tags
+  under `==`, such as `true == 1` or `{} == 'x'`, convert their operands
+  and still take the slow path, as do numbers, BigInts, ropes and strings
+  that need their characters compared. Why this is safe:
+  each answer is the one the slow path gives for that pair, none of them
+  can throw or call a script, and both operands lose their reference as
+  `JS_FreeValue` does, freed through `eqFree` (`lib/eq.go`) when it was the
+  last. Strings that are both atoms are told apart only when both are
+  string atoms: the description of a symbol is an atom of another type and
+  can hold the text of a string atom. The text is written into the four
+  handlers, with no call on the usual path, since Go does not inline into a
+  function as big as the interpreter. It passes `eqFree` the stack pointer
+  rather than the values, so the frame of the interpreter changes little:
+  8 bytes more on amd64 and 16 fewer on arm64, from v0.26.16. Only the 11
+  files of 64-bit
+  targets change, because the text reads their struct `JSValue`. The bit
+  fields it reads (the length and atom type of a string, the `IsHTMLDDA`
+  bit) come from each file's `js_string_eq`, `__JS_FreeValueRT` and
+  `JS_IsHTMLDDA`, and the layout of a value (how far below its pointer
+  the reference count sits, the size of a value on the stack and how a
+  boolean is stored) from its `JS_FreeValue` and `js_strict_eq_slow`.
+  `fixlib` pins those and `js_strict_eq_slow`,
+  `js_strict_eq2`, `js_eq_slow` and `__JS_FreeValue` by fingerprints
+  (`eqSites`), and stops when the interpreter no longer has one call of
+  each slow path per operator. This changes only the generated Go, with no
+  C hunk (`internal/fixlib/eq.go`). Tests: `lib/eq_test.go`, whose
+  `testdata/eq.txt` is what the engine gave before the change (Node gives
+  the same) and which checks that compared values are freed once, and
+  `internal/fixlib/eq_test.go`.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -930,7 +972,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go` and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -950,7 +992,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin` and `-bitwise`. Each of these runs
+  `-front`, `-shape`, `-forin`, `-bitwise` and `-eq`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1264,6 +1306,20 @@ Conflicts to expect:
   stack, and the opcode in `op`. Then put the new
   fingerprints in (`go run ./internal/fixlib -bitwise` prints them) and run
   `go test -run Bitwise ./lib`.
+  If it reports that `js_strict_eq_slow`, `js_strict_eq2`, `js_eq_slow`,
+  `js_string_eq`, `__JS_FreeValueRT`, `__JS_FreeValue` or `JS_IsHTMLDDA`
+  changed (a fingerprint other than the one in
+  `internal/fixlib/eqsites.go`), read them against the cases in the comment
+  of `fixEq`: each pair it answers must still get that answer from the
+  slow path, with both operands freed, and string atoms of one text must
+  still be one atom. If it reports that a bit field, `JS_FreeValue` or
+  `js_strict_eq_slow` changed shape, or that a slow call pops another
+  size than a value, find where the bits, the reference count or the
+  result are now and update the patterns in `internal/fixlib/eq.go`. If it reports another number of calls in
+  `_JS_CallInternal`, read the new interpreter: each slow call must still
+  have the two operands on top of the stack and pop one. Then put the new
+  fingerprints in (`go run ./internal/fixlib -eq` prints them) and run
+  `go test -run Eq ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1308,8 +1364,8 @@ Conflicts to expect:
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
   statement, the calls written out in the interpreter, the calls into
-  `lib/forin.go` and `lib/bitwise.go` and the frames freed without a defer
-  have no C form: they
+  `lib/forin.go` and `lib/bitwise.go`, the comparisons written out in the
+  interpreter and the frames freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -1441,6 +1497,7 @@ go test -run RegexScanStops .                            # a timeout stops a reg
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
+go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

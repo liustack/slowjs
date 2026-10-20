@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-five things:
+// It does twenty-six things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -70,6 +70,9 @@
 //   - In the lib/ccgo_*.go files of 64-bit targets, let the slow paths of
 //     &, |, ^, <<, >> and >>> do two numbers through bitwiseNumbers of
 //     lib/bitwise.go first (see fixBitwise).
+//   - In the lib/ccgo_*.go files of 64-bit targets, let the interpreter do
+//     the usual pairs of ===, !==, == and != without calling the slow
+//     paths (see fixEq).
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement
 //     that passes an address in the frame on or can reach a stack check a
@@ -146,6 +149,7 @@ var (
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
 	bitwise   = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
+	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -170,7 +174,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -198,6 +202,8 @@ func main() {
 			err = fingerprintReport(files, hw, "forInSites", forInFingerprint)
 		} else if err == nil && *bitwise {
 			err = fingerprintReport(files, hw, "bitwiseSites", bitwiseFingerprint)
+		} else if err == nil && *eq {
+			err = fingerprintReport(files, hw, "eqSites", eqFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -335,6 +341,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixBitwise(b, name); err != nil {
+		return nil, err
+	}
+	if b, err = fixEq(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
