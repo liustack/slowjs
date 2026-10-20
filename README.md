@@ -675,7 +675,12 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   (`forInSites`). This changes only the generated Go, with no C hunk
   (`internal/fixlib/forin.go`). Tests: `lib/forin_test.go`, whose
   `testdata/forin.txt` is what the engine gave before the change, and
-  `internal/fixlib/forin_test.go`.
+  `internal/fixlib/forin_test.go`. On linux/amd64 without PGO, against
+  v0.26.16 over 10 rounds, the spiral page of tifa's bench app, which runs
+  many for in loops, renders in 0.983 of the time (a wide range, 0.888 to
+  1.041) and the table page in 0.971 (0.871 to 1.035). tifa's example shop
+  barely changes (0.996, 0.987 to 1.001), nor do the MUI pages. The HTML
+  and the memory of a VM stay the same.
 - `&`, `|`, `^`, `<<`, `>>` and `>>>` of two numbers no longer take the
   slow path when one of them is a float. The interpreter did the operator
   itself only for two ints and called `js_binary_logic_slow` or
@@ -707,6 +712,14 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of numbers against `ToInt32` of the specification (which the engine's
   `JS_ToInt32Free` must also give) and the operator done in Go, and
   `internal/fixlib/bitwise_test.go`.
+  On linux/amd64 without PGO, against v0.26.16 over 10 rounds, the pages
+  of tifa's MUI app, which run about 130,000 to 300,000 of these
+  operators on floats per render, take 0.952 to 0.960 of the time (0.935
+  to 0.969). The
+  shop runs the slow paths 3 to 24 times per render and the bench app not
+  at all, so they have nothing to gain: the shop measured 1.008 (0.999 to
+  1.042), which is code layout, not work. The HTML and the memory of a VM
+  stay the same.
 - `===`, `!==`, `==` and `!=` no longer call the slow path for the usual
   pairs. The interpreter compared two ints itself and called
   `js_strict_eq_slow` or `js_eq_slow` for everything else, which for `===`
@@ -748,7 +761,12 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   C hunk (`internal/fixlib/eq.go`). Tests: `lib/eq_test.go`, whose
   `testdata/eq.txt` is what the engine gave before the change (Node gives
   the same) and which checks that compared values are freed once, and
-  `internal/fixlib/eq_test.go`.
+  `internal/fixlib/eq_test.go`. On linux/amd64 without PGO, against
+  v0.26.16 over 10 rounds, a render of tifa's example shop takes 0.982 of
+  the time (0.974 to 0.989), the spiral and table pages of its bench app
+  0.940 and 0.942 (with wide ranges, 0.859 to 0.969 and 0.871 to 1.030),
+  and its MUI pages 0.982 to 0.985. The HTML and the memory of a VM stay
+  the same.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
