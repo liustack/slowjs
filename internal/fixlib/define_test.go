@@ -82,9 +82,10 @@ func TestDefineRejects(t *testing.T) {
 	}
 }
 
-// -define, -backtrace, -regex and -lazyaddr print the fingerprints the
-// checks compare with defineSites, backtraceSites, regexSites and
-// lazyAddrSites, so that a table updated from them passes.
+// -define, -backtrace, -regex, -lazyaddr and -inline print the
+// fingerprints the checks compare with defineSites, backtraceSites,
+// regexSites, lazyAddrSites and inlineSites, so that a table updated from
+// them passes.
 func TestFingerprintReportMatchesSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -101,6 +102,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		{"backtraceSites", backtraceFingerprint, backtraceSites[name]},
 		{"regexSites", regexFingerprint, regexSites[name]},
 		{"lazyAddrSites", lazyAddrFingerprint, lazyAddrSites[name]},
+		{"inlineSites", inlineFingerprint, inlineSites[name]},
 	} {
 		got, err := reportedFingerprint(fn, hw, c.fp)
 		if err != nil {

@@ -1,0 +1,456 @@
+// Copyright 2026 The quickjs-go Authors. All rights reserved.
+// Use of the source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"go/ast"
+	"go/token"
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// fixInline writes out the calls of set_value, the callee of
+// inlineCallees, in JS_CallInternal. Go inlines into a function as big as
+// the interpreter only callees that cost 20 or less, with or without PGO,
+// so each of these calls is a real call there, made for every put_loc,
+// set_loc, put_arg and put_var_ref of a script. A call, as a statement:
+//
+//	_set_value(tls, ctx10, var_buf+uintptr(idx3)*16, v121)
+//
+// becomes a block that gives each argument to a variable of the
+// parameter's type, in order, then runs the body of the callee with its
+// parameters renamed to those variables and its labels renamed to labels
+// of their own:
+//
+//	{
+//		// Changed by internal/fixlib: _set_value written out (see fixInline).
+//		var inl1 uintptr = ctx10
+//		var inl2 uintptr = var_buf + uintptr(idx3)*16
+//		var inl3 TJSValue = v121
+//		BODY OF set_value
+//	}
+//
+// The locals of the callee are declared in the block, after the
+// arguments, so they cannot change what an argument reads. JS_FreeAtom
+// and is_strict_mode were written out too, and gained nothing that could
+// be told from noise, so they stay calls.
+//
+// fixInline stops when a callee has a result, returns early or takes a
+// TLS frame, when a name the callee uses is a local of JS_CallInternal (it
+// would read the local), when a call is not a statement of its own, or
+// when the number of calls is not that of inlineCallees. The text of the callees is pinned
+// in inlineSites, so a change upstream stops fixlib until it is read
+// again. Other changes match JS_CallInternal as ccgo writes it, so
+// fixInline comes last, before fixNoDefer, and restoreInline, its exact
+// inverse, comes first. fixInline checks that restoreInline gives its
+// input back.
+func fixInline(b []byte, name string) ([]byte, error) {
+	got, err := inlineFingerprint(b)
+	if err != nil {
+		return nil, err
+	}
+	if want := inlineSites[name]; got != want && !reporting() {
+		return nil, fmt.Errorf("%s: %s changed (fingerprint %s, want %s): read them against fixInline, then update inlineSites (go run ./internal/fixlib -inline)", name, strings.Join(inlineNames(), ", "), got, want)
+	}
+	out, err := inlineCalls(b, inlineCallees)
+	if err != nil {
+		return nil, err
+	}
+	back, err := restoreInline(out)
+	if err != nil {
+		return nil, fmt.Errorf("fixInline: %v", err)
+	}
+	if !bytes.Equal(back, b) {
+		return nil, fmt.Errorf("fixInline: restoreInline does not give the input back")
+	}
+	return out, nil
+}
+
+// inlineFunc is the function whose calls fixInline writes out.
+const inlineFunc = "_JS_CallInternal"
+
+// inlineCallees are the callees fixInline writes out in inlineFunc, with
+// the number of their calls there.
+var inlineCallees = map[string]int{
+	"_set_value": 46,
+}
+
+// inlineMark is the first line of the block a call of name becomes.
+func inlineMark(name string) string {
+	return "// Changed by internal/fixlib: " + name + " written out (see fixInline).\n"
+}
+
+var (
+	reInlineBlock = regexp.MustCompile(`^\{\n\t+// Changed by internal/fixlib: (\w+) written out \(see fixInline\)\.\n`)
+	reInlineName  = regexp.MustCompile(`^inl\d`)
+)
+
+func inlineNames() []string {
+	names := make([]string, 0, len(inlineCallees))
+	for name := range inlineCallees {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// inlineFingerprint hashes the callees of inlineCallees.
+func inlineFingerprint(b []byte) (string, error) {
+	return funcsFingerprint(b, inlineNames(), func(text []byte) []byte { return text })
+}
+
+// inlineCallee is a callee of inlineCallees, ready to be written out.
+type inlineCallee struct {
+	name   string
+	params []string // the names after tls
+	types  []string // their types
+	free   map[string]bool
+	// Its body, from the line after its opening brace to the line before
+	// its closing one, and the offsets of its parameters and labels there.
+	body   string
+	idents []inlineIdent
+}
+
+// inlineIdent is a parameter (param >= 0) or a label of a callee.
+type inlineIdent struct {
+	start, end int
+	param      int
+	label      string
+}
+
+// newInlineCallee reads the callee name, whose text is body.
+func newInlineCallee(name string, body []byte) (*inlineCallee, error) {
+	f, err := parseFunc(name, body)
+	if err != nil {
+		return nil, err
+	}
+	c := &inlineCallee{name: name, free: map[string]bool{}}
+	ps := f.decl.Type.Params.List
+	if len(ps) == 0 || len(ps[0].Names) != 1 || ps[0].Names[0].Name != "tls" || f.text(ps[0].Type) != "*libc.TLS" {
+		return nil, fmt.Errorf("%s: the first parameter is not tls *libc.TLS", name)
+	}
+	param := map[string]int{}
+	for _, p := range ps[1:] {
+		for _, id := range p.Names {
+			param[id.Name] = len(c.params)
+			c.params = append(c.params, id.Name)
+			c.types = append(c.types, f.text(p.Type))
+		}
+	}
+	locals := map[string]bool{}
+	labels := map[string]bool{}
+	var problem string
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.ValueSpec:
+			for _, id := range x.Names {
+				locals[id.Name] = true
+			}
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				for _, l := range x.Lhs {
+					locals[l.(*ast.Ident).Name] = true
+				}
+			}
+		case *ast.LabeledStmt:
+			labels[x.Label.Name] = true
+		case *ast.DeferStmt, *ast.GoStmt, *ast.FuncLit:
+			problem = fmt.Sprintf("%s: a %T", name, x)
+		case *ast.CallExpr:
+			if _, ok := tlsCall(x, "Alloc"); ok {
+				problem = name + ": a TLS frame"
+			}
+		}
+		return problem == ""
+	})
+	if problem != "" {
+		return nil, fmt.Errorf("%s", problem)
+	}
+	if res := f.decl.Type.Results; res != nil && len(res.List) != 0 {
+		return nil, fmt.Errorf("%s: a result", name)
+	}
+	// The identifiers of the body: parameters and labels to rename, and
+	// the names it takes from the package.
+	start, end := f.off(f.decl.Body.Lbrace)+2, f.off(f.decl.Body.Rbrace)
+	c.body = string(f.src[start:end])
+	var stack []ast.Node
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		stack = append(stack, n)
+		switch x := n.(type) {
+		case *ast.ReturnStmt:
+			problem = name + ": a return"
+		case *ast.Ident:
+			if reInlineName.MatchString(x.Name) {
+				problem = fmt.Sprintf("%s: a name %s", name, x.Name)
+			}
+			at := inlineIdent{start: f.off(x.Pos()) - start, end: f.off(x.End()) - start, param: -1}
+			switch parent := stack[len(stack)-2].(type) {
+			case *ast.LabeledStmt:
+				at.label = x.Name
+			case *ast.BranchStmt:
+				if parent.Label == x {
+					at.label = x.Name
+				}
+			}
+			if i, ok := param[x.Name]; ok && at.label == "" {
+				at.param = i
+			}
+			if at.label != "" || at.param >= 0 {
+				c.idents = append(c.idents, at)
+			} else if !locals[x.Name] && !inlineField(stack) && x.Name != "_" {
+				c.free[x.Name] = true
+			}
+		}
+		return problem == ""
+	})
+	if problem != "" {
+		return nil, fmt.Errorf("%s", problem)
+	}
+	return c, nil
+}
+
+// inlineField reports whether the identifier at the top of stack names a
+// field: a selector or the key of a struct literal.
+func inlineField(stack []ast.Node) bool {
+	id := stack[len(stack)-1]
+	switch p := stack[len(stack)-2].(type) {
+	case *ast.SelectorExpr:
+		return p.Sel == id
+	case *ast.KeyValueExpr:
+		return p.Key == id
+	}
+	return false
+}
+
+// block writes out a call with the arguments args, as the k-th call
+// written out, at the indent in.
+func (c *inlineCallee) block(in string, args []string, k int) string {
+	var s strings.Builder
+	s.WriteString("{\n" + in + "\t" + inlineMark(c.name))
+	for i, a := range args {
+		fmt.Fprintf(&s, "%s\tvar inl%d %s = %s\n", in, i+1, c.types[i], a)
+	}
+	var body strings.Builder
+	last := 0
+	for _, id := range c.idents {
+		body.WriteString(c.body[last:id.start])
+		if id.label != "" {
+			fmt.Fprintf(&body, "inl%d_%s", k, id.label)
+		} else {
+			fmt.Fprintf(&body, "inl%d", id.param+1)
+		}
+		last = id.end
+	}
+	body.WriteString(c.body[last:])
+	for _, line := range strings.SplitAfter(body.String(), "\n") {
+		if strings.HasPrefix(strings.TrimLeft(line, "\t"), "// Changed by internal/fixlib:") {
+			continue // the marks of other changes stay with the callee
+		}
+		if line != "" && line != "\n" {
+			s.WriteString(in)
+		}
+		s.WriteString(line)
+	}
+	s.WriteString(in + "}")
+	return s.String()
+}
+
+// inlineCalls writes out the calls of callees, with the number of calls
+// of each, in inlineFunc of b.
+func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
+	body, err := funcBody(b, funcHead(inlineFunc), inlineFunc)
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Contains(body, []byte("fixInline")) {
+		return nil, fmt.Errorf("%s: changed by fixInline already", inlineFunc)
+	}
+	f, err := parseFunc(inlineFunc, body)
+	if err != nil {
+		return nil, err
+	}
+	var problem string
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok && problem == "" && reInlineName.MatchString(id.Name) {
+			problem = fmt.Sprintf("%s already has a name %s", inlineFunc, id.Name)
+		}
+		return problem == ""
+	})
+	if problem != "" {
+		return nil, fmt.Errorf("%s", problem)
+	}
+	locals := localNames(f.decl)
+	names := make([]string, 0, len(callees))
+	for name := range callees {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	cs := map[string]*inlineCallee{}
+	for _, name := range names {
+		cb, err := funcBody(b, funcHead(name), name)
+		if err != nil {
+			return nil, err
+		}
+		c, err := newInlineCallee(name, cb)
+		if err != nil {
+			return nil, err
+		}
+		free := make([]string, 0, len(c.free))
+		for id := range c.free {
+			free = append(free, id)
+		}
+		sort.Strings(free)
+		for _, id := range free {
+			if id != "tls" && locals[id] {
+				return nil, fmt.Errorf("%s, which %s uses, is a local of %s", id, name, inlineFunc)
+			}
+		}
+		cs[name] = c
+	}
+
+	counts := map[string]int{}
+	var edits []edit
+	var problems []string
+	k := 0
+	var stack []ast.Node
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		if n == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		call, ok := n.(*ast.CallExpr)
+		var c *inlineCallee
+		if ok {
+			if id, ok := call.Fun.(*ast.Ident); ok {
+				c = cs[id.Name]
+			}
+		}
+		if c == nil {
+			stack = append(stack, n)
+			return true
+		}
+		// The arguments are left as they are: a call of a callee in
+		// them is not counted, and the counts stop it.
+		counts[c.name]++
+		k++
+		args := make([]string, len(call.Args))
+		for i, a := range call.Args {
+			args[i] = f.text(a)
+		}
+		want := c.name + "(" + strings.Join(args, ", ") + ")"
+		switch {
+		case len(args) != len(c.params)+1 || args[0] != "tls":
+			problems = append(problems, fmt.Sprintf("%s: %s, not with tls and %d arguments", inlineFunc, firstLine(f.text(call)), len(c.params)))
+			return false
+		case f.text(call) != want:
+			problems = append(problems, fmt.Sprintf("%s: %s not written as %s", inlineFunc, firstLine(f.text(call)), firstLine(want)))
+			return false
+		}
+		s, ok := stack[len(stack)-1].(*ast.ExprStmt)
+		var in ast.Node = stack[len(stack)-1]
+		if ok {
+			in = stack[len(stack)-2]
+			switch in.(type) {
+			case *ast.BlockStmt, *ast.CaseClause, *ast.LabeledStmt:
+				in = nil
+			}
+		}
+		if in != nil {
+			problems = append(problems, fmt.Sprintf("%s: %s called in a %T", inlineFunc, c.name, in))
+			return false
+		}
+		indent := indentOf(f, s)
+		if ls, _ := f.line(s); string(f.src[ls:f.off(s.Pos())]) != indent || strings.Trim(indent, "\t") != "" {
+			problems = append(problems, fmt.Sprintf("%s: %s is not on a line of its own", inlineFunc, firstLine(want)))
+			return false
+		}
+		edits = append(edits, edit{f.off(s.Pos()), f.off(s.End()), c.block(indent, args[1:], k)})
+		return false
+	})
+	for _, name := range names {
+		if counts[name] != callees[name] {
+			problems = append(problems, fmt.Sprintf("%s: %d calls of %s, inlineCallees has %d", inlineFunc, counts[name], name, callees[name]))
+		}
+	}
+	if len(problems) != 0 {
+		return nil, fmt.Errorf("calls written out by fixInline changed, review them and update inlineCallees:\n\t%s", strings.Join(problems, "\n\t"))
+	}
+	out := f.apply(edits)
+	if _, err := parseFunc(inlineFunc, out); err != nil {
+		return nil, err
+	}
+	return bytes.Replace(b, body, out, 1), nil
+}
+
+// restoreInline undoes fixInline: it writes each call it wrote out back
+// as the call. It fails on a change that is not in the form fixInline
+// writes.
+func restoreInline(b []byte) ([]byte, error) {
+	if !bytes.Contains(b, []byte("(see fixInline)")) {
+		return b, nil
+	}
+	body, err := funcBody(b, funcHead(inlineFunc), inlineFunc)
+	if err != nil {
+		return nil, err
+	}
+	if n, m := bytes.Count(b, []byte("(see fixInline)")), bytes.Count(body, []byte("(see fixInline)")); n != m {
+		return nil, fmt.Errorf("%d changes of fixInline outside %s", n-m, inlineFunc)
+	}
+	// The blocks, from their first statements.
+	f, err := parseFunc(inlineFunc, body)
+	if err != nil {
+		return nil, err
+	}
+	var edits []edit
+	var problems []string
+	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+		blk, ok := n.(*ast.BlockStmt)
+		if !ok {
+			return true
+		}
+		m := reInlineBlock.FindSubmatch(f.src[f.off(blk.Lbrace):])
+		if m == nil {
+			return true
+		}
+		name := string(m[1])
+		var args []string
+		for i, s := range blk.List {
+			d, ok := s.(*ast.DeclStmt)
+			if !ok {
+				break
+			}
+			g := d.Decl.(*ast.GenDecl)
+			if g.Tok != token.VAR || len(g.Specs) != 1 {
+				break
+			}
+			v := g.Specs[0].(*ast.ValueSpec)
+			if len(v.Names) != 1 || v.Names[0].Name != fmt.Sprintf("inl%d", i+1) || len(v.Values) != 1 {
+				break
+			}
+			args = append(args, f.text(v.Values[0]))
+		}
+		if len(args) == 0 {
+			problems = append(problems, fmt.Sprintf("%s: a block of %s without its arguments", inlineFunc, name))
+			return false
+		}
+		edits = append(edits, edit{f.off(blk.Pos()), f.off(blk.End()), name + "(tls, " + strings.Join(args, ", ") + ")"})
+		return false
+	})
+	if len(problems) != 0 {
+		return nil, fmt.Errorf("%s", strings.Join(problems, "\n\t"))
+	}
+	out := f.apply(edits)
+	if bytes.Contains(out, []byte("fixInline")) {
+		return nil, fmt.Errorf("%s: a change of fixInline left after undoing it", inlineFunc)
+	}
+	return bytes.Replace(b, body, out, 1), nil
+}

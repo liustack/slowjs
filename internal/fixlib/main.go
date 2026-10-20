@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does eighteen things:
+// It does nineteen things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -69,6 +69,9 @@
 //     TLS frame of its own, so that the usual path takes none (see
 //     fixLazyFrames). The first step undoes it, as the other changes match
 //     these functions as ccgo writes them.
+//   - In every lib/ccgo_*.go file, write out the calls of set_value in
+//     JS_CallInternal, which Go does not inline into a function that big
+//     (see fixInline). The first step undoes it as well.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -114,6 +117,7 @@ var (
 	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
 	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
 	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
+	inline    = flag.Bool("inline", false, "print the fingerprints of set_value, which fixInline writes out in the interpreter, in the form of inlineSites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -139,7 +143,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -153,6 +157,8 @@ func main() {
 			err = fingerprintReport(files, hw, "regexSites", regexFingerprint)
 		} else if err == nil && *lazyAddr {
 			err = fingerprintReport(files, hw, "lazyAddrSites", lazyAddrFingerprint)
+		} else if err == nil && *inline {
+			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -251,9 +257,10 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Other changes match the functions fixLazyFrames changes as ccgo
-	// writes them: undo it first, and make it again last.
-	if b, err = restoreLazy(b); err != nil {
+	// Other changes match the functions fixLazyFrames and fixInline
+	// change as ccgo writes them: undo them first, and make them again
+	// last.
+	if b, err = restoreLate(b); err != nil {
 		return nil, err
 	}
 	if b, err = fixBeforeUp(b, hw, name); err != nil {
@@ -292,7 +299,20 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if b, err = fixLazyFrames(b, hw, name); err != nil {
 		return nil, err
 	}
+	if b, err = fixInline(b, name); err != nil {
+		return nil, err
+	}
 	return dropDefers(b)
+}
+
+// restoreLate undoes fixInline and fixLazyFrames, the changes made last
+// before fixNoDefer.
+func restoreLate(b []byte) ([]byte, error) {
+	b, err := restoreInline(b)
+	if err != nil {
+		return nil, err
+	}
+	return restoreLazy(b)
 }
 
 // fixBeforeUp applies the changes that come before fixUp.

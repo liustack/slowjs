@@ -55,17 +55,21 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		// fixInline comes between them and fixNoDefer.
+		if out, err = fixInline(out, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 		if out, err = dropDefers(out); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if !bytes.Equal(out, raw) {
 			t.Errorf("%s: fixLazyFrames does not make the file again", name)
 		}
-		back, err := restoreLazy(out)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
+		back, err := restoreDefer(out)
+		if err == nil {
+			back, err = restoreLate(back)
 		}
-		if back, err = restoreDefer(back); err != nil || !bytes.Equal(back, b) {
+		if err != nil || !bytes.Equal(back, b) {
 			t.Errorf("%s: restoreLazy does not give the input back (%v)", name, err)
 		}
 	}

@@ -176,7 +176,7 @@ func defineFingerprint(b []byte) (string, error) {
 
 // reporting reports whether fixlib prints fingerprints (-define, -backtrace
 // or -regex) rather than checking them.
-func reporting() bool { return *define || *backtrace || *regex || *lazyAddr }
+func reporting() bool { return *define || *backtrace || *regex || *lazyAddr || *inline }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
 // generated files as they are after all of fixlib's changes, made in
@@ -207,7 +207,7 @@ func reportedFingerprint(fn string, hw []*ast.File, fp func([]byte) (string, err
 		return "", fmt.Errorf("%s: %v", fn, err)
 	}
 	if b, err = restoreDefer(b); err == nil {
-		b, err = restoreLazy(b)
+		b, err = restoreLate(b)
 	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %v", fn, err)
