@@ -54,6 +54,7 @@ To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'T
 ## Focused checks
 
 ```sh
+go test -short ./...                                     # all packages
 go test -vet=off -run 'TestToCString' ./lib              # the leak of JS_ToCStringLen2 out of memory
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
