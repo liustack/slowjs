@@ -143509,8 +143509,8 @@ func _mul_pow_round_to_d(tls *libc.TLS, pe uintptr, a uintptr, radix1 int32, rad
 //	   'd' only if format = JS_DTOA_FORMAT_FRAC or if JS_DTOA_EXP_DISABLED
 //	   is enabled. */
 func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, flags int32) (r int32) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var a1, v1 Tuint64_t
 	var e, fmt, n, v5, v6, v7 int32
 	var _ /* u at bp+0 */ struct {
@@ -143527,8 +143527,8 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 		}
 		if flags&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(2)) == libc.Int32FromInt32(2)<<libc.Int32FromInt32(2) {
 			/* no exponential */
-			*(*float64)(unsafe.Pointer(bp)) = d1
-			v1 = *(*Tuint64_t)(unsafe.Pointer(bp))
+			*(*float64)(unsafe.Pointer(&localbp)) = d1
+			v1 = *(*Tuint64_t)(unsafe.Pointer(&localbp))
 			goto _2
 		_2:
 			a1 = v1
@@ -143546,8 +143546,8 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 			n = n + (libc.Int32FromInt32(1) + libc.Int32FromInt32(1) + libc.Int32FromInt32(6))
 		}
 	} else {
-		*(*float64)(unsafe.Pointer(bp)) = d1
-		v1 = *(*Tuint64_t)(unsafe.Pointer(bp))
+		*(*float64)(unsafe.Pointer(&localbp)) = d1
+		v1 = *(*Tuint64_t)(unsafe.Pointer(&localbp))
 		goto _4
 	_4:
 		a1 = v1
@@ -143578,9 +143578,7 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 		goto _8
 	}
 _8:
-	r = v7
-	tls.Free(16)
-	return /* also include NaN and [-]Infinity */
+	return v7 /* also include NaN and [-]Infinity */
 }
 
 func _dtoa_malloc(tls *libc.TLS, pptr uintptr, size Tsize_t) (r uintptr) {

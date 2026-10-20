@@ -47,7 +47,7 @@ func unfixFrames(t *testing.T, b []byte) []byte {
 }
 
 // Every generated file has the functions of frameSites changed (on 32-bit
-// targets, the two that have a frame there), fixFrames leaves a fixed file
+// targets, the three that have a frame there), fixFrames leaves a fixed file
 // as it is and makes it again from the file with the frames given back
 // (with fixColdFrames for the functions of coldSites), and the property
 // slot audit sees the same uses in both.
@@ -74,7 +74,7 @@ func TestFramesEveryFile(t *testing.T) {
 		// left.
 		want := len(frameSites) + len(coldSites)
 		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			want = 2 + 1
+			want = 3 + 1
 		}
 		if n := bytes.Count(b, []byte(framesInGo)); n != want {
 			t.Errorf("%s: %d frames changed, want %d", fn, n, want)

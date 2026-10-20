@@ -390,6 +390,10 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `free_property` and `__JS_FreeValueRT`, used their TLS frame only to
   read a `JSValue` as a pointer or a float as bits: they now keep those
   bytes in a Go array, and skip `tls.Alloc`, `tls.Free` and the `defer`.
+  22 more were added later, from the count of `tls.Alloc` per function in
+  renders of tifa's example shop and test apps, such as
+  `js_same_value_zero` (`Map` and `Set` keys, `includes`), `free_token`
+  (the parser) and the finalizers of functions and iterators.
   The stack check counts the same TLS stack slots as before at every
   point, so a script recurses exactly as deep as it used to. A server
   render of a page of tifa's example shop takes about 11% less time on

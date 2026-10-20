@@ -11406,8 +11406,8 @@ func _JS_MarkContext(tls *libc.TLS, rt uintptr, ctx uintptr, __ccgo_fp_mark_func
 }
 
 func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var i, v1 int32
 	var next, p, prev, rt, v2, v4 uintptr
 	var v3 TJSValue
@@ -11417,14 +11417,13 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 	*(*int32)(unsafe.Pointer(v2)) = *(*int32)(unsafe.Pointer(v2)) - 1
 	v1 = *(*int32)(unsafe.Pointer(v2))
 	if v1 > 0 {
-		tls.Free(16)
 		return
 	}
 	_js_free_modules(tls, ctx1, int32(EJS_FREE_MODULE_ALL))
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fglobal_obj
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _5
 	_5:
 		p = v2
@@ -11436,9 +11435,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fglobal_var_obj
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _10
 	_10:
 		p = v2
@@ -11450,9 +11449,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fthrow_type_error
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _15
 	_15:
 		p = v2
@@ -11464,9 +11463,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Feval_obj
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _20
 	_20:
 		p = v2
@@ -11478,9 +11477,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Farray_proto_values
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _25
 	_25:
 		p = v2
@@ -11497,9 +11496,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 			break
 		}
 		v3 = *(*TJSValue)(unsafe.Pointer(ctx1 + 176 + uintptr(i)*16))
-		*(*TJSValue)(unsafe.Pointer(bp)) = v3
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 		if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _31
 		_31:
 			p = v2
@@ -11521,9 +11520,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 			break
 		}
 		v3 = *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Fclass_proto + uintptr(i)*16))
-		*(*TJSValue)(unsafe.Pointer(bp)) = v3
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 		if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _37
 		_37:
 			p = v2
@@ -11541,9 +11540,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 	}
 	Xjs_free_rt(tls, rt, (*TJSContext)(unsafe.Pointer(ctx1)).Fclass_proto)
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fiterator_ctor
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _42
 	_42:
 		p = v2
@@ -11555,9 +11554,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fasync_iterator_proto
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _47
 	_47:
 		p = v2
@@ -11569,9 +11568,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fpromise_ctor
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _52
 	_52:
 		p = v2
@@ -11583,9 +11582,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Farray_ctor
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _57
 	_57:
 		p = v2
@@ -11597,9 +11596,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Fregexp_ctor
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _62
 	_62:
 		p = v2
@@ -11611,9 +11610,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Ffunction_ctor
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _67
 	_67:
 		p = v2
@@ -11625,9 +11624,9 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 		}
 	}
 	v3 = (*TJSContext)(unsafe.Pointer(ctx1)).Ffunction_proto
-	*(*TJSValue)(unsafe.Pointer(bp)) = v3
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v3
 	if libc.Uint32FromInt32(int32(v3.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _72
 	_72:
 		p = v2
@@ -11652,7 +11651,6 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 	(*Tlist_head)(unsafe.Pointer(v2)).Fnext = libc.UintptrFromInt32(0)
 	_remove_gc_object(tls, ctx1)
 	Xjs_free_rt(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, ctx1)
-	tls.Free(16)
 }
 
 func XJS_GetRuntime(tls *libc.TLS, ctx uintptr) (r uintptr) {
@@ -17660,13 +17658,13 @@ func _js_array_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 }
 
 func _js_array_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var i int32
 	var p uintptr
 	_, _ = i, p
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	i = 0
 	for {
 		if !(libc.Uint32FromInt32(i) < (*(*struct {
@@ -17701,7 +17699,6 @@ func _js_array_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_fun
 		;
 		i = i + 1
 	}
-	tls.Free(16)
 }
 
 func _js_object_data_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
@@ -17796,14 +17793,14 @@ func _js_c_function_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mar
 }
 
 func _js_bytecode_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
-	bp := tls.Alloc(32)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp + 16)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [4]uint64
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 16)) = _val
 	var b, p, p1, p11, var_refs, v2, v5 uintptr
 	var i, v4 int32
 	var v1 TJSValue
 	_, _, _, _, _, _, _, _, _, _ = b, i, p, p1, p11, var_refs, v1, v2, v4, v5
-	p1 = *(*uintptr)(unsafe.Pointer(bp + 16))
+	p1 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 16))
 	p11 = (*(*struct {
 		Ffunction_bytecode uintptr
 		Fvar_refs          uintptr
@@ -17814,9 +17811,9 @@ func _js_bytecode_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) 
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p11})),
 			Ftag: int64(EJS_TAG_OBJECT),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _3
 		_3:
 			p = v2
@@ -17857,9 +17854,9 @@ func _js_bytecode_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) 
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: b})),
 			Ftag: int64(EJS_TAG_FUNCTION_BYTECODE),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _9
 		_9:
 			p = v2
@@ -17871,17 +17868,16 @@ func _js_bytecode_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) 
 			}
 		}
 	}
-	tls.Free(32)
 }
 
 func _js_bytecode_function_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var b, p, var_ref, var_refs uintptr
 	var i int32
 	_, _, _, _, _ = b, i, p, var_ref, var_refs
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	var_refs = (*(*struct {
 		Ffunction_bytecode uintptr
 		Fvar_refs          uintptr
@@ -17930,7 +17926,6 @@ func _js_bytecode_function_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo
 			Ftag: int64(EJS_TAG_FUNCTION_BYTECODE),
 		}, __ccgo_fp_mark_func)
 	}
-	tls.Free(16)
 }
 
 func _js_bound_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
@@ -18000,13 +17995,13 @@ func _js_bound_function_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 }
 
 func _js_bound_function_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var bf, p uintptr
 	var i int32
 	_, _, _ = bf, i, p
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	bf = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
 	XJS_MarkValue(tls, rt, (*TJSBoundFunction)(unsafe.Pointer(bf)).Ffunc_obj, __ccgo_fp_mark_func)
 	XJS_MarkValue(tls, rt, (*TJSBoundFunction)(unsafe.Pointer(bf)).Fthis_val, __ccgo_fp_mark_func)
@@ -18021,23 +18016,22 @@ func _js_bound_function_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp
 		;
 		i = i + 1
 	}
-	tls.Free(16)
 }
 
 func _js_for_in_iterator_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
-	bp := tls.Alloc(32)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp + 16)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [4]uint64
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 16)) = _val
 	var i, v4 int32
 	var it, p, p1, v2, v5 uintptr
 	var v1 TJSValue
 	_, _, _, _, _, _, _, _ = i, it, p, p1, v1, v2, v4, v5
-	p1 = *(*uintptr)(unsafe.Pointer(bp + 16))
+	p1 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 16))
 	it = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))
 	v1 = (*TJSForInIterator)(unsafe.Pointer(it)).Fobj
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _3
 	_3:
 		p = v2
@@ -18063,7 +18057,6 @@ func _js_for_in_iterator_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 		Xjs_free_rt(tls, rt1, (*TJSForInIterator)(unsafe.Pointer(it)).Ftab_atom)
 	}
 	Xjs_free_rt(tls, rt1, it)
-	tls.Free(32)
 }
 
 func _js_for_in_iterator_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
@@ -24856,16 +24849,16 @@ _3:
 }
 
 func _js_free_desc(tls *libc.TLS, ctx1 uintptr, desc uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var p, v2, v5 uintptr
 	var v1 TJSValue
 	var v4 int32
 	_, _, _, _, _ = p, v1, v2, v4, v5
 	v1 = (*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fgetter
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _3
 	_3:
 		p = v2
@@ -24877,9 +24870,9 @@ func _js_free_desc(tls *libc.TLS, ctx1 uintptr, desc uintptr) {
 		}
 	}
 	v1 = (*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fsetter
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _8
 	_8:
 		p = v2
@@ -24891,9 +24884,9 @@ func _js_free_desc(tls *libc.TLS, ctx1 uintptr, desc uintptr) {
 		}
 	}
 	v1 = (*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fvalue
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _13
 	_13:
 		p = v2
@@ -24904,7 +24897,6 @@ func _js_free_desc(tls *libc.TLS, ctx1 uintptr, desc uintptr) {
 			x__JS_FreeValue(tls, ctx1, v1)
 		}
 	}
-	tls.Free(16)
 }
 
 // C documentation
@@ -28311,69 +28303,54 @@ type t__ccgo_fp__XJS_IsCFunction_2 = func(*libc.TLS, uintptr, struct {
 }
 
 func XJS_IsCFunction(tls *libc.TLS, ctx uintptr, _val TJSValue, __ccgo_fp_func uintptr, magic int32) (r TBOOL) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var p uintptr
 	_ = p
-	if int32((*(*TJSValue)(unsafe.Pointer(bp))).Ftag) != int32(EJS_TAG_OBJECT) {
-		r = MFALSE
-		tls.Free(16)
-		return
+	if int32((*(*TJSValue)(unsafe.Pointer(&localbp))).Ftag) != int32(EJS_TAG_OBJECT) {
+		return MFALSE
 	}
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id) == int32(EJS_CLASS_C_FUNCTION) {
-		r = libc.BoolInt32(*(*uintptr)(unsafe.Pointer(p + 40 + 8)) == __ccgo_fp_func && int32((*(*struct {
+		return libc.BoolInt32(*(*uintptr)(unsafe.Pointer(p + 40 + 8)) == __ccgo_fp_func && int32((*(*struct {
 			Frealm      uintptr
 			Fc_function TJSCFunctionType
 			Flength     Tuint8_t
 			Fcproto     Tuint8_t
 			Fmagic      Tint16_t
 		})(unsafe.Pointer(p + 40))).Fmagic) == magic)
-		tls.Free(16)
-		return
 	} else {
-		r = MFALSE
-		tls.Free(16)
-		return
+		return MFALSE
 	}
-	tls.Free(16)
 	return r
 }
 
 func XJS_IsConstructor(tls *libc.TLS, ctx uintptr, _val TJSValue) (r TBOOL) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var p uintptr
 	_ = p
-	if int32((*(*TJSValue)(unsafe.Pointer(bp))).Ftag) != int32(EJS_TAG_OBJECT) {
-		r = MFALSE
-		tls.Free(16)
-		return
+	if int32((*(*TJSValue)(unsafe.Pointer(&localbp))).Ftag) != int32(EJS_TAG_OBJECT) {
+		return MFALSE
 	}
-	p = *(*uintptr)(unsafe.Pointer(bp))
-	r = int32(*(*uint8)(unsafe.Pointer(p + 16)) & 0x20 >> 5)
-	tls.Free(16)
-	return
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
+	return int32(*(*uint8)(unsafe.Pointer(p + 16)) & 0x20 >> 5)
 }
 
 func XJS_SetConstructorBit(tls *libc.TLS, ctx uintptr, _func_obj TJSValue, val TBOOL) (r TBOOL) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _func_obj
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _func_obj
 	var p uintptr
 	_ = p
-	if int32((*(*TJSValue)(unsafe.Pointer(bp))).Ftag) != int32(EJS_TAG_OBJECT) {
-		r = MFALSE
-		tls.Free(16)
-		return
+	if int32((*(*TJSValue)(unsafe.Pointer(&localbp))).Ftag) != int32(EJS_TAG_OBJECT) {
+		return MFALSE
 	}
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	libc.SetBitFieldPtr8Uint8(p+16, libc.Uint8FromInt32(val), 5, 0x20)
-	r = int32(MTRUE)
-	tls.Free(16)
-	return
+	return int32(MTRUE)
 }
 
 func XJS_IsError(tls *libc.TLS, ctx uintptr, _val TJSValue) (r TBOOL) {
@@ -28401,16 +28378,15 @@ func XJS_SetUncatchableException(tls *libc.TLS, ctx uintptr, flag TBOOL) {
 }
 
 func XJS_SetOpaque(tls *libc.TLS, _obj TJSValue, opaque uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _obj
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _obj
 	var p uintptr
 	_ = p
-	if int32((*(*TJSValue)(unsafe.Pointer(bp))).Ftag) == int32(EJS_TAG_OBJECT) {
-		p = *(*uintptr)(unsafe.Pointer(bp))
+	if int32((*(*TJSValue)(unsafe.Pointer(&localbp))).Ftag) == int32(EJS_TAG_OBJECT) {
+		p = *(*uintptr)(unsafe.Pointer(&localbp))
 		(*TJSObject)(unsafe.Pointer(p)).Fu.Fopaque = opaque
 	}
-	tls.Free(16)
 }
 
 // C documentation
@@ -37608,16 +37584,16 @@ func XJS_SameValue(tls *libc.TLS, ctx uintptr, op1 TJSValue, op2 TJSValue) (r TB
 }
 
 func _js_same_value_zero(tls *libc.TLS, ctx1 uintptr, op1 TJSValue, op2 TJSValue) (r TBOOL) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var p, v2, v7 uintptr
 	var v1, v4, v6, v9 TJSValue
 	_, _, _, _, _, _, _ = p, v1, v2, v4, v6, v7, v9
 	_ = ctx1
 	v1 = op1
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _3
 	_3:
 		p = v2
@@ -37628,9 +37604,9 @@ func _js_same_value_zero(tls *libc.TLS, ctx1 uintptr, op1 TJSValue, op2 TJSValue
 _5:
 	_ = ctx1
 	v6 = op2
-	*(*TJSValue)(unsafe.Pointer(bp)) = v6
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v6
 	if libc.Uint32FromInt32(int32(v6.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v7 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v7 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _8
 	_8:
 		p = v7
@@ -37639,9 +37615,7 @@ _5:
 	v9 = v6
 	goto _10
 _10:
-	r = _js_strict_eq2(tls, ctx1, v4, v9, int32(EJS_EQ_SAME_VALUE_ZERO))
-	tls.Free(16)
-	return
+	return _js_strict_eq2(tls, ctx1, v4, v9, int32(EJS_EQ_SAME_VALUE_ZERO))
 }
 
 func XJS_SameValueZero(tls *libc.TLS, ctx uintptr, op1 TJSValue, op2 TJSValue) (r TBOOL) {
@@ -38364,13 +38338,13 @@ fail:
 }
 
 func _js_mapped_arguments_finalizer(tls *libc.TLS, rt uintptr, _val TJSValue) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var i int32
 	var p, var_refs uintptr
 	_, _, _ = i, p, var_refs
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	var_refs = *(*uintptr)(unsafe.Pointer(p + 40 + 8))
 	i = 0
 	for {
@@ -38407,7 +38381,6 @@ func _js_mapped_arguments_finalizer(tls *libc.TLS, rt uintptr, _val TJSValue) {
 		i = i + 1
 	}
 	Xjs_free_rt(tls, rt, var_refs)
-	tls.Free(16)
 }
 
 func _js_mapped_arguments_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
@@ -40002,14 +39975,14 @@ func _js_is_fast_array(tls *libc.TLS, ctx uintptr, _obj TJSValue) (r TBOOL) {
 //
 //	/* Access an Array's internal JSValue array if available */
 func _js_get_fast_array(tls *libc.TLS, ctx uintptr, _obj TJSValue, arrpp uintptr, countp uintptr) (r TBOOL) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _obj
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _obj
 	var p uintptr
 	_ = p
 	/* Try and handle fast arrays explicitly */
-	if int32((*(*TJSValue)(unsafe.Pointer(bp))).Ftag) == int32(EJS_TAG_OBJECT) {
-		p = *(*uintptr)(unsafe.Pointer(bp))
+	if int32((*(*TJSValue)(unsafe.Pointer(&localbp))).Ftag) == int32(EJS_TAG_OBJECT) {
+		p = *(*uintptr)(unsafe.Pointer(&localbp))
 		if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id) == int32(EJS_CLASS_ARRAY) && int32(*(*uint8)(unsafe.Pointer(p + 16))&0x10>>4) != 0 {
 			*(*Tuint32_t)(unsafe.Pointer(countp)) = (*(*struct {
 				Fu1 struct {
@@ -40036,14 +40009,10 @@ func _js_get_fast_array(tls *libc.TLS, ctx uintptr, _obj TJSValue, arrpp uintptr
 				Fcount Tuint32_t
 			})(unsafe.Pointer(p + 40))).Fcount
 			*(*uintptr)(unsafe.Pointer(arrpp)) = *(*uintptr)(unsafe.Pointer(p + 40 + 8))
-			r = int32(MTRUE)
-			tls.Free(16)
-			return
+			return int32(MTRUE)
 		}
 	}
-	r = MFALSE
-	tls.Free(16)
-	return
+	return MFALSE
 }
 
 func _js_append_enumerate(tls *libc.TLS, ctx4 uintptr, sp uintptr) (r int32) {
@@ -41364,8 +41333,8 @@ fail:
 }
 
 func _close_var_ref(tls *libc.TLS, rt1 uintptr, sf uintptr, var_ref uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var async_func, p, v2 uintptr
 	var v1, v4 TJSValue
 	_, _, _, _, _ = async_func, p, v1, v2, v4
@@ -41375,9 +41344,9 @@ func _close_var_ref(tls *libc.TLS, rt1 uintptr, sf uintptr, var_ref uintptr) {
 	}
 	_ = rt1
 	v1 = *(*TJSValue)(unsafe.Pointer((*TJSVarRef)(unsafe.Pointer(var_ref)).Fpvalue))
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _3
 	_3:
 		p = v2
@@ -41390,7 +41359,6 @@ _5:
 	(*TJSVarRef)(unsafe.Pointer(var_ref)).Fpvalue = var_ref + 32
 	/* the reference is no longer to a local variable */
 	(*TJSVarRef)(unsafe.Pointer(var_ref)).Fis_detached = uint8(MTRUE)
-	tls.Free(16)
 }
 
 func _close_var_refs(tls *libc.TLS, rt uintptr, b uintptr, sf uintptr) {
@@ -54195,8 +54163,8 @@ var _opcode_info = [263]TJSOpCode{
 }
 
 func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var p, v2, v5 uintptr
 	var v1 TJSValue
 	var v4 int32
@@ -54206,9 +54174,9 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 		v1 = (*(*struct {
 			Fval TJSValue
 		})(unsafe.Pointer(&(*TJSToken)(unsafe.Pointer(token)).Fu))).Fval
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _3
 		_3:
 			p = v2
@@ -54223,9 +54191,9 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 		fallthrough
 	case int32(ETOK_TEMPLATE):
 		v1 = (*TJSToken)(unsafe.Pointer(token)).Fu.Fstr.Fstr
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _8
 		_8:
 			p = v2
@@ -54241,9 +54209,9 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 			Fbody  TJSValue
 			Fflags TJSValue
 		})(unsafe.Pointer(token + 16))).Fbody
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _13
 		_13:
 			p = v2
@@ -54258,9 +54226,9 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 			Fbody  TJSValue
 			Fflags TJSValue
 		})(unsafe.Pointer(token + 16))).Fflags
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _18
 		_18:
 			p = v2
@@ -54289,7 +54257,6 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 		}
 		break
 	}
-	tls.Free(16)
 }
 
 func _dump_token(tls *libc.TLS, s uintptr, token uintptr) {
@@ -87716,8 +87683,8 @@ _5:
 }
 
 func _free_arg_list(tls *libc.TLS, ctx1 uintptr, tab uintptr, len1 Tuint32_t) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var i Tuint32_t
 	var p, v3, v6 uintptr
 	var v2 TJSValue
@@ -87729,9 +87696,9 @@ func _free_arg_list(tls *libc.TLS, ctx1 uintptr, tab uintptr, len1 Tuint32_t) {
 			break
 		}
 		v2 = *(*TJSValue)(unsafe.Pointer(tab + uintptr(i)*16))
-		*(*TJSValue)(unsafe.Pointer(bp)) = v2
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v2
 		if libc.Uint32FromInt32(int32(v2.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v3 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v3 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _4
 		_4:
 			p = v3
@@ -87748,7 +87715,6 @@ func _free_arg_list(tls *libc.TLS, ctx1 uintptr, tab uintptr, len1 Tuint32_t) {
 		i = i + 1
 	}
 	Xjs_free(tls, ctx1, tab)
-	tls.Free(16)
 }
 
 // C documentation
@@ -90530,16 +90496,16 @@ func _js_array_isArray(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 }
 
 func _js_get_this(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var p, v2 uintptr
 	var v1, v4 TJSValue
 	_, _, _, _ = p, v1, v2, v4
 	_ = ctx1
 	v1 = this_val
-	*(*TJSValue)(unsafe.Pointer(bp)) = v1
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-		v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+		v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 		goto _3
 	_3:
 		p = v2
@@ -90548,9 +90514,7 @@ func _js_get_this(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJSValue) {
 	v4 = v1
 	goto _5
 _5:
-	r = v4
-	tls.Free(16)
-	return
+	return v4
 }
 
 func _JS_ArraySpeciesCreate(tls *libc.TLS, ctx2 uintptr, obj TJSValue, _len_val TJSValue) (r TJSValue) {
@@ -95443,20 +95407,20 @@ type TJSArrayIteratorData = struct {
 }
 
 func _js_array_iterator_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
-	bp := tls.Alloc(32)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp + 16)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [4]uint64
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 16)) = _val
 	var it, p, p1, v2, v5 uintptr
 	var v1 TJSValue
 	var v4 int32
 	_, _, _, _, _, _, _ = it, p, p1, v1, v2, v4, v5
-	p1 = *(*uintptr)(unsafe.Pointer(bp + 16))
+	p1 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 16))
 	it = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))
 	if it != 0 {
 		v1 = (*TJSArrayIteratorData)(unsafe.Pointer(it)).Fobj
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _3
 		_3:
 			p = v2
@@ -95469,7 +95433,6 @@ func _js_array_iterator_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 		}
 		Xjs_free_rt(tls, rt1, it)
 	}
-	tls.Free(32)
 }
 
 func _js_array_iterator_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
@@ -112030,23 +111993,23 @@ func _getTimezoneOffset(tls *libc.TLS, time Tint64_t) (r int32) {
 /* RegExp */
 
 func _js_regexp_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
-	bp := tls.Alloc(32)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp + 16)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [4]uint64
+	*(*TJSValue)(unsafe.Add(unsafe.Pointer(&localbp), 16)) = _val
 	var p, p1, re, v2, v5 uintptr
 	var v1 TJSValue
 	var v4 int32
 	_, _, _, _, _, _, _ = p, p1, re, v1, v2, v4, v5
-	p1 = *(*uintptr)(unsafe.Pointer(bp + 16))
+	p1 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 16))
 	re = p1 + 40
 	if (*TJSRegExp)(unsafe.Pointer(re)).Fbytecode != libc.UintptrFromInt32(0) {
 		v1 = TJSValue{
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: (*TJSRegExp)(unsafe.Pointer(re)).Fbytecode})),
 			Ftag: int64(EJS_TAG_STRING),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _3
 		_3:
 			p = v2
@@ -112063,9 +112026,9 @@ func _js_regexp_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 			Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: (*TJSRegExp)(unsafe.Pointer(re)).Fpattern})),
 			Ftag: int64(EJS_TAG_STRING),
 		}
-		*(*TJSValue)(unsafe.Pointer(bp)) = v1
+		*(*TJSValue)(unsafe.Pointer(&localbp)) = v1
 		if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
-			v2 = *(*uintptr)(unsafe.Pointer(bp)) - libc.UintptrFromInt32(1)*4
+			v2 = *(*uintptr)(unsafe.Pointer(&localbp)) - libc.UintptrFromInt32(1)*4
 			goto _8
 		_8:
 			p = v2
@@ -112077,7 +112040,6 @@ func _js_regexp_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 			}
 		}
 	}
-	tls.Free(32)
 }
 
 // C documentation
@@ -126326,12 +126288,12 @@ func _js_map_finalizer(tls *libc.TLS, rt1 uintptr, _val TJSValue) {
 }
 
 func _js_map_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func uintptr) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
-	*(*TJSValue)(unsafe.Pointer(bp)) = _val
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
+	*(*TJSValue)(unsafe.Pointer(&localbp)) = _val
 	var el, mr, p, s uintptr
 	_, _, _, _ = el, mr, p, s
-	p = *(*uintptr)(unsafe.Pointer(bp))
+	p = *(*uintptr)(unsafe.Pointer(&localbp))
 	s = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
 	if s != 0 {
 		el = (*Tlist_head)(unsafe.Pointer(s + 8)).Fnext
@@ -126350,7 +126312,6 @@ func _js_map_mark(tls *libc.TLS, rt uintptr, _val TJSValue, __ccgo_fp_mark_func 
 			el = (*Tlist_head)(unsafe.Pointer(el)).Fnext
 		}
 	}
-	tls.Free(16)
 }
 
 /* Map Iterator */
@@ -158191,8 +158152,8 @@ func _mul_pow_round_to_d(tls *libc.TLS, pe uintptr, a uintptr, radix1 int32, rad
 //	   'd' only if format = JS_DTOA_FORMAT_FRAC or if JS_DTOA_EXP_DISABLED
 //	   is enabled. */
 func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, flags int32) (r int32) {
-	bp := tls.Alloc(16)
-	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
+	// Changed by internal/fixlib: the TLS frame is a Go array (see fixFrames).
+	var localbp [2]uint64
 	var a1, v1 Tuint64_t
 	var e, fmt, n, v5, v6, v7 int32
 	var _ /* u at bp+0 */ struct {
@@ -158209,8 +158170,8 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 		}
 		if flags&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(2)) == libc.Int32FromInt32(2)<<libc.Int32FromInt32(2) {
 			/* no exponential */
-			*(*float64)(unsafe.Pointer(bp)) = d1
-			v1 = *(*Tuint64_t)(unsafe.Pointer(bp))
+			*(*float64)(unsafe.Pointer(&localbp)) = d1
+			v1 = *(*Tuint64_t)(unsafe.Pointer(&localbp))
 			goto _2
 		_2:
 			a1 = v1
@@ -158228,8 +158189,8 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 			n = n + (libc.Int32FromInt32(1) + libc.Int32FromInt32(1) + libc.Int32FromInt32(6))
 		}
 	} else {
-		*(*float64)(unsafe.Pointer(bp)) = d1
-		v1 = *(*Tuint64_t)(unsafe.Pointer(bp))
+		*(*float64)(unsafe.Pointer(&localbp)) = d1
+		v1 = *(*Tuint64_t)(unsafe.Pointer(&localbp))
 		goto _4
 	_4:
 		a1 = v1
@@ -158260,9 +158221,7 @@ func Xjs_dtoa_max_len(tls *libc.TLS, d1 float64, radix int32, n_digits int32, fl
 		goto _8
 	}
 _8:
-	r = v7
-	tls.Free(16)
-	return /* also include NaN and [-]Infinity */
+	return v7 /* also include NaN and [-]Infinity */
 }
 
 func _dtoa_malloc(tls *libc.TLS, pptr uintptr, size Tsize_t) (r uintptr) {
