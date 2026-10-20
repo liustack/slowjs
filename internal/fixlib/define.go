@@ -196,9 +196,9 @@ func defineFingerprint(b []byte) (string, error) {
 
 // reporting reports whether fixlib prints fingerprints (-define,
 // -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front,
-// -shape, -forin, -bitwise or -eq) rather than checking them.
+// -shape, -forin, -bitwise, -eq or -atomkey) rather than checking them.
 func reporting() bool {
-	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq
+	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey
 }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
