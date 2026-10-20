@@ -1,17 +1,10 @@
 # quickjs (liustack fork)
 
+The <!-- 待 docs/benchmarks.md 确认范围，只在部分负载上最快时改成那类负载 -->fastest pure Go JavaScript engine, with all of modern JavaScript.
+
+Other pure Go engines make you give something up: newer syntax, `Intl`, async code, or speed. This one runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
+
 English · [简体中文](README.zh-CN.md)
-
-This repository is a fork of two modernc.org modules, merged into one Go module:
-
-| Upstream module | Upstream repository | Here |
-|---|---|---|
-| `modernc.org/quickjs` (the Go API) | https://gitlab.com/cznic/quickjs | repository root, package `github.com/liustack/quickjs` |
-| `modernc.org/libquickjs` (QuickJS transpiled to Go by ccgo) | https://gitlab.com/cznic/libquickjs | `lib/`, package `github.com/liustack/quickjs/lib` |
-
-It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
-2026-06-04, commit `3d5e064`), with the changes listed in
-[docs/fork-changes](docs/fork-changes/README.md).
 
 ## Install
 
@@ -68,7 +61,7 @@ A VM is not safe for several goroutines at once: give each goroutine its own, or
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 60,000 expressions.
 - **Strings arrive whole.** A Go string from javascript is always valid UTF-8, and a Go string with invalid bytes reads in javascript as Go itself decodes it.
-- **Faster pages.** On the React pages of tifa's example shop, the engine renders 1.63 to 1.66 times as fast as the original modernc.org/quickjs it started from (measured at v0.26.15), and several VMs on several cores no longer wait on one lock.
+- **Faster pages.** On the React pages of tifa's example shop, the engine renders 1.63 to 1.66 times as fast as the original modernc.org/quickjs it started from (measured at v0.26.15), and several VMs on several cores no longer wait on one lock. [How it compares with other Go engines](docs/benchmarks.md).
 
 ## Why you can trust it
 
@@ -77,6 +70,19 @@ A VM is not safe for several goroutines at once: give each goroutine its own, or
 - **Every change is written down.** [docs/fork-changes](docs/fork-changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
 - **The tests are upstream's and more.** test262 gives the same 58 known failures as upstream libquickjs, line for line. On top come over 300 tests of the fork's own, and leak checks under libc's allocator that tracks every allocation.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
+
+## Where it comes from
+
+This repository is a fork of two modernc.org modules, merged into one Go module:
+
+| Upstream module | Upstream repository | Here |
+|---|---|---|
+| `modernc.org/quickjs` (the Go API) | https://gitlab.com/cznic/quickjs | repository root, package `github.com/liustack/quickjs` |
+| `modernc.org/libquickjs` (QuickJS transpiled to Go by ccgo) | https://gitlab.com/cznic/libquickjs | `lib/`, package `github.com/liustack/quickjs/lib` |
+
+It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
+2026-06-04, commit `3d5e064`), with the changes listed in
+[docs/fork-changes](docs/fork-changes/README.md).
 
 ## Documentation
 

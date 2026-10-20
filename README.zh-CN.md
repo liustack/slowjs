@@ -1,15 +1,10 @@
 # quickjs（liustack fork）
 
+<!-- 待 docs/benchmarks.md 确认范围，只在部分负载上最快时改成那类负载 -->最快的纯 Go JavaScript 引擎，现代 JavaScript 一样不少。
+
+别的纯 Go 引擎总要你放弃点什么：新语法、`Intl`、异步代码，或者速度。这个支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
+
 [English](README.md) · 简体中文
-
-这个仓库 fork 了 modernc.org 的两个模块，合并成一个 Go 模块：
-
-| 上游模块 | 上游仓库 | 本仓库位置 |
-|---|---|---|
-| `modernc.org/quickjs`（Go API） | https://gitlab.com/cznic/quickjs | 仓库根目录，包 `github.com/liustack/quickjs` |
-| `modernc.org/libquickjs`（ccgo 转译成 Go 的 QuickJS） | https://gitlab.com/cznic/libquickjs | `lib/`，包 `github.com/liustack/quickjs/lib` |
-
-起点是 quickjs v0.25.0 和 libquickjs v0.13.1（QuickJS 2026-06-04 版，提交 `3d5e064`），改动列在 [docs/fork-changes](docs/fork-changes/README.md)。
 
 ## 安装
 
@@ -66,7 +61,7 @@ func main() {
 - **限额一到，调用就结束。** 脚本超过执行时限或内存上限就停在那里，不管它怎么 catch：页面里的 `catch`、`finally`、promise 回调和 Go 函数都不会再跑。`*Error` 会说明是超时还是内存。交给 VM 的 Go 函数 panic 了，panic 会回到你自己的 Go 代码，内存耗尽的 VM 也照样能关掉，不漏内存。
 - **每台机器上页面都一样。** 每个 VM 里脚本的本地时间都是 UTC，不用给整个进程设 `TZ`。`Intl` 支持 Chromium 有的所有语言，在约 60,000 个表达式上和 Chromium 156 对过结果。
 - **字符串完整到达。** 从 JavaScript 拿到的 Go 字符串一定是合法的 UTF-8，带非法字节的 Go 字符串到了 JavaScript 里，读法和 Go 自己解码时一样。
-- **页面渲染更快。** 在 tifa 示例商店的 React 页面上，引擎渲染速度是起点 modernc.org/quickjs 的 1.63 到 1.66 倍（v0.26.15 时测的），多个 VM 在多个核上也不再等同一把锁。
+- **页面渲染更快。** 在 tifa 示例商店的 React 页面上，引擎渲染速度是起点 modernc.org/quickjs 的 1.63 到 1.66 倍（v0.26.15 时测的），多个 VM 在多个核上也不再等同一把锁。[和其他 Go 引擎的对比](docs/benchmarks.md)。
 
 ## 凭什么信它
 
@@ -75,6 +70,17 @@ func main() {
 - **每处改动都有记录。** [docs/fork-changes](docs/fork-changes/README.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
 - **测试用上游的，还多加了一层。** test262 的 58 个已知失败和上游 libquickjs 逐行相同。另外还有 fork 自己的 300 多个测试，以及在 libc 跟踪每次分配的分配器下跑的泄漏检查。
 - **有人真在依赖它。** 它是为 [tifa](https://github.com/liustack/tifa) 维护的，tifa 是一个用它渲染 React 页面的 Go 框架，每个版本都先在 tifa 的页面上测过再让 tifa 升级。
+
+## 来自哪里
+
+这个仓库 fork 了 modernc.org 的两个模块，合并成一个 Go 模块：
+
+| 上游模块 | 上游仓库 | 本仓库位置 |
+|---|---|---|
+| `modernc.org/quickjs`（Go API） | https://gitlab.com/cznic/quickjs | 仓库根目录，包 `github.com/liustack/quickjs` |
+| `modernc.org/libquickjs`（ccgo 转译成 Go 的 QuickJS） | https://gitlab.com/cznic/libquickjs | `lib/`，包 `github.com/liustack/quickjs/lib` |
+
+起点是 quickjs v0.25.0 和 libquickjs v0.13.1（QuickJS 2026-06-04 版，提交 `3d5e064`），改动列在 [docs/fork-changes](docs/fork-changes/README.md)。
 
 ## 文档
 
