@@ -38,11 +38,11 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// _JS_ToObject and js_array_finalizer have no TLS frame on 32-bit
+		// The functions of lazyFrameless have no TLS frame on 32-bit
 		// targets.
 		want := len(lazySites)
 		if strings.HasSuffix(name, "_386.go") || strings.HasSuffix(name, "_arm.go") {
-			want -= 2
+			want -= len(lazyFrameless)
 		}
 		if n := bytes.Count(raw, []byte("each statement that needs a TLS frame takes one of its own")); n != want {
 			t.Errorf("%s: %d functions changed by fixLazyFrames, want %d", name, n, want)

@@ -84,9 +84,9 @@ func lazyHead(body []byte) (int, bool) {
 // inverse, comes first. fixLazyFrames checks that restoreLazy gives its
 // input back. The frame sizes, cell uses, wrapped statements and out
 // parameters of lib/ccgo_darwin_arm64.go are pinned in lazySites. On
-// 32-bit targets, where a JSValue is a uint64, _JS_ToObject and
-// js_array_finalizer have no TLS frame and are left as they are, and the
-// frames of the others are smaller.
+// 32-bit targets, where a JSValue is a uint64, the functions of
+// lazyFrameless have no TLS frame and are left as they are, and the frames
+// of the others are smaller.
 func fixLazyFrames(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	got, err := lazyAddrFingerprint(b)
 	if err != nil {
@@ -127,6 +127,18 @@ var lazySites = map[string]lazySite{
 	"_JS_ToStringInternal":       {80, 14, 13, 0, "the value, ropes, numbers, symbols and objects need the frame"},
 	"_JS_ToObject":               {48, 12, 10, 0, "the value, making a wrapper object needs the frame"},
 	"_js_array_finalizer":        {32, 4, 0, 0, "the elements, to read their pointers (JS_FreeValueRT)"},
+	"_JS_ToInt32Free":            {32, 9, 1, 0, "the value and float conversions, turning a value that is not a number into one needs the frame"},
+	"_JS_ToInt32SatFree":         {16, 5, 1, 0, "the value and float conversions, turning a value that is not a number into one needs the frame"},
+	"XJS_GetPrototype":           {32, 8, 1, 0, "the value, the get_prototype method of an exotic object needs the frame"},
+	"_JS_ToFloat64Free":          {16, 4, 1, 0, "the value, turning a value that is not a number into one needs the frame"},
+	"_js_get_regexp":             {16, 3, 1, 0, "the object, the error for another class needs the frame"},
+	"_js_regexp_get_lastIndex":   {32, 4, 1, 0, "the object, a lastIndex that is not an integer needs the frame"},
+	"_JS_ToInt64SatFree":         {16, 5, 1, 0, "the value and float conversions, turning a value that is not a number into one needs the frame"},
+	"_js_thisNumberValue":        {32, 9, 1, 0, "the value, the error for a value that is not a number needs the frame"},
+	"_js_sub_string":             {16, 2, 3, 0, "the string, making the substring needs the frame"},
+	"_js_object_has_name":        {48, 6, 0, 1, "the object and the found property (find_own_property)"},
+	"_JS_ConcatString2":          {48, 15, 1, 0, "the strings, joining two strings that do not fit in place needs the frame"},
+	"_add_fast_array_element":    {16, 4, 2, 0, "the array, growing it and the error for a read-only length need the frame"},
 }
 
 // outParam is a callee of outParams: its second parameter (after tls) is a
@@ -216,8 +228,15 @@ var reLazyClone = regexp.MustCompile(`\n// Changed by internal/fixlib: (\w+) wit
 // 32-bit targets, where a JSValue is a uint64 the functions keep in a Go
 // local. lazyFrames leaves them as they are there.
 var lazyFrameless = map[string]bool{
-	"_JS_ToObject":        true,
-	"_js_array_finalizer": true,
+	"_JS_ToObject":             true,
+	"_js_array_finalizer":      true,
+	"XJS_GetPrototype":         true,
+	"_JS_ConcatString2":        true,
+	"_add_fast_array_element":  true,
+	"_js_get_regexp":           true,
+	"_js_regexp_get_lastIndex": true,
+	"_js_sub_string":           true,
+	"_js_thisNumberValue":      true,
 }
 
 // lazyFrames changes the functions of sites in b. pin checks the counts

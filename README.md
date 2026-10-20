@@ -569,9 +569,15 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`,
   `JS_AtomIsArrayIndex`, `JS_NewAtomStr`, `js_eq_slow`,
   `JS_ToStringInternal`, `JS_ToObject` and `js_array_finalizer` allocated
-  a TLS frame on every call, though only a few of their statements need
-  one: those that pass the address of a part of the frame to a callee, and
-  those that can reach a stack check. `fixlib` makes the frame a Go array,
+  a TLS frame on every call, and so did 12 functions added later from the
+  count of `tls.Alloc` per function in renders of tifa's test apps: the
+  conversions to numbers (`JS_ToInt32Free`, `JS_ToInt32SatFree`,
+  `JS_ToInt64SatFree`, `JS_ToFloat64Free`), `JS_GetPrototype`,
+  `JS_ConcatString2`, `js_sub_string`, `add_fast_array_element`,
+  `js_object_has_name`, `js_get_regexp`, `js_regexp_get_lastIndex` and
+  `js_thisNumberValue`. Only a few of their statements need a frame: those
+  that pass the address of a part of the frame to a callee, and those that
+  can reach a stack check. `fixlib` makes the frame a Go array,
   as for the functions of `frameSites`, and gives each of those statements
   a TLS frame of the same size for itself: right before the statement it
   allocates the frame and copies the array into it, and right after it
@@ -600,8 +606,9 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `fixlib` match these functions as ccgo writes them, so `fixlib` undoes
   this change first (`restoreLazy`) and makes it again last, and checks
   that undoing it gives back the text it was given, byte for byte. On
-  32-bit targets `JS_ToObject` and `js_array_finalizer` have no TLS frame
-  and stay as they are (`lazyFrameless`). Another function of `lazySites`
+  32-bit targets nine of these functions, such as `JS_ToObject` and
+  `js_array_finalizer`, have no TLS frame and stay as they are
+  (`lazyFrameless`). Another function of `lazySites`
   without a frame there stops `fixlib`. A server render of a page of tifa's example shop
   takes 1.6% (with PGO) and 1.1% (without) less time on linux/amd64 (AMD
   EPYC), and 2.6% less on darwin/arm64 (Apple M4, with PGO), with the same

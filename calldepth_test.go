@@ -44,6 +44,17 @@ var depthCases = []struct {
 	{"padded native", `function f() { n++; f.call() } f()`, 3332, 98},
 	{"yield*", `function* g() { n++; yield* g() } g().next()`, 2498, 73},
 	{"async", `async function f() { n++; await f() } f()`, 3331, 98},
+	// These recurse through functions that take a TLS frame per statement
+	// (internal/fixlib/lazy.go): JS_ToInt32Free, JS_ToInt32SatFree,
+	// js_thisNumberValue, js_sub_string, JS_GetPrototype, JS_ConcatString2
+	// and js_regexp_get_lastIndex.
+	{"Math.imul valueOf", `const o = { valueOf() { n++; return Math.imul(this, 1) } }; Math.imul(o, 1)`, 1110, 32},
+	{"charCodeAt valueOf", `const o = { valueOf() { n++; return 'ab'.charCodeAt(this) } }; 'ab'.charCodeAt(o)`, 1110, 32},
+	{"toFixed valueOf", `const o = { valueOf() { n++; return (1).toFixed(this) } }; (1).toFixed(o)`, 1110, 32},
+	{"substring valueOf", `const o = { valueOf() { n++; return 'ab'.substring(this) } }; 'ab'.substring(o)`, 1110, 32},
+	{"getPrototypeOf proxy", `const p = new Proxy({}, { getPrototypeOf(t) { n++; return Object.getPrototypeOf(p) } }); Object.getPrototypeOf(p)`, 1665, 49},
+	{"concat toString", `const o = { toString() { n++; return 'y' + this } }; 'y' + o`, 2498, 73},
+	{"regexp lastIndex", `const r = /a/g; r.lastIndex = { valueOf() { n++; r.exec('a'); return 0 } }; r.exec('a')`, 908, 26},
 }
 
 // Every way of recursing reaches the same depth as before, at the default
