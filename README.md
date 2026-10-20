@@ -759,8 +759,9 @@ Conflicts to expect:
   compiler's out of memory checks, the stack limit of a new runtime, the
   call paths without `alloca`, the functions without a TLS frame, the
   changes to the interpreter loop, the call into `lib/objlit.go`, the
-  call into `lib/regexskip.go`, the cold paths moved out and the frames
-  freed without a defer conflict. Take the upstream version of every generated file, then put
+  call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
+  taken per statement, `set_value` written out in the interpreter and the
+  frames freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -771,12 +772,18 @@ Conflicts to expect:
   `fixlib` also rewrites `modernc.org/libquickjs` imports in hand-written
   files under `lib/`. `go run ./internal/fixlib -check` lists files that still
   need changes. Some steps check the code against a list kept in
-  `internal/fixlib`, and a flag prints the list as the files have it. Each
-  report runs the steps before its own, so it fails while an earlier list
-  is out of date. Update them in the order `fixlib` checks them: `-frames`,
-  then `-up` (on the files as taken from upstream), then `-cells`, then
-  the fingerprints, `-define`, `-backtrace` and `-regex`, and last
-  `-slots`. Read
+  `internal/fixlib`, and a flag prints the list as the files have it. A
+  report fails while a list it depends on is out of date, so update them
+  in this order: `-frames`, then `-up` (on the files as taken from
+  upstream), then `-cells`, then `-slots`. Then fix `lazySites`
+  (`internal/fixlib/lazy.go`) and `inlineCallees`
+  (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
+  no flag prints them. Last come the fingerprints, `-define`,
+  `-backtrace`, `-regex`, `-lazyaddr` and `-inline`. Each of these runs
+  every change of `fixlib` and skips only the fingerprint checks, so a
+  report that stops on another list, such as "TLS frames taken by
+  statement changed", means that list is out of date, not the one the
+  flag prints. Read
   every new line before you put it in. If `fixlib` reports that
   `XJS_ToCStringLen2` changed shape, read the new upstream code: QuickJS
   may have fixed the leak itself. If the fail label now frees `val`, drop
