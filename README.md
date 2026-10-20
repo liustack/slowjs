@@ -390,16 +390,18 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `free_property` and `__JS_FreeValueRT`, used their TLS frame only to
   read a `JSValue` as a pointer or a float as bits: they now keep those
   bytes in a Go array, and skip `tls.Alloc`, `tls.Free` and the `defer`.
-  22 more were added later, from the count of `tls.Alloc` per function in
-  renders of tifa's example shop and test apps, such as
-  `js_same_value_zero` (`Map` and `Set` keys, `includes`), `free_token`
-  (the parser) and the finalizers of functions and iterators.
   The stack check counts the same TLS stack slots as before at every
   point, so a script recurses exactly as deep as it used to. A server
   render of a page of tifa's example shop takes about 11% less time on
   linux/amd64 (AMD EPYC) and 14% less on darwin/arm64 (Apple M4), with
   the same HTML, and loading the shop's bytecode into a VM about 11% less
-  on linux.
+  on linux. 22 more functions were added later, from the count of
+  `tls.Alloc` per function in renders of tifa's example shop and test
+  apps, such as `js_same_value_zero` (`Map` and `Set` keys, `includes`),
+  `free_token` (the parser) and the finalizers of functions and
+  iterators: the numbers above are from before, and what the later
+  changes give together is under the frame of `JS_CallInternal` taken
+  once on linux, below.
 
   The 768 bytes bound what this costs in TLS memory on linux. Linux's
   libc keeps the TLS block of every call depth a VM has reached until the
@@ -609,10 +611,13 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   32-bit targets nine of these functions, such as `JS_ToObject` and
   `js_array_finalizer`, have no TLS frame and stay as they are
   (`lazyFrameless`). Another function of `lazySites`
-  without a frame there stops `fixlib`. A server render of a page of tifa's example shop
+  without a frame there stops `fixlib`. With the first eight functions, a
+  server render of a page of tifa's example shop
   takes 1.6% (with PGO) and 1.1% (without) less time on linux/amd64 (AMD
   EPYC), and 2.6% less on darwin/arm64 (Apple M4, with PGO), with the same
-  HTML. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:
+  HTML. What the 12 added later give, together with the other later
+  changes, is under the frame of `JS_CallInternal` taken once on linux,
+  below. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:
   `internal/fixlib/lazy_test.go` and `internal/fixlib/nodefer_test.go`,
   with test262 and the tests of the root package for what the engine
   gives.
@@ -803,7 +808,19 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `JS_CallInternal` as `fixAlloca` writes it, so `fixlib` undoes this
   change first (`restoreOneFrame`) and makes it again right before the
   frames are freed without a defer, and checks that undoing it gives back
-  the text it was given, byte for byte. This changes only the generated
+  the text it was given, byte for byte. On its own this takes about 9%
+  of the TLS frames out of a render of tifa's example shop on linux.
+  Together with the 22 functions added to `frameSites` and the 12 added
+  to `lazySites` above, it takes out about a fifth: 20.6% for the shop,
+  and 20.1% and 25.4% for tifa's test apps bench and mui. A render then
+  takes 1.4% (shop), 2.2% (bench) and 3.1% (mui) less time than with
+  v0.26.16 on linux/amd64 (AMD EPYC, without PGO), with the same HTML:
+  the median of 6 rounds, each comparing the mean of three builds of the
+  new code, whose code sits at slightly different addresses, with one
+  build of v0.26.16. That placement alone moves the time: moving
+  `JS_CallInternal` by 160 or 224 bytes changes the time of a render by
+  up to 2.4%, so these numbers are good to about that much, and one build
+  is not enough to measure changes this small. This changes only the generated
   Go, with no C hunk (`internal/fixlib/oneframe.go`). Tests:
   `internal/fixlib/oneframe_test.go`, with `calldepth_test.go`, test262
   and the tests of the root package for what the engine gives.
