@@ -899,6 +899,39 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   on 8 goroutines), `shapecache_test.go` (the memory limit, and objects
   built in many ways that read the same with the cache on and off) and
   `internal/fixlib/shapecache_test.go`.
+- A string key that is already an atom costs less. `o[k]`, `o[k] = v`,
+  `k in o`, `hasOwnProperty(k)`, computed keys of literals and every other
+  path that turns a value into a property key go through
+  `JS_ValueToAtom`, which took a TLS frame, duplicated the string
+  (`JS_ToPropertyKey`), checked that it is no index (`is_num_string`) and
+  looked its index up (`__JS_NewAtom`), even when the string was the atom
+  itself: a name the code has, a key from `for...in`, `Object.keys` or
+  `JSON.parse`. On the pages of tifa's example shop, 92% of the strings
+  `JS_ValueToAtom` gets are such atoms. Now, for a string, it first calls
+  `atomKey` (`lib/atomkey.go`): an atom string that is not empty and does
+  not start with a digit, for which `is_num_string` is false, gets its
+  index from the atom table and one more reference, none for a constant
+  atom, as the generic path gives. Every other string, numbers and
+  symbols take the generic path, and a number does not even make the
+  call. Nothing is cached, so memory use is the same. On linux/amd64
+  without PGO (AMD EPYC 7B13, one core), against v0.26.16, a micro
+  benchmark reads with a string key in 13% less time, writes in 30% less,
+  runs `k in o` in 26% less and `hasOwnProperty(k)` in 14% less, and a
+  server render of a page of the shop takes 1.3% less time (median of 6
+  rounds, 0.9% to 1.5% over the rounds), with the same HTML. These were
+  measured before the `for in`, bitwise and comparison changes above.
+  `fixlib` puts the call into all 13 files and takes the atom type and the
+  length of a `JSString` from each file's `__JS_NewAtom` and
+  `is_num_string`, so the big-endian target gets its own bit fields.
+  Generated Go only, no C hunk (`internal/fixlib/atomkey.go`). Tests:
+  `lib/atomkey_test.go` (the atom and the reference counts against the
+  generic path, the keys it leaves to that path, an atom freed and made
+  again, the description of a symbol and the key of a registered symbol,
+  strings that share the symbol's atom), `lib/atomkey_memgrind_test.go`
+  (the same tests leave no C memory behind), `atomkey_test.go` (keys that
+  look like numbers, index strings, symbols, the text of symbols and
+  constant atoms through every way a key goes, against Node, and the atom
+  count after keys are dropped) and `internal/fixlib/atomkey_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -990,7 +1023,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go` and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -1010,7 +1043,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin`, `-bitwise` and `-eq`. Each of these runs
+  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq` and `-atomkey`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1338,6 +1371,18 @@ Conflicts to expect:
   have the two operands on top of the stack and pop one. Then put the new
   fingerprints in (`go run ./internal/fixlib -eq` prints them) and run
   `go test -run Eq ./lib`.
+  If it reports that `JS_ValueToAtom` or a function of `atomKeyFuncs`
+  changed (`internal/fixlib/atomkeysites.go`), read them against
+  `lib/atomkey.go`: for a string that is an atom and does not start with
+  a digit, `JS_ToPropertyKey` must still return it with one more
+  reference, `is_num_string` must still be false for it, and
+  `__JS_NewAtom` must still answer with `js_get_atom_index` and drop that
+  reference only for a constant atom. Then run `-atomkey`. If it reports
+  that `JS_ValueToAtom` has another signature, or that the atom type test
+  of `__JS_NewAtom` or the length read of `is_num_string` changed shape,
+  update `reAtomKeyHead`, `reAtomKeyType` or `reAtomKeyLen` in
+  `internal/fixlib/atomkey.go`: `atomKey` reads the atom type and the
+  length through the constants `fixlib` takes from them.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1382,7 +1427,7 @@ Conflicts to expect:
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
   statement, the calls written out in the interpreter, the calls into
-  `lib/forin.go` and `lib/bitwise.go`, the comparisons written out in the
+  `lib/forin.go`, `lib/bitwise.go` and `lib/atomkey.go`, the comparisons written out in the
   interpreter and the frames freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
@@ -1516,6 +1561,7 @@ go test -run ColdPath ./lib                              # ===, Object.is and ke
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
 go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
+go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
