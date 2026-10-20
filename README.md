@@ -670,6 +670,111 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   about 0.5%. One VM renders as fast as before. Linux is not changed:
   libc keeps one block per slot there and never frees it. Test:
   `tlswarm_other_test.go`.
+- The interpreter counts its interrupt counter down in its own body. Each
+  of the eight interrupt polls of `JS_CallInternal` (at its entry and at
+  each backward jump, so a loop polls twice a pass) called
+  `js_poll_interrupts`, which only counts a counter down and calls
+  `__js_poll_interrupts` once the counter runs out, every 10000 polls.
+  `JS_CallInternal` is too large for Go to inline a function of that cost
+  into it, so every poll was a call. `fixlib` writes each poll as
+  `pollDue(ctx+OFFSET) && __js_poll_interrupts(tls, ctx) != 0`: `pollDue`
+  (`lib/poll.go`) is the countdown, small enough to be inlined, and OFFSET
+  is the counter `js_poll_interrupts` reads. Its text is pinned in
+  `pollSites`. On top of the changes above, a render of a page of tifa's
+  example shop takes 0.6% less time with PGO and about as long without,
+  on linux/amd64 (AMD EPYC), with the same HTML. This changes only the generated Go, with no C hunk
+  (`internal/fixlib/poll.go`). Tests: `lib/poll_test.go` (the handler is
+  still called as often, and stops an endless loop) and
+  `internal/fixlib/poll_test.go`.
+- Each runtime has a front cache in front of the small block allocator. A
+  freed block of 16 to 512 bytes went back to its arena: the free list of
+  the arena, its count of used blocks and the lists of arenas changed on
+  every free, and again on the next allocation of that size. Now
+  `__js_free` puts the block on a list of its size, up to 256 blocks a size
+  (1.6 MiB at most), and `__js_malloc` takes it from there
+  (`lib/frontcache.go`). A cached block keeps its header, so to the arena
+  and to `js_malloc_usable_size` it is a block in use. `JS_RunGC` gives
+  every cached block back to its arena, so after a GC the memory a runtime
+  holds is what it was without the cache, give or take how the blocks fell
+  in the arenas: one VM of the shop holds 48 KiB more after a GC (7.37 MiB
+  rather than 7.33). With a memory limit set, an allocation that fails
+  gives the cache back and is tried once more, so cached blocks never make
+  an allocation of another size fail. This holds for the blocks of this
+  cache only: the shape cache below does not give its shapes back. A
+  cached block also keeps its arena of 4 KiB from being freed until the
+  next GC: with every list full and each block in an arena of its own,
+  that is about 31 MiB, which the GC threshold, as it counts those arenas,
+  and the retry past the memory limit get back. `JS_FreeRuntime` gives the
+  cache back first and turns it off. The cache lives in a field that `fixlib` adds at
+  the end of `JSRuntime` (`Ffork`, the state of `lib/runtime.go`), which
+  `JS_NewRuntime2` allocates and clears with the C struct, so each runtime
+  has its own, used only by the goroutine that runs it, and the fields of
+  the C struct keep their offsets (`internal/fixlib/runtimefield.go`).
+  Alone it makes a render 0.9% faster with PGO and leaves it about as it
+  was without. The shape cache below allocates and frees more: with it,
+  the front cache and the interrupt countdown take another 0.9% off a
+  render without PGO. Generated Go only, no C hunk
+  (`internal/fixlib/frontcache.go`). Tests: `lib/frontcache_test.go`,
+  `alloc_test.go` (8 VMs on 8 goroutines, the same results, and memory
+  after a GC that does not grow), `internal/fixlib/frontcache_test.go` and
+  `internal/fixlib/runtimefield_test.go`.
+- A VM keeps the shapes of plain objects once their objects are gone. The
+  shape of an object is its keys in order, and an object literal goes
+  through one shape for each key. `add_property` grew a shape in place when
+  only its object used it, so the shapes in between were gone once the
+  object had its keys, and the last one went with the last object: the
+  next literal with the same keys copied and grew them all again. Now
+  `js_free_shape0` keeps a shape whose count drops to zero in a ring of the
+  last n, with a count of one, and `add_property` copies a shape that only
+  its object uses instead of growing it, so that the shapes in between are
+  kept too (`lib/shapecache.go`). The next literal with the same keys finds
+  every shape it needs in the shape hash table, and makes none. The times
+  in this entry were all taken without PGO, on linux/amd64 (AMD EPYC). A
+  copy costs an allocation and the keys so far, which an object that gets keys
+  no other object has, one at a time, pays for each key and never gets
+  back: such objects took 22% longer to build. So each shape `add_property`
+  finds earns one copy, up to 64, and without credit the shape grows in
+  place. The shapes in between are then still kept, only later: the shape
+  an object leaves when it finds the next one kept is kept. Objects of
+  keys no other object has now take about 6% longer to build than with
+  the cache off, and object literals with the same keys 30% less.
+  Only shapes whose prototype is the `Object.prototype` of the VM, that
+  have at most 32 keys and no key that is a symbol not registered are
+  kept, so a kept shape holds nothing alive but that prototype and the
+  atoms of its keys, and a `WeakRef` or `FinalizationRegistry` whose
+  target is a symbol sees it go as it would without the cache. Shapes the
+  cycle collector frees are not kept, and `JS_FreeRuntime` lets every kept
+  shape go. The ring is in the state of the runtime, next to the front
+  cache. In `lib` it is off until `JS_SetShapeCache(ctx, n)`, which
+  refuses a ring whose size does not fit in a `size_t`. A new VM keeps
+  `DefaultShapeCache` (2048) shapes, `VM.SetShapeCache` changes it, and
+  `VM.Close` turns it off before it frees the context. Memory: one VM of
+  the shop holds 647 KiB more after a GC, and with the front cache as well
+  722 KiB more (8.03 MiB rather than 7.33). With 1024 shapes it was 190 KiB
+  and 461 to 502 KiB more, and with 4096 shapes and the front cache 1.26
+  MiB more. How the blocks fall in the arenas moves these by up to 0.5 MiB
+  from one run to another, with the same shapes and objects left. Loading
+  the shop's bundle alone keeps about 1250 shapes, so a ring of 1024 is
+  full before the first render. Kept shapes count against the memory limit
+  of the VM, and they are not let go when an allocation fails: an
+  allocation in `add_property` can come right before the object takes a
+  shape that only the cache holds. A shape of 32 keys of about ten
+  characters, that no other object has, takes about 3 KiB with the atoms
+  of its keys, so 2048 of them take about 6 MiB, and the atom table keeps the size it grew to after they go.
+  A script that runs close to its memory limit can run out of memory with
+  the cache on where it would not without it: give such a VM a smaller
+  cache, or none. Without PGO, on linux/amd64 (AMD EPYC), with the same
+  HTML, the shape cache alone makes a render 3.6% faster, and with the
+  front cache and the interrupt countdown above a render takes 4.5% less
+  time than without the three (six rounds). Two VMs on two hardware
+  threads of one core render 2.9% more pages a second. Generated Go
+  only, no C hunk (`internal/fixlib/shapecache.go`). Tests:
+  `lib/shapecache_test.go` (reuse, which shapes are kept, symbol keys, the
+  ring, the credit for copies, the cycle collector, `JS_FreeRuntime` with
+  the cache on, out of memory, a ring too large for a `size_t`, 8 runtimes
+  on 8 goroutines), `shapecache_test.go` (the memory limit, and objects
+  built in many ways that read the same with the cache on and off) and
+  `internal/fixlib/shapecache_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -760,8 +865,9 @@ Conflicts to expect:
   call paths without `alloca`, the functions without a TLS frame, the
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
-  taken per statement, `set_value` written out in the interpreter and the
-  frames freed without a defer conflict. Take the upstream version of every generated file, then put
+  taken per statement, `set_value` written out in the interpreter, the
+  interrupt countdown, the front cache, the shape cache and the frames
+  freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
   ```sh
@@ -779,7 +885,8 @@ Conflicts to expect:
   (`internal/fixlib/lazy.go`) and `inlineCallees`
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
-  `-backtrace`, `-regex`, `-lazyaddr` and `-inline`. Each of these runs
+  `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
+  `-front` and `-shape`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1033,6 +1140,42 @@ Conflicts to expect:
   a statement of its own or a name of the callee that is a local of
   `JS_CallInternal`, read the new interpreter and update `inlineCallees`
   in `internal/fixlib/inline.go`.
+  If it reports that `js_poll_interrupts` changed (a fingerprint other
+  than the one in `internal/fixlib/pollsites.go`), read it against
+  `pollDue` in `lib/poll.go`: it must still count the counter at the
+  offset `fixPoll` reads down by one and call `__js_poll_interrupts` when
+  the counter is at most zero. Then put the new fingerprints in (`go run
+  ./internal/fixlib -poll` prints them). If it reports that `JSRuntime` or
+  `JS_NewRuntime2` changed (`internal/fixlib/runtimesites.go`), check that
+  `malloc_ctx` is still the first field and that `JS_NewRuntime2` still
+  allocates and clears the runtime with `sizeof(JSRuntime)`, then run
+  `-runtime`. If it reports that the functions of `frontFuncs` or
+  `JSMallocBlockHeader` changed (`internal/fixlib/frontsites.go`), read
+  them against `lib/frontcache.go`: `__js_malloc` must still size a block
+  as `frontPop` does, a large block must still have `MFREE_NIL` in its
+  header (`js_malloc_large` writes it), `__js_realloc` must still move a
+  small block through `__js_malloc` and `__js_free`, and `js_def_malloc`
+  and `js_def_realloc` must still fail only past the memory limit or when
+  libc fails. Then run `-front`. If it reports that the
+  functions of `shapeFuncs` or `JSShape` changed
+  (`internal/fixlib/shapesites.go`), read them against
+  `lib/shapecache.go`: `add_property` must still copy a shape whose count
+  is not one, link the copy into the hash table, and take a shape it finds
+  there on the line `shapeFound` is put before. A shape whose count is not
+  one must still never change in place: `js_shape_prepare_update` copies
+  it, and `resize_properties` and `compact_properties` change only a shape
+  of count one that an object has. Outside the cycle collector a shape must
+  still be freed only through `js_free_shape0` (`free_object` frees the
+  shape of an object that way, and `JS_NewObjectFromShape` takes the count
+  it is given), `js_new_shape2` must still grow the hash table when it is
+  half full, `__JS_NewAtom` must still put the index of a symbol that is
+  not registered in its `hash_next`, where `js_get_atom_index` and
+  `JS_FreeAtomStruct` read it and which `JS_ResizeAtomHash` leaves alone,
+  and the cycle collector must still
+  free the shapes of a cycle itself while `gc_phase` is
+  `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it
+  reports that `gc_phase` is not the byte right after `tmp_obj_list`,
+  change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
