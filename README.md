@@ -643,6 +643,130 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   with no C hunk (`internal/fixlib/inline.go`).
   Tests: `internal/fixlib/inline_test.go`, with test262 and the tests of
   the root package for what the engine gives.
+- A `for in` loop no longer lists the property names of each prototype
+  to find out that it has no enumerable property. When a loop runs out of
+  the object's own properties, the engine checks the objects of its
+  prototype chain for enumerable string keys, to know whether it must walk
+  the chain. It did that with `JS_GetOwnPropertyNamesInternal`, which
+  mallocs a list, takes a reference to each name and frees it all again,
+  in every loop and for every prototype, mostly for `Object.prototype`,
+  which has dozens of names and none of them enumerable.
+  `js_for_in_prepare_prototype_chain_enum` now first calls `forInNoEnum`
+  (`lib/forin.go`), which reads the shape of a prototype that is not
+  exotic: when no property of the shape has a name and the enumerable flag,
+  it gives the same empty list without allocating, and the loop goes on as
+  before. Why this is safe: for an object that is not exotic,
+  `JS_GetOwnPropertyNamesInternal` with these flags counts only shape
+  properties with a name, the enumerable flag and a string key, calls no
+  method of the class and throws for nothing it does not count, so with no
+  such property its list is empty. `forInNoEnum` answers no for every
+  exotic object (arrays, `String` objects, proxies, ...) and for every
+  object with an enumerable property, symbols included, and the engine
+  lists the names as before, so the traps of a proxy in the chain run as
+  they did. The only difference is out of memory: the empty list needs no
+  memory, where the engine mallocs one entry, so with no memory left the
+  loop goes on where it used to fail. `fixlib` puts the call into all 13
+  files and takes the two bit fields `forInNoEnum` reads, the flags of a
+  shape property and the `is_exotic` bit of an object, from each file's
+  own `JS_GetOwnPropertyNamesInternal`, so 32-bit and big-endian targets
+  get their own layout. It pins the text of
+  `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`,
+  `get_shape_prop` and `JS_FreePropertyEnum` by fingerprints
+  (`forInSites`). This changes only the generated Go, with no C hunk
+  (`internal/fixlib/forin.go`). Tests: `lib/forin_test.go`, whose
+  `testdata/forin.txt` is what the engine gave before the change, and
+  `internal/fixlib/forin_test.go`. On linux/amd64 without PGO, against
+  v0.26.16 over 10 rounds, the spiral page of tifa's bench app, which runs
+  many for in loops, renders in 0.983 of the time (a wide range, 0.888 to
+  1.041) and the table page in 0.971 (0.871 to 1.035). tifa's example shop
+  barely changes (0.996, 0.987 to 1.001), nor do the MUI pages. The HTML
+  and the memory of a VM stay the same.
+- `&`, `|`, `^`, `<<`, `>>` and `>>>` of two numbers no longer take the
+  slow path when one of them is a float. The interpreter did the operator
+  itself only for two ints and called `js_binary_logic_slow` or
+  `js_shr_slow` for everything else, which convert both operands with the
+  checks for BigInts and objects and then with the generic `ToInt32`. A
+  product past 2^31 is a float, so the string hash of emotion, the CSS-in-JS
+  library of MUI, took that path for almost every operator. The two slow
+  functions now first call `bitwiseNumbers` (`lib/bitwise.go`), before
+  they take their TLS frame. It does the operator for any two ints or
+  floats, converting a float as `JS_ToInt32Free` does (the same bits,
+  without `fmod`), and stores an int, or for `>>>` a float above
+  2^31 - 1, as `JS_NewUint32` does. Any other pair goes on through the rest
+  of the slow path as before. Why this is safe: numbers hold no reference,
+  so nothing is freed, and the slow paths do nothing else for two numbers,
+  since converting a number to a numeric is a no-op and cannot throw or
+  call a script. The interpreter is left as it is: calling
+  `bitwiseNumbers` from its six handlers instead made the shop 0.8% slower.
+  Only the 11 files
+  of 64-bit targets change, because `bitwiseNumbers` reads their struct
+  `JSValue`: the 32-bit targets keep the slow path. `fixlib` pins the text
+  of `js_binary_logic_slow`, `js_shr_slow`, `JS_ToNumberHintFree` and
+  `JS_ToInt32Free` by fingerprints (`bitwiseSites`), and stops when the
+  interpreter no longer has 5 calls of the first and 1 of the second, or
+  when either no longer takes its TLS frame first. This
+  changes only the generated Go, with no C hunk
+  (`internal/fixlib/bitwise.go`). Tests: `lib/bitwise_test.go`, whose
+  `testdata/bitwise.txt` is what the engine gave before the change (Node
+  gives the same) and which checks `bitwiseNumbers` on about 41,000 pairs
+  of numbers against `ToInt32` of the specification (which the engine's
+  `JS_ToInt32Free` must also give) and the operator done in Go, and
+  `internal/fixlib/bitwise_test.go`.
+  On linux/amd64 without PGO, against v0.26.16 over 10 rounds, the pages
+  of tifa's MUI app, which run about 130,000 to 300,000 of these
+  operators on floats per render, take 0.952 to 0.960 of the time (0.935
+  to 0.969). The
+  shop runs the slow paths 3 to 24 times per render and the bench app not
+  at all, so they have nothing to gain: the shop measured 1.008 (0.999 to
+  1.042), which is code layout, not work. The HTML and the memory of a VM
+  stay the same.
+- `===`, `!==`, `==` and `!=` no longer call the slow path for the usual
+  pairs. The interpreter compared two ints itself and called
+  `js_strict_eq_slow` or `js_eq_slow` for everything else, which for `===`
+  went on to `js_strict_eq2`. React compares with `null` and `undefined`
+  (minified as `null != x` and `void 0 === x`, which the compiler does not
+  turn into `is_null` or `is_undefined`), compares types, symbols and
+  objects by identity, and switches over strings. The interpreter now
+  answers these itself: objects and symbols by pointer, `null`, `undefined`
+  and booleans by tag and value, strings when they are the same string,
+  have different lengths or are both string atoms (the atom table holds
+  each text once), for `===` and `!==` values of different tags when one
+  is `null`, `undefined`, a boolean, an object or a symbol, and for `==`
+  and `!=` `null` or `undefined` beside anything (equal only to `null`,
+  `undefined` or an `IsHTMLDDA` object). Other pairs of different tags
+  under `==`, such as `true == 1` or `{} == 'x'`, convert their operands
+  and still take the slow path, as do numbers, BigInts, ropes and strings
+  that need their characters compared. Why this is safe:
+  each answer is the one the slow path gives for that pair, none of them
+  can throw or call a script, and both operands lose their reference as
+  `JS_FreeValue` does, freed through `eqFree` (`lib/eq.go`) when it was the
+  last. Strings that are both atoms are told apart only when both are
+  string atoms: the description of a symbol is an atom of another type and
+  can hold the text of a string atom. The text is written into the four
+  handlers, with no call on the usual path, since Go does not inline into a
+  function as big as the interpreter. It passes `eqFree` the stack pointer
+  rather than the values, so the frame of the interpreter changes little:
+  8 bytes more on amd64 and 16 fewer on arm64, from v0.26.16. Only the 11
+  files of 64-bit
+  targets change, because the text reads their struct `JSValue`. The bit
+  fields it reads (the length and atom type of a string, the `IsHTMLDDA`
+  bit) come from each file's `js_string_eq`, `__JS_FreeValueRT` and
+  `JS_IsHTMLDDA`, and the layout of a value (how far below its pointer
+  the reference count sits, the size of a value on the stack and how a
+  boolean is stored) from its `JS_FreeValue` and `js_strict_eq_slow`.
+  `fixlib` pins those and `js_strict_eq_slow`,
+  `js_strict_eq2`, `js_eq_slow` and `__JS_FreeValue` by fingerprints
+  (`eqSites`), and stops when the interpreter no longer has one call of
+  each slow path per operator. This changes only the generated Go, with no
+  C hunk (`internal/fixlib/eq.go`). Tests: `lib/eq_test.go`, whose
+  `testdata/eq.txt` is what the engine gave before the change (Node gives
+  the same) and which checks that compared values are freed once, and
+  `internal/fixlib/eq_test.go`. On linux/amd64 without PGO, against
+  v0.26.16 over 10 rounds, a render of tifa's example shop takes 0.982 of
+  the time (0.974 to 0.989), the spiral and table pages of its bench app
+  0.940 and 0.942 (with wide ranges, 0.859 to 0.969 and 0.871 to 1.030),
+  and its MUI pages 0.982 to 0.985. The HTML and the memory of a VM stay
+  the same.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -866,7 +990,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -886,7 +1010,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front` and `-shape`. Each of these runs
+  `-front`, `-shape`, `-forin`, `-bitwise` and `-eq`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1176,6 +1300,44 @@ Conflicts to expect:
   `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it
   reports that `gc_phase` is not the byte right after `tmp_obj_list`,
   change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
+  If it reports that `js_for_in_prepare_prototype_chain_enum`,
+  `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or
+  `JS_FreePropertyEnum` changed (a fingerprint other than the one in
+  `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for
+  an object that is not exotic, the names listed with `JS_GPN_STRING_MASK`
+  and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name
+  and the enumerable flag, the loop must still go on to the next prototype
+  when the list is empty, and freeing an empty list must still do nothing.
+  If it reports that the reads of the enumerable flag or the test of
+  `is_exotic` changed shape, find where the bits are now and update the
+  patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in
+  (`go run ./internal/fixlib -forin` prints them) and run
+  `go test -run ForIn ./lib`.
+  If it reports that `js_binary_logic_slow`, `js_shr_slow`,
+  `JS_ToNumberHintFree` or `JS_ToInt32Free` changed (a fingerprint other
+  than the one in `internal/fixlib/bitwisesites.go`), read them against
+  `lib/bitwise.go`: for two ints or floats the slow paths must still give
+  `ToInt32` of each, the same operator with the count masked to 5 bits, and
+  an int, or a float for a `>>>` above 2^31 - 1. If it reports another
+  number of calls in `_JS_CallInternal`, read the new interpreter: each
+  call of the slow functions must have the two operands on top of the
+  stack, and the opcode in `op`. Then put the new
+  fingerprints in (`go run ./internal/fixlib -bitwise` prints them) and run
+  `go test -run Bitwise ./lib`.
+  If it reports that `js_strict_eq_slow`, `js_strict_eq2`, `js_eq_slow`,
+  `js_string_eq`, `__JS_FreeValueRT`, `__JS_FreeValue` or `JS_IsHTMLDDA`
+  changed (a fingerprint other than the one in
+  `internal/fixlib/eqsites.go`), read them against the cases in the comment
+  of `fixEq`: each pair it answers must still get that answer from the
+  slow path, with both operands freed, and string atoms of one text must
+  still be one atom. If it reports that a bit field, `JS_FreeValue` or
+  `js_strict_eq_slow` changed shape, or that a slow call pops another
+  size than a value, find where the bits, the reference count or the
+  result are now and update the patterns in `internal/fixlib/eq.go`. If it reports another number of calls in
+  `_JS_CallInternal`, read the new interpreter: each slow call must still
+  have the two operands on top of the stack and pop one. Then put the new
+  fingerprints in (`go run ./internal/fixlib -eq` prints them) and run
+  `go test -run Eq ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1219,8 +1381,9 @@ Conflicts to expect:
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
-  statement, the calls written out in the interpreter and the frames freed
-  without a defer have no C form: they
+  statement, the calls written out in the interpreter, the calls into
+  `lib/forin.go` and `lib/bitwise.go`, the comparisons written out in the
+  interpreter and the frames freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -1350,6 +1513,9 @@ go test -run EnginePanic .                               # the TLS stack after a
 go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
 go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
+go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
+go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
+go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

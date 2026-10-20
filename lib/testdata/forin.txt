@@ -1,0 +1,42 @@
+plain: 3,a,b,c
+empty: 
+null proto: x
+proto enumerable: own,p,q
+proto shadowed: b,c,a
+proto not enumerable: own
+proto enumerable symbol: own
+proto integer key: 1,own,2,7
+proto getter: own,g
+proto hidden getter: own
+class: x,y
+function prototype: own,shared
+deep: mid,deep
+deep quiet: 
+array: 0,1,2
+array extra: 0,2,extra
+proto array: 0,1
+proto empty array: own
+string: 0,1,2
+string object: 0,1
+proto string object: own,0,1
+typed array: 0,1,2
+arguments: 0,1
+number: 
+null: 
+undefined: 
+function: 
+date: 
+regexp: 
+map: 
+frozen: a,b
+error: 
+proxy proto: own,t
+proxy log: ownKeys,gopd t,ownKeys,gopd t,gopd t,getPrototypeOf
+proxy: a,b
+proxy log: ownKeys,gopd a,gopd b,gopd a,gopd b
+proto grows: a,b,c,late
+proto shrinks: a,b
+object changes: a,c
+prototype swapped: a,two
+Object.prototype polluted: a,polluted,a
+again: 3,3,3

@@ -41,12 +41,14 @@ func TestDefineIdempotent(t *testing.T) {
 		if m == nil || i < 0 {
 			t.Fatalf("%s: no call or no bit fields", fn)
 		}
-		// The layout constants end the file.
-		bare := bytes.Replace(b[:i:i], []byte(fmt.Sprintf(defineCall, m[1])), nil, 1)
+		// Without them, fixDefine puts the constants at the end.
+		bare := bytes.Replace(cutConstants(bytes.Clone(b), layoutMark), []byte(fmt.Sprintf(defineCall, m[1])), nil, 1)
+		end := bytes.Index(b[i:], []byte("\n)\n"))
+		want := append(cutConstants(bytes.Clone(b), layoutMark), b[i:i+end+3]...)
 		if got, err = fixDefine(bare, name); err != nil {
 			t.Fatalf("%s: %v", fn, err)
 		}
-		if !bytes.Equal(got, b) {
+		if !bytes.Equal(got, want) {
 			t.Errorf("%s: fixDefine does not restore the change", fn)
 		}
 	}
@@ -110,6 +112,38 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		}
 		if got != c.want {
 			t.Errorf("%s: the report gives %s, the table has %s", c.table, got, c.want)
+		}
+	}
+}
+
+// -forin, -bitwise and -eq print the fingerprints even when the table
+// does not match the files, which is when they are needed: the check of
+// the table must not stop the report.
+func TestFingerprintReportIgnoresSites(t *testing.T) {
+	hw, err := handWritten(filepath.Join("..", "..", "lib"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := filepath.Join("..", "..", "lib", "ccgo_darwin_arm64.go")
+	name := filepath.Base(fn)
+	for _, c := range []struct {
+		name  string
+		flag  *bool
+		table map[string]string
+		fp    func([]byte) (string, error)
+	}{
+		{"-forin", forIn, forInSites, forInFingerprint},
+		{"-bitwise", bitwise, bitwiseSites, bitwiseFingerprint},
+		{"-eq", eq, eqSites, eqFingerprint},
+	} {
+		want := c.table[name]
+		*c.flag, c.table[name] = true, "0"
+		got, err := reportedFingerprint(fn, hw, c.fp)
+		*c.flag, c.table[name] = false, want
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		} else if got != want {
+			t.Errorf("%s: the report gives %s, want %s", c.name, got, want)
 		}
 	}
 }

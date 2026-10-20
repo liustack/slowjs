@@ -59,14 +59,34 @@ func fixDefine(b []byte, file string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if i := bytes.Index(b, []byte(layoutMark)); i >= 0 {
-		end := bytes.Index(b[i:], []byte("\n)\n"))
-		if end < 0 {
-			return nil, fmt.Errorf("end of the JSObject bit field constants not found")
-		}
-		b = append(b[:i:i], b[i+end+3:]...)
+	return putConstants(b, layoutMark, layout)
+}
+
+// putConstants puts block, a const block that starts with mark, into b: in
+// place of the block with that mark, or at the end of b when there is none.
+func putConstants(b []byte, mark string, block []byte) ([]byte, error) {
+	i := bytes.Index(b, []byte(mark))
+	if i < 0 {
+		return append(b, block...), nil
 	}
-	return append(b, layout...), nil
+	end := bytes.Index(b[i:], []byte("\n)\n"))
+	if end < 0 {
+		return nil, fmt.Errorf("end of the constants after %q not found", bytes.TrimSpace([]byte(mark)))
+	}
+	return append(append(append([]byte{}, b[:i]...), block...), b[i+end+3:]...), nil
+}
+
+// cutConstants takes the const block that starts with mark out of b.
+func cutConstants(b []byte, mark string) []byte {
+	i := bytes.Index(b, []byte(mark))
+	if i < 0 {
+		return b
+	}
+	end := bytes.Index(b[i:], []byte("\n)\n"))
+	if end < 0 {
+		return b
+	}
+	return append(b[:i:i], b[i+end+3:]...)
 }
 
 var (
@@ -175,10 +195,10 @@ func defineFingerprint(b []byte) (string, error) {
 }
 
 // reporting reports whether fixlib prints fingerprints (-define,
-// -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front or
-// -shape) rather than checking them.
+// -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front,
+// -shape, -forin, -bitwise or -eq) rather than checking them.
 func reporting() bool {
-	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape
+	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq
 }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
