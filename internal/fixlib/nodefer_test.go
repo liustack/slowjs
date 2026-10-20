@@ -369,3 +369,42 @@ func TestNoDeferRejectsInFile(t *testing.T) {
 		}
 	}
 }
+
+// fixNoDefer leaves a function fixLazyFrames changed as it is: its TLS
+// frames are freed right after the statements that take them. It stops
+// when such a function takes or frees a frame some other way.
+func TestNoDeferLazyFrames(t *testing.T) {
+	lazy := func(body string) string {
+		return "package p\n\nfunc f(tls *libc.TLS, x int32) (r int32) {\n\t" + lazyHeadMark(16) + "\tvar localbp [2]uint64\n\tvar bp uintptr\n" + body + "}\n"
+	}
+	wrap := func(alloc, stmt, free string) string {
+		return "\t" + lazyStmtMark + "\t" + alloc + "\n\t" + stmt + "\n\t" + free + "\n"
+	}
+	ret := "\t" + lazyReturnMark + "\tbp = tls.Alloc(16)\n\tr = g(tls, bp)\n\ttls.Free(16)\n\treturn\n"
+	good := lazy(wrap("bp = tls.Alloc(16)", "x = g(tls, bp)", "tls.Free(16)") + wrap("tls.Alloc(16)", "x = h(tls)", "tls.Free(16)") + "\t*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&localbp)))) = x\n" + ret)
+	out, err := dropDefers([]byte(good))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != good {
+		t.Errorf("fixNoDefer changed a function of fixLazyFrames:\n%s", out)
+	}
+	if back, err := restoreDefer(out); err != nil || string(back) != good {
+		t.Errorf("restoreDefer changed a function of fixLazyFrames: %v", err)
+	}
+	for _, c := range []struct {
+		name, src, want string
+	}{
+		{"another size", lazy(wrap("bp = tls.Alloc(32)", "x = g(tls, bp)", "tls.Free(32)") + "\treturn x\n"), "f: tls.Alloc(32) in a function whose TLS frame is 16 bytes"},
+		{"free of another size", lazy(wrap("bp = tls.Alloc(16)", "x = g(tls, bp)", "tls.Free(32)") + "\treturn x\n"), "f: tls.Free(32) in a function whose TLS frame is 16 bytes"},
+		{"no mark", lazy("\tbp = tls.Alloc(16)\n\tx = g(tls, bp)\n\ttls.Free(16)\n\treturn x\n"), "f: 1 tls.Alloc and 1 tls.Free for 0 statements marked"},
+		{"not freed", lazy("\t" + lazyStmtMark + "\tbp = tls.Alloc(16)\n\tx = g(tls, bp)\n\treturn x\n"), "f: 1 tls.Alloc and 0 tls.Free for 1 statements marked"},
+		{"defer", lazy("\tdefer tls.Free(16)\n\treturn x\n"), "f: defer tls.Free(16)"},
+		{"another variable", lazy(wrap("p := tls.Alloc(16)", "x = g(tls, p)", "tls.Free(16)") + "\treturn x\n"), "f: p := tls.Alloc(16) is not bp = tls.Alloc(16)"},
+	} {
+		_, err := dropDefers([]byte(c.src))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want %q", c.name, err, c.want)
+		}
+	}
+}

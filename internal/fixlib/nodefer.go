@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -330,6 +331,13 @@ func fixNoDefer(b []byte) ([]byte, error) {
 	var problems []string
 	for _, d := range funcs {
 		name := d.Name.Name
+		if n, ok := lazyHead(b[pos(d.Body.Lbrace):pos(d.Body.End())]); ok {
+			// fixLazyFrames frees each frame right after its statement.
+			if err := checkLazyFrames(b, fset, d, n); err != nil {
+				problems = append(problems, err.Error())
+			}
+			continue
+		}
 		fr, err := frameOf(b, fset, d, false)
 		if err != nil {
 			problems = append(problems, err.Error())
@@ -485,6 +493,61 @@ func checkDefers(b []byte, fset *token.FileSet, d *ast.FuncDecl, fr *frameFree) 
 	return nil
 }
 
+// checkLazyFrames checks a function fixLazyFrames changed, whose TLS frame
+// was n bytes: it has no defer, and each statement fixLazyFrames marked
+// takes a frame of n bytes, as bp = tls.Alloc(n) or tls.Alloc(n), and frees
+// it with tls.Free(n).
+func checkLazyFrames(b []byte, fset *token.FileSet, d *ast.FuncDecl, n int) error {
+	name := d.Name.Name
+	pos := func(p token.Pos) int { return fset.Position(p).Offset }
+	text := func(x ast.Node) string { return string(b[pos(x.Pos()):pos(x.End())]) }
+	body := b[pos(d.Body.Lbrace):pos(d.Body.End())]
+	size := strconv.Itoa(n)
+	allocs, frees := 0, 0
+	var problem string
+	ast.Inspect(d.Body, func(x ast.Node) bool {
+		if problem != "" {
+			return false
+		}
+		switch x := x.(type) {
+		case *ast.DeferStmt:
+			problem = fmt.Sprintf("%s: %s", name, firstLine(text(x)))
+		case *ast.AssignStmt:
+			if len(x.Rhs) == 1 {
+				if _, ok := tlsCall(x.Rhs[0], "Alloc"); ok {
+					if x.Tok != token.ASSIGN || len(x.Lhs) != 1 || !isIdent(x.Lhs[0], "bp") {
+						problem = fmt.Sprintf("%s: %s is not bp = tls.Alloc(%d)", name, text(x), n)
+					}
+				}
+			}
+		case *ast.CallExpr:
+			for _, f := range []string{"Alloc", "Free"} {
+				if args, ok := tlsCall(x, f); ok {
+					if len(args) != 1 || text(args[0]) != size {
+						problem = fmt.Sprintf("%s: %s in a function whose TLS frame is %d bytes", name, text(x), n)
+					} else if f == "Alloc" {
+						allocs++
+					} else {
+						frees++
+					}
+				}
+			}
+		}
+		return true
+	})
+	if problem != "" {
+		return fmt.Errorf("%s", problem)
+	}
+	marks := 0
+	for _, m := range []string{lazyStmtMark, lazyReturnMark, lazyIfMark} {
+		marks += bytes.Count(body, []byte(m))
+	}
+	if allocs != marks || frees != marks {
+		return fmt.Errorf("%s: %d tls.Alloc and %d tls.Free for %d statements marked", name, allocs, frees, marks)
+	}
+	return nil
+}
+
 // fallsOff reports whether a void function whose body is list can reach
 // its end: its last statement is not a return or a goto.
 func fallsOff(list []ast.Stmt) bool {
@@ -631,13 +694,16 @@ func dropDefers(b []byte) ([]byte, error) {
 	return out, nil
 }
 
-// readEngine reads a generated file of lib/ as every change but fixNoDefer
-// leaves it, which is what the other changes take and check, and what the
-// reports print.
+// readEngine reads a generated file of lib/ as every change but
+// fixNoDefer, fixLazyFrames and fixInline leaves it, which is what the
+// other changes take and check, and what the reports print.
 func readEngine(fn string) ([]byte, error) {
 	b, err := os.ReadFile(fn)
 	if err != nil {
 		return nil, err
 	}
-	return restoreDefer(b)
+	if b, err = restoreDefer(b); err != nil {
+		return nil, err
+	}
+	return restoreLate(b)
 }
