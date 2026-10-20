@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -atomkey and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-six things:
+// It does twenty-seven things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -93,9 +93,13 @@
 //   - In every lib/ccgo_*.go file, keep the shapes of plain objects in the
 //     shape cache of lib/shapecache.go, kept in that state, once their last
 //     object is gone (see fixShapeCache).
-//     The first step undoes these four, as the other changes match the
-//     polls, JSRuntime, the allocator and the shape functions as ccgo
-//     writes them.
+//   - In every lib/ccgo_*.go file, let JS_ValueToAtom take the atom of a
+//     string key that is already an atom and no index through atomKey of
+//     lib/atomkey.go, without a TLS frame and the four calls of the
+//     generic path (see fixAtomKey).
+//     The first step undoes these five, as the other changes match the
+//     polls, JSRuntime, the allocator, the shape functions and
+//     JS_ValueToAtom as ccgo writes them.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -146,6 +150,7 @@ var (
 	runtimeF  = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
 	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
 	shape     = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
+	atomkey   = flag.Bool("atomkey", false, "print the fingerprints of JS_ValueToAtom and the functions lib/atomkey.go repeats, in the form of atomKeySites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
 	bitwise   = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
@@ -174,7 +179,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -196,6 +201,8 @@ func main() {
 			err = fingerprintReport(files, hw, "frontSites", frontFingerprint)
 		} else if err == nil && *shape {
 			err = fingerprintReport(files, hw, "shapeSites", shapeFingerprint)
+		} else if err == nil && *atomkey {
+			err = fingerprintReport(files, hw, "atomKeySites", atomKeyFingerprint)
 		} else if err == nil && *inline {
 			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
 		} else if err == nil && *forIn {
@@ -379,7 +386,7 @@ func restoreLate(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixAtomKey} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -390,7 +397,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreAtomKey, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

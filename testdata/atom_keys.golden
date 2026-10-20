@@ -1,0 +1,57 @@
+"a" 0 true true 0 undefined false undefined false 7
+"length" 1 true true 1 3 true 3 true 7
+"constructor" 2 true true 2 fn:Array true fn:String true 7
+"toString" 3 true true 3 fn:toString true fn:toString true 7
+"" 4 true true 4 undefined false undefined false 7
+"0" 5 true true 5 10 true "h" true 7
+"-0" 6 true true 6 undefined false undefined false 7
+"1e3" 7 true true 7 undefined false undefined false 7
+"01" 8 true true 8 undefined false undefined false 7
+"1a" 9 true true 9 undefined false undefined false 7
+"9" 10 true true 10 undefined false undefined false 7
+"-1" 11 true true 11 undefined false undefined false 7
+"2147483647" 12 true true 12 undefined false undefined false 7
+"2147483648" 13 true true 13 undefined false undefined false 7
+"4294967294" 14 true true 14 undefined false undefined false 7
+"4294967295" 15 true true 15 undefined false undefined false 7
+"NaN" 16 true true 16 undefined false undefined false 7
+"Infinity" 17 true true 17 undefined false undefined false 7
+" 1" 18 true true 18 undefined false undefined false 7
+"١" 19 true true 19 undefined false undefined false 7
+"ключ" 20 true true 20 undefined false undefined false 7
+"1ключ" 21 true true 21 undefined false undefined false 7
+keys "0","9","2147483647","2147483648","4294967294","a","length","constructor","toString","","-0","1e3","01","1a","-1","4294967295","NaN","Infinity"," 1","١","ключ","1ключ"
+forin "0","9","2147483647","2147483648","4294967294","a","length","constructor","toString","","-0","1e3","01","1a","-1","4294967295","NaN","Infinity"," 1","١","ключ","1ключ"
+after delete 0 "constructor","toString"
+array 4294967295 "1","4294967294","length","01","-0"
+"a" 0 true true 0 undefined false undefined false 7
+"length" 1 true true 1 3 true 3 true 7
+"constructor" 2 true true 2 fn:Array true fn:String true 7
+"toString" 3 true true 3 fn:toString true fn:toString true 7
+"" 4 true true 4 undefined false undefined false 7
+"0" 5 true true 5 10 true "h" true 7
+"-0" 6 true true 6 undefined false undefined false 7
+"1e3" 7 true true 7 undefined false undefined false 7
+"01" 8 true true 8 undefined false undefined false 7
+"1a" 9 true true 9 undefined false undefined false 7
+"9" 10 true true 10 undefined false undefined false 7
+"-1" 11 true true 11 undefined false undefined false 7
+"2147483647" 12 true true 12 undefined false undefined false 7
+"2147483648" 13 true true 13 undefined false undefined false 7
+"4294967294" 14 true true 14 undefined false undefined false 7
+"4294967295" 15 true true 15 undefined false undefined false 7
+"NaN" 16 true true 16 undefined false undefined false 7
+"Infinity" 17 true true 17 undefined false undefined false 7
+" 1" 18 true true 18 undefined false undefined false 7
+"١" 19 true true 19 undefined false undefined false 7
+"ключ" 20 true true 20 undefined false undefined false 7
+"1ключ" 21 true true 21 undefined false undefined false 7
+keys "0","9","2147483647","2147483648","4294967294","a","length","constructor","toString","","-0","1e3","01","1a","-1","4294967295","NaN","Infinity"," 1","١","ключ","1ключ"
+forin "0","9","2147483647","2147483648","4294967294","a","length","constructor","toString","","-0","1e3","01","1a","-1","4294967295","NaN","Infinity"," 1","١","ключ","1ключ"
+after delete 0 "constructor","toString"
+array 4294967295 "1","4294967294","length","01","-0"
+symbol 1 true true 2 true [null,null]
+symbol text sym gsym str:desc str:glob true true 1 ["desc","glob","Symbol(desc)","Symbol(glob)"] true
+rebuilt "rebuilt0" 0 true ["rebuilt0"]
+rebuilt "rebuilt1" 1 true ["rebuilt1"]
+rebuilt "rebuilt0" 2 true ["rebuilt0"]

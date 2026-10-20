@@ -16197,6 +16197,12 @@ func _js_symbol_to_atom(tls *libc.TLS, ctx uintptr, _val TJSValue) (r TJSAtom) {
 //
 //	/* return JS_ATOM_NULL in case of exception */
 func XJS_ValueToAtom(tls *libc.TLS, ctx uintptr, _val TJSValue) (r TJSAtom) {
+	// Changed by internal/fixlib: a string key that is an atom and no index takes atomKey of lib/atomkey.go (see fixAtomKey).
+	if jsvTag(_val) == EJS_TAG_STRING {
+		if atom, ok := atomKey(tls, ctx, jsvPtr(_val)); ok {
+			return atom
+		}
+	}
 	bp := tls.Alloc(32)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _val
@@ -205818,4 +205824,13 @@ const (
 	forInFlagsShift = 26
 	forInExoticOff  = 16
 	forInExotic     = 0x8
+)
+
+// Changed by internal/fixlib: the atom type and the length of a JSString, as lib/atomkey.go reads them (see fixAtomKey).
+const (
+	atomKeyTypeOff   = 4
+	atomKeyTypeMask  = 0xc0000000
+	atomKeyTypeShift = 30
+	atomKeyLenMask   = 0x7fffffff
+	atomKeyLenShift  = 0
 )
