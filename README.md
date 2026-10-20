@@ -643,6 +643,39 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   with no C hunk (`internal/fixlib/inline.go`).
   Tests: `internal/fixlib/inline_test.go`, with test262 and the tests of
   the root package for what the engine gives.
+- A `for in` loop no longer lists the property names of each prototype
+  to find out that it has no enumerable property. When a loop runs out of
+  the object's own properties, the engine checks the objects of its
+  prototype chain for enumerable string keys, to know whether it must walk
+  the chain. It did that with `JS_GetOwnPropertyNamesInternal`, which
+  mallocs a list, takes a reference to each name and frees it all again,
+  in every loop and for every prototype, mostly for `Object.prototype`,
+  which has dozens of names and none of them enumerable.
+  `js_for_in_prepare_prototype_chain_enum` now first calls `forInNoEnum`
+  (`lib/forin.go`), which reads the shape of a prototype that is not
+  exotic: when no property of the shape has a name and the enumerable flag,
+  it gives the same empty list without allocating, and the loop goes on as
+  before. Why this is safe: for an object that is not exotic,
+  `JS_GetOwnPropertyNamesInternal` with these flags counts only shape
+  properties with a name, the enumerable flag and a string key, calls no
+  method of the class and throws for nothing it does not count, so with no
+  such property its list is empty. `forInNoEnum` answers no for every
+  exotic object (arrays, `String` objects, proxies, ...) and for every
+  object with an enumerable property, symbols included, and the engine
+  lists the names as before, so the traps of a proxy in the chain run as
+  they did. The only difference is out of memory: the empty list needs no
+  memory, where the engine mallocs one entry, so with no memory left the
+  loop goes on where it used to fail. `fixlib` puts the call into all 13
+  files and takes the two bit fields `forInNoEnum` reads, the flags of a
+  shape property and the `is_exotic` bit of an object, from each file's
+  own `JS_GetOwnPropertyNamesInternal`, so 32-bit and big-endian targets
+  get their own layout. It pins the text of
+  `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`,
+  `get_shape_prop` and `JS_FreePropertyEnum` by fingerprints
+  (`forInSites`). This changes only the generated Go, with no C hunk
+  (`internal/fixlib/forin.go`). Tests: `lib/forin_test.go`, whose
+  `testdata/forin.txt` is what the engine gave before the change, and
+  `internal/fixlib/forin_test.go`.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -866,7 +899,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go` and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -886,7 +919,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front` and `-shape`. Each of these runs
+  `-front`, `-shape` and `-forin`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1176,6 +1209,19 @@ Conflicts to expect:
   `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it
   reports that `gc_phase` is not the byte right after `tmp_obj_list`,
   change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
+  If it reports that `js_for_in_prepare_prototype_chain_enum`,
+  `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or
+  `JS_FreePropertyEnum` changed (a fingerprint other than the one in
+  `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for
+  an object that is not exotic, the names listed with `JS_GPN_STRING_MASK`
+  and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name
+  and the enumerable flag, the loop must still go on to the next prototype
+  when the list is empty, and freeing an empty list must still do nothing.
+  If it reports that the reads of the enumerable flag or the test of
+  `is_exotic` changed shape, find where the bits are now and update the
+  patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in
+  (`go run ./internal/fixlib -forin` prints them) and run
+  `go test -run ForIn ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1219,8 +1265,8 @@ Conflicts to expect:
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
-  statement, the calls written out in the interpreter and the frames freed
-  without a defer have no C form: they
+  statement, the calls written out in the interpreter, the call into
+  `lib/forin.go` and the frames freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -1350,6 +1396,7 @@ go test -run EnginePanic .                               # the TLS stack after a
 go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
 go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
+go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

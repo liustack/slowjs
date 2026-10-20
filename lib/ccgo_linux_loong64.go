@@ -32411,7 +32411,8 @@ _5:
 		if v7 != 0 {
 			goto fail
 		}
-		if _JS_GetOwnPropertyNamesInternal(tls, ctx2, bp+48, bp+56, *(*uintptr)(unsafe.Pointer(bp + 64)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
+		// Changed by internal/fixlib: no names to list for a prototype without enumerable properties (see fixForIn).
+		if !forInNoEnum(tls, *(*uintptr)(unsafe.Pointer(bp + 64)), bp+48, bp+56) && _JS_GetOwnPropertyNamesInternal(tls, ctx2, bp+48, bp+56, *(*uintptr)(unsafe.Pointer(bp + 64)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 			v1 = *(*TJSValue)(unsafe.Pointer(bp + 64))
 			*(*TJSValue)(unsafe.Pointer(bp)) = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -205645,4 +205646,12 @@ const (
 	objlitExtensible = 0x2
 	objlitExotic     = 0x8
 	objlitFastArray  = 0x10
+)
+
+// Changed by internal/fixlib: the bit fields lib/forin.go reads (see fixForIn).
+const (
+	forInFlagsMask  = 0xfc000000
+	forInFlagsShift = 26
+	forInExoticOff  = 16
+	forInExotic     = 0x8
 )

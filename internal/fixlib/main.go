@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-three things:
+// It does twenty-four things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -63,6 +63,10 @@
 //   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
 //     the string where the regexp cannot start to match, through lreSkip
 //     of lib/regexskip.go (see fixRegexSkip).
+//   - In every lib/ccgo_*.go file, let a for in loop read from the shape
+//     of a prototype that it has no enumerable property, through
+//     forInNoEnum of lib/forin.go, before it lists the prototype's names
+//     (see fixForIn).
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement
 //     that passes an address in the frame on or can reach a stack check a
@@ -137,6 +141,7 @@ var (
 	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
 	shape     = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
+	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -161,7 +166,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -185,6 +190,8 @@ func main() {
 			err = fingerprintReport(files, hw, "shapeSites", shapeFingerprint)
 		} else if err == nil && *inline {
 			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
+		} else if err == nil && *forIn {
+			err = fingerprintReport(files, hw, "forInSites", forInFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -316,6 +323,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixRegexSkip(b, name); err != nil {
+		return nil, err
+	}
+	if b, err = fixForIn(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
