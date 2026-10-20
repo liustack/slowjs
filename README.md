@@ -583,8 +583,10 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   that was read and does not keep it after it returns nor return it
   (`addrCallees` in `internal/fixlib/lazy.go`), and every call that can
   reach a stack check is in such a statement. The text of those callees,
-  of the functions the `va_list` goes on to, and of the
-  `get_own_property` methods of the engine's classes is pinned by
+  of the functions the `va_list` goes on to, of the
+  `get_own_property` methods of the engine's classes and of
+  `JS_GetOwnPropertyInternal`, which the method of a proxy passes the
+  descriptor to, is pinned by
   fingerprints (`lazyAddrSites`), so an upstream change to one stops
   `fixlib` until it is read again, and the frame size, cell uses and
   statements of each function are pinned in `lazySites`. A class

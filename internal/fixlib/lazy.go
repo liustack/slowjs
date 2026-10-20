@@ -159,7 +159,9 @@ var addrCallees = map[string]string{
 // lazyAddrFuncs are the functions that get an address in the frame from
 // the calls addrCallees allows, directly or passed on: the va_list goes
 // from JS_ThrowTypeError through JS_ThrowError to vsnprintf in
-// JS_ThrowError2, and i32toa writes through u32toa.
+// JS_ThrowError2, i32toa writes through u32toa, and the get_own_property
+// method of a proxy without a trap passes the descriptor to
+// JS_GetOwnPropertyInternal.
 var lazyAddrFuncs = []string{
 	"___JS_ThrowTypeErrorAtom",
 	"XJS_ThrowTypeError",
@@ -168,6 +170,7 @@ var lazyAddrFuncs = []string{
 	"Xi32toa",
 	"Xu32toa",
 	"_js_new_string8_len",
+	"_JS_GetOwnPropertyInternal",
 }
 
 var (

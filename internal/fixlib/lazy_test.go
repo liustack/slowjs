@@ -233,6 +233,10 @@ func TestLazyAddrSites(t *testing.T) {
 		old:  "\treturn _JS_ThrowError2(tls, ctx, error_num, fmt, ap, add_backtrace)\n",
 		new:  "\tsaved = ap\n\treturn _JS_ThrowError2(tls, ctx, error_num, fmt, ap, add_backtrace)\n",
 	}, {
+		name: "the descriptor of a proxy passed on",
+		old:  "retry:\n\t;\n\tprs = _find_own_property(tls, bp+16, p1, prop)\n",
+		new:  "retry:\n\t;\n\tsaved = desc\n\tprs = _find_own_property(tls, bp+16, p1, prop)\n",
+	}, {
 		name: "a new get_own_property",
 		old:  "\tp := unsafe.Pointer(&_js_arguments_exotic_methods)\n",
 		new:  "\tp := unsafe.Pointer(&_js_arguments_exotic_methods)\n\t*(*uintptr)(unsafe.Add(p, 0)) = __ccgo_fp(_js_string_get_own_property)\n",
