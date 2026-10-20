@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -50,6 +51,15 @@ func TestRegexSemantics(t *testing.T) {
 	}
 }
 
+// testdata/regexsplit.js runs regexps of alternatives, groups, quantifiers,
+// assertions, lookarounds and back references, with every flag, on a set of
+// strings through every API that runs a regexp. testdata/regexsplit.txt is
+// what Node gives (and the engine gave the same before lreFirstSet and
+// lreSplit), so it must stay as it is.
+func TestRegexSplitSemantics(t *testing.T) {
+	matchTranscript(t, "regexsplit")
+}
+
 // lreSkip moves the start of a match to the first position where the first
 // character can match, gives up when there is none, and leaves the regexps
 // it does not know as they are. Every pointer it gets is to C memory, as
@@ -70,7 +80,8 @@ func TestRegexSkip(t *testing.T) {
 		y = MLRE_FLAG_STICKY
 		v = MLRE_FLAG_UNICODE_SETS
 
-		asIs = -2 // lreSkip leaves the start as it is
+		asIs = -2 // lreSkip leaves the start as it is, with the loop
+		at0  = -3 // lreSkip runs the match once at position 0
 	)
 	for _, c := range []struct {
 		re     string
@@ -78,47 +89,69 @@ func TestRegexSkip(t *testing.T) {
 		s      string
 		wide   bool // a string of 16-bit units
 		cindex int32
-		want   int32 // the start, -1 for no match, or asIs
-		loop   bool  // whether the match starts with the loop over positions
+		want   int32 // the start, -1 for no match, asIs or at0
+		kind   uint8 // how lreRun goes on from a start
 	}{
-		{"a", 0, "xxa", false, 0, 2, true},
-		{"a", g, "xxa", false, 1, 2, true},
-		{"a", g, "xxa", false, 2, 2, true},
-		{"a", 0, "xxx", false, 0, -1, false},
-		{"a", g, "xxa", false, 3, -1, false},
-		{"a", 0, "", false, 0, -1, false},
-		{"ab", 0, "xab", false, 0, 1, true},
-		{"[b-d]", 0, "aaac", false, 0, 3, true},
-		{"[b-d]", 0, "aaae", false, 0, -1, false},
-		{"[<>&]", 0, "xx&", false, 0, 2, true},
-		{"[^a]", 0, "aab", false, 0, 2, true},
-		{"[\\s\\S]", 0, "", false, 0, -1, false},
-		{"\\uffff", 0, "a\uffff", true, 0, 1, true},
-		{"[^a]", 0, "a\uffff", true, 0, 1, true},
-		{"[\\uff00-\\uffff]", 0, "a\uffff", true, 0, asIs, true}, // range32
-		{"中", 0, "ab中", true, 0, 2, true},
-		{"中", 0, "abc", false, 0, -1, false},
-		{"[一-龥]", 0, "ab中", true, 1, 2, true},
-		{"^a", 0, "ab", false, 0, 0, false},
-		{"^a", g, "ab", false, 1, -1, false},
-		{"^", g, "", false, 0, 0, false},
-		{"^a", m, "b\na", false, 0, asIs, true},
-		{"a", y, "xxa", false, 0, asIs, false},
-		{"a", u, "xxa", false, 0, asIs, true},
-		{"a", v, "xxa", false, 0, asIs, true},
-		{"a", i, "xxa", false, 0, asIs, true},
-		{"[a-c]", i, "xxa", false, 0, asIs, true},
-		{"&", i, "xx&", false, 0, asIs, true},    // char even when ignoring case
-		{"[&<]", i, "xx&", false, 0, asIs, true}, // range even when ignoring case
-		{"a", m, "xxa", false, 0, asIs, true},
-		{"(a)", 0, "xxa", false, 0, asIs, true},
-		{"a|b", 0, "xxa", false, 0, asIs, true},
-		{".", 0, "xxa", false, 0, asIs, true},
-		{"\\d", 0, "xx1", false, 0, 2, true},
-		{"\\w", 0, "-_", false, 0, 1, true},
-		{"\\s", 0, "a\u3000", true, 0, asIs, true}, // space
+		{"a", 0, "xxa", false, 0, 2, lreRunChar},
+		{"a", g, "xxa", false, 1, 2, lreRunChar},
+		{"a", g, "xxa", false, 2, 2, lreRunChar},
+		{"a", 0, "xxx", false, 0, -1, 0},
+		{"a", g, "xxa", false, 3, -1, 0},
+		{"a", 0, "", false, 0, -1, 0},
+		{"ab", 0, "xab", false, 0, 1, lreRunChar},
+		{"[b-d]", 0, "aaac", false, 0, 3, lreRunRange},
+		{"[b-d]", 0, "aaae", false, 0, -1, 0},
+		{"[<>&]", 0, "xx&", false, 0, 2, lreRunRange},
+		{"[^a]", 0, "aab", false, 0, 2, lreRunRange},
+		{"[\\s\\S]", 0, "", false, 0, -1, 0},
+		{"\\uffff", 0, "a\uffff", true, 0, 1, lreRunChar},
+		{"[^a]", 0, "a\uffff", true, 0, 1, lreRunRange},
+		{"[\\uff00-\\uffff]", 0, "a\uffff", true, 0, 1, lreRunSet}, // range32: all units from 256 up
+		{"中", 0, "ab中", true, 0, 2, lreRunChar},
+		{"中", 0, "abc", false, 0, -1, 0},
+		{"[一-龥]", 0, "ab中", true, 1, 2, lreRunRange},
+		{"^a", 0, "ab", false, 0, at0, 0},
+		{"^a", g, "ab", false, 1, -1, 0},
+		{"^", g, "", false, 0, at0, 0},
+		{"^a", m, "b\na", false, 0, 2, lreRunSet},
+		{"a", y, "xxa", false, 0, asIs, 0},
+		{"a", u, "xxa", false, 0, asIs, 0},
+		{"a", v, "xxa", false, 0, asIs, 0},
+		{"a", i, "xxA", false, 0, 2, lreRunSet},
+		{"A", i, "xxa", false, 0, 2, lreRunSet},
+		{"a", i, "xx\u212a", true, 0, -1, 0},
+		{"[a-c]", i, "xxa", false, 0, asIs, 0},
+		{"é", i, "xxé", false, 0, asIs, 0},
+		{"&", i, "xx&", false, 0, 2, lreRunSet}, // char even when ignoring case
+		{"[&<]", i, "xx&", false, 0, asIs, 0},   // range even when ignoring case
+		{"a", m, "xxa", false, 0, 2, lreRunChar},
+		{"(a)", 0, "xxa", false, 0, 2, lreRunSet},
+		{"a|b", 0, "xxb", false, 0, 2, lreRunSet},
+		{"a|b", 0, "xxc", false, 0, -1, 0},
+		{"a|b", 0, "xx中b", true, 0, 3, lreRunSet},
+		{"a|中", 0, "xxx中", true, 0, 3, lreRunSet}, // any unit from 256 up
+		{"(?:ab|cd)*e", 0, "xxe", false, 0, 2, lreRunSet},
+		{"a?b", 0, "xxb", false, 0, 2, lreRunSet},
+		{"a*", 0, "xxa", false, 0, asIs, 0}, // matches the empty string
+		{"a|", 0, "xxa", false, 0, asIs, 0},
+		{"\\bfoo", 0, "a foo", false, 0, 2, lreRunSet},
+		{"(?=a)\\w", 0, "--a", false, 0, 2, lreRunSet},
+		{"(?<=a)b", 0, "xab", false, 0, 2, lreRunSet},
+		{"(a)\\1", 0, "xxa", false, 0, 2, lreRunSet},
+		{"\\1(a)", 0, "xxa", false, 0, asIs, 0},
+		{"(?:)a", 0, "xxa", false, 0, 2, lreRunChar},
+		{".", 0, "xxa", false, 0, asIs, 0},
+		{"\\d", 0, "xx1", false, 0, 2, lreRunRange},
+		{"\\w", 0, "-_", false, 0, 1, lreRunRange},
+		{"\\s", 0, "a\u3000", true, 0, asIs, 0}, // space
+		{"x\\s|a", 0, "-x", false, 0, 1, lreRunSet},
+		{strings.Repeat("w|", 600) + "a", 0, "xxa", false, 0, asIs, 0}, // past lreFirstBudget
+		{strings.Repeat("w|", 300) + "a", 0, "xxa", false, 0, 2, lreRunSet},
 	} {
 		name := fmt.Sprintf("/%s/%d on %q from %d", c.re, c.flags, c.s, c.cindex)
+		if len(name) > 80 {
+			name = name[:80]
+		}
 		bc := compileRegexp(t, tls, ctx, c.re, c.flags)
 		buf, clen, cbufType := regexpInput(t, tls, c.s, c.wide)
 		n := uintptr(2 * Xlre_get_capture_count(tls, bc))
@@ -126,28 +159,91 @@ func TestRegexSkip(t *testing.T) {
 		for k := uintptr(0); k < n; k++ {
 			*(*uintptr)(unsafe.Pointer(capture + k*unsafe.Sizeof(uintptr(0)))) = 1
 		}
-		start, pc := lreSkip(tls, capture, bc, buf, c.cindex, clen, cbufType, ctx)
-		want, wantPC := c.want, uintptr(MRE_HEADER_LEN)
-		switch {
-		case want == asIs:
-			want = c.cindex
-		case want < 0:
+		st := lreSkip(tls, capture, bc, buf, c.cindex, clen, cbufType, ctx)
+		want, wantPC, kind := c.want, uintptr(lreSkipMatch), c.kind
+		switch want {
+		case asIs:
+			want, wantPC = c.cindex, MRE_HEADER_LEN
+		case at0:
+			want = 0
+		case -1:
 			want, wantPC = 0, 0
-		case !c.loop:
-			wantPC = MRE_HEADER_LEN + 11
 		}
-		if start != want || pc != wantPC {
-			t.Errorf("%s: start %d, code at %d, want %d, %d", name, start, pc, want, wantPC)
+		if st.index != want || st.pc != wantPC || st.kind != kind {
+			t.Errorf("%s: start %d, code at %d, kind %d, want %d, %d, %d", name, st.index, st.pc, st.kind, want, wantPC, kind)
 		}
 		for k := uintptr(0); k < n; k++ {
 			p := *(*uintptr)(unsafe.Pointer(capture + k*unsafe.Sizeof(uintptr(0))))
-			if pc == 0 && p != 0 || pc != 0 && p != 1 {
+			if st.pc == 0 && p != 0 || st.pc != 0 && p != 1 {
 				t.Errorf("%s: capture %d is %#x", name, k, p)
 			}
 		}
 		libc.Xfree(tls, capture)
 		libc.Xfree(tls, buf)
 		Xjs_free(tls, ctx, bc)
+	}
+}
+
+// lreFirstSet gives the units a match can start with, from both ways of
+// every split, and nothing it does not know.
+func TestRegexFirstSet(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	rt := XJS_NewRuntime(tls)
+	defer XJS_FreeRuntime(tls, rt)
+	ctx := XJS_NewContext(tls, rt)
+	defer XJS_FreeContext(tls, ctx)
+
+	for _, c := range []struct {
+		re    string
+		flags int32
+		units string // the units below 256 of the set, in order
+		high  bool
+	}{
+		{"cat|dog|bird", 0, "bcd", false},
+		{"(cat)|(?:dog)|[x-z]", 0, "cdxyz", false},
+		{"a?b*c", 0, "abc", false},
+		{"(?:a|b)?(?:c|d)?e", 0, "abcde", false},
+		{"[^\\x00-\\xfe]", 0, "\xff", true},
+		{"a|\\u0100", 0, "a", true},
+		{"(?<=x)a|(?!y)b", 0, "ab", false},
+		{"\\b(?:a|b)\\B$|c", 0, "abc", false},
+		{"Ab|c", MLRE_FLAG_IGNORECASE, "ACac", false},
+		{"(?i:k)|(?-i:x)", 0, "Kkx", false},
+		{"[]|a", 0, "a", false},
+	} {
+		bc := compileRegexp(t, tls, ctx, c.re, c.flags)
+		set, ok := lreFirstSet(bc + lreSkipBody)
+		var got []byte
+		for k := uint32(0); k < 256; k++ {
+			if set.has(k) {
+				got = append(got, byte(k))
+			}
+		}
+		if !ok || string(got) != c.units || set.high != c.high {
+			t.Errorf("/%s/%d: %v, %q, high %v, want %q, high %v", c.re, c.flags, ok, got, set.high, c.units, c.high)
+		}
+		Xjs_free(tls, ctx, bc)
+	}
+}
+
+// Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
+// letter, every other ASCII unit as it is, and an ASCII unit for no other
+// unit, as Canonicalize of the specification does: a character from 128
+// whose upper case is below 128 stays as it is. lreFirstSet relies on it
+// for the characters that ignore case.
+func TestCanonicalizeASCII(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	for c := uint32(0); c <= 0xffff; c++ {
+		got := uint32(Xlre_canonicalize(tls, c, 0))
+		want := c
+		if c >= 'a' && c <= 'z' {
+			want = c - 'a' + 'A'
+		}
+		if c < 128 && got != want || c >= 128 && got < 128 {
+			t.Errorf("lre_canonicalize(%#x) = %#x", c, got)
+		}
 	}
 }
 
@@ -176,6 +272,8 @@ func TestRegexSkipInterrupt(t *testing.T) {
 		{"a", "x", lreSkipChunk + 1, 1, MLRE_RET_TIMEOUT, 0, 1},
 		{"a", "x", 3*lreSkipChunk + 1, 0, 0, 0, 3},
 		{"[ab]", "x", 3*lreSkipChunk + 1, 1, MLRE_RET_TIMEOUT, 0, 1},
+		{"a|b", "x", 3*lreSkipChunk + 1, 1, MLRE_RET_TIMEOUT, 0, 1},
+		{"a|b", "x", 3*lreSkipChunk + 1, 0, 0, 0, 3},
 		{"a", "\u4e2d", 2*lreSkipChunk + 1, 1, MLRE_RET_TIMEOUT, 0, 1},
 		{"a", "x", 2 * lreSkipChunk, 0, 0, 0, 1},
 	} {
@@ -184,13 +282,48 @@ func TestRegexSkipInterrupt(t *testing.T) {
 		bc := compileRegexp(t, tls, ctx, c.re, 0)
 		buf, clen, cbufType := regexpInput(t, tls, strings.Repeat(c.s, c.units), false)
 		capture := cAlloc(t, tls, 2*unsafe.Sizeof(uintptr(0)))
-		start, pc := lreSkip(tls, capture, bc, buf, 0, clen, cbufType, ctx)
-		if start != c.start || pc != c.pc || skipChecks != c.wantCalls {
-			t.Errorf("%s: start %d, code at %d, %d checks, want %d, %d, %d", name, start, pc, skipChecks, c.start, c.pc, c.wantCalls)
+		st := lreSkip(tls, capture, bc, buf, 0, clen, cbufType, ctx)
+		if st.index != c.start || st.pc != c.pc || skipChecks != c.wantCalls {
+			t.Errorf("%s: start %d, code at %d, %d checks, want %d, %d, %d", name, st.index, st.pc, skipChecks, c.start, c.pc, c.wantCalls)
 		}
 		libc.Xfree(tls, capture)
 		libc.Xfree(tls, buf)
 		Xjs_free(tls, ctx, bc)
+	}
+}
+
+// lreSplit steps over at most lreSplitBudget split ops in one call, and
+// then gives back the one it is at to be pushed, so a chain of splits that
+// leads back to itself, which lre_compile does not write, cannot hold it.
+// The bytecode is a split_goto_first that takes itself and pushes a char
+// 'z', on a string of 'a'.
+func TestRegexSplitBudget(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	bc := cAlloc(t, tls, 8)
+	defer libc.Xfree(tls, bc)
+	*(*uint8)(unsafe.Pointer(bc)) = EREOP_split_goto_first
+	(*Tpacked_u32)(unsafe.Pointer(bc + 1)).Fv = uint32(0xffff_fffb) // -5: back to itself
+	*(*uint8)(unsafe.Pointer(bc + 5)) = EREOP_char
+	(*Tpacked_u16)(unsafe.Pointer(bc + 6)).Fv = 'z'
+	buf, clen, cbufType := regexpInput(t, tls, "a", false)
+	defer libc.Xfree(tls, buf)
+	s := cAlloc(t, tls, unsafe.Sizeof(TREExecContext{}))
+	defer libc.Xfree(tls, s)
+	x := (*TREExecContext)(unsafe.Pointer(s))
+	x.Fcbuf, x.Fcbuf_end, x.Fcbuf_type = buf, buf+uintptr(clen), cbufType
+	done := make(chan [2]uintptr, 1)
+	go func() {
+		pc, pc1 := lreSplit(tls, s, bc, bc+5, buf)
+		done <- [2]uintptr{pc, pc1}
+	}()
+	select {
+	case got := <-done:
+		if got != [2]uintptr{bc, bc + 5} {
+			t.Errorf("lreSplit gave %d and %d, want the split at 0 and its char at 5", got[0]-bc, got[1]-bc)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("lreSplit did not return")
 	}
 }
 

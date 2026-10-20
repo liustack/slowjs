@@ -117,7 +117,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 	}
 }
 
-// -forin, -bitwise, -eq, -lazyaddr, -json and -atomkey print the
+// -forin, -bitwise, -eq, -lazyaddr, -json, -atomkey and -regex print the
 // fingerprints even when the table does not match the files, which is when
 // they are needed: the check of the table must not stop the report.
 func TestFingerprintReportIgnoresSites(t *testing.T) {
@@ -139,6 +139,7 @@ func TestFingerprintReportIgnoresSites(t *testing.T) {
 		{"-json", jsonF, jsonSites, jsonFingerprint},
 		{"-atomkey", atomkey, atomKeySites, atomKeyFingerprint},
 		{"-lazyaddr", lazyAddr, lazyAddrSites, lazyAddrFingerprint},
+		{"-regex", regex, regexSites, regexFingerprint},
 	} {
 		want := c.table[name]
 		*c.flag, c.table[name] = true, "0"

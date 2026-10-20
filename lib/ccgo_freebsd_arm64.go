@@ -157449,6 +157449,15 @@ func _lre_exec_backtrack(tls *libc.TLS, s uintptr, capture uintptr, pc uintptr, 
 			pc1 = pc
 			pc = pc + uintptr(libc.Int32FromUint32(val))
 		}
+		// Changed by internal/fixlib: a way that cannot start here is not pushed (see fixRegexSkip).
+		if lrePeekOps>>*(*uint8)(unsafe.Pointer(pc1))&1 != 0 {
+			if pc, pc1 = lreSplit(tls, s, pc, pc1, cptr); pc1 == 0 {
+				if _lre_poll_timeout(tls, s) != 0 {
+					return Tintptr_t(MLRE_RET_TIMEOUT)
+				}
+				goto _48
+			}
+		}
 		if libc.BoolInt64(!!((int64(stack_end)-int64(sp))/8 < int64(libc.Int32FromInt32(3)))) != 0 {
 			saved_sp = libc.Uint64FromInt64((int64(sp) - int64((*TREExecContext)(unsafe.Pointer(s)).Fstack_buf)) / 8)
 			saved_bp = libc.Uint64FromInt64((int64(bp) - int64((*TREExecContext)(unsafe.Pointer(s)).Fstack_buf)) / 8)
@@ -158539,10 +158548,11 @@ func _lre_exec_backtrack(tls *libc.TLS, s uintptr, capture uintptr, pc uintptr, 
 //	   clen. */
 func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cindex int32, clen int32, cbuf_type int32, opaque uintptr) (r int32) {
 	// Changed by internal/fixlib: start where a match can start (see fixRegexSkip).
-	cindex, skipPC := lreSkip(tls, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque)
-	if skipPC == 0 {
-		return cindex
+	skip := lreSkip(tls, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque)
+	if skip.pc == 0 {
+		return skip.index
 	}
+	cindex = skip.index
 	bp := tls.Alloc(320)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cptr, p, s uintptr
@@ -158592,7 +158602,7 @@ func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cin
 			cptr = p - libc.UintptrFromInt32(1)*2
 		}
 	}
-	ret = int32(_lre_exec_backtrack(tls, s, capture, bc_buf+skipPC, cptr))
+	ret = int32(lreRun(tls, s, capture, bc_buf, cptr, &skip))
 	if (*TREExecContext)(unsafe.Pointer(s)).Fstack_buf != s+56 {
 		Xlre_realloc(tls, (*TREExecContext)(unsafe.Pointer(s)).Fopaque, (*TREExecContext)(unsafe.Pointer(s)).Fstack_buf, uint64(0))
 	}

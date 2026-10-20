@@ -533,8 +533,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   match without running the bytecode. A regexp that starts with `^`
   outside multiline mode is run at position 0 only. Unicode regexps (`u`,
   `v`), regexps that ignore case or are multiline (`i`, `m`), and every
-  other first op take the old path. `lreSkip` checks for an interrupt
-  after every 65,536 characters it looks at, as the backtracking machine
+  other first op took the old path, until the change for alternations
+  below. `lreSkip` checks for an interrupt after every 65,536 characters it looks at, as the backtracking machine
   does every 10,000 steps, so the eval timeout and `Interrupt` stop a
   regexp that runs again and again on a long string as before. A server
   render of a page of tifa's example shop takes about 3% less time on
@@ -824,6 +824,77 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   Go, with no C hunk (`internal/fixlib/oneframe.go`). Tests:
   `internal/fixlib/oneframe_test.go`, with `calldepth_test.go`, test262
   and the tests of the root package for what the engine gives.
+- A regexp of alternatives no longer tries each alternative that cannot
+  match at a position. An alternation such as `(red|blue|...)` compiles to
+  a chain of split ops, each pushing a state for the next alternative
+  before the machine tries one, so at every position of the string the
+  machine pushed and popped a state for each alternative, which for the
+  148 color names react-spring tests its values against (`new
+  RegExp('(' + names.join('|') + ')(?!\\w)', 'g')`) was 147 states per
+  position. Two changes, both in `lib/regexskip.go`:
+  - The split ops of `lre_exec_backtrack` ask `lreSplit` first whether the
+    way they push can start at the position: when it begins with a
+    character or a class of characters, after nothing but saves of
+    captures, and the character at the position does not match it, the
+    way would fail as soon as it is popped, and nothing is pushed. When
+    the way the machine takes is another split op, as in an alternation,
+    `lreSplit` goes on with that one in the same call, for up to 4096
+    split ops, after which it gives back the one it is at to be pushed as
+    usual. It reads the
+    character as the machine does and tests it as the op does, with the
+    same `lre_canonicalize` for a regexp that ignores case, so this holds
+    for every regexp and flag, lookbehinds and sticky regexps included.
+  - `lreSkip` knows more first ops. `lreFirstSet` follows the bytecode
+    from the start of the regexp through both ways of every split, over
+    saves and assertions (`^`, `$`, `\b`, lookaheads and lookbehinds, to
+    the op after them), up to the first op on each path that reads a
+    character, and collects the characters a match can start with: a
+    set of the 256 Latin-1 units and one bit for all others. It gives up,
+    and the regexp takes the old path, when a path can reach the end
+    without reading a character (the regexp can match the empty string),
+    at a jump back, at an op it does not know (`.`, `\s`, a back reference,
+    a class that ignores case, ...), and after 1024 ops. A character
+    that ignores case counts as itself and its lower case when it is
+    ASCII: outside unicode mode `lre_canonicalize` gives no other unit an
+    ASCII canonical form (`TestCanonicalizeASCII` checks every unit).
+    Regexps that ignore case or are multiline now take this path too.
+    `lre_exec` then calls `lreRun` in place of the machine: it tries the
+    match at the first position that can start one, without the loop over
+    positions at the start of the bytecode, and when that fails, finds the
+    next such position in Go and tries again, for the regexps of `lreSkip`
+    that start with one character or class too. That is what the loop
+    does: it tries each position in turn, from the captures as they were
+    before the loop, all cleared, which `lreRun` clears again before each
+    try. It polls the interrupt counter of the machine after each failed
+    try and checks for an interrupt every 65,536 characters it looks at.
+  Why this is safe: a state that is not pushed is one that would have
+  been popped only to fail at its first character, after saves the
+  machine undoes when it fails, and a position that is skipped is one
+  where no path of the regexp can read its character. Results, captures,
+  `lastIndex` and the errors a regexp throws are the same. The machine
+  counts a step toward its interrupt check, and checks, at each `goto`,
+  each loop and each failed pop, and a greedy `x+` jumps back by a split
+  op, so over a long string it counted only through the pops of the
+  states it pushed. A split op that pushes nothing therefore counts a step
+  and checks itself, and one long match still stops when the eval timeout
+  fires or `Interrupt` is called. What differs is how many steps are
+  counted: one for each call of `lreSplit` that pushes nothing, however
+  many splits it stepped over, where the machine counted one for each
+  state it popped. So an interrupt stops a match after a different number
+  of ops. And states not pushed take no room on the backtracking stack, so
+  a regexp near the memory limit can go on where it ran out of memory.
+  `fixlib` puts the question to `lreSplit` into the handler of the split
+  ops in all 13 files, after it finds that the handler pushes the way it
+  computes and jumps to the next op, and pins `lre_canonicalize`,
+  `lre_case_folding_entry` and `lre_poll_timeout` beside the functions
+  `regexSites` pinned already. This changes only the generated Go, with no C hunk
+  (`internal/fixlib/regexskip.go`). Tests: `lib/regexskip_test.go`, whose
+  `testdata/regexsplit.txt` holds what Node gives for 84 regexps on 73
+  strings through every API that runs one (the engine before the change
+  gives the same), with `testdata/regex.txt` as before,
+  `lib/regexskip_memgrind_test.go`, `internal/fixlib/regexskip_test.go`,
+  and `TestRegexScanStops` and `TestRegexMatchStops` in `timeout_test.go`,
+  which stop regexps that try every position, and single long matches.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -1362,16 +1433,25 @@ Conflicts to expect:
   then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
   fields in another order: find where the three bits are now and update
   `objectBits` and its patterns in `internal/fixlib/define.go`.
-  If it reports that `Xlre_compile`, `Xlre_exec` or
-  `_lre_exec_backtrack` changed (a fingerprint other than the one in
+  If it reports that `Xlre_compile`, `Xlre_exec`,
+  `_lre_exec_backtrack`, `Xlre_canonicalize` or `_lre_case_folding_entry`
+  changed (a fingerprint other than the one in
   `internal/fixlib/regexsites.go`), read the new code against
   `lib/regexskip.go`: the loop and `save_start 0` at the start of the
-  bytecode, the header fields it reads, and what `char`, `range` and
-  `line_start` match at a position must still be what `lreSkip` assumes,
-  and `lre_exec` must still return `LRE_RET_TIMEOUT` when
-  `lre_check_timeout` asks it to stop.
-  Then put the new fingerprints in (`go run ./internal/fixlib -regex`
-  prints them) and run `go test -run Regex ./lib`.
+  bytecode, the header fields it reads, the size and the meaning of every
+  op `lreFirstSet` follows, what the character and class ops match at a
+  position and how `GET_CHAR` reads it (`lreSplit`), that the split ops
+  only push a state, that a failed match at one position undoes its
+  captures down to the loop (`lreRun`), that `lre_canonicalize` gives an
+  ASCII result outside unicode mode only for ASCII units, that
+  `lre_poll_timeout` counts one step and returns non-zero when the machine
+  must stop (`lreRun` and the split ops call it), and `lre_exec` must still
+  return `LRE_RET_TIMEOUT` when `lre_check_timeout` asks it to stop. Then put the new fingerprints in (`go run ./internal/fixlib
+  -regex` prints them, even while the table is wrong) and run `go test
+  -run 'Regex|Canonicalize' ./lib`. If it reports that it cannot find the
+  handler of the split ops, its push or the jump to the next op, update
+  the patterns `reRegexSplit`, `reRegexSplitPush` and `reRegexNext` in
+  `internal/fixlib/regexskip.go` after reading the new handler.
   If it reports that the cold paths of `coldSites` changed, read the new
   `js_strict_eq2` or `__JS_AtomToValue`: the cold path must still be the
   only code that passes the address of a part of the frame on, and it must
@@ -1766,8 +1846,8 @@ go run ./intl/internal/gen -fetch -check                 # intl data is what the
 go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
-go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
-go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
+go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
+go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise

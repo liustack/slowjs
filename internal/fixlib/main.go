@@ -62,7 +62,9 @@
 //     fixDefine).
 //   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
 //     the string where the regexp cannot start to match, through lreSkip
-//     of lib/regexskip.go (see fixRegexSkip).
+//     and lreRun of lib/regexskip.go, and let the split ops of
+//     lre_exec_backtrack push no way that cannot start at the position,
+//     through lreSplit (see fixRegexSkip).
 //   - In every lib/ccgo_*.go file, let a for in loop read from the shape
 //     of a prototype that it has no enumerable property, through
 //     forInNoEnum of lib/forin.go, before it lists the prototype's names
