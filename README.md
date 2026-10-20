@@ -676,6 +676,37 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   (`internal/fixlib/forin.go`). Tests: `lib/forin_test.go`, whose
   `testdata/forin.txt` is what the engine gave before the change, and
   `internal/fixlib/forin_test.go`.
+- `&`, `|`, `^`, `<<`, `>>` and `>>>` of two numbers no longer take the
+  slow path when one of them is a float. The interpreter did the operator
+  itself only for two ints and called `js_binary_logic_slow` or
+  `js_shr_slow` for everything else, which convert both operands with the
+  checks for BigInts and objects and then with the generic `ToInt32`. A
+  product past 2^31 is a float, so the string hash of emotion, the CSS-in-JS
+  library of MUI, took that path for almost every operator. The two slow
+  functions now first call `bitwiseNumbers` (`lib/bitwise.go`), before
+  they take their TLS frame. It does the operator for any two ints or
+  floats, converting a float as `JS_ToInt32Free` does (the same bits,
+  without `fmod`), and stores an int, or for `>>>` a float above
+  2^31 - 1, as `JS_NewUint32` does. Any other pair goes on through the rest
+  of the slow path as before. Why this is safe: numbers hold no reference,
+  so nothing is freed, and the slow paths do nothing else for two numbers,
+  since converting a number to a numeric is a no-op and cannot throw or
+  call a script. The interpreter is left as it is: calling
+  `bitwiseNumbers` from its six handlers instead made the shop 0.8% slower.
+  Only the 11 files
+  of 64-bit targets change, because `bitwiseNumbers` reads their struct
+  `JSValue`: the 32-bit targets keep the slow path. `fixlib` pins the text
+  of `js_binary_logic_slow`, `js_shr_slow`, `JS_ToNumberHintFree` and
+  `JS_ToInt32Free` by fingerprints (`bitwiseSites`), and stops when the
+  interpreter no longer has 5 calls of the first and 1 of the second, or
+  when either no longer takes its TLS frame first. This
+  changes only the generated Go, with no C hunk
+  (`internal/fixlib/bitwise.go`). Tests: `lib/bitwise_test.go`, whose
+  `testdata/bitwise.txt` is what the engine gave before the change (Node
+  gives the same) and which checks `bitwiseNumbers` on about 41,000 pairs
+  of numbers against `ToInt32` of the specification (which the engine's
+  `JS_ToInt32Free` must also give) and the operator done in Go, and
+  `internal/fixlib/bitwise_test.go`.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -899,7 +930,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go` and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go` and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -919,7 +950,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape` and `-forin`. Each of these runs
+  `-front`, `-shape`, `-forin` and `-bitwise`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1222,6 +1253,17 @@ Conflicts to expect:
   patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in
   (`go run ./internal/fixlib -forin` prints them) and run
   `go test -run ForIn ./lib`.
+  If it reports that `js_binary_logic_slow`, `js_shr_slow`,
+  `JS_ToNumberHintFree` or `JS_ToInt32Free` changed (a fingerprint other
+  than the one in `internal/fixlib/bitwisesites.go`), read them against
+  `lib/bitwise.go`: for two ints or floats the slow paths must still give
+  `ToInt32` of each, the same operator with the count masked to 5 bits, and
+  an int, or a float for a `>>>` above 2^31 - 1. If it reports another
+  number of calls in `_JS_CallInternal`, read the new interpreter: each
+  call of the slow functions must have the two operands on top of the
+  stack, and the opcode in `op`. Then put the new
+  fingerprints in (`go run ./internal/fixlib -bitwise` prints them) and run
+  `go test -run Bitwise ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1265,8 +1307,9 @@ Conflicts to expect:
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
-  statement, the calls written out in the interpreter, the call into
-  `lib/forin.go` and the frames freed without a defer have no C form: they
+  statement, the calls written out in the interpreter, the calls into
+  `lib/forin.go` and `lib/bitwise.go` and the frames freed without a defer
+  have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
@@ -1397,6 +1440,7 @@ go test -run Regex ./lib                                 # regexps give what the
 go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
+go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...

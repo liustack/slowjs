@@ -36064,6 +36064,10 @@ exception:
 }
 
 func _js_binary_logic_slow(tls *libc.TLS, ctx3 uintptr, sp uintptr, op TOPCodeEnum) (r3 int32) {
+	// Changed by internal/fixlib: two numbers without the slow path (see fixBitwise).
+	if bitwiseNumbers(sp, op) {
+		return 0
+	}
 	bp := tls.Alloc(96)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, p2, r1, r2, v13, v16 uintptr
@@ -37143,6 +37147,10 @@ exception:
 }
 
 func _js_shr_slow(tls *libc.TLS, ctx4 uintptr, sp uintptr) (r1 int32) {
+	// Changed by internal/fixlib: two numbers without the slow path (see fixBitwise).
+	if bitwiseNumbers(sp, int32(EOP_shr)) {
+		return 0
+	}
 	bp := tls.Alloc(48)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var op1, op2, v1, v10, v15, v3 TJSValue
