@@ -39,7 +39,7 @@
 // as the difference from its parent's data: the keys whose value differs, and
 // "∅∅∅" for a key the parent has and the locale does not.
 //
-// The README of the module says how to move to a new CLDR or Chromium.
+// docs/upgrading.md says how to move to a new CLDR, tzdb or Chromium.
 package main
 
 import (
@@ -62,7 +62,8 @@ import (
 )
 
 // cldrTag is the cldr-json release the data comes from. Changing it and
-// running the generator again is how the data is upgraded; see the README.
+// running the generator again is how the data is upgraded. See "Updating
+// the intl locale data" in docs/upgrading.md.
 const cldrTag = "48.2.3"
 
 var (
