@@ -602,6 +602,44 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `internal/fixlib/lazy_test.go` and `internal/fixlib/nodefer_test.go`,
   with test262 and the tests of the root package for what the engine
   gives.
+- The interpreter no longer calls `set_value`: its 46 calls in
+  `JS_CallInternal` are written out in place. Go inlines into a function
+  as big as the interpreter only callees that cost 20 or less, with or
+  without PGO, so each was a real call, made by every `put_loc`,
+  `set_loc`, `put_arg` and `put_var_ref` of a script. `fixlib` turns a
+  call into a block that gives each argument to a variable of the
+  parameter's type, in order, then runs the callee's own body with its
+  parameters renamed to those variables and its labels renamed to labels
+  of their own. An argument that is a variable of the interpreter, such
+  as `ctx10`, is read where the parameter is, with no variable of its
+  own, when nothing can set it while the copy runs and the callee does
+  not set the parameter: 46 copies of `ctx10` made the interpreter's
+  frame on amd64 288 bytes bigger and undid `fixPin`, which keeps `ctx10`
+  in its stack slot. The Go array that `fixFrames` gives `set_value`
+  holds one JSValue, and becomes a Go JSValue in each copy, read as
+  `fixCells` reads the interpreter's own cells. Why this is safe: the
+  arguments are evaluated once and in order, as for the call, before the
+  callee's locals are declared, so a local cannot change what an argument
+  reads, and `fixlib` stops when the callee has a result, returns early,
+  takes a TLS frame, uses its Go array other than as one JSValue or uses
+  a name that is a local of the interpreter, when a call is not a
+  statement of its own, or when the number of calls changes. `set_value`
+  takes no TLS frame, so the TLS stack a stack check sees is the same.
+  Its text is pinned by fingerprints (`inlineSites`), so an upstream
+  change stops `fixlib` until it is read again. Other changes of `fixlib`
+  match the interpreter as ccgo writes it, so `fixlib` undoes this change
+  first (`restoreInline`) and makes it again last, and checks that
+  undoing it gives back the text it was given, byte for byte. A server
+  render of a page of tifa's example shop on linux/amd64 (AMD EPYC) takes
+  1.4% less time with this change, with and without PGO, with the same
+  HTML. With the TLS frames taken by statement as well, it takes 2.8% less
+  time than with v0.26.15 with PGO (each with an engine profile taken on
+  its own code) and 2.9% less without. `JS_FreeAtom` and
+  `is_strict_mode`, written out too, gained nothing that could be told
+  from noise, so they stay calls. This changes only the generated Go,
+  with no C hunk (`internal/fixlib/inline.go`).
+  Tests: `internal/fixlib/inline_test.go`, with test262 and the tests of
+  the root package for what the engine gives.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -976,6 +1014,15 @@ Conflicts to expect:
   read them: none may keep an address it is given after it returns, nor
   return it. Then put the new fingerprints in (`go run ./internal/fixlib
   -lazyaddr` prints them).
+  If it reports that `set_value` changed (a fingerprint other than the one
+  in `internal/fixlib/inlinesites.go`), read it: `fixInline` writes its
+  body out in the interpreter, and must still be able to (no result, no
+  early return, no TLS frame, its Go array used only as one JSValue).
+  Then put the new fingerprints in (`go run ./internal/fixlib -inline`
+  prints them). If it reports another number of calls, a call that is not
+  a statement of its own or a name of the callee that is a local of
+  `JS_CallInternal`, read the new interpreter and update `inlineCallees`
+  in `internal/fixlib/inline.go`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1019,7 +1066,8 @@ Conflicts to expect:
   `alloca`, the functions without a TLS frame, the changes to the
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
-  statement and the frames freed without a defer have no C form: they
+  statement, the calls written out in the interpreter and the frames freed
+  without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
