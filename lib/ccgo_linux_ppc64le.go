@@ -4478,6 +4478,8 @@ func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
 	var v1 TJSValue
 	var _ /* ms at bp+16 */ TJSMallocState
 	_, _, _, _, _, _, _, _, _, _, _ = cl, e, el, el1, i, p, p1, v1, v2, v4, v5
+	// Changed by internal/fixlib: let go of the shapes the shape cache keeps (see fixShapeCache).
+	shapeCacheOff(tls, rt1)
 	// Changed by internal/fixlib: give the front cache back and turn it off (see fixFrontCache).
 	frontOff(tls, rt1)
 	v1 = (*TJSRuntime)(unsafe.Pointer(rt1)).Fcurrent_exception
@@ -9481,6 +9483,10 @@ func _js_free_shape0(tls *libc.TLS, rt1 uintptr, sh uintptr) {
 	var v1 TJSValue
 	var v4 int32
 	_, _, _, _, _, _, _ = i, p, pr, v1, v2, v4, v5
+	// Changed by internal/fixlib: keep the shape in the shape cache (see fixShapeCache).
+	if shapeKeep(tls, rt1, sh) {
+		return
+	}
 	if (*TJSShape)(unsafe.Pointer(sh)).Fis_hashed != 0 {
 		_js_shape_hash_unlink(tls, rt1, sh)
 	}
@@ -17003,11 +17009,14 @@ func _add_property(tls *libc.TLS, ctx uintptr, p uintptr, prop TJSAtom, prop_fla
 				}
 				(*TJSObject)(unsafe.Pointer(p)).Fprop = new_prop
 			}
+			// Changed by internal/fixlib: a shape found again earns the shape cache a copy (see fixShapeCache).
+			shapeFound(tls, ctx)
 			(*TJSObject)(unsafe.Pointer(p)).Fshape = _js_dup_shape(tls, new_sh)
 			_js_free_shape(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, sh)
 			return (*TJSObject)(unsafe.Pointer(p)).Fprop + uintptr((*TJSShape)(unsafe.Pointer(new_sh)).Fprop_count-int32(1))*16
 		} else {
-			if (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, sh))).Fref_count != int32(1) {
+			// Changed by internal/fixlib: copy a shape the shape cache can keep (see fixShapeCache).
+			if (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, sh))).Fref_count != int32(1) || shapeKeepable(tls, ctx, sh) {
 				/* if the shape is shared, clone it */
 				new_sh = _js_clone_shape(tls, ctx, sh)
 				if !(new_sh != 0) {

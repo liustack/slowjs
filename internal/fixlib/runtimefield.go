@@ -165,7 +165,7 @@ func structBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
 
 // insertAfterDecls inserts text into the function name of b right after
 // the line that ends its declarations, which must come before any other
-// statement but the TLS frame.
+// statement but the TLS frame and comments.
 func insertAfterDecls(b []byte, name, text string) ([]byte, error) {
 	body, err := funcBody(b, funcHead(name), name)
 	if err != nil {
@@ -177,7 +177,7 @@ func insertAfterDecls(b []byte, name, text string) ([]byte, error) {
 	}
 	head := funcHead(name).FindIndex(body)[1]
 	for _, line := range bytes.Split(bytes.TrimSuffix(body[head:loc[0]+1], []byte("\n")), []byte("\n")) {
-		if len(line) != 0 && !bytes.HasPrefix(line, []byte("\tvar ")) && !bytes.HasPrefix(line, []byte("\tbp := tls.Alloc(")) && !bytes.HasPrefix(line, []byte("\tdefer tls.Free(")) {
+		if len(line) != 0 && !bytes.HasPrefix(line, []byte("\tvar ")) && !bytes.HasPrefix(line, []byte("\tbp := tls.Alloc(")) && !bytes.HasPrefix(line, []byte("\tdefer tls.Free(")) && !bytes.HasPrefix(line, []byte("\t// ")) {
 			return nil, fmt.Errorf("%s: a statement before the end of the declarations: %s", name, line)
 		}
 	}

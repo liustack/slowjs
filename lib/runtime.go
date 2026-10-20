@@ -12,6 +12,7 @@ import "unsafe"
 // allocates it with the C struct and clears it.
 type TforkRuntime struct {
 	front TfrontCache // see frontcache.go
+	shape TshapeCache // see shapecache.go
 }
 
 // forkRuntimeSize is the size of TforkRuntime, which JS_NewRuntime2

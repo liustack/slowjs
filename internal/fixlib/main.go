@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-two things:
+// It does twenty-three things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -80,8 +80,12 @@
 //   - In every lib/ccgo_*.go file, put the front cache of
 //     lib/frontcache.go, kept in that state, in front of the small block
 //     allocator (see fixFrontCache).
-//     The first step undoes these three, as the other changes match the
-//     polls, JSRuntime and the allocator as ccgo writes them.
+//   - In every lib/ccgo_*.go file, keep the shapes of plain objects in the
+//     shape cache of lib/shapecache.go, kept in that state, once their last
+//     object is gone (see fixShapeCache).
+//     The first step undoes these four, as the other changes match the
+//     polls, JSRuntime, the allocator and the shape functions as ccgo
+//     writes them.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -131,6 +135,7 @@ var (
 	poll      = flag.Bool("poll", false, "print the fingerprints of the function lib/poll.go repeats, in the form of pollSites, to update it after a review")
 	runtimeF  = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
 	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
+	shape     = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -156,7 +161,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -176,6 +181,8 @@ func main() {
 			err = fingerprintReport(files, hw, "runtimeSites", runtimeFingerprint)
 		} else if err == nil && *front {
 			err = fingerprintReport(files, hw, "frontSites", frontFingerprint)
+		} else if err == nil && *shape {
+			err = fingerprintReport(files, hw, "shapeSites", shapeFingerprint)
 		} else if err == nil && *inline {
 			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
 		} else if err == nil && *cells {
@@ -344,7 +351,7 @@ func restoreLate(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -355,7 +362,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}
