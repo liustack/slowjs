@@ -1,8 +1,8 @@
 # quickjs（liustack fork）
 
-<!-- 待 docs/benchmarks.md 确认范围，只在部分负载上最快时改成那类负载 -->最快的纯 Go JavaScript 引擎，现代 JavaScript 一样不少。
+npm 上的现代 JavaScript 原样跑在一个静态 Go 程序里。
 
-别的纯 Go 引擎总要你放弃点什么：新语法、`Intl`、异步代码，或者速度。这个支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
+引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
 
 [English](README.md) · 简体中文
 
@@ -89,7 +89,7 @@ func main() {
 | 文档 | 什么时候读 |
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | 想知道这个 fork 和 modernc.org/quickjs 有什么不同，为什么 |
-| [Benchmarks](docs/benchmarks.md) | 在给 Go 选 JavaScript 引擎，想和 goja、sobek、otto、modernc.org/quickjs、fastschema/qjs 比一比 |
+| [Benchmarks](docs/benchmarks.md) | 在给 Go 选 JavaScript 引擎，想和其他支持现代 JavaScript 的引擎比一比 |
 | [Performance](docs/performance.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
 | [更新记录](CHANGELOG.zh-CN.md) | 升级前想知道改了什么 |
 | [Architecture](docs/architecture.md) | 准备改代码 |

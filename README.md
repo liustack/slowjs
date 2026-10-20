@@ -1,8 +1,8 @@
 # quickjs (liustack fork)
 
-The <!-- 待 docs/benchmarks.md 确认范围，只在部分负载上最快时改成那类负载 -->fastest pure Go JavaScript engine, with all of modern JavaScript.
+Run today's npm code unchanged inside one static Go binary.
 
-Other pure Go engines make you give something up: newer syntax, `Intl`, async code, or speed. This one runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
+The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
 
 English · [简体中文](README.zh-CN.md)
 
@@ -89,7 +89,7 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
 | Doc | Read it when |
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | You want to know what this fork does differently from modernc.org/quickjs, and why |
-| [Benchmarks](docs/benchmarks.md) | You are choosing a JavaScript engine for Go and want to compare it with goja, sobek, otto, modernc.org/quickjs and fastschema/qjs |
+| [Benchmarks](docs/benchmarks.md) | You are choosing a JavaScript engine for Go and want to compare it with the other engines that run modern JavaScript |
 | [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
 | [Architecture](docs/architecture.md) | You are about to change the code |
