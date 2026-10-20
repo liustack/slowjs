@@ -1,10 +1,11 @@
 ---
-summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, and upgrading tifa and collecting its engine profile again after'
+summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, and after it running the comparison with other Go engines again, upgrading tifa and collecting its engine profile again'
 read_when:
   - A branch was merged into main and is ready to ship
   - Choosing the version of the next release
   - About to create or push a tag
   - A release is out and tifa should use it
+  - Running the comparison with other JavaScript engines for Go again
 ---
 
 # Releasing
@@ -46,6 +47,21 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
 3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@v0.26.17`.
 
 ## After the release
+
+### Compare with the other engines again
+
+Every release runs the comparison with the other JavaScript engines for Go again, as [benchmarks.md](benchmarks.md) says:
+
+1. Run the comparison on the released version:
+
+   ```sh
+   # TODO: the commands of docs/benchmarks.md
+   ```
+
+2. Keep the results of the run under `compare/results/`, in the form [benchmarks.md](benchmarks.md) gives.
+3. Update the tables and the history of [benchmarks.md](benchmarks.md) from them, and add the run to `compare/CHANGELOG.md`.
+
+### Upgrade tifa
 
 The fork exists for tifa, so every release goes into tifa next:
 
