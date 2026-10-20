@@ -83,6 +83,7 @@ func main() {
 | 文档 | 什么时候读 |
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | 想知道这个 fork 和 modernc.org/quickjs 有什么不同，为什么 |
+| [Benchmarks](docs/benchmarks.md) | 在给 Go 选 JavaScript 引擎，想和 goja、sobek、otto、modernc.org/quickjs、fastschema/qjs 比一比 |
 | [Performance](docs/performance.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
 | [更新记录](CHANGELOG.zh-CN.md) | 升级前想知道改了什么 |
 | [Architecture](docs/architecture.md) | 准备改代码 |

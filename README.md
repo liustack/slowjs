@@ -83,6 +83,7 @@ A VM is not safe for several goroutines at once: give each goroutine its own, or
 | Doc | Read it when |
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | You want to know what this fork does differently from modernc.org/quickjs, and why |
+| [Benchmarks](docs/benchmarks.md) | You are choosing a JavaScript engine for Go and want to compare it with goja, sobek, otto, modernc.org/quickjs and fastschema/qjs |
 | [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
 | [Architecture](docs/architecture.md) | You are about to change the code |
