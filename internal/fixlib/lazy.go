@@ -209,9 +209,17 @@ func lazyCloneMark(orig string) string {
 
 var reLazyClone = regexp.MustCompile(`\n// Changed by internal/fixlib: (\w+) with its out parameter as a Go pointer, for the functions fixLazyFrames changes\.\nfunc (\w+)\(`)
 
+// lazyFrameless are the functions of lazySites without a TLS frame on
+// 32-bit targets, where a JSValue is a uint64 the functions keep in a Go
+// local. lazyFrames leaves them as they are there.
+var lazyFrameless = map[string]bool{
+	"_JS_ToObject":        true,
+	"_js_array_finalizer": true,
+}
+
 // lazyFrames changes the functions of sites in b. pin checks the counts
-// of sites. A function without a TLS frame is left as it is on 32-bit
-// targets.
+// of sites. A function of lazyFrameless without a TLS frame is left as it
+// is on 32-bit targets.
 func lazyFrames(b []byte, hw []*ast.File, sites map[string]lazySite, pin bool) ([]byte, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), "", b, parser.SkipObjectResolution)
 	if err != nil {
@@ -244,6 +252,9 @@ func lazyFrames(b []byte, hw []*ast.File, sites map[string]lazySite, pin bool) (
 			return nil, err
 		}
 		if !wide && !bytes.Contains(body, []byte("\n\tbp := tls.Alloc(")) {
+			if !lazyFrameless[name] {
+				problems = append(problems, fmt.Sprintf("%s: no TLS frame on a 32-bit target, and lazyFrameless does not have it", name))
+			}
 			continue
 		}
 		fixed, got, outs, err := lazyFunc(name, body, reach, imports)

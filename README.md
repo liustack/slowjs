@@ -595,7 +595,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   this change first (`restoreLazy`) and makes it again last, and checks
   that undoing it gives back the text it was given, byte for byte. On
   32-bit targets `JS_ToObject` and `js_array_finalizer` have no TLS frame
-  and stay as they are. A server render of a page of tifa's example shop
+  and stay as they are (`lazyFrameless`). Another function of `lazySites`
+  without a frame there stops `fixlib`. A server render of a page of tifa's example shop
   takes 1.6% (with PGO) and 1.1% (without) less time on linux/amd64 (AMD
   EPYC), and 2.6% less on darwin/arm64 (Apple M4, with PGO), with the same
   HTML. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:

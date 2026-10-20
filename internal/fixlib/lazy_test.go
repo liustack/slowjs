@@ -165,6 +165,19 @@ func TestLazyFramesRejects(t *testing.T) {
 	}
 }
 
+// On 32-bit targets fixLazyFrames leaves only the functions of
+// lazyFrameless without a TLS frame as they are.
+func TestLazyFramesFrameless(t *testing.T) {
+	b, hw := lazyInput(t, "ccgo_linux_386.go")
+	if _, err := lazyFrames(bytes.Clone(b), hw, map[string]lazySite{"_JS_ToObject": lazySites["_JS_ToObject"]}, false); err != nil {
+		t.Errorf("_JS_ToObject: %v", err)
+	}
+	_, err := lazyFrames(bytes.Clone(b), hw, map[string]lazySite{"_js_new_string8_len": {}}, false)
+	if want := "_js_new_string8_len: no TLS frame"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
 // outClone takes only an out parameter that is loaded or stored through.
 func TestLazyOutCloneRejects(t *testing.T) {
 	b, _ := lazyInput(t, lazyPinFile)
