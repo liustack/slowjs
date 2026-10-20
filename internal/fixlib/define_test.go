@@ -41,12 +41,14 @@ func TestDefineIdempotent(t *testing.T) {
 		if m == nil || i < 0 {
 			t.Fatalf("%s: no call or no bit fields", fn)
 		}
-		// The layout constants end the file.
-		bare := bytes.Replace(b[:i:i], []byte(fmt.Sprintf(defineCall, m[1])), nil, 1)
+		// Without them, fixDefine puts the constants at the end.
+		bare := bytes.Replace(cutConstants(bytes.Clone(b), layoutMark), []byte(fmt.Sprintf(defineCall, m[1])), nil, 1)
+		end := bytes.Index(b[i:], []byte("\n)\n"))
+		want := append(cutConstants(bytes.Clone(b), layoutMark), b[i:i+end+3]...)
 		if got, err = fixDefine(bare, name); err != nil {
 			t.Fatalf("%s: %v", fn, err)
 		}
-		if !bytes.Equal(got, b) {
+		if !bytes.Equal(got, want) {
 			t.Errorf("%s: fixDefine does not restore the change", fn)
 		}
 	}
