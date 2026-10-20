@@ -54,7 +54,7 @@ func TestInlineFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n := bytes.Count(raw, []byte("written out (see fixInline).")); n != want {
+		if n := bytes.Count(raw, []byte("written out (see fixInline)")); n != want {
 			t.Errorf("%s: %d calls written out, want %d", name, n, want)
 		}
 		b := inlineInput(t, name)
@@ -94,11 +94,13 @@ func TestInlineShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"\t\t{\n\t\t\t// Changed by internal/fixlib: _set_value written out (see fixInline).\n\t\t\tvar inl1 uintptr = ctx10\n\t\t\tvar inl2 uintptr = var_buf+uintptr(idx3)*16\n\t\t\tvar inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))\n\t\t\tvar cell TJSValue\n\t\t\tvar old_val, v1 TJSValue\n",
+		"\t\t{\n\t\t\t// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.\n\t\t\tvar inl2 uintptr = var_buf+uintptr(idx3)*16\n\t\t\tvar inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))\n\t\t\tvar cell TJSValue\n\t\t\tvar old_val, v1 TJSValue\n",
 		"\t\t\told_val = *(*TJSValue)(unsafe.Pointer(inl2))\n\t\t\t*(*TJSValue)(unsafe.Pointer(inl2)) = inl3\n",
 		"\t\t\tcell = v1\n",
 		"\t\t\t\tv2 = uintptr(cell.Fu.Fuint641) - libc.UintptrFromInt32(1)*4\n",
-		"\t\t\t\tx__JS_FreeValue(tls, inl1, v1)\n",
+		"\t\t\t\tx__JS_FreeValue(tls, ctx10, v1)\n",
+		"// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, var_buf as inl2, v121 as inl3.\n\t\t\tvar cell TJSValue\n",
+		"\t\t\t*(*TJSValue)(unsafe.Pointer(var_buf)) = v121\n",
 	} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("no %q", want)
@@ -111,6 +113,10 @@ func TestInlineShapes(t *testing.T) {
 	}
 	if bytes.Contains(body, []byte(framesInGo)) {
 		t.Error("the mark of fixFrames copied")
+	}
+	// A variable given as an argument is read where the parameter is.
+	if bytes.Contains(body, []byte("var inl1 ")) {
+		t.Error("a variable given to a parameter")
 	}
 	// The frame of set_value, one JSValue, is a Go variable in each copy.
 	if bytes.Contains(body, []byte("localbp")) {
@@ -205,6 +211,62 @@ func TestInlineRejects(t *testing.T) {
 	}
 }
 
+// A variable given as an argument is read in place of the parameter only
+// when the callee does not set the parameter or take its address, has no
+// local of that name, and the variable is declared once, with the type of
+// the parameter, and its address is not taken (or given to _ only).
+func TestInlineArgs(t *testing.T) {
+	b := inlineInput(t, lazyPinFile)
+	for _, c := range []struct {
+		name, fn, old, new, want string
+	}{{
+		name: "a parameter set by the callee",
+		fn:   "_set_value",
+		old:  "\tv1 = old_val\n",
+		new:  "\tv1 = old_val\n\tctx1 += 0\n",
+		want: "\t\t\tinl1 += 0\n",
+	}, {
+		name: "a parameter whose address the callee takes",
+		fn:   "_set_value",
+		old:  "\tv1 = old_val\n",
+		new:  "\tv1 = old_val\n\t_ = &new_val\n",
+		want: "\t\t\t_ = &inl3\n",
+	}, {
+		name: "a local of the callee named like the variable",
+		fn:   "_set_value",
+		old:  "\tvar old_val, v1 TJSValue\n",
+		new:  "\tvar old_val, v1, v121 TJSValue\n",
+		want: "\t\tvar inl3 TJSValue = v121\n",
+	}, {
+		name: "a variable whose address goes nowhere",
+		fn:   inlineFunc,
+		old:  "\t\t_set_value(tls, ctx10, var_buf, v121)\n",
+		new:  "\t\t_, _ = &ctx10, &var_buf\n\t\t_set_value(tls, ctx10, var_buf, v121)\n",
+		want: "with ctx10 as inl1, var_buf as inl2, v121 as inl3.\n\t\t\tvar cell TJSValue\n",
+	}, {
+		name: "a variable whose address is taken",
+		fn:   inlineFunc,
+		old:  "\t\t_set_value(tls, ctx10, var_buf, v121)\n",
+		new:  "\t\t_ = uintptr(unsafe.Pointer(&var_buf))\n\t\t_set_value(tls, ctx10, var_buf, v121)\n",
+		want: "with ctx10 as inl1, v121 as inl3.\n\t\t\tvar inl2 uintptr = var_buf\n",
+	}} {
+		t.Run(c.name, func(t *testing.T) {
+			m := editFunc(t, b, c.fn, c.old, c.new)
+			out, err := inlineCalls(m, inlineCallees)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(out, []byte(c.want)) {
+				t.Fatalf("no %q", c.want)
+			}
+			back, err := restoreInline(out)
+			if err != nil || !bytes.Equal(back, m) {
+				t.Fatalf("restoreInline does not give the input back (%v)", err)
+			}
+		})
+	}
+}
+
 // The frame of set_value becomes a Go JSValue only where a JSValue is
 // 8 bytes of a union then a tag.
 func TestInlineFrameLayout(t *testing.T) {
@@ -239,6 +301,7 @@ func TestRestoreInlineRejects(t *testing.T) {
 	}{
 		{"a block without its arguments", "\t{\n\t\t" + inlineMark("_set_value") + "\t\tvar old_val TJSValue\n\t}\n\treturn 0\n", "a block of _set_value without its arguments"},
 		{"an argument out of order", "\t{\n\t\t" + inlineMark("_set_value") + "\t\tvar inl2 uintptr = ctx10\n\t}\n\treturn 0\n", "a block of _set_value without its arguments"},
+		{"an argument missing", "\t{\n\t\t" + inlineMark("_set_value", "ctx10 as inl3") + "\t\tvar inl1 uintptr = ctx10\n\t}\n\treturn 0\n", "a block of _set_value without its argument inl2"},
 	} {
 		_, err := restoreInline([]byte(head + c.body + "}\n"))
 		if err == nil || !strings.Contains(err.Error(), c.want) {

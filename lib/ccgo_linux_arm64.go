@@ -37607,8 +37607,7 @@ restart:
 	put_var_ok:
 		;
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(var_ref)).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -37629,7 +37628,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37668,8 +37667,7 @@ restart:
 		idx3 = libc.Int32FromUint32(v267)
 		pc = pc + uintptr(2)
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx3)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -37690,7 +37688,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37717,17 +37715,15 @@ restart:
 		goto _633
 	_633:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+uintptr(idx4)*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -37739,7 +37735,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37775,8 +37771,7 @@ restart:
 		idx6 = libc.Int32FromUint32(v267)
 		pc = pc + uintptr(2)
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = arg_buf+uintptr(idx6)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -37797,7 +37792,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37824,17 +37819,15 @@ restart:
 		goto _649
 	_649:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = arg_buf+uintptr(idx7)*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -37846,7 +37839,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37879,8 +37872,7 @@ restart:
 		sp -= 16
 		v10 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(*(*Tuint8_t)(unsafe.Pointer(v1)))*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v10))
 			var cell TJSValue
@@ -37901,7 +37893,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -37924,17 +37916,15 @@ restart:
 		goto _664
 	_664:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+uintptr(*(*Tuint8_t)(unsafe.Pointer(v1)))*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -37946,7 +37936,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38032,17 +38022,15 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
-			var inl2 uintptr = var_buf
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, var_buf as inl2.
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			old_val = *(*TJSValue)(unsafe.Pointer(var_buf))
+			*(*TJSValue)(unsafe.Pointer(var_buf)) = inl3
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38054,7 +38042,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38064,8 +38052,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+1*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38086,7 +38073,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38096,8 +38083,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+2*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38118,7 +38104,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38128,8 +38114,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+3*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38150,7 +38135,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38171,17 +38156,14 @@ restart:
 		goto _697
 	_697:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
-			var inl2 uintptr = var_buf
-			var inl3 TJSValue = v121
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, var_buf as inl2, v121 as inl3.
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			old_val = *(*TJSValue)(unsafe.Pointer(var_buf))
+			*(*TJSValue)(unsafe.Pointer(var_buf)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38193,7 +38175,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38214,17 +38196,15 @@ restart:
 		goto _702
 	_702:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+1*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38236,7 +38216,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38257,17 +38237,15 @@ restart:
 		goto _707
 	_707:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+2*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38279,7 +38257,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38300,17 +38278,15 @@ restart:
 		goto _712
 	_712:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+3*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38322,7 +38298,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38408,17 +38384,15 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
-			var inl2 uintptr = arg_buf
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, arg_buf as inl2.
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			old_val = *(*TJSValue)(unsafe.Pointer(arg_buf))
+			*(*TJSValue)(unsafe.Pointer(arg_buf)) = inl3
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38430,7 +38404,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38440,8 +38414,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = arg_buf+1*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38462,7 +38435,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38472,8 +38445,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = arg_buf+2*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38494,7 +38466,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38504,8 +38476,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = arg_buf+3*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38526,7 +38497,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38547,17 +38518,14 @@ restart:
 		goto _745
 	_745:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
-			var inl2 uintptr = arg_buf
-			var inl3 TJSValue = v121
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, arg_buf as inl2, v121 as inl3.
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			old_val = *(*TJSValue)(unsafe.Pointer(arg_buf))
+			*(*TJSValue)(unsafe.Pointer(arg_buf)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38569,7 +38537,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38590,17 +38558,15 @@ restart:
 		goto _750
 	_750:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = arg_buf+1*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38612,7 +38578,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38633,17 +38599,15 @@ restart:
 		goto _755
 	_755:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = arg_buf+2*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38655,7 +38619,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38676,17 +38640,15 @@ restart:
 		goto _760
 	_760:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = arg_buf+3*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38698,7 +38660,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38784,8 +38746,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38806,7 +38767,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38816,8 +38777,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 1*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38838,7 +38798,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38848,8 +38808,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 2*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38870,7 +38829,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38880,8 +38839,7 @@ restart:
 		sp -= 16
 		v1 = sp
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 3*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(v1))
 			var cell TJSValue
@@ -38902,7 +38860,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38923,17 +38881,15 @@ restart:
 		goto _793
 	_793:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs)))).Fpvalue
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38945,7 +38901,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -38966,17 +38922,15 @@ restart:
 		goto _798
 	_798:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 1*8)))).Fpvalue
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -38988,7 +38942,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39009,17 +38963,15 @@ restart:
 		goto _803
 	_803:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 2*8)))).Fpvalue
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -39031,7 +38983,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39052,17 +39004,15 @@ restart:
 		goto _808
 	_808:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + 3*8)))).Fpvalue
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -39074,7 +39024,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39111,8 +39061,7 @@ restart:
 		idx9 = libc.Int32FromUint32(v267)
 		pc = pc + uintptr(2)
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx9)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -39133,7 +39082,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39160,17 +39109,15 @@ restart:
 		goto _824
 	_824:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx10)*8)))).Fpvalue
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -39182,7 +39129,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39233,8 +39180,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx12)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -39255,7 +39201,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39276,8 +39222,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(var_refs + uintptr(idx13)*8)))).Fpvalue
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -39298,7 +39243,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39312,8 +39257,7 @@ restart:
 		idx14 = libc.Int32FromUint32(v267)
 		pc = pc + uintptr(2)
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx14)*16
 			var inl3 TJSValue = TJSValue{
 			Fu:   TJSValueUnion{},
@@ -39337,7 +39281,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39417,8 +39361,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx17)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -39439,7 +39382,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39473,17 +39416,15 @@ restart:
 		goto _874
 	_874:
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 			var inl2 uintptr = var_buf+uintptr(idx18)*16
-			var inl3 TJSValue = v121
 			var cell TJSValue
 			var old_val, v1 TJSValue
 			var p, v2, v5 uintptr
 			var v4 int32
 			_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 			old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-			*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+			*(*TJSValue)(unsafe.Pointer(inl2)) = v121
 			v1 = old_val
 			cell = v1
 			if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -39495,7 +39436,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -39515,8 +39456,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx19)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 			var cell TJSValue
@@ -39537,7 +39477,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -40370,8 +40310,7 @@ restart:
 		if libc.BoolInt64(!!(int32(*(*uint32)(unsafe.Pointer(prs3 + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))) != 0 {
 			/* fast path */
 			{
-				// Changed by internal/fixlib: _set_value written out (see fixInline).
-				var inl1 uintptr = ctx10
+				// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 				var inl2 uintptr = *(*uintptr)(unsafe.Pointer(bp + 360))
 				var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 				var cell TJSValue
@@ -40392,7 +40331,7 @@ restart:
 					*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 					v4 = *(*int32)(unsafe.Pointer(v5))
 					if v4 <= libc.Int32FromInt32(0) {
-						x__JS_FreeValue(tls, inl1, v1)
+						x__JS_FreeValue(tls, ctx10, v1)
 					}
 				}
 			}
@@ -41296,8 +41235,7 @@ restart:
 			*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p10 + 40 + 8)) + uintptr(idx25)*16)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 		} else {
 			{
-				// Changed by internal/fixlib: _set_value written out (see fixInline).
-				var inl1 uintptr = ctx10
+				// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 				var inl2 uintptr = *(*uintptr)(unsafe.Pointer(p10 + 40 + 8))+uintptr(idx25)*16
 				var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 				var cell TJSValue
@@ -41318,7 +41256,7 @@ restart:
 					*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 					v4 = *(*int32)(unsafe.Pointer(v5))
 					if v4 <= libc.Int32FromInt32(0) {
-						x__JS_FreeValue(tls, inl1, v1)
+						x__JS_FreeValue(tls, ctx10, v1)
 					}
 				}
 			}
@@ -41732,17 +41670,15 @@ restart:
 							goto exception
 						}
 						{
-							// Changed by internal/fixlib: _set_value written out (see fixInline).
-							var inl1 uintptr = ctx10
-							var inl2 uintptr = pv
+							// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, pv as inl2.
 							var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 464))
 							var cell TJSValue
 							var old_val, v1 TJSValue
 							var p, v2, v5 uintptr
 							var v4 int32
 							_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-							old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-							*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+							old_val = *(*TJSValue)(unsafe.Pointer(pv))
+							*(*TJSValue)(unsafe.Pointer(pv)) = inl3
 							v1 = old_val
 							cell = v1
 							if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -41754,7 +41690,7 @@ restart:
 								*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 								v4 = *(*int32)(unsafe.Pointer(v5))
 								if v4 <= libc.Int32FromInt32(0) {
-									x__JS_FreeValue(tls, inl1, v1)
+									x__JS_FreeValue(tls, ctx10, v1)
 								}
 							}
 						}
@@ -41783,17 +41719,15 @@ restart:
 						goto exception
 					}
 					{
-						// Changed by internal/fixlib: _set_value written out (see fixInline).
-						var inl1 uintptr = ctx10
-						var inl2 uintptr = pv
+						// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, pv as inl2.
 						var inl3 TJSValue = (*(*[2]TJSValue)(unsafe.Pointer(bp + 480)))[0]
 						var cell TJSValue
 						var old_val, v1 TJSValue
 						var p, v2, v5 uintptr
 						var v4 int32
 						_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
-						old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-						*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+						old_val = *(*TJSValue)(unsafe.Pointer(pv))
+						*(*TJSValue)(unsafe.Pointer(pv)) = inl3
 						v1 = old_val
 						cell = v1
 						if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -41805,7 +41739,7 @@ restart:
 							*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 							v4 = *(*int32)(unsafe.Pointer(v5))
 							if v4 <= libc.Int32FromInt32(0) {
-								x__JS_FreeValue(tls, inl1, v1)
+								x__JS_FreeValue(tls, ctx10, v1)
 							}
 						}
 					}
@@ -42255,8 +42189,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx27)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 736))
 			var cell TJSValue
@@ -42277,7 +42210,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -42330,8 +42263,7 @@ restart:
 			goto exception
 		}
 		{
-			// Changed by internal/fixlib: _set_value written out (see fixInline).
-			var inl1 uintptr = ctx10
+			// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1.
 			var inl2 uintptr = var_buf+uintptr(idx28)*16
 			var inl3 TJSValue = *(*TJSValue)(unsafe.Pointer(bp + 752))
 			var cell TJSValue
@@ -42352,7 +42284,7 @@ restart:
 				*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 				v4 = *(*int32)(unsafe.Pointer(v5))
 				if v4 <= libc.Int32FromInt32(0) {
-					x__JS_FreeValue(tls, inl1, v1)
+					x__JS_FreeValue(tls, ctx10, v1)
 				}
 			}
 		}
@@ -42908,17 +42840,15 @@ restart:
 				}
 			}
 			{
-				// Changed by internal/fixlib: _set_value written out (see fixInline).
-				var inl1 uintptr = ctx10
+				// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, val27 as inl3.
 				var inl2 uintptr = sp+uintptr(-libc.Int32FromInt32(1))*16
-				var inl3 TJSValue = val27
 				var cell TJSValue
 				var old_val, v1 TJSValue
 				var p, v2, v5 uintptr
 				var v4 int32
 				_, _, _, _, _, _ = old_val, p, v1, v2, v4, v5
 				old_val = *(*TJSValue)(unsafe.Pointer(inl2))
-				*(*TJSValue)(unsafe.Pointer(inl2)) = inl3
+				*(*TJSValue)(unsafe.Pointer(inl2)) = val27
 				v1 = old_val
 				cell = v1
 				if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -42930,7 +42860,7 @@ restart:
 					*(*int32)(unsafe.Pointer(v5)) = *(*int32)(unsafe.Pointer(v5)) - 1
 					v4 = *(*int32)(unsafe.Pointer(v5))
 					if v4 <= libc.Int32FromInt32(0) {
-						x__JS_FreeValue(tls, inl1, v1)
+						x__JS_FreeValue(tls, ctx10, v1)
 					}
 				}
 			}

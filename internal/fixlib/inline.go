@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -25,15 +26,22 @@ import (
 // becomes a block that gives each argument to a variable of the
 // parameter's type, in order, then runs the body of the callee with its
 // parameters renamed to those variables and its labels renamed to labels
-// of their own:
+// of their own. An argument that is a variable of the interpreter is read
+// where the parameter is instead, and the first line names it, when
+// nothing can set the variable while the copy runs (see inlineVars) and
+// the callee neither sets the parameter nor takes its address nor has a
+// local of that name:
 //
 //	{
-//		// Changed by internal/fixlib: _set_value written out (see fixInline).
-//		var inl1 uintptr = ctx10
+//		// Changed by internal/fixlib: _set_value written out (see fixInline), with ctx10 as inl1, v121 as inl3.
 //		var inl2 uintptr = var_buf + uintptr(idx3)*16
-//		var inl3 TJSValue = v121
 //		BODY OF set_value
 //	}
+//
+// A copy of each such variable would be one more value for the compiler
+// to keep in a register or spill, and on amd64 it undoes fixPin, which
+// keeps ctx10 and var_buf in their stack slots: the frame of the
+// interpreter there grew by 288 bytes with the copies.
 //
 // The locals of the callee are declared in the block, after the
 // arguments, so they cannot change what an argument reads. The TLS frame
@@ -45,9 +53,9 @@ import (
 // fixInline stops when a callee has a result, returns early or takes a
 // TLS frame, when a name the callee uses is a local of JS_CallInternal (it
 // would read the local), when a call is not a statement of its own, or
-// when the number of calls is not that of inlineCallees. The text of the callees is pinned
-// in inlineSites, so a change upstream stops fixlib until it is read
-// again. Other changes match JS_CallInternal as ccgo writes it, so
+// when the number of calls is not that of inlineCallees. The text of the
+// callees is pinned in inlineSites, so a change upstream stops fixlib
+// until it is read again. Other changes match JS_CallInternal as ccgo writes it, so
 // fixInline comes last, before fixNoDefer, and restoreInline, its exact
 // inverse, comes first. fixInline checks that restoreInline gives its
 // input back.
@@ -82,13 +90,18 @@ var inlineCallees = map[string]int{
 	"_set_value": 46,
 }
 
-// inlineMark is the first line of the block a call of name becomes.
-func inlineMark(name string) string {
-	return "// Changed by internal/fixlib: " + name + " written out (see fixInline).\n"
+// inlineMark is the first line of the block a call of name becomes. with
+// names the variables read in place of parameters, as "ctx10 as inl1".
+func inlineMark(name string, with ...string) string {
+	if len(with) == 0 {
+		return "// Changed by internal/fixlib: " + name + " written out (see fixInline).\n"
+	}
+	return "// Changed by internal/fixlib: " + name + " written out (see fixInline), with " + strings.Join(with, ", ") + ".\n"
 }
 
 var (
-	reInlineBlock = regexp.MustCompile(`^\{\n\t+// Changed by internal/fixlib: (\w+) written out \(see fixInline\)\.\n`)
+	reInlineBlock = regexp.MustCompile(`^\{\n\t+// Changed by internal/fixlib: (\w+) written out \(see fixInline\)(?:, with (\w+ as inl\d+(?:, \w+ as inl\d+)*))?\.\n`)
+	reInlineWith  = regexp.MustCompile(`(\w+) as inl(\d+)`)
 	reInlineName  = regexp.MustCompile(`^inl\d`)
 )
 
@@ -112,6 +125,10 @@ type inlineCallee struct {
 	params []string // the names after tls
 	types  []string // their types
 	free   map[string]bool
+	// The names the callee declares, and whether it sets each parameter
+	// or takes its address.
+	locals  map[string]bool
+	written []bool
 	// Its body, from the line after its opening brace to the line before
 	// its closing one, and the offsets of its parameters and labels there.
 	body   string
@@ -153,18 +170,34 @@ func newInlineCallee(name string, body []byte, cells bool) (*inlineCallee, error
 	}
 	locals := map[string]bool{}
 	labels := map[string]bool{}
+	c.locals = locals
+	c.written = make([]bool, len(c.params))
+	set := func(e ast.Expr) {
+		if id, ok := ast.Unparen(e).(*ast.Ident); ok {
+			if i, ok := param[id.Name]; ok {
+				c.written[i] = true
+			}
+		}
+	}
 	var problem string
 	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
 		switch x := n.(type) {
+		case *ast.UnaryExpr:
+			if x.Op == token.AND {
+				set(x.X)
+			}
+		case *ast.IncDecStmt:
+			set(x.X)
 		case *ast.ValueSpec:
 			for _, id := range x.Names {
 				locals[id.Name] = true
 			}
 		case *ast.AssignStmt:
-			if x.Tok == token.DEFINE {
-				for _, l := range x.Lhs {
+			for _, l := range x.Lhs {
+				if x.Tok == token.DEFINE {
 					locals[l.(*ast.Ident).Name] = true
 				}
+				set(l)
 			}
 		case *ast.LabeledStmt:
 			labels[x.Label.Name] = true
@@ -188,6 +221,7 @@ func newInlineCallee(name string, body []byte, cells bool) (*inlineCallee, error
 	start, end := f.off(f.decl.Body.Lbrace)+2, f.off(f.decl.Body.Rbrace)
 	c.body = string(f.src[start:end])
 	var stack []ast.Node
+	frame := false
 	ast.Inspect(f.decl.Body, func(n ast.Node) bool {
 		if n == nil {
 			stack = stack[:len(stack)-1]
@@ -213,6 +247,7 @@ func newInlineCallee(name string, body []byte, cells bool) (*inlineCallee, error
 				at.start -= start
 				at.end -= start
 				c.idents = append(c.idents, at)
+				frame = true
 				return problem == ""
 			}
 			at := inlineIdent{start: f.off(x.Pos()) - start, end: f.off(x.End()) - start, param: -1}
@@ -240,6 +275,9 @@ func newInlineCallee(name string, body []byte, cells bool) (*inlineCallee, error
 	}
 	if c.free[inlineCell] {
 		return nil, fmt.Errorf("%s: a name %s", name, inlineCell)
+	}
+	if frame {
+		locals[inlineCell] = true // no variable of that name in place of a parameter
 	}
 	sort.Slice(c.idents, func(i, j int) bool { return c.idents[i].start < c.idents[j].start })
 	return c, nil
@@ -333,12 +371,21 @@ func inlineField(stack []ast.Node) bool {
 }
 
 // block writes out a call with the arguments args, as the k-th call
-// written out, at the indent in.
-func (c *inlineCallee) block(in string, args []string, k int) string {
-	var s strings.Builder
-	s.WriteString("{\n" + in + "\t" + inlineMark(c.name))
+// written out, at the indent in. An argument with direct set is a
+// variable that the body reads in place of the parameter.
+func (c *inlineCallee) block(in string, args []string, direct []bool, k int) string {
+	var with []string
 	for i, a := range args {
-		fmt.Fprintf(&s, "%s\tvar inl%d %s = %s\n", in, i+1, c.types[i], a)
+		if direct[i] {
+			with = append(with, fmt.Sprintf("%s as inl%d", a, i+1))
+		}
+	}
+	var s strings.Builder
+	s.WriteString("{\n" + in + "\t" + inlineMark(c.name, with...))
+	for i, a := range args {
+		if !direct[i] {
+			fmt.Fprintf(&s, "%s\tvar inl%d %s = %s\n", in, i+1, c.types[i], a)
+		}
 	}
 	var body strings.Builder
 	last := 0
@@ -348,6 +395,8 @@ func (c *inlineCallee) block(in string, args []string, k int) string {
 			body.WriteString(id.text)
 		} else if id.label != "" {
 			fmt.Fprintf(&body, "inl%d_%s", k, id.label)
+		} else if direct[id.param] {
+			body.WriteString(args[id.param])
 		} else {
 			fmt.Fprintf(&body, "inl%d", id.param+1)
 		}
@@ -392,6 +441,7 @@ func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
 		return nil, fmt.Errorf("%s", problem)
 	}
 	locals := localNames(f.decl)
+	vars := inlineVars(f)
 	cells := bytes.Contains(b, []byte(cellsValue)) && reCellsUnion.Match(b) && bytes.Contains(b, []byte("\ntype Tuint64_t = uint64\n"))
 	names := make([]string, 0, len(callees))
 	for name := range callees {
@@ -477,7 +527,12 @@ func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
 			problems = append(problems, fmt.Sprintf("%s: %s is not on a line of its own", inlineFunc, firstLine(want)))
 			return false
 		}
-		edits = append(edits, edit{f.off(s.Pos()), f.off(s.End()), c.block(indent, args[1:], k)})
+		direct := make([]bool, len(c.params))
+		for i, a := range call.Args[1:] {
+			id, ok := a.(*ast.Ident)
+			direct[i] = ok && vars[id.Name] == c.types[i] && !c.written[i] && !c.locals[id.Name]
+		}
+		edits = append(edits, edit{f.off(s.Pos()), f.off(s.End()), c.block(indent, args[1:], direct, k)})
 		return false
 	})
 	for _, name := range names {
@@ -493,6 +548,85 @@ func inlineCalls(b []byte, callees map[string]int) ([]byte, error) {
 		return nil, err
 	}
 	return bytes.Replace(b, body, out, 1), nil
+}
+
+// inlineVars returns the variables of the function f that a copy may read
+// in place of a parameter of the same type, with their types: those
+// declared once, as a parameter or by a var with a type, whose address
+// is not taken and which no function literal uses. Nothing else can set
+// such a variable while a copy runs. An address given to _ only, as
+// fixPin gives the variables it keeps in their stack slots, goes nowhere:
+// a copy then reads the variable in its slot, as the call did.
+func inlineVars(f *parsedFunc) map[string]string {
+	vars := map[string]string{}
+	count := map[string]int{}
+	add := func(names []*ast.Ident, typ ast.Expr) {
+		for _, id := range names {
+			count[id.Name]++
+			if typ != nil {
+				vars[id.Name] = f.text(typ)
+			}
+		}
+	}
+	for _, p := range f.decl.Type.Params.List {
+		add(p.Names, p.Type)
+	}
+	if res := f.decl.Type.Results; res != nil {
+		for _, p := range res.List {
+			add(p.Names, nil)
+		}
+	}
+	not := map[string]bool{}
+	var visit func(n ast.Node) bool
+	visit = func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.ValueSpec:
+			add(x.Names, x.Type)
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				for _, l := range x.Lhs {
+					if id, ok := l.(*ast.Ident); ok {
+						add([]*ast.Ident{id}, nil)
+					}
+				}
+			}
+			blank := true
+			for _, l := range x.Lhs {
+				blank = blank && isIdent(l, "_")
+			}
+			if blank {
+				for _, r := range x.Rhs {
+					if u, ok := r.(*ast.UnaryExpr); ok && u.Op == token.AND {
+						if _, ok := u.X.(*ast.Ident); ok {
+							continue
+						}
+					}
+					ast.Inspect(r, visit)
+				}
+				return false
+			}
+		case *ast.UnaryExpr:
+			if id, ok := ast.Unparen(x.X).(*ast.Ident); ok && x.Op == token.AND {
+				not[id.Name] = true
+			}
+		case *ast.FuncLit:
+			ast.Inspect(x, func(n ast.Node) bool {
+				if id, ok := n.(*ast.Ident); ok {
+					not[id.Name] = true
+				}
+				return true
+			})
+			return false
+		}
+		return true
+	}
+	ast.Inspect(f.decl.Body, visit)
+	for name := range vars {
+		if count[name] != 1 || not[name] {
+			delete(vars, name)
+		}
+	}
+	return vars
 }
 
 // restoreInline undoes fixInline: it writes each call it wrote out back
@@ -526,8 +660,21 @@ func restoreInline(b []byte) ([]byte, error) {
 			return true
 		}
 		name := string(m[1])
+		// The variables of the mark, then the declarations of the others
+		// in order.
+		given := map[int]string{}
+		for _, w := range reInlineWith.FindAllSubmatch(m[2], -1) {
+			i, _ := strconv.Atoi(string(w[2]))
+			given[i] = string(w[1])
+		}
 		var args []string
-		for i, s := range blk.List {
+		next := func() {
+			for given[len(args)+1] != "" {
+				args = append(args, given[len(args)+1])
+			}
+		}
+		next()
+		for _, s := range blk.List {
 			d, ok := s.(*ast.DeclStmt)
 			if !ok {
 				break
@@ -537,14 +684,21 @@ func restoreInline(b []byte) ([]byte, error) {
 				break
 			}
 			v := g.Specs[0].(*ast.ValueSpec)
-			if len(v.Names) != 1 || v.Names[0].Name != fmt.Sprintf("inl%d", i+1) || len(v.Values) != 1 {
+			if len(v.Names) != 1 || v.Names[0].Name != fmt.Sprintf("inl%d", len(args)+1) || len(v.Values) != 1 {
 				break
 			}
 			args = append(args, f.text(v.Values[0]))
+			next()
 		}
 		if len(args) == 0 {
 			problems = append(problems, fmt.Sprintf("%s: a block of %s without its arguments", inlineFunc, name))
 			return false
+		}
+		for i := range given {
+			if i > len(args) {
+				problems = append(problems, fmt.Sprintf("%s: a block of %s without its argument inl%d", inlineFunc, name, len(args)+1))
+				return false
+			}
 		}
 		edits = append(edits, edit{f.off(blk.Pos()), f.off(blk.End()), name + "(tls, " + strings.Join(args, ", ") + ")"})
 		return false
