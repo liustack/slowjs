@@ -35395,7 +35395,7 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, thi
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = &this_obj1, &new_target, &argc, &argv, &caller_ctx, &flags, &rt, &ctx10, &b1, &sf, &var_buf, &arg_buf, &var_refs, &local_buf, &stack_buf // Changed by internal/fixlib: kept in the stack frame (see fixPin).
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 96
-	if _js_poll_interrupts(tls, caller_ctx) != 0 {
+	if pollDue(caller_ctx+424) && ___js_poll_interrupts(tls, caller_ctx) != 0 {
 		r5 = TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_EXCEPTION),
@@ -39583,7 +39583,7 @@ restart:
 		goto _892
 	_892:
 		pc = pc + uintptr(libc.Int32FromUint32(v267))
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -39593,14 +39593,14 @@ restart:
 		goto _894
 	_894:
 		pc = pc + uintptr(libc.Int16FromUint32(v267))
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
 	_159:
 		;
 		pc = pc + uintptr(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc))))
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -39620,7 +39620,7 @@ restart:
 		_896:
 			pc = pc + uintptr(libc.Int32FromUint32(v267)-int32(4))
 		}
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -39641,7 +39641,7 @@ restart:
 		_898:
 			pc = pc + uintptr(libc.Int32FromUint32(v267)-int32(4))
 		}
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -39658,7 +39658,7 @@ restart:
 		if res2 != 0 {
 			pc = pc + uintptr(int32(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -39675,7 +39675,7 @@ restart:
 		if !(res3 != 0) {
 			pc = pc + uintptr(int32(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt64(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt64(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265

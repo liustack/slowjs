@@ -33527,7 +33527,7 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, func_obj TJSValue, this
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = alloca_size, arg, arg_allocated_size, arg_buf, array_len, atom, atom1, atom10, atom11, atom12, atom13, atom14, atom15, atom16, atom17, atom18, atom2, atom3, atom4, atom5, atom6, atom7, atom8, atom9, b1, bfunc, call_argc, call_argv, call_func, class_flags, ctx10, cv, cv1, d11, d12, d13, d21, d22, d23, d3, d4, diff, diff1, diff2, first, flags1, flags2, getter, i, idx, idx1, idx10, idx11, idx12, idx13, idx14, idx15, idx16, idx17, idx18, idx19, idx2, idx20, idx21, idx22, idx23, idx24, idx25, idx26, idx27, idx28, idx3, idx4, idx5, idx6, idx7, idx8, idx9, is_computed, is_with, local_buf, magic, mask, method, n, new_len, obj, obj1, obj2, obj3, obj4, obj5, obj6, obj7, obj8, obj9, offset, op1, op11, op110, op111, op112, op113, op114, op115, op116, op119, op12, op120, op121, op122, op123, op124, op125, op126, op127, op128, op129, op13, op130, op131, op132, op133, op134, op14, op15, op16, op17, op18, op19, op2, op21, op210, op211, op212, op213, op214, op215, op216, op217, op218, op219, op22, op23, op24, op25, op26, op27, op28, op29, op_flags, opcode, p, p1, p10, p11, p2, p3, p4, p5, p6, p7, p8, p9, pc, pos, pos1, pr, prop1, prop2, proto, proto1, prs, prs1, prs2, prs3, pv, pval, r, r1, r2, r3, r4, res, res1, res2, res3, res4, ret, ret1, ret10, ret11, ret12, ret13, ret14, ret15, ret16, ret17, ret18, ret2, ret3, ret4, ret5, ret6, ret7, ret8, ret9, ret_flag, ret_val, ret_val1, rt, s, scope_idx, scope_idx1, setter, sf, sp, stack_buf, super, tab4, tag, tag1, tag2, tmp, tmp1, tmp11, tmp2, tmp21, tmp3, tmp4, tmp5, tmp6, tmp7, type1, v1, v11, v12, v13, v14, v2, v21, v22, v23, v24, v25, v26, val10, val11, val12, val13, val14, val15, val16, val17, val18, val19, val20, val21, val22, val23, val24, val25, val26, val27, val28, val4, val5, val6, val7, val8, val9, value, var_buf, var_ref, var_ref1, var_refs, v15, v10, v121, v1242, v1244, v19, v267, v269, v288, v4, v5, v6, v9, v958
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 32
-	if _js_poll_interrupts(tls, caller_ctx) != 0 {
+	if pollDue(caller_ctx+220) && ___js_poll_interrupts(tls, caller_ctx) != 0 {
 		r5 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 		if frame_malloc != 0 {
 			libc.Xfree(tls, frame_malloc)
@@ -37476,7 +37476,7 @@ restart:
 		goto _892
 	_892:
 		pc = pc + uintptr(libc.Int32FromUint32(v267))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -37486,14 +37486,14 @@ restart:
 		goto _894
 	_894:
 		pc = pc + uintptr(libc.Int16FromUint32(v267))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
 	_159:
 		;
 		pc = pc + uintptr(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc))))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -37513,7 +37513,7 @@ restart:
 		_896:
 			pc = pc + uintptr(libc.Int32FromUint32(v267)-int32(4))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -37534,7 +37534,7 @@ restart:
 		_898:
 			pc = pc + uintptr(libc.Int32FromUint32(v267)-int32(4))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -37551,7 +37551,7 @@ restart:
 		if res2 != 0 {
 			pc = pc + uintptr(int32(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -37568,7 +37568,7 @@ restart:
 		if !(res3 != 0) {
 			pc = pc + uintptr(int32(libc.Int8FromUint8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+220) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265

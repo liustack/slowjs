@@ -65,6 +65,10 @@ func TestInlineFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		// fixPoll comes between it and fixNoDefer.
+		if out, err = fixPoll(out, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
 		if out, err = dropDefers(out); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -72,6 +76,9 @@ func TestInlineFixedFile(t *testing.T) {
 			t.Errorf("%s: fixInline does not make the file again", name)
 		}
 		back, err := restoreDefer(out)
+		if err == nil {
+			back, err = restorePoll(back)
+		}
 		if err == nil {
 			back, err = restoreInline(back)
 		}
