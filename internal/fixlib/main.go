@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty things:
+// It does twenty-two things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -74,8 +74,14 @@
 //     (see fixInline). The first step undoes it as well.
 //   - In every lib/ccgo_*.go file, count the interrupt counter down in
 //     the body of the interpreter, through pollDue of lib/poll.go, and call
-//     the poll only when it runs out (see fixPoll). The first step undoes
-//     it, as the other changes match the polls as ccgo writes them.
+//     the poll only when it runs out (see fixPoll).
+//   - In every lib/ccgo_*.go file, add the field Ffork, the state of
+//     lib/runtime.go, at the end of JSRuntime (see fixRuntimeField).
+//   - In every lib/ccgo_*.go file, put the front cache of
+//     lib/frontcache.go, kept in that state, in front of the small block
+//     allocator (see fixFrontCache).
+//     The first step undoes these three, as the other changes match the
+//     polls, JSRuntime and the allocator as ccgo writes them.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -123,6 +129,8 @@ var (
 	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
 	inline    = flag.Bool("inline", false, "print the fingerprints of set_value, which fixInline writes out in the interpreter, in the form of inlineSites, to update it after a review")
 	poll      = flag.Bool("poll", false, "print the fingerprints of the function lib/poll.go repeats, in the form of pollSites, to update it after a review")
+	runtimeF  = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
+	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -148,7 +156,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -164,6 +172,10 @@ func main() {
 			err = fingerprintReport(files, hw, "lazyAddrSites", lazyAddrFingerprint)
 		} else if err == nil && *poll {
 			err = fingerprintReport(files, hw, "pollSites", pollFingerprint)
+		} else if err == nil && *runtimeF {
+			err = fingerprintReport(files, hw, "runtimeSites", runtimeFingerprint)
+		} else if err == nil && *front {
+			err = fingerprintReport(files, hw, "frontSites", frontFingerprint)
 		} else if err == nil && *inline {
 			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
 		} else if err == nil && *cells {
@@ -309,17 +321,41 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if b, err = fixInline(b, name); err != nil {
 		return nil, err
 	}
-	if b, err = fixPoll(b, name); err != nil {
+	if b, err = fixLast(b, name); err != nil {
 		return nil, err
 	}
 	return dropDefers(b)
 }
 
-// restoreLate undoes fixPoll, fixInline and fixLazyFrames, the changes
+// restoreLate undoes fixLast, fixInline and fixLazyFrames, the changes
 // made last before fixNoDefer.
 func restoreLate(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restorePoll, restoreInline, restoreLazy} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreLast, restoreInline, restoreLazy} {
+		if b, err = restore(b); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// fixLast makes the changes that come after fixInline and before
+// fixNoDefer. Each changes text that the other changes match as ccgo
+// writes it, and restoreLast, which fixEngine calls first, undoes them.
+func fixLast(b []byte, name string) ([]byte, error) {
+	var err error
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache} {
+		if b, err = fix(b, name); err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
+}
+
+// restoreLast undoes fixLast.
+func restoreLast(b []byte) ([]byte, error) {
+	var err error
+	for _, restore := range []func([]byte) ([]byte, error){restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

@@ -55,11 +55,11 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		// fixInline and fixPoll come between them and fixNoDefer.
+		// fixInline and fixLast come between them and fixNoDefer.
 		if out, err = fixInline(out, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if out, err = fixPoll(out, name); err != nil {
+		if out, err = fixLast(out, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if out, err = dropDefers(out); err != nil {

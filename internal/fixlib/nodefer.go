@@ -695,7 +695,7 @@ func dropDefers(b []byte) ([]byte, error) {
 }
 
 // readEngine reads a generated file of lib/ as every change but
-// fixNoDefer, fixLazyFrames, fixInline and fixPoll leaves it, which is what the
+// fixNoDefer, fixLazyFrames, fixInline and fixLast leaves it, which is what the
 // other changes take and check, and what the reports print.
 func readEngine(fn string) ([]byte, error) {
 	b, err := os.ReadFile(fn)

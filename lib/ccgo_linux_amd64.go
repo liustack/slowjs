@@ -1316,6 +1316,8 @@ type TJSRuntime = struct {
 	Fshape_hash_count                       int32
 	Fshape_hash                             uintptr
 	Fuser_opaque                            uintptr
+	// Added by internal/fixlib: the state of lib/runtime.go (see fixRuntimeField).
+	Ffork TforkRuntime
 }
 
 const EJS_GC_PHASE_NONE = 0
@@ -3271,6 +3273,10 @@ func ___js_malloc(tls *libc.TLS, s uintptr, size Tsize_t) (r uintptr) {
 	var block_size_idx int32
 	var total_size Tsize_t
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, b1, block_idx, block_size, block_size_idx, el1, head, next, prev, total_size, v1
+	// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).
+	if p := frontPop(tls, s, size); p != 0 {
+		return p
+	}
 	if libc.BoolInt64(!!(size == libc.Uint64FromInt32(0))) != 0 {
 		b = _get_zero_size_block(tls, s)
 		return b + 8
@@ -3315,6 +3321,10 @@ func ___js_free(tls *libc.TLS, s uintptr, ptr uintptr) {
 	var ar, b, lb, next1, prev1, v1, v2, v3, v4 uintptr
 	var block_idx, block_size, block_size_idx uint32
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, block_idx, block_size, block_size_idx, lb, next1, prev1, v1, v2, v3, v4
+	// Changed by internal/fixlib: keep the block in the front cache (see fixFrontCache).
+	if frontPush(s, ptr) {
+		return
+	}
 	if !(ptr != 0) {
 		return
 	}
@@ -3497,7 +3507,11 @@ func _js_trigger_gc(tls *libc.TLS, rt uintptr, size Tsize_t) {
 }
 
 func Xjs_malloc_rt(tls *libc.TLS, rt uintptr, size Tsize_t) (r uintptr) {
-	return ___js_malloc(tls, rt, size)
+	// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).
+	if r = ___js_malloc(tls, rt, size); r == 0 && frontRetry(tls, rt) {
+		r = ___js_malloc(tls, rt, size)
+	}
+	return r
 }
 
 func Xjs_free_rt(tls *libc.TLS, rt uintptr, ptr uintptr) {
@@ -3505,7 +3519,11 @@ func Xjs_free_rt(tls *libc.TLS, rt uintptr, ptr uintptr) {
 }
 
 func Xjs_realloc_rt(tls *libc.TLS, rt uintptr, ptr uintptr, size Tsize_t) (r uintptr) {
-	return ___js_realloc(tls, rt, ptr, size)
+	// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).
+	if r = ___js_realloc(tls, rt, ptr, size); r == 0 && size != 0 && frontRetry(tls, rt) {
+		r = ___js_realloc(tls, rt, ptr, size)
+	}
+	return r
 }
 
 func Xjs_malloc_usable_size_rt(tls *libc.TLS, rt uintptr, ptr uintptr) (r Tsize_t) {
@@ -3995,13 +4013,13 @@ func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
 	libc.Xmemset(tls, bp, 0, uint64(32))
 	(*(*TJSMallocState)(unsafe.Pointer(bp))).Fopaque = opaque
 	(*(*TJSMallocState)(unsafe.Pointer(bp))).Fmalloc_limit = libc.Uint64FromInt32(-libc.Int32FromInt32(1))
-	rt = (*(*func(*libc.TLS, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TJSMallocFunctions)(unsafe.Pointer(mf)).Fjs_malloc})))(tls, bp, uint64(1440))
+	rt = (*(*func(*libc.TLS, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TJSMallocFunctions)(unsafe.Pointer(mf)).Fjs_malloc})))(tls, bp, uint64(1440+forkRuntimeSize))
 	if !(rt != 0) {
 		r = libc.UintptrFromInt32(0)
 		tls.Free(32)
 		return
 	}
-	libc.Xmemset(tls, rt, 0, uint64(1440))
+	libc.Xmemset(tls, rt, 0, uint64(1440+forkRuntimeSize))
 	_js_malloc_init(tls, rt)
 	(*TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmf = *(*TJSMallocFunctions)(unsafe.Pointer(mf))
 	(*TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state = *(*TJSMallocState)(unsafe.Pointer(bp))
@@ -4426,6 +4444,8 @@ func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
 	var v1 TJSValue
 	var _ /* ms at bp+16 */ TJSMallocState
 	_, _, _, _, _, _, _, _, _, _, _ = cl, e, el, el1, i, p, p1, v1, v2, v4, v5
+	// Changed by internal/fixlib: give the front cache back and turn it off (see fixFrontCache).
+	frontOff(tls, rt1)
 	v1 = (*TJSRuntime)(unsafe.Pointer(rt1)).Fcurrent_exception
 	*(*TJSValue)(unsafe.Pointer(bp)) = v1
 	if libc.Uint32FromInt32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -12115,6 +12135,8 @@ func _JS_RunGCInternal(tls *libc.TLS, rt uintptr, remove_weak_objects TBOOL) {
 
 func XJS_RunGC(tls *libc.TLS, rt uintptr) {
 	_JS_RunGCInternal(tls, rt, int32(ETRUE))
+	// Changed by internal/fixlib: give the front cache back to the arenas (see fixFrontCache).
+	frontDrain(tls, rt)
 }
 
 // C documentation
