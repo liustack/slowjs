@@ -35415,7 +35415,8 @@ const EOP_SPECIAL_OBJECT_IMPORT_META = 6
 //
 //	/* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, this_obj1 TJSValue, new_target TJSValue, argc int32, argv uintptr, flags int32) (r5 TJSValue) {
-	frame_size := 1280
+	// Changed by internal/fixlib: the frame has the room of a small alloca from the entry (see fixOneFrame).
+	frame_size := 1280 + 768
 	var frame_malloc uintptr
 	bp := tls.Alloc(frame_size)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
@@ -35610,13 +35611,14 @@ _2:
 	}
 	alloca_size = uint64(16)*libc.Uint64FromInt32(arg_allocated_size+libc.Int32FromUint16((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_count)+libc.Int32FromUint16((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fstack_size)) + uint64(8)*uint64((*TJSFunctionBytecode)(unsafe.Pointer(b1)).Fvar_ref_count)
 	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
-	if alloca_size <= 768 {
-		tls.Free(frame_size)
-		frame_size = 1280 + int(alloca_size)
-		bp = tls.Alloc(frame_size)
-		*(*TJSValue)(unsafe.Pointer(bp + 80)) = _func_obj
-		sf = bp + 96
-	}
+	// Changed by internal/fixlib: the frame has the room already, so it is not taken again (see fixOneFrame).
+	//if alloca_size <= 768 {
+	//	tls.Free(frame_size)
+	//	frame_size = 1280 + int(alloca_size)
+	//	bp = tls.Alloc(frame_size)
+	//	*(*TJSValue)(unsafe.Pointer(bp + 80)) = _func_obj
+	//	sf = bp + 96
+	//}
 	if _js_check_stack_overflow(tls, rt, alloca_size) != 0 {
 		r5 = _JS_ThrowStackOverflow(tls, caller_ctx)
 		if frame_malloc != 0 {

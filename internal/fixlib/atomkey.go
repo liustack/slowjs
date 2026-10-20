@@ -81,7 +81,7 @@ func fixAtomKey(b []byte, file string) ([]byte, error) {
 // planAtomKey returns b with the change of fixAtomKey and the fingerprint
 // of the functions it stands for.
 func planAtomKey(b []byte) ([]byte, string, error) {
-	plain, err := restoreLate(bytes.Clone(b))
+	plain, err := restoreBeforeOneFrame(bytes.Clone(b))
 	if err != nil {
 		return nil, "", err
 	}

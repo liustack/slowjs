@@ -234,7 +234,11 @@ func TestTLSStackResidentNearLimit(t *testing.T) {
 
 // callInternalFrame returns the size of the TLS frame of JS_CallInternal
 // and the largest room for its arguments, locals and stack that goes into
-// it, from the generated code of this target.
+// it, from the generated code of this target. On linux the frame takes the
+// room from the entry, as frame_size := N + room, and the block that took
+// it again is a comment (internal/fixlib/oneframe.go): then the room the
+// entry takes must be the limit of that block, and elsewhere the block
+// must still run.
 func callInternalFrame(t *testing.T) (frame, limit int) {
 	t.Helper()
 	fn := filepath.Join("lib", "ccgo_"+goruntime.GOOS+"_"+goruntime.GOARCH+".go")
@@ -251,13 +255,21 @@ func callInternalFrame(t *testing.T) (frame, limit int) {
 	}
 	body := string(b[i:])
 	body = body[:strings.Index(body, "\n}\n")]
-	f := regexp.MustCompile(`\n\tframe_size := (\d+)\n`).FindStringSubmatch(body)
-	l := regexp.MustCompile(`\n\tif alloca_size <= (\d+) \{\n`).FindStringSubmatch(body)
+	f := regexp.MustCompile(`\n\tframe_size := (\d+)(?: \+ (\d+))?\n`).FindStringSubmatch(body)
+	l := regexp.MustCompile(`\n\t(//)?if alloca_size <= (\d+) \{\n`).FindStringSubmatch(body)
 	if f == nil || l == nil {
 		t.Fatalf("%s: _JS_CallInternal has no frame size or no limit for its room", fn)
 	}
 	frame, _ = strconv.Atoi(f[1])
-	limit, _ = strconv.Atoi(l[1])
+	limit, _ = strconv.Atoi(l[2])
+	switch room, once := f[2], l[1] != ""; {
+	case room == "" && once:
+		t.Fatalf("%s: _JS_CallInternal does not take the frame again, but its entry takes no room", fn)
+	case room != "" && !once:
+		t.Fatalf("%s: _JS_CallInternal takes %s bytes of room at its entry and the frame again", fn, room)
+	case room != "" && room != l[2]:
+		t.Fatalf("%s: _JS_CallInternal takes %s bytes of room at its entry, want the limit %d", fn, room, limit)
+	}
 	return frame, limit
 }
 

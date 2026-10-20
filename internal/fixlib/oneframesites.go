@@ -1,0 +1,26 @@
+// Copyright 2026 The quickjs-go Authors. All rights reserved.
+// Use of the source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package main
+
+// oneFrameSites are the fingerprints of the text of JS_CallInternal
+// between its entry and the block fixOneFrame drops (see
+// oneFrameFingerprint), in each generated file, as reviewed: nothing there
+// writes again the parameter copies and the pointers into the frame the
+// block makes. fixOneFrame checks them in the files it changes.
+var oneFrameSites = map[string]string{
+	"ccgo_darwin_amd64.go":  "0b761a802ac89677",
+	"ccgo_darwin_arm64.go":  "123c96df1846e437",
+	"ccgo_freebsd_amd64.go": "670b786d70aea597",
+	"ccgo_freebsd_arm64.go": "bc43a62147b09dc2",
+	"ccgo_linux_386.go":     "93e7a5376e4782e5",
+	"ccgo_linux_amd64.go":   "670b786d70aea597",
+	"ccgo_linux_arm.go":     "89f770acbb723c34",
+	"ccgo_linux_arm64.go":   "bc43a62147b09dc2",
+	"ccgo_linux_loong64.go": "bc43a62147b09dc2",
+	"ccgo_linux_ppc64le.go": "bc43a62147b09dc2",
+	"ccgo_linux_riscv64.go": "bc43a62147b09dc2",
+	"ccgo_linux_s390x.go":   "bc43a62147b09dc2",
+	"ccgo_windows.go":       "9d7d7514d3ea536c",
+}

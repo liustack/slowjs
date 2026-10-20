@@ -65,8 +65,11 @@ func TestInlineFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		// fixLast comes between it and fixNoDefer.
+		// fixLast and fixOneFrame come between it and fixNoDefer.
 		if out, err = fixLast(out, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if out, err = fixOneFrame(out, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if out, err = dropDefers(out); err != nil {
@@ -76,6 +79,9 @@ func TestInlineFixedFile(t *testing.T) {
 			t.Errorf("%s: fixInline does not make the file again", name)
 		}
 		back, err := restoreDefer(out)
+		if err == nil {
+			back, err = restoreOneFrame(back, name)
+		}
 		if err == nil {
 			back, err = restoreLast(back)
 		}
