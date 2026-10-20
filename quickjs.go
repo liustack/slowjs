@@ -502,7 +502,43 @@ func NewVM() (*VM, error) {
 	}
 
 	lib.XJS_SetInterruptHandler(rt.tls, rt.cRuntime, fp(interruptHandler), vm.interruptData)
+	if err := vm.SetShapeCache(DefaultShapeCache); err != nil {
+		vm.Close()
+		return nil, err
+	}
 	return vm, nil
+}
+
+// DefaultShapeCache is the number of shapes a new VM keeps (see
+// [VM.SetShapeCache]).
+const DefaultShapeCache = 2048
+
+// SetShapeCache sets how many shapes of plain objects m keeps after their
+// last object is gone, 0 for none. The shape of an object is its keys in
+// order: an object that gets the same keys in the same order as an object
+// before it, as the objects a function returns often do, finds the shapes
+// it goes through kept, instead of copying a shape for each key. m keeps
+// the last n shapes it would have freed, of objects whose prototype is
+// Object.prototype and that have at most 32 keys, none of them a symbol
+// that is not registered. A new VM keeps DefaultShapeCache shapes.
+//
+// Kept shapes take memory that counts against the limit of SetMemoryLimit,
+// and each holds the atoms of its keys. A kept shape of a few keys takes
+// about 100 bytes. A shape of 32 keys of about ten characters, that no
+// other object has, takes about 3 KiB with its atoms, so 2048 of them take
+// about 6 MiB, and the table of atoms m grew for them keeps its size after
+// they are let go. So a script
+// that runs close to its memory limit can run out of memory with the cache
+// on where it would not without it: give such a VM a smaller cache, or 0.
+// Kept shapes are not let go when an allocation fails.
+func (m *VM) SetShapeCache(n int) error {
+	if n < 0 || n > math.MaxInt32/8 {
+		return fmt.Errorf("quickjs: a shape cache of %d shapes", n)
+	}
+	if lib.XJS_SetShapeCache(m.runtime.tls, m.cContext, int32(n)) != 0 {
+		return fmt.Errorf("quickjs: out of memory for a shape cache of %d shapes", n)
+	}
+	return nil
 }
 
 // SetEvalTimeout sets the timeout for the various eval functions. Passing
@@ -650,6 +686,8 @@ func (m *VM) Close() error {
 	m.intr.mu.Unlock()
 	libc.Xfree(tls, m.interruptData)
 	libc.Xfree(tls, m.toStringArgv)
+	// The kept shapes hold the context.
+	lib.XJS_SetShapeCache(tls, ctx, 0)
 	lib.XJS_FreeContext(tls, ctx)
 	r := m.runtime
 	m.vmState = vmState{}

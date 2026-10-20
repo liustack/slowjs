@@ -1702,6 +1702,8 @@ type TJSRuntime = struct {
 	Fshape_hash_count                       int32
 	Fshape_hash                             uintptr
 	Fuser_opaque                            uintptr
+	// Added by internal/fixlib: the state of lib/runtime.go (see fixRuntimeField).
+	Ffork TforkRuntime
 }
 
 const EJS_GC_PHASE_NONE = 0
@@ -3668,6 +3670,10 @@ func ___js_malloc(tls *libc.TLS, s uintptr, size Tsize_t) (r uintptr) {
 	var block_size_idx int32
 	var total_size Tsize_t
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, b1, block_idx, block_size, block_size_idx, el1, head, next, prev, total_size, v1
+	// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).
+	if p := frontPop(tls, s, size); p != 0 {
+		return p
+	}
 	if libc.BoolInt32(!!(size == libc.Uint64FromInt32(0))) != 0 {
 		b = _get_zero_size_block(tls, s)
 		return b + 8
@@ -3712,6 +3718,10 @@ func ___js_free(tls *libc.TLS, s uintptr, ptr uintptr) {
 	var ar, b, lb, next1, prev1, v1, v2, v3, v4 uintptr
 	var block_idx, block_size, block_size_idx uint32
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, block_idx, block_size, block_size_idx, lb, next1, prev1, v1, v2, v3, v4
+	// Changed by internal/fixlib: keep the block in the front cache (see fixFrontCache).
+	if frontPush(s, ptr) {
+		return
+	}
 	if !(ptr != 0) {
 		return
 	}
@@ -3894,7 +3904,11 @@ func _js_trigger_gc(tls *libc.TLS, rt uintptr, size Tsize_t) {
 }
 
 func Xjs_malloc_rt(tls *libc.TLS, rt uintptr, size Tsize_t) (r uintptr) {
-	return ___js_malloc(tls, rt, size)
+	// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).
+	if r = ___js_malloc(tls, rt, size); r == 0 && frontRetry(tls, rt) {
+		r = ___js_malloc(tls, rt, size)
+	}
+	return r
 }
 
 func Xjs_free_rt(tls *libc.TLS, rt uintptr, ptr uintptr) {
@@ -3902,7 +3916,11 @@ func Xjs_free_rt(tls *libc.TLS, rt uintptr, ptr uintptr) {
 }
 
 func Xjs_realloc_rt(tls *libc.TLS, rt uintptr, ptr uintptr, size Tsize_t) (r uintptr) {
-	return ___js_realloc(tls, rt, ptr, size)
+	// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).
+	if r = ___js_realloc(tls, rt, ptr, size); r == 0 && size != 0 && frontRetry(tls, rt) {
+		r = ___js_realloc(tls, rt, ptr, size)
+	}
+	return r
 }
 
 func Xjs_malloc_usable_size_rt(tls *libc.TLS, rt uintptr, ptr uintptr) (r Tsize_t) {
@@ -4392,13 +4410,13 @@ func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
 	libc.Xmemset(tls, bp, 0, uint64(32))
 	(*(*TJSMallocState)(unsafe.Pointer(bp))).Fopaque = opaque
 	(*(*TJSMallocState)(unsafe.Pointer(bp))).Fmalloc_limit = uint64(-libc.Int32FromInt32(1))
-	rt = (*(*func(*libc.TLS, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TJSMallocFunctions)(unsafe.Pointer(mf)).Fjs_malloc})))(tls, bp, uint64(1440))
+	rt = (*(*func(*libc.TLS, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TJSMallocFunctions)(unsafe.Pointer(mf)).Fjs_malloc})))(tls, bp, uint64(1440+forkRuntimeSize))
 	if !(rt != 0) {
 		r = libc.UintptrFromInt32(0)
 		tls.Free(32)
 		return
 	}
-	libc.Xmemset(tls, rt, 0, uint64(1440))
+	libc.Xmemset(tls, rt, 0, uint64(1440+forkRuntimeSize))
 	_js_malloc_init(tls, rt)
 	(*TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmf = *(*TJSMallocFunctions)(unsafe.Pointer(mf))
 	(*TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state = *(*TJSMallocState)(unsafe.Pointer(bp))
@@ -4823,6 +4841,10 @@ func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
 	var v1 TJSValue
 	var _ /* ms at bp+16 */ TJSMallocState
 	_, _, _, _, _, _, _, _, _, _, _ = cl, e, el, el1, i, p, p1, v1, v2, v4, v5
+	// Changed by internal/fixlib: let go of the shapes the shape cache keeps (see fixShapeCache).
+	shapeCacheOff(tls, rt1)
+	// Changed by internal/fixlib: give the front cache back and turn it off (see fixFrontCache).
+	frontOff(tls, rt1)
 	v1 = (*TJSRuntime)(unsafe.Pointer(rt1)).Fcurrent_exception
 	*(*TJSValue)(unsafe.Pointer(bp)) = v1
 	if uint32(int32(v1.Ftag)) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
@@ -9824,6 +9846,10 @@ func _js_free_shape0(tls *libc.TLS, rt1 uintptr, sh uintptr) {
 	var v1 TJSValue
 	var v4 int32
 	_, _, _, _, _, _, _ = i, p, pr, v1, v2, v4, v5
+	// Changed by internal/fixlib: keep the shape in the shape cache (see fixShapeCache).
+	if shapeKeep(tls, rt1, sh) {
+		return
+	}
 	if (*TJSShape)(unsafe.Pointer(sh)).Fis_hashed != 0 {
 		_js_shape_hash_unlink(tls, rt1, sh)
 	}
@@ -12512,6 +12538,8 @@ func _JS_RunGCInternal(tls *libc.TLS, rt uintptr, remove_weak_objects TBOOL) {
 
 func XJS_RunGC(tls *libc.TLS, rt uintptr) {
 	_JS_RunGCInternal(tls, rt, int32(ETRUE))
+	// Changed by internal/fixlib: give the front cache back to the arenas (see fixFrontCache).
+	frontDrain(tls, rt)
 }
 
 // C documentation
@@ -17347,11 +17375,14 @@ func _add_property(tls *libc.TLS, ctx uintptr, p uintptr, prop TJSAtom, prop_fla
 				}
 				(*TJSObject)(unsafe.Pointer(p)).Fprop = new_prop
 			}
+			// Changed by internal/fixlib: a shape found again earns the shape cache a copy (see fixShapeCache).
+			shapeFound(tls, ctx)
 			(*TJSObject)(unsafe.Pointer(p)).Fshape = _js_dup_shape(tls, new_sh)
 			_js_free_shape(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, sh)
 			return (*TJSObject)(unsafe.Pointer(p)).Fprop + uintptr((*TJSShape)(unsafe.Pointer(new_sh)).Fprop_count-int32(1))*16
 		} else {
-			if (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, sh))).Fref_count != int32(1) {
+			// Changed by internal/fixlib: copy a shape the shape cache can keep (see fixShapeCache).
+			if (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, sh))).Fref_count != int32(1) || shapeKeepable(tls, ctx, sh) {
 				/* if the shape is shared, clone it */
 				new_sh = _js_clone_shape(tls, ctx, sh)
 				if !(new_sh != 0) {
@@ -35941,7 +35972,7 @@ func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, thi
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = &this_obj1, &new_target, &argc, &argv, &caller_ctx, &flags, &rt, &ctx10, &b1, &sf, &var_buf, &arg_buf, &var_refs, &local_buf, &stack_buf // Changed by internal/fixlib: kept in the stack frame (see fixPin).
 	rt = (*TJSContext)(unsafe.Pointer(caller_ctx)).Frt
 	sf = bp + 96
-	if _js_poll_interrupts(tls, caller_ctx) != 0 {
+	if pollDue(caller_ctx+424) && ___js_poll_interrupts(tls, caller_ctx) != 0 {
 		r5 = TJSValue{
 			Fu:   TJSValueUnion{},
 			Ftag: int64(EJS_TAG_EXCEPTION),
@@ -40129,7 +40160,7 @@ restart:
 		goto _892
 	_892:
 		pc = pc + uintptr(int32(v267))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -40139,14 +40170,14 @@ restart:
 		goto _894
 	_894:
 		pc = pc + uintptr(int16(v267))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
 	_159:
 		;
 		pc = pc + uintptr(int8(*(*Tuint8_t)(unsafe.Pointer(pc))))
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -40166,7 +40197,7 @@ restart:
 		_896:
 			pc = pc + uintptr(int32(v267)-int32(4))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -40187,7 +40218,7 @@ restart:
 		_898:
 			pc = pc + uintptr(int32(v267)-int32(4))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -40204,7 +40235,7 @@ restart:
 		if res2 != 0 {
 			pc = pc + uintptr(int32(int8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
@@ -40221,7 +40252,7 @@ restart:
 		if !(res3 != 0) {
 			pc = pc + uintptr(int32(int8(*(*Tuint8_t)(unsafe.Pointer(pc + uintptr(-libc.Int32FromInt32(1))))))-int32(1))
 		}
-		if libc.BoolInt32(!!(_js_poll_interrupts(tls, ctx10) != 0)) != 0 {
+		if libc.BoolInt32(!!(pollDue(ctx10+424) && ___js_poll_interrupts(tls, ctx10) != 0)) != 0 {
 			goto exception
 		}
 		goto _265
