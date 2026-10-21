@@ -1222,6 +1222,18 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in
   any VM that loads it, which is what a polyfill playing built-ins wants.
   Test: `strip_test.go`.
+- `VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC
+  now, `MemorySize` returns the memory the VM takes, as the memory limit
+  and the GC threshold count it, and `GCThreshold` returns the threshold.
+  The engine runs a GC when it makes an object and the memory would pass
+  the threshold, then sets the threshold to 1.5 times what the GC left, so
+  a threshold other than the one set last means the engine ran a GC since.
+  `RunGC` leaves the threshold as it is. With these an embedder can collect
+  between two calls into javascript, where the GC holds up no call, and
+  set the threshold for the next one, as tifa does between two renders,
+  without reading the runtime through `reflect`. As with `SetGCThreshold`,
+  no other goroutine may use the VM meanwhile, and a call after `Close`
+  panics. Test: `gc_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
