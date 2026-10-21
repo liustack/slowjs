@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, and OnClose'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -10,6 +10,7 @@ read_when:
   - Reading a string argument whose lone surrogates matter, such as one to collate (Args.WTF8)
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
+  - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
 ---
 
 # The Go API
@@ -129,3 +130,13 @@ Release: v0.26.17.
 With these an embedder can collect between two calls into javascript, where the GC holds up no call, and set the threshold for the next one, as tifa does between two renders, without reading the runtime through `reflect`. As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and a call after `Close` panics.
 
 Test: `gc_test.go`.
+
+## OnClose
+
+Release: not released yet.
+
+`VM.OnClose(f)` has `Close` run `f`, after the VM is released, so `f` must not use it. `Close` runs the functions once each, in the order given. Nothing else runs them: not the garbage collector, and not a VM that is never closed.
+
+It is for a package that keeps something per VM in a table of its own. An entry whose value is a closure that references the VM keeps the VM reachable from the table, so a cleanup the garbage collector would run for the VM never runs, and the entry stays for the life of the process. Dropping the entry in `OnClose` ends that. Package `temporal` keeps the clock of a VM this way.
+
+Test: `onclose_test.go`.
