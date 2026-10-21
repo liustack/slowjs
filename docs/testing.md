@@ -23,11 +23,12 @@ gofmt -l -s . | grep -v ccgo_          # prints nothing
 go vet ./internal/fixlib ./intl/... ./fmt
 go run ./internal/fixlib -check        # the fork's changes are all in lib/
 scripts/docs-list.sh --check           # every doc has a summary
-go test -short -p 2 . ./lib ./internal/fixlib
+go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib
 ```
 
 - `go vet` on the root package and on `lib/` reports the `unsafe.Pointer` conversions of the tests and of the generated code, so nothing runs it there. Upstream's Makefile of `lib/` passes `-vet=off` to its tests, since vet is slow on the generated files, and so do some commands below.
 - `-p 2` builds at most two packages at once: the generated files are large, and building several of them together takes much memory.
+- The tests of `internal/fixlib` take 8 to 13 minutes, longer than the 10 minutes `go test` gives by default, so every command that runs them passes `-timeout 30m`.
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
@@ -56,13 +57,13 @@ To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'T
 ## Focused checks
 
 ```sh
-go test -short ./...                                     # all packages
+go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes 8 to 13 minutes)
 go test -vet=off -run 'TestToCString' ./lib              # the leak of JS_ToCStringLen2 out of memory
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
-go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
+go test -timeout 30m ./internal/fixlib                   # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
 go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
@@ -124,7 +125,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root: the tests of `lib/` use the value form, which is not a struct on 32-bit targets) for all 14 targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the four main targets:
+It builds every package and compiles the tests of every package (not only the root: the tests of `lib/` use the value form, which is not a struct on 32-bit targets), each package to a test binary of its own, as two packages share the name `gen`, for all 14 targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the four main targets:
 
 ```sh
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
