@@ -85,6 +85,8 @@ go test -run LinksOnlyReadData ./temporal               # the packs a program wi
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
 go test -run 'DateNow|RandomSeed|Monotonic' ./lib        # Date.now, the seed of Math.random and performance.now read Go's clocks
 go test -run QuickJSLibc . ./internal/fixlib            # what stays of quickjs-libc.c works, and what goes is not linked
+go test -run Expect ./internal/fixlib                    # every likely and unlikely test branches on its condition
+go test -run FastFrame ./lib ./internal/fixlib           # TLS frames taken and freed as libc does, on linux (lib) and in the rewrite
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 go test -run '^$' -bench Clock .                         # the cost of Date.now, new Date() and performance.now

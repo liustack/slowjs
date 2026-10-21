@@ -1,8 +1,8 @@
 ---
-summary: 'The fork changes to the interpreter loop JS_CallInternal: plain pointer conversions instead of __ccgo_up, the cells of Dup and Free as Go variables, values pinned in their stack slots on amd64, set_value written out, and the interrupt countdown inline, with what each gains, why it is safe and what to do when upstream changes it'
+summary: 'The fork changes to the interpreter loop JS_CallInternal: plain pointer conversions instead of __ccgo_up, the cells of Dup and Free as Go variables, values pinned in their stack slots on amd64, set_value written out, the interrupt countdown inline, and likely and unlikely tests that branch on their condition, with what each gains, why it is safe and what to do when upstream changes it'
 read_when:
-  - Changing fixUp, fixCells, fixPin, fixInline or fixPoll in internal/fixlib
-  - fixlib stops on upSites, the cells of JS_CallInternal, pinVars, set_value, inlineCallees or js_poll_interrupts after an upstream release
+  - Changing fixUp, fixCells, fixPin, fixInline, fixPoll or fixExpect in internal/fixlib
+  - fixlib stops on upSites, the cells of JS_CallInternal, pinVars, set_value, inlineCallees, js_poll_interrupts or expectSites after an upstream release
   - About to add a fast path or a helper to the interpreter loop
   - Asking why the Go stack frame of JS_CallInternal has the size it has
 ---
@@ -60,3 +60,19 @@ Tests: `lib/poll_test.go` (the handler is still called as often, and stops an en
 ### When upstream changes it
 
 If it reports that `js_poll_interrupts` changed (a fingerprint other than the one in `internal/fixlib/pollsites.go`), read it against `pollDue` in `lib/poll.go`: it must still count the counter at the offset `fixPoll` reads down by one and call `__js_poll_interrupts` when the counter is at most zero. Then put the new fingerprints in (`go run ./internal/fixlib -poll` prints them).
+
+## Likely and unlikely tests branch on their condition
+
+Release: not released yet.
+
+QuickJS marks its hot tests as likely or unlikely with `__builtin_expect(!!(x), c)`, which returns a `long`. ccgo writes such a test as `libc.BoolInt64(!!(x)) != 0`, or `libc.BoolInt32(!!(x)) != 0` where a `long` has 32 bits (386, arm and windows). When `x` has `&&` or `||`, Go makes the integer of the condition and then tests it, where it could branch on `x` itself: a `SETcc` and a `TEST` more on each such test. `fixlib` writes each of these tests as `expect64(!!(x))` or `expect32(!!(x))`, of `lib/expect.go`, which return their argument and which Go inlines everywhere, also in `JS_CallInternal`. 728 tests in each file change (862 on linux/386 and linux/arm), 144 of them in `JS_CallInternal`.
+
+Why this is safe: `libc.BoolInt64(b) != 0` is `b` for every `b`, so each test takes the same branch as before. `fixlib` changes only a test of that exact form, a call of `libc.BoolInt64` or `libc.BoolInt32` on `!!(x)` compared with `!= 0`, found by Go's parser, nested ones too. A value made of such a call, or a test without the `!!` of `__builtin_expect`, stays as it is. It checks the number of tests it changes in each file against `expectSites`, and checks that undoing the change gives back the text it was given, byte for byte. Other changes of `fixlib` match the text of these tests, so it makes this change after the frames are freed without a defer, and undoes it first.
+
+A render of the pages of tifa's bench app takes 0.976 to 0.987 of the time of v0.26.17 (the medians of two sessions of 8 rounds, single rounds 0.961 to 0.992), and of the shop's pages 0.983 (0.976 to 0.984 over 5 rounds), on linux/amd64 (AMD EPYC, without PGO), with the same HTML: each round compares the mean of six builds (three for the shop) whose code sits at different addresses with the same for v0.26.17. A render runs 1.8% fewer instructions for the bench pages and 1.6% fewer for the shop's (callgrind), most of them in `JS_CallInternal`, where the change also moves which values Go keeps in registers. This changes only the generated Go, with no C hunk (`internal/fixlib/expect.go`).
+
+Tests: `internal/fixlib/expect_test.go`, with test262 and the tests of the root package for what the engine gives.
+
+### When upstream changes it
+
+If it reports a number of tests other than `expectSites` has for a file, read the new or the missing ones: each must still be a test of `__builtin_expect`, `libc.BoolInt64(!!(x)) != 0` or `libc.BoolInt32(!!(x)) != 0`. Then put the new numbers in (`go run ./internal/fixlib -expect` prints them).

@@ -11,7 +11,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,7 +21,7 @@ import (
 // frees it before every return.
 func TestNoDeferEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		raw, err := os.ReadFile(fn)
+		raw, err := readNoDefer(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

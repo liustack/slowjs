@@ -73,6 +73,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | EvalBytecode waits for a module's top-level await in Go | Unreleased | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |
 | The engine reads Go's clocks | Unreleased | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
 | quickjs-libc.c keeps only what the Go API calls | Unreleased | [trimmed.md](trimmed.md#quickjs-libcc-keeps-only-what-the-go-api-calls) |
+| Likely and unlikely tests branch on their condition | Unreleased | [interpreter-loop.md](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) |
+| TLS frames taken without a call on linux | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

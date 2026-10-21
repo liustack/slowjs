@@ -34,7 +34,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 | `quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `builtin.go`, `etc.go` | The Go API |
 | `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
 | `lib/ccgo_*.go` | The generated engine. Never edited by hand: `internal/fixlib` rewrites them |
-| `lib/*.go` (the rest) | Hand-written Go the generated engine calls: `backtrace.go` (lazy error stacks), `uncatchable.go`, `outofmemory.go`, `objlit.go`, `regexskip.go`, `poll.go`, `runtime.go` (the fork's state at the end of `JSRuntime`), `frontcache.go`, `shapecache.go`, `forin.go`, `bitwise.go`, `eq.go`, `atomkey.go`, `jsonstr.go`, `funcshape.go`, `regexcache.go`, `clock.go` (the engine's clocks), `test262_runner.go` |
+| `lib/*.go` (the rest) | Hand-written Go the generated engine calls: `backtrace.go` (lazy error stacks), `uncatchable.go`, `outofmemory.go`, `objlit.go`, `regexskip.go`, `poll.go`, `runtime.go` (the fork's state at the end of `JSRuntime`), `frontcache.go`, `shapecache.go`, `forin.go`, `bitwise.go`, `eq.go`, `atomkey.go`, `jsonstr.go`, `funcshape.go`, `regexcache.go`, `clock.go` (the engine's clocks), `expect.go` (likely and unlikely tests), `fastframes_linux.go` (TLS frames without a call on linux), `test262_runner.go` |
 | `lib/internal/patch/quickjs.diff` | The fork's changes in C, for a regeneration of `lib/` (see [upgrading.md](upgrading.md#the-c-patch)) |
 | `lib/internal/patch/test262.diff` | Upstream's patch to test262 |
 | `lib/internal/run-test262/` | The test262 runner, a module of its own (see [testing.md](testing.md#test262)) |

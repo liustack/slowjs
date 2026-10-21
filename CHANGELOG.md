@@ -37,6 +37,8 @@ All without PGO, against v0.26.17.
 
 - A VM keeps the bytecode of the regexps it compiled, so code that makes the same regexps on every render compiles them once: the journal post of tifa's example shop that highlights CSS renders in 0.893 of the time, the other pages in the same time. A VM of the shop holds 12 KiB more, and one that rendered the CSS post keeps about 714 KiB of regexps.
 - `Date.now()`, `new Date()` and `performance.now()` read the time from Go instead of a system call of modernc.org/libc: 122 ns rather than 689, 261 rather than 870, and 107 rather than 686. A render of the shop does not change.
+- The likely and unlikely tests of the engine branch on their condition, without making an integer of it first: 0.983 of the time, and 0.976 to 0.987 on the pages of tifa's bench app.
+- On linux, the engine takes and frees its TLS frames without calling libc, except in the interpreter function: about 360000 fewer calls in a render of tifa's bench pages. On top of the change above, 0.998 of the time and 0.990 on the bench pages. Both together: 0.979 of the time of v0.26.17, and 0.967 on the bench pages.
 
 ## [v0.26.17] - 2026-10-21
 

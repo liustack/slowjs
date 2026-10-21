@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ import (
 // lets the cache go before the shape cache and the front cache.
 func TestRegexCacheEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readNoDefer(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
