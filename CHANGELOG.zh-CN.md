@@ -14,7 +14,11 @@
 
 ### 变更
 
-- `StdAddHelpers` 的 `performance.now()`、`os.now()` 和 quickjs-libc os 模块的定时器改为从进程启动开始计时。以前在 Linux 和 macOS 上从系统启动开始，在 Windows 和 FreeBSD 上从 1970 年开始，还会随系统时钟的调整而跳动。在 macOS 上不再计入系统睡眠的时间。`Date.now()` 和 `new Date()` 的值和原来一样。
+- `StdAddHelpers` 的 `performance.now()` 改为从进程启动开始计时。以前在 Linux 和 macOS 上从系统启动开始，在 Windows 和 FreeBSD 上从 1970 年开始，还会随系统时钟的调整而跳动。在 macOS 上不再计入系统睡眠的时间。`Date.now()` 和 `new Date()` 的值和原来一样。
+
+### 移除
+
+- `lib` 去掉了 QuickJS 命令行（`quickjs-libc.c`）里的 `std`、`os` 和 `Worker` 模块，Go API 从来不注册它们：`js_init_module_std`、`js_init_module_os`、`js_module_check_attributes`、`js_std_set_worker_new_context_func`、`js_std_init_handlers`、`js_std_free_handlers`、`js_std_promise_rejection_tracker`、`js_std_await`、`js_std_loop`、`js_std_eval_binary` 和 `js_std_eval_binary_json_module` 都没有了。`StdAddHelpers`、`SetDefaultModuleLoader` 和模块的字节码照常可用。程序不再链接这些代码，也不再链接只有它们调用的 libc 部分（`fork`、`execve`、`popen`、`setenv`、文件和终端相关的函数）：只调用 `Eval` 的程序在 linux/amd64 上小 354 KB，tifa 示例商店的服务端按 `tifa build` 的方式构建（`-ldflags=-w`，用商店的 PGO 配置文件，linux/amd64）小 181 KB。
 
 ### 修复
 
