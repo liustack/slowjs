@@ -167,13 +167,17 @@
 	}
 
 	// pushOptions appends the options of o in list, from optionLists, to
-	// args, converted as their kind says.
+	// args, converted as their kind says. Without options, nothing: a
+	// Builtin reads missing arguments as undefined.
 	function pushOptions(args, o, list) {
-		const n = args.length;
-		for (let i = 0; i < list.length; i++) {
-			let v = o[list[i][0]];
+		if (o === noOptions) {
+			return args;
+		}
+		const n = args.length, names = list.names, kinds = list.kinds;
+		for (let i = 0; i < names.length; i++) {
+			let v = o[names[i]];
 			if (v !== undefined) {
-				switch (list[i][1]) {
+				switch (kinds[i]) {
 				case 's':
 					v = String(v);
 					break;

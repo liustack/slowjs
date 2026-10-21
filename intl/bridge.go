@@ -104,13 +104,19 @@ func digitOptions() []option {
 }
 
 // optionLists tells intl.js the options of each constructor, as json: the
-// name of the constructor to a list of [name, kind] pairs.
+// name of the constructor to the names of its options and a string of their
+// kinds, one byte each.
 var optionLists = func() string {
-	m := map[string][][2]string{}
+	type list struct {
+		Names []string `json:"names"`
+		Kinds string   `json:"kinds"`
+	}
+	m := map[string]list{}
 	for _, c := range ctors {
-		l := [][2]string{}
+		l := list{Names: []string{}}
 		for _, o := range c.options {
-			l = append(l, [2]string{o.name, string(o.kind)})
+			l.Names = append(l.Names, o.name)
+			l.Kinds += string(o.kind)
 		}
 		m[c.name] = l
 	}
