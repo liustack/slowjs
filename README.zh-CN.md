@@ -107,6 +107,6 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。
 
 ## 许可证
 
-这个 fork 自己写的文件用 [MIT 许可证](LICENSE-MIT)，每个文件开头都有 `SPDX-License-Identifier: MIT`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 fork 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。fork 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)。
+这个 fork 自己写的文件用 [MIT 许可证](LICENSE-MIT)，每个文件开头都有 `SPDX-License-Identifier: MIT`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 fork 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。fork 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它数据里的分词词典另有 ICU 的声明（[internal/gointl/qjsdata/NOTICE-ICU](internal/gointl/qjsdata/NOTICE-ICU)）。
 
 用这个模块构建并分发二进制的程序，要附上这些许可证的声明。哪个路径用哪个许可证、要附哪些文本，见 [NOTICE.md](NOTICE.md)。
