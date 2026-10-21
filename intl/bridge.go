@@ -23,9 +23,10 @@ import (
 // registry (registry.go) and hands javascript its id, which every other call
 // passes first. Calls go through Builtins, which convert nothing: a resolve
 // takes strings, numbers and booleans, a format a number or a string, and
-// they return a string, a number or undefined. Results that are objects,
-// resolvedOptions() and formatToParts(), cross as json for JSON.parse, which
-// builds them faster than javascript would and calls no setter of the page.
+// they return a string, a number, an array of strings (VM.NewArray) or
+// undefined. resolvedOptions(), an object, crosses as json for JSON.parse,
+// which builds it faster than javascript would and calls no setter of the
+// page. formatToParts() crosses as the strings of its parts.
 //
 // # Adding a constructor
 //
@@ -413,7 +414,7 @@ var bridge = []*quickjs.Builtin{
 				r = append(r, s)
 			}
 		}
-		return a.VM().NewString(string(appendStrings(nil, r)))
+		return stringArray(a.VM(), r)
 	}),
 	quickjs.NewBuiltin("supportedLocalesOf", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		name, _ := a.String(0)
@@ -437,7 +438,7 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, jsErr(err)
 		}
 
-		return a.VM().NewString(string(appendStrings(nil, r)))
+		return stringArray(a.VM(), r)
 	}),
 }
 
@@ -489,24 +490,16 @@ func dateFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 	return formatted(a.VM(), parts, wantParts)
 }
 
-// formatted returns parts either as the json of the formatToParts result or,
+// formatted returns parts either as the array of their types and values, in
+// turn, which parts() in intl.js makes the formatToParts result of, or,
 // joined, as the format one.
 func formatted(vm *quickjs.VM, parts []part, wantParts bool) (quickjs.Value, error) {
 	if wantParts {
-		b := make([]byte, 0, 32*len(parts))
-		b = append(b, '[')
-		for i, p := range parts {
-			if i > 0 {
-				b = append(b, ',')
-			}
-			b = append(b, `{"type":`...)
-			b = appendString(b, p.Type)
-			b = append(b, `,"value":`...)
-			b = appendString(b, p.Value)
-			b = append(b, '}')
+		l := make([]string, 0, 2*len(parts))
+		for _, p := range parts {
+			l = append(l, p.Type, p.Value)
 		}
-		b = append(b, ']')
-		return vm.NewString(string(b))
+		return stringArray(vm, l)
 	}
 
 	if len(parts) == 1 {
@@ -524,33 +517,26 @@ func formatted(vm *quickjs.VM, parts []part, wantParts bool) (quickjs.Value, err
 	return vm.NewString(string(b))
 }
 
-// appendStrings appends the json array of l.
-func appendStrings(b []byte, l []string) []byte {
-	b = append(b, '[')
-	for i, s := range l {
-		if i > 0 {
-			b = append(b, ',')
+// stringArray returns a javascript array of l.
+func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, 0, len(l))
+	free := func() {
+		for i := range vals {
+			vals[i].Free()
 		}
-		b = appendString(b, s)
 	}
-	return append(b, ']')
-}
+	for _, s := range l {
+		v, err := vm.NewString(s)
+		if err != nil {
+			free()
+			return quickjs.Value{}, err
+		}
 
-// appendString appends the json string of s, which is valid UTF-8.
-func appendString(b []byte, s string) []byte {
-	const hex = "0123456789abcdef"
-	b = append(b, '"')
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; {
-		case c == '"' || c == '\\':
-			b = append(b, '\\', c)
-		case c < 0x20:
-			b = append(b, '\\', 'u', '0', '0', hex[c>>4], hex[c&15])
-		default:
-			b = append(b, c)
-		}
+		vals = append(vals, v)
 	}
-	return append(b, '"')
+	a, err := vm.NewArray(vals...)
+	free()
+	return a, err
 }
 
 // jsErr returns err as the javascript error ECMA-402 has for it: a jsError's

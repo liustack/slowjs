@@ -235,8 +235,22 @@
 		return args;
 	}
 
+	// parts turns the array of types and values, in turn, a Builtin answers
+	// for formatToParts into its result, in place: element i takes the part
+	// made of elements 2i and 2i+1, already read, and the array is then cut
+	// to half its length. Only own elements are set, so no setter on
+	// Array.prototype runs.
+	function parts(a) {
+		const n = a.length / 2;
+		for (let i = 0; i < n; i++) {
+			a[i] = {type: a[2 * i], value: a[2 * i + 1]};
+		}
+		a.length = n;
+		return a;
+	}
+
 	function supportedLocalesOf(service, locales) {
-		return parse(apply(supportedLocales, undefined, pushLocales(bare([service]), locales)));
+		return apply(supportedLocales, undefined, pushLocales(bare([service]), locales));
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
@@ -277,7 +291,7 @@
 			return i.bound;
 		},
 		formatToParts(date) {
-			return parse(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
+			return parts(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'DateTimeFormat', DateTimeFormat), optionsOf));
@@ -323,7 +337,7 @@
 			return i.bound;
 		},
 		formatToParts(value) {
-			return parse(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
+			return parts(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
@@ -373,7 +387,7 @@
 		NumberFormat: NumberFormat,
 		PluralRules: PluralRules,
 		getCanonicalLocales(locales) {
-			return parse(apply(canonicalLocales, undefined, pushLocales(bare([]), locales)));
+			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
 		},
 		[toStringTag]: 'Intl'
 	});

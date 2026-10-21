@@ -150,7 +150,7 @@ orders it with `Close` (which frees the flag): `Close` clears only the embedded 
     locales and options into an id in the process-wide `registry.go` (bounded, shared by all VMs);
     every later call passes the id, and a Builtin answers `undefined` for an id the registry
     dropped, on which `intl.js` resolves the same arguments again. Values cross as strings,
-    numbers and booleans, results that are objects as JSON. `stub.js` takes the built-ins both
+    numbers and booleans, lists as arrays (`VM.NewArray`), `resolvedOptions()` as JSON. `stub.js` takes the built-ins both
     scripts use at Register time, before any page code runs, and `intl.js` uses only those,
     null-prototype descriptors and arrays, and a private field for internal slots
     (`intl/testdata/node/tamper.js` lists what a page may change). The comment at the top of
