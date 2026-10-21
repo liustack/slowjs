@@ -1,0 +1,545 @@
+{
+ "node": "v24.13.0",
+ "icu": "77.1",
+ "features": [
+  {
+   "id": "class",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "class A { constructor() { this.v = 1 } m() { return this.v } static s() { return 3 } } class B extends A { m() { return super.m() + 1 } } (new B().m() === 2 && B.s() === 3) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "let-const-arrow-template",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "{ let a = 1; const f = (x, y = 2) => x + y; var r = `${f(a)}` } r === \"3\" ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "destructuring-spread",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var {a, b: [c, ...d]} = {a: 1, b: [2, 3, 4]}; var m = Math.max(...d); (a + c + m === 7 && d.length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "generators",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "function* g() { var x = yield 1; yield x * 2 } var it = g(); it.next(); (it.next(21).value === 42 && [...g()].length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "symbol-iterator-for-of",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var o = {*[Symbol.iterator]() { yield 1; yield 2 }}; var s = 0; for (var v of o) s += v; s === 3 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "map-set-weakmap",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var m = new Map([[1, \"a\"]]); var s = new Set([1, 1, 2]); var w = new WeakMap(); var k = {}; w.set(k, 1); (m.get(1) === \"a\" && s.size === 2 && w.get(k) === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "proxy",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var p = new Proxy({}, { get: (t, k) => k === \"x\" ? 42 : undefined, has: () => true }); (p.x === 42 && (\"y\" in p)) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "reflect",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var o = {}; Reflect.defineProperty(o, \"x\", {value: 1}); (Reflect.ownKeys(o).length === 1 && Reflect.has(o, \"x\") && Reflect.apply(Math.max, null, [1, 3]) === 3) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "promise",
+   "edition": "ES2015",
+   "kind": "async",
+   "src": "Promise.resolve(1).then(v => { globalThis.__result = v === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "typed-arrays",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var b = new ArrayBuffer(8); var f = new Float64Array(b); f[0] = 1.5; var u = new Uint8Array(b); var dv = new DataView(b); (u.length === 8 && dv.getFloat64(0, true) === 1.5) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-unicode-sticky",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "var r = /a/y; r.lastIndex = 1; (/\\u{1F600}/u.test(\"😀\") && r.test(\"ba\")) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "new-target-tagged-template",
+   "edition": "ES2015",
+   "kind": "script",
+   "src": "function F() { return new.target === F } var t = (s, ...v) => s.raw[0] + v[0]; (new F() instanceof F || true) && t`x${1}` === \"x1\" ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "exponent-includes",
+   "edition": "ES2016",
+   "kind": "script",
+   "src": "(2 ** 10 === 1024 && [NaN].includes(NaN)) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "async-await",
+   "edition": "ES2017",
+   "kind": "async",
+   "src": "async function f() { var a = await 1; var b = await Promise.resolve(2); return a + b } f().then(v => { globalThis.__result = v === 3 ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "object-entries-padstart",
+   "edition": "ES2017",
+   "kind": "script",
+   "src": "(Object.entries({a: 1})[0][1] === 1 && \"5\".padStart(3, \"0\") === \"005\" && Object.getOwnPropertyDescriptors({a: 1}).a.value === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "shared-array-buffer-atomics",
+   "edition": "ES2017",
+   "kind": "script",
+   "src": "var s = new SharedArrayBuffer(8); var i = new Int32Array(s); Atomics.add(i, 0, 5); Atomics.load(i, 0) === 5 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "async-iteration",
+   "edition": "ES2018",
+   "kind": "async",
+   "src": "async function* g() { yield 1; yield 2 } (async () => { var s = 0; for await (var v of g()) s += v; globalThis.__result = s === 3 ? \"ok\" : \"bad\" })()",
+   "expect": "ok"
+  },
+  {
+   "id": "object-rest-spread",
+   "edition": "ES2018",
+   "kind": "script",
+   "src": "var {a, ...r} = {a: 1, b: 2, c: 3}; var o = {...r, d: 4}; (Object.keys(o).join() === \"b,c,d\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "promise-finally",
+   "edition": "ES2018",
+   "kind": "async",
+   "src": "Promise.reject(1).finally(() => {}).catch(v => { globalThis.__result = v === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-named-groups",
+   "edition": "ES2018",
+   "kind": "script",
+   "src": "var m = /(?<y>\\d{4})-(?<m>\\d{2})/.exec(\"2026-10\"); (m.groups.y === \"2026\" && \"2026-10\".replace(/(?<y>\\d+)-(?<m>\\d+)/, \"$<m>/$<y>\") === \"10/2026\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-lookbehind",
+   "edition": "ES2018",
+   "kind": "script",
+   "src": "(\"$42 and €17\".match(/(?<=\\$)\\d+/)[0] === \"42\" && /(?<!a)b/.test(\"cb\")) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-dotall",
+   "edition": "ES2018",
+   "kind": "script",
+   "src": "/a.b/s.test(\"a\\nb\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-unicode-property",
+   "edition": "ES2018",
+   "kind": "script",
+   "src": "var m = \"Grüße, Ankara 日本\".match(/\\p{L}+/gu); (m !== null && m.join(\"|\") === \"Grüße|Ankara|日本\" && \"Ankara-2026!\".replace(/[^\\p{L}\\p{N}]+/gu, \"_\") === \"Ankara_2026_\") ? \"ok\" : \"bad: \" + m",
+   "expect": "ok"
+  },
+  {
+   "id": "flat-fromentries-trim",
+   "edition": "ES2019",
+   "kind": "script",
+   "src": "([1, [2, [3]]].flat(Infinity).length === 3 && Object.fromEntries([[\"a\", 1]]).a === 1 && \" x\".trimStart() === \"x\" && Symbol(\"d\").description === \"d\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "optional-catch-binding",
+   "edition": "ES2019",
+   "kind": "script",
+   "src": "try { throw 1 } catch { var c = \"ok\" } c",
+   "expect": "ok"
+  },
+  {
+   "id": "well-formed-json-stringify",
+   "edition": "ES2019",
+   "kind": "script",
+   "src": "JSON.stringify(\"\\uD800\") === '\"\\\\ud800\"' ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "stable-sort",
+   "edition": "ES2019",
+   "kind": "script",
+   "src": "var a = []; for (var i = 0; i < 100; i++) a.push({k: i % 3, i}); a.sort((x, y) => x.k - y.k); var ok = true; for (var i = 1; i < a.length; i++) if (a[i - 1].k === a[i].k && a[i - 1].i > a[i].i) ok = false; ok ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "bigint",
+   "edition": "ES2020",
+   "kind": "script",
+   "src": "(2n ** 64n === 18446744073709551616n && BigInt.asUintN(8, 257n) === 1n && typeof 1n === \"bigint\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "optional-chaining-nullish",
+   "edition": "ES2020",
+   "kind": "script",
+   "src": "var o = {a: {b: 0}}; (o?.a?.b ?? 5) === 0 && o.x?.y === undefined && (null ?? \"d\") === \"d\" ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "promise-allsettled",
+   "edition": "ES2020",
+   "kind": "async",
+   "src": "Promise.allSettled([Promise.resolve(1), Promise.reject(2)]).then(r => { globalThis.__result = r[1].status === \"rejected\" ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "globalthis-matchall",
+   "edition": "ES2020",
+   "kind": "script",
+   "src": "(typeof globalThis === \"object\" && [...\"a1b2\".matchAll(/\\d/g)].length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "dynamic-import",
+   "edition": "ES2020",
+   "kind": "module",
+   "src": "import(\"./dep.js\").then(m => { globalThis.__result = m.x === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "import-meta",
+   "edition": "ES2020",
+   "kind": "module",
+   "src": "globalThis.__result = typeof import.meta === \"object\" ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "logical-assignment-separators",
+   "edition": "ES2021",
+   "kind": "script",
+   "src": "var a = null; a ??= 1_000; var b = 0; b ||= 2; (a === 1000 && b === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "replaceall-promise-any",
+   "edition": "ES2021",
+   "kind": "async",
+   "src": "globalThis.__result = \"aaa\".replaceAll(\"a\", \"b\") === \"bbb\" ? \"pending\" : \"bad\"; Promise.any([Promise.reject(1), Promise.resolve(2)]).then(v => { if (__result === \"pending\") globalThis.__result = v === 2 ? \"ok\" : \"bad\" })",
+   "expect": "ok"
+  },
+  {
+   "id": "weakref-finalization",
+   "edition": "ES2021",
+   "kind": "script",
+   "src": "var o = {}; var w = new WeakRef(o); var f = new FinalizationRegistry(() => {}); f.register(o, 1); w.deref() === o ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "class-fields-private",
+   "edition": "ES2022",
+   "kind": "script",
+   "src": "class A { #x = 1; y = 2; static #s = 3; #m() { return this.#x } static { A.z = A.#s } get v() { return this.#m() + this.y } static has(o) { return #x in o } } (new A().v === 3 && A.z === 3 && A.has(new A())) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "at-hasown-cause",
+   "edition": "ES2022",
+   "kind": "script",
+   "src": "([1, 2, 3].at(-1) === 3 && \"abc\".at(-1) === \"c\" && Object.hasOwn({a: 1}, \"a\") && new Error(\"x\", {cause: 1}).cause === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-match-indices",
+   "edition": "ES2022",
+   "kind": "script",
+   "src": "var m = /b/d.exec(\"abc\"); m.indices[0][0] === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "top-level-await",
+   "edition": "ES2022",
+   "kind": "module",
+   "src": "var v = await Promise.resolve(5); globalThis.__result = v === 5 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "modules",
+   "edition": "ES2015",
+   "kind": "module",
+   "src": "import d, {x} from \"./dep.js\"; globalThis.__result = x + d() === 3 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "array-find-last",
+   "edition": "ES2023",
+   "kind": "script",
+   "src": "([1, 2, 3].findLast(x => x < 3) === 2 && [1, 2, 3].findLastIndex(x => x > 5) === -1) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "change-array-by-copy",
+   "edition": "ES2023",
+   "kind": "script",
+   "src": "var a = [3, 1, 2]; var s = a.toSorted(); (s.join() === \"1,2,3\" && a.join() === \"3,1,2\" && a.toReversed()[0] === 2 && a.with(0, 9)[0] === 9 && a.toSpliced(0, 1).length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "hashbang",
+   "edition": "ES2023",
+   "kind": "script",
+   "src": "#!/usr/bin/env node\n\"ok\"",
+   "expect": "ok"
+  },
+  {
+   "id": "symbols-as-weakmap-keys",
+   "edition": "ES2023",
+   "kind": "script",
+   "src": "var w = new WeakMap(); var s = Symbol(\"k\"); w.set(s, 1); w.get(s) === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "object-groupby",
+   "edition": "ES2024",
+   "kind": "script",
+   "src": "var g = Object.groupBy([1, 2, 3], x => x % 2 ? \"odd\" : \"even\"); var m = Map.groupBy([1, 2], x => x > 1); (g.odd.length === 2 && m.get(true)[0] === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "promise-withresolvers",
+   "edition": "ES2024",
+   "kind": "async",
+   "src": "var r = Promise.withResolvers(); r.promise.then(v => { globalThis.__result = v }); r.resolve(\"ok\")",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-v-flag",
+   "edition": "ES2024",
+   "kind": "script",
+   "src": "(/[\\p{L}--[a-z]]/v.test(\"A\") && !/[\\p{L}--[a-z]]/v.test(\"a\") && /[[a-z]&&[aeiou]]/v.test(\"e\")) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "arraybuffer-resize-transfer",
+   "edition": "ES2024",
+   "kind": "script",
+   "src": "var b = new ArrayBuffer(4, {maxByteLength: 16}); b.resize(8); var t = b.transfer(); (t.byteLength === 8 && b.detached === true) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "string-wellformed",
+   "edition": "ES2024",
+   "kind": "script",
+   "src": "(\"a\\uD800\".isWellFormed() === false && \"a\\uD800\".toWellFormed() === \"a\\uFFFD\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "iterator-helpers",
+   "edition": "ES2025",
+   "kind": "script",
+   "src": "function* n() { for (var i = 0; ; i++) yield i } n().filter(x => x % 3 === 0).take(4).toArray().join() === \"0,3,6,9\" ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "set-methods",
+   "edition": "ES2025",
+   "kind": "script",
+   "src": "var a = new Set([1, 2]), b = new Set([2, 3]); (a.union(b).size === 3 && a.intersection(b).size === 1 && a.isSubsetOf(new Set([1, 2, 3]))) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "promise-try",
+   "edition": "ES2025",
+   "kind": "async",
+   "src": "Promise.try(() => \"ok\").then(v => { globalThis.__result = v })",
+   "expect": "ok"
+  },
+  {
+   "id": "regexp-escape-modifiers",
+   "edition": "ES2025",
+   "kind": "script",
+   "src": "(RegExp.escape(\"a.b\") === \"\\\\x61\\\\.b\" && /(?i:a)b/.test(\"Ab\")) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "float16array",
+   "edition": "ES2025",
+   "kind": "script",
+   "src": "var f = new Float16Array([1.5]); (f[0] === 1.5 && Math.f16round(1.337) === 1.3369140625) ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "json-modules",
+   "edition": "ES2025",
+   "kind": "module",
+   "src": "import data from \"./data.json\" with { type: \"json\" }; globalThis.__result = data.a === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "annexb-html-comments-escape",
+   "edition": "AnnexB",
+   "kind": "script",
+   "src": "var x = 1; <!-- comment\n (escape(\"ä\") === \"%E4\" && \"abc\".substr(1, 1) === \"b\") ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "sloppy-with",
+   "edition": "ES5",
+   "kind": "script",
+   "src": "var o = {a: 1}; with (o) { a = 2 } o.a === 2 ? \"ok\" : \"bad\"",
+   "expect": "ok"
+  },
+  {
+   "id": "intl-datetimeformat",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.DateTimeFormat(\"zh-CN\", {dateStyle: \"full\", timeStyle: \"short\", timeZone: \"Asia/Shanghai\"}).format(new Date(Date.UTC(2026, 9, 21, 8, 30)))",
+   "expect": "2026年10月21日星期三 16:30"
+  },
+  {
+   "id": "intl-datetimeformat-en",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.DateTimeFormat(\"en-US\", {year: \"numeric\", month: \"long\", day: \"numeric\", weekday: \"short\", timeZone: \"America/New_York\"}).format(new Date(Date.UTC(2026, 9, 21, 3, 0)))",
+   "expect": "Tue, October 20, 2026"
+  },
+  {
+   "id": "intl-numberformat-currency",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.NumberFormat(\"de-DE\", {style: \"currency\", currency: \"EUR\"}).format(1234.5)",
+   "expect": "1.234,50 €"
+  },
+  {
+   "id": "intl-numberformat-compact",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.NumberFormat(\"en\", {notation: \"compact\"}).format(1234567) + \" \" + new Intl.NumberFormat(\"en-IN\").format(12345678.9)",
+   "expect": "1.2M 1,23,45,678.9"
+  },
+  {
+   "id": "intl-collator",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "[\"z\", \"ä\", \"a\", \"Ö\"].sort(new Intl.Collator(\"de\").compare).join(\",\") + \" \" + [\"z\", \"ä\", \"a\"].sort(new Intl.Collator(\"sv\").compare).join(\",\")",
+   "expect": "a,ä,Ö,z a,z,ä"
+  },
+  {
+   "id": "intl-pluralrules",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "[0, 1, 2, 5].map(n => new Intl.PluralRules(\"ru\").select(n)).join(\",\")",
+   "expect": "many,one,few,many"
+  },
+  {
+   "id": "intl-relativetimeformat",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.RelativeTimeFormat(\"en\", {numeric: \"auto\"}).format(-1, \"day\") + \" | \" + new Intl.RelativeTimeFormat(\"fr\").format(3, \"hour\")",
+   "expect": "yesterday | dans 3 heures"
+  },
+  {
+   "id": "intl-listformat",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.ListFormat(\"en\", {type: \"conjunction\"}).format([\"Alice\", \"Bob\", \"Carol\"])",
+   "expect": "Alice, Bob, and Carol"
+  },
+  {
+   "id": "intl-segmenter",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "[...new Intl.Segmenter(\"en\", {granularity: \"word\"}).segment(\"Hello, world!\")].filter(s => s.isWordLike).map(s => s.segment).join(\"|\")",
+   "expect": "Hello|world"
+  },
+  {
+   "id": "intl-displaynames",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Intl.DisplayNames([\"en\"], {type: \"region\"}).of(\"JP\")",
+   "expect": "Japan"
+  },
+  {
+   "id": "number-tolocalestring",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "(1234567.891).toLocaleString(\"en-US\", {maximumFractionDigits: 2})",
+   "expect": "1,234,567.89"
+  },
+  {
+   "id": "date-tolocalestring",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "new Date(Date.UTC(2026, 0, 2, 3, 4, 5)).toLocaleString(\"en-US\", {timeZone: \"UTC\"})",
+   "expect": "1/2/2026, 3:04:05 AM"
+  },
+  {
+   "id": "string-localecompare",
+   "edition": "Intl",
+   "kind": "script",
+   "src": "[\"b\", \"a\", \"á\", \"A\"].sort((x, y) => x.localeCompare(y, \"en\")).join(\",\")",
+   "expect": "a,A,á,b"
+  },
+  {
+   "id": "host-structuredclone",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof structuredClone",
+   "expect": ""
+  },
+  {
+   "id": "host-textencoder",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof TextEncoder",
+   "expect": ""
+  },
+  {
+   "id": "host-settimeout",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof setTimeout",
+   "expect": ""
+  },
+  {
+   "id": "host-queuemicrotask",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof queueMicrotask",
+   "expect": ""
+  },
+  {
+   "id": "host-console",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof console",
+   "expect": ""
+  },
+  {
+   "id": "host-url",
+   "edition": "Host",
+   "kind": "host",
+   "src": "typeof URL",
+   "expect": ""
+  }
+ ]
+}

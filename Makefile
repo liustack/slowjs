@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark cover gointl
+.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl
 
 all: editor
 	golint 2>&1
@@ -10,6 +10,13 @@ all: editor
 benchmark:
 	date
 	make -C ./compare benchmark
+
+# Compares this engine with the other pure Go JavaScript engines and writes
+# compare/engines/results/<date>-<version>-<host>.{json,md}. See
+# docs/benchmarks.md. Pass flags with ARGS, for example
+# make compare-engines ARGS="-cpu 1 -sibling 5".
+compare-engines:
+	cd compare/engines && go run ./cmd/compare $(ARGS)
 
 build_all_targets:
 	./build_all_targets.sh
