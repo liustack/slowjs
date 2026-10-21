@@ -56,19 +56,14 @@ func resolveRelativeTimeFormat(req request) (*relativeTimeFormat, error) {
 	case s == "auto":
 		opts.Numeric = gointl.RelativeAuto
 	}
-	data, rebase, err := goDataLocale(gointl.ServiceRelativeTimeFormat, loc)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := gointl.NewRelativeTimeFormat(data, opts)
+	f, err := gointl.NewRelativeTimeFormatFrom(chromiumData{}, loc, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	r := f.ResolvedOptions()
 	return &relativeTimeFormat{
-		Locale:          rebase(r.Locale),
+		Locale:          r.Locale,
 		Style:           [...]string{"long", "short", "narrow"}[r.Style],
 		Numeric:         [...]string{"always", "auto"}[r.Numeric],
 		NumberingSystem: r.NumberingSystem,

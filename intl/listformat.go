@@ -52,19 +52,14 @@ func resolveListFormat(req request) (*listFormat, error) {
 	case s == "narrow":
 		opts.Style = gointl.ListNarrow
 	}
-	data, rebase, err := goDataLocale(gointl.ServiceListFormat, loc)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := gointl.NewListFormat(data, opts)
+	f, err := gointl.NewListFormatFrom(chromiumData{}, loc, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	r := f.ResolvedOptions()
 	return &listFormat{
-		Locale: rebase(r.Locale),
+		Locale: r.Locale,
 		Type:   [...]string{"conjunction", "disjunction", "unit"}[r.Type],
 		Style:  [...]string{"long", "short", "narrow"}[r.Style],
 		f:      f,
