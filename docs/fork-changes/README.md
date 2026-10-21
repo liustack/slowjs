@@ -71,6 +71,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Intl leaves what a page put in place of a stand-in | Unreleased | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
 | Temporal on go-intl | Unreleased | [temporal.md](temporal.md#temporal-on-go-intl) |
 | EvalBytecode waits for a module's top-level await in Go | Unreleased | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |
+| The engine reads Go's clocks | Unreleased | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

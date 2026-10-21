@@ -108,3 +108,25 @@ func TestHugeEvalTimeout(t *testing.T) {
 		}
 	}
 }
+
+// BenchmarkClock times one read of each clock javascript has: Date.now,
+// new Date() and performance.now of StdAddHelpers. ns/op is per read.
+func BenchmarkClock(b *testing.B) {
+	for _, c := range []struct{ name, call string }{
+		{"DateNow", `Date.now()`},
+		{"NewDate", `new Date()`},
+		{"PerformanceNow", `performance.now()`},
+	} {
+		b.Run(c.name, func(b *testing.B) {
+			m := newCallVM(b, "", c.call)
+			if err := m.StdAddHelpers(); err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			if _, err := m.Call("loop", b.N); err != nil {
+				b.Fatal(err)
+			}
+		})
+	}
+}

@@ -12,6 +12,10 @@
 - `VM.OnClose`：VM 关闭时运行一个函数，自己用表按 VM 存东西的包可以在这时删掉对应的项。
 - `temporal` 包：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，还有 `Date.prototype.toTemporalInstant`。计算由 go-intl 在 Go 里完成，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 用 `intl.TimeZone` 设的时区和 `temporal.Clock` 设的时钟。test262 的 `built-ins/Temporal` 通过 9210 次中的 9206 次，`intl402/Temporal` 通过 4058 次中的 3972 次。tifa 的示例商店因此大 0.84 MB，进程里第一次用要 13.4 ms，之后每个新 VM 第一次用要 1.1 ms。
 
+### 变更
+
+- `StdAddHelpers` 的 `performance.now()`、`os.now()` 和 quickjs-libc os 模块的定时器改为从进程启动开始计时。以前在 Linux 和 macOS 上从系统启动开始，在 Windows 和 FreeBSD 上从 1970 年开始，还会随系统时钟的调整而跳动。在 macOS 上不再计入系统睡眠的时间。`Date.now()` 和 `new Date()` 的值和原来一样。
+
 ### 修复
 
 - 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。
@@ -20,6 +24,7 @@
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
 - CLDR 用的时区名主机的 zoneinfo 里没有时（比如没装 tzdata-legacy 的 Linux 上的 `Asia/Calcutta` 和 `Europe/Kiev`），改用它的其他名字加载，所以那里 `Asia/Kolkata` 和 `Europe/Kyiv` 也能用了，`Intl.supportedValuesOf('timeZone')` 列出的 `Africa/Asmera` 也一样。
 - 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
+- 在 Windows 上，`Date.now()` 和 `new Date()` 到 2038 年不再溢出。
 - test262 的 intl402 测试通过 6764 次中的 6274 次（加上 Temporal 的用例），以前是 912 次，以前通过的都没有变成失败。
 
 ### 性能
@@ -27,6 +32,7 @@
 都是不开 PGO，和 v0.26.17 比。
 
 - VM 留下编译好的正则字节码，每次渲染都新建同样正则的代码只编译一次：tifa 示例商店里高亮 CSS 的那篇文章渲染耗时为原来的 0.893，其他页面不变。商店页面的 VM 多占 12 KiB，渲染过那篇 CSS 文章的 VM 留着约 714 KiB 的正则。
+- `Date.now()`、`new Date()` 和 `performance.now()` 从 Go 读时间，不再走 modernc.org/libc 的系统调用：分别从 689 ns 降到 122 ns、从 870 ns 降到 261 ns、从 686 ns 降到 107 ns。商店页面的渲染时间不变。
 
 ## [v0.26.17] - 2026-10-21
 

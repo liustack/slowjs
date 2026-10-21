@@ -47,6 +47,7 @@ Unless a row says otherwise:
 | v0.26.17 | [New functions get length and name at once](fork-changes/objects-and-shapes.md#new-functions-get-length-and-name-at-once) | 0.982 of the time without PGO, on top of the regexp change. 3,000 new functions make 2,000 shapes rather than 5,001 |
 | v0.26.17 | [Intl calls Go through Builtins](fork-changes/time-and-intl.md#intl-calls-go-through-builtins) | Not measured on a render. `new Intl.NumberFormat('en')` takes 2.7 µs rather than 16.5, a `DateTimeFormat` with a time zone 8.1 µs to make rather than 32.0, and a VM that has used `Intl` holds about 15 KB less |
 | Unreleased | [Compiled regexps kept per VM](fork-changes/regexp.md#compiled-regexps-kept-per-vm) | The journal post of tifa's example shop that highlights CSS, which compiles 392 regexps per render, renders in 0.893 of the time without PGO (0.841 to 0.903 over 6 rounds in 3 code layouts). The other pages render in the same time. A VM of the shop holds 12 KiB more |
+| Unreleased | [The engine reads Go's clocks](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks) | The shop does not change (0.994 to 1.009 over 6 rounds, median 1.000), without PGO. `Date.now()` takes 122 ns rather than 689, `new Date()` 261 rather than 870 and `performance.now()` 107 rather than 686 |
 
 Whole releases, measured in tifa:
 

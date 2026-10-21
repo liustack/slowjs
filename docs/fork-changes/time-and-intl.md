@@ -1,8 +1,9 @@
 ---
-summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, Intl calling Go through Builtins with formatters shared across VMs, and the Intl constructors built on go-intl (Collator, Segmenter, RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat, Locale, supportedValuesOf, locale-aware case mapping) with what they cost, and stand-ins that leave what a page put in their place'
+summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, the engine reading the time from Go instead of libc system calls, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, Intl calling Go through Builtins with formatters shared across VMs, and the Intl constructors built on go-intl (Collator, Segmenter, RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat, Locale, supportedValuesOf, locale-aware case mapping) with what they cost, and stand-ins that leave what a page put in their place'
 read_when:
-  - Changing package intl, fixTimezone, or the getTimezoneOffset hunk of the C patch
-  - fixlib stops on _getTimezoneOffset or a call of libc's local time functions after an upstream release
+  - Changing package intl, fixTimezone, fixClock, lib/clock.go, or the getTimezoneOffset hunk of the C patch
+  - fixlib stops on _getTimezoneOffset, a call of libc's local time functions, clockSites or a call of a clock of libc after an upstream release
+  - Date.now, new Date() or performance.now is slow, or gives a time other than Go's time.Now
   - A page shows another date or time on the server than in the browser, or a zone name differs from Chromium
   - Asking what Intl costs in program size, VM memory and time
   - Changing intl/bridge.go, intl/registry.go, intl.js or stub.js, or adding a constructor to the bridge
@@ -34,6 +35,32 @@ Tests: `dateutc_unix_test.go`, `internal/fixlib/main_test.go`.
 What to do when `go run ./internal/fixlib` stops on this change after an upstream release. [upgrading.md](../upgrading.md) has the whole procedure and the order in which to update the lists `fixlib` checks against.
 
 If it reports that `_getTimezoneOffset` changed shape, or that the engine calls libc's local time functions (`localtime`, `mktime`, `tzset`, ...) somewhere else, upstream reads the local zone some new way: make that answer UTC too and teach `fixTimezone` about it.
+
+## The engine reads Go's clocks
+
+Release: not released yet.
+
+Every function of the engine that reads the time asks Go instead of libc. The `gettimeofday` and `clock_gettime` of modernc.org/libc v1.77.1 are system calls, while Go's `time.Now` reads the clock without entering the kernel where the system allows it (the vDSO on Linux), so `Date.now()` cost several times what it costs in other Go engines. `fixClock` gives these functions a body that calls `lib/clock.go`:
+
+| Function | What reads it | Clock |
+| --- | --- | --- |
+| `date_now` | `Date.now()`, `new Date()`, `Date()` | `time.Now().UnixMilli()`: whole milliseconds since 1970, rounded down, as before |
+| `js_random_init` | the seed of `Math.random` in a new context | `time.Now().UnixMicro()`, and 1 for 0, as before |
+| `get_time_ns`, `get_time_ms` | `performance.now()` of `StdAddHelpers`, and `os.now()` and the timers of the os module of quickjs-libc | Go's monotonic clock, from the start of the process |
+
+The function each one replaces stays in the file, with fixlib's other changes, under a name ending in `_libc`, next to the new one. Nothing calls it, so the linker leaves it out, but `fixlib` checks its text against `clockSites` on every run, and `restoreClock` gives the file back byte for byte. `Atomics.wait` still reads libc's `CLOCK_REALTIME`: it hands the deadline to libc's `pthread_cond_timedwait`, which measures it on that clock, and it is not a hot path. The eval timeout already ran on Go's monotonic clock (see [uncatchable.md](uncatchable.md#the-eval-timeout-runs-on-the-monotonic-clock)), and local time stays UTC.
+
+What a script can see change: `performance.now()` counts from the start of the process, as in Node. Before, it counted from the boot of the system on Linux and macOS, and on Windows and FreeBSD, where quickjs-libc read the wall clock (`gettimeofday`) for it, it gave milliseconds since 1970 and moved when the system clock was set. Its resolution, nanoseconds in a double of milliseconds, does not change, and neither does its rate, except on macOS: the old `CLOCK_MONOTONIC` of macOS goes on while the system sleeps, and Go's monotonic clock (`mach_absolute_time`) does not, so a script that spans a sleep sees less time pass. On Windows, `Date.now()` and `new Date()` no longer overflow in 2038: libc's `timeval` there has 32 bits of seconds.
+
+On one core of an AMD EPYC 7B13 (linux/amd64, without PGO, `BenchmarkClock`, 6 rounds of before and after in turn, the median of 18 runs of each): `Date.now()` takes 122 ns rather than 689, `new Date()` 261 ns rather than 870, and `performance.now()` 107 ns rather than 686. A render of a page of tifa's example shop reads the clock too rarely to gain: over 6 rounds (a seventh, which overlapped another job on the same core, is left out) the sum of the six P50 came out at 0.994 to 1.009 of the time (median 1.000), inside the spread of a round, with the same HTML.
+
+This changes only the generated Go, with no C hunk (`internal/fixlib/clock.go`).
+
+Tests: `lib/clock_test.go` (the values of `Date.now`, `new Date()` and `Date()` for a given `time.Now`, rounding before 1970, agreement with Go's clock, the seed of `Math.random`, and a monotonic `performance.now` that counts from the start of the process, with a fraction that goes on while the wall clock stands still), `internal/fixlib/clock_test.go`, and `BenchmarkClock` in `clock_test.go`.
+
+### When upstream changes it
+
+If it reports that a function of `clockFuncs` changed (a fingerprint other than the one in `internal/fixlib/clocksites.go`), read it against `lib/clock.go`: `date_now` must still give milliseconds since 1970 from the wall clock, `js_random_init` the time in microseconds with 1 for 0, and `get_time_ns` and `get_time_ms` a monotonic clock in nanoseconds and milliseconds. Then put the new fingerprints in (`go run ./internal/fixlib -clock` prints them). If it reports that the engine reads the time some new way, upstream uses a function of libc whose name says it deals with time (`gettimeofday`, `clock_gettime`, `time`, `QueryPerformanceCounter`, `mach_absolute_time`, ...), called or only by address, or a shim such as mingw's `_time64`, outside these functions and `_js_atomics_wait`: make it call `lib/clock.go` too and add it to `clockFuncs`. A function of libc that reads no clock goes in `clockAllowed` instead. `pthread_cond_timedwait` may appear only in `_js_atomics_wait`: a new timed wait must be read against the clock it measures its deadline on. If it reports that a function of `clockFuncs` is gone, upstream removed it: take it out of `clockFuncs`, then update the fingerprints and this page.
 
 ## Intl in every locale Chromium has
 
