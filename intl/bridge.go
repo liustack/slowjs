@@ -57,7 +57,9 @@ import (
 //  5. Nothing in intl.js may use a global or a method a page can change:
 //     only what P, from stub.js, holds, object literals, null-prototype
 //     arrays (bare) and descriptors ({__proto__: null, ...}), apply for
-//     calls, +v and `${v}` for conversions. A built-in it needs and P lacks
+//     calls, +v and toString(v) for conversions: not a template literal,
+//     which QuickJS compiles into a call of String.prototype.concat. A
+//     built-in it needs and P lacks
 //     goes into P in stub.js. TestTamper and TestBuiltinShape check against
 //     Node, in testdata/node: add the new constructor's uses there.
 //

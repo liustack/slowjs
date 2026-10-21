@@ -108,6 +108,8 @@ var tamper = [
 		for (const k of ['charAt', 'charCodeAt', 'indexOf', 'slice', 'split', 'toLowerCase', 'replace', 'startsWith']) {
 			String.prototype[k] = ${throws};
 		}`],
+	// QuickJS compiles a template literal into a call of concat.
+	['String.prototype.concat', `String.prototype.concat = ${throws};`],
 	['Symbol', `
 		const toStringTag = Symbol.toStringTag;
 		Symbol = function () { throw new Error('tampered'); };

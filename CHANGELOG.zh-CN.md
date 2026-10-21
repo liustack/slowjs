@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。
+
 ## [v0.26.17] - 2026-10-21
 
 ### 新增

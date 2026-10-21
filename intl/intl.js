@@ -154,7 +154,7 @@
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				r[r.length] = `${v}`;
+				r[r.length] = toString(v);
 			}
 		}
 		return r;
@@ -190,9 +190,20 @@
 		return o === undefined ? noOptions : Object(o);
 	}
 
+	// toString is ECMA-262's ToString, which throws for a Symbol where
+	// String() names it. A template literal is ToString too, but QuickJS
+	// compiles one into a call of String.prototype.concat, which a page can
+	// replace.
+	function toString(v) {
+		if (typeof v === 'symbol') {
+			throw new TypeError('Cannot convert a Symbol value to a string');
+		}
+		return String(v);
+	}
+
 	// toLength is ECMA-262's ToLength. The conversions here are the spec's:
-	// +v is ToNumber and `${v}` ToString, which throw for a BigInt or a Symbol
-	// where Number() and String() convert them.
+	// +v is ToNumber, which throws for a BigInt where Number() converts it,
+	// and toString ToString.
 	function toLength(v) {
 		const n = +v;
 		if (!(n > 0)) {
@@ -214,7 +225,7 @@
 			if (v !== undefined) {
 				switch (kinds[i]) {
 				case 's':
-					v = `${v}`;
+					v = toString(v);
 					break;
 				case 'n':
 					v = +v;
@@ -226,7 +237,7 @@
 					// GetBooleanOrStringNumberFormatOption: true, false for
 					// anything falsy, else a string.
 					if (v !== true) {
-						v = v ? `${v}` : false;
+						v = v ? toString(v) : false;
 					}
 				}
 			}
