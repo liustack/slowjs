@@ -22,9 +22,10 @@ A file the fork changed but did not create stays under its upstream license. The
 | Data | Comes from | License | Notice |
 | --- | --- | --- | --- |
 | `intl/cldr.bin`, `intl/testdata/chromium/icu.json.gz`, the values in `intl/internal/gen/overrides.go` | Unicode CLDR 48.2 (cldr-json 48.2.3), the ICU 78.2 data of Chromium 156.0.8078.4, with Chromium's changes to it | Unicode License V3, ICU's license for the data, Chromium's BSD-3-Clause license | [intl/LICENSE-DATA](intl/LICENSE-DATA) |
+| `intl/testdata/chromium/golden.json.gz`, `intl/testdata/chromium/availability.json` | What Chromium 156.0.8078.4 answered to `Intl` calls, made from the same ICU 78.2 data. The expressions in `golden.json.gz` were written for this fork | The same notices as `icu.json.gz` | [intl/LICENSE-DATA](intl/LICENSE-DATA) |
 | `intl/tzdst_table.go`, `intl/testdata/tzdata/` | The IANA tz database, release 2026d | Public domain | None needed |
 | `internal/gointl/qjsdata/` (`core.bin`, `names.bin`, `cjdict.bin`, `chromium.json`) | Made from go-intl's data, which comes from Unicode CLDR 48.2, ICU 78.3 and the IANA tz database, as [internal/gointl/SOURCES.md](internal/gointl/SOURCES.md) lists. The locale lists come from Chromium 156 | Unicode License V3 | [internal/gointl/LICENSE](internal/gointl/LICENSE) |
-| `intl/testdata/chromium/golden.json.gz`, `intl/testdata/node/`, `lib/testdata/*.txt`, `testdata/*.golden` | What Chromium, Node and the engine print for the tests of this fork | Test data, written for this fork | None |
+| `intl/testdata/node/`, `lib/testdata/*.txt`, `testdata/*.golden` | What Node and the engine print for the tests of this fork, which wrote the scripts that make them | MIT, as test data of this fork | [LICENSE-MIT](LICENSE-MIT) |
 
 ## Go modules a program links
 
