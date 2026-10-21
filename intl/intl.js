@@ -260,8 +260,36 @@
 		return a;
 	}
 
-	function supportedLocalesOf(service, locales) {
-		return apply(supportedLocales, undefined, pushLocales(bare([service]), locales));
+	// stringOption is ECMA-402's GetOption for a string option of o, an
+	// options object, that takes the values in allowed: undefined when o
+	// has none.
+	function stringOption(o, name, allowed) {
+		const v = o[name];
+		if (v === undefined) {
+			return undefined;
+		}
+		const s = toString(v);
+		for (let i = 0; i < allowed.length; i++) {
+			if (allowed[i] === s) {
+				return s;
+			}
+		}
+		throw new RangeError('Value ' + s + ' out of range for options property ' + name);
+	}
+
+	const matchers = bare(['lookup', 'best fit']);
+
+	// supportedLocalesOf is ECMA-402's SupportedLocales after
+	// CanonicalizeLocaleList: the host canonicalizes the locales, which
+	// throws for a tag that is not one, and then the options are read. Both
+	// matchers match alike, so localeMatcher is only checked.
+	function supportedLocalesOf(service, locales, options) {
+		const r = apply(supportedLocales, undefined, pushLocales(bare([service]), locales));
+		const o = toOptions(options);
+		if (o !== noOptions) {
+			stringOption(o, 'localeMatcher', matchers);
+		}
+		return r;
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
@@ -289,7 +317,7 @@
 
 	defineConstructor(DateTimeFormat, {
 		supportedLocalesOf(locales, options = undefined) {
-			return supportedLocalesOf('DateTimeFormat', locales);
+			return supportedLocalesOf('DateTimeFormat', locales, options);
 		}
 	}, {
 		get format() {
@@ -374,7 +402,7 @@
 
 	defineConstructor(NumberFormat, {
 		supportedLocalesOf(locales, options = undefined) {
-			return supportedLocalesOf('NumberFormat', locales);
+			return supportedLocalesOf('NumberFormat', locales, options);
 		}
 	}, {
 		get format() {
@@ -405,7 +433,7 @@
 
 	defineConstructor(PluralRules, {
 		supportedLocalesOf(locales, options = undefined) {
-			return supportedLocalesOf('PluralRules', locales);
+			return supportedLocalesOf('PluralRules', locales, options);
 		}
 	}, {
 		select(value) {

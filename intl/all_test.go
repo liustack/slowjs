@@ -713,6 +713,49 @@ func TestResolvedOptions(t *testing.T) {
 	})
 }
 
+// TestSupportedLocalesOfOptions checks that supportedLocalesOf reads its
+// options as ECMA-402's SupportedLocales does, after the locales: null is no
+// options object and localeMatcher has two values. The answers are Chromium
+// 156's.
+func TestSupportedLocalesOfOptions(t *testing.T) {
+	vm := newVM(t)
+	for _, c := range []string{"NumberFormat", "DateTimeFormat", "PluralRules"} {
+		var tests [][2]string
+		for _, test := range [][2]string{
+			{`null`, "TypeError"},
+			{`undefined`, `["en","de"]`},
+			{`{}`, `["en","de"]`},
+			{`5`, `["en","de"]`},
+			{`"x"`, `["en","de"]`},
+			{`{localeMatcher: 'bogus'}`, "RangeError"},
+			{`{localeMatcher: 'lookup'}`, `["en","de"]`},
+			{`{localeMatcher: 'best fit'}`, `["en","de"]`},
+			{`{localeMatcher: undefined}`, `["en","de"]`},
+			{`{localeMatcher: null}`, "RangeError"},
+			{`{localeMatcher: {toString() { return 'lookup'; }}}`, `["en","de"]`},
+			{`Object.create({localeMatcher: 'x'})`, "RangeError"},
+		} {
+			tests = append(tests, [2]string{
+				`(() => {try {return JSON.stringify(Intl.` + c + `.supportedLocalesOf(['en', 'de'], ` + test[0] + `))} catch (e) {return e.constructor.name}})()`,
+				test[1]})
+		}
+		tests = append(tests,
+			// A tag that is not one throws first.
+			[2]string{`(() => {try {Intl.` + c + `.supportedLocalesOf(['en-'], null)} catch (e) {return e.constructor.name}})()`, "RangeError"},
+			[2]string{`(() => {
+				const log = [];
+				try {
+					Intl.` + c + `.supportedLocalesOf({get length() { log.push('length'); return 1; }, get 0() { log.push('0'); return 'en'; }},
+						{get localeMatcher() { log.push('localeMatcher'); return 'lookup'; }});
+				} catch (e) {
+					log.push(e.constructor.name);
+				}
+				return log.join();
+			})()`, "length,0,localeMatcher"})
+		evalTests(t, vm, tests)
+	}
+}
+
 func TestErrors(t *testing.T) {
 	vm := newVM(t)
 	catch := func(src string) string {
