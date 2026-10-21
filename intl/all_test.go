@@ -710,6 +710,15 @@ func TestErrors(t *testing.T) {
 		{`new Intl.NumberFormat('en', {style: 'currency', currency: 'US'})`, "RangeError:"},
 		{`new Intl.NumberFormat('en', {minimumFractionDigits: 3, maximumFractionDigits: 1})`, "RangeError:"},
 		{`Intl.DateTimeFormat.prototype.resolvedOptions.call({})`, "TypeError:"},
+		// null is no list of locales (as Node 24 has it).
+		{`new Intl.NumberFormat(null)`, "TypeError:"},
+		{`new Intl.DateTimeFormat(null)`, "TypeError:"},
+		{`new Intl.PluralRules(null)`, "TypeError:"},
+		{`Intl.getCanonicalLocales(null)`, "TypeError:"},
+		{`Intl.NumberFormat.supportedLocalesOf(null)`, "TypeError:"},
+		{`(1).toLocaleString(null)`, "TypeError:"},
+		{`new Date(0).toLocaleString(null)`, "TypeError:"},
+		{`Intl.getCanonicalLocales(5).length`, "no error"},
 	} {
 		got := fmt.Sprint(eval(t, vm, catch(test.src)))
 		if !strings.HasPrefix(got, test.want) {

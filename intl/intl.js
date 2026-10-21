@@ -123,6 +123,9 @@
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
 	// themselves are canonicalized by the host.
 	function localeList(locales) {
+		if (locales === null) {
+			throw new TypeError('Cannot convert null to object');
+		}
 		const o = Object(locales), n = o.length >>> 0, r = bare([]);
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
