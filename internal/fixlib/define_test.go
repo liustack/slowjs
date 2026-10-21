@@ -105,6 +105,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		{"regexSites", regexFingerprint, regexSites[name]},
 		{"lazyAddrSites", lazyAddrFingerprint, lazyAddrSites[name]},
 		{"inlineSites", inlineFingerprint, inlineSites[name]},
+		{"oneFrameSites", oneFrameFingerprint, oneFrameSites[name]},
 	} {
 		got, err := reportedFingerprint(fn, hw, c.fp)
 		if err != nil {
@@ -135,6 +136,7 @@ func TestFingerprintReportIgnoresSites(t *testing.T) {
 		{"-forin", forIn, forInSites, forInFingerprint},
 		{"-bitwise", bitwise, bitwiseSites, bitwiseFingerprint},
 		{"-eq", eq, eqSites, eqFingerprint},
+		{"-lazyaddr", lazyAddr, lazyAddrSites, lazyAddrFingerprint},
 	} {
 		want := c.table[name]
 		*c.flag, c.table[name] = true, "0"

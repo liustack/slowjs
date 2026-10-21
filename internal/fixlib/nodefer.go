@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -705,5 +706,5 @@ func readEngine(fn string) ([]byte, error) {
 	if b, err = restoreDefer(b); err != nil {
 		return nil, err
 	}
-	return restoreLate(b)
+	return restoreLate(b, filepath.Base(fn))
 }

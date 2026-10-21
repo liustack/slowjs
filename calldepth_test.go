@@ -44,6 +44,17 @@ var depthCases = []struct {
 	{"padded native", `function f() { n++; f.call() } f()`, 3332, 98},
 	{"yield*", `function* g() { n++; yield* g() } g().next()`, 2498, 73},
 	{"async", `async function f() { n++; await f() } f()`, 3331, 98},
+	// These recurse through functions that take a TLS frame per statement
+	// (internal/fixlib/lazy.go): JS_ToInt32Free, JS_ToInt32SatFree,
+	// js_thisNumberValue, js_sub_string, JS_GetPrototype, JS_ConcatString2
+	// and js_regexp_get_lastIndex.
+	{"Math.imul valueOf", `const o = { valueOf() { n++; return Math.imul(this, 1) } }; Math.imul(o, 1)`, 1110, 32},
+	{"charCodeAt valueOf", `const o = { valueOf() { n++; return 'ab'.charCodeAt(this) } }; 'ab'.charCodeAt(o)`, 1110, 32},
+	{"toFixed valueOf", `const o = { valueOf() { n++; return (1).toFixed(this) } }; (1).toFixed(o)`, 1110, 32},
+	{"substring valueOf", `const o = { valueOf() { n++; return 'ab'.substring(this) } }; 'ab'.substring(o)`, 1110, 32},
+	{"getPrototypeOf proxy", `const p = new Proxy({}, { getPrototypeOf(t) { n++; return Object.getPrototypeOf(p) } }); Object.getPrototypeOf(p)`, 1665, 49},
+	{"concat toString", `const o = { toString() { n++; return 'y' + this } }; 'y' + o`, 2498, 73},
+	{"regexp lastIndex", `const r = /a/g; r.lastIndex = { valueOf() { n++; r.exec('a'); return 0 } }; r.exec('a')`, 908, 26},
 }
 
 // Every way of recursing reaches the same depth as before, at the default
@@ -234,7 +245,11 @@ func TestTLSStackResidentNearLimit(t *testing.T) {
 
 // callInternalFrame returns the size of the TLS frame of JS_CallInternal
 // and the largest room for its arguments, locals and stack that goes into
-// it, from the generated code of this target.
+// it, from the generated code of this target. On linux the frame takes the
+// room from the entry, as frame_size := N + room, and the block that took
+// it again is a comment (internal/fixlib/oneframe.go): then the room the
+// entry takes must be the limit of that block, and elsewhere the block
+// must still run.
 func callInternalFrame(t *testing.T) (frame, limit int) {
 	t.Helper()
 	fn := filepath.Join("lib", "ccgo_"+goruntime.GOOS+"_"+goruntime.GOARCH+".go")
@@ -251,13 +266,21 @@ func callInternalFrame(t *testing.T) (frame, limit int) {
 	}
 	body := string(b[i:])
 	body = body[:strings.Index(body, "\n}\n")]
-	f := regexp.MustCompile(`\n\tframe_size := (\d+)\n`).FindStringSubmatch(body)
-	l := regexp.MustCompile(`\n\tif alloca_size <= (\d+) \{\n`).FindStringSubmatch(body)
+	f := regexp.MustCompile(`\n\tframe_size := (\d+)(?: \+ (\d+))?\n`).FindStringSubmatch(body)
+	l := regexp.MustCompile(`\n\t(//)?if alloca_size <= (\d+) \{\n`).FindStringSubmatch(body)
 	if f == nil || l == nil {
 		t.Fatalf("%s: _JS_CallInternal has no frame size or no limit for its room", fn)
 	}
 	frame, _ = strconv.Atoi(f[1])
-	limit, _ = strconv.Atoi(l[1])
+	limit, _ = strconv.Atoi(l[2])
+	switch room, once := f[2], l[1] != ""; {
+	case room == "" && once:
+		t.Fatalf("%s: _JS_CallInternal does not take the frame again, but its entry takes no room", fn)
+	case room != "" && !once:
+		t.Fatalf("%s: _JS_CallInternal takes %s bytes of room at its entry and the frame again", fn, room)
+	case room != "" && room != l[2]:
+		t.Fatalf("%s: _JS_CallInternal takes %s bytes of room at its entry, want the limit %d", fn, room, limit)
+	}
 	return frame, limit
 }
 

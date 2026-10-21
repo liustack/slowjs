@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -atomkey and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -atomkey, -oneframe and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-seven things:
+// It does twenty-eight things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -100,6 +100,10 @@
 //     The first step undoes these five, as the other changes match the
 //     polls, JSRuntime, the allocator, the shape functions and
 //     JS_ValueToAtom as ccgo writes them.
+//   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
+//     JS_CallInternal take its TLS frame with the room of a small alloca
+//     once at its entry, instead of taking it again before the stack check
+//     (see fixOneFrame). The first step undoes it as well.
 //   - In every lib/ccgo_*.go file, free each TLS frame before every
 //     return instead of in a defer, which keeps Go from inlining the
 //     function (see fixNoDefer). This is the last change, and the first
@@ -155,6 +159,7 @@ var (
 	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
 	bitwise   = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
 	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
+	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -179,7 +184,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey || *oneFrame || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -211,6 +216,8 @@ func main() {
 			err = fingerprintReport(files, hw, "bitwiseSites", bitwiseFingerprint)
 		} else if err == nil && *eq {
 			err = fingerprintReport(files, hw, "eqSites", eqFingerprint)
+		} else if err == nil && *oneFrame {
+			err = fingerprintReport(files, hw, "oneFrameSites", oneFrameFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -309,10 +316,10 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Other changes match the functions fixLazyFrames, fixInline and the
-	// changes after them change as ccgo writes them: undo them first, and
-	// make them again last.
-	if b, err = restoreLate(b); err != nil {
+	// Other changes match the functions fixLazyFrames, fixInline, the
+	// changes after them and fixOneFrame change as ccgo and fixAlloca
+	// write them: undo them first, and make them again last.
+	if b, err = restoreLate(b, name); err != nil {
 		return nil, err
 	}
 	if b, err = fixBeforeUp(b, hw, name); err != nil {
@@ -366,12 +373,25 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if b, err = fixLast(b, name); err != nil {
 		return nil, err
 	}
+	if b, err = fixOneFrame(b, name); err != nil {
+		return nil, err
+	}
 	return dropDefers(b)
 }
 
-// restoreLate undoes fixLast, fixInline and fixLazyFrames, the changes
-// made last before fixNoDefer.
-func restoreLate(b []byte) ([]byte, error) {
+// restoreLate undoes fixOneFrame, fixLast, fixInline and fixLazyFrames,
+// the changes made last before fixNoDefer, in b, the generated file name.
+func restoreLate(b []byte, name string) ([]byte, error) {
+	b, err := restoreOneFrame(b, name)
+	if err != nil {
+		return nil, err
+	}
+	return restoreBeforeOneFrame(b)
+}
+
+// restoreBeforeOneFrame undoes fixLast, fixInline and fixLazyFrames, the
+// late changes made before fixOneFrame.
+func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 	var err error
 	for _, restore := range []func([]byte) ([]byte, error){restoreLast, restoreInline, restoreLazy} {
 		if b, err = restore(b); err != nil {

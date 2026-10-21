@@ -196,9 +196,9 @@ func defineFingerprint(b []byte) (string, error) {
 
 // reporting reports whether fixlib prints fingerprints (-define,
 // -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front,
-// -shape, -forin, -bitwise, -eq or -atomkey) rather than checking them.
+// -shape, -forin, -bitwise, -eq, -atomkey or -oneframe) rather than checking them.
 func reporting() bool {
-	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey
+	return *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey || *oneFrame
 }
 
 // fingerprintReport prints the map name of fingerprints fp gives for the
@@ -230,7 +230,7 @@ func reportedFingerprint(fn string, hw []*ast.File, fp func([]byte) (string, err
 		return "", fmt.Errorf("%s: %v", fn, err)
 	}
 	if b, err = restoreDefer(b); err == nil {
-		b, err = restoreLate(b)
+		b, err = restoreLate(b, filepath.Base(fn))
 	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %v", fn, err)

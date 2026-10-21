@@ -38,11 +38,11 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// _JS_ToObject and js_array_finalizer have no TLS frame on 32-bit
+		// The functions of lazyFrameless have no TLS frame on 32-bit
 		// targets.
 		want := len(lazySites)
 		if strings.HasSuffix(name, "_386.go") || strings.HasSuffix(name, "_arm.go") {
-			want -= 2
+			want -= len(lazyFrameless)
 		}
 		if n := bytes.Count(raw, []byte("each statement that needs a TLS frame takes one of its own")); n != want {
 			t.Errorf("%s: %d functions changed by fixLazyFrames, want %d", name, n, want)
@@ -55,11 +55,14 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		// fixInline and fixLast come between them and fixNoDefer.
+		// fixInline, fixLast and fixOneFrame come between them and fixNoDefer.
 		if out, err = fixInline(out, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if out, err = fixLast(out, name); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if out, err = fixOneFrame(out, name); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if out, err = dropDefers(out); err != nil {
@@ -70,7 +73,7 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		}
 		back, err := restoreDefer(out)
 		if err == nil {
-			back, err = restoreLate(back)
+			back, err = restoreLate(back, name)
 		}
 		if err != nil || !bytes.Equal(back, b) {
 			t.Errorf("%s: restoreLazy does not give the input back (%v)", name, err)

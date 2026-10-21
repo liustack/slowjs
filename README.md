@@ -395,7 +395,13 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   render of a page of tifa's example shop takes about 11% less time on
   linux/amd64 (AMD EPYC) and 14% less on darwin/arm64 (Apple M4), with
   the same HTML, and loading the shop's bytecode into a VM about 11% less
-  on linux.
+  on linux. 22 more functions were added later, from the count of
+  `tls.Alloc` per function in renders of tifa's example shop and test
+  apps, such as `js_same_value_zero` (`Map` and `Set` keys, `includes`),
+  `free_token` (the parser) and the finalizers of functions and
+  iterators: the numbers above are from before, and what the later
+  changes give together is under the frame of `JS_CallInternal` taken
+  once on linux, below.
 
   The 768 bytes bound what this costs in TLS memory on linux. Linux's
   libc keeps the TLS block of every call depth a VM has reached until the
@@ -565,9 +571,15 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`,
   `JS_AtomIsArrayIndex`, `JS_NewAtomStr`, `js_eq_slow`,
   `JS_ToStringInternal`, `JS_ToObject` and `js_array_finalizer` allocated
-  a TLS frame on every call, though only a few of their statements need
-  one: those that pass the address of a part of the frame to a callee, and
-  those that can reach a stack check. `fixlib` makes the frame a Go array,
+  a TLS frame on every call, and so did 12 functions added later from the
+  count of `tls.Alloc` per function in renders of tifa's test apps: the
+  conversions to numbers (`JS_ToInt32Free`, `JS_ToInt32SatFree`,
+  `JS_ToInt64SatFree`, `JS_ToFloat64Free`), `JS_GetPrototype`,
+  `JS_ConcatString2`, `js_sub_string`, `add_fast_array_element`,
+  `js_object_has_name`, `js_get_regexp`, `js_regexp_get_lastIndex` and
+  `js_thisNumberValue`. Only a few of their statements need a frame: those
+  that pass the address of a part of the frame to a callee, and those that
+  can reach a stack check. `fixlib` makes the frame a Go array,
   as for the functions of `frameSites`, and gives each of those statements
   a TLS frame of the same size for itself: right before the statement it
   allocates the frame and copies the array into it, and right after it
@@ -596,12 +608,16 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   `fixlib` match these functions as ccgo writes them, so `fixlib` undoes
   this change first (`restoreLazy`) and makes it again last, and checks
   that undoing it gives back the text it was given, byte for byte. On
-  32-bit targets `JS_ToObject` and `js_array_finalizer` have no TLS frame
-  and stay as they are (`lazyFrameless`). Another function of `lazySites`
-  without a frame there stops `fixlib`. A server render of a page of tifa's example shop
+  32-bit targets nine of these functions, such as `JS_ToObject` and
+  `js_array_finalizer`, have no TLS frame and stay as they are
+  (`lazyFrameless`). Another function of `lazySites`
+  without a frame there stops `fixlib`. With the first eight functions, a
+  server render of a page of tifa's example shop
   takes 1.6% (with PGO) and 1.1% (without) less time on linux/amd64 (AMD
   EPYC), and 2.6% less on darwin/arm64 (Apple M4, with PGO), with the same
-  HTML. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:
+  HTML. What the 12 added later give, together with the other later
+  changes, is under the frame of `JS_CallInternal` taken once on linux,
+  below. This changes only the generated Go, with no C hunk (`internal/fixlib/lazy.go`). Tests:
   `internal/fixlib/lazy_test.go` and `internal/fixlib/nodefer_test.go`,
   with test262 and the tests of the root package for what the engine
   gives.
@@ -767,6 +783,47 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   0.940 and 0.942 (with wide ranges, 0.859 to 0.969 and 0.871 to 1.030),
   and its MUI pages 0.982 to 0.985. The HTML and the memory of a VM stay
   the same.
+- On linux, a call of a javascript function takes one TLS frame instead
+  of two. `JS_CallInternal` took a frame of 1280 bytes at its entry, and
+  for a function whose arguments, locals and stack fit in 768 bytes (see
+  `fixAlloca` above) freed it and took 1280 bytes plus that room again
+  right before the stack check. `fixlib` makes the entry take 1280 + 768
+  bytes, and turns the block that freed and took the frame again into a
+  comment. Why this is safe: the rest of the function is the path an
+  alloca larger than 768 bytes took before, which skips that block too.
+  The block only copied a parameter into the new frame and set a pointer
+  into it, and `fixlib` stops unless the entry made each of those, once,
+  in the same words. Nothing between the entry and the block writes them
+  again, except on paths that return or jump past the block, and
+  `fixlib` pins that text by fingerprints (`oneFrameSites`), so a new
+  write there stops it. The room is still at `bp + 1280`, now inside the
+  frame the entry took, and each call holds one slot of the TLS stack at
+  every point, as before, so a stack check sees the same count and a
+  script recurses exactly as deep as it used to. Linux's libc keeps one
+  block per slot, rounded up to a power of two, and 1280 + 768 bytes fill
+  the 2 KB block the frame took already, so no block grows. On 32-bit
+  linux (a frame of 160 bytes) a block would grow, and elsewhere the TLS
+  stack is one run of bytes that a larger frame uses up faster, so those
+  files are not changed. Other changes of `fixlib` match
+  `JS_CallInternal` as `fixAlloca` writes it, so `fixlib` undoes this
+  change first (`restoreOneFrame`) and makes it again right before the
+  frames are freed without a defer, and checks that undoing it gives back
+  the text it was given, byte for byte. On its own this takes about 9%
+  of the TLS frames out of a render of tifa's example shop on linux.
+  Together with the 22 functions added to `frameSites` and the 12 added
+  to `lazySites` above, it takes out about a fifth: 20.6% for the shop,
+  and 20.1% and 25.4% for tifa's test apps bench and mui. A render then
+  takes 1.4% (shop), 2.2% (bench) and 3.1% (mui) less time than with
+  v0.26.16 on linux/amd64 (AMD EPYC, without PGO), with the same HTML:
+  the median of 6 rounds, each comparing the mean of three builds of the
+  new code, whose code sits at slightly different addresses, with one
+  build of v0.26.16. That placement alone moves the time: moving
+  `JS_CallInternal` by 160 or 224 bytes changes the time of a render by
+  up to 2.4%, so these numbers are good to about that much, and one build
+  is not enough to measure changes this small. This changes only the generated
+  Go, with no C hunk (`internal/fixlib/oneframe.go`). Tests:
+  `internal/fixlib/oneframe_test.go`, with `calldepth_test.go`, test262
+  and the tests of the root package for what the engine gives.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -1023,7 +1080,8 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go` and the frames
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go`, the frame of
+  `JS_CallInternal` taken once on linux and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
 
@@ -1383,6 +1441,22 @@ Conflicts to expect:
   update `reAtomKeyHead`, `reAtomKeyType` or `reAtomKeyLen` in
   `internal/fixlib/atomkey.go`: `atomKey` reads the atom type and the
   length through the constants `fixlib` takes from them.
+  If it reports that the frame of `_JS_CallInternal` is not taken as
+  `fixAlloca` writes it (`fixOneFrame` in `internal/fixlib/oneframe.go`),
+  that the block that takes it again runs a statement the entry does not
+  run once, or that the function has another `tls.Alloc`, read the new
+  function: the block may only make again what the entry made on the
+  frame, or dropping it changes what the rest of the function finds
+  there. If the frame of 1280 bytes changes size, `fixOneFrame` changes a
+  linux file only while the power of two that holds the frame also holds
+  the room of `allocaMax`, so check that the files it changes are still
+  the ones `oneFrameFiles` lists in `internal/fixlib/oneframe_test.go`.
+  If it reports that the text between the entry and that block changed (a
+  fingerprint other than the one in `internal/fixlib/oneframesites.go`),
+  read it: nothing there may write again the parameter copy or the
+  pointers into the frame the block made, except on a path that returns
+  or jumps past the block. Then put the new fingerprints in (`go run
+  ./internal/fixlib -oneframe` prints them).
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1428,7 +1502,8 @@ Conflicts to expect:
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
   statement, the calls written out in the interpreter, the calls into
   `lib/forin.go`, `lib/bitwise.go` and `lib/atomkey.go`, the comparisons written out in the
-  interpreter and the frames freed without a defer have no C form: they
+  interpreter, the frame of `JS_CallInternal` taken once and the frames
+  freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
   regeneration.
 - `lib/go.mod`, `lib/go.sum`: they do not exist here. When upstream changed
