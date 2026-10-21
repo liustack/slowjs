@@ -37,6 +37,7 @@ Unless a row says otherwise:
 | v0.26.16 | [The interrupt countdown inside the interpreter](fork-changes/interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter) | 0.6% less with PGO, about the same without |
 | v0.26.16 | [A front cache for small blocks](fork-changes/memory-and-allocation.md#a-front-cache-for-small-blocks) | 0.9% less with PGO alone, about the same without |
 | v0.26.16 | [Kept shapes](fork-changes/objects-and-shapes.md#kept-shapes) | 3.6% less alone, without PGO. With the front cache and the interrupt countdown, 4.5% less than without the three. Two VMs on two hyperthreads of one core render 2.9% more pages a second |
+| Unreleased | [One TLS frame per call on linux](fork-changes/calls-and-tls-frames.md#one-tls-frame-per-call-on-linux), with 22 more functions without a TLS frame and 12 more with frames per statement | About a fifth fewer TLS frames per render. 1.4% less than v0.26.16 without PGO, and 2.2% and 3.1% less on tifa's bench and mui test apps |
 
 Whole releases, measured in tifa:
 
@@ -101,7 +102,7 @@ With v0.26.15 the interpreter function alone took about 36% of a render. In roug
 
 1. **Property access.** Property reads took about 16% of a render with v0.26.15, `find_own_property` alone 5.5%, mostly waiting on cache misses. Assignment (`o.x = v`, `Object.assign`) still takes the slow path, about 2%, and a fast path for it needs prototype setters and read-only properties checked: estimated at 0.3% to 0.5%.
 2. **Making and freeing objects.** The engine's malloc and free, making and freeing objects and reference counts took about 13% of a render. v0.26.16's front cache and kept shapes go after part of it.
-3. **TLS frames.** About 1.5% of a render is frames the stack check counts, in `JS_CallInternal`, `js_call_c_function` and the like, which must stay. v0.26.16 takes the frames of 8 more functions per statement. tifa's engine study puts what is left to win there at most 1% to 1.2%, with a general transform in fixlib for every function whose frame address stays inside it.
+3. **TLS frames.** About 1.5% of a render is frames the stack check counts, in `JS_CallInternal`, `js_call_c_function` and the like, which must stay. v0.26.16 takes the frames of 8 more functions per statement, and the changes after it (not released yet) take out about a fifth of the frames of a render. tifa's engine study puts what is left to win there at most 1% to 1.2%, with a general transform in fixlib for every function whose frame address stays inside it.
 4. **Regular expressions.** Testing the first character of each alternative before trying it would make react-spring's test of 148 color names cheaper: about 2% of the order list.
 5. **Spreading a plain array without the iterator**: about 1.2% of the order list (TanStack Table calls through `fn(this, ...args)`).
 6. **Less memory per VM.** All VMs could share one read-only copy of the function source and line tables from the bytecode, so `toString` still works. Estimated at about 380 KB per VM. Needs changes to the C patch, to fixlib and to the Go API.

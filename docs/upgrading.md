@@ -36,7 +36,7 @@ git subtree pull --prefix lib upstream-lib <libquickjs tag, e.g. v0.13.2>
 
 ### Conflicts to expect
 
-`lib/ccgo_*.go`: every upstream release regenerates these files, so the two lines added to `XJS_ToCStringLen2`, the calls into `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that answers 0 (local time is UTC) and the calls into `lib/uncatchable.go` (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the compiler's out of memory checks, the stack limit of a new runtime, the call paths without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the call into `lib/objlit.go`, the call into `lib/regexskip.go`, the cold paths moved out, the TLS frames taken per statement, `set_value` written out in the interpreter, the interrupt countdown, the front cache, the shape cache and the frames freed without a defer conflict. Take the upstream version of every generated file, then put the changes back:
+`lib/ccgo_*.go`: every upstream release regenerates these files, so the two lines added to `XJS_ToCStringLen2`, the calls into `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that answers 0 (local time is UTC) and the calls into `lib/uncatchable.go` (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the compiler's out of memory checks, the stack limit of a new runtime, the call paths without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the call into `lib/objlit.go`, the call into `lib/regexskip.go`, the cold paths moved out, the TLS frames taken per statement, `set_value` written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the frame of `JS_CallInternal` taken once on linux and the frames freed without a defer conflict. Take the upstream version of every generated file, then put the changes back:
 
 ```sh
 git checkout --theirs -- 'lib/ccgo_*.go' 'lib/internal/run-test262/ccgo_*.go'
@@ -47,7 +47,7 @@ go run ./internal/fixlib
 
 ### The order of the reports
 
-Some steps check the code against a list kept in `internal/fixlib`, and a flag prints the list as the files have it. A report fails while a list it depends on is out of date, so update them in this order: `-frames`, then `-up` (on the files as taken from upstream), then `-cells`, then `-slots`. Then fix `lazySites` (`internal/fixlib/lazy.go`) and `inlineCallees` (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports: no flag prints them. Last come the fingerprints, `-define`, `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`, `-front` and `-shape`. Each of these runs every change of `fixlib` and skips only the fingerprint checks, so a report that stops on another list, such as "TLS frames taken by statement changed", means that list is out of date, not the one the flag prints. Read every new line before you put it in.
+Some steps check the code against a list kept in `internal/fixlib`, and a flag prints the list as the files have it. A report fails while a list it depends on is out of date, so update them in this order: `-frames`, then `-up` (on the files as taken from upstream), then `-cells`, then `-slots`. Then fix `lazySites` (`internal/fixlib/lazy.go`) and `inlineCallees` (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports: no flag prints them. Last come the fingerprints, `-define`, `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`, `-front`, `-shape` and `-oneframe`. Each of these runs every change of `fixlib` and skips only the fingerprint checks, so a report that stops on another list, such as "TLS frames taken by statement changed", means that list is out of date, not the one the flag prints. Read every new line before you put it in.
 
 ### When fixlib stops
 
@@ -66,6 +66,7 @@ Some steps check the code against a list kept in `internal/fixlib`, and a flag p
 | A defer, `tls.Alloc` or `tls.Free` that `fixNoDefer` does not know | [calls-and-tls-frames.md](fork-changes/calls-and-tls-frames.md#frames-freed-without-defer) |
 | `coldSites`, `coldShapes` | [calls-and-tls-frames.md](fork-changes/calls-and-tls-frames.md#cold-paths-of--and-key-names) |
 | `lazySites`, `lazyAddrSites` (`-lazyaddr`) | [calls-and-tls-frames.md](fork-changes/calls-and-tls-frames.md#tls-frames-taken-per-statement) |
+| The frame of `_JS_CallInternal`, `oneFrameSites` (`-oneframe`) | [calls-and-tls-frames.md](fork-changes/calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
 | `__ccgo_up`, `upSites` (`-up`), the cells of `_JS_CallInternal` (`-cells`), `pinVars` | [interpreter-loop.md](fork-changes/interpreter-loop.md#less-stack-work-in-the-interpreter-loop) |
 | `set_value`, `inlineCallees` (`-inline`) | [interpreter-loop.md](fork-changes/interpreter-loop.md#set_value-written-out-in-the-interpreter) |
 | `js_poll_interrupts` (`-poll`) | [interpreter-loop.md](fork-changes/interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter) |
@@ -98,7 +99,7 @@ fixlib takes a change of its own as made only when its whole text is where it pu
 
 After a regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and their wiring in `fixlib` are no longer needed.
 
-The calls without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the calls into `lib/objlit.go` and `lib/regexskip.go`, the cold paths moved out, the frames taken by statement, the calls written out in the interpreter, the interrupt countdown, the front cache, the shape cache and the frames freed without a defer have no C form: they are changes to what ccgo generates, so `fixlib` applies them after every regeneration.
+The calls without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the calls into `lib/objlit.go` and `lib/regexskip.go`, the cold paths moved out, the frames taken by statement, the calls written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the frame of `JS_CallInternal` taken once and the frames freed without a defer have no C form: they are changes to what ccgo generates, so `fixlib` applies them after every regeneration.
 
 ## Other files of an engine release
 

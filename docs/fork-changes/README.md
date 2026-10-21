@@ -49,6 +49,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | A front cache for small blocks | v0.26.16 | [memory-and-allocation.md](memory-and-allocation.md#a-front-cache-for-small-blocks) |
 | Kept shapes | v0.26.16 | [objects-and-shapes.md](objects-and-shapes.md#kept-shapes) |
 | SetShapeCache and DefaultShapeCache | v0.26.16 | [go-api.md](go-api.md#setshapecache-and-defaultshapecache) |
+| One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
