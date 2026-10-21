@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.26.17] - 2026-10-21
+
 ### 新增
 
 - `NewBuiltin` 和 `VM.NewBuiltinFunction`：JavaScript 像调用 `Math.max` 这类内置函数那样调用的 Go 函数，用 `Args` 读参数，不做转换。在 Apple M4 上一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。它返回的 `*Error` 按 `Name` 抛成对应的错误。
@@ -215,7 +217,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.16...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.17...main
+[v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16
 [v0.26.15]: https://github.com/liustack/quickjs/compare/v0.26.14...v0.26.15
 [v0.26.14]: https://github.com/liustack/quickjs/compare/v0.26.13...v0.26.14

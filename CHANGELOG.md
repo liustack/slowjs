@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+## [v0.26.17] - 2026-10-21
+
 ### Added
 
 - `NewBuiltin` and `VM.NewBuiltinFunction`: a Go function that javascript calls as a built-in, such as `Math.max`, with `Args` to read its arguments without conversions. A call that adds two numbers takes about 55 ns on an Apple M4, against about 470 ns through `RegisterHostFunc`. An `*Error` it returns is thrown as the error its `Name` says.
@@ -215,7 +217,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.16...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.17...main
+[v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16
 [v0.26.15]: https://github.com/liustack/quickjs/compare/v0.26.14...v0.26.15
 [v0.26.14]: https://github.com/liustack/quickjs/compare/v0.26.13...v0.26.14
