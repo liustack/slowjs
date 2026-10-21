@@ -268,7 +268,8 @@ func TestQJSInflatesOnlyWhatIsRead(t *testing.T) {
 // qjsTemporalFile says whether a file is one of those the temporal package
 // reads, which the tz pack holds.
 func qjsTemporalFile(name string) bool {
-	return strings.HasPrefix(name, "tz/") || name == "temporalzones.bin" || name == "temporalcalendars.bin"
+	return strings.HasPrefix(name, "tz/") || name == "tzversion.bin" || name == "temporalzones.bin" ||
+		name == "temporalcalendars.bin"
 }
 
 // The tz pack holds the files Temporal reads, and no other pack does.
@@ -338,5 +339,17 @@ func TestQJSLazyKeepsPanic(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("open ran %d times", calls)
+	}
+}
+
+// The time zones are those of the tz release qjstz names, which the docs
+// give: docs/fork-changes/temporal.md, and the temporal package's.
+func TestQJSTZVersion(t *testing.T) {
+	b, err := EmbeddedTemporalSource{}.Open("tzversion", DataLocale{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), "2026e"; got != want {
+		t.Errorf("the packs have the time zones of tz %s, want %s", got, want)
 	}
 }

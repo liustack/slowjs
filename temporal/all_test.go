@@ -296,6 +296,16 @@ func TestToLocaleString(t *testing.T) {
 	})
 }
 
+// The zones are tz 2026e's: Manitoba stays on -05 from 2026-10-31, where it
+// fell back to -06 before.
+func TestZoneData(t *testing.T) {
+	vm := newVM(t)
+	evalTests(t, vm, [][2]string{
+		{`Temporal.Instant.from('2026-11-01T07:00:00Z').toZonedDateTimeISO('America/Winnipeg').toString()`, "2026-11-01T02:00:00-05:00[America/Winnipeg]"},
+		{`Temporal.Instant.from('2026-07-01T07:00:00Z').toZonedDateTimeISO('America/Winnipeg').offset`, "-05:00"},
+	})
+}
+
 // A ZonedDateTime's toLocaleString shows the wall clock and offset its
 // toString does, also where Go's zone data has another offset for the
 // zone: Temporal's data is ICU's, package intl's is Go's.

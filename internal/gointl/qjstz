@@ -1,0 +1,22 @@
+# Copyright (c) 2026 The liustack/quickjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
+
+# The time zones the packs carry: ICU's time zone update TZ_VERSION, from
+# the icu-data repository (tzdata/icunew/<version>/44), in place of the one
+# go-intl's data was made from. qjs-sync.sh reads this file: "checkout"
+# fetches the files, checks their sha256 and runs go-intl's own tzgen on
+# them, and "pack" packs its output. To move to a new update, set the
+# version and the four checksums, then run checkout and pack.
+TZ_VERSION=2026e
+TZ_ZONEINFO64=c154153a7371a12b3aaa839ca40112ab9aba956be752588134bacae360b37893
+TZ_TIMEZONETYPES=18ad140d21818711b882e8536e24a472b9828e5700a6ecdaa0444b34c42eaec0
+TZ_WINDOWSZONES=7addd9b95977b860d540d29796a655b8fe7247a0fdf9641f6f759b5442041312
+TZ_METAZONES=55ba858327677222e9526acce34db10bee4fed14ccefc9df5b90452ab76f8c61
+
+# ICU's sources, which tzgen reads the host abbreviations' zones from, as
+# go-intl's SOURCES.md pins them.
+ICU_SOURCES=icu4c-78.3-sources.tgz
+ICU_SOURCES_URL=https://github.com/unicode-org/icu/releases/download/release-78.3/$ICU_SOURCES
+ICU_SOURCES_SHA256=3a2e7a47604ba702f345878308e6fefeca612ee895cf4a5f222e7955fabfe0c0
