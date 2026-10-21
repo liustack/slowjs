@@ -4,326 +4,430 @@
 //
 // The javascript half of modernc.org/quickjs/intl. It owns the ECMA-402
 // surface - the constructors, their prototypes and the option plumbing the
-// spec makes observable - and leaves every formatting decision to the Go host
-// functions it is called with. See call() below for what crosses between them.
+// spec makes observable - and leaves every formatting decision to the Go
+// Builtins it is called with (see bridge.go). It evaluates to a function of
+// the built-ins stub.js took before the page ran, the VM's default time zone,
+// the json of each constructor's options and the Builtins, which returns what
+// stub.js puts in place.
+//
+// Nothing here may depend on what a page can change: it uses only what it is
+// called with, reads only own properties of its own objects, and builds
+// property descriptors and the arrays it passes on without a prototype.
 
-(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales, prResolve, prSelect) {
+(function (P, zone, optionLists,
+	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
+	optionsOf, canonicalLocales, supportedLocales) {
 	'use strict';
 
-	const g = globalThis;
-	const internals = new WeakMap();
+	const {
+		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
+		Object, String, Number, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance,
+		dateNow, dateValueOf, numberValueOf, bigintValueOf
+	} = P;
+	const lists = parse(optionLists);
+	const noArgs = [];
+	const noOptions = setPrototypeOf({}, null);
 
-	// A host function answers with its result as a string. An error instead
-	// answers with '\x01' + the error constructor's name + '\x01' + the
-	// message, a shape no formatted result can have. Nothing is wrapped in json
-	// so that format(), the call a page makes per row of a table, does not pay
-	// for a JSON.parse of its own answer.
-	const errorMark = '\u0001';
+	// bare returns the array a without a prototype, so that adding to it calls
+	// no setter a page put on Array.prototype.
+	function bare(a) {
+		return setPrototypeOf(a, null);
+	}
 
-	function call(fn, args) {
-		const r = fn.apply(null, args);
-		if (r.charCodeAt(0) === 1) {
-			const i = r.indexOf(errorMark, 1);
-			const ctor = g[r.slice(1, i)];
-			throw new (typeof ctor === 'function' ? ctor : Error)(r.slice(i + 1));
+	// Slots holds the internal slots of the objects Intl makes, in a private
+	// field, which nothing outside this function can read, forge or replace.
+	// Its base class returns the object it is given, so that the field goes on
+	// that object.
+	class Stamp {
+		constructor(o) {
+			return o;
 		}
-		return r;
 	}
 
-	function callJSON(fn, args) {
-		return JSON.parse(call(fn, args));
+	class Slots extends Stamp {
+		#slots;
+
+		constructor(o, slots) {
+			super(o);
+			this.#slots = slots;
+		}
+
+		static of(o) {
+			return typeof o === 'object' && o !== null && #slots in o ? o.#slots : undefined;
+		}
 	}
 
-	function internal(o, kind) {
-		const i = internals.get(o);
+	// A formatter is a record: the Builtin that resolves it, the arguments it
+	// was resolved with and the id of what that resolved to, which every
+	// other call passes on. A Builtin answers undefined for an id the
+	// process has since dropped (see registry.go): call then resolves the
+	// same arguments again and repeats the call. Other VMs making formatters
+	// fast enough can drop the new one too before the call gets to it, so
+	// call tries a few times, then throws: it never returns undefined.
+	function resolve(kind, fn, args) {
+		return {__proto__: null, kind: kind, fn: fn, args: args, id: apply(fn, undefined, args), bound: undefined};
+	}
+
+	const tries = 8;
+
+	function call(r, fn, x, y) {
+		for (let i = 0; i < tries; i++) {
+			const v = fn(r.id, x, y);
+			if (v !== undefined) {
+				return v;
+			}
+			r.id = apply(r.fn, undefined, r.args);
+		}
+		throw new Error('Intl.' + r.kind + ': other code made formatters too fast to keep this one');
+	}
+
+	// internal returns the internal slots of o, a kind object. For the format
+	// getter and resolvedOptions of DateTimeFormat and NumberFormat, C is the
+	// constructor: an o that is not one, but inherits from C.prototype, may
+	// hold one at the fallback symbol (see chain).
+	function internal(o, kind, C) {
+		let i = Slots.of(o);
+		if (i === undefined && C !== undefined && apply(hasInstance, C, [o])) {
+			i = Slots.of(o[fallback]);
+		}
 		if (i === undefined || i.kind !== kind) {
 			throw new TypeError('Intl.' + kind + '.prototype method called on an incompatible receiver');
 		}
 		return i;
 	}
 
-	function defineMethod(o, name, value) {
-		Object.defineProperty(o, name, {value: value, writable: true, enumerable: false, configurable: true});
+	// chain is ECMA-402's ChainNumberFormat and ChainDateTimeFormat, the
+	// normative optional mode browsers implement: C called as a function on o,
+	// an object that inherits from C.prototype, keeps f, the formatter it
+	// made, at a symbol property of o and returns o.
+	const fallback = Symbol('IntlLegacyConstructedSymbol');
+
+	function chain(C, f, o) {
+		if (!apply(hasInstance, C, [o])) {
+			return f;
+		}
+		defineProperty(o, fallback, {__proto__: null, value: f, writable: false, enumerable: false, configurable: false});
+		return o;
 	}
 
-	function defineTag(o, tag) {
-		if (typeof Symbol === 'function' && Symbol.toStringTag !== undefined) {
-			Object.defineProperty(o, Symbol.toStringTag, {value: tag, writable: false, enumerable: false, configurable: true});
+	// define puts the properties of the object literal props on o as ECMA-402
+	// has those of its built-ins: not enumerable, configurable, and writable
+	// but for constants such as Symbol.toStringTag. A function written in
+	// props as a method or a getter is shaped like a built-in function: it
+	// has no prototype property and cannot construct, its name is the
+	// method's ("get format" for a getter) and its length the number of its
+	// parameters before the first one with a default (x = undefined).
+	function define(o, props) {
+		const keys = ownKeys(props);
+		for (let i = 0; i < keys.length; i++) {
+			const d = setPrototypeOf(getOwnPropertyDescriptor(props, keys[i]), null);
+			d.enumerable = false;
+			if ('value' in d) {
+				d.writable = typeof d.value === 'function';
+			}
+			defineProperty(o, keys[i], d);
 		}
+		return o;
+	}
+
+	// defineConstructor finishes C, a constructor written as a function declaration
+	// whose parameters all have defaults, so that its length is 0: its
+	// prototype property becomes read only, statics go on C and methods on
+	// its prototype, both through define.
+	function defineConstructor(C, statics, methods) {
+		defineProperty(C, 'prototype', {__proto__: null, writable: false});
+		define(C, statics);
+		define(C.prototype, methods);
+		return C;
 	}
 
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
 	// themselves are canonicalized by the host.
 	function localeList(locales) {
-		if (locales === undefined) {
-			return [];
+		if (locales === null) {
+			throw new TypeError('Cannot convert null to object');
 		}
-		if (typeof locales === 'string') {
-			return [locales];
-		}
-		const o = Object(locales), n = o.length >>> 0, r = [];
+		const o = Object(locales), n = toLength(o.length), r = bare([]);
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
 				const v = o[i];
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				r.push(String(v));
+				r[r.length] = `${v}`;
 			}
 		}
 		return r;
 	}
 
-	// publicOptions turns the host's resolved state into a resolvedOptions()
-	// result, dropping the underscore prefixed keys the host keeps for itself.
-	function publicOptions(json) {
-		const o = JSON.parse(json);
-		const keys = Object.keys(o);
-		for (let i = 0; i < keys.length; i++) {
-			if (keys[i].charAt(0) === '_') {
-				delete o[keys[i]];
+	// pushLocales appends the two locale arguments of a Builtin to args: a
+	// single tag as itself, a list as one string of the tags each preceded by
+	// its length and a colon.
+	function pushLocales(args, locales) {
+		const n = args.length;
+		if (typeof locales === 'string') {
+			args[n] = locales;
+			args[n + 1] = undefined;
+		} else if (locales === undefined) {
+			args[n] = undefined;
+			args[n + 1] = undefined;
+		} else {
+			const l = localeList(locales);
+			let s = '';
+			for (let i = 0; i < l.length; i++) {
+				s += l[i].length + ':' + l[i];
 			}
+			args[n] = undefined;
+			args[n + 1] = s;
 		}
-		return o;
+		return args;
 	}
 
-	function options(o) {
+	function toOptions(o) {
 		if (o === null) {
 			throw new TypeError('Options must be an object');
 		}
-		return o === undefined ? {} : Object(o);
+		return o === undefined ? noOptions : Object(o);
 	}
 
-	function supportedLocalesOf(service) {
-		return function (locales) {
-			return callJSON(canonicalLocales, [JSON.stringify(localeList(locales)), service]);
-		};
+	// toLength is ECMA-262's ToLength. The conversions here are the spec's:
+	// +v is ToNumber and `${v}` ToString, which throw for a BigInt or a Symbol
+	// where Number() and String() convert them.
+	function toLength(v) {
+		const n = +v;
+		if (!(n > 0)) {
+			return 0;
+		}
+		return n < 9007199254740991 ? n - n % 1 : 9007199254740991;
+	}
+
+	// pushOptions appends the options of o in list, from optionLists, to
+	// args, converted as their kind says. Without options, nothing: a
+	// Builtin reads missing arguments as undefined.
+	function pushOptions(args, o, list) {
+		if (o === noOptions) {
+			return args;
+		}
+		const n = args.length, names = list.names, kinds = list.kinds;
+		for (let i = 0; i < names.length; i++) {
+			let v = o[names[i]];
+			if (v !== undefined) {
+				switch (kinds[i]) {
+				case 's':
+					v = `${v}`;
+					break;
+				case 'n':
+					v = +v;
+					break;
+				case 'b':
+					v = !!v;
+					break;
+				default:
+					// GetBooleanOrStringNumberFormatOption: true, false for
+					// anything falsy, else a string.
+					if (v !== true) {
+						v = v ? `${v}` : false;
+					}
+				}
+			}
+			args[n + i] = v;
+		}
+		return args;
+	}
+
+	// parts turns the array of types and values, in turn, a Builtin answers
+	// for formatToParts into its result, in place: element i takes the part
+	// made of elements 2i and 2i+1, already read, and the array is then cut
+	// to half its length. Only own elements are set, so no setter on
+	// Array.prototype runs.
+	function parts(a) {
+		const n = a.length / 2;
+		for (let i = 0; i < n; i++) {
+			a[i] = {type: a[2 * i], value: a[2 * i + 1]};
+		}
+		a.length = n;
+		return a;
+	}
+
+	function supportedLocalesOf(service, locales) {
+		return apply(supportedLocales, undefined, pushLocales(bare([service]), locales));
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
 
-	const dateTimeKeys = [
-		'localeMatcher', 'calendar', 'numberingSystem', 'timeZone', 'hourCycle', 'weekday', 'era', 'year',
-		'month', 'day', 'dayPeriod', 'hour', 'minute', 'second', 'timeZoneName', 'formatMatcher',
-		'dateStyle', 'timeStyle'
-	];
-
-	// readDateTimeOptions copies the options a DateTimeFormat reads. required
-	// and defaults are ECMA-402's ToDateTimeOptions arguments: they are what
-	// make toLocaleDateString a date and toLocaleTimeString a time. The host
+	// dateFormat resolves a DateTimeFormat. required and defaults are
+	// ECMA-402's ToDateTimeOptions arguments: they are what make
+	// toLocaleDateString a date and toLocaleTimeString a time. The host
 	// applies them, because the defaults it adds depend on the locale's hour
 	// cycle.
-	function readDateTimeOptions(o, required, defaults) {
-		o = o === undefined ? {} : options(o);
-		const r = {_required: required, _defaults: defaults};
-		for (let i = 0; i < dateTimeKeys.length; i++) {
-			const v = o[dateTimeKeys[i]];
-			if (v !== undefined) {
-				r[dateTimeKeys[i]] = String(v);
-			}
-		}
-		if (o.hour12 !== undefined) {
-			r.hour12 = Boolean(o.hour12);
-		}
-		if (o.fractionalSecondDigits !== undefined) {
-			r.fractionalSecondDigits = Number(o.fractionalSecondDigits);
-		}
-		return r;
+	function dateFormat(locales, opts, required, defaults) {
+		const args = pushLocales(bare([zone, required, defaults]), locales);
+		return resolve('DateTimeFormat', dtfResolve, pushOptions(args, toOptions(opts), lists.DateTimeFormat));
 	}
 
-	function initDateTimeFormat(f, locales, opts, required, defaults) {
-		internals.set(f, {
-			kind: 'DateTimeFormat',
-			resolved: call(dtfResolve, [JSON.stringify({locales: localeList(locales), options: readDateTimeOptions(opts, required, defaults)})])
-		});
-		return f;
-	}
-
-	function DateTimeFormat(locales, opts) {
-		if (!(this instanceof DateTimeFormat)) {
-			return new DateTimeFormat(locales, opts);
+	function DateTimeFormat(locales = undefined, options = undefined) {
+		if (new.target === undefined) {
+			return chain(DateTimeFormat, new DateTimeFormat(locales, options), this);
 		}
-		initDateTimeFormat(this, locales, opts, 'any', 'date');
+		new Slots(this, dateFormat(locales, options, 'any', 'date'));
 	}
 
 	function timeValue(date) {
-		return date === undefined ? Date.now() : Number(date);
+		return date === undefined ? dateNow() : +date;
 	}
 
-	Object.defineProperty(DateTimeFormat.prototype, 'format', {
-		enumerable: false,
-		configurable: true,
-		get: function () {
+	defineConstructor(DateTimeFormat, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('DateTimeFormat', locales);
+		}
+	}, {
+		get format() {
 			// The spec hands out a bound function so that [d1, d2].map(f.format)
 			// keeps working. Code in the wild does exactly that.
-			const i = internal(this, 'DateTimeFormat');
+			const i = internal(this, 'DateTimeFormat', DateTimeFormat);
 			if (i.bound === undefined) {
-				i.bound = function (date) {
-					return call(dtfFormat, [i.resolved, timeValue(date), false]);
-				};
+				i.bound = (date) => call(i, dtfFormat, timeValue(date));
 			}
 			return i.bound;
-		}
+		},
+		formatToParts(date) {
+			return parts(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'DateTimeFormat', DateTimeFormat), optionsOf));
+		},
+		[toStringTag]: 'Intl.DateTimeFormat'
 	});
-
-	defineMethod(DateTimeFormat.prototype, 'formatToParts', function (date) {
-		return callJSON(dtfFormat, [internal(this, 'DateTimeFormat').resolved, timeValue(date), true]);
-	});
-
-	defineMethod(DateTimeFormat.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'DateTimeFormat').resolved);
-	});
-
-	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf('DateTimeFormat'));
-	defineTag(DateTimeFormat.prototype, 'Intl.DateTimeFormat');
 
 	// ------------------------------------------------------------ NumberFormat
 
-	const numberKeys = [
-		'localeMatcher', 'style', 'currency', 'currencyDisplay', 'currencySign', 'unit', 'unitDisplay',
-		'numberingSystem', 'notation', 'compactDisplay', 'signDisplay', 'roundingMode', 'trailingZeroDisplay'
-	];
-
-	const numberDigitKeys = [
-		'minimumIntegerDigits', 'minimumFractionDigits', 'maximumFractionDigits',
-		'minimumSignificantDigits', 'maximumSignificantDigits'
-	];
-
-	function readNumberOptions(o) {
-		o = options(o);
-		const r = {};
-		let i;
-		for (i = 0; i < numberKeys.length; i++) {
-			const v = o[numberKeys[i]];
-			if (v !== undefined) {
-				r[numberKeys[i]] = String(v);
-			}
-		}
-		for (i = 0; i < numberDigitKeys.length; i++) {
-			const v = o[numberDigitKeys[i]];
-			if (v !== undefined) {
-				r[numberDigitKeys[i]] = Number(v);
-			}
-		}
-		if (o.useGrouping !== undefined) {
-			r.useGrouping = typeof o.useGrouping === 'boolean' ? o.useGrouping : String(o.useGrouping);
-		}
-		return r;
+	function numberFormat(locales, opts) {
+		const args = pushLocales(bare([]), locales);
+		return resolve('NumberFormat', nfResolve, pushOptions(args, toOptions(opts), lists.NumberFormat));
 	}
 
-	function NumberFormat(locales, opts) {
-		if (!(this instanceof NumberFormat)) {
-			return new NumberFormat(locales, opts);
+	function NumberFormat(locales = undefined, options = undefined) {
+		if (new.target === undefined) {
+			return chain(NumberFormat, new NumberFormat(locales, options), this);
 		}
-		internals.set(this, {
-			kind: 'NumberFormat',
-			resolved: call(nfResolve, [JSON.stringify({locales: localeList(locales), options: readNumberOptions(opts)})])
-		});
+		new Slots(this, numberFormat(locales, options));
 	}
 
-	// numberValue keeps a BigInt and a numeric string exact by passing them on
-	// as a string: the host parses decimal digits, so nothing round trips
-	// through a double that did not start as one.
+	// numberValue is ECMA-402's ToIntlMathematicalValue. It keeps a BigInt
+	// and a numeric string exact by passing them on as a string, also when an
+	// object, such as Object(1n), converts to one: the host parses decimal
+	// digits, so nothing round trips through a double that did not start as
+	// one.
 	function numberValue(v) {
-		const t = typeof v;
+		const p = isObject(v) ? toPrimitiveNumber(v) : v;
+		const t = typeof p;
 		if (t === 'bigint' || t === 'string') {
-			return String(v);
+			return String(p);
 		}
-		return Number(v);
+		return +p;
 	}
 
-	Object.defineProperty(NumberFormat.prototype, 'format', {
-		enumerable: false,
-		configurable: true,
-		get: function () {
-			const i = internal(this, 'NumberFormat');
+	function isObject(v) {
+		return typeof v === 'object' ? v !== null : typeof v === 'function';
+	}
+
+	// toPrimitiveNumber is ToPrimitive(o, number), for an object o: what
+	// Number(o) does before it converts the result to a number.
+	const toPrimitive = Symbol.toPrimitive;
+	const hintNumber = bare(['number']);
+	const ordinary = bare(['valueOf', 'toString']);
+
+	function toPrimitiveNumber(o) {
+		const exotic = o[toPrimitive];
+		if (exotic !== undefined && exotic !== null) {
+			if (typeof exotic !== 'function') {
+				throw new TypeError('Symbol.toPrimitive is not a function');
+			}
+			const r = apply(exotic, o, hintNumber);
+			if (isObject(r)) {
+				throw new TypeError('Cannot convert object to primitive value');
+			}
+			return r;
+		}
+		for (let i = 0; i < ordinary.length; i++) {
+			const f = o[ordinary[i]];
+			if (typeof f === 'function') {
+				const r = apply(f, o, noArgs);
+				if (!isObject(r)) {
+					return r;
+				}
+			}
+		}
+		throw new TypeError('Cannot convert object to primitive value');
+	}
+
+	defineConstructor(NumberFormat, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('NumberFormat', locales);
+		}
+	}, {
+		get format() {
+			const i = internal(this, 'NumberFormat', NumberFormat);
 			if (i.bound === undefined) {
-				i.bound = function (value) {
-					return call(nfFormat, [i.resolved, numberValue(value), false]);
-				};
+				i.bound = (value) => call(i, nfFormat, numberValue(value));
 			}
 			return i.bound;
-		}
+		},
+		formatToParts(value) {
+			return parts(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
+		},
+		[toStringTag]: 'Intl.NumberFormat'
 	});
-
-	defineMethod(NumberFormat.prototype, 'formatToParts', function (value) {
-		return callJSON(nfFormat, [internal(this, 'NumberFormat').resolved, numberValue(value), true]);
-	});
-
-	defineMethod(NumberFormat.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'NumberFormat').resolved);
-	});
-
-	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf('NumberFormat'));
-	defineTag(NumberFormat.prototype, 'Intl.NumberFormat');
 
 	// ------------------------------------------------------------- PluralRules
 
-	const pluralKeys = ['localeMatcher', 'type', 'notation', 'roundingMode', 'roundingPriority', 'trailingZeroDisplay'];
-
-	function readPluralOptions(o) {
-		o = options(o);
-		const r = {};
-		let i;
-		for (i = 0; i < pluralKeys.length; i++) {
-			const v = o[pluralKeys[i]];
-			if (v !== undefined) {
-				r[pluralKeys[i]] = String(v);
-			}
-		}
-		for (i = 0; i < numberDigitKeys.length; i++) {
-			const v = o[numberDigitKeys[i]];
-			if (v !== undefined) {
-				r[numberDigitKeys[i]] = Number(v);
-			}
-		}
-		return r;
-	}
-
-	function PluralRules(locales, opts) {
+	function PluralRules(locales = undefined, options = undefined) {
 		if (new.target === undefined) {
 			throw new TypeError("Constructor Intl.PluralRules requires 'new'");
 		}
-		internals.set(this, {
-			kind: 'PluralRules',
-			resolved: call(prResolve, [JSON.stringify({locales: localeList(locales), options: readPluralOptions(opts)})])
-		});
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('PluralRules', prResolve, pushOptions(args, toOptions(options), lists.PluralRules)));
 	}
 
-	defineMethod(PluralRules.prototype, 'select', function (value) {
-		return call(prSelect, [internal(this, 'PluralRules').resolved, Number(value)]);
-	});
-
-	defineMethod(PluralRules.prototype, 'selectRange', function (start, end) {
-		const i = internal(this, 'PluralRules');
-		if (start === undefined || end === undefined) {
-			throw new TypeError('start or end is undefined');
+	defineConstructor(PluralRules, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('PluralRules', locales);
 		}
-		const x = Number(start), y = Number(end);
-		if (x !== x || y !== y) {
-			throw new RangeError('start or end is NaN');
-		}
-		return call(prSelect, [i.resolved, x, y]);
+	}, {
+		select(value) {
+			return call(internal(this, 'PluralRules'), prSelect, +value);
+		},
+		selectRange(start, end) {
+			const i = internal(this, 'PluralRules');
+			if (start === undefined || end === undefined) {
+				throw new TypeError('start or end is undefined');
+			}
+			const x = +start, y = +end;
+			if (x !== x || y !== y) {
+				throw new RangeError('start or end is NaN');
+			}
+			return call(i, prSelectRange, x, y);
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'PluralRules'), optionsOf));
+		},
+		[toStringTag]: 'Intl.PluralRules'
 	});
-
-	defineMethod(PluralRules.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'PluralRules').resolved);
-	});
-
-	defineMethod(PluralRules, 'supportedLocalesOf', supportedLocalesOf('PluralRules'));
-	defineTag(PluralRules.prototype, 'Intl.PluralRules');
 
 	// ------------------------------------------------------------------- Intl
 
-	const Intl = {};
-	defineTag(Intl, 'Intl');
-	defineMethod(Intl, 'DateTimeFormat', DateTimeFormat);
-	defineMethod(Intl, 'NumberFormat', NumberFormat);
-	defineMethod(Intl, 'PluralRules', PluralRules);
-	defineMethod(Intl, 'getCanonicalLocales', function (locales) {
-		return callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
+	const Intl = define({}, {
+		DateTimeFormat: DateTimeFormat,
+		NumberFormat: NumberFormat,
+		PluralRules: PluralRules,
+		getCanonicalLocales(locales) {
+			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
+		},
+		[toStringTag]: 'Intl'
 	});
-	Object.defineProperty(g, 'Intl', {value: Intl, writable: true, enumerable: false, configurable: true});
 
 	// ------------------------------------------- the toLocale* methods ECMA-402
 	// replaces. Without them the engine's own fallbacks stay in place, and those
@@ -331,25 +435,24 @@
 	// zone whatever zone was asked for, which is a wrong time rather than a
 	// missing one.
 
-	const dateValueOf = Date.prototype.valueOf;
-	const numberValueOf = Number.prototype.valueOf;
-
 	// Formatters are memoized for the common shapes because toLocaleString is
-	// called per row of a table and constructing one costs a host call. Only
-	// argument shapes that are safe to use as a cache key take part.
-	const cache = new Map();
+	// called per row of a table. Only argument shapes that are safe to use as
+	// a cache key take part.
+	let cache = setPrototypeOf({}, null), cacheSize = 0;
 
 	function cached(key, make) {
 		if (key === null) {
 			return make();
 		}
-		let f = cache.get(key);
+		let f = cache[key];
 		if (f === undefined) {
-			if (cache.size >= 64) {
-				cache.clear();
+			if (cacheSize >= 64) {
+				cache = setPrototypeOf({}, null);
+				cacheSize = 0;
 			}
 			f = make();
-			cache.set(key, f);
+			cache[key] = f;
+			cacheSize++;
 		}
 		return f;
 	}
@@ -358,61 +461,56 @@
 		if (opts !== undefined || (locales !== undefined && typeof locales !== 'string')) {
 			return null;
 		}
-		return kind + ' ' + (locales === undefined ? '' : locales);
+		return kind + ' ' + (locales === undefined ? '' : locales);
 	}
 
 	function dateFormatter(locales, opts, required, defaults) {
 		return cached(cacheKey(required, locales, opts), function () {
-			return initDateTimeFormat(Object.create(DateTimeFormat.prototype), locales, opts, required, defaults);
+			return dateFormat(locales, opts, required, defaults);
 		});
 	}
 
-	defineMethod(Date.prototype, 'toLocaleString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'any', 'all').format(t);
-	});
-
-	defineMethod(Date.prototype, 'toLocaleDateString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'date', 'date').format(t);
-	});
-
-	defineMethod(Date.prototype, 'toLocaleTimeString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'time', 'time').format(t);
-	});
-
-	defineMethod(Number.prototype, 'toLocaleString', function (locales, opts) {
-		const v = numberValueOf.call(this);
+	function numberFormatter(locales, opts) {
 		return cached(cacheKey('number', locales, opts), function () {
-			return new NumberFormat(locales, opts);
-		}).format(v);
-	});
-
-	if (typeof BigInt === 'function') {
-		const bigintValueOf = BigInt.prototype.valueOf;
-		defineMethod(BigInt.prototype, 'toLocaleString', function (locales, opts) {
-			const v = bigintValueOf.call(this);
-			return cached(cacheKey('number', locales, opts), function () {
-				return new NumberFormat(locales, opts);
-			}).format(v);
+			return numberFormat(locales, opts);
 		});
 	}
-})(...(function () {
-	// Take the host functions out of sight before the body puts anything in
-	// place. An interrupt or running out of memory can cut the install short
-	// anywhere, and the next use must find none of them left behind (see
-	// ensure in stub.js).
-	const g = globalThis;
-	const names = [
-		'__quickjs_intl_dtfResolve__', '__quickjs_intl_dtfFormat__', '__quickjs_intl_nfResolve__',
-		'__quickjs_intl_nfFormat__', '__quickjs_intl_canonicalLocales__', '__quickjs_intl_prResolve__',
-		'__quickjs_intl_prSelect__'
-	];
-	const host = [];
-	for (let i = 0; i < names.length; i++) {
-		host.push(g[names[i]]);
-		delete g[names[i]];
+
+	const date = {
+		toLocaleString(locales = undefined, options = undefined) {
+			const t = apply(dateValueOf, this, noArgs);
+			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'any', 'all'), dtfFormat, t);
+		},
+		toLocaleDateString(locales = undefined, options = undefined) {
+			const t = apply(dateValueOf, this, noArgs);
+			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'date', 'date'), dtfFormat, t);
+		},
+		toLocaleTimeString(locales = undefined, options = undefined) {
+			const t = apply(dateValueOf, this, noArgs);
+			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'time', 'time'), dtfFormat, t);
+		}
+	};
+
+	const number = {
+		toLocaleString(locales = undefined, options = undefined) {
+			return call(numberFormatter(locales, options), nfFormat, apply(numberValueOf, this, noArgs));
+		}
+	};
+
+	const api = {
+		__proto__: null,
+		Intl: Intl,
+		dateToLocaleString: date.toLocaleString,
+		dateToLocaleDateString: date.toLocaleDateString,
+		dateToLocaleTimeString: date.toLocaleTimeString,
+		numberToLocaleString: number.toLocaleString
+	};
+	if (bigintValueOf !== undefined) {
+		api.bigintToLocaleString = {
+			toLocaleString(locales = undefined, options = undefined) {
+				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)));
+			}
+		}.toLocaleString;
 	}
-	return host;
-})());
+	return api;
+})

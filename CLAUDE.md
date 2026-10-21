@@ -111,6 +111,14 @@ registries keyed by an int32 "magic": `goFuncs` (+ `freeMagic` for reuse) under 
 handed out by the `staticMagic` atomic counter. Custom module loaders live in `customLoaders` under
 `customLoadersMu`. These globals are process-wide, not per-VM.
 
+A `Builtin` (`builtin.go`) is the fast path: made once per process by `NewBuiltin`, kept in the
+copy-on-write `builtins.list` indexed by its magic, and turned into a function object per VM by
+`VM.NewBuiltinFunction`. `callBuiltin` finds its VM from the context's opaque, the VM's id in `vms`, a
+table read without a lock. It keeps the `host` count, the TLS mark and the panic and uncatchable
+handling of `callGo`: change one, change the other. `VM.NewArray` builds an array with
+`JS_DefinePropertyValueUint32`, so no setter on `Array.prototype` runs: a Builtin returns a list
+with it.
+
 ### Interrupt / eval timeout
 
 Each `VM` owns an `interruptData` struct (allocated in libc memory) holding `interrupt int32` and
@@ -137,9 +145,17 @@ orders it with `Close` (which frees the flag): `Close` clears only the embedded 
   Register also replaces the `toLocale*` methods, which ECMA-402 redefines in terms of those two
   constructors and whose QuickJS fallbacks silently ignore the `timeZone` argument.
   - The javascript surface lives in `intl.js` (`go:embed`ed by `intl.go`) and every formatting
-    decision in Go; they trade JSON over five `RegisterHostFunc` bridges that the shim deletes from
-    `globalThis` once it holds them. Nothing here touches a `Value`, so there is no `Dup`/`Free`
-    discipline to get wrong — `intl/memgrind_test.go` guards that (and `make leak` now runs `./...`).
+    decision in Go. `intl.js` is a function of the `Builtin`s in `bridge.go`, which `stub.js`'s
+    install calls it with, so none of them is ever on `globalThis`. A constructor resolves its
+    locales and options into an id in the process-wide `registry.go` (bounded, shared by all VMs);
+    every later call passes the id, and a Builtin answers `undefined` for an id the registry
+    dropped, on which `intl.js` resolves the same arguments again. Values cross as strings,
+    numbers and booleans, lists as arrays (`VM.NewArray`), `resolvedOptions()` as JSON. `stub.js` takes the built-ins both
+    scripts use at Register time, before any page code runs, and `intl.js` uses only those,
+    null-prototype descriptors and arrays, and a private field for internal slots
+    (`intl/testdata/node/tamper.js` lists what a page may change). The comment at the top of
+    `bridge.go` says how to add a constructor. `intl/memgrind_test.go` guards the `Value`
+    handling (and `make leak` now runs `./...`).
   - Locale data is en-US only: Go ships zoneinfo but no CLDR. The tables in `data.go` were extracted
     from ICU, not hand-written. Where CLDR data is missing the code falls back to something
     derivable (a GMT offset for a long time zone name, the code for a currency name), never to a

@@ -186,7 +186,7 @@ func (r *runtime) newVM() (*VM, error) {
 		return nil, fmt.Errorf("failed to create a new Javascript context")
 	}
 
-	return &VM{
+	m := &VM{
 		intr: &interrupter{flag: interruptData},
 		vmState: vmState{
 			cContext:      c,
@@ -196,7 +196,19 @@ func (r *runtime) newVM() (*VM, error) {
 			runtime:       r,
 			toStringArgv:  argv,
 		},
-	}, nil
+	}
+	id, err := vms.add(m)
+	if err != nil {
+		lib.XJS_FreeContext(tls, c)
+		libc.Xfree(tls, interruptData)
+		libc.Xfree(tls, argv)
+		return nil, err
+	}
+
+	// How a Builtin finds the VM that calls it.
+	m.id = id
+	lib.XJS_SetContextOpaque(tls, c, uintptr(id))
+	return m, nil
 }
 
 // close releases the resources held by r.
@@ -344,7 +356,8 @@ func (u Undefined) String() string {
 //		// the script needs a higher SetMemoryLimit
 //	}
 type Error struct {
-	raw string
+	raw    string
+	engine bool // made of an exception, raw is the engine's text
 
 	Name         string // e.g. "ReferenceError", "TypeError"
 	Message      string // the error message
@@ -365,8 +378,25 @@ type Error struct {
 }
 
 // Error implements the error interface. It returns the same string the engine
-// produces for the exception, unchanged from earlier releases.
-func (e *Error) Error() string { return e.raw }
+// produces for the exception, unchanged from earlier releases. For an Error
+// made in Go, say to throw from a [Builtin], it returns what javascript's
+// Error.prototype.toString does: Name, or "Error" when Name is empty, then
+// ": " and Message when Message is not empty.
+func (e *Error) Error() string {
+	if e.engine {
+		return e.raw
+	}
+
+	name := e.Name
+	if name == "" {
+		name = "Error"
+	}
+	if e.Message == "" {
+		return name
+	}
+
+	return name + ": " + e.Message
+}
 
 // Object represents the value of a Javascript object, but not the javascript
 // object instance itself. Do not compare instances of Object.
@@ -463,7 +493,9 @@ type interrupter struct {
 // vmState is the state of a VM that Close clears.
 type vmState struct {
 	cContext uintptr // lib.TJSContext
-	goFuncs  map[string]int32
+	// id is how a Builtin finds the VM, the context's opaque (see vms).
+	id      uint32
+	goFuncs map[string]int32
 	// Safe to share, not reference counted
 	int32_16      lib.TJSValue
 	int32_2       lib.TJSValue
@@ -643,6 +675,32 @@ func (m *VM) SetMaxStackSize(threshold uintptr) {
 	lib.XJS_SetMaxStackSize(m.runtime.tls, m.runtime.cRuntime, libc.Tsize_t(threshold))
 }
 
+// Strip says what a VM leaves out of the functions it compiles (see
+// [VM.SetStrip]).
+type Strip int
+
+const (
+	// StripSource leaves out the source text: the toString of a function
+	// shows [native code] instead, as it does for the engine's built-ins.
+	StripSource Strip = Strip(lib.MJS_STRIP_SOURCE)
+	// StripDebug leaves out the file name, line and column numbers, so a
+	// stack frame of the function shows only its name, and the source too.
+	StripDebug Strip = Strip(lib.MJS_STRIP_DEBUG)
+)
+
+// SetStrip sets what m leaves out of the functions it compiles from then on:
+// StripSource, StripDebug, both or 0, the default, for nothing. That is every
+// function m compiles: from source by Eval and the like, into bytecode by
+// Compile, and in the page's own code by eval and new Function. Functions
+// compiled before keep what they have. The bytecode of Compile keeps what is
+// left out left out in any VM that loads it, which suits a script that plays
+// a built-in, such as a polyfill whose functions should not show their
+// source: compile it on a VM of its own, so that the page's functions keep
+// their source.
+func (m *VM) SetStrip(s Strip) {
+	lib.XJS_SetStripInfo(m.runtime.tls, m.runtime.cRuntime, int32(s))
+}
+
 // SetCanBlock configures m's blocking mode.
 func (m *VM) SetCanBlock(value bool) {
 	n := int32(0)
@@ -689,6 +747,7 @@ func (m *VM) Close() error {
 	// The kept shapes hold the context.
 	lib.XJS_SetShapeCache(tls, ctx, 0)
 	lib.XJS_FreeContext(tls, ctx)
+	vms.remove(m.id)
 	r := m.runtime
 	m.vmState = vmState{}
 	return r.close()
@@ -1566,6 +1625,7 @@ func ErrorFromValue(v Value) *Error {
 	ctx := v.vm.cContext
 
 	return &Error{
+		engine:       true,
 		raw:          errString(tls, ctx, v.v),
 		Name:         errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&nameC[0]))),
 		Message:      errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&messageC[0]))),
@@ -1725,7 +1785,7 @@ func uncatchableError(tls *libc.TLS, ctx uintptr, e lib.TJSValue) *Error {
 	if message != "" {
 		raw += ": " + message
 	}
-	return &Error{raw: raw, Name: "InternalError", Message: message, Stack: ownString(tls, ctx, e, lib.EJS_ATOM_stack)}
+	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: ownString(tls, ctx, e, lib.EJS_ATOM_stack)}
 }
 
 // ownString returns the own property atom of v, an error the engine or the
@@ -1776,7 +1836,7 @@ func dropUncatchable(tls *libc.TLS, ctx uintptr) {
 // outOfMemoryError is the error the engine throws when it runs out of
 // memory.
 func outOfMemoryError() *Error {
-	return &Error{raw: "InternalError: out of memory", Name: "InternalError", Message: "out of memory"}
+	return &Error{engine: true, raw: "InternalError: out of memory", Name: "InternalError", Message: "out of memory"}
 }
 
 // uncatchablePending reports whether an uncatchable exception (an
@@ -1818,31 +1878,26 @@ var (
 )
 
 func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(validUTF8(msg))
-	if err != nil {
-		return lib.XJS_ThrowTypeError(tls, ctx, 0, 0)
-	}
-
-	defer libc.Xfree(tls, p)
-
-	// Freed before it returns, not in a defer (see tlsMark).
-	bp := tls.Alloc(16)
-	r = lib.XJS_ThrowTypeError(tls, ctx, percentS, libc.VaList(bp+8, p))
-	tls.Free(16)
-	return r
+	return throwf(tls, ctx, lib.XJS_ThrowTypeError, msg)
 }
 
 func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
+	return throwf(tls, ctx, lib.XJS_ThrowInternalError, msg)
+}
+
+// throwf throws msg with throw, one of the engine's JS_Throw...Error
+// functions, which cut the message to 255 bytes.
+func throwf(tls *libc.TLS, ctx uintptr, throw func(tls *libc.TLS, ctx uintptr, fmt uintptr, va uintptr) lib.TJSValue, msg string) (r lib.TJSValue) {
 	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
-		return lib.XJS_ThrowInternalError(tls, ctx, 0, 0)
+		return throw(tls, ctx, 0, 0)
 	}
 
 	defer libc.Xfree(tls, p)
 
 	// Freed before it returns, not in a defer (see tlsMark).
 	bp := tls.Alloc(16)
-	r = lib.XJS_ThrowInternalError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	r = throw(tls, ctx, percentS, libc.VaList(bp+8, p))
 	tls.Free(16)
 	return r
 }
@@ -1902,6 +1957,10 @@ type goFunc struct {
 //
 // For binding host objects (a DOM, console, fetch, …) prefer RegisterHostFunc,
 // which gives the more convenient single-return / error-throws-exception shape.
+//
+// A function javascript calls often, say once per item of a list, or one that
+// has to look like a built-in, is better a [Builtin]: it converts nothing and
+// uses no reflection, so a call costs far less.
 func (m *VM) RegisterFunc(name string, f any, wantThis bool) error {
 	return m.registerFunc(name, f, wantThis, false)
 }
@@ -1923,6 +1982,11 @@ type HostFunc func(args []any) (any, error)
 // value (so a (value, error) pair becomes the array [value, error] rather than a
 // value-or-throw). RegisterHostFunc is the better fit for binding host objects;
 // RegisterFunc remains for direct, typed Go calls.
+//
+// Each call converts every argument to a Go value through reflection. A
+// function javascript calls often, or one that has to look like a built-in,
+// is better a [Builtin], which reads only the arguments it wants, as they
+// are.
 //
 // The name is handled as by RegisterFunc, including when the global object
 // already has it.

@@ -308,6 +308,26 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of any language also decodes about 1 MB of shared data. Formatting a date
   takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
   2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
+- Package `intl` calls Go through `Builtin`s, with no reflection and no
+  JSON on the way in, and keeps its formatters in one registry for the
+  whole process: a `NumberFormat` made with the same locale and options in
+  another VM, or spelled another way, reuses the one already made. The
+  registry keeps up to 1024 formatters and drops the oldest, and an object
+  whose formatter was dropped makes it again on its next call. Its
+  functions have the shape of built-ins (`length`, `name`, no
+  `prototype`, `toString` showing `[native code]`, accessors and
+  descriptors as ECMA-402 has them), and a page that changes
+  `Array.prototype`, `Object.prototype`, `JSON` or other built-ins after
+  `Register` does not change what it does. On an AMD EPYC 7B13 core:
+  `new Intl.NumberFormat('en')` takes 2.7 µs (16.5 µs before), `format`
+  3.2 µs (5.6 µs), `formatToParts` 6.7 µs (12.9 µs), a
+  `DateTimeFormat` with a time zone 8.1 µs to make (32.0 µs) and 2.6 µs
+  to format (5.2 µs), `PluralRules.select` 0.9 µs (2.9 µs) and
+  `toLocaleDateString` with options 9.5 µs (41.8 µs). A VM that has used
+  `Intl` holds about 15 KB less. test262's intl402 tests pass 912 runs of
+  6764 (770 before), none of those that passed before failing. Tests:
+  `intl/registry_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`,
+  `intl/convert_test.go`, `intl/legacy_test.go`.
 - Package `intl` tells daylight saving time from standard time as ICU does,
   whichever form of the tz data Go reads. In the main form, which Linux
   distributions and Go's `time/tzdata` ship, Europe/Dublin's summer time
@@ -1167,6 +1187,36 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   change gives the same), the shapes it holds and lets go, and a context
   that only they hold alive, `lib/funcshape_memgrind_test.go` and
   `internal/fixlib/funcshape_test.go`.
+- `Builtin` is a Go function javascript calls as a built-in function,
+  without the reflection and conversions of `RegisterFunc` and
+  `RegisterHostFunc`. `NewBuiltin(name, length, fn)` makes one, once per
+  process, and `VM.NewBuiltinFunction` makes a function object of it in
+  any VM: it has its name and length and nothing else of its own, no
+  `prototype`, it cannot be called with `new` and its `toString` shows
+  `[native code]`, like `Math.max`. `fn` reads the arguments it wants from
+  `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert
+  nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on
+  several goroutines call it at once, so it has to be safe for that, and
+  keeps what it needs per VM by `Args.VM()`. An `*Error` it returns is
+  thrown as the constructor its `Name` says (`Error`, `RangeError`,
+  `TypeError`, ...), with a stack that starts at the Builtin, any other
+  error as a `TypeError`. On an Apple M4 a call that adds two numbers takes
+  about 55 ns, loop included, where the same call of a `RegisterHostFunc`
+  function takes about 470 ns. A VM's context now carries an id, which is
+  how a call finds its VM without a lock. Test: `builtin_test.go`.
+- `VM.NewArray(vals...)` makes an array of values made in Go, as an array
+  literal makes one: its elements are its own properties, so a setter a page
+  put on `Array.prototype` never runs, and it costs no JSON. It borrows the
+  values, as `SetPropertyValue` does, and refuses a value of another VM, a
+  number too. A Builtin returns a list this way. Test: `builtin_test.go`.
+- `VM.SetStrip(StripSource)` compiles functions without their source, so
+  their `toString` shows `[native code]` as the engine's built-ins do, and
+  `StripDebug` leaves out line and column numbers too. It wraps
+  `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It
+  applies to every function the VM compiles from then on, those of the
+  page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in
+  any VM that loads it, which is what a polyfill playing built-ins wants.
+  Test: `strip_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
