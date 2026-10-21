@@ -1818,31 +1818,26 @@ var (
 )
 
 func throwTypeError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
-	p, err := libc.CString(validUTF8(msg))
-	if err != nil {
-		return lib.XJS_ThrowTypeError(tls, ctx, 0, 0)
-	}
-
-	defer libc.Xfree(tls, p)
-
-	// Freed before it returns, not in a defer (see tlsMark).
-	bp := tls.Alloc(16)
-	r = lib.XJS_ThrowTypeError(tls, ctx, percentS, libc.VaList(bp+8, p))
-	tls.Free(16)
-	return r
+	return throwf(tls, ctx, lib.XJS_ThrowTypeError, msg)
 }
 
 func throwInternalError(tls *libc.TLS, ctx uintptr, msg string) (r lib.TJSValue) {
+	return throwf(tls, ctx, lib.XJS_ThrowInternalError, msg)
+}
+
+// throwf throws msg with throw, one of the engine's JS_Throw...Error
+// functions, which cut the message to 255 bytes.
+func throwf(tls *libc.TLS, ctx uintptr, throw func(tls *libc.TLS, ctx uintptr, fmt uintptr, va uintptr) lib.TJSValue, msg string) (r lib.TJSValue) {
 	p, err := libc.CString(validUTF8(msg))
 	if err != nil {
-		return lib.XJS_ThrowInternalError(tls, ctx, 0, 0)
+		return throw(tls, ctx, 0, 0)
 	}
 
 	defer libc.Xfree(tls, p)
 
 	// Freed before it returns, not in a defer (see tlsMark).
 	bp := tls.Alloc(16)
-	r = lib.XJS_ThrowInternalError(tls, ctx, percentS, libc.VaList(bp+8, p))
+	r = throw(tls, ctx, percentS, libc.VaList(bp+8, p))
 	tls.Free(16)
 	return r
 }
