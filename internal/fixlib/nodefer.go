@@ -696,12 +696,15 @@ func dropDefers(b []byte) ([]byte, error) {
 	return out, nil
 }
 
-// readEngine reads a generated file of lib/ as every change but
-// fixNoDefer, fixLazyFrames, fixInline and fixLast leaves it, which is what the
-// other changes take and check, and what the reports print.
+// readEngine reads a generated file of lib/ as every change but the final
+// changes, fixNoDefer, fixLazyFrames, fixInline and fixLast leaves it, which
+// is what the other changes take and check, and what the reports print.
 func readEngine(fn string) ([]byte, error) {
 	b, err := os.ReadFile(fn)
 	if err != nil {
+		return nil, err
+	}
+	if b, err = restoreFinal(b, filepath.Base(fn)); err != nil {
 		return nil, err
 	}
 	if b, err = restoreDefer(b); err != nil {

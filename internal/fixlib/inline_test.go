@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -51,7 +50,7 @@ func TestInlineFixedFile(t *testing.T) {
 	}
 	for _, fn := range libFiles(t) {
 		name := filepath.Base(fn)
-		raw, err := os.ReadFile(fn)
+		raw, err := readNoDefer(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

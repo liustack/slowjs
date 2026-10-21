@@ -8,7 +8,6 @@ package main
 import (
 	"bytes"
 	"go/ast"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,7 +34,7 @@ func lazyInput(t *testing.T, name string) ([]byte, []*ast.File) {
 func TestLazyFramesFixedFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		name := filepath.Base(fn)
-		raw, err := os.ReadFile(fn)
+		raw, err := readNoDefer(fn)
 		if err != nil {
 			t.Fatal(err)
 		}

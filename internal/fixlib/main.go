@@ -198,6 +198,9 @@ var (
 
 func main() {
 	flag.Parse()
+	if finalReports() {
+		return
+	}
 	if *slots {
 		if err := printSlots(filepath.Join("lib", "ccgo_darwin_arm64.go")); err != nil {
 			fmt.Fprintln(os.Stderr, "fixlib:", err)
@@ -348,10 +351,25 @@ func run() (missing int, err error) {
 // fixEngine applies every change to the generated file of lib/ named
 // name.
 func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	b, err := fixBeforeFinal(b, hw, name)
+	if err != nil {
+		return nil, err
+	}
+	return fixFinal(b, name)
+}
+
+// fixBeforeFinal runs the earlier changes through dropDefers, in memory.
+// Final reports use the same input as fixFinal, from upstream or fixed files.
+func fixBeforeFinal(b []byte, hw []*ast.File, name string) ([]byte, error) {
+	// The final changes match the text every other change leaves: undo
+	// them first, and make them again last.
+	b, err := restoreFinal(b, name)
+	if err != nil {
+		return nil, err
+	}
 	// Every change and check below sees the defers that free the TLS
 	// frames, as ccgo writes them: fixNoDefer drops them last.
-	b, err := restoreDefer(b)
-	if err != nil {
+	if b, err = restoreDefer(b); err != nil {
 		return nil, err
 	}
 	// Other changes match the functions fixLazyFrames, fixInline, the
@@ -370,7 +388,8 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	}
 	// The fingerprint of what stays of quickjs-libc.c is of the text fixUp
 	// leaves, and nothing before fixUp checks a list that names a function
-	// of quickjs-libc.c that goes.
+	// of quickjs-libc.c that goes. The final changes run after this trim,
+	// and restoreFinal above undoes them before this fingerprint is read.
 	if b, err = fixQuickJSLibc(b, name); err != nil {
 		return nil, err
 	}
@@ -423,7 +442,12 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	if b, err = fixOneFrame(b, name); err != nil {
 		return nil, err
 	}
-	return dropDefers(b)
+	if b, err = dropDefers(b); err != nil {
+		return nil, err
+	}
+	// The final changes read the trimmed file after fixLast, fixOneFrame
+	// and fixNoDefer, so their site lists describe only the code that stays.
+	return b, nil
 }
 
 // restoreLate undoes fixOneFrame, fixLast, fixInline and fixLazyFrames,

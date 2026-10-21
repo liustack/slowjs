@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,7 +44,7 @@ var oneFrameFiles = map[string]bool{
 func TestOneFrameEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		name := filepath.Base(fn)
-		raw, err := os.ReadFile(fn)
+		raw, err := readNoDefer(fn)
 		if err != nil {
 			t.Fatal(err)
 		}
