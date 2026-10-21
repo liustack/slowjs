@@ -66,6 +66,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Intl constructors on go-intl | Unreleased | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
 | Args.WTF8 | Unreleased | [go-api.md](go-api.md#argswtf8) |
 | OnClose | Unreleased | [go-api.md](go-api.md#onclose) |
+| Intl leaves what a page put in place of a stand-in | Unreleased | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
+| Temporal on go-intl | Unreleased | [temporal.md](temporal.md#temporal-on-go-intl) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

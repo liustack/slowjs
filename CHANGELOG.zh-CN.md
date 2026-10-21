@@ -9,6 +9,13 @@
 - `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们读 go-intl 的数据，用了 `intl` 的程序因此大约大 9.8 MB，加构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 时大 5.8 MB，代价是没有显示名称（`Intl.DisplayNames` 对每个代码都按 fallback 回答：代码本身，`fallback: 'none'` 时是 `undefined`），也没有中文和日文的词典（一串中文或日文算一个词）。用过 `Intl` 的 VM 比刚 `Register` 时多占 151 KB，以前是 77 KB，第一次使用要 0.49 ms，以前是 0.24 ms。用了 `intl` 的程序现在还要附上 `internal/gointl` 的声明（见 `NOTICE.md`）。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
 - `VM.OnClose`：VM 关闭时运行一个函数，自己用表按 VM 存东西的包可以在这时删掉对应的项。
+- `temporal` 包：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，还有 `Date.prototype.toTemporalInstant`。计算由 go-intl 在 Go 里完成，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 用 `intl.TimeZone` 设的时区和 `temporal.Clock` 设的时钟。test262 的 `built-ins/Temporal` 通过 9210 次中的 9206 次，`intl402/Temporal` 通过 4058 次中的 3972 次。tifa 的示例商店因此大 0.84 MB，进程里第一次用要 13.4 ms，之后每个新 VM 第一次用要 1.1 ms。
+
+### 修复
+
+- 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
+- 语言列表里放一个函数，抛的是标签不合法的 `RangeError`，和 Chromium 一样，不再是 `TypeError`。
+- CLDR 用的时区名主机的 zoneinfo 里没有时（比如没装 tzdata-legacy 的 Linux 上的 `Asia/Calcutta` 和 `Europe/Kiev`），改用它的其他名字加载，所以那里 `Asia/Kolkata` 和 `Europe/Kyiv` 也能用了，`Intl.supportedValuesOf('timeZone')` 列出的 `Africa/Asmera` 也一样。
 
 ### 修复
 
