@@ -84,10 +84,13 @@
 // # Differences from Chromium
 //
 // The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
-// 48.1) on about 60,000 expressions recorded in testdata/chromium. All
-// match exactly but those in a calendar other than the ones above, which
-// format as Chromium does without that calendar: in the locale's default
-// calendar, Gregorian but for th and the persian locales.
+// 48.1) on about 75,000 expressions recorded in testdata/chromium. The
+// 60,000 of DateTimeFormat, NumberFormat and PluralRules all match exactly
+// but those in a calendar other than the ones above, which format as
+// Chromium does without that calendar: in the locale's default calendar,
+// Gregorian but for th and the persian locales. Those of the other
+// constructors, in every language Chromium has for each, match but where
+// the paragraphs below say.
 //
 // Checks over every locale beyond those expressions found these other
 // differences, all in rare locales or options:
@@ -166,6 +169,15 @@
 // options made up in a loop makes the formatters of other VMs resolve again
 // too, which costs them time but changes no result.
 //
+// The other constructors read go-intl's data (internal/gointl), about 11 MB
+// more in the binary: 7.3 MB for collation, segmentation, relative times,
+// lists, durations and locale facts, 1.9 MB of display names, which the
+// build tag quickjs_intl_nonames leaves out, and 2.0 MB of the Chinese and
+// Japanese word dictionary, which quickjs_intl_nocjdict leaves out. The
+// tables a formatter reads only a little of stay in the binary's read only
+// data, and the rest is inflated into the Go heap the first time a formatter
+// needs it, once per process.
+//
 // # License of the data
 //
 // The embedded locale data comes from Unicode CLDR and from the ICU data
@@ -173,7 +185,10 @@
 // Chromium made to it under Chromium's BSD license. A program that imports
 // this package distributes that data, and has to include the notices in
 // LICENSE-DATA, in this package's directory, in its documentation or with
-// its copies.
+// its copies. It also links internal/gointl and internal/gointl/temporal,
+// and has to include their notices too: internal/gointl/LICENSE and the
+// NOTICE-ICU, NOTICE-ICU4X, NOTICE-TEMPORAL and NOTICE-V8 files in
+// internal/gointl/qjsdata, as NOTICE.md at the module root says.
 //
 // # Time zones
 //

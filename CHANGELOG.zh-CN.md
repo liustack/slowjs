@@ -6,11 +6,14 @@
 
 ### 新增
 
+- `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们读 go-intl 的数据，用了 `intl` 的程序因此大约大 12.6 MB，加构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 时大 8.7 MB。用过 `Intl` 的 VM 比刚 `Register` 时多占 151 KB，以前是 77 KB，第一次使用要 0.49 ms，以前是 0.24 ms。用了 `intl` 的程序现在还要附上 `internal/gointl` 的声明（见 `NOTICE.md`）。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
 
 ### 修复
 
 - 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。
+- `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
+- test262 的 intl402 测试通过 6764 次中的 2282 次，以前是 912 次，以前通过的都没有变成失败。
 
 ## [v0.26.17] - 2026-10-21
 

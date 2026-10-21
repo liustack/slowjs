@@ -6,11 +6,14 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ### Added
 
+- `Intl.Collator`, `Intl.Segmenter`, `Intl.RelativeTimeFormat`, `Intl.ListFormat`, `Intl.DisplayNames`, `Intl.DurationFormat`, `Intl.Locale` and `Intl.supportedValuesOf`, in every locale Chromium has, compared with Chromium 156 on 14,269 expressions. `localeCompare` sorts by the locale's collation, and `toLocaleUpperCase` and `toLocaleLowerCase` follow Turkish, Azeri, Lithuanian and Greek rules. They read go-intl's data, which makes a program that imports `intl` about 12.6 MB larger, or 8.7 MB with the build tags `quickjs_intl_nonames` and `quickjs_intl_nocjdict`. A VM that has used `Intl` holds 151 KB more than after `Register`, against 77 KB, and its first use takes 0.49 ms, against 0.24 ms. A program that imports `intl` now has to carry the notices of `internal/gointl` (see `NOTICE.md`).
 - `Args.WTF8`: read a string argument of a Builtin with its lone surrogates as the engine holds them, where `Args.String` gives U+FFFD for each.
 
 ### Fixed
 
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
+- `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
+- test262's intl402 tests pass 2282 runs of 6764, against 912, none of those that passed before failing.
 
 ## [v0.26.17] - 2026-10-21
 
