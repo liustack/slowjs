@@ -1146,7 +1146,8 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json` and `-atomkey`. Each of these runs
+  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json`, `-atomkey` and
+  `-oneframe`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
