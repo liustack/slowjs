@@ -97,6 +97,14 @@ var uses = `(() => {
 		const a = it.next(), b = it.next(), c = it.next();
 		return a.value.segment + '|' + b.value.segment + '|' + c.done + '|' + (getPrototypeOf(it) === getPrototypeOf(it));
 	});
+	// A function in a locale list is an object: its string is read.
+	use(() => new Intl.NumberFormat([function () {}]));
+	use(() => 'a'.toLocaleUpperCase([function () {}]));
+	use(() => {
+		const f = function () {};
+		f.toString = () => 'tr';
+		return new Intl.NumberFormat([f]).resolvedOptions().locale + ' ' + 'i'.toLocaleUpperCase([f]);
+	});
 	return r;
 })()`;
 

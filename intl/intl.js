@@ -161,7 +161,7 @@
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
 				const v = o[i];
-				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
+				if (typeof v !== 'string' && !isObject(v)) {
 					throw new TypeError('Language ID should be string or object');
 				}
 				if (typeof v === 'string') {

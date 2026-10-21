@@ -13,6 +13,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
 - `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
+- A function in a list of locales is read as an object, as ECMA-402 has it, so `new Intl.NumberFormat([function () {}])` throws a RangeError, where v0.26.17 threw a TypeError.
 - test262's intl402 tests pass 2282 runs of 6764, against 912, none of those that passed before failing.
 
 ## [v0.26.17] - 2026-10-21
