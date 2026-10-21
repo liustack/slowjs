@@ -13,6 +13,7 @@ import "unsafe"
 type TforkRuntime struct {
 	front TfrontCache // see frontcache.go
 	shape TshapeCache // see shapecache.go
+	fn    TfuncShapes // see funcshape.go
 }
 
 // forkRuntimeSize is the size of TforkRuntime, which JS_NewRuntime2

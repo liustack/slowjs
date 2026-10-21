@@ -286,9 +286,10 @@ func TestNestedEvalKeepsInterrupt(t *testing.T) {
 }
 
 // The eval timeout and Interrupt stop a loop of regexps that find nothing
-// in a long string as soon as they fire. lreSkip looks for where a match
-// can start in Go, not in the backtracking machine, and must check for an
-// interrupt as the machine does.
+// in a long string as soon as they fire. lreSkip and lreRun look for where
+// a match can start in Go, not in the backtracking machine, and must check
+// for an interrupt as the machine does: when no position can start a
+// match, and when each can but the match fails there.
 func TestRegexScanStops(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -303,10 +304,14 @@ func TestRegexScanStops(t *testing.T) {
 			return func() { timer.Stop() }
 		}},
 	} {
-		for _, w := range []struct{ name, s string }{{"8bit", `'a'`}, {"16bit", `'中'`}} {
+		for _, w := range []struct{ name, s, re string }{
+			{"8bit", `'a'`, `/["&<>]/`}, {"16bit", `'中'`, `/["&<>]/`},
+			{"8bit/each", `'a'`, `/ab/`}, {"16bit/each", `'中'`, `/中b/`},
+			{"8bit/set", `'a'`, `/(?:a|c)b/`}, {"16bit/set", `'中'`, `/(?:中|c)b/`},
+		} {
 			t.Run(c.name+"/"+w.name, func(t *testing.T) {
 				m := newTestVM(t)
-				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 22); var re = /["&<>]/; 0`, EvalGlobal); err != nil {
+				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 22); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				stop := c.arm(m)
@@ -319,6 +324,55 @@ func TestRegexScanStops(t *testing.T) {
 				}
 				if took > 500*time.Millisecond {
 					t.Errorf("stopped %v after the call started, want about 10ms", took)
+				}
+			})
+		}
+	}
+}
+
+// The eval timeout and Interrupt stop one call of a regexp whose match runs
+// long, as soon as they fire. A greedy x+ jumps back by a split op, so over
+// a long string the machine counts steps toward its interrupt check only
+// through the pops of the states its splits push, and the split ops that
+// lreSplit lets push nothing must count and check themselves.
+func TestRegexMatchStops(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		arm  func(m *VM) (stop func())
+	}{
+		{"timeout", func(m *VM) func() {
+			m.SetEvalTimeout(20 * time.Millisecond)
+			return func() {}
+		}},
+		{"interrupt", func(m *VM) func() {
+			timer := time.AfterFunc(20*time.Millisecond, m.Interrupt)
+			return func() { timer.Stop() }
+		}},
+	} {
+		for _, w := range []struct{ name, s, re string }{
+			{"plus", `'a'`, `/a+b/`},
+			{"plus/unicode", `'a'`, `/a+b/u`},
+			{"plus/16bit", `'中'`, `/中+b/`},
+			{"plus/ignore case", `'a'`, `/A+b/i`},
+			{"class", `'a'`, `/\w+@/`},
+			{"capture", `'a'`, `/(a)+b/`},
+			{"alternatives", `'a'`, `/(?:a|c)+b/`},
+		} {
+			t.Run(c.name+"/"+w.name, func(t *testing.T) {
+				m := newTestVM(t)
+				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 17); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
+					t.Fatal(err)
+				}
+				stop := c.arm(m)
+				defer stop()
+				start := time.Now()
+				_, err := m.Eval(`re.test(s)`, EvalGlobal)
+				took := time.Since(start)
+				if err == nil || !strings.Contains(err.Error(), "interrupted") {
+					t.Fatalf("got %v, want interrupted", err)
+				}
+				if took > 500*time.Millisecond {
+					t.Errorf("stopped %v after the call started, want about 20ms", took)
 				}
 			})
 		}

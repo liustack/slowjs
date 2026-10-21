@@ -84,10 +84,10 @@ func TestDefineRejects(t *testing.T) {
 	}
 }
 
-// -define, -backtrace, -regex, -lazyaddr and -inline print the
+// -define, -backtrace, -regex, -lazyaddr, -inline and -funcshape print the
 // fingerprints the checks compare with defineSites, backtraceSites,
-// regexSites, lazyAddrSites and inlineSites, so that a table updated from
-// them passes.
+// regexSites, lazyAddrSites, inlineSites and funcShapeSites, so that a
+// table updated from them passes.
 func TestFingerprintReportMatchesSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -106,6 +106,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		{"lazyAddrSites", lazyAddrFingerprint, lazyAddrSites[name]},
 		{"inlineSites", inlineFingerprint, inlineSites[name]},
 		{"oneFrameSites", oneFrameFingerprint, oneFrameSites[name]},
+		{"funcShapeSites", funcShapeFingerprint, funcShapeSites[name]},
 	} {
 		got, err := reportedFingerprint(fn, hw, c.fp)
 		if err != nil {
@@ -117,7 +118,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 	}
 }
 
-// -forin, -bitwise, -eq, -lazyaddr, -json and -atomkey print the
+// -forin, -bitwise, -eq, -lazyaddr, -json, -atomkey, -regex and -funcshape print the
 // fingerprints even when the table does not match the files, which is when
 // they are needed: the check of the table must not stop the report.
 func TestFingerprintReportIgnoresSites(t *testing.T) {
@@ -139,6 +140,8 @@ func TestFingerprintReportIgnoresSites(t *testing.T) {
 		{"-json", jsonF, jsonSites, jsonFingerprint},
 		{"-atomkey", atomkey, atomKeySites, atomKeyFingerprint},
 		{"-lazyaddr", lazyAddr, lazyAddrSites, lazyAddrFingerprint},
+		{"-regex", regex, regexSites, regexFingerprint},
+		{"-funcshape", fnShape, funcShapeSites, funcShapeFingerprint},
 	} {
 		want := c.table[name]
 		*c.flag, c.table[name] = true, "0"

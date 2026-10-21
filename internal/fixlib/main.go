@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -atomkey, -oneframe and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -oneframe and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-nine things:
+// It does thirty things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -62,7 +62,9 @@
 //     fixDefine).
 //   - In every lib/ccgo_*.go file, let lre_exec skip the positions of
 //     the string where the regexp cannot start to match, through lreSkip
-//     of lib/regexskip.go (see fixRegexSkip).
+//     and lreRun of lib/regexskip.go, and let the split ops of
+//     lre_exec_backtrack push no way that cannot start at the position,
+//     through lreSplit (see fixRegexSkip).
 //   - In every lib/ccgo_*.go file, let a for in loop read from the shape
 //     of a prototype that it has no enumerable property, through
 //     forInNoEnum of lib/forin.go, before it lists the prototype's names
@@ -97,13 +99,17 @@
 //   - In every lib/ccgo_*.go file, keep the shapes of plain objects in the
 //     shape cache of lib/shapecache.go, kept in that state, once their last
 //     object is gone (see fixShapeCache).
+//   - In every lib/ccgo_*.go file, let js_function_set_properties put a
+//     new function straight onto the shape with length and name, through
+//     funcShape of lib/funcshape.go, which holds the shapes for the
+//     context (see fixFuncShape).
 //   - In every lib/ccgo_*.go file, let JS_ValueToAtom take the atom of a
 //     string key that is already an atom and no index through atomKey of
 //     lib/atomkey.go, without a TLS frame and the four calls of the
 //     generic path (see fixAtomKey).
-//     The first step undoes these five, as the other changes match the
-//     polls, JSRuntime, the allocator, the shape functions and
-//     JS_ValueToAtom as ccgo writes them.
+//     The first step undoes these six, as the other changes match the
+//     polls, JSRuntime, the allocator, the shape functions, the functions
+//     funcShape is called from and JS_ValueToAtom as ccgo writes them.
 //   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
 //     JS_CallInternal take its TLS frame with the room of a small alloca
 //     once at its entry, instead of taking it again before the stack check
@@ -165,6 +171,7 @@ var (
 	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
 	jsonF     = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
 	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
+	fnShape   = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -189,7 +196,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *atomkey || *oneFrame || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *oneFrame || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -225,6 +232,8 @@ func main() {
 			err = fingerprintReport(files, hw, "jsonSites", jsonFingerprint)
 		} else if err == nil && *oneFrame {
 			err = fingerprintReport(files, hw, "oneFrameSites", oneFrameFingerprint)
+		} else if err == nil && *fnShape {
+			err = fingerprintReport(files, hw, "funcShapeSites", funcShapeFingerprint)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -416,7 +425,7 @@ func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixAtomKey} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -427,7 +436,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreAtomKey, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

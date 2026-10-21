@@ -533,8 +533,8 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   match without running the bytecode. A regexp that starts with `^`
   outside multiline mode is run at position 0 only. Unicode regexps (`u`,
   `v`), regexps that ignore case or are multiline (`i`, `m`), and every
-  other first op take the old path. `lreSkip` checks for an interrupt
-  after every 65,536 characters it looks at, as the backtracking machine
+  other first op took the old path, until the change for alternations
+  below. `lreSkip` checks for an interrupt after every 65,536 characters it looks at, as the backtracking machine
   does every 10,000 steps, so the eval timeout and `Interrupt` stop a
   regexp that runs again and again on a long string as before. A server
   render of a page of tifa's example shop takes about 3% less time on
@@ -824,6 +824,95 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   Go, with no C hunk (`internal/fixlib/oneframe.go`). Tests:
   `internal/fixlib/oneframe_test.go`, with `calldepth_test.go`, test262
   and the tests of the root package for what the engine gives.
+- A regexp of alternatives no longer tries each alternative that cannot
+  match at a position. An alternation such as `(red|blue|...)` compiles to
+  a chain of split ops, each pushing a state for the next alternative
+  before the machine tries one, so at every position of the string the
+  machine pushed and popped a state for each alternative, which for the
+  148 color names react-spring tests its values against (`new
+  RegExp('(' + names.join('|') + ')(?!\\w)', 'g')`) was 147 states per
+  position. Two changes, both in `lib/regexskip.go`:
+  - The split ops of `lre_exec_backtrack` ask `lreSplit` first whether the
+    way they push can start at the position: when it begins with a
+    character or a class of characters, after nothing but saves of
+    captures, and the character at the position does not match it, the
+    way would fail as soon as it is popped, and nothing is pushed. When
+    the way the machine takes is another split op, as in an alternation,
+    `lreSplit` goes on with that one in the same call, for up to 4096
+    split ops, after which it gives back the one it is at to be pushed as
+    usual. It reads the
+    character as the machine does and tests it as the op does, with the
+    same `lre_canonicalize` for a regexp that ignores case, so this holds
+    for every regexp and flag, lookbehinds and sticky regexps included.
+  - `lreSkip` knows more first ops. `lreFirstSet` follows the bytecode
+    from the start of the regexp through both ways of every split, over
+    saves and assertions (`^`, `$`, `\b`, lookaheads and lookbehinds, to
+    the op after them), up to the first op on each path that reads a
+    character, and collects the characters a match can start with: a
+    set of the 256 Latin-1 units and one bit for all others. It gives up,
+    and the regexp takes the old path, when a path can reach the end
+    without reading a character (the regexp can match the empty string),
+    at a jump back, at an op it does not know (`.`, `\s`, a back reference,
+    a class that ignores case, ...), and after 1024 ops. A character
+    that ignores case counts as itself and its lower case when it is
+    ASCII: outside unicode mode `lre_canonicalize` gives no other unit an
+    ASCII canonical form (`TestCanonicalizeASCII` checks every unit).
+    Regexps that ignore case or are multiline now take this path too.
+    `lre_exec` then calls `lreRun` in place of the machine: it tries the
+    match at the first position that can start one, without the loop over
+    positions at the start of the bytecode, and when that fails, finds the
+    next such position in Go and tries again, for the regexps of `lreSkip`
+    that start with one character or class too. That is what the loop
+    does: it tries each position in turn, from the captures as they were
+    before the loop, all cleared, which `lreRun` clears again before each
+    try. It polls the interrupt counter of the machine after each failed
+    try and checks for an interrupt every 65,536 characters it looks at.
+  Why this is safe: a state that is not pushed is one that would have
+  been popped only to fail at its first character, after saves the
+  machine undoes when it fails, and a position that is skipped is one
+  where no path of the regexp can read its character. Results, captures,
+  `lastIndex` and the errors a regexp throws are the same. The machine
+  counts a step toward its interrupt check, and checks, at each `goto`,
+  each loop and each failed pop, and a greedy `x+` jumps back by a split
+  op, so over a long string it counted only through the pops of the
+  states it pushed. A split op that pushes nothing therefore counts a step
+  and checks itself, and one long match still stops when the eval timeout
+  fires or `Interrupt` is called. What differs is how many steps are
+  counted: one for each call of `lreSplit` that pushes nothing, however
+  many splits it stepped over, where the machine counted one for each
+  state it popped. So an interrupt stops a match after a different number
+  of ops. And states not pushed take no room on the backtracking stack, so
+  a regexp near the memory limit can go on where it ran out of memory.
+  `BenchmarkRegexColors` times a `replace` with the react-spring regexp of
+  color names: on linux/amd64 (AMD EPYC, one core) it takes 5.9 µs where
+  it took 44.5 on a value with no color name, and 8.5 µs where it took
+  20.2 on one with a name (the medians of 10 runs). Without PGO, with the
+  same HTML and the same memory of a VM, a render of tifa's example shop
+  takes about 1% to 2.5% less time, and the MUI pages of tifa's test apps
+  about 3% to 5% less. The medians of 10 rounds against `a84c8ed`, before
+  the split ops counted their steps toward the interrupt check, were 0.989
+  for the shop (0.981 to 1.015 over the rounds) and 0.946 to 0.954 for the
+  MUI pages, and two runs against `80261af` gave 0.983 and 0.987 for the
+  shop and 0.947 to 0.965 for the MUI pages. With the steps counted, two
+  runs of 3 rounds against `de42e83` gave 0.983 and 0.975 for the shop and
+  0.962 to 0.993 for the MUI pages. The bench pages moved by less than
+  their noise (table varies by 10% between rounds by itself). Other work
+  ran on other cores of the machine during the rounds (a load average of
+  up to 6). Each figure is from one build of each side: where the code
+  sits moves a render by up to 2.4% (see the frame of `JS_CallInternal`
+  above).
+  `fixlib` puts the question to `lreSplit` into the handler of the split
+  ops in all 13 files, after it finds that the handler pushes the way it
+  computes and jumps to the next op, and pins `lre_canonicalize`,
+  `lre_case_folding_entry` and `lre_poll_timeout` beside the functions
+  `regexSites` pinned already. This changes only the generated Go, with no C hunk
+  (`internal/fixlib/regexskip.go`). Tests: `lib/regexskip_test.go`, whose
+  `testdata/regexsplit.txt` holds what Node gives for 84 regexps on 73
+  strings through every API that runs one (the engine before the change
+  gives the same), with `testdata/regex.txt` as before,
+  `lib/regexskip_memgrind_test.go`, `internal/fixlib/regexskip_test.go`,
+  and `TestRegexScanStops` and `TestRegexMatchStops` in `timeout_test.go`,
+  which stop regexps that try every position, and single long matches.
 - Outside linux, VMs on several goroutines no longer wait for each other
   on the TLS stack. There libc keeps that stack in segments of about 4 KiB,
   each malloc'd under the one lock of libc's allocator, and frees a segment
@@ -1029,6 +1118,55 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   a run grows or widens a buffer failing for lack of memory, and a run
   past the longest string, `lib/jsonstr_memgrind_test.go` (no C memory
   left behind) and `internal/fixlib/jsonstr_test.go`.
+- A new function gets its `length` and `name` without the shapes in
+  between. `js_function_set_properties` gave every new function the two
+  through `JS_DefinePropertyValue` and `add_property`, one at a time: the
+  function went from the empty shape of its prototype, through a shape
+  with `length` only, to the shape with both. Nothing held the empty shape
+  or the one with `length` only for long, so they were made again for each
+  function and freed again a moment later (3,000 arrows, methods and
+  constructors made 5,001 shapes). Now `js_function_set_properties` calls
+  `funcShape` first (`lib/funcshape.go`). For each of the four prototypes
+  of new functions (`Function.prototype` and those of async, generator and
+  async generator functions) it remembers the empty shape and the shape
+  with both, the first time a function goes through `add_property`, and
+  puts the next functions with that empty shape straight onto the shape
+  with both, and writes the two values (the same 3,000 functions made
+  2,000 shapes, for the object literals and the `prototype` of the
+  constructors). Why this is safe: a shape is shared and never changes in
+  place while more than one object holds it (`add_property` and
+  `js_shape_prepare_update` copy it first), and `funcShape` holds both, so
+  they stay as they were and the empty shape cannot be freed and its
+  memory taken by another shape. The shape with both is the one
+  `add_property` gives, with the same prototype, keys, order, flags and
+  size of the property array, and the name is made before the function
+  changes, so the cycle collector, which can run there, finds it as it
+  is. The shapes are held for the context, as it holds the shapes of its
+  arrays and `arguments` objects: `JS_MarkContext` marks them, so the
+  cycle collector frees a context that only they hold alive, and
+  `JS_FreeContext` lets them go. Everything else, an object that is not
+  an ordinary extensible one or has another shape, takes the old path.
+  The shapes held add one or two shapes to a VM (88 to 176 bytes in one VM
+  of the shop). Without PGO, on linux/amd64 (AMD EPYC, one core), with the
+  same HTML, a render of tifa's example shop takes 0.982 of the time it
+  took with the regexp change above alone (the median of 10 rounds, 0.967
+  to 0.989), the MUI pages 0.993 to 1.000 and the bench pages 0.984 and
+  0.995, each from one build of each side. Against `80261af`, with the
+  code elsewhere, the shop took 0.972 (0.951 to 1.003), the MUI pages 0.990
+  to 1.004, and the bench pages 0.993 and 0.995. On `de42e83`, 3 rounds gave
+  the shop 0.988 and the MUI pages 0.983 to 0.997.
+  `fixlib` puts the three calls into all 13 files, and checks the text of
+  `js_function_set_properties`, `add_property`, `find_hashed_shape_prop`,
+  `add_shape_property`, `js_shape_prepare_update`, `js_clone_shape`,
+  `JS_NewObjectFromShape`, `JS_AtomToString`, `JS_MarkContext`,
+  `JS_FreeContext` and `JSShape` against fingerprints. This changes only
+  the generated Go, with no C hunk (`internal/fixlib/funcshape.go`).
+  Tests: `lib/funcshape_test.go`, whose `testdata/funcshape.txt` holds
+  what Node gives for the own properties of 36 kinds of new functions,
+  made many times and changed after they were made (the engine before the
+  change gives the same), the shapes it holds and lets go, and a context
+  that only they hold alive, `lib/funcshape_memgrind_test.go` and
+  `internal/fixlib/funcshape_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -1125,7 +1263,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go`, the calls into `lib/jsonstr.go`, the frame of
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the calls into `lib/funcshape.go`, the call into `lib/atomkey.go`, the calls into `lib/jsonstr.go`, the frame of
   `JS_CallInternal` taken once on linux and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
@@ -1146,7 +1284,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json`, `-atomkey` and
+  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json`, `-funcshape`, `-atomkey` and
   `-oneframe`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
@@ -1362,16 +1500,25 @@ Conflicts to expect:
   then the layout of `JSObject` moved or `JS_NewObjectFromShape` sets the
   fields in another order: find where the three bits are now and update
   `objectBits` and its patterns in `internal/fixlib/define.go`.
-  If it reports that `Xlre_compile`, `Xlre_exec` or
-  `_lre_exec_backtrack` changed (a fingerprint other than the one in
+  If it reports that `Xlre_compile`, `Xlre_exec`,
+  `_lre_exec_backtrack`, `Xlre_canonicalize` or `_lre_case_folding_entry`
+  changed (a fingerprint other than the one in
   `internal/fixlib/regexsites.go`), read the new code against
   `lib/regexskip.go`: the loop and `save_start 0` at the start of the
-  bytecode, the header fields it reads, and what `char`, `range` and
-  `line_start` match at a position must still be what `lreSkip` assumes,
-  and `lre_exec` must still return `LRE_RET_TIMEOUT` when
-  `lre_check_timeout` asks it to stop.
-  Then put the new fingerprints in (`go run ./internal/fixlib -regex`
-  prints them) and run `go test -run Regex ./lib`.
+  bytecode, the header fields it reads, the size and the meaning of every
+  op `lreFirstSet` follows, what the character and class ops match at a
+  position and how `GET_CHAR` reads it (`lreSplit`), that the split ops
+  only push a state, that a failed match at one position undoes its
+  captures down to the loop (`lreRun`), that `lre_canonicalize` gives an
+  ASCII result outside unicode mode only for ASCII units, that
+  `lre_poll_timeout` counts one step and returns non-zero when the machine
+  must stop (`lreRun` and the split ops call it), and `lre_exec` must still
+  return `LRE_RET_TIMEOUT` when `lre_check_timeout` asks it to stop. Then put the new fingerprints in (`go run ./internal/fixlib
+  -regex` prints them, even while the table is wrong) and run `go test
+  -run 'Regex|Canonicalize' ./lib`. If it reports that it cannot find the
+  handler of the split ops, its push or the jump to the next op, update
+  the patterns `reRegexSplit`, `reRegexSplitPush` and `reRegexNext` in
+  `internal/fixlib/regexskip.go` after reading the new handler.
   If it reports that the cold paths of `coldSites` changed, read the new
   `js_strict_eq2` or `__JS_AtomToValue`: the cold path must still be the
   only code that passes the address of a part of the frame on, and it must
@@ -1437,6 +1584,18 @@ Conflicts to expect:
   `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it
   reports that `gc_phase` is not the byte right after `tmp_obj_list`,
   change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
+  If it reports that the functions of `funcShapeFuncs` or `JSShape`
+  changed (`internal/fixlib/funcshapesites.go`), read them against
+  `lib/funcshape.go`: `js_function_set_properties` must still give
+  `length` and then `name`, both configurable only, through
+  `JS_DefinePropertyValue`, `add_property` must still move an object onto
+  a shape it finds in the hash table as `funcShape` does (`shapeFound`, a
+  new count, the old shape freed, the property array kept when the sizes
+  match), a shape whose count is not one must still never change in
+  place, `JS_NewObjectFromShape` must still give an object a property
+  array of the size of its shape, and `JS_MarkContext` and
+  `JS_FreeContext` must still mark and free the shape of arrays where
+  `funcShapesMark` and `funcShapesFree` are put. Then run `-funcshape`.
   If it reports that `js_for_in_prepare_prototype_chain_enum`,
   `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or
   `JS_FreePropertyEnum` changed (a fingerprint other than the one in
@@ -1757,23 +1916,25 @@ the tests that name such a locale in their code or count locales or cases
 ### Checks
 
 ```sh
-go test -short ./...                                     # all packages
+go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes 8 to 13 minutes)
 go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
-go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
+go test -timeout 30m ./internal/fixlib                   # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
-go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
-go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
+go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
+go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
 go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
+go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -run '^$' -bench Call .                          # the cost of each kind of call
+go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
 done
