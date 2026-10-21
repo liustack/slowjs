@@ -6,6 +6,8 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"slices"
+	"strings"
 	"sync"
 
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -169,4 +171,44 @@ func withoutLackedCollation(l gointl.Locale) gointl.Locale {
 	}
 	l.Keywords = kept
 	return l
+}
+
+// chromiumRootData are, by service, the languages Chromium has the locales
+// of but ships none of the service's data for: a locale whose data would
+// come from the language's own takes root's there, as if it were und,
+// while resolvedOptions names it. go-intl has the language's data.
+// TestChromiumRootData derives the lists from Chromium's ICU data.
+var chromiumRootData = map[gointl.Service]struct {
+	tree  string // the ICU tree of the data, as gointl.Fallbacker.ChainIn takes it
+	langs []string
+}{
+	gointl.ServiceRelativeTimeFormat: {"locales", []string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}},
+}
+
+var goFallbacker = sync.OnceValues(func() (*gointl.Fallbacker, error) { return gointl.NewFallbacker(gointl.Embedded) })
+
+// goDataLocale is the locale go-intl is to build a formatter of s for l
+// in: l, or und with l's keywords where Chromium has root's data for l.
+// rebase turns the locale go-intl then resolves back into l's.
+func goDataLocale(s gointl.Service, l gointl.Locale) (data gointl.Locale, rebase func(string) string, err error) {
+	same := func(resolved string) string { return resolved }
+	root, ok := chromiumRootData[s]
+	if !ok || !slices.Contains(root.langs, l.Language.String()) {
+		return l, same, nil
+	}
+
+	fb, err := goFallbacker()
+	if err != nil {
+		return l, nil, err
+	}
+
+	lang := gointl.Locale{Language: l.Language}.Data()
+	if !slices.Contains(fb.ChainIn(root.tree, l.Data()), lang) {
+		return l, same, nil
+	}
+
+	base := l
+	base.Attributes, base.Keywords, base.Extensions, base.Private = nil, nil, nil, ""
+	return gointl.Locale{Attributes: l.Attributes, Keywords: l.Keywords},
+		func(resolved string) string { return base.String() + strings.TrimPrefix(resolved, "und") }, nil
 }

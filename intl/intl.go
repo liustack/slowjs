@@ -23,6 +23,8 @@
 //     collation in Go over the data Chromium ships.
 //   - Intl.Segmenter: graphemes, words, with the dictionaries of Thai, Lao,
 //     Khmer, Burmese, Chinese and Japanese, and sentences.
+//   - Intl.RelativeTimeFormat: every unit and style, words such as
+//     "yesterday" with numeric auto, and numbering systems.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
@@ -54,8 +56,7 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.RelativeTimeFormat,
-// Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
+// Not implemented: Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
 // Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
 // roundingIncrement and roundingPriority but only implement their defaults,
 // which is what resolvedOptions reports: a value out of range throws a

@@ -198,6 +198,7 @@ var goldenSets = []struct {
 	{"", goldenExprs},
 	{"collator", collatorExprs},
 	{"segmenter", segmenterExprs},
+	{"relativetime", rtfExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for

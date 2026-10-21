@@ -17,7 +17,7 @@
 (function (P, zone, optionLists,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
-	colResolve, colCompare, segResolve, segBreaks) {
+	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts) {
 	'use strict';
 
 	const {
@@ -278,6 +278,19 @@
 		const n = a.length / 2;
 		for (let i = 0; i < n; i++) {
 			a[i] = {type: a[2 * i], value: a[2 * i + 1]};
+		}
+		a.length = n;
+		return a;
+	}
+
+	// unitParts is parts for the type, value and unit triples a Builtin
+	// answers, with a unit for the parts that have one. Each part is an
+	// object literal, so no setter on Object.prototype takes its unit.
+	function unitParts(a) {
+		const n = a.length / 3;
+		for (let i = 0; i < n; i++) {
+			const type = a[3 * i], value = a[3 * i + 1], unit = a[3 * i + 2];
+			a[i] = unit !== '' ? {type: type, value: value, unit: unit} : {type: type, value: value};
 		}
 		a.length = n;
 		return a;
@@ -612,6 +625,34 @@
 		[toStringTag]: 'Segmenter String Iterator'
 	});
 
+	// ------------------------------------------------------ RelativeTimeFormat
+
+	function RelativeTimeFormat(locales = undefined, options = undefined) {
+		requireNew(new.target, 'RelativeTimeFormat');
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('RelativeTimeFormat', rtfResolve,
+			pushOptions(args, toOptions(options), lists.RelativeTimeFormat)));
+	}
+
+	defineConstructor(RelativeTimeFormat, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('RelativeTimeFormat', locales, options);
+		}
+	}, {
+		format(value, unit) {
+			const i = internal(this, 'RelativeTimeFormat'), v = +value;
+			return call(i, rtfFormat, v, toString(unit));
+		},
+		formatToParts(value, unit) {
+			const i = internal(this, 'RelativeTimeFormat'), v = +value;
+			return unitParts(call(i, rtfParts, v, toString(unit)));
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'RelativeTimeFormat'), optionsOf));
+		},
+		[toStringTag]: 'Intl.RelativeTimeFormat'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
@@ -619,6 +660,7 @@
 		NumberFormat: NumberFormat,
 		Collator: Collator,
 		PluralRules: PluralRules,
+		RelativeTimeFormat: RelativeTimeFormat,
 		Segmenter: Segmenter,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));

@@ -23,6 +23,9 @@ var goIntlUses = []struct{ make, use, want string }{
 	{`var seg = new Intl.Segmenter('th', {granularity: 'word'}), segs = seg.segment('สวัสดีครับ'), segsUsed = seg.segment('ab cd.'); segsUsed.containing(0)`,
 		`[...segs].map((s) => s.segment).join('|') + ' ' + segsUsed.containing(3).segment + ' ' + [...seg.segment('x y')].length + ' ' + seg.resolvedOptions().granularity`,
 		"สวัสดี|ครับ cd 3 word"},
+	{`var rtf = new Intl.RelativeTimeFormat('de', {numeric: 'auto', style: 'short'})`,
+		`rtf.format(-1, 'day') + ' ' + rtf.format(3, 'hours') + ' ' + rtf.formatToParts(2, 'week').length + ' ' + rtf.resolvedOptions().style`,
+		"gestern in 3 Std. 3 short"},
 }
 
 // goIntlHold makes the objects of goIntlUses, and goIntlCheck uses them: it

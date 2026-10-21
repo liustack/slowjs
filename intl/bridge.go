@@ -185,7 +185,16 @@ var (
 		resolve: func(req request) (formatter, error) { return resolveSegmenter(req) },
 	}
 
-	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor}
+	relativeTimeFormatCtor = &ctor{
+		name:    "RelativeTimeFormat",
+		tag:     'R',
+		goSvc:   gointl.ServiceRelativeTimeFormat,
+		options: stringOptions("localeMatcher", "numberingSystem", "style", "numeric"),
+		resolve: func(req request) (formatter, error) { return resolveRelativeTimeFormat(req) },
+	}
+
+	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor,
+		relativeTimeFormatCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -545,6 +554,45 @@ var bridge = []*quickjs.Builtin{
 
 		text, _ := a.WTF8(1)
 		return intArray(a.VM(), s.breaks(text))
+	}),
+	resolveBuiltin(relativeTimeFormatCtor),
+	// rtfFormat and rtfParts take the value, a number, and the unit, a
+	// string. The parts are their type, value and unit in turn, the unit
+	// empty for the text around the number.
+	quickjs.NewBuiltin("rtfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*relativeTimeFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		v, _ := a.Number(1)
+		u, _ := a.String(2)
+		unit, err := f.unit(v, u)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return a.VM().NewString(f.f.Format(v, unit))
+	}),
+	quickjs.NewBuiltin("rtfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*relativeTimeFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		v, _ := a.Number(1)
+		u, _ := a.String(2)
+		unit, err := f.unit(v, u)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		parts := f.f.FormatToParts(v, unit)
+		l := make([]string, 0, 3*len(parts))
+		for _, p := range parts {
+			l = append(l, string(p.Kind), p.Value, p.Unit)
+		}
+		return stringArray(a.VM(), l)
 	}),
 }
 

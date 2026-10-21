@@ -85,6 +85,7 @@ function shape() {
 		PluralRules: ['select', 'selectRange', 'resolvedOptions'],
 		Collator: ['compare', 'resolvedOptions'],
 		Segmenter: ['segment', 'resolvedOptions'],
+		RelativeTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
 	};
 	for (const name of Object.keys(ctors)) {
 		const C = Intl[name], p = 'Intl.' + name;
@@ -154,6 +155,8 @@ function shape() {
 	// The objects the other methods return.
 	const kinds = {
 		'Collator resolvedOptions': new Intl.Collator('en').resolvedOptions(),
+		'RelativeTimeFormat formatToParts': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[1],
+		'RelativeTimeFormat formatToParts literal': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[0],
 	};
 	for (const k of Object.keys(kinds)) {
 		const o = kinds[k];

@@ -275,3 +275,88 @@ func segmenterExprs() (r []string) {
 	}
 	return r
 }
+
+// rtfLocales are the locales relative times are written in: every language
+// tifa users are likely to write and a spread of the others.
+var rtfLocales = []string{
+	"en", "en-US", "en-GB", "en-IN", "en-AU", "de", "de-AT", "fr", "fr-CA", "es", "es-MX", "it", "pt", "pt-PT",
+	"nl", "sv", "da", "nb", "fi", "pl", "cs", "sk", "sl", "hr", "sr", "sr-Latn", "hu", "ro", "lt", "lv", "et",
+	"tr", "az", "ru", "uk", "be", "bg", "el", "he", "ar", "ar-EG", "fa", "ur", "hi", "mr", "bn", "ta", "te", "kn",
+	"ml", "th", "vi", "id", "ms", "fil", "sw", "zu", "af", "am", "ca", "eu", "gl", "ga", "cy", "is", "ka", "hy",
+	"kk", "uz", "mn", "km", "lo", "my", "ne", "si", "ja", "ko", "zh", "zh-TW", "zh-HK", "yue", "root", "xx",
+	"en-u-nu-arab", "ar-u-nu-latn", "hi-u-nu-deva", "th-u-nu-thai", "zh-u-nu-hanidec",
+	// Locales Chromium has for RelativeTimeFormat with no relative time data
+	// of their own, or whose parent has none.
+	"az-Cyrl", "bs", "ckb-IR", "ee-TG", "ha-GH", "kk-CN", "kok", "ne-IN", "om-KE", "pa", "sd", "so-KE", "sq-MK",
+	"st-LS", "ti-ER", "uz-Arab", "uz-AF",
+}
+
+func rtfExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	tags := append(chromiumTags(4), "und", "xx", "EN-us", "en-u-nu-arab", "en-u-nu-xyz", "en-u-ca-japanese", "ar-u-nu-latn",
+		"zh-u-nu-hanidec", "x-private", "sr-ME", "iw", "in", "mo", "de-u-co-phonebk-nu-thai")
+	for _, tag := range tags {
+		add(`JSON.stringify(new Intl.RelativeTimeFormat(%q).resolvedOptions())`, tag)
+	}
+	for _, tag := range []string{"en", "ar", "zh", "hi", "xx"} {
+		for _, o := range []string{`{style:'long'}`, `{style:'short'}`, `{style:'narrow'}`, `{numeric:'auto'}`, `{numeric:'always'}`,
+			`{numberingSystem:'arab'}`, `{numberingSystem:'latn'}`, `{numberingSystem:'thai'}`, `{numberingSystem:'xyz'}`,
+			`{numberingSystem:'hanidec'}`, `{localeMatcher:'lookup'}`, `{style:'narrow',numeric:'auto',numberingSystem:'deva'}`,
+			`null`, `5`, `'x'`, `undefined`} {
+			add(`JSON.stringify(new Intl.RelativeTimeFormat(%q,%s).resolvedOptions())`, tag, o)
+		}
+	}
+
+	// Every unit, at offsets with and without words, in every style.
+	const values = `[-2, -1, -0, 0, 1, 2, 3, 1.5, -1.5, 0.5, 10, 21, 100, 1000, 12345.678, -1e6, 0.001, 1.004, -1.006]`
+	const units = `['year', 'quarter', 'month', 'week', 'day', 'hour', 'minute', 'second']`
+	for _, l := range rtfLocales {
+		for _, style := range []string{"long", "short", "narrow"} {
+			for _, numeric := range []string{"always", "auto"} {
+				add(`(() => {const f = new Intl.RelativeTimeFormat(%q,{style:%q,numeric:%q}); return %s.map((u) => %s.map((v) => f.format(v, u)).join('|')).join('\n')})()`,
+					l, style, numeric, units, values)
+			}
+		}
+	}
+
+	// The parts, for some locales.
+	for _, l := range []string{"en", "de", "ar", "zh", "ja", "fr", "hi", "ru", "he", "en-u-nu-arab"} {
+		for _, numeric := range []string{"always", "auto"} {
+			add(`(() => {const f = new Intl.RelativeTimeFormat(%q,{numeric:%q}); return JSON.stringify([[-1,'day'],[0,'day'],[1,'days'],[2,'hours'],[1.5,'week'],[-1234.5,'minutes'],[100000,'seconds'],[-0,'year'],[3,'quarters'],[-2,'months']].map(([v, u]) => f.formatToParts(v, u)))})()`, l, numeric)
+		}
+	}
+
+	for _, e := range []string{
+		`new Intl.RelativeTimeFormat().format(1, 'days')`, `new Intl.RelativeTimeFormat().format('1', 'day')`,
+		`new Intl.RelativeTimeFormat().format({valueOf() { return 2; }}, {toString() { return 'week'; }})`,
+		`new Intl.RelativeTimeFormat().format(true, 'day')`, `new Intl.RelativeTimeFormat().format(null, 'day')`,
+		`new Intl.RelativeTimeFormat().format(1e21, 'day')`, `new Intl.RelativeTimeFormat().format(-1e-7, 'day')`,
+		`new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(-0, 'day')`, `new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(0, 'second')`,
+		`new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(1.0, 'year')`, `new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(1.001, 'year')`,
+		`new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(0.0001, 'day')`, `new Intl.RelativeTimeFormat('en', {numeric:'auto'}).format(-0.004, 'day')`,
+		`JSON.stringify(Intl.RelativeTimeFormat.supportedLocalesOf(['en', 'de', 'xx', 'zh-Hant-TW', 'tlh', 'yue']))`,
+		`JSON.stringify(Intl.RelativeTimeFormat.supportedLocalesOf(['en-US', 'ar-EG'], {localeMatcher:'lookup'}))`,
+		`Object.prototype.toString.call(new Intl.RelativeTimeFormat())`,
+	} {
+		add(`%s`, e)
+	}
+	add(`JSON.stringify(Intl.RelativeTimeFormat.supportedLocalesOf(%s))`, validTags(chromiumTags(3)))
+
+	for _, src := range []string{
+		`Intl.RelativeTimeFormat()`, `new Intl.RelativeTimeFormat('en-')`, `new Intl.RelativeTimeFormat(null)`,
+		`new Intl.RelativeTimeFormat('en', null)`, `new Intl.RelativeTimeFormat('en', {style:'x'})`, `new Intl.RelativeTimeFormat('en', {numeric:'x'})`,
+		`new Intl.RelativeTimeFormat('en', {numberingSystem:'ab'})`, `new Intl.RelativeTimeFormat('en', {numberingSystem:'abc-defghijkl'})`,
+		`new Intl.RelativeTimeFormat('en', {localeMatcher:'x'})`, `new Intl.RelativeTimeFormat().format(1, 'x')`,
+		`new Intl.RelativeTimeFormat().format(1, 'days ')`, `new Intl.RelativeTimeFormat().format(1, 'Day')`, `new Intl.RelativeTimeFormat().format(1)`,
+		`new Intl.RelativeTimeFormat().format(NaN, 'day')`, `new Intl.RelativeTimeFormat().format(Infinity, 'day')`,
+		`new Intl.RelativeTimeFormat().format(1n, 'day')`, `new Intl.RelativeTimeFormat().format(Symbol(), 'day')`,
+		`new Intl.RelativeTimeFormat().format(1, Symbol())`, `new Intl.RelativeTimeFormat().formatToParts(NaN, 'day')`,
+		`new Intl.RelativeTimeFormat().format(1, 'millisecond')`, `new Intl.RelativeTimeFormat().format(1, 'weekss')`,
+		`Intl.RelativeTimeFormat.prototype.format(1, 'day')`, `Intl.RelativeTimeFormat.prototype.resolvedOptions()`,
+		`Intl.RelativeTimeFormat.prototype.formatToParts.call(new Intl.NumberFormat(), 1, 'day')`,
+		`Intl.RelativeTimeFormat.supportedLocalesOf('en', null)`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}
