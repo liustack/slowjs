@@ -4,9 +4,40 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `NewBuiltin` 和 `VM.NewBuiltinFunction`：JavaScript 像调用 `Math.max` 这类内置函数那样调用的 Go 函数，用 `Args` 读参数，不做转换。在 Apple M4 上一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。它返回的 `*Error` 按 `Name` 抛成对应的错误。
+- `VM.NewArray`：用 Go 里建的值做一个数组，做法和数组字面量一样，页面在 `Array.prototype` 上放的 setter 不会被触发。
+- `VM.SetStrip`，配 `StripSource` 和 `StripDebug`：编译函数时不留源码（`toString` 显示 `[native code]`），或者不留行号和列号。
+
 ### 变更
 
+- Go 里建的 `*Error` 的 `Error()` 改为 `Name: Message`，和 JavaScript 的 `Error.prototype.toString` 写法一样，以前是空字符串。所以 `RegisterHostFunc` 函数为这种错误抛出的 `TypeError` 现在也带上这条消息。从 JavaScript 拿到的错误仍是引擎原来的文本。
+- `Intl` 的格式化器由进程里所有 VM 共用，最多 1024 个，满了先丢最早的。用过 `Intl` 的 VM 少占约 15 KB。
+- `Intl` 的函数和内置函数一个样子：`length` 和 `name` 按 ECMA-402 给，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
+- 对继承了 `Intl.NumberFormat` 或 `Intl.DateTimeFormat` 原型的 `o` 调用 `Intl.NumberFormat.call(o)` 或 `Intl.DateTimeFormat.call(o)`，新的格式化器挂在 `o` 上并返回 `o`，和 V8 一样。
 - README 改成一页简短的落地页，有英文和中文两版。原来的内容挪进了 `docs/`：按领域分的 fork 改动、测试、合入上游、性能、发版，以及上游的 README。
+
+### 修复
+
+- 页面改了 `Array.prototype`、`Object.prototype`、`JSON` 或其他内置对象，只要是在 `Register` 之后改的，都不再影响 `Intl` 的行为。
+- `Intl` 按 ECMA-402 的规则转换选项、值和语言列表：该给字符串或数字的地方给了 Symbol 或 BigInt 会抛 `TypeError`，语言传 `null` 会抛 `TypeError`，选项的读取顺序也和 ECMA-402 一致。
+- `Intl.NumberFormat` 格式化包装过的 BigInt，或者 `valueOf` 返回一长串数字的对象时，结果是精确的，以前会经过 double 被舍入。
+- test262 的 intl402 测试通过 6764 次中的 912 次，以前是 770 次，以前通过的都没有变成失败。
+
+### 性能
+
+都是不开 PGO，和 v0.26.16 比。
+
+- `===`、`!==`、`==` 和 `!=` 的常见组合（`null`、`undefined`、布尔值、对象、symbol、同为 atom 的字符串）由解释器直接给出结果：耗时为原来的 0.982。
+- 已经是 atom 的字符串键一步找到：渲染时间少 1.3%。微基准里用这种键读属性少 13%，写属性少 30%。
+- 在 linux 上调用一次 JavaScript 函数只取一个 TLS 帧，原来是两个，另有 34 个函数取 TLS 帧的次数变少：每次渲染的帧少了约五分之一，时间少 1.4%。
+- 由多个分支组成的正则不再尝试在当前位置不可能匹配的分支：时间少约 1% 到 2.5%。用 react-spring 那个含 148 个颜色名的正则做一次 `replace`，从 44.5 µs 降到 5.9 µs。
+- 新函数直接拿到 `length` 和 `name`，不再经过中间的 shape：耗时为原来的 0.982。
+- 浮点数的位运算不走慢路径：tifa 的 MUI 测试应用的页面耗时为原来的 0.952 到 0.960。商店页面用得太少，没有收益。
+- `for in` 循环跳过没有可枚举属性的原型：大量使用这种循环的页面最多少约 3%。
+- `JSON.stringify` 和 `JSON.parse` 把成段的普通字符一次拷完：把一个路由的数据转成带引号的字符串少 41%，但渲染整体的收益不到 1%。
+- `Intl`：在一个 AMD EPYC 7B13 核上，`new Intl.NumberFormat('en')` 从 16.5 µs 降到 2.7 µs，带时区的 `DateTimeFormat` 创建从 32.0 µs 降到 8.1 µs，格式化从 5.2 µs 降到 2.6 µs。
 
 ## [v0.26.16] - 2026-10-20
 
