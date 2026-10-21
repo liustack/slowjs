@@ -54,6 +54,15 @@ var uses = `(() => {
 	use(() => 'ä'.localeCompare('z', 'sv') + ' ' + 'ä'.localeCompare('z', 'de'));
 	use(() => 'a'.localeCompare('B', undefined, {caseFirst: 'upper'}));
 	use(() => apply(getDescriptor(Intl.Collator.prototype, 'compare').get, new Intl.NumberFormat('en'), []));
+	use(() => [...new Intl.Segmenter('en', {granularity: 'word'}).segment('Hi there, you.')].map((s) => s.segment + ':' + s.index + ':' + s.isWordLike).join('|'));
+	use(() => show(new Intl.Segmenter('th', {granularity: 'word'}).segment('สวัสดีครับ').containing(3)));
+	use(() => show(new Intl.Segmenter('de').resolvedOptions()));
+	use(() => Intl.Segmenter.supportedLocalesOf(['th', 'xx']).join());
+	use(() => {
+		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
+		const a = it.next(), b = it.next(), c = it.next();
+		return a.value.segment + '|' + b.value.segment + '|' + c.done + '|' + (getPrototypeOf(it) === getPrototypeOf(it));
+	});
 	return r;
 })()`;
 
@@ -73,11 +82,13 @@ var tamper = [
 		Object.prototype.writable = true;`],
 	['Object.prototype options', `
 		for (const k of ['style', 'currency', 'localeMatcher', 'type', 'timeZone', 'hour12', 'useGrouping',
-			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation']) {
+			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation',
+			'granularity', 'segment', 'index', 'input', 'isWordLike', 'done', 'next']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Object.prototype slots', `
-		for (const k of ['kind', 'id', 'fn', 'args', 'bound', 'resolve', 'Intl', 'dateToLocaleString', 'numberToLocaleString']) {
+		for (const k of ['kind', 'id', 'fn', 'args', 'bound', 'resolve', 'Intl', 'dateToLocaleString', 'numberToLocaleString',
+			'stringLocaleCompare', 'segmenter', 'string', 'breaks', 'segments', 'at', 'data', 'end']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Function.prototype call apply bind', `
@@ -112,7 +123,7 @@ var tamper = [
 		Date.prototype.getTime = function () { return 0; };`],
 	['Date.now', `Date.now = function () { return 0; };`],
 	['String methods', `
-		for (const k of ['charAt', 'charCodeAt', 'indexOf', 'slice', 'split', 'toLowerCase', 'replace', 'startsWith']) {
+		for (const k of ['charAt', 'charCodeAt', 'indexOf', 'slice', 'substring', 'split', 'toLowerCase', 'replace', 'startsWith']) {
 			String.prototype[k] = ${throws};
 		}`],
 	// QuickJS compiles a template literal into a call of concat.

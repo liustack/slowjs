@@ -6,13 +6,48 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 )
 
 // The corpora of the constructors built on go-intl. Their locales are a
 // sample of the 1005 tags of internal/gointl/qjsdata/chromium.json: every
 // language a constructor has data for in Chromium, some regions and scripts
 // of them, tags it falls back from, and Unicode extension keywords.
+
+// chromiumTags are every step-th of the tags Chromium knows, from
+// internal/gointl/qjsdata/chromium.json, starting at the first.
+func chromiumTags(step int) []string {
+	all := chromiumTagList()
+	var r []string
+	for i := 0; i < len(all); i += step {
+		r = append(r, all[i])
+	}
+	return r
+}
+
+// validTags is javascript for the tags that are tags in the engine that
+// runs it: chromium.json has a few, such as root, that Chromium refuses.
+func validTags(tags []string) string {
+	return jsList(tags...) + `.filter((t) => {try {Intl.getCanonicalLocales(t); return true} catch {return false}})`
+}
+
+var chromiumTagList = sync.OnceValue(func() []string {
+	b, err := os.ReadFile(filepath.Join("..", "internal", "gointl", "qjsdata", "chromium.json"))
+	if err != nil {
+		panic(err)
+	}
+
+	var v struct{ Tags []string }
+	if err := json.Unmarshal(b, &v); err != nil {
+		panic(err)
+	}
+
+	return v.Tags
+})
 
 // collatorWords are strings that sort apart differently in the languages
 // below: accents, case, letters some languages add or join, digits, spaces
@@ -138,6 +173,103 @@ func collatorExprs() (r []string) {
 		`Object.getOwnPropertyDescriptor(Intl.Collator.prototype, 'compare').get.call(new Intl.NumberFormat())`,
 		`String.prototype.localeCompare.call(null, 'a')`, `String.prototype.localeCompare.call(undefined, 'a')`,
 		`'a'.localeCompare(Symbol())`, `'a'.localeCompare('b', 'en-')`, `'a'.localeCompare('b', 'en', {usage:'x'})`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}
+
+// segmenterTexts are texts, as javascript source, whose breaks differ by
+// granularity and language: punctuation and abbreviations, numbers, emoji
+// sequences and flags, combining marks, scripts that break by dictionary
+// (Thai, Lao, Khmer, Burmese, Chinese and Japanese), Indic conjuncts, line
+// ends, and lone surrogates.
+var segmenterTexts = []string{
+	`''`, `'a'`, `'Hello, world! How are you?'`, `'The U.S.A. is big. Mr. Smith went to Washington. Dr. Who?'`,
+	`'It costs $3.14, or 3,000.50 euros (approx.)'`, `"don't stop can't won't l'homme"`, `'e-mail co-op 2026-10-21 10:30 a_b'`,
+	`'👨‍👩‍👧‍👦 family 🇺🇸🇩🇪 flags 👍🏽 thumbs ❤️'`, `'e\u0301 a\u0308 n\u0303 \u1100\u1161\u11a8'`,
+	`'สวัสดีครับ ยินดีต้อนรับ'`, `'ສະບາຍດີ ຍິນດີຕ້ອນຮັບ'`, `'សួស្តី ពិភពលោក'`, `'မင်္ဂလာပါ ကမ္ဘာ'`,
+	`'我们今天去北京大学看看。你好吗？'`, `'私は東京に住んでいます。カタカナとひらがな、漢字。'`, `'안녕하세요 세계. 반갑습니다!'`,
+	`'नमस्ते दुनिया। क्षत्रिय स्त्री'`, `'হ্যালো বিশ্ব। ক্ষ'`, `'مرحبا بالعالم. كيف حالك؟'`, `'שלום עולם. מה שלומך?'`,
+	`'Привет, мир! Как дела?'`, `'Γειά σου κόσμε; Τι κάνεις;'`, `'line one\r\nline two\nline three\r'`,
+	`'tab\there  two  spaces'`, `'a\ud800b\udc00c'`, `'\ud83d'`, `'x\ud83d\ude00y'`, `'Straße Öl über'`,
+	`'«Bonjour», dit-il. «Ça va?»'`, `'1. First. 2. Second.'`, `'Hello.World. Next'`, `'ABC123 abc_123 a1b2'`,
+}
+
+// segmenterLocales are the locales the texts are broken in.
+var segmenterLocales = []string{
+	"en", "en-US", "de", "fr", "it", "es", "ru", "el", "fi", "sv", "ja", "zh", "zh-Hant", "ko", "th", "lo", "km",
+	"my", "hi", "bn", "ar", "he", "tr", "root", "xx", "en-u-ss-standard", "de-u-ss-standard",
+}
+
+func segmenterExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	tags := append(chromiumTags(5), "und", "xx", "EN-us", "en-u-ss-standard", "en-u-co-phonebk", "zh-u-ca-chinese",
+		"ja-JP-u-nu-arab", "x-private", "sr-ME", "iw", "in", "mo")
+	for _, tag := range tags {
+		add(`JSON.stringify(new Intl.Segmenter(%q).resolvedOptions())`, tag)
+	}
+	for _, tag := range []string{"en", "de", "ja", "zh", "th", "xx"} {
+		for _, o := range []string{`{granularity:'grapheme'}`, `{granularity:'word'}`, `{granularity:'sentence'}`, `{localeMatcher:'lookup'}`,
+			`{localeMatcher:'best fit',granularity:'word'}`, `{granularity:undefined}`, `undefined`} {
+			add(`JSON.stringify(new Intl.Segmenter(%q,%s).resolvedOptions())`, tag, o)
+		}
+	}
+
+	// Each text broken up in each locale, at each granularity.
+	for _, l := range segmenterLocales {
+		for _, g := range []string{"grapheme", "word", "sentence"} {
+			for _, text := range segmenterTexts {
+				add(`JSON.stringify([...new Intl.Segmenter(%q,{granularity:%q}).segment(%s)].map((s) => [s.segment, s.index, s.isWordLike]))`, l, g, text)
+			}
+		}
+	}
+
+	// containing at offsets inside and outside the text, and not numbers.
+	for _, g := range []string{"grapheme", "word", "sentence"} {
+		for _, text := range []string{`'Hello, world! How are you?'`, `'x\ud83d\ude00y 👨‍👩‍👧 z'`, `'我们今天去北京'`} {
+			add(`(() => {const s = new Intl.Segmenter('en',{granularity:%q}).segment(%s); return JSON.stringify([-1, 0, 1, 2, 3, 5, 7, 8, 13, 14, 25, 26, 1.5, 2.9, -0.5, '3', NaN, undefined, null, true, Infinity, -Infinity, 1e10].map((i) => {const d = s.containing(i); return d === undefined ? 'undefined' : [d.segment, d.index, d.isWordLike, d.input === s.containing(0).input]}))})()`, g, text)
+		}
+	}
+	for _, e := range []string{
+		`new Intl.Segmenter().segment('ab').containing() .segment`,
+		`new Intl.Segmenter('en', {granularity:'word'}).segment('ab cd').containing({valueOf() { return 3; }}).segment`,
+		`(() => {const it = new Intl.Segmenter().segment('ab')[Symbol.iterator](); return JSON.stringify([it.next(), it.next(), it.next(), it.next()])})()`,
+		`(() => {const s = new Intl.Segmenter().segment('abc'), a = s[Symbol.iterator](), b = s[Symbol.iterator](); a.next(); return a.next().value.segment + b.next().value.segment})()`,
+		`(() => {const s = new Intl.Segmenter().segment('abc'); return [...s].length + [...s].length})()`,
+		`(() => {const it = new Intl.Segmenter().segment('a')[Symbol.iterator](); return it[Symbol.iterator]() === it})()`,
+		`Object.prototype.toString.call(new Intl.Segmenter().segment('a')[Symbol.iterator]())`,
+		`Object.prototype.toString.call(new Intl.Segmenter().segment('a'))`,
+		`Object.prototype.toString.call(new Intl.Segmenter())`,
+		`new Intl.Segmenter().segment(12345).containing(2).input`,
+		`new Intl.Segmenter().segment(undefined).containing(0).input`,
+		`new Intl.Segmenter().segment(null).containing(0).segment`,
+		`new Intl.Segmenter().segment({toString() { return 'xy'; }}).containing(1).segment`,
+		`JSON.stringify(new Intl.Segmenter('en', {granularity:'word'}).segment('a b').containing(1))`,
+		`JSON.stringify(new Intl.Segmenter('en', {granularity:'sentence'}).segment('a. b').containing(0))`,
+		`JSON.stringify(Object.keys(new Intl.Segmenter('en', {granularity:'word'}).segment('a').containing(0)))`,
+		`JSON.stringify(Object.keys(new Intl.Segmenter('en').segment('a').containing(0)))`,
+		`(() => {const s = new Intl.Segmenter().segment('ab'); return Object.getPrototypeOf(s.containing(0)) === Object.prototype})()`,
+		`JSON.stringify(Intl.Segmenter.supportedLocalesOf(['en', 'de', 'xx', 'th', 'zh-Hant-TW', 'ja-JP', 'km', 'tlh']))`,
+		`JSON.stringify(Intl.Segmenter.supportedLocalesOf(['en-US', 'yue', 'zu'], {localeMatcher:'lookup'}))`,
+		`JSON.stringify(Intl.Segmenter.supportedLocalesOf())`,
+	} {
+		add(`%s`, e)
+	}
+	add(`JSON.stringify(Intl.Segmenter.supportedLocalesOf(%s))`, validTags(chromiumTags(3)))
+
+	for _, src := range []string{
+		`Intl.Segmenter()`, `Intl.Segmenter('en')`, `new Intl.Segmenter('en-')`, `new Intl.Segmenter(null)`,
+		`new Intl.Segmenter('en', null)`, `new Intl.Segmenter('en', 5)`, `new Intl.Segmenter('en', 'word')`, `new Intl.Segmenter('en', true)`,
+		`new Intl.Segmenter('en', {granularity:'line'})`, `new Intl.Segmenter('en', {granularity:'x'})`, `new Intl.Segmenter('en', {localeMatcher:'x'})`,
+		`new Intl.Segmenter('en', {granularity:{toString() { throw new RangeError() }}})`,
+		`Intl.Segmenter.prototype.segment('a')`, `Intl.Segmenter.prototype.resolvedOptions()`,
+		`Intl.Segmenter.prototype.segment.call(new Intl.Collator(), 'a')`, `new Intl.Segmenter().segment(Symbol())`,
+		`new Intl.Segmenter().segment('a').containing(Symbol())`, `new Intl.Segmenter().segment('a').containing(1n)`,
+		`Object.getPrototypeOf(new Intl.Segmenter().segment('a')).containing.call({}, 0)`,
+		`Object.getPrototypeOf(new Intl.Segmenter().segment('a'))[Symbol.iterator].call({})`,
+		`Object.getPrototypeOf(new Intl.Segmenter().segment('a')[Symbol.iterator]()).next.call({})`,
+		`Intl.Segmenter.supportedLocalesOf('en', null)`, `Intl.Segmenter.supportedLocalesOf('en', {localeMatcher:'x'})`,
 	} {
 		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
 	}

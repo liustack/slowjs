@@ -20,6 +20,9 @@ var goIntlUses = []struct{ make, use, want string }{
 	{`var col = new Intl.Collator('de', {sensitivity: 'base'}), colCompare = col.compare`,
 		`col.compare('a', 'A') + ' ' + colCompare('a', 'b') + ' ' + col.resolvedOptions().sensitivity`, "0 -1 base"},
 	{``, `'ä'.localeCompare('z', 'sv', {sensitivity: 'base'})`, "1"},
+	{`var seg = new Intl.Segmenter('th', {granularity: 'word'}), segs = seg.segment('สวัสดีครับ'), segsUsed = seg.segment('ab cd.'); segsUsed.containing(0)`,
+		`[...segs].map((s) => s.segment).join('|') + ' ' + segsUsed.containing(3).segment + ' ' + [...seg.segment('x y')].length + ' ' + seg.resolvedOptions().granularity`,
+		"สวัสดี|ครับ cd 3 word"},
 }
 
 // goIntlHold makes the objects of goIntlUses, and goIntlCheck uses them: it

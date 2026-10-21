@@ -84,6 +84,7 @@ function shape() {
 		NumberFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		PluralRules: ['select', 'selectRange', 'resolvedOptions'],
 		Collator: ['compare', 'resolvedOptions'],
+		Segmenter: ['segment', 'resolvedOptions'],
 	};
 	for (const name of Object.keys(ctors)) {
 		const C = Intl[name], p = 'Intl.' + name;
@@ -122,6 +123,33 @@ function shape() {
 			r[p + '.prototype.resolvedOptions()'] = e.constructor.name;
 		}
 	}
+
+	// What Intl.Segmenter's segment returns, and its iterator.
+	const segments = new Intl.Segmenter('en').segment('ab');
+	const S = Object.getPrototypeOf(segments);
+	r['Segments proto'] = Object.getPrototypeOf(S) === Object.prototype;
+	r['Segments prototype keys'] = Reflect.ownKeys(S).map(String).sort().join(' ');
+	r['Segments toString'] = Object.prototype.toString.call(segments);
+	r['Segments instance keys'] = Reflect.ownKeys(segments).map(String).join(' ');
+	prop('Segments.prototype.containing', S, 'containing');
+	fn('Segments.prototype.containing', S.containing);
+	prop('Segments.prototype[@@iterator]', S, Symbol.iterator);
+	fn('Segments.prototype[@@iterator]', S[Symbol.iterator]);
+	const iterator = segments[Symbol.iterator]();
+	const I = Object.getPrototypeOf(iterator);
+	r['Segment Iterator proto'] = Object.getPrototypeOf(I) === Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+	r['Segment Iterator prototype keys'] = Reflect.ownKeys(I).map(String).sort().join(' ');
+	r['Segment Iterator instance keys'] = Reflect.ownKeys(iterator).map(String).join(' ');
+	prop('Segment Iterator.prototype.next', I, 'next');
+	fn('Segment Iterator.prototype.next', I.next);
+	prop('Segment Iterator.prototype[@@toStringTag]', I, Symbol.toStringTag);
+	const data = iterator.next().value;
+	r['segment data'] = Reflect.ownKeys(data).map((k) => k + ':' + attrs(Object.getOwnPropertyDescriptor(data, k))).join(', ');
+	r['segment data proto'] = Object.getPrototypeOf(data) === Object.prototype;
+	const word = new Intl.Segmenter('en', {granularity: 'word'}).segment('ab').containing(0);
+	r['word segment data'] = Reflect.ownKeys(word).map((k) => k + ':' + attrs(Object.getOwnPropertyDescriptor(word, k))).join(', ');
+	const step = iterator.next();
+	r['iterator result'] = Reflect.ownKeys(step).map((k) => k + ':' + attrs(Object.getOwnPropertyDescriptor(step, k)).replace(/ .*/, '')).join(', ');
 
 	// The objects the other methods return.
 	const kinds = {

@@ -177,7 +177,15 @@ var (
 		resolve: func(req request) (formatter, error) { return resolveCollator(req) },
 	}
 
-	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor}
+	segmenterCtor = &ctor{
+		name:    "Segmenter",
+		tag:     'S',
+		goSvc:   gointl.ServiceSegmenter,
+		options: stringOptions("localeMatcher", "granularity"),
+		resolve: func(req request) (formatter, error) { return resolveSegmenter(req) },
+	}
+
+	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -528,6 +536,16 @@ var bridge = []*quickjs.Builtin{
 		y, _ := a.WTF8(2)
 		return a.VM().NewInt(c.c.Compare(x, y)), nil
 	}),
+	resolveBuiltin(segmenterCtor),
+	quickjs.NewBuiltin("breaks", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		s, ok, err := formatterOf[*segmenter](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		text, _ := a.WTF8(1)
+		return intArray(a.VM(), s.breaks(text))
+	}),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.
@@ -625,6 +643,15 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 	a, err := vm.NewArray(vals...)
 	free()
 	return a, err
+}
+
+// intArray is l as a javascript array of numbers.
+func intArray(vm *quickjs.VM, l []int) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, len(l))
+	for i, n := range l {
+		vals[i] = vm.NewInt(n)
+	}
+	return vm.NewArray(vals...)
 }
 
 // jsErr returns err as the javascript error ECMA-402 has for it: a jsError's

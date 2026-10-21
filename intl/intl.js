@@ -17,12 +17,13 @@
 (function (P, zone, optionLists,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
-	colResolve, colCompare) {
+	colResolve, colCompare, segResolve, segBreaks) {
 	'use strict';
 
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
 		Object, String, Number, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance,
+		iterator, iteratorPrototype, stringSlice,
 		dateNow, dateValueOf, numberValueOf, bigintValueOf
 	} = P;
 	const lists = parse(optionLists);
@@ -182,6 +183,27 @@
 			args[n + 1] = s;
 		}
 		return args;
+	}
+
+	// optionsObject is ECMA-402's GetOptionsObject: the constructors added
+	// after the first edition take an object or nothing, and convert no
+	// other value.
+	function optionsObject(o) {
+		if (o === undefined) {
+			return noOptions;
+		}
+		if (o === null || (typeof o !== 'object' && typeof o !== 'function')) {
+			throw new TypeError('Options must be an object');
+		}
+		return o;
+	}
+
+	// requireNew throws the TypeError of a constructor called as a function,
+	// for those added after the first edition.
+	function requireNew(newTarget, name) {
+		if (newTarget === undefined) {
+			throw new TypeError("Constructor Intl." + name + " requires 'new'");
+		}
 	}
 
 	function toOptions(o) {
@@ -490,6 +512,106 @@
 		[toStringTag]: 'Intl.Collator'
 	});
 
+	// --------------------------------------------------------------- Segmenter
+
+	function Segmenter(locales = undefined, options = undefined) {
+		requireNew(new.target, 'Segmenter');
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('Segmenter', segResolve, pushOptions(args, optionsObject(options), lists.Segmenter)));
+	}
+
+	defineConstructor(Segmenter, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('Segmenter', locales, options);
+		}
+	}, {
+		segment(string) {
+			const i = internal(this, 'Segmenter');
+			return new Slots({__proto__: segmentsPrototype}, {
+				__proto__: null, kind: 'Segments', segmenter: i, string: toString(string), breaks: undefined
+			});
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'Segmenter'), optionsOf));
+		},
+		[toStringTag]: 'Intl.Segmenter'
+	});
+
+	// breaks returns what the segBreaks Builtin answers for s, a Segments'
+	// slots: 1 if its segments may be word-like, else 0, then where each
+	// segment ends, as twice the offset, plus one for a word-like segment.
+	// It is asked on first use and kept.
+	function breaks(s) {
+		if (s.breaks === undefined) {
+			s.breaks = call(s.segmenter, segBreaks, s.string);
+		}
+		return s.breaks;
+	}
+
+	function half(n) {
+		return (n - n % 2) / 2;
+	}
+
+	// segmentAt is the segment data of the segment of s that holds the
+	// offset n, which is in s's string, and where it ends: the first break
+	// past n, found by bisection, ends it.
+	function segmentAt(s, n) {
+		const b = breaks(s);
+		let lo = 1, hi = b.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (half(b[mid]) > n) {
+				hi = mid;
+			} else {
+				lo = mid + 1;
+			}
+		}
+		const start = lo === 1 ? 0 : half(b[lo - 1]), end = half(b[lo]);
+		const segment = apply(stringSlice, s.string, [start, end]);
+		// An object literal, so no setter on Object.prototype takes isWordLike.
+		const d = b[0] === 1 ?
+			{segment: segment, index: start, input: s.string, isWordLike: b[lo] % 2 === 1} :
+			{segment: segment, index: start, input: s.string};
+		return {__proto__: null, data: d, end: end};
+	}
+
+	// toIntegerOrInfinity is ECMA-262's ToIntegerOrInfinity.
+	function toIntegerOrInfinity(v) {
+		const n = +v;
+		if (n !== n) {
+			return 0;
+		}
+		return n === n + 1 ? n : n - n % 1;
+	}
+
+	const segmentsPrototype = define({}, {
+		containing(index) {
+			const s = internal(this, 'Segments');
+			const n = toIntegerOrInfinity(index);
+			if (n < 0 || n >= s.string.length) {
+				return undefined;
+			}
+			return segmentAt(s, n).data;
+		},
+		[iterator]() {
+			const s = internal(this, 'Segments');
+			return new Slots({__proto__: segmentIteratorPrototype}, {__proto__: null, kind: 'Segment Iterator', segments: s, at: 0});
+		}
+	});
+
+	const segmentIteratorPrototype = define({__proto__: iteratorPrototype}, {
+		next() {
+			const i = internal(this, 'Segment Iterator'), s = i.segments;
+			if (i.at >= s.string.length) {
+				return {value: undefined, done: true};
+			}
+			const r = segmentAt(s, i.at);
+			i.at = r.end;
+			return {value: r.data, done: false};
+		},
+		[toStringTag]: 'Segmenter String Iterator'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
@@ -497,6 +619,7 @@
 		NumberFormat: NumberFormat,
 		Collator: Collator,
 		PluralRules: PluralRules,
+		Segmenter: Segmenter,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
 		},

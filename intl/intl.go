@@ -21,6 +21,8 @@
 //     collation types, sensitivity, numeric, caseFirst, ignorePunctuation
 //     and search usage, from go-intl (internal/gointl), which is ICU's
 //     collation in Go over the data Chromium ships.
+//   - Intl.Segmenter: graphemes, words, with the dictionaries of Thai, Lao,
+//     Khmer, Burmese, Chinese and Japanese, and sentences.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
@@ -52,7 +54,7 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.Segmenter, Intl.RelativeTimeFormat,
+// Not implemented: Intl.RelativeTimeFormat,
 // Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
 // Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
 // roundingIncrement and roundingPriority but only implement their defaults,
@@ -78,6 +80,11 @@
 //   - en-IE and fr-MA with hourCycle h11 write the day period "am" and "AM"
 //     where Chromium writes "a.m.".
 //   - om-KE's short era is "BA" where Chromium's is "CE".
+//
+// Intl.Segmenter breaks words by ICU's rules, which Chromium changes: there a
+// full stop or a colon between letters ends a word, so "U.S.A" is five
+// segments and "a:b" three, and Lao and Khmer break by smaller dictionaries
+// of Chromium's own, which find other words in some runs.
 //
 // Error messages are worded differently, though the errors thrown are the
 // same.

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/liustack/quickjs"
 )
@@ -83,6 +84,57 @@ func goldenDropCalendar(expr string) string {
 	})
 }
 
+// goldenWordsAsChromium takes the json of word segments as the Segmenter
+// golden expressions write them, [segment, index, isWordLike], and returns
+// them with every word cut at its full stops and colons and every run of
+// Lao and Khmer words joined, which both break rules agree on.
+func goldenWordsAsChromium(answer string) (string, bool) {
+	var segs [][3]any
+	if json.Unmarshal([]byte(answer), &segs) != nil {
+		return "", false
+	}
+
+	laoKhmer := func(s string) bool {
+		for _, r := range s {
+			if unicode.In(r, unicode.Lao, unicode.Khmer) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []string
+	joinable := false
+	for _, seg := range segs {
+		s, _ := seg[0].(string)
+		word, _ := seg[2].(bool)
+		if word && laoKhmer(s) {
+			if joinable {
+				out[len(out)-1] += s
+				continue
+			}
+			out = append(out, s)
+			joinable = true
+			continue
+		}
+
+		joinable = false
+		if !word {
+			out = append(out, s)
+			continue
+		}
+
+		start := 0
+		for i, r := range s {
+			if r == '.' || r == ':' {
+				out = append(out, s[start:i], string(r))
+				start = i + 1
+			}
+		}
+		out = append(out, s[start:])
+	}
+	return strings.Join(out, "|"), true
+}
+
 // goldenDifference is a difference from Chromium that is understood: the
 // expression, Chromium's answer and ours match a known cause. Anything else
 // fails the test. recorded holds Chromium's answer to every expression of
@@ -93,6 +145,30 @@ type goldenDifference struct {
 }
 
 var goldenDifferences = []goldenDifference{
+	{
+		// Chromium patches ICU's word break rules: a full stop is MidNum
+		// rather than MidNumLet, and a colon no MidLetter, so "U.S.A" and
+		// "a:b" are words apart there ("3.14" is one in both). And it ships
+		// Lao and Khmer dictionaries of its own, smaller than ICU's, which
+		// break some runs into other words. go-intl has ICU's rules and
+		// dictionaries. The answers have to be the same once words are cut
+		// at full stops and colons and runs of Lao and Khmer words are
+		// joined.
+		why: "Chromium's word break rules and Lao and Khmer dictionaries are its own",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, `granularity:"word"`) {
+				return false
+			}
+
+			g, ok := goldenWordsAsChromium(got)
+			if !ok {
+				return false
+			}
+
+			w, ok := goldenWordsAsChromium(want)
+			return ok && g == w
+		},
+	},
 	{
 		// Only the Gregorian calendar has data everywhere. buddhist and
 		// persian have it where they are the default (th, fa). Any other
@@ -121,6 +197,7 @@ var goldenSets = []struct {
 }{
 	{"", goldenExprs},
 	{"collator", collatorExprs},
+	{"segmenter", segmenterExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for
