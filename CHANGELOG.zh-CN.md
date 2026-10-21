@@ -6,7 +6,7 @@
 
 ### 新增
 
-- `Intl.DateTimeFormat` 的四个格式化方法支持 Temporal 值，按类型补默认字段并检查日历。`formatRange` 和 `formatRangeToParts` 也支持 Date 和数字。Temporal 日期的本地化使用同一套格式，新增 ISO 日历支持。通过共用的 go-intl 数据包支持 Chromium 的全部 18 种日历。
+- `Intl.DateTimeFormat` 的四个格式化方法支持 Temporal 值，按类型补默认字段并检查日历。`formatRange` 和 `formatRangeToParts` 也支持 Date 和数字。Temporal 日期的本地化使用同一套格式，通过共用的 go-intl 数据包支持 Chromium 的全部 18 种日历，包括 ISO。
 - `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们和其他构造器共用 go-intl 数据。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 可以省去显示名称及中文、日文词典。用了 `intl` 的程序需要附上 `NOTICE.md` 所列声明。当前体积和内存测量见 `docs/fork-changes/time-and-intl.md`。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
 - `VM.SetRegExpCache`、`DefaultRegExpCache` 和 `DefaultRegExpCacheBytes`：一个 VM 最多留多少个编译好的正则，占多少字节（默认 256 个、1 MiB）。缓存算进内存上限，贴着上限跑的 VM 可以把缓存调小或关掉。
@@ -29,7 +29,7 @@
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
-- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。
+- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.16 MB。指定用例中，预热后的数字格式化约慢 11%，日期格式化约慢 29.4% 至 39.5%，命中缓存的构造基本不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
 - Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
 - 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
 - 在 Windows 上，`Date.now()` 和 `new Date()` 到 2038 年不再溢出。
