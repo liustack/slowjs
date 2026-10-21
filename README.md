@@ -1184,6 +1184,14 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   about 55 ns, loop included, where the same call of a `RegisterHostFunc`
   function takes about 470 ns. A VM's context now carries an id, which is
   how a call finds its VM without a lock. Test: `builtin_test.go`.
+- `VM.SetStrip(StripSource)` compiles functions without their source, so
+  their `toString` shows `[native code]` as the engine's built-ins do, and
+  `StripDebug` leaves out line and column numbers too. It wraps
+  `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It
+  applies to every function the VM compiles from then on, those of the
+  page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in
+  any VM that loads it, which is what a polyfill playing built-ins wants.
+  Test: `strip_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.

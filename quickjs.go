@@ -675,6 +675,32 @@ func (m *VM) SetMaxStackSize(threshold uintptr) {
 	lib.XJS_SetMaxStackSize(m.runtime.tls, m.runtime.cRuntime, libc.Tsize_t(threshold))
 }
 
+// Strip says what a VM leaves out of the functions it compiles (see
+// [VM.SetStrip]).
+type Strip int
+
+const (
+	// StripSource leaves out the source text: the toString of a function
+	// shows [native code] instead, as it does for the engine's built-ins.
+	StripSource Strip = Strip(lib.MJS_STRIP_SOURCE)
+	// StripDebug leaves out the file name, line and column numbers, so a
+	// stack frame of the function shows only its name, and the source too.
+	StripDebug Strip = Strip(lib.MJS_STRIP_DEBUG)
+)
+
+// SetStrip sets what m leaves out of the functions it compiles from then on:
+// StripSource, StripDebug, both or 0, the default, for nothing. That is every
+// function m compiles: from source by Eval and the like, into bytecode by
+// Compile, and in the page's own code by eval and new Function. Functions
+// compiled before keep what they have. The bytecode of Compile keeps what is
+// left out left out in any VM that loads it, which suits a script that plays
+// a built-in, such as a polyfill whose functions should not show their
+// source: compile it on a VM of its own, so that the page's functions keep
+// their source.
+func (m *VM) SetStrip(s Strip) {
+	lib.XJS_SetStripInfo(m.runtime.tls, m.runtime.cRuntime, int32(s))
+}
+
 // SetCanBlock configures m's blocking mode.
 func (m *VM) SetCanBlock(value bool) {
 	n := int32(0)
