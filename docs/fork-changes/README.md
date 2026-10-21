@@ -67,6 +67,6 @@ v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix t
 
 ## Adding a change
 
-- Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table above.
+- Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table above, with "Unreleased" as its release until it ships. Never write it into README.md, which only links here.
 - Say what it does, why it is safe, what it gains or costs with the machine and how it was measured, which tests check it, whether it has a C form, and what to do when `fixlib` stops on it.
 - Add it to [CHANGELOG.md](../../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../../CHANGELOG.zh-CN.md), and a change for speed to [performance.md](../performance.md).
