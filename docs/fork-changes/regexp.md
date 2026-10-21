@@ -27,7 +27,7 @@ If it reports that `Xlre_compile`, `Xlre_exec`, `_lre_exec_backtrack`, `Xlre_can
 
 ## Alternatives that cannot match are not pushed
 
-Release: not released yet.
+Release: v0.26.17.
 
 A regexp of alternatives no longer tries each alternative that cannot match at a position. An alternation such as `(red|blue|...)` compiles to a chain of split ops, each pushing a state for the next alternative before the machine tries one, so at every position of the string the machine pushed and popped a state for each alternative, which for the 148 color names react-spring tests its values against (`new RegExp('(' + names.join('|') + ')(?!\\w)', 'g')`) was 147 states per position. Two changes, both in `lib/regexskip.go`:
 

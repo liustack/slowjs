@@ -59,7 +59,7 @@ Tests: `intl/tzdst_test.go`.
 
 ## Intl calls Go through Builtins
 
-Release: not released yet.
+Release: v0.26.17.
 
 Package `intl` calls Go through `Builtin`s (see [go-api.md](go-api.md#builtin-a-go-function-called-as-a-built-in)), with no reflection and no JSON on the way in, and keeps its formatters in one registry for the whole process: a `NumberFormat` made with the same locale and options in another VM, or spelled another way, reuses the one already made. The registry keeps up to 1024 formatters and drops the oldest, and an object whose formatter was dropped makes it again on its next call. Its functions have the shape of built-ins (`length`, `name`, no `prototype`, `toString` showing `[native code]`, accessors and descriptors as ECMA-402 has them), and a page that changes `Array.prototype`, `Object.prototype`, `JSON` or other built-ins after `Register` does not change what it does.
 

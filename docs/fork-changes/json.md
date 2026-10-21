@@ -10,7 +10,7 @@ read_when:
 
 ## JSON copies runs of plain characters
 
-Release: not released yet.
+Release: v0.26.17.
 
 `JSON.stringify` and `JSON.parse` copy the plain characters of a string in runs. Both went through a string one character at a time: `JSON.stringify` read each with `string_getc` and wrote it with `string_buffer_putc`, and `JSON.parse` put each byte of its text into the new string the same way, decoding UTF-8 with `unicode_from_utf8`. Now, at the start of each turn of those loops, `jsonQuoteRun` and `jsonStringRun` (`lib/jsonstr.go`) copy the run of characters the loop would put as they are, in one Go copy, and leave the loop the character that ended the run: one to escape, the end of the string, a surrogate (`JSON.stringify` decides how to write it) or a byte that is not valid UTF-8 (`JSON.parse` throws the same error at the same place).
 
