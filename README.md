@@ -883,6 +883,24 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   state it popped. So an interrupt stops a match after a different number
   of ops. And states not pushed take no room on the backtracking stack, so
   a regexp near the memory limit can go on where it ran out of memory.
+  `BenchmarkRegexColors` times a `replace` with the react-spring regexp of
+  color names: on linux/amd64 (AMD EPYC, one core) it takes 5.9 µs where
+  it took 44.5 on a value with no color name, and 8.5 µs where it took
+  20.2 on one with a name (the medians of 10 runs). Without PGO, with the
+  same HTML and the same memory of a VM, a render of tifa's example shop
+  takes about 1% to 2.5% less time, and the MUI pages of tifa's test apps
+  about 3% to 5% less. The medians of 10 rounds against `a84c8ed`, before
+  the split ops counted their steps toward the interrupt check, were 0.989
+  for the shop (0.981 to 1.015 over the rounds) and 0.946 to 0.954 for the
+  MUI pages, and two runs against `80261af` gave 0.983 and 0.987 for the
+  shop and 0.947 to 0.965 for the MUI pages. With the steps counted, two
+  runs of 3 rounds against `de42e83` gave 0.983 and 0.975 for the shop and
+  0.962 to 0.993 for the MUI pages. The bench pages moved by less than
+  their noise (table varies by 10% between rounds by itself). Other work
+  ran on other cores of the machine during the rounds (a load average of
+  up to 6). Each figure is from one build of each side: where the code
+  sits moves a render by up to 2.4% (see the frame of `JS_CallInternal`
+  above).
   `fixlib` puts the question to `lreSplit` into the handler of the split
   ops in all 13 files, after it finds that the handler pushes the way it
   computes and jumps to the next op, and pins `lre_canonicalize`,
@@ -1128,6 +1146,15 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   cycle collector frees a context that only they hold alive, and
   `JS_FreeContext` lets them go. Everything else, an object that is not
   an ordinary extensible one or has another shape, takes the old path.
+  The shapes held add one or two shapes to a VM (88 to 176 bytes in one VM
+  of the shop). Without PGO, on linux/amd64 (AMD EPYC, one core), with the
+  same HTML, a render of tifa's example shop takes 0.982 of the time it
+  took with the regexp change above alone (the median of 10 rounds, 0.967
+  to 0.989), the MUI pages 0.993 to 1.000 and the bench pages 0.984 and
+  0.995, each from one build of each side. Against `80261af`, with the
+  code elsewhere, the shop took 0.972 (0.951 to 1.003), the MUI pages 0.990
+  to 1.004, and the bench pages 0.993 and 0.995. On `de42e83`, 3 rounds gave
+  the shop 0.988 and the MUI pages 0.983 to 0.997.
   `fixlib` puts the three calls into all 13 files, and checks the text of
   `js_function_set_properties`, `add_property`, `find_hashed_shape_prop`,
   `add_shape_property`, `js_shape_prepare_update`, `js_clone_shape`,
@@ -1907,6 +1934,7 @@ go test -run Eq ./lib                                    # comparisons give what
 go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -run '^$' -bench Call .                          # the cost of each kind of call
+go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
 done
