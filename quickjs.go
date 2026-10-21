@@ -15,9 +15,11 @@
 // The engine has no Intl. ECMA-402 is not implemented by the C library this
 // package wraps, so a page or bundle reaching for Intl.DateTimeFormat gets a
 // ReferenceError, and the toLocale* methods it ships ignore both their locale
-// and their timeZone argument. Package [github.com/liustack/quickjs/intl] provides
-// Intl.DateTimeFormat and Intl.NumberFormat, en-US over Go's time zone
-// database, for a VM that opts in by calling its Register.
+// and their timeZone argument. Package [github.com/liustack/quickjs/intl] adds
+// Intl.DateTimeFormat, Intl.NumberFormat and Intl.PluralRules, with CLDR data
+// for every locale Chromium has, and replaces those toLocale* methods, for a VM
+// that opts in by calling its Register. With no locale argument the locale is
+// en-US, and with no timeZone option the zone is UTC.
 //
 // # Performance
 //

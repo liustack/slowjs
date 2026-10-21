@@ -1,7 +1,8 @@
 #!/bin/sh
-# Copyright 2026 The quickjs-go Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style
-# license that can be found in the LICENSE file.
+# Copyright (c) 2026 The liustack/quickjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
 
 # qjs-sync.sh keeps internal/gointl a copy of go-intl
 # (https://github.com/go-quickjs/go-intl) at the commit in UPSTREAM, with our
@@ -11,11 +12,13 @@
 # script, qjs.patch, qjs_*.go, qjsdata/, internal/qjspack/, the qjs_walk.go of
 # each data package), and UPSTREAM. Everything else is go-intl's, rewritten
 # from github.com/go-quickjs/go-intl to github.com/liustack/quickjs/internal/gointl
-# and changed only by qjs.patch, which is kept to the data loading layer:
-# source.go stops embedding data.pack and serves our packs instead,
-# internal/blob reports the pool parts it reads when the pack tool walks the
-# data, and dictbe.go takes a missing break dictionary for none, so that a
-# build without the CJK dictionary still segments.
+# and changed only by qjs.patch, which is kept to the data loading layer and
+# to notices: source.go stops embedding data.pack and serves our packs
+# instead, internal/blob reports the pool parts it reads when the pack tool
+# walks the data, dictbe.go takes a missing break dictionary for none, so
+# that a build without the CJK dictionary still segments, and the files
+# ported from calendrical_calculations (temporal/solar.go,
+# temporal/zoneinfo.go) say so in a header, as its Apache-2.0 license asks.
 #
 # Run it from anywhere: it works on the module the script is in.
 #

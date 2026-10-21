@@ -1,6 +1,7 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/quickjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 // Command gen builds intl/cldr.bin, the locale data package intl formats
 // with, from the JSON distribution of CLDR (github.com/unicode-org/cldr-json).
@@ -39,7 +40,7 @@
 // as the difference from its parent's data: the keys whose value differs, and
 // "∅∅∅" for a key the parent has and the locale does not.
 //
-// The README of the module says how to move to a new CLDR or Chromium.
+// docs/upgrading.md says how to move to a new CLDR, tzdb or Chromium.
 package main
 
 import (
@@ -62,7 +63,8 @@ import (
 )
 
 // cldrTag is the cldr-json release the data comes from. Changing it and
-// running the generator again is how the data is upgraded; see the README.
+// running the generator again is how the data is upgraded. See "Updating
+// the intl locale data" in docs/upgrading.md.
 const cldrTag = "48.2.3"
 
 var (

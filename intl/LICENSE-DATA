@@ -12,6 +12,13 @@ intl/internal/gen/overrides.go, which it is generated with) comes from:
     such as the Korean names of the North American time zones, which are
     also under the third notice below.
 
+intl/testdata/chromium/golden.json.gz and availability.json, which the tests
+and the generator read, hold what Chromium 156.0.8078.4 answered to Intl
+calls, recorded by intl/testdata/chromium/record.cjs: the formatted strings,
+resolved options and locale lists it made from the same ICU 78.2 data. They
+are under the same notices as icu.json.gz. The expressions in golden.json.gz
+were written for this fork.
+
 A program that embeds the data distributes it, and has to include these
 notices in its documentation or with its copies.
 

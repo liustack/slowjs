@@ -1,6 +1,10 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/quickjs Authors.
+// SPDX-License-Identifier: MIT AND BSD-3-Clause
+// The fork's code here is under the MIT license in LICENSE-MIT at the root of
+// this repository. Parts follow QuickJS (Copyright (c) 2017-2021 Fabrice
+// Bellard and Charlie Gordon, MIT, see LICENSE-LIBQUICKJS) as translated by
+// modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
+// lib/LICENSE).
 
 //go:build 386 || arm
 

@@ -1,6 +1,7 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/quickjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package main
 
@@ -100,7 +101,7 @@ type chromiumICU struct {
 func loadChromiumICU(path string) *chromiumICU {
 	f, err := os.Open(path)
 	if err != nil {
-		fail(fmt.Errorf("%v (see the README on recording Chromium's data)", err))
+		fail(fmt.Errorf("%v (docs/upgrading.md says how to record Chromium's data)", err))
 	}
 
 	defer f.Close()
