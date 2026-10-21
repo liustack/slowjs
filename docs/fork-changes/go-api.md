@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, NewArray, SetStrip and the text of an Error made in Go'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -8,6 +8,7 @@ read_when:
   - Calling VM.SetShapeCache
   - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
   - Hiding the source of a script's functions (SetStrip)
+  - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
 ---
 
 # The Go API
@@ -109,3 +110,13 @@ Release: not released yet.
 `VM.SetStrip(StripSource)` compiles functions without their source, so their `toString` shows `[native code]` as the engine's built-ins do, and `StripDebug` leaves out line and column numbers too. Both are values of `type Strip`. It wraps `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It applies to every function the VM compiles from then on, those of the page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in any VM that loads it, which is what a polyfill playing built-ins wants.
 
 Test: `strip_test.go`.
+
+## RunGC, MemorySize and GCThreshold
+
+Release: not released yet.
+
+`VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC now, `MemorySize` returns the memory the VM takes, as the memory limit and the GC threshold count it, and `GCThreshold` returns the threshold. The engine runs a GC when it makes an object and the memory would pass the threshold, then sets the threshold to 1.5 times what the GC left, so a threshold other than the one set last means the engine ran a GC since. `RunGC` leaves the threshold as it is.
+
+With these an embedder can collect between two calls into javascript, where the GC holds up no call, and set the threshold for the next one, as tifa does between two renders, without reading the runtime through `reflect`. As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and a call after `Close` panics.
+
+Test: `gc_test.go`.

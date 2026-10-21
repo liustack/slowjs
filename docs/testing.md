@@ -76,6 +76,7 @@ go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the 
 go test -run JSON ./lib                                  # JSON strings give what Node gives, and runs stay in their buffer
 go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
+go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 ```

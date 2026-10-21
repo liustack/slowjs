@@ -62,6 +62,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Error() of an Error made in Go | Unreleased | [go-api.md](go-api.md#error-of-an-error-made-in-go) |
 | NewArray | Unreleased | [go-api.md](go-api.md#newarray) |
 | SetStrip | Unreleased | [go-api.md](go-api.md#setstrip) |
+| RunGC, MemorySize and GCThreshold | Unreleased | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

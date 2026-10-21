@@ -64,10 +64,11 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`VM.NewArray(vals...)`**：用 Go 里建的值做一个数组，做法和数组字面量一样，页面在 `Array.prototype` 上放的 setter 不会被触发。[详情](docs/fork-changes/go-api.md#newarray)
 - **`VM.SetStrip(s)`** 和 `type Strip`：`StripSource` 编译函数时不留源码，函数的 `toString` 显示 `[native code]`，`StripDebug` 不留行号和列号。[详情](docs/fork-changes/go-api.md#setstrip)
 - **Go 里建的 `*Error` 的 `Error()`** 是 `Name: Message`，和 `Error.prototype.toString` 的写法一样，以前是空字符串。从 JavaScript 拿到的错误仍是引擎原来的文本。[详情](docs/fork-changes/go-api.md#error-of-an-error-made-in-go)
+- **`VM.RunGC()`、`VM.MemorySize()` 和 `VM.GCThreshold()`**：马上跑一次 GC，读 VM 占的内存和下次 GC 的阈值，这样程序可以在两次调用 JavaScript 之间回收，再给下一次设好阈值。[详情](docs/fork-changes/go-api.md#rungc-memorysize-and-gcthreshold)
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 
-前四项在 `main` 上，还没进任何发布版本。
+前五项在 `main` 上，还没进任何发布版本。
 
 ## 用了以后有什么不同
 

@@ -9,6 +9,7 @@
 - `NewBuiltin` 和 `VM.NewBuiltinFunction`：JavaScript 像调用 `Math.max` 这类内置函数那样调用的 Go 函数，用 `Args` 读参数，不做转换。在 Apple M4 上一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。它返回的 `*Error` 按 `Name` 抛成对应的错误。
 - `VM.NewArray`：用 Go 里建的值做一个数组，做法和数组字面量一样，页面在 `Array.prototype` 上放的 setter 不会被触发。
 - `VM.SetStrip`，配 `StripSource` 和 `StripDebug`：编译函数时不留源码（`toString` 显示 `[native code]`），或者不留行号和列号。
+- `VM.RunGC`、`VM.MemorySize` 和 `VM.GCThreshold`：马上跑一次 GC，按内存上限的算法读 VM 占的内存，读下次 GC 的阈值。程序可以在两次调用 JavaScript 之间回收，再给下一次设好阈值，tifa 就在两次渲染之间这样做。
 
 ### 变更
 
