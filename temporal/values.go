@@ -32,8 +32,11 @@ import (
 // the calendar and the zone are looked up, the rest is checked. Results go
 // back as arrays of numbers (VM.NewArray), in the same groups.
 
-// data is Temporal's calendars and zones, read once for the process.
-var data = sync.OnceValues(func() (*temporal.Data, error) { return temporal.LoadData(gointl.Embedded) })
+// data is Temporal's calendars and zones, read once for the process from
+// EmbeddedTemporalSource, the part of go-intl's data that Temporal reads.
+// So Temporal's own code references tz.bin alone: what else a program links
+// comes from package intl, which toLocaleString needs.
+var data = sync.OnceValues(func() (*temporal.Data, error) { return temporal.LoadData(gointl.EmbeddedTemporalSource{}) })
 
 // zones caches the zones of the identifiers temporal.js keeps, which are
 // those Identifier gives: a few hundred names and offsets at most.

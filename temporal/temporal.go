@@ -29,13 +29,14 @@
 // reader's zone names it, as it has to on a server anyway.
 //
 // The zone and calendar data is go-intl's, built into the binary: ICU's
-// zoneinfo64 (ICU 78.3) and ICU's calendar data. The host's zoneinfo is never
-// read, so Temporal gives the same answers on every machine, a container
-// without /usr/share/zoneinfo included. Package intl resolves zones with
-// Go's time package instead, from the host's zoneinfo or time/tzdata, so the
-// two can disagree where the two databases do, and a
-// ZonedDateTime.prototype.toLocaleString in a named zone needs a zoneinfo
-// Go can read.
+// zoneinfo64 (ICU 78.3) and ICU's calendar data, the 91 KB pack of it that
+// Temporal reads, without the rest of go-intl's data. The host's zoneinfo is
+// never read, so Temporal gives the same answers on every machine, a
+// container without /usr/share/zoneinfo included. Package intl resolves
+// zones with Go's time package instead, from the host's zoneinfo or
+// time/tzdata, so the two can disagree where the two databases do, and a
+// ZonedDateTime.prototype.toLocaleString in a named zone needs a zoneinfo Go
+// can read.
 //
 // # toLocaleString
 //
