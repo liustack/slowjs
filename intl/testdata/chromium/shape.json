@@ -614,6 +614,364 @@
 	"Intl.DurationFormat instance toString": "[object Intl.DurationFormat]",
 	"Intl.DurationFormat instance keys": "",
 	"Intl.DurationFormat.prototype.resolvedOptions()": "TypeError",
+	"Intl keys": "getCanonicalLocales supportedValuesOf DateTimeFormat NumberFormat Collator PluralRules RelativeTimeFormat ListFormat Locale DisplayNames Segmenter DurationFormat Symbol(Symbol.toStringTag)",
+	"Intl.Locale property": "-cw function",
+	"Intl.Locale": {
+		"name": "-c- \"Locale\"",
+		"length": "-c- 1",
+		"prototype": "--- {}",
+		"keys": "length name prototype",
+		"constructor": true,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype property": "--- {}",
+	"Intl.Locale keys": "length name prototype",
+	"Intl.Locale.prototype keys": "constructor toString maximize minimize language script region variants baseName calendar caseFirst collation firstDayOfWeek hourCycle numeric numberingSystem getCalendars getCollations getHourCycles getNumberingSystems getTimeZones getTextInfo getWeekInfo Symbol(Symbol.toStringTag)",
+	"Intl.Locale.prototype proto": true,
+	"Intl.Locale.prototype toString": "[object Intl.Locale]",
+	"Intl.Locale.prototype.constructor property": "-cw function",
+	"Intl.Locale.prototype.constructor": {
+		"name": "-c- \"Locale\"",
+		"length": "-c- 1",
+		"prototype": "--- {}",
+		"keys": "length name prototype",
+		"constructor": true,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.toString property": "-cw function",
+	"Intl.Locale.prototype.toString": {
+		"name": "-c- \"toString\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.maximize property": "-cw function",
+	"Intl.Locale.prototype.maximize": {
+		"name": "-c- \"maximize\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.minimize property": "-cw function",
+	"Intl.Locale.prototype.minimize": {
+		"name": "-c- \"minimize\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.language property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.language getter": {
+		"name": "-c- \"get language\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.language get": {
+		"name": "-c- \"get language\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.script property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.script getter": {
+		"name": "-c- \"get script\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.script get": {
+		"name": "-c- \"get script\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.region property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.region getter": {
+		"name": "-c- \"get region\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.region get": {
+		"name": "-c- \"get region\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.variants property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.variants getter": {
+		"name": "-c- \"get variants\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.variants get": {
+		"name": "-c- \"get variants\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.baseName property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.baseName getter": {
+		"name": "-c- \"get baseName\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.baseName get": {
+		"name": "-c- \"get baseName\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.calendar property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.calendar getter": {
+		"name": "-c- \"get calendar\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.calendar get": {
+		"name": "-c- \"get calendar\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.caseFirst property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.caseFirst getter": {
+		"name": "-c- \"get caseFirst\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.caseFirst get": {
+		"name": "-c- \"get caseFirst\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.collation property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.collation getter": {
+		"name": "-c- \"get collation\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.collation get": {
+		"name": "-c- \"get collation\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.firstDayOfWeek property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.firstDayOfWeek getter": {
+		"name": "-c- \"get firstDayOfWeek\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.firstDayOfWeek get": {
+		"name": "-c- \"get firstDayOfWeek\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.hourCycle property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.hourCycle getter": {
+		"name": "-c- \"get hourCycle\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.hourCycle get": {
+		"name": "-c- \"get hourCycle\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.numeric property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.numeric getter": {
+		"name": "-c- \"get numeric\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.numeric get": {
+		"name": "-c- \"get numeric\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.numberingSystem property": "-c get:function set:undefined",
+	"Intl.Locale.prototype.numberingSystem getter": {
+		"name": "-c- \"get numberingSystem\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.numberingSystem get": {
+		"name": "-c- \"get numberingSystem\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getCalendars property": "-cw function",
+	"Intl.Locale.prototype.getCalendars": {
+		"name": "-c- \"getCalendars\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getCollations property": "-cw function",
+	"Intl.Locale.prototype.getCollations": {
+		"name": "-c- \"getCollations\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getHourCycles property": "-cw function",
+	"Intl.Locale.prototype.getHourCycles": {
+		"name": "-c- \"getHourCycles\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getNumberingSystems property": "-cw function",
+	"Intl.Locale.prototype.getNumberingSystems": {
+		"name": "-c- \"getNumberingSystems\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getTimeZones property": "-cw function",
+	"Intl.Locale.prototype.getTimeZones": {
+		"name": "-c- \"getTimeZones\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getTextInfo property": "-cw function",
+	"Intl.Locale.prototype.getTextInfo": {
+		"name": "-c- \"getTextInfo\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.getWeekInfo property": "-cw function",
+	"Intl.Locale.prototype.getWeekInfo": {
+		"name": "-c- \"getWeekInfo\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Locale.prototype.Symbol(Symbol.toStringTag) property": "-c- \"Intl.Locale\"",
+	"Intl.Locale instance toString": "[object Intl.Locale]",
+	"Intl.Locale instance keys": "",
+	"Intl.Locale.prototype.language": "TypeError",
 	"Segments proto": true,
 	"Segments prototype keys": "Symbol(Symbol.iterator) containing",
 	"Segments toString": "[object Object]",
@@ -674,6 +1032,10 @@
 	"DurationFormat formatToParts proto": true,
 	"DurationFormat formatToParts literal": "type:ecw, value:ecw",
 	"DurationFormat formatToParts literal proto": true,
+	"Locale getTextInfo": "direction:ecw",
+	"Locale getTextInfo proto": true,
+	"Locale getWeekInfo": "firstDay:ecw, weekend:ecw",
+	"Locale getWeekInfo proto": true,
 	"Date.prototype.toLocaleString property": "-cw function",
 	"Date.prototype.toLocaleString": {
 		"name": "-c- \"toLocaleString\"",

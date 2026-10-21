@@ -131,6 +131,40 @@ function shape() {
 		}
 	}
 
+	// Intl.Locale, which has getters and no supportedLocalesOf, and the
+	// order of Intl's keys and its prototype's.
+	// V8's v8BreakIterator is its own, no part of ECMA-402.
+	r['Intl keys'] = Reflect.ownKeys(Intl).map(String).filter((k) => k !== 'v8BreakIterator').join(' ');
+	prop('Intl.Locale', Intl, 'Locale');
+	fn('Intl.Locale', Intl.Locale);
+	prop('Intl.Locale.prototype', Intl.Locale, 'prototype');
+	r['Intl.Locale keys'] = Reflect.ownKeys(Intl.Locale).map(String).sort().join(' ');
+	{
+		const P = Intl.Locale.prototype, p = 'Intl.Locale.prototype';
+		r[p + ' keys'] = Reflect.ownKeys(P).map(String).join(' ');
+		r[p + ' proto'] = Object.getPrototypeOf(P) === Object.prototype;
+		r[p + ' toString'] = Object.prototype.toString.call(P);
+		for (const k of Reflect.ownKeys(P)) {
+			const name = p + '.' + String(k);
+			prop(name, P, k);
+			const d = Object.getOwnPropertyDescriptor(P, k);
+			if (typeof d.value === 'function') {
+				fn(name, d.value);
+			} else if (d.get !== undefined) {
+				fn(name + ' get', d.get);
+			}
+		}
+		const o = new Intl.Locale('en');
+		r['Intl.Locale instance toString'] = Object.prototype.toString.call(o);
+		r['Intl.Locale instance keys'] = Reflect.ownKeys(o).map(String).join(' ');
+		try {
+			P.language;
+			r[p + '.language'] = 'no error';
+		} catch (e) {
+			r[p + '.language'] = e.constructor.name;
+		}
+	}
+
 	// What Intl.Segmenter's segment returns, and its iterator.
 	const segments = new Intl.Segmenter('en').segment('ab');
 	const S = Object.getPrototypeOf(segments);
@@ -169,6 +203,8 @@ function shape() {
 		'DurationFormat resolvedOptions': new Intl.DurationFormat('en', {fractionalDigits: 2}).resolvedOptions(),
 		'DurationFormat formatToParts': new Intl.DurationFormat('en').formatToParts({hours: 1, minutes: 2})[0],
 		'DurationFormat formatToParts literal': new Intl.DurationFormat('en').formatToParts({hours: 1, minutes: 2})[3],
+		'Locale getTextInfo': new Intl.Locale('ar').getTextInfo(),
+		'Locale getWeekInfo': new Intl.Locale('en-US').getWeekInfo(),
 	};
 	for (const k of Object.keys(kinds)) {
 		const o = kinds[k];

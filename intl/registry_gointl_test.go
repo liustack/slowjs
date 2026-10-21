@@ -35,6 +35,10 @@ var goIntlUses = []struct{ make, use, want string }{
 	{`var df = new Intl.DurationFormat('de', {style: 'digital'})`,
 		`df.format({hours: 1, minutes: 2, seconds: 3}) + ' ' + df.formatToParts('PT1M').length + ' ' + df.resolvedOptions().minutes`,
 		"1:02:03 5 2-digit"},
+	{`var loc = new Intl.Locale('de-at', {hourCycle: 'h12'})`,
+		`loc.maximize() + ' ' + loc.getWeekInfo().firstDay + ' ' + loc.getHourCycles() + ' ' + loc.getTimeZones() + ' ' + ` +
+			`new Intl.NumberFormat(loc).format(1.5) + ' ' + Intl.supportedValuesOf('unit').length`,
+		"de-Latn-AT-u-hc-h12 1 h12 Europe/Vienna 1,5 45"},
 }
 
 // goIntlHold makes the objects of goIntlUses, and goIntlCheck uses them: it

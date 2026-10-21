@@ -65,6 +65,14 @@ import (
 //     Chromium, in testdata/chromium: add the new constructor's uses to
 //     tamper.js and shape.js there and record them again (record.cjs).
 //
+// # Objects that are not formatters
+//
+// An Intl.Locale is a tag and what its getters answer, which localeNew works
+// out once and javascript keeps in the object's slots. Nothing of it goes in
+// the registry: its methods pass the tag to localeInfo, which answers from
+// go-intl's LocaleInfo, and Intl.supportedValuesOf answers lists made once
+// per process.
+//
 // # Formatters from internal/gointl
 //
 // A go-intl formatter, such as a *gointl.NumberFormat or a *gointl.Collator,
@@ -725,6 +733,47 @@ var bridge = []*quickjs.Builtin{
 		}
 
 		return stringArray(a.VM(), l)
+	}),
+	// localeCheck throws the RangeError of Intl.Locale for its tag or one of
+	// the options checkLocale checks.
+	quickjs.NewBuiltin("localeCheck", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		kind, _ := a.String(0)
+		s, _ := a.String(1)
+		if err := checkLocale(kind, s); err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return quickjs.UndefinedValue, nil
+	}),
+	// localeNew takes the tag and the options of Intl.Locale, each a string
+	// or undefined, and answers the json of the new Locale's slots.
+	quickjs.NewBuiltin("localeNew", 1+locOptions, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		var opts [locOptions]*string
+		for i := range opts {
+			if s, ok := a.String(1 + i); ok {
+				opts[i] = &s
+			}
+		}
+		r, err := newLocale(tag, &opts)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		s, err := localeJSON(r)
+		if err != nil {
+			return quickjs.Value{}, err
+		}
+
+		return a.VM().NewString(s)
+	}),
+	// localeInfo answers what the method of Intl.Locale named by its second
+	// argument answers for the tag of a Locale, its first: maximize and
+	// minimize the tag of the Locale to make.
+	quickjs.NewBuiltin("localeInfo", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		what, _ := a.String(1)
+		return localeInfo(a.VM(), tag, what)
 	}),
 }
 

@@ -34,6 +34,10 @@
 //   - Intl.DurationFormat: every style and each unit's own, digital
 //     clocks with fractional seconds, and durations given as objects or as
 //     Temporal's duration strings ("PT1H30M"), as Chromium takes them.
+//   - Intl.Locale: tags built from options, likely subtags added and
+//     removed, every getter, and the calendars, collations, hour cycles,
+//     numbering systems, time zones, text direction and week of a locale.
+//     A Locale stands for its tag wherever a constructor takes locales.
 //   - Intl.supportedValuesOf, which lists the calendars, collations,
 //     currencies, numbering systems, time zones and units the constructors
 //     take.
@@ -107,6 +111,13 @@
 // Kong, Macao, Palestine and the Falkland Islands ("Hong Kong" for "Hong
 // Kong SAR China"). Here the names are CLDR's. The narrow names of de-CH's
 // era and th's time zone are go-intl's, which ICU writes otherwise.
+//
+// Intl.Locale's getTimeZones for the world, 001, leaves out five zones that
+// Chromium lists, EST5EDT, CST6CDT, MST7MDT, PST8PDT and Factory. Its
+// baseName of a tag with -u-va-posix leaves the extension out, which V8
+// keeps ("en-US-u-va-posix"). An unknown region in -u-rg-, as in
+// "en-u-rg-xxzzzz", leaves the locale's own region in place for the hour
+// cycle and the week, where Chromium takes the world's.
 //
 // Intl.supportedValuesOf("calendar") lists gregory only, the calendar
 // DateTimeFormat formats in every locale, where Chromium lists 18. Its

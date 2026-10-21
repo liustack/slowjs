@@ -271,6 +271,75 @@ var goldenDifferences = []goldenDifference{
 				strings.Join(named, ",") == want
 		},
 	},
+	{
+		// ICU's zones of region 001 have five that go-intl's data puts in
+		// no region: the POSIX style zones, such as EST5EDT, and Factory.
+		why: "Chromium's ICU data has five zones more in 001",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeTimeZones && got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(z string) bool {
+					return slices.Contains([]string{"CST6CDT", "EST5EDT", "Factory", "MST7MDT", "PST8PDT"}, z)
+				}), ",")
+			})
+		},
+	},
+	{
+		// V8 takes the baseName from ICU, which reads -u-va-posix as the
+		// variant POSIX, and keeps the extension in it too.
+		why: "V8 reads -u-va-posix as a variant",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeBaseName && want == got+"-u-va-posix" || field == localeVariants && want == "posix"
+			})
+		},
+	},
+	{
+		// Chromium's ICU, 78, reads the region of an unknown -u-rg- value,
+		// "xx", as a region without data, and takes the hour cycle and the
+		// week of the world, 001; go-intl, as Node's ICU, the locale's own.
+		// And it takes h12 for und-ZZ, where go-intl takes 001's h23.
+		why: "Chromium's ICU reads unknown regions otherwise",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, `Locale("en-u-rg-xxzzzz")`) && !strings.Contains(expr, `Locale("und-ZZ")`) &&
+				!strings.Contains(expr, `Locale("und-Zzzz-ZZ")`) {
+				return false
+			}
+
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeHourCycles || field == localeWeekInfo
+			})
+		},
+	},
+}
+
+// The fields of localeShow's answer, by index, that the differences of
+// Intl.Locale look at.
+const (
+	localeBaseName   = 1
+	localeVariants   = 5
+	localeHourCycles = 17
+	localeTimeZones  = 19
+	localeWeekInfo   = 21
+)
+
+// localeDiffers reports whether expr writes out an Intl.Locale with
+// localeShow and each field of got that is not want's is explained.
+func localeDiffers(expr, got, want string, explained func(field int, got, want string) bool) bool {
+	if !strings.HasPrefix(expr, localeShow) {
+		return false
+	}
+
+	g, w := strings.Split(got, " | "), strings.Split(want, " | ")
+	if len(g) != len(w) {
+		return false
+	}
+
+	for i := range g {
+		if g[i] != w[i] && !explained(i, g[i], w[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 type golden struct {
@@ -293,6 +362,7 @@ var goldenSets = []struct {
 	{"displaynames", dnExprs},
 	{"duration", durationExprs},
 	{"values", valuesExprs},
+	{"locale", localeExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for

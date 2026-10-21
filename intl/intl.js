@@ -18,7 +18,7 @@
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf) {
+	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo) {
 	'use strict';
 
 	const {
@@ -144,8 +144,15 @@
 		return C;
 	}
 
+	// localeTag is the tag of o where o is an Intl.Locale, else undefined.
+	function localeTag(o) {
+		const i = Slots.of(o);
+		return i !== undefined && i.kind === 'Locale' ? i.locale : undefined;
+	}
+
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
-	// themselves are canonicalized by the host.
+	// themselves are canonicalized by the host. An Intl.Locale is its tag,
+	// whatever its toString says.
 	function localeList(locales) {
 		if (locales === null) {
 			throw new TypeError('Cannot convert null to object');
@@ -157,7 +164,8 @@
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				r[r.length] = toString(v);
+				const tag = localeTag(v);
+				r[r.length] = tag !== undefined ? tag : toString(v);
 			}
 		}
 		return r;
@@ -165,9 +173,13 @@
 
 	// pushLocales appends the two locale arguments of a Builtin to args: a
 	// single tag as itself, a list as one string of the tags each preceded by
-	// its length and a colon.
+	// its length and a colon. A single Intl.Locale is its tag.
 	function pushLocales(args, locales) {
 		const n = args.length;
+		const tag = localeTag(locales);
+		if (tag !== undefined) {
+			locales = tag;
+		}
 		if (typeof locales === 'string') {
 			args[n] = locales;
 			args[n + 1] = undefined;
@@ -792,24 +804,142 @@
 		[toStringTag]: 'Intl.DurationFormat'
 	});
 
+	// ------------------------------------------------------------------ Locale
+
+	// An Intl.Locale holds its tag and what its getters answer, which Go
+	// works out when it is made. It is not a formatter: nothing of it is
+	// kept in the registry, and its methods go to Go with its tag.
+	const localeChecked = ['language', 'script', 'region', 'variants', 'calendar', 'collation', 'firstDayOfWeek'];
+	const hourCycles = bare(['h11', 'h12', 'h23', 'h24']), caseFirsts = bare(['upper', 'lower', 'false']);
+
+	function Locale(tag, options = undefined) {
+		requireNew(new.target, 'Locale');
+		if (tag === null || typeof tag !== 'string' && typeof tag !== 'object' && typeof tag !== 'function') {
+			throw new TypeError('First argument to Intl.Locale constructor can\'t be empty or missing');
+		}
+		let s = localeTag(tag);
+		if (s === undefined) {
+			s = toString(tag);
+		}
+		const o = toOptions(options), args = bare([s]);
+		localeCheck('tag', s);
+		if (o !== noOptions) {
+			// V8 checks the subtags as it reads them, and a calendar, a
+			// collation and a first day of the week as ICU takes a type: it
+			// checks their types in full once it has read them all.
+			for (let i = 0; i < localeChecked.length; i++) {
+				let v = o[localeChecked[i]];
+				if (v !== undefined) {
+					v = toString(v);
+					localeCheck(localeChecked[i], v);
+				}
+				args[i + 1] = v;
+			}
+			args[8] = stringOption(o, 'hourCycle', hourCycles);
+			args[9] = stringOption(o, 'caseFirst', caseFirsts);
+			let v = o.numeric;
+			args[10] = v === undefined ? v : v ? 'true' : 'false';
+			v = o.numberingSystem;
+			args[11] = v === undefined ? v : toString(v);
+		}
+		new Slots(this, setPrototypeOf(parse(apply(localeNew, undefined, args)), null));
+	}
+
+	function locale(o) {
+		return internal(o, 'Locale');
+	}
+
+	defineConstructor(Locale, {}, {
+		toString() {
+			return locale(this).locale;
+		},
+		maximize() {
+			return new Locale(localeInfo(locale(this).locale, 'maximize'));
+		},
+		minimize() {
+			return new Locale(localeInfo(locale(this).locale, 'minimize'));
+		},
+		get language() {
+			return locale(this).language;
+		},
+		get script() {
+			return locale(this).script;
+		},
+		get region() {
+			return locale(this).region;
+		},
+		get variants() {
+			return locale(this).variants;
+		},
+		get baseName() {
+			return locale(this).baseName;
+		},
+		get calendar() {
+			return locale(this).calendar;
+		},
+		get caseFirst() {
+			return locale(this).caseFirst;
+		},
+		get collation() {
+			return locale(this).collation;
+		},
+		get firstDayOfWeek() {
+			return locale(this).firstDayOfWeek;
+		},
+		get hourCycle() {
+			return locale(this).hourCycle;
+		},
+		get numeric() {
+			return locale(this).numeric;
+		},
+		get numberingSystem() {
+			return locale(this).numberingSystem;
+		},
+		getCalendars() {
+			return localeInfo(locale(this).locale, 'calendars');
+		},
+		getCollations() {
+			return localeInfo(locale(this).locale, 'collations');
+		},
+		getHourCycles() {
+			return localeInfo(locale(this).locale, 'hourCycles');
+		},
+		getNumberingSystems() {
+			return localeInfo(locale(this).locale, 'numberingSystems');
+		},
+		getTimeZones() {
+			return localeInfo(locale(this).locale, 'timeZones');
+		},
+		getTextInfo() {
+			const d = localeInfo(locale(this).locale, 'direction');
+			return d === undefined ? {} : {direction: d};
+		},
+		getWeekInfo() {
+			const tag = locale(this).locale;
+			return {firstDay: localeInfo(tag, 'firstDay'), weekend: localeInfo(tag, 'weekend')};
+		},
+		[toStringTag]: 'Intl.Locale'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
-		DateTimeFormat: DateTimeFormat,
-		NumberFormat: NumberFormat,
-		Collator: Collator,
-		PluralRules: PluralRules,
-		RelativeTimeFormat: RelativeTimeFormat,
-		ListFormat: ListFormat,
-		DisplayNames: DisplayNames,
-		Segmenter: Segmenter,
-		DurationFormat: DurationFormat,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
 		},
 		supportedValuesOf(key) {
 			return valuesOf(toString(key));
 		},
+		DateTimeFormat: DateTimeFormat,
+		NumberFormat: NumberFormat,
+		Collator: Collator,
+		PluralRules: PluralRules,
+		RelativeTimeFormat: RelativeTimeFormat,
+		ListFormat: ListFormat,
+		Locale: Locale,
+		DisplayNames: DisplayNames,
+		Segmenter: Segmenter,
+		DurationFormat: DurationFormat,
 		[toStringTag]: 'Intl'
 	});
 

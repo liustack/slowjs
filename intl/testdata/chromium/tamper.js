@@ -83,6 +83,14 @@ var uses = `(() => {
 	use(() => Intl.supportedValuesOf('unit').length + ' ' + Intl.supportedValuesOf('collation').join());
 	use(() => Intl.supportedValuesOf('x'));
 	use(() => {
+		const l = new Intl.Locale('de-latn-u-ca-gregory', {region: 'AT', hourCycle: 'h23', numeric: true});
+		return [l, l.baseName, l.language, l.script, l.region, l.calendar, l.hourCycle, l.numeric, l.maximize(), l.minimize(),
+			l.getCalendars().join(), l.getCollations().join(), l.getHourCycles().join(), l.getNumberingSystems().join(),
+			l.getTimeZones().join(), show(l.getTextInfo()), show(l.getWeekInfo())].join(' ');
+	});
+	use(() => new Intl.NumberFormat(new Intl.Locale('de')).format(1234.5) + ' ' + Intl.getCanonicalLocales([new Intl.Locale('fr')]));
+	use(() => new Intl.Locale('en', {language: 'x1'}));
+	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();
 		return a.value.segment + '|' + b.value.segment + '|' + c.done + '|' + (getPrototypeOf(it) === getPrototypeOf(it));

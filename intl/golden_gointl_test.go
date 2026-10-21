@@ -1061,3 +1061,151 @@ var goldenChromiumCurrencies = sync.OnceValue(func() []string {
 
 	return icu.Currencies
 })
+
+// localeShow is javascript for a function writing out an Intl.Locale: its
+// string, every getter, maximize and minimize, and what each get method
+// answers.
+const localeShow = `((l) => [l.toString(), l.baseName, l.language, l.script, l.region, l.variants, l.calendar, ` +
+	`l.caseFirst, l.collation, l.firstDayOfWeek, l.hourCycle, l.numeric, l.numberingSystem, ` +
+	`l.maximize().toString(), l.minimize().toString(), l.getCalendars(), l.getCollations(), l.getHourCycles(), ` +
+	`l.getNumberingSystems(), l.getTimeZones(), JSON.stringify(l.getTextInfo()), JSON.stringify(l.getWeekInfo())]` +
+	`.map(String).join(' | '))`
+
+// localeTags are tags of every shape beyond Chromium's own: likely subtags
+// to add and remove, aliases, extensions, private use, and tags that are
+// not tags.
+var localeTags = []string{
+	"und", "und-Latn", "und-US", "und-Zzzz", "und-ZZ", "und-Zzzz-ZZ", "und-150", "und-419", "und-Cyrl", "und-Hani",
+	"und-Kana", "und-Jpan", "und-Kore", "und-Arab", "und-Hebr", "und-Thaa", "und-Syrc", "und-Brai", "und-Qaaa",
+	"zh-Hant", "zh-Hans-TW", "zh-Hant-CN", "zh-HK", "zh-Hant-TW", "zh-MO", "sr-ME", "sr-Latn", "sr-Cyrl-RS", "sh",
+	"iw", "in", "ji", "mo", "tl", "cmn", "cmn-TW", "art-lojban", "en-GB-oed", "i-klingon", "sgn-GR", "no", "nb",
+	"en-a-bar-x-u-foo", "en-x-private", "en-t-ja", "en-t-ja-m0-names", "en-u-ab-cd-t-ja", "de-1996", "sl-rozaj-biske-1994",
+	"hy-arevela", "en-US-posix", "ja-JP-u-ca-japanese-tz-jptyo", "ar-SA-u-nu-latn", "th-TH-u-nu-thai", "ff-Adlm", "ks-Deva",
+	"uz-Arab", "pa-Arab", "he", "fa", "dv", "yi", "syr", "en-Arab", "ar-Latn", "en-Zyyy", "en-Zinh", "en-Qaaa", "en-XA",
+	"en-AA", "en-QO", "en-001", "es-419", "en-150", "xx", "xyz", "aaa", "abcde", "EN-latn-us", "en-u-ca-gregory", "en-u-ca",
+	"en-u-kn", "en-u-kn-true", "en-u-kn-false", "en-u-kn-yes", "en-u-kf-upper", "en-u-kf", "en-u-kf-false", "en-u-co-phonebk",
+	"de-u-co-phonebk", "de-u-co-phonebook", "en-u-hc-h11", "en-u-hc-h24", "en-u-fw-mon", "en-u-fw-sun", "en-u-fw-xyz",
+	"en-u-nu-arab", "en-u-ca-islamicc", "en-u-ca-ethiopic-amete-alem", "en-u-ca-ethioaa", "en-u-rg-gbzzzz",
+	"en-US-u-rg-dezzzz", "en-u-rg-xxzzzz", "en-u-sd-usca", "und-u-sd-gbsct", "en-u-ms-imperial", "en-u-tz-usnyc",
+	"en-u-attr-ca-gregory", "en-u-ca-gregory-ca-buddhist", "en-u-ka-shifted-ks-level2", "en-u-co-standard",
+	"zh-u-co-pinyin", "zh-TW-u-co-zhuyin", "ja-u-hc-h12", "ko-KR", "ar", "ar-EG", "ar-MA", "fa-AF", "ps", "ug",
+	"ckb", "ckb-IR", "mzn", "sd", "ur", "ur-IN", "en-MV", "en-AE", "en-IR", "en-AF", "en-IL", "en-BR", "en-CN",
+	"en-IN", "en-MX", "en-JP", "en-SA", "en-TH", "en-US-u-fw-thu", "en-US-u-ca-iso8601", "en-US-u-ca-buddhist",
+	"th-u-ca-gregory", "fa-u-ca-gregory", "ja-u-ca-japanese", "zh-u-ca-chinese", "ko-u-ca-dangi", "he-u-ca-hebrew",
+	"ar-u-ca-islamic-umalqura", "en-u-va-posix", "en-u-nu-native", "en-u-nu-traditio", "en-u-nu-finance",
+	"zh-u-nu-hanidec", "ta-u-nu-tamldec", "x-private", "en_US", "", "en-", "-en", "en--US", "e", "en-USA",
+	"abcdefghi", "en-u", "en-u-ca-x", "en-x", "en-1", "en-a-ab", "en-u-ca-gregory-u-nu-latn", "en-US-1994-1994",
+	"en-Latn-Latn", "123", "root", "en-t-und", "und-t-ja-latn", "en-t-zh-latn-pinyin", "de-DE-u-co-phonebk-ka-shifted",
+}
+
+// localeOptions are option objects for the Intl.Locale constructor, valid
+// and not.
+var localeOptions = []string{
+	"{}", "{language: 'fr'}", "{script: 'Cyrl'}", "{region: 'DE'}", "{region: '419'}", "{variants: 'fonipa-1996'}",
+	"{variants: 'FONIPA'}", "{variants: ''}", "{variants: 'fonipa-fonipa'}", "{variants: 'fonipa-FONIPA'}",
+	"{variants: 'abc'}", "{variants: '1abc'}", "{variants: 'fonipa_1996'}", "{language: 'sh'}", "{language: 'zh', region: 'TW'}",
+	"{language: 'iw'}", "{language: 'und'}", "{language: 'root'}", "{language: 'en-US'}", "{language: '1'}",
+	"{language: 'abcd'}", "{language: 'abcde'}", "{language: 'ABC'}", "{language: ''}", "{script: 'Latn1'}",
+	"{script: 'latn'}", "{script: ''}", "{region: 'USA'}", "{region: '999'}", "{region: 'us'}", "{region: ''}",
+	"{region: 'SU'}", "{region: 'DD'}", "{calendar: 'buddhist'}", "{calendar: 'islamicc'}", "{calendar: 'ethiopic-amete-alem'}",
+	"{calendar: 'abc'}", "{calendar: 'ab'}", "{calendar: 'abc-'}", "{calendar: 'GREGORY'}", "{calendar: ''}",
+	"{collation: 'phonebk'}", "{collation: 'phonebook'}", "{collation: 'standard'}", "{collation: 'xy'}",
+	"{hourCycle: 'h11'}", "{hourCycle: 'h24'}", "{hourCycle: 'h25'}", "{hourCycle: 'H11'}", "{caseFirst: 'false'}",
+	"{caseFirst: false}", "{caseFirst: 'upper'}", "{caseFirst: 'up'}", "{numeric: true}", "{numeric: 0}",
+	"{numeric: 'false'}", "{numeric: null}", "{numberingSystem: 'arab'}", "{numberingSystem: 'xx'}",
+	"{numberingSystem: 'Thai'}", "{firstDayOfWeek: 0}", "{firstDayOfWeek: 1}", "{firstDayOfWeek: 6}",
+	"{firstDayOfWeek: 7}", "{firstDayOfWeek: 8}", "{firstDayOfWeek: 'mon'}", "{firstDayOfWeek: 'Mon'}",
+	"{firstDayOfWeek: 'monday'}", "{firstDayOfWeek: 'abc'}", "{firstDayOfWeek: 'ab'}", "{firstDayOfWeek: ''}",
+	"{firstDayOfWeek: -1}", "{firstDayOfWeek: 1.5}", "{firstDayOfWeek: true}",
+	"{language: 'de', script: 'Latn', region: 'AT', variants: '1996', calendar: 'gregory', collation: 'phonebk', " +
+		"hourCycle: 'h12', caseFirst: 'lower', numeric: false, numberingSystem: 'latn', firstDayOfWeek: 'sun'}",
+}
+
+func localeExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	for _, tag := range append(chromiumTagList(), localeTags...) {
+		add(`%s(new Intl.Locale(%q))`, localeShow, tag)
+	}
+	for _, tag := range []string{"en", "en-Latn-US-1994-u-ca-buddhist-co-emoji-fw-tue-hc-h23-kf-upper-kn-nu-arab-x-y"} {
+		for _, o := range localeOptions {
+			add(`%s(new Intl.Locale(%q, %s))`, localeShow, tag, o)
+		}
+	}
+	for _, e := range []string{
+		// The argument, as a tag and an object.
+		`new Intl.Locale(5)`, `new Intl.Locale(null)`, `new Intl.Locale()`, `new Intl.Locale(true)`, `new Intl.Locale(Symbol())`,
+		`new Intl.Locale({toString() { return 'de-at'; }})`, `new Intl.Locale(Object('en-us'))`,
+		`new Intl.Locale(new Intl.Locale('fr-ca', {calendar: 'gregory'}))`,
+		`new Intl.Locale(Object.assign(new Intl.Locale('fr'), {toString() { return 'de'; }}))`,
+		`new Intl.Locale(new Intl.Locale('fr'), {region: 'BE'})`,
+		`new Intl.Locale('en', null)`, `new Intl.Locale('en', 'abc')`, `new Intl.Locale('en', 5)`,
+		`new Intl.Locale('en', undefined)`, `new Intl.Locale('en', {language: {toString() { return 'de'; }}})`,
+		`new Intl.Locale('en', {numeric: 'x'}).numeric`, `new Intl.Locale('en', {numeric: ''}).numeric`,
+		`new Intl.Locale('en', Object.create({region: 'GB'}))`,
+		// The order the options are read in, and their conversions.
+		`(() => {const log = []; new Intl.Locale('en', new Proxy({}, {get(t, k) {log.push(String(k)); return undefined}})); return log.join()})()`,
+		`(() => {const log = []; const v = (s) => ({toString() {log.push(s); return s === 'numeric' ? 'x' : ({language: 'de', script: 'Latn', region: 'DE', variants: '1996', calendar: 'gregory', collation: 'phonebk', hourCycle: 'h23', caseFirst: 'upper', numberingSystem: 'latn', firstDayOfWeek: 'mon'})[s]}}); ` +
+			`const l = new Intl.Locale('en', Object.fromEntries(['language', 'script', 'region', 'variants', 'calendar', 'collation', 'firstDayOfWeek', 'hourCycle', 'caseFirst', 'numeric', 'numberingSystem'].map((k) => [k, v(k)]))); return log.join() + ' ' + l})()`,
+		`(() => {const log = []; try {new Intl.Locale('en', {get language() {log.push('language'); return 'x1'}, get script() {log.push('script')}})} catch (e) {log.push(e.name)} return log.join()})()`,
+		`(() => {const log = []; try {new Intl.Locale('en', {get calendar() {log.push('calendar'); return 'x'}, get collation() {log.push('collation')}})} catch (e) {log.push(e.name)} return log.join()})()`,
+		`(() => {const log = []; try {new Intl.Locale('en', {get hourCycle() {log.push('hourCycle'); return 'x'}, get caseFirst() {log.push('caseFirst')}})} catch (e) {log.push(e.name)} return log.join()})()`,
+		`(() => {const log = []; try {new Intl.Locale('x_', {get language() {log.push('language')}})} catch (e) {log.push(e.name)} return log.join()})()`,
+		`(() => {const log = []; try {new Intl.Locale({toString() {log.push('tag'); return 'en'}}, {get language() {log.push('language')}})} catch (e) {log.push(e.name)} return log.join()})()`,
+		`(() => {try {new Intl.Locale('en', {get region() {throw new SyntaxError()}})} catch (e) {return e.name}})()`,
+		// The constructor, its prototype and what they answer.
+		`Intl.Locale.length`, `Intl.Locale.name`, `Intl.Locale('en')`, `Object.prototype.toString.call(new Intl.Locale('en'))`,
+		`Object.getPrototypeOf(new Intl.Locale('en')) === Intl.Locale.prototype`,
+		`(() => {class L extends Intl.Locale {}; const l = new L('de'); return (l instanceof L) + ' ' + (l.maximize() instanceof L)})()`,
+		`(() => {const L = Intl.Locale; Intl.Locale = function () {}; const m = new L('en').maximize(); Intl.Locale = L; return Object.getPrototypeOf(m) === L.prototype})()`,
+		`new Intl.Locale('en').getCalendars() === new Intl.Locale('en').getCalendars()`,
+		`(() => {const l = new Intl.Locale('en-US'); return l.getTimeZones() === l.getTimeZones()})()`,
+		`(() => {const l = new Intl.Locale('en-US'); return l.getWeekInfo() === l.getWeekInfo()})()`,
+		`Object.getPrototypeOf(new Intl.Locale('en').getWeekInfo()) === Object.prototype`,
+		`Object.getPrototypeOf(new Intl.Locale('en').getCalendars()) === Array.prototype`,
+		`Object.getOwnPropertyNames(new Intl.Locale('en-US').getWeekInfo()).join()`,
+		`Object.getOwnPropertyNames(new Intl.Locale('und-Zyyy').getTextInfo()).join()`,
+		`Object.getOwnPropertyNames(new Intl.Locale('en')).length`,
+		`JSON.stringify(new Intl.Locale('en-US'))`,
+		`new Intl.Locale('en') + ''`,
+		`Intl.Locale.prototype.toString.call({})`, `Intl.Locale.prototype.maximize.call(Intl.Locale.prototype)`,
+		`Object.getOwnPropertyDescriptor(Intl.Locale.prototype, 'language').get.call(new Intl.DateTimeFormat())`,
+		`Intl.Locale.prototype.getWeekInfo.call(new Intl.Locale('en-u-fw-fri'))`,
+		// A Locale in a list of locales is its tag, not its string.
+		`Intl.getCanonicalLocales(new Intl.Locale('EN-us')).join()`,
+		`Intl.getCanonicalLocales([new Intl.Locale('de-u-co-phonebk'), 'en']).join()`,
+		`Intl.getCanonicalLocales(Object.assign(new Intl.Locale('fr'), {toString() { return 'de'; }})).join()`,
+		`Intl.getCanonicalLocales([Object.assign(new Intl.Locale('fr'), {toString() { return 'de'; }})]).join()`,
+		`Intl.getCanonicalLocales(Object.assign(new Intl.Locale('fr'), {length: 1, 0: 'de'})).join()`,
+		`new Intl.NumberFormat(new Intl.Locale('de-u-nu-arab')).format(1234.5)`,
+		`new Intl.NumberFormat([new Intl.Locale('ar-EG')]).resolvedOptions().locale`,
+		`new Intl.DateTimeFormat(new Intl.Locale('de', {hourCycle: 'h11'}), {timeStyle: 'short', timeZone: 'UTC'}).format(0)`,
+		`new Intl.Collator(new Intl.Locale('de', {collation: 'phonebk'})).resolvedOptions().collation`,
+		`new Intl.PluralRules(new Intl.Locale('ar')).select(2)`,
+		`new Intl.Segmenter(new Intl.Locale('th')).resolvedOptions().locale`,
+		`new Intl.RelativeTimeFormat(new Intl.Locale('es')).format(-1, 'day')`,
+		`new Intl.ListFormat(new Intl.Locale('es')).format(['a', 'b'])`,
+		`new Intl.DisplayNames(new Intl.Locale('fr'), {type: 'region'}).of('DE')`,
+		`new Intl.DurationFormat(new Intl.Locale('de')).format({hours: 1})`,
+		`Intl.NumberFormat.supportedLocalesOf(new Intl.Locale('fr-CA')).join()`,
+		`'a'.localeCompare('ä', new Intl.Locale('sv'))`,
+		`(1234.5).toLocaleString(new Intl.Locale('de'))`,
+		`new Date(0).toLocaleString(new Intl.Locale('ja'), {timeZone: 'UTC'})`,
+		`Intl.getCanonicalLocales([new Intl.Locale('en'), new Intl.Locale('en')]).join()`,
+		`Intl.getCanonicalLocales([Object.create(Intl.Locale.prototype)]).join()`,
+	} {
+		add(`%s`, e)
+	}
+	// Which options are read before one throws: a calendar, a collation and
+	// a first day of the week that are not even a type to ICU throw at once.
+	for _, kv := range [][2]string{
+		{"calendar", ""}, {"calendar", "a b"}, {"calendar", "gregory-"}, {"calendar", "été"}, {"calendar", "abc_def"},
+		{"calendar", "a/b"}, {"calendar", "abcdefghi"}, {"calendar", "_x"}, {"collation", ""}, {"collation", "-x"},
+		{"firstDayOfWeek", ""}, {"firstDayOfWeek", "mon_"}, {"numberingSystem", ""}, {"numberingSystem", "a b"},
+	} {
+		add(`(() => {const log = []; const o = {}; for (const k of ['language', 'script', 'region', 'variants', 'calendar', 'collation', `+
+			`'firstDayOfWeek', 'hourCycle', 'caseFirst', 'numeric', 'numberingSystem']) Object.defineProperty(o, k, `+
+			`{get() {log.push(k); return k === %q ? %q : undefined}}); try {new Intl.Locale('en', o)} catch (e) {log.push(e.name)} return log.join()})()`,
+			kv[0], kv[1])
+	}
+	return r
+}
