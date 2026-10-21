@@ -377,3 +377,34 @@ func (t *vmTable) remove(id uint32) {
 func (t *vmTable) vm(id uint32) *VM {
 	return t.chunks[id>>vmChunkBits].Load()[id&(vmChunkSize-1)].Load()
 }
+
+// NewArray returns a new array of vals, made as an array literal makes one:
+// its elements are own properties, which no setter a page put on
+// Array.prototype sees. It borrows vals, as [VM.SetPropertyValue] and
+// [Value.Call] do: the caller still owns them. The zero Value is undefined.
+// A Value of another VM, a number too, is an error, as it is for a
+// [Builtin] to return one.
+func (m *VM) NewArray(vals ...Value) (Value, error) {
+	for _, v := range vals {
+		if v.vm != m && v.vm != nil {
+			return Value{}, errors.New("quickjs: NewArray of a Value of another VM")
+		}
+	}
+
+	tls := m.runtime.tls
+	ctx := m.cContext
+	a := lib.XJS_NewArray(tls, ctx)
+	if isException(a) {
+		return Value{}, m.errFromException()
+	}
+
+	for i, v := range vals {
+		// JS_DefinePropertyValueUint32 takes the copy, also when it fails.
+		e := lib.XDupValue(tls, ctx, v.jsValue())
+		if lib.XJS_DefinePropertyValueUint32(tls, ctx, a, uint32(i), e, lib.MJS_PROP_C_W_E|lib.MJS_PROP_THROW) < 0 {
+			lib.XFreeValue(tls, ctx, a)
+			return Value{}, m.errFromException()
+		}
+	}
+	return Value{vm: m, v: a}, nil
+}

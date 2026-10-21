@@ -115,7 +115,9 @@ A `Builtin` (`builtin.go`) is the fast path: made once per process by `NewBuilti
 copy-on-write `builtins.list` indexed by its magic, and turned into a function object per VM by
 `VM.NewBuiltinFunction`. `callBuiltin` finds its VM from the context's opaque, the VM's id in `vms`, a
 table read without a lock. It keeps the `host` count, the TLS mark and the panic and uncatchable
-handling of `callGo`: change one, change the other.
+handling of `callGo`: change one, change the other. `VM.NewArray` builds an array with
+`JS_DefinePropertyValueUint32`, so no setter on `Array.prototype` runs: a Builtin returns a list
+with it.
 
 ### Interrupt / eval timeout
 

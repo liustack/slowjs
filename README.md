@@ -1184,6 +1184,11 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   about 55 ns, loop included, where the same call of a `RegisterHostFunc`
   function takes about 470 ns. A VM's context now carries an id, which is
   how a call finds its VM without a lock. Test: `builtin_test.go`.
+- `VM.NewArray(vals...)` makes an array of values made in Go, as an array
+  literal makes one: its elements are its own properties, so a setter a page
+  put on `Array.prototype` never runs, and it costs no JSON. It borrows the
+  values, as `SetPropertyValue` does, and refuses a value of another VM, a
+  number too. A Builtin returns a list this way. Test: `builtin_test.go`.
 - `VM.SetStrip(StripSource)` compiles functions without their source, so
   their `toString` shows `[native code]` as the engine's built-ins do, and
   `StripDebug` leaves out line and column numbers too. It wraps

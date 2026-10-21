@@ -108,6 +108,8 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("builtinAnotherVM", TestBuiltinValueOfAnotherVM)
 	t.Run("builtinZeroAndError", TestBuiltinZeroAndError)
 	t.Run("builtinUncatchable", TestBuiltinUncatchable)
+	t.Run("newArray", TestNewArray)
+	t.Run("newArrayAnotherVM", TestNewArrayValueOfAnotherVM)
 	t.Run("evalValue", TestEvalValue)
 	t.Run("atom", TestAtom)
 	t.Run("setPropValue", TestSetPropertyValue)

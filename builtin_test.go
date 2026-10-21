@@ -428,3 +428,78 @@ func BenchmarkBuiltinCall(b *testing.B) {
 		})
 	}
 }
+
+// NewArray makes an array as the literal ['a', 'b', ...] makes one: own,
+// writable, enumerable, configurable elements, Array.prototype its prototype,
+// and no setter a page put on Array.prototype called. It borrows its
+// elements. The expected results are what Node 24 gives for the literal.
+func TestNewArray(t *testing.T) {
+	m := newTestVM(t)
+	defineBuiltin(t, m, "pair", NewBuiltin("pair", 2, func(a Args) (Value, error) {
+		x, _ := a.String(0)
+		y, _ := a.String(1)
+		vx, err := a.VM().NewString(x)
+		if err != nil {
+			return Value{}, err
+		}
+
+		defer vx.Free()
+
+		vy, err := a.VM().NewString(y)
+		if err != nil {
+			return Value{}, err
+		}
+
+		defer vy.Free()
+
+		return a.VM().NewArray(vx, vy, a.Value(1), UndefinedValue)
+	}))
+	defineBuiltin(t, m, "empty", NewBuiltin("empty", 0, func(a Args) (Value, error) { return a.VM().NewArray() }))
+	defineBuiltin(t, m, "zeros", NewBuiltin("zeros", 0, func(a Args) (Value, error) { return a.VM().NewArray(Value{}, a.VM().NewInt(0)) }))
+	for _, test := range [][2]string{
+		{`JSON.stringify(pair('a', 'b'))`, `["a","b","b",null]`},
+		{`pair('a', 'b').length`, "4"},
+		{`Array.isArray(pair()) && Object.getPrototypeOf(pair()) === Array.prototype`, "true"},
+		{`JSON.stringify(Object.getOwnPropertyDescriptor(pair('a', 'b'), 1))`, `{"value":"b","writable":true,"enumerable":true,"configurable":true}`},
+		{`Object.keys(pair('a', 'b')).join()`, "0,1,2,3"},
+		{`3 in pair()`, "true"},
+		{`empty().length`, "0"},
+		{`const z = zeros(); typeof z[0] + ' ' + typeof z[1] + ' ' + z.length`, "undefined number 2"},
+		{`let n = 0; Object.defineProperty(Array.prototype, 0, {set() { n++ }, configurable: true}); const r = pair('x', 'y'); delete Array.prototype[0]; n + ' ' + r[0]`, "0 x"},
+	} {
+		if got := evalString(t, m, test[0]); got != test[1] {
+			t.Errorf("%s: got %s, want %s", test[0], got, test[1])
+		}
+	}
+}
+
+// NewArray refuses a Value of another VM, a number too, and leaves what it
+// was given to its owners.
+func TestNewArrayValueOfAnotherVM(t *testing.T) {
+	other := newTestVM(t)
+	m := newTestVM(t)
+	theirs, err := other.NewString("not mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer theirs.Free()
+
+	mine, err := m.NewString("mine")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer mine.Free()
+
+	for _, v := range []Value{theirs, other.NewInt(1)} {
+		if _, err := m.NewArray(mine, v); err == nil {
+			t.Fatal("NewArray took a Value of another VM")
+		}
+	}
+	for v, want := range map[*Value]string{&theirs: "not mine", &mine: "mine"} {
+		if got, err := v.Any(); err != nil || got != want {
+			t.Errorf("got %q, %v, want %q", got, err, want)
+		}
+	}
+}
