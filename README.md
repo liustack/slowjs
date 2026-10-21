@@ -99,6 +99,7 @@ The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Char
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | You want to know what this fork does differently from modernc.org/quickjs, and why |
 | [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
+| [Benchmarks](docs/benchmarks.md) | You want to know how this engine compares with the other pure Go JavaScript engines |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
 | [Architecture](docs/architecture.md) | You are about to change the code |
 | [Testing](docs/testing.md) | You are about to commit, or want to check the fork against upstream |

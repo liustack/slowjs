@@ -50,7 +50,40 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
 
 ### Compare with the other engines again
 
-Every release runs the comparison with the other JavaScript engines for Go again, keeps the results of the run under `compare/results/` and adds the run to `compare/CHANGELOG.md`. The doc of that comparison, docs/benchmarks.md, with the commands to run and the tables to update, is not written yet.
+Every release runs the comparison with the other pure Go JavaScript engines again ([benchmarks.md](benchmarks.md)). It lives in `compare/engines`, a module of its own, and runs on a Linux machine with a CPU and its hyperthread sibling kept free for it (CPU 1 and CPU 5 below):
+
+1. Point the comparison at the release, and update the other engines if their newest versions should be in the run:
+
+   ```sh
+   cd compare/engines
+   go get <module>@latest && go mod tidy      # optional, for each other engine
+   ```
+
+   `compare/engines` reaches this module through a `replace` of the repository root, so the run measures the checkout it is in: check out the tag first.
+
+2. Run every workload, five rounds, and the tifa pages with the reference rows:
+
+   ```sh
+   run="<date>-<version>-<host>"
+   go run ./cmd/compare -cpu 1 -sibling 5 -name "$run"
+   tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
+   page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
+   tifa/run.sh "$page_dir" bin "$HOME/jsnative"
+   python3 behind.py "results/$run.json"
+   ```
+
+   With `-cpu 1 -sibling 5` the driver pins timed processes to CPU 1 with GOMAXPROCS=1. `tifa/run.sh` pins both functional checks (normal, stub and proxy) and timed processes to CPU 1, with GOMAXPROCS=1 and TZ=UTC. Both stages use the same 4 GiB capped entry and allow at most three tries for CPU disturbance. The binaries are built with `-pgo=off`. On a shared machine, cut the run into pieces with `-add` and run test262 on another CPU at low priority, as [benchmarks.md](benchmarks.md#rerun) shows. When an engine fails shop pages and closes its runtime, measure the other pages in a run of their own, as the same section says.
+
+3. After any rest runs or single-page probes, write and commit both page files with one command:
+
+   ```sh
+   python3 tifa/pages.py "$page_dir" --output "results/$run-pages" &&
+     git add "results/$run-pages.md" "results/$run-pages.json" &&
+     git commit -m "docs(bench): record $run pages" -m "Archive page times and normalized HTML digests so equality can be checked from the saved results."
+   ```
+
+   The JSON keeps raw process results, rest runs, probes, tries and per-page HTML comparisons. Commit `results/<run>.json` and `results/<run>.md` too, update the tables of [benchmarks.md](benchmarks.md) and the list of where the engine is far behind, and add the run to its History.
+4. If the method changed (a workload, an engine, a pinned input, a setting), add an entry to `compare/engines/CHANGELOG.md`.
 
 ### Upgrade tifa
 

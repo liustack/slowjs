@@ -47,6 +47,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
 | `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
 | `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), the suite kept from upstream |
+| `make compare-engines` | `go run ./cmd/compare $(ARGS)` in `compare/engines`: the comparison with the other pure Go JavaScript engines in [benchmarks.md](benchmarks.md) (support, speed, memory, limits, tifa pages), each engine in a binary of its own |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |
 | `make clean` | Deletes test binaries, profiles and `go.work` |
@@ -175,4 +176,4 @@ While a `go.work` exists it must keep listing `./compare`. A workspace is found 
 
 ## Speed
 
-`go test -run '^$' -bench Call .` gives the cost of each kind of call, and `make benchmark` upstream's micro benchmarks on this engine, goja and fastschema/qjs. These micro benchmarks are not the comparison with other engines that a user choosing one would read. Render speed is measured in tifa, on the pages of its example app: see [performance.md](performance.md#measuring-in-tifa).
+`go test -run '^$' -bench Call .` gives the cost of each kind of call, and `make benchmark` upstream's micro benchmarks on this engine, goja and fastschema/qjs, from `compare/`, the suite kept from upstream. The comparison a user choosing an engine would read is `compare/engines`, a module of its own next to it: it runs this engine, modernc.org/quickjs, go-quickjs, goant and moejs on the same workloads, each in its own binary pinned to one CPU, and C QuickJS, QuickJS-NG and Node as reference rows on tifa's pages ([benchmarks.md](benchmarks.md)). Render speed is measured in tifa, on the pages of its example app: see [performance.md](performance.md#measuring-in-tifa).

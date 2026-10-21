@@ -1,0 +1,4466 @@
+{
+ "name": "2026-10-21-v0.26.16-gcp-moejs",
+ "started": "2026-10-21T08:42:37Z",
+ "finished": "2026-10-21T08:53:31Z",
+ "machine": {
+  "desc": "GCP c2d-standard-8, measured on CPU 1 (hyperthread sibling CPU 5 kept idle)",
+  "host": "instance-20261017-151130",
+  "cpu": "AMD EPYC 7B13",
+  "num_cpu": 1,
+  "kernel": "Linux 7.3.0-1003-gcp",
+  "go": "go1.27.2",
+  "goos": "linux",
+  "goarch": "amd64"
+ },
+ "source": {
+  "commit": "ea5b899888eb00a118b223c120959402c2ea9aae",
+  "describe": "v0.26.16-36-gea5b899",
+  "built": "2026-10-21T08:36:48Z"
+ },
+ "pinned_cpu": "1",
+ "gomaxprocs": 1,
+ "rounds": 5,
+ "pinned_inputs": {
+  "test262": "d53ebc8b1931d9f1541e43d59650776e4b766248",
+  "v8-v7 (mozilla/arewefastyet)": "d2ddc6ce1ce4f8d90606864615543708d1cfa3fd"
+ },
+ "engines": [
+  {
+   "engine": "moejs",
+   "module": "github.com/Calcium-Ion/moejs",
+   "version": "v0.1.0-alpha.9",
+   "sum": "h1:WY1ebChegtafhPjHSQx3Q+gfnrjqYwHewHuO9k+v7e0=",
+   "go": "go1.27.2",
+   "settings": [
+    "-tags=eng_moejs",
+    "-trimpath=true",
+    "CGO_ENABLED=0",
+    "GOAMD64=v1"
+   ],
+   "interrupt": true,
+   "memory_limit": true,
+   "modules": true,
+   "shared_programs": true,
+   "notes": [
+    "Scripts are compiled once with moejs.CompileScript and run with Runtime.RunScript. A Script runs on any runtime.",
+    "Runtimes are made with Options.MutableIntrinsics: test262, the Intl polyfills and the tifa bundles write to the builtins, which are frozen and shared by default (a new runtime costs about 25 times as much this way, by its guide).",
+    "Promise jobs run before RunScript and CallFunction return, so RunJobs has nothing to do.",
+    "Options.MemoryLimit counts what a runtime allocates between resets, not what is live. The call depth is fixed at 512."
+   ]
+  }
+ ],
+ "features": [
+  {
+   "id": "class",
+   "edition": "ES2015",
+   "src": "class A { constructor() { this.v = 1 } m() { return this.v } static s() { return 3 } } class B extends A { m() { return super.m() + 1 } } (new B().m() === 2 \u0026\u0026 B.s() === 3) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "class",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.35
+    }
+   }
+  },
+  {
+   "id": "let-const-arrow-template",
+   "edition": "ES2015",
+   "src": "{ let a = 1; const f = (x, y = 2) =\u003e x + y; var r = `${f(a)}` } r === \"3\" ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "let-const-arrow-template",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.36
+    }
+   }
+  },
+  {
+   "id": "destructuring-spread",
+   "edition": "ES2015",
+   "src": "var {a, b: [c, ...d]} = {a: 1, b: [2, 3, 4]}; var m = Math.max(...d); (a + c + m === 7 \u0026\u0026 d.length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "destructuring-spread",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.428
+    }
+   }
+  },
+  {
+   "id": "generators",
+   "edition": "ES2015",
+   "src": "function* g() { var x = yield 1; yield x * 2 } var it = g(); it.next(); (it.next(21).value === 42 \u0026\u0026 [...g()].length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "generators",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.411
+    }
+   }
+  },
+  {
+   "id": "symbol-iterator-for-of",
+   "edition": "ES2015",
+   "src": "var o = {*[Symbol.iterator]() { yield 1; yield 2 }}; var s = 0; for (var v of o) s += v; s === 3 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "symbol-iterator-for-of",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.269
+    }
+   }
+  },
+  {
+   "id": "map-set-weakmap",
+   "edition": "ES2015",
+   "src": "var m = new Map([[1, \"a\"]]); var s = new Set([1, 1, 2]); var w = new WeakMap(); var k = {}; w.set(k, 1); (m.get(1) === \"a\" \u0026\u0026 s.size === 2 \u0026\u0026 w.get(k) === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "map-set-weakmap",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.565
+    }
+   }
+  },
+  {
+   "id": "proxy",
+   "edition": "ES2015",
+   "src": "var p = new Proxy({}, { get: (t, k) =\u003e k === \"x\" ? 42 : undefined, has: () =\u003e true }); (p.x === 42 \u0026\u0026 (\"y\" in p)) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "proxy",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.311
+    }
+   }
+  },
+  {
+   "id": "reflect",
+   "edition": "ES2015",
+   "src": "var o = {}; Reflect.defineProperty(o, \"x\", {value: 1}); (Reflect.ownKeys(o).length === 1 \u0026\u0026 Reflect.has(o, \"x\") \u0026\u0026 Reflect.apply(Math.max, null, [1, 3]) === 3) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "reflect",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.359
+    }
+   }
+  },
+  {
+   "id": "promise",
+   "edition": "ES2015",
+   "src": "Promise.resolve(1).then(v =\u003e { globalThis.__result = v === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "promise",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.318
+    }
+   }
+  },
+  {
+   "id": "typed-arrays",
+   "edition": "ES2015",
+   "src": "var b = new ArrayBuffer(8); var f = new Float64Array(b); f[0] = 1.5; var u = new Uint8Array(b); var dv = new DataView(b); (u.length === 8 \u0026\u0026 dv.getFloat64(0, true) === 1.5) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "typed-arrays",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.377
+    }
+   }
+  },
+  {
+   "id": "regexp-unicode-sticky",
+   "edition": "ES2015",
+   "src": "var r = /a/y; r.lastIndex = 1; (/\\u{1F600}/u.test(\"😀\") \u0026\u0026 r.test(\"ba\")) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-unicode-sticky",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.259
+    }
+   }
+  },
+  {
+   "id": "new-target-tagged-template",
+   "edition": "ES2015",
+   "src": "function F() { return new.target === F } var t = (s, ...v) =\u003e s.raw[0] + v[0]; (new F() instanceof F || true) \u0026\u0026 t`x${1}` === \"x1\" ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "new-target-tagged-template",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.254
+    }
+   }
+  },
+  {
+   "id": "exponent-includes",
+   "edition": "ES2016",
+   "src": "(2 ** 10 === 1024 \u0026\u0026 [NaN].includes(NaN)) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "exponent-includes",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.374
+    }
+   }
+  },
+  {
+   "id": "async-await",
+   "edition": "ES2017",
+   "src": "async function f() { var a = await 1; var b = await Promise.resolve(2); return a + b } f().then(v =\u003e { globalThis.__result = v === 3 ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "async-await",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.326
+    }
+   }
+  },
+  {
+   "id": "object-entries-padstart",
+   "edition": "ES2017",
+   "src": "(Object.entries({a: 1})[0][1] === 1 \u0026\u0026 \"5\".padStart(3, \"0\") === \"005\" \u0026\u0026 Object.getOwnPropertyDescriptors({a: 1}).a.value === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "object-entries-padstart",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.327
+    }
+   }
+  },
+  {
+   "id": "shared-array-buffer-atomics",
+   "edition": "ES2017",
+   "src": "var s = new SharedArrayBuffer(8); var i = new Int32Array(s); Atomics.add(i, 0, 5); Atomics.load(i, 0) === 5 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "shared-array-buffer-atomics",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.425
+    }
+   }
+  },
+  {
+   "id": "async-iteration",
+   "edition": "ES2018",
+   "src": "async function* g() { yield 1; yield 2 } (async () =\u003e { var s = 0; for await (var v of g()) s += v; globalThis.__result = s === 3 ? \"ok\" : \"bad\" })()",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "async-iteration",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.403
+    }
+   }
+  },
+  {
+   "id": "object-rest-spread",
+   "edition": "ES2018",
+   "src": "var {a, ...r} = {a: 1, b: 2, c: 3}; var o = {...r, d: 4}; (Object.keys(o).join() === \"b,c,d\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "object-rest-spread",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.306
+    }
+   }
+  },
+  {
+   "id": "promise-finally",
+   "edition": "ES2018",
+   "src": "Promise.reject(1).finally(() =\u003e {}).catch(v =\u003e { globalThis.__result = v === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "promise-finally",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.285
+    }
+   }
+  },
+  {
+   "id": "regexp-named-groups",
+   "edition": "ES2018",
+   "src": "var m = /(?\u003cy\u003e\\d{4})-(?\u003cm\u003e\\d{2})/.exec(\"2026-10\"); (m.groups.y === \"2026\" \u0026\u0026 \"2026-10\".replace(/(?\u003cy\u003e\\d+)-(?\u003cm\u003e\\d+)/, \"$\u003cm\u003e/$\u003cy\u003e\") === \"10/2026\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-named-groups",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.376
+    }
+   }
+  },
+  {
+   "id": "regexp-lookbehind",
+   "edition": "ES2018",
+   "src": "(\"$42 and €17\".match(/(?\u003c=\\$)\\d+/)[0] === \"42\" \u0026\u0026 /(?\u003c!a)b/.test(\"cb\")) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-lookbehind",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.312
+    }
+   }
+  },
+  {
+   "id": "regexp-dotall",
+   "edition": "ES2018",
+   "src": "/a.b/s.test(\"a\\nb\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-dotall",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.298
+    }
+   }
+  },
+  {
+   "id": "regexp-unicode-property",
+   "edition": "ES2018",
+   "src": "var m = \"Grüße, Ankara 日本\".match(/\\p{L}+/gu); (m !== null \u0026\u0026 m.join(\"|\") === \"Grüße|Ankara|日本\" \u0026\u0026 \"Ankara-2026!\".replace(/[^\\p{L}\\p{N}]+/gu, \"_\") === \"Ankara_2026_\") ? \"ok\" : \"bad: \" + m",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-unicode-property",
+     "status": "pass",
+     "got": "ok",
+     "ms": 1.057
+    }
+   }
+  },
+  {
+   "id": "flat-fromentries-trim",
+   "edition": "ES2019",
+   "src": "([1, [2, [3]]].flat(Infinity).length === 3 \u0026\u0026 Object.fromEntries([[\"a\", 1]]).a === 1 \u0026\u0026 \" x\".trimStart() === \"x\" \u0026\u0026 Symbol(\"d\").description === \"d\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "flat-fromentries-trim",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.356
+    }
+   }
+  },
+  {
+   "id": "optional-catch-binding",
+   "edition": "ES2019",
+   "src": "try { throw 1 } catch { var c = \"ok\" } c",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "optional-catch-binding",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.2
+    }
+   }
+  },
+  {
+   "id": "well-formed-json-stringify",
+   "edition": "ES2019",
+   "src": "JSON.stringify(\"\\uD800\") === '\"\\\\ud800\"' ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "well-formed-json-stringify",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.3
+    }
+   }
+  },
+  {
+   "id": "stable-sort",
+   "edition": "ES2019",
+   "src": "var a = []; for (var i = 0; i \u003c 100; i++) a.push({k: i % 3, i}); a.sort((x, y) =\u003e x.k - y.k); var ok = true; for (var i = 1; i \u003c a.length; i++) if (a[i - 1].k === a[i].k \u0026\u0026 a[i - 1].i \u003e a[i].i) ok = false; ok ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "stable-sort",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.42
+    }
+   }
+  },
+  {
+   "id": "bigint",
+   "edition": "ES2020",
+   "src": "(2n ** 64n === 18446744073709551616n \u0026\u0026 BigInt.asUintN(8, 257n) === 1n \u0026\u0026 typeof 1n === \"bigint\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "bigint",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.398
+    }
+   }
+  },
+  {
+   "id": "optional-chaining-nullish",
+   "edition": "ES2020",
+   "src": "var o = {a: {b: 0}}; (o?.a?.b ?? 5) === 0 \u0026\u0026 o.x?.y === undefined \u0026\u0026 (null ?? \"d\") === \"d\" ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "optional-chaining-nullish",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.35
+    }
+   }
+  },
+  {
+   "id": "promise-allsettled",
+   "edition": "ES2020",
+   "src": "Promise.allSettled([Promise.resolve(1), Promise.reject(2)]).then(r =\u003e { globalThis.__result = r[1].status === \"rejected\" ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "promise-allsettled",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.371
+    }
+   }
+  },
+  {
+   "id": "globalthis-matchall",
+   "edition": "ES2020",
+   "src": "(typeof globalThis === \"object\" \u0026\u0026 [...\"a1b2\".matchAll(/\\d/g)].length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "globalthis-matchall",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.31
+    }
+   }
+  },
+  {
+   "id": "dynamic-import",
+   "edition": "ES2020",
+   "src": "import(\"./dep.js\").then(m =\u003e { globalThis.__result = m.x === 1 ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "dynamic-import",
+     "status": "pass",
+     "got": "ok",
+     "ms": 1.256
+    }
+   }
+  },
+  {
+   "id": "import-meta",
+   "edition": "ES2020",
+   "src": "globalThis.__result = typeof import.meta === \"object\" ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "import-meta",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.33
+    }
+   }
+  },
+  {
+   "id": "logical-assignment-separators",
+   "edition": "ES2021",
+   "src": "var a = null; a ??= 1_000; var b = 0; b ||= 2; (a === 1000 \u0026\u0026 b === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "logical-assignment-separators",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.271
+    }
+   }
+  },
+  {
+   "id": "replaceall-promise-any",
+   "edition": "ES2021",
+   "src": "globalThis.__result = \"aaa\".replaceAll(\"a\", \"b\") === \"bbb\" ? \"pending\" : \"bad\"; Promise.any([Promise.reject(1), Promise.resolve(2)]).then(v =\u003e { if (__result === \"pending\") globalThis.__result = v === 2 ? \"ok\" : \"bad\" })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "replaceall-promise-any",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.388
+    }
+   }
+  },
+  {
+   "id": "weakref-finalization",
+   "edition": "ES2021",
+   "src": "var o = {}; var w = new WeakRef(o); var f = new FinalizationRegistry(() =\u003e {}); f.register(o, 1); w.deref() === o ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "weakref-finalization",
+     "status": "fail",
+     "err": "ReferenceError: FinalizationRegistry is not defined",
+     "ms": 0.362
+    }
+   }
+  },
+  {
+   "id": "class-fields-private",
+   "edition": "ES2022",
+   "src": "class A { #x = 1; y = 2; static #s = 3; #m() { return this.#x } static { A.z = A.#s } get v() { return this.#m() + this.y } static has(o) { return #x in o } } (new A().v === 3 \u0026\u0026 A.z === 3 \u0026\u0026 A.has(new A())) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "class-fields-private",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.532
+    }
+   }
+  },
+  {
+   "id": "at-hasown-cause",
+   "edition": "ES2022",
+   "src": "([1, 2, 3].at(-1) === 3 \u0026\u0026 \"abc\".at(-1) === \"c\" \u0026\u0026 Object.hasOwn({a: 1}, \"a\") \u0026\u0026 new Error(\"x\", {cause: 1}).cause === 1) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "at-hasown-cause",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.279
+    }
+   }
+  },
+  {
+   "id": "regexp-match-indices",
+   "edition": "ES2022",
+   "src": "var m = /b/d.exec(\"abc\"); m.indices[0][0] === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-match-indices",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.358
+    }
+   }
+  },
+  {
+   "id": "top-level-await",
+   "edition": "ES2022",
+   "src": "var v = await Promise.resolve(5); globalThis.__result = v === 5 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "top-level-await",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.539
+    }
+   }
+  },
+  {
+   "id": "modules",
+   "edition": "ES2015",
+   "src": "import d, {x} from \"./dep.js\"; globalThis.__result = x + d() === 3 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "modules",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.436
+    }
+   }
+  },
+  {
+   "id": "array-find-last",
+   "edition": "ES2023",
+   "src": "([1, 2, 3].findLast(x =\u003e x \u003c 3) === 2 \u0026\u0026 [1, 2, 3].findLastIndex(x =\u003e x \u003e 5) === -1) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "array-find-last",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.272
+    }
+   }
+  },
+  {
+   "id": "change-array-by-copy",
+   "edition": "ES2023",
+   "src": "var a = [3, 1, 2]; var s = a.toSorted(); (s.join() === \"1,2,3\" \u0026\u0026 a.join() === \"3,1,2\" \u0026\u0026 a.toReversed()[0] === 2 \u0026\u0026 a.with(0, 9)[0] === 9 \u0026\u0026 a.toSpliced(0, 1).length === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "change-array-by-copy",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.387
+    }
+   }
+  },
+  {
+   "id": "hashbang",
+   "edition": "ES2023",
+   "src": "#!/usr/bin/env node\n\"ok\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "hashbang",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.215
+    }
+   }
+  },
+  {
+   "id": "symbols-as-weakmap-keys",
+   "edition": "ES2023",
+   "src": "var w = new WeakMap(); var s = Symbol(\"k\"); w.set(s, 1); w.get(s) === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "symbols-as-weakmap-keys",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.245
+    }
+   }
+  },
+  {
+   "id": "object-groupby",
+   "edition": "ES2024",
+   "src": "var g = Object.groupBy([1, 2, 3], x =\u003e x % 2 ? \"odd\" : \"even\"); var m = Map.groupBy([1, 2], x =\u003e x \u003e 1); (g.odd.length === 2 \u0026\u0026 m.get(true)[0] === 2) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "object-groupby",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.384
+    }
+   }
+  },
+  {
+   "id": "promise-withresolvers",
+   "edition": "ES2024",
+   "src": "var r = Promise.withResolvers(); r.promise.then(v =\u003e { globalThis.__result = v }); r.resolve(\"ok\")",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "promise-withresolvers",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.372
+    }
+   }
+  },
+  {
+   "id": "regexp-v-flag",
+   "edition": "ES2024",
+   "src": "(/[\\p{L}--[a-z]]/v.test(\"A\") \u0026\u0026 !/[\\p{L}--[a-z]]/v.test(\"a\") \u0026\u0026 /[[a-z]\u0026\u0026[aeiou]]/v.test(\"e\")) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-v-flag",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.732
+    }
+   }
+  },
+  {
+   "id": "arraybuffer-resize-transfer",
+   "edition": "ES2024",
+   "src": "var b = new ArrayBuffer(4, {maxByteLength: 16}); b.resize(8); var t = b.transfer(); (t.byteLength === 8 \u0026\u0026 b.detached === true) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "arraybuffer-resize-transfer",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.52
+    }
+   }
+  },
+  {
+   "id": "string-wellformed",
+   "edition": "ES2024",
+   "src": "(\"a\\uD800\".isWellFormed() === false \u0026\u0026 \"a\\uD800\".toWellFormed() === \"a\\uFFFD\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "string-wellformed",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.261
+    }
+   }
+  },
+  {
+   "id": "iterator-helpers",
+   "edition": "ES2025",
+   "src": "function* n() { for (var i = 0; ; i++) yield i } n().filter(x =\u003e x % 3 === 0).take(4).toArray().join() === \"0,3,6,9\" ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "iterator-helpers",
+     "status": "fail",
+     "err": "TypeError: n(...).filter is not a function",
+     "ms": 0.384
+    }
+   }
+  },
+  {
+   "id": "set-methods",
+   "edition": "ES2025",
+   "src": "var a = new Set([1, 2]), b = new Set([2, 3]); (a.union(b).size === 3 \u0026\u0026 a.intersection(b).size === 1 \u0026\u0026 a.isSubsetOf(new Set([1, 2, 3]))) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "set-methods",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.378
+    }
+   }
+  },
+  {
+   "id": "promise-try",
+   "edition": "ES2025",
+   "src": "Promise.try(() =\u003e \"ok\").then(v =\u003e { globalThis.__result = v })",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "promise-try",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.258
+    }
+   }
+  },
+  {
+   "id": "regexp-escape-modifiers",
+   "edition": "ES2025",
+   "src": "(RegExp.escape(\"a.b\") === \"\\\\x61\\\\.b\" \u0026\u0026 /(?i:a)b/.test(\"Ab\")) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "regexp-escape-modifiers",
+     "status": "fail",
+     "err": "TypeError: RegExp.escape is not a function",
+     "ms": 0.244
+    }
+   }
+  },
+  {
+   "id": "float16array",
+   "edition": "ES2025",
+   "src": "var f = new Float16Array([1.5]); (f[0] === 1.5 \u0026\u0026 Math.f16round(1.337) === 1.3369140625) ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "float16array",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.522
+    }
+   }
+  },
+  {
+   "id": "json-modules",
+   "edition": "ES2025",
+   "src": "import data from \"./data.json\" with { type: \"json\" }; globalThis.__result = data.a === 1 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "json-modules",
+     "status": "fail",
+     "err": "SyntaxError: import attribute syntax is not supported yet (see TODO.md)",
+     "ms": 0.509
+    }
+   }
+  },
+  {
+   "id": "annexb-html-comments-escape",
+   "edition": "AnnexB",
+   "src": "var x = 1; \u003c!-- comment\n (escape(\"ä\") === \"%E4\" \u0026\u0026 \"abc\".substr(1, 1) === \"b\") ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "annexb-html-comments-escape",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.215
+    }
+   }
+  },
+  {
+   "id": "sloppy-with",
+   "edition": "ES5",
+   "src": "var o = {a: 1}; with (o) { a = 2 } o.a === 2 ? \"ok\" : \"bad\"",
+   "expect": "ok",
+   "results": {
+    "moejs": {
+     "id": "sloppy-with",
+     "status": "pass",
+     "got": "ok",
+     "ms": 0.303
+    }
+   }
+  },
+  {
+   "id": "intl-datetimeformat",
+   "edition": "Intl",
+   "src": "new Intl.DateTimeFormat(\"zh-CN\", {dateStyle: \"full\", timeStyle: \"short\", timeZone: \"Asia/Shanghai\"}).format(new Date(Date.UTC(2026, 9, 21, 8, 30)))",
+   "expect": "2026年10月21日星期三 16:30",
+   "results": {
+    "moejs": {
+     "id": "intl-datetimeformat",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.333
+    }
+   }
+  },
+  {
+   "id": "intl-datetimeformat-en",
+   "edition": "Intl",
+   "src": "new Intl.DateTimeFormat(\"en-US\", {year: \"numeric\", month: \"long\", day: \"numeric\", weekday: \"short\", timeZone: \"America/New_York\"}).format(new Date(Date.UTC(2026, 9, 21, 3, 0)))",
+   "expect": "Tue, October 20, 2026",
+   "results": {
+    "moejs": {
+     "id": "intl-datetimeformat-en",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.286
+    }
+   }
+  },
+  {
+   "id": "intl-numberformat-currency",
+   "edition": "Intl",
+   "src": "new Intl.NumberFormat(\"de-DE\", {style: \"currency\", currency: \"EUR\"}).format(1234.5)",
+   "expect": "1.234,50 €",
+   "results": {
+    "moejs": {
+     "id": "intl-numberformat-currency",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.313
+    }
+   }
+  },
+  {
+   "id": "intl-numberformat-compact",
+   "edition": "Intl",
+   "src": "new Intl.NumberFormat(\"en\", {notation: \"compact\"}).format(1234567) + \" \" + new Intl.NumberFormat(\"en-IN\").format(12345678.9)",
+   "expect": "1.2M 1,23,45,678.9",
+   "results": {
+    "moejs": {
+     "id": "intl-numberformat-compact",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.337
+    }
+   }
+  },
+  {
+   "id": "intl-collator",
+   "edition": "Intl",
+   "src": "[\"z\", \"ä\", \"a\", \"Ö\"].sort(new Intl.Collator(\"de\").compare).join(\",\") + \" \" + [\"z\", \"ä\", \"a\"].sort(new Intl.Collator(\"sv\").compare).join(\",\")",
+   "expect": "a,ä,Ö,z a,z,ä",
+   "results": {
+    "moejs": {
+     "id": "intl-collator",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.312
+    }
+   }
+  },
+  {
+   "id": "intl-pluralrules",
+   "edition": "Intl",
+   "src": "[0, 1, 2, 5].map(n =\u003e new Intl.PluralRules(\"ru\").select(n)).join(\",\")",
+   "expect": "many,one,few,many",
+   "results": {
+    "moejs": {
+     "id": "intl-pluralrules",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.314
+    }
+   }
+  },
+  {
+   "id": "intl-relativetimeformat",
+   "edition": "Intl",
+   "src": "new Intl.RelativeTimeFormat(\"en\", {numeric: \"auto\"}).format(-1, \"day\") + \" | \" + new Intl.RelativeTimeFormat(\"fr\").format(3, \"hour\")",
+   "expect": "yesterday | dans 3 heures",
+   "results": {
+    "moejs": {
+     "id": "intl-relativetimeformat",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.413
+    }
+   }
+  },
+  {
+   "id": "intl-listformat",
+   "edition": "Intl",
+   "src": "new Intl.ListFormat(\"en\", {type: \"conjunction\"}).format([\"Alice\", \"Bob\", \"Carol\"])",
+   "expect": "Alice, Bob, and Carol",
+   "results": {
+    "moejs": {
+     "id": "intl-listformat",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.296
+    }
+   }
+  },
+  {
+   "id": "intl-segmenter",
+   "edition": "Intl",
+   "src": "[...new Intl.Segmenter(\"en\", {granularity: \"word\"}).segment(\"Hello, world!\")].filter(s =\u003e s.isWordLike).map(s =\u003e s.segment).join(\"|\")",
+   "expect": "Hello|world",
+   "results": {
+    "moejs": {
+     "id": "intl-segmenter",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.26
+    }
+   }
+  },
+  {
+   "id": "intl-displaynames",
+   "edition": "Intl",
+   "src": "new Intl.DisplayNames([\"en\"], {type: \"region\"}).of(\"JP\")",
+   "expect": "Japan",
+   "results": {
+    "moejs": {
+     "id": "intl-displaynames",
+     "status": "fail",
+     "err": "ReferenceError: Intl is not defined",
+     "ms": 0.309
+    }
+   }
+  },
+  {
+   "id": "number-tolocalestring",
+   "edition": "Intl",
+   "src": "(1234567.891).toLocaleString(\"en-US\", {maximumFractionDigits: 2})",
+   "expect": "1,234,567.89",
+   "results": {
+    "moejs": {
+     "id": "number-tolocalestring",
+     "status": "fail",
+     "got": "1234567.891",
+     "err": "expected 1,234,567.89",
+     "ms": 0.359
+    }
+   }
+  },
+  {
+   "id": "date-tolocalestring",
+   "edition": "Intl",
+   "src": "new Date(Date.UTC(2026, 0, 2, 3, 4, 5)).toLocaleString(\"en-US\", {timeZone: \"UTC\"})",
+   "expect": "1/2/2026, 3:04:05 AM",
+   "results": {
+    "moejs": {
+     "id": "date-tolocalestring",
+     "status": "pass",
+     "got": "1/2/2026, 3:04:05 AM",
+     "ms": 0.274
+    }
+   }
+  },
+  {
+   "id": "string-localecompare",
+   "edition": "Intl",
+   "src": "[\"b\", \"a\", \"á\", \"A\"].sort((x, y) =\u003e x.localeCompare(y, \"en\")).join(\",\")",
+   "expect": "a,A,á,b",
+   "results": {
+    "moejs": {
+     "id": "string-localecompare",
+     "status": "pass",
+     "got": "a,A,á,b",
+     "ms": 0.679
+    }
+   }
+  },
+  {
+   "id": "host-structuredclone",
+   "edition": "Host",
+   "src": "typeof structuredClone",
+   "results": {
+    "moejs": {
+     "id": "host-structuredclone",
+     "status": "pass",
+     "got": "function",
+     "ms": 0.241
+    }
+   }
+  },
+  {
+   "id": "host-textencoder",
+   "edition": "Host",
+   "src": "typeof TextEncoder",
+   "results": {
+    "moejs": {
+     "id": "host-textencoder",
+     "status": "pass",
+     "got": "function",
+     "ms": 0.419
+    }
+   }
+  },
+  {
+   "id": "host-settimeout",
+   "edition": "Host",
+   "src": "typeof setTimeout",
+   "results": {
+    "moejs": {
+     "id": "host-settimeout",
+     "status": "fail",
+     "got": "undefined",
+     "ms": 0.195
+    }
+   }
+  },
+  {
+   "id": "host-queuemicrotask",
+   "edition": "Host",
+   "src": "typeof queueMicrotask",
+   "results": {
+    "moejs": {
+     "id": "host-queuemicrotask",
+     "status": "pass",
+     "got": "function",
+     "ms": 0.244
+    }
+   }
+  },
+  {
+   "id": "host-console",
+   "edition": "Host",
+   "src": "typeof console",
+   "results": {
+    "moejs": {
+     "id": "host-console",
+     "status": "fail",
+     "got": "undefined",
+     "ms": 0.243
+    }
+   }
+  },
+  {
+   "id": "host-url",
+   "edition": "Host",
+   "src": "typeof URL",
+   "results": {
+    "moejs": {
+     "id": "host-url",
+     "status": "fail",
+     "got": "undefined",
+     "ms": 0.306
+    }
+   }
+  },
+  {
+   "id": "tail-call",
+   "edition": "ES2015",
+   "results": {
+    "moejs": {
+     "id": "script",
+     "status": "fail",
+     "err": "RangeError: Maximum call stack size exceeded",
+     "ms": 1.098
+    }
+   }
+  },
+  {
+   "id": "recursion-depth",
+   "edition": "Limits",
+   "results": {
+    "moejs": {
+     "id": "recursion-depth",
+     "status": "pass",
+     "got": "508",
+     "ms": 1.723
+    }
+   }
+  },
+  {
+   "id": "recursion-overflow",
+   "edition": "Limits",
+   "results": {
+    "moejs": {
+     "id": "script",
+     "status": "pass",
+     "got": "RangeError",
+     "ms": 1.185
+    }
+   }
+  },
+  {
+   "id": "interrupt",
+   "edition": "Limits",
+   "results": {
+    "moejs": {
+     "id": "",
+     "status": "pass",
+     "got": "interrupted",
+     "ms": 106.088
+    }
+   }
+  },
+  {
+   "id": "interrupt-uncatchable",
+   "edition": "Limits",
+   "results": {
+    "moejs": {
+     "id": "",
+     "status": "pass",
+     "got": "interrupted",
+     "ms": 106.13
+    }
+   }
+  },
+  {
+   "id": "memory-limit",
+   "edition": "Limits",
+   "results": {
+    "moejs": {
+     "id": "",
+     "status": "pass",
+     "got": "arrays: stopped (memory limit: 33604816 bytes allocated, limit 33554432); objects: stopped (memory limit: 33554550 bytes allocated, limit 33554432); string: stopped (memory limit: 89524326 bytes allocated, limit 33554432)",
+     "ms": 121.689
+    }
+   }
+  }
+ ],
+ "concurrent": {
+  "moejs": {
+   "ok": true,
+   "renders": 80,
+   "wall_ms": 1124.049
+  }
+ },
+ "timed": {
+  "cold": {
+   "moejs": [
+    {
+     "ok": true,
+     "new_vm": {
+      "n": 30,
+      "median_ns": 100790,
+      "min_ns": 96510,
+      "max_ns": 190290,
+      "mean_ns": 107839.3
+     },
+     "new_vm_and_load_source": {
+      "n": 30,
+      "median_ns": 16016743.5,
+      "min_ns": 15142959,
+      "max_ns": 19180569,
+      "mean_ns": 16151577.266666668
+     },
+     "new_vm_and_load_program": {
+      "n": 30,
+      "median_ns": 574185,
+      "min_ns": 534920,
+      "max_ns": 1937959,
+      "mean_ns": 635753.9
+     },
+     "first_render": {
+      "n": 30,
+      "median_ns": 12719094,
+      "min_ns": 11948000,
+      "max_ns": 17372139,
+      "mean_ns": 13636498.8
+     }
+    },
+    {
+     "ok": true,
+     "new_vm": {
+      "n": 30,
+      "median_ns": 100380,
+      "min_ns": 94100,
+      "max_ns": 134630,
+      "mean_ns": 102596.7
+     },
+     "new_vm_and_load_source": {
+      "n": 30,
+      "median_ns": 15937694.5,
+      "min_ns": 15375279,
+      "max_ns": 20277009,
+      "mean_ns": 16120953.666666666
+     },
+     "new_vm_and_load_program": {
+      "n": 30,
+      "median_ns": 565470,
+      "min_ns": 522820,
+      "max_ns": 1887070,
+      "mean_ns": 612730.3666666667
+     },
+     "first_render": {
+      "n": 30,
+      "median_ns": 12485914.5,
+      "min_ns": 11773049,
+      "max_ns": 17541349,
+      "mean_ns": 13997142.433333334
+     }
+    },
+    {
+     "ok": true,
+     "new_vm": {
+      "n": 30,
+      "median_ns": 100440,
+      "min_ns": 92680,
+      "max_ns": 192080,
+      "mean_ns": 104365.53333333334
+     },
+     "new_vm_and_load_source": {
+      "n": 30,
+      "median_ns": 15661724.5,
+      "min_ns": 14894839,
+      "max_ns": 18192309,
+      "mean_ns": 15771099
+     },
+     "new_vm_and_load_program": {
+      "n": 30,
+      "median_ns": 556925,
+      "min_ns": 526200,
+      "max_ns": 1814090,
+      "mean_ns": 615030.2333333333
+     },
+     "first_render": {
+      "n": 30,
+      "median_ns": 12612825,
+      "min_ns": 11370140,
+      "max_ns": 17282289,
+      "mean_ns": 13899463.966666667
+     }
+    },
+    {
+     "ok": true,
+     "new_vm": {
+      "n": 30,
+      "median_ns": 102280,
+      "min_ns": 94170,
+      "max_ns": 201480,
+      "mean_ns": 108089
+     },
+     "new_vm_and_load_source": {
+      "n": 30,
+      "median_ns": 15736644,
+      "min_ns": 14965009,
+      "max_ns": 17847828,
+      "mean_ns": 15923591
+     },
+     "new_vm_and_load_program": {
+      "n": 30,
+      "median_ns": 553140,
+      "min_ns": 521680,
+      "max_ns": 1880570,
+      "mean_ns": 620438.3
+     },
+     "first_render": {
+      "n": 30,
+      "median_ns": 12528839,
+      "min_ns": 11474029,
+      "max_ns": 18323889,
+      "mean_ns": 13317267.533333333
+     }
+    },
+    {
+     "ok": true,
+     "new_vm": {
+      "n": 30,
+      "median_ns": 96470,
+      "min_ns": 91630,
+      "max_ns": 171490,
+      "mean_ns": 102043.06666666667
+     },
+     "new_vm_and_load_source": {
+      "n": 30,
+      "median_ns": 15820299.5,
+      "min_ns": 14819419,
+      "max_ns": 16264809,
+      "mean_ns": 15750353.066666666
+     },
+     "new_vm_and_load_program": {
+      "n": 30,
+      "median_ns": 557885,
+      "min_ns": 511470,
+      "max_ns": 1801330,
+      "mean_ns": 603506.9666666667
+     },
+     "first_render": {
+      "n": 30,
+      "median_ns": 14882728.5,
+      "min_ns": 11842759,
+      "max_ns": 17202948,
+      "mean_ns": 14625558.933333334
+     }
+    }
+   ]
+  },
+  "mem": {
+   "moejs": [
+    {
+     "ok": true,
+     "k": 100,
+     "loaded": "program",
+     "rss_per_vm_bytes": 1520394.24,
+     "go_heap_per_vm_bytes": 1118289.92,
+     "rss_base_bytes": 14983168
+    },
+    {
+     "ok": true,
+     "k": 100,
+     "loaded": "program",
+     "rss_per_vm_bytes": 1493606.4,
+     "go_heap_per_vm_bytes": 1115914.24,
+     "rss_base_bytes": 14974976
+    },
+    {
+     "ok": true,
+     "k": 100,
+     "loaded": "program",
+     "rss_per_vm_bytes": 1549803.52,
+     "go_heap_per_vm_bytes": 1126973.44,
+     "rss_base_bytes": 15339520
+    },
+    {
+     "ok": true,
+     "k": 100,
+     "loaded": "program",
+     "rss_per_vm_bytes": 1494917.12,
+     "go_heap_per_vm_bytes": 1115422.72,
+     "rss_base_bytes": 15163392
+    },
+    {
+     "ok": true,
+     "k": 100,
+     "loaded": "program",
+     "rss_per_vm_bytes": 1587077.12,
+     "go_heap_per_vm_bytes": 1141637.12,
+     "rss_base_bytes": 15630336
+    }
+   ]
+  },
+  "micro/json-parse": {
+   "moejs": [
+    {
+     "ok": true,
+     "check": "1003",
+     "call": {
+      "n": 30,
+      "median_ns": 1862595,
+      "min_ns": 1342850,
+      "max_ns": 3122579,
+      "mean_ns": 1908535.9333333333
+     },
+     "cpu_ms_per_op": 1.9053333333333333
+    },
+    {
+     "ok": true,
+     "check": "1003",
+     "call": {
+      "n": 30,
+      "median_ns": 1628640,
+      "min_ns": 1326850,
+      "max_ns": 2951540,
+      "mean_ns": 1877783.8666666667
+     },
+     "cpu_ms_per_op": 1.8741333333333332
+    },
+    {
+     "ok": true,
+     "check": "1003",
+     "call": {
+      "n": 30,
+      "median_ns": 1743199.5,
+      "min_ns": 1322349,
+      "max_ns": 2908030,
+      "mean_ns": 1896819.5666666667
+     },
+     "cpu_ms_per_op": 1.8931666666666667
+    },
+    {
+     "ok": true,
+     "check": "1003",
+     "call": {
+      "n": 30,
+      "median_ns": 1777464.5,
+      "min_ns": 1356070,
+      "max_ns": 3344349,
+      "mean_ns": 1865483.7333333334
+     },
+     "cpu_ms_per_op": 1.8619666666666668
+    },
+    {
+     "ok": true,
+     "check": "1003",
+     "call": {
+      "n": 30,
+      "median_ns": 1722065,
+      "min_ns": 1338240,
+      "max_ns": 3219530,
+      "mean_ns": 1911919.8666666667
+     },
+     "cpu_ms_per_op": 1.9088
+    }
+   ]
+  },
+  "micro/json-stringify": {
+   "moejs": [
+    {
+     "ok": true,
+     "check": "156891",
+     "call": {
+      "n": 30,
+      "median_ns": 1373969.5,
+      "min_ns": 859590,
+      "max_ns": 2266630,
+      "mean_ns": 1354180.0333333334
+     },
+     "cpu_ms_per_op": 1.3518333333333332
+    },
+    {
+     "ok": true,
+     "check": "156891",
+     "call": {
+      "n": 30,
+      "median_ns": 1351015,
+      "min_ns": 855730,
+      "max_ns": 2327859,
+      "mean_ns": 1346031.2
+     },
+     "cpu_ms_per_op": 1.3430666666666666
+    },
+    {
+     "ok": true,
+     "check": "156891",
+     "call": {
+      "n": 30,
+      "median_ns": 1496150,
+      "min_ns": 847570,
+      "max_ns": 2524430,
+      "mean_ns": 1418028.9666666666
+     },
+     "cpu_ms_per_op": 1.4144333333333334
+    },
+    {
+     "ok": true,
+     "check": "156891",
+     "call": {
+      "n": 30,
+      "median_ns": 1496110.5,
+      "min_ns": 891720,
+      "max_ns": 2114980,
+      "mean_ns": 1452535.3
+     },
+     "cpu_ms_per_op": 1.4479333333333335
+    },
+    {
+     "ok": true,
+     "check": "156891",
+     "call": {
+      "n": 30,
+      "median_ns": 1313015,
+      "min_ns": 852010,
+      "max_ns": 1959659,
+      "mean_ns": 1326177.5
+     },
+     "cpu_ms_per_op": 1.3229666666666666
+    }
+   ]
+  },
+  "micro/regexp": {
+   "moejs": [
+    {
+     "ok": true,
+     "check": "2000,2000,286,188034,16000",
+     "call": {
+      "n": 30,
+      "median_ns": 38645387.5,
+      "min_ns": 35610408,
+      "max_ns": 44962407,
+      "mean_ns": 39232592.93333333
+     },
+     "cpu_ms_per_op": 39.161633333333334
+    },
+    {
+     "ok": true,
+     "check": "2000,2000,286,188034,16000",
+     "call": {
+      "n": 30,
+      "median_ns": 39798052.5,
+      "min_ns": 35708137,
+      "max_ns": 45000557,
+      "mean_ns": 40076171.766666666
+     },
+     "cpu_ms_per_op": 40.0003
+    },
+    {
+     "ok": true,
+     "check": "2000,2000,286,188034,16000",
+     "call": {
+      "n": 30,
+      "median_ns": 38025707.5,
+      "min_ns": 35083148,
+      "max_ns": 42117187,
+      "mean_ns": 38242774.833333336
+     },
+     "cpu_ms_per_op": 38.176966666666665
+    },
+    {
+     "ok": true,
+     "check": "2000,2000,286,188034,16000",
+     "call": {
+      "n": 30,
+      "median_ns": 39649707.5,
+      "min_ns": 35413598,
+      "max_ns": 44608727,
+      "mean_ns": 39557349.43333333
+     },
+     "cpu_ms_per_op": 39.49013333333333
+    },
+    {
+     "ok": true,
+     "check": "2000,2000,286,188034,16000",
+     "call": {
+      "n": 30,
+      "median_ns": 39304378,
+      "min_ns": 34789788,
+      "max_ns": 46717978,
+      "mean_ns": 39463774.2
+     },
+     "cpu_ms_per_op": 39.40096666666667
+    }
+   ]
+  },
+  "micro/string-concat": {
+   "moejs": [
+    {
+     "ok": true,
+     "check": "456770",
+     "call": {
+      "n": 30,
+      "median_ns": 4780110,
+      "min_ns": 4649640,
+      "max_ns": 4954650,
+      "mean_ns": 4789399.666666667
+     },
+     "cpu_ms_per_op": 4.779066666666667
+    },
+    {
+     "ok": true,
+     "check": "456770",
+     "call": {
+      "n": 30,
+      "median_ns": 4785249.5,
+      "min_ns": 4501220,
+      "max_ns": 4970999,
+      "mean_ns": 4787985.6
+     },
+     "cpu_ms_per_op": 4.7794
+    },
+    {
+     "ok": true,
+     "check": "456770",
+     "call": {
+      "n": 30,
+      "median_ns": 4796999,
+      "min_ns": 4558460,
+      "max_ns": 5573220,
+      "mean_ns": 4847653.3
+     },
+     "cpu_ms_per_op": 4.8396333333333335
+    },
+    {
+     "ok": true,
+     "check": "456770",
+     "call": {
+      "n": 30,
+      "median_ns": 4810529.5,
+      "min_ns": 4464350,
+      "max_ns": 5213650,
+      "mean_ns": 4850329.3
+     },
+     "cpu_ms_per_op": 4.841399999999999
+    },
+    {
+     "ok": true,
+     "check": "456770",
+     "call": {
+      "n": 30,
+      "median_ns": 4805650,
+      "min_ns": 4591630,
+      "max_ns": 5455280,
+      "mean_ns": 4868629.4
+     },
+     "cpu_ms_per_op": 4.856966666666667
+    }
+   ]
+  },
+  "react": {
+   "moejs": [
+    {
+     "ok": true,
+     "match": true,
+     "html_bytes": 29148,
+     "html_sum": "208deb8ecb0897fd",
+     "render": {
+      "n": 200,
+      "median_ns": 14406009,
+      "min_ns": 9907839,
+      "max_ns": 19369189,
+      "mean_ns": 13909312.235
+     },
+     "cpu_ms_per_op": 13.877695000000001
+    },
+    {
+     "ok": true,
+     "match": true,
+     "html_bytes": 29148,
+     "html_sum": "208deb8ecb0897fd",
+     "render": {
+      "n": 200,
+      "median_ns": 14038999,
+      "min_ns": 9817940,
+      "max_ns": 16681539,
+      "mean_ns": 13792165.77
+     },
+     "cpu_ms_per_op": 13.767715
+    },
+    {
+     "ok": true,
+     "match": true,
+     "html_bytes": 29148,
+     "html_sum": "208deb8ecb0897fd",
+     "render": {
+      "n": 200,
+      "median_ns": 14090054,
+      "min_ns": 10150089,
+      "max_ns": 16644999,
+      "mean_ns": 13790207.5
+     },
+     "cpu_ms_per_op": 13.758135
+    },
+    {
+     "ok": true,
+     "match": true,
+     "html_bytes": 29148,
+     "html_sum": "208deb8ecb0897fd",
+     "render": {
+      "n": 200,
+      "median_ns": 13756804,
+      "min_ns": 9957839,
+      "max_ns": 17475119,
+      "mean_ns": 13584389.83
+     },
+     "cpu_ms_per_op": 13.5539
+    },
+    {
+     "ok": true,
+     "match": true,
+     "html_bytes": 29148,
+     "html_sum": "208deb8ecb0897fd",
+     "render": {
+      "n": 200,
+      "median_ns": 13901539,
+      "min_ns": 9917379,
+      "max_ns": 18907999,
+      "mean_ns": 13905775.02
+     },
+     "cpu_ms_per_op": 13.88147
+    }
+   ]
+  },
+  "upstream": {
+   "moejs": [
+    {
+     "tests": {
+      "array_for": {
+       "ns_per_n": 1828.903076171875,
+       "n": 16384
+      },
+      "array_for_in": {
+       "ns_per_n": 17742.40625,
+       "n": 2048
+      },
+      "array_for_of": {
+       "ns_per_n": 1411.5141906738281,
+       "n": 32768
+      },
+      "array_hole_length_decr": {
+       "ns_per_n": 157830.3828125,
+       "n": 256
+      },
+      "array_length_decr": {
+       "ns_per_n": 156919.2109375,
+       "n": 256
+      },
+      "array_pop": {
+       "ns_per_n": 70442.59375,
+       "n": 512
+      },
+      "array_prop_create": {
+       "err": "no call line"
+      },
+      "array_push": {
+       "ns_per_n": 31259.744140625,
+       "n": 1024
+      },
+      "array_read": {
+       "ns_per_n": 119.61268615722656,
+       "n": 262144
+      },
+      "array_slice": {
+       "ns_per_n": 4413.736328125,
+       "n": 8192
+      },
+      "array_write": {
+       "ns_per_n": 421.3790588378906,
+       "n": 65536
+      },
+      "date_now": {
+       "ns_per_n": 77.45557403564453,
+       "n": 524288
+      },
+      "date_parse": {
+       "ns_per_n": 4666.5377197265625,
+       "n": 8192
+      },
+      "empty_do_loop": {
+       "ns_per_n": 10.712630033493042,
+       "n": 4194304
+      },
+      "empty_down_loop": {
+       "ns_per_n": 8.822443008422852,
+       "n": 4194304
+      },
+      "empty_down_loop2": {
+       "ns_per_n": 11.02488923072815,
+       "n": 4194304
+      },
+      "empty_loop": {
+       "ns_per_n": 8.396315097808838,
+       "n": 4194304
+      },
+      "factorial10": {
+       "ns_per_n": 410021625,
+       "n": 1
+      },
+      "float_arith": {
+       "ns_per_n": 21303.80712890625,
+       "n": 2048
+      },
+      "float_toExponential": {
+       "ns_per_n": 3424.4200439453125,
+       "n": 8192
+      },
+      "float_toFixed": {
+       "ns_per_n": 1518.5500183105469,
+       "n": 32768
+      },
+      "float_toPrecision": {
+       "ns_per_n": 3295.500244140625,
+       "n": 8192
+      },
+      "float_toString": {
+       "ns_per_n": 579.2620391845703,
+       "n": 65536
+      },
+      "float_to_string": {
+       "ns_per_n": 461.7562561035156,
+       "n": 65536
+      },
+      "func_call": {
+       "ns_per_n": 144.74269104003906,
+       "n": 262144
+      },
+      "func_closure_call": {
+       "ns_per_n": 163.78229904174805,
+       "n": 262144
+      },
+      "global_destruct": {
+       "ns_per_n": 453.9686279296875,
+       "n": 65536
+      },
+      "global_destruct_strict": {
+       "ns_per_n": 455.79266357421875,
+       "n": 65536
+      },
+      "global_func_call": {
+       "ns_per_n": 150.70929336547852,
+       "n": 262144
+      },
+      "global_read": {
+       "ns_per_n": 40.875718116760254,
+       "n": 1048576
+      },
+      "global_write": {
+       "ns_per_n": 103.41941452026367,
+       "n": 262144
+      },
+      "global_write_strict": {
+       "ns_per_n": 103.15051651000977,
+       "n": 262144
+      },
+      "int_arith": {
+       "ns_per_n": 17417.22509765625,
+       "n": 2048
+      },
+      "int_toString": {
+       "ns_per_n": 287.04710388183594,
+       "n": 131072
+      },
+      "int_to_string": {
+       "ns_per_n": 246.91038513183594,
+       "n": 131072
+      },
+      "int_to_string2": {
+       "ns_per_n": 206.92617797851562,
+       "n": 131072
+      },
+      "local_destruct": {
+       "ns_per_n": 315.74414825439453,
+       "n": 131072
+      },
+      "map_delete": {
+       "ns_per_n": 378019.2734375,
+       "n": 128
+      },
+      "map_set_bigint": {
+       "ns_per_n": 332521.2265625,
+       "n": 128
+      },
+      "map_set_int": {
+       "ns_per_n": 158412.56640625,
+       "n": 256
+      },
+      "map_set_string": {
+       "ns_per_n": 373368.9609375,
+       "n": 128
+      },
+      "math_min": {
+       "ns_per_n": 42127.56640625,
+       "n": 1024
+      },
+      "prop_clone": {
+       "ns_per_n": 2275.0535888671875,
+       "n": 16384
+      },
+      "prop_create": {
+       "ns_per_n": 1478.2378234863281,
+       "n": 32768
+      },
+      "prop_delete": {
+       "ns_per_n": 5481.4620361328125,
+       "n": 8192
+      },
+      "prop_read": {
+       "ns_per_n": 43.16248607635498,
+       "n": 1048576
+      },
+      "prop_update": {
+       "ns_per_n": 149.25128173828125,
+       "n": 262144
+      },
+      "prop_write": {
+       "ns_per_n": 104.54166030883789,
+       "n": 262144
+      },
+      "regexp_ascii": {
+       "ns_per_n": 642547.78125,
+       "n": 64
+      },
+      "regexp_utf16": {
+       "ns_per_n": 751377.296875,
+       "n": 64
+      },
+      "string_build1": {
+       "ns_per_n": 53660.232421875,
+       "n": 512
+      },
+      "string_build1x": {
+       "ns_per_n": 54124.83984375,
+       "n": 512
+      },
+      "string_build2": {
+       "ns_per_n": 53554.21484375,
+       "n": 512
+      },
+      "string_build2c": {
+       "ns_per_n": 53250.974609375,
+       "n": 512
+      },
+      "string_build3": {
+       "ns_per_n": 47693.0927734375,
+       "n": 1024
+      },
+      "string_build4": {
+       "ns_per_n": 62359.01953125,
+       "n": 512
+      },
+      "string_build_large1": {
+       "ns_per_n": 1079669.9375,
+       "n": 32
+      },
+      "string_build_large2": {
+       "ns_per_n": 1359163.34375,
+       "n": 32
+      },
+      "string_to_float": {
+       "ns_per_n": 85.07832908630371,
+       "n": 524288
+      },
+      "string_to_int": {
+       "ns_per_n": 82.24532508850098,
+       "n": 524288
+      },
+      "typed_array_read": {
+       "ns_per_n": 170.8611183166504,
+       "n": 262144
+      },
+      "typed_array_write": {
+       "ns_per_n": 370.22672271728516,
+       "n": 131072
+      },
+      "weak_map_delete": {
+       "ns_per_n": 344839.1171875,
+       "n": 128
+      },
+      "weak_map_set": {
+       "ns_per_n": 700325.90625,
+       "n": 64
+      }
+     }
+    },
+    {
+     "tests": {
+      "array_for": {
+       "ns_per_n": 1829.7820434570312,
+       "n": 16384
+      },
+      "array_for_in": {
+       "ns_per_n": 17649.349609375,
+       "n": 2048
+      },
+      "array_for_of": {
+       "ns_per_n": 1403.7731018066406,
+       "n": 32768
+      },
+      "array_hole_length_decr": {
+       "ns_per_n": 155016.671875,
+       "n": 256
+      },
+      "array_length_decr": {
+       "ns_per_n": 156478.30859375,
+       "n": 256
+      },
+      "array_pop": {
+       "ns_per_n": 67839.1171875,
+       "n": 512
+      },
+      "array_prop_create": {
+       "err": "no call line"
+      },
+      "array_push": {
+       "ns_per_n": 31396.4140625,
+       "n": 1024
+      },
+      "array_read": {
+       "ns_per_n": 105.13129806518555,
+       "n": 262144
+      },
+      "array_slice": {
+       "ns_per_n": 4384.294189453125,
+       "n": 8192
+      },
+      "array_write": {
+       "ns_per_n": 384.8865966796875,
+       "n": 65536
+      },
+      "date_now": {
+       "ns_per_n": 76.56388664245605,
+       "n": 524288
+      },
+      "date_parse": {
+       "ns_per_n": 4677.9830322265625,
+       "n": 8192
+      },
+      "empty_do_loop": {
+       "ns_per_n": 10.733286619186401,
+       "n": 4194304
+      },
+      "empty_down_loop": {
+       "ns_per_n": 8.695079803466797,
+       "n": 4194304
+      },
+      "empty_down_loop2": {
+       "ns_per_n": 11.034955263137817,
+       "n": 4194304
+      },
+      "empty_loop": {
+       "ns_per_n": 8.403944492340088,
+       "n": 4194304
+      },
+      "factorial10": {
+       "ns_per_n": 403641705,
+       "n": 1
+      },
+      "float_arith": {
+       "ns_per_n": 21331.537109375,
+       "n": 2048
+      },
+      "float_toExponential": {
+       "ns_per_n": 3367.482666015625,
+       "n": 8192
+      },
+      "float_toFixed": {
+       "ns_per_n": 1523.3727111816406,
+       "n": 32768
+      },
+      "float_toPrecision": {
+       "ns_per_n": 3285.591796875,
+       "n": 8192
+      },
+      "float_toString": {
+       "ns_per_n": 568.9243621826172,
+       "n": 65536
+      },
+      "float_to_string": {
+       "ns_per_n": 462.1905212402344,
+       "n": 65536
+      },
+      "func_call": {
+       "ns_per_n": 143.71107864379883,
+       "n": 262144
+      },
+      "func_closure_call": {
+       "ns_per_n": 164.1380958557129,
+       "n": 262144
+      },
+      "global_destruct": {
+       "ns_per_n": 451.5049591064453,
+       "n": 65536
+      },
+      "global_destruct_strict": {
+       "ns_per_n": 456.8145446777344,
+       "n": 65536
+      },
+      "global_func_call": {
+       "ns_per_n": 154.09949111938477,
+       "n": 262144
+      },
+      "global_read": {
+       "ns_per_n": 40.86158561706543,
+       "n": 1048576
+      },
+      "global_write": {
+       "ns_per_n": 110.98113250732422,
+       "n": 262144
+      },
+      "global_write_strict": {
+       "ns_per_n": 103.11271286010742,
+       "n": 262144
+      },
+      "int_arith": {
+       "ns_per_n": 17187.0595703125,
+       "n": 2048
+      },
+      "int_toString": {
+       "ns_per_n": 290.0224075317383,
+       "n": 131072
+      },
+      "int_to_string": {
+       "ns_per_n": 248.17510986328125,
+       "n": 131072
+      },
+      "int_to_string2": {
+       "ns_per_n": 207.16123962402344,
+       "n": 131072
+      },
+      "local_destruct": {
+       "ns_per_n": 328.0137405395508,
+       "n": 131072
+      },
+      "map_delete": {
+       "ns_per_n": 378341.5390625,
+       "n": 128
+      },
+      "map_set_bigint": {
+       "ns_per_n": 330579.515625,
+       "n": 128
+      },
+      "map_set_int": {
+       "ns_per_n": 175862.13671875,
+       "n": 256
+      },
+      "map_set_string": {
+       "ns_per_n": 370404.046875,
+       "n": 128
+      },
+      "math_min": {
+       "ns_per_n": 42371.8720703125,
+       "n": 1024
+      },
+      "prop_clone": {
+       "ns_per_n": 2275.4996948242188,
+       "n": 16384
+      },
+      "prop_create": {
+       "ns_per_n": 1472.1556701660156,
+       "n": 32768
+      },
+      "prop_delete": {
+       "ns_per_n": 5306.3790283203125,
+       "n": 8192
+      },
+      "prop_read": {
+       "ns_per_n": 43.32734775543213,
+       "n": 1048576
+      },
+      "prop_update": {
+       "ns_per_n": 148.00143432617188,
+       "n": 262144
+      },
+      "prop_write": {
+       "ns_per_n": 103.93642044067383,
+       "n": 262144
+      },
+      "regexp_ascii": {
+       "ns_per_n": 633391.046875,
+       "n": 64
+      },
+      "regexp_utf16": {
+       "ns_per_n": 780999.171875,
+       "n": 64
+      },
+      "string_build1": {
+       "ns_per_n": 53475.640625,
+       "n": 512
+      },
+      "string_build1x": {
+       "ns_per_n": 53447.984375,
+       "n": 512
+      },
+      "string_build2": {
+       "ns_per_n": 53508.84375,
+       "n": 512
+      },
+      "string_build2c": {
+       "ns_per_n": 53199.37109375,
+       "n": 512
+      },
+      "string_build3": {
+       "ns_per_n": 47664.0400390625,
+       "n": 1024
+      },
+      "string_build4": {
+       "ns_per_n": 59586.24609375,
+       "n": 512
+      },
+      "string_build_large1": {
+       "ns_per_n": 1077521.8125,
+       "n": 32
+      },
+      "string_build_large2": {
+       "ns_per_n": 1388363.96875,
+       "n": 32
+      },
+      "string_to_float": {
+       "ns_per_n": 84.51526069641113,
+       "n": 524288
+      },
+      "string_to_int": {
+       "ns_per_n": 82.38387489318848,
+       "n": 524288
+      },
+      "typed_array_read": {
+       "ns_per_n": 171.49058151245117,
+       "n": 262144
+      },
+      "typed_array_write": {
+       "ns_per_n": 371.0636672973633,
+       "n": 131072
+      },
+      "weak_map_delete": {
+       "ns_per_n": 346747.015625,
+       "n": 128
+      },
+      "weak_map_set": {
+       "ns_per_n": 601349.34375,
+       "n": 64
+      }
+     }
+    },
+    {
+     "tests": {
+      "array_for": {
+       "ns_per_n": 1831.923095703125,
+       "n": 16384
+      },
+      "array_for_in": {
+       "ns_per_n": 18458.6318359375,
+       "n": 2048
+      },
+      "array_for_of": {
+       "ns_per_n": 1406.8446960449219,
+       "n": 32768
+      },
+      "array_hole_length_decr": {
+       "ns_per_n": 157332.99609375,
+       "n": 256
+      },
+      "array_length_decr": {
+       "ns_per_n": 156105.73046875,
+       "n": 256
+      },
+      "array_pop": {
+       "ns_per_n": 68664.83984375,
+       "n": 512
+      },
+      "array_prop_create": {
+       "err": "no call line"
+      },
+      "array_push": {
+       "ns_per_n": 30970.251953125,
+       "n": 1024
+      },
+      "array_read": {
+       "ns_per_n": 105.22013854980469,
+       "n": 262144
+      },
+      "array_slice": {
+       "ns_per_n": 4374.767822265625,
+       "n": 8192
+      },
+      "array_write": {
+       "ns_per_n": 386.0119323730469,
+       "n": 65536
+      },
+      "date_now": {
+       "ns_per_n": 76.62837600708008,
+       "n": 524288
+      },
+      "date_parse": {
+       "ns_per_n": 4696.9150390625,
+       "n": 8192
+      },
+      "empty_do_loop": {
+       "ns_per_n": 10.720400333404541,
+       "n": 4194304
+      },
+      "empty_down_loop": {
+       "ns_per_n": 8.702492237091064,
+       "n": 4194304
+      },
+      "empty_down_loop2": {
+       "ns_per_n": 11.004158735275269,
+       "n": 4194304
+      },
+      "empty_loop": {
+       "ns_per_n": 8.408932209014893,
+       "n": 4194304
+      },
+      "factorial10": {
+       "ns_per_n": 407059745,
+       "n": 1
+      },
+      "float_arith": {
+       "ns_per_n": 21250.69189453125,
+       "n": 2048
+      },
+      "float_toExponential": {
+       "ns_per_n": 3401.015380859375,
+       "n": 8192
+      },
+      "float_toFixed": {
+       "ns_per_n": 1517.1687927246094,
+       "n": 32768
+      },
+      "float_toPrecision": {
+       "ns_per_n": 3296.23876953125,
+       "n": 8192
+      },
+      "float_toString": {
+       "ns_per_n": 572.4972076416016,
+       "n": 65536
+      },
+      "float_to_string": {
+       "ns_per_n": 462.3879699707031,
+       "n": 65536
+      },
+      "func_call": {
+       "ns_per_n": 150.56082916259766,
+       "n": 262144
+      },
+      "func_closure_call": {
+       "ns_per_n": 162.65929412841797,
+       "n": 262144
+      },
+      "global_destruct": {
+       "ns_per_n": 461.4791717529297,
+       "n": 65536
+      },
+      "global_destruct_strict": {
+       "ns_per_n": 456.5748291015625,
+       "n": 65536
+      },
+      "global_func_call": {
+       "ns_per_n": 145.70902633666992,
+       "n": 262144
+      },
+      "global_read": {
+       "ns_per_n": 40.97246837615967,
+       "n": 1048576
+      },
+      "global_write": {
+       "ns_per_n": 105.5216178894043,
+       "n": 262144
+      },
+      "global_write_strict": {
+       "ns_per_n": 103.30195617675781,
+       "n": 262144
+      },
+      "int_arith": {
+       "ns_per_n": 17195.0869140625,
+       "n": 2048
+      },
+      "int_toString": {
+       "ns_per_n": 287.83750915527344,
+       "n": 131072
+      },
+      "int_to_string": {
+       "ns_per_n": 254.16944885253906,
+       "n": 131072
+      },
+      "int_to_string2": {
+       "ns_per_n": 207.3081817626953,
+       "n": 131072
+      },
+      "local_destruct": {
+       "ns_per_n": 323.2719192504883,
+       "n": 131072
+      },
+      "map_delete": {
+       "ns_per_n": 396017.46875,
+       "n": 64
+      },
+      "map_set_bigint": {
+       "ns_per_n": 336288.4140625,
+       "n": 128
+      },
+      "map_set_int": {
+       "ns_per_n": 157102.17578125,
+       "n": 256
+      },
+      "map_set_string": {
+       "ns_per_n": 369544.2734375,
+       "n": 128
+      },
+      "math_min": {
+       "ns_per_n": 42456.08203125,
+       "n": 1024
+      },
+      "prop_clone": {
+       "ns_per_n": 2284.9107055664062,
+       "n": 16384
+      },
+      "prop_create": {
+       "ns_per_n": 1466.5169677734375,
+       "n": 32768
+      },
+      "prop_delete": {
+       "ns_per_n": 5312.1981201171875,
+       "n": 8192
+      },
+      "prop_read": {
+       "ns_per_n": 43.380486488342285,
+       "n": 1048576
+      },
+      "prop_update": {
+       "ns_per_n": 151.10304641723633,
+       "n": 262144
+      },
+      "prop_write": {
+       "ns_per_n": 104.1926498413086,
+       "n": 262144
+      },
+      "regexp_ascii": {
+       "ns_per_n": 644334.34375,
+       "n": 64
+      },
+      "regexp_utf16": {
+       "ns_per_n": 752184.328125,
+       "n": 64
+      },
+      "string_build1": {
+       "ns_per_n": 53830.8359375,
+       "n": 512
+      },
+      "string_build1x": {
+       "ns_per_n": 53954.78125,
+       "n": 512
+      },
+      "string_build2": {
+       "ns_per_n": 54420.8359375,
+       "n": 512
+      },
+      "string_build2c": {
+       "ns_per_n": 53546.63671875,
+       "n": 512
+      },
+      "string_build3": {
+       "ns_per_n": 48096.4716796875,
+       "n": 1024
+      },
+      "string_build4": {
+       "ns_per_n": 61084.83984375,
+       "n": 512
+      },
+      "string_build_large1": {
+       "ns_per_n": 1079744.59375,
+       "n": 32
+      },
+      "string_build_large2": {
+       "ns_per_n": 1332589.59375,
+       "n": 32
+      },
+      "string_to_float": {
+       "ns_per_n": 85.04073524475098,
+       "n": 524288
+      },
+      "string_to_int": {
+       "ns_per_n": 82.23489379882812,
+       "n": 524288
+      },
+      "typed_array_read": {
+       "ns_per_n": 170.72760391235352,
+       "n": 262144
+      },
+      "typed_array_write": {
+       "ns_per_n": 369.46973419189453,
+       "n": 131072
+      },
+      "weak_map_delete": {
+       "ns_per_n": 345300.4453125,
+       "n": 128
+      },
+      "weak_map_set": {
+       "ns_per_n": 603712.9375,
+       "n": 64
+      }
+     }
+    },
+    {
+     "tests": {
+      "array_for": {
+       "ns_per_n": 1835.0322265625,
+       "n": 16384
+      },
+      "array_for_in": {
+       "ns_per_n": 17793.1484375,
+       "n": 2048
+      },
+      "array_for_of": {
+       "ns_per_n": 1405.931640625,
+       "n": 32768
+      },
+      "array_hole_length_decr": {
+       "ns_per_n": 156800.1484375,
+       "n": 256
+      },
+      "array_length_decr": {
+       "ns_per_n": 156676.4375,
+       "n": 256
+      },
+      "array_pop": {
+       "ns_per_n": 75545.033203125,
+       "n": 512
+      },
+      "array_prop_create": {
+       "err": "no call line"
+      },
+      "array_push": {
+       "ns_per_n": 31639.333984375,
+       "n": 1024
+      },
+      "array_read": {
+       "ns_per_n": 106.39674377441406,
+       "n": 262144
+      },
+      "array_slice": {
+       "ns_per_n": 7035.48046875,
+       "n": 4096
+      },
+      "array_write": {
+       "ns_per_n": 390.1150360107422,
+       "n": 65536
+      },
+      "date_now": {
+       "ns_per_n": 76.86437034606934,
+       "n": 524288
+      },
+      "date_parse": {
+       "ns_per_n": 4618.23095703125,
+       "n": 8192
+      },
+      "empty_do_loop": {
+       "ns_per_n": 10.71713137626648,
+       "n": 4194304
+      },
+      "empty_down_loop": {
+       "ns_per_n": 8.70923924446106,
+       "n": 4194304
+      },
+      "empty_down_loop2": {
+       "ns_per_n": 11.32877516746521,
+       "n": 4194304
+      },
+      "empty_loop": {
+       "ns_per_n": 8.484041213989258,
+       "n": 4194304
+      },
+      "factorial10": {
+       "ns_per_n": 410529094,
+       "n": 1
+      },
+      "float_arith": {
+       "ns_per_n": 21337.2548828125,
+       "n": 2048
+      },
+      "float_toExponential": {
+       "ns_per_n": 3377.18115234375,
+       "n": 8192
+      },
+      "float_toFixed": {
+       "ns_per_n": 1511.267578125,
+       "n": 16384
+      },
+      "float_toPrecision": {
+       "ns_per_n": 3268.38232421875,
+       "n": 8192
+      },
+      "float_toString": {
+       "ns_per_n": 571.6826934814453,
+       "n": 65536
+      },
+      "float_to_string": {
+       "ns_per_n": 466.0494689941406,
+       "n": 65536
+      },
+      "func_call": {
+       "ns_per_n": 147.8908462524414,
+       "n": 262144
+      },
+      "func_closure_call": {
+       "ns_per_n": 165.0344352722168,
+       "n": 262144
+      },
+      "global_destruct": {
+       "ns_per_n": 458.4998779296875,
+       "n": 65536
+      },
+      "global_destruct_strict": {
+       "ns_per_n": 457.1804504394531,
+       "n": 65536
+      },
+      "global_func_call": {
+       "ns_per_n": 149.9482650756836,
+       "n": 262144
+      },
+      "global_read": {
+       "ns_per_n": 41.04594898223877,
+       "n": 1048576
+      },
+      "global_write": {
+       "ns_per_n": 121.13311386108398,
+       "n": 262144
+      },
+      "global_write_strict": {
+       "ns_per_n": 103.36199951171875,
+       "n": 262144
+      },
+      "int_arith": {
+       "ns_per_n": 17257.38671875,
+       "n": 2048
+      },
+      "int_toString": {
+       "ns_per_n": 286.147216796875,
+       "n": 131072
+      },
+      "int_to_string": {
+       "ns_per_n": 254.0330352783203,
+       "n": 131072
+      },
+      "int_to_string2": {
+       "ns_per_n": 207.26119232177734,
+       "n": 131072
+      },
+      "local_destruct": {
+       "ns_per_n": 320.3790054321289,
+       "n": 131072
+      },
+      "map_delete": {
+       "ns_per_n": 383755.59375,
+       "n": 64
+      },
+      "map_set_bigint": {
+       "ns_per_n": 325218.1015625,
+       "n": 128
+      },
+      "map_set_int": {
+       "ns_per_n": 156925.33984375,
+       "n": 256
+      },
+      "map_set_string": {
+       "ns_per_n": 371476.6953125,
+       "n": 128
+      },
+      "math_min": {
+       "ns_per_n": 42392.1748046875,
+       "n": 1024
+      },
+      "prop_clone": {
+       "ns_per_n": 2297.5260620117188,
+       "n": 16384
+      },
+      "prop_create": {
+       "ns_per_n": 1472.1657409667969,
+       "n": 32768
+      },
+      "prop_delete": {
+       "ns_per_n": 5319.5028076171875,
+       "n": 8192
+      },
+      "prop_read": {
+       "ns_per_n": 43.442389488220215,
+       "n": 1048576
+      },
+      "prop_update": {
+       "ns_per_n": 148.83620071411133,
+       "n": 262144
+      },
+      "prop_write": {
+       "ns_per_n": 104.33696365356445,
+       "n": 262144
+      },
+      "regexp_ascii": {
+       "ns_per_n": 640656.203125,
+       "n": 64
+      },
+      "regexp_utf16": {
+       "ns_per_n": 744114.015625,
+       "n": 64
+      },
+      "string_build1": {
+       "ns_per_n": 53623.279296875,
+       "n": 512
+      },
+      "string_build1x": {
+       "ns_per_n": 53821.599609375,
+       "n": 512
+      },
+      "string_build2": {
+       "ns_per_n": 54254.294921875,
+       "n": 512
+      },
+      "string_build2c": {
+       "ns_per_n": 53958.611328125,
+       "n": 512
+      },
+      "string_build3": {
+       "ns_per_n": 48269.8603515625,
+       "n": 1024
+      },
+      "string_build4": {
+       "ns_per_n": 59115.1328125,
+       "n": 512
+      },
+      "string_build_large1": {
+       "ns_per_n": 1090289.34375,
+       "n": 32
+      },
+      "string_build_large2": {
+       "ns_per_n": 1332033.34375,
+       "n": 32
+      },
+      "string_to_float": {
+       "ns_per_n": 84.9448356628418,
+       "n": 524288
+      },
+      "string_to_int": {
+       "ns_per_n": 82.71476173400879,
+       "n": 524288
+      },
+      "typed_array_read": {
+       "ns_per_n": 169.11490631103516,
+       "n": 262144
+      },
+      "typed_array_write": {
+       "ns_per_n": 369.25267791748047,
+       "n": 131072
+      },
+      "weak_map_delete": {
+       "ns_per_n": 363581.0703125,
+       "n": 128
+      },
+      "weak_map_set": {
+       "ns_per_n": 605628.703125,
+       "n": 64
+      }
+     }
+    },
+    {
+     "tests": {
+      "array_for": {
+       "ns_per_n": 1825.4124755859375,
+       "n": 16384
+      },
+      "array_for_in": {
+       "ns_per_n": 18249.31005859375,
+       "n": 2048
+      },
+      "array_for_of": {
+       "ns_per_n": 1413.9507141113281,
+       "n": 32768
+      },
+      "array_hole_length_decr": {
+       "ns_per_n": 161074.24609375,
+       "n": 256
+      },
+      "array_length_decr": {
+       "ns_per_n": 160873.46875,
+       "n": 256
+      },
+      "array_pop": {
+       "ns_per_n": 68133.62890625,
+       "n": 512
+      },
+      "array_prop_create": {
+       "err": "no call line"
+      },
+      "array_push": {
+       "ns_per_n": 31230.662109375,
+       "n": 1024
+      },
+      "array_read": {
+       "ns_per_n": 105.54595184326172,
+       "n": 262144
+      },
+      "array_slice": {
+       "ns_per_n": 4418.083251953125,
+       "n": 8192
+      },
+      "array_write": {
+       "ns_per_n": 386.0464172363281,
+       "n": 65536
+      },
+      "date_now": {
+       "ns_per_n": 80.9468994140625,
+       "n": 524288
+      },
+      "date_parse": {
+       "ns_per_n": 5024.72021484375,
+       "n": 8192
+      },
+      "empty_do_loop": {
+       "ns_per_n": 10.776705026626587,
+       "n": 4194304
+      },
+      "empty_down_loop": {
+       "ns_per_n": 8.75287938117981,
+       "n": 4194304
+      },
+      "empty_down_loop2": {
+       "ns_per_n": 11.076776266098022,
+       "n": 4194304
+      },
+      "empty_loop": {
+       "ns_per_n": 8.43028473854065,
+       "n": 4194304
+      },
+      "factorial10": {
+       "ns_per_n": 405683395,
+       "n": 1
+      },
+      "float_arith": {
+       "ns_per_n": 21351.02392578125,
+       "n": 2048
+      },
+      "float_toExponential": {
+       "ns_per_n": 3420.44775390625,
+       "n": 8192
+      },
+      "float_toFixed": {
+       "ns_per_n": 1532.5579223632812,
+       "n": 16384
+      },
+      "float_toPrecision": {
+       "ns_per_n": 3347.17138671875,
+       "n": 8192
+      },
+      "float_toString": {
+       "ns_per_n": 568.9402465820312,
+       "n": 65536
+      },
+      "float_to_string": {
+       "ns_per_n": 457.4792175292969,
+       "n": 65536
+      },
+      "func_call": {
+       "ns_per_n": 149.02346801757812,
+       "n": 262144
+      },
+      "func_closure_call": {
+       "ns_per_n": 163.87907791137695,
+       "n": 262144
+      },
+      "global_destruct": {
+       "ns_per_n": 456.5520935058594,
+       "n": 65536
+      },
+      "global_destruct_strict": {
+       "ns_per_n": 454.24114990234375,
+       "n": 65536
+      },
+      "global_func_call": {
+       "ns_per_n": 151.8676300048828,
+       "n": 262144
+      },
+      "global_read": {
+       "ns_per_n": 41.14719104766846,
+       "n": 1048576
+      },
+      "global_write": {
+       "ns_per_n": 103.32556915283203,
+       "n": 262144
+      },
+      "global_write_strict": {
+       "ns_per_n": 103.38954162597656,
+       "n": 262144
+      },
+      "int_arith": {
+       "ns_per_n": 17228.83203125,
+       "n": 2048
+      },
+      "int_toString": {
+       "ns_per_n": 292.1538314819336,
+       "n": 131072
+      },
+      "int_to_string": {
+       "ns_per_n": 251.39875030517578,
+       "n": 131072
+      },
+      "int_to_string2": {
+       "ns_per_n": 224.95130920410156,
+       "n": 131072
+      },
+      "local_destruct": {
+       "ns_per_n": 380.8606491088867,
+       "n": 131072
+      },
+      "map_delete": {
+       "ns_per_n": 382444.75,
+       "n": 128
+      },
+      "map_set_bigint": {
+       "ns_per_n": 319452.7109375,
+       "n": 128
+      },
+      "map_set_int": {
+       "ns_per_n": 159770.265625,
+       "n": 256
+      },
+      "map_set_string": {
+       "ns_per_n": 368829.5859375,
+       "n": 128
+      },
+      "math_min": {
+       "ns_per_n": 42512.8193359375,
+       "n": 1024
+      },
+      "prop_clone": {
+       "ns_per_n": 2295.3624267578125,
+       "n": 16384
+      },
+      "prop_create": {
+       "ns_per_n": 1510.7661743164062,
+       "n": 32768
+      },
+      "prop_delete": {
+       "ns_per_n": 5389.5089111328125,
+       "n": 8192
+      },
+      "prop_read": {
+       "ns_per_n": 43.86707019805908,
+       "n": 1048576
+      },
+      "prop_update": {
+       "ns_per_n": 147.95580673217773,
+       "n": 262144
+      },
+      "prop_write": {
+       "ns_per_n": 105.0905532836914,
+       "n": 262144
+      },
+      "regexp_ascii": {
+       "ns_per_n": 650371.359375,
+       "n": 64
+      },
+      "regexp_utf16": {
+       "ns_per_n": 758595.265625,
+       "n": 64
+      },
+      "string_build1": {
+       "ns_per_n": 54087.3984375,
+       "n": 512
+      },
+      "string_build1x": {
+       "ns_per_n": 53919.548828125,
+       "n": 512
+      },
+      "string_build2": {
+       "ns_per_n": 53950.11328125,
+       "n": 512
+      },
+      "string_build2c": {
+       "ns_per_n": 54547.02734375,
+       "n": 512
+      },
+      "string_build3": {
+       "ns_per_n": 48331.6083984375,
+       "n": 1024
+      },
+      "string_build4": {
+       "ns_per_n": 60065.81640625,
+       "n": 512
+      },
+      "string_build_large1": {
+       "ns_per_n": 1080914.9375,
+       "n": 32
+      },
+      "string_build_large2": {
+       "ns_per_n": 1357359.28125,
+       "n": 32
+      },
+      "string_to_float": {
+       "ns_per_n": 84.87563514709473,
+       "n": 524288
+      },
+      "string_to_int": {
+       "ns_per_n": 83.18202590942383,
+       "n": 524288
+      },
+      "typed_array_read": {
+       "ns_per_n": 171.94731521606445,
+       "n": 262144
+      },
+      "typed_array_write": {
+       "ns_per_n": 371.8987808227539,
+       "n": 131072
+      },
+      "weak_map_delete": {
+       "ns_per_n": 343463.2578125,
+       "n": 128
+      },
+      "weak_map_set": {
+       "ns_per_n": 679222.296875,
+       "n": 64
+      }
+     }
+    }
+   ]
+  },
+  "v8": {
+   "moejs": [
+    {
+     "scores": {
+      "Crypto": "767",
+      "DeltaBlue": "469",
+      "EarleyBoyer": "1062",
+      "NavierStokes": "1237",
+      "RayTrace": "634",
+      "RegExp": "399",
+      "Richards": "340",
+      "Score": "701",
+      "Splay": "1433"
+     },
+     "wall_s": 47.345827266,
+     "cpu_s": 47.25775
+    },
+    {
+     "scores": {
+      "Crypto": "770",
+      "DeltaBlue": "460",
+      "EarleyBoyer": "1039",
+      "NavierStokes": "1237",
+      "RayTrace": "598",
+      "RegExp": "404",
+      "Richards": "297",
+      "Score": "677",
+      "Splay": "1353"
+     },
+     "wall_s": 47.457197039,
+     "cpu_s": 47.361579
+    },
+    {
+     "scores": {
+      "Crypto": "759",
+      "DeltaBlue": "458",
+      "EarleyBoyer": "1038",
+      "NavierStokes": "1210",
+      "RayTrace": "630",
+      "RegExp": "399",
+      "Richards": "338",
+      "Score": "691",
+      "Splay": "1397"
+     },
+     "wall_s": 47.90816459,
+     "cpu_s": 47.820809
+    },
+    {
+     "scores": {
+      "Crypto": "768",
+      "DeltaBlue": "470",
+      "EarleyBoyer": "1046",
+      "NavierStokes": "1214",
+      "RayTrace": "633",
+      "RegExp": "400",
+      "Richards": "341",
+      "Score": "702",
+      "Splay": "1483"
+     },
+     "wall_s": 47.714679372,
+     "cpu_s": 47.633116
+    },
+    {
+     "scores": {
+      "Crypto": "752",
+      "DeltaBlue": "456",
+      "EarleyBoyer": "1042",
+      "NavierStokes": "1224",
+      "RayTrace": "630",
+      "RegExp": "402",
+      "Richards": "334",
+      "Score": "698",
+      "Splay": "1516"
+     },
+     "wall_s": 47.58533512,
+     "cpu_s": 47.505584
+    }
+   ]
+  }
+ },
+ "disturbed_reruns": {
+  "moejs micro/regexp": 1
+ },
+ "memory_cap": "4G for timed workloads and probes, 2G for test262: cgroup MemoryMax (systemd-run --user --scope), swap off, and resident size checked by the driver",
+ "test262": {
+  "commit": "d53ebc8b1931d9f1541e43d59650776e4b766248",
+  "dirs": [
+   "test/language",
+   "test/built-ins",
+   "test/intl402"
+  ],
+  "files": 50931,
+  "excluded": {
+   "agent": 9,
+   "host-hook": 613,
+   "module": 830
+  },
+  "runs": 96540,
+  "engines": {
+   "moejs": {
+    "runs": 96540,
+    "pass": 76841,
+    "crashes": 0,
+    "timeouts": 0,
+    "out_of_memory": 0,
+    "memory_restarts": 0,
+    "areas": {
+     "built-ins/AggregateError": [
+      48,
+      48
+     ],
+     "built-ins/Array": [
+      6087,
+      6087
+     ],
+     "built-ins/ArrayBuffer": [
+      366,
+      410
+     ],
+     "built-ins/ArrayIteratorPrototype": [
+      44,
+      44
+     ],
+     "built-ins/AsyncDisposableStack": [
+      0,
+      206
+     ],
+     "built-ins/AsyncFromSyncIteratorPrototype": [
+      76,
+      76
+     ],
+     "built-ins/AsyncFunction": [
+      34,
+      34
+     ],
+     "built-ins/AsyncGeneratorFunction": [
+      42,
+      42
+     ],
+     "built-ins/AsyncGeneratorPrototype": [
+      96,
+      96
+     ],
+     "built-ins/AsyncIteratorPrototype": [
+      8,
+      26
+     ],
+     "built-ins/Atomics": [
+      402,
+      522
+     ],
+     "built-ins/BigInt": [
+      152,
+      152
+     ],
+     "built-ins/Boolean": [
+      99,
+      99
+     ],
+     "built-ins/DataView": [
+      938,
+      960
+     ],
+     "built-ins/Date": [
+      1166,
+      1182
+     ],
+     "built-ins/DisposableStack": [
+      0,
+      184
+     ],
+     "built-ins/Error": [
+      110,
+      176
+     ],
+     "built-ins/FinalizationRegistry": [
+      0,
+      92
+     ],
+     "built-ins/Function": [
+      844,
+      867
+     ],
+     "built-ins/GeneratorFunction": [
+      42,
+      42
+     ],
+     "built-ins/GeneratorPrototype": [
+      122,
+      122
+     ],
+     "built-ins/Infinity": [
+      10,
+      10
+     ],
+     "built-ins/Iterator": [
+      36,
+      1306
+     ],
+     "built-ins/JSON": [
+      286,
+      328
+     ],
+     "built-ins/Map": [
+      354,
+      403
+     ],
+     "built-ins/MapIteratorPrototype": [
+      22,
+      22
+     ],
+     "built-ins/Math": [
+      654,
+      654
+     ],
+     "built-ins/NaN": [
+      10,
+      10
+     ],
+     "built-ins/NativeErrors": [
+      176,
+      176
+     ],
+     "built-ins/Number": [
+      678,
+      678
+     ],
+     "built-ins/Object": [
+      6790,
+      6800
+     ],
+     "built-ins/Promise": [
+      1282,
+      1456
+     ],
+     "built-ins/Proxy": [
+      533,
+      533
+     ],
+     "built-ins/Reflect": [
+      306,
+      306
+     ],
+     "built-ins/RegExp": [
+      3694,
+      3732
+     ],
+     "built-ins/RegExpStringIteratorPrototype": [
+      34,
+      34
+     ],
+     "built-ins/Set": [
+      762,
+      762
+     ],
+     "built-ins/SetIteratorPrototype": [
+      22,
+      22
+     ],
+     "built-ins/ShadowRealm": [
+      0,
+      114
+     ],
+     "built-ins/SharedArrayBuffer": [
+      206,
+      206
+     ],
+     "built-ins/String": [
+      2437,
+      2437
+     ],
+     "built-ins/StringIteratorPrototype": [
+      14,
+      14
+     ],
+     "built-ins/SuppressedError": [
+      0,
+      42
+     ],
+     "built-ins/Symbol": [
+      150,
+      158
+     ],
+     "built-ins/Temporal": [
+      0,
+      9210
+     ],
+     "built-ins/ThrowTypeError": [
+      26,
+      26
+     ],
+     "built-ins/TypedArray": [
+      2608,
+      2624
+     ],
+     "built-ins/TypedArrayConstructors": [
+      1292,
+      1296
+     ],
+     "built-ins/Uint8Array": [
+      128,
+      132
+     ],
+     "built-ins/WeakMap": [
+      232,
+      279
+     ],
+     "built-ins/WeakRef": [
+      54,
+      56
+     ],
+     "built-ins/WeakSet": [
+      168,
+      168
+     ],
+     "built-ins/decodeURI": [
+      110,
+      110
+     ],
+     "built-ins/decodeURIComponent": [
+      111,
+      112
+     ],
+     "built-ins/encodeURI": [
+      62,
+      62
+     ],
+     "built-ins/encodeURIComponent": [
+      62,
+      62
+     ],
+     "built-ins/eval": [
+      20,
+      20
+     ],
+     "built-ins/global": [
+      56,
+      56
+     ],
+     "built-ins/isFinite": [
+      30,
+      30
+     ],
+     "built-ins/isNaN": [
+      30,
+      30
+     ],
+     "built-ins/parseFloat": [
+      108,
+      108
+     ],
+     "built-ins/parseInt": [
+      110,
+      110
+     ],
+     "built-ins/undefined": [
+      12,
+      12
+     ],
+     "intl402/Array": [
+      2,
+      4
+     ],
+     "intl402/BigInt": [
+      10,
+      22
+     ],
+     "intl402/Collator": [
+      0,
+      128
+     ],
+     "intl402/Date": [
+      16,
+      24
+     ],
+     "intl402/DateTimeFormat": [
+      0,
+      488
+     ],
+     "intl402/DisplayNames": [
+      0,
+      112
+     ],
+     "intl402/DurationFormat": [
+      0,
+      220
+     ],
+     "intl402/FallbackSymbol": [
+      0,
+      2
+     ],
+     "intl402/Intl": [
+      0,
+      132
+     ],
+     "intl402/ListFormat": [
+      0,
+      160
+     ],
+     "intl402/Locale": [
+      0,
+      378
+     ],
+     "intl402/Number": [
+      6,
+      14
+     ],
+     "intl402/NumberFormat": [
+      0,
+      500
+     ],
+     "intl402/PluralRules": [
+      0,
+      104
+     ],
+     "intl402/RelativeTimeFormat": [
+      0,
+      158
+     ],
+     "intl402/Segmenter": [
+      0,
+      154
+     ],
+     "intl402/String": [
+      14,
+      38
+     ],
+     "intl402/Temporal": [
+      0,
+      4058
+     ],
+     "intl402/TypedArray": [
+      2,
+      2
+     ],
+     "intl402/constructors-string-and-single-element-array.js": [
+      0,
+      2
+     ],
+     "intl402/constructors-taint-Object-prototype-2.js": [
+      0,
+      2
+     ],
+     "intl402/constructors-taint-Object-prototype.js": [
+      0,
+      2
+     ],
+     "intl402/default-locale-is-canonicalized.js": [
+      0,
+      2
+     ],
+     "intl402/default-locale-is-supported.js": [
+      0,
+      2
+     ],
+     "intl402/fallback-locales-are-supported.js": [
+      0,
+      2
+     ],
+     "intl402/language-tags-canonicalized.js": [
+      0,
+      2
+     ],
+     "intl402/language-tags-invalid.js": [
+      0,
+      2
+     ],
+     "intl402/language-tags-valid.js": [
+      0,
+      2
+     ],
+     "intl402/language-tags-with-underscore.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-consistent-with-resolvedOptions.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-default-locale-and-zxx-locale.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-duplicate-elements-removed.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-empty-and-undefined.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-locales-arg-coered-to-object.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-locales-arg-empty-array.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-returned-array-elements-are-not-frozen.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-taint-Array-2.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-taint-Array.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-test-option-localeMatcher.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-throws-if-element-not-string-or-object.js": [
+      0,
+      2
+     ],
+     "intl402/supportedLocalesOf-unicode-extensions-ignored.js": [
+      0,
+      2
+     ],
+     "language/arguments-object": [
+      458,
+      460
+     ],
+     "language/asi": [
+      204,
+      204
+     ],
+     "language/block-scope": [
+      287,
+      287
+     ],
+     "language/comments": [
+      80,
+      80
+     ],
+     "language/computed-property-names": [
+      96,
+      96
+     ],
+     "language/destructuring": [
+      37,
+      37
+     ],
+     "language/directive-prologue": [
+      62,
+      62
+     ],
+     "language/eval-code": [
+      448,
+      448
+     ],
+     "language/expressions": [
+      20291,
+      21193
+     ],
+     "language/function-code": [
+      281,
+      281
+     ],
+     "language/future-reserved-words": [
+      85,
+      85
+     ],
+     "language/global-code": [
+      50,
+      50
+     ],
+     "language/identifier-resolution": [
+      22,
+      22
+     ],
+     "language/identifiers": [
+      535,
+      535
+     ],
+     "language/import": [
+      12,
+      12
+     ],
+     "language/keywords": [
+      50,
+      50
+     ],
+     "language/line-terminators": [
+      68,
+      82
+     ],
+     "language/literals": [
+      1041,
+      1041
+     ],
+     "language/module-code": [
+      4,
+      6
+     ],
+     "language/punctuators": [
+      22,
+      22
+     ],
+     "language/reserved-words": [
+      52,
+      52
+     ],
+     "language/rest-parameters": [
+      22,
+      22
+     ],
+     "language/source-text": [
+      2,
+      2
+     ],
+     "language/statementList": [
+      160,
+      160
+     ],
+     "language/statements": [
+      17730,
+      17995
+     ],
+     "language/types": [
+      207,
+      207
+     ],
+     "language/white-space": [
+      134,
+      134
+     ]
+    },
+    "es2023": {
+     "all": [
+      73344,
+      75862
+     ],
+     "built-ins": [
+      31663,
+      31783
+     ],
+     "intl402": [
+      50,
+      1894
+     ],
+     "language": [
+      41631,
+      42185
+     ]
+    },
+    "features": {
+     "AggregateError": [
+      60,
+      60
+     ],
+     "Array.fromAsync": [
+      186,
+      186
+     ],
+     "Array.prototype.at": [
+      24,
+      24
+     ],
+     "Array.prototype.flat": [
+      30,
+      30
+     ],
+     "Array.prototype.flatMap": [
+      41,
+      41
+     ],
+     "Array.prototype.includes": [
+      88,
+      138
+     ],
+     "Array.prototype.values": [
+      8,
+      8
+     ],
+     "ArrayBuffer": [
+      484,
+      512
+     ],
+     "Atomics": [
+      402,
+      512
+     ],
+     "Atomics.pause": [
+      0,
+      10
+     ],
+     "Atomics.waitAsync": [
+      0,
+      92
+     ],
+     "BigInt": [
+      2232,
+      2670
+     ],
+     "DataView": [
+      334,
+      366
+     ],
+     "DataView.prototype.getFloat32": [
+      14,
+      14
+     ],
+     "DataView.prototype.getFloat64": [
+      10,
+      10
+     ],
+     "DataView.prototype.getInt16": [
+      14,
+      14
+     ],
+     "DataView.prototype.getInt32": [
+      14,
+      14
+     ],
+     "DataView.prototype.getInt8": [
+      10,
+      10
+     ],
+     "DataView.prototype.getUint16": [
+      14,
+      14
+     ],
+     "DataView.prototype.getUint32": [
+      14,
+      14
+     ],
+     "DataView.prototype.setUint8": [
+      112,
+      112
+     ],
+     "Error.isError": [
+      20,
+      20
+     ],
+     "FinalizationRegistry": [
+      0,
+      96
+     ],
+     "Float16Array": [
+      84,
+      84
+     ],
+     "Float32Array": [
+      8,
+      12
+     ],
+     "Float64Array": [
+      8,
+      12
+     ],
+     "Int16Array": [
+      4,
+      4
+     ],
+     "Int32Array": [
+      8,
+      8
+     ],
+     "Int8Array": [
+      66,
+      76
+     ],
+     "Intl-enumeration": [
+      0,
+      70
+     ],
+     "Intl.DateTimeFormat-datetimestyle": [
+      0,
+      32
+     ],
+     "Intl.DateTimeFormat-dayPeriod": [
+      0,
+      24
+     ],
+     "Intl.DateTimeFormat-extend-timezonename": [
+      0,
+      4
+     ],
+     "Intl.DateTimeFormat-formatRange": [
+      0,
+      74
+     ],
+     "Intl.DateTimeFormat-fractionalSecondDigits": [
+      0,
+      20
+     ],
+     "Intl.DisplayNames": [
+      0,
+      92
+     ],
+     "Intl.DisplayNames-v2": [
+      0,
+      24
+     ],
+     "Intl.DurationFormat": [
+      0,
+      222
+     ],
+     "Intl.Era-monthcode": [
+      0,
+      3132
+     ],
+     "Intl.ListFormat": [
+      0,
+      160
+     ],
+     "Intl.Locale": [
+      0,
+      386
+     ],
+     "Intl.Locale-info": [
+      0,
+      154
+     ],
+     "Intl.NumberFormat-unified": [
+      0,
+      136
+     ],
+     "Intl.NumberFormat-v3": [
+      0,
+      198
+     ],
+     "Intl.RelativeTimeFormat": [
+      0,
+      156
+     ],
+     "Intl.Segmenter": [
+      0,
+      154
+     ],
+     "Iterator.prototype.join": [
+      2,
+      36
+     ],
+     "Map": [
+      74,
+      80
+     ],
+     "Math.sumPrecise": [
+      20,
+      20
+     ],
+     "Object.fromEntries": [
+      50,
+      50
+     ],
+     "Object.hasOwn": [
+      124,
+      124
+     ],
+     "Object.is": [
+      4,
+      4
+     ],
+     "Promise": [
+      8,
+      8
+     ],
+     "Promise.allSettled": [
+      204,
+      204
+     ],
+     "Promise.any": [
+      184,
+      184
+     ],
+     "Promise.prototype.finally": [
+      58,
+      58
+     ],
+     "Proxy": [
+      823,
+      857
+     ],
+     "Reflect": [
+      678,
+      722
+     ],
+     "Reflect.construct": [
+      978,
+      1362
+     ],
+     "Reflect.set": [
+      90,
+      90
+     ],
+     "Reflect.setPrototypeOf": [
+      46,
+      46
+     ],
+     "RegExp.escape": [
+      0,
+      38
+     ],
+     "Set": [
+      74,
+      76
+     ],
+     "ShadowRealm": [
+      0,
+      114
+     ],
+     "SharedArrayBuffer": [
+      602,
+      678
+     ],
+     "String.fromCodePoint": [
+      44,
+      44
+     ],
+     "String.prototype.at": [
+      22,
+      22
+     ],
+     "String.prototype.endsWith": [
+      54,
+      54
+     ],
+     "String.prototype.includes": [
+      52,
+      52
+     ],
+     "String.prototype.isWellFormed": [
+      16,
+      16
+     ],
+     "String.prototype.matchAll": [
+      30,
+      30
+     ],
+     "String.prototype.replaceAll": [
+      80,
+      80
+     ],
+     "String.prototype.toWellFormed": [
+      16,
+      16
+     ],
+     "String.prototype.trimEnd": [
+      46,
+      46
+     ],
+     "String.prototype.trimStart": [
+      44,
+      44
+     ],
+     "Symbol": [
+      1833,
+      2760
+     ],
+     "Symbol.asyncIterator": [
+      1074,
+      1074
+     ],
+     "Symbol.hasInstance": [
+      32,
+      32
+     ],
+     "Symbol.isConcatSpreadable": [
+      65,
+      65
+     ],
+     "Symbol.iterator": [
+      3676,
+      3698
+     ],
+     "Symbol.match": [
+      170,
+      170
+     ],
+     "Symbol.matchAll": [
+      122,
+      122
+     ],
+     "Symbol.prototype.description": [
+      16,
+      16
+     ],
+     "Symbol.replace": [
+      188,
+      188
+     ],
+     "Symbol.search": [
+      70,
+      70
+     ],
+     "Symbol.species": [
+      514,
+      520
+     ],
+     "Symbol.split": [
+      104,
+      104
+     ],
+     "Symbol.toPrimitive": [
+      384,
+      426
+     ],
+     "Symbol.toStringTag": [
+      126,
+      230
+     ],
+     "Symbol.unscopables": [
+      52,
+      52
+     ],
+     "Temporal": [
+      0,
+      13426
+     ],
+     "TypedArray": [
+      4226,
+      4326
+     ],
+     "TypedArray.prototype.at": [
+      26,
+      26
+     ],
+     "Uint16Array": [
+      8,
+      12
+     ],
+     "Uint32Array": [
+      4,
+      4
+     ],
+     "Uint8Array": [
+      18,
+      26
+     ],
+     "Uint8ClampedArray": [
+      8,
+      12
+     ],
+     "WeakMap": [
+      108,
+      157
+     ],
+     "WeakRef": [
+      64,
+      72
+     ],
+     "WeakSet": [
+      62,
+      68
+     ],
+     "__getter__": [
+      54,
+      54
+     ],
+     "__proto__": [
+      36,
+      40
+     ],
+     "__setter__": [
+      54,
+      54
+     ],
+     "align-detached-buffer-semantics-with-web-reality": [
+      146,
+      146
+     ],
+     "array-find-from-last": [
+      190,
+      190
+     ],
+     "array-grouping": [
+      56,
+      56
+     ],
+     "arraybuffer-transfer": [
+      106,
+      110
+     ],
+     "arrow-function": [
+      1224,
+      1648
+     ],
+     "async-functions": [
+      1200,
+      1204
+     ],
+     "async-iteration": [
+      9706,
+      9772
+     ],
+     "await-dictionary": [
+      4,
+      178
+     ],
+     "caller": [
+      0,
+      23
+     ],
+     "canonical-tz": [
+      0,
+      38
+     ],
+     "change-array-by-copy": [
+      270,
+      270
+     ],
+     "class": [
+      9251,
+      9343
+     ],
+     "class-fields-private": [
+      2232,
+      2234
+     ],
+     "class-fields-private-in": [
+      38,
+      38
+     ],
+     "class-fields-public": [
+      4091,
+      4093
+     ],
+     "class-methods-private": [
+      3392,
+      3392
+     ],
+     "class-static-block": [
+      128,
+      130
+     ],
+     "class-static-fields-private": [
+      684,
+      684
+     ],
+     "class-static-fields-public": [
+      416,
+      416
+     ],
+     "class-static-methods-private": [
+      3006,
+      3006
+     ],
+     "coalesce-expression": [
+      46,
+      48
+     ],
+     "computed-property-names": [
+      895,
+      933
+     ],
+     "const": [
+      28,
+      28
+     ],
+     "cross-realm": [
+      0,
+      4
+     ],
+     "decorators": [
+      4,
+      42
+     ],
+     "default-parameters": [
+      4514,
+      4514
+     ],
+     "destructuring-assignment": [
+      213,
+      213
+     ],
+     "destructuring-binding": [
+      13117,
+      13127
+     ],
+     "dynamic-import": [
+      991,
+      1864
+     ],
+     "error-cause": [
+      10,
+      10
+     ],
+     "error-stack-accessor": [
+      0,
+      66
+     ],
+     "explicit-resource-management": [
+      128,
+      820
+     ],
+     "exponentiation": [
+      202,
+      208
+     ],
+     "export-star-as-namespace-from-module": [
+      0,
+      8
+     ],
+     "for-in-order": [
+      18,
+      18
+     ],
+     "for-of": [
+      8,
+      10
+     ],
+     "generators": [
+      7968,
+      8030
+     ],
+     "globalThis": [
+      124,
+      150
+     ],
+     "hashbang": [
+      34,
+      34
+     ],
+     "immutable-arraybuffer": [
+      2,
+      110
+     ],
+     "import-attributes": [
+      43,
+      124
+     ],
+     "import-defer": [
+      172,
+      284
+     ],
+     "import-text": [
+      0,
+      2
+     ],
+     "import.meta": [
+      10,
+      10
+     ],
+     "intl-normative-optional": [
+      0,
+      14
+     ],
+     "iterator-chunking": [
+      10,
+      156
+     ],
+     "iterator-helpers": [
+      14,
+      784
+     ],
+     "iterator-includes": [
+      0,
+      88
+     ],
+     "iterator-sequencing": [
+      0,
+      64
+     ],
+     "joint-iteration": [
+      0,
+      164
+     ],
+     "json-modules": [
+      0,
+      2
+     ],
+     "json-parse-with-source": [
+      0,
+      42
+     ],
+     "json-superset": [
+      8,
+      8
+     ],
+     "let": [
+      121,
+      121
+     ],
+     "logical-assignment-operators": [
+      186,
+      186
+     ],
+     "new.target": [
+      118,
+      124
+     ],
+     "nonextensible-applies-to-private": [
+      0,
+      2
+     ],
+     "numeric-separator-literal": [
+      318,
+      318
+     ],
+     "object-rest": [
+      712,
+      712
+     ],
+     "object-spread": [
+      238,
+      238
+     ],
+     "optional-catch-binding": [
+      10,
+      10
+     ],
+     "optional-chaining": [
+      112,
+      112
+     ],
+     "promise-try": [
+      30,
+      30
+     ],
+     "promise-with-resolvers": [
+      12,
+      12
+     ],
+     "proxy-missing-checks": [
+      6,
+      6
+     ],
+     "regexp-dotall": [
+      30,
+      30
+     ],
+     "regexp-duplicate-named-groups": [
+      30,
+      30
+     ],
+     "regexp-lookbehind": [
+      36,
+      36
+     ],
+     "regexp-match-indices": [
+      60,
+      60
+     ],
+     "regexp-modifiers": [
+      460,
+      460
+     ],
+     "regexp-named-groups": [
+      196,
+      196
+     ],
+     "regexp-unicode-property-escapes": [
+      1362,
+      1362
+     ],
+     "regexp-v-flag": [
+      372,
+      372
+     ],
+     "resizable-arraybuffer": [
+      918,
+      924
+     ],
+     "rest-parameters": [
+      192,
+      192
+     ],
+     "set-methods": [
+      372,
+      372
+     ],
+     "source-phase-imports": [
+      282,
+      458
+     ],
+     "source-phase-imports-module-source": [
+      120,
+      200
+     ],
+     "stable-array-sort": [
+      8,
+      8
+     ],
+     "stable-typedarray-sort": [
+      2,
+      2
+     ],
+     "string-trimming": [
+      92,
+      92
+     ],
+     "super": [
+      38,
+      38
+     ],
+     "symbols-as-weakmap-keys": [
+      36,
+      55
+     ],
+     "tail-call-optimization": [
+      0,
+      34
+     ],
+     "template": [
+      2,
+      2
+     ],
+     "top-level-await": [
+      2,
+      4
+     ],
+     "u180e": [
+      50,
+      50
+     ],
+     "uint8array-base64": [
+      128,
+      132
+     ],
+     "upsert": [
+      46,
+      142
+     ],
+     "well-formed-json-stringify": [
+      2,
+      2
+     ]
+    }
+   }
+  }
+ }
+}
