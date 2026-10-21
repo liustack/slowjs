@@ -95,6 +95,23 @@ func main() {
 		only := fs.String("only", "", "run the tests whose name matches this glob")
 		fs.Parse(args)
 		out = runUpstream(eng, *dir, *budget, *only)
+	case "tifa-ssr":
+		bundle := fs.String("bundle", "", "a tifa SSR bundle (.tifa/dist/ssr.js)")
+		inputs := fs.String("inputs", "", "comma-separated files with the JSON of render inputs")
+		outDir := fs.String("html", "", "write the first HTML of each page here")
+		warm := fs.Int("warm", 50, "renders per page before measuring")
+		n := fs.Int("n", 200, "measured renders per page")
+		intl := fs.Bool("intl", true, "register the engine's own Intl where it is opt-in")
+		prelude := fs.String("prelude", "", "comma-separated scripts to run before the bundle")
+		probe := fs.String("probe", "", "an expression recorded after the first and the timed renders")
+		tag := fs.String("tag", "", "added to the names of the HTML files")
+		mem := fs.Int("mem", 0, "VMs kept alive to measure memory per VM (0: skip)")
+		fs.Parse(args)
+		o := tifaOpts{intl: *intl, probe: *probe, tag: *tag, mem: *mem}
+		if *prelude != "" {
+			o.preludes = strings.Split(*prelude, ",")
+		}
+		out = runTifaSSR(eng, *bundle, strings.Split(*inputs, ","), *outDir, *warm, *n, o)
 	case "cold":
 		bundle := fs.String("bundle", "react/react-ssr.js", "bundle")
 		n := fs.Int("n", 30, "VMs per kind")
