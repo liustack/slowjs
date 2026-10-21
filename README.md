@@ -308,6 +308,26 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   of any language also decodes about 1 MB of shared data. Formatting a date
   takes 3.3 µs in en-US (4.3 µs before) and 3.7 µs in zh-CN, a number
   2.4 µs in en-US (2.4 µs before) and 2.7 µs in de.
+- Package `intl` calls Go through `Builtin`s, with no reflection and no
+  JSON on the way in, and keeps its formatters in one registry for the
+  whole process: a `NumberFormat` made with the same locale and options in
+  another VM, or spelled another way, reuses the one already made. The
+  registry keeps up to 1024 formatters and drops the oldest, and an object
+  whose formatter was dropped makes it again on its next call. Its
+  functions have the shape of built-ins (`length`, `name`, no
+  `prototype`, `toString` showing `[native code]`, accessors and
+  descriptors as ECMA-402 has them), and a page that changes
+  `Array.prototype`, `Object.prototype`, `JSON` or other built-ins after
+  `Register` does not change what it does. On an AMD EPYC 7B13 core:
+  `new Intl.NumberFormat('en')` takes 2.7 µs (16.5 µs before), `format`
+  3.2 µs (5.6 µs), `formatToParts` 6.7 µs (12.9 µs), a
+  `DateTimeFormat` with a time zone 8.1 µs to make (32.0 µs) and 2.6 µs
+  to format (5.2 µs), `PluralRules.select` 0.9 µs (2.9 µs) and
+  `toLocaleDateString` with options 9.5 µs (41.8 µs). A VM that has used
+  `Intl` holds about 15 KB less. test262's intl402 tests pass 912 runs of
+  6764 (770 before), none of those that passed before failing. Tests:
+  `intl/registry_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`,
+  `intl/convert_test.go`, `intl/legacy_test.go`.
 - Package `intl` tells daylight saving time from standard time as ICU does,
   whichever form of the tz data Go reads. In the main form, which Linux
   distributions and Go's `time/tzdata` ship, Europe/Dublin's summer time
