@@ -99,6 +99,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 | :-- | :-- |
 | [Fork changes](docs/fork-changes/README.md) | 想知道这个 fork 和 modernc.org/quickjs 有什么不同，为什么 |
 | [Performance](docs/performance.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
+| [Benchmarks](docs/benchmarks.md) | 想知道这个引擎和其他纯 Go JavaScript 引擎比起来怎样 |
 | [更新记录](CHANGELOG.zh-CN.md) | 升级前想知道改了什么 |
 | [Architecture](docs/architecture.md) | 准备改代码 |
 | [Testing](docs/testing.md) | 准备提交，或者想拿 fork 和上游对照 |
