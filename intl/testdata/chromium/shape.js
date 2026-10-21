@@ -87,7 +87,9 @@ function shape() {
 		Segmenter: ['segment', 'resolvedOptions'],
 		RelativeTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		ListFormat: ['format', 'formatToParts', 'resolvedOptions'],
+		DisplayNames: ['of', 'resolvedOptions'],
 	};
+	const args = {DisplayNames: {type: 'region'}};
 	for (const name of Object.keys(ctors)) {
 		const C = Intl[name], p = 'Intl.' + name;
 		prop(p, Intl, name);
@@ -108,7 +110,7 @@ function shape() {
 				fn(p + '.prototype.' + k, d.value);
 			}
 		}
-		const o = new C('en');
+		const o = new C('en', args[name]);
 		r[p + ' instance toString'] = Object.prototype.toString.call(o);
 		r[p + ' instance keys'] = Reflect.ownKeys(o).map(String).join(' ');
 		for (const k of ['format', 'compare']) {
@@ -159,6 +161,8 @@ function shape() {
 		'RelativeTimeFormat formatToParts': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[1],
 		'RelativeTimeFormat formatToParts literal': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[0],
 		'ListFormat formatToParts': new Intl.ListFormat('en').formatToParts(['a'])[0],
+		'DisplayNames resolvedOptions': new Intl.DisplayNames('en', {type: 'language'}).resolvedOptions(),
+		'DisplayNames resolvedOptions region': new Intl.DisplayNames('en', {type: 'region'}).resolvedOptions(),
 	};
 	for (const k of Object.keys(kinds)) {
 		const o = kinds[k];

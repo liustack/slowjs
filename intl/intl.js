@@ -18,7 +18,7 @@
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts) {
+	lfResolve, lfParts, dnResolve, dnOf) {
 	'use strict';
 
 	const {
@@ -706,6 +706,30 @@
 		[toStringTag]: 'Intl.ListFormat'
 	});
 
+	// ------------------------------------------------------------ DisplayNames
+
+	function DisplayNames(locales = undefined, options = undefined) {
+		requireNew(new.target, 'DisplayNames');
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('DisplayNames', dnResolve, pushOptions(args, optionsObject(options), lists.DisplayNames)));
+	}
+	defineProperty(DisplayNames, 'length', {__proto__: null, value: 2});
+
+	defineConstructor(DisplayNames, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('DisplayNames', locales, options);
+		}
+	}, {
+		of(code) {
+			const v = call(internal(this, 'DisplayNames'), dnOf, toString(code));
+			return typeof v === 'number' ? undefined : v;
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'DisplayNames'), optionsOf));
+		},
+		[toStringTag]: 'Intl.DisplayNames'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
@@ -715,6 +739,7 @@
 		PluralRules: PluralRules,
 		RelativeTimeFormat: RelativeTimeFormat,
 		ListFormat: ListFormat,
+		DisplayNames: DisplayNames,
 		Segmenter: Segmenter,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));

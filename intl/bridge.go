@@ -201,8 +201,16 @@ var (
 		resolve: func(req request) (formatter, error) { return resolveListFormat(req) },
 	}
 
+	displayNamesCtor = &ctor{
+		name:    "DisplayNames",
+		tag:     'I',
+		goSvc:   gointl.ServiceDisplayNames,
+		options: stringOptions("localeMatcher", "style", "type", "fallback", "languageDisplay"),
+		resolve: func(req request) (formatter, error) { return resolveDisplayNames(req) },
+	}
+
 	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor,
-		relativeTimeFormatCtor, listFormatCtor}
+		relativeTimeFormatCtor, listFormatCtor, displayNamesCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -618,6 +626,24 @@ var bridge = []*quickjs.Builtin{
 		}
 
 		return listParts(a.VM(), items, f.f.FormatToParts(items))
+	}),
+	resolveBuiltin(displayNamesCtor),
+	// dnOf answers the name, or the number 0 for none.
+	quickjs.NewBuiltin("dnOf", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		d, ok, err := formatterOf[*displayNames](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		code, _ := a.String(1)
+		name, ok, err := d.of(code)
+		switch {
+		case err != nil:
+			return quickjs.Value{}, jsErr(err)
+		case !ok:
+			return a.VM().NewInt(0), nil
+		}
+		return a.VM().NewString(name)
 	}),
 }
 

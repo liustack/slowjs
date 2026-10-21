@@ -10,8 +10,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
+
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // The corpora of the constructors built on go-intl. Their locales are a
@@ -462,3 +466,413 @@ func listExprs() (r []string) {
 	}
 	return r
 }
+
+// The codes DisplayNames names, of each type: common and rare ones, codes
+// with no name, and codes in other cases and forms.
+var (
+	dnLanguages = `['en', 'en-US', 'en-GB', 'en-AU', 'en-CA', 'en-IN', 'fr', 'fr-CA', 'fr-CH', 'de', 'de-AT', 'de-CH', 'es', 'es-419', 'es-MX', ` +
+		`'es-ES', 'pt', 'pt-BR', 'pt-PT', 'zh', 'zh-Hans', 'zh-Hant', 'zh-CN', 'zh-TW', 'zh-HK', 'zh-Hant-HK', 'yue', 'ja', 'ko', ` +
+		`'ar', 'ar-001', 'he', 'iw', 'hi', 'bn', 'ru', 'uk', 'sr', 'sr-Latn', 'sr-Cyrl-ME', 'nl', 'nl-BE', 'sv', 'nb', 'no', 'nn', ` +
+		`'mo', 'ro-MD', 'sw-CD', 'ca-ES-valencia', 'en-Latn-US', 'tlh', 'qaa', 'xyz', 'und', 'root', 'EN-us', 'zh-hant-tw', ` +
+		`'fil', 'tl', 'in', 'ms-Arab', 'az-Arab', 'uz-Cyrl', 'pa-Arab', 'ks-Deva', 'en-US-posix', 'de-1996', 'sl-rozaj', 'arb', 'cmn']`
+	dnRegions = `['US', 'GB', 'DE', 'FR', 'CN', 'TW', 'HK', 'MO', 'JP', 'KR', 'KP', 'IN', 'RU', 'UA', 'BR', 'MX', 'PS', 'EH', ` +
+		`'XK', 'MK', 'CZ', 'SZ', 'CI', 'MM', 'TL', 'CD', 'CG', 'FK', 'AQ', 'EU', 'EZ', 'UN', 'ZZ', 'QO', 'AA', '001', '002', '019', '150', ` +
+		`'419', '999', 'us', 'gB', 'XA', 'XB', 'BU', 'DD', 'SU', 'YU']`
+	dnScripts = `['Latn', 'Cyrl', 'Arab', 'Hans', 'Hant', 'Jpan', 'Kore', 'Hira', 'Kana', 'Hang', 'Deva', 'Beng', 'Thai', 'Grek', ` +
+		`'Hebr', 'Ethi', 'Mong', 'Tibt', 'Zyyy', 'Zzzz', 'Zinh', 'Zmth', 'Zsye', 'Brai', 'Qaaa', 'Xxxx', 'latn', 'LATN', 'hAnS']`
+	dnCurrencies = `['USD', 'EUR', 'JPY', 'CNY', 'GBP', 'CHF', 'CAD', 'AUD', 'HKD', 'TWD', 'KRW', 'INR', 'RUB', 'BRL', 'MXN', ` +
+		`'XAU', 'XXX', 'XTS', 'BTC', 'ABC', 'DEM', 'FRF', 'ESP', 'VEF', 'VES', 'usd', 'eUr', 'ZWL', 'SLE', 'SLL', 'CNH']`
+	dnCalendars = `['gregory', 'buddhist', 'chinese', 'coptic', 'dangi', 'ethioaa', 'ethiopic', 'hebrew', 'indian', 'islamic', ` +
+		`'islamic-civil', 'islamic-umalqura', 'islamic-tbla', 'islamic-rgsa', 'iso8601', 'japanese', 'persian', 'roc', 'gregorian', ` +
+		`'islamicc', 'ethiopic-amete-alem', 'unknown', 'GREGORY']`
+	dnFields = `['era', 'year', 'quarter', 'month', 'weekOfYear', 'weekday', 'day', 'dayPeriod', 'hour', 'minute', 'second', 'timeZoneName']`
+)
+
+var dnLocales = []string{
+	"en", "en-GB", "en-AU", "en-IN", "de", "de-CH", "fr", "fr-CA", "es", "es-MX", "it", "pt", "pt-PT", "nl", "sv",
+	"da", "nb", "fi", "pl", "cs", "hu", "ro", "tr", "ru", "uk", "el", "he", "ar", "fa", "hi", "bn", "ta", "th",
+	"vi", "id", "ms", "fil", "sw", "ja", "ko", "zh", "zh-TW", "zh-HK", "yue", "kk", "az", "sr", "sr-Latn", "xx",
+}
+
+func dnExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	tags := append(chromiumTags(4), "und", "xx", "EN-us", "en-u-nu-arab", "en-u-ca-japanese", "x-private", "sr-ME",
+		"iw", "in", "mo", "de-u-co-phonebk")
+	for _, tag := range tags {
+		add(`JSON.stringify(new Intl.DisplayNames(%q,{type:'language'}).resolvedOptions())`, tag)
+	}
+	for _, tag := range []string{"en", "zh", "xx"} {
+		for _, o := range []string{`{type:'region'}`, `{type:'script'}`, `{type:'currency'}`, `{type:'calendar'}`, `{type:'dateTimeField'}`,
+			`{type:'language',style:'short'}`, `{type:'region',style:'narrow'}`, `{type:'language',fallback:'none'}`,
+			`{type:'language',languageDisplay:'standard'}`, `{type:'region',languageDisplay:'standard'}`, `{type:'script',fallback:'code'}`,
+			`{type:'language',localeMatcher:'lookup'}`} {
+			add(`JSON.stringify(new Intl.DisplayNames(%q,%s).resolvedOptions())`, tag, o)
+		}
+	}
+
+	kinds := []struct{ typ, codes string }{
+		{"language", dnLanguages}, {"region", dnRegions}, {"script", dnScripts}, {"currency", dnCurrencies},
+		{"calendar", dnCalendars}, {"dateTimeField", dnFields},
+	}
+	for _, l := range dnLocales {
+		for _, k := range kinds {
+			for _, o := range []string{`style:'long'`, `style:'short'`, `style:'narrow'`, `fallback:'none'`} {
+				add(`(() => {const d = new Intl.DisplayNames(%q,{type:%q,%s}); return %s.map((c) => {try {return String(d.of(c))} catch (e) {return e.constructor.name}}).join('|')})()`, l, k.typ, o, k.codes)
+			}
+		}
+		add(`(() => {const d = new Intl.DisplayNames(%q,{type:'language',languageDisplay:'standard'}); return %s.map((c) => {try {return String(d.of(c))} catch (e) {return e.constructor.name}}).join('|')})()`, l, dnLanguages)
+	}
+
+	// Every language Chromium has names for.
+	for _, l := range chromiumLanguages("DisplayNames") {
+		add(`[new Intl.DisplayNames(%q,{type:'language'}).of('de-CH'), new Intl.DisplayNames(%q,{type:'region'}).of('JP'), new Intl.DisplayNames(%q,{type:'script'}).of('Cyrl'), new Intl.DisplayNames(%q,{type:'currency'}).of('EUR'), new Intl.DisplayNames(%q,{type:'calendar'}).of('gregory'), new Intl.DisplayNames(%q,{type:'dateTimeField'}).of('weekday')].join('|')`, l, l, l, l, l, l)
+	}
+
+	for _, e := range []string{
+		`new Intl.DisplayNames('en', {type:'language'}).of({toString() { return 'fr'; }})`,
+		`String(new Intl.DisplayNames('en', {type:'region', fallback:'none'}).of('ZZ'))`,
+		`String(new Intl.DisplayNames('en', {type:'language', fallback:'none'}).of('xyz'))`,
+		`new Intl.DisplayNames('en', {type:'language'}).of('en-Latn-US-u-ca-gregory')`,
+		`JSON.stringify(Intl.DisplayNames.supportedLocalesOf(['en', 'de', 'xx', 'zh-Hant-TW', 'kk', 'az']))`,
+		`JSON.stringify(Intl.DisplayNames.supportedLocalesOf(['en-US', 'ar-EG'], {localeMatcher:'lookup'}))`,
+		`Object.prototype.toString.call(new Intl.DisplayNames('en', {type:'region'}))`,
+		`Intl.DisplayNames.length`,
+	} {
+		add(`%s`, e)
+	}
+	add(`JSON.stringify(Intl.DisplayNames.supportedLocalesOf(%s))`, validTags(chromiumTags(3)))
+
+	for _, src := range []string{
+		`Intl.DisplayNames('en', {type:'region'})`, `new Intl.DisplayNames('en')`, `new Intl.DisplayNames('en', {})`,
+		`new Intl.DisplayNames('en', undefined)`, `new Intl.DisplayNames('en', null)`, `new Intl.DisplayNames('en', 5)`,
+		`new Intl.DisplayNames('en', 'region')`, `new Intl.DisplayNames('en-', {type:'region'})`, `new Intl.DisplayNames(null, {type:'region'})`,
+		`new Intl.DisplayNames('en', {type:'x'})`, `new Intl.DisplayNames('en', {type:'region', style:'x'})`,
+		`new Intl.DisplayNames('en', {type:'region', fallback:'x'})`, `new Intl.DisplayNames('en', {type:'language', languageDisplay:'x'})`,
+		`new Intl.DisplayNames('en', {type:'region', languageDisplay:'x'})`, `new Intl.DisplayNames('en', {type:'region', localeMatcher:'x'})`,
+		`new Intl.DisplayNames('en', {type:'unit'})`, `new Intl.DisplayNames('en', {type:'region'}).of()`,
+		`new Intl.DisplayNames('en', {type:'region'}).of('')`, `new Intl.DisplayNames('en', {type:'region'}).of('USA')`,
+		`new Intl.DisplayNames('en', {type:'region'}).of('1')`, `new Intl.DisplayNames('en', {type:'script'}).of('Lat')`,
+		`new Intl.DisplayNames('en', {type:'currency'}).of('US')`, `new Intl.DisplayNames('en', {type:'currency'}).of('US1')`,
+		`new Intl.DisplayNames('en', {type:'language'}).of('en-')`, `new Intl.DisplayNames('en', {type:'language'}).of('en-u-ca-gregory')`,
+		`new Intl.DisplayNames('en', {type:'language'}).of('en-x-private')`, `new Intl.DisplayNames('en', {type:'language'}).of('root')`,
+		`new Intl.DisplayNames('en', {type:'language'}).of('en_US')`, `new Intl.DisplayNames('en', {type:'calendar'}).of('ab')`,
+		`new Intl.DisplayNames('en', {type:'calendar'}).of('gregory-')`, `new Intl.DisplayNames('en', {type:'dateTimeField'}).of('week')`,
+		`new Intl.DisplayNames('en', {type:'dateTimeField'}).of('Era')`, `new Intl.DisplayNames('en', {type:'region'}).of(Symbol())`,
+		`Intl.DisplayNames.prototype.of('US')`, `Intl.DisplayNames.prototype.resolvedOptions()`,
+		`Intl.DisplayNames.prototype.of.call(new Intl.NumberFormat(), 'US')`, `Intl.DisplayNames.supportedLocalesOf('en', null)`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}
+
+// A dnItem is one name of a DisplayNames expression: in the locale and
+// with the options of its expression, the code asked for and the two
+// answers, ours and Chromium's.
+type dnItem struct {
+	loc, typ, style, code string
+	none                  bool // fallback:'none', where Chromium has no name is undefined
+	got, want             string
+}
+
+var (
+	dnGrid  = regexp.MustCompile(`^\(\(\) => \{const d = new Intl\.DisplayNames\("([^"]+)",\{type:["'](\w+)["'],(?:style:'(\w+)'|fallback:'none'|languageDisplay:'standard')\}\); return \[(.*?)\]\.map`)
+	dnSweep = regexp.MustCompile(`^\[new Intl\.DisplayNames\("([^"]+)",\{type:'language'\}\)\.of\('de-CH'\)`)
+)
+
+// dnItems are the names of expr that differ, or false when expr is not
+// a list of names or the two answers do not list as many.
+func dnItems(expr, got, want string) ([]dnItem, bool) {
+	var loc, style string
+	var typs, codes []string
+	none := strings.Contains(expr, "fallback:'none'")
+	if m := dnGrid.FindStringSubmatch(expr); m != nil {
+		loc, style = m[1], m[3]
+		for _, c := range strings.Split(m[4], ", ") {
+			codes = append(codes, strings.Trim(c, "'"))
+			typs = append(typs, m[2])
+		}
+	} else if m := dnSweep.FindStringSubmatch(expr); m != nil {
+		loc = m[1]
+		typs = []string{"language", "region", "script", "currency", "calendar", "dateTimeField"}
+		codes = []string{"de-CH", "JP", "Cyrl", "EUR", "gregory", "weekday"}
+	} else {
+		return nil, false
+	}
+	if style == "" {
+		style = "long"
+	}
+	g, w := strings.Split(got, "|"), strings.Split(want, "|")
+	if len(g) != len(codes) || len(w) != len(codes) {
+		return nil, false
+	}
+
+	var r []dnItem
+	for i := range codes {
+		if g[i] != w[i] {
+			r = append(r, dnItem{loc, typs[i], style, codes[i], none, g[i], w[i]})
+		}
+	}
+	return r, true
+}
+
+// dnRootData are the languages Chromium has the locales of but no names
+// data for: their names are root's, which are codes, ICU's own keys for
+// calendars and English for fields, but for regions and currencies, which
+// go to English, the default locale. The sweep over every language shows
+// them.
+var dnRootData = []string{"ak", "az", "bs", "kk", "kok", "pa", "sd", "uz"}
+
+// dnRootFields are root's names of the date-time fields, and
+// dnRootCalendars ICU's keys of the calendars whose key is not the BCP 47
+// type.
+var (
+	dnRootFields = map[string]string{
+		"era": "Era", "year": "Year", "quarter": "Quarter", "month": "Month", "weekOfYear": "Week", "weekday": "Day of the Week",
+		"day": "Day", "dayPeriod": "Dayperiod", "hour": "Hour", "minute": "Minute", "second": "Second", "timeZoneName": "Zone",
+	}
+	dnRootCalendars = map[string]string{"gregory": "gregorian", "ethioaa": "ethiopic-amete-alem"}
+)
+
+// dnChromiumNames turns go-intl's names in loc into Chromium's, which
+// has the short names of Hong Kong, Macao and Palestine as their names:
+// "Hong Kong" for "Hong Kong SAR China".
+func dnChromiumNames(loc string) *strings.Replacer {
+	if r, ok := dnChromiumNamesIn.Load(loc); ok {
+		return r.(*strings.Replacer)
+	}
+
+	r := dnChromiumNamesOf(loc)
+	dnChromiumNamesIn.Store(loc, r)
+	return r
+}
+
+var dnChromiumNamesIn sync.Map
+
+func dnChromiumNamesOf(loc string) *strings.Replacer {
+	var pairs []string
+	l, err := goResolve(gointl.ServiceDisplayNames, []string{loc})
+	if err != nil {
+		return strings.NewReplacer()
+	}
+
+	long, err1 := gointl.NewDisplayNames(l, gointl.DisplayNamesOptions{Kind: gointl.DisplayRegion, Compat: goCompat})
+	short, err2 := gointl.NewDisplayNames(l, gointl.DisplayNamesOptions{Kind: gointl.DisplayRegion, Style: gointl.DisplayShort, Compat: goCompat})
+	if err1 != nil || err2 != nil {
+		return strings.NewReplacer()
+	}
+
+	for _, r := range []string{"HK", "MO", "PS"} {
+		n, _ := long.Of(r)
+		s, _ := short.Of(r)
+		if n != s {
+			// Beside a language, ICU writes its brackets as square ones.
+			square := strings.NewReplacer("(", "[", ")", "]")
+			pairs = append(pairs, n, s, square.Replace(n), square.Replace(s))
+		}
+	}
+	return strings.NewReplacer(pairs...)
+}
+
+// dnFalklands reports whether want is a name of the Falkland Islands,
+// which Chromium has CLDR's variant name for, with the Spanish name in it,
+// and go-intl does not have: "Falkland Islands (Islas Malvinas)", "îles
+// Falkland (Malouines)", "جزر فوكلاند - جزر مالفيناس". Any name but the
+// code is that one.
+func dnFalklands(it dnItem, want string) bool {
+	return it.typ == "region" && it.code == "FK" && want != "FK" && want != "undefined"
+}
+
+// dnSeparators are what locales put between the parts beside a name.
+var dnSeparators = regexp.MustCompile(`, |، |、|，`)
+
+// dnBeside finds the parts beside a name, in brackets at its end, which
+// some locales write with no space before them and some as full width.
+var dnBeside = regexp.MustCompile(`^(.*?) ?[(（]([^()（）]*)[)）]$`)
+
+// dnParts splits a name into the name and what is put beside it:
+// "Catalan (Spain, Valencian)" is "Catalan", then "Spain" and "Valencian".
+// The name may have its own: "anglais (É.-U.) (informatique)".
+func dnParts(name string) []string {
+	m := dnBeside.FindStringSubmatch(name)
+	if m == nil {
+		return []string{name}
+	}
+
+	return append([]string{m[1]}, dnSeparators.Split(m[2], -1)...)
+}
+
+// dnCodes are the codes Chromium may write in place of a name of code:
+// code and its canonical form, whole and by subtags.
+func dnCodes(code string) map[string]bool {
+	r := map[string]bool{}
+	add := func(s string) {
+		r[strings.ToLower(s)] = true
+		for _, sub := range strings.Split(s, "-") {
+			r[strings.ToLower(sub)] = true
+		}
+	}
+	add(code)
+	if c, err := goCanonicalizer(); err == nil {
+		if l, err := c.Canonicalize(code); err == nil {
+			add(l.String())
+		}
+	}
+	return r
+}
+
+// dnExplained reports whether Chromium's name differs from ours only as its
+// ICU data does: a name, or a part of one, it has no name for is the code,
+// a language with no names data has root's and English ones, and a few
+// English names are Chromium's own. english are Chromium's English names
+// for the same expression and of regions in the same style.
+func dnExplained(it dnItem, english map[string]bool) bool {
+	got := dnChromiumNames(it.loc).Replace(it.got)
+	if got == it.want || dnFalklands(it, it.want) {
+		return true
+	}
+
+	if it.none && it.want == "undefined" {
+		// No name, where root's would be the code.
+		return true
+	}
+
+	root := slices.Contains(dnRootData, strings.Split(it.loc, "-")[0])
+	if root {
+		switch {
+		case english[it.want]:
+			return true
+		case it.typ == "dateTimeField":
+			return it.want == dnRootFields[it.code]
+		case it.typ == "calendar":
+			return it.want == it.code || it.want == dnRootCalendars[it.code]
+		}
+	}
+	codes := dnCodes(it.code)
+	if codes[strings.ToLower(it.want)] {
+		return true
+	}
+
+	g, w := dnParts(got), dnParts(it.want)
+	if root {
+		// Root's code for the language, or the locale's name of its own
+		// language, the one name Chromium keeps, with codes and English
+		// names beside it.
+		if !codes[strings.ToLower(w[0])] && w[0] != g[0] && w[0] != dnOwnName(it) {
+			return false
+		}
+
+		region := dnEnglishRegion(it)
+		for _, part := range w[1:] {
+			if !codes[strings.ToLower(part)] && !english[part] && part != region {
+				return false
+			}
+		}
+		return true
+	}
+	if len(g) != len(w) {
+		return false
+	}
+
+	for i := range w {
+		if g[i] != w[i] && !codes[strings.ToLower(w[i])] {
+			return false
+		}
+	}
+	return true
+}
+
+// dnOwnName is go-intl's name of the language of it's locale in it, when
+// it's code is of that language.
+func dnOwnName(it dnItem) string {
+	lang := strings.Split(it.loc, "-")[0]
+	if strings.Split(it.code, "-")[0] != lang {
+		return ""
+	}
+
+	l, err := gointl.ParseLocale(lang)
+	if err != nil {
+		return ""
+	}
+
+	d, err := gointl.NewDisplayNames(l, gointl.DisplayNamesOptions{Kind: gointl.DisplayLanguage, Compat: goCompat})
+	if err != nil {
+		return ""
+	}
+
+	name, _ := d.Of(lang)
+	return name
+}
+
+// dnEnglishRegions are the expressions of English names of regions, by
+// style.
+var dnEnglishRegions = sync.OnceValue(func() map[string][]string {
+	r := map[string][]string{}
+	for _, e := range dnExprs() {
+		if m := dnGrid.FindStringSubmatch(e); m != nil && m[1] == "en" && m[2] == "region" {
+			style := m[3]
+			if style == "" {
+				style = "long"
+			}
+			r[style] = append(r[style], e)
+		}
+	}
+	return r
+})
+
+// dnEnglishRegion is the English name of the region of it's code, in its
+// style, as Chromium has it.
+func dnEnglishRegion(it dnItem) string {
+	c, err := goCanonicalizer()
+	if err != nil {
+		return ""
+	}
+
+	l, err := c.Canonicalize(it.code)
+	if err != nil || l.Region.String() == "" {
+		return ""
+	}
+
+	opts := gointl.DisplayNamesOptions{Kind: gointl.DisplayRegion, Compat: goCompat}
+	if it.style != "long" {
+		opts.Style = gointl.DisplayShort
+	}
+	d, err := gointl.NewDisplayNames(goDefaultLocale, opts)
+	if err != nil {
+		return ""
+	}
+
+	name, _ := d.Of(l.Region.String())
+	return dnChromiumNames("en").Replace(name)
+}
+
+// dnEnglish are Chromium's English names for expr's codes, and of regions
+// in the style of expr, from the corpus.
+func dnEnglish(expr string, recorded map[string]string) map[string]bool {
+	r := map[string]bool{}
+	m := dnGrid.FindStringSubmatch(expr)
+	var en []string
+	if m == nil {
+		if m = dnSweep.FindStringSubmatch(expr); m == nil {
+			return r
+		}
+		en = append(en, strings.ReplaceAll(expr, fmt.Sprintf("%q", m[1]), `"en"`))
+	} else {
+		en = append(en, strings.Replace(expr, fmt.Sprintf("%q", m[1]), `"en"`, 1))
+		style := m[3]
+		if style == "" {
+			style = "long"
+		}
+		en = append(en, dnEnglishRegions()[style]...)
+	}
+	for _, e := range en {
+		for _, name := range strings.Split(recorded[e], "|") {
+			r[name] = true
+		}
+	}
+	return r
+}
+
+// dnGoIntlFields are the names of fields go-intl has otherwise than ICU,
+// which Node 77 writes as Chromium does: by locale, style and field.
+var dnGoIntlFields = map[[3]string]bool{{"de-CH", "narrow", "era"}: true, {"th", "narrow", "timeZoneName"}: true}

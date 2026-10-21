@@ -28,6 +28,9 @@
 //   - Intl.ListFormat: conjunctions, disjunctions and unit lists in every
 //     style, with the joins that depend on the next item, as Spanish "e"
 //     and "u" and Hebrew "ו-".
+//   - Intl.DisplayNames: the names of languages, with dialect names such
+//     as "British English" or without, of regions, scripts, currencies,
+//     calendars and date fields, in every style.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
@@ -59,7 +62,7 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.DisplayNames, Intl.DurationFormat,
+// Not implemented: Intl.DurationFormat,
 // Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
 // roundingIncrement and roundingPriority but only implement their defaults,
 // which is what resolvedOptions reports: a value out of range throws a
@@ -89,6 +92,16 @@
 // full stop or a colon between letters ends a word, so "U.S.A" is five
 // segments and "a:b" three, and Lao and Khmer break by smaller dictionaries
 // of Chromium's own, which find other words in some runs.
+//
+// Intl.DisplayNames names more than Chromium, whose ICU data leaves names
+// out: of some languages ("tlh" for Klingon), of variants ("German (1996)"),
+// of numeric regions but 419, and of currencies no longer in use, which it
+// writes as their codes, or leaves undefined with fallback none. It has no
+// names at all for ak, az, bs, kk, kok, pa, sd and uz, which it names as
+// root does, by codes, or in English. And it has names of its own for Hong
+// Kong, Macao, Palestine and the Falkland Islands ("Hong Kong" for "Hong
+// Kong SAR China"). Here the names are CLDR's. The narrow names of de-CH's
+// era and th's time zone are go-intl's, which ICU writes otherwise.
 //
 // Error messages are worded differently, though the errors thrown are the
 // same.

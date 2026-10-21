@@ -68,6 +68,12 @@ var uses = `(() => {
 	use(() => new Intl.ListFormat('de', {type: 'unit', style: 'narrow'}).format(new Set(['1 m', '2 cm'])));
 	use(() => show(new Intl.ListFormat('kk').resolvedOptions()) + ' ' + new Intl.ListFormat('kk').format(['a', 'b']));
 	use(() => new Intl.ListFormat().format(['a', 1]));
+	use(() => new Intl.DisplayNames('de', {type: 'region'}).of('US') + ' ' + new Intl.DisplayNames('en', {type: 'language'}).of('zh-Hant-TW'));
+	use(() => new Intl.DisplayNames('fr', {type: 'currency', style: 'short'}).of('eur') + ' ' + new Intl.DisplayNames('ja', {type: 'dateTimeField'}).of('weekday'));
+	use(() => String(new Intl.DisplayNames('en', {type: 'script', fallback: 'none'}).of('Zzzz')) + ' ' + new Intl.DisplayNames('en', {type: 'calendar'}).of('gregory'));
+	use(() => show(new Intl.DisplayNames('es', {type: 'language', languageDisplay: 'standard'}).resolvedOptions()));
+	use(() => new Intl.DisplayNames('en', {type: 'region'}).of('USA'));
+	use(() => new Intl.DisplayNames('en'));
 	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();
@@ -94,7 +100,7 @@ var tamper = [
 		for (const k of ['style', 'currency', 'localeMatcher', 'type', 'timeZone', 'hour12', 'useGrouping',
 			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation',
 			'granularity', 'segment', 'index', 'input', 'isWordLike', 'done', 'next', 'numeric', 'unit',
-			'items', 's', 'element', 'literal']) {
+			'items', 's', 'element', 'literal', 'fallback', 'languageDisplay', 'code']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Object.prototype slots', `

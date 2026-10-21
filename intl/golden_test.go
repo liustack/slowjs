@@ -181,6 +181,49 @@ var goldenDifferences = []goldenDifference{
 			return goldenOtherCalendar(expr) && ok && got == stripped
 		},
 	},
+	{
+		// Chromium's ICU data has fewer names than CLDR: none for some
+		// languages, the numeric regions but 419, variants, and currencies
+		// that are no longer used, which it writes as their codes. It has
+		// none at all for ak, az, bs, kk, kok, pa, sd and uz, which it
+		// names as root and English do. And a few English names are its
+		// own: "Hong Kong" for "Hong Kong SAR China". go-intl has CLDR's
+		// names. Every name that differs has to differ that way.
+		why: "Chromium's ICU data has fewer names, and a few of its own",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			items, ok := dnItems(expr, got, want)
+			if !ok || len(items) == 0 {
+				return false
+			}
+
+			english := dnEnglish(expr, recorded)
+			for _, it := range items {
+				if !dnExplained(it, english) {
+					return false
+				}
+			}
+			return true
+		},
+	},
+	{
+		// go-intl falls back to other narrow names of fields than ICU does
+		// in two locales: de-CH's era and th's time zone, which Node 77
+		// writes as Chromium does.
+		why: "go-intl's narrow names of two fields",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			items, ok := dnItems(expr, got, want)
+			if !ok || len(items) == 0 {
+				return false
+			}
+
+			for _, it := range items {
+				if !dnGoIntlFields[[3]string{it.loc, it.style, it.code}] {
+					return false
+				}
+			}
+			return true
+		},
+	},
 }
 
 type golden struct {
@@ -200,6 +243,7 @@ var goldenSets = []struct {
 	{"segmenter", segmenterExprs},
 	{"relativetime", rtfExprs},
 	{"list", listExprs},
+	{"displaynames", dnExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for
