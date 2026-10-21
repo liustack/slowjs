@@ -1,0 +1,67 @@
+diff --git a/source.go b/source.go
+index 56a6838..544df1d 100644
+--- a/source.go
++++ b/source.go
+@@ -1,14 +1,11 @@
+ package intl
+ 
+ import (
+-	_ "embed"
+ 	"errors"
+ 	"fmt"
+ 	"io/fs"
+-	"unsafe"
+ 
+ 	"github.com/liustack/quickjs/internal/gointl/internal/blob"
+-	"github.com/liustack/quickjs/internal/gointl/internal/datapack"
+ 	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+ )
+ 
+@@ -168,16 +165,11 @@ type Source interface {
+ 	Open(m Marker, d DataLocale) ([]byte, error)
+ }
+ 
+-// The data directory is embedded packed into one file, data.pack, which
+-// internal/packgen writes, so that it is read where it lies: an embed.FS
+-// copies a file out on every read, and building a formatter reads a dozen.
+-//
+-//go:embed data.pack
+-var embeddedPack string
+-
+ // Embedded is the data built into this package. It is the default, so that the
+ // simple path needs no setting up, and it is only a default: anything taking a
+ // Source can be given another.
++//
++// In quickjs it is not go-intl's data.pack but the packs qjs_source.go embeds.
+ var Embedded EmbeddedSource
+ 
+ // EmbeddedSource is Embedded's type, the data built into the package. Its
+@@ -187,27 +179,7 @@ type EmbeddedSource struct{}
+ 
+ // Open serves the embedded data.
+ func (EmbeddedSource) Open(m Marker, d DataLocale) ([]byte, error) {
+-	return packSource{embeddedPack}.Open(m, d)
+-}
+-
+-// packSource serves a pack in place.
+-type packSource struct{ pack string }
+-
+-func (s packSource) Open(m Marker, d DataLocale) ([]byte, error) {
+-	return openFiles(s, m, d)
+-}
+-
+-func (s packSource) readFile(name string) ([]byte, error) {
+-	start, end, ok := datapack.Find(s.pack, name)
+-	if !ok {
+-		return nil, fs.ErrNotExist
+-	}
+-	if start == end {
+-		return []byte{}, nil
+-	}
+-	// The pack's own memory, which is read-only: Source's bytes are never
+-	// changed.
+-	return unsafe.Slice(unsafe.StringData(s.pack[start:end]), end-start), nil
++	return openFiles(qjsFiles{}, m, d)
+ }
+ 
+ // NewFS returns a Source that reads from a file system, such as the data
