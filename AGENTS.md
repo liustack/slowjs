@@ -79,7 +79,7 @@ Plans, design drafts, experiment notes and raw measurement data go in the reposi
 
 ## Verification and commits
 
-- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet ./internal/fixlib`, `go run ./internal/fixlib -check` and `scripts/docs-list.sh --check`, and the branch passes `go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib` before it is merged (the tests of `internal/fixlib` take 8 to 13 minutes).
+- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet ./internal/fixlib`, `go run ./internal/fixlib -check` and `scripts/docs-list.sh --check`, and the branch passes `go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib` before it is merged (the tests of `internal/fixlib` take about 16 minutes).
 - The generated files are large. Build and test a few packages at a time (`-p 2`), and run heavy jobs such as test262, `make build_all_targets` or the race detector one after another, not in parallel.
 - For new behavior, write a failing test first, then implement. For a bug, find the root cause before changing code, and do not hide it with fallback values.
 - After an upstream release, follow [docs/upgrading.md](docs/upgrading.md). When `fixlib` stops, read the code it names before updating any list.

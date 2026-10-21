@@ -28,7 +28,7 @@ go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib
 
 - `go vet` on the root package and on `lib/` reports the `unsafe.Pointer` conversions of the tests and of the generated code, so nothing runs it there. Upstream's Makefile of `lib/` passes `-vet=off` to its tests, since vet is slow on the generated files, and so do some commands below.
 - `-p 2` builds at most two packages at once: the generated files are large, and building several of them together takes much memory.
-- The tests of `internal/fixlib` take 8 to 13 minutes, longer than the 10 minutes `go test` gives by default, so every command that runs them passes `-timeout 30m`.
+- The tests of `internal/fixlib` take about 16 minutes on two hyperthreads of one AMD EPYC 7B13 core, with 20 minutes of CPU, longer than the 10 minutes `go test` gives by default, so every command that runs them passes `-timeout 30m`. On cores other work is using they take much longer, past an hour.
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
@@ -57,7 +57,7 @@ To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'T
 ## Focused checks
 
 ```sh
-go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes 8 to 13 minutes)
+go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes about 16 minutes)
 go test -vet=off -run 'TestToCString' ./lib              # the leak of JS_ToCStringLen2 out of memory
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
