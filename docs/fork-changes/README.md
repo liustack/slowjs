@@ -50,6 +50,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Kept shapes | v0.26.16 | [objects-and-shapes.md](objects-and-shapes.md#kept-shapes) |
 | SetShapeCache and DefaultShapeCache | v0.26.16 | [go-api.md](go-api.md#setshapecache-and-defaultshapecache) |
 | for in skips prototypes with no enumerable property | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) |
+| String keys that are already atoms | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#string-keys-that-are-already-atoms) |
 | Bitwise operators on floats skip the slow path | Unreleased | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | Unreleased | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
 | One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |

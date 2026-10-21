@@ -1,8 +1,8 @@
 ---
-summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, and for in loops that skip prototypes with no enumerable property, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
+summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, and string keys that are already atoms, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
 read_when:
-  - Changing lib/objlit.go, lib/shapecache.go, lib/forin.go, fixDefine, fixShapeCache or fixForIn
-  - fixlib stops on defineSites, objectBits, shapeSites or forInSites after an upstream release
+  - Changing lib/objlit.go, lib/shapecache.go, lib/forin.go, lib/atomkey.go, fixDefine, fixShapeCache, fixForIn or fixAtomKey
+  - fixlib stops on defineSites, objectBits, shapeSites, forInSites or atomKeySites after an upstream release
   - A VM runs close to its memory limit and you wonder whether to give it a smaller shape cache
   - Calling VM.SetShapeCache, or asking what DefaultShapeCache costs
   - Planning more work on property access or object creation
@@ -55,3 +55,19 @@ Tests: `lib/forin_test.go`, whose `testdata/forin.txt` is what the engine gave b
 ### When upstream changes it
 
 If it reports that `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or `JS_FreePropertyEnum` changed (a fingerprint other than the one in `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for an object that is not exotic, the names listed with `JS_GPN_STRING_MASK` and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name and the enumerable flag, the loop must still go on to the next prototype when the list is empty, and freeing an empty list must still do nothing. If it reports that the reads of the enumerable flag or the test of `is_exotic` changed shape, find where the bits are now and update the patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in (`go run ./internal/fixlib -forin` prints them) and run `go test -run ForIn ./lib`.
+
+## String keys that are already atoms
+
+Release: not released yet.
+
+A string key that is already an atom costs less. `o[k]`, `o[k] = v`, `k in o`, `hasOwnProperty(k)`, computed keys of literals and every other path that turns a value into a property key go through `JS_ValueToAtom`, which took a TLS frame, duplicated the string (`JS_ToPropertyKey`), checked that it is no index (`is_num_string`) and looked its index up (`__JS_NewAtom`), even when the string was the atom itself: a name the code has, a key from `for...in`, `Object.keys` or `JSON.parse`. On the pages of tifa's example shop, 92% of the strings `JS_ValueToAtom` gets are such atoms. Now, for a string, it first calls `atomKey` (`lib/atomkey.go`): an atom string that is not empty and does not start with a digit, for which `is_num_string` is false, gets its index from the atom table and one more reference, none for a constant atom, as the generic path gives. Every other string, numbers and symbols take the generic path, and a number does not even make the call. Nothing is cached, so memory use is the same.
+
+On linux/amd64 without PGO (AMD EPYC 7B13, one core), against v0.26.16, a micro benchmark reads with a string key in 13% less time, writes in 30% less, runs `k in o` in 26% less and `hasOwnProperty(k)` in 14% less, and a server render of a page of the shop takes 1.3% less time (median of 6 rounds, 0.9% to 1.5% over the rounds), with the same HTML. These were measured before the [for in](#for-in-skips-prototypes-with-no-enumerable-property), bitwise and comparison changes (see [operators.md](operators.md)).
+
+`fixlib` puts the call into all 13 files and takes the atom type and the length of a `JSString` from each file's `__JS_NewAtom` and `is_num_string`, so the big-endian target gets its own bit fields. Generated Go only, no C hunk (`internal/fixlib/atomkey.go`).
+
+Tests: `lib/atomkey_test.go` (the atom and the reference counts against the generic path, the keys it leaves to that path, an atom freed and made again, the description of a symbol and the key of a registered symbol, strings that share the symbol's atom), `lib/atomkey_memgrind_test.go` (the same tests leave no C memory behind), `atomkey_test.go` (keys that look like numbers, index strings, symbols, the text of symbols and constant atoms through every way a key goes, against Node, and the atom count after keys are dropped) and `internal/fixlib/atomkey_test.go`.
+
+### When upstream changes it
+
+If it reports that `JS_ValueToAtom` or a function of `atomKeyFuncs` changed (`internal/fixlib/atomkeysites.go`), read them against `lib/atomkey.go`: for a string that is an atom and does not start with a digit, `JS_ToPropertyKey` must still return it with one more reference, `is_num_string` must still be false for it, and `__JS_NewAtom` must still answer with `js_get_atom_index` and drop that reference only for a constant atom. Then run `-atomkey`. If it reports that `JS_ValueToAtom` has another signature, or that the atom type test of `__JS_NewAtom` or the length read of `is_num_string` changed shape, update `reAtomKeyHead`, `reAtomKeyType` or `reAtomKeyLen` in `internal/fixlib/atomkey.go`: `atomKey` reads the atom type and the length through the constants `fixlib` takes from them.
