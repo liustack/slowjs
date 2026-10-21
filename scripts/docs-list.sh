@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 The liustack/quickjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
+#
 # List docs/ with the summary and read_when from each file's front matter.
 #
 #   scripts/docs-list.sh           print the index

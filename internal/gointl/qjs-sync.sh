@@ -1,7 +1,8 @@
 #!/bin/sh
-# Copyright 2026 The quickjs-go Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style
-# license that can be found in the LICENSE file.
+# Copyright (c) 2026 The liustack/quickjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
 
 # qjs-sync.sh keeps internal/gointl a copy of go-intl
 # (https://github.com/go-quickjs/go-intl) at the commit in UPSTREAM, with our

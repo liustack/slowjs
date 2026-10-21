@@ -1,6 +1,7 @@
-// Copyright 2026 The quickjs-go Authors. All rights reserved.
-// Use of the source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (c) 2026 The liustack/quickjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
 
 package datedata
 
