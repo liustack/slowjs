@@ -14,7 +14,7 @@ QuickJS has no Temporal. Package `temporal` adds it for a VM that calls `tempora
 
 ## Temporal on go-intl
 
-Release: not released yet.
+Release: v0.27.0.
 
 `temporal.Register(vm)` installs `Temporal.Now`, `Instant`, `ZonedDateTime`, `PlainDate`, `PlainTime`, `PlainDateTime`, `PlainYearMonth`, `PlainMonthDay` and `Duration` with every method V8 ships, and `Date.prototype.toTemporalInstant`. go-intl's temporal package (`internal/gointl/temporal`, a Go port of temporal_rs, the library V8 builds Temporal on) does the computing. `temporal.js` reads arguments, options and property bags in the order V8 reads them, with V8's conversions and error messages, and keeps each object's internal slots in a private field no page can reach.
 

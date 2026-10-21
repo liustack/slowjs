@@ -87,7 +87,7 @@ If it reports that the frame of `_JS_CallInternal` is not taken as `fixAlloca` w
 
 ## TLS frames taken without a call on linux
 
-Release: not released yet.
+Release: v0.27.0.
 
 On linux, taking and freeing a TLS frame is no longer a call. `TLS.Alloc` and `TLS.Free` of `modernc.org/libc` cost more than Go inlines (in a function as large as `JS_CallInternal`, Go inlines only a cost of 20 or less), so every frame of the engine was two calls: about 490000 calls of `TLS.Alloc` in a render of the pages of tifa's test app bench. On linux, libc keeps one block per slot of the TLS stack, and taking a frame is only to step the index of the next slot when its block is large enough, which it nearly always is once a VM has run for a while. `lib/fastframes_linux.go` does that in `tlsTake` and `tlsDrop`, and `fixlib` writes every `tls.Alloc` and `tls.Free` of the 8 files of linux through them, but those of `JS_CallInternal`:
 
