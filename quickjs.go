@@ -95,6 +95,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -1063,12 +1064,15 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 		lib.Xjs_module_set_import_meta(tls, ctx, obj, 0, 1)
 		// 'this' is set to ctx->global_obj
 		// see https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs.c#L36045
-		v = lib.XJS_EvalFunction(tls, ctx, obj)
-		v = lib.Xjs_std_await(tls, ctx, v)
+		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
+		if !isException(v) {
+			if v, err = m.await(v); err != nil {
+				return r, err
+			}
+		}
 	} else {
-		v = lib.XJS_EvalFunction(tls, ctx, obj)
+		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
 	}
-	v = m.settled(v)
 
 	if isException(v) {
 		lib.XFreeValue(tls, ctx, v)
@@ -1076,6 +1080,68 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 	}
 
 	return Value{vm: m, v: v}, nil
+}
+
+// errAwaitPending is the error of EvalBytecode and EvalBytecodeValue for a
+// module whose top-level await is still pending when no job is left to run.
+// What it waits for may still settle from outside the job queue, such as a
+// promise that a Go function returned and Go resolves later. Then
+// ExecutePendingJobs runs the rest of the module.
+var errAwaitPending = errors.New("quickjs: the module's top-level await is still pending and no job is left to run")
+
+// await runs pending jobs until the promise v, which it frees, settles, and
+// returns its result, or the exception of a rejected promise. It follows the
+// rule of ExecutePendingJobs: a job that throws does not stop it, and the
+// first such error is what it returns when v is fulfilled, joined with
+// errAwaitPending when no job is left and v is still pending. A rejected v
+// is the error, as it is what the module itself ended with. An uncatchable
+// exception (an interrupt, the eval timeout, out of memory, a panic in a Go
+// function) ends the wait at once, and the jobs left stay queued.
+//
+// It replaces js_std_await of quickjs-libc.c, which the qjs shell calls. That
+// one prints a failed job and goes on, and when the queue is empty it reads
+// the state js_std_init_handlers sets up, which a VM has not got.
+func (m *VM) await(v lib.TJSValue) (lib.TJSValue, error) {
+	tls := m.runtime.tls
+	ctx := m.cContext
+	rt := m.runtime.cRuntime
+	defer lib.XFreeValue(tls, ctx, v)
+
+	var jobErr error
+	for {
+		switch lib.XJS_PromiseState(tls, ctx, v) {
+		case lib.EJS_PROMISE_FULFILLED:
+			if jobErr != nil {
+				return exception, jobErr
+			}
+			return lib.XJS_PromiseResult(tls, ctx, v), nil
+		case lib.EJS_PROMISE_REJECTED:
+			lib.XJS_Throw(tls, ctx, lib.XJS_PromiseResult(tls, ctx, v))
+			return exception, m.errFromException()
+		case lib.EJS_PROMISE_PENDING:
+			r := lib.XJS_ExecutePendingJob(tls, rt, 0)
+			if r == 0 {
+				if jobErr != nil {
+					return exception, errors.Join(errAwaitPending, jobErr)
+				}
+				return exception, errAwaitPending
+			}
+			if r > 0 && m.uncatchablePending() {
+				r = -1 // the job stopped at an uncatchable exception without failing
+			}
+			if r < 0 {
+				e, uncatchable := m.takeException()
+				if uncatchable {
+					return exception, e
+				}
+				if jobErr == nil {
+					jobErr = e
+				}
+			}
+		default: // not a promise
+			return lib.XDupValue(tls, ctx, v), nil
+		}
+	}
 }
 
 // Compile compiles the bytecode representation of the passed script.

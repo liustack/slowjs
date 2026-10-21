@@ -19,6 +19,7 @@
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
 - CLDR 用的时区名主机的 zoneinfo 里没有时（比如没装 tzdata-legacy 的 Linux 上的 `Asia/Calcutta` 和 `Europe/Kiev`），改用它的其他名字加载，所以那里 `Asia/Kolkata` 和 `Europe/Kyiv` 也能用了，`Intl.supportedValuesOf('timeZone')` 列出的 `Africa/Asmera` 也一样。
+- 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
 - test262 的 intl402 测试通过 6764 次中的 6274 次（加上 Temporal 的用例），以前是 912 次，以前通过的都没有变成失败。
 
 ### 性能

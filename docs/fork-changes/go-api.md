@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, and OnClose'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, and how EvalBytecode waits for a module's top-level await'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -11,6 +11,7 @@ read_when:
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
   - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
+  - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
 ---
 
 # The Go API
@@ -146,3 +147,18 @@ Release: not released yet.
 It is for a package that keeps something per VM in a table of its own. An entry whose value is a closure that references the VM keeps the VM reachable from the table, so a cleanup the garbage collector would run for the VM never runs, and the entry stays for the life of the process. Dropping the entry in `OnClose` ends that. Package `temporal` keeps the clock of a VM this way.
 
 Test: `onclose_test.go`.
+
+## EvalBytecode waits for a module's top-level await in Go
+
+Release: Unreleased.
+
+`EvalBytecode` and `EvalBytecodeValue` of a module run pending jobs until the module's promise settles, in Go, and follow the rule of `ExecutePendingJobs`:
+
+- A fulfilled module returns its result, and a rejected one returns the rejection as the error, as before.
+- A job that throws does not stop the wait. Promise reactions throw when a page makes them throw, such as a `Promise` subclass whose species gives a resolve function that throws, and so does a `FinalizationRegistry` callback that has nothing to do with the module. The module runs on, and the first such error is what the call returns. When the module itself rejects, its rejection is the error instead, as Node reports the module's error and drops the job's.
+- An uncatchable exception (an interrupt, the eval timeout, out of memory, a panic in a Go function) ends the call at once with its `*Error`, or its panic. Other jobs the module queued stay in the queue, as `ExecutePendingJobs` leaves them (see [uncatchable.md](uncatchable.md#interrupts-cannot-be-caught-through-promises-or-iterators)).
+- When no job is left and the module is still pending, as for `await new Promise(() => {})`, the error says the module's top-level await is still pending and no job is left to run (joined with the first job error, if a job threw), and the VM can go on. What the module waits for may still settle from outside the job queue: a promise that a Go function returned and Go resolves later, or one that an outer call resolves after a nested `EvalBytecode` returned. Then a later `ExecutePendingJobs` runs the rest of the module.
+
+They called `js_std_await` of `quickjs-libc.c`, the helper of the `qjs` shell. When the job queue ran dry with the promise pending, it read the state that `js_std_init_handlers` sets up, which a VM never sets up, and the process crashed with a nil pointer dereference. A job that failed was printed to stderr and dropped, so the eval timeout after a module's first `await` crashed the same way once the queue was empty. The `qjs` shell does not crash there, it spins on the empty queue for good, and Node ends a module whose top-level await never settles with exit code 13.
+
+Test: `moduleawait_test.go`, also run under memgrind, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
