@@ -1,8 +1,9 @@
 ---
-summary: 'The fork changes to calls and TLS frames: calls that allocate no Go memory, small functions without a TLS frame, frames freed without defer, the cold paths of === and key names, TLS frames taken per statement, and one TLS frame per call on linux, with what each gains, why it is safe and what to do when upstream changes it'
+summary: 'The fork changes to calls and TLS frames: calls that allocate no Go memory, small functions without a TLS frame, frames freed without defer, the cold paths of === and key names, TLS frames taken per statement, one TLS frame per call on linux, and TLS frames taken without a call on linux, with what each gains, why it is safe and what to do when upstream changes it'
 read_when:
-  - Changing fixAlloca, fixFrames, fixNoDefer, fixColdFrames, fixLazyFrames or fixOneFrame in internal/fixlib
-  - fixlib stops on alloca, framesites, a defer, coldSites, lazySites, lazyAddrSites or oneFrameSites after an upstream release
+  - Changing fixAlloca, fixFrames, fixNoDefer, fixColdFrames, fixLazyFrames, fixOneFrame or fixFastFrames in internal/fixlib
+  - fixlib stops on alloca, framesites, a defer, coldSites, lazySites, lazyAddrSites, oneFrameSites or fastFrameSites after an upstream release
+  - Taking a new release of modernc.org/libc, or a program stops at start saying libc keeps its TLS stack in another way
   - A Go panic went up through the engine, or a VM is good only for Close after a panic or Goexit
   - Checking how deep a script can recurse, or what TLS memory a VM holds on linux
   - Planning more work on TLS frames
@@ -83,3 +84,32 @@ Tests: `internal/fixlib/oneframe_test.go`, with `calldepth_test.go`, test262 and
 ### When upstream changes it
 
 If it reports that the frame of `_JS_CallInternal` is not taken as `fixAlloca` writes it (`fixOneFrame` in `internal/fixlib/oneframe.go`), that the block that takes it again runs a statement the entry does not run once, or that the function has another `tls.Alloc`, read the new function: the block may only make again what the entry made on the frame, or dropping it changes what the rest of the function finds there. If the frame of 1280 bytes changes size, `fixOneFrame` changes a linux file only while the power of two that holds the frame also holds the room of `allocaMax`, so check that the files it changes are still the ones `oneFrameFiles` lists in `internal/fixlib/oneframe_test.go`. If it reports that the text between the entry and that block changed (a fingerprint other than the one in `internal/fixlib/oneframesites.go`), read it: nothing there may write again the parameter copy or the pointers into the frame the block made, except on a path that returns or jumps past the block. Then put the new fingerprints in (`go run ./internal/fixlib -oneframe` prints them).
+
+## TLS frames taken without a call on linux
+
+Release: not released yet.
+
+On linux, taking and freeing a TLS frame is no longer a call. `TLS.Alloc` and `TLS.Free` of `modernc.org/libc` cost more than Go inlines (in a function as large as `JS_CallInternal`, Go inlines only a cost of 20 or less), so every frame of the engine was two calls: about 490000 calls of `TLS.Alloc` in a render of the pages of tifa's test app bench. On linux, libc keeps one block per slot of the TLS stack, and taking a frame is only to step the index of the next slot when its block is large enough, which it nearly always is once a VM has run for a while. `lib/fastframes_linux.go` does that in `tlsTake` and `tlsDrop`, and `fixlib` writes every `tls.Alloc` and `tls.Free` of the 8 files of linux through them, but those of `JS_CallInternal`:
+
+```go
+bp := tlsTake(tls, 48)
+if bp == 0 {
+	bp = tls.Alloc(48) // the next block is too small: libc takes a larger one
+}
+...
+if tlsDrop(tls, 48) {
+	tlsSignals(tls) // a C signal handler was set through libc on this TLS
+}
+```
+
+Go inlines `tlsDrop` everywhere, and `tlsTake` everywhere but in the largest functions, `resolve_scope_var` and `resolve_labels` of the compiler, where it is one call as `TLS.Alloc` was. `JS_CallInternal` keeps `TLS.Alloc` and `TLS.Free` (`fastFrameSkip`): Go does not inline `tlsTake` there either, and with the frees inlined at its returns the interpreter got slower, so renders of tifa's bench pages took 1.6% more time than with `JS_CallInternal` left as it is.
+
+Why this is safe: `tlsTake` and `tlsDrop` do what `TLS.Alloc` and `TLS.Free` do on their usual path, on the same fields, so the stack, its slots and the addresses the engine gets are the same, and a stack check sees the same count at every point. When the next block is too small, `TLS.Alloc` does the rest, and when libc checks for signals on a free, `tlsSignals` takes the slot back and lets `TLS.Free` free it. The fields of `libc.TLS` they read are not exported: `lib/fastframes_linux.go` finds their offsets by name when the package starts and checks their types, and the program stops there with a message if libc changed them. `fixlib` pins the text of `TLS.Alloc`, `TLS.Free`, `TLS.StackSlots` and the two structs in `libc_musl.go` of the libc release in `go.mod` by a fingerprint (`fastFrameSites`), so a libc release that changes them stops it until they are read again. Elsewhere libc keeps the TLS stack in segments, and those files are not changed. `fixlib` makes this change last, after the frames are freed without a defer (see [Frames freed without defer](#frames-freed-without-defer)), and undoes it first, and checks that undoing it gives back the text it was given, byte for byte. Every `tls.Alloc` and `tls.Free` of a file of linux must be a statement of its own of the forms above, or it stops.
+
+In a render of tifa's bench pages, the calls of `TLS.Alloc` go from about 490000 to the 132000 of `JS_CallInternal`, and the instructions down by 1.3%, by 1.9% for the shop's pages (callgrind). On top of [Likely and unlikely tests branch on their condition](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition), a render of the bench pages takes 0.990 of the time (0.985 to 0.993 over 8 rounds) and of the shop's pages 0.998 (0.995 to 1.004 over 5 rounds), on linux/amd64 (AMD EPYC, without PGO), with the same HTML: each round compares the mean of six builds (three for the shop) whose code sits at different addresses. Both changes together take 0.967 of the time of v0.26.17 for the bench pages (0.947 to 0.983) and 0.979 for the shop's (0.974 to 0.989). The call micro benchmarks of the root package (`go test -bench Call .`) go both ways: in four builds each, with code at different addresses, a call of a native function took 75 to 81 ns with this change and 79 to 82 without, but a builtin call that adds two numbers 84 to 89 ns with it and 72 to 78 without, with 1% fewer instructions. Why is not known: the VM has no CPU counters to tell, and a build that also kept the frame of `js_call_c_function` took 77 to 89 ns. This changes only the generated Go, with no C hunk (`internal/fixlib/fastframes.go`).
+
+Tests: `lib/fastframes_linux_test.go` (the same addresses and slot counts as libc, and the signal check), `internal/fixlib/fastframes_test.go`, with `calldepth_test.go`, `enginepanic_test.go`, test262 and the tests of the root package for what the engine gives.
+
+### When upstream changes it
+
+If it reports a `tls.Alloc` or `tls.Free` that is not a statement of a form it knows, read the function and teach `fixFastFrames` the form, or leave the call as it is: the result of each rewrite must be used exactly as the result of `tls.Alloc` was. If it reports that the text of libc changed (a fingerprint other than the one in `internal/fixlib/fastframesites.go`), which happens with a new release of `modernc.org/libc`, read `TLS.Alloc`, `TLS.Free` and the structs against `tlsTake` and `tlsDrop`: they must still only step `sp` when the block of the next slot is large enough, and only step it back and check `checkSignals` on a free. Then put the new fingerprint in (`go run ./internal/fixlib -fastframes` prints it). If a program stops when it starts, saying that libc keeps its TLS stack in another way, the fields `sp`, `stack` or `checkSignals` of `libc.TLS` changed name or type: change `tlsLayout` and the helpers to match, or drop this change.
