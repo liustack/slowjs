@@ -1198,9 +1198,14 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on
   several goroutines call it at once, so it has to be safe for that, and
   keeps what it needs per VM by `Args.VM()`. An `*Error` it returns is
-  thrown as the constructor its `Name` says (`Error`, `RangeError`,
-  `TypeError`, ...), with a stack that starts at the Builtin, any other
-  error as a `TypeError`. On an Apple M4 a call that adds two numbers takes
+  thrown as the constructor its `Name` says (`Error`, `TypeError`,
+  `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`, and any
+  other name as `Error`), with a stack that starts at the Builtin, any other
+  error as a `TypeError`. `Error()` of an `*Error` made in Go is now
+  `Name: Message`, as `Error.prototype.toString` writes it, where it was
+  empty before, so the `TypeError` a `RegisterHostFunc` function throws for
+  such an error now has that message too. `Error()` of an error taken from
+  javascript is as before. On an Apple M4 a call that adds two numbers takes
   about 55 ns, loop included, where the same call of a `RegisterHostFunc`
   function takes about 470 ns. A VM's context now carries an id, which is
   how a call finds its VM without a lock. Test: `builtin_test.go`.
