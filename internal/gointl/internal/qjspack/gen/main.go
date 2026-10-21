@@ -61,7 +61,7 @@
 // -check writes nothing and fails if qjsdata is not what the data gives.
 // -tags prints the tags of go-intl's available locales, which
 // qjs-chromium.cjs asks Chromium about. -cut-corpus takes the languages left
-// out of go-intl's test corpora, for qjs-sync.sh test-chromium.
+// out of go-intl's test corpora for comparisons with partial data.
 package main
 
 import (

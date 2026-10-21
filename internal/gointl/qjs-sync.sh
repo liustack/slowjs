@@ -40,10 +40,8 @@
 #	                       on packs of every language made of go-intl's data
 #	                       with its own time zones (arguments go to go test)
 #	qjs-sync.sh test-chromium
-#	                       the same on the packs built in: Chromium's
-#	                       languages and qjstz's time zones, with the cases
-#	                       of the other languages taken out of go-intl's
-#	                       corpora
+#	                       run the fork's tests and recorded Chromium corpora
+#	                       on the packs built in (arguments go to go test)
 #	qjs-sync.sh chromium   record in qjsdata/chromium.json what Chromium resolves
 #	                       go-intl's available locales to (needs Node and
 #	                       Playwright's Chromium, see qjs-chromium.cjs)
@@ -67,18 +65,6 @@ cache=$(dirname "$upstream")
 tzdata=$upstream-tz$TZ_VERSION
 tzstamp="$COMMIT $TZ_VERSION $TZ_ZONEINFO64 $TZ_TIMEZONETYPES $TZ_WINDOWSZONES $TZ_METAZONES"
 ours=github.com/liustack/quickjs/internal/gointl
-
-# chromium_skips are go-intl's tests that do not pass on the packs of
-# Chromium's languages, for what they are: they name in their code a
-# language the packs leave out or keep the plural rules of only (my, lo,
-# ps, ast, wo, kea, iw), or count the locales Node has, or count the cases
-# of the corpora test-chromium cuts.
-chromium_skips='TestWeekYearIsTheExtendedYears|TestCompactCurrency|TestCompactLongOwnPatterns|TestCurrencyFormats|TestCurrencyUnitPatterns|TestListContextualJoins|TestLocaleMatcherLocales|TestCorpusLocalesParse|TestEveryCaseParses|TestCaseCounts'
-
-# tz_skips are go-intl's tests that hold its zones to Node's, at the tz
-# release of go-intl's data: on zones of another release they differ where
-# the zones changed in between.
-tz_skips='TestTimeZonesMatchNode|TestDateMatchesNode|TestTemporalMatchesNode'
 
 die() {
 	echo "qjs-sync.sh: $*" >&2
@@ -222,9 +208,8 @@ pack)
 	(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
 		-data "$tzdata/data" -out internal/gointl/qjsdata "$@")
 	;;
-test | test-chromium)
+test)
 	need_checkout
-	which=$1
 	shift
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
@@ -245,34 +230,27 @@ test | test-chromium)
 	# go-intl's corpora have.
 	gotz=$(sed -n 's/^| IANA tzdb | \([0-9a-z]*\),.*/\1/p' "$upstream/SOURCES.md")
 	[ -n "$gotz" ] || die "cannot read the tz release of go-intl's data from $upstream/SOURCES.md"
-	if [ "$which" = test ]; then
-		# go-intl's tests hold it to Node in every language ICU has, so
-		# they run on packs of every language: what they check is that the
-		# packs serve go-intl's data. So the packs are made of go-intl's
-		# data as it is, with its time zones, not qjstz's. The tests of
-		# Chromium's locales, and of the tz release qjstz names, are left
-		# out.
-		data=$tmp/gointl-data
-		cp -R "$upstream/data" "$data"
-		printf '%s' "$gotz" >"$data/tzversion.bin"
-		(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
-			-data "$data" -out "$mod/qjsdata" -locales all >/dev/null)
-		skip="$skip|TestQJSAvailable|TestQJSResolveMatchesChromium|TestQJSTZVersion"
-	else
-		# On the packs built in, with the corpus cases of what they leave
-		# out taken out (see chromium_skips for the tests left out). Their
-		# zones are qjstz's: where that is not go-intl's release, the three
-		# tests that hold zones to Node's answers are left out, since
-		# those answers have go-intl's release. test runs them.
-		(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
-			-data "$tzdata/data" -out "$mod/qjsdata" -cut-corpus "$mod/testdata" >/dev/null)
-		skip="$skip|$chromium_skips"
-		if [ "$gotz" != "$TZ_VERSION" ]; then
-			skip="$skip|$tz_skips"
-		fi
-	fi
+	# go-intl's tests hold it to Node in every language ICU has, so
+	# they run on packs of every language: what they check is that the
+	# packs serve go-intl's data. So the packs are made of go-intl's
+	# data as it is, with its time zones, not qjstz's. The tests of
+	# Chromium's locales, and of the tz release qjstz names, are left
+	# out.
+	data=$tmp/gointl-data
+	cp -R "$upstream/data" "$data"
+	printf '%s' "$gotz" >"$data/tzversion.bin"
+	(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
+		-data "$data" -out "$mod/qjsdata" -locales all >/dev/null)
+	skip="$skip|TestQJSAvailable|TestQJSResolveMatchesChromium|TestQJSTZVersion"
 	printf 'module github.com/liustack/quickjs\n\ngo 1.24\n' >"$tmp/go.mod"
 	(cd "$tmp" && go test -skip "^($skip)\$" "$@" ./internal/gointl/...)
+	;;
+test-chromium)
+	shift
+	# These packs select Chromium's ICU resources, not Node's full data.
+	# Keep Node's corpus in test and check the shipped packs against the
+	# recorded browser answers, including their exact known differences.
+	(cd "$root" && go test "$@" ./internal/gointl/... ./intl/... ./temporal/...)
 	;;
 chromium)
 	need_checkout

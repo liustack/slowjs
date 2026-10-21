@@ -25,9 +25,8 @@ import (
 // cases whose locale is in a language the packs leave out, or, but for the
 // plural rules' corpora, keep the plural rules of only, and those whose
 // locale a service has in go-intl's lists, which are Node's, and not in
-// Chromium's, so that go-intl's tests check what the packs keep
-// (qjs-sync.sh test-chromium). It rewrites the files in place and says what
-// it took out of each.
+// Chromium's. This only filters locales, not differing resources within a
+// locale. It rewrites the files in place and says what it took out of each.
 func cutCorpus(dir string, dropped, pluralOnly []string, unlisted map[string]bool) error {
 	drop, plural := map[string]bool{}, map[string]bool{}
 	for _, l := range dropped {

@@ -96,6 +96,22 @@ func qjsPacks() ([]*qjspack.Pack, error) {
 	})
 }
 
+// qjsResolvedNumbers distinguishes packs whose individual ICU resources have
+// been selected from raw go-intl data. Absence means the original source format.
+func qjsResolvedNumbers(src Source) (bool, error) {
+	b, err := src.Open(Marker("qjsnumbers"), DataLocale{})
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if string(b) != "1" {
+		return false, fmt.Errorf("intl: unsupported number resource version %q", b)
+	}
+	return true, nil
+}
+
 // qjsOpen serves Embedded: the packs built in, and the readers' packs in
 // use (see qjs_readers.go).
 func qjsOpen(m Marker, d DataLocale) ([]byte, error) {

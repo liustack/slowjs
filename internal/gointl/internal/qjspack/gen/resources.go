@@ -27,6 +27,7 @@ import (
 // Re-encoding uses one pool per data set, shared by all locales and VMs.
 func chromiumResources(files, out map[string][]byte) error {
 	c := loadChromiumICU(*icuSummaryFile, files)
+	out["qjsnumbers.bin"] = []byte("1")
 	rules, err := rbnfdata.Decode(files["rbnf.bin"])
 	if err != nil {
 		return err

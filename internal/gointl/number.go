@@ -411,22 +411,36 @@ func (s *numberSources) numberFormat(opts NumberFormatOptions) (*NumberFormat, e
 // loadNumbers walks the fallback chain until a locale has number data. The
 // root always does, so this always finds something or the data is broken.
 //
-// The pack generator resolves each ICU resource separately, including currency
-// names whose parent can differ from the parent of number symbols.
+// Chromium packs resolve each resource before encoding. Raw go-intl sources
+// still need ICU's separate number-symbol and currency-name fallback trees.
 func loadNumbers(src Source, loc Locale) (*numdata.Locale, error) {
+	resolved, err := qjsResolvedNumbers(src)
+	if err != nil {
+		return nil, err
+	}
 	f, err := NewFallbacker(src)
 	if err != nil {
 		return loadNumbersAlong(src, loc, loc.Fallback())
 	}
 	chain := f.ChainIn(treeLocales, loc.Data())
-	if _, err := src.Open(MarkerNumbers, loc.Data()); err == nil {
-		chain = f.Chain(loc.Data())
+	if resolved {
+		if _, err := src.Open(MarkerNumbers, loc.Data()); err == nil {
+			chain = f.Chain(loc.Data())
+		}
 	}
 	data, err := loadNumbersAlong(src, loc, chain)
 	if err != nil {
 		return nil, err
 	}
-
+	if !resolved {
+		if curr := f.ChainIn(treeCurr, loc.Data()); curr[0] != chain[0] {
+			names, err := loadNumbersAlong(src, loc, curr)
+			if err != nil {
+				return nil, err
+			}
+			data.TakeCurrencies(names)
+		}
+	}
 	return data, nil
 }
 
