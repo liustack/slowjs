@@ -80,6 +80,8 @@ var uses = `(() => {
 	use(() => show(new Intl.DurationFormat('ja', {hours: 'numeric'}).resolvedOptions()));
 	use(() => new Intl.DurationFormat('en').format({hours: 1.5}));
 	use(() => new Intl.DurationFormat('kk', {style: 'narrow'}).format({years: 2, days: 1}));
+	use(() => Intl.supportedValuesOf('unit').length + ' ' + Intl.supportedValuesOf('collation').join());
+	use(() => Intl.supportedValuesOf('x'));
 	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();

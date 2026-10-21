@@ -6,6 +6,7 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1001,3 +1002,53 @@ func durationExprs() (r []string) {
 	}
 	return r
 }
+
+func valuesExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	for _, key := range []string{"calendar", "collation", "currency", "numberingSystem", "timeZone", "unit"} {
+		add(`Intl.supportedValuesOf(%q).join()`, key)
+	}
+	for _, e := range []string{
+		`Intl.supportedValuesOf.length`, `Intl.supportedValuesOf.name`,
+		`Intl.supportedValuesOf('unit') === Intl.supportedValuesOf('unit')`,
+		`Object.getPrototypeOf(Intl.supportedValuesOf('unit')) === Array.prototype`,
+		`Intl.supportedValuesOf({toString() { return 'unit'; }}).length`,
+		`Intl.supportedValuesOf('timeZone').every((z) => new Intl.DateTimeFormat('en', {timeZone: z}).resolvedOptions().timeZone === z)`,
+		`Intl.supportedValuesOf('numberingSystem').every((n) => new Intl.NumberFormat('en', {numberingSystem: n}).resolvedOptions().numberingSystem === n)`,
+		`Intl.supportedValuesOf('collation').every((c) => !['standard', 'search'].includes(c))`,
+		`Intl.supportedValuesOf('unit').every((u) => new Intl.NumberFormat('en', {style: 'unit', unit: u}).resolvedOptions().unit === u)`,
+		`Intl.supportedValuesOf('currency').every((c) => new Intl.NumberFormat('en', {style: 'currency', currency: c}).resolvedOptions().currency === c)`,
+	} {
+		add(`%s`, e)
+	}
+	for _, src := range []string{
+		`Intl.supportedValuesOf()`, `Intl.supportedValuesOf('x')`, `Intl.supportedValuesOf('Calendar')`, `Intl.supportedValuesOf('calendars')`,
+		`Intl.supportedValuesOf(Symbol())`, `Intl.supportedValuesOf(null)`, `new Intl.supportedValuesOf('unit')`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}
+
+// goldenChromiumCurrencies are the currencies Chromium's ICU data names, from
+// its summary.
+var goldenChromiumCurrencies = sync.OnceValue(func() []string {
+	f, err := os.Open(filepath.Join(goldenDir, "icu.json.gz"))
+	if err != nil {
+		panic(err)
+	}
+
+	defer f.Close()
+
+	z, err := gzip.NewReader(f)
+	if err != nil {
+		panic(err)
+	}
+
+	var icu struct{ Currencies []string }
+	if err := json.NewDecoder(z).Decode(&icu); err != nil {
+		panic(err)
+	}
+
+	return icu.Currencies
+})

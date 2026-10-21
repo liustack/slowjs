@@ -73,6 +73,16 @@
 		"proto": true,
 		"native": true
 	},
+	"Intl.supportedValuesOf property": "-cw function",
+	"Intl.supportedValuesOf": {
+		"name": "-c- \"supportedValuesOf\"",
+		"length": "-c- 1",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
 	"Intl.DateTimeFormat property": "-cw function",
 	"Intl.DateTimeFormat": {
 		"name": "-c- \"DateTimeFormat\"",

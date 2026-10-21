@@ -78,6 +78,8 @@ function shape() {
 	prop('Intl[@@toStringTag]', Intl, Symbol.toStringTag);
 	prop('Intl.getCanonicalLocales', Intl, 'getCanonicalLocales');
 	fn('Intl.getCanonicalLocales', Intl.getCanonicalLocales);
+	prop('Intl.supportedValuesOf', Intl, 'supportedValuesOf');
+	fn('Intl.supportedValuesOf', Intl.supportedValuesOf);
 
 	const ctors = {
 		DateTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],

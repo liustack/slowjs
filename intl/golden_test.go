@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -242,6 +243,34 @@ var goldenDifferences = []goldenDifference{
 			return goldenDurationOverflow.ReplaceAllString(got, "${1}807") == want
 		},
 	},
+	{
+		// DateTimeFormat writes dates in fewer calendars than Chromium (see
+		// the package doc), and lists those it does.
+		why: "DateTimeFormat has fewer calendars",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if expr != `Intl.supportedValuesOf("calendar").join()` {
+				return false
+			}
+
+			en := cldr().locale(defaultLocale)
+			return got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(c string) bool { return calendarFor(en, c).name != c }), ",")
+		},
+	},
+	{
+		// go-intl lists the currencies that ICU names, which are more than
+		// Chromium's ICU data names, as with DisplayNames: those of the
+		// summary of Chromium's data.
+		why: "Chromium's ICU data names fewer currencies",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if expr != `Intl.supportedValuesOf("currency").join()` {
+				return false
+			}
+
+			named := goldenChromiumCurrencies()
+			return want == strings.Join(slices.DeleteFunc(strings.Split(got, ","), func(c string) bool { return !slices.Contains(named, c) }), ",") &&
+				strings.Join(named, ",") == want
+		},
+	},
 }
 
 type golden struct {
@@ -263,6 +292,7 @@ var goldenSets = []struct {
 	{"list", listExprs},
 	{"displaynames", dnExprs},
 	{"duration", durationExprs},
+	{"values", valuesExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for

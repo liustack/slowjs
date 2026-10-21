@@ -711,6 +711,21 @@ var bridge = []*quickjs.Builtin{
 		}
 		return stringArray(a.VM(), l)
 	}),
+	// supportedValuesOf answers a new array of the list of the key.
+	quickjs.NewBuiltin("supportedValuesOf", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		key, _ := a.String(0)
+		values, err := supportedValues()
+		if err != nil {
+			return quickjs.Value{}, err
+		}
+
+		l, ok := values[key]
+		if !ok {
+			return quickjs.Value{}, jsErr(rangeError("Invalid key : %s", key))
+		}
+
+		return stringArray(a.VM(), l)
+	}),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.

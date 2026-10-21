@@ -18,7 +18,7 @@
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts) {
+	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf) {
 	'use strict';
 
 	const {
@@ -806,6 +806,9 @@
 		DurationFormat: DurationFormat,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
+		},
+		supportedValuesOf(key) {
+			return valuesOf(toString(key));
 		},
 		[toStringTag]: 'Intl'
 	});
