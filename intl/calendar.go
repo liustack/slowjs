@@ -29,6 +29,9 @@ type calendarData struct {
 // calendarFor returns the data of calendar ca in d, or of the gregorian
 // calendar when there is none for ca.
 func calendarFor(d *cldrData, ca string) *calendarData {
+	if ca == "iso8601" {
+		return &calendarData{d, ca, "g"}
+	}
 	if p, ok := calendarPrefixes[ca]; ok && ca != "gregory" {
 		if _, ok := d.get(p + "/months/format/wide/1"); ok {
 			return &calendarData{d, ca, p}

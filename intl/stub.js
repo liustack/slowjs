@@ -14,7 +14,7 @@
 // built-ins Intl's code uses, which a page may change later, and that code
 // uses nothing else.
 
-(function (install, zone) {
+(function (install, zone, state) {
 	'use strict';
 
 	const g = globalThis;
@@ -67,7 +67,7 @@
 			installing = true;
 			let a;
 			try {
-				a = install(P, zone, retry);
+				a = install(P, zone, retry, state);
 			} catch (e) {
 				installing = false;
 				throw e;

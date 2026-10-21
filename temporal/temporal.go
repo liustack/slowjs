@@ -34,24 +34,22 @@
 // zoneinfo64 from ICU's time zone update for tz 2026e and ICU's calendar
 // data, the 92 KB pack of it that Temporal reads. The host's zoneinfo is never read, so Temporal gives the
 // same answers on every machine, a container without /usr/share/zoneinfo
-// included. Package intl resolves zones with Go's time package instead, from
-// the host's zoneinfo or time/tzdata, so the two can disagree where the two
-// databases do. ZonedDateTime.prototype.toLocaleString shows the wall clock
-// and offset Temporal computed, so it always agrees with toString: where
-// Go's data has another offset for the zone at that time, the zone is
-// named by its offset, GMT-05:00 say. It needs a zoneinfo Go can read for a
-// named zone all the same.
+// included. Temporal date formatting reads the same zones. Named zones
+// still pass package intl's validation, which needs zoneinfo Go can read.
+// ZonedDateTime.toLocaleString honors Temporal's offset even if the zone
+// data used for formatting ever differs, naming that offset instead.
 //
 // # toLocaleString
 //
-// toLocaleString is Intl.DateTimeFormat's, from package intl, with the
-// options and defaults ECMA-402 gives each type, and works whether or not
-// the VM has intl registered. Package intl formats in the Gregorian
-// calendar only, so a value in another calendar, which ECMA-402 formats only
-// in its own calendar, throws a RangeError where Chromium formats it, and so
-// does a PlainYearMonth or PlainMonthDay in the ISO calendar, as it does in
-// Chromium without a calendar option. Duration.prototype.toLocaleString
-// uses Intl.DurationFormat, reading the duration from its private slots.
+// Date types use the same type-specific formats as Intl.DateTimeFormat,
+// from package intl, whether or not the VM has intl registered. Plain values
+// ignore timeZone, an Instant uses the formatter's zone, and ZonedDateTime
+// uses its own zone. DateTimeFormat itself rejects ZonedDateTime.
+// Calendar support is limited to Gregorian, ISO and the existing Buddhist
+// and Persian locale data. A mismatched calendar throws RangeError.
+// ISO PlainYearMonth and PlainMonthDay need an explicit ISO calendar.
+// Duration.toLocaleString uses Intl.DurationFormat. Both paths read private
+// slots and captured built-ins, not properties a page can replace.
 //
 // # Cost
 //
@@ -217,7 +215,13 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 
 	defer install.Free()
 
-	if _, err := f.Call(quickjs.UndefinedValue, install); err != nil {
+	state, err := intlhook.State(vm)
+	if err != nil {
+		return err
+	}
+	defer state.Free()
+
+	if _, err := f.Call(quickjs.UndefinedValue, install, state); err != nil {
 		return err
 	}
 
@@ -281,7 +285,7 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 	}
 	defer formatDuration.Free()
 	return f.CallValue(quickjs.UndefinedValue, a.Value(0), opNames, b, intlhook.Options, format, intlhook.DefaultZone(vm),
-		intlhook.DurationOptions, resolveDuration, formatDuration)
+		intlhook.DurationOptions, resolveDuration, formatDuration, a.Value(1))
 })
 
 // marker is the well known symbol stub.js stamps on the global object of a

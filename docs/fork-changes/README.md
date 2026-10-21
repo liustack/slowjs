@@ -69,6 +69,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | SetRegExpCache and DefaultRegExpCache | Unreleased | [go-api.md](go-api.md#setregexpcache-and-defaultregexpcache) |
 | OnClose | Unreleased | [go-api.md](go-api.md#onclose) |
 | Intl leaves what a page put in place of a stand-in | Unreleased | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
+| DateTimeFormat takes Temporal values and formats ranges | Unreleased | [time-and-intl.md](time-and-intl.md#datetimeformat-takes-temporal-values) |
 | Temporal durations use DurationFormat | Unreleased | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
 | Temporal on go-intl | Unreleased | [temporal.md](temporal.md#temporal-on-go-intl) |
 | EvalBytecode waits for a module's top-level await in Go | Unreleased | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |

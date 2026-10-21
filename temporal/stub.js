@@ -13,7 +13,7 @@
 // the page runs. So it takes here the built-ins Temporal's code uses, which
 // a page may change later, and that code uses nothing else.
 
-(function (install) {
+(function (install, state) {
 	'use strict';
 
 	const g = globalThis;
@@ -53,7 +53,7 @@
 	// there, as settle says.
 	function ensure() {
 		if (api === undefined) {
-			api = install(P);
+			api = install(P, state);
 		}
 		settle(api);
 		return api;

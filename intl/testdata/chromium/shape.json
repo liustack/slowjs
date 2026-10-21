@@ -149,6 +149,26 @@
 		"proto": true,
 		"native": true
 	},
+	"Intl.DateTimeFormat.prototype.formatRange property": "-cw function",
+	"Intl.DateTimeFormat.prototype.formatRange": {
+		"name": "-c- \"formatRange\"",
+		"length": "-c- 2",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.DateTimeFormat.prototype.formatRangeToParts property": "-cw function",
+	"Intl.DateTimeFormat.prototype.formatRangeToParts": {
+		"name": "-c- \"formatRangeToParts\"",
+		"length": "-c- 2",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
 	"Intl.DateTimeFormat.prototype.resolvedOptions property": "-cw function",
 	"Intl.DateTimeFormat.prototype.resolvedOptions": {
 		"name": "-c- \"resolvedOptions\"",

@@ -329,6 +329,13 @@ func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, er
 		h12 := dtfHourCycle == "h11" || dtfHourCycle == "h12"
 		f.HourCycle, f.Hour12 = dtfHourCycle, &h12
 	}
+	if f.Calendar == "iso8601" {
+		base, err := temporalBase(temporalKinds["legacy"], f, o)
+		if err != nil {
+			return nil, err
+		}
+		f.Pattern = base.ChromiumPattern()
+	}
 	if f.DateStyle == "" && f.TimeStyle == "" {
 		f.readComponents()
 	}

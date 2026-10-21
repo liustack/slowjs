@@ -3,9 +3,9 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Package intlhook is what package temporal needs of package intl, set by
-// intl when it is initialized: the toLocaleString of the Temporal types,
-// which is Intl.DateTimeFormat's.
+// Package intlhook connects the Intl and Temporal shims. Package intl sets
+// the date and duration formatting built-ins at initialization. State shares
+// their private slot readers in each VM.
 package intlhook // import "github.com/liustack/quickjs/internal/intlhook"
 
 import "github.com/liustack/quickjs"

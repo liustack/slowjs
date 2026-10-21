@@ -81,6 +81,8 @@ go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and t
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
+go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
+go test -p 2 ./internal/intlhook                        # private state across GC and Close
 go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
 go test -run 'DateNow|RandomSeed|Monotonic' ./lib        # Date.now, the seed of Math.random and performance.now read Go's clocks

@@ -789,6 +789,11 @@ var bridge = []*quickjs.Builtin{
 		}
 		return mixedArray(a.VM(), pieces)
 	}),
+	resolveBuiltin(temporalDateFormatCtor),
+	quickjs.NewBuiltin("temporalFormat", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, false) }),
+	quickjs.NewBuiltin("temporalParts", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, false) }),
+	quickjs.NewBuiltin("temporalRange", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, true) }),
+	quickjs.NewBuiltin("temporalRangeParts", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, true) }),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.

@@ -12,11 +12,8 @@ import (
 	"testing"
 )
 
-// A program that uses all of package intl links the go-intl packs its code
-// reads and none of those only other readers read: DateTimeFormat, the zone
-// names and the guess at the host's zone are not go-intl's here, so their
-// 2.8 MB of data stay out (see internal/gointl/qjs_readers.go). A program
-// that formats a date with go-intl links dates.bin and zonenames.bin.
+// A program using intl now reads go-intl's dates and zone names for
+// Temporal values and date ranges. The host-zone guessing tables stay out.
 func TestLinksOnlyReadData(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds programs")
@@ -25,7 +22,7 @@ func TestLinksOnlyReadData(t *testing.T) {
 		dir          string
 		links, skips []string
 	}{
-		{"linkprobe", []string{"qjsCore", "qjsNames", "qjsCJDict"}, []string{"qjsDates", "qjsZoneNames", "qjsHostZones"}},
+		{"linkprobe", []string{"qjsCore", "qjsNames", "qjsCJDict", "qjsDates", "qjsZoneNames"}, []string{"qjsHostZones"}},
 		{"linkprobedtf", []string{"qjsCore", "qjsDates", "qjsZoneNames"}, []string{"qjsHostZones"}},
 	} {
 		linked := linkedSymbols(t, probe.dir)

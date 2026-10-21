@@ -67,7 +67,7 @@
 // UTC: Intl and the toLocale* methods never read the host's language or zone.
 // Neither does the engine's own Date, whose local time is UTC in every VM.
 //
-// Dates are in the Gregorian calendar, or in the buddhist one for th and the
+// Dates support the Gregorian and ISO calendars, the buddhist one for th and the
 // persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
 // Another calendar asked for, with -u-ca- or the calendar option, such as
 // japanese or roc, is not supported: as ECMA-402 has it for a calendar an
@@ -76,7 +76,7 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: formatRange. NumberFormat and
+// Not implemented: NumberFormat.formatRange and formatRangeToParts. NumberFormat and
 // PluralRules accept roundingIncrement and roundingPriority but only
 // implement their defaults, which is what resolvedOptions reports: a value
 // out of range throws a RangeError, any other is ignored.
@@ -175,8 +175,9 @@
 // build tag quickjs_intl_nonames leaves out (Intl.DisplayNames then answers
 // each code with its fallback), and 2.0 MB of the Chinese and Japanese word
 // dictionary, which quickjs_intl_nocjdict leaves out (a run of Chinese or
-// Japanese is then one word). go-intl's dates and zone names are not
-// linked: this package formats dates with its own data. The tables a
+// Japanese is then one word). Temporal values and date ranges also link
+// go-intl's dates and zone names, 2.83 MB. Single Date values use the existing
+// formatter, with ISO patterns from go-intl. The tables a
 // formatter reads only a little of stay in the binary's read only data, and
 // the rest is inflated into the Go heap the first time a formatter needs it,
 // once per process.
@@ -228,6 +229,7 @@ import (
 	"sync/atomic"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 //go:embed intl.js
@@ -382,7 +384,13 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 
 	defer install.Free()
 
-	if _, err = f.Call(quickjs.UndefinedValue, install, name); err != nil {
+	state, err := intlhook.State(vm)
+	if err != nil {
+		return err
+	}
+	defer state.Free()
+
+	if _, err = f.Call(quickjs.UndefinedValue, install, name, state); err != nil {
 		return err
 	}
 
@@ -425,7 +433,7 @@ var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quic
 	defer f.Free()
 
 	args := make([]any, 0, 3+len(bridge))
-	args = append(args, a.Value(0), a.Value(1), optionLists)
+	args = append(args, a.Value(0), a.Value(1), optionLists, a.Value(3))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
