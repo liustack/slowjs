@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -35,18 +36,35 @@ func validTags(tags []string) string {
 	return jsList(tags...) + `.filter((t) => {try {Intl.getCanonicalLocales(t); return true} catch {return false}})`
 }
 
-var chromiumTagList = sync.OnceValue(func() []string {
+func chromiumTagList() []string { return chromiumJSON().Tags }
+
+// chromiumLanguages are the languages, tags of a language subtag alone,
+// Chromium has for service: those it resolves to themselves.
+func chromiumLanguages(service string) []string {
+	cj := chromiumJSON()
+	var r []string
+	for _, tag := range cj.Tags {
+		if r2, ok := cj.Services[service][tag]; !strings.Contains(tag, "-") && tag != "root" && (!ok || r2 == tag) {
+			r = append(r, tag)
+		}
+	}
+	return r
+}
+
+var chromiumJSON = sync.OnceValue(func() (v struct {
+	Tags     []string
+	Services map[string]map[string]string
+}) {
 	b, err := os.ReadFile(filepath.Join("..", "internal", "gointl", "qjsdata", "chromium.json"))
 	if err != nil {
 		panic(err)
 	}
 
-	var v struct{ Tags []string }
 	if err := json.Unmarshal(b, &v); err != nil {
 		panic(err)
 	}
 
-	return v.Tags
+	return v
 })
 
 // collatorWords are strings that sort apart differently in the languages
@@ -133,6 +151,11 @@ func collatorExprs() (r []string) {
 			`{ignorePunctuation:true}`, `{usage:'search'}`, `{sensitivity:'accent'}`, `{sensitivity:'case'}`} {
 			add(`JSON.stringify(%s.sort(new Intl.Collator(%q,%s).compare))`, words, l, o)
 		}
+	}
+
+	// Every language Chromium has collators for.
+	for _, l := range chromiumLanguages("Collator") {
+		add(`JSON.stringify(%s.sort(new Intl.Collator(%q).compare))`, words, l)
 	}
 
 	// Which differences count, pair by pair.
@@ -319,6 +342,11 @@ func rtfExprs() (r []string) {
 		}
 	}
 
+	// Every language Chromium has relative times for.
+	for _, l := range chromiumLanguages("RelativeTimeFormat") {
+		add(`(() => {const f = new Intl.RelativeTimeFormat(%q, {numeric: 'auto'}); return [f.format(-1, 'day'), f.format(2, 'hours'), f.format(-1234.5, 'months'), new Intl.RelativeTimeFormat(%q, {style: 'narrow'}).format(3, 'years')].join('|')})()`, l, l)
+	}
+
 	// The parts, for some locales.
 	for _, l := range []string{"en", "de", "ar", "zh", "ja", "fr", "hi", "ru", "he", "en-u-nu-arab"} {
 		for _, numeric := range []string{"always", "auto"} {
@@ -360,3 +388,4 @@ func rtfExprs() (r []string) {
 	}
 	return r
 }
+
