@@ -16,6 +16,7 @@
 - `Intl` 的格式化器由进程里所有 VM 共用，最多 1024 个，满了先丢最早的。用过 `Intl` 的 VM 少占约 15 KB。
 - `Intl` 的函数和内置函数一个样子：`length` 和 `name` 按 ECMA-402 给，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
 - 对继承了 `Intl.NumberFormat` 或 `Intl.DateTimeFormat` 原型的 `o` 调用 `Intl.NumberFormat.call(o)` 或 `Intl.DateTimeFormat.call(o)`，新的格式化器挂在 `o` 上并返回 `o`，和 V8 一样。
+- 这个 fork 新建的文件改用 MIT 许可证（`LICENSE-MIT`），其中的源码文件带 SPDX 标识。`lib/` 里有 14 个文件照着引擎的部分代码写，标识是 `MIT AND BSD-3-Clause`。来自上游的代码仍是 BSD-3-Clause 和 QuickJS 的 MIT 许可证，语言数据仍是 Unicode License V3。`NOTICE.md` 列出哪个路径用哪个许可证，以及分发二进制的程序要附上哪些声明。
 - README 改成一页简短的落地页，有英文和中文两版。原来的内容挪进了 `docs/`：按领域分的 fork 改动、测试、合入上游、性能、发版，以及代码从哪来、从 modernc.org/quickjs 换过来会遇到什么。
 
 ### 修复

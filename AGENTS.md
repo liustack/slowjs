@@ -46,6 +46,33 @@
 7. English: keep it short and direct, use everyday words, and do not invent terms. Chinese: do not use semicolons, and do not use dashes as punctuation.
 8. Code comments and error messages point to a doc by its path, such as `docs/upgrading.md`, never to a section of the README.
 
+## License headers
+
+- A new file written in this fork starts with this header, in the comment syntax of its language and with the year it was created:
+
+  ```go
+  // Copyright (c) 2026 The liustack/quickjs Authors.
+  // SPDX-License-Identifier: MIT
+  // Use of this source code is governed by the MIT license in LICENSE-MIT at the
+  // root of this repository.
+  ```
+
+- A new file whose code repeats parts of the engine as ccgo translated it, such as a Go form of an engine function that `internal/fixlib` calls instead, takes this header and a row in [NOTICE.md](NOTICE.md):
+
+  ```go
+  // Copyright (c) 2026 The liustack/quickjs Authors.
+  // SPDX-License-Identifier: MIT AND BSD-3-Clause
+  // The fork's code here is under the MIT license in LICENSE-MIT at the root of
+  // this repository. Parts follow QuickJS (Copyright (c) 2017-2021 Fabrice
+  // Bellard and Charlie Gordon, MIT, see LICENSE-LIBQUICKJS) as translated by
+  // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
+  // lib/LICENSE).
+  ```
+
+- A file that came from upstream (modernc.org/quickjs, modernc.org/libquickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much the fork changes them.
+- Add a new author of the fork to `AUTHORS-FORK`. `AUTHORS` lists upstream's authors and stays as upstream has it.
+- New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
+
 ## Draft folder
 
 Plans, design drafts, experiment notes and raw measurement data go in the repository draft folder `.issues/<YYYY-MM-DD-topic>/`, with the files for one task in one folder. `.issues/` is not checked in (add it to `.git/info/exclude` in a fresh clone), and checked-in code, docs and scripts must not refer to anything in it. Conclusions that are settled and need to be kept long term are cleaned up and written into `docs/`.
