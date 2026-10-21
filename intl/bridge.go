@@ -58,6 +58,31 @@ import (
 //     calls, +v and `${v}` for conversions. A built-in it needs and P lacks
 //     goes into P in stub.js. TestTamper and TestBuiltinShape check against
 //     Node, in testdata/node: add the new constructor's uses there.
+//
+// # Formatters from internal/gointl
+//
+// A go-intl formatter, such as a *gointl.NumberFormat or a *gointl.Collator,
+// is the kind of formatter the registry wants: once made it never changes and
+// any number of goroutines may use it at once. So its formatter type here
+// holds the resolved state as json fields, as in step 1, and makes the go-intl
+// object in init, from the resolved locale and options, which keeps the
+// registry the only cache: two requests that resolve alike share one go-intl
+// object across all VMs. A few rules on top of the steps above:
+//
+//   - The default locale and time zone come from the request, as _zone,
+//     the zone Register hands intl.js, does for DateTimeFormat, never from
+//     gointl.HostLocale or gointl.HostTimeZone, which read the machine the
+//     process runs on.
+//   - Strings go to javascript through VM.NewString or stringArray, which copy
+//     them into the VM. go-intl may hand out strings and bytes that sit in the
+//     read only data of its packs: never write to them, and copy bytes
+//     (string(b)) before keeping them past the call.
+//   - A result that is a number, as Collator.compare's, is VM.NewInt or
+//     VM.NewFloat64. Parts go through formatted, a gointl.Part as
+//     part{Type: string(p.Kind), Value: p.Value}.
+//   - Data loaded for the whole process, such as Temporal's
+//     temporal.LoadData, which takes milliseconds, is loaded once (a
+//     sync.OnceValues), not per formatter.
 
 // An option is one property of a constructor's options argument.
 type option struct {
