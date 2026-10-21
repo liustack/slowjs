@@ -186,6 +186,25 @@ func TestToLocaleStringOverrides(t *testing.T) {
 	})
 }
 
+// What a page does to Intl or the toLocale methods before the first use
+// stays as V8 has it: the first use replaces a stand-in only while it is
+// still there and can be replaced, and a stand-in left in place keeps
+// working. Each case runs in a VM of its own.
+func TestStandInsKeepPageCode(t *testing.T) {
+	for _, test := range [][2]string{
+		{`Date.prototype.toLocaleString = function () { return 'mine'; }; Intl; new Date(0).toLocaleString()`, "mine"},
+		{`Number.prototype.toLocaleString = function () { return 'n'; }; [new Date(0).toLocaleDateString('en-US'), (1).toLocaleString()].join()`, "1/1/1970,n"},
+		{`Object.freeze(Date.prototype); new Date(0).toLocaleString('en-US')`, "1/1/1970, 12:00:00 AM"},
+		{`Object.freeze(globalThis); [typeof Intl.NumberFormat, Intl === Intl, (1234.5).toLocaleString('de')].join()`, "function,true,1.234,5"},
+		{`Object.defineProperty(globalThis, 'Intl', {value: 42, writable: true, configurable: false}); (1234.5).toLocaleString('de') + ' ' + Intl`, "1.234,5 42"},
+		{`delete globalThis.Intl; (1234.5).toLocaleString('de') + ' ' + typeof Intl`, "1.234,5 undefined"},
+		{`Intl = 5; [Intl, (1234.5).toLocaleString('de')].join()`, "5,1.234,5"},
+		{`var f = Number.prototype.toLocaleString; Intl.NumberFormat; f.call(1234.5, 'de')`, "1.234,5"},
+	} {
+		evalTests(t, newVM(t), [][2]string{test})
+	}
+}
+
 func TestNumberFormat(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
