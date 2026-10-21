@@ -6,7 +6,7 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
-	"slices"
+	"maps"
 	"sync"
 
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -175,35 +175,76 @@ func withoutLackedCollation(l gointl.Locale) gointl.Locale {
 // chromiumData is go-intl's data (gointl.Embedded) as Chromium's ICU data
 // has it. Chromium has the locales of some languages but leaves some of
 // their data out, and ICU then takes other data in its place: root's where
-// the language's bundle lacks it, and the default locale's, English, where
-// a tree has no bundle for the language at all. go-intl has the language's
-// own. chromiumData serves those data sets as Chromium has them, for the
-// language alone: "kk-CN" and "az-Cyrl" have data of their own in Chromium
-// too. TestChromiumData derives the languages from the summary of
-// Chromium's ICU data where it can, and the golden test formats in every
-// language Chromium has.
+// no bundle along the locale's chain has it, and the default locale's,
+// English, where a tree has no bundle for the language at all. go-intl has
+// the locale's own. chromiumData serves those data sets as Chromium has
+// them, for the locales Chromium has no data for: the language alone, its
+// default script, as "az-Latn", and regions of it, as "kk-KZ", where
+// "kk-Arab" and "az-Cyrl" have data of their own in Chromium.
+// TestChromiumData derives the locales from the summary of Chromium's ICU
+// data where it can, and the golden test formats in them.
 type chromiumData struct{}
 
-// chromiumMissing are, by data set, the languages Chromium has other data
+// chromiumMissing are, by data set, the locales Chromium has other data
 // for, and the data it has.
-var chromiumMissing = map[gointl.Marker]struct {
-	langs []string
-	as    gointl.DataLocale
-}{
-	gointl.MarkerNumbers:      {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
-	gointl.MarkerRelativeTime: {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
-	gointl.MarkerLists:        {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
-	gointl.MarkerUnits:        {[]string{"ak", "az", "bs", "kk", "kok", "nn", "pa", "sd", "uz"}, english},
+var chromiumMissing = map[gointl.Marker]map[string]gointl.DataLocale{
+	gointl.MarkerNumbers: missingAs(gointl.DataLocale{}, "az", "az-Latn", "bs", "bs-Latn", "kk", "kk-Cyrl", "kk-KZ", "kok",
+		"kok-Deva", "pa", "pa-Guru", "sd", "sd-Arab", "sd-Deva", "uz", "uz-Latn"),
+	gointl.MarkerRelativeTime: missingAs(gointl.DataLocale{}, chromiumMissingFields...),
+	gointl.MarkerLists:        missingAs(gointl.DataLocale{}, chromiumMissingFields...),
+	gointl.MarkerUnits:        chromiumMissingUnits(),
 }
+
+// chromiumMissingFields are the locales Chromium has no relative times and
+// no lists for.
+var chromiumMissingFields = []string{"az", "az-Cyrl", "az-Latn", "bs", "bs-Latn", "kk", "kk-Cyrl", "kk-KZ", "kok",
+	"kok-Deva", "pa", "pa-Guru", "sd", "sd-Arab", "uz", "uz-Arab", "uz-Latn"}
+
+// chromiumMissingUnits are the locales Chromium has no units for: those of
+// a language whose units it leaves out take English's, and those whose
+// parent is root, as "az-Cyrl", root's.
+func chromiumMissingUnits() map[string]gointl.DataLocale {
+	m := missingAs(english, "ak", "az", "az-Latn", "bs", "bs-Latn", "kk", "kk-Cyrl", "kk-KZ", "kok", "kok-Deva", "nn", "pa",
+		"pa-Guru", "sd", "sd-Arab", "uz", "uz-Latn")
+	maps.Copy(m, missingAs(gointl.DataLocale{}, "az-Cyrl", "bs-Cyrl", "kk-Arab", "kok-Latn", "pa-Arab", "sd-Deva", "uz-Arab",
+		"uz-Cyrl"))
+	return m
+}
+
+func missingAs(as gointl.DataLocale, tags ...string) map[string]gointl.DataLocale {
+	m := make(map[string]gointl.DataLocale, len(tags))
+	for _, tag := range tags {
+		m[tag] = as
+	}
+	return m
+}
+
+// chromiumMissingLanguages are the languages of chromiumMissing's locales,
+// which Open looks for before it writes a locale out.
+var chromiumMissingLanguages = func() map[gointl.Language]bool {
+	r := map[gointl.Language]bool{}
+	for _, m := range chromiumMissing {
+		for tag := range m {
+			l, err := gointl.ParseLocale(tag)
+			if err != nil {
+				panic(err)
+			}
+
+			r[l.Language] = true
+		}
+	}
+	return r
+}()
 
 // english is the data of en-US, the default locale, which ICU falls back
 // along to en.
 var english = gointl.DataLocale{Language: goDefaultLocale.Language}
 
 func (chromiumData) Open(m gointl.Marker, d gointl.DataLocale) ([]byte, error) {
-	if missing, ok := chromiumMissing[m]; ok && d == (gointl.DataLocale{Language: d.Language}) &&
-		slices.Contains(missing.langs, d.Language.String()) {
-		d = missing.as
+	if missing, ok := chromiumMissing[m]; ok && chromiumMissingLanguages[d.Language] {
+		if as, found := missing[d.String()]; found {
+			d = as
+		}
 	}
 	return gointl.Embedded.Open(m, d)
 }

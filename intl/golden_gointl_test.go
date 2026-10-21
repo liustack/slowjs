@@ -304,6 +304,15 @@ func segmenterExprs() (r []string) {
 	return r
 }
 
+// chromiumMissingLocales are locales of the languages chromiumMissing
+// has, other than the languages alone: with their scripts and regions,
+// those Chromium has no data for and those it has.
+var chromiumMissingLocales = []string{
+	"ak-GH", "az-AZ", "az-Latn", "az-Cyrl-AZ", "bs-BA", "bs-Latn", "bs-Cyrl", "kk-KZ", "kk-Cyrl", "kk-Arab", "kok-IN",
+	"kok-Deva", "kok-Latn", "nn-NO", "pa-IN", "pa-Guru", "pa-PK", "sd-PK", "sd-Arab", "sd-Deva", "sd-IN", "uz-UZ",
+	"uz-Latn", "uz-Cyrl",
+}
+
 // rtfLocales are the locales relative times are written in: every language
 // tifa users are likely to write and a spread of the others.
 var rtfLocales = []string{
@@ -338,7 +347,7 @@ func rtfExprs() (r []string) {
 	// Every unit, at offsets with and without words, in every style.
 	const values = `[-2, -1, -0, 0, 1, 2, 3, 1.5, -1.5, 0.5, 10, 21, 100, 1000, 12345.678, -1e6, 0.001, 1.004, -1.006]`
 	const units = `['year', 'quarter', 'month', 'week', 'day', 'hour', 'minute', 'second']`
-	for _, l := range rtfLocales {
+	for _, l := range append(rtfLocales, chromiumMissingLocales...) {
 		for _, style := range []string{"long", "short", "narrow"} {
 			for _, numeric := range []string{"always", "auto"} {
 				add(`(() => {const f = new Intl.RelativeTimeFormat(%q,{style:%q,numeric:%q}); return %s.map((u) => %s.map((v) => f.format(v, u)).join('|')).join('\n')})()`,
@@ -419,7 +428,7 @@ func listExprs() (r []string) {
 
 	// Lists of every length in every locale, type and style.
 	const lists = `[[], ['a'], ['a', 'b'], ['a', 'b', 'c'], ['one', 'two', 'three', 'four'], ['1', '2', '3', '4', '5', '6']]`
-	for _, l := range listLocales {
+	for _, l := range append(listLocales, chromiumMissingLocales...) {
 		for _, typ := range []string{"conjunction", "disjunction", "unit"} {
 			for _, style := range []string{"long", "short", "narrow"} {
 				add(`(() => {const f = new Intl.ListFormat(%q,{type:%q,style:%q}); return %s.map((l) => f.format(l)).join('|')})()`, l, typ, style, lists)
@@ -919,7 +928,7 @@ func durationExprs() (r []string) {
 	}
 
 	// Every duration in every locale and style.
-	for _, l := range durLocales {
+	for _, l := range append(durLocales, chromiumMissingLocales...) {
 		for _, style := range []string{"long", "short", "narrow", "digital"} {
 			add(`(() => {const f = new Intl.DurationFormat(%q,{style:%q}); return %s.map((d) => {try {return f.format(d)} catch (e) {return e.constructor.name}}).join('|')})()`, l, style, durDurations)
 		}
