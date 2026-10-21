@@ -122,6 +122,15 @@ var tamper = [
 			'fractionalDigits']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
+	// A setter on Object.prototype runs for a property set by assignment,
+	// not for one an object literal or JSON.parse makes.
+	['Object.prototype setters on results', `
+		for (const k of ['type', 'value', 'unit', 'source', 'segment', 'index', 'input', 'isWordLike', 'done',
+			'locale', 'calendar', 'numberingSystem', 'timeZone', 'style', 'numeric', 'granularity', 'collation',
+			'sensitivity', 'usage', 'fallback', 'languageDisplay', 'pluralCategories', 'direction', 'firstDay',
+			'weekend', 'minimalDays']) {
+			Object.defineProperty(Object.prototype, k, {__proto__: null, set() {}, configurable: true});
+		}`],
 	['Object.prototype slots', `
 		for (const k of ['kind', 'id', 'fn', 'args', 'bound', 'resolve', 'Intl', 'dateToLocaleString', 'numberToLocaleString',
 			'stringLocaleCompare', 'segmenter', 'string', 'breaks', 'segments', 'at', 'data', 'end']) {
