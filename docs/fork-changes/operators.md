@@ -12,7 +12,7 @@ The interpreter does an operator itself only for the simplest operands, two ints
 
 ## Bitwise operators on floats skip the slow path
 
-Release: not released yet.
+Release: v0.26.17.
 
 `&`, `|`, `^`, `<<`, `>>` and `>>>` of two numbers no longer take the slow path when one of them is a float. The interpreter did the operator itself only for two ints and called `js_binary_logic_slow` or `js_shr_slow` for everything else, which convert both operands with the checks for BigInts and objects and then with the generic `ToInt32`. A product past 2^31 is a float, so the string hash of emotion, the CSS-in-JS library of MUI, took that path for almost every operator. The two slow functions now first call `bitwiseNumbers` (`lib/bitwise.go`), before they take their TLS frame. It does the operator for any two ints or floats, converting a float as `JS_ToInt32Free` does (the same bits, without `fmod`), and stores an int, or for `>>>` a float above 2^31 - 1, as `JS_NewUint32` does. Any other pair goes on through the rest of the slow path as before.
 
@@ -30,7 +30,7 @@ If it reports that `js_binary_logic_slow`, `js_shr_slow`, `JS_ToNumberHintFree` 
 
 ## The usual comparisons answered in the interpreter
 
-Release: not released yet.
+Release: v0.26.17.
 
 `===`, `!==`, `==` and `!=` no longer call the slow path for the usual pairs. The interpreter compared two ints itself and called `js_strict_eq_slow` or `js_eq_slow` for everything else, which for `===` went on to `js_strict_eq2`. React compares with `null` and `undefined` (minified as `null != x` and `void 0 === x`, which the compiler does not turn into `is_null` or `is_undefined`), compares types, symbols and objects by identity, and switches over strings. The interpreter now answers these itself:
 

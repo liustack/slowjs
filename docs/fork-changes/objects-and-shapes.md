@@ -42,7 +42,7 @@ If it reports that the functions of `shapeFuncs` or `JSShape` changed (`internal
 
 ## for in skips prototypes with no enumerable property
 
-Release: not released yet.
+Release: v0.26.17.
 
 A `for in` loop no longer lists the property names of each prototype to find out that it has no enumerable property. When a loop runs out of the object's own properties, the engine checks the objects of its prototype chain for enumerable string keys, to know whether it must walk the chain. It did that with `JS_GetOwnPropertyNamesInternal`, which mallocs a list, takes a reference to each name and frees it all again, in every loop and for every prototype, mostly for `Object.prototype`, which has dozens of names and none of them enumerable. `js_for_in_prepare_prototype_chain_enum` now first calls `forInNoEnum` (`lib/forin.go`), which reads the shape of a prototype that is not exotic: when no property of the shape has a name and the enumerable flag, it gives the same empty list without allocating, and the loop goes on as before.
 
@@ -58,7 +58,7 @@ If it reports that `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyN
 
 ## String keys that are already atoms
 
-Release: not released yet.
+Release: v0.26.17.
 
 A string key that is already an atom costs less. `o[k]`, `o[k] = v`, `k in o`, `hasOwnProperty(k)`, computed keys of literals and every other path that turns a value into a property key go through `JS_ValueToAtom`, which took a TLS frame, duplicated the string (`JS_ToPropertyKey`), checked that it is no index (`is_num_string`) and looked its index up (`__JS_NewAtom`), even when the string was the atom itself: a name the code has, a key from `for...in`, `Object.keys` or `JSON.parse`. On the pages of tifa's example shop, 92% of the strings `JS_ValueToAtom` gets are such atoms. Now, for a string, it first calls `atomKey` (`lib/atomkey.go`): an atom string that is not empty and does not start with a digit, for which `is_num_string` is false, gets its index from the atom table and one more reference, none for a constant atom, as the generic path gives. Every other string, numbers and symbols take the generic path, and a number does not even make the call. Nothing is cached, so memory use is the same.
 
@@ -74,7 +74,7 @@ If it reports that `JS_ValueToAtom` or a function of `atomKeyFuncs` changed (`in
 
 ## New functions get length and name at once
 
-Release: not released yet.
+Release: v0.26.17.
 
 A new function gets its `length` and `name` without the shapes in between. `js_function_set_properties` gave every new function the two through `JS_DefinePropertyValue` and `add_property`, one at a time: the function went from the empty shape of its prototype, through a shape with `length` only, to the shape with both. Nothing held the empty shape or the one with `length` only for long, so they were made again for each function and freed again a moment later (3,000 arrows, methods and constructors made 5,001 shapes). Now `js_function_set_properties` calls `funcShape` first (`lib/funcshape.go`). For each of the four prototypes of new functions (`Function.prototype` and those of async, generator and async generator functions) it remembers the empty shape and the shape with both, the first time a function goes through `add_property`, and puts the next functions with that empty shape straight onto the shape with both, and writes the two values (the same 3,000 functions made 2,000 shapes, for the object literals and the `prototype` of the constructors).
 

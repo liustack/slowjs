@@ -77,7 +77,7 @@ Release: v0.26.16.
 
 ## Builtin, a Go function called as a built-in
 
-Release: not released yet.
+Release: v0.26.17.
 
 `Builtin` is a Go function javascript calls as a built-in function, without the reflection and conversions of `RegisterFunc` and `RegisterHostFunc`. `NewBuiltin(name, length, fn)` makes one, once per process, and `VM.NewBuiltinFunction` makes a function object of it in any VM: it has its name and length and nothing else of its own, no `prototype`, it cannot be called with `new` and its `toString` shows `[native code]`, like `Math.max`. `fn` reads the arguments it wants from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on several goroutines call it at once, so it has to be safe for that, and keeps what it needs per VM by `Args.VM()`.
 
@@ -89,7 +89,7 @@ Test: `builtin_test.go`.
 
 ## Error() of an Error made in Go
 
-Release: not released yet.
+Release: v0.26.17.
 
 `Error()` of an `*Error` made in Go is now `Name: Message`, as `Error.prototype.toString` writes it, where it was empty before, so the `TypeError` a `RegisterHostFunc` function throws for such an error now has that message too. `Error()` of an error taken from javascript is as before.
 
@@ -97,7 +97,7 @@ Test: `builtin_test.go`.
 
 ## NewArray
 
-Release: not released yet.
+Release: v0.26.17.
 
 `VM.NewArray(vals...)` makes an array of values made in Go, as an array literal makes one: its elements are its own properties, so a setter a page put on `Array.prototype` never runs, and it costs no JSON. It borrows the values, as `SetPropertyValue` does, and refuses a value of another VM, a number too. A Builtin returns a list this way.
 
@@ -105,7 +105,7 @@ Test: `builtin_test.go`.
 
 ## SetStrip
 
-Release: not released yet.
+Release: v0.26.17.
 
 `VM.SetStrip(StripSource)` compiles functions without their source, so their `toString` shows `[native code]` as the engine's built-ins do, and `StripDebug` leaves out line and column numbers too. Both are values of `type Strip`. It wraps `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It applies to every function the VM compiles from then on, those of the page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in any VM that loads it, which is what a polyfill playing built-ins wants.
 
@@ -113,7 +113,7 @@ Test: `strip_test.go`.
 
 ## RunGC, MemorySize and GCThreshold
 
-Release: not released yet.
+Release: v0.26.17.
 
 `VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC now, `MemorySize` returns the memory the VM takes, as the memory limit and the GC threshold count it, and `GCThreshold` returns the threshold. The engine runs a GC when it makes an object and the memory would pass the threshold, then sets the threshold to 1.5 times what the GC left, so a threshold other than the one set last means the engine ran a GC since. `RunGC` leaves the threshold as it is.
 

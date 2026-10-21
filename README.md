@@ -70,7 +70,7 @@ The API is that of modernc.org/quickjs, documented at [pkg.go.dev](https://pkg.g
 - **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`**: why a call ended, which no script can fake. [More](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 
-The first five are on `main` and not in a release yet.
+The first five came in v0.26.17.
 
 ## What changes for you
 

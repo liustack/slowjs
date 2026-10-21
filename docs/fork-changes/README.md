@@ -49,20 +49,20 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | A front cache for small blocks | v0.26.16 | [memory-and-allocation.md](memory-and-allocation.md#a-front-cache-for-small-blocks) |
 | Kept shapes | v0.26.16 | [objects-and-shapes.md](objects-and-shapes.md#kept-shapes) |
 | SetShapeCache and DefaultShapeCache | v0.26.16 | [go-api.md](go-api.md#setshapecache-and-defaultshapecache) |
-| for in skips prototypes with no enumerable property | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) |
-| String keys that are already atoms | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#string-keys-that-are-already-atoms) |
-| JSON copies runs of plain characters | Unreleased | [json.md](json.md#json-copies-runs-of-plain-characters) |
-| Bitwise operators on floats skip the slow path | Unreleased | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
-| The usual comparisons answered in the interpreter | Unreleased | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
-| One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
-| Alternatives that cannot match are not pushed | Unreleased | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
-| New functions get length and name at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
-| Intl calls Go through Builtins | Unreleased | [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins) |
-| Builtin, a Go function called as a built-in | Unreleased | [go-api.md](go-api.md#builtin-a-go-function-called-as-a-built-in) |
-| Error() of an Error made in Go | Unreleased | [go-api.md](go-api.md#error-of-an-error-made-in-go) |
-| NewArray | Unreleased | [go-api.md](go-api.md#newarray) |
-| SetStrip | Unreleased | [go-api.md](go-api.md#setstrip) |
-| RunGC, MemorySize and GCThreshold | Unreleased | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
+| for in skips prototypes with no enumerable property | v0.26.17 | [objects-and-shapes.md](objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) |
+| String keys that are already atoms | v0.26.17 | [objects-and-shapes.md](objects-and-shapes.md#string-keys-that-are-already-atoms) |
+| JSON copies runs of plain characters | v0.26.17 | [json.md](json.md#json-copies-runs-of-plain-characters) |
+| Bitwise operators on floats skip the slow path | v0.26.17 | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
+| The usual comparisons answered in the interpreter | v0.26.17 | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
+| One TLS frame per call on linux, and 34 more functions with fewer frames | v0.26.17 | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
+| Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
+| New functions get length and name at once | v0.26.17 | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
+| Intl calls Go through Builtins | v0.26.17 | [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins) |
+| Builtin, a Go function called as a built-in | v0.26.17 | [go-api.md](go-api.md#builtin-a-go-function-called-as-a-built-in) |
+| Error() of an Error made in Go | v0.26.17 | [go-api.md](go-api.md#error-of-an-error-made-in-go) |
+| NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
+| SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
+| RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
