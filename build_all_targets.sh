@@ -13,7 +13,11 @@ do
 		GOOS=$goos GOARCH=$goarch go build -tags=$tag -v ./...
 		# The tests of every package, not only the root one: the tests of
 		# lib/ use the value representation, which is not a struct on 32-bit
-		# targets.
-		GOOS=$goos GOARCH=$goarch go test -tags=$tag -c -o "$out/" ./...
+		# targets. Each package gets its own file, as two packages share the
+		# name gen.
+		for pkg in $(GOOS=$goos GOARCH=$goarch go list -tags=$tag -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./...)
+		do
+			GOOS=$goos GOARCH=$goarch go test -tags=$tag -c -o "$out/$(echo "$pkg" | tr / _).test" "$pkg"
+		done
 	done
 done
