@@ -1,5 +1,17 @@
+diff --git a/internal/blob/blob.go b/internal/blob/blob.go
+index 7e8f383..318f321 100644
+--- a/internal/blob/blob.go
++++ b/internal/blob/blob.go
+@@ -260,6 +260,7 @@ func ReadShared(b []byte, version byte) (Shared, error) {
+ }
+ 
+ func (s Shared) part(i int) ([]byte, bool) {
++	walked(s, i)
+ 	// i is compared with the parts there are, not multiplied out, which
+ 	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
+ 	if i < 0 || i >= len(s.ends)/4 {
 diff --git a/source.go b/source.go
-index 56a6838..544df1d 100644
+index 56a6838..bc096cf 100644
 --- a/source.go
 +++ b/source.go
 @@ -1,14 +1,11 @@
@@ -17,7 +29,7 @@ index 56a6838..544df1d 100644
  	"github.com/liustack/quickjs/internal/gointl/internal/layout"
  )
  
-@@ -168,16 +165,11 @@ type Source interface {
+@@ -168,16 +165,12 @@ type Source interface {
  	Open(m Marker, d DataLocale) ([]byte, error)
  }
  
@@ -32,11 +44,12 @@ index 56a6838..544df1d 100644
  // simple path needs no setting up, and it is only a default: anything taking a
  // Source can be given another.
 +//
-+// In quickjs it is not go-intl's data.pack but the packs qjs_source.go embeds.
++// In quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
++// qjs_source.go serves.
  var Embedded EmbeddedSource
  
  // EmbeddedSource is Embedded's type, the data built into the package. Its
-@@ -187,27 +179,7 @@ type EmbeddedSource struct{}
+@@ -187,27 +180,7 @@ type EmbeddedSource struct{}
  
  // Open serves the embedded data.
  func (EmbeddedSource) Open(m Marker, d DataLocale) ([]byte, error) {
@@ -61,7 +74,7 @@ index 56a6838..544df1d 100644
 -	// The pack's own memory, which is read-only: Source's bytes are never
 -	// changed.
 -	return unsafe.Slice(unsafe.StringData(s.pack[start:end]), end-start), nil
-+	return openFiles(qjsFiles{}, m, d)
++	return qjsOpen(m, d)
  }
  
  // NewFS returns a Source that reads from a file system, such as the data

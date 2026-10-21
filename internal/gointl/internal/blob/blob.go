@@ -260,6 +260,7 @@ func ReadShared(b []byte, version byte) (Shared, error) {
 }
 
 func (s Shared) part(i int) ([]byte, bool) {
+	walked(s, i)
 	// i is compared with the parts there are, not multiplied out, which
 	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
 	if i < 0 || i >= len(s.ends)/4 {

@@ -169,7 +169,8 @@ type Source interface {
 // simple path needs no setting up, and it is only a default: anything taking a
 // Source can be given another.
 //
-// In quickjs it is not go-intl's data.pack but the packs qjs_source.go embeds.
+// In quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
+// qjs_source.go serves.
 var Embedded EmbeddedSource
 
 // EmbeddedSource is Embedded's type, the data built into the package. Its
@@ -179,7 +180,7 @@ type EmbeddedSource struct{}
 
 // Open serves the embedded data.
 func (EmbeddedSource) Open(m Marker, d DataLocale) ([]byte, error) {
-	return openFiles(qjsFiles{}, m, d)
+	return qjsOpen(m, d)
 }
 
 // NewFS returns a Source that reads from a file system, such as the data
