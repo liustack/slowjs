@@ -1,9 +1,9 @@
 // tamper lists pages that change built-ins before they first use Intl, as
 // [name, script] pairs. Each script runs in a realm of its own and answers a
 // string. TestTamper runs them on fresh VMs and compares the answers with
-// Node 24's, recorded in tamper.json by:
+// Chromium's, recorded in tamper.json by:
 //
-//	node tamper-node.js > tamper.json
+//	node record.cjs tamper
 var uses = `(() => {
 	let r = '';
 	// show writes an object out without JSON.stringify, which in QuickJS

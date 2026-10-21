@@ -13,6 +13,12 @@
 //   node record.cjs golden
 //       evaluates corpus.json (go test -run TestGolden -golden.corpus writes
 //       it) and writes golden.json.gz.
+//   node record.cjs shape
+//       evaluates shape.js and writes shape.json: the names, lengths and
+//       property attributes of Intl's built-ins (TestBuiltinShape).
+//   node record.cjs tamper
+//       runs each script of tamper.js in a realm of its own, an iframe, and
+//       writes their answers to tamper.json (TestTamper).
 //   node record.cjs icudtl
 //       prints the path of the browser's ICU data file, for the generator's
 //       -icudtl.
@@ -104,6 +110,36 @@ async function golden() {
 	});
 }
 
+async function shape() {
+	const src = fs.readFileSync(path.join(dir, 'shape.js'), 'utf8');
+	await withPage(async (page, version) => {
+		const out = await page.evaluate((src) => (0, eval)(src + '\nshape()'), src);
+		fs.writeFileSync(path.join(dir, 'shape.json'), out + '\n');
+		console.log(`Chromium ${version}: shape.json`);
+	});
+}
+
+// tamper runs the scripts in iframes, so that what they change stays out of
+// the realm that collects the answers.
+async function tamper() {
+	const src = fs.readFileSync(path.join(dir, 'tamper.js'), 'utf8');
+	await withPage(async (page, version) => {
+		const out = await page.evaluate((src) => {
+			const scripts = (0, eval)(src + '\nscripts');
+			const r = {};
+			for (const [name, script] of scripts) {
+				const frame = document.createElement('iframe');
+				document.body.appendChild(frame);
+				r[name] = String(frame.contentWindow.eval(script));
+				frame.remove();
+			}
+			return r;
+		}, src);
+		fs.writeFileSync(path.join(dir, 'tamper.json'), JSON.stringify(out, null, '\t') + '\n');
+		console.log(`Chromium ${version}: ${Object.keys(out).length} scripts`);
+	});
+}
+
 // icudtl prints where the browser keeps icudtl.dat: next to the executable on
 // Linux and Windows, in the framework's Resources directory on macOS.
 function icudtl() {
@@ -147,8 +183,14 @@ function icudtl() {
 	case 'golden':
 		await golden();
 		break;
+	case 'shape':
+		await shape();
+		break;
+	case 'tamper':
+		await tamper();
+		break;
 	default:
-		console.error('usage: node record.cjs availability <cldr-json dir> | golden | icudtl');
+		console.error('usage: node record.cjs availability <cldr-json dir> | golden | shape | tamper | icudtl');
 		process.exit(2);
 	}
 })().catch((err) => {

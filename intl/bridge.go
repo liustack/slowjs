@@ -61,7 +61,8 @@ import (
 //     which QuickJS compiles into a call of String.prototype.concat. A
 //     built-in it needs and P lacks
 //     goes into P in stub.js. TestTamper and TestBuiltinShape check against
-//     Node, in testdata/node: add the new constructor's uses there.
+//     Chromium, in testdata/chromium: add the new constructor's uses to
+//     tamper.js and shape.js there and record them again (record.cjs).
 //
 // # Formatters from internal/gointl
 //

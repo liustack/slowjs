@@ -1,9 +1,9 @@
 // shape() describes the built-ins of Intl and the toLocale* methods: their
 // names, lengths, own properties, attributes and whether they construct.
-// TestBuiltinShape runs it on a VM and compares the result with what Node
-// 24 answers, recorded in shape.json by:
+// TestBuiltinShape runs it on a VM and compares the result with what
+// Chromium answers, recorded in shape.json by:
 //
-//	node -e "$(cat shape.js); console.log(shape())" > shape.json
+//	node record.cjs shape
 function shape() {
 	'use strict';
 	const r = {};

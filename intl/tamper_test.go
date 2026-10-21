@@ -18,15 +18,15 @@ import (
 // TestTamper runs pages that replace or change built-ins, Array.prototype.push,
 // Function.prototype.call, Object.defineProperty, WeakMap.prototype.get and
 // the like, before their first use of Intl, and compares what Intl answers
-// with Node 24's answers (testdata/node/tamper.js). Intl's own code must not
-// depend on anything a page can change.
+// with Chromium's answers (testdata/chromium/tamper.js). Intl's own code
+// must not depend on anything a page can change.
 func TestTamper(t *testing.T) {
-	src, err := os.ReadFile("testdata/node/tamper.js")
+	src, err := os.ReadFile("testdata/chromium/tamper.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	b, err := os.ReadFile("testdata/node/tamper.json")
+	b, err := os.ReadFile("testdata/chromium/tamper.json")
 	if err != nil {
 		t.Fatal(err)
 	}
