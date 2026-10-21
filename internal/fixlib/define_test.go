@@ -85,10 +85,11 @@ func TestDefineRejects(t *testing.T) {
 	}
 }
 
-// -define, -backtrace, -regex, -lazyaddr, -inline and -funcshape print the
-// fingerprints the checks compare with defineSites, backtraceSites,
-// regexSites, lazyAddrSites, inlineSites and funcShapeSites, so that a
-// table updated from them passes.
+// -define, -backtrace, -regex, -lazyaddr, -inline, -oneframe, -funcshape
+// and -recache print the fingerprints the checks compare with defineSites,
+// backtraceSites, regexSites, lazyAddrSites, inlineSites, oneFrameSites,
+// funcShapeSites and regexCacheSites, so that a table updated from them
+// passes.
 func TestFingerprintReportMatchesSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -108,6 +109,7 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 		{"inlineSites", inlineFingerprint, inlineSites[name]},
 		{"oneFrameSites", oneFrameFingerprint, oneFrameSites[name]},
 		{"funcShapeSites", funcShapeFingerprint, funcShapeSites[name]},
+		{"regexCacheSites", regexCacheFingerprint, regexCacheSites[name]},
 	} {
 		got, err := reportedFingerprint(fn, hw, c.fp)
 		if err != nil {
@@ -119,9 +121,10 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 	}
 }
 
-// -forin, -bitwise, -eq, -lazyaddr, -json, -atomkey, -regex and -funcshape print the
-// fingerprints even when the table does not match the files, which is when
-// they are needed: the check of the table must not stop the report.
+// -forin, -bitwise, -eq, -lazyaddr, -json, -atomkey, -regex, -funcshape and
+// -recache print the fingerprints even when the table does not match the
+// files, which is when they are needed: the check of the table must not
+// stop the report.
 func TestFingerprintReportIgnoresSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -143,6 +146,7 @@ func TestFingerprintReportIgnoresSites(t *testing.T) {
 		{"-lazyaddr", lazyAddr, lazyAddrSites, lazyAddrFingerprint},
 		{"-regex", regex, regexSites, regexFingerprint},
 		{"-funcshape", fnShape, funcShapeSites, funcShapeFingerprint},
+		{"-recache", recache, regexCacheSites, regexCacheFingerprint},
 	} {
 		want := c.table[name]
 		*c.flag, c.table[name] = true, "0"

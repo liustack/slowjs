@@ -63,6 +63,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
 | SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
 | RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
+| Compiled regexps kept per VM | Unreleased | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
+| SetRegExpCache and DefaultRegExpCache | Unreleased | [go-api.md](go-api.md#setregexpcache-and-defaultregexpcache) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

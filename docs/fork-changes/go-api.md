@@ -1,11 +1,11 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
   - Telling an interrupt or out of memory from an error a script threw
   - Registering a Go function under a name the global object already has
-  - Calling VM.SetShapeCache
+  - Calling VM.SetShapeCache or VM.SetRegExpCache
   - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
@@ -74,6 +74,12 @@ Test: `TestNewVMContextFailure` in `close_test.go`, also run under memgrind.
 Release: v0.26.16.
 
 `DefaultShapeCache` (2048) is the number of shapes a new VM keeps once their objects are gone, and `VM.SetShapeCache(n)` changes it for one VM, 0 turning it off. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Kept shapes](objects-and-shapes.md#kept-shapes) has what it gains and costs.
+
+## SetRegExpCache and DefaultRegExpCache
+
+Release: not released yet.
+
+`DefaultRegExpCache` (256) and `DefaultRegExpCacheBytes` (1 MiB) are how many compiled regexps a new VM keeps at most, and in how many bytes, counting their patterns and flags. `VM.SetRegExpCache(n, bytes)` changes both for one VM and lets go of what it kept, 0 turning it off. `n` can be at most `math.MaxInt32/8`, as for `SetShapeCache`. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Compiled regexps kept per VM](regexp.md#compiled-regexps-kept-per-vm) has what it gains and costs.
 
 ## Builtin, a Go function called as a built-in
 

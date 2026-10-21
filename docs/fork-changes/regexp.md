@@ -1,15 +1,16 @@
 ---
-summary: 'The fork changes to regular expressions: skipping to where a regexp can start to match, and not pushing the alternatives that cannot match at a position, with what each gains, which regexps take them, how timeouts still stop them, and what to do when upstream changes the regexp engine'
+summary: 'The fork changes to regular expressions: skipping to where a regexp can start to match, not pushing the alternatives that cannot match at a position, and keeping the bytecode of compiled regexps per VM, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, and what to do when upstream changes the regexp engine'
 read_when:
   - Changing lib/regexskip.go or fixRegexSkip
+  - Changing lib/regexcache.go or fixRegexCache, or calling VM.SetRegExpCache
   - Measuring a regexp with BenchmarkRegexColors
-  - fixlib stops on regexSites after an upstream release
+  - fixlib stops on regexSites or regexCacheSites after an upstream release
   - A regexp gives another result than before, or a timeout does not stop a regexp
 ---
 
 # Regular expressions
 
-The engine runs a regexp in a backtracking machine over its bytecode. Both changes here are in `lib/regexskip.go` and change only the generated Go, through `internal/fixlib`, with no C form.
+The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. All of them change only the generated Go, through `internal/fixlib`, with no C form.
 
 ## Skip to where a regexp can match
 
@@ -45,3 +46,25 @@ Tests: `lib/regexskip_test.go`, whose `testdata/regexsplit.txt` holds what Node 
 ### When upstream changes it
 
 The checks under [Skip to where a regexp can match](#when-upstream-changes-it) cover this change too: both read the same functions, and `fixlib` pins them in one table (`regexSites`).
+
+## Compiled regexps kept per VM
+
+Release: not released yet.
+
+A VM keeps the bytecode of the regexps it compiled. Code that makes a new `RegExp` of the same pattern on every call compiled it every time: a syntax highlighter made anew for each render, as react-markdown makes one, compiles the regexps of its grammar again on each page. Now `js_compile_regexp`, which compiles every regexp (a literal when the parser meets it, `new RegExp`, `RegExp`, `RegExp.prototype.compile`, and the copy `split` and the other built-ins make of a regexp with new flags), first looks the pattern and the flags up in a cache of the runtime, and keeps there what it compiled (`lib/regexcache.go`).
+
+Why this is safe: the bytecode is a string the engine never changes once `lre_compile` wrote it, and `lastIndex` is a property of each object, so objects made from the cache share it, as the objects of one literal and `new RegExp(re)` already did. Only a pattern that is a flat string, with flags that are undefined or a flat string, is looked up and kept: converting anything else can run a script or allocate, which `js_compile_regexp` does before it compiles, and a rope (a string made of others and not yet flattened) is converted too. A compile that fails is not kept, so a pattern that throws a `SyntaxError` throws it every time. What differs: a hit can succeed where compiling again would fail, for lack of memory or of stack.
+
+The cache keeps at most 256 regexps in 1 MiB, counting each entry, its pattern, flags and bytecode, and lets go of the one used least recently first. Its table of hash chains is not in those bytes: it has one pointer for each entry that fits in them, at most 65,536 (512 KiB on 64-bit targets), however many entries the limit allows, and counts against the memory limit of the VM. With the defaults it takes 2 KiB. The limits come from the pages measured: the journal post of tifa's example shop that highlights CSS compiles 392 regexps per render, 162 of them different, which take 714 KiB, so they fit with room to spare. The other pages of the shop and of an app built on MUI compile at most 83 per render, of at most 11 patterns, in under 15 KiB. In `lib`, `JS_SetRegExpCache(rt, n, bytes)` changes the limits, 0 and 0 turning it off. A new VM keeps `DefaultRegExpCache` regexps in `DefaultRegExpCacheBytes`, and [`VM.SetRegExpCache`](go-api.md#setregexpcache-and-defaultregexpcache) changes it. `JS_FreeRuntime` lets every entry go first.
+
+Memory: the entries are kept in C memory, in the state of the runtime next to the [shape cache](objects-and-shapes.md#kept-shapes), so they count against the memory limit of the VM. They are not let go when an allocation fails: freeing a string can free an atom, and the allocation that fails can be one in the middle of growing the atom table. So a script that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. One VM of the shop holds 12 KiB more after a GC (12.84 MiB rather than 12.83, measured with tifa's `TestShopVMMemory`), and a VM that rendered the CSS post holds the 714 KiB of its 162 regexps.
+
+Without PGO, on linux/amd64 (AMD EPYC 7B13, one core), against `ff35232` (the engine of v0.26.17), the CSS post renders in 0.893 of the time: the median of 6 rounds in 3 code layouts, 0.841 to 0.903 over them. The other pages, which compile no regexp after their first render, render in the same time: 1.003 for the shop, 1.000 for the other store pages and 0.999 for the MUI pages, inside the 1% by which the code layout moves a render. The HTML is the same.
+
+`fixlib` puts the lookup and the store into `js_compile_regexp` and the release into `JS_FreeRuntime` in all 13 files, and pins the text of `js_compile_regexp` and of the functions the cache hashes, compares, counts and frees strings with. This changes only the generated Go, with no C hunk (`internal/fixlib/regexcache.go`).
+
+Tests: `lib/regexcache_test.go`, whose `testdata/regexcache.txt` is what Node 24 prints for `testdata/regexcache.js` (patterns and flags of every kind, `v`, named groups, `d`, errors, made again through every way that compiles a regexp and used on their own, with the cache at its defaults, at four entries and off), the sharing of bytecode, a pattern that is an object whose `toString` is called every time, the LRU by count and by bytes, the size of the table for limits up to `math.MaxInt32` entries, a regexp that outlives its entry and a GC, the memory the cache counts, out of memory at every limit, and 8 runtimes on 8 goroutines. Also `lib/regexcache_memgrind_test.go` (no C memory left behind), `regexcache_test.go` (the memory limit, `SetRegExpCache`, and the timeout and `Interrupt` in loops that make regexps) and `internal/fixlib/regexcache_test.go`.
+
+### When upstream changes it
+
+If `fixlib` reports that a function of `regexCacheFuncs` changed (a fingerprint other than the one in `internal/fixlib/regexcachesites.go`), read the new code against `lib/regexcache.go`: `js_compile_regexp` must still only read a pattern and flags that are flat strings, return the bytecode as a new 8-bit string and not change it after, and every other return must still be of an exception. `hash_string`, `js_string_compare` and `js_string_memcmp` must still read a string as the cache hashes and compares it, `js_free_string` and the reference count (`js_rc`) must still free a string as the cache frees its entries, and `js_malloc_usable_size_rt` must still give the size the memory limit counts. Then put the new fingerprints in (`go run ./internal/fixlib -recache` prints them, even while the table is wrong) and run `go test -vet=off -run 'RegexCache|RegExpCache' ./lib .`. If it reports that the bytecode is not returned at the end of `js_compile_regexp`, or that it has another number of returns of `ret`, read the new end of the function and teach `addRegexCache` where the bytecode is made.
