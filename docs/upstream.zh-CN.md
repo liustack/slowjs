@@ -11,7 +11,7 @@
 3. **[modernc.org/quickjs](https://gitlab.com/cznic/quickjs)**：libquickjs 之上的 Go API。fork 从 v0.25.0（2026-10-01）开始，也就是本仓库历史里的提交 `ea7b851`。
 4. **这个 fork**：`github.com/liustack/quickjs`，把 Go API 和引擎合成一个模块。
 
-modernc.org/libquickjs 和 modernc.org/quickjs 出自 quickjs-go 的作者们。它们的 `AUTHORS` 文件保留为 [AUTHORS](../AUTHORS) 和 [lib/AUTHORS](../lib/AUTHORS)，两个模块都列了 Jan Mercl，modernc.org/quickjs 还列了 Dan Kortschak。
+modernc.org/libquickjs 和 modernc.org/quickjs 出自 quickjs-go 的作者们。它们的 `AUTHORS` 文件按上游原样保留为 [AUTHORS](../AUTHORS) 和 [lib/AUTHORS](../lib/AUTHORS)，两个模块都列了 Jan Mercl，modernc.org/quickjs 还列了 Dan Kortschak。这个 fork 的作者列在 [AUTHORS-FORK](../AUTHORS-FORK)。
 
 ## fork 保留了什么，改了什么
 

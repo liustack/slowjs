@@ -19,7 +19,7 @@ The code was built in four steps, each on the one before:
 3. **[modernc.org/quickjs](https://gitlab.com/cznic/quickjs)**, the Go API over libquickjs. The fork starts from v0.25.0 (2026-10-01), which is commit `ea7b851` in this repository's history.
 4. **This fork**, `github.com/liustack/quickjs`, which merges the Go API and the engine into one module.
 
-modernc.org/libquickjs and modernc.org/quickjs are by the quickjs-go authors. Their `AUTHORS` files, kept as [AUTHORS](../AUTHORS) and [lib/AUTHORS](../lib/AUTHORS), list Jan Mercl for both and Dan Kortschak for modernc.org/quickjs.
+modernc.org/libquickjs and modernc.org/quickjs are by the quickjs-go authors. Their `AUTHORS` files, kept as upstream has them in [AUTHORS](../AUTHORS) and [lib/AUTHORS](../lib/AUTHORS), list Jan Mercl for both and Dan Kortschak for modernc.org/quickjs. The authors of this fork are in [AUTHORS-FORK](../AUTHORS-FORK).
 
 ## What the fork keeps and what it changed
 
