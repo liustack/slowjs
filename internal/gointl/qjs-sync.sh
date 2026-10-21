@@ -12,9 +12,10 @@
 # each data package), and UPSTREAM. Everything else is go-intl's, rewritten
 # from github.com/go-quickjs/go-intl to github.com/liustack/quickjs/internal/gointl
 # and changed only by qjs.patch, which is kept to the data loading layer:
-# source.go stops embedding data.pack and serves our packs instead, and
+# source.go stops embedding data.pack and serves our packs instead,
 # internal/blob reports the pool parts it reads when the pack tool walks the
-# data.
+# data, and dictbe.go takes a missing break dictionary for none, so that a
+# build without the CJK dictionary still segments.
 #
 # Run it from anywhere: it works on the module the script is in.
 #

@@ -24,18 +24,27 @@ import (
 // inflated one is shared by every formatter and VM in the process. Glue that
 // hands bytes from here to JS copies them first.
 
-// qjsPackNames are the packs, in the order qjsPackData gives them.
-var qjsPackNames = []string{"core", "names", "cjdict"}
+// A qjsBuiltIn is one pack built in.
+type qjsBuiltIn struct{ name, data string }
 
-// qjsPackData returns the packs built in.
-func qjsPackData() []string { return []string{qjsCore, qjsNames, qjsCJDict} }
+// qjsPackData returns the packs built in, leaving out those a build tag
+// leaves out.
+func qjsPackData() []qjsBuiltIn {
+	var out []qjsBuiltIn
+	for _, p := range []qjsBuiltIn{{"core", qjsCore}, {"names", qjsNames}, {"cjdict", qjsCJDict}} {
+		if p.data != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
-func qjsOpenPacks(data []string) ([]*qjspack.Pack, error) {
+func qjsOpenPacks(built []qjsBuiltIn) ([]*qjspack.Pack, error) {
 	var packs []*qjspack.Pack
-	for i, s := range data {
-		p, err := qjspack.Open(s)
+	for _, b := range built {
+		p, err := qjspack.Open(b.data)
 		if err != nil {
-			return nil, fmt.Errorf("intl: qjsdata/%s.bin: %w", qjsPackNames[i], err)
+			return nil, fmt.Errorf("intl: qjsdata/%s.bin: %w", b.name, err)
 		}
 		packs = append(packs, p)
 	}

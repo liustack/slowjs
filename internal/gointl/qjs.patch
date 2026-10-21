@@ -1,3 +1,27 @@
+diff --git a/dictbe.go b/dictbe.go
+index 19d93bd..b7bc846 100644
+--- a/dictbe.go
++++ b/dictbe.go
+@@ -2,6 +2,7 @@ package intl
+ 
+ import (
+ 	"encoding/binary"
++	"errors"
+ 	"fmt"
+ 	"sort"
+ 	"strings"
+@@ -124,6 +125,11 @@ func loadBreakEngines(src Source, norm *Normalizer) (*breakEngines, error) {
+ 			return nil, nil
+ 		}
+ 		b, err := src.Open(Marker("brkitr/"+name), DataLocale{})
++		if errors.Is(err, ErrNotFound) {
++			// A source without the dictionary has no engine for the
++			// script, as ICU has none when the .dict file is missing.
++			return nil, nil
++		}
+ 		if err != nil {
+ 			return nil, fmt.Errorf("intl: the %s dictionary: %w", name, err)
+ 		}
 diff --git a/internal/blob/blob.go b/internal/blob/blob.go
 index 7e8f383..318f321 100644
 --- a/internal/blob/blob.go

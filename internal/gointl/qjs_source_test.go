@@ -148,8 +148,17 @@ var qjsExpected = map[string]string{
 	"DurationFormat":           "2 hours, 5 minutes",
 }
 
+// qjsLeftOut says whether a probe uses data a build tag leaves out, which
+// qjs_tags_test.go checks instead.
+func qjsLeftOut(probe string) bool {
+	return probe == "DisplayNames" && qjsNoNames || probe == "Segmenter" && qjsNoCJDict
+}
+
 func TestQJSProbes(t *testing.T) {
 	for _, p := range qjsProbes {
+		if qjsLeftOut(p.name) {
+			continue
+		}
 		got, err := p.run(Embedded)
 		if err != nil {
 			t.Errorf("%s: %v", p.name, err)
@@ -170,6 +179,9 @@ func TestQJSProbesMatchUpstream(t *testing.T) {
 	}
 	upstream := NewFS(os.DirFS(dir))
 	for _, p := range qjsProbes {
+		if qjsLeftOut(p.name) {
+			continue
+		}
 		want, err := p.run(upstream)
 		if err != nil {
 			t.Fatalf("%s from go-intl's data: %v", p.name, err)
@@ -236,10 +248,11 @@ func TestQJSInflatesOnlyWhatIsRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	total := 0
+	built := qjsPackData()
 	for i, p := range packs {
 		n, size := p.Inflated()
-		if qjsPackNames[i] != "core" && n != 0 {
-			t.Errorf("%s: %d chunks inflated", qjsPackNames[i], n)
+		if built[i].name != "core" && n != 0 {
+			t.Errorf("%s: %d chunks inflated", built[i].name, n)
 		}
 		total += size
 	}

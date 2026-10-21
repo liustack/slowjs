@@ -6,13 +6,9 @@ package intl
 
 import _ "embed"
 
-// The packs, which internal/qjspack/gen writes (qjs-sync.sh pack).
+// The packs, which internal/qjspack/gen writes (qjs-sync.sh pack). The
+// display names and the CJK dictionary are packs of their own, which the
+// build tags quickjs_intl_nonames and quickjs_intl_nocjdict leave out.
 
 //go:embed qjsdata/core.bin
 var qjsCore string
-
-//go:embed qjsdata/names.bin
-var qjsNames string
-
-//go:embed qjsdata/cjdict.bin
-var qjsCJDict string
