@@ -363,6 +363,7 @@ var goldenSets = []struct {
 	{"duration", durationExprs},
 	{"values", valuesExprs},
 	{"locale", localeExprs},
+	{"case", caseExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for

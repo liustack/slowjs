@@ -39,6 +39,9 @@
 		iterator: Symbol.iterator,
 		iteratorPrototype: Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())),
 		stringSlice: String.prototype.slice,
+		toUpperCase: String.prototype.toUpperCase,
+		toLowerCase: String.prototype.toLowerCase,
+		fromCharCode: String.fromCharCode,
 		hasInstance: Function.prototype[Symbol.hasInstance],
 		dateNow: Date.now,
 		dateValueOf: Date.prototype.valueOf,
@@ -143,7 +146,9 @@
 		standIn(Date.prototype, 'toLocaleDateString', 'dateToLocaleDateString'),
 		standIn(Date.prototype, 'toLocaleTimeString', 'dateToLocaleTimeString'),
 		standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString'),
-		standIn(String.prototype, 'localeCompare', 'stringLocaleCompare', 1)
+		standIn(String.prototype, 'localeCompare', 'stringLocaleCompare', 1),
+		standIn(String.prototype, 'toLocaleUpperCase', 'stringToLocaleUpperCase'),
+		standIn(String.prototype, 'toLocaleLowerCase', 'stringToLocaleLowerCase')
 	];
 	if (typeof BigInt === 'function') {
 		standIns[standIns.length] = standIn(BigInt.prototype, 'toLocaleString', 'bigintToLocaleString');

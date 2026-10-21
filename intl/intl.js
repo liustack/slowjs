@@ -18,13 +18,13 @@
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo) {
+	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo, caseLanguage, casePremap) {
 	'use strict';
 
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
 		Object, String, Number, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance,
-		iterator, iteratorPrototype, stringSlice,
+		iterator, iteratorPrototype, stringSlice, toUpperCase, toLowerCase, fromCharCode,
 		dateNow, dateValueOf, numberValueOf, bigintValueOf
 	} = P;
 	const lists = parse(optionLists);
@@ -1025,8 +1025,60 @@
 				return collator(locales, options);
 			});
 			return call(c, colCompare, s, t);
+		},
+		toLocaleUpperCase(locales = undefined) {
+			return caseMapped(thisString(this, 'toLocaleUpperCase'), locales, true);
+		},
+		toLocaleLowerCase(locales = undefined) {
+			return caseMapped(thisString(this, 'toLocaleLowerCase'), locales, false);
 		}
 	};
+
+	// caseTag is the tag the case of a string maps by: the first of the
+	// locales, as V8 reads them, which checks no other, or undefined for the
+	// default locale.
+	function caseTag(locales) {
+		const tag = localeTag(locales);
+		if (tag !== undefined || typeof locales === 'string' || locales === undefined) {
+			return tag !== undefined ? tag : locales;
+		}
+		if (locales === null) {
+			throw new TypeError('Cannot convert null to object');
+		}
+		const o = Object(locales), n = toLength(o.length);
+		for (let i = 0; i < n; i++) {
+			if (i in o) {
+				const v = o[i];
+				if (typeof v !== 'string' && !isObject(v)) {
+					throw new TypeError('Language ID should be string or object');
+				}
+				const t = localeTag(v);
+				return t !== undefined ? t : toString(v);
+			}
+		}
+		return undefined;
+	}
+
+	// caseMapped is s in upper case or lower case by the rules of the first
+	// of locales: Go maps what the rules of Turkish, Azeri, Lithuanian and
+	// Greek change, and the engine the rest. The default locale, en-US, has
+	// the engine's rules.
+	function caseMapped(s, locales, upper) {
+		const tag = caseTag(locales);
+		const lang = tag === undefined ? '' : caseLanguage(tag);
+		if (lang !== '') {
+			const r = casePremap(s, lang, upper);
+			if (typeof r === 'string') {
+				s = r;
+			} else if (r !== undefined) {
+				s = '';
+				for (let i = 0; i < r.length; i++) {
+					s += typeof r[i] === 'number' ? fromCharCode(r[i]) : r[i];
+				}
+			}
+		}
+		return apply(upper ? toUpperCase : toLowerCase, s, noArgs);
+	}
 
 	const api = {
 		__proto__: null,
@@ -1035,7 +1087,9 @@
 		dateToLocaleDateString: date.toLocaleDateString,
 		dateToLocaleTimeString: date.toLocaleTimeString,
 		numberToLocaleString: number.toLocaleString,
-		stringLocaleCompare: string.localeCompare
+		stringLocaleCompare: string.localeCompare,
+		stringToLocaleUpperCase: string.toLocaleUpperCase,
+		stringToLocaleLowerCase: string.toLocaleLowerCase
 	};
 	if (bigintValueOf !== undefined) {
 		api.bigintToLocaleString = {

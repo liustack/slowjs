@@ -61,7 +61,7 @@ function shape() {
 		['Date.prototype', Date.prototype, ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']],
 		['Number.prototype', Number.prototype, ['toLocaleString']],
 		['BigInt.prototype', BigInt.prototype, ['toLocaleString']],
-		['String.prototype', String.prototype, ['localeCompare']],
+		['String.prototype', String.prototype, ['localeCompare', 'toLocaleUpperCase', 'toLocaleLowerCase']],
 	];
 	for (const [name, o, keys] of methods) {
 		for (const k of keys) {

@@ -46,8 +46,12 @@
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
 // toLocaleTimeString along with Number.prototype.toLocaleString,
 // BigInt.prototype.toLocaleString and String.prototype.localeCompare, which
-// ECMA-402 redefines in terms of those constructors. QuickJS ships fallbacks
-// for them that ignore their arguments, so
+// ECMA-402 redefines in terms of those constructors, and
+// String.prototype.toLocaleUpperCase and toLocaleLowerCase, which map case
+// by the rules of Turkish and Azeri ("i" to "İ"), Lithuanian and, to upper
+// case, Greek ("άδικος" to "ΑΔΙΚΟΣ"), as V8 does, and by Unicode's default
+// rules in other languages. QuickJS ships fallbacks for them that ignore
+// their arguments, so
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //

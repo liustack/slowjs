@@ -1209,3 +1209,75 @@ func localeExprs() (r []string) {
 	}
 	return r
 }
+
+// caseHex is javascript for a function writing out a string's code
+// points, lone surrogates among them, in hex.
+const caseHex = `((s) => Array.from(s, (c) => c.codePointAt(0).toString(16)).join(' '))`
+
+// caseTexts are strings whose case maps by the rules of Turkish and Azeri,
+// Lithuanian and Greek, or by the default ones.
+var caseTexts = []string{
+	"I\u0131İi", "TITLE title", "istanbul İSTANBUL", "DİYARBAKIR diyarbak\u0131r", "I\u0307", "i\u0307", "I\u0300\u0307", "I\u0316\u0307",
+	"I\u0307\u0300", "IJ\u0307", "İ\u0301", "\u0307I", "\u0131\u0307", "I\u0345\u0307",
+	"I\u0300", "J\u0301", "Į\u0303", "ÌÍĨ", "i\u0307\u0301", "j\u0307", "į\u0307", "i\u0316\u0307", "i\u0300\u0307", "ǐ\u0307",
+	"ɨ\u0307", "ⅈ\u0307", "Ii\u0307J\u0307\u0301",
+	"άδικος, κείμενο, ίριδα", "Πατάτα", "Αέρας, Μυστήριο, Ωραίο", "ΰ", "ΐ", "ή", "Ή", "ή ή", "ά", "άι", "όι", "αϊ", "άϋ",
+	"άί", "Άι", "ΆΙ", "ᾳ", "ᾷ", "ᾅ", "ἀ", "ῤ", "ϐ ϑ ϒ ϓ ϔ ϕ ϖ ϗ ϰ ϱ ϲ ϵ", "ς σ Σ", "η\u0301", "η\u0301 και", "και ή",
+	"ή.", "a ή b", "αή", "ήα", "Ω \u2126", "\u0345", "a\u0345", "ε\u0313\u0301", "ε\u0301\u0313", "α\u0342\u0345", "ι\u0308\u0301",
+	"ά\u0308", "υ\u0344", "ἄι", "ΐι", "όιι", "\u1fbe", "ᾼῌῼ", "ΟΔΟΣ οδος", "ὈΔΥΣΣΕΎΣ", "Ἀθῆναι",
+	"ß ŉ ǰ ﬃ ᾀ", "ΣΑΣ σας", "\U0001f600i", "",
+}
+
+// caseSurrogates are javascript strings with lone surrogates, which Go
+// strings cannot hold.
+var caseSurrogates = []string{`'i\ud800I'`, `'\udc00İ\u0307'`, `'\ud800\u0307I\u0307'`, `'ά\udc00ι'`}
+
+func caseExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	// Every Greek letter, alone, and each vowel with an accent before an
+	// iota and an upsilon.
+	var greek []string
+	for c := rune(0x370); c <= 0x3ff; c++ {
+		greek = append(greek, string(c))
+	}
+	for c := rune(0x1f00); c <= 0x1fff; c++ {
+		greek = append(greek, string(c))
+	}
+	texts := slices.Clone(caseTexts)
+	for i := 0; i < len(greek); i += 16 {
+		texts = append(texts, strings.Join(greek[i:min(i+16, len(greek))], " "))
+	}
+	for _, v := range []string{"ά", "έ", "ή", "ί", "ό", "ύ", "ώ", "ὰ", "ᾶ", "α\u0301", "ἄ"} {
+		texts = append(texts, v+"ι "+v+"υ "+v+"ϊ "+v+"ι\u0308 "+"x"+v+"ι")
+	}
+	for i, s := range texts {
+		texts[i] = jsList(s)[1 : len(jsList(s))-1]
+	}
+	texts = append(texts, caseSurrogates...)
+	for _, lang := range []string{"tr", "az", "lt", "el", "en", "und", "TR", "tr-TR", "az-Cyrl", "lt-LT", "el-GR", "hy", "nl", "de"} {
+		for _, s := range texts {
+			for _, m := range []string{"toLocaleUpperCase", "toLocaleLowerCase"} {
+				add(`%s(%s.%s(%q))`, caseHex, s, m, lang)
+			}
+		}
+	}
+	for _, e := range []string{
+		`'i'.toLocaleUpperCase()`, `'I'.toLocaleLowerCase()`, `'i'.toLocaleUpperCase([])`, `'i'.toLocaleUpperCase(['tr', 'en'])`,
+		`'i'.toLocaleUpperCase(['en', 'tr'])`, `'i'.toLocaleUpperCase(new Intl.Locale('tr'))`, `'I'.toLocaleLowerCase([new Intl.Locale('az')])`,
+		`'i'.toLocaleUpperCase('tr-u-co-trad')`, `'i'.toLocaleUpperCase('x_')`, `'i'.toLocaleUpperCase(['tr', 'x_'])`,
+		`'i'.toLocaleUpperCase(null)`, `'i'.toLocaleUpperCase(5)`, `'i'.toLocaleUpperCase(['tr', 5])`, `'i'.toLocaleUpperCase({length: 1, 0: 'tr'})`,
+		`'i'.toLocaleUpperCase('TR')`, `'i'.toLocaleUpperCase('tr-x-y')`, `'I'.toLocaleLowerCase('tr', 'en')`,
+		`String.prototype.toLocaleUpperCase.call(null)`, `String.prototype.toLocaleLowerCase.call(undefined, 'tr')`,
+		`String.prototype.toLocaleUpperCase.call(123, 'tr')`, `String.prototype.toLocaleUpperCase.call(true, 'tr')`,
+		`String.prototype.toLocaleUpperCase.call({toString() { return 'i'; }}, 'tr')`, `String.prototype.toLocaleUpperCase.call(Symbol(), 'tr')`,
+		`(() => {const log = []; String.prototype.toLocaleUpperCase.call({toString() {log.push('this'); return 'i'}}, {get length() {log.push('locales'); return 0}}); return log.join()})()`,
+		`(() => {try {String.prototype.toLocaleUpperCase.call(Symbol(), 'x_')} catch (e) {return e.name}})()`,
+		`String.prototype.toLocaleUpperCase.length`, `String.prototype.toLocaleLowerCase.length`,
+		`String.prototype.toLocaleUpperCase.name`, `String.prototype.toLocaleLowerCase.name`,
+		`'ꞵ'.repeat(1000).toLocaleUpperCase('tr').length`, `'İ'.repeat(1000).toLocaleLowerCase('tr').length`,
+		`'İ'.repeat(1000).toLocaleLowerCase('en').length`,
+	} {
+		add(`%s`, e)
+	}
+	return r
+}

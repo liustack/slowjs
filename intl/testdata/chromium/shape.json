@@ -59,6 +59,26 @@
 		"proto": true,
 		"native": true
 	},
+	"before String.prototype.toLocaleUpperCase property": "-cw function",
+	"before String.prototype.toLocaleUpperCase": {
+		"name": "-c- \"toLocaleUpperCase\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"before String.prototype.toLocaleLowerCase property": "-cw function",
+	"before String.prototype.toLocaleLowerCase": {
+		"name": "-c- \"toLocaleLowerCase\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
 	"typeof Intl": "object",
 	"globalThis.Intl property": "-cw {}",
 	"Intl proto": true,
@@ -1090,6 +1110,26 @@
 	"String.prototype.localeCompare": {
 		"name": "-c- \"localeCompare\"",
 		"length": "-c- 1",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"String.prototype.toLocaleUpperCase property": "-cw function",
+	"String.prototype.toLocaleUpperCase": {
+		"name": "-c- \"toLocaleUpperCase\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"String.prototype.toLocaleLowerCase property": "-cw function",
+	"String.prototype.toLocaleLowerCase": {
+		"name": "-c- \"toLocaleLowerCase\"",
+		"length": "-c- 0",
 		"prototype": "absent",
 		"keys": "length name",
 		"constructor": false,

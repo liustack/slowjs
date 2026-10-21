@@ -775,6 +775,39 @@ var bridge = []*quickjs.Builtin{
 		what, _ := a.String(1)
 		return localeInfo(a.VM(), tag, what)
 	}),
+	// caseLanguage answers the language whose case rules toLocaleUpperCase
+	// and toLocaleLowerCase follow for a tag, or "" for the default ones.
+	quickjs.NewBuiltin("caseLanguage", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		lang, err := caseLanguage(tag)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return a.VM().NewString(lang)
+	}),
+	// casePremap takes a string, a language from caseLanguage and whether to
+	// map to upper case, and answers what the language's rules make of the
+	// string, for the engine to map the rest: a string, or an array of
+	// strings and the code units of lone surrogates; undefined where they
+	// change nothing.
+	quickjs.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		s, _ := a.WTF8(0)
+		lang, _ := a.String(1)
+		upper, _ := a.Bool(2)
+		pieces, ok, err := premapCase(s, lang, upper)
+		switch {
+		case err != nil:
+			return quickjs.Value{}, err
+		case !ok:
+			return quickjs.UndefinedValue, nil
+		case len(pieces) == 1:
+			if s, ok := pieces[0].(string); ok {
+				return a.VM().NewString(s)
+			}
+		}
+		return mixedArray(a.VM(), pieces)
+	}),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.
@@ -867,6 +900,36 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 			return quickjs.Value{}, err
 		}
 
+		vals = append(vals, v)
+	}
+	a, err := vm.NewArray(vals...)
+	free()
+	return a, err
+}
+
+// mixedArray is l, strings and ints, as a javascript array.
+func mixedArray(vm *quickjs.VM, l []any) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, 0, len(l))
+	free := func() {
+		for i := range vals {
+			vals[i].Free()
+		}
+	}
+	for _, x := range l {
+		var v quickjs.Value
+		switch x := x.(type) {
+		case string:
+			var err error
+			if v, err = vm.NewString(x); err != nil {
+				free()
+				return quickjs.Value{}, err
+			}
+		case int:
+			v = vm.NewInt(x)
+		default:
+			free()
+			return quickjs.Value{}, errors.New("intl: internal error: a value of another type in an array")
+		}
 		vals = append(vals, v)
 	}
 	a, err := vm.NewArray(vals...)

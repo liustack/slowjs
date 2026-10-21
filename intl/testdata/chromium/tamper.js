@@ -90,6 +90,8 @@ var uses = `(() => {
 	});
 	use(() => new Intl.NumberFormat(new Intl.Locale('de')).format(1234.5) + ' ' + Intl.getCanonicalLocales([new Intl.Locale('fr')]));
 	use(() => new Intl.Locale('en', {language: 'x1'}));
+	use(() => 'İstanbul'.toLocaleLowerCase('tr') + ' ' + 'iı'.toLocaleUpperCase(['az']) + ' ' + 'άι'.toLocaleUpperCase('el') +
+		' ' + 'ĮÌ'.toLocaleLowerCase(new Intl.Locale('lt')) + ' ' + 'ß'.toLocaleUpperCase() + ' ' + 'i\ud800ı'.toLocaleUpperCase('tr').length);
 	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();
@@ -157,9 +159,11 @@ var tamper = [
 		Date.prototype.getTime = function () { return 0; };`],
 	['Date.now', `Date.now = function () { return 0; };`],
 	['String methods', `
-		for (const k of ['charAt', 'charCodeAt', 'indexOf', 'slice', 'substring', 'split', 'toLowerCase', 'replace', 'startsWith']) {
+		for (const k of ['charAt', 'charCodeAt', 'indexOf', 'slice', 'substring', 'split', 'toLowerCase', 'toUpperCase', 'replace',
+			'startsWith']) {
 			String.prototype[k] = ${throws};
-		}`],
+		}
+		String.fromCharCode = ${throws};`],
 	// QuickJS compiles a template literal into a call of concat.
 	['String.prototype.concat', `String.prototype.concat = ${throws};`],
 	['Symbol', `
