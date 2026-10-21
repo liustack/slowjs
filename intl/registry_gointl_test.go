@@ -32,6 +32,9 @@ var goIntlUses = []struct{ make, use, want string }{
 	{`var dn = new Intl.DisplayNames('fr', {type: 'region', style: 'short'})`,
 		`dn.of('US') + ' ' + new Intl.DisplayNames('fr', {type: 'language'}).of('de-AT') + ' ' + dn.of('BU') + ' ' + dn.resolvedOptions().style`,
 		"É.-U. allemand autrichien Myanmar (Birmanie) short"},
+	{`var df = new Intl.DurationFormat('de', {style: 'digital'})`,
+		`df.format({hours: 1, minutes: 2, seconds: 3}) + ' ' + df.formatToParts('PT1M').length + ' ' + df.resolvedOptions().minutes`,
+		"1:02:03 5 2-digit"},
 }
 
 // goIntlHold makes the objects of goIntlUses, and goIntlCheck uses them: it

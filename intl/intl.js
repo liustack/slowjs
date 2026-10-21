@@ -18,7 +18,7 @@
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts, dnResolve, dnOf) {
+	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts) {
 	'use strict';
 
 	const {
@@ -730,6 +730,68 @@
 		[toStringTag]: 'Intl.DisplayNames'
 	});
 
+	// ---------------------------------------------------------- DurationFormat
+
+	function DurationFormat(locales = undefined, options = undefined) {
+		requireNew(new.target, 'DurationFormat');
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('DurationFormat', dfResolve, pushOptions(args, optionsObject(options), lists.DurationFormat)));
+	}
+
+	// The fields of a duration in the order ToTemporalPartialDurationRecord
+	// reads them, and where each goes in the order Go takes them, largest
+	// first.
+	const durationFields = ['days', 'hours', 'microseconds', 'milliseconds', 'minutes', 'months', 'nanoseconds', 'seconds',
+		'weeks', 'years'];
+	const durationOrder = [3, 4, 8, 7, 5, 1, 9, 6, 2, 0];
+
+	// durationOf reads the duration d as dfFormat and dfParts take it: a
+	// string as it is, or an object's fields, each ToIntegerIfIntegral,
+	// joined by commas, empty where it has none.
+	function durationOf(d) {
+		if (typeof d === 'string') {
+			return [d, false];
+		}
+		if (d === null || typeof d !== 'object' && typeof d !== 'function') {
+			throw new TypeError('Invalid duration: ' + typeof d);
+		}
+		const fields = bare(['', '', '', '', '', '', '', '', '', '']);
+		for (let i = 0; i < durationFields.length; i++) {
+			const v = d[durationFields[i]];
+			if (v !== undefined) {
+				const n = +v;
+				if (n % 1 !== 0) {
+					throw new RangeError('Invalid ' + durationFields[i] + ': not a finite integer');
+				}
+				fields[durationOrder[i]] = toString(n);
+			}
+		}
+		let s = fields[0];
+		for (let i = 1; i < fields.length; i++) {
+			s += ',' + fields[i];
+		}
+		return [s, true];
+	}
+
+	defineConstructor(DurationFormat, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('DurationFormat', locales, options);
+		}
+	}, {
+		format(duration) {
+			const i = internal(this, 'DurationFormat'), d = durationOf(duration);
+			return call(i, dfFormat, d[0], d[1]);
+		},
+		formatToParts(duration) {
+			const i = internal(this, 'DurationFormat'), d = durationOf(duration);
+			return unitParts(call(i, dfParts, d[0], d[1]));
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'DurationFormat'), optionsOf));
+		},
+		[toStringTag]: 'Intl.DurationFormat'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
@@ -741,6 +803,7 @@
 		ListFormat: ListFormat,
 		DisplayNames: DisplayNames,
 		Segmenter: Segmenter,
+		DurationFormat: DurationFormat,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
 		},

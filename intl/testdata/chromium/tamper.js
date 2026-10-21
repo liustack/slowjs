@@ -74,6 +74,12 @@ var uses = `(() => {
 	use(() => show(new Intl.DisplayNames('es', {type: 'language', languageDisplay: 'standard'}).resolvedOptions()));
 	use(() => new Intl.DisplayNames('en', {type: 'region'}).of('USA'));
 	use(() => new Intl.DisplayNames('en'));
+	use(() => new Intl.DurationFormat('fr', {style: 'long'}).format({hours: 1, minutes: 46, seconds: 40}));
+	use(() => new Intl.DurationFormat('en', {style: 'digital', fractionalDigits: 2}).formatToParts({minutes: 1, seconds: 2, milliseconds: 345}).map((p) => p.type + ':' + p.value + ':' + p.unit).join('|'));
+	use(() => new Intl.DurationFormat('de').format('PT1H30M'));
+	use(() => show(new Intl.DurationFormat('ja', {hours: 'numeric'}).resolvedOptions()));
+	use(() => new Intl.DurationFormat('en').format({hours: 1.5}));
+	use(() => new Intl.DurationFormat('kk', {style: 'narrow'}).format({years: 2, days: 1}));
 	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();
@@ -100,7 +106,8 @@ var tamper = [
 		for (const k of ['style', 'currency', 'localeMatcher', 'type', 'timeZone', 'hour12', 'useGrouping',
 			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation',
 			'granularity', 'segment', 'index', 'input', 'isWordLike', 'done', 'next', 'numeric', 'unit',
-			'items', 's', 'element', 'literal', 'fallback', 'languageDisplay', 'code']) {
+			'items', 's', 'element', 'literal', 'fallback', 'languageDisplay', 'code', 'hours', 'seconds', 'hoursDisplay',
+			'fractionalDigits']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Object.prototype slots', `

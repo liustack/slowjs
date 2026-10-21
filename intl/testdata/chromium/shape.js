@@ -88,6 +88,7 @@ function shape() {
 		RelativeTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		ListFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		DisplayNames: ['of', 'resolvedOptions'],
+		DurationFormat: ['format', 'formatToParts', 'resolvedOptions'],
 	};
 	const args = {DisplayNames: {type: 'region'}};
 	for (const name of Object.keys(ctors)) {
@@ -163,6 +164,9 @@ function shape() {
 		'ListFormat formatToParts': new Intl.ListFormat('en').formatToParts(['a'])[0],
 		'DisplayNames resolvedOptions': new Intl.DisplayNames('en', {type: 'language'}).resolvedOptions(),
 		'DisplayNames resolvedOptions region': new Intl.DisplayNames('en', {type: 'region'}).resolvedOptions(),
+		'DurationFormat resolvedOptions': new Intl.DurationFormat('en', {fractionalDigits: 2}).resolvedOptions(),
+		'DurationFormat formatToParts': new Intl.DurationFormat('en').formatToParts({hours: 1, minutes: 2})[0],
+		'DurationFormat formatToParts literal': new Intl.DurationFormat('en').formatToParts({hours: 1, minutes: 2})[3],
 	};
 	for (const k of Object.keys(kinds)) {
 		const o = kinds[k];

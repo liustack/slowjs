@@ -31,6 +31,9 @@
 //   - Intl.DisplayNames: the names of languages, with dialect names such
 //     as "British English" or without, of regions, scripts, currencies,
 //     calendars and date fields, in every style.
+//   - Intl.DurationFormat: every style and each unit's own, digital
+//     clocks with fractional seconds, and durations given as objects or as
+//     Temporal's duration strings ("PT1H30M"), as Chromium takes them.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
@@ -62,11 +65,10 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.DurationFormat,
-// Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
-// roundingIncrement and roundingPriority but only implement their defaults,
-// which is what resolvedOptions reports: a value out of range throws a
-// RangeError, any other is ignored.
+// Not implemented: Intl.supportedValuesOf and formatRange. NumberFormat and
+// PluralRules accept roundingIncrement and roundingPriority but only
+// implement their defaults, which is what resolvedOptions reports: a value
+// out of range throws a RangeError, any other is ignored.
 //
 // # Differences from Chromium
 //
@@ -102,6 +104,11 @@
 // Kong, Macao, Palestine and the Falkland Islands ("Hong Kong" for "Hong
 // Kong SAR China"). Here the names are CLDR's. The narrow names of de-CH's
 // era and th's time zone are go-intl's, which ICU writes otherwise.
+//
+// Intl.DurationFormat writes a fraction of more than 2**63 nanoseconds, as
+// in {nanoseconds: 1e20} with numeric seconds, as V8 does on x86-64:
+// "9223372036.854775808" seconds. V8 on arm64 writes
+// "9223372036.854775807".
 //
 // Error messages are worded differently, though the errors thrown are the
 // same.

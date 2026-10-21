@@ -209,8 +209,16 @@ var (
 		resolve: func(req request) (formatter, error) { return resolveDisplayNames(req) },
 	}
 
+	durationFormatCtor = &ctor{
+		name:    "DurationFormat",
+		tag:     'U',
+		goSvc:   gointl.ServiceDurationFormat,
+		options: concat(stringOptions("localeMatcher", "numberingSystem", "style"), durationOptions(), []option{{"fractionalDigits", 'n'}}),
+		resolve: func(req request) (formatter, error) { return resolveDurationFormat(req) },
+	}
+
 	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor,
-		relativeTimeFormatCtor, listFormatCtor, displayNamesCtor}
+		relativeTimeFormatCtor, listFormatCtor, displayNamesCtor, durationFormatCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -228,6 +236,16 @@ func digitOptions() []option {
 		{"minimumSignificantDigits", 'n'}, {"maximumSignificantDigits", 'n'}, {"roundingIncrement", 'n'},
 		{"roundingMode", 's'}, {"roundingPriority", 's'}, {"trailingZeroDisplay", 's'},
 	}
+}
+
+// durationOptions are those GetDurationUnitOptions reads, each unit's style
+// and display in turn.
+func durationOptions() []option {
+	var r []option
+	for _, u := range durationUnits {
+		r = append(r, option{u, 's'}, option{u + "Display", 's'})
+	}
+	return r
 }
 
 func concat(lists ...[]option) []option {
@@ -644,6 +662,54 @@ var bridge = []*quickjs.Builtin{
 			return a.VM().NewInt(0), nil
 		}
 		return a.VM().NewString(name)
+	}),
+	resolveBuiltin(durationFormatCtor),
+	// dfFormat and dfParts take the duration as durationOf does: the
+	// string, and true for fields. The parts are their type, value and
+	// unit in turn, the unit empty for the list's own text.
+	quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*durationFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		fields, _ := a.Bool(2)
+		d, err := durationOf(s, fields)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		r, err := f.f.Format(d)
+		if err != nil {
+			return quickjs.Value{}, jsErr(rangeError("%s", err))
+		}
+
+		return a.VM().NewString(r)
+	}),
+	quickjs.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*durationFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		fields, _ := a.Bool(2)
+		d, err := durationOf(s, fields)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		parts, err := f.f.FormatToParts(d)
+		if err != nil {
+			return quickjs.Value{}, jsErr(rangeError("%s", err))
+		}
+
+		l := make([]string, 0, 3*len(parts))
+		for _, p := range parts {
+			l = append(l, string(p.Kind), p.Value, p.Unit)
+		}
+		return stringArray(a.VM(), l)
 	}),
 }
 

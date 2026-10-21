@@ -876,3 +876,128 @@ func dnEnglish(expr string, recorded map[string]string) map[string]bool {
 // dnGoIntlFields are the names of fields go-intl has otherwise than ICU,
 // which Node 77 writes as Chromium does: by locale, style and field.
 var dnGoIntlFields = map[[3]string]bool{{"de-CH", "narrow", "era"}: true, {"th", "narrow", "timeZoneName"}: true}
+
+// durDurations are durations of every unit and sign, zero, ones with only
+// sub-second units, and large ones.
+const durDurations = `[{hours: 1, minutes: 46, seconds: 40}, {years: 1, months: 2, weeks: 3, days: 4, hours: 5, minutes: 6, seconds: 7, ` +
+	`milliseconds: 8, microseconds: 9, nanoseconds: 10}, {days: -2, hours: -3}, {seconds: 0}, {minutes: 5, seconds: 3, milliseconds: 250}, ` +
+	`{hours: 0, minutes: 0, seconds: 1}, {milliseconds: 1234}, {hours: 12345}, {years: -1}, {microseconds: 1, nanoseconds: 500}, ` +
+	`{hours: 2, seconds: 5}, {days: 1, minutes: 30}, {weeks: 1}, {months: 1, days: 1}, {seconds: 59, milliseconds: 999, microseconds: 999, nanoseconds: 999}, ` +
+	`{hours: -1, minutes: -2, seconds: -3, milliseconds: -4}, {nanoseconds: 123456789}, {years: 1000000, days: 1}]`
+
+var durLocales = []string{
+	"en", "en-GB", "en-IN", "de", "de-CH", "fr", "fr-CA", "es", "es-MX", "it", "pt", "pt-PT", "nl", "sv", "da", "nb", "fi", "pl",
+	"cs", "hu", "ro", "tr", "ru", "uk", "el", "he", "ar", "fa", "hi", "bn", "ta", "th", "vi", "id", "ms", "fil", "sw", "ja", "ko",
+	"zh", "zh-TW", "zh-HK", "yue", "kk", "az", "ak", "bs", "sr", "sr-Latn", "ka", "hy", "mn", "my", "km", "am", "xx",
+}
+
+func durationExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	tags := append(chromiumTags(4), "und", "xx", "EN-us", "en-u-nu-arab", "ar-u-nu-latn", "zh-u-nu-hanidec", "x-private", "sr-ME",
+		"iw", "in", "mo", "th-u-nu-thai")
+	for _, tag := range tags {
+		add(`JSON.stringify(new Intl.DurationFormat(%q).resolvedOptions())`, tag)
+	}
+
+	// Options alone and together, as resolvedOptions reports them.
+	opts := []string{
+		`{style:'long'}`, `{style:'short'}`, `{style:'narrow'}`, `{style:'digital'}`, `{numberingSystem:'arab'}`, `{numberingSystem:'thai'}`,
+		`{numberingSystem:'xyzw'}`, `{localeMatcher:'lookup'}`, `{fractionalDigits:0}`, `{fractionalDigits:9}`, `{fractionalDigits:3.7}`,
+		`{fractionalDigits:'5'}`, `{hours:'numeric'}`, `{minutes:'numeric'}`, `{seconds:'numeric'}`, `{milliseconds:'numeric'}`,
+		`{microseconds:'numeric'}`, `{nanoseconds:'numeric'}`, `{hours:'2-digit'}`, `{minutes:'2-digit'}`, `{seconds:'2-digit'}`,
+		`{hours:'long', minutes:'numeric'}`, `{style:'digital', hours:'long'}`, `{style:'digital', days:'long', hours:'2-digit'}`,
+		`{style:'long', seconds:'narrow', secondsDisplay:'always'}`, `{years:'long', yearsDisplay:'always'}`, `{daysDisplay:'always'}`,
+		`{style:'digital', hoursDisplay:'auto'}`, `{style:'digital', fractionalDigits:2}`, `{minutes:'numeric', hours:'numeric'}`,
+		`{seconds:'numeric', milliseconds:'long'}`, `{milliseconds:'numeric', microseconds:'long'}`, `{style:'narrow', milliseconds:'numeric'}`,
+		`{weeks:'narrow', months:'short', years:'long'}`, `{style:'digital', minutesDisplay:'auto', secondsDisplay:'auto'}`,
+	}
+	for _, tag := range []string{"en", "de", "ar", "xx"} {
+		for _, o := range opts {
+			add(`(() => {try {return JSON.stringify(new Intl.DurationFormat(%q,%s).resolvedOptions())} catch (e) {return e.constructor.name}})()`, tag, o)
+		}
+	}
+
+	// Every duration in every locale and style.
+	for _, l := range durLocales {
+		for _, style := range []string{"long", "short", "narrow", "digital"} {
+			add(`(() => {const f = new Intl.DurationFormat(%q,{style:%q}); return %s.map((d) => {try {return f.format(d)} catch (e) {return e.constructor.name}}).join('|')})()`, l, style, durDurations)
+		}
+	}
+	// Every duration with the options, in a few locales.
+	for _, l := range []string{"en", "de", "ar", "fr", "ja"} {
+		for _, o := range opts {
+			add(`(() => {try {const f = new Intl.DurationFormat(%q,%s); return %s.map((d) => {try {return f.format(d)} catch (e) {return e.constructor.name}}).join('|')} catch (e) {return e.constructor.name}})()`, l, o, durDurations)
+		}
+	}
+	// The parts.
+	for _, l := range []string{"en", "de", "ar", "zh"} {
+		for _, o := range []string{`{}`, `{style:'long'}`, `{style:'digital'}`, `{style:'digital', fractionalDigits:3}`, `{hours:'numeric'}`,
+			`{seconds:'numeric'}`, `{style:'narrow', milliseconds:'numeric'}`} {
+			add(`(() => {const f = new Intl.DurationFormat(%q,%s); return JSON.stringify(%s.map((d) => {try {return f.formatToParts(d)} catch (e) {return e.constructor.name}}))})()`, l, o, durDurations)
+		}
+	}
+
+	// Every language Chromium has durations for.
+	for _, l := range chromiumLanguages("DurationFormat") {
+		add(`(() => {const d = {years: 2, days: 1, hours: 12345, minutes: 3, seconds: 4, milliseconds: 5}; return ['long', 'short', 'narrow', 'digital'].map((style) => new Intl.DurationFormat(%q, {style}).format(d)).join('|')})()`, l)
+	}
+
+	// What format takes: strings, objects with fields of every kind, and
+	// durations at the limits.
+	inputs := []string{
+		`'PT1H46M40S'`, `'P1Y2M3W4DT5H6M7.008009010S'`, `'-PT1H'`, `'+P1D'`, `'PT1.5H'`, `'PT0.25M'`, `'PT1,5S'`, `'pt1h'`, `'P1W'`,
+		`'PT'`, `'P'`, `'1H'`, `'PT1.0000000001S'`, `'P1Y1Y'`, `'PT1H1.5M'`, `'−PT1H'`, `''`, `'PT36H'`, `'P1DT'`,
+		`{hours: '2'}`, `{hours: 2.5}`, `{hours: NaN}`, `{hours: Infinity}`, `{hours: -0}`, `{hours: 1, minutes: -1}`, `{}`, `{foo: 1}`,
+		`{hours: undefined}`, `{hours: null}`, `{hours: true}`, `{hours: 1n}`, `{hours: {valueOf() { return 3; }}}`, `{years: 2 ** 32}`,
+		`{years: 2 ** 32 - 1}`, `{days: 104249991374}`, `{days: 104249991375}`, `{seconds: 2 ** 53}`, `{seconds: 2 ** 53 - 1}`,
+		`{seconds: 9007199254740991, nanoseconds: 999999999}`, `{milliseconds: 9007199254740991}`, `{microseconds: 9007199254740991000}`,
+		`{nanoseconds: 1e20}`, `{nanoseconds: 9e18}`, `{milliseconds: 1e16}`, `{seconds: 1e16}`, `{hours: 1e10}`, `{minutes: -1e12}`,
+		`5`, `null`, `undefined`, `true`, `Symbol()`, `1n`, `[]`, `new Date(0)`, `Object.assign(Object.create({hours: 7}), {minutes: 1})`,
+		`new Proxy({}, {get(t, k) { return k === 'hours' ? 1 : undefined; }})`,
+	}
+	for _, l := range []string{"en", "de"} {
+		for _, o := range []string{`{}`, `{style:'digital'}`, `{style:'digital', fractionalDigits:9}`, `{seconds:'numeric'}`} {
+			add(`(() => {const f = new Intl.DurationFormat(%q,%s); return [%s].map((d) => {try {return f.format(d)} catch (e) {return e.constructor.name}}).join('|')})()`, l, o, strings.Join(inputs, ", "))
+		}
+	}
+	// The order format reads the fields in, and how many times.
+	add(`(() => {const seen = []; const d = new Proxy({}, {get(t, k) { seen.push(String(k)); return k === 'hours' ? 1 : undefined; }}); new Intl.DurationFormat().format(d); return seen.join()})()`)
+	add(`(() => {const seen = []; const d = new Proxy({}, {get(t, k) { seen.push(String(k)); return 1; }, has(t, k) { seen.push('has ' + String(k)); return true; }}); new Intl.DurationFormat().formatToParts(d); return seen.join()})()`)
+	add(`(() => {const seen = []; const o = new Proxy({}, {get(t, k) { seen.push(String(k)); return undefined; }}); new Intl.DurationFormat('en', o); return seen.join()})()`)
+
+	for _, e := range []string{
+		`JSON.stringify(Intl.DurationFormat.supportedLocalesOf(['en', 'de', 'xx', 'zh-Hant-TW', 'kk', 'az', 'nn']))`,
+		`JSON.stringify(Intl.DurationFormat.supportedLocalesOf(['en-US', 'ar-EG'], {localeMatcher:'lookup'}))`,
+		`Object.prototype.toString.call(new Intl.DurationFormat())`, `Intl.DurationFormat.length`,
+		`new Intl.DurationFormat('en', {style: 'digital', fractionalDigits: 0}).format({seconds: 1, milliseconds: 999})`,
+		`new Intl.DurationFormat('en', {style: 'digital', fractionalDigits: 2}).format({seconds: -1, milliseconds: -999})`,
+		`new Intl.DurationFormat('en', {style: 'digital'}).format({hours: -0, minutes: -1})`,
+		`new Intl.DurationFormat('en', {seconds: 'numeric'}).format({minutes: 1, seconds: 2})`,
+		`new Intl.DurationFormat('en', {minutes: 'numeric'}).format({hours: 1, minutes: 2})`,
+		`new Intl.DurationFormat('en', {hours: 'numeric'}).format({days: 1, minutes: 2})`,
+		`new Intl.DurationFormat('en', {hours: 'numeric', minutesDisplay: 'auto'}).format({hours: 1, seconds: 2})`,
+		`new Intl.DurationFormat('en', {style: 'digital', hours: '2-digit'}).format({hours: 1, minutes: 2})`,
+	} {
+		add(`%s`, e)
+	}
+	add(`JSON.stringify(Intl.DurationFormat.supportedLocalesOf(%s))`, validTags(chromiumTags(3)))
+
+	for _, src := range []string{
+		`Intl.DurationFormat()`, `new Intl.DurationFormat('en-')`, `new Intl.DurationFormat(null)`, `new Intl.DurationFormat('en', null)`,
+		`new Intl.DurationFormat('en', 5)`, `new Intl.DurationFormat('en', 'x')`, `new Intl.DurationFormat('en', {style:'x'})`,
+		`new Intl.DurationFormat('en', {localeMatcher:'x'})`, `new Intl.DurationFormat('en', {numberingSystem:'a'})`,
+		`new Intl.DurationFormat('en', {years:'numeric'})`, `new Intl.DurationFormat('en', {days:'2-digit'})`,
+		`new Intl.DurationFormat('en', {milliseconds:'2-digit'})`, `new Intl.DurationFormat('en', {hours:'x'})`,
+		`new Intl.DurationFormat('en', {hoursDisplay:'x'})`, `new Intl.DurationFormat('en', {fractionalDigits:10})`,
+		`new Intl.DurationFormat('en', {fractionalDigits:-1})`, `new Intl.DurationFormat('en', {fractionalDigits:NaN})`,
+		`new Intl.DurationFormat('en', {milliseconds:'numeric', millisecondsDisplay:'always'})`,
+		`new Intl.DurationFormat('en', {hours:'numeric', minutes:'long'})`, `new Intl.DurationFormat('en', {seconds:'numeric', minutes:'long', milliseconds:'long'})`,
+		`new Intl.DurationFormat('en', {milliseconds:'numeric', microseconds:'long'})`,
+		`Intl.DurationFormat.prototype.format({hours: 1})`, `Intl.DurationFormat.prototype.resolvedOptions()`,
+		`Intl.DurationFormat.prototype.formatToParts.call(new Intl.NumberFormat(), {hours: 1})`,
+		`Intl.DurationFormat.supportedLocalesOf('en', null)`, `new Intl.DurationFormat().format()`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}

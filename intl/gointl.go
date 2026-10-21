@@ -192,7 +192,7 @@ var chromiumMissing = map[gointl.Marker]struct {
 }{
 	gointl.MarkerNumbers:      {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
 	gointl.MarkerRelativeTime: {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
-	gointl.MarkerLists:        {[]string{"bs", "kk", "kok"}, gointl.DataLocale{}},
+	gointl.MarkerLists:        {[]string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}, gointl.DataLocale{}},
 	gointl.MarkerUnits:        {[]string{"ak", "az", "bs", "kk", "kok", "nn", "pa", "sd", "uz"}, english},
 }
 

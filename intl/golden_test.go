@@ -135,6 +135,10 @@ func goldenWordsAsChromium(answer string) (string, bool) {
 	return strings.Join(out, "|"), true
 }
 
+// goldenDurationOverflow finds INT64_MIN nanoseconds as a number of
+// seconds, which x86-64 writes where arm64 writes INT64_MAX's.
+var goldenDurationOverflow = regexp.MustCompile(`-?(9223372036[.,]854775)808`)
+
 // goldenDifference is a difference from Chromium that is understood: the
 // expression, Chromium's answer and ours match a known cause. Anything else
 // fails the test. recorded holds Chromium's answer to every expression of
@@ -224,6 +228,20 @@ var goldenDifferences = []goldenDifference{
 			return true
 		},
 	},
+	{
+		// V8 sums the sub-second units of a duration in nanoseconds, a
+		// double it converts to an int64, which C++ leaves undefined past
+		// 2**63: x86-64 gives INT64_MIN, where Node runs, and arm64, where
+		// this Chromium ran, INT64_MAX. go-intl converts as x86-64 does.
+		why: "V8 overflows durations of more than 2**63 nanoseconds by the machine's rules",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, "Intl.DurationFormat") {
+				return false
+			}
+
+			return goldenDurationOverflow.ReplaceAllString(got, "${1}807") == want
+		},
+	},
 }
 
 type golden struct {
@@ -244,6 +262,7 @@ var goldenSets = []struct {
 	{"relativetime", rtfExprs},
 	{"list", listExprs},
 	{"displaynames", dnExprs},
+	{"duration", durationExprs},
 }
 
 // goldenFile returns the name of a file of the set name: corpus.json for
