@@ -667,6 +667,43 @@ func (m *VM) SetGCThreshold(threshold uintptr) {
 	lib.XJS_SetGCThreshold(m.runtime.tls, m.runtime.cRuntime, libc.Tsize_t(threshold))
 }
 
+// GCThreshold returns the memory threshold at which a GC will be performed, in
+// bytes. The engine checks it when it makes an object: when [VM.MemorySize]
+// would pass it, the engine runs a GC and then sets the threshold to 1.5 times
+// what the GC left. So a threshold other than the one [VM.SetGCThreshold] set
+// last means the engine ran a GC since. [VM.RunGC] does not change it.
+//
+// As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
+// and a call after Close panics.
+func (m *VM) GCThreshold() uintptr {
+	return uintptr((*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fmalloc_gc_threshold)
+}
+
+// RunGC performs a GC now. It frees what javascript can no longer reach,
+// objects in reference cycles included, and gives the small blocks the runtime
+// keeps for reuse back to their arenas. Unlike the GC the engine runs when
+// [VM.MemorySize] passes [VM.GCThreshold], it leaves the threshold as it is.
+// It runs no javascript: the callbacks of a FinalizationRegistry whose targets
+// it frees are queued and run at the next [VM.ExecutePendingJobs], so what they
+// hold goes at a later GC.
+//
+// As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
+// and a call after Close panics.
+func (m *VM) RunGC() {
+	lib.XJS_RunGC(m.runtime.tls, m.runtime.cRuntime)
+}
+
+// MemorySize returns the memory m takes, in bytes, as [VM.SetMemoryLimit] and
+// [VM.SetGCThreshold] count it. After [VM.RunGC] it is what the objects that
+// javascript can still reach take, with the arenas they are in, plus the
+// runtime's own structures and the object shapes it keeps for reuse.
+//
+// As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
+// and a call after Close panics.
+func (m *VM) MemorySize() uintptr {
+	return uintptr((*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
+}
+
 // SetMaxStackSize limits the JS call depth, in libc.TLS stack slots (~one per JS
 // call frame in the CGo-free port). Deep recursion then throws a catchable
 // RangeError instead of overflowing the Go goroutine stack. 0 restores the
