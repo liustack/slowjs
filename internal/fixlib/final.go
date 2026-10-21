@@ -29,6 +29,7 @@ type finalChange struct {
 // finalChanges are the final changes, in the order fixEngine makes them.
 var finalChanges = []finalChange{
 	{"fixExpect", fixExpect, restoreExpect, expectF, expectReport},
+	{"fixFastFrames", fixFastFrames, restoreFastFrames, fastFramesF, fastFrameReport},
 }
 
 // fixFinal makes the final changes in b, the generated file name.

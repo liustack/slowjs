@@ -3536,7 +3536,10 @@ func ___js_malloc_usable_size(tls *libc.TLS, s uintptr, ptr uintptr) (r Tsize_t)
 }
 
 func _js_malloc_dump_arenas(tls *libc.TLS, s uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ar, el uintptr
 	var block_size, block_size_idx int32
@@ -3565,7 +3568,9 @@ func _js_malloc_dump_arenas(tls *libc.TLS, s uintptr) {
 		;
 		block_size_idx = block_size_idx + 1
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 /* end JS malloc */
@@ -3708,7 +3713,10 @@ func Xjs_strdup(tls *libc.TLS, ctx uintptr, str uintptr) (r uintptr) {
 }
 
 func _js_realloc_array(tls *libc.TLS, ctx uintptr, parray uintptr, elem_size int32, psize uintptr, req_size int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var new_array uintptr
 	var new_size, v1, v2, v3 int32
@@ -3729,14 +3737,18 @@ _4:
 	new_array = Xjs_realloc2(tls, ctx, *(*uintptr)(unsafe.Pointer(parray)), libc.Uint32FromInt32(new_size*elem_size), bp)
 	if !(new_array != 0) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	new_size = libc.Int32FromUint32(uint32(new_size) + *(*Tsize_t)(unsafe.Pointer(bp))/libc.Uint32FromInt32(elem_size))
 	*(*int32)(unsafe.Pointer(psize)) = new_size
 	*(*uintptr)(unsafe.Pointer(parray)) = new_array
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -4051,7 +4063,10 @@ func init() {
 }
 
 func _init_class_range(tls *libc.TLS, rt uintptr, tab uintptr, start int32, count int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var class_id, i int32
 	var cm uintptr
@@ -4069,7 +4084,9 @@ func _init_class_range(tls *libc.TLS, rt uintptr, tab uintptr, start int32, coun
 		(*TJSClassDef)(unsafe.Pointer(cm)).Fgc_mark = (*(*TJSClassShortDef)(unsafe.Pointer(tab + uintptr(i)*12))).Fgc_mark
 		if _JS_NewClass1(tls, rt, libc.Uint32FromInt32(class_id), cm, (*(*TJSClassShortDef)(unsafe.Pointer(tab + uintptr(i)*12))).Fclass_name) < 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _1
@@ -4078,7 +4095,9 @@ func _init_class_range(tls *libc.TLS, rt uintptr, tab uintptr, start int32, coun
 		i = i + 1
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -4090,7 +4109,10 @@ func _js_get_stack_pointer(tls *libc.TLS) (r Tuintptr_t) {
 }
 
 func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var rt, v1 uintptr
 	var _ /* ms at bp+0 */ TJSMallocState
@@ -4101,7 +4123,9 @@ func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
 	rt = (*(*func(*libc.TLS, uintptr, Tsize_t) uintptr)(unsafe.Pointer(&struct{ uintptr }{(*TJSMallocFunctions)(unsafe.Pointer(mf)).Fjs_malloc})))(tls, bp, uint32(760+forkRuntimeSize))
 	if !(rt != 0) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.Xmemset(tls, rt, 0, uint32(760+forkRuntimeSize))
@@ -4147,14 +4171,18 @@ func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
 	XJS_UpdateStackTop(tls, rt)
 	(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception = libc.Uint64FromInt32(int32(EJS_TAG_UNINITIALIZED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r = rt
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	XJS_FreeRuntime(tls, rt)
 	r = libc.UintptrFromInt32(0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -4501,7 +4529,10 @@ func XJS_SetRuntimeInfo(tls *libc.TLS, rt uintptr, s uintptr) {
 }
 
 func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cl, e, el, el1, p, p1, v2, v5 uintptr
 	var i, v4 int32
@@ -4607,7 +4638,9 @@ func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
 	Xjs_free_rt(tls, rt1, (*TJSRuntime)(unsafe.Pointer(rt1)).Fshape_hash)
 	*(*TJSMallocState)(unsafe.Pointer(bp)) = (*TJSRuntime)(unsafe.Pointer(rt1)).Fmalloc_ctx.Fmalloc_state
 	(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{(*TJSRuntime)(unsafe.Pointer(rt1)).Fmalloc_ctx.Fmf.Fjs_free})))(tls, bp, rt1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func XJS_NewContextRaw(tls *libc.TLS, rt uintptr) (r uintptr) {
@@ -5311,7 +5344,10 @@ func _hash_string_rope(tls *libc.TLS, val TJSValue, h Tuint32_t) (r1 Tuint32_t) 
 }
 
 func _JS_DumpChar(tls *libc.TLS, fo uintptr, c int32, sep int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if c == sep || c == int32('\\') {
 		libc.Xfputc(tls, int32('\\'), fo)
@@ -5328,17 +5364,24 @@ func _JS_DumpChar(tls *libc.TLS, fo uintptr, c int32, sep int32) {
 			}
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpString(tls *libc.TLS, rt uintptr, p uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, sep, v1 int32
 	_, _, _ = i, sep, v1
 	if p == libc.UintptrFromInt32(0) {
 		libc.Xprintf(tls, __ccgo_ts+61, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.Xprintf(tls, __ccgo_ts+68, libc.VaList(bp+8, (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, p))).Fref_count))
@@ -5361,11 +5404,16 @@ func _JS_DumpString(tls *libc.TLS, rt uintptr, p uintptr) {
 		i = i + 1
 	}
 	libc.Xputchar(tls, sep)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpAtoms(tls *libc.TLS, rt uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var h, i int32
 	var p uintptr
@@ -5415,7 +5463,9 @@ func _JS_DumpAtoms(tls *libc.TLS, rt uintptr) {
 		i = i + 1
 	}
 	libc.Xprintf(tls, __ccgo_ts+142, 0)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_ResizeAtomHash(tls *libc.TLS, rt uintptr, new_hash_size int32) (r int32) {
@@ -5875,7 +5925,10 @@ func XJS_NewAtom(tls *libc.TLS, ctx uintptr, str uintptr) (r TJSAtom) {
 }
 
 func XJS_NewAtomUInt32(tls *libc.TLS, ctx uintptr, n Tuint32_t) (r TJSAtom) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tsize_t
 	var val TJSValue
@@ -5884,7 +5937,9 @@ func XJS_NewAtomUInt32(tls *libc.TLS, ctx uintptr, n Tuint32_t) (r TJSAtom) {
 	_, _, _ = len1, val, v1
 	if n <= libc.Uint32FromUint32(1)<<libc.Int32FromInt32(31)-libc.Uint32FromInt32(1) {
 		r = ___JS_AtomFromUInt32(tls, n)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		len1 = Xu32toa(tls, bp, n)
@@ -5894,19 +5949,28 @@ func XJS_NewAtomUInt32(tls *libc.TLS, ctx uintptr, n Tuint32_t) (r TJSAtom) {
 	_2:
 		if v1 != 0 {
 			r = uint32(MJS_ATOM_NULL)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = ___JS_NewAtom(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, uintptr(libc.Int32FromUint64(val)), int32(EJS_ATOM_TYPE_STRING))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _JS_NewAtomInt64(tls *libc.TLS, ctx uintptr, n Tint64_t) (r TJSAtom) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tsize_t
 	var val TJSValue
@@ -5915,7 +5979,9 @@ func _JS_NewAtomInt64(tls *libc.TLS, ctx uintptr, n Tint64_t) (r TJSAtom) {
 	_, _, _ = len1, val, v1
 	if libc.Uint64FromInt64(n) <= uint64(libc.Uint32FromUint32(1)<<libc.Int32FromInt32(31)-libc.Uint32FromInt32(1)) {
 		r = ___JS_AtomFromUInt32(tls, libc.Uint32FromInt64(n))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		len1 = Xi64toa(tls, bp, n)
@@ -5925,14 +5991,20 @@ func _JS_NewAtomInt64(tls *libc.TLS, ctx uintptr, n Tint64_t) (r TJSAtom) {
 	_2:
 		if v1 != 0 {
 			r = uint32(MJS_ATOM_NULL)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = ___JS_NewAtom(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, uintptr(libc.Int32FromUint64(val)), int32(EJS_ATOM_TYPE_STRING))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -5980,7 +6052,10 @@ _4:
 //
 //	/* Should only be used for debug. */
 func _JS_AtomGetStrRT(tls *libc.TLS, rt uintptr, buf uintptr, buf_size int32, atom TJSAtom) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, i int32
 	var p, q, str, v3 uintptr
@@ -6011,7 +6086,9 @@ func _JS_AtomGetStrRT(tls *libc.TLS, rt uintptr, buf uintptr, buf_size int32, at
 					}
 					if c < int32(0x80) {
 						r = str + 12
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -6041,7 +6118,9 @@ func _JS_AtomGetStrRT(tls *libc.TLS, rt uintptr, buf uintptr, buf_size int32, at
 		}
 	}
 	r = buf
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -6117,12 +6196,17 @@ func ___JS_AtomToValue(tls *libc.TLS, ctx1 uintptr, atom TJSAtom, force_string T
 
 // Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
 func ___JS_AtomToValue_cold(tls *libc.TLS, ctx1 uintptr, atom TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tsize_t
 	len1 = Xu32toa(tls, bp, ___JS_AtomToUInt32(tls, atom))
 	r = _js_new_string8_len(tls, ctx1, bp, libc.Int32FromUint32(len1))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -6167,7 +6251,10 @@ func _JS_AtomIsArrayIndex(tls *libc.TLS, ctx uintptr, pval uintptr, atom TJSAtom
 //	   method name). Return JS_UNDEFINED if not a numeric
 //	   index. JS_EXCEPTION can also be returned. */
 func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, ret, v11, v13 int32
 	var num, str, v, v1 TJSValue
@@ -6185,13 +6272,17 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 		goto _2
 	_2:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p11 = *(*uintptr)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer(rt)).Fatom_array + uintptr(atom)*4))
 	if int32(Tuint8_t(*(*uint32)(unsafe.Pointer(p11 + 4))&0xc0000000>>30)) != int32(EJS_ATOM_TYPE_STRING) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	switch atom {
@@ -6207,7 +6298,9 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 		goto _4
 	_4:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_ATOM_Infinity):
 		_ = ctx3
@@ -6221,7 +6314,9 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 		goto _6
 	_6:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_ATOM_minus_Infinity):
 		_ = ctx3
@@ -6235,7 +6330,9 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 		goto _8
 	_8:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_ATOM_NaN):
 		_ = ctx3
@@ -6249,7 +6346,9 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 		goto _10
 	_10:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		break
@@ -6257,13 +6356,17 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 	p1 = p11
 	if int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0x7fffffff>>0) == 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	c = _string_get(tls, p1, 0)
 	if !(_is_num(tls, c) != 0) && c != int32('-') {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* this is ECMA CanonicalNumericIndexString primitive */
@@ -6273,7 +6376,9 @@ func _JS_AtomIsNumericIndex1(tls *libc.TLS, ctx3 uintptr, atom TJSAtom) (r TJSVa
 _12:
 	if v11 != 0 {
 		r = num
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	str = XJS_ToString(tls, ctx3, num)
@@ -6295,7 +6400,9 @@ _14:
 			}
 		}
 		r = str
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _js_string_eq(tls, ctx3, p1, uintptr(libc.Int32FromUint64(str)))
@@ -6314,7 +6421,9 @@ _14:
 	}
 	if ret != 0 {
 		r = num
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		v1 = num
@@ -6331,10 +6440,14 @@ _14:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -6443,7 +6556,10 @@ _4:
 //
 //	/* return a string atom containing name concatenated with str1 */
 func _js_atom_concat_str(tls *libc.TLS, ctx2 uintptr, name TJSAtom, str1 uintptr) (r TJSAtom) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var cstr, cstr2, p, v3, v6 uintptr
@@ -6458,7 +6574,9 @@ func _js_atom_concat_str(tls *libc.TLS, ctx2 uintptr, name TJSAtom, str1 uintptr
 _2:
 	if v1 != 0 {
 		r = uint32(MJS_ATOM_NULL)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = XJS_ToCStringLen2(tls, ctx2, bp, str, 0)
@@ -6493,7 +6611,9 @@ _4:
 		}
 	}
 	r = atom
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -6513,12 +6633,17 @@ fail:
 		}
 	}
 	r = uint32(MJS_ATOM_NULL)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_atom_concat_num(tls *libc.TLS, ctx uintptr, name TJSAtom, n Tuint32_t) (r TJSAtom) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tsize_t
 	var _ /* buf at bp+0 */ [16]uint8
@@ -6526,7 +6651,9 @@ func _js_atom_concat_num(tls *libc.TLS, ctx uintptr, name TJSAtom, n Tuint32_t) 
 	len1 = Xu32toa(tls, bp, n)
 	(*(*[16]uint8)(unsafe.Pointer(bp)))[len1] = uint8('\000')
 	r = _js_atom_concat_str(tls, ctx, name, bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -6701,22 +6828,31 @@ func _js_new_string16_len(tls *libc.TLS, ctx uintptr, buf uintptr, len1 int32) (
 }
 
 func _js_new_string_char(tls *libc.TLS, ctx uintptr, c Tuint16_t) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* ch16 at bp+2 */ Tuint16_t
 	var _ /* ch8 at bp+0 */ Tuint8_t
 	if libc.Int32FromUint16(c) < int32(0x100) {
 		*(*Tuint8_t)(unsafe.Pointer(bp)) = uint8(c)
 		r = _js_new_string8_len(tls, ctx, bp, int32(1))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		*(*Tuint16_t)(unsafe.Pointer(bp + 2)) = c
 		r = _js_new_string16_len(tls, ctx, bp+2, int32(1))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -6836,7 +6972,10 @@ func _string_buffer_set_error(tls *libc.TLS, s uintptr) (r int32) {
 }
 
 func _string_buffer_widen(tls *libc.TLS, s uintptr, size int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v2 int32
 	var str uintptr
@@ -6844,13 +6983,17 @@ func _string_buffer_widen(tls *libc.TLS, s uintptr, size int32) (r int32) {
 	_, _, _ = i, str, v2
 	if (*TStringBuffer)(unsafe.Pointer(s)).Ferror_status != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	str = Xjs_realloc2(tls, (*TStringBuffer)(unsafe.Pointer(s)).Fctx, (*TStringBuffer)(unsafe.Pointer(s)).Fstr, uint32(12)+libc.Uint32FromInt32(size<<libc.Int32FromInt32(1)), bp)
 	if !(str != 0) {
 		r = _string_buffer_set_error(tls, s)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size = libc.Int32FromUint32(uint32(size) + *(*Tsize_t)(unsafe.Pointer(bp))>>libc.Int32FromInt32(1))
@@ -6869,12 +7012,17 @@ func _string_buffer_widen(tls *libc.TLS, s uintptr, size int32) (r int32) {
 	(*TStringBuffer)(unsafe.Pointer(s)).Fsize = size
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = str
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _string_buffer_realloc(tls *libc.TLS, s uintptr, new_len int32, c int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var new_size, v1, v2, v3, v5, v6, v7 int32
 	var new_size_bytes Tsize_t
@@ -6883,13 +7031,17 @@ func _string_buffer_realloc(tls *libc.TLS, s uintptr, new_len int32, c int32) (r
 	_, _, _, _, _, _, _, _, _ = new_size, new_size_bytes, new_str, v1, v2, v3, v5, v6, v7
 	if (*TStringBuffer)(unsafe.Pointer(s)).Ferror_status != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if new_len > libc.Int32FromInt32(1)<<libc.Int32FromInt32(30)-libc.Int32FromInt32(1) {
 		XJS_ThrowInternalError(tls, (*TStringBuffer)(unsafe.Pointer(s)).Fctx, __ccgo_ts+190, 0)
 		r = _string_buffer_set_error(tls, s)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = new_len
@@ -6915,14 +7067,18 @@ _8:
 	new_size = v7
 	if !((*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char != 0) && c >= int32(0x100) {
 		r = _string_buffer_widen(tls, s, new_size)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	new_size_bytes = uint32(12) + libc.Uint32FromInt32(new_size<<(*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char) + uint32(1) - libc.Uint32FromInt32((*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char)
 	new_str = Xjs_realloc2(tls, (*TStringBuffer)(unsafe.Pointer(s)).Fctx, (*TStringBuffer)(unsafe.Pointer(s)).Fstr, new_size_bytes, bp)
 	if !(new_str != 0) {
 		r = _string_buffer_set_error(tls, s)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.Int32FromUint32(libc.Uint32FromInt32(new_size) + *(*Tsize_t)(unsafe.Pointer(bp))>>(*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char)
@@ -6939,7 +7095,9 @@ _12:
 	(*TStringBuffer)(unsafe.Pointer(s)).Fsize = new_size
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = new_str
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -7378,7 +7536,10 @@ func _string_buffer_end(tls *libc.TLS, s uintptr) (r TJSValue) {
 //
 //	/* create a string from a UTF-8 buffer */
 func XJS_NewStringLen(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p_end, p_start, v1 uintptr
 	var c2, v2 Tuint32_t
@@ -7393,13 +7554,17 @@ func XJS_NewStringLen(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t) 
 	p = p_start + uintptr(len1)
 	if len1 > libc.Uint32FromInt32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(30)-libc.Int32FromInt32(1)) {
 		r = XJS_ThrowInternalError(tls, ctx, __ccgo_ts+190, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if p == p_end {
 		/* ASCII string */
 		r = _js_new_string8_len(tls, ctx, buf, libc.Int32FromUint32(buf_len))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if _string_buffer_init(tls, ctx, b, libc.Int32FromUint32(buf_len)) != 0 {
@@ -7449,19 +7614,26 @@ func XJS_NewStringLen(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t) 
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ConcatString3(tls *libc.TLS, ctx1 uintptr, str1 uintptr, str2 TJSValue, str3 uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v4, v7 uintptr
 	var len1, len3, v1 int32
@@ -7501,7 +7673,9 @@ func _JS_ConcatString3(tls *libc.TLS, ctx1 uintptr, str1 uintptr, str2 TJSValue,
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -7520,7 +7694,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -8064,7 +8240,10 @@ func _string_rope_get_len(tls *libc.TLS, val TJSValue) (r Tuint32_t) {
 }
 
 func _js_string_rope_compare(tls *libc.TLS, ctx uintptr, op1 TJSValue, op2 TJSValue, eq_only TBOOL) (r int32) {
-	bp := tls.Alloc(976)
+	bp := tlsTake(tls, 976)
+	if bp == 0 {
+		bp = tls.Alloc(976)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var l, len1, len11, len2, pos1, pos2, v1, v2, v3 Tuint32_t
 	var p1, p2 uintptr
@@ -8078,7 +8257,9 @@ func _js_string_rope_compare(tls *libc.TLS, ctx uintptr, op1 TJSValue, op2 TJSVa
 	   different length */
 	if eq_only != 0 && len11 != len2 {
 		r = int32(1)
-		tls.Free(976)
+		if tlsDrop(tls, 976) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = len11
@@ -8124,7 +8305,9 @@ _4:
 		res = _js_string_memcmp(tls, p1, libc.Int32FromUint32(pos1), p2, libc.Int32FromUint32(pos2), libc.Int32FromUint32(l))
 		if res != 0 {
 			r = res
-			tls.Free(976)
+			if tlsDrop(tls, 976) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		len1 = len1 - l
@@ -8149,7 +8332,9 @@ _4:
 		}
 	}
 	r = res
-	tls.Free(976)
+	if tlsDrop(tls, 976) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -8158,7 +8343,10 @@ _4:
 //	/* 'rope' must be a rope. return a string and modify the rope so that
 //	   it won't need to be linearized again. */
 func _js_linearize_string_rope(tls *libc.TLS, ctx2 uintptr, rope TJSValue) (r1 TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, r, v2, v7 uintptr
 	var ret, v1, v4 TJSValue
@@ -8196,7 +8384,9 @@ func _js_linearize_string_rope(tls *libc.TLS, ctx2 uintptr, rope TJSValue) (r1 T
 			}
 		}
 		r1 = ret
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _string_buffer_init2(tls, ctx2, b, libc.Int32FromUint32((*TJSStringRope)(unsafe.Pointer(r)).Flen1), libc.Int32FromUint8((*TJSStringRope)(unsafe.Pointer(r)).Fis_wide_char)) != 0 {
@@ -8263,7 +8453,9 @@ func _js_linearize_string_rope(tls *libc.TLS, ctx2 uintptr, rope TJSValue) (r1 T
 		}
 	}
 	r1 = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -8282,7 +8474,9 @@ fail:
 		}
 	}
 	r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -8553,7 +8747,10 @@ func _js_rebalancee_string_rope_rec(tls *libc.TLS, ctx1 uintptr, buckets uintptr
 //	   Alternative to Strings", Hans-J. Boehm, Russ Atkinson and Michael
 //	   Plass. */
 func _js_rebalancee_string_rope(tls *libc.TLS, ctx1 uintptr, rope TJSValue) (r TJSValue) {
-	bp := tls.Alloc(352)
+	bp := tlsTake(tls, 352)
+	if bp == 0 {
+		bp = tls.Alloc(352)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, b, v12 TJSValue
 	var i, v3 int32
@@ -8612,11 +8809,15 @@ func _js_rebalancee_string_rope(tls *libc.TLS, ctx1 uintptr, rope TJSValue) (r T
 _10:
 	if v3 != 0 {
 		r = XJS_AtomToString(tls, ctx1, uint32(EJS_ATOM_empty_string))
-		tls.Free(352)
+		if tlsDrop(tls, 352) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = a
-		tls.Free(352)
+		if tlsDrop(tls, 352) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto fail
@@ -8646,7 +8847,9 @@ fail:
 		i = i + 1
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(352)
+	if tlsDrop(tls, 352) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -9455,7 +9658,10 @@ func _find_hashed_shape_prop(tls *libc.TLS, rt uintptr, sh uintptr, atom TJSAtom
 }
 
 func _JS_DumpShape(tls *libc.TLS, rt uintptr, i int32, sh uintptr) {
-	bp := tls.Alloc(128)
+	bp := tlsTake(tls, 128)
+	if bp == 0 {
+		bp = tls.Alloc(128)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var j int32
 	var _ /* atom_buf at bp+0 */ [64]uint8
@@ -9474,11 +9680,16 @@ func _JS_DumpShape(tls *libc.TLS, rt uintptr, i int32, sh uintptr) {
 		j = j + 1
 	}
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(128)
+	if tlsDrop(tls, 128) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpShapes(tls *libc.TLS, rt uintptr) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var el, gp, p, sh uintptr
 	var i int32
@@ -9525,7 +9736,9 @@ func _JS_DumpShapes(tls *libc.TLS, rt uintptr) {
 		el = (*Tlist_head)(unsafe.Pointer(el)).Fnext
 	}
 	libc.Xprintf(tls, __ccgo_ts+142, 0)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -11685,7 +11898,10 @@ func _compute_value_size(tls *libc.TLS, val TJSValue, hp uintptr) {
 }
 
 func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, b, bf, ctx, el, el1, fd, gp, hp, it, m, me, p, p1, pr, prs, sh, sh1, sh2, var_refs, v9 uintptr
 	var hash_size, hash_size1, hash_size2, i int32
@@ -12232,11 +12448,16 @@ func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
 	v9 = s + 32
 	*(*Tint64_t)(unsafe.Pointer(v9)) = Tint64_t(float64(*(*Tint64_t)(unsafe.Pointer(v9))) + (libc.X__builtin_round(tls, (*(*TJSMemoryUsage_helper)(unsafe.Pointer(bp))).Fmemory_used_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fatom_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fstr_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fobj_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fshape_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fjs_func_count) + float64((*TJSMemoryUsage)(unsafe.Pointer(s)).Fjs_func_pc2line_count)))
 	*(*Tint64_t)(unsafe.Pointer(s + 16)) += (*TJSMemoryUsage)(unsafe.Pointer(s)).Fatom_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fstr_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fobj_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fprop_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fshape_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fjs_func_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fjs_func_code_size + (*TJSMemoryUsage)(unsafe.Pointer(s)).Fjs_func_pc2line_size
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 }
 
 func XJS_DumpMemoryUsage(tls *libc.TLS, fp uintptr, s uintptr, rt uintptr) {
-	bp := tls.Alloc(112)
+	bp := tlsTake(tls, 112)
+	if bp == 0 {
+		bp = tls.Alloc(112)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var class_id, i, usage_size_ok int32
 	var el, gp, p, p1 uintptr
@@ -12355,7 +12576,9 @@ func XJS_DumpMemoryUsage(tls *libc.TLS, fp uintptr, s uintptr, rt uintptr) {
 	if (*TJSMemoryUsage)(unsafe.Pointer(s)).Fbinary_object_count != 0 {
 		libc.Xfprintf(tls, fp, __ccgo_ts+909, libc.VaList(bp+72, __ccgo_ts+1109, (*TJSMemoryUsage)(unsafe.Pointer(s)).Fbinary_object_count, (*TJSMemoryUsage)(unsafe.Pointer(s)).Fbinary_object_size))
 	}
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 }
 
 var _object_types = [5]struct {
@@ -12542,7 +12765,10 @@ func _get_leb128(tls *libc.TLS, pval uintptr, buf uintptr, buf_end uintptr) (r i
 }
 
 func _get_sleb128(tls *libc.TLS, pval uintptr, buf uintptr, buf_end uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ret int32
 	var _ /* val at bp+0 */ Tuint32_t
@@ -12551,12 +12777,16 @@ func _get_sleb128(tls *libc.TLS, pval uintptr, buf uintptr, buf_end uintptr) (r 
 	if ret < 0 {
 		*(*Tint32_t)(unsafe.Pointer(pval)) = 0
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tint32_t)(unsafe.Pointer(pval)) = libc.Int32FromUint32(*(*Tuint32_t)(unsafe.Pointer(bp))>>libc.Int32FromInt32(1) ^ -(*(*Tuint32_t)(unsafe.Pointer(bp)) & libc.Uint32FromInt32(1)))
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -12564,7 +12794,10 @@ func _get_sleb128(tls *libc.TLS, pval uintptr, buf uintptr, buf_end uintptr) (r 
 //
 //	/* use pc_value = -1 to get the position of the function definition */
 func _find_line_num(tls *libc.TLS, ctx uintptr, b uintptr, pc_value Tuint32_t, pcol_num uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var col_num, line_num, new_col_num, new_line_num, pc, ret int32
 	var op uint32
@@ -12632,14 +12865,18 @@ done:
 	;
 	*(*int32)(unsafe.Pointer(pcol_num)) = col_num
 	r = line_num
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	*(*int32)(unsafe.Pointer(pcol_num)) = 0
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -12648,7 +12885,10 @@ fail:
 //	/* return a string property without executing arbitrary JS code (used
 //	   when dumping the stack trace or in debug print). */
 func _get_prop_string(tls *libc.TLS, ctx1 uintptr, obj TJSValue, prop TJSAtom) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs, v1 uintptr
 	var val TJSValue
@@ -12656,7 +12896,9 @@ func _get_prop_string(tls *libc.TLS, ctx1 uintptr, obj TJSValue, prop TJSAtom) (
 	_, _, _, _ = p, prs, val, v1
 	if libc.Int32FromUint64(obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(libc.Int32FromUint64(obj))
@@ -12667,37 +12909,49 @@ func _get_prop_string(tls *libc.TLS, ctx1 uintptr, obj TJSValue, prop TJSAtom) (
 		p = (*TJSShape)(unsafe.Pointer((*TJSObject)(unsafe.Pointer(p)).Fshape)).Fproto
 		if !(p != 0) {
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		prs = _find_own_property(tls, bp, p, prop)
 		if !(prs != 0) {
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if pending, ok := _js_backtrace_prop_string(tls, ctx1, p, prs, *(*uintptr)(unsafe.Pointer(bp))); ok {
 		r = pending
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(0)<<libc.Int32FromInt32(4) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	val = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))
 	if libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) != int32(EJS_TAG_STRING) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = XJS_ToCStringLen2(tls, ctx1, libc.UintptrFromInt32(0), val, 0)
 	goto _2
 _2:
 	r = v1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -12706,7 +12960,10 @@ _2:
 //	/* if filename != NULL, an additional level is added with the filename
 //	   and line number information (used for parse error). */
 func _build_backtrace(tls *libc.TLS, ctx3 uintptr, error_obj TJSValue, filename uintptr, line_num int32, col_num int32, backtrace_flags int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom_str, b, func_name_str, p, sf, str11, v3, v7 uintptr
 	var line_num1, v1 int32
@@ -12722,11 +12979,15 @@ func _build_backtrace(tls *libc.TLS, ctx3 uintptr, error_obj TJSValue, filename 
 	goto _2
 _2:
 	if !(v1 != 0) {
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	} /* protection in the out of memory case */
 	if filename == 0 && _js_backtrace_build(tls, ctx3, error_obj, backtrace_flags) != 0 {
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_js_dbuf_init(tls, ctx3, bp)
@@ -12759,7 +13020,9 @@ _2:
 		goto _12
 	_12:
 		if v1 != 0 {
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* Note: SpiderMonkey does that, could update once there is a standard */
@@ -12776,7 +13039,9 @@ _2:
 		_17:
 		}
 		if v18 || XJS_DefinePropertyValue(tls, ctx3, error_obj, uint32(EJS_ATOM_columnNumber), v13, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) < 0 {
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -12890,7 +13155,9 @@ _39:
 	}
 	Xdbuf_free(tls, bp)
 	XJS_DefinePropertyValue(tls, ctx3, error_obj, uint32(EJS_ATOM_stack), str1, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -12917,7 +13184,10 @@ func XJS_NewError(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 }
 
 func _JS_ThrowError2(tls *libc.TLS, ctx1 uintptr, error_num TJSErrorEnum, fmt uintptr, ap Tva_list, add_backtrace TBOOL) (r TJSValue) {
-	bp := tls.Alloc(256)
+	bp := tlsTake(tls, 256)
+	if bp == 0 {
+		bp = tls.Alloc(256)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, ret, v4 TJSValue
 	var v1 int32
@@ -12926,7 +13196,9 @@ func _JS_ThrowError2(tls *libc.TLS, ctx1 uintptr, error_num TJSErrorEnum, fmt ui
 	_, _, _, _, _ = obj, ret, v1, v3, v4
 	libc.X__builtin_vsnprintf(tls, bp, uint32(256), fmt, ap)
 	r = _js_throw_error2(tls, ctx1, error_num, bp, add_backtrace)
-	tls.Free(256)
+	if tlsDrop(tls, 256) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -12979,11 +13251,16 @@ func _JS_ThrowTypeErrorOrFalse(tls *libc.TLS, ctx uintptr, flags int32, fmt uint
 //
 //	/* never use it directly */
 func ___JS_ThrowTypeErrorAtom(tls *libc.TLS, ctx uintptr, atom TJSAtom, fmt uintptr, va uintptr) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf at bp+0 */ [64]uint8
 	r = XJS_ThrowTypeError(tls, ctx, fmt, libc.VaList(bp+72, _JS_AtomGetStr(tls, ctx, bp, int32(64), atom)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -12991,11 +13268,16 @@ func ___JS_ThrowTypeErrorAtom(tls *libc.TLS, ctx uintptr, atom TJSAtom, fmt uint
 //
 //	/* never use it directly */
 func ___JS_ThrowSyntaxErrorAtom(tls *libc.TLS, ctx uintptr, atom TJSAtom, fmt uintptr, va uintptr) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf at bp+0 */ [64]uint8
 	r = XJS_ThrowSyntaxError(tls, ctx, fmt, libc.VaList(bp+72, _JS_AtomGetStr(tls, ctx, bp, int32(64), atom)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13003,19 +13285,28 @@ func ___JS_ThrowSyntaxErrorAtom(tls *libc.TLS, ctx uintptr, atom TJSAtom, fmt ui
    the format string. */
 
 func _JS_ThrowTypeErrorReadOnly(tls *libc.TLS, ctx uintptr, flags int32, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) != 0 || flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(15)) != 0 && _is_strict_mode(tls, ctx) != 0 {
 		___JS_ThrowTypeErrorAtom(tls, ctx, atom, __ccgo_ts+1168, libc.VaList(bp+8, __ccgo_ts+189))
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -13071,7 +13362,10 @@ func _JS_ThrowTypeErrorNotAnObject(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 }
 
 func _JS_ThrowTypeErrorNotAConstructor(tls *libc.TLS, ctx uintptr, func_obj TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var name uintptr
 	_ = name
@@ -13086,14 +13380,18 @@ func _JS_ThrowTypeErrorNotAConstructor(tls *libc.TLS, ctx uintptr, func_obj TJSV
 fail:
 	;
 	r = XJS_ThrowTypeError(tls, ctx, __ccgo_ts+1229, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
 	XJS_ThrowTypeError(tls, ctx, __ccgo_ts+1247, libc.VaList(bp+8, name))
 	XJS_FreeCString(tls, ctx, name)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13102,16 +13400,24 @@ func _JS_ThrowTypeErrorNotASymbol(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 }
 
 func _JS_ThrowReferenceErrorNotDefined(tls *libc.TLS, ctx uintptr, name TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf at bp+0 */ [64]uint8
 	r = XJS_ThrowReferenceError(tls, ctx, __ccgo_ts+1284, libc.VaList(bp+72, _JS_AtomGetStr(tls, ctx, bp, int32(64), name)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ThrowReferenceErrorUninitialized(tls *libc.TLS, ctx uintptr, name TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uintptr
 	var _ /* buf at bp+0 */ [64]uint8
@@ -13122,7 +13428,9 @@ func _JS_ThrowReferenceErrorUninitialized(tls *libc.TLS, ctx uintptr, name TJSAt
 		v1 = _JS_AtomGetStr(tls, ctx, bp, int32(64), name)
 	}
 	r = XJS_ThrowReferenceError(tls, ctx, __ccgo_ts+1321, libc.VaList(bp+72, v1))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13142,7 +13450,10 @@ func _JS_ThrowReferenceErrorUninitialized2(tls *libc.TLS, ctx uintptr, b uintptr
 }
 
 func _JS_ThrowTypeErrorInvalidClass(tls *libc.TLS, ctx uintptr, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var name TJSAtom
 	var rt uintptr
@@ -13150,7 +13461,9 @@ func _JS_ThrowTypeErrorInvalidClass(tls *libc.TLS, ctx uintptr, class_id int32) 
 	rt = (*TJSContext)(unsafe.Pointer(ctx)).Frt
 	name = (*(*TJSClass)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer(rt)).Fclass_array + uintptr(class_id)*24))).Fclass_name
 	r = ___JS_ThrowTypeErrorAtom(tls, ctx, name, __ccgo_ts+1343, libc.VaList(bp+8, __ccgo_ts+189))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13596,7 +13909,10 @@ done:
 //
 //	/* return TRUE, FALSE or (-1) in case of exception */
 func XJS_IsInstanceOf(tls *libc.TLS, ctx1 uintptr, _val TJSValue, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _val
 	var method, ret, v3, v4 TJSValue
@@ -13619,7 +13935,9 @@ _5:
 _7:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(method>>libc.Int32FromInt32(32)) == int32(EJS_TAG_NULL))
@@ -13634,7 +13952,9 @@ _9:
 	if v12 && !(v6 != 0) {
 		ret = _JS_CallFree(tls, ctx1, method, obj, int32(1), bp)
 		r = _JS_ToBoolFree(tls, ctx1, ret)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* legacy case */
@@ -13646,12 +13966,16 @@ fail:
 	;
 	XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+1514, 0)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _13:
 	;
 	r = _JS_OrdinaryIsInstanceOf(tls, ctx1, *(*TJSValue)(unsafe.Pointer(bp)), obj)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13668,7 +13992,10 @@ func init() {
 //
 //	/* warning: 'prs' is reallocated after it */
 func _JS_AutoInitProperty(tls *libc.TLS, ctx uintptr, p uintptr, prop TJSAtom, pr uintptr, _prs uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*uintptr)(unsafe.Pointer(bp)) = _prs
 	var func1, realm, var_ref uintptr
@@ -13678,7 +14005,9 @@ func _JS_AutoInitProperty(tls *libc.TLS, ctx uintptr, p uintptr, prop TJSAtom, p
 	_, _, _, _, _, _ = func1, id, realm, val, var_ref, v1
 	if _js_shape_prepare_update(tls, ctx, p, bp) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	realm = _js_autoinit_get_realm(tls, pr)
@@ -13697,7 +14026,9 @@ func _JS_AutoInitProperty(tls *libc.TLS, ctx uintptr, p uintptr, prop TJSAtom, p
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if id == int32(EJS_AUTOINIT_ID_MODULE_NS) && libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_STRING) {
@@ -13711,7 +14042,9 @@ _2:
 			var_ref = _js_create_var_ref(tls, ctx, int32(EFALSE))
 			if !(var_ref != 0) {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			libc.AssignBitFieldPtr32Int32(*(*uintptr)(unsafe.Pointer(bp))+0, int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 0))&0xfc000000>>26)|int32(libc.Int32FromInt32(2)<<libc.Int32FromInt32(4)), 6, 26, 0xfc000000)
@@ -13723,7 +14056,9 @@ _2:
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -13744,17 +14079,27 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 		switch tag {
 		case uint32(EJS_TAG_NULL):
 			// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-			bp = tls.Alloc(64)
+			bp = tlsTake(tls, 64)
+			if bp == 0 {
+				bp = tls.Alloc(64)
+			}
 			*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 			r = ___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1549, libc.VaList(bp+48, __ccgo_ts+189))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32(EJS_TAG_UNDEFINED):
 			// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-			bp = tls.Alloc(64)
+			bp = tlsTake(tls, 64)
+			if bp == 0 {
+				bp = tls.Alloc(64)
+			}
 			*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 			r = ___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1583, libc.VaList(bp+48, __ccgo_ts+189))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32(EJS_TAG_EXCEPTION):
 			return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -13764,9 +14109,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 				idx = ___JS_AtomToUInt32(tls, prop)
 				if idx < libc.Uint32FromInt32(int32(*(*uint32)(unsafe.Pointer(p11 + 0))&0x7fffffff>>0)) {
 					// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-					tls.Alloc(64)
+					if tlsTake(tls, 64) == 0 {
+						tls.Alloc(64)
+					}
 					r = _js_new_string_char(tls, ctx3, libc.Uint16FromInt32(_string_get(tls, p11, libc.Int32FromUint32(idx))))
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
@@ -13784,9 +14133,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 				idx1 = ___JS_AtomToUInt32(tls, prop)
 				if idx1 < (*TJSStringRope)(unsafe.Pointer(p12)).Flen1 {
 					// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-					tls.Alloc(64)
+					if tlsTake(tls, 64) == 0 {
+						tls.Alloc(64)
+					}
 					r = _js_new_string_char(tls, ctx3, libc.Uint16FromInt32(_string_rope_get(tls, obj, idx1)))
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
@@ -13814,11 +14167,16 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 		if prs != 0 {
 		if prop == uint32(EJS_ATOM_stack) {
 			// Changed by internal/fixlib: a TLS frame for the condition of this if (see fixLazyFrames).
-			bp = tls.Alloc(64)
+			bp = tlsTake(tls, 64)
+			if bp == 0 {
+				bp = tls.Alloc(64)
+			}
 			*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 			lazyc = _js_backtrace_settle(tls, ctx3, p2, prs, *(*uintptr)(unsafe.Pointer(bp))) < 0
 			localbp = *(*[8]uint64)(unsafe.Pointer(bp))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			if lazyc {
 				return jsvException()
 			}
@@ -13851,9 +14209,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 					_10:
 						func1 = v3
 						// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-						tls.Alloc(64)
+						if tlsTake(tls, 64) == 0 {
+							tls.Alloc(64)
+						}
 						r = _JS_CallFree(tls, ctx3, func1, this_obj, 0, libc.UintptrFromInt32(0))
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				} else {
@@ -13864,9 +14226,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 					_12:
 						if expect32(!!(v11 != 0)) {
 							// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-							tls.Alloc(64)
+							if tlsTake(tls, 64) == 0 {
+								tls.Alloc(64)
+							}
 							r = _JS_ThrowReferenceErrorUninitialized(tls, ctx3, (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom)
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						_ = ctx3
@@ -13886,11 +14252,16 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 						if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(3)<<libc.Int32FromInt32(4) {
 							/* Instantiate property and retry */
 							// Changed by internal/fixlib: a TLS frame for the condition of this if (see fixLazyFrames).
-							bp = tls.Alloc(64)
+							bp = tlsTake(tls, 64)
+							if bp == 0 {
+								bp = tls.Alloc(64)
+							}
 							*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 							lazyc = _JS_AutoInitProperty(tls, ctx3, p2, prop, *(*uintptr)(unsafe.Pointer(bp)), prs) != 0
 							localbp = *(*[8]uint64)(unsafe.Pointer(bp))
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							if lazyc {
 								return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 							}
@@ -13944,9 +14315,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 					})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount {
 						/* we avoid duplicating the code */
 						// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-						tls.Alloc(64)
+						if tlsTake(tls, 64) == 0 {
+							tls.Alloc(64)
+						}
 						r = XJS_GetPropertyUint32(tls, ctx3, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p2)), idx2)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					} else {
 						if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) >= int32(EJS_CLASS_UINT8C_ARRAY) && libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) <= int32(EJS_CLASS_FLOAT64_ARRAY) {
@@ -13956,9 +14331,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 				} else {
 					if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) >= int32(EJS_CLASS_UINT8C_ARRAY) && libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) <= int32(EJS_CLASS_FLOAT64_ARRAY) {
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(64)
+						if tlsTake(tls, 64) == 0 {
+							tls.Alloc(64)
+						}
 						ret = _JS_AtomIsNumericIndex(tls, ctx3, prop)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						if ret != 0 {
 							if ret < 0 {
 								return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -13988,9 +14367,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 					_27:
 						obj1 = v3
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(64)
+						if tlsTake(tls, 64) == 0 {
+							tls.Alloc(64)
+						}
 						retval = (*(*func(*libc.TLS, uintptr, TJSValue, TJSAtom, TJSValue) TJSValue)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_property})))(tls, ctx3, obj1, prop, this_obj)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						v1 = obj1
 						if libc.Uint32FromInt32(libc.Int32FromUint64(v1>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
 							v7 = uintptr(libc.Int32FromUint64(v1)) - libc.UintptrFromInt32(1)*4
@@ -14023,11 +14406,16 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 					_37:
 						obj11 = v3
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						bp = tls.Alloc(64)
+						bp = tlsTake(tls, 64)
+						if bp == 0 {
+							bp = tls.Alloc(64)
+						}
 						*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 						ret1 = (*(*func(*libc.TLS, uintptr, uintptr, TJSValue, TJSAtom) int32)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property})))(tls, ctx3, bp+8, obj11, prop)
 						localbp = *(*[8]uint64)(unsafe.Pointer(bp))
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						v1 = obj11
 						if libc.Uint32FromInt32(libc.Int32FromUint64(v1>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
 							v7 = uintptr(libc.Int32FromUint64(v1)) - libc.UintptrFromInt32(1)*4
@@ -14060,10 +14448,15 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 									}
 								}
 								// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-								bp = tls.Alloc(64)
+								bp = tlsTake(tls, 64)
+								if bp == 0 {
+									bp = tls.Alloc(64)
+								}
 								*(*[8]uint64)(unsafe.Pointer(bp)) = localbp
 								r = _JS_CallFree(tls, ctx3, (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp + 8))).Fgetter, this_obj, 0, libc.UintptrFromInt32(0))
-								tls.Free(64)
+								if tlsDrop(tls, 64) {
+									tlsSignals(tls)
+								}
 								return
 							} else {
 								return (*(*TJSPropertyDescriptor)(unsafe.Add(unsafe.Pointer(&localbp), 8))).Fvalue
@@ -14082,9 +14475,13 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 	}
 	if expect32(!!(throw_ref_error != 0)) {
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(64)
+		if tlsTake(tls, 64) == 0 {
+			tls.Alloc(64)
+		}
 		r = _JS_ThrowReferenceErrorNotDefined(tls, ctx3, prop)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		return libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -14093,10 +14490,15 @@ func XJS_GetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 }
 
 func _JS_ThrowTypeErrorPrivateNotFound(tls *libc.TLS, ctx uintptr, atom TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	r = ___JS_ThrowTypeErrorAtom(tls, ctx, atom, __ccgo_ts+1622, libc.VaList(bp+8, __ccgo_ts+189))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -14105,7 +14507,10 @@ func _JS_ThrowTypeErrorPrivateNotFound(tls *libc.TLS, ctx uintptr, atom TJSAtom)
 //	/* Private fields can be added even on non extensible objects or
 //	   Proxies */
 func _JS_DefinePrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValue, val TJSValue) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, prs, v3, v6 uintptr
 	var prop TJSAtom
@@ -14150,18 +14555,25 @@ fail:
 		}
 	}
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
 	*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))) = val
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_GetPrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, prs, v2 uintptr
 	var prop TJSAtom
@@ -14170,13 +14582,17 @@ func _JS_GetPrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValu
 	_, _, _, _, _, _, _ = p, p1, prop, prs, v1, v2, v4
 	if expect32(!!(libc.Int32FromUint64(obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT))) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* safety check */
 	if expect32(!!(libc.Int32FromUint64(name>>libc.Int32FromInt32(32)) != int32(EJS_TAG_SYMBOL))) {
 		r = _JS_ThrowTypeErrorNotASymbol(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prop = _js_symbol_to_atom(tls, ctx1, name)
@@ -14185,7 +14601,9 @@ func _JS_GetPrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValu
 	if !(prs != 0) {
 		_JS_ThrowTypeErrorPrivateNotFound(tls, ctx1, prop)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx1
@@ -14201,12 +14619,17 @@ func _JS_GetPrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValu
 	goto _5
 _5:
 	r = v4
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_SetPrivateField(tls *libc.TLS, ctx1 uintptr, obj TJSValue, name TJSValue, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, prs, v3, v6 uintptr
 	var prop TJSAtom
@@ -14247,13 +14670,17 @@ fail:
 		}
 	}
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
 	_set_value(tls, ctx1, *(*uintptr)(unsafe.Pointer(bp)), val)
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -14262,7 +14689,10 @@ _1:
 //	/* add a private brand field to 'home_obj' if not already present and
 //	   if obj is != null add a private brand to it */
 func _JS_AddBrand(tls *libc.TLS, ctx2 uintptr, obj TJSValue, home_obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var brand, v3, v8 TJSValue
 	var brand_atom TJSAtom
@@ -14273,7 +14703,9 @@ func _JS_AddBrand(tls *libc.TLS, ctx2 uintptr, obj TJSValue, home_obj TJSValue) 
 	if expect32(!!(libc.Int32FromUint64(home_obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT))) {
 		_JS_ThrowTypeErrorNotAnObject(tls, ctx2)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p2 = uintptr(libc.Int32FromUint64(home_obj))
@@ -14286,7 +14718,9 @@ func _JS_AddBrand(tls *libc.TLS, ctx2 uintptr, obj TJSValue, home_obj TJSValue) 
 	_2:
 		if v1 != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*uintptr)(unsafe.Pointer(bp)) = _add_property(tls, ctx2, p2, uint32(EJS_ATOM_Private_brand), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))
@@ -14305,7 +14739,9 @@ func _JS_AddBrand(tls *libc.TLS, ctx2 uintptr, obj TJSValue, home_obj TJSValue) 
 				}
 			}
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_ = ctx2
@@ -14347,14 +14783,18 @@ _19:
 			XJS_FreeAtom(tls, ctx2, brand_atom)
 			XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+1702, 0)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*uintptr)(unsafe.Pointer(bp)) = _add_property(tls, ctx2, p11, brand_atom, libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))
 		XJS_FreeAtom(tls, ctx2, brand_atom)
 		if !(*(*uintptr)(unsafe.Pointer(bp)) != 0) {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -14362,7 +14802,9 @@ _19:
 		XJS_FreeAtom(tls, ctx2, brand_atom)
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -14371,7 +14813,10 @@ _19:
 //	/* return a boolean telling if the brand of the home object of 'func'
 //	   is present on 'obj' or -1 in case of exception */
 func _JS_CheckBrand(tls *libc.TLS, ctx uintptr, obj TJSValue, func1 TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var brand TJSValue
 	var home_obj, p, p1, prs uintptr
@@ -14397,7 +14842,9 @@ func _JS_CheckBrand(tls *libc.TLS, ctx uintptr, obj TJSValue, func1 TJSValue) (r
 	if !(prs != 0) {
 		XJS_ThrowTypeError(tls, ctx, __ccgo_ts+1736, 0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	brand = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))
@@ -14414,14 +14861,18 @@ not_obj:
 	;
 	_JS_ThrowTypeErrorNotAnObject(tls, ctx)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
 	p = uintptr(libc.Int32FromUint64(obj))
 	prs = _find_own_property(tls, bp, p, _js_symbol_to_atom(tls, ctx, brand))
 	r = libc.BoolInt32(prs != libc.UintptrFromInt32(0))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -14440,7 +14891,10 @@ func _js_string_obj_get_length(tls *libc.TLS, ctx uintptr, obj TJSValue) (r Tuin
 }
 
 func _num_keys_cmp(tls *libc.TLS, p1 uintptr, p2 uintptr, opaque uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom1, atom2 TJSAtom
 	var atom1_is_integer, atom2_is_integer TBOOL
@@ -14455,20 +14909,28 @@ func _num_keys_cmp(tls *libc.TLS, p1 uintptr, p2 uintptr, opaque uintptr) (r int
 	atom2_is_integer = _JS_AtomIsArrayIndex(tls, ctx, bp+4, atom2)
 	if *(*Tuint32_t)(unsafe.Pointer(bp)) < *(*Tuint32_t)(unsafe.Pointer(bp + 4)) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if *(*Tuint32_t)(unsafe.Pointer(bp)) == *(*Tuint32_t)(unsafe.Pointer(bp + 4)) {
 			r = 0
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			r = int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -14496,7 +14958,10 @@ func XJS_FreePropertyEnum(tls *libc.TLS, ctx uintptr, tab uintptr, len1 Tuint32_
 //	/* return < 0 in case if exception, 0 if OK. ptab and its atoms must
 //	   be freed by the user. */
 func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, plen uintptr, p uintptr, flags int32) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var atom_count, exotic_keys_count, num_index, num_keys_count, str_index, str_keys_count, sym_index, sym_keys_count, v11 Tuint32_t
@@ -14541,7 +15006,9 @@ func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, p
 					if expect32(!!(v2 != 0)) {
 						_JS_ThrowReferenceErrorUninitialized(tls, ctx, (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom)
 						r = -int32(1)
-						tls.Free(48)
+						if tlsDrop(tls, 48) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -14599,7 +15066,9 @@ func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, p
 				if em != 0 && (*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property_names != 0 {
 					if (*(*func(*libc.TLS, uintptr, uintptr, uintptr, TJSValue) int32)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property_names})))(tls, ctx, bp, bp+4, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p))) != 0 {
 						r = -int32(1)
-						tls.Free(48)
+						if tlsDrop(tls, 48) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					i = 0
@@ -14617,7 +15086,9 @@ func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, p
 								if res < 0 {
 									XJS_FreePropertyEnum(tls, ctx, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 									r = -int32(1)
-									tls.Free(48)
+									if tlsDrop(tls, 48) {
+										tlsSignals(tls)
+									}
 									return
 								}
 								if res != 0 {
@@ -14658,7 +15129,9 @@ add_overflow:
 	XJS_ThrowOutOfMemory(tls, ctx)
 	XJS_FreePropertyEnum(tls, ctx, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _5:
 	;
@@ -14678,7 +15151,9 @@ _9:
 	if !(tab_atom != 0) {
 		XJS_FreePropertyEnum(tls, ctx, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	num_index = uint32(0)
@@ -14775,7 +15250,9 @@ _9:
 			if (*(*TJSPropertyEnum)(unsafe.Pointer(tab_atom + uintptr(num_index)*8))).Fatom == uint32(MJS_ATOM_NULL) {
 				XJS_FreePropertyEnum(tls, ctx, tab_atom, num_index)
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			(*(*TJSPropertyEnum)(unsafe.Pointer(tab_atom + uintptr(num_index)*8))).Fis_enumerable = int32(ETRUE)
@@ -14822,7 +15299,9 @@ _9:
 	*(*uintptr)(unsafe.Pointer(ptab)) = tab_atom
 	*(*Tuint32_t)(unsafe.Pointer(plen)) = atom_count
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -14857,11 +15336,16 @@ retry:
 	if prs != 0 {
 		if prop == uint32(EJS_ATOM_stack) && desc != 0 {
 			// Changed by internal/fixlib: a TLS frame for the condition of this if (see fixLazyFrames).
-			bp = tls.Alloc(16)
+			bp = tlsTake(tls, 16)
+			if bp == 0 {
+				bp = tls.Alloc(16)
+			}
 			*(*[2]uint64)(unsafe.Pointer(bp)) = localbp
 			lazyc = _js_backtrace_settle(tls, ctx1, p1, prs, *(*uintptr)(unsafe.Pointer(bp))) < 0
 			localbp = *(*[2]uint64)(unsafe.Pointer(bp))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			if lazyc {
 				return -int32(1)
 			}
@@ -14924,9 +15408,13 @@ retry:
 					_12:
 						if expect32(!!(v11 != 0)) {
 							// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-							tls.Alloc(16)
+							if tlsTake(tls, 16) == 0 {
+								tls.Alloc(16)
+							}
 							_JS_ThrowReferenceErrorUninitialized(tls, ctx1, (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return -int32(1)
 						}
 						_ = ctx1
@@ -14946,11 +15434,16 @@ retry:
 						if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(3)<<libc.Int32FromInt32(4) {
 							/* Instantiate property and retry */
 							// Changed by internal/fixlib: a TLS frame for the condition of this if (see fixLazyFrames).
-							bp = tls.Alloc(16)
+							bp = tlsTake(tls, 16)
+							if bp == 0 {
+								bp = tls.Alloc(16)
+							}
 							*(*[2]uint64)(unsafe.Pointer(bp)) = localbp
 							lazyc = _JS_AutoInitProperty(tls, ctx1, p1, prop, *(*uintptr)(unsafe.Pointer(bp)), prs) != 0
 							localbp = *(*[2]uint64)(unsafe.Pointer(bp))
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							if lazyc {
 								return -int32(1)
 							}
@@ -14981,9 +15474,13 @@ retry:
 			_24:
 				if expect32(!!(v11 != 0)) {
 					// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-					tls.Alloc(16)
+					if tlsTake(tls, 16) == 0 {
+						tls.Alloc(16)
+					}
 					_JS_ThrowReferenceErrorUninitialized(tls, ctx1, (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return -int32(1)
 				}
 			} else {
@@ -15027,9 +15524,13 @@ retry:
 						(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fgetter = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 						(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fsetter = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(16)
+						if tlsTake(tls, 16) == 0 {
+							tls.Alloc(16)
+						}
 						(*TJSPropertyDescriptor)(unsafe.Pointer(desc)).Fvalue = XJS_GetPropertyUint32(tls, ctx1, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p1)), idx)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 					}
 					return int32(ETRUE)
 				}
@@ -15038,9 +15539,13 @@ retry:
 			em = (*(*TJSClass)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fclass_array + uintptr((*TJSObject)(unsafe.Pointer(p1)).Fclass_id)*24))).Fexotic
 			if em != 0 && (*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property != 0 {
 				// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-				tls.Alloc(16)
+				if tlsTake(tls, 16) == 0 {
+					tls.Alloc(16)
+				}
 				r = (*(*func(*libc.TLS, uintptr, uintptr, TJSValue, TJSAtom) int32)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property})))(tls, ctx1, desc, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p1)), prop)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -15254,7 +15759,10 @@ func XJS_ValueToAtom(tls *libc.TLS, ctx uintptr, val TJSValue) (r TJSAtom) {
 }
 
 func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1 TJSValue) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var d, v32, v34 float64
@@ -15323,7 +15831,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _7
 	_7:
 		r = v6
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_MAPPED_ARGUMENTS):
 		if expect32(!!(idx >= (*(*struct {
@@ -15364,7 +15874,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _12
 	_12:
 		r = v6
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_INT8_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15397,7 +15909,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _14
 	_14:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT8C_ARRAY):
 		fallthrough
@@ -15432,7 +15946,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _16
 	_16:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_INT16_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15465,7 +15981,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _18
 	_18:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT16_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15498,7 +16016,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _20
 	_20:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_INT32_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15531,7 +16051,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _22
 	_22:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT32_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15584,7 +16106,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _30
 	_30:
 		r = v8
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_BIG_INT64_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15613,7 +16137,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 			goto slow_path
 		}
 		r = XJS_NewBigInt64(tls, ctx6, *(*Tint64_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p2 + 24 + 4)) + uintptr(idx)*8)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_BIG_UINT64_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15642,7 +16168,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 			goto slow_path
 		}
 		r = XJS_NewBigUint64(tls, ctx6, *(*Tuint64_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(p2 + 24 + 4)) + uintptr(idx)*8)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT16_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15694,7 +16222,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _37
 	_37:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT32_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15733,7 +16263,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _39
 	_39:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT64_ARRAY):
 		if expect32(!!(idx >= (*(*struct {
@@ -15772,7 +16304,9 @@ func _JS_GetPropertyValue(tls *libc.TLS, ctx6 uintptr, this_obj1 TJSValue, prop1
 		goto _41
 	_41:
 		r = v3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		goto slow_path
@@ -15816,7 +16350,9 @@ _43:
 			v4 = __ccgo_ts + 1773
 		}
 		r = XJS_ThrowTypeError(tls, ctx6, __ccgo_ts+1783, libc.VaList(bp+24, v4))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	atom = XJS_ValueToAtom(tls, ctx6, prop1)
@@ -15835,7 +16371,9 @@ _43:
 	}
 	if expect32(!!(atom == libc.Uint32FromInt32(MJS_ATOM_NULL))) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = this_obj1
@@ -15845,16 +16383,23 @@ _62:
 	ret = v6
 	XJS_FreeAtom(tls, ctx6, atom)
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _2:
 	;
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func XJS_GetPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx Tuint32_t) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -15890,7 +16435,9 @@ func XJS_GetPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx T
 	goto _8
 _8:
 	r = _JS_GetPropertyValue(tls, ctx3, this_obj, v7)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -16221,7 +16768,10 @@ func _remove_global_object_property(tls *libc.TLS, ctx1 uintptr, p1 uintptr, prs
 }
 
 func _delete_property(tls *libc.TLS, ctx1 uintptr, p1 uintptr, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var em, lpr, p, pr1, prop, sh, v2, v5 uintptr
 	var h, h1 Tintptr_t
@@ -16246,7 +16796,9 @@ redo:
 			/* found ! */
 			if !(int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0) {
 				r = int32(EFALSE)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			/* realloc the shape if needed */
@@ -16255,7 +16807,9 @@ redo:
 			}
 			if _js_shape_prepare_update(tls, ctx1, p1, bp) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			sh = (*TJSObject)(unsafe.Pointer(p1)).Fshape
@@ -16273,7 +16827,9 @@ redo:
 				if int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(2)<<libc.Int32FromInt32(4) {
 					if _remove_global_object_property(tls, ctx1, p1, *(*uintptr)(unsafe.Pointer(bp)), pr1) != 0 {
 						r = -int32(1)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -16289,7 +16845,9 @@ redo:
 				_compact_properties(tls, ctx1, p1)
 			}
 			r = int32(ETRUE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		lpr = *(*uintptr)(unsafe.Pointer(bp))
@@ -16386,18 +16944,24 @@ redo:
 							Fcount Tuint32_t
 						})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))).Fcount = *(*Tuint32_t)(unsafe.Pointer(bp + 4))
 						r = int32(ETRUE)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if _convert_fast_array_to_array(tls, ctx1, p1) != 0 {
 						r = -int32(1)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					goto redo
 				} else {
 					r = int32(EFALSE)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -16405,19 +16969,26 @@ redo:
 			em = (*(*TJSClass)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Frt)).Fclass_array + uintptr((*TJSObject)(unsafe.Pointer(p1)).Fclass_id)*24))).Fexotic
 			if em != 0 && (*TJSClassExoticMethods)(unsafe.Pointer(em)).Fdelete_property != 0 {
 				r = (*(*func(*libc.TLS, uintptr, TJSValue, TJSAtom) int32)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fdelete_property})))(tls, ctx1, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p1)), atom)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 	}
 	/* not found */
 	r = int32(ETRUE)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _call_setter(tls *libc.TLS, ctx2 uintptr, setter uintptr, this_obj TJSValue, _val TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _val
 	var func1, ret, v1, v4 TJSValue
@@ -16459,7 +17030,9 @@ func _call_setter(tls *libc.TLS, ctx2 uintptr, setter uintptr, this_obj TJSValue
 	_12:
 		if v9 != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v1 = ret
@@ -16476,7 +17049,9 @@ func _call_setter(tls *libc.TLS, ctx2 uintptr, setter uintptr, this_obj TJSValue
 			}
 		}
 		r = int32(ETRUE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		v1 = *(*TJSValue)(unsafe.Pointer(bp))
@@ -16495,14 +17070,20 @@ func _call_setter(tls *libc.TLS, ctx2 uintptr, setter uintptr, this_obj TJSValue
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) != 0 || flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(15)) != 0 && _is_strict_mode(tls, ctx2) != 0 {
 			XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+1810, 0)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -16510,7 +17091,10 @@ func _call_setter(tls *libc.TLS, ctx2 uintptr, setter uintptr, this_obj TJSValue
 //
 //	/* set the array length and remove the array elements if necessary. */
 func _set_array_length(tls *libc.TLS, ctx5 uintptr, p1 uintptr, val3 TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var d1, old_len, v8 Tuint32_t
@@ -16530,13 +17114,17 @@ func _set_array_length(tls *libc.TLS, ctx5 uintptr, p1 uintptr, val3 TJSValue, f
 	ret = _JS_ToArrayLengthFree(tls, ctx5, bp+8, val3, int32(EFALSE))
 	if ret != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* JS_ToArrayLengthFree() must be done before the read-only test */
 	if expect32(!!!(int32(*(*uint32)(unsafe.Pointer(_get_shape_prop(tls, (*TJSObject)(unsafe.Pointer(p1)).Fshape) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != 0)) {
 		r = _JS_ThrowTypeErrorReadOnly(tls, ctx5, flags, uint32(EJS_ATOM_length))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(int32(*(*uint8)(unsafe.Pointer(p1 + 8))&0x10>>4) != 0)) {
@@ -16733,12 +17321,16 @@ func _set_array_length(tls *libc.TLS, ctx5 uintptr, p1 uintptr, val3 TJSValue, f
 		_set_value(tls, ctx5, (*TJSObject)(unsafe.Pointer(p1)).Fprop, v11)
 		if expect32(!!(*(*Tuint32_t)(unsafe.Pointer(bp + 16)) > *(*Tuint32_t)(unsafe.Pointer(bp + 8)))) {
 			r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+1833, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -16746,7 +17338,10 @@ func _set_array_length(tls *libc.TLS, ctx5 uintptr, p1 uintptr, val3 TJSValue, f
 //
 //	/* return -1 if exception */
 func _expand_fast_array(tls *libc.TLS, ctx uintptr, p uintptr, new_len Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var new_array_prop uintptr
 	var new_size Tuint32_t
@@ -16768,14 +17363,18 @@ _4:
 	new_array_prop = Xjs_realloc2(tls, ctx, *(*uintptr)(unsafe.Pointer(p + 24 + 4)), uint32(8)*new_size, bp)
 	if !(new_array_prop != 0) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	new_size = new_size + *(*Tsize_t)(unsafe.Pointer(bp))/uint32(8)
 	*(*uintptr)(unsafe.Pointer(p + 24 + 4)) = new_array_prop
 	*(*Tuint32_t)(unsafe.Pointer(p + 24)) = new_size
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -17214,7 +17813,10 @@ func _js_free_desc(tls *libc.TLS, ctx1 uintptr, desc uintptr) {
 //	   JS_PROP_THROW_STRICT. 'this_obj' is the receiver. If obj !=
 //	   this_obj, then obj must be an object (Reflect.set case). */
 func XJS_SetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJSAtom, val1 TJSValue, this_obj TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var em, p, p1, p11, p2, prs, setter, v2, v5 uintptr
 	var idx, idx1, tag Tuint32_t
@@ -17248,7 +17850,9 @@ func XJS_SetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 				}
 				___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1871, libc.VaList(bp+56, __ccgo_ts+189))
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			case uint32(EJS_TAG_UNDEFINED):
 				v1 = val1
@@ -17266,7 +17870,9 @@ func XJS_SetPropertyInternal(tls *libc.TLS, ctx3 uintptr, obj TJSValue, prop TJS
 				}
 				___JS_ThrowTypeErrorAtom(tls, ctx3, prop, __ccgo_ts+1904, libc.VaList(bp+56, __ccgo_ts+189))
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			default:
 				/* even on a primitive type we can have setters on the prototype */
@@ -17292,12 +17898,16 @@ retry:
 			/* fast case */
 			_set_value(tls, ctx3, *(*uintptr)(unsafe.Pointer(bp)), val1)
 			r = int32(ETRUE)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 				r = _set_array_length(tls, ctx3, p2, val1, flags)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(4) {
@@ -17305,7 +17915,9 @@ retry:
 						Fgetter uintptr
 						Fsetter uintptr
 					})(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))).Fsetter, this_obj, val1, flags)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(2)<<libc.Int32FromInt32(4) {
@@ -17316,7 +17928,9 @@ retry:
 						}
 						_set_value(tls, ctx3, (*TJSVarRef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu)))).Fpvalue, val1)
 						r = int32(ETRUE)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					} else {
 						if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(3)<<libc.Int32FromInt32(4) {
@@ -17336,7 +17950,9 @@ retry:
 									}
 								}
 								r = -int32(1)
-								tls.Free(64)
+								if tlsDrop(tls, 64) {
+									tlsSignals(tls)
+								}
 								return
 							}
 							goto retry
@@ -17385,7 +18001,9 @@ _18:
 					goto _22
 				_22:
 					r = _JS_SetPropertyValue(tls, ctx3, this_obj, v1, val1, flags)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					goto _16
@@ -17420,7 +18038,9 @@ _18:
 					}
 				}
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto typed_array_oob
@@ -17431,7 +18051,9 @@ _18:
 				if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p11)).Fclass_id) == int32(EJS_CLASS_BIG_INT64_ARRAY) || libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p11)).Fclass_id) == int32(EJS_CLASS_BIG_UINT64_ARRAY) {
 					if _JS_ToBigInt64Free(tls, ctx3, bp+40, val1) != 0 {
 						r = -int32(1)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				} else {
@@ -17454,7 +18076,9 @@ _18:
 				_36:
 					if v4 != 0 {
 						r = -int32(1)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -17474,7 +18098,9 @@ _18:
 				}
 			}
 			r = int32(ETRUE)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		_24:
 			;
@@ -17527,7 +18153,9 @@ _18:
 						}
 					}
 					r = ret
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if (*TJSClassExoticMethods)(unsafe.Pointer(em)).Fget_own_property != 0 {
@@ -17574,7 +18202,9 @@ _18:
 							}
 						}
 						r = ret
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if ret != 0 {
@@ -17615,7 +18245,9 @@ _18:
 								}
 							}
 							r = ret
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							return
 						} else {
 							v1 = (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp + 8))).Fvalue
@@ -17650,7 +18282,9 @@ _18:
 									}
 								}
 								r = ret
-								tls.Free(64)
+								if tlsDrop(tls, 64) {
+									tlsSignals(tls)
+								}
 								return
 							} else {
 								goto _16
@@ -17678,14 +18312,18 @@ retry2:
 				Fgetter uintptr
 				Fsetter uintptr
 			})(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))).Fsetter, this_obj, val1, flags)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(3)<<libc.Int32FromInt32(4) {
 				/* Instantiate property and retry (potentially useless) */
 				if _JS_AutoInitProperty(tls, ctx3, p11, prop, *(*uintptr)(unsafe.Pointer(bp)), prs) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				goto retry2
@@ -17720,7 +18358,9 @@ _16:
 			}
 		}
 		r = _JS_ThrowTypeErrorOrFalse(tls, ctx3, flags, __ccgo_ts+1215, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!!(int32(*(*uint8)(unsafe.Pointer(p2 + 8))&0x2>>1) != 0)) {
@@ -17738,7 +18378,9 @@ _16:
 			}
 		}
 		r = _JS_ThrowTypeErrorOrFalse(tls, ctx3, flags, __ccgo_ts+1418, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(expect32(!!(p2 == uintptr(libc.Int32FromUint64(obj))))) {
@@ -17772,7 +18414,9 @@ _16:
 			})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount {
 				/* fast case */
 				r = _add_fast_array_element(tls, ctx3, p2, val1, flags)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				goto generic_create_prop
@@ -17800,12 +18444,16 @@ _16:
 				}
 			}
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))) = val1
 		r = int32(ETRUE)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _105
@@ -17828,7 +18476,9 @@ _104:
 			}
 		}
 		r = ret
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(ret != 0) {
@@ -17877,7 +18527,9 @@ _104:
 		}
 	}
 	r = _JS_ThrowTypeErrorOrFalse(tls, ctx3, flags, __ccgo_ts+1942, 0)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto _119
 _118:
@@ -17915,7 +18567,9 @@ read_only_prop:
 		}
 	}
 	r = _JS_ThrowTypeErrorReadOnly(tls, ctx3, flags, prop)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _140:
 	;
@@ -17936,7 +18590,9 @@ _119:
 		}
 	}
 	r = ret
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto _117
 _116:
@@ -17959,13 +18615,17 @@ generic_create_prop:
 		}
 	}
 	r = ret
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _117:
 	;
 _105:
 	;
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -17989,7 +18649,10 @@ func _can_extend_fast_array(tls *libc.TLS, p uintptr) (r TBOOL) {
 //
 //	/* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
 func _JS_SetPropertyValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, prop TJSValue, val TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, addend, v20 Tuint64_t
 	var atom TJSAtom
@@ -18101,7 +18764,9 @@ _3:
 		}
 		/* add element */
 		r = _add_fast_array_element(tls, ctx1, p1, val, flags)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_set_value(tls, ctx1, *(*uintptr)(unsafe.Pointer(p1 + 24 + 4))+uintptr(idx)*8, val)
@@ -18168,7 +18833,9 @@ _6:
 	;
 	if _JS_ToUint8ClampFree(tls, ctx1, bp+16, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Note: the conversion can detach the typed array, so the
@@ -18206,7 +18873,9 @@ _7:
 	;
 	if _JS_ToInt32Free(tls, ctx1, bp+16, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18242,7 +18911,9 @@ _9:
 	;
 	if _JS_ToInt32Free(tls, ctx1, bp+16, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18278,7 +18949,9 @@ _11:
 	;
 	if _JS_ToInt32Free(tls, ctx1, bp+16, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18315,7 +18988,9 @@ _13:
 	/* XXX: need specific conversion function */
 	if _JS_ToBigInt64Free(tls, ctx1, bp+24, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18349,7 +19024,9 @@ _15:
 	;
 	if _JS_ToFloat64Free(tls, ctx1, bp+8, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18414,7 +19091,9 @@ _16:
 	;
 	if _JS_ToFloat64Free(tls, ctx1, bp+8, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(idx >= (*(*struct {
@@ -18448,7 +19127,9 @@ _17:
 	;
 	if _JS_ToFloat64Free(tls, ctx1, bp+8, val) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(expect32(!!(idx >= (*(*struct {
@@ -18480,7 +19161,9 @@ _17:
 ta_out_of_bound:
 	;
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _24:
 	;
@@ -18492,7 +19175,9 @@ _18:
 _19:
 	;
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto _2
 _1:
@@ -18529,22 +19214,31 @@ slow_path:
 			}
 		}
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_SetPropertyInternal(tls, ctx1, this_obj, atom, val, this_obj, flags)
 	XJS_FreeAtom(tls, ctx1, atom)
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _2:
 	;
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func XJS_SetPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx Tuint32_t, val2 TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -18580,7 +19274,9 @@ func XJS_SetPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx T
 	goto _8
 _8:
 	r = _JS_SetPropertyValue(tls, ctx3, this_obj, v7, val2, libc.Int32FromInt32(1)<<libc.Int32FromInt32(14))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -18666,7 +19362,10 @@ func _get_prop_flags(tls *libc.TLS, flags int32, def_flags int32) (r int32) {
 }
 
 func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, val3 TJSValue, getter TJSValue, setter TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var delete_obj, em, p, p11, plen, pr, prs1, pslen, var_ref, v6 uintptr
 	var prop_flags, ret int32
@@ -18737,7 +19436,9 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 				goto _9
 			_9:
 				r = _add_fast_array_element(tls, ctx5, p1, v8, flags)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				goto convert_to_array
@@ -18754,7 +19455,9 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 			;
 			if _convert_fast_array_to_array(tls, ctx5, p1) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto generic_array
@@ -18781,7 +19484,9 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 				pslen = _get_shape_prop(tls, (*TJSObject)(unsafe.Pointer(p1)).Fshape)
 				if expect32(!!!(int32(*(*uint32)(unsafe.Pointer(pslen + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != 0)) {
 					r = _JS_ThrowTypeErrorReadOnly(tls, ctx5, flags, uint32(EJS_ATOM_length))
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* XXX: should update the length after defining
@@ -18822,11 +19527,15 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 				if ret != 0 {
 					if ret < 0 {
 						r = -int32(1)
-						tls.Free(32)
+						if tlsDrop(tls, 32) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+1962, 0)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
@@ -18835,13 +19544,17 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 					if em != 0 {
 						if (*TJSClassExoticMethods)(unsafe.Pointer(em)).Fdefine_own_property != 0 {
 							r = (*(*func(*libc.TLS, uintptr, TJSValue, TJSAtom, TJSValue, TJSValue, TJSValue, int32) int32)(unsafe.Pointer(&struct{ uintptr }{(*TJSClassExoticMethods)(unsafe.Pointer(em)).Fdefine_own_property})))(tls, ctx5, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p1)), prop, val3, getter, setter, flags)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						ret = XJS_IsExtensible(tls, ctx5, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p1)))
 						if ret < 0 {
 							r = -int32(1)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						if !(ret != 0) {
@@ -18859,7 +19572,9 @@ func _JS_CreateProperty(tls *libc.TLS, ctx5 uintptr, p1 uintptr, prop TJSAtom, v
 not_extensible:
 	;
 	r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+1418, 0)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _21:
 	;
@@ -18880,7 +19595,9 @@ _21:
 				var_ref = _js_create_var_ref(tls, ctx5, int32(EFALSE))
 				if !(var_ref != 0) {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -18894,7 +19611,9 @@ _21:
 			_free_var_ref(tls, (*TJSContext)(unsafe.Pointer(ctx5)).Frt, var_ref)
 		}
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)) != 0 {
@@ -18986,7 +19705,9 @@ _21:
 		}
 	}
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -19075,7 +19796,10 @@ func _js_update_property_flags(tls *libc.TLS, ctx uintptr, p uintptr, pprs uintp
 //	   return -1 (exception), FALSE or TRUE.
 //	*/
 func XJS_DefineProperty(tls *libc.TLS, ctx5 uintptr, this_obj TJSValue, prop TJSAtom, val2 TJSValue, getter TJSValue, setter TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var idx, prop_flags, v8 Tuint32_t
 	var mask, res, ret, v19 int32
@@ -19093,7 +19817,9 @@ func XJS_DefineProperty(tls *libc.TLS, ctx5 uintptr, this_obj TJSValue, prop TJS
 	if libc.Int32FromUint64(this_obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		_JS_ThrowTypeErrorNotAnObject(tls, ctx5)
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p2 = uintptr(libc.Int32FromUint64(this_obj))
@@ -19120,7 +19846,9 @@ redo_prop_update:
 	_6:
 		if _JS_ToArrayLengthFree(tls, ctx5, bp+16, v5, int32(EFALSE)) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* this code relies on the fact that Uint32 are never allocated */
@@ -19160,7 +19888,9 @@ redo_prop_update:
 not_configurable:
 	;
 	r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2005, 0)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _15:
 	;
@@ -19168,7 +19898,9 @@ _15:
 		/* Instantiate property and retry */
 		if _JS_AutoInitProperty(tls, ctx5, p2, prop, *(*uintptr)(unsafe.Pointer(bp + 12)), *(*uintptr)(unsafe.Pointer(bp + 8))) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto redo_prop_update
@@ -19188,7 +19920,9 @@ _15:
 			if int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(1)<<libc.Int32FromInt32(4) {
 				if _js_shape_prepare_update(tls, ctx5, p2, bp+8) != 0 {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* convert to getset */
@@ -19196,7 +19930,9 @@ _15:
 					if expect32(!!(libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) == int32(EJS_CLASS_GLOBAL_OBJECT))) {
 						if _remove_global_object_property(tls, ctx5, p2, *(*uintptr)(unsafe.Pointer(bp + 8)), *(*uintptr)(unsafe.Pointer(bp + 12))) != 0 {
 							r = -int32(1)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					}
@@ -19329,7 +20065,9 @@ _15:
 					var_ref = _js_global_object_find_uninitialized_var(tls, ctx5, p2, prop, int32(EFALSE))
 					if !(var_ref != 0) {
 						r = -int32(1)
-						tls.Free(32)
+						if tlsDrop(tls, 32) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				} else {
@@ -19340,7 +20078,9 @@ _15:
 						_free_var_ref(tls, (*TJSContext)(unsafe.Pointer(ctx5)).Frt, var_ref)
 					}
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if (*(*struct {
@@ -19399,14 +20139,18 @@ _15:
 					if int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8)) + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == 0 && flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(13)) != 0 {
 						if prop == uint32(EJS_ATOM_stack) && _js_backtrace_settle(tls, ctx5, p2, *(*uintptr)(unsafe.Pointer(bp + 8)), *(*uintptr)(unsafe.Pointer(bp + 12))) < 0 {
 							r = -int32(1)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						if !(_js_same_value(tls, ctx5, val2, *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 12))))) != 0) {
 							goto not_configurable
 						} else {
 							r = int32(ETRUE)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					}
@@ -19441,12 +20185,16 @@ _15:
 				if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(9)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(9) {
 					if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) == int32(EJS_CLASS_MODULE_NS) {
 						r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2034, 0)
-						tls.Free(32)
+						if tlsDrop(tls, 32) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if _js_shape_prepare_update(tls, ctx5, p2, bp+8) != 0 {
 						r = -int32(1)
-						tls.Free(32)
+						if tlsDrop(tls, 32) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id) == int32(EJS_CLASS_GLOBAL_OBJECT) {
@@ -19502,12 +20250,16 @@ _15:
 						*(*uintptr)(unsafe.Pointer(bp + 8)) = _get_shape_prop(tls, (*TJSObject)(unsafe.Pointer(p2)).Fshape)
 						if _js_update_property_flags(tls, ctx5, p2, bp+8, int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8)) + 0))&0xfc000000>>26) & ^(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))) != 0 {
 							r = -int32(1)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					}
 					r = res
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(13)) != 0 {
@@ -19541,7 +20293,9 @@ _15:
 					if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(9)) != 0 {
 						if _js_update_property_flags(tls, ctx5, p2, bp+8, int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8)) + 0))&0xfc000000>>26) & ^(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) | flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))) != 0 {
 							r = -int32(1)
-							tls.Free(32)
+							if tlsDrop(tls, 32) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					}
@@ -19558,11 +20312,15 @@ _15:
 	}
 	if _js_update_property_flags(tls, ctx5, p2, bp+8, int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8)) + 0))&0xfc000000>>26) & ^mask | flags&mask) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
@@ -19608,7 +20366,9 @@ _1:
 				;
 				if _convert_fast_array_to_array(tls, ctx5, p2) != 0 {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					goto redo_prop_update
@@ -19631,7 +20391,9 @@ _1:
 					_set_value(tls, ctx5, *(*uintptr)(unsafe.Pointer(p2 + 24 + 4))+uintptr(idx)*8, v5)
 				}
 				r = int32(ETRUE)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			_74:
 			}
@@ -19653,7 +20415,9 @@ _1:
 			_85:
 				if v19 != 0 {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				ret = _JS_NumberIsInteger(tls, ctx5, num)
@@ -19672,7 +20436,9 @@ _1:
 						}
 					}
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if !(ret != 0) {
@@ -19690,7 +20456,9 @@ _1:
 						}
 					}
 					r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2084, 0)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				ret = _JS_NumberIsNegativeOrMinusZero(tls, ctx5, num)
@@ -19709,7 +20477,9 @@ _1:
 				}
 				if ret != 0 {
 					r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2117, 0)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if !(___JS_AtomIsTaggedInt(tls, prop) != 0) {
@@ -19747,14 +20517,18 @@ _1:
 		typed_array_oob:
 			;
 			r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2147, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		_101:
 			;
 			prop_flags = libc.Uint32FromInt32(_get_prop_flags(tls, flags, libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)))
 			if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)) != 0 || prop_flags != libc.Uint32FromInt32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) {
 				r = _JS_ThrowTypeErrorOrFalse(tls, ctx5, flags, __ccgo_ts+2181, 0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(13)) != 0 {
@@ -19775,11 +20549,15 @@ _1:
 				goto _108
 			_108:
 				r = _JS_SetPropertyValue(tls, ctx5, this_obj, v2, v9, flags)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = int32(ETRUE)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 			goto typed_array_done
 		typed_array_done:
@@ -19788,19 +20566,26 @@ _1:
 		}
 	}
 	r = _JS_CreateProperty(tls, ctx5, p2, prop, val2, getter, setter, flags)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_DefineAutoInitProperty(tls *libc.TLS, ctx uintptr, this_obj TJSValue, prop TJSAtom, id TJSAutoInitIDEnum, opaque uintptr, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p uintptr
 	var _ /* pr at bp+0 */ uintptr
 	_ = p
 	if libc.Int32FromUint64(this_obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(libc.Int32FromUint64(this_obj))
@@ -19808,14 +20593,18 @@ func _JS_DefineAutoInitProperty(tls *libc.TLS, ctx uintptr, this_obj TJSValue, p
 		/* property already exists */
 		libc.Xabort(tls)
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Specialized CreateProperty */
 	*(*uintptr)(unsafe.Pointer(bp)) = _add_property(tls, ctx, p, prop, flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))|libc.Int32FromInt32(3)<<libc.Int32FromInt32(4))
 	if expect32(!!!(*(*uintptr)(unsafe.Pointer(bp)) != 0)) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*struct {
@@ -19831,7 +20620,9 @@ func _JS_DefineAutoInitProperty(tls *libc.TLS, ctx uintptr, this_obj TJSValue, p
 		Fopaque       uintptr
 	})(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))).Fopaque = opaque
 	r = int32(ETRUE)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -19906,7 +20697,10 @@ func XJS_DefinePropertyValueValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue
 }
 
 func XJS_DefinePropertyValueUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx Tuint32_t, val2 TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -19942,12 +20736,17 @@ func XJS_DefinePropertyValueUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValu
 	goto _8
 _8:
 	r = XJS_DefinePropertyValueValue(tls, ctx3, this_obj, v7, val2, flags)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_DefinePropertyValueInt64(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx Tint64_t, val2 TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -19983,7 +20782,9 @@ func XJS_DefinePropertyValueInt64(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue
 	goto _8
 _8:
 	r = XJS_DefinePropertyValueValue(tls, ctx3, this_obj, v7, val2, flags)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20054,7 +20855,10 @@ func XJS_DefinePropertyGetSet(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, pr
 }
 
 func _JS_CreateDataPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, idx Tint64_t, val2 TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -20090,7 +20894,9 @@ func _JS_CreateDataPropertyUint32(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue
 	goto _8
 _8:
 	r = XJS_DefinePropertyValueValue(tls, ctx3, this_obj, v7, val2, flags|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20164,10 +20970,15 @@ _2:
 }
 
 func _JS_ThrowSyntaxErrorVarRedeclaration(tls *libc.TLS, ctx uintptr, prop TJSAtom) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	r = ___JS_ThrowSyntaxErrorAtom(tls, ctx, prop, __ccgo_ts+2206, libc.VaList(bp+8, __ccgo_ts+189))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20176,7 +20987,10 @@ func _JS_ThrowSyntaxErrorVarRedeclaration(tls *libc.TLS, ctx uintptr, prop TJSAt
 //	/* flags is 0, DEFINE_GLOBAL_LEX_VAR or DEFINE_GLOBAL_FUNC_VAR */
 //	/* XXX: could support exotic global object. */
 func _JS_CheckDefineGlobalVar(tls *libc.TLS, ctx uintptr, prop TJSAtom, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs uintptr
 	_, _ = p, prs
@@ -20205,7 +21019,9 @@ func _JS_CheckDefineGlobalVar(tls *libc.TLS, ctx uintptr, prop TJSAtom, flags in
 		;
 		___JS_ThrowTypeErrorAtom(tls, ctx, prop, __ccgo_ts+2228, libc.VaList(bp+8, __ccgo_ts+189))
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	_3:
 		;
@@ -20224,12 +21040,16 @@ fail_redeclaration:
 	;
 	_JS_ThrowSyntaxErrorVarRedeclaration(tls, ctx, prop)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _4:
 	;
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20237,7 +21057,10 @@ _4:
 //
 //	/* construct a reference to a global variable */
 func _JS_GetGlobalVarRef(tls *libc.TLS, ctx1 uintptr, prop TJSAtom, sp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, prs, v4 uintptr
 	var ret, v1 int32
@@ -20256,12 +21079,16 @@ func _JS_GetGlobalVarRef(tls *libc.TLS, ctx1 uintptr, prop TJSAtom, sp uintptr) 
 		if expect32(!!(v1 != 0)) {
 			_JS_ThrowReferenceErrorUninitialized(tls, ctx1, (*TJSShapeProperty)(unsafe.Pointer(prs)).Fatom)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if expect32(!!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != 0)) {
 			r = _JS_ThrowTypeErrorReadOnly(tls, ctx1, libc.Int32FromInt32(1)<<libc.Int32FromInt32(14), prop)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_ = ctx1
@@ -20281,7 +21108,9 @@ func _JS_GetGlobalVarRef(tls *libc.TLS, ctx1 uintptr, prop TJSAtom, sp uintptr) 
 		ret = XJS_HasProperty(tls, ctx1, (*TJSContext)(unsafe.Pointer(ctx1)).Fglobal_obj, prop)
 		if ret < 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if ret != 0 {
@@ -20304,7 +21133,9 @@ func _JS_GetGlobalVarRef(tls *libc.TLS, ctx1 uintptr, prop TJSAtom, sp uintptr) 
 	}
 	*(*TJSValue)(unsafe.Pointer(sp + 1*8)) = XJS_AtomToValue(tls, ctx1, prop)
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20312,7 +21143,10 @@ func _JS_GetGlobalVarRef(tls *libc.TLS, ctx1 uintptr, prop TJSAtom, sp uintptr) 
 //
 //	/* return -1, FALSE or TRUE */
 func _JS_DeleteGlobalVar(tls *libc.TLS, ctx uintptr, prop TJSAtom) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs uintptr
 	var ret int32
@@ -20323,25 +21157,35 @@ func _JS_DeleteGlobalVar(tls *libc.TLS, ctx uintptr, prop TJSAtom) (r int32) {
 	prs = _find_own_property(tls, bp, p, prop)
 	if prs != 0 {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} /* lexical variables cannot be deleted */
 	ret = XJS_HasProperty(tls, ctx, (*TJSContext)(unsafe.Pointer(ctx)).Fglobal_obj, prop)
 	if ret < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if ret != 0 {
 		r = XJS_DeleteProperty(tls, ctx, (*TJSContext)(unsafe.Pointer(ctx)).Fglobal_obj, prop, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = int32(ETRUE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -20531,7 +21375,10 @@ func XJS_GetAnyOpaque(tls *libc.TLS, obj TJSValue, class_id uintptr) (r uintptr)
 }
 
 func _JS_ToPrimitiveFree(tls *libc.TLS, ctx2 uintptr, val TJSValue, hint int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom, method_name TJSAtom
 	var force_ordinary TBOOL
@@ -20543,7 +21390,9 @@ func _JS_ToPrimitiveFree(tls *libc.TLS, ctx2 uintptr, val TJSValue, hint int32) 
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _ = atom, force_ordinary, i, method, method_name, p, ret, v1, v10, v12, v15, v2, v4, v6
 	if libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = val
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	force_ordinary = hint & (libc.Int32FromInt32(1) << libc.Int32FromInt32(4))
@@ -20619,7 +21468,9 @@ func _JS_ToPrimitiveFree(tls *libc.TLS, ctx2 uintptr, val TJSValue, hint int32) 
 			}
 			if libc.Int32FromUint64(ret>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 				r = ret
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v1 = ret
@@ -20636,7 +21487,9 @@ func _JS_ToPrimitiveFree(tls *libc.TLS, ctx2 uintptr, val TJSValue, hint int32) 
 				}
 			}
 			r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+2282, 0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -20687,7 +21540,9 @@ func _JS_ToPrimitiveFree(tls *libc.TLS, ctx2 uintptr, val TJSValue, hint int32) 
 					}
 				}
 				r = ret
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v1 = ret
@@ -20741,7 +21596,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -20956,7 +21813,10 @@ _5:
 }
 
 func _skip_spaces(tls *libc.TLS, pc uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c2, v3 Tuint32_t
 	var p, p_start, v1 uintptr
@@ -20996,7 +21856,9 @@ func _skip_spaces(tls *libc.TLS, pc uintptr) (r int32) {
 	_2:
 	}
 	r = int32(p) - int32(p_start)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -21268,7 +22130,10 @@ func _udiv1norm(tls *libc.TLS, pr uintptr, a1 Tjs_limb_t, a0 Tjs_limb_t, d Tjs_l
 //
 //	/* b must be >= 1 << (JS_LIMB_BITS - 1) */
 func _mp_div1norm(tls *libc.TLS, tabr uintptr, taba uintptr, n Tjs_limb_t, b Tjs_limb_t, _r Tjs_limb_t) (r Tjs_limb_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tjs_limb_t)(unsafe.Pointer(bp)) = _r
 	var a1 Tjs_dlimb_t
@@ -21304,7 +22169,9 @@ func _mp_div1norm(tls *libc.TLS, tabr uintptr, taba uintptr, n Tjs_limb_t, b Tjs
 		}
 	}
 	r = *(*Tjs_limb_t)(unsafe.Pointer(bp))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -21315,7 +22182,10 @@ func _mp_div1norm(tls *libc.TLS, tabr uintptr, taba uintptr, n Tjs_limb_t, b Tjs
 //	   is modified and contains the remainder (nb limbs). tabq[0..na-nb]
 //	   contains the quotient with tabq[na - nb] <= 1. */
 func _mp_divnorm(tls *libc.TLS, tabq uintptr, taba uintptr, na Tjs_limb_t, tabb uintptr, nb Tjs_limb_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, b1, b1_inv, c, n, q, r, v, v4 Tjs_limb_t
 	var al Tjs_dlimb_t
@@ -21326,7 +22196,9 @@ func _mp_divnorm(tls *libc.TLS, tabq uintptr, taba uintptr, na Tjs_limb_t, tabb 
 	b1 = *(*Tjs_limb_t)(unsafe.Pointer(tabb + uintptr(nb-uint32(1))*4))
 	if nb == uint32(1) {
 		*(*Tjs_limb_t)(unsafe.Pointer(taba)) = _mp_div1norm(tls, tabq, taba, na, b1, uint32(0))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	n = na - nb
@@ -21402,7 +22274,9 @@ func _mp_divnorm(tls *libc.TLS, tabq uintptr, taba uintptr, na Tjs_limb_t, tabb 
 		;
 		i = i - 1
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -21502,7 +22376,10 @@ func _js_bigint_set_short(tls *libc.TLS, buf uintptr, val TJSValue) (r uintptr) 
 }
 
 func _js_bigint_dump1(tls *libc.TLS, ctx uintptr, str uintptr, tab uintptr, len1 int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	_ = i
@@ -21519,7 +22396,9 @@ func _js_bigint_dump1(tls *libc.TLS, ctx uintptr, str uintptr, tab uintptr, len1
 		i = i - 1
 	}
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_bigint_dump(tls *libc.TLS, ctx uintptr, str uintptr, p uintptr) {
@@ -21778,14 +22657,19 @@ _8:
 //
 //	/* XXX: optimize */
 func _js_bigint_neg(tls *libc.TLS, ctx uintptr, a uintptr) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var _ /* buf at bp+0 */ TJSBigIntBuf
 	_ = b
 	b = _js_bigint_set_si(tls, bp, 0)
 	r = _js_bigint_add(tls, ctx, b, a, int32(1))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -22334,7 +23218,10 @@ func _shr_rndn(tls *libc.TLS, a Tuint64_t, n int32) (r Tuint64_t) {
 //	/* convert to float64 with round to nearest, ties to even. Return
 //	   +/-infinity if too large. */
 func _js_bigint_to_float64(tls *libc.TLS, ctx uintptr, a uintptr) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var mant Tuint64_t
 	var sgn int32
@@ -22349,7 +23236,9 @@ func _js_bigint_to_float64(tls *libc.TLS, ctx uintptr, a uintptr) (r float64) {
 	if (*TJSBigInt)(unsafe.Pointer(a)).Flen1 == uint32(1) {
 		/* fast case, including zero */
 		r = float64(libc.Int32FromUint32(*(*Tjs_limb_t)(unsafe.Pointer(a + 4))))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	sgn = _js_bigint_sign(tls, a)
@@ -22373,7 +23262,9 @@ func _js_bigint_to_float64(tls *libc.TLS, ctx uintptr, a uintptr) (r float64) {
 	goto _2
 _2:
 	r = v1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -22382,7 +23273,10 @@ _2:
 //	/* return (1, NULL) if not an integer, (2, NULL) if NaN or Infinity,
 //	   (0, n) if an integer, (0, NULL) in case of memory error */
 func _js_bigint_from_float64(tls *libc.TLS, ctx uintptr, pres uintptr, a1 float64) (r1 uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, mant, v1 Tuint64_t
 	var e, sgn, shift int32
@@ -22406,14 +23300,18 @@ _2:
 		/* NaN, Infinity */
 		*(*int32)(unsafe.Pointer(pres)) = int32(2)
 		r1 = libc.UintptrFromInt32(0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if e == 0 && mant == uint64(0) {
 		/* zero */
 		*(*int32)(unsafe.Pointer(pres)) = 0
 		r1 = _js_bigint_new_si(tls, ctx, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	e = e - int32(1023)
@@ -22435,7 +23333,9 @@ not_an_integer:
 	;
 	*(*int32)(unsafe.Pointer(pres)) = int32(1)
 	r1 = libc.UintptrFromInt32(0)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _5:
 	;
@@ -22454,7 +23354,9 @@ _4:
 	r = _js_bigint_set_si64(tls, bp+8, libc.Int64FromUint64(mant))
 	*(*int32)(unsafe.Pointer(pres)) = 0
 	r1 = _js_bigint_shl(tls, ctx, r, libc.Uint32FromInt32(e))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -22462,7 +23364,10 @@ _4:
 //
 //	/* return -1, 0, 1 or (2) (unordered) */
 func _js_bigint_float64_cmp(tls *libc.TLS, ctx uintptr, a uintptr, b float64) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a_mant, b1, mant, v1 Tuint64_t
 	var a_sign, b_sign, e int32
@@ -22486,12 +23391,16 @@ _2:
 		if mant != uint64(0) {
 			/* NaN */
 			r = int32(2)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			/* +/- infinity */
 			r = int32(2)*b_sign - int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -22499,23 +23408,31 @@ _2:
 			/* b = +/-0 */
 			if (*TJSBigInt)(unsafe.Pointer(a)).Flen1 == uint32(1) && *(*Tjs_limb_t)(unsafe.Pointer(a + 4)) == uint32(0) {
 				r = 0
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				r = int32(1) - int32(2)*a_sign
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
 			if (*TJSBigInt)(unsafe.Pointer(a)).Flen1 == uint32(1) && *(*Tjs_limb_t)(unsafe.Pointer(a + 4)) == uint32(0) {
 				/* a = 0, b != 0 */
 				r = int32(2)*b_sign - int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				if a_sign != b_sign {
 					r = int32(1) - int32(2)*a_sign
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					e = e - int32(1023)
@@ -22526,27 +23443,37 @@ _2:
 					if *(*int32)(unsafe.Pointer(bp + 8)) != e {
 						if *(*int32)(unsafe.Pointer(bp + 8)) < e {
 							r = -int32(1)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return
 						} else {
 							r = int32(1)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					} else {
 						mant = (mant | libc.Uint64FromInt32(1)<<libc.Int32FromInt32(52)) << int32(11) /* align to a_mant */
 						if a_mant < mant {
 							r = int32(2)*a_sign - int32(1)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return
 						} else {
 							if a_mant > mant {
 								r = int32(1) - int32(2)*a_sign
-								tls.Free(16)
+								if tlsDrop(tls, 16) {
+									tlsSignals(tls)
+								}
 								return
 							} else {
 								r = 0
-								tls.Free(16)
+								if tlsDrop(tls, 16) {
+									tlsSignals(tls)
+								}
 								return
 							}
 						}
@@ -22555,7 +23482,9 @@ _2:
 			}
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -22943,7 +23872,10 @@ var _radix_base_table = [35]Tjs_limb_t{
 }
 
 func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32) (r1 TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bit_pos, c, pos uint32
 	var buf1, buf_end, q, r, tmp, v3 uintptr
@@ -22956,7 +23888,9 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 	if libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_SHORT_BIG_INT) {
 		len1 = libc.Int32FromUint32(Xi64toa_radix(tls, bp, int64(libc.Int32FromUint64(val)), libc.Uint32FromInt32(radix)))
 		r1 = _js_new_string8_len(tls, ctx, bp, len1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		tmp = libc.UintptrFromInt32(0)
@@ -22964,7 +23898,9 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 		if (*TJSBigInt)(unsafe.Pointer(r)).Flen1 == uint32(1) && *(*Tjs_limb_t)(unsafe.Pointer(r + 4)) == uint32(0) {
 			/* '0' case */
 			r1 = _js_new_string8_len(tls, ctx, __ccgo_ts+2406, int32(1))
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		is_binary_radix = libc.BoolInt32(radix&(radix-libc.Int32FromInt32(1)) == libc.Int32FromInt32(0))
@@ -22973,7 +23909,9 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 			tmp = _js_bigint_neg(tls, ctx, r)
 			if !(tmp != 0) {
 				r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(80)
+				if tlsDrop(tls, 80) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = tmp
@@ -22983,7 +23921,9 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 				tmp = _js_bigint_new(tls, ctx, libc.Int32FromUint32((*TJSBigInt)(unsafe.Pointer(r)).Flen1))
 				if !(tmp != 0) {
 					r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(80)
+					if tlsDrop(tls, 80) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				libc.Xmemcpy(tls, tmp+4, r+4, (*TJSBigInt)(unsafe.Pointer(r)).Flen1*uint32(4))
@@ -23003,7 +23943,9 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 		if !(buf1 != 0) {
 			Xjs_free(tls, ctx, tmp)
 			r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		q = buf1 + uintptr(n_digits) + uintptr(is_neg) + uintptr(1)
@@ -23065,10 +24007,14 @@ func _js_bigint_to_string1(tls *libc.TLS, ctx uintptr, val TJSValue, radix int32
 		res = _js_new_string8_len(tls, ctx, q, int32(buf_end)-int32(q))
 		Xjs_free(tls, ctx, buf1)
 		r1 = res
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return r1
 }
 
@@ -23106,7 +24052,10 @@ func _JS_CompactBigInt(tls *libc.TLS, ctx1 uintptr, p uintptr) (r TJSValue) {
 //	   invalid syntax */
 //	/* XXX: directly use js_atod() */
 func _js_atof(tls *libc.TLS, ctx2 uintptr, str uintptr, pp uintptr, radix int32, flags int32) (r1 TJSValue) {
-	bp := tls.Alloc(320)
+	bp := tlsTake(tls, 320)
+	if bp == 0 {
+		bp = tls.Alloc(320)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atod_type, i, i1, is_neg, j, len1, sep, v1 int32
 	var buf, p1, p_start, r uintptr
@@ -23381,7 +24330,9 @@ done:
 		*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp + 24))
 	}
 	r1 = val1
-	tls.Free(320)
+	if tlsDrop(tls, 320) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -23393,7 +24344,9 @@ mem_error:
 	;
 	val1 = XJS_ThrowOutOfMemory(tls, ctx2)
 	goto done
-	tls.Free(320)
+	if tlsDrop(tls, 320) {
+		tlsSignals(tls)
+	}
 	return r1
 }
 
@@ -23405,7 +24358,10 @@ const ETON_FLAG_NUMBER = 0
 const ETON_FLAG_NUMERIC = 1
 
 func _JS_ToNumberHintFree(tls *libc.TLS, ctx3 uintptr, val1 TJSValue, flag TJSToNumberHintEnum) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags, v1 int32
 	var p, str, v4, v7 uintptr
@@ -23446,7 +24402,9 @@ _2:
 				}
 			}
 			r = XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+2417, 0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		ret = val1
@@ -23473,7 +24431,9 @@ _2:
 	_11:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto redo
@@ -23499,7 +24459,9 @@ _2:
 		}
 		if !(str != 0) {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*uintptr)(unsafe.Pointer(bp)) = str
@@ -23552,7 +24514,9 @@ _2:
 			}
 		}
 		r = XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+2449, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		v3 = val1
@@ -23572,7 +24536,9 @@ _2:
 		break
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -23604,7 +24570,10 @@ _5:
 }
 
 func ___JS_ToFloat64Free(tls *libc.TLS, ctx uintptr, pres uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v5 float64
 	var tag, tag1 Tuint32_t
@@ -23647,14 +24616,18 @@ _4:
 	}
 	*(*float64)(unsafe.Pointer(pres)) = d
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	*(*float64)(unsafe.Pointer(pres)) = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -23684,9 +24657,13 @@ func _JS_ToFloat64Free(tls *libc.TLS, ctx uintptr, pres uintptr, val TJSValue) (
 			return 0
 		} else {
 			// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-			tls.Alloc(16)
+			if tlsTake(tls, 16) == 0 {
+				tls.Alloc(16)
+			}
 			r = ___JS_ToFloat64Free(tls, ctx, pres, val)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -23735,7 +24712,10 @@ _5:
 //
 //	/* same as JS_ToNumber() but return 0 in case of NaN/Undefined */
 func _JS_ToIntegerFree(tls *libc.TLS, ctx3 uintptr, val2 TJSValue) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d2, v5 float64
 	var ret, v1, v3, v9 TJSValue
@@ -23847,13 +24827,17 @@ _2:
 	_17:
 		if v11 != 0 {
 			r = val2
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto redo
 	}
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -23929,9 +24913,13 @@ _2:
 		}
 	default:
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		tls.Alloc(16)
+		if tlsTake(tls, 16) == 0 {
+			tls.Alloc(16)
+		}
 		val = _JS_ToNumberFree(tls, ctx, val)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 		goto _8
 	_8:
@@ -24068,9 +25056,13 @@ _2:
 		return 0
 	default:
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		tls.Alloc(16)
+		if tlsTake(tls, 16) == 0 {
+			tls.Alloc(16)
+		}
 		val = _JS_ToNumberFree(tls, ctx, val)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 		goto _8
 	_8:
@@ -24140,7 +25132,10 @@ _5:
 //	/* Same as JS_ToInt32Free() but with a 64 bit result. Return (<0, 0)
 //	   in case of exception */
 func _JS_ToInt64Free(tls *libc.TLS, ctx uintptr, pres uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v31 float64
 	var e, v1 int32
@@ -24210,14 +25205,18 @@ _2:
 		if v1 != 0 {
 			*(*Tint64_t)(unsafe.Pointer(pres)) = 0
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto redo
 	}
 	*(*Tint64_t)(unsafe.Pointer(pres)) = ret
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -24325,9 +25324,13 @@ _2:
 		}
 	default:
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		tls.Alloc(16)
+		if tlsTake(tls, 16) == 0 {
+			tls.Alloc(16)
+		}
 		val = _JS_ToNumberFree(tls, ctx, val)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 		goto _6
 	_6:
@@ -24365,7 +25368,10 @@ func _JS_ToUint32Free(tls *libc.TLS, ctx uintptr, pres uintptr, val TJSValue) (r
 }
 
 func _JS_ToUint8ClampFree(tls *libc.TLS, ctx uintptr, pres uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v11 float64
 	var res, v1, v3, v4, v5, v7, v8 int32
@@ -24457,19 +25463,26 @@ _2:
 		if v1 != 0 {
 			*(*Tint32_t)(unsafe.Pointer(pres)) = 0
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto redo
 	}
 	*(*Tint32_t)(unsafe.Pointer(pres)) = res
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ToArrayLengthFree(tls *libc.TLS, ctx2 uintptr, plen uintptr, val1 TJSValue, is_array_ctor TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v8 float64
 	var p, v17, v20 uintptr
@@ -24538,13 +25551,17 @@ _6:
 _13:
 	if v12 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* cannot recurse because val is a number */
 	if _JS_ToArrayLengthFree(tls, ctx2, bp+8, val1, int32(ETRUE)) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _11
@@ -24569,7 +25586,9 @@ _15:
 			}
 		}
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	val1 = _JS_ToNumberFree(tls, ctx2, val1)
@@ -24578,13 +25597,17 @@ _15:
 _22:
 	if v12 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* cannot recurse because val is a number */
 	if _JS_ToArrayLengthFree(tls, ctx2, bp+12, val1, int32(EFALSE)) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(*(*Tuint32_t)(unsafe.Pointer(bp + 12)) != *(*Tuint32_t)(unsafe.Pointer(bp + 8))) {
@@ -24595,7 +25618,9 @@ fail:
 	;
 	XJS_ThrowRangeError(tls, ctx2, __ccgo_ts+1850, 0)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _23:
 	;
@@ -24608,12 +25633,17 @@ _5:
 	;
 	*(*Tuint32_t)(unsafe.Pointer(plen)) = *(*Tuint32_t)(unsafe.Pointer(bp + 8))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _is_safe_integer(tls *libc.TLS, d float64) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uint64
 	var _ /* __u at bp+0 */ struct {
@@ -24628,29 +25658,40 @@ func _is_safe_integer(tls *libc.TLS, d float64) (r TBOOL) {
 _2:
 	;
 	r = libc.BoolInt32(libc.BoolInt32(v1&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) < libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 && libc.Xfloor(tls, d) == d && libc.Xfabs(tls, d) <= float64(libc.Int64FromInt32(1)<<libc.Int32FromInt32(53)-libc.Int64FromInt32(1)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_ToIndex(tls *libc.TLS, ctx uintptr, plen uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* v at bp+0 */ Tint64_t
 	if XJS_ToInt64Sat(tls, ctx, bp, val) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tint64_t)(unsafe.Pointer(bp)) < 0 || *(*Tint64_t)(unsafe.Pointer(bp)) > libc.Int64FromInt32(1)<<libc.Int32FromInt32(53)-libc.Int64FromInt32(1) {
 		XJS_ThrowRangeError(tls, ctx, __ccgo_ts+2481, 0)
 		*(*Tuint64_t)(unsafe.Pointer(plen)) = uint64(0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tuint64_t)(unsafe.Pointer(plen)) = libc.Uint64FromInt64(*(*Tint64_t)(unsafe.Pointer(bp)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -24684,7 +25725,10 @@ func _JS_ToLengthFree(tls *libc.TLS, ctx1 uintptr, plen uintptr, val TJSValue) (
 //
 //	/* Note: can return an exception */
 func _JS_NumberIsInteger(tls *libc.TLS, ctx uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var tag, v1 int32
 	var v3 uint64
@@ -24701,12 +25745,16 @@ func _JS_NumberIsInteger(tls *libc.TLS, ctx uintptr, val TJSValue) (r int32) {
 _2:
 	if !(v1 != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(XJS_ToFloat64(tls, ctx, bp+8, val) != 0)) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 8))
@@ -24715,12 +25763,17 @@ _2:
 _4:
 	;
 	r = libc.BoolInt32(libc.BoolInt32(v3&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) < libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 && libc.Xfloor(tls, *(*float64)(unsafe.Pointer(bp + 8))) == *(*float64)(unsafe.Pointer(bp + 8)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_NumberIsNegativeOrMinusZero(tls *libc.TLS, ctx uintptr, val TJSValue) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p uintptr
 	var tag, tag1 Tuint32_t
@@ -24747,7 +25800,9 @@ _2:
 	case uint32(EJS_TAG_INT):
 		v2 = libc.Int32FromUint64(val)
 		r = libc.BoolInt32(v2 < libc.Int32FromInt32(0))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_FLOAT64):
 		*(*TJSValue)(unsafe.Pointer(bp)) = val
@@ -24757,23 +25812,33 @@ _2:
 	_4:
 		*(*float64)(unsafe.Pointer(bp + 8)) = v3
 		r = libc.Int32FromUint64(*(*Tuint64_t)(unsafe.Pointer(bp + 8)) >> libc.Int32FromInt32(63))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_SHORT_BIG_INT):
 		r = libc.BoolInt32(libc.Int32FromUint64(val) < libc.Int32FromInt32(0))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case libc.Uint32FromInt32(EJS_TAG_BIG_INT):
 		p = uintptr(libc.Int32FromUint64(val))
 		r = _js_bigint_sign(tls, p)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -24782,7 +25847,10 @@ func _js_bigint_to_string(tls *libc.TLS, ctx uintptr, val TJSValue) (r TJSValue)
 }
 
 func _js_dtoa2(tls *libc.TLS, ctx uintptr, d float64, radix int32, n_digits int32, flags int32) (r TJSValue) {
-	bp := tls.Alloc(432)
+	bp := tlsTake(tls, 432)
+	if bp == 0 {
+		bp = tls.Alloc(432)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, tmp_buf uintptr
 	var len1, len_max int32
@@ -24796,7 +25864,9 @@ func _js_dtoa2(tls *libc.TLS, ctx uintptr, d float64, radix int32, n_digits int3
 		tmp_buf = Xjs_malloc(tls, ctx, libc.Uint32FromInt32(len_max+int32(1)))
 		if !(tmp_buf != 0) {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(432)
+			if tlsDrop(tls, 432) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		buf = tmp_buf
@@ -24808,7 +25878,9 @@ func _js_dtoa2(tls *libc.TLS, ctx uintptr, d float64, radix int32, n_digits int3
 	res = _js_new_string8_len(tls, ctx, buf, len1)
 	Xjs_free(tls, ctx, tmp_buf)
 	r = res
-	tls.Free(432)
+	if tlsDrop(tls, 432) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -24868,22 +25940,36 @@ _2:
 		goto _12
 	_12:
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = _js_linearize_string_rope(tls, ctx2, v6)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_INT):
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		bp = tls.Alloc(48)
+		bp = tlsTake(tls, 48)
+		if bp == 0 {
+			bp = tls.Alloc(48)
+		}
 		*(*[6]uint64)(unsafe.Pointer(bp)) = localbp
 		len1 = Xi32toa(tls, bp+8, libc.Int32FromUint64(val))
 		localbp = *(*[6]uint64)(unsafe.Pointer(bp))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		bp = tls.Alloc(48)
+		bp = tlsTake(tls, 48)
+		if bp == 0 {
+			bp = tls.Alloc(48)
+		}
 		*(*[6]uint64)(unsafe.Pointer(bp)) = localbp
 		r = _js_new_string8_len(tls, ctx2, bp+8, libc.Int32FromUint32(len1))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_BOOL):
 		if libc.Int32FromUint64(val) != 0 {
@@ -24892,29 +25978,45 @@ _2:
 			v1 = int32(EJS_ATOM_false)
 		}
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = XJS_AtomToString(tls, ctx2, libc.Uint32FromInt32(v1))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_NULL):
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = XJS_AtomToString(tls, ctx2, uint32(EJS_ATOM_null))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_UNDEFINED):
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = XJS_AtomToString(tls, ctx2, uint32(EJS_ATOM_undefined))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_EXCEPTION):
 		return libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	case libc.Uint32FromInt32(EJS_TAG_OBJECT):
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		val1 = _JS_ToPrimitive(tls, ctx2, val, MHINT_STRING)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(val1>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 		goto _15
 	_15:
@@ -24922,9 +26024,13 @@ _2:
 			return val1
 		}
 		// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		ret = _JS_ToStringInternal(tls, ctx2, val1, is_ToPropertyKey)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		v3 = val1
 		if libc.Uint32FromInt32(libc.Int32FromUint64(v3>>libc.Int32FromInt32(32))) >= libc.Uint32FromInt32(EJS_TAG_FIRST) {
 			v4 = uintptr(libc.Int32FromUint64(v3)) - libc.UintptrFromInt32(1)*4
@@ -24941,9 +26047,13 @@ _2:
 		return ret
 	case libc.Uint32FromInt32(EJS_TAG_FUNCTION_BYTECODE):
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = _js_new_string8(tls, ctx2, __ccgo_ts+2501)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case libc.Uint32FromInt32(EJS_TAG_SYMBOL):
 		if is_ToPropertyKey != 0 {
@@ -24962,9 +26072,13 @@ _2:
 			return v6
 		} else {
 			// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-			tls.Alloc(48)
+			if tlsTake(tls, 48) == 0 {
+				tls.Alloc(48)
+			}
 			r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+2521, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		fallthrough
@@ -24975,23 +26089,35 @@ _2:
 		goto _27
 	_27:
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = _js_dtoa2(tls, ctx2, v26, int32(10), 0, libc.Int32FromInt32(0)<<libc.Int32FromInt32(0))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case uint32(EJS_TAG_SHORT_BIG_INT):
 		fallthrough
 	case libc.Uint32FromInt32(EJS_TAG_BIG_INT):
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = _js_bigint_to_string(tls, ctx2, val)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		// Changed by internal/fixlib: a TLS frame for this return (see fixLazyFrames).
-		tls.Alloc(48)
+		if tlsTake(tls, 48) == 0 {
+			tls.Alloc(48)
+		}
 		r = _js_new_string8(tls, ctx2, __ccgo_ts+2553)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	return r
@@ -25067,11 +26193,16 @@ type TJSPrintValueState = struct {
 }
 
 func _js_putc(tls *libc.TLS, s uintptr, _c uint8) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*uint8)(unsafe.Pointer(bp)) = _c
 	(*(*func(*libc.TLS, uintptr, uintptr, Tsize_t))(unsafe.Pointer(&struct{ uintptr }{(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func})))(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque, bp, uint32(1))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_puts(tls *libc.TLS, s uintptr, str uintptr) {
@@ -25079,7 +26210,10 @@ func _js_puts(tls *libc.TLS, s uintptr, str uintptr) {
 }
 
 func _js_printf(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) {
-	bp := tls.Alloc(256)
+	bp := tlsTake(tls, 256)
+	if bp == 0 {
+		bp = tls.Alloc(256)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ap Tva_list
 	var _ /* buf at bp+0 */ [256]uint8
@@ -25088,11 +26222,16 @@ func _js_printf(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) {
 	libc.X__builtin_vsnprintf(tls, bp, uint32(256), fmt, ap)
 	_ = ap
 	(*(*func(*libc.TLS, uintptr, uintptr, Tsize_t))(unsafe.Pointer(&struct{ uintptr }{(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func})))(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque, bp, libc.Xstrlen(tls, bp))
-	tls.Free(256)
+	if tlsDrop(tls, 256) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_print_float64(tls *libc.TLS, s uintptr, d float64) {
-	bp := tls.Alloc(336)
+	bp := tlsTake(tls, 336)
+	if bp == 0 {
+		bp = tls.Alloc(336)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 int32
 	var _ /* buf at bp+296 */ [32]uint8
@@ -25100,7 +26239,9 @@ func _js_print_float64(tls *libc.TLS, s uintptr, d float64) {
 	_ = len1
 	len1 = Xjs_dtoa(tls, bp+296, d, int32(10), 0, libc.Int32FromInt32(0)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(4), bp)
 	(*(*func(*libc.TLS, uintptr, uintptr, Tsize_t))(unsafe.Pointer(&struct{ uintptr }{(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func})))(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque, bp+296, libc.Uint32FromInt32(len1))
-	tls.Free(336)
+	if tlsDrop(tls, 336) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_string_get_length(tls *libc.TLS, val TJSValue) (r1 Tuint32_t) {
@@ -25124,7 +26265,10 @@ func _js_string_get_length(tls *libc.TLS, val TJSValue) (r1 Tuint32_t) {
 //
 //	/* pretty print the first 'len' characters of 'p' */
 func _js_print_string1(tls *libc.TLS, s uintptr, p uintptr, len1 int32, sep int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c11, c2, i, l int32
 	var v12 TBOOL
@@ -25239,11 +26383,16 @@ func _js_print_string1(tls *libc.TLS, s uintptr, p uintptr, len1 int32, sep int3
 		;
 		i = i + 1
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_print_string_rec(tls *libc.TLS, s uintptr, val TJSValue, sep int32, pos Tuint32_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1, v1, v2, v3 Tuint32_t
 	var p, r uintptr
@@ -25273,11 +26422,16 @@ func _js_print_string_rec(tls *libc.TLS, s uintptr, val TJSValue, sep int32, pos
 			_js_printf(tls, s, __ccgo_ts+2604, libc.VaList(bp+8, libc.Int32FromUint64(val>>libc.Int32FromInt32(32))))
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_print_string(tls *libc.TLS, s uintptr, val TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var n Tuint32_t
 	var p, v2 uintptr
@@ -25307,11 +26461,16 @@ func _js_print_string(tls *libc.TLS, s uintptr, val TJSValue) {
 		}
 		_js_printf(tls, s, __ccgo_ts+2630, libc.VaList(bp+8, n, v2))
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_print_raw_string(tls *libc.TLS, s uintptr, val TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cstr, v1 uintptr
 	var _ /* len at bp+0 */ Tsize_t
@@ -25324,7 +26483,9 @@ _2:
 		(*(*func(*libc.TLS, uintptr, uintptr, Tsize_t))(unsafe.Pointer(&struct{ uintptr }{(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func})))(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque, cstr, *(*Tsize_t)(unsafe.Pointer(bp)))
 		XJS_FreeCString(tls, (*TJSPrintValueState)(unsafe.Pointer(s)).Fctx, cstr)
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _is_ascii_ident(tls *libc.TLS, p uintptr) (r TBOOL) {
@@ -25351,7 +26512,10 @@ func _is_ascii_ident(tls *libc.TLS, p uintptr) (r TBOOL) {
 }
 
 func _js_print_atom(tls *libc.TLS, s uintptr, atom TJSAtom) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	var p uintptr
@@ -25382,14 +26546,19 @@ func _js_print_atom(tls *libc.TLS, s uintptr, atom TJSAtom) {
 			}
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
 //
 //	/* return 0 if invalid length */
 func _js_print_array_get_length(tls *libc.TLS, p uintptr) (r Tuint32_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var prs uintptr
 	var tag Tuint32_t
@@ -25406,12 +26575,16 @@ func _js_print_array_get_length(tls *libc.TLS, p uintptr) (r Tuint32_t) {
 	prs = _find_own_property(tls, bp+8, p, uint32(EJS_ATOM_length))
 	if !(prs != 0) {
 		r = uint32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(0)<<libc.Int32FromInt32(4) {
 		r = uint32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	val = *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8))))
@@ -25427,7 +26600,9 @@ _2:
 	switch v1 {
 	case int32(EJS_TAG_INT):
 		r = libc.Uint32FromInt32(libc.Int32FromUint64(val))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_TAG_FLOAT64):
 		*(*TJSValue)(unsafe.Pointer(bp)) = val
@@ -25436,14 +26611,20 @@ _2:
 		goto _4
 	_4:
 		r = uint32(v3)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		r = uint32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -25460,7 +26641,10 @@ func _js_print_comma(tls *libc.TLS, s uintptr, pcomma_state uintptr) {
 }
 
 func _js_print_more_items(tls *libc.TLS, s uintptr, pcomma_state uintptr, n Tuint32_t) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uintptr
 	_ = v1
@@ -25471,7 +26655,9 @@ func _js_print_more_items(tls *libc.TLS, s uintptr, pcomma_state uintptr, n Tuin
 		v1 = __ccgo_ts + 189
 	}
 	_js_printf(tls, s, __ccgo_ts+2661, libc.VaList(bp+8, n, v1))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -25610,7 +26796,10 @@ func _js_print_error(tls *libc.TLS, s uintptr, p uintptr) {
 }
 
 func _js_print_object(tls *libc.TLS, s uintptr, p1 uintptr) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b1, el, func_name_str, mr, ms, p, pr, prs, ptr1, rt1, sh, var_refs, v40, v6 uintptr
 	var d, v26, v28 float64
@@ -26253,7 +27442,9 @@ func _js_print_object(tls *libc.TLS, s uintptr, p1 uintptr) {
 	} else {
 		_js_printf(tls, s, __ccgo_ts+2908, 0)
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_print_stack_index(tls *libc.TLS, s uintptr, p uintptr) (r int32) {
@@ -26276,7 +27467,10 @@ func _js_print_stack_index(tls *libc.TLS, s uintptr, p uintptr) (r int32) {
 }
 
 func _js_print_value(tls *libc.TLS, s uintptr, val TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var b, p, p1, p2, p3, r, str, v27, v30 uintptr
@@ -26500,7 +27694,9 @@ _18:
 	_js_printf(tls, s, __ccgo_ts+3067, libc.VaList(bp+16, tag1))
 	goto _19
 _19:
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func XJS_PrintValueSetDefaultOptions(tls *libc.TLS, options uintptr) {
@@ -26511,7 +27707,10 @@ func XJS_PrintValueSetDefaultOptions(tls *libc.TLS, options uintptr) {
 }
 
 func _JS_PrintValueInternal(tls *libc.TLS, rt uintptr, ctx uintptr, __ccgo_fp_write_func uintptr, write_opaque uintptr, val TJSValue, options uintptr) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var s uintptr
 	var v1, v2, v3 int32
@@ -26550,7 +27749,9 @@ func _JS_PrintValueInternal(tls *libc.TLS, rt uintptr, ctx uintptr, __ccgo_fp_wr
 	(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque = write_opaque
 	(*TJSPrintValueState)(unsafe.Pointer(s)).Flevel = 0
 	_js_print_value(tls, s, val)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 }
 
 type t__ccgo_fp__XJS_PrintValueRT_1 = func(*libc.TLS, uintptr, uintptr, uint32)
@@ -26573,7 +27774,10 @@ func _js_dump_value_write(tls *libc.TLS, opaque uintptr, buf uintptr, len1 Tsize
 }
 
 func _print_atom(tls *libc.TLS, ctx uintptr, atom TJSAtom) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var s uintptr
 	var _ /* ss at bp+0 */ TJSPrintValueState
@@ -26585,48 +27789,73 @@ func _print_atom(tls *libc.TLS, ctx uintptr, atom TJSAtom) {
 	(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_func = __ccgo_fp(_js_dump_value_write)
 	(*TJSPrintValueState)(unsafe.Pointer(s)).Fwrite_opaque = libc.Xstdout
 	_js_print_atom(tls, s, atom)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpAtom(tls *libc.TLS, ctx uintptr, str uintptr, atom TJSAtom) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	libc.Xprintf(tls, __ccgo_ts+3084, libc.VaList(bp+8, str))
 	_print_atom(tls, ctx, atom)
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpValue(tls *libc.TLS, ctx uintptr, str uintptr, val TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	libc.Xprintf(tls, __ccgo_ts+3084, libc.VaList(bp+8, str))
 	XJS_PrintValue(tls, ctx, __ccgo_fp(_js_dump_value_write), libc.Xstdout, val, libc.UintptrFromInt32(0))
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpValueRT(tls *libc.TLS, rt uintptr, str uintptr, val TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	libc.Xprintf(tls, __ccgo_ts+3084, libc.VaList(bp+8, str))
 	XJS_PrintValueRT(tls, rt, __ccgo_fp(_js_dump_value_write), libc.Xstdout, val, libc.UintptrFromInt32(0))
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpObjectHeader(tls *libc.TLS, rt uintptr) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	libc.Xprintf(tls, __ccgo_ts+3088, libc.VaList(bp+8, __ccgo_ts+3110, __ccgo_ts+279, __ccgo_ts+3118, __ccgo_ts+284, __ccgo_ts+3123))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
 //
 //	/* for debug only: dump an object without side effect */
 func _JS_DumpObject(tls *libc.TLS, rt uintptr, p uintptr) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var sh uintptr
 	var _ /* options at bp+0 */ TJSPrintValueOptions
@@ -26645,11 +27874,16 @@ func _JS_DumpObject(tls *libc.TLS, rt uintptr, p uintptr) {
 	libc.SetBitFieldPtr16Int32(bp+0, int32(ETRUE), 8, 0xff00)
 	XJS_PrintValueRT(tls, rt, __ccgo_fp(_js_dump_value_write), libc.Xstdout, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32(p)), bp)
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 }
 
 func _JS_DumpGCObject(tls *libc.TLS, rt uintptr, p uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if int32(*(*uint8)(unsafe.Pointer(_js_rc(tls, p) + 3))&0x7f>>0) == int32(EJS_GC_OBJ_TYPE_JS_OBJECT) {
 		_JS_DumpObject(tls, rt, p)
@@ -26674,7 +27908,9 @@ func _JS_DumpGCObject(tls *libc.TLS, rt uintptr, p uintptr) {
 		}
 		libc.Xprintf(tls, __ccgo_ts+140, 0)
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -26682,32 +27918,46 @@ func _JS_DumpGCObject(tls *libc.TLS, rt uintptr, p uintptr) {
 //	/* return -1 if exception (proxy case) or TRUE/FALSE */
 //	// TODO: should take flags to make proxy resolution and exceptions optional
 func XJS_IsArray(tls *libc.TLS, ctx uintptr, _val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _val
 	var p uintptr
 	_ = p
 	if _js_resolve_proxy(tls, ctx, bp, int32(ETRUE)) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT) {
 		p = uintptr(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))))
 		r = libc.BoolInt32(libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id) == int32(EJS_CLASS_ARRAY))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_pow(tls *libc.TLS, a float64, b float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uint64
 	var _ /* __u at bp+0 */ struct {
@@ -26724,14 +27974,20 @@ _2:
 	if expect32(!!!(libc.BoolInt32(v1&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) < libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0)) && libc.Xfabs(tls, a) == libc.Float64FromInt32(1) {
 		/* not compatible with IEEE 754 */
 		r = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.Xpow(tls, a, b)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -26779,7 +28035,10 @@ func XJS_NewBigUint64(tls *libc.TLS, ctx1 uintptr, v Tuint64_t) (r TJSValue) {
 //
 //	/* return NaN if bad bigint literal */
 func _JS_StringToBigInt(tls *libc.TLS, ctx2 uintptr, val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags, v6, v8 int32
 	var p, str, v1, v4 uintptr
@@ -26806,7 +28065,9 @@ _2:
 	}
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp)) = str
@@ -26841,7 +28102,9 @@ _2:
 	}
 	XJS_FreeCString(tls, ctx2, str)
 	r = val
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -27058,7 +28321,10 @@ _5:
 }
 
 func _js_unary_arith_slow(tls *libc.TLS, ctx5 uintptr, sp uintptr, op TOPCodeEnum) (r1 int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d2, v41 float64
 	var op1, v1, v2, v12, v14, v8 TJSValue
@@ -27127,7 +28393,9 @@ _3:
 		_9:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = v8
 			r1 = 0
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			v64 = -v64
@@ -27319,14 +28587,18 @@ _44:
 _7:
 	;
 	r1 = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r1 = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -27363,7 +28635,10 @@ _7:
 }
 
 func _js_not_slow(tls *libc.TLS, ctx3 uintptr, sp uintptr) (r1 int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var op1, v3 TJSValue
 	var p, r, v6, v9 uintptr
@@ -27416,19 +28691,26 @@ _2:
 		}
 	}
 	r1 = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r1 = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_binary_arith_slow(tls *libc.TLS, ctx6 uintptr, sp uintptr, op TOPCodeEnum) (r2 int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var dr, v5 float64
 	var op1, op2, v1, v3, v111, v131, v9 TJSValue
@@ -27521,7 +28803,9 @@ _4:
 		_10:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 			r2 = 0
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		case int32(EOP_mod):
 			if v21 == 0 || libc.Uint32FromInt32(v11) == libc.Uint32FromInt32(1)<<(libc.Int32FromInt32(MJS_LIMB_BITS)-libc.Int32FromInt32(1)) && v21 == -int32(1) {
@@ -27533,7 +28817,9 @@ _4:
 		_12:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 			r2 = 0
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		case int32(EOP_pow):
 			goto slow_big_int
@@ -27554,7 +28840,9 @@ _4:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_BIG_INT))<<libc.Int32FromInt32(32) | uint64(uint32(r))
 		}
 		r2 = 0
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	op1 = _JS_ToNumericFree(tls, ctx6, op1)
@@ -27640,7 +28928,9 @@ _32:
 		_36:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 			r2 = 0
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	case int32(EOP_div):
@@ -27669,7 +28959,9 @@ _32:
 	_39:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 		r2 = 0
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EOP_mod):
 		if v12 < 0 || v22 <= 0 {
@@ -27698,7 +28990,9 @@ _32:
 		_44:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 			r2 = 0
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			v7 = int64(v12) % int64(v22)
@@ -27729,7 +29023,9 @@ _32:
 	_49:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 		r2 = 0
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		libc.Xabort(tls)
@@ -27881,7 +29177,9 @@ _61:
 _34:
 	;
 	r2 = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -27889,7 +29187,9 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r2 = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -27898,7 +29198,10 @@ func _tag_is_string(tls *libc.TLS, tag Tuint32_t) (r TBOOL) {
 }
 
 func _js_add_slow(tls *libc.TLS, ctx5 uintptr, sp uintptr) (r2 int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d11, d2, v5 float64
 	var op1, op2, v1, v3, v111, v15, v9 TJSValue
@@ -27972,7 +29275,9 @@ _4:
 	_10:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v9
 		r2 = 0
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* fast path for short bigint */
@@ -27994,7 +29299,9 @@ _4:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_BIG_INT))<<libc.Int32FromInt32(32) | uint64(uint32(r))
 		}
 		r2 = 0
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if tag1 == libc.Uint32FromInt32(EJS_TAG_OBJECT) || tag2 == libc.Uint32FromInt32(EJS_TAG_OBJECT) {
@@ -28068,7 +29375,9 @@ _4:
 			goto exception
 		}
 		r2 = 0
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	op1 = _JS_ToNumericFree(tls, ctx5, op1)
@@ -28239,7 +29548,9 @@ _50:
 		}
 	}
 	r2 = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -28247,12 +29558,17 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r2 = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_binary_logic_slow(tls *libc.TLS, ctx3 uintptr, sp uintptr, op TOPCodeEnum) (r3 int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var op1, op2, v121 TJSValue
 	var p, p1, p2, r1, r2, v17, v20 uintptr
@@ -28362,7 +29678,9 @@ _4:
 			}
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_BIG_INT))<<libc.Int32FromInt32(32) | uint64(uint32(r1))
 			r3 = 0
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _11
@@ -28377,7 +29695,9 @@ _4:
 	_13:
 		*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v121
 		r3 = 0
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	op1 = _JS_ToNumericFree(tls, ctx3, op1)
@@ -28541,7 +29861,9 @@ _46:
 _29:
 	;
 	r3 = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -28549,7 +29871,9 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r3 = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -28577,7 +29901,10 @@ func _JS_ToBigIntBuf(tls *libc.TLS, ctx uintptr, buf1 uintptr, op1 TJSValue) (r 
 //	/* op1 and op2 must be numeric types and at least one must be a
 //	   bigint. No exception is generated. */
 func _js_compare_bigint(tls *libc.TLS, ctx1 uintptr, op TOPCodeEnum, op1 TJSValue, op2 TJSValue) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, p2, v15, v18 uintptr
 	var res, tag1, tag2, val, v1 int32
@@ -28686,7 +30013,9 @@ _4:
 			}
 		}
 		r = int32(EFALSE)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	_13:
 		;
@@ -28742,12 +30071,17 @@ _4:
 		libc.Xabort(tls)
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_relational_slow(tls *libc.TLS, ctx2 uintptr, sp uintptr, op TOPCodeEnum) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d1, d2, v69 float64
 	var op1, op2, v7 TJSValue
@@ -29069,7 +30403,9 @@ done:
 _74:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v7
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -29077,7 +30413,9 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -29171,9 +30509,13 @@ _4:
 						}
 						if _tag_is_string(tls, tag1) != 0 {
 							// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-							tls.Alloc(16)
+							if tlsTake(tls, 16) == 0 {
+								tls.Alloc(16)
+							}
 							op1 = _JS_StringToBigInt(tls, ctx3, op1)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							if libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) != int32(EJS_TAG_BIG_INT) && libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) != int32(EJS_TAG_SHORT_BIG_INT) {
 								goto invalid_bigint_string
 							}
@@ -29182,9 +30524,13 @@ _4:
 							goto _11
 						}
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(16)
+						if tlsTake(tls, 16) == 0 {
+							tls.Alloc(16)
+						}
 						op2 = _JS_StringToBigInt(tls, ctx3, op2)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						if !(libc.Int32FromUint64(op2>>libc.Int32FromInt32(32)) != int32(EJS_TAG_BIG_INT) && libc.Int32FromUint64(op2>>libc.Int32FromInt32(32)) != int32(EJS_TAG_SHORT_BIG_INT)) {
 							goto _12
 						}
@@ -29227,9 +30573,13 @@ _4:
 					_9:
 						;
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(16)
+						if tlsTake(tls, 16) == 0 {
+							tls.Alloc(16)
+						}
 						op1 = _JS_ToNumericFree(tls, ctx3, op1)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 						goto _24
 					_24:
@@ -29250,9 +30600,13 @@ _4:
 							goto exception
 						}
 						// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-						tls.Alloc(16)
+						if tlsTake(tls, 16) == 0 {
+							tls.Alloc(16)
+						}
 						op2 = _JS_ToNumericFree(tls, ctx3, op2)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(op2>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 						goto _31
 					_31:
@@ -29294,9 +30648,13 @@ _4:
 							} else {
 								if tag1 == libc.Uint32FromInt32(EJS_TAG_OBJECT) && (_tag_is_number(tls, tag2) != 0 || _tag_is_string(tls, tag2) != 0 || tag2 == libc.Uint32FromInt32(EJS_TAG_SYMBOL)) || tag2 == libc.Uint32FromInt32(EJS_TAG_OBJECT) && (_tag_is_number(tls, tag1) != 0 || _tag_is_string(tls, tag1) != 0 || tag1 == libc.Uint32FromInt32(EJS_TAG_SYMBOL)) {
 									// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-									tls.Alloc(16)
+									if tlsTake(tls, 16) == 0 {
+										tls.Alloc(16)
+									}
 									op1 = _JS_ToPrimitiveFree(tls, ctx3, op1, int32(MHINT_NONE))
-									tls.Free(16)
+									if tlsDrop(tls, 16) {
+										tlsSignals(tls)
+									}
 									v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 									goto _42
 								_42:
@@ -29317,9 +30675,13 @@ _4:
 										goto exception
 									}
 									// Changed by internal/fixlib: a TLS frame for this statement (see fixLazyFrames).
-									tls.Alloc(16)
+									if tlsTake(tls, 16) == 0 {
+										tls.Alloc(16)
+									}
 									op2 = _JS_ToPrimitiveFree(tls, ctx3, op2, int32(MHINT_NONE))
-									tls.Free(16)
+									if tlsDrop(tls, 16) {
+										tlsSignals(tls)
+									}
 									v1 = int32(libc.BoolInt32(!!(libc.Int32FromUint64(op2>>libc.Int32FromInt32(32)) == int32(EJS_TAG_EXCEPTION))))
 									goto _49
 								_49:
@@ -29399,7 +30761,10 @@ exception:
 }
 
 func _js_shr_slow(tls *libc.TLS, ctx4 uintptr, sp uintptr) (r1 int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var op1, op2, v, v1, v10, v15, v3 TJSValue
 	var p, v4, v7 uintptr
@@ -29515,7 +30880,9 @@ _9:
 _32:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v15
 	r1 = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -29523,7 +30890,9 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r1 = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -29784,7 +31153,10 @@ done_no_free:
 
 // Changed by internal/fixlib: the cold path, which uses the TLS frame (see fixColdFrames).
 func _js_strict_eq2_cold(tls *libc.TLS, ctx1 uintptr, op1 TJSValue, op2 TJSValue) (r TBOOL) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p11, p21 uintptr
 	if libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) == int32(EJS_TAG_SHORT_BIG_INT) {
@@ -29798,7 +31170,9 @@ func _js_strict_eq2_cold(tls *libc.TLS, ctx1 uintptr, op1 TJSValue, op2 TJSValue
 		p21 = uintptr(libc.Int32FromUint64(op2))
 	}
 	r = libc.BoolInt32(_js_bigint_cmp(tls, ctx1, p11, p21) == libc.Int32FromInt32(0))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -29976,7 +31350,10 @@ _12:
 }
 
 func _js_operator_private_in(tls *libc.TLS, ctx2 uintptr, sp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var op1, op2, v3 TJSValue
@@ -29989,7 +31366,9 @@ func _js_operator_private_in(tls *libc.TLS, ctx2 uintptr, sp uintptr) (r int32) 
 	if libc.Int32FromUint64(op1>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+3342, 0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(op2>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT))
@@ -30000,7 +31379,9 @@ _2:
 		ret = _JS_CheckBrand(tls, ctx2, op1, op2)
 		if ret < 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -30008,7 +31389,9 @@ _2:
 		atom = XJS_ValueToAtom(tls, ctx2, op2)
 		if expect32(!!(atom == libc.Uint32FromInt32(MJS_ATOM_NULL))) {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		p1 = uintptr(libc.Int32FromUint64(op1))
@@ -30048,7 +31431,9 @@ _2:
 _14:
 	*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8)) = v3
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -30321,7 +31706,10 @@ func _js_function_proto_fileName(tls *libc.TLS, ctx uintptr, this_val TJSValue) 
 }
 
 func _js_function_proto_lineNumber(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, is_col int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var line_num int32
@@ -30337,7 +31725,9 @@ func _js_function_proto_lineNumber(tls *libc.TLS, ctx1 uintptr, this_val TJSValu
 			goto _2
 		_2:
 			r = v1
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			_ = ctx1
@@ -30345,17 +31735,24 @@ func _js_function_proto_lineNumber(tls *libc.TLS, ctx1 uintptr, this_val TJSValu
 			goto _4
 		_4:
 			r = v1
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_arguments_define_own_property(tls *libc.TLS, ctx uintptr, this_obj TJSValue, prop TJSAtom, val TJSValue, getter TJSValue, setter TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p uintptr
 	var _ /* idx at bp+0 */ Tuint32_t
@@ -30387,13 +31784,17 @@ func _js_arguments_define_own_property(tls *libc.TLS, ctx uintptr, this_obj TJSV
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))).Fcount {
 		if _convert_fast_array_to_array(tls, ctx, p) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	/* run the default define own property */
 	r = XJS_DefineProperty(tls, ctx, this_obj, prop, val, getter, setter, flags|libc.Int32FromInt32(1)<<libc.Int32FromInt32(16))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -30405,7 +31806,10 @@ func init() {
 }
 
 func _js_build_arguments(tls *libc.TLS, ctx3 uintptr, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v18 int32
 	var p, p1, p2, tab, v4, v9 uintptr
@@ -30462,7 +31866,9 @@ _17:
 _19:
 	if v18 != 0 {
 		r = val1
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p2 = uintptr(libc.Int32FromUint64(val1))
@@ -30522,7 +31928,9 @@ _19:
 		Fcount Tuint32_t
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount = libc.Uint32FromInt32(argc)
 	r = val1
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -30541,7 +31949,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -30632,7 +32042,10 @@ func _js_mapped_arguments_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_f
 //
 //	/* legacy arguments object: add references to the function arguments */
 func _js_build_mapped_arguments(tls *libc.TLS, ctx3 uintptr, argc int32, argv uintptr, sf uintptr, arg_count int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, j, v13 int32
 	var p, p1, p2, tab, var_ref, v4, v9 uintptr
@@ -30676,7 +32089,9 @@ _12:
 _14:
 	if v13 != 0 {
 		r = val1
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p2 = uintptr(libc.Int32FromUint64(val1))
@@ -30781,7 +32196,9 @@ _15:
 		Fcount Tuint32_t
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount = libc.Uint32FromInt32(argc)
 	r = val1
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -30800,12 +32217,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _build_for_in_iterator(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var enum_obj, v1 TJSValue
 	var i, v4 int32
@@ -30834,7 +32256,9 @@ func _build_for_in_iterator(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSVal
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	enum_obj = XJS_NewObjectProtoClass(tls, ctx1, libc.Uint64FromInt32(int32(EJS_TAG_NULL))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), uint32(EJS_CLASS_FOR_IN_ITERATOR))
@@ -30857,7 +32281,9 @@ _7:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSForInIterator)(unsafe.Pointer(it)).Fis_array = uint8(EFALSE)
@@ -30870,7 +32296,9 @@ _7:
 	*(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p11)).Fu)) = it
 	if tag == uint32(EJS_TAG_NULL) || tag == uint32(EJS_TAG_UNDEFINED) {
 		r = enum_obj
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(obj))
@@ -30940,7 +32368,9 @@ normal_case:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSForInIterator)(unsafe.Pointer(it)).Ftab_atom = *(*uintptr)(unsafe.Pointer(bp))
@@ -30948,7 +32378,9 @@ normal_case:
 _14:
 	;
 	r = enum_obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -30972,7 +32404,10 @@ _2:
 //
 //	/* return -1 if exception, 0 if slow case, 1 if the enumeration is finished */
 func _js_for_in_prepare_prototype_chain_enum(tls *libc.TLS, ctx2 uintptr, enum_obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i Tuint32_t
 	var it, p, p1, p2, v12, v2 uintptr
@@ -31079,7 +32514,9 @@ _5:
 		}
 	}
 	r = int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto slow_path
 slow_path:
@@ -31107,15 +32544,21 @@ slow_path:
 		i = i + 1
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -31123,7 +32566,10 @@ fail:
 //
 //	/* enum_obj -> enum_obj value done */
 func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var enum_obj TJSValue
 	var is_enumerable TBOOL
@@ -31163,7 +32609,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 				ret = _js_for_in_prepare_prototype_chain_enum(tls, ctx, enum_obj)
 				if ret < 0 {
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if ret != 0 {
@@ -31177,7 +32625,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 		_8:
 			if v2 != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v2 = libc.BoolInt32(libc.Int32FromUint64((*TJSForInIterator)(unsafe.Pointer(it)).Fobj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_NULL))
@@ -31189,12 +32639,16 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 			/* must check for timeout to avoid infinite loop */
 			if _js_poll_interrupts(tls, ctx) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _JS_GetOwnPropertyNamesInternal(tls, ctx, bp, bp+4, uintptr(libc.Int32FromUint64((*TJSForInIterator)(unsafe.Pointer(it)).Fobj)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(5)) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			XJS_FreePropertyEnum(tls, ctx, (*TJSForInIterator)(unsafe.Pointer(it)).Ftab_atom, (*TJSForInIterator)(unsafe.Pointer(it)).Fatom_count)
@@ -31214,7 +32668,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 					ret = _JS_GetOwnPropertyInternal(tls, ctx, libc.UintptrFromInt32(0), uintptr(libc.Int32FromUint64(enum_obj)), prop)
 					if ret < 0 {
 						r = ret
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if ret != 0 {
@@ -31223,7 +32679,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 					/* add to the visited property list */
 					if XJS_DefinePropertyValue(tls, ctx, enum_obj, prop, libc.Uint64FromInt32(int32(EJS_TAG_NULL))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)) < 0 {
 						r = -int32(1)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -31235,7 +32693,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 			ret = _JS_GetOwnPropertyInternal(tls, ctx, libc.UintptrFromInt32(0), uintptr(libc.Int32FromUint64((*TJSForInIterator)(unsafe.Pointer(it)).Fobj)), prop)
 			if ret < 0 {
 				r = ret
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if ret != 0 {
@@ -31249,7 +32709,9 @@ func _js_for_in_next(tls *libc.TLS, ctx uintptr, sp uintptr) (r int32) {
 	*(*TJSValue)(unsafe.Pointer(sp)) = XJS_AtomToValue(tls, ctx, prop)
 	*(*TJSValue)(unsafe.Pointer(sp + 1*8)) = libc.Uint64FromInt32(int32(EJS_TAG_BOOL))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto done
 done:
@@ -31258,7 +32720,9 @@ done:
 	*(*TJSValue)(unsafe.Pointer(sp)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(sp + 1*8)) = libc.Uint64FromInt32(int32(EJS_TAG_BOOL))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(1)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -31421,7 +32885,10 @@ func _JS_GetIterator(tls *libc.TLS, ctx2 uintptr, obj TJSValue, is_async TBOOL) 
 //
 //	/* return *pdone = 2 if the iterator object is not parsed */
 func _JS_IteratorNext2(tls *libc.TLS, ctx1 uintptr, enum_obj TJSValue, method TJSValue, argc int32, argv uintptr, pdone uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func1 TJSCFunctionType
 	var obj, v7 TJSValue
@@ -31462,7 +32929,9 @@ _2:
 				Fcproto     Tuint8_t
 				Fmagic      Tint16_t
 			})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))).Fmagic))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -31495,14 +32964,18 @@ _6:
 	}
 	*(*int32)(unsafe.Pointer(pdone)) = int32(2)
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	*(*int32)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -31510,7 +32983,10 @@ fail:
 //
 //	/* Note: always return JS_UNDEFINED when *pdone = TRUE. */
 func _JS_IteratorNext(tls *libc.TLS, ctx2 uintptr, enum_obj TJSValue, method TJSValue, argc int32, argv uintptr, pdone uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var done_val, obj, value, v3, v8 TJSValue
 	var p, v4, v7 uintptr
@@ -31527,7 +33003,9 @@ _2:
 	if expect32(!!(*(*int32)(unsafe.Pointer(bp)) == libc.Int32FromInt32(0))) {
 		*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 		r = obj
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if *(*int32)(unsafe.Pointer(bp)) != int32(2) {
@@ -31546,7 +33024,9 @@ _2:
 			}
 			*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 			r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			v3 = obj
@@ -31583,7 +33063,9 @@ _2:
 				}
 			}
 			r = value
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -31605,7 +33087,9 @@ fail:
 	}
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -31744,7 +33228,10 @@ _12:
 //	   to undefined. If 'done' is true, 'value' is always set to
 //	   undefined. */
 func _js_for_of_next(tls *libc.TLS, ctx2 uintptr, sp uintptr, offset int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v6, v9 uintptr
 	var value, v5 TJSValue
@@ -31783,7 +33270,9 @@ _2:
 			*(*TJSValue)(unsafe.Pointer(sp + uintptr(offset)*8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 			if *(*int32)(unsafe.Pointer(bp)) < 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				v5 = value
@@ -31810,7 +33299,9 @@ _2:
 _16:
 	*(*TJSValue)(unsafe.Pointer(sp + 1*8)) = v5
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -31871,7 +33362,10 @@ fail:
 }
 
 func _js_iterator_get_value_done(tls *libc.TLS, ctx3 uintptr, sp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, value, v5 TJSValue
 	var p, v6, v9 uintptr
@@ -31885,7 +33379,9 @@ _2:
 	if !(v1 != 0) {
 		XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+3409, 0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	value = _JS_IteratorGetCompleteValue(tls, ctx3, obj, bp)
@@ -31894,7 +33390,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = obj
@@ -31924,7 +33422,9 @@ _11:
 _13:
 	*(*TJSValue)(unsafe.Pointer(sp)) = v5
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -32039,7 +33539,10 @@ func _js_get_fast_array(tls *libc.TLS, ctx uintptr, obj TJSValue, arrpp uintptr,
 }
 
 func _js_append_enumerate(tls *libc.TLS, ctx4 uintptr, sp uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var enumobj, iterator, method, value, v1, v2 TJSValue
 	var i, pos, v26 Tuint32_t
@@ -32054,7 +33557,9 @@ func _js_append_enumerate(tls *libc.TLS, ctx4 uintptr, sp uintptr) (r int32) {
 	if libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8))>>libc.Int32FromInt32(32)) != int32(EJS_TAG_INT) {
 		XJS_ThrowInternalError(tls, ctx4, __ccgo_ts+3440, 0)
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	pos = libc.Uint32FromInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(2))*8))))
@@ -32074,7 +33579,9 @@ _3:
 _5:
 	if v4 != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp + 8)) = __ccgo_fp(_js_create_array_iterator)
@@ -32098,7 +33605,9 @@ _5:
 _12:
 	if v4 != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = enumobj
@@ -32124,7 +33633,9 @@ _17:
 			}
 		}
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp + 8)) = __ccgo_fp(_js_array_iterator_next)
@@ -32228,7 +33739,9 @@ _37:
 		}
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -32261,12 +33774,17 @@ exception:
 		}
 	}
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, source TJSValue, excluded TJSValue, setprop TBOOL) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var em, p, pexcl uintptr
 	var gpn_flags, ret, v5 int32
@@ -32280,7 +33798,9 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, source
 	pexcl = libc.UintptrFromInt32(0)
 	if libc.Int32FromUint64(source>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = 0
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Int32FromUint64(excluded>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT) {
@@ -32298,7 +33818,9 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, source
 	}
 	if _JS_GetOwnPropertyNamesInternal(tls, ctx2, bp, bp+4, p, gpn_flags) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = uint32(0)
@@ -32360,14 +33882,18 @@ func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, source
 	}
 	XJS_FreePropertyEnum(tls, ctx2, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	XJS_FreePropertyEnum(tls, ctx2, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -32481,7 +34007,10 @@ func _js_global_object_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp_m
 }
 
 func _js_global_object_get_uninitialized_var(tls *libc.TLS, ctx uintptr, p1 uintptr, atom TJSAtom) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs, var_ref uintptr
 	var _ /* pr at bp+0 */ uintptr
@@ -32492,26 +34021,34 @@ func _js_global_object_get_uninitialized_var(tls *libc.TLS, ctx uintptr, p1 uint
 		var_ref = *(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu))
 		(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 		r = var_ref
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	var_ref = _js_create_var_ref(tls, ctx, int32(ETRUE))
 	if !(var_ref != 0) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp)) = _add_property(tls, ctx, p, atom, libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(2)<<libc.Int32FromInt32(4))
 	if expect32(!!!(*(*uintptr)(unsafe.Pointer(bp)) != 0)) {
 		_free_var_ref(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, var_ref)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu)) = var_ref
 	(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 	r = var_ref
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -32520,7 +34057,10 @@ func _js_global_object_get_uninitialized_var(tls *libc.TLS, ctx uintptr, p1 uint
 //	/* return a new variable reference. Get it from the uninitialized
 //	   variables if it is present. Return NULL in case of memory error. */
 func _js_global_object_find_uninitialized_var(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom, is_lexical TBOOL) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p1, prs, var_ref uintptr
 	var _ /* pr at bp+0 */ uintptr
@@ -32538,17 +34078,24 @@ func _js_global_object_find_uninitialized_var(tls *libc.TLS, ctx uintptr, p uint
 		var_ref = _js_create_var_ref(tls, ctx, is_lexical)
 		if !(var_ref != 0) {
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = var_ref
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_direct_or_indirect_eval TBOOL) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags int32
 	var p, p1, prs, var_ref, var_ref1 uintptr
@@ -32565,7 +34112,9 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 			var_ref = *(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu))
 			(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 			r = var_ref
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* if there is a corresponding global variable, reuse its
@@ -32576,7 +34125,9 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 			var_ref1 = _js_create_var_ref(tls, ctx, int32(EFALSE))
 			if !(var_ref1 != 0) {
 				r = libc.UintptrFromInt32(0)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			var_ref = *(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu))
@@ -32599,7 +34150,9 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 			if expect32(!!(int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) == libc.Int32FromInt32(3)<<libc.Int32FromInt32(4))) {
 				if _JS_AutoInitProperty(tls, ctx, p, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name, *(*uintptr)(unsafe.Pointer(bp)), prs) != 0 {
 					r = libc.UintptrFromInt32(0)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				goto retry
@@ -32608,7 +34161,9 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 					var_ref = _js_global_object_get_uninitialized_var(tls, ctx, p, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name)
 					if !(var_ref != 0) {
 						r = libc.UintptrFromInt32(0)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				} else {
@@ -32630,12 +34185,16 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 				(*TJSVarRef)(unsafe.Pointer(var_ref)).Fis_const = uint8(EFALSE)
 			}
 			r = var_ref
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(int32(*(*uint8)(unsafe.Pointer(p + 8))&0x2>>1) != 0) {
 			r = _js_global_object_get_uninitialized_var(tls, ctx, p, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -32644,7 +34203,9 @@ func _js_closure_define_global_var(tls *libc.TLS, ctx uintptr, cv uintptr, is_di
 	var_ref = _js_global_object_find_uninitialized_var(tls, ctx, p1, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name, int32(Tuint8_t(*(*uint16)(unsafe.Pointer(cv + 0))&0x8>>3)))
 	if !(var_ref != 0) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto add_var_ref
@@ -32658,18 +34219,25 @@ add_var_ref:
 	if expect32(!!!(*(*uintptr)(unsafe.Pointer(bp)) != 0)) {
 		_free_var_ref(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, var_ref)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu)) = var_ref
 	(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 	r = var_ref
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_closure_global_var(tls *libc.TLS, ctx uintptr, cv uintptr) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs, var_ref uintptr
 	var _ /* pr at bp+0 */ uintptr
@@ -32680,7 +34248,9 @@ func _js_closure_global_var(tls *libc.TLS, ctx uintptr, cv uintptr) (r uintptr) 
 		var_ref = *(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu))
 		(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 		r = var_ref
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(libc.Int32FromUint64((*TJSContext)(unsafe.Pointer(ctx)).Fglobal_obj))
@@ -32693,7 +34263,9 @@ redo:
 			/* Instantiate property and retry */
 			if _JS_AutoInitProperty(tls, ctx, p, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name, *(*uintptr)(unsafe.Pointer(bp)), prs) != 0 {
 				r = libc.UintptrFromInt32(0)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto redo
@@ -32702,12 +34274,16 @@ redo:
 			var_ref = *(*uintptr)(unsafe.Pointer(&(*TJSProperty)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu))
 			(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count = (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, var_ref))).Fref_count + 1
 			r = var_ref
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = _js_global_object_get_uninitialized_var(tls, ctx, p, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -33295,7 +34871,10 @@ func _close_lexical_var(tls *libc.TLS, ctx uintptr, b uintptr, sf uintptr, var_i
 func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
 	frame_size := 112
 	var frame_malloc uintptr
-	bp := tls.Alloc(frame_size)
+	bp := tlsTake(tls, frame_size)
+	if bp == 0 {
+		bp = tls.Alloc(frame_size)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arg_buf, p, prev_sf, rt, sf uintptr
 	var arg_count, i, v31 int32
@@ -33345,9 +34924,14 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_ob
 	/* better to always check stack overflow */
 	// Changed by internal/fixlib: the room of a small alloca below is the end of this frame (see fixAlloca).
 	if expect32(!!(argc < arg_count)) && uint32(8)*libc.Uint32FromInt32(arg_count) <= 768 {
-		tls.Free(frame_size)
+		if tlsDrop(tls, frame_size) {
+			tlsSignals(tls)
+		}
 		frame_size = 112 + int(uint32(8)*libc.Uint32FromInt32(arg_count))
-		bp = tls.Alloc(frame_size)
+		bp = tlsTake(tls, frame_size)
+		if bp == 0 {
+			bp = tls.Alloc(frame_size)
+		}
 		sf = bp + 24
 	}
 	if _js_check_stack_overflow(tls, rt, uint32(8)*libc.Uint32FromInt32(arg_count)) != 0 {
@@ -33355,7 +34939,9 @@ func _js_call_c_function(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_ob
 		if frame_malloc != 0 {
 			libc.Xfree(tls, frame_malloc)
 		}
-		tls.Free(frame_size)
+		if tlsDrop(tls, frame_size) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prev_sf = (*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_stack_frame
@@ -33615,7 +35201,9 @@ _17:
 	if frame_malloc != 0 {
 		libc.Xfree(tls, frame_malloc)
 	}
-	tls.Free(frame_size)
+	if tlsDrop(tls, frame_size) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -42141,7 +43729,10 @@ func _js_async_function_resolve_create(tls *libc.TLS, ctx1 uintptr, s uintptr, r
 }
 
 func _js_async_function_resume(tls *libc.TLS, ctx1 uintptr, s uintptr) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, res, v5 int32
 	var p, v11, v8 uintptr
@@ -42335,7 +43926,9 @@ _38:
 		goto fail
 	}
 _2:
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_async_function_resolve_call(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
@@ -42553,7 +44146,10 @@ func _js_async_generator_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp
 }
 
 func _js_async_generator_resolve_function_create(tls *libc.TLS, ctx1 uintptr, _generator TJSValue, resolving_funcs uintptr, is_resume_next TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _generator
 	var func1, v4 TJSValue
@@ -42586,7 +44182,9 @@ func _js_async_generator_resolve_function_create(tls *libc.TLS, ctx1 uintptr, _g
 				}
 			}
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*TJSValue)(unsafe.Pointer(resolving_funcs + uintptr(i)*8)) = func1
@@ -42596,12 +44194,17 @@ func _js_async_generator_resolve_function_create(tls *libc.TLS, ctx1 uintptr, _g
 		i = i + 1
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_async_generator_await(tls *libc.TLS, ctx1 uintptr, s uintptr, _value TJSValue) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _value
 	var i, res, v1 int32
@@ -42687,20 +44290,29 @@ _2:
 		goto fail
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_async_generator_resolve_or_reject(tls *libc.TLS, ctx1 uintptr, s uintptr, _result TJSValue, is_reject int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _result
 	var next, next1, p, prev, v1, v3 uintptr
@@ -42782,7 +44394,9 @@ func _js_async_generator_resolve_or_reject(tls *libc.TLS, ctx1 uintptr, s uintpt
 		}
 	}
 	Xjs_free(tls, ctx1, next1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_async_generator_resolve(tls *libc.TLS, ctx2 uintptr, s uintptr, value TJSValue, done TBOOL) {
@@ -42833,7 +44447,10 @@ func _js_async_generator_complete(tls *libc.TLS, ctx uintptr, s uintptr) {
 }
 
 func _js_async_generator_completed_return(tls *libc.TLS, ctx1 uintptr, s uintptr, _value TJSValue) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _value
 	var p, v4, v7 uintptr
@@ -42871,7 +44488,9 @@ _2:
 	_9:
 		if v1 != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -42890,7 +44509,9 @@ _2:
 			}
 		}
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[2]TJSValue)(unsafe.Pointer(bp + 8)))[0] = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -42936,7 +44557,9 @@ _2:
 		}
 	}
 	r = res
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -43209,7 +44832,10 @@ func _js_async_generator_resolve_function(tls *libc.TLS, ctx1 uintptr, this_obj 
 //
 //	/* magic = GEN_MAGIC_x */
 func _js_async_generator_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, req, s, v12, v4, v7, v9 uintptr
 	var promise, res2, v3, v8 TJSValue
@@ -43224,7 +44850,9 @@ func _js_async_generator_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, ar
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(s != 0) {
@@ -43284,7 +44912,9 @@ _2:
 			}
 		}
 		r = promise
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	req = Xjs_mallocz(tls, ctx2, uint32(48))
@@ -43332,7 +44962,9 @@ _32:
 		_js_async_generator_resume_next(tls, ctx2, s)
 	}
 	r = promise
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -43377,7 +45009,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -45192,7 +46826,10 @@ func _free_token(tls *libc.TLS, s uintptr, token uintptr) {
 }
 
 func _dump_token(tls *libc.TLS, s uintptr, token uintptr) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var str, str1, str2, str21, v9 uintptr
 	var _ /* buf at bp+8 */ [64]uint8
@@ -45302,7 +46939,9 @@ _7:
 	}
 	goto _8
 _8:
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -45339,7 +46978,10 @@ func _get_line_col(tls *libc.TLS, pcol_num uintptr, buf uintptr, len1 Tsize_t) (
 }
 
 func _get_line_col_cached(tls *libc.TLS, s uintptr, pcol_num uintptr, ptr uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var line_num int32
 	var p uintptr
@@ -45384,7 +47026,9 @@ func _get_line_col_cached(tls *libc.TLS, s uintptr, pcol_num uintptr, ptr uintpt
 	(*TGetLineColCache)(unsafe.Pointer(s)).Fptr = ptr
 	*(*int32)(unsafe.Pointer(pcol_num)) = (*TGetLineColCache)(unsafe.Pointer(s)).Fcol_num
 	r = (*TGetLineColCache)(unsafe.Pointer(s)).Fline_num
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -45392,7 +47036,10 @@ func _get_line_col_cached(tls *libc.TLS, s uintptr, pcol_num uintptr, ptr uintpt
 //
 //	/* 'ptr' is the position of the error in the source */
 func _js_parse_error_v(tls *libc.TLS, s uintptr, ptr uintptr, fmt uintptr, ap Tva_list) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx uintptr
 	var line_num int32
@@ -45402,14 +47049,18 @@ func _js_parse_error_v(tls *libc.TLS, s uintptr, ptr uintptr, fmt uintptr, ap Tv
 	if (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
 		XJS_ThrowOutOfMemory(tls, ctx)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	line_num = _get_line_col(tls, bp, (*TJSParseState)(unsafe.Pointer(s)).Fbuf_start, libc.Uint32FromInt32(int32(ptr)-int32((*TJSParseState)(unsafe.Pointer(s)).Fbuf_start)))
 	_JS_ThrowError2(tls, ctx, int32(EJS_SYNTAX_ERROR), fmt, ap, int32(EFALSE))
 	_build_backtrace(tls, ctx, (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt)).Fcurrent_exception, (*TJSParseState)(unsafe.Pointer(s)).Ffilename, line_num+int32(1), *(*int32)(unsafe.Pointer(bp))+int32(1), 0)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -45434,49 +47085,73 @@ func _js_parse_error(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) (r int32
 }
 
 func _js_parse_expect(tls *libc.TLS, s uintptr, tok int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != tok {
 		/* XXX: dump token correctly in all cases */
 		r = _js_parse_error(tls, s, __ccgo_ts+4115, libc.VaList(bp+8, tok))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _next_token(tls, s)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_parse_expect_semi(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != int32(';') {
 		/* automatic insertion of ';' */
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_EOF) || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('}') || (*TJSParseState)(unsafe.Pointer(s)).Fgot_lf != 0 {
 			r = 0
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = _js_parse_error(tls, s, __ccgo_ts+4115, libc.VaList(bp+8, int32(';')))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _next_token(tls, s)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_parse_error_reserved_identifier(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf1 at bp+0 */ [64]uint8
 	r = _js_parse_error(tls, s, __ccgo_ts+4130, libc.VaList(bp+72, _JS_AtomGetStr(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, bp, int32(64), *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)))))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_parse_template_part(tls *libc.TLS, s uintptr, p uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, v2 uintptr
 	var c Tuint32_t
@@ -45544,7 +47219,9 @@ func _js_parse_template_part(tls *libc.TLS, s uintptr, p uintptr) (r int32) {
 _5:
 	if v4 != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval = int32(ETOK_TEMPLATE)
@@ -45552,7 +47229,9 @@ _5:
 	*(*TJSValue)(unsafe.Pointer(s + 8 + 8)) = str
 	(*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr = p
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto unexpected_eof
 unexpected_eof:
@@ -45563,12 +47242,17 @@ fail:
 	;
 	_string_buffer_free(tls, b)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_parse_string(tls *libc.TLS, s uintptr, sep int32, do_throw TBOOL, _p uintptr, token uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*uintptr)(unsafe.Pointer(bp)) = _p
 	var b, p_escape uintptr
@@ -45754,7 +47438,9 @@ func _js_parse_string(tls *libc.TLS, s uintptr, sep int32, do_throw TBOOL, _p ui
 _17:
 	if v16 != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSToken)(unsafe.Pointer(token)).Fval = int32(ETOK_STRING)
@@ -45772,7 +47458,9 @@ _17:
 	})(unsafe.Pointer(token + 8))).Fstr = str
 	*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp))
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto invalid_utf8
 invalid_utf8:
@@ -45792,7 +47480,9 @@ fail:
 	;
 	_string_buffer_free(tls, b)
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -45801,7 +47491,10 @@ func _token_is_pseudo_keyword(tls *libc.TLS, s uintptr, atom TJSAtom) (r TBOOL) 
 }
 
 func _js_parse_regexp(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, b2, p, p1, v16, v5 uintptr
 	var body_str, flags_str, v32 TJSValue
@@ -45822,7 +47515,9 @@ func _js_parse_regexp(tls *libc.TLS, s uintptr) (r int32) {
 	in_class = int32(EFALSE)
 	if _string_buffer_init(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, b, int32(32)) != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _string_buffer_init(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, b2, int32(1)) != 0 {
@@ -46030,7 +47725,9 @@ _28:
 			}
 		}
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval = int32(ETOK_REGEXP)
@@ -46038,7 +47735,9 @@ _28:
 	*(*TJSValue)(unsafe.Pointer(s + 8 + 8 + 8)) = flags_str
 	(*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr = p1
 	r = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -46046,7 +47745,9 @@ fail:
 	_string_buffer_free(tls, b)
 	_string_buffer_free(tls, b2)
 	r = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -46109,7 +47810,10 @@ func _reparse_ident_token(tls *libc.TLS, s uintptr) {
 //
 //	/* 'c' is the first character. Return JS_ATOM_NULL in case of error */
 func _parse_ident(tls *libc.TLS, s uintptr, pp uintptr, pident_has_escape uintptr, c2 int32, is_private TBOOL) (r TJSAtom) {
-	bp := tls.Alloc(144)
+	bp := tlsTake(tls, 144)
+	if bp == 0 {
+		bp = tls.Alloc(144)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var ident_pos, v1 Tsize_t
@@ -46188,12 +47892,17 @@ done:
 	}
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = atom
-	tls.Free(144)
+	if tlsDrop(tls, 144) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _next_token(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var c11, c6, flags, v101, v103, v108, v110 int32
@@ -46210,13 +47919,17 @@ func _next_token(tls *libc.TLS, s uintptr) (r int32) {
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fctx)).Frt, uint32(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 		r = -1
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSParseState)(unsafe.Pointer(s)).Fcur_func != 0 && (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
 		XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_free_token(tls, s, s+8)
@@ -47111,14 +48824,18 @@ _93:
 	(*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 	//    dump_token(s, &s->token);
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	(*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval = int32(ETOK_ERROR)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -47127,7 +48844,10 @@ fail:
 //	/* 'c' is the first character. Return JS_ATOM_NULL in case of error */
 //	/* XXX: accept unicode identifiers as JSON5 ? */
 func _json_parse_ident(tls *libc.TLS, s uintptr, pp uintptr, c1 int32) (r TJSAtom) {
-	bp := tls.Alloc(144)
+	bp := tlsTake(tls, 144)
+	if bp == 0 {
+		bp = tls.Alloc(144)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var ident_pos, v2 Tsize_t
@@ -47174,12 +48894,17 @@ done:
 	}
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = atom
-	tls.Free(144)
+	if tlsDrop(tls, 144) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _json_parse_string(tls *libc.TLS, s uintptr, pp uintptr, sep int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, v2 uintptr
 	var c1 Tuint32_t
@@ -47354,7 +49079,9 @@ func _json_parse_string(tls *libc.TLS, s uintptr, pp uintptr, sep int32) (r int3
 	*(*TJSValue)(unsafe.Pointer(s + 8 + 8)) = _string_buffer_end(tls, b)
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto end_of_input
 end_of_input:
@@ -47365,12 +49092,17 @@ fail:
 	;
 	_string_buffer_free(tls, b)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _json_parse_number(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(272)
+	bp := tlsTake(tls, 272)
+	if bp == 0 {
+		bp = tls.Alloc(272)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d2, v5 float64
 	var p_start uintptr
@@ -47455,7 +49187,9 @@ func _json_parse_number(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
 unexpected_token:
 	;
 	r = _js_parse_error_pos(tls, s, *(*uintptr)(unsafe.Pointer(bp + 24)), __ccgo_ts+4656, libc.VaList(bp+256, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)))))))
-	tls.Free(272)
+	if tlsDrop(tls, 272) {
+		tlsSignals(tls)
+	}
 	return
 _4:
 	;
@@ -47467,7 +49201,9 @@ _2:
 	;
 	if _is_digit(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)) + 1)))) != 0 {
 		r = _js_parse_error_pos(tls, s, *(*uintptr)(unsafe.Pointer(bp + 24)), __ccgo_ts+4678, 0)
-		tls.Free(272)
+		if tlsDrop(tls, 272) {
+			tlsSignals(tls)
+		}
 		return
 	}
 _1:
@@ -47479,7 +49215,9 @@ _1:
 		*(*uintptr)(unsafe.Pointer(bp + 24)) = *(*uintptr)(unsafe.Pointer(bp + 24)) + 1
 		if !(_is_digit(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)))))) != 0) {
 			r = _js_parse_error_pos(tls, s, *(*uintptr)(unsafe.Pointer(bp + 24)), __ccgo_ts+4696, 0)
-			tls.Free(272)
+			if tlsDrop(tls, 272) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		for _is_digit(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)))))) != 0 {
@@ -47493,7 +49231,9 @@ _1:
 		}
 		if !(_is_digit(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)))))) != 0) {
 			r = _js_parse_error_pos(tls, s, *(*uintptr)(unsafe.Pointer(bp + 24)), __ccgo_ts+4727, 0)
-			tls.Free(272)
+			if tlsDrop(tls, 272) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		for _is_digit(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 24)))))) != 0 {
@@ -47531,12 +49271,17 @@ _7:
 	*(*TJSValue)(unsafe.Pointer(s + 8 + 8)) = v6
 	*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp + 24))
 	r = 0
-	tls.Free(272)
+	if tlsDrop(tls, 272) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _json_next_token(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var c int32
@@ -47546,7 +49291,9 @@ func _json_next_token(tls *libc.TLS, s uintptr) (r int32) {
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fctx)).Frt, uint32(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 		r = -1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_free_token(tls, s, s+8)
@@ -48005,19 +49752,26 @@ _80:
 	(*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 	//    dump_token(s, &s->token);
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	(*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval = int32(ETOK_ERROR)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _match_identifier(tls *libc.TLS, _p uintptr, s uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*uintptr)(unsafe.Pointer(bp)) = _p
 	var c2, v3 Tuint32_t
@@ -48031,7 +49785,9 @@ func _match_identifier(tls *libc.TLS, _p uintptr, s uintptr) (r int32) {
 		*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(bp)) + 1
 		if libc.Int32FromUint8(uint8(*(*uint8)(unsafe.Pointer(v1)))) != libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(v2))) {
 			r = 0
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -48056,7 +49812,9 @@ func _match_identifier(tls *libc.TLS, _p uintptr, s uintptr) (r int32) {
 	}
 _5:
 	r = libc.BoolInt32(!(v4 != 0))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -48074,7 +49832,10 @@ _5:
 //	   - otherwise the next character or unicode codepoint is returned.
 //	 */
 func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c4, v2 Tuint32_t
 	var v6, v8 int32
@@ -48094,7 +49855,9 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 		case uint32('\n'):
 			if no_line_terminator != 0 {
 				r = int32('\n')
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto _1
@@ -48110,7 +49873,9 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 			if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('/') {
 				if no_line_terminator != 0 {
 					r = int32('\n')
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				for *(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))) != 0 && libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('\r') && libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('\n') {
@@ -48127,7 +49892,9 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 					}
 					if (libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('\r') || libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('\n')) && no_line_terminator != 0 {
 						r = int32('\n')
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('*') && libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 1))) == int32('/') {
@@ -48140,50 +49907,70 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 		case uint32('='):
 			if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('>') {
 				r = int32(ETOK_ARROW)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		case uint32('i'):
 			if _match_identifier(tls, *(*uintptr)(unsafe.Pointer(bp)), __ccgo_ts+4761) != 0 {
 				r = int32(ETOK_IN)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _match_identifier(tls, *(*uintptr)(unsafe.Pointer(bp)), __ccgo_ts+4763) != 0 {
 				*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp)) + uintptr(5)
 				r = int32(ETOK_IMPORT)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = int32(ETOK_IDENT)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32('o'):
 			if _match_identifier(tls, *(*uintptr)(unsafe.Pointer(bp)), __ccgo_ts+4769) != 0 {
 				r = int32(ETOK_OF)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = int32(ETOK_IDENT)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32('e'):
 			if _match_identifier(tls, *(*uintptr)(unsafe.Pointer(bp)), __ccgo_ts+4771) != 0 {
 				r = int32(ETOK_EXPORT)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = int32(ETOK_IDENT)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32('f'):
 			if _match_identifier(tls, *(*uintptr)(unsafe.Pointer(bp)), __ccgo_ts+4777) != 0 {
 				r = int32(ETOK_FUNCTION)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			r = int32(ETOK_IDENT)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case uint32('\\'):
 			if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('u') {
@@ -48201,7 +49988,9 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 			_7:
 				if v6 != 0 {
 					r = int32(ETOK_IDENT)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -48210,7 +49999,9 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 				c4 = libc.Uint32FromInt32(Xunicode_from_utf8(tls, *(*uintptr)(unsafe.Pointer(bp))-uintptr(1), int32(MUTF8_CHAR_LEN_MAX), bp))
 				if no_line_terminator != 0 && (c4 == uint32(MCP_PS) || c4 == uint32(MCP_LS)) {
 					r = int32('\n')
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -48243,33 +50034,47 @@ func _simple_next_token(tls *libc.TLS, pp uintptr, no_line_terminator TBOOL) (r 
 		_17:
 			if v6 != 0 {
 				r = int32(ETOK_IDENT)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			break
 		}
 		r = libc.Int32FromUint32(c4)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 		goto _1
 	_1:
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _peek_token(tls *libc.TLS, s uintptr, no_line_terminator TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* p at bp+0 */ uintptr
 	*(*uintptr)(unsafe.Pointer(bp)) = (*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr
 	r = _simple_next_token(tls, bp, no_line_terminator)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _skip_shebang(tls *libc.TLS, pp uintptr, buf_end uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c int32
 	var _ /* p at bp+0 */ uintptr
@@ -48297,7 +50102,9 @@ func _skip_shebang(tls *libc.TLS, pp uintptr, buf_end uintptr) {
 		}
 		*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp))
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -48309,7 +50116,10 @@ func _skip_shebang(tls *libc.TLS, pp uintptr, buf_end uintptr) {
 //	   by '(' or '.' or export keyword.
 //	*/
 func XJS_DetectModule(tls *libc.TLS, input uintptr, input_len Tsize_t) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var tok int32
 	var _ /* p at bp+0 */ uintptr
@@ -48320,18 +50130,26 @@ func XJS_DetectModule(tls *libc.TLS, input uintptr, input_len Tsize_t) (r TBOOL)
 	case int32(ETOK_IMPORT):
 		tok = _simple_next_token(tls, bp, int32(EFALSE))
 		r = libc.BoolInt32(tok != int32('.') && tok != int32('('))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(ETOK_EXPORT):
 		r = int32(ETRUE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -48836,7 +50654,10 @@ func _find_lexical_decl(tls *libc.TLS, ctx uintptr, fd uintptr, name TJSAtom, sc
 }
 
 func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var fd, new_buf uintptr
 	var new_size, scope, v1, v2, v3 int32
@@ -48848,7 +50669,9 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 		if (*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 != 0 {
 			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* XXX: should check for scope overflow */
@@ -48870,7 +50693,9 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 				if !(new_buf != 0) {
 					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(1)
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				libc.Xmemcpy(tls, new_buf, (*TJSFunctionDef)(unsafe.Pointer(fd)).Fscopes, libc.Uint32FromInt32((*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_count)*uint32(8))
@@ -48879,7 +50704,9 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 				if !(new_buf != 0) {
 					(*TJSFunctionDef)(unsafe.Pointer(fd)).Fbyte_code.Ferror1 = int32(1)
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -48895,11 +50722,15 @@ func _push_scope(tls *libc.TLS, s uintptr) (r int32) {
 		v1 = scope
 		(*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level = v1
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -49280,7 +51111,10 @@ func _add_private_class_field(tls *libc.TLS, s uintptr, fd uintptr, name TJSAtom
 //
 //	/* Note: all the fields are already sealed except length */
 func _seal_template_obj(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p uintptr
 	var _ /* prs at bp+0 */ uintptr
@@ -49290,18 +51124,25 @@ func _seal_template_obj(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32) {
 	if *(*uintptr)(unsafe.Pointer(bp)) != 0 {
 		if _js_update_property_flags(tls, ctx, p, bp, int32(*(*uint32)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 0))&0xfc000000>>26) & ^(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	libc.SetBitFieldPtr8Uint8(p+8, uint8(EFALSE), 1, 0x2)
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx2, p, p1, str, v4, v7 uintptr
 	var depth, ret, v1 int32
@@ -49321,7 +51162,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 	_2:
 		if v1 != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		//        pool_idx = s->cur_func->cpool_count;
@@ -49341,7 +51184,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 		}
 		if ret != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		raw_array = XJS_NewArray(tls, ctx2)
@@ -49350,12 +51195,16 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 	_9:
 		if v1 != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if XJS_DefinePropertyValue(tls, ctx2, template_object, uint32(EJS_ATOM_raw), raw_array, libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) < 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -49378,7 +51227,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 		_14:
 			if XJS_DefinePropertyValueUint32(tls, ctx2, raw_array, libc.Uint32FromInt32(depth), v10, libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) < 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			/* re-parse the string with escape sequences but do not throw a
@@ -49389,7 +51240,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 			}
 			if XJS_DefinePropertyValueUint32(tls, ctx2, template_object, libc.Uint32FromInt32(depth), *(*TJSValue)(unsafe.Pointer(bp + 8)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) < 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -49412,7 +51265,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 			*(*TJSValue)(unsafe.Pointer(s + 8 + 8)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 			if _js_parse_string(tls, s, int32('`'), int32(ETRUE), *(*uintptr)(unsafe.Pointer(bp + 24)), bp, bp+24) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			str = uintptr(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp + 8))))
@@ -49433,7 +51288,9 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 				}
 				if ret != 0 {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if depth == 0 {
@@ -49465,18 +51322,24 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		depth = depth + 1
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != int32('}') {
 			r = _js_parse_error(tls, s, __ccgo_ts+4988, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* XXX: should convert to string at this stage? */
@@ -49486,12 +51349,16 @@ func _js_parse_template(tls *libc.TLS, s uintptr, call int32, argc uintptr) (r i
 		(*TJSParseState)(unsafe.Pointer(s)).Fgot_lf = int32(EFALSE)
 		if _js_parse_template_part(tls, s, (*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = _js_parse_expect(tls, s, int32(ETOK_TEMPLATE))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto done
 done:
@@ -49509,9 +51376,13 @@ done:
 done1:
 	;
 	r = _next_token(tls, s)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -49737,7 +51608,10 @@ func _has_lf_in_range(tls *libc.TLS, p1 uintptr, p2 uintptr) (r TBOOL) {
 //	/* XXX: no longer works if regexps are present. Could use previous
 //	   regexp parsing heuristics to handle most cases */
 func _js_parse_skip_parens_token(tls *libc.TLS, s uintptr, pbits uintptr, no_line_terminator TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bits, c, last_tok, tok, tok_len int32
 	var last_token_ptr uintptr
@@ -49921,11 +51795,15 @@ done:
 	}
 	if _js_parse_seek_token(tls, s, bp) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = tok
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -49987,7 +51865,10 @@ func _set_object_name_computed(tls *libc.TLS, s uintptr) {
 }
 
 func _js_parse_object_literal(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func_kind TJSFunctionKindEnum
 	var func_type TJSParseFunctionEnum
@@ -50009,12 +51890,16 @@ func _js_parse_object_literal(tls *libc.TLS, s uintptr) (r int32) {
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_ELLIPSIS) {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _js_parse_assign_expr(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_emit_op(tls, s, uint8(EOP_null)) /* dummy excludeList */
@@ -50117,14 +52002,18 @@ func _js_parse_object_literal(tls *libc.TLS, s uintptr) (r int32) {
 		goto fail
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp)))
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -50281,7 +52170,10 @@ func _emit_class_init_end(tls *libc.TLS, s uintptr, cf uintptr) {
 }
 
 func _js_parse_class(tls *libc.TLS, s uintptr, is_class_expr TBOOL, export_flag TJSParseExportEnum) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cf, cf1, cf2, cf3, cf4, class_start_ptr, ctx, fd, start_ptr, v1 uintptr
 	var class_flags, class_name_var_idx, ctor_cpool_offset, define_class_offset, i, idx, is_static1, next, prop_type, ret, saved_js_mode, var_idx, var_kind int32
@@ -50818,7 +52710,9 @@ func _js_parse_class(tls *libc.TLS, s uintptr, is_class_expr TBOOL, export_flag 
 	XJS_FreeAtom(tls, ctx, class_var_name)
 	(*TJSFunctionDef)(unsafe.Pointer(fd)).Fjs_mode = libc.Uint8FromInt32(saved_js_mode)
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -50828,7 +52722,9 @@ fail:
 	XJS_FreeAtom(tls, ctx, class_var_name)
 	(*TJSFunctionDef)(unsafe.Pointer(fd)).Fjs_mode = libc.Uint8FromInt32(saved_js_mode)
 	r = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -51275,11 +53171,16 @@ func _js_parse_expr_paren(tls *libc.TLS, s uintptr) (r int32) {
 }
 
 func _js_unsupported_keyword(tls *libc.TLS, s uintptr, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf at bp+0 */ [64]uint8
 	r = _js_parse_error(tls, s, __ccgo_ts+5405, libc.VaList(bp+72, _JS_AtomGetStr(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, bp, int32(64), atom)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -51434,7 +53335,10 @@ fail:
 //	/* Return -1 if error, 0 if no initializer, 1 if an initializer is
 //	   present at the top level. */
 func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg int32, hasval int32, has_ellipsis int32, allow_initializer TBOOL, export_flag TBOOL) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var assign_addr, label_assign, label_done, label_hasval, label_hasval1, label_parse, prop_type, start_addr, tok1, v5 int32
 	var has_initializer, has_spread TBOOL
@@ -51474,7 +53378,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('{') {
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* throw an exception if the value cannot be converted to an object */
@@ -51489,12 +53395,16 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				if !(has_ellipsis != 0) {
 					XJS_ThrowInternalError(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, __ccgo_ts+5581, 0)
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if _next_token(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if !(tok != 0) {
@@ -51503,7 +53413,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				*(*TJSAtom)(unsafe.Pointer(bp + 12)) = _js_parse_destructuring_var(tls, s, tok, is_arg)
 				if *(*TJSAtom)(unsafe.Pointer(bp + 12)) == uint32(MJS_ATOM_NULL) {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if _need_var_reference(tls, s, tok) != 0 {
@@ -51524,7 +53436,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				;
 				if _js_parse_left_hand_side_expr(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				goto lvalue0
@@ -51532,7 +53446,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				;
 				if _get_lvalue(tls, s, bp+16, bp+20, bp+12, bp, bp+4, int32(EFALSE), int32('{')) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			_2:
@@ -51549,7 +53465,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 			prop_type = _js_parse_property_name(tls, s, bp+8, int32(EFALSE), int32(ETRUE), int32(EFALSE))
 			if prop_type < 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*TJSAtom)(unsafe.Pointer(bp + 12)) = uint32(MJS_ATOM_NULL)
@@ -51592,7 +53510,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				}
 				if _js_parse_destructuring_element(tls, s, tok, is_arg, int32(ETRUE), -int32(1), int32(ETRUE), export_flag) < 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('}') {
@@ -51601,7 +53521,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				/* accept a trailing comma before the '}' */
 				if _js_parse_expect(tls, s, int32(',')) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				continue
@@ -51788,7 +53710,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 			/* accept a trailing comma before the '}' */
 			if _js_parse_expect(tls, s, int32(',')) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -51799,14 +53723,18 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('[') {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			/* the block environment is only needed in generators in case
@@ -51820,12 +53748,16 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_ELLIPSIS) {
 					if _next_token(tls, s) != 0 {
 						r = -int32(1)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(',') || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(']') {
 						r = _js_parse_error(tls, s, __ccgo_ts+5645, 0)
-						tls.Free(64)
+						if tlsDrop(tls, 64) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					has_spread = int32(ETRUE)
@@ -51845,7 +53777,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 						if has_spread != 0 {
 							if tok1 == int32('=') {
 								r = _js_parse_error(tls, s, __ccgo_ts+5672, 0)
-								tls.Free(64)
+								if tlsDrop(tls, 64) {
+									tlsSignals(tls)
+								}
 								return
 							}
 							_js_emit_spread_code(tls, s, 0)
@@ -51856,7 +53790,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 						}
 						if _js_parse_destructuring_element(tls, s, tok, is_arg, int32(ETRUE), *(*int32)(unsafe.Pointer(bp + 24))&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)), int32(ETRUE), export_flag) < 0 {
 							r = -int32(1)
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					} else {
@@ -51890,7 +53826,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 						;
 						if _js_parse_left_hand_side_expr(tls, s) != 0 {
 							r = -int32(1)
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						goto lvalue2
@@ -51898,7 +53836,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 						;
 						if _get_lvalue(tls, s, bp+16, bp+20, bp+12, bp, bp+28, int32(EFALSE), int32('[')) != 0 {
 							r = -int32(1)
-							tls.Free(64)
+							if tlsDrop(tls, 64) {
+								tlsSignals(tls)
+							}
 							return
 						}
 					_12:
@@ -51936,13 +53876,17 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 				}
 				if has_spread != 0 {
 					r = _js_parse_error(tls, s, __ccgo_ts+5713, 0)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* accept a trailing comma before the ']' */
 				if _js_parse_expect(tls, s, int32(',')) != 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -51952,12 +53896,16 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 			_pop_break_entry(tls, (*TJSParseState)(unsafe.Pointer(s)).Fcur_func)
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
 			r = _js_parse_error(tls, s, __ccgo_ts+5747, 0)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -51965,7 +53913,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 		label_done = _emit_goto(tls, s, int32(EOP_goto), -int32(1))
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_label(tls, s, label_parse)
@@ -51974,7 +53924,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 		}
 		if _js_parse_assign_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_goto(tls, s, int32(EOP_goto), label_assign)
@@ -51987,14 +53939,18 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 		if !(hasval != 0) {
 			_js_parse_error(tls, s, __ccgo_ts+5773, 0)
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* remove test and decrement label ref count */
 		if (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Ferror1 != 0 {
 			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		libc.Xmemset(tls, (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fbyte_code.Fbuf+uintptr(start_addr), int32(EOP_nop), libc.Uint32FromInt32(assign_addr-start_addr))
@@ -52002,7 +53958,9 @@ func _js_parse_destructuring_element(tls *libc.TLS, s uintptr, tok int32, is_arg
 		has_initializer = int32(EFALSE)
 	}
 	r = has_initializer
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto prop_error
 prop_error:
@@ -52013,7 +53971,9 @@ var_error:
 	;
 	XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp + 12)))
 	r = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -52056,7 +54016,10 @@ func _optional_chain_test(tls *libc.TLS, s uintptr, poptional_chaining_label uin
 //
 //	/* allowed parse_flags: PF_POSTFIX_CALL */
 func _js_parse_postfix_expr(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var accept_lparen, has_optional_chain TBOOL
 	var call_type TFuncCallType
@@ -52138,14 +54101,18 @@ _1:
 		;
 		if _emit_push_const(tls, s, val, 0) < 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	_22:
 	}
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52153,7 +54120,9 @@ _2:
 	;
 	if _js_parse_template(tls, s, 0, libc.UintptrFromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52161,12 +54130,16 @@ _3:
 	;
 	if _emit_push_const(tls, s, *(*TJSValue)(unsafe.Pointer(s + 8 + 8)), int32(1)) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52182,13 +54155,17 @@ parse_regexp:
 	;
 	if !((*TJSContext)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fctx)).Fcompile_regexp != 0) {
 		r = _js_parse_error(tls, s, __ccgo_ts+5814, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* the previous token is '/' or '/=', so no need to free */
 	if _js_parse_regexp(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _emit_push_const(tls, s, *(*TJSValue)(unsafe.Pointer(s + 8 + 8)), 0)
@@ -52200,7 +54177,9 @@ _24:
 		line_num = _get_line_col(tls, bp+4, (*TJSParseState)(unsafe.Pointer(s)).Fbuf_start, libc.Uint32FromInt32(int32((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr)-int32((*TJSParseState)(unsafe.Pointer(s)).Fbuf_start)))
 		_build_backtrace(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, (*TJSRuntime)(unsafe.Pointer((*TJSContext)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fctx)).Frt)).Fcurrent_exception, (*TJSParseState)(unsafe.Pointer(s)).Ffilename, line_num+int32(1), *(*int32)(unsafe.Pointer(bp + 4))+int32(1), 0)
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _emit_push_const(tls, s, str, 0)
@@ -52219,7 +54198,9 @@ _24:
 	}
 	if ret != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* we use a specific opcode to be sure the correct
@@ -52228,7 +54209,9 @@ _24:
 	_emit_op(tls, s, uint8(EOP_regexp))
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52236,7 +54219,9 @@ _6:
 	;
 	if _js_parse_expr_paren(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52244,7 +54229,9 @@ _7:
 	;
 	if _js_parse_function_decl(tls, s, int32(EJS_PARSE_FUNC_EXPR), int32(EJS_FUNC_NORMAL), uint32(MJS_ATOM_NULL), (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52252,7 +54239,9 @@ _8:
 	;
 	if _js_parse_class(tls, s, int32(ETRUE), int32(EJS_PARSE_EXPORT_NONE)) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _20
@@ -52260,7 +54249,9 @@ _9:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_emit_op(tls, s, uint8(EOP_null))
@@ -52269,7 +54260,9 @@ _10:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_emit_op(tls, s, uint8(EOP_scope_get_var))
@@ -52280,7 +54273,9 @@ _11:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_emit_op(tls, s, uint8(EOP_push_false))
@@ -52289,7 +54284,9 @@ _12:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_emit_op(tls, s, uint8(EOP_push_true))
@@ -52298,7 +54295,9 @@ _13:
 	;
 	if *(*TBOOL)(unsafe.Pointer(s + 8 + 8 + 8)) != 0 {
 		r = _js_parse_error_reserved_identifier(tls, s)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	source_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
@@ -52307,13 +54306,17 @@ _13:
 	}
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_FUNCTION) {
 		if _js_parse_function_decl(tls, s, int32(EJS_PARSE_FUNC_EXPR), int32(EJS_FUNC_ASYNC), uint32(MJS_ATOM_NULL), source_ptr) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -52326,14 +54329,18 @@ _30:
 	if *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)) == uint32(EJS_ATOM_arguments) && !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Farguments_allowed != 0) {
 		_js_parse_error(tls, s, __ccgo_ts+5839, 0)
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	name = XJS_DupAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)))
 	if _next_token(tls, s) != 0 {
 		XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, name)
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto do_get_var
@@ -52353,13 +54360,17 @@ _14:
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('{') {
 		if _js_parse_object_literal(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		if _js_parse_array_literal(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -52368,28 +54379,38 @@ _16:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('.') {
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(_token_is_pseudo_keyword(tls, s, uint32(EJS_ATOM_target)) != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+5904, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fnew_target_allowed != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+5921, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_op(tls, s, uint8(EOP_scope_get_var))
@@ -52398,7 +54419,9 @@ _16:
 	} else {
 		if _js_parse_postfix_expr(tls, s, 0) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		accept_lparen = int32(ETRUE)
@@ -52417,13 +54440,17 @@ _17:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('(') {
 		if !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fsuper_call_allowed != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+5962, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		call_type = int32(EFUNC_CALL_SUPER_CTOR)
@@ -52431,7 +54458,9 @@ _17:
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('.') || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('[') {
 			if !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fsuper_allowed != 0) {
 				r = _js_parse_error(tls, s, __ccgo_ts+6015, 0)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_emit_op(tls, s, uint8(EOP_scope_get_var))
@@ -52443,7 +54472,9 @@ _17:
 			_emit_op(tls, s, uint8(EOP_get_super))
 		} else {
 			r = _js_parse_error(tls, s, __ccgo_ts+6049, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -52452,28 +54483,38 @@ _18:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('.') {
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(_token_is_pseudo_keyword(tls, s, uint32(EJS_ATOM_meta)) != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6072, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSParseState)(unsafe.Pointer(s)).Fis_module != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6086, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_op(tls, s, uint8(EOP_special_object))
@@ -52481,36 +54522,48 @@ _18:
 	} else {
 		if _js_parse_expect(tls, s, int32('(')) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(accept_lparen != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6124, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_assign_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(',') {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != int32(')') {
 				if _js_parse_assign_expr(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* accept a trailing comma */
 				if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(',') {
 					if _next_token(tls, s) != 0 {
 						r = -int32(1)
-						tls.Free(48)
+						if tlsDrop(tls, 48) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -52522,7 +54575,9 @@ _18:
 		}
 		if _js_parse_expect(tls, s, int32(')')) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_op(tls, s, uint8(EOP_import))
@@ -52531,7 +54586,9 @@ _18:
 _19:
 	;
 	r = _js_parse_error(tls, s, __ccgo_ts+6150, libc.VaList(bp+24, int32((*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr)-int32((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr), (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _20:
 	;
@@ -52544,14 +54601,18 @@ _20:
 		}
 		if parse_flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) == 0 {
 			r = _js_parse_error(tls, s, __ccgo_ts+6189, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 		/* optional chaining */
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		has_optional_chain = int32(ETRUE)
@@ -52572,7 +54633,9 @@ _20:
 		}
 		if *(*int32)(unsafe.Pointer(bp)) >= 0 {
 			r = _js_parse_error(tls, s, __ccgo_ts+6239, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		call_type = int32(EFUNC_CALL_TEMPLATE)
@@ -52591,7 +54654,9 @@ _20:
 		op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(call_type == int32(EFUNC_CALL_NORMAL)) {
@@ -52698,7 +54763,9 @@ _20:
 		if call_type == int32(EFUNC_CALL_TEMPLATE) {
 			if _js_parse_template(tls, s, int32(1), bp+8) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto emit_func_call
@@ -52722,7 +54789,9 @@ _20:
 		for (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != int32(')') {
 			if *(*int32)(unsafe.Pointer(bp + 8)) >= int32(65535) {
 				r = _js_parse_error(tls, s, __ccgo_ts+6291, 0)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_ELLIPSIS) {
@@ -52730,7 +54799,9 @@ _20:
 			}
 			if _js_parse_assign_expr(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*int32)(unsafe.Pointer(bp + 8)) = *(*int32)(unsafe.Pointer(bp + 8)) + 1
@@ -52740,7 +54811,9 @@ _20:
 			/* accept a trailing comma before the ')' */
 			if _js_parse_expect(tls, s, int32(',')) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -52756,12 +54829,16 @@ _20:
 			if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_ELLIPSIS) {
 				if _next_token(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if _js_parse_assign_expr(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* XXX: could pass is_last indicator? */
@@ -52769,7 +54846,9 @@ _20:
 			} else {
 				if _js_parse_assign_expr(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* array idx val */
@@ -52782,13 +54861,17 @@ _20:
 			/* accept a trailing comma before the ')' */
 			if _js_parse_expect(tls, s, int32(',')) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* drop the index */
@@ -52842,7 +54925,9 @@ _20:
 		;
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto emit_func_call
@@ -52897,7 +54982,9 @@ _20:
 		op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto parse_property
@@ -52908,7 +54995,9 @@ _20:
 			/* private class field */
 			if _get_prev_opcode(tls, fd) == int32(EOP_get_super) {
 				r = _js_parse_error(tls, s, __ccgo_ts+6315, 0)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if has_optional_chain != 0 {
@@ -52920,7 +55009,9 @@ _20:
 		} else {
 			if !(_token_is_ident(tls, (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval) != 0) {
 				r = _js_parse_error(tls, s, __ccgo_ts+6357, 0)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _get_prev_opcode(tls, fd) == int32(EOP_get_super) {
@@ -52941,7 +55032,9 @@ _20:
 				}
 				if ret1 != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				_emit_op(tls, s, uint8(EOP_get_super_value))
@@ -52955,7 +55048,9 @@ _20:
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _53
@@ -52974,17 +55069,23 @@ _20:
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_expect(tls, s, int32(']')) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_source_pos(tls, s, op_token_ptr)
@@ -53028,7 +55129,9 @@ _20:
 		}
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -53180,7 +55283,10 @@ _10:
 //
 //	/* allowed parse_flags: PF_POW_ALLOWED, PF_POW_FORBIDDEN */
 func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var fd, op_token_ptr uintptr
 	var op, op1, op2 int32
@@ -53207,12 +55313,16 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 		op = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_unary(tls, s, libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		switch op {
@@ -53241,17 +55351,23 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 		op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_unary(tls, s, 0) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _get_lvalue(tls, s, bp, bp+4, bp+12, bp+8, libc.UintptrFromInt32(0), int32(ETRUE), op1) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_emit_source_pos(tls, s, op_token_ptr)
@@ -53260,12 +55376,16 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 	case int32(ETOK_TYPEOF):
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_unary(tls, s, libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* reference access should not return an exception, so we
@@ -53279,29 +55399,39 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 	case int32(ETOK_DELETE):
 		if _js_parse_delete(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		parse_flags = 0
 	case int32(ETOK_AWAIT):
 		if !(TJSFunctionKindEnum(*(*uint16)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func + 104))&0xff>>0)&int32(EJS_FUNC_ASYNC) != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6462, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fin_function_body != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6489, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_unary(tls, s, libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		(*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fhas_await = int32(ETRUE)
@@ -53310,7 +55440,9 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 	default:
 		if _js_parse_postfix_expr(tls, s, libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSParseState)(unsafe.Pointer(s)).Fgot_lf != 0) && ((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_DEC) || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_INC)) {
@@ -53318,7 +55450,9 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 			op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 			if _get_lvalue(tls, s, bp+16, bp+20, bp+28, bp+24, libc.UintptrFromInt32(0), int32(ETRUE), op2) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_emit_source_pos(tls, s, op_token_ptr)
@@ -53326,7 +55460,9 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 			_put_lvalue(tls, s, *(*int32)(unsafe.Pointer(bp + 16)), *(*int32)(unsafe.Pointer(bp + 20)), *(*TJSAtom)(unsafe.Pointer(bp + 28)), *(*int32)(unsafe.Pointer(bp + 24)), int32(EPUT_LVALUE_KEEP_SECOND), int32(EFALSE))
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -53342,18 +55478,24 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 			if parse_flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 				XJS_ThrowSyntaxError(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, __ccgo_ts+6517, 0)
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _js_parse_unary(tls, s, libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)) != 0 {
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_emit_source_pos(tls, s, op_token_ptr)
@@ -53361,7 +55503,9 @@ func _js_parse_unary(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
 		}
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -53635,7 +55779,10 @@ func _js_parse_cond_expr(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) 
 //
 //	/* allowed parse_flags: PF_IN_ACCEPTED */
 func _js_parse_assign_expr2(tls *libc.TLS, s uintptr, parse_flags int32) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_async, is_star TBOOL
 	var label11, label2, label_loop, label_next, label_next1, label_return, label_return1, label_throw, label_throw1, label_throw2, label_yield, op, tok, v1 int32
@@ -53655,17 +55802,23 @@ func _js_parse_assign_expr2(tls *libc.TLS, s uintptr, parse_flags int32) (r int3
 		is_star = int32(EFALSE)
 		if !(TJSFunctionKindEnum(*(*uint16)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func + 104))&0xff>>0)&int32(EJS_FUNC_GENERATOR) != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6621, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fin_function_body != 0) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6648, 0)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* XXX: is there a better method to detect 'yield' without
@@ -53675,13 +55828,17 @@ func _js_parse_assign_expr2(tls *libc.TLS, s uintptr, parse_flags int32) (r int3
 				is_star = int32(ETRUE)
 				if _next_token(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
 			if _js_parse_assign_expr2(tls, s, parse_flags) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -53793,12 +55950,16 @@ func _js_parse_assign_expr2(tls *libc.TLS, s uintptr, parse_flags int32) (r int3
 			_emit_label(tls, s, label_next1)
 		}
 		r = 0
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('(') && _js_parse_skip_parens_token(tls, s, libc.UintptrFromInt32(0), int32(ETRUE)) == int32(ETOK_ARROW) {
 			r = _js_parse_function_decl(tls, s, int32(EJS_PARSE_FUNC_ARROW), int32(EJS_FUNC_NORMAL), uint32(MJS_ATOM_NULL), (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			if _token_is_pseudo_keyword(tls, s, uint32(EJS_ATOM_async)) != 0 {
@@ -53811,35 +55972,47 @@ func _js_parse_assign_expr2(tls *libc.TLS, s uintptr, parse_flags int32) (r int3
 				_js_parse_get_pos(tls, s, bp+16)
 				if _next_token(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('(') && _js_parse_skip_parens_token(tls, s, libc.UintptrFromInt32(0), int32(ETRUE)) == int32(ETOK_ARROW) || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_IDENT) && !(*(*TBOOL)(unsafe.Pointer(s + 8 + 8 + 8)) != 0) && _peek_token(tls, s, int32(ETRUE)) == int32(ETOK_ARROW) {
 					r = _js_parse_function_decl(tls, s, int32(EJS_PARSE_FUNC_ARROW), int32(EJS_FUNC_ASYNC), uint32(MJS_ATOM_NULL), source_ptr)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					/* undo the token parsing */
 					if _js_parse_seek_token(tls, s, bp+16) != 0 {
 						r = -int32(1)
-						tls.Free(48)
+						if tlsDrop(tls, 48) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
 			} else {
 				if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_IDENT) && _peek_token(tls, s, int32(ETRUE)) == int32(ETOK_ARROW) {
 					r = _js_parse_function_decl(tls, s, int32(EJS_PARSE_FUNC_ARROW), int32(EJS_FUNC_NORMAL), uint32(MJS_ATOM_NULL), (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					if ((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('{') || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('[')) && _js_parse_skip_parens_token(tls, s, bp+8, int32(EFALSE)) == int32('=') {
 						if _js_parse_destructuring_element(tls, s, 0, 0, int32(EFALSE), *(*int32)(unsafe.Pointer(bp + 8))&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)), int32(ETRUE), int32(EFALSE)) < 0 {
 							r = -int32(1)
-							tls.Free(48)
+							if tlsDrop(tls, 48) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						r = 0
-						tls.Free(48)
+						if tlsDrop(tls, 48) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -53855,7 +56028,9 @@ next:
 	}
 	if _js_parse_cond_expr(tls, s, parse_flags) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	op = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval
@@ -53863,18 +56038,24 @@ next:
 		op_token_ptr = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _get_lvalue(tls, s, bp, bp+4, bp+12, bp+24, libc.UintptrFromInt32(0), libc.BoolInt32(op != libc.Int32FromUint8('=')), op) < 0 {
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _js_parse_assign_expr2(tls, s, parse_flags) != 0 {
 			XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp + 12)))
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if op == int32('=') {
@@ -53891,12 +56072,16 @@ next:
 		if op >= int32(ETOK_LAND_ASSIGN) && op <= int32(ETOK_DOUBLE_QUESTION_MARK_ASSIGN) {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _get_lvalue(tls, s, bp, bp+4, bp+12, bp+28, bp+32, int32(ETRUE), op) < 0 {
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_emit_op(tls, s, uint8(EOP_dup))
@@ -53913,7 +56098,9 @@ next:
 			if _js_parse_assign_expr2(tls, s, parse_flags) != 0 {
 				XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp + 12)))
 				r = -int32(1)
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if (*(*int32)(unsafe.Pointer(bp)) == int32(EOP_get_ref_value) || *(*int32)(unsafe.Pointer(bp)) == int32(EOP_scope_get_var)) && *(*TJSAtom)(unsafe.Pointer(bp + 12)) == name0 {
@@ -53945,7 +56132,9 @@ next:
 		}
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -54205,7 +56394,10 @@ func _js_parse_block(tls *libc.TLS, s uintptr) (r int32) {
 //
 //	/* allowed parse_flags: PF_IN_ACCEPTED */
 func _js_parse_var(tls *libc.TLS, s uintptr, parse_flags int32, tok int32, export_flag TBOOL) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx, fd, source_ptr uintptr
 	var name TJSAtom
@@ -54223,7 +56415,9 @@ func _js_parse_var(tls *libc.TLS, s uintptr, parse_flags int32, tok int32, expor
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_IDENT) {
 			if *(*TBOOL)(unsafe.Pointer(s + 8 + 8 + 8)) != 0 {
 				r = _js_parse_error_reserved_identifier(tls, s)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			name = XJS_DupAtom(tls, ctx, *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)))
@@ -54295,12 +56489,16 @@ func _js_parse_var(tls *libc.TLS, s uintptr, parse_flags int32, tok int32, expor
 				_emit_op(tls, s, uint8(EOP_undefined))
 				if _js_parse_destructuring_element(tls, s, tok, 0, int32(ETRUE), *(*int32)(unsafe.Pointer(bp + 16))&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)), int32(ETRUE), export_flag) < 0 {
 					r = -int32(1)
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
 				r = _js_parse_error(tls, s, __ccgo_ts+6851, 0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -54309,21 +56507,27 @@ func _js_parse_var(tls *libc.TLS, s uintptr, parse_flags int32, tok int32, expor
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _1
 	_1:
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto var_error
 var_error:
 	;
 	XJS_FreeAtom(tls, ctx, name)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -54338,7 +56542,10 @@ func _is_label(tls *libc.TLS, s uintptr) (r TBOOL) {
 //
 //	/* test if the current token is a let keyword. Use simplistic look-ahead scanner */
 func _is_let(tls *libc.TLS, s uintptr, decl_mask int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var last_token_ptr uintptr
 	var res int32
@@ -54378,7 +56585,9 @@ func _is_let(tls *libc.TLS, s uintptr, decl_mask int32) (r int32) {
 		}
 	}
 	r = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -54387,7 +56596,10 @@ func _is_let(tls *libc.TLS, s uintptr, decl_mask int32) (r int32) {
 //	/* XXX: handle IteratorClose when exiting the loop before the
 //	   enumeration is done */
 func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TBOOL) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bc, ctx, fd, ls, v9 uintptr
 	var block_scope_level, chunk_size, i, label_body, label_break, label_cont, label_expr, label_next, offset, pos_expr, pos_next, tok, tok1, v1 int32
@@ -54428,26 +56640,34 @@ func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TB
 	case int32(EFALSE):
 	default:
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if tok == int32(ETOK_VAR) || tok == int32(ETOK_LET) || tok == int32(ETOK_CONST) {
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_IDENT) && !(*(*TBOOL)(unsafe.Pointer(s + 8 + 8 + 8)) != 0)) {
 			if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('[') || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('{') {
 				if _js_parse_destructuring_element(tls, s, tok, 0, int32(ETRUE), -int32(1), int32(EFALSE), int32(EFALSE)) < 0 {
 					r = -int32(1)
-					tls.Free(80)
+					if tlsDrop(tls, 80) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				has_destructuring = int32(ETRUE)
 			} else {
 				r = _js_parse_error(tls, s, __ccgo_ts+6851, 0)
-				tls.Free(80)
+				if tlsDrop(tls, 80) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*TJSAtom)(unsafe.Pointer(bp)) = uint32(MJS_ATOM_NULL)
@@ -54456,13 +56676,17 @@ func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TB
 			if _next_token(tls, s) != 0 {
 				XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp)))
 				r = -int32(1)
-				tls.Free(80)
+				if tlsDrop(tls, 80) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _js_define_var(tls, s, *(*TJSAtom)(unsafe.Pointer(bp)), tok) != 0 {
 				XJS_FreeAtom(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer(bp)))
 				r = -int32(1)
-				tls.Free(80)
+				if tlsDrop(tls, 80) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if tok == int32(ETOK_CONST) || tok == int32(ETOK_LET) {
@@ -54477,7 +56701,9 @@ func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TB
 	} else {
 		if !(is_async != 0) && _token_is_pseudo_keyword(tls, s, uint32(EJS_ATOM_async)) != 0 && _peek_token(tls, s, int32(EFALSE)) == int32(ETOK_OF) {
 			r = _js_parse_error(tls, s, __ccgo_ts+6874, 0)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			if v3 = (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('[') || (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('{'); v3 {
@@ -54487,18 +56713,24 @@ func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TB
 			if v3 && (v1 == int32(ETOK_IN) || tok1 == int32(ETOK_OF)) {
 				if _js_parse_destructuring_element(tls, s, 0, 0, int32(ETRUE), *(*int32)(unsafe.Pointer(bp + 44))&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)), int32(ETRUE), int32(EFALSE)) < 0 {
 					r = -int32(1)
-					tls.Free(80)
+					if tlsDrop(tls, 80) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
 				if _js_parse_left_hand_side_expr(tls, s) != 0 {
 					r = -int32(1)
-					tls.Free(80)
+					if tlsDrop(tls, 80) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if _get_lvalue(tls, s, bp+4, bp+8, bp, bp+48, libc.UintptrFromInt32(0), int32(EFALSE), int32(ETOK_FOR)) != 0 {
 					r = -int32(1)
-					tls.Free(80)
+					if tlsDrop(tls, 80) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				_put_lvalue(tls, s, *(*int32)(unsafe.Pointer(bp + 4)), *(*int32)(unsafe.Pointer(bp + 8)), *(*TJSAtom)(unsafe.Pointer(bp)), *(*int32)(unsafe.Pointer(bp + 48)), int32(EPUT_LVALUE_NOKEEP_BOTTOM), int32(EFALSE))
@@ -54518,7 +56750,9 @@ func _js_parse_for_in_of(tls *libc.TLS, s uintptr, label_name int32, is_async TB
 		if _next_token(tls, s) != 0 || _js_parse_assign_expr2(tls, s, 0) != 0 {
 			XJS_FreeAtom(tls, ctx, *(*TJSAtom)(unsafe.Pointer(bp)))
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if *(*TJSAtom)(unsafe.Pointer(bp)) != uint32(MJS_ATOM_NULL) {
@@ -54543,7 +56777,9 @@ _4:
 	}
 	if is_async != 0 {
 		r = _js_parse_error(tls, s, __ccgo_ts+6920, 0)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(has_initializer != 0 && (tok != int32(ETOK_VAR) || libc.Int32FromUint8((*TJSFunctionDef)(unsafe.Pointer(fd)).Fjs_mode)&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 || has_destructuring != 0)) {
@@ -54558,7 +56794,9 @@ initializer_error:
 		v9 = __ccgo_ts + 6965
 	}
 	r = _js_parse_error(tls, s, __ccgo_ts+6968, libc.VaList(bp+64, v9))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 _8:
 	;
@@ -54566,7 +56804,9 @@ _8:
 _6:
 	;
 	r = _js_parse_error(tls, s, __ccgo_ts+7037, 0)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 _7:
 	;
@@ -54574,19 +56814,25 @@ _5:
 	;
 	if _next_token(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if is_for_of != 0 {
 		if _js_parse_assign_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		if _js_parse_expr(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -54612,7 +56858,9 @@ _5:
 	_emit_goto(tls, s, int32(EOP_goto), label_cont)
 	if _js_parse_expect(tls, s, int32(')')) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(MOPTIMIZE) != 0 {
@@ -54623,7 +56871,9 @@ _5:
 		if (*TDynBuf)(unsafe.Pointer(bc)).Ferror1 != 0 || Xdbuf_claim(tls, bc, libc.Uint32FromInt32(chunk_size)) != 0 {
 			XJS_ThrowOutOfMemory(tls, (*TJSParseState)(unsafe.Pointer(s)).Fctx)
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		Xdbuf_put(tls, bc, (*TDynBuf)(unsafe.Pointer(bc)).Fbuf+uintptr(pos_next), libc.Uint32FromInt32(chunk_size))
@@ -54649,7 +56899,9 @@ _5:
 	_emit_label(tls, s, label_body)
 	if _js_parse_statement(tls, s) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_close_scopes(tls, s, (*TJSFunctionDef)(unsafe.Pointer((*TJSParseState)(unsafe.Pointer(s)).Fcur_func)).Fscope_level, block_scope_level)
@@ -54684,7 +56936,9 @@ _5:
 	_pop_break_entry(tls, (*TJSParseState)(unsafe.Pointer(s)).Fcur_func)
 	_pop_scope(tls, s)
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -54697,7 +56951,10 @@ func _set_eval_ret_undefined(tls *libc.TLS, s uintptr) {
 }
 
 func _js_parse_statement_or_decl(tls *libc.TLS, s uintptr, decl_mask int32) (r int32) {
-	bp := tls.Alloc(208)
+	bp := tlsTake(tls, 208)
+	if bp == 0 {
+		bp = tls.Alloc(208)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bc, be, ctx, ls, op_token_ptr, op_token_ptr1 uintptr
 	var block_scope_level, chunk_size, default_label_pos, i, is_cont, label, label1, label11, label12, label2, label_body, label_break, label_break1, label_break2, label_break3, label_break4, label_case, label_catch, label_catch2, label_cont, label_cont1, label_cont2, label_end, label_finally, label_test, mask, mask1, offset, pos_body, pos_cont, saved_eval_ret_idx, tok, tok1, with_idx, v2 int32
@@ -55475,7 +57732,9 @@ _21:
 	}
 	if _js_parse_class(tls, s, int32(EFALSE), int32(EJS_PARSE_EXPORT_NONE)) != 0 {
 		r = -int32(1)
-		tls.Free(208)
+		if tlsDrop(tls, 208) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto _27
@@ -55525,14 +57784,18 @@ done:
 	;
 	XJS_FreeAtom(tls, ctx, label_name)
 	r = 0
-	tls.Free(208)
+	if tlsDrop(tls, 208) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	XJS_FreeAtom(tls, ctx, label_name)
 	r = -int32(1)
-	tls.Free(208)
+	if tlsDrop(tls, 208) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -55851,7 +58114,10 @@ func _find_export_entry(tls *libc.TLS, ctx uintptr, m uintptr, export_name TJSAt
 }
 
 func _add_export_entry2(tls *libc.TLS, ctx uintptr, s uintptr, m uintptr, local_name TJSAtom, export_name TJSAtom, export_type TJSExportTypeEnum) (r uintptr) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var me, v2 uintptr
 	var v1 int32
@@ -55864,12 +58130,16 @@ func _add_export_entry2(tls *libc.TLS, ctx uintptr, s uintptr, m uintptr, local_
 			___JS_ThrowSyntaxErrorAtom(tls, ctx, export_name, __ccgo_ts+7555, libc.VaList(bp+72, __ccgo_ts+189))
 		}
 		r = libc.UintptrFromInt32(0)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _js_resize_array(tls, ctx, m+32, int32(20), m+40, (*TJSModuleDef)(unsafe.Pointer(m)).Fexport_entries_count+int32(1)) != 0 {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v2 = m + 36
@@ -55881,7 +58151,9 @@ func _add_export_entry2(tls *libc.TLS, ctx uintptr, s uintptr, m uintptr, local_
 	(*TJSExportEntry)(unsafe.Pointer(me)).Fexport_name = XJS_DupAtom(tls, ctx, export_name)
 	(*TJSExportEntry)(unsafe.Pointer(me)).Fexport_type = export_type
 	r = me
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -56122,7 +58394,10 @@ func _js_find_loaded_module(tls *libc.TLS, ctx uintptr, name TJSAtom) (r uintptr
 //
 //	/* return NULL in case of exception (e.g. module could not be loaded) */
 func _js_host_resolve_imported_module(tls *libc.TLS, ctx uintptr, base_cname uintptr, cname1 uintptr, attributes TJSValue) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cname, m, rt uintptr
 	var module_name TJSAtom
@@ -56135,14 +58410,18 @@ func _js_host_resolve_imported_module(tls *libc.TLS, ctx uintptr, base_cname uin
 	}
 	if !(cname != 0) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	module_name = XJS_NewAtom(tls, ctx, cname)
 	if module_name == uint32(MJS_ATOM_NULL) {
 		Xjs_free(tls, ctx, cname)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* first look at the loaded modules */
@@ -56151,7 +58430,9 @@ func _js_host_resolve_imported_module(tls *libc.TLS, ctx uintptr, base_cname uin
 		Xjs_free(tls, ctx, cname)
 		XJS_FreeAtom(tls, ctx, module_name)
 		r = m
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	XJS_FreeAtom(tls, ctx, module_name)
@@ -56161,7 +58442,9 @@ func _js_host_resolve_imported_module(tls *libc.TLS, ctx uintptr, base_cname uin
 		XJS_ThrowReferenceError(tls, ctx, __ccgo_ts+7591, libc.VaList(bp+8, cname))
 		Xjs_free(tls, ctx, cname)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSRuntime)(unsafe.Pointer(rt)).Fmodule_loader_has_attr != 0 {
@@ -56171,7 +58454,9 @@ func _js_host_resolve_imported_module(tls *libc.TLS, ctx uintptr, base_cname uin
 	}
 	Xjs_free(tls, ctx, cname)
 	r = m
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -56259,7 +58544,10 @@ const EJS_RESOLVE_RES_CIRCULAR = 2
 const EJS_RESOLVE_RES_AMBIGUOUS = 3
 
 func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintptr, m uintptr, export_name TJSAtom, s uintptr) (r TJSResolveResultEnum) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	var m1, m11, me, se uintptr
@@ -56271,12 +58559,16 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 	*(*uintptr)(unsafe.Pointer(pme)) = libc.UintptrFromInt32(0)
 	if _find_resolve_entry(tls, s, m, export_name) >= 0 {
 		r = int32(EJS_RESOLVE_RES_CIRCULAR)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_resolve_entry(tls, ctx, s, m, export_name) < 0 {
 		r = int32(EJS_RESOLVE_RES_EXCEPTION)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	me = _find_export_entry(tls, ctx, m, export_name)
@@ -56286,7 +58578,9 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 			*(*uintptr)(unsafe.Pointer(pmodule)) = m
 			*(*uintptr)(unsafe.Pointer(pme)) = me
 			r = int32(EJS_RESOLVE_RES_FOUND)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			m1 = (*(*TJSReqModuleEntry)(unsafe.Pointer((*TJSModuleDef)(unsafe.Pointer(m)).Freq_module_entries + uintptr(*(*int32)(unsafe.Pointer(&(*TJSExportEntry)(unsafe.Pointer(me)).Fu)))*16))).Fmodule
@@ -56295,11 +58589,15 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 				*(*uintptr)(unsafe.Pointer(pmodule)) = m
 				*(*uintptr)(unsafe.Pointer(pme)) = me
 				r = int32(EJS_RESOLVE_RES_FOUND)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				r = _js_resolve_export1(tls, ctx, pmodule, pme, m1, (*TJSExportEntry)(unsafe.Pointer(me)).Flocal_name, s)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -56315,7 +58613,9 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 				ret = _js_resolve_export1(tls, ctx, bp, bp+4, m11, export_name, s)
 				if ret == int32(EJS_RESOLVE_RES_AMBIGUOUS) || ret == int32(EJS_RESOLVE_RES_EXCEPTION) {
 					r = ret
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					if ret == int32(EJS_RESOLVE_RES_FOUND) {
@@ -56324,7 +58624,9 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 								*(*uintptr)(unsafe.Pointer(pmodule)) = libc.UintptrFromInt32(0)
 								*(*uintptr)(unsafe.Pointer(pme)) = libc.UintptrFromInt32(0)
 								r = int32(EJS_RESOLVE_RES_AMBIGUOUS)
-								tls.Free(16)
+								if tlsDrop(tls, 16) {
+									tlsSignals(tls)
+								}
 								return
 							}
 						} else {
@@ -56340,15 +58642,21 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 			}
 			if *(*uintptr)(unsafe.Pointer(pme)) != libc.UintptrFromInt32(0) {
 				r = int32(EJS_RESOLVE_RES_FOUND)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 		r = int32(EJS_RESOLVE_RES_NOT_FOUND)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -56358,7 +58666,10 @@ func _js_resolve_export1(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintpt
 //	  (*pmodule) and the corresponding local export entry
 //	  (*pme). Otherwise return (NULL, NULL) */
 func _js_resolve_export(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintptr, m uintptr, export_name TJSAtom) (r TJSResolveResultEnum) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	var ret TJSResolveResultEnum
@@ -56383,12 +58694,17 @@ func _js_resolve_export(tls *libc.TLS, ctx uintptr, pmodule uintptr, pme uintptr
 	}
 	Xjs_free(tls, ctx, (*TJSResolveState)(unsafe.Pointer(s)).Farray)
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_resolve_export_throw_error(tls *libc.TLS, ctx uintptr, res TJSResolveResultEnum, m uintptr, export_name TJSAtom) {
-	bp := tls.Alloc(160)
+	bp := tlsTake(tls, 160)
+	if bp == 0 {
+		bp = tls.Alloc(160)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* buf1 at bp+0 */ [64]uint8
 	var _ /* buf2 at bp+64 */ [64]uint8
@@ -56404,7 +58720,9 @@ func _js_resolve_export_throw_error(tls *libc.TLS, ctx uintptr, res TJSResolveRe
 		XJS_ThrowSyntaxError(tls, ctx, __ccgo_ts+7723, libc.VaList(bp+136, _JS_AtomGetStr(tls, ctx, bp, int32(64), export_name), _JS_AtomGetStr(tls, ctx, bp+64, int32(64), (*TJSModuleDef)(unsafe.Pointer(m)).Fmodule_name)))
 		break
 	}
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 }
 
 type TExportedNameEntryEnum = int32
@@ -56598,7 +58916,10 @@ _2:
 }
 
 func _js_module_ns_autoinit(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom, opaque uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var m, p1, var_ref uintptr
 	var res TJSResolveResultEnum
@@ -56611,12 +58932,16 @@ func _js_module_ns_autoinit(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom,
 		/* fail safe: normally no error should happen here except for memory */
 		_js_resolve_export_throw_error(tls, ctx, res, m, atom)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSExportEntry)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Flocal_name == uint32(EJS_ATOM__star_) {
 		r = XJS_GetModuleNamespace(tls, ctx, (*(*TJSReqModuleEntry)(unsafe.Pointer((*TJSModuleDef)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 4)))).Freq_module_entries + uintptr(*(*int32)(unsafe.Pointer(&(*TJSExportEntry)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))).Fu)))*16))).Fmodule)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if (*(*struct {
@@ -56640,15 +58965,22 @@ func _js_module_ns_autoinit(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom,
 		}
 		/* WARNING: a varref is returned as a string ! */
 		r = libc.Uint64FromInt32(int32(EJS_TAG_STRING))<<libc.Int32FromInt32(32) | uint64(uint32(var_ref))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_build_module_ns(tls *libc.TLS, ctx1 uintptr, m uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var en, en1, p, p1, p11, pr, s, var_ref, v6, v9 uintptr
 	var i, ret, v1 int32
@@ -56665,7 +58997,9 @@ func _js_build_module_ns(tls *libc.TLS, ctx1 uintptr, m uintptr) (r TJSValue) {
 _2:
 	if v1 != 0 {
 		r = obj
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(obj))
@@ -56765,7 +59099,9 @@ _2:
 	XJS_DefinePropertyValue(tls, ctx1, obj, uint32(EJS_ATOM_Symbol_toStringTag), XJS_AtomToString(tls, ctx1, uint32(EJS_ATOM_Module)), 0)
 	libc.SetBitFieldPtr8Uint8(p1+8, uint8(EFALSE), 1, 0x2)
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -56785,7 +59121,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -56964,7 +59302,10 @@ func _js_create_module_function(tls *libc.TLS, ctx uintptr, m uintptr) (r int32)
 //	/* Prepare a module to be executed by resolving all the imported
 //	   variables. */
 func _js_inner_module_linking(tls *libc.TLS, ctx1 uintptr, m uintptr, pstack_top uintptr, index int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v2, v3, v4 int32
 	var is_c_module TBOOL
@@ -56979,12 +59320,16 @@ func _js_inner_module_linking(tls *libc.TLS, ctx1 uintptr, m uintptr, pstack_top
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, uint32(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, ctx1)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_LINKING) || TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_LINKED) || TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATING_ASYNC) || TJSModuleStatus(*(*uint32)(unsafe.Pointer(m + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATED) {
 		r = index
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.SetBitFieldPtr32Int32(m+92, int32(EJS_MODULE_STATUS_LINKING), 24, 0xff000000)
@@ -57189,15 +59534,21 @@ func _js_inner_module_linking(tls *libc.TLS, ctx1 uintptr, m uintptr, pstack_top
 		}
 	}
 	r = index
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -57206,7 +59557,10 @@ fail:
 //	/* Prepare a module to be executed by resolving all the imported
 //	   variables. */
 func _js_link_module(tls *libc.TLS, ctx uintptr, m uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var m1 uintptr
 	var _ /* stack_top at bp+0 */ uintptr
@@ -57219,11 +59573,15 @@ func _js_link_module(tls *libc.TLS, ctx uintptr, m uintptr) (r int32) {
 			*(*uintptr)(unsafe.Pointer(bp)) = (*TJSModuleDef)(unsafe.Pointer(m1)).Fstack_prev
 		}
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -57367,7 +59725,10 @@ _5:
 }
 
 func _js_load_module_rejected(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, resolving_funcs, v2, v5 uintptr
 	var ret, v1 TJSValue
@@ -57396,12 +59757,17 @@ func _js_load_module_rejected(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, ar
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_load_module_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var m, p, resolving_funcs, v4, v7 uintptr
 	var ret, v3 TJSValue
@@ -57420,7 +59786,9 @@ _2:
 		*(*TJSValue)(unsafe.Pointer(bp + 8)) = _js_get_exception(tls, ctx1)
 		_js_load_module_rejected(tls, ctx1, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), bp+8, 0, func_data)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_Call(tls, ctx1, *(*TJSValue)(unsafe.Pointer(resolving_funcs)), libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), bp)
@@ -57451,12 +59819,17 @@ _2:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_LoadModuleInternal(tls *libc.TLS, ctx1 uintptr, basename uintptr, filename uintptr, resolving_funcs uintptr, attributes TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var evaluate_promise, func_obj, ret, v4 TJSValue
 	var m, p, v5, v8 uintptr
@@ -57513,7 +59886,9 @@ fail:
 			x__JS_FreeValue(tls, ctx1, v4)
 		}
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
@@ -57589,7 +59964,9 @@ _1:
 			x__JS_FreeValue(tls, ctx1, v4)
 		}
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -57597,7 +59974,10 @@ _1:
 //	/* Return a promise or an exception in case of memory error. Used by
 //	   os.Worker() */
 func XJS_LoadModule(tls *libc.TLS, ctx1 uintptr, basename uintptr, filename uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v4, v7 uintptr
 	var promise, v3 TJSValue
@@ -57610,7 +59990,9 @@ func XJS_LoadModule(tls *libc.TLS, ctx1 uintptr, basename uintptr, filename uint
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_JS_LoadModuleInternal(tls, ctx1, basename, filename, bp, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))))
@@ -57641,12 +60023,17 @@ _2:
 		}
 	}
 	r = promise
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_dynamic_import_job(tls *libc.TLS, ctx2 uintptr, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var attributes, basename_val, ret, specifier, v1 TJSValue
 	var basename, filename, p, resolving_funcs, v4, v6 uintptr
@@ -57684,7 +60071,9 @@ _7:
 	XJS_FreeCString(tls, ctx2, filename)
 	XJS_FreeCString(tls, ctx2, basename)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -57719,12 +60108,17 @@ exception:
 	}
 	XJS_FreeCString(tls, ctx2, basename)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_dynamic_import(tls *libc.TLS, ctx2 uintptr, specifier TJSValue, options TJSValue) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var attributes, attributes_obj, basename_val, promise, ret, specifier_str, val, v16, v5 TJSValue
 	var basename TJSAtom
@@ -57752,7 +60146,9 @@ func _js_dynamic_import(tls *libc.TLS, ctx2 uintptr, specifier TJSValue, options
 _2:
 	if v1 != 0 {
 		r = basename_val
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	promise = XJS_NewPromiseCapability(tls, ctx2, bp)
@@ -57774,7 +60170,9 @@ _4:
 			}
 		}
 		r = promise
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* the string conversion must occur here */
@@ -57974,7 +60372,9 @@ done:
 		}
 	}
 	r = promise
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -58021,12 +60421,17 @@ exception:
 		}
 	}
 	goto done
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_set_module_evaluated(tls *libc.TLS, ctx1 uintptr, m uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v4, v7 uintptr
 	var ret_val, v3 TJSValue
@@ -58054,7 +60459,9 @@ _2:
 			}
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 type TExecModuleList = struct {
@@ -58133,7 +60540,10 @@ func _exec_module_list_cmp(tls *libc.TLS, p1 uintptr, p2 uintptr, opaque uintptr
 }
 
 func _js_async_module_execution_rejected(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v6 int32
 	var m, module, p, p1, v2, v9 uintptr
@@ -58145,12 +60555,16 @@ func _js_async_module_execution_rejected(tls *libc.TLS, ctx2 uintptr, this_val T
 	*(*TJSValue)(unsafe.Pointer(bp)) = *(*TJSValue)(unsafe.Pointer(argv))
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx2)).Frt, uint32(0)) != 0 {
 		r = _JS_ThrowStackOverflow(tls, ctx2)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if TJSModuleStatus(*(*uint32)(unsafe.Pointer(module + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATED) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.SetBitFieldPtr8Int32(module+168, int32(ETRUE), 0, 0xff)
@@ -58215,12 +60629,17 @@ _7:
 		i = i + 1
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_async_module_execution_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var exec_list, m, module, p, v3, v6 uintptr
 	var i, v5 int32
@@ -58233,7 +60652,9 @@ func _js_async_module_execution_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val 
 	exec_list = bp
 	if TJSModuleStatus(*(*uint32)(unsafe.Pointer(module + 92))&0xff000000>>24) == int32(EJS_MODULE_STATUS_EVALUATED) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSModuleDef)(unsafe.Pointer(module)).Fasync_evaluation = int32(EFALSE)
@@ -58244,7 +60665,9 @@ func _js_async_module_execution_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val 
 	if _gather_available_ancestors(tls, ctx1, module, exec_list) < 0 {
 		Xjs_free(tls, ctx1, (*TExecModuleList)(unsafe.Pointer(exec_list)).Ftab)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* sort by increasing async_evaluation timestamp */
@@ -58302,12 +60725,17 @@ func _js_async_module_execution_fulfilled(tls *libc.TLS, ctx1 uintptr, this_val 
 	}
 	Xjs_free(tls, ctx1, (*TExecModuleList)(unsafe.Pointer(exec_list)).Ftab)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_execute_async_module(tls *libc.TLS, ctx1 uintptr, m uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v4, v7 uintptr
 	var promise, ret_val, v3 TJSValue
@@ -58321,7 +60749,9 @@ func _js_execute_async_module(tls *libc.TLS, ctx1 uintptr, m uintptr) (r int32) 
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer(bp)) = _JS_NewModuleValue(tls, ctx1, m)
@@ -58394,7 +60824,9 @@ _2:
 		}
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -58648,7 +61080,10 @@ func _js_inner_module_evaluation(tls *libc.TLS, ctx1 uintptr, m uintptr, index i
 //	/* Run the <eval> function of the module and of all its requested
 //	   modules. Return a promise or an exception. */
 func _js_evaluate_module(tls *libc.TLS, ctx2 uintptr, m uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var m1, p, p1, v11, v4 uintptr
 	var ret_val, v3, v6 TJSValue
@@ -58678,7 +61113,9 @@ _2:
 		goto _7
 	_7:
 		r = v6
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSModuleDef)(unsafe.Pointer(m)).Fpromise = XJS_NewPromiseCapability(tls, ctx2, m+152)
@@ -58687,7 +61124,9 @@ _2:
 _9:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp)) = libc.UintptrFromInt32(0)
@@ -58771,7 +61210,9 @@ _9:
 	goto _34
 _34:
 	r = v6
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -59945,7 +62386,10 @@ func _capture_var(tls *libc.TLS, s uintptr, vd uintptr) {
 //
 //	/* return the position of the next opcode or -1 if error */
 func _resolve_scope_var(tls *libc.TLS, ctx uintptr, s3 uintptr, var_name TJSAtom, scope_level int32, op int32, bc uintptr, bc_buf uintptr, ls uintptr, pos_next int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var closure_type TJSClosureTypeEnum
 	var cv, fd, vd, v2, v6 uintptr
@@ -60937,7 +63381,9 @@ func _resolve_scope_var(tls *libc.TLS, ctx uintptr, s3 uintptr, var_name TJSAtom
 	idx1 = _add_closure_var(tls, ctx, fd, int32(EJS_CLOSURE_GLOBAL), 0, var_name, int32(EFALSE), int32(EFALSE), int32(EJS_VAR_NORMAL))
 	if idx1 < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if fd != s3 {
@@ -61583,7 +64029,9 @@ done:
 		(*(*TLabelSlot)(unsafe.Pointer((*TJSFunctionDef)(unsafe.Pointer(s3)).Flabel_slots + uintptr(*(*int32)(unsafe.Pointer(bp)))*20))).Fpos2 = libc.Int32FromUint32((*TDynBuf)(unsafe.Pointer(bc)).Fsize)
 	}
 	r = pos_next
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -61657,7 +64105,10 @@ _13:
 }
 
 func _resolve_scope_private_field1(tls *libc.TLS, ctx uintptr, pis_ref uintptr, pvar_kind uintptr, s uintptr, var_name TJSAtom, scope_level int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cv, fd uintptr
 	var idx, var_kind int32
@@ -61674,7 +64125,9 @@ func _resolve_scope_private_field1(tls *libc.TLS, ctx uintptr, pis_ref uintptr, 
 				idx = _get_closure_var(tls, ctx, s, fd, int32(EJS_CLOSURE_LOCAL), idx, var_name, int32(ETRUE), int32(ETRUE), int32(EJS_VAR_NORMAL))
 				if idx < 0 {
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -61697,7 +64150,9 @@ func _resolve_scope_private_field1(tls *libc.TLS, ctx uintptr, pis_ref uintptr, 
 							idx = _get_closure_var(tls, ctx, s, fd, int32(EJS_CLOSURE_REF), idx, (*TJSClosureVar)(unsafe.Pointer(cv)).Fvar_name, int32(Tuint8_t(*(*uint16)(unsafe.Pointer(cv + 0))&0x10>>4)), int32(Tuint8_t(*(*uint16)(unsafe.Pointer(cv + 0))&0x8>>3)), int32(Tuint8_t(*(*uint16)(unsafe.Pointer(cv + 0))&0x1e0>>5)))
 							if idx < 0 {
 								r = -int32(1)
-								tls.Free(16)
+								if tlsDrop(tls, 16) {
+									tlsSignals(tls)
+								}
 								return
 							}
 						}
@@ -61712,7 +64167,9 @@ func _resolve_scope_private_field1(tls *libc.TLS, ctx uintptr, pis_ref uintptr, 
 			/* XXX: no line number info */
 			___JS_ThrowSyntaxErrorAtom(tls, ctx, var_name, __ccgo_ts+8151, libc.VaList(bp+8, __ccgo_ts+189))
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			fd = (*TJSFunctionDef)(unsafe.Pointer(fd)).Fparent
@@ -61727,7 +64184,9 @@ done:
 	*(*TBOOL)(unsafe.Pointer(pis_ref)) = is_ref
 	*(*int32)(unsafe.Pointer(pvar_kind)) = var_kind
 	r = idx
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -61735,7 +64194,10 @@ done:
 //
 //	/* return 0 if OK or -1 if the private field could not be resolved */
 func _resolve_scope_private_field(tls *libc.TLS, ctx uintptr, s3 uintptr, var_name TJSAtom, scope_level int32, op int32, bc uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var idx int32
 	var setter_name TJSAtom
@@ -61750,7 +64212,9 @@ func _resolve_scope_private_field(tls *libc.TLS, ctx uintptr, s3 uintptr, var_na
 	idx = _resolve_scope_private_field1(tls, ctx, bp+4, bp, s3, var_name, scope_level)
 	if idx < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	switch op {
@@ -62007,14 +64471,18 @@ func _resolve_scope_private_field(tls *libc.TLS, ctx uintptr, s3 uintptr, var_na
 			setter_name = _get_private_setter_name(tls, ctx, var_name)
 			if setter_name == uint32(MJS_ATOM_NULL) {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			idx = _resolve_scope_private_field1(tls, ctx, bp+4, bp, s3, setter_name, scope_level)
 			XJS_FreeAtom(tls, ctx, setter_name)
 			if idx < 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_get_loc_or_ref(tls, bc, *(*TBOOL)(unsafe.Pointer(bp + 4)), idx)
@@ -62148,7 +64616,9 @@ func _resolve_scope_private_field(tls *libc.TLS, ctx uintptr, s3 uintptr, var_na
 		libc.Xabort(tls)
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -63278,7 +65748,10 @@ func _get_label_pos(tls *libc.TLS, s uintptr, label int32) (r int32) {
 //	/* convert global variable accesses to local variables or closure
 //	   variables when necessary */
 func _resolve_variables(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
-	bp := tls.Alloc(112)
+	bp := tlsTake(tls, 112)
+	if bp == 0 {
+		bp = tls.Alloc(112)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bc_buf, cv, hf, ls, ls1, ls2, vd, vd1, v1, v5 uintptr
 	var bc_len, call_argc, i, idx, lab0, lab1, label, label1, label2, len1, line1, line11, line_num, op, op1, pos, pos1, pos11, pos2, pos_next, ret, scope, scope1, scope2, scope_idx, scope_idx1, v2 int32
@@ -64190,11 +66663,15 @@ _207:
 	if v206 != 0 {
 		XJS_ThrowOutOfMemory(tls, ctx)
 		r = -int32(1)
-		tls.Free(112)
+		if tlsDrop(tls, 112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -64217,7 +66694,9 @@ fail:
 	Xdbuf_free(tls, s4+256)
 	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fbyte_code = *(*TDynBuf)(unsafe.Pointer(bp))
 	r = -int32(1)
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -64243,7 +66722,10 @@ func _add_pc2line_info(tls *libc.TLS, s uintptr, pc Tuint32_t, source_pos Tuint3
 //	   emit_source_pos() so that the deltas are more likely to be
 //	   small. */
 func _compute_pc2line_info(tls *libc.TLS, s1 uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf_start, v2, v6 uintptr
 	var diff_col, diff_line, diff_pc, i, last_line_num, line_num int32
@@ -64325,7 +66807,9 @@ func _compute_pc2line_info(tls *libc.TLS, s1 uintptr) {
 			i = i + 1
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _add_reloc(tls *libc.TLS, ctx uintptr, ls uintptr, addr Tuint32_t, size int32) (r uintptr) {
@@ -64913,7 +67397,10 @@ _88:
 //
 //	/* peephole optimizations and resolve goto/labels */
 func _resolve_labels(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
-	bp := tls.Alloc(144)
+	bp := tlsTake(tls, 144)
+	if bp == 0 {
+		bp = tls.Alloc(144)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var argc, bc_len, delta, diff, diff1, diff11, diff2, diff3, i, idx, idx1, idx2, idx3, idx4, is_with, j, j1, label, len1, line11, line2, op, op11, op12, op13, op2, patch_offsets, pos, pos1, pos11, pos_next, val6, v2 int32
 	var atom, atom1, atom2 TJSAtom
@@ -64943,7 +67430,9 @@ func _resolve_labels(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 		(*TJSFunctionDef)(unsafe.Pointer(s4)).Fjump_slots = Xjs_mallocz(tls, (*TJSFunctionDef)(unsafe.Pointer(s4)).Fctx, uint32(16)*libc.Uint32FromInt32((*TJSFunctionDef)(unsafe.Pointer(s4)).Fjump_size))
 		if (*TJSFunctionDef)(unsafe.Pointer(s4)).Fjump_slots == libc.UintptrFromInt32(0) {
 			r = -int32(1)
-			tls.Free(144)
+			if tlsDrop(tls, 144) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -64952,7 +67441,9 @@ func _resolve_labels(tls *libc.TLS, ctx uintptr, s4 uintptr) (r int32) {
 		(*TJSFunctionDef)(unsafe.Pointer(s4)).Fline_number_slots = Xjs_mallocz(tls, (*TJSFunctionDef)(unsafe.Pointer(s4)).Fctx, uint32(8)*libc.Uint32FromInt32((*TJSFunctionDef)(unsafe.Pointer(s4)).Fline_number_size))
 		if (*TJSFunctionDef)(unsafe.Pointer(s4)).Fline_number_slots == libc.UintptrFromInt32(0) {
 			r = -int32(1)
-			tls.Free(144)
+			if tlsDrop(tls, 144) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		(*TJSFunctionDef)(unsafe.Pointer(s4)).Fline_number_last = libc.Int32FromUint32((*TJSFunctionDef)(unsafe.Pointer(s4)).Fsource_pos)
@@ -67042,11 +69533,15 @@ _427:
 	if v426 != 0 {
 		XJS_ThrowOutOfMemory(tls, ctx)
 		r = -int32(1)
-		tls.Free(144)
+		if tlsDrop(tls, 144) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(144)
+	if tlsDrop(tls, 144) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 out_of_memory:
@@ -67068,7 +69563,9 @@ fail:
 	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fbyte_code = *(*TDynBuf)(unsafe.Pointer(bp + 8))
 	(*TJSFunctionDef)(unsafe.Pointer(s4)).Fuse_short_opcodes = int32(ETRUE)
 	r = -int32(1)
-	tls.Free(144)
+	if tlsDrop(tls, 144) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -67088,7 +69585,10 @@ type TStackSizeState = struct {
 //
 //	/* 'op' is only used for error indication */
 func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack_len int32, catch_pos int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 int32
 	var v2 uintptr
@@ -67096,7 +69596,9 @@ func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack
 	if libc.Uint32FromInt32(pos) >= libc.Uint32FromInt32((*TStackSizeState)(unsafe.Pointer(s)).Fbc_len) {
 		XJS_ThrowInternalError(tls, ctx, __ccgo_ts+8180, libc.VaList(bp+8, op, pos))
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if stack_len > (*TStackSizeState)(unsafe.Pointer(s)).Fstack_len_max {
@@ -67104,7 +69606,9 @@ func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack
 		if (*TStackSizeState)(unsafe.Pointer(s)).Fstack_len_max > int32(MJS_STACK_SIZE_MAX) {
 			XJS_ThrowInternalError(tls, ctx, __ccgo_ts+8220, libc.VaList(bp+8, op, pos))
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -67113,17 +69617,23 @@ func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack
 		if libc.Int32FromUint16(*(*Tuint16_t)(unsafe.Pointer((*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab + uintptr(pos)*2))) != stack_len {
 			XJS_ThrowInternalError(tls, ctx, __ccgo_ts+8250, libc.VaList(bp+8, libc.Int32FromUint16(*(*Tuint16_t)(unsafe.Pointer((*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab + uintptr(pos)*2))), stack_len, pos))
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			if *(*Tint32_t)(unsafe.Pointer((*TStackSizeState)(unsafe.Pointer(s)).Fcatch_pos_tab + uintptr(pos)*4)) != catch_pos {
 				XJS_ThrowInternalError(tls, ctx, __ccgo_ts+8289, libc.VaList(bp+8, *(*Tint32_t)(unsafe.Pointer((*TStackSizeState)(unsafe.Pointer(s)).Fcatch_pos_tab + uintptr(pos)*4)), catch_pos, pos))
 				r = -int32(1)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				r = 0
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -67134,7 +69644,9 @@ func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack
 	/* queue the new PC to explore */
 	if _js_resize_array(tls, ctx, s+16, int32(4), s+24, (*TStackSizeState)(unsafe.Pointer(s)).Fpc_stack_len+int32(1)) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v2 = s + 20
@@ -67142,12 +69654,17 @@ func _ss_check(tls *libc.TLS, ctx uintptr, s uintptr, pos int32, op int32, stack
 	*(*int32)(unsafe.Pointer(v2)) = *(*int32)(unsafe.Pointer(v2)) + 1
 	*(*int32)(unsafe.Pointer((*TStackSizeState)(unsafe.Pointer(s)).Fpc_stack + uintptr(v1)*4)) = pos
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _compute_stack_size(tls *libc.TLS, ctx uintptr, fd uintptr, pstack_size uintptr) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bc_buf, oi, s, v3 uintptr
 	var catch_level, catch_pos, diff, i, level, n_pop, op, pos, pos_next, stack_len, v2 int32
@@ -67161,7 +69678,9 @@ func _compute_stack_size(tls *libc.TLS, ctx uintptr, fd uintptr, pstack_size uin
 	(*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab = Xjs_malloc(tls, ctx, uint32(2)*libc.Uint32FromInt32((*TStackSizeState)(unsafe.Pointer(s)).Fbc_len))
 	if !((*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab != 0) {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -67480,7 +69999,9 @@ func _compute_stack_size(tls *libc.TLS, ctx uintptr, fd uintptr, pstack_size uin
 	Xjs_free(tls, ctx, (*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab)
 	*(*int32)(unsafe.Pointer(pstack_size)) = (*TStackSizeState)(unsafe.Pointer(s)).Fstack_len_max
 	r = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -67490,12 +70011,17 @@ fail:
 	Xjs_free(tls, ctx, (*TStackSizeState)(unsafe.Pointer(s)).Fstack_level_tab)
 	*(*int32)(unsafe.Pointer(pstack_size)) = 0
 	r = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _add_global_variables(tls *libc.TLS, ctx uintptr, fd uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var closure_type TJSClosureTypeEnum
 	var cv, hf, m, me uintptr
@@ -67549,7 +70075,9 @@ func _add_global_variables(tls *libc.TLS, ctx uintptr, fd uintptr) (r int32) {
 			}
 			if _add_closure_var(tls, ctx, fd, closure_type, i, (*TJSGlobalVar)(unsafe.Pointer(hf)).Fvar_name, int32(*(*uint8)(unsafe.Pointer(hf + 4))&0x4>>2), int32(*(*uint8)(unsafe.Pointer(hf + 4))&0x2>>1), var_kind) < 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto _2
@@ -67571,7 +70099,9 @@ func _add_global_variables(tls *libc.TLS, ctx uintptr, fd uintptr) (r int32) {
 				if idx < 0 {
 					___JS_ThrowSyntaxErrorAtom(tls, ctx, (*TJSExportEntry)(unsafe.Pointer(me)).Flocal_name, __ccgo_ts+8424, libc.VaList(bp+8, __ccgo_ts+189))
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				(*(*struct {
@@ -67586,7 +70116,9 @@ func _add_global_variables(tls *libc.TLS, ctx uintptr, fd uintptr) (r int32) {
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -67596,7 +70128,10 @@ func _add_global_variables(tls *libc.TLS, ctx uintptr, fd uintptr) (r int32) {
 //	   definition is freed. All the child functions are also created. It
 //	   must be done this way to resolve all the variables. */
 func _js_create_function(tls *libc.TLS, ctx uintptr, fd uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, cv, el1, el11, fd1, next, prev, sd, vd, vd1, vd11, vd12, vd2, vd3, v11 uintptr
 	var byte_code_offset, closure_var_offset, cpool_idx, cpool_offset, function_size, i, i1, idx, scope, vardefs_offset, v6 int32
@@ -67876,14 +70411,18 @@ func _js_create_function(tls *libc.TLS, ctx uintptr, fd uintptr) (r TJSValue) {
 	}
 	Xjs_free(tls, ctx, fd)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_FUNCTION_BYTECODE))<<libc.Int32FromInt32(32) | uint64(uint32(b))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	_js_free_function_def(tls, ctx, fd)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -67968,7 +70507,10 @@ func _free_function_bytecode(tls *libc.TLS, rt1 uintptr, b uintptr) {
 }
 
 func _js_parse_directives(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var has_semi TBOOL
 	var v1 uintptr
@@ -67977,7 +70519,9 @@ func _js_parse_directives(tls *libc.TLS, s uintptr) (r int32) {
 	_, _ = has_semi, v1
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != int32(ETOK_STRING) {
 		r = 0
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_js_parse_get_pos(tls, s, bp+24)
@@ -67986,7 +70530,9 @@ func _js_parse_directives(tls *libc.TLS, s uintptr) (r int32) {
 		libc.X__builtin_snprintf(tls, bp, uint32(20), __ccgo_ts+8462, libc.VaList(bp+40, int32((*TJSParseState)(unsafe.Pointer(s)).Fbuf_ptr)-int32((*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr)-libc.Int32FromInt32(2), (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fptr+uintptr(1)))
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		has_semi = int32(EFALSE)
@@ -67994,7 +70540,9 @@ func _js_parse_directives(tls *libc.TLS, s uintptr) (r int32) {
 		case int32(';'):
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			has_semi = int32(ETRUE)
@@ -68096,7 +70644,9 @@ func _js_parse_directives(tls *libc.TLS, s uintptr) (r int32) {
 		}
 	}
 	r = _js_parse_seek_token(tls, s, bp+24)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -68215,7 +70765,10 @@ func _js_parse_function_class_fields_init(tls *libc.TLS, s uintptr) (r uintptr) 
 //	/* func_name must be JS_ATOM_NULL for JS_PARSE_FUNC_STATEMENT and
 //	   JS_PARSE_FUNC_EXPR, JS_PARSE_FUNC_ARROW and JS_PARSE_FUNC_VAR */
 func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFunctionEnum, func_kind TJSFunctionKindEnum, func_name TJSAtom, ptr uintptr, export_flag TJSParseExportEnum, pfd uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var create_func_var, has_opt_arg, is_expr, rest TBOOL
 	var ctx, fd, hf, hf1, hf2, hf3, vd uintptr
@@ -68234,20 +70787,26 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 		if func_kind == int32(EJS_FUNC_NORMAL) && _token_is_pseudo_keyword(tls, s, uint32(EJS_ATOM_async)) != 0 && _peek_token(tls, s, int32(ETRUE)) != int32('\n') {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			func_kind = int32(EJS_FUNC_ASYNC)
 		}
 		if _next_token(tls, s) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32('*') {
 			if _next_token(tls, s) != 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			func_kind = func_kind | int32(EJS_FUNC_GENERATOR)
@@ -68255,7 +70814,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 		if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval == int32(ETOK_IDENT) {
 			if *(*TBOOL)(unsafe.Pointer(s + 8 + 8 + 8)) != 0 || *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)) == uint32(EJS_ATOM_yield) && func_type == int32(EJS_PARSE_FUNC_EXPR) && func_kind&int32(EJS_FUNC_GENERATOR) != 0 || *(*TJSAtom)(unsafe.Pointer(s + 8 + 8)) == uint32(EJS_ATOM_await) && (func_type == int32(EJS_PARSE_FUNC_EXPR) && func_kind&int32(EJS_FUNC_ASYNC) != 0 || func_type == int32(EJS_PARSE_FUNC_CLASS_STATIC_INIT)) {
 				r = _js_parse_error_reserved_identifier(tls, s)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -68264,13 +70825,17 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 			if _next_token(tls, s) != 0 {
 				XJS_FreeAtom(tls, ctx, func_name)
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
 			if func_type != int32(EJS_PARSE_FUNC_EXPR) && export_flag != int32(EJS_PARSE_EXPORT_DEFAULT) {
 				r = _js_parse_error(tls, s, __ccgo_ts+8682, 0)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -68286,7 +70851,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 			_js_parse_error(tls, s, __ccgo_ts+8705, 0)
 			XJS_FreeAtom(tls, ctx, func_name)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -68307,7 +70874,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 				_js_parse_error(tls, s, __ccgo_ts+4946, 0)
 				XJS_FreeAtom(tls, ctx, func_name)
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -68323,7 +70892,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 			if lexical_func_idx < 0 {
 				XJS_FreeAtom(tls, ctx, func_name)
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -68332,7 +70903,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 	if !(fd != 0) {
 		XJS_FreeAtom(tls, ctx, func_name)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if pfd != 0 {
@@ -68413,7 +70986,9 @@ func _js_parse_function_decl2(tls *libc.TLS, s uintptr, func_type TJSParseFuncti
 			(*TJSFunctionDef)(unsafe.Pointer(fd)).Fscope_level = -int32(1) /* force no parent scope */
 			if _push_scope(tls, s) < 0 {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -68782,7 +71357,9 @@ done:
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -68793,7 +71370,9 @@ fail:
 		*(*uintptr)(unsafe.Pointer(pfd)) = libc.UintptrFromInt32(0)
 	}
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -68951,7 +71530,10 @@ func XJS_EvalFunction(tls *libc.TLS, ctx uintptr, fun_obj TJSValue) (r TJSValue)
 //
 //	/* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
 func ___JS_EvalInternal(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, input uintptr, input_len Tsize_t, filename uintptr, flags int32, scope_idx int32) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, fd, m, p, p1, s, sf, var_refs, v5, v8 uintptr
 	var err, eval_type, js_mode, v2 int32
@@ -68990,13 +71572,17 @@ func ___JS_EvalInternal(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, input ui
 			module_name = XJS_NewAtom(tls, ctx1, filename)
 			if module_name == uint32(MJS_ATOM_NULL) {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(96)
+				if tlsDrop(tls, 96) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			m = _js_new_module_def(tls, ctx1, module_name)
 			if !(m != 0) {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(96)
+				if tlsDrop(tls, 96) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			js_mode = js_mode | libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)
@@ -69073,7 +71659,9 @@ _3:
 		ret_val = _JS_EvalFunctionInternal(tls, ctx1, fun_obj, this_obj, var_refs, sf)
 	}
 	r = ret_val
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail1
 fail1:
@@ -69095,7 +71683,9 @@ fail1:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -69124,7 +71714,10 @@ func _JS_EvalInternal(tls *libc.TLS, ctx uintptr, this_obj TJSValue, input uintp
 }
 
 func _JS_EvalObject(tls *libc.TLS, ctx2 uintptr, this_obj TJSValue, val TJSValue, flags int32, scope_idx int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, str, v5 uintptr
 	var ret, v1, v4, v7 TJSValue
@@ -69149,7 +71742,9 @@ _3:
 		goto _8
 	_8:
 		r = v7
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = XJS_ToCStringLen2(tls, ctx2, bp, val, 0)
@@ -69158,13 +71753,17 @@ _10:
 	str = v5
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_EvalInternal(tls, ctx2, this_obj, str, *(*Tsize_t)(unsafe.Pointer(bp)), __ccgo_ts+8885, flags, scope_idx)
 	XJS_FreeCString(tls, ctx2, str)
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -69461,7 +72060,10 @@ _6:
 }
 
 func _bc_put_u64(tls *libc.TLS, s uintptr, _v Tuint64_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint64_t)(unsafe.Pointer(bp)) = _v
 	var v1, v2 Tuint64_t
@@ -69474,7 +72076,9 @@ func _bc_put_u64(tls *libc.TLS, s uintptr, _v Tuint64_t) {
 		*(*Tuint64_t)(unsafe.Pointer(bp)) = v2
 	}
 	Xdbuf_put(tls, s+4, bp, uint32(8))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _bc_put_leb128(tls *libc.TLS, s uintptr, v Tuint32_t) {
@@ -69542,7 +72146,10 @@ fail:
 }
 
 func _bc_put_atom(tls *libc.TLS, s uintptr, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* v at bp+0 */ Tuint32_t
 	if ___JS_AtomIsTaggedInt(tls, atom) != 0 {
@@ -69551,14 +72158,18 @@ func _bc_put_atom(tls *libc.TLS, s uintptr, atom TJSAtom) (r int32) {
 		if _bc_atom_to_idx(tls, s, bp, atom) != 0 {
 			(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Ferror1 = int32(1)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*Tuint32_t)(unsafe.Pointer(bp)) = *(*Tuint32_t)(unsafe.Pointer(bp)) << uint32(1)
 	}
 	_bc_put_leb128(tls, s, *(*Tuint32_t)(unsafe.Pointer(bp)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -69696,7 +72307,10 @@ func _bc_byte_swap(tls *libc.TLS, bc_buf uintptr, bc_len int32) {
 }
 
 func _JS_WriteFunctionBytecode(tls *libc.TLS, s uintptr, bc_buf1 uintptr, bc_len int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var bc_buf uintptr
@@ -69707,7 +72321,9 @@ func _JS_WriteFunctionBytecode(tls *libc.TLS, s uintptr, bc_buf1 uintptr, bc_len
 	bc_buf = Xjs_malloc(tls, (*TBCWriterState)(unsafe.Pointer(s)).Fctx, libc.Uint32FromInt32(bc_len))
 	if !(bc_buf != 0) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.Xmemcpy(tls, bc_buf, bc_buf1, libc.Uint32FromInt32(bc_len))
@@ -69754,14 +72370,18 @@ func _JS_WriteFunctionBytecode(tls *libc.TLS, s uintptr, bc_buf1 uintptr, bc_len
 	Xdbuf_put(tls, s+4, bc_buf, libc.Uint32FromInt32(bc_len))
 	Xjs_free(tls, (*TBCWriterState)(unsafe.Pointer(s)).Fctx, bc_buf)
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	Xjs_free(tls, (*TBCWriterState)(unsafe.Pointer(s)).Fctx, bc_buf)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -69787,7 +72407,10 @@ func _JS_WriteString(tls *libc.TLS, s uintptr, p uintptr) {
 }
 
 func _JS_WriteBigInt(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, v Tjs_limb_t
 	var i, len1 Tuint32_t
@@ -69848,12 +72471,17 @@ func _JS_WriteBigInt(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_WriteFunctionTag(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, cv, vd uintptr
 	var i, v1 int32
@@ -69964,15 +72592,21 @@ func _JS_WriteFunctionTag(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
 		i = i + 1
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -70067,7 +72701,10 @@ fail:
 //
 //	/* XXX: be compatible with the structured clone algorithm */
 func _JS_WriteArray(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var ctx, p, prs uintptr
@@ -70218,15 +72855,21 @@ func _JS_WriteArray(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -70364,7 +73007,10 @@ func _JS_WriteSharedArrayBuffer(tls *libc.TLS, s uintptr, obj TJSValue) (r int32
 }
 
 func _JS_WriteObjectRec(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var idx, ret, ret1, v1 int32
 	var p, p1, p2, v22, v25 uintptr
@@ -70381,7 +73027,9 @@ func _JS_WriteObjectRec(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer((*TBCWriterState)(unsafe.Pointer(s)).Fctx)).Frt, uint32(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, (*TBCWriterState)(unsafe.Pointer(s)).Fctx)
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	tag = libc.Uint32FromInt32(libc.Int32FromUint64(obj >> libc.Int32FromInt32(32)))
@@ -70579,15 +73227,21 @@ invalid_tag:
 _16:
 	;
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -70595,7 +73249,10 @@ fail:
 //
 //	/* create the atom table */
 func _JS_WriteObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atoms_size, i int32
 	var p, rt uintptr
@@ -70633,19 +73290,26 @@ func _JS_WriteObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 	Xdbuf_free(tls, s+4)
 	(*TBCWriterState)(unsafe.Pointer(s)).Fdbuf = *(*TDynBuf)(unsafe.Pointer(bp))
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	Xdbuf_free(tls, bp)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_WriteObject2(tls *libc.TLS, ctx uintptr, psize uintptr, obj TJSValue, flags int32, psab_tab uintptr, psab_tab_len uintptr) (r uintptr) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var s uintptr
 	var _ /* ss at bp+0 */ TBCWriterState
@@ -70685,7 +73349,9 @@ func XJS_WriteObject2(tls *libc.TLS, ctx uintptr, psize uintptr, obj TJSValue, f
 		*(*Tsize_t)(unsafe.Pointer(psab_tab_len)) = libc.Uint32FromInt32((*TBCWriterState)(unsafe.Pointer(s)).Fsab_tab_len)
 	}
 	r = (*TBCWriterState)(unsafe.Pointer(s)).Fdbuf.Fbuf
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -70702,7 +73368,9 @@ fail:
 		*(*Tsize_t)(unsafe.Pointer(psab_tab_len)) = uint32(0)
 	}
 	r = libc.UintptrFromInt32(0)
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -70850,18 +73518,25 @@ func _bc_get_leb128_int(tls *libc.TLS, s uintptr, pval uintptr) (r int32) {
 }
 
 func _bc_get_leb128_u16(tls *libc.TLS, s uintptr, pval uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* val at bp+0 */ Tuint32_t
 	if _bc_get_leb128(tls, s, bp) != 0 {
 		*(*Tuint16_t)(unsafe.Pointer(pval)) = uint16(0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tuint16_t)(unsafe.Pointer(pval)) = uint16(*(*Tuint32_t)(unsafe.Pointer(bp)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -70877,7 +73552,10 @@ func _bc_get_buf(tls *libc.TLS, s uintptr, buf uintptr, buf_len Tuint32_t) (r in
 }
 
 func _bc_idx_to_atom(tls *libc.TLS, s uintptr, patom uintptr, idx Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var v1 int32
@@ -70895,7 +73573,9 @@ func _bc_idx_to_atom(tls *libc.TLS, s uintptr, patom uintptr, idx Tuint32_t) (r 
 				v1 = -libc.Int32FromInt32(1)
 				(*TBCReaderState)(unsafe.Pointer(s)).Ferror_state = v1
 				r = v1
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			atom = XJS_DupAtom(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, *(*TJSAtom)(unsafe.Pointer((*TBCReaderState)(unsafe.Pointer(s)).Fidx_to_atom + uintptr(idx)*4)))
@@ -70903,35 +73583,51 @@ func _bc_idx_to_atom(tls *libc.TLS, s uintptr, patom uintptr, idx Tuint32_t) (r 
 	}
 	*(*TJSAtom)(unsafe.Pointer(patom)) = atom
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _bc_get_atom(tls *libc.TLS, s uintptr, patom uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* v at bp+0 */ Tuint32_t
 	if _bc_get_leb128(tls, s, bp) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp))&uint32(1) != 0 {
 		*(*TJSAtom)(unsafe.Pointer(patom)) = ___JS_AtomFromUInt32(tls, *(*Tuint32_t)(unsafe.Pointer(bp))>>int32(1))
 		r = 0
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = _bc_idx_to_atom(tls, s, patom, *(*Tuint32_t)(unsafe.Pointer(bp))>>int32(1))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _JS_ReadString(tls *libc.TLS, s uintptr) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i Tuint32_t
 	var is_wide_char TBOOL
@@ -70942,7 +73638,9 @@ func _JS_ReadString(tls *libc.TLS, s uintptr) (r uintptr) {
 	_, _, _, _, _, _ = i, is_wide_char, p, size, v2, v3
 	if _bc_get_leb128(tls, s, bp) != 0 {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	is_wide_char = libc.Int32FromUint32(*(*Tuint32_t)(unsafe.Pointer(bp)) & uint32(1))
@@ -70950,14 +73648,18 @@ func _JS_ReadString(tls *libc.TLS, s uintptr) (r uintptr) {
 	if *(*Tuint32_t)(unsafe.Pointer(bp)) > libc.Uint32FromInt32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(30)-libc.Int32FromInt32(1)) {
 		XJS_ThrowInternalError(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, __ccgo_ts+190, 0)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = _js_alloc_string(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, libc.Int32FromUint32(*(*Tuint32_t)(unsafe.Pointer(bp))), is_wide_char)
 	if !(p != 0) {
 		(*TBCReaderState)(unsafe.Pointer(s)).Ferror_state = -int32(1)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size = *(*Tuint32_t)(unsafe.Pointer(bp)) << is_wide_char
@@ -70965,7 +73667,9 @@ func _JS_ReadString(tls *libc.TLS, s uintptr) (r uintptr) {
 		_bc_read_error_end(tls, s)
 		_js_free_string(tls, (*TJSContext)(unsafe.Pointer((*TBCReaderState)(unsafe.Pointer(s)).Fctx)).Frt, p)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.Xmemcpy(tls, p+12, (*TBCReaderState)(unsafe.Pointer(s)).Fptr, size)
@@ -70992,7 +73696,9 @@ func _JS_ReadString(tls *libc.TLS, s uintptr) (r uintptr) {
 		*(*Tuint8_t)(unsafe.Pointer(p + 12 + uintptr(size))) = uint8('\000') /* add the trailing zero for 8 bit strings */
 	}
 	r = p
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -71006,7 +73712,10 @@ func _bc_get_flags(tls *libc.TLS, flags Tuint32_t, pidx uintptr, n int32) (r Tui
 }
 
 func _JS_ReadFunctionBytecode(tls *libc.TLS, s uintptr, b uintptr, byte_code_offset int32, bc_len Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bc_buf uintptr
 	var idx, v3 Tuint32_t
@@ -71017,7 +73726,9 @@ func _JS_ReadFunctionBytecode(tls *libc.TLS, s uintptr, b uintptr, byte_code_off
 		/* directly use the input buffer */
 		if expect32(!!(libc.Uint32FromInt32(int32((*TBCReaderState)(unsafe.Pointer(s)).Fbuf_end)-int32((*TBCReaderState)(unsafe.Pointer(s)).Fptr)) < bc_len)) {
 			r = _bc_read_error_end(tls, s)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		bc_buf = (*TBCReaderState)(unsafe.Pointer(s)).Fptr
@@ -71026,7 +73737,9 @@ func _JS_ReadFunctionBytecode(tls *libc.TLS, s uintptr, b uintptr, byte_code_off
 		bc_buf = b + uintptr(byte_code_offset)
 		if _bc_get_buf(tls, s, bc_buf, bc_len) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -71070,7 +73783,9 @@ func _JS_ReadFunctionBytecode(tls *libc.TLS, s uintptr, b uintptr, byte_code_off
 					/* Note: the atoms will be freed up to this position */
 					(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fbyte_code_len = pos
 					r = -int32(1)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				(*Tpacked_u32)(unsafe.Pointer(bc_buf + uintptr(pos) + uintptr(1))).Fv = *(*TJSAtom)(unsafe.Pointer(bp))
@@ -71081,12 +73796,17 @@ func _JS_ReadFunctionBytecode(tls *libc.TLS, s uintptr, b uintptr, byte_code_off
 		pos = pos + len1
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadBigInt(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, n Tuint32_t
 	var obj, v1 TJSValue
@@ -71107,7 +73827,9 @@ func _JS_ReadBigInt(tls *libc.TLS, s uintptr) (r TJSValue) {
 		goto _2
 	_2:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = _js_bigint_new(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, libc.Int32FromUint32((*(*Tuint32_t)(unsafe.Pointer(bp))-uint32(1))/libc.Uint32FromInt32(libc.Int32FromInt32(MJS_LIMB_BITS)/libc.Int32FromInt32(8))+uint32(1)))
@@ -71153,7 +73875,9 @@ func _JS_ReadBigInt(tls *libc.TLS, s uintptr) (r TJSValue) {
 		*(*Tjs_limb_t)(unsafe.Pointer(p1 + 4 + uintptr((*TJSBigInt)(unsafe.Pointer(p1)).Flen1-uint32(1))*4)) = *(*Tjs_limb_t)(unsafe.Pointer(bp + 4))
 	}
 	r = _JS_CompactBigInt(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, p1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71172,7 +73896,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -71197,7 +73923,10 @@ func _BC_add_object_ref(tls *libc.TLS, s uintptr, obj TJSValue) (r int32) {
 }
 
 func _JS_ReadFunctionTag(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, ctx1, cv, p, vd, v10, v7 uintptr
 	var byte_code_offset, closure_var_offset, cpool_offset, i, vardefs_offset, v4 int32
@@ -71280,13 +74009,17 @@ func _JS_ReadFunctionTag(tls *libc.TLS, s uintptr) (r TJSValue) {
 	}
 	if function_size > libc.Uint64FromInt32(libc.Int32FromInt32(MINT32_MAX)) {
 		r = XJS_ThrowOutOfMemory(tls, ctx1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	b = Xjs_mallocz(tls, ctx1, uint32(function_size))
 	if !(b != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.Xmemcpy(tls, b, bp, uint32(libc.UintptrFromInt32(0)+60))
@@ -71417,7 +74150,9 @@ func _JS_ReadFunctionTag(tls *libc.TLS, s uintptr) (r TJSValue) {
 	}
 	(*TJSFunctionBytecode)(unsafe.Pointer(b)).Frealm = XJS_DupContext(tls, ctx1)
 	r = obj
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71436,12 +74171,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadModule(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx1, m, me, mi, p, rme, se, v10, v13 uintptr
 	var i, v2 int32
@@ -71602,7 +74342,9 @@ _8:
 		goto fail
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71623,12 +74365,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadObjectTag(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx1, p, v5, v8 uintptr
 	var i Tuint32_t
@@ -71672,7 +74419,9 @@ func _JS_ReadObjectTag(tls *libc.TLS, s uintptr) (r TJSValue) {
 		i = i + 1
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71691,12 +74440,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadArray(tls *libc.TLS, s uintptr, tag int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx1, p, v12, v9 uintptr
 	var i Tuint32_t
@@ -71760,7 +74514,9 @@ func _JS_ReadArray(tls *libc.TLS, s uintptr, tag int32) (r TJSValue) {
 		XJS_PreventExtensions(tls, ctx1, obj)
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71779,12 +74535,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadTypedArray(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var array_buffer, obj, v, v1, v10, v12, v3 TJSValue
 	var ctx4, p, v4, v7 uintptr
@@ -71806,22 +74567,30 @@ func _JS_ReadTypedArray(tls *libc.TLS, s uintptr) (r TJSValue) {
 	array_buffer = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	if _bc_get_u8(tls, s, bp+8) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(bp + 8))) >= int32(EJS_CLASS_FLOAT64_ARRAY)-int32(EJS_CLASS_UINT8C_ARRAY)+libc.Int32FromInt32(1) {
 		r = XJS_ThrowTypeError(tls, ctx4, __ccgo_ts+9055, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, bp+44) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, bp+40) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: this hack could be avoided if the typed array could be
@@ -71836,7 +74605,9 @@ func _JS_ReadTypedArray(tls *libc.TLS, s uintptr) (r TJSValue) {
 _2:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(_js_get_array_buffer(tls, ctx4, array_buffer) != 0) {
@@ -71854,7 +74625,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 16)))[0] = array_buffer
@@ -71932,7 +74705,9 @@ _25:
 		}
 	}
 	r = obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -71964,12 +74739,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx1, p, pmax_byte_length, v4, v7 uintptr
 	var obj, v3 TJSValue
@@ -71982,17 +74762,23 @@ func _JS_ReadArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
 	pmax_byte_length = libc.UintptrFromInt32(0)
 	if _bc_get_leb128(tls, s, bp) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, bp+4) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp + 4)) < *(*Tuint32_t)(unsafe.Pointer(bp)) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+9075, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp + 4)) != uint32(0xffffffff) {
@@ -72002,7 +74788,9 @@ func _JS_ReadArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
 	if expect32(!!(libc.Uint32FromInt32(int32((*TBCReaderState)(unsafe.Pointer(s)).Fbuf_end)-int32((*TBCReaderState)(unsafe.Pointer(s)).Fptr)) < *(*Tuint32_t)(unsafe.Pointer(bp)))) {
 		_bc_read_error_end(tls, s)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// makes a copy of the input
@@ -72018,7 +74806,9 @@ _2:
 	}
 	*(*uintptr)(unsafe.Pointer(s + 8)) += uintptr(*(*Tuint32_t)(unsafe.Pointer(bp)))
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -72037,12 +74827,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadSharedArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx1, data_ptr, p, pmax_byte_length, v4, v7 uintptr
 	var obj, v3 TJSValue
@@ -72056,17 +74851,23 @@ func _JS_ReadSharedArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
 	pmax_byte_length = libc.UintptrFromInt32(0)
 	if _bc_get_leb128(tls, s, bp) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, bp+4) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp + 4)) < *(*Tuint32_t)(unsafe.Pointer(bp)) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+9075, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp + 4)) != uint32(0xffffffff) {
@@ -72075,7 +74876,9 @@ func _JS_ReadSharedArrayBuffer(tls *libc.TLS, s uintptr) (r TJSValue) {
 	}
 	if _bc_get_u64(tls, s, bp+16) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	data_ptr = uintptr(uint32(*(*Tuint64_t)(unsafe.Pointer(bp + 16))))
@@ -72091,7 +74894,9 @@ _2:
 		goto fail
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -72110,7 +74915,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -72251,7 +75058,10 @@ fail:
 }
 
 func _JS_ReadObjectRec(tls *libc.TLS, s uintptr) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx4, p, p1, v29 uintptr
 	var obj, v, v22, v24 TJSValue
@@ -72269,12 +75079,16 @@ func _JS_ReadObjectRec(tls *libc.TLS, s uintptr) (r TJSValue) {
 	obj = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx4)).Frt, uint32(0)) != 0 {
 		r = _JS_ThrowStackOverflow(tls, ctx4)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_u8(tls, s, bp+8) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	switch libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(bp + 8))) {
@@ -72342,7 +75156,9 @@ _5:
 	;
 	if _bc_get_sleb128(tls, s, bp+12) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx4
@@ -72355,7 +75171,9 @@ _6:
 	;
 	if _bc_get_u64(tls, s, bp+16) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx4
@@ -72375,7 +75193,9 @@ _7:
 	p1 = _JS_ReadString(tls, s)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	obj = libc.Uint64FromInt32(int32(EJS_TAG_STRING))<<libc.Int32FromInt32(32) | uint64(uint32(p1))
@@ -72435,17 +75255,23 @@ _19:
 	;
 	if !(TBOOL(*(*uint32)(unsafe.Pointer(s + 32))&0xff000000>>24)<<24>>24 != 0) {
 		r = XJS_ThrowSyntaxError(tls, ctx4, __ccgo_ts+9125, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, bp+24) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp + 24)) >= libc.Uint32FromInt32((*TBCReaderState)(unsafe.Pointer(s)).Fobjects_count) {
 		r = XJS_ThrowSyntaxError(tls, ctx4, __ccgo_ts+9159, libc.VaList(bp+40, *(*Tuint32_t)(unsafe.Pointer(bp + 24)), (*TBCReaderState)(unsafe.Pointer(s)).Fobjects_count))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx4
@@ -72468,17 +75294,24 @@ _20:
 invalid_tag:
 	;
 	r = XJS_ThrowSyntaxError(tls, ctx4, __ccgo_ts+9195, libc.VaList(bp+40, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(bp + 8))), libc.Uint32FromInt32(int32((*TBCReaderState)(unsafe.Pointer(s)).Fptr)-int32((*TBCReaderState)(unsafe.Pointer(s)).Fbuf_start))))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _21:
 	;
 	r = obj
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var i, v1 int32
@@ -72487,18 +75320,24 @@ func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 	_, _, _, _ = atom, i, p, v1
 	if _bc_get_u8(tls, s, bp) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(bp))) != int32(MBC_VERSION) {
 		XJS_ThrowSyntaxError(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, __ccgo_ts+9223, libc.VaList(bp+16, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(bp))), int32(MBC_VERSION)))
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _bc_get_leb128(tls, s, s+20) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TBCReaderState)(unsafe.Pointer(s)).Fidx_to_atom_count != uint32(0) {
@@ -72507,7 +75346,9 @@ func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 			v1 = -libc.Int32FromInt32(1)
 			(*TBCReaderState)(unsafe.Pointer(s)).Ferror_state = v1
 			r = v1
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -72519,7 +75360,9 @@ func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 		p = _JS_ReadString(tls, s)
 		if !(p != 0) {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		atom = _JS_NewAtomStr(tls, (*TBCReaderState)(unsafe.Pointer(s)).Fctx, p)
@@ -72527,7 +75370,9 @@ func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 			v1 = -libc.Int32FromInt32(1)
 			(*TBCReaderState)(unsafe.Pointer(s)).Ferror_state = v1
 			r = v1
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*TJSAtom)(unsafe.Pointer((*TBCReaderState)(unsafe.Pointer(s)).Fidx_to_atom + uintptr(i)*4)) = atom
@@ -72540,7 +75385,9 @@ func _JS_ReadObjectAtoms(tls *libc.TLS, s uintptr) (r int32) {
 		i = i + 1
 	}
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -72565,7 +75412,10 @@ func _bc_reader_free(tls *libc.TLS, s uintptr) {
 }
 
 func XJS_ReadObject(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t, flags int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj TJSValue
 	var s, v1 uintptr
@@ -72597,7 +75447,9 @@ func XJS_ReadObject(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t, fl
 	}
 	_bc_reader_free(tls, s)
 	r = obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -72735,7 +75587,10 @@ func _JS_InstantiateFunctionListItem2(tls *libc.TLS, ctx uintptr, p uintptr, ato
 }
 
 func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, atom TJSAtom, e uintptr) (r int32) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom1 TJSAtom
 	var getter, setter, v, v1, val3, v11, v2, v4 TJSValue
@@ -72787,7 +75642,9 @@ func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, 
 	_11:
 		if v10 != 0 {
 			r = -int32(1)
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if atom == uint32(EJS_ATOM_Symbol_toPrimitive) {
@@ -72811,11 +75668,15 @@ func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, 
 		}
 		if _JS_DefineAutoInitProperty(tls, ctx6, obj, atom, int32(EJS_AUTOINIT_ID_PROP), e, prop_flags) < 0 {
 			r = -int32(1)
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = 0
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(MJS_DEF_CGETSET): /* XXX: use autoinit again ? */
 		fallthrough
@@ -72834,7 +75695,9 @@ func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, 
 		_14:
 			if v10 != 0 {
 				r = -int32(1)
-				tls.Free(96)
+				if tlsDrop(tls, 96) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -72865,17 +75728,23 @@ func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, 
 					}
 				}
 				r = -int32(1)
-				tls.Free(96)
+				if tlsDrop(tls, 96) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 		if XJS_DefinePropertyGetSet(tls, ctx6, obj, atom, getter, setter, prop_flags) < 0 {
 			r = -int32(1)
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = 0
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(MJS_DEF_PROP_INT32):
 		_ = ctx6
@@ -72936,22 +75805,30 @@ func _JS_InstantiateFunctionListItem(tls *libc.TLS, ctx6 uintptr, obj TJSValue, 
 	case int32(MJS_DEF_OBJECT):
 		if _JS_DefineAutoInitProperty(tls, ctx6, obj, atom, int32(EJS_AUTOINIT_ID_PROP), e, prop_flags) < 0 {
 			r = -int32(1)
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r = 0
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		libc.Xabort(tls)
 	}
 	if XJS_DefinePropertyValue(tls, ctx6, obj, atom, val3, prop_flags) < 0 {
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -73003,7 +75880,10 @@ func XJS_AddModuleExportList(tls *libc.TLS, ctx uintptr, m uintptr, tab uintptr,
 }
 
 func XJS_SetModuleExportList(tls *libc.TLS, ctx4 uintptr, m uintptr, tab uintptr, len1 int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var e, v2 uintptr
 	var i int32
@@ -73095,7 +75975,9 @@ func XJS_SetModuleExportList(tls *libc.TLS, ctx4 uintptr, m uintptr, tab uintptr
 		}
 		if XJS_SetModuleExport(tls, ctx4, m, (*TJSCFunctionListEntry)(unsafe.Pointer(e)).Fname, val2) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _1
@@ -73104,7 +75986,9 @@ func XJS_SetModuleExportList(tls *libc.TLS, ctx4 uintptr, m uintptr, tab uintptr
 		i = i + 1
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -73359,7 +76243,10 @@ func _js_global_eval(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, 
 }
 
 func _js_global_isNaN(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uint64
 	var v3 TJSValue
@@ -73372,7 +76259,9 @@ func _js_global_isNaN(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 	_, _ = v1, v3
 	if expect32(!!(XJS_ToFloat64(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv))) != 0)) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 8))
@@ -73384,12 +76273,17 @@ _2:
 	goto _4
 _4:
 	r = v3
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_global_isFinite(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uint64
 	var v3 TJSValue
@@ -73402,7 +76296,9 @@ func _js_global_isFinite(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 	_, _ = v1, v3
 	if expect32(!!(XJS_ToFloat64(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv))) != 0)) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 8))
@@ -73414,7 +76310,9 @@ _2:
 	goto _4
 _4:
 	r = v3
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -73786,25 +76684,35 @@ fail:
 }
 
 func _JS_DefinePropertyDesc(tls *libc.TLS, ctx uintptr, obj TJSValue, prop TJSAtom, desc TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ret int32
 	var _ /* d at bp+0 */ TJSPropertyDescriptor
 	_ = ret
 	if _js_obj_to_desc(tls, ctx, bp, desc) < 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_DefineProperty(tls, ctx, obj, prop, (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fvalue, (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fgetter, (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fsetter, (*(*TJSPropertyDescriptor)(unsafe.Pointer(bp))).Fflags|flags)
 	_js_free_desc(tls, ctx, bp)
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_ObjectDefineProperties(tls *libc.TLS, ctx2 uintptr, obj TJSValue, properties TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var desc, props, v11, v6 TJSValue
 	var i Tuint32_t
@@ -73820,7 +76728,9 @@ _2:
 	if !(v1 != 0) {
 		_JS_ThrowTypeErrorNotAnObject(tls, ctx2)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	desc = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -73830,7 +76740,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(props))
@@ -73907,7 +76819,9 @@ exception:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -74198,7 +77112,10 @@ _2:
 }
 
 func _js_object_getOwnPropertyDescriptor(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var flags, res, v6 int32
@@ -74211,7 +77128,9 @@ func _js_object_getOwnPropertyDescriptor(tls *libc.TLS, ctx3 uintptr, this_val T
 		/* Reflect.getOwnPropertyDescriptor case */
 		if libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(argv))>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 			r = _JS_ThrowTypeErrorNotAnObject(tls, ctx3)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		_ = ctx3
@@ -74234,7 +77153,9 @@ func _js_object_getOwnPropertyDescriptor(tls *libc.TLS, ctx3 uintptr, this_val T
 	_7:
 		if v6 != 0 {
 			r = obj
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -74345,7 +77266,9 @@ func _js_object_getOwnPropertyDescriptor(tls *libc.TLS, ctx3 uintptr, this_val T
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception1
 exception1:
@@ -74382,12 +77305,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_object_getOwnPropertyDescriptors(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r1 TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atomValue, desc, obj, r, v8 TJSValue
 	var i Tuint32_t
@@ -74404,7 +77332,9 @@ func _js_object_getOwnPropertyDescriptors(tls *libc.TLS, ctx1 uintptr, this_val 
 _2:
 	if v1 != 0 {
 		r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(obj))
@@ -74480,7 +77410,9 @@ _4:
 		}
 	}
 	r1 = r
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -74513,12 +77445,17 @@ exception:
 		}
 	}
 	r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_GetOwnPropertyNames2(tls *libc.TLS, ctx2 uintptr, obj1 TJSValue, flags int32, kind int32) (r1 TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var i, j, v6 Tuint32_t
@@ -74537,7 +77474,9 @@ func _JS_GetOwnPropertyNames2(tls *libc.TLS, ctx2 uintptr, obj1 TJSValue, flags 
 _2:
 	if v1 != 0 {
 		r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(obj))
@@ -74692,7 +77631,9 @@ done:
 		}
 	}
 	r1 = r
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -75116,7 +78057,10 @@ exception:
 }
 
 func _js_object_seal(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, freeze_flag int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var desc_flags, flags, res, v1 int32
 	var i Tuint32_t
@@ -75145,25 +78089,33 @@ _2:
 		goto _7
 	_7:
 		r = v6
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = XJS_PreventExtensions(tls, ctx1, obj)
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(res != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+9389, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(obj))
 	flags = libc.Int32FromInt32(1)<<libc.Int32FromInt32(0) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)
 	if _JS_GetOwnPropertyNamesInternal(tls, ctx1, bp, bp+4, p1, flags) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = uint32(0)
@@ -75207,19 +78159,26 @@ _2:
 	goto _13
 _13:
 	r = v6
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	XJS_FreePropertyEnum(tls, ctx1, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_object_isSealed(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, is_frozen int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags, res, v1 int32
 	var i Tuint32_t
@@ -75236,14 +78195,18 @@ func _js_object_isSealed(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 _2:
 	if !(v1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_BOOL))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(1)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(libc.Int32FromUint64(obj))
 	flags = libc.Int32FromInt32(1)<<libc.Int32FromInt32(0) | libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)
 	if _JS_GetOwnPropertyNamesInternal(tls, ctx1, bp, bp+4, p, flags) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = uint32(0)
@@ -75271,7 +78234,9 @@ _2:
 	res = XJS_IsExtensible(tls, ctx1, obj)
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = res ^ int32(1)
@@ -75284,19 +78249,26 @@ done:
 	goto _5
 _5:
 	r = v4
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	XJS_FreePropertyEnum(tls, ctx1, *(*uintptr)(unsafe.Pointer(bp)), *(*Tuint32_t)(unsafe.Pointer(bp + 4)))
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_object_fromEntries(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var item, iter, iterable, key, next_method, obj, value, v5, v6 TJSValue
 	var p, v22, v25 uintptr
@@ -75313,7 +78285,9 @@ func _js_object_fromEntries(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc
 _2:
 	if v1 != 0 {
 		r = obj
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	iter = _JS_GetIterator(tls, ctx2, iterable, int32(EFALSE))
@@ -75451,7 +78425,9 @@ _10:
 		}
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -75503,7 +78479,9 @@ _48:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -75832,7 +78810,10 @@ exception:
 }
 
 func _js_object_propertyIsEnumerable(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var has_prop, v1 int32
 	var obj, res, v3 TJSValue
@@ -75885,12 +78866,17 @@ exception:
 		}
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_object___lookupGetter__(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, setter int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var has_prop, v1 int32
 	var obj, res, v5, v8 TJSValue
@@ -75982,7 +78968,9 @@ exception:
 		}
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -77212,7 +80200,10 @@ func _js_function_proto(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 //
 //	/* XXX: add a specific eval mode so that Function("}), ({") is rejected */
 func _js_function_constructor(tls *libc.TLS, ctx3 uintptr, new_target TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, realm, v5, v8 uintptr
 	var func_kind TJSFunctionKindEnum
@@ -77354,7 +80345,9 @@ _12:
 		}
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -77377,7 +80370,9 @@ fail1:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -77455,7 +80450,10 @@ func _free_arg_list(tls *libc.TLS, ctx1 uintptr, tab uintptr, len1 Tuint32_t) {
 //
 //	/* XXX: should use ValueArray */
 func _build_arg_list(tls *libc.TLS, ctx1 uintptr, plen uintptr, array_arg TJSValue) (r uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, len1, v1, v2, v3 Tuint32_t
 	var p, p1, tab, v7 uintptr
@@ -77466,19 +80464,25 @@ func _build_arg_list(tls *libc.TLS, ctx1 uintptr, plen uintptr, array_arg TJSVal
 	if libc.Int32FromUint64(array_arg>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+9938, 0)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _js_get_length64(tls, ctx1, bp, array_arg) != 0 {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tint64_t)(unsafe.Pointer(bp)) > int64(MJS_MAX_LOCAL_VARS) {
 		// XXX: check for stack overflow?
 		XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+9951, libc.VaList(bp+16, int32(MJS_MAX_LOCAL_VARS)))
 		r = libc.UintptrFromInt32(0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Uint32FromInt64(*(*Tint64_t)(unsafe.Pointer(bp)))
@@ -77496,7 +80500,9 @@ _4:
 	tab = Xjs_mallocz(tls, ctx1, uint32(8)*v3)
 	if !(tab != 0) {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(array_arg))
@@ -77585,7 +80591,9 @@ _4:
 			if v18 != 0 {
 				_free_arg_list(tls, ctx1, tab, i)
 				r = libc.UintptrFromInt32(0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*TJSValue)(unsafe.Pointer(tab + uintptr(i)*8)) = ret
@@ -77597,7 +80605,9 @@ _4:
 	}
 	*(*Tuint32_t)(unsafe.Pointer(plen)) = len1
 	r = tab
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -77606,7 +80616,10 @@ _4:
 //	/* magic value: 0 = normal apply, 1 = apply for constructor, 2 =
 //	   Reflect.apply */
 func _js_function_apply(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var array_arg, ret, this_arg TJSValue
 	var tab uintptr
@@ -77614,20 +80627,26 @@ func _js_function_apply(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 	_, _, _, _ = array_arg, ret, tab, this_arg
 	if _check_function(tls, ctx, this_val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	this_arg = *(*TJSValue)(unsafe.Pointer(argv))
 	array_arg = *(*TJSValue)(unsafe.Pointer(argv + 1*8))
 	if (libc.Int32FromUint64(array_arg>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED) || libc.Int32FromUint64(array_arg>>libc.Int32FromInt32(32)) == int32(EJS_TAG_NULL)) && magic != int32(2) {
 		r = XJS_Call(tls, ctx, this_val, this_arg, 0, libc.UintptrFromInt32(0))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	tab = _build_arg_list(tls, ctx, bp, array_arg)
 	if !(tab != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if magic&int32(1) != 0 {
@@ -77637,7 +80656,9 @@ func _js_function_apply(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 	}
 	_free_arg_list(tls, ctx, tab, *(*Tuint32_t)(unsafe.Pointer(bp)))
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -77651,7 +80672,10 @@ func _js_function_call(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32
 }
 
 func _js_function_bind(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arg_count, i, len1, ret, v11, v3, v4 int32
 	var bf, p, p1, p2, v13, v8 uintptr
@@ -77688,7 +80712,9 @@ func _js_function_bind(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int3
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = arg_count, bf, d2, func_obj, i, len1, len_val, name1, p, p1, p2, ret, tag, v1, val1, v11, v10, v13, v3, v34, v36, v4, v7, v8
 	if _check_function(tls, ctx6, this_val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	func_obj = XJS_NewObjectProtoClass(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Ffunction_proto, uint32(EJS_CLASS_BOUND_FUNCTION))
@@ -77697,7 +80723,9 @@ func _js_function_bind(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int3
 _2:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p2 = uintptr(libc.Int32FromUint64(func_obj))
@@ -77922,7 +80950,9 @@ _64:
 	}
 	XJS_DefinePropertyValue(tls, ctx6, func_obj, uint32(EJS_ATOM_name), name1, libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
 	r = func_obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -77941,7 +80971,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -78297,7 +81329,10 @@ var _js_function_proto_funcs = [8]TJSCFunctionListEntry{
 /* Error class */
 
 func _iterator_to_array(tls *libc.TLS, ctx2 uintptr, items TJSValue) (r1 TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var iter, next_method, r, v2, v3, v4 TJSValue
 	var k Tint64_t
@@ -78382,7 +81417,9 @@ done:
 		}
 	}
 	r1 = r
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception_close
 exception_close:
@@ -78406,7 +81443,9 @@ exception:
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	goto done
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r1
 }
 
@@ -79316,7 +82355,10 @@ _7:
 /* Array */
 
 func _JS_CopySubArray(tls *libc.TLS, ctx1 uintptr, obj TJSValue, to_pos Tint64_t, from_pos Tint64_t, count Tint64_t, dir int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var from, i, j, l, len1, to, v2, v4, v5 Tint64_t
 	var fromPresent int32
@@ -79489,20 +82531,29 @@ func _JS_CopySubArray(tls *libc.TLS, ctx1 uintptr, obj TJSValue, to_pos Tint64_t
 	_1:
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_array_constructor(tls *libc.TLS, ctx6 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, tag, v11 int32
 	var obj, v, v1, v13, v15, v6, v9 TJSValue
@@ -79522,7 +82573,9 @@ func _js_array_constructor(tls *libc.TLS, ctx6 uintptr, new_target TJSValue, arg
 _2:
 	if v11 != 0 {
 		r = obj
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if v5 = argc == int32(1); v5 {
@@ -79606,7 +82659,9 @@ _2:
 		}
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -79625,12 +82680,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_from(tls *libc.TLS, ctx7 uintptr, this_val TJSValue, argc int32, argv uintptr) (r1 TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arrayLike, enum_obj, items, iter, mapfn, next_method, r, this_arg, v, v1, v2, v21, v7, v17, v18, v3, v4 TJSValue
 	var k, v37 Tint64_t
@@ -79995,12 +83055,17 @@ done:
 		}
 	}
 	r1 = r
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func Xjs_array_of(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v21, v3 int32
 	var obj, v, v1, v11, v14, v16, v6, v9 TJSValue
@@ -80028,7 +83093,9 @@ func Xjs_array_of(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, ar
 _4:
 	if v3 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -80104,12 +83171,16 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _11:
 	;
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -80150,7 +83221,10 @@ _5:
 }
 
 func _JS_ArraySpeciesCreate(tls *libc.TLS, ctx2 uintptr, obj TJSValue, _len_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _len_val
 	var ctor, ret, species, v1, v2 TJSValue
@@ -80160,12 +83234,16 @@ func _JS_ArraySpeciesCreate(tls *libc.TLS, ctx2 uintptr, obj TJSValue, _len_val 
 	res = XJS_IsArray(tls, ctx2, obj)
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(res != 0) {
 		r = _js_array_constructor(tls, ctx2, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), bp)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj
@@ -80178,7 +83256,9 @@ _3:
 _5:
 	if v4 != 0 {
 		r = ctor
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_IsConstructor(tls, ctx2, ctor) != 0 {
@@ -80199,7 +83279,9 @@ _5:
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if realm != ctx2 && _js_same_value(tls, ctx2, ctor, (*TJSContext)(unsafe.Pointer(realm)).Farray_ctor) != 0 {
@@ -80246,7 +83328,9 @@ _17:
 	_27:
 		if v4 != 0 {
 			r = species
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		ctor = species
@@ -80262,7 +83346,9 @@ _17:
 _31:
 	if v4 != 0 {
 		r = _js_array_constructor(tls, ctx2, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), bp)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		ret = XJS_CallConstructor(tls, ctx2, ctor, int32(1), bp)
@@ -80280,10 +83366,14 @@ _31:
 			}
 		}
 		r = ret
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -80459,7 +83549,10 @@ _9:
 }
 
 func _js_array_at(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v1, v4 TJSValue
 	var p, p1, v2, v7 uintptr
@@ -80521,7 +83614,9 @@ func _js_array_at(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, ar
 		}
 	}
 	r = *(*TJSValue)(unsafe.Pointer(bp))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -80540,12 +83635,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_with(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, obj, ret, v4, v7 TJSValue
 	var i Tint64_t
@@ -80719,12 +83819,17 @@ exception:
 		}
 	}
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_concat(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, e, obj, v, v1, v12, v16, v3, v9 TJSValue
 	var i, res, v11 int32
@@ -80872,7 +83977,9 @@ _24:
 		}
 	}
 	r = arr
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -80904,12 +84011,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_every(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr, special int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, func1, index_val, obj, res, ret, this_arg, v, v1, v11, v4, v8 TJSValue
 	var k, n, v7 Tint64_t
@@ -81274,7 +84386,9 @@ done:
 		}
 	}
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -81319,12 +84433,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_reduce(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr, special int32) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var acc1, func1, index_val, obj, v, v1, v11, v4, v6 TJSValue
 	var k, k1, v20 Tint64_t
@@ -81550,7 +84669,9 @@ func _js_array_reduce(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32
 		}
 	}
 	r = *(*TJSValue)(unsafe.Pointer(bp + 16))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -81595,12 +84716,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v10, v7 TJSValue
 	var p, p1, v13, v8 uintptr
@@ -81656,7 +84782,9 @@ func _js_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, 
 		*(*Tint64_t)(unsafe.Pointer(bp + 8)) = *(*Tint64_t)(unsafe.Pointer(bp + 8)) + 1
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -81675,12 +84803,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_includes(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, val1, v10, v2, v5, v7 TJSValue
 	var p, p1, v3, v8 uintptr
@@ -81795,7 +84928,9 @@ done:
 	goto _26
 _26:
 	r = v2
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -81814,12 +84949,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_indexOf(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v, v1, v10, v2, v5, v7 TJSValue
 	var p, p1, v3, v8 uintptr
@@ -81960,7 +85100,9 @@ done:
 	goto _30
 _30:
 	r = v7
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -81979,12 +85121,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_lastIndexOf(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v, v1, v2, v5, v7 TJSValue
 	var p, p1, v3, v8 uintptr
@@ -82082,7 +85229,9 @@ func _js_array_lastIndexOf(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc 
 	goto _19
 _19:
 	r = v7
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -82101,7 +85250,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -82111,7 +85262,10 @@ const EArrayFindLast = 2
 const EArrayFindLastIndex = 3
 
 func _js_array_find(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, argv uintptr, mode int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var dir, v10 int32
 	var end, k, v3 Tint64_t
@@ -82229,7 +85383,9 @@ func _js_array_find(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, 
 					}
 				}
 				r = index_val
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				v4 = index_val
@@ -82259,7 +85415,9 @@ func _js_array_find(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, 
 					}
 				}
 				r = val2
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -82313,11 +85471,15 @@ func _js_array_find(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, 
 		goto _52
 	_52:
 		r = v4
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto exception
@@ -82363,7 +85525,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -82427,7 +85591,10 @@ _7:
 }
 
 func _js_array_join(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, toLocaleString int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v15, v18 uintptr
 	var c, v1, v4 int32
@@ -82534,7 +85701,9 @@ func _js_array_join(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, 
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -82570,12 +85739,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_pop(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr, shift int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var newLen, v6 Tint64_t
 	var obj, res, v, v1, v111, v13, v7, v9 TJSValue
@@ -82768,7 +85942,9 @@ _15:
 		}
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -82800,12 +85976,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_push(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, unshift int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var from, newLen, v18 Tint64_t
 	var i, v26 int32
@@ -82871,7 +86052,9 @@ func _js_array_push(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, 
 				if expect32(!!(new_len > *(*Tuint32_t)(unsafe.Pointer(p2 + 24)))) {
 					if _expand_fast_array(tls, ctx6, p2, new_len) != 0 {
 						r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 				}
@@ -82953,7 +86136,9 @@ func _js_array_push(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, 
 				goto _10
 			_10:
 				r = v2
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -83068,7 +86253,9 @@ _27:
 	goto _40
 _40:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -83087,12 +86274,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_reverse(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var h, l Tint64_t
 	var h_present, l_present, v6 int32
@@ -83130,7 +86322,9 @@ func _js_array_reverse(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 			}
 		}
 		r = obj
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	l = 0
@@ -83181,7 +86375,9 @@ func _js_array_reverse(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 		h = h - 1
 	}
 	r = obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -83213,7 +86409,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -83224,7 +86422,10 @@ exception:
 //	// with undefined, thus in effect creating a dense array.
 //	// Does not use Array[@@species], always returns a base Array.
 func _js_array_toReversed(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, obj, ret, v4, v7 TJSValue
 	var i Tint64_t
@@ -83324,12 +86525,17 @@ exception:
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_slice(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, splice int32) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, len_val, obj, v, v1, v111, v13, v15, v9 TJSValue
 	var count, k, n, new_len, v3, v4, v5 Tint64_t
@@ -83627,7 +86833,9 @@ _39:
 		}
 	}
 	r = arr
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -83659,12 +86867,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_toSpliced(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var add, i, j, newlen Tint64_t
 	var arr, obj, ret, v4, v7 TJSValue
@@ -83883,12 +87096,17 @@ exception:
 		}
 	}
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_copyWithin(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var count, v4, v5, v6 Tint64_t
 	var obj, v9 TJSValue
@@ -83941,7 +87159,9 @@ _7:
 		goto exception
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -83960,12 +87180,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source TJSValue, sourceLen Tint64_t, targetIndex Tint64_t, depth int32, mapperFunction TJSValue, thisArg TJSValue) (r Tint64_t) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_array, present, v2 int32
 	var p, v13, v4 uintptr
@@ -83983,7 +87208,9 @@ func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source T
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx4)).Frt, uint32(0)) != 0 {
 		_JS_ThrowStackOverflow(tls, ctx4)
 		r = int64(-int32(1))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	sourceIndex = 0
@@ -83994,7 +87221,9 @@ func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source T
 		present = _JS_TryGetPropertyInt64(tls, ctx4, source, sourceIndex, bp+8)
 		if present < 0 {
 			r = int64(-int32(1))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(present != 0) {
@@ -84065,7 +87294,9 @@ func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source T
 		_23:
 			if v2 != 0 {
 				r = int64(-int32(1))
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -84104,7 +87335,9 @@ func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source T
 		}
 		if XJS_DefinePropertyValueInt64(tls, ctx4, target, targetIndex, *(*TJSValue)(unsafe.Pointer(bp + 8)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) < 0 {
 			r = int64(-int32(1))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		targetIndex = targetIndex + 1
@@ -84114,7 +87347,9 @@ func _JS_FlattenIntoArray(tls *libc.TLS, ctx4 uintptr, target TJSValue, source T
 		sourceIndex = sourceIndex + 1
 	}
 	r = targetIndex
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -84133,12 +87368,17 @@ fail:
 		}
 	}
 	r = int64(-int32(1))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_flatten(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, map1 int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, mapperFunction, obj, thisArg, v4 TJSValue
 	var p, v12, v9 uintptr
@@ -84203,7 +87443,9 @@ _7:
 		}
 	}
 	r = arr
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -84235,7 +87477,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -84259,7 +87503,10 @@ type Tarray_sort_context = struct {
 }
 
 func _js_array_cmp_generic(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) (r int32) {
-	bp1 := tls.Alloc(32)
+	bp1 := tlsTake(tls, 32)
+	if bp1 == 0 {
+		bp1 = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ap, bp, ctx, psc uintptr
 	var cmp, val, v1 int32
@@ -84273,7 +87520,9 @@ func _js_array_cmp_generic(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) 
 	bp = b
 	if (*Tarray_sort_context)(unsafe.Pointer(psc)).Fexception != 0 {
 		r = 0
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*Tarray_sort_context)(unsafe.Pointer(psc)).Fhas_method != 0 {
@@ -84329,7 +87578,9 @@ func _js_array_cmp_generic(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) 
 	}
 	if cmp != 0 {
 		r = cmp
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto cmp_same
@@ -84337,19 +87588,26 @@ cmp_same:
 	;
 	/* make sort stable: compare array offsets */
 	r = libc.BoolInt32((*TValueSlot)(unsafe.Pointer(ap)).Fpos > (*TValueSlot)(unsafe.Pointer(bp)).Fpos) - libc.BoolInt32((*TValueSlot)(unsafe.Pointer(ap)).Fpos < (*TValueSlot)(unsafe.Pointer(bp)).Fpos)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	(*Tarray_sort_context)(unsafe.Pointer(psc)).Fexception = int32(1)
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_sort(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var array, new_array, p, v10, v7 uintptr
 	var array_size, n, new_size, pos Tsize_t
@@ -84493,7 +87751,9 @@ _2:
 		i = i + 1
 	}
 	r = obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -84553,7 +87813,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -84564,7 +87826,10 @@ fail:
 //	// with undefined, thus in effect creating a dense array.
 //	// Does not use Array[@@species], always returns a base Array.
 func _js_array_toSorted(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, obj, ret, v6, v9 TJSValue
 	var i Tint64_t
@@ -84581,7 +87846,9 @@ _2:
 	ok = libc.BoolInt32(v1 != 0 || XJS_IsFunction(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv))) != 0)
 	if !(ok != 0) {
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+3565, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -84693,7 +87960,9 @@ exception:
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -84812,7 +88081,10 @@ fail:
 }
 
 func _js_array_iterator_next(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var idx, v13 Tuint32_t
 	var it, p, p1, v111, v8 uintptr
@@ -84878,7 +88150,9 @@ fail1:
 	;
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _5:
 	;
@@ -84907,7 +88181,9 @@ done:
 	;
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _6:
 	;
@@ -84939,7 +88215,9 @@ _6:
 		goto _19
 	_19:
 		r = v16
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		val2 = XJS_GetPropertyUint32(tls, ctx4, (*TJSArrayIteratorData)(unsafe.Pointer(it)).Fobj, idx)
@@ -84948,12 +88226,16 @@ _6:
 	_21:
 		if v11 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if (*TJSArrayIteratorData)(unsafe.Pointer(it)).Fkind == int32(EJS_ITERATOR_KIND_VALUE) {
 			r = val2
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			v8 = ctx4
@@ -85011,11 +88293,15 @@ _6:
 				}
 			}
 			r = obj
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -85367,7 +88653,10 @@ func _js_iterator_concat_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp
 }
 
 func _js_iterator_concat_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var it, meth, obj, p, v28, v31 uintptr
 	var item, iter, next, ret, val, v10, v11 TJSValue
@@ -85378,12 +88667,16 @@ func _js_iterator_concat_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, ar
 	it = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_ITERATOR_CONCAT))
 	if !(it != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSIteratorConcatData)(unsafe.Pointer(it)).Frunning != 0 {
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+10352, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSIteratorConcatData)(unsafe.Pointer(it)).Frunning = int32(ETRUE)
@@ -85587,7 +88880,9 @@ _1:
 	;
 	(*TJSIteratorConcatData)(unsafe.Pointer(it)).Frunning = int32(EFALSE)
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -86089,7 +89384,10 @@ type TJSIteratorHelperData = struct {
 }
 
 func _js_create_iterator_helper(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func1, method, obj, v4, v12, v5 TJSValue
 	var it, p, p1, v6, v9 uintptr
@@ -86108,7 +89406,9 @@ func _js_create_iterator_helper(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, 
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx3)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	func1 = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -86307,7 +89607,9 @@ _57:
 	libc.SetBitFieldPtr16Uint8(it+40, libc.Uint8FromInt32(0), 9, 0x200)
 	XJS_SetOpaque(tls, obj, it)
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto range_error
 range_error:
@@ -86318,12 +89620,17 @@ fail:
 	;
 	_JS_IteratorClose(tls, ctx3, this_val, int32(ETRUE))
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_iterator_proto_func(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r1 TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func1, index_val, item, method, r, ret, v, v1, v3, v6, v8 TJSValue
 	var idx, v17 Tint64_t
@@ -86342,7 +89649,9 @@ func _js_iterator_proto_func(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, arg
 _2:
 	if !(v11 != 0) {
 		r1 = _JS_ThrowTypeErrorNotAnObject(tls, ctx6)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	func1 = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -86796,7 +90105,9 @@ _12:
 		}
 	}
 	r1 = r
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -86832,12 +90143,17 @@ fail_no_close:
 		}
 	}
 	r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_iterator_proto_reduce(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var acc, func1, index_val, item, method, ret, v, v1, v3, v6, v8 TJSValue
 	var idx, v24 Tint64_t
@@ -86856,7 +90172,9 @@ func _js_iterator_proto_reduce(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, a
 _2:
 	if !(v11 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx6)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	acc = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -87039,7 +90357,9 @@ _12:
 		}
 	}
 	r = acc
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -87088,12 +90408,17 @@ exception_no_close:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_iterator_proto_toArray(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var idx Tint64_t
 	var item, method, result, v, v1, v15, v17, v3, v4 TJSValue
@@ -87113,7 +90438,9 @@ func _js_iterator_proto_toArray(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, 
 _2:
 	if !(v11 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx6)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = this_val
@@ -87126,7 +90453,9 @@ _5:
 _7:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result = XJS_NewArray(tls, ctx6)
@@ -87201,7 +90530,9 @@ _23:
 		}
 	}
 	r = result
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -87233,7 +90564,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -87398,7 +90731,10 @@ func _js_iterator_helper_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp
 }
 
 func _js_iterator_helper_next(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var index_val, index_val1, index_val2, item, item1, item2, item3, item4, iter, method, method1, method2, method3, method4, ret, selected, v, v1, v11, v13, v8 TJSValue
 	var it, p, p1, v21, v9 uintptr
@@ -87418,18 +90754,24 @@ func _js_iterator_helper_next(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, ar
 	it = XJS_GetOpaque2(tls, ctx6, this_val, uint32(EJS_CLASS_ITERATOR_HELPER))
 	if !(it != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(Tuint8_t(*(*uint16)(unsafe.Pointer(it + 40))&0x100>>8)) != 0 {
 		r = XJS_ThrowTypeError(tls, ctx6, __ccgo_ts+10508, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(Tuint8_t(*(*uint16)(unsafe.Pointer(it + 40))&0x200>>9)) != 0 {
 		*(*int32)(unsafe.Pointer(pdone)) = int32(ETRUE)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	libc.SetBitFieldPtr16Uint8(it+40, libc.Uint8FromInt32(1), 8, 0x100)
@@ -88260,7 +91602,9 @@ done:
 	libc.SetBitFieldPtr16Uint8(it+40, libc.Uint8FromInt32(v16), 9, 0x200)
 	libc.SetBitFieldPtr16Uint8(it+40, libc.Uint8FromInt32(0), 8, 0x100)
 	r = ret
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -88272,7 +91616,9 @@ fail_no_close:
 	;
 	ret = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	goto done
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -90899,7 +94245,10 @@ var _js_array_iterator_proto_funcs = [2]TJSCFunctionListEntry{
 /* Number */
 
 func _js_number_constructor(tls *libc.TLS, ctx5 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d2, v20 float64
 	var obj, v, v1, val3, v11, v7, v9 TJSValue
@@ -90936,7 +94285,9 @@ func _js_number_constructor(tls *libc.TLS, ctx5 uintptr, new_target TJSValue, ar
 	_4:
 		if v3 != 0 {
 			r = val3
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		switch libc.Int32FromUint64(val3 >> libc.Int32FromInt32(32)) {
@@ -90971,7 +94322,9 @@ func _js_number_constructor(tls *libc.TLS, ctx5 uintptr, new_target TJSValue, ar
 		_14:
 			if v3 != 0 {
 				r = val3
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		case int32(EJS_TAG_BIG_INT):
@@ -91030,14 +94383,20 @@ _26:
 			_JS_SetObjectData(tls, ctx5, obj, val3)
 		}
 		r = obj
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = val3
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -91085,7 +94444,10 @@ func _js_number_isInteger(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 }
 
 func _js_number_isSafeInteger(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var tag, v1 int32
 	var v3 TJSValue
@@ -91097,12 +94459,16 @@ func _js_number_isSafeInteger(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, ar
 _2:
 	if !(v1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_BOOL))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if expect32(!!(XJS_ToFloat64(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0)) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx1
@@ -91110,7 +94476,9 @@ _2:
 	goto _4
 _4:
 	r = v3
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -91605,27 +94973,39 @@ func _js_number_valueOf(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 }
 
 func _js_get_radix(tls *libc.TLS, ctx uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* radix at bp+0 */ int32
 	if XJS_ToInt32Sat(tls, ctx, bp, val) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) < int32(2) || *(*int32)(unsafe.Pointer(bp)) > int32(36) {
 		XJS_ThrowRangeError(tls, ctx, __ccgo_ts+11043, 0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = *(*int32)(unsafe.Pointer(bp))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_number_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var base, flags, len1, v1 int32
 	var p, v10, v7 uintptr
@@ -91640,7 +95020,9 @@ func _js_number_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if v5 = magic != 0; !v5 {
@@ -91659,12 +95041,16 @@ _2:
 	if libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_INT) {
 		len1 = libc.Int32FromUint32(Xi64toa_radix(tls, bp+8, int64(libc.Int32FromUint64(val)), libc.Uint32FromInt32(base)))
 		r = _js_new_string8_len(tls, ctx1, bp+8, len1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _JS_ToFloat64Free(tls, ctx1, bp, val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	flags = libc.Int32FromInt32(0) << libc.Int32FromInt32(0)
@@ -91672,7 +95058,9 @@ _2:
 		flags = flags | libc.Int32FromInt32(2)<<libc.Int32FromInt32(2)
 	}
 	r = _js_dtoa2(tls, ctx1, *(*float64)(unsafe.Pointer(bp)), base, 0, flags)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -91691,12 +95079,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_number_toFixed(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags, v1 int32
 	var val TJSValue
@@ -91709,22 +95102,30 @@ func _js_number_toFixed(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _JS_ToFloat64Free(tls, ctx, bp+8, val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_ToInt32Sat(tls, ctx, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) < 0 || *(*int32)(unsafe.Pointer(bp)) > int32(100) {
 		r = XJS_ThrowRangeError(tls, ctx, __ccgo_ts+11074, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Xfabs(tls, *(*float64)(unsafe.Pointer(bp + 8))) >= float64(1e+21) {
@@ -91733,12 +95134,17 @@ _2:
 		flags = libc.Int32FromInt32(2) << libc.Int32FromInt32(0)
 	}
 	r = _js_dtoa2(tls, ctx, *(*float64)(unsafe.Pointer(bp + 8)), int32(10), *(*int32)(unsafe.Pointer(bp)), flags)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_number_toExponential(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags, v1 int32
 	var v, val, v5 TJSValue
@@ -91762,17 +95168,23 @@ func _js_number_toExponential(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, ar
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _JS_ToFloat64Free(tls, ctx1, bp+24, val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_ToInt32Sat(tls, ctx1, bp+16, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 24))
@@ -91791,7 +95203,9 @@ _4:
 		goto _6
 	_6:
 		r = _JS_ToStringFree(tls, ctx1, v5)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(argv))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -91803,19 +95217,26 @@ _8:
 	} else {
 		if *(*int32)(unsafe.Pointer(bp + 16)) < 0 || *(*int32)(unsafe.Pointer(bp + 16)) > int32(100) {
 			r = XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+11074, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*int32)(unsafe.Pointer(bp + 16)) = *(*int32)(unsafe.Pointer(bp + 16)) + 1
 		flags = libc.Int32FromInt32(1) << libc.Int32FromInt32(0)
 	}
 	r = _js_dtoa2(tls, ctx1, *(*float64)(unsafe.Pointer(bp + 24)), int32(10), *(*int32)(unsafe.Pointer(bp + 16)), flags|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_number_toPrecision(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, val, v8 TJSValue
 	var v1 int32
@@ -91839,12 +95260,16 @@ func _js_number_toPrecision(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _JS_ToFloat64Free(tls, ctx1, bp+24, val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(argv))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -91855,7 +95280,9 @@ _4:
 	}
 	if XJS_ToInt32Sat(tls, ctx1, bp+16, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 24))
@@ -91879,17 +95306,23 @@ to_string:
 	goto _9
 _9:
 	r = _JS_ToStringFree(tls, ctx1, v8)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _5:
 	;
 	if *(*int32)(unsafe.Pointer(bp + 16)) < int32(1) || *(*int32)(unsafe.Pointer(bp + 16)) > int32(100) {
 		r = XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+11074, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _js_dtoa2(tls, ctx1, *(*float64)(unsafe.Pointer(bp + 24)), int32(10), *(*int32)(unsafe.Pointer(bp + 16)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -92108,7 +95541,10 @@ var _js_number_proto_funcs = [6]TJSCFunctionListEntry{
 }
 
 func _js_parseInt(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var flags int32
 	var p, str, v1 uintptr
@@ -92121,13 +95557,17 @@ _2:
 	str = v1
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_ToInt32(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) != 0 && (*(*int32)(unsafe.Pointer(bp)) < int32(2) || *(*int32)(unsafe.Pointer(bp)) > int32(36)) {
@@ -92140,7 +95580,9 @@ _2:
 	}
 	XJS_FreeCString(tls, ctx1, str)
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -92530,7 +95972,10 @@ func _js_thisStringValue(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJSV
 }
 
 func _js_string_fromCharCode(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var i int32
@@ -92547,7 +95992,9 @@ func _js_string_fromCharCode(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc
 		if XJS_ToInt32(tls, ctx, bp+24, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 || _string_buffer_putc16(tls, b, libc.Uint32FromInt32(*(*Tint32_t)(unsafe.Pointer(bp + 24))&int32(0xffff))) != 0 {
 			_string_buffer_free(tls, b)
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _1
@@ -92556,12 +96003,17 @@ func _js_string_fromCharCode(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc
 		i = i + 1
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_fromCodePoint(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var c, i, v4 int32
@@ -92616,7 +96068,9 @@ func _js_string_fromCodePoint(tls *libc.TLS, ctx uintptr, this_val TJSValue, arg
 		i = i + 1
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto range_error
 range_error:
@@ -92627,12 +96081,17 @@ fail:
 	;
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_raw(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, v12, v15 uintptr
 	var cooked, raw, val, v3, v4 TJSValue
@@ -92715,7 +96174,9 @@ _7:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -92748,7 +96209,9 @@ exception:
 	}
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -92756,7 +96219,10 @@ exception:
 //
 //	/* only used in test262 */
 func Xjs_string_codePointRange(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b2 uintptr
 	var i, n, v6, v7, v8 Tuint32_t
@@ -92778,7 +96244,9 @@ _2:
 	}
 	if v5 || v3 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v6 = *(*Tuint32_t)(unsafe.Pointer(bp + 4))
@@ -92811,7 +96279,9 @@ _9:
 	}
 	if _string_buffer_init2(tls, ctx1, b2, libc.Int32FromUint32(n), libc.BoolInt32(*(*Tuint32_t)(unsafe.Pointer(bp + 4)) >= uint32(0x100))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = *(*Tuint32_t)(unsafe.Pointer(bp))
@@ -92826,12 +96296,17 @@ _9:
 		i = i + 1
 	}
 	r = _string_buffer_end(tls, b2)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_charCodeAt(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, v1 int32
 	var p, p1, v4, v7 uintptr
@@ -92844,7 +96319,9 @@ func _js_string_charCodeAt(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc 
 _2:
 	if v1 != 0 {
 		r = val1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val1))
@@ -92863,7 +96340,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) < 0 || *(*int32)(unsafe.Pointer(bp)) >= int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0x7fffffff>>0) {
@@ -92890,12 +96369,17 @@ _2:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_charAt(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, is_at int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, v1 int32
 	var p, p1, v4, v7 uintptr
@@ -92908,7 +96392,9 @@ func _js_string_charAt(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val))
@@ -92927,7 +96413,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) < 0 && is_at != 0 {
@@ -92957,12 +96445,17 @@ _2:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_codePointAt(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, v1 int32
 	var p, p1, v4, v7 uintptr
@@ -92975,7 +96468,9 @@ func _js_string_codePointAt(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc
 _2:
 	if v1 != 0 {
 		r = val1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val1))
@@ -92994,7 +96489,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(bp)) < 0 || *(*int32)(unsafe.Pointer(bp)) >= int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0x7fffffff>>0) {
@@ -93021,7 +96518,9 @@ _2:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -93157,7 +96656,10 @@ func _string_indexof(tls *libc.TLS, p1 uintptr, p2 uintptr, from int32) (r int32
 }
 
 func _string_advance_index(tls *libc.TLS, p uintptr, index Tint64_t, unicode TBOOL) (r Tint64_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* index32 at bp+0 */ int32
 	if !(unicode != 0) || index >= int64(int32(*(*uint32)(unsafe.Pointer(p + 0))&0x7fffffff>>0)) || !(int32(Tuint8_t(*(*uint32)(unsafe.Pointer(p + 0))&0x80000000>>31)) != 0) {
@@ -93168,7 +96670,9 @@ func _string_advance_index(tls *libc.TLS, p uintptr, index Tint64_t, unicode TBO
 		index = int64(*(*int32)(unsafe.Pointer(bp)))
 	}
 	r = index
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -93328,7 +96832,10 @@ _9:
 }
 
 func _js_string_indexOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, lastIndexOf int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, inc, len1, ret, start, stop, v_len, v1 int32
 	var p, p1, p11, v12, v9 uintptr
@@ -93348,7 +96855,9 @@ func _js_string_indexOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v2 = XJS_ToString(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)))
@@ -93444,7 +96953,9 @@ _4:
 	goto _19
 _19:
 	r = v8
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -93476,12 +96987,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_includes(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, len1, ret, start, stop, v_len, v1 int32
 	var p, p1, p11, v12, v15 uintptr
@@ -93496,7 +97012,9 @@ func _js_string_includes(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _js_is_regexp(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)))
@@ -93600,7 +97118,9 @@ done:
 	goto _22
 _22:
 	r = v11
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -93632,7 +97152,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -93701,7 +97223,10 @@ func _check_regexp_g_flag(tls *libc.TLS, ctx2 uintptr, regexp TJSValue) (r int32
 }
 
 func _js_string_match(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, atom int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var args_len, v1, v3 int32
 	var matcher, regexp, result, rx, str, v8, v9 TJSValue
@@ -93726,7 +97251,9 @@ _2:
 	}
 	if v5 || v3 != 0 {
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+9270, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(regexp>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT))
@@ -93743,7 +97270,9 @@ _7:
 	_12:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if atom == int32(EJS_ATOM_Symbol_matchAll) {
@@ -93762,7 +97291,9 @@ _7:
 					}
 				}
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -93777,7 +97308,9 @@ _7:
 		}
 		if v5 && !(v3 != 0) {
 			r = _JS_CallFree(tls, ctx2, matcher, regexp, int32(1), bp)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -93787,7 +97320,9 @@ _7:
 _24:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	args_len = int32(1)
@@ -93842,7 +97377,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _33:
 	;
@@ -93861,7 +97398,9 @@ _33:
 		}
 	}
 	r = result
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -93870,7 +97409,10 @@ _33:
 //	/* if captures != NULL, captures_val and matched are ignored. Otherwise,
 //	   captures_len is ignored */
 func _js_string_GetSubstitution(tls *libc.TLS, ctx uintptr, b uintptr, matched TJSValue, sp uintptr, position Tuint32_t, captures_val TJSValue, namedCaptures TJSValue, rep TJSValue, captures uintptr, _captures_len Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint32_t)(unsafe.Pointer(bp)) = _captures_len
 	var c, c1, end, i, j, j0, k, k1, shift, start, v1 int32
@@ -94036,20 +97578,29 @@ func _js_string_GetSubstitution(tls *libc.TLS, ctx uintptr, b uintptr, matched T
 	}
 	_string_buffer_concat(tls, b, rp, libc.Uint32FromInt32(i), libc.Uint32FromInt32(int32(*(*uint32)(unsafe.Pointer(rp + 0))&0x7fffffff>>0)))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_string_replace(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, is_replaceAll int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var O, repl_str, replaceValue, replaceValue_str, replacer, searchValue, search_str, str, v8, v9 TJSValue
 	var b, p, searchp, sp, v26, v29 uintptr
@@ -94075,7 +97626,9 @@ _2:
 	}
 	if v5 || v3 != 0 {
 		r = XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+9270, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	search_str = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -94088,7 +97641,9 @@ _7:
 		if is_replaceAll != 0 {
 			if _check_regexp_g_flag(tls, ctx3, searchValue) < 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -94102,7 +97657,9 @@ _7:
 	_12:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v1 = libc.BoolInt32(libc.Int32FromUint64(replacer>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -94118,7 +97675,9 @@ _7:
 			(*(*[3]TJSValue)(unsafe.Pointer(bp)))[0] = O
 			(*(*[3]TJSValue)(unsafe.Pointer(bp)))[int32(1)] = replaceValue
 			r = _JS_CallFree(tls, ctx3, replacer, searchValue, int32(2), bp)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -94195,7 +97754,9 @@ _21:
 					}
 				}
 				r = str
-				tls.Free(48)
+				if tlsDrop(tls, 48) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				break
@@ -94272,7 +97833,9 @@ _21:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -94318,12 +97881,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_split(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r1 TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var A, O, R, S, T, limit, separator, splitter, v8, v9 TJSValue
 	var e, p1, q, r, s, v34 Tint64_t
@@ -94349,7 +97917,9 @@ _2:
 	}
 	if v5 || v3 != 0 {
 		r1 = XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+9270, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	S = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -94369,7 +97939,9 @@ _7:
 	_12:
 		if v1 != 0 {
 			r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v1 = libc.BoolInt32(libc.Int32FromUint64(splitter>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -94385,7 +97957,9 @@ _7:
 			(*(*[2]TJSValue)(unsafe.Pointer(bp)))[0] = O
 			(*(*[2]TJSValue)(unsafe.Pointer(bp)))[int32(1)] = limit
 			r1 = _JS_CallFree(tls, ctx3, splitter, separator, int32(2), bp)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -94521,7 +98095,9 @@ done:
 		}
 	}
 	r1 = A
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -94566,12 +98142,17 @@ exception:
 		}
 	}
 	r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_substring(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var end, start, v1, v6 int32
 	var p, p1, v4, v7 uintptr
@@ -94585,7 +98166,9 @@ func _js_string_substring(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -94604,7 +98187,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(bp + 4)) = int32(*(*uint32)(unsafe.Pointer(p1 + 0)) & 0x7fffffff >> 0)
@@ -94627,7 +98212,9 @@ _9:
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -94653,12 +98240,17 @@ _9:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_substr(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1, v1, v6 int32
 	var p, p1, v4, v7 uintptr
@@ -94672,7 +98264,9 @@ func _js_string_substr(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -94692,7 +98286,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(bp + 4)) = len1 - *(*int32)(unsafe.Pointer(bp))
@@ -94715,7 +98311,9 @@ _9:
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -94734,12 +98332,17 @@ _9:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_slice(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1, v1, v6, v8 int32
 	var p, p1, v4, v7 uintptr
@@ -94753,7 +98356,9 @@ func _js_string_slice(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -94773,7 +98378,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(bp + 4)) = len1
@@ -94796,7 +98403,9 @@ _9:
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -94825,12 +98434,17 @@ _18:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_pad(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, padEnd int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b1, p, p1, p11, v12, v9 uintptr
 	var c, chunk, len1, v1, v31, v6 int32
@@ -94857,7 +98471,9 @@ _2:
 	len1 = int32(*(*uint32)(unsafe.Pointer(p1 + 0)) & 0x7fffffff >> 0)
 	if len1 >= *(*int32)(unsafe.Pointer(bp + 24)) {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if v5 = argc > int32(1); v5 {
@@ -94889,7 +98505,9 @@ _2:
 				}
 			}
 			r = str
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if int32(*(*uint32)(unsafe.Pointer(p11 + 0))&0x7fffffff>>0) == int32(1) {
@@ -94965,7 +98583,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -95007,14 +98627,21 @@ fail2:
 fail1:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_string_repeat(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v5, v8 uintptr
 	var len1, n, v1 int32
@@ -95042,7 +98669,9 @@ _2:
 	len1 = int32(*(*uint32)(unsafe.Pointer(p1 + 0)) & 0x7fffffff >> 0)
 	if len1 == 0 || n == int32(1) {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// XXX: potential arithmetic overflow
@@ -95079,7 +98708,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -95098,7 +98729,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -95222,7 +98855,10 @@ func _string_prevc(tls *libc.TLS, p uintptr, pidx uintptr) (r int32) {
 }
 
 func _test_final_sigma(tls *libc.TLS, p uintptr, sigma_pos int32) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c1 int32
 	var _ /* k at bp+0 */ int32
@@ -95240,7 +98876,9 @@ func _test_final_sigma(tls *libc.TLS, p uintptr, sigma_pos int32) (r TBOOL) {
 	}
 	if !(Xlre_is_cased(tls, libc.Uint32FromInt32(c1)) != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* after C: skip case ignorable chars and check there is
@@ -95249,7 +98887,9 @@ func _test_final_sigma(tls *libc.TLS, p uintptr, sigma_pos int32) (r TBOOL) {
 	for {
 		if *(*int32)(unsafe.Pointer(bp)) >= int32(*(*uint32)(unsafe.Pointer(p + 0))&0x7fffffff>>0) {
 			r = int32(ETRUE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		c1 = _string_getc(tls, p, bp)
@@ -95260,12 +98900,17 @@ func _test_final_sigma(tls *libc.TLS, p uintptr, sigma_pos int32) (r TBOOL) {
 	_2:
 	}
 	r = libc.BoolInt32(!(Xlre_is_cased(tls, libc.Uint32FromInt32(c1)) != 0))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_toLowerCase(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, to_lower int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v6, v9 uintptr
 	var c, j, l, v1 int32
@@ -95281,13 +98926,17 @@ func _js_string_toLowerCase(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val))
 	if int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0x7fffffff>>0) == 0 {
 		r = val
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _string_buffer_init(tls, ctx1, b, int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0x7fffffff>>0)) != 0 {
@@ -95335,7 +98984,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -95355,7 +99006,9 @@ fail:
 	}
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -95363,7 +99016,10 @@ fail:
 //
 //	/* return (-1, NULL) if exception, otherwise (len, buf) */
 func _JS_ToUTF32String(tls *libc.TLS, ctx1 uintptr, pbuf uintptr, val1 TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, p, p1, v11, v8 uintptr
 	var j, len1, v1, v3, v4 int32
@@ -95376,7 +99032,9 @@ func _JS_ToUTF32String(tls *libc.TLS, ctx1 uintptr, pbuf uintptr, val1 TJSValue)
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val))
@@ -95437,19 +99095,26 @@ _6:
 	}
 	*(*uintptr)(unsafe.Pointer(pbuf)) = buf
 	r = j
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	*(*uintptr)(unsafe.Pointer(pbuf)) = libc.UintptrFromInt32(0)
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_NewUTF32String(tls *libc.TLS, ctx uintptr, buf uintptr, len1 int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var i int32
@@ -95458,7 +99123,9 @@ func _JS_NewUTF32String(tls *libc.TLS, ctx uintptr, buf uintptr, len1 int32) (r 
 	b = bp
 	if _string_buffer_init(tls, ctx, b, len1) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -95475,19 +99142,26 @@ func _JS_NewUTF32String(tls *libc.TLS, ctx uintptr, buf uintptr, len1 int32) (r 
 		i = i + 1
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_normalize1(tls *libc.TLS, ctx uintptr, pout_buf uintptr, val TJSValue, n_type TUnicodeNormalizationEnum) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf_len, out_len int32
 	var _ /* buf at bp+0 */ uintptr
@@ -95496,24 +99170,33 @@ func _js_string_normalize1(tls *libc.TLS, ctx uintptr, pout_buf uintptr, val TJS
 	buf_len = _JS_ToUTF32String(tls, ctx, bp, val)
 	if buf_len < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	out_len = Xunicode_normalize(tls, bp+4, *(*uintptr)(unsafe.Pointer(bp)), buf_len, n_type, (*TJSContext)(unsafe.Pointer(ctx)).Frt, __ccgo_fp(Xjs_realloc_rt))
 	Xjs_free(tls, ctx, *(*uintptr)(unsafe.Pointer(bp)))
 	if out_len < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(pout_buf)) = *(*uintptr)(unsafe.Pointer(bp + 4))
 	r = out_len
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_string_normalize(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var form, p, p1, v11, v6 uintptr
 	var is_compat, out_len, v1 int32
@@ -95529,7 +99212,9 @@ func _js_string_normalize(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 _2:
 	if v1 != 0 {
 		r = val
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if v5 = argc == 0; !v5 {
@@ -95589,7 +99274,9 @@ _2:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	_9:
 		;
@@ -95611,13 +99298,17 @@ _2:
 	}
 	if out_len < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	val = _JS_NewUTF32String(tls, ctx2, *(*uintptr)(unsafe.Pointer(bp + 4)), out_len)
 	Xjs_free(tls, ctx2, *(*uintptr)(unsafe.Pointer(bp + 4)))
 	r = val
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -95666,7 +99357,10 @@ _4:
 }
 
 func _js_string_localeCompare(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, b, v5 TJSValue
 	var a_len, b_len, cmp, v1, v3 int32
@@ -95680,7 +99374,9 @@ func _js_string_localeCompare(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, ar
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	b = XJS_ToString(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)))
@@ -95702,7 +99398,9 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	a_len = _js_string_normalize1(tls, ctx2, bp, a, int32(EUNICODE_NFC))
@@ -95734,7 +99432,9 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	b_len = _js_string_normalize1(tls, ctx2, bp+4, b, int32(EUNICODE_NFC))
@@ -95754,7 +99454,9 @@ _4:
 	if b_len < 0 {
 		Xjs_free(tls, ctx2, *(*uintptr)(unsafe.Pointer(bp)))
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	cmp = _js_UTF32_compare(tls, *(*uintptr)(unsafe.Pointer(bp)), a_len, *(*uintptr)(unsafe.Pointer(bp + 4)), b_len)
@@ -95765,7 +99467,9 @@ _4:
 	goto _26
 _26:
 	r = v5
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -95779,7 +99483,10 @@ func _js_string_toString(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int
 /* String Iterator */
 
 func _js_string_iterator_next(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, start Tuint32_t
 	var it, p, p1, v5, v8 uintptr
@@ -95791,7 +99498,9 @@ func _js_string_iterator_next(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, ar
 	if !(it != 0) {
 		*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64((*TJSArrayIteratorData)(unsafe.Pointer(it)).Fobj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -95824,7 +99533,9 @@ done:
 	;
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _3:
 	;
@@ -95834,14 +99545,20 @@ _3:
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	if c <= uint32(0xffff) {
 		r = _js_new_string_char(tls, ctx1, uint16(c))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = _js_new_string16_len(tls, ctx1, p1+12+uintptr(start)*2, int32(2))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -95860,7 +99577,10 @@ const Emagic_string_sub = 11
 const Emagic_string_sup = 12
 
 func _js_string_CreateHTML(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v6, v9 uintptr
 	var c, i, v1, v3 int32
@@ -95874,7 +99594,9 @@ func _js_string_CreateHTML(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc 
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_string_buffer_init(tls, ctx1, b, int32(7))
@@ -95904,7 +99626,9 @@ _2:
 			}
 			_string_buffer_free(tls, b)
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		p1 = uintptr(libc.Int32FromUint64(value))
@@ -95946,7 +99670,9 @@ _2:
 	_string_buffer_puts8(tls, b, _defs[magic].Ftag)
 	_string_buffer_putc8(tls, b, uint32('>'))
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -98023,7 +101749,10 @@ func XJS_AddIntrinsicStringNormalize(tls *libc.TLS, ctx uintptr) (r int32) {
 //
 //	/* precondition: a and b are not NaN */
 func _js_fmin(tls *libc.TLS, a float64, b float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* a1 at bp+0 */ TJSFloat64Union
 	var _ /* b1 at bp+8 */ TJSFloat64Union
@@ -98032,14 +101761,20 @@ func _js_fmin(tls *libc.TLS, a float64, b float64) (r float64) {
 		*(*float64)(unsafe.Pointer(bp + 8)) = b
 		*(*Tuint64_t)(unsafe.Pointer(bp)) |= *(*Tuint64_t)(unsafe.Pointer(bp + 8))
 		r = *(*float64)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.X__builtin_fmin(tls, a, b)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -98047,7 +101782,10 @@ func _js_fmin(tls *libc.TLS, a float64, b float64) (r float64) {
 //
 //	/* precondition: a and b are not NaN */
 func _js_fmax(tls *libc.TLS, a float64, b float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* a1 at bp+0 */ TJSFloat64Union
 	var _ /* b1 at bp+8 */ TJSFloat64Union
@@ -98056,19 +101794,28 @@ func _js_fmax(tls *libc.TLS, a float64, b float64) (r float64) {
 		*(*float64)(unsafe.Pointer(bp + 8)) = b
 		*(*Tuint64_t)(unsafe.Pointer(bp)) &= *(*Tuint64_t)(unsafe.Pointer(bp + 8))
 		r = *(*float64)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.X__builtin_fmax(tls, a, b)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_math_min_max(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a11, i, r1, v7, v8, v9 int32
 	var is_max TBOOL
@@ -98118,7 +101865,9 @@ func _js_math_min_max(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32
 		goto _3
 	_3:
 		r = v2
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	tag = libc.Uint32FromInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(argv)) >> libc.Int32FromInt32(32)))
@@ -98172,14 +101921,18 @@ func _js_math_min_max(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32
 	goto _16
 _16:
 	r = v2
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto _5
 _4:
 	;
 	if XJS_ToFloat64(tls, ctx3, bp+32, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = int32(1)
@@ -98189,7 +101942,9 @@ generic_case:
 	for i < argc {
 		if XJS_ToFloat64(tls, ctx3, bp+40, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 32))
@@ -98237,16 +101992,23 @@ _25:
 	goto _23
 _23:
 	r = v2
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _5:
 	;
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_math_sign(tls *libc.TLS, a float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 uint64
 	var _ /* __u at bp+0 */ struct {
@@ -98262,24 +102024,35 @@ _2:
 	;
 	if libc.BoolInt32(v1&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) > libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 || a == float64(0) {
 		r = a
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if a < libc.Float64FromInt32(0) {
 		r = float64(-libc.Int32FromInt32(1))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.Float64FromInt32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_math_round(tls *libc.TLS, a float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var e, s uint32
 	var frac_mask, one Tuint64_t
@@ -98307,12 +102080,17 @@ func _js_math_round(tls *libc.TLS, a float64) (r float64) {
 	}
 	/* otherwise: abs(a) >= 2^52, or NaN, +/-Infinity: no change */
 	r = *(*float64)(unsafe.Pointer(bp))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_math_hypot(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	var v, v3, v5 TJSValue
@@ -98340,7 +102118,9 @@ func _js_math_hypot(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, 
 	if argc > 0 {
 		if XJS_ToFloat64(tls, ctx2, bp+24, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if argc == int32(1) {
@@ -98354,7 +102134,9 @@ func _js_math_hypot(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, 
 				}
 				if XJS_ToFloat64(tls, ctx2, bp+32, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				*(*float64)(unsafe.Pointer(bp + 24)) = libc.X__builtin_hypot(tls, *(*float64)(unsafe.Pointer(bp + 24)), *(*float64)(unsafe.Pointer(bp + 32)))
@@ -98389,12 +102171,17 @@ _6:
 	goto _4
 _4:
 	r = v3
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_math_f16round(tls *libc.TLS, a1 float64) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, addend, v12 Tuint64_t
 	var d1, v6, v8 float64
@@ -98457,7 +102244,9 @@ _7:
 	goto _9
 _9:
 	r = v8
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -98466,7 +102255,10 @@ func _js_math_fround(tls *libc.TLS, a float64) (r float64) {
 }
 
 func _js_math_imul(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 int32
 	var v5 TJSValue
@@ -98480,7 +102272,9 @@ func _js_math_imul(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, a
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = XJS_ToInt32(tls, ctx2, bp+4, *(*TJSValue)(unsafe.Pointer(argv + 1*8)))
@@ -98488,7 +102282,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tuint32_t)(unsafe.Pointer(bp + 8)) = *(*Tuint32_t)(unsafe.Pointer(bp)) * *(*Tuint32_t)(unsafe.Pointer(bp + 4))
@@ -98498,12 +102294,17 @@ _4:
 	goto _6
 _6:
 	r = v5
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_math_clz32(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r1 TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var r Tuint32_t
 	var v1 int32
@@ -98515,7 +102316,9 @@ func _js_math_clz32(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, 
 _2:
 	if v1 != 0 {
 		r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint32_t)(unsafe.Pointer(bp)) == uint32(0) {
@@ -98531,7 +102334,9 @@ _2:
 	goto _6
 _6:
 	r1 = v5
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -98591,7 +102396,10 @@ func _sum_precise_renorm(tls *libc.TLS, s uintptr) {
 }
 
 func _sum_precise_add(tls *libc.TLS, s uintptr, d1 float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a0, a1, a11, m, v1 Tuint64_t
 	var e, p, sgn, v10, v11, v9 int32
@@ -98686,11 +102494,16 @@ _2:
 		}
 	_4:
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _sum_precise_get_result(tls *libc.TLS, s uintptr) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var addend, carry, m, nz, v Tuint64_t
 	var e, i, is_neg, n, p, shift, shift1, v4 int32
@@ -98707,15 +102520,21 @@ func _sum_precise_get_result(tls *libc.TLS, s uintptr) (r float64) {
 			fallthrough
 		case int32(ESUM_PRECISE_STATE_INFINITY):
 			r = float64(libc.X__builtin_inff(tls))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case int32(ESUM_PRECISE_STATE_MINUS_INFINITY):
 			r = float64(-libc.X__builtin_inff(tls))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		case int32(ESUM_PRECISE_STATE_NAN):
 			r = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -98725,7 +102544,9 @@ func _sum_precise_get_result(tls *libc.TLS, s uintptr) (r float64) {
 	/* minus zero result */
 	if n == 0 {
 		r = -libc.Float64FromFloat64(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* normalize */
@@ -98735,7 +102556,9 @@ func _sum_precise_get_result(tls *libc.TLS, s uintptr) (r float64) {
 	/* zero result. The spec tells it is always positive in the finite case */
 	if n == 0 {
 		r = float64(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	is_neg = libc.BoolInt32(*(*Tint64_t)(unsafe.Pointer(s + 16 + uintptr(n-int32(1))*8)) < 0)
@@ -98768,7 +102591,9 @@ func _sum_precise_get_result(tls *libc.TLS, s uintptr) (r float64) {
 		goto _3
 	_3:
 		r = v2
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* normal case */
@@ -98813,7 +102638,9 @@ _5:
 		goto _7
 	_7:
 		r = v2
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		m = m & (libc.Uint64FromInt32(1)<<libc.Int32FromInt32(52) - libc.Uint64FromInt32(1))
@@ -98822,15 +102649,22 @@ _5:
 		goto _9
 	_9:
 		r = v2
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_math_sumPrecise(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(352)
+	bp := tlsTake(tls, 352)
+	if bp == 0 {
+		bp = tls.Alloc(352)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d1, v111 float64
 	var item, iter, next, ret, v1, v3, v4 TJSValue
@@ -98857,7 +102691,9 @@ func _js_math_sumPrecise(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc in
 _2:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(352)
+		if tlsDrop(tls, 352) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -98959,7 +102795,9 @@ fail:
 		}
 	}
 	r = ret
-	tls.Free(352)
+	if tlsDrop(tls, 352) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -98983,7 +102821,10 @@ func _js_random_init(tls *libc.TLS, ctx uintptr) {
 }
 
 func _js_random_init_libc(tls *libc.TLS, ctx uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* tv at bp+0 */ Ttimeval
 	libc.Xgettimeofday(tls, bp, libc.UintptrFromInt32(0))
@@ -98992,11 +102833,16 @@ func _js_random_init_libc(tls *libc.TLS, ctx uintptr) {
 	if (*TJSContext)(unsafe.Pointer(ctx)).Frandom_state == uint64(0) {
 		(*TJSContext)(unsafe.Pointer(ctx)).Frandom_state = uint64(1)
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_math_random(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v11 TJSValue
 	var v1 Tuint64_t
@@ -99021,7 +102867,9 @@ func _js_math_random(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32,
 	goto _2
 _2:
 	r = v11
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -100705,7 +104553,10 @@ func _js_regexp_finalizer(tls *libc.TLS, rt1 uintptr, val TJSValue) {
 //
 //	/* create a string containing the RegExp bytecode */
 func _js_compile_regexp(tls *libc.TLS, ctx1 uintptr, pattern TJSValue, flags TJSValue) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i Tsize_t
 	var mask, re_flags, v1 int32
@@ -100718,7 +104569,9 @@ func _js_compile_regexp(tls *libc.TLS, ctx1 uintptr, pattern TJSValue, flags TJS
 	// Changed by internal/fixlib: take the bytecode the regexp cache keeps (see fixRegexCache).
 	if bc, ok := regexpCacheGet(tls, ctx1, pattern, flags); ok {
 		r = bc
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	re_flags = 0
@@ -100732,7 +104585,9 @@ _2:
 		str = v3
 		if !(str != 0) {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* XXX: re_flags = LRE_FLAG_OCTAL unless strict mode? */
@@ -100791,14 +104646,18 @@ _2:
 bad_flags1:
 	;
 	r = XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12015, 0)
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 _9:
 	;
 	str = XJS_ToCStringLen2(tls, ctx1, bp, pattern, libc.BoolInt32(!(re_flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)) != 0)))
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	re_bytecode_buf = Xlre_compile(tls, bp+4, bp+8, int32(64), str, *(*Tsize_t)(unsafe.Pointer(bp)), re_flags, ctx1)
@@ -100810,7 +104669,9 @@ _9:
 			XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12048, libc.VaList(bp+80, bp+8))
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _js_new_string8_len(tls, ctx1, re_bytecode_buf, *(*int32)(unsafe.Pointer(bp + 4)))
@@ -100818,7 +104679,9 @@ _9:
 	// Changed by internal/fixlib: keep the bytecode in the regexp cache (see fixRegexCache).
 	regexpCachePut(tls, ctx1, pattern, flags, ret)
 	r = ret
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -100826,7 +104689,10 @@ _9:
 //
 //	/* fast regexp creation */
 func _JS_NewRegexp(tls *libc.TLS, ctx2 uintptr, pattern TJSValue, bc TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v1 TJSValue
 	var p, p1, re, v6, v9 uintptr
@@ -100855,7 +104721,9 @@ _4:
 	(*TJSRegExp)(unsafe.Pointer(re)).Fpattern = uintptr(libc.Int32FromUint64(pattern))
 	(*TJSRegExp)(unsafe.Pointer(re)).Fbytecode = uintptr(libc.Int32FromUint64(bc))
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -100887,7 +104755,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -101458,7 +105328,10 @@ fail:
 }
 
 func _js_regexp_get_source(tls *libc.TLS, ctx uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, re uintptr
 	var bra, c, c2, i, n, v3, v4, v5 int32
@@ -101467,7 +105340,9 @@ func _js_regexp_get_source(tls *libc.TLS, ctx uintptr, this_val TJSValue) (r TJS
 	b = bp
 	if libc.Int32FromUint64(this_val>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _js_same_value(tls, ctx, this_val, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Fclass_proto + uintptr(EJS_CLASS_REGEXP)*8))) != 0 {
@@ -101476,7 +105351,9 @@ func _js_regexp_get_source(tls *libc.TLS, ctx uintptr, this_val TJSValue) (r TJS
 	re = _js_get_regexp(tls, ctx, this_val, int32(ETRUE))
 	if !(re != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = (*TJSRegExp)(unsafe.Pointer(re)).Fpattern
@@ -101487,7 +105364,9 @@ func _js_regexp_get_source(tls *libc.TLS, ctx uintptr, this_val TJSValue) (r TJS
 empty_regex:
 	;
 	r = _js_new_string8(tls, ctx, __ccgo_ts+2703)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
@@ -101544,7 +105423,9 @@ _1:
 	_2:
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -101573,7 +105454,10 @@ _2:
 }
 
 func _js_regexp_get_flags(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, res int32
 	var p, v5 uintptr
@@ -101583,7 +105467,9 @@ func _js_regexp_get_flags(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJS
 	p = bp
 	if libc.Int32FromUint64(this_val>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -101610,15 +105496,21 @@ func _js_regexp_get_flags(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJS
 		i = i + 1
 	}
 	r = XJS_NewStringLen(tls, ctx1, bp, libc.Uint32FromInt32(int32(p)-t__predefined_ptrdiff_t(bp)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -101645,7 +105537,10 @@ var _flag_char = [8]uint8{
 }
 
 func _js_regexp_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b uintptr
 	var flags, pattern, v3, v4 TJSValue
@@ -101658,7 +105553,9 @@ func _js_regexp_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_string_buffer_init(tls, ctx1, b, 0)
@@ -101681,14 +105578,18 @@ _8:
 		goto fail
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -101716,7 +105617,10 @@ func Xlre_realloc(tls *libc.TLS, opaque uintptr, ptr uintptr, size Tsize_t) (r u
 }
 
 func _js_regexp_escape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v22, v25 uintptr
 	var c3, v15 Tuint32_t
@@ -101735,7 +105639,9 @@ func _js_regexp_escape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 _3:
 	if !(v2 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+11149, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	str = XJS_ToString(tls, ctx1, *(*TJSValue)(unsafe.Pointer(argv))) /* must call it to linearlize ropes */
@@ -101744,7 +105650,9 @@ _3:
 _5:
 	if v2 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -101846,7 +105754,9 @@ _5:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -101924,7 +105834,10 @@ func _js_regexp_set_lastIndex(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, la
 }
 
 func _js_regexp_exec(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alloc_count, capture_count, end, i, prop_flags, rc, re_flags, shift, start, v1, v3 int32
 	var capture, group_name_ptr, match, p, p1, p_obj, re, re_bytecode, str, str_buf, v14, v28, v31 uintptr
@@ -101937,7 +105850,9 @@ func _js_regexp_exec(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32,
 	re = _js_get_regexp(tls, ctx3, this_val, int32(ETRUE))
 	if !(re != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	str_val = XJS_ToString(tls, ctx3, *(*TJSValue)(unsafe.Pointer(argv)))
@@ -101946,7 +105861,9 @@ func _js_regexp_exec(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32,
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -102331,7 +106248,9 @@ fail:
 	}
 	Xjs_free(tls, ctx3, capture)
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -102339,7 +106258,10 @@ fail:
 //
 //	/* XXX: add group names support */
 func _js_regexp_replace(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, arg TJSValue, rep_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alloc_count, capture_count, end, next_src_pos, re_flags, ret, shift, start, v1 int32
 	var b, capture, group_name_ptr, p, re, re_bytecode, rp, str, str_buf, v5, v8 uintptr
@@ -102353,14 +106275,18 @@ func _js_regexp_replace(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, arg TJSV
 	rp = uintptr(libc.Int32FromUint64(rep_val))
 	if !(re != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	re_bytecode = (*TJSRegExp)(unsafe.Pointer(re)).Fbytecode + 12
 	group_name_ptr = Xlre_get_groupnames(tls, re_bytecode)
 	if group_name_ptr != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} /* group names are not supported yet */
 	_string_buffer_init(tls, ctx1, b, 0)
@@ -102468,7 +106394,9 @@ _2:
 	}
 	Xjs_free(tls, ctx1, capture)
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -102489,12 +106417,17 @@ fail:
 	Xjs_free(tls, ctx1, capture)
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _JS_RegExpExec(tls *libc.TLS, ctx2 uintptr, r TJSValue, _s TJSValue) (r1 TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _s
 	var method, ret, v1, v2 TJSValue
@@ -102512,7 +106445,9 @@ _3:
 _5:
 	if v4 != 0 {
 		r1 = method
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_IsFunction(tls, ctx2, method) != 0 {
@@ -102522,7 +106457,9 @@ _5:
 	_7:
 		if v4 != 0 {
 			r1 = ret
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v4 = libc.BoolInt32(libc.Int32FromUint64(ret>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT))
@@ -102549,11 +106486,15 @@ _5:
 				}
 			}
 			r1 = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+12139, 0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		r1 = ret
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = method
@@ -102570,7 +106511,9 @@ _5:
 		}
 	}
 	r1 = _js_regexp_exec(tls, ctx2, r, int32(1), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -102612,7 +106555,10 @@ _11:
 }
 
 func _js_regexp_Symbol_match(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var A, S, flags, matchStr, result, rx, v, v1, v12, v14, v5, v6 TJSValue
 	var fullUnicode, global, isEmpty, n, v11 int32
@@ -102632,7 +106578,9 @@ func _js_regexp_Symbol_match(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, arg
 _2:
 	if !(v11 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx6)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	A = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -102831,7 +106779,9 @@ _11:
 		}
 	}
 	r = A
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -102889,7 +106839,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -102953,7 +106905,10 @@ func _js_regexp_string_iterator_mark(tls *libc.TLS, rt uintptr, val TJSValue, __
 }
 
 func _js_regexp_string_iterator_next(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var R, S, match, matchStr, v, v1, v12, v14, v7, v8 TJSValue
 	var it, p, sp, v10, v22 uintptr
@@ -102975,7 +106930,9 @@ func _js_regexp_string_iterator_next(tls *libc.TLS, ctx6 uintptr, this_val TJSVa
 	if (*TJSRegExpStringIteratorData)(unsafe.Pointer(it)).Fdone != 0 {
 		*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	R = (*TJSRegExpStringIteratorData)(unsafe.Pointer(it)).Fiterating_regexp
@@ -102994,7 +106951,9 @@ _4:
 		(*TJSRegExpStringIteratorData)(unsafe.Pointer(it)).Fdone = int32(ETRUE)
 		*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if (*TJSRegExpStringIteratorData)(unsafe.Pointer(it)).Fglobal != 0 {
@@ -103066,7 +107025,9 @@ _4:
 	}
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	r = match
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -103099,12 +107060,17 @@ exception:
 	}
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_regexp_Symbol_matchAll(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var C, R, S, flags, iter, matcher, v, v1, v14, v15, v7, v8 TJSValue
 	var it, p, strp, v17, v31 uintptr
@@ -103125,7 +107091,9 @@ func _js_regexp_Symbol_matchAll(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, 
 _2:
 	if !(v11 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx6)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	C = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -103249,7 +107217,9 @@ _29:
 		}
 	}
 	r = iter
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -103320,7 +107290,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -103375,7 +107347,10 @@ func _value_buffer_free(tls *libc.TLS, b uintptr) {
 }
 
 func _value_buffer_append(tls *libc.TLS, b uintptr, val TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var new_arr, p, v2, v5 uintptr
 	var new_size, v4 int32
@@ -103384,7 +107359,9 @@ func _value_buffer_append(tls *libc.TLS, b uintptr, val TJSValue) (r int32) {
 	_, _, _, _, _, _, _ = new_arr, new_size, p, v1, v2, v4, v5
 	if (*TValueBuffer)(unsafe.Pointer(b)).Ferror_status != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TValueBuffer)(unsafe.Pointer(b)).Flen1 >= (*TValueBuffer)(unsafe.Pointer(b)).Fsize {
@@ -103414,7 +107391,9 @@ func _value_buffer_append(tls *libc.TLS, b uintptr, val TJSValue) (r int32) {
 			}
 			(*TValueBuffer)(unsafe.Pointer(b)).Ferror_status = -int32(1)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		new_size = libc.Int32FromUint32(uint32(new_size) + *(*Tsize_t)(unsafe.Pointer(bp))/libc.Uint32FromInt64(8))
@@ -103426,7 +107405,9 @@ func _value_buffer_append(tls *libc.TLS, b uintptr, val TJSValue) (r int32) {
 	*(*int32)(unsafe.Pointer(v2)) = *(*int32)(unsafe.Pointer(v2)) + 1
 	*(*TJSValue)(unsafe.Pointer((*TValueBuffer)(unsafe.Pointer(b)).Farr + uintptr(v4)*8)) = val
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -103455,7 +107436,10 @@ func _find_property_regexp(tls *libc.TLS, ppr uintptr, p uintptr, atom TJSAtom) 
 }
 
 func _check_regexp_getter(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom, __ccgo_fp_func uintptr, magic int32) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var prs uintptr
 	var _ /* pr at bp+0 */ uintptr
@@ -103463,12 +107447,16 @@ func _check_regexp_getter(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom, _
 	prs = _find_property_regexp(tls, bp, p, atom)
 	if !(prs != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(1)<<libc.Int32FromInt32(4) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !((*(*struct {
@@ -103476,19 +107464,26 @@ func _check_regexp_getter(tls *libc.TLS, ctx uintptr, p uintptr, atom TJSAtom, _
 		Fsetter uintptr
 	})(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))).Fgetter != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = XJS_IsCFunction(tls, ctx, libc.Uint64FromInt32(int32(EJS_TAG_OBJECT))<<libc.Int32FromInt32(32)|uint64(uint32((*(*struct {
 		Fgetter uintptr
 		Fsetter uintptr
 	})(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))).Fgetter)), __ccgo_fp_func, magic)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_is_standard_regexp(tls *libc.TLS, ctx uintptr, obj TJSValue) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, prs uintptr
 	var tag, v1 int32
@@ -103497,20 +107492,26 @@ func _js_is_standard_regexp(tls *libc.TLS, ctx uintptr, obj TJSValue) (r TBOOL) 
 	_, _, _, _ = p, prs, tag, v1
 	if libc.Int32FromUint64(obj>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(libc.Int32FromUint64(obj))
 	if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id) != int32(EJS_CLASS_REGEXP) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* check that the lastIndex is a number (no side effect while getting it) */
 	prs = _find_own_property(tls, bp, p, uint32(EJS_ATOM_lastIndex))
 	if !(prs != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	tag = libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))) >> libc.Int32FromInt32(32))
@@ -103519,52 +107520,71 @@ func _js_is_standard_regexp(tls *libc.TLS, ctx uintptr, obj TJSValue) (r TBOOL) 
 _2:
 	if !(v1 != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* check the 'exec' method. */
 	prs = _find_property_regexp(tls, bp, p, uint32(EJS_ATOM_exec))
 	if !(prs != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if int32(*(*uint32)(unsafe.Pointer(prs + 0))&0xfc000000>>26)&(libc.Int32FromInt32(3)<<libc.Int32FromInt32(4)) != libc.Int32FromInt32(0)<<libc.Int32FromInt32(4) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(XJS_IsCFunction(tls, ctx, *(*TJSValue)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))), __ccgo_fp(_js_regexp_exec), 0) != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* check the flag getters */
 	*(*uintptr)(unsafe.Pointer(bp + 4)) = __ccgo_fp(_js_regexp_get_flags)
 	if !(_check_regexp_getter(tls, ctx, p, uint32(EJS_ATOM_flags), *(*uintptr)(unsafe.Pointer(bp + 4)), 0) != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp + 4)) = __ccgo_fp(_js_regexp_get_flag)
 	if !(_check_regexp_getter(tls, ctx, p, uint32(EJS_ATOM_global), *(*uintptr)(unsafe.Pointer(bp + 4)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(_check_regexp_getter(tls, ctx, p, uint32(EJS_ATOM_unicode), *(*uintptr)(unsafe.Pointer(bp + 4)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: need to check all accessors, need a faster way.  */
 	r = int32(ETRUE)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_regexp_Symbol_replace(tls *libc.TLS, ctx7 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(192)
+	bp := tlsTake(tls, 192)
+	if bp == 0 {
+		bp = tls.Alloc(192)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, b1, p, p1, p2, results, sp, v27, v30 uintptr
 	var capN, flags, matched, namedCaptures, namedCaptures1, rep, rep_str, rep_val, res, result, result1, rx, str, tab, v, v1, v10, v16, v18, v9 TJSValue
@@ -103593,7 +107613,9 @@ func _js_regexp_Symbol_replace(tls *libc.TLS, ctx7 uintptr, this_val TJSValue, a
 _2:
 	if !(v11 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx7)
-		tls.Free(192)
+		if tlsDrop(tls, 192) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_string_buffer_init(tls, ctx7, b, 0)
@@ -104125,7 +108147,9 @@ done1:
 		}
 	}
 	r = res
-	tls.Free(192)
+	if tlsDrop(tls, 192) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -104336,7 +108360,10 @@ exception:
 }
 
 func _js_regexp_Symbol_split(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var A, ctor, flags, rx, splitter, str, sub, z, v7, v8 TJSValue
 	var i, lengthA, v46 Tint64_t
@@ -104355,7 +108382,9 @@ func _js_regexp_Symbol_split(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, arg
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx5)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ctor = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -104657,7 +108686,9 @@ done:
 		}
 	}
 	r = A
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -105521,16 +109552,23 @@ _4:
 /* JSON */
 
 func _json_parse_expect(tls *libc.TLS, s uintptr, tok int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if (*TJSParseState)(unsafe.Pointer(s)).Ftoken.Fval != tok {
 		/* XXX: dump token correctly in all cases */
 		r = _js_parse_error(tls, s, __ccgo_ts+4115, libc.VaList(bp+8, tok))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _json_next_token(tls, s)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -105818,7 +109856,10 @@ _2:
 //
 //	/* 'pr' can be NULL */
 func _json_parse_value(tls *libc.TLS, s uintptr, pr uintptr) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctx5, p, p1, pr1, pr11, v20, v24 uintptr
 	var el, prop_val, v, val2, v23, v26 TJSValue
@@ -106143,7 +110184,9 @@ def_token:
 _7:
 	;
 	r = val2
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -106163,12 +110206,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_ParseJSON3(tls *libc.TLS, ctx1 uintptr, buf uintptr, buf_len Tsize_t, filename uintptr, flags int32, pr uintptr) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, s, v4, v7 uintptr
 	var val, v3 TJSValue
@@ -106196,7 +110244,9 @@ _2:
 		}
 	}
 	r = val
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -106216,7 +110266,9 @@ fail:
 	}
 	_free_token(tls, s, s+8)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -106232,7 +110284,10 @@ func XJS_ParseJSON(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t, fil
 //
 //	/* if pr != NULL, then pr->value = holder by construction */
 func _internalize_json_property(tls *libc.TLS, ctx2 uintptr, holder TJSValue, name TJSAtom, reviver TJSValue, text_str uintptr, pr uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var context, name_val, new_el, res, val, v1, v2 TJSValue
 	var i, idx Tuint32_t
@@ -106247,7 +110302,9 @@ func _internalize_json_property(tls *libc.TLS, ctx2 uintptr, holder TJSValue, na
 	*(*uintptr)(unsafe.Pointer(bp + 28)) = libc.UintptrFromInt32(0)
 	if _js_check_stack_overflow(tls, (*TJSContext)(unsafe.Pointer(ctx2)).Frt, uint32(0)) != 0 {
 		r = _JS_ThrowStackOverflow(tls, ctx2)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = holder
@@ -106260,7 +110317,9 @@ _3:
 _5:
 	if v4 != 0 {
 		r = val
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if pr != 0 {
@@ -106422,7 +110481,9 @@ _18:
 		}
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -106455,12 +110516,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_json_parse(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, reviver, root, v10 TJSValue
 	var p, pr, pr1, str, v1, v11 uintptr
@@ -106475,7 +110541,9 @@ _2:
 	str = v1
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(argc > int32(1) && XJS_IsFunction(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0) {
@@ -106562,14 +110630,18 @@ _4:
 	;
 	XJS_FreeCString(tls, ctx2, str)
 	r = obj
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	XJS_FreeCString(tls, ctx2, str)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -106596,7 +110668,10 @@ func _is_valid_raw_json_char(tls *libc.TLS, c int32) (r TBOOL) {
 }
 
 func _js_json_rawJSON(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, res, v6 TJSValue
 	var p, p1, v10, v7 uintptr
@@ -106609,7 +110684,9 @@ func _js_json_rawJSON(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 _2:
 	if v1 != 0 {
 		r = *(*TJSValue)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))))
@@ -106665,12 +110742,16 @@ _12:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	XJS_PreventExtensions(tls, ctx1, obj)
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -106689,7 +110770,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -106705,7 +110788,10 @@ type TJSONStringifyContext = struct {
 }
 
 func _JS_ToQuotedString(tls *libc.TLS, ctx1 uintptr, b uintptr, val1 TJSValue) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c1 Tuint32_t
 	var p, p1, v17, v20 uintptr
@@ -106722,7 +110808,9 @@ func _JS_ToQuotedString(tls *libc.TLS, ctx1 uintptr, b uintptr, val1 TJSValue) (
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(val))
@@ -106832,7 +110920,9 @@ _2:
 		}
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -106851,7 +110941,9 @@ fail:
 		}
 	}
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -106878,7 +110970,10 @@ func _JS_ToQuotedStringFree(tls *libc.TLS, ctx1 uintptr, b uintptr, val TJSValue
 }
 
 func _js_json_check(tls *libc.TLS, ctx3 uintptr, jsc uintptr, holder TJSValue, val TJSValue, _key TJSValue) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _key
 	var f, v6, v61, v7 TJSValue
@@ -107012,7 +111107,9 @@ _33:
 		fallthrough
 	case int32(EJS_TAG_EXCEPTION):
 		r = val
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		break
@@ -107031,7 +111128,9 @@ _33:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -107050,12 +111149,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_json_to_str(tls *libc.TLS, ctx6 uintptr, jsc uintptr, holder TJSValue, _val TJSValue, indent TJSValue) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp + 32)) = _val
 	var cl, ret, v11, v31 int32
@@ -107576,7 +111680,9 @@ _2:
 			}
 		}
 		r = 0
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto concat_primitive
@@ -107617,7 +111723,9 @@ _143:
 _142:
 	;
 	r = _JS_ToQuotedStringFree(tls, ctx6, (*TJSONStringifyContext)(unsafe.Pointer(jsc)).Fb, *(*TJSValue)(unsafe.Pointer(bp + 32)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _144:
 	;
@@ -107668,7 +111776,9 @@ _145:
 concat_value:
 	;
 	r = _string_buffer_concat_value_free(tls, (*TJSONStringifyContext)(unsafe.Pointer(jsc)).Fb, *(*TJSValue)(unsafe.Pointer(bp + 32)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _149:
 	;
@@ -107693,7 +111803,9 @@ _150:
 		}
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 _151:
 	;
@@ -107779,12 +111891,17 @@ exception:
 		}
 	}
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_JSONStringify(tls *libc.TLS, ctx2 uintptr, obj TJSValue, replacer TJSValue, space0 TJSValue) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, j, v6 Tint64_t
 	var jsc, p, p1, p2, p3, p4, v14, v17 uintptr
@@ -108195,7 +112312,9 @@ done:
 		}
 	}
 	r = ret
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -108441,7 +112560,10 @@ _4:
 }
 
 func _js_reflect_construct(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var array_arg, func1, new_target, ret TJSValue
 	var tab uintptr
@@ -108453,7 +112575,9 @@ func _js_reflect_construct(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc i
 		new_target = *(*TJSValue)(unsafe.Pointer(argv + 2*8))
 		if !(XJS_IsConstructor(tls, ctx, new_target) != 0) {
 			r = _JS_ThrowTypeErrorNotAConstructor(tls, ctx, new_target)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -108462,13 +112586,17 @@ func _js_reflect_construct(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc i
 	tab = _build_arg_list(tls, ctx, bp, array_arg)
 	if !(tab != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_CallConstructor2(tls, ctx, func1, new_target, libc.Int32FromUint32(*(*Tuint32_t)(unsafe.Pointer(bp))), tab)
 	_free_arg_list(tls, ctx, tab, *(*Tuint32_t)(unsafe.Pointer(bp)))
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -109250,7 +113378,10 @@ _7:
 }
 
 func _js_proxy_get_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, s, v6, v9 uintptr
 	var proto1, ret, v5 TJSValue
@@ -109260,7 +113391,9 @@ func _js_proxy_get_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSVa
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_getPrototypeOf))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109268,7 +113401,9 @@ func _js_proxy_get_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue) (r TJSVa
 _2:
 	if v1 != 0 {
 		r = XJS_GetPrototype(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_CallFree(tls, ctx1, *(*TJSValue)(unsafe.Pointer(bp)), (*TJSProxyData)(unsafe.Pointer(s)).Fhandler, int32(1), s)
@@ -109277,7 +113412,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = ret
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Int32FromUint64(ret>>libc.Int32FromInt32(32)) != int32(EJS_TAG_NULL) && libc.Int32FromUint64(ret>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
@@ -109299,7 +113436,9 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !!(res != 0) {
@@ -109325,7 +113464,9 @@ _12:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !!(_js_same_value(tls, ctx1, proto1, ret) != 0) {
@@ -109361,7 +113502,9 @@ fail:
 		}
 	}
 	r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12666, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _18:
 	;
@@ -109381,12 +113524,17 @@ _18:
 _10:
 	;
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_set_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue, proto_val TJSValue) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, s, v11, v8 uintptr
 	var proto1, ret, v7 TJSValue
@@ -109398,7 +113546,9 @@ func _js_proxy_set_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue, proto_va
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_setPrototypeOf))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109406,7 +113556,9 @@ func _js_proxy_set_prototype(tls *libc.TLS, ctx1 uintptr, obj TJSValue, proto_va
 _2:
 	if v1 != 0 {
 		r = _JS_SetPrototypeInternal(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, proto_val, int32(EFALSE))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[2]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -109417,19 +113569,25 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _JS_ToBoolFree(tls, ctx1, ret)
 	if !(res != 0) {
 		r = int32(EFALSE)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res2 = XJS_IsExtensible(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
 	if res2 < 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(res2 != 0) {
@@ -109439,7 +113597,9 @@ _4:
 	_6:
 		if v1 != 0 {
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(_js_same_value(tls, ctx1, proto_val, proto1) != 0) {
@@ -109458,7 +113618,9 @@ _4:
 			}
 			XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12666, 0)
 			r = -int32(1)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v7 = proto1
@@ -109476,12 +113638,17 @@ _4:
 		}
 	}
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_is_extensible(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var res TBOOL
 	var res2, v1 int32
@@ -109492,7 +113659,9 @@ func _js_proxy_is_extensible(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32)
 	s = _get_proxy_method(tls, ctx, bp, obj, uint32(EJS_ATOM_isExtensible))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109500,7 +113669,9 @@ func _js_proxy_is_extensible(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32)
 _2:
 	if v1 != 0 {
 		r = XJS_IsExtensible(tls, ctx, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_CallFree(tls, ctx, *(*TJSValue)(unsafe.Pointer(bp)), (*TJSProxyData)(unsafe.Pointer(s)).Fhandler, int32(1), s)
@@ -109509,29 +113680,40 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _JS_ToBoolFree(tls, ctx, ret)
 	res2 = XJS_IsExtensible(tls, ctx, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
 	if res2 < 0 {
 		r = res2
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if res != res2 {
 		XJS_ThrowTypeError(tls, ctx, __ccgo_ts+12696, 0)
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_prevent_extensions(tls *libc.TLS, ctx uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var res TBOOL
 	var res2, v1 int32
@@ -109542,7 +113724,9 @@ func _js_proxy_prevent_extensions(tls *libc.TLS, ctx uintptr, obj TJSValue) (r i
 	s = _get_proxy_method(tls, ctx, bp, obj, uint32(EJS_ATOM_preventExtensions))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109550,7 +113734,9 @@ func _js_proxy_prevent_extensions(tls *libc.TLS, ctx uintptr, obj TJSValue) (r i
 _2:
 	if v1 != 0 {
 		r = XJS_PreventExtensions(tls, ctx, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_CallFree(tls, ctx, *(*TJSValue)(unsafe.Pointer(bp)), (*TJSProxyData)(unsafe.Pointer(s)).Fhandler, int32(1), s)
@@ -109559,7 +113745,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _JS_ToBoolFree(tls, ctx, ret)
@@ -109567,23 +113755,32 @@ _4:
 		res2 = XJS_IsExtensible(tls, ctx, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
 		if res2 < 0 {
 			r = res2
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if res2 != 0 {
 			XJS_ThrowTypeError(tls, ctx, __ccgo_ts+12729, 0)
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_has(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom_val, ret1, v5 TJSValue
 	var p, p1, s, v6, v9 uintptr
@@ -109596,7 +113793,9 @@ func _js_proxy_has(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom) (r i
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_has))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109604,7 +113803,9 @@ func _js_proxy_has(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom) (r i
 _2:
 	if v1 != 0 {
 		r = XJS_HasProperty(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, atom)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	atom_val = XJS_AtomToValue(tls, ctx1, atom)
@@ -109626,7 +113827,9 @@ _4:
 			}
 		}
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[2]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -109650,7 +113853,9 @@ _4:
 _16:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_ToBoolFree(tls, ctx1, ret1)
@@ -109659,7 +113864,9 @@ _16:
 		res = _js_backtrace_own_flags(tls, ctx1, bp+24, p1, atom)
 		if res < 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if res != 0 {
@@ -109668,18 +113875,25 @@ _16:
 			if res2 != 0 || !(int32(*(*uint8)(unsafe.Pointer(p1 + 8))&0x2>>1) != 0) {
 				XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12767, 0)
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 	}
 	r = ret
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_get(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom, receiver TJSValue) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom_val, ret, v5 TJSValue
 	var p, s, v6, v9 uintptr
@@ -109692,7 +113906,9 @@ func _js_proxy_get(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom, rece
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_get))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Note: recursion is possible thru the prototype of s->target */
@@ -109701,7 +113917,9 @@ func _js_proxy_get(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom, rece
 _2:
 	if v1 != 0 {
 		r = XJS_GetPropertyInternal(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, atom, receiver, int32(EFALSE))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	atom_val = XJS_AtomToValue(tls, ctx1, atom)
@@ -109723,7 +113941,9 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -109748,7 +113968,9 @@ _4:
 _16:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
@@ -109767,7 +113989,9 @@ _16:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if res != 0 {
@@ -109813,7 +114037,9 @@ _16:
 			}
 		}
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12791, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	_25:
 		;
@@ -109824,12 +114050,17 @@ _16:
 		_js_free_desc(tls, ctx1, bp+32)
 	}
 	r = ret
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_set(tls *libc.TLS, ctx2 uintptr, obj TJSValue, atom TJSAtom, value TJSValue, receiver TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom_val, ret1, v3, v6 TJSValue
 	var p, p1, s, v11, v4 uintptr
@@ -109842,7 +114073,9 @@ func _js_proxy_set(tls *libc.TLS, ctx2 uintptr, obj TJSValue, atom TJSAtom, valu
 	s = _get_proxy_method(tls, ctx2, bp, obj, uint32(EJS_ATOM_set))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -109862,7 +114095,9 @@ _2:
 		goto _7
 	_7:
 		r = XJS_SetPropertyInternal(tls, ctx2, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, atom, v6, receiver, flags)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	atom_val = XJS_AtomToValue(tls, ctx2, atom)
@@ -109884,7 +114119,9 @@ _9:
 			}
 		}
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[4]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -109910,7 +114147,9 @@ _9:
 _21:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_ToBoolFree(tls, ctx2, ret1)
@@ -109918,7 +114157,9 @@ _21:
 		res = _JS_GetOwnPropertyInternal(tls, ctx2, bp+40, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
 		if res < 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if res != 0 {
@@ -109945,7 +114186,9 @@ _21:
 			_js_free_desc(tls, ctx2, bp+40)
 			XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+12815, 0)
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		_24:
 			;
@@ -109957,12 +114200,16 @@ _21:
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) != 0 || flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(15)) != 0 && _is_strict_mode(tls, ctx2) != 0 {
 			XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+12839, 0)
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = ret
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -110048,7 +114295,10 @@ _2:
 }
 
 func _js_proxy_get_own_property(tls *libc.TLS, ctx1 uintptr, pdesc uintptr, obj TJSValue, prop TJSAtom) (r int32) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var extensible_target, flags1, res, ret, target_desc_ret, v1, v3, v8 int32
 	var p, p1, s, v6, v9 uintptr
@@ -110062,7 +114312,9 @@ func _js_proxy_get_own_property(tls *libc.TLS, ctx1 uintptr, pdesc uintptr, obj 
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_getOwnPropertyDescriptor))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget))
@@ -110071,7 +114323,9 @@ func _js_proxy_get_own_property(tls *libc.TLS, ctx1 uintptr, pdesc uintptr, obj 
 _2:
 	if v1 != 0 {
 		r = _JS_GetOwnPropertyInternal(tls, ctx1, pdesc, p1, prop)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prop_val = XJS_AtomToValue(tls, ctx1, prop)
@@ -110093,7 +114347,9 @@ _4:
 			}
 		}
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[2]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -110117,7 +114373,9 @@ _4:
 _16:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(trap_result_obj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_OBJECT))
@@ -110161,7 +114419,9 @@ _18:
 			}
 		}
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if target_desc_ret != 0 {
@@ -110198,7 +114458,9 @@ _32:
 			}
 		}
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _js_obj_to_desc(tls, ctx1, bp+24, trap_result_obj)
@@ -110217,7 +114479,9 @@ _32:
 	}
 	if res < 0 {
 		r = -int32(1)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* convert the result_desc.flags to property flags */
@@ -110264,7 +114528,9 @@ fail:
 	;
 	XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12866, 0)
 	r = -int32(1)
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 _47:
 	;
@@ -110279,12 +114545,17 @@ _46:
 _33:
 	;
 	r = ret
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_define_own_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, prop TJSAtom, val TJSValue, getter TJSValue, setter TJSValue, flags int32) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var desc_val, prop_val, ret1, v5 TJSValue
 	var p, p1, s, v6, v9 uintptr
@@ -110297,7 +114568,9 @@ func _js_proxy_define_own_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, pr
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_defineProperty))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -110305,7 +114578,9 @@ func _js_proxy_define_own_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, pr
 _2:
 	if v1 != 0 {
 		r = XJS_DefineProperty(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, prop, val, getter, setter, flags)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prop_val = XJS_AtomToValue(tls, ctx1, prop)
@@ -110327,7 +114602,9 @@ _4:
 			}
 		}
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	desc_val = _js_create_desc(tls, ctx1, val, getter, setter, flags)
@@ -110362,7 +114639,9 @@ _11:
 			}
 		}
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -110400,7 +114679,9 @@ _11:
 _33:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_ToBoolFree(tls, ctx1, ret1)
@@ -110408,11 +114689,15 @@ _33:
 		if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(14)) != 0 {
 			XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12911, 0)
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			r = 0
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -110420,7 +114705,9 @@ _33:
 	res = _JS_GetOwnPropertyInternal(tls, ctx1, bp+32, p1, prop)
 	if res < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	setting_not_configurable = libc.BoolInt32(flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) == libc.Int32FromInt32(1)<<libc.Int32FromInt32(8))
@@ -110469,7 +114756,9 @@ fail:
 	;
 	XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+12943, 0)
 	r = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _36:
 	;
@@ -110477,12 +114766,17 @@ _36:
 _35:
 	;
 	r = int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_delete_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom TJSAtom) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom_val, ret, v5 TJSValue
 	var is_extensible, res, res2, v1, v3 int32
@@ -110494,7 +114788,9 @@ func _js_proxy_delete_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom T
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_deleteProperty))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -110502,7 +114798,9 @@ func _js_proxy_delete_property(tls *libc.TLS, ctx1 uintptr, obj TJSValue, atom T
 _2:
 	if v1 != 0 {
 		r = XJS_DeleteProperty(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, atom, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	atom_val = XJS_AtomToValue(tls, ctx1, atom)
@@ -110524,7 +114822,9 @@ _4:
 			}
 		}
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*(*[2]TJSValue)(unsafe.Pointer(bp + 8)))[0] = (*TJSProxyData)(unsafe.Pointer(s)).Ftarget
@@ -110548,7 +114848,9 @@ _4:
 _16:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = _JS_ToBoolFree(tls, ctx1, ret)
@@ -110556,7 +114858,9 @@ _16:
 		res2 = _js_backtrace_own_flags(tls, ctx1, bp+24, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), atom)
 		if res2 < 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if !(res2 != 0) {
@@ -110582,7 +114886,9 @@ _16:
 		;
 		_js_free_desc(tls, ctx1, bp+24)
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	_18:
 		;
@@ -110590,7 +114896,9 @@ _16:
 	_17:
 	}
 	r = res
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -110617,7 +114925,10 @@ func _find_prop_key(tls *libc.TLS, tab uintptr, n int32, atom TJSAtom) (r int32)
 }
 
 func _js_proxy_get_own_property_names(tls *libc.TLS, ctx1 uintptr, ptab uintptr, plen uintptr, obj TJSValue) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var atom TJSAtom
 	var i Tuint32_t
@@ -110634,7 +114945,9 @@ func _js_proxy_get_own_property_names(tls *libc.TLS, ctx1 uintptr, ptab uintptr,
 	s = _get_proxy_method(tls, ctx1, bp, obj, uint32(EJS_ATOM_ownKeys))
 	if !(s != 0) {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -110642,7 +114955,9 @@ func _js_proxy_get_own_property_names(tls *libc.TLS, ctx1 uintptr, ptab uintptr,
 _2:
 	if v1 != 0 {
 		r = _JS_GetOwnPropertyNamesInternal(tls, ctx1, ptab, plen, uintptr(libc.Int32FromUint64((*TJSProxyData)(unsafe.Pointer(s)).Ftarget)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prop_array = _JS_CallFree(tls, ctx1, *(*TJSValue)(unsafe.Pointer(bp)), (*TJSProxyData)(unsafe.Pointer(s)).Fhandler, int32(1), s)
@@ -110651,7 +114966,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	tab = libc.UintptrFromInt32(0)
@@ -110824,7 +115141,9 @@ _4:
 	*(*uintptr)(unsafe.Pointer(ptab)) = tab
 	*(*Tuint32_t)(unsafe.Pointer(plen)) = *(*Tuint32_t)(unsafe.Pointer(bp + 8))
 	r = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -110845,12 +115164,17 @@ fail:
 		}
 	}
 	r = -int32(1)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_call_constructor(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arg_array, ret, v7 TJSValue
 	var p, s, v11, v8 uintptr
@@ -110861,12 +115185,16 @@ func _js_proxy_call_constructor(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, 
 	s = _get_proxy_method(tls, ctx1, bp, func_obj, uint32(EJS_ATOM_construct))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(XJS_IsConstructor(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget) != 0) {
 		r = _JS_ThrowTypeErrorNotAConstructor(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -110874,7 +115202,9 @@ func _js_proxy_call_constructor(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, 
 _2:
 	if v1 != 0 {
 		r = XJS_CallConstructor2(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, new_target, argc, argv)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	arg_array = _js_create_array(tls, ctx1, argc, argv)
@@ -110939,12 +115269,17 @@ fail:
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_proxy_call(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, this_obj TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arg_array, ret, v1 TJSValue
 	var p, s, v2, v5 uintptr
@@ -110954,13 +115289,17 @@ func _js_proxy_call(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, this_obj TJS
 	_, _, _, _, _, _, _, _ = arg_array, p, ret, s, v1, v2, v4, v5
 	if flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = _js_proxy_call_constructor(tls, ctx1, func_obj, this_obj, argc, argv)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	s = _get_proxy_method(tls, ctx1, bp, func_obj, uint32(EJS_ATOM_apply))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !((*TJSProxyData)(unsafe.Pointer(s)).Fis_func != 0) {
@@ -110978,7 +115317,9 @@ func _js_proxy_call(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, this_obj TJS
 			}
 		}
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+3565, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v4 = libc.BoolInt32(libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(bp))>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -110986,7 +115327,9 @@ func _js_proxy_call(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, this_obj TJS
 _7:
 	if v4 != 0 {
 		r = XJS_Call(tls, ctx1, (*TJSProxyData)(unsafe.Pointer(s)).Ftarget, this_obj, argc, argv)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	arg_array = _js_create_array(tls, ctx1, argc, argv)
@@ -111031,7 +115374,9 @@ fail:
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -111186,11 +115531,16 @@ func _js_proxy_revoke(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 }
 
 func _js_proxy_revoke_constructor(tls *libc.TLS, ctx uintptr, _proxy_obj TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _proxy_obj
 	r = XJS_NewCFunctionData(tls, ctx, __ccgo_fp(_js_proxy_revoke), 0, 0, int32(1), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -111432,7 +115782,10 @@ func _js_thisSymbolValue(tls *libc.TLS, ctx1 uintptr, this_val TJSValue) (r TJSV
 }
 
 func _js_symbol_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v4, v7 uintptr
 	var ret, v3 TJSValue
@@ -111445,7 +115798,9 @@ func _js_symbol_toString(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 _2:
 	if v1 != 0 {
 		r = *(*TJSValue)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: use JS_ToStringInternal() with a flags */
@@ -111464,7 +115819,9 @@ _2:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -112245,7 +116602,10 @@ func _js_weakref_new(tls *libc.TLS, ctx uintptr, val TJSValue) (r TJSValue) {
 }
 
 func _js_map_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var adder, arr, iter, key, next_method, obj, ret, value, v14, v15 TJSValue
 	var is_set, is_weak TBOOL
@@ -112267,7 +116627,9 @@ func _js_map_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc 
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	s = Xjs_mallocz(tls, ctx2, uint32(44))
@@ -112556,7 +116918,9 @@ _9:
 		}
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail_close
 fail_close:
@@ -112619,7 +116983,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -112682,7 +117048,10 @@ func _map_hash_pointer(tls *libc.TLS, a Tuintptr_t, hash_bits int32) (r Tuint32_
 //	/* XXX: better hash ? */
 //	/* precondition: 1 <= hash_bits <= 32 */
 func _map_hash_key(tls *libc.TLS, key TJSValue, hash_bits int32) (r Tuint32_t) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d1, v14 float64
 	var h, tag, tag1 Tuint32_t
@@ -112820,7 +117189,9 @@ _12:
 _13:
 	;
 	r = h
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -113080,7 +117451,10 @@ func _map_delete_weakrefs(tls *libc.TLS, rt uintptr, wh uintptr) {
 }
 
 func _js_map_set(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var key, value, v2, v7 TJSValue
 	var mr, p, p1, s, v1, v3 uintptr
@@ -113089,7 +117463,9 @@ func _js_map_set(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, arg
 	s = XJS_GetOpaque2(tls, ctx2, this_val, libc.Uint32FromInt32(int32(EJS_CLASS_MAP)+magic))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	key = _map_normalize_key_const(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)))
@@ -113100,7 +117476,9 @@ func _js_map_set(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, arg
 			v1 = __ccgo_ts + 13403
 		}
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+13411, libc.VaList(bp+8, v1))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if magic&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
@@ -113127,7 +117505,9 @@ func _js_map_set(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, arg
 		mr = _map_add_record(tls, ctx2, s, key)
 		if !(mr != 0) {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -113157,7 +117537,9 @@ _11:
 	goto _16
 _16:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -113224,7 +117606,10 @@ func _map_delete_record(tls *libc.TLS, ctx uintptr, s uintptr, key TJSValue) (r 
 }
 
 func _js_map_getOrInsert(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var class_id TJSClassID
 	var computed TBOOL
@@ -113238,18 +117623,24 @@ func _js_map_getOrInsert(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 	s = XJS_GetOpaque2(tls, ctx2, this_val, class_id)
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if computed != 0 && !(XJS_IsFunction(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0) {
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+3565, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer(bp)) = _map_normalize_key_const(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)))
 	if (*TJSMapState)(unsafe.Pointer(s)).Fis_weak != 0 && !(_js_weakref_is_target(tls, *(*TJSValue)(unsafe.Pointer(bp))) != 0) {
 		r = XJS_ThrowTypeError(tls, ctx2, __ccgo_ts+13440, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	mr = _map_find_record(tls, ctx2, s, *(*TJSValue)(unsafe.Pointer(bp)))
@@ -113261,7 +117652,9 @@ func _js_map_getOrInsert(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 		_2:
 			if v1 != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_map_delete_record(tls, ctx2, s, *(*TJSValue)(unsafe.Pointer(bp)))
@@ -113296,7 +117689,9 @@ func _js_map_getOrInsert(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		(*TJSMapRecord)(unsafe.Pointer(mr)).Fvalue = value
@@ -113314,7 +117709,9 @@ func _js_map_getOrInsert(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 	goto _17
 _17:
 	r = v6
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -113372,7 +117769,10 @@ func _js_map_clear(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, ar
 }
 
 func _js_map_get_size(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var s, v11 uintptr
 	var v, v1, v3, v5, v7 TJSValue
@@ -113386,7 +117786,9 @@ func _js_map_get_size(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, magic int3
 	s = XJS_GetOpaque2(tls, ctx3, this_val, libc.Uint32FromInt32(int32(EJS_CLASS_MAP)+magic))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v11 = ctx3
@@ -113414,12 +117816,17 @@ func _js_map_get_size(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, magic int3
 	goto _8
 _8:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_map_forEach(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var el, mr, p, p1, s, v2, v7 uintptr
 	var func1, ret, this_arg, v1, v4 TJSValue
@@ -113429,7 +117836,9 @@ func _js_map_forEach(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32,
 	s = XJS_GetOpaque2(tls, ctx2, this_val, libc.Uint32FromInt32(int32(EJS_CLASS_MAP)+magic))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	func1 = *(*TJSValue)(unsafe.Pointer(argv))
@@ -113440,7 +117849,9 @@ func _js_map_forEach(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32,
 	}
 	if _check_function(tls, ctx2, func1) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Note: the list can be modified while traversing it, but the
@@ -113518,7 +117929,9 @@ func _js_map_forEach(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32,
 		_22:
 			if v14 != 0 {
 				r = ret
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v1 = ret
@@ -113539,12 +117952,17 @@ func _js_map_forEach(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32,
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_object_groupBy(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int32, argv uintptr, is_map int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cb, groups, iter, next, prop1, res, v, v1, v15, v3, v4 TJSValue
 	var idx, v14 Tint64_t
@@ -113566,7 +117984,9 @@ func _js_object_groupBy(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int
 	cb = *(*TJSValue)(unsafe.Pointer(argv + 1*8))
 	if _check_function(tls, ctx6, cb) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	iter = _JS_GetIterator(tls, ctx6, *(*TJSValue)(unsafe.Pointer(argv)), int32(EFALSE))
@@ -113575,7 +117995,9 @@ func _js_object_groupBy(tls *libc.TLS, ctx6 uintptr, this_val TJSValue, argc int
 _2:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer(bp + 24)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
@@ -113824,7 +118246,9 @@ _9:
 		}
 	}
 	r = groups
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto iterator_close_exception
 iterator_close_exception:
@@ -113913,7 +118337,9 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -114122,7 +118548,10 @@ fail:
 }
 
 func _js_map_iterator_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, pdone uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var el, it, mr, p, p1, s, v11, v8 uintptr
 	var v1 int32
@@ -114133,7 +118562,9 @@ func _js_map_iterator_next(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc 
 	if !(it != 0) {
 		*(*TBOOL)(unsafe.Pointer(pdone)) = int32(EFALSE)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64((*TJSMapIteratorData)(unsafe.Pointer(it)).Fobj>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -114177,7 +118608,9 @@ done:
 	/* end of enumeration */
 	*(*TBOOL)(unsafe.Pointer(pdone)) = int32(ETRUE)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _6:
 	;
@@ -114212,7 +118645,9 @@ _3:
 		goto _16
 	_16:
 		r = v12
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		(*(*[2]TJSValue)(unsafe.Pointer(bp)))[0] = (*TJSMapRecord)(unsafe.Pointer(mr)).Fkey
@@ -114235,20 +118670,29 @@ _3:
 			goto _21
 		_21:
 			r = v12
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			r = _js_create_array(tls, ctx2, int32(2), bp)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _get_set_record(tls *libc.TLS, ctx2 uintptr, obj TJSValue, psize uintptr, phas uintptr, pkeys uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var has, keys, v3, v1, v2 TJSValue
 	var p, s, v23, v26 uintptr
@@ -114352,7 +118796,9 @@ _21:
 	*(*TJSValue)(unsafe.Pointer(phas)) = has
 	*(*TJSValue)(unsafe.Pointer(pkeys)) = keys
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -114387,7 +118833,9 @@ exception:
 	*(*TJSValue)(unsafe.Pointer(phas)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	*(*TJSValue)(unsafe.Pointer(pkeys)) = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r = -int32(1)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -114451,7 +118899,10 @@ exception:
 }
 
 func _js_set_isDisjointFrom(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var found TBOOL
 	var iter, next, rv, rval, v12, v5 TJSValue
@@ -114470,7 +118921,9 @@ func _js_set_isDisjointFrom(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+32, bp+16, bp+8) < 0 {
@@ -114632,12 +119085,17 @@ exception:
 		}
 	}
 	r = rval
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_isSubsetOf(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var found TBOOL
 	var iter, next, rv, rval, v5 TJSValue
@@ -114656,7 +119114,9 @@ func _js_set_isSubsetOf(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int
 	s = XJS_GetOpaque2(tls, ctx1, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx1, *(*TJSValue)(unsafe.Pointer(argv)), bp+24, bp+16, bp+8) < 0 {
@@ -114770,12 +119230,17 @@ exception:
 		}
 	}
 	r = rval
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_isSupersetOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var found TBOOL
 	var item, iter, next, rval, v3, v4 TJSValue
@@ -114793,7 +119258,9 @@ func _js_set_isSupersetOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+24, bp+8, bp) < 0 {
@@ -114920,12 +119387,17 @@ exception:
 		}
 	}
 	r = rval
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_intersection(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var iter, newset, next, rv, v3, v4 TJSValue
 	var mr, p, s, t, v14, v17 uintptr
@@ -114942,7 +119414,9 @@ func _js_set_intersection(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+24, bp+16, bp+8) < 0 {
@@ -115199,12 +119673,17 @@ fini:
 		}
 	}
 	r = newset
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_difference(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var iter, newset, next, rv, v13, v8 TJSValue
 	var ok, v1 int32
@@ -115221,7 +119700,9 @@ func _js_set_difference(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+24, bp+16, bp+8) < 0 {
@@ -115413,12 +119894,17 @@ fini:
 		}
 	}
 	r = newset
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_symmetricDifference(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var item, iter, newset, next, v1, v8 TJSValue
 	var mr, p, s, t, v2, v5 uintptr
@@ -115432,12 +119918,16 @@ func _js_set_symmetricDifference(tls *libc.TLS, ctx2 uintptr, this_val TJSValue,
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+16, bp, bp+8) < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = *(*TJSValue)(unsafe.Pointer(bp))
@@ -115617,12 +120107,17 @@ fini:
 		}
 	}
 	r = newset
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_set_union(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var iter, newset, next, rv, v1, v8 TJSValue
 	var p, s, v2, v5 uintptr
@@ -115636,12 +120131,16 @@ func _js_set_union(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, a
 	s = XJS_GetOpaque2(tls, ctx2, this_val, uint32(EJS_CLASS_SET))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_set_record(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv)), bp+24, bp+8, bp+16) < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = *(*TJSValue)(unsafe.Pointer(bp + 8))
@@ -115792,7 +120291,9 @@ fini:
 		}
 	}
 	r = newset
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -117574,7 +122075,10 @@ var _js_map_proto_funcs_count = [6]Tuint8_t{
 }
 
 func XJS_AddIntrinsicMapSet(tls *libc.TLS, ctx1 uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v3 int32
 	var name, p, v6, v9 uintptr
@@ -117601,7 +122105,9 @@ func XJS_AddIntrinsicMapSet(tls *libc.TLS, ctx1 uintptr) (r int32) {
 	_4:
 		if v3 != 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v5 = obj1
@@ -117633,7 +122139,9 @@ func XJS_AddIntrinsicMapSet(tls *libc.TLS, ctx1 uintptr) (r int32) {
 	_12:
 		if v3 != 0 {
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _10
@@ -117642,7 +122150,9 @@ func XJS_AddIntrinsicMapSet(tls *libc.TLS, ctx1 uintptr) (r int32) {
 		i = i + 1
 	}
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -117939,7 +122449,10 @@ func _promise_reaction_data_free(tls *libc.TLS, rt1 uintptr, rd uintptr) {
 }
 
 func _promise_reaction_job(tls *libc.TLS, ctx2 uintptr, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func1, handler, res2, v3, v6 TJSValue
 	var is_reject TBOOL
@@ -118020,7 +122533,9 @@ _16:
 		}
 	}
 	r = res2
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -118032,7 +122547,10 @@ func XJS_SetHostPromiseRejectionTracker(tls *libc.TLS, rt uintptr, __ccgo_fp_cb 
 }
 
 func _fulfill_or_reject_promise(tls *libc.TLS, ctx2 uintptr, promise TJSValue, value TJSValue, is_reject TBOOL) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var el1, el11, next, p, prev, rd, rt, s, v2 uintptr
 	var v1, v4 TJSValue
@@ -118040,7 +122558,9 @@ func _fulfill_or_reject_promise(tls *libc.TLS, ctx2 uintptr, promise TJSValue, v
 	_, _, _, _, _, _, _, _, _, _, _ = el1, el11, next, p, prev, rd, rt, s, v1, v2, v4
 	s = XJS_GetOpaque(tls, promise, uint32(EJS_CLASS_PROMISE))
 	if !(s != 0) || (*TJSPromiseData)(unsafe.Pointer(s)).Fpromise_state != int32(EJS_PROMISE_PENDING) {
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	} /* should never happen */
 	_ = ctx2
@@ -118115,7 +122635,9 @@ _5:
 		el1 = el11
 		el11 = (*Tlist_head)(unsafe.Pointer(el1)).Fnext
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 }
 
 func _reject_promise(tls *libc.TLS, ctx uintptr, promise TJSValue, value TJSValue) {
@@ -118123,7 +122645,10 @@ func _reject_promise(tls *libc.TLS, ctx uintptr, promise TJSValue, value TJSValu
 }
 
 func _js_promise_resolve_thenable_job(tls *libc.TLS, ctx1 uintptr, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, v4, v7 uintptr
 	var promise, res, then, thenable, v3 TJSValue
@@ -118136,7 +122661,9 @@ func _js_promise_resolve_thenable_job(tls *libc.TLS, ctx1 uintptr, argc int32, a
 	then = *(*TJSValue)(unsafe.Pointer(argv + 2*8))
 	if _js_create_resolving_functions(tls, ctx1, bp, promise) < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res = XJS_Call(tls, ctx1, then, thenable, int32(2), bp)
@@ -118187,7 +122714,9 @@ _2:
 		}
 	}
 	r = res
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -118332,7 +122861,10 @@ func _js_promise_resolve_function_mark(tls *libc.TLS, rt uintptr, val TJSValue, 
 }
 
 func _js_promise_resolve_function_call(tls *libc.TLS, ctx2 uintptr, func_obj TJSValue, this_val TJSValue, argc int32, argv uintptr, flags int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var error1, resolution, then, v4, v5 TJSValue
 	var is_reject TBOOL
@@ -118345,7 +122877,9 @@ func _js_promise_resolve_function_call(tls *libc.TLS, ctx2 uintptr, func_obj TJS
 	s = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))
 	if !(s != 0) || (*TJSPromiseFunctionDataResolved)(unsafe.Pointer((*TJSPromiseFunctionData)(unsafe.Pointer(s)).Fpresolved)).Falready_resolved != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSPromiseFunctionDataResolved)(unsafe.Pointer((*TJSPromiseFunctionData)(unsafe.Pointer(s)).Fpresolved)).Falready_resolved = int32(ETRUE)
@@ -118445,7 +122979,9 @@ _17:
 _8:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -118534,7 +123070,10 @@ func _js_promise_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp_mark_fu
 }
 
 func _js_promise_constructor(tls *libc.TLS, ctx1 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var executor, obj, ret, ret2, v7 TJSValue
 	var i, v1 int32
@@ -118545,7 +123084,9 @@ func _js_promise_constructor(tls *libc.TLS, ctx1 uintptr, new_target TJSValue, a
 	executor = *(*TJSValue)(unsafe.Pointer(argv))
 	if _check_function(tls, ctx1, executor) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	obj = _js_create_from_ctor(tls, ctx1, new_target, int32(EJS_CLASS_PROMISE))
@@ -118554,7 +123095,9 @@ func _js_promise_constructor(tls *libc.TLS, ctx1 uintptr, new_target TJSValue, a
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	s = Xjs_mallocz(tls, ctx1, uint32(32))
@@ -118661,7 +123204,9 @@ _6:
 		}
 	}
 	r = obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail1
 fail1:
@@ -118709,7 +123254,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -118751,18 +123298,26 @@ func _js_promise_executor(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 }
 
 func _js_promise_executor_new(tls *libc.TLS, ctx uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* func_data at bp+0 */ [2]TJSValue
 	(*(*[2]TJSValue)(unsafe.Pointer(bp)))[0] = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	(*(*[2]TJSValue)(unsafe.Pointer(bp)))[int32(1)] = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	r = XJS_NewCFunctionData(tls, ctx, __ccgo_fp(_js_promise_executor), int32(2), 0, int32(2), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_new_promise_capability(tls *libc.TLS, ctx2 uintptr, resolving_funcs uintptr, ctor TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v1 int32
 	var p, p1, s, v10, v15 uintptr
@@ -118775,7 +123330,9 @@ func _js_new_promise_capability(tls *libc.TLS, ctx2 uintptr, resolving_funcs uin
 _2:
 	if v1 != 0 {
 		r = *(*TJSValue)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(ctor>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -118843,7 +123400,9 @@ _6:
 		}
 	}
 	r = result_promise
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -118875,7 +123434,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -118884,7 +123445,10 @@ func XJS_NewPromiseCapability(tls *libc.TLS, ctx uintptr, resolving_funcs uintpt
 }
 
 func _js_promise_resolve(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctor, result_promise, ret, v3, v4 TJSValue
 	var is_reject, is_same TBOOL
@@ -118898,7 +123462,9 @@ func _js_promise_resolve(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc in
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx3)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(is_reject != 0) && XJS_GetOpaque(tls, *(*TJSValue)(unsafe.Pointer(argv)), uint32(EJS_CLASS_PROMISE)) != 0 {
@@ -118912,7 +123478,9 @@ _2:
 	_7:
 		if v1 != 0 {
 			r = ctor
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		is_same = _js_same_value(tls, ctx3, ctor, this_val)
@@ -118943,7 +123511,9 @@ _2:
 			goto _17
 		_17:
 			r = v4
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -118953,7 +123523,9 @@ _2:
 _19:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_Call(tls, ctx3, (*(*[2]TJSValue)(unsafe.Pointer(bp)))[is_reject], libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), argv)
@@ -119001,7 +123573,9 @@ _31:
 			}
 		}
 		r = ret
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = ret
@@ -119018,12 +123592,17 @@ _31:
 		}
 	}
 	r = result_promise
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_withResolvers(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, result_promise, v7 TJSValue
 	var p, v11, v8 uintptr
@@ -119035,7 +123614,9 @@ func _js_promise_withResolvers(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result_promise = _js_new_promise_capability(tls, ctx1, bp, this_val)
@@ -119044,7 +123625,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	obj = XJS_NewObject(tls, ctx1)
@@ -119066,7 +123649,9 @@ _6:
 		goto exception
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -119124,12 +123709,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_try(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_reject TBOOL
 	var p, v11, v8 uintptr
@@ -119144,7 +123734,9 @@ func _js_promise_try(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32,
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result_promise = _js_new_promise_capability(tls, ctx1, bp, this_val)
@@ -119153,7 +123745,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer(bp + 16)) = XJS_Call(tls, ctx1, *(*TJSValue)(unsafe.Pointer(argv)), libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), argc-int32(1), argv+uintptr(1)*8)
@@ -119222,7 +123816,9 @@ _23:
 			}
 		}
 		r = ret2
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v7 = ret2
@@ -119239,12 +123835,17 @@ _23:
 		}
 	}
 	r = result_promise
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _remainingElementsCount_add(tls *libc.TLS, ctx1 uintptr, resolve_element_env TJSValue, addend int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var val1, v3 TJSValue
 	var v1 int32
@@ -119256,12 +123857,16 @@ func _remainingElementsCount_add(tls *libc.TLS, ctx1 uintptr, resolve_element_en
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _JS_ToInt32Free(tls, ctx1, bp, val1) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(bp)) = *(*int32)(unsafe.Pointer(bp)) + addend
@@ -119271,16 +123876,23 @@ _2:
 _4:
 	if XJS_SetPropertyUint32(tls, ctx1, resolve_element_env, uint32(0), v3) < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = libc.BoolInt32(*(*int32)(unsafe.Pointer(bp)) == libc.Int32FromInt32(0))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_all_resolve_element(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alreadyCalled TBOOL
 	var is_reject, is_zero, resolve_type, v5, v8 int32
@@ -119298,12 +123910,16 @@ func _js_promise_all_resolve_element(tls *libc.TLS, ctx3 uintptr, this_val TJSVa
 	resolve_element_env = *(*TJSValue)(unsafe.Pointer(func_data + 4*8))
 	if XJS_ToInt32(tls, ctx3, bp+8, *(*TJSValue)(unsafe.Pointer(func_data + 1*8))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if alreadyCalled != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx3
@@ -119320,7 +123936,9 @@ _2:
 _6:
 	if v5 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if is_reject != 0 {
@@ -119375,7 +123993,9 @@ fail1:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _10:
 	;
@@ -119399,13 +124019,17 @@ _4:
 	;
 	if XJS_DefinePropertyValueUint32(tls, ctx3, *(*TJSValue)(unsafe.Pointer(bp)), libc.Uint32FromInt32(*(*int32)(unsafe.Pointer(bp + 8))), obj, libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)) < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	is_zero = _remainingElementsCount_add(tls, ctx3, resolve_element_env, -int32(1))
 	if is_zero < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if is_zero != 0 {
@@ -119416,7 +124040,9 @@ _4:
 		_28:
 			if v5 != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			ret = XJS_Call(tls, ctx3, resolve, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), bp+16)
@@ -119441,7 +124067,9 @@ _4:
 	_35:
 		if v5 != 0 {
 			r = ret
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v1 = ret
@@ -119459,7 +124087,9 @@ _4:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -119467,7 +124097,10 @@ _4:
 //
 //	/* magic = 0: Promise.all 1: Promise.allSettled */
 func _js_promise_all(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(112)
+	bp := tlsTake(tls, 112)
+	if bp == 0 {
+		bp = tls.Alloc(112)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var error1, iter, next_method, next_promise, promise_resolve, reject_element, resolve_element, resolve_element_env, result_promise, ret, v5, v6 TJSValue
 	var index, is_promise_any, is_zero, v1, v3 int32
@@ -119491,7 +124124,9 @@ func _js_promise_all(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32,
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx5)
-		tls.Free(112)
+		if tlsDrop(tls, 112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result_promise = _js_new_promise_capability(tls, ctx5, bp, this_val)
@@ -119500,7 +124135,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(112)
+		if tlsDrop(tls, 112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = this_val
@@ -119938,7 +124575,9 @@ done:
 		}
 	}
 	r = result_promise
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -119958,12 +124597,17 @@ fail:
 	}
 	result_promise = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	goto done
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_promise_race(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var iter, next_method, next_promise, promise_resolve, result_promise, ret, v5, v6 TJSValue
 	var p, v15, v18 uintptr
@@ -119981,7 +124625,9 @@ func _js_promise_race(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32
 _2:
 	if !(v1 != 0) {
 		r = _JS_ThrowTypeErrorNotAnObject(tls, ctx2)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result_promise = _js_new_promise_capability(tls, ctx2, bp, this_val)
@@ -119990,7 +124636,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = this_val
@@ -120186,7 +124834,9 @@ done:
 		}
 	}
 	r = result_promise
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -120207,12 +124857,17 @@ fail:
 	}
 	result_promise = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	goto done
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _perform_promise_then(tls *libc.TLS, ctx2 uintptr, promise TJSValue, resolve_reject uintptr, cap_resolving_funcs uintptr) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var handler, v3, v6 TJSValue
 	var i, j int32
@@ -120234,7 +124889,9 @@ func _perform_promise_then(tls *libc.TLS, ctx2 uintptr, promise TJSValue, resolv
 				_promise_reaction_data_free(tls, (*TJSContext)(unsafe.Pointer(ctx2)).Frt, rd_array[0])
 			}
 			r = -int32(1)
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		j = 0
@@ -120335,12 +124992,17 @@ func _perform_promise_then(tls *libc.TLS, ctx2 uintptr, promise TJSValue, resolv
 	}
 	(*TJSPromiseData)(unsafe.Pointer(s)).Fis_handled = int32(ETRUE)
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_then(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctor, result_promise, v3 TJSValue
 	var i, ret, v1 int32
@@ -120350,7 +125012,9 @@ func _js_promise_then(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 	s = XJS_GetOpaque2(tls, ctx1, this_val, uint32(EJS_CLASS_PROMISE))
 	if !(s != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ctor = _JS_SpeciesConstructor(tls, ctx1, this_val, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))))
@@ -120359,7 +125023,9 @@ func _js_promise_then(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32
 _2:
 	if v1 != 0 {
 		r = ctor
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result_promise = _js_new_promise_capability(tls, ctx1, bp, ctor)
@@ -120381,7 +125047,9 @@ _2:
 _9:
 	if v1 != 0 {
 		r = result_promise
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _perform_promise_then(tls, ctx1, this_val, argv, bp)
@@ -120423,22 +125091,31 @@ _9:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = result_promise
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_catch(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* args at bp+0 */ [2]TJSValue
 	(*(*[2]TJSValue)(unsafe.Pointer(bp)))[0] = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
 	(*(*[2]TJSValue)(unsafe.Pointer(bp)))[int32(1)] = *(*TJSValue)(unsafe.Pointer(argv))
 	r = XJS_Invoke(tls, ctx, this_val, uint32(EJS_ATOM_then), int32(2), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -120481,7 +125158,10 @@ _5:
 }
 
 func _js_promise_then_finally_func(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32, func_data uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctor, onFinally, promise, ret, v3 TJSValue
 	var p, v4, v7 uintptr
@@ -120497,7 +125177,9 @@ func _js_promise_then_finally_func(tls *libc.TLS, ctx1 uintptr, this_val TJSValu
 _2:
 	if v1 != 0 {
 		r = *(*TJSValue)(unsafe.Pointer(bp))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	promise = _js_promise_resolve(tls, ctx1, ctor, int32(1), bp, 0)
@@ -120519,7 +125201,9 @@ _2:
 _9:
 	if v1 != 0 {
 		r = promise
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if magic == 0 {
@@ -120545,7 +125229,9 @@ _11:
 			}
 		}
 		r = *(*TJSValue)(unsafe.Pointer(bp + 8))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = _JS_InvokeFree(tls, ctx1, promise, uint32(EJS_ATOM_then), int32(1), bp+8)
@@ -120563,12 +125249,17 @@ _11:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_promise_finally(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ctor, onFinally, ret, v3, v6 TJSValue
 	var i, v1, v14 int32
@@ -120583,7 +125274,9 @@ func _js_promise_finally(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc in
 _2:
 	if v1 != 0 {
 		r = ctor
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(XJS_IsFunction(tls, ctx2, onFinally) != 0) {
@@ -120655,7 +125348,9 @@ _2:
 					}
 				}
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			goto _13
@@ -120705,7 +125400,9 @@ _2:
 		}
 	}
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -121409,7 +126106,10 @@ _5:
 }
 
 func _js_async_from_sync_iterator_unwrap_func_create(tls *libc.TLS, ctx1 uintptr, done TBOOL) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 TJSValue
 	var _ /* func_data at bp+0 */ [1]TJSValue
@@ -121420,7 +126120,9 @@ func _js_async_from_sync_iterator_unwrap_func_create(tls *libc.TLS, ctx1 uintptr
 _2:
 	(*(*[1]TJSValue)(unsafe.Pointer(bp)))[0] = v1
 	r = XJS_NewCFunctionData(tls, ctx1, __ccgo_fp(_js_async_from_sync_iterator_unwrap), int32(1), 0, int32(1), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -121446,16 +126148,24 @@ _5:
 }
 
 func _js_async_from_sync_iterator_close_wrap_func_create(tls *libc.TLS, ctx uintptr, _sync_iter TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*TJSValue)(unsafe.Pointer(bp)) = _sync_iter
 	r = XJS_NewCFunctionData(tls, ctx, __ccgo_fp(_js_async_from_sync_iterator_close_wrap), int32(1), 0, int32(1), bp)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_async_from_sync_iterator_next(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_reject, res, v1, v8 int32
 	var method, obj, promise, res2, value_wrapper_promise, v3, v6 TJSValue
@@ -121473,7 +126183,9 @@ func _js_async_from_sync_iterator_next(tls *libc.TLS, ctx3 uintptr, this_val TJS
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	s = XJS_GetOpaque(tls, this_val, uint32(EJS_CLASS_ASYNC_FROM_SYNC_ITERATOR))
@@ -121686,7 +126398,9 @@ done_resolve:
 		}
 	}
 	r = promise
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _41:
 	;
@@ -121841,11 +126555,15 @@ _70:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = promise
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -121903,7 +126621,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -122257,7 +126977,10 @@ func init() {
 }
 
 func XJS_AddIntrinsicPromise(tls *libc.TLS, ctx1 uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj1, v5 TJSValue
 	var p, rt, v6, v9 uintptr
@@ -122268,7 +126991,9 @@ func XJS_AddIntrinsicPromise(tls *libc.TLS, ctx1 uintptr) (r int32) {
 	if !(XJS_IsRegisteredClass(tls, rt, uint32(EJS_CLASS_PROMISE)) != 0) {
 		if _init_class_range(tls, rt, uintptr(unsafe.Pointer(&_js_async_class_def)), int32(EJS_CLASS_PROMISE), libc.Int32FromUint32(libc.Uint32FromInt64(108)/libc.Uint32FromInt64(12))) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		(*(*TJSClass)(unsafe.Pointer((*TJSRuntime)(unsafe.Pointer(rt)).Fclass_array + uintptr(EJS_CLASS_PROMISE_RESOLVE_FUNCTION)*24))).Fcall = __ccgo_fp(_js_promise_resolve_function_call)
@@ -122285,7 +127010,9 @@ func XJS_AddIntrinsicPromise(tls *libc.TLS, ctx1 uintptr) (r int32) {
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSContext)(unsafe.Pointer(ctx1)).Fpromise_ctor = obj1
@@ -122297,7 +127024,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = obj1
@@ -122320,7 +127049,9 @@ _4:
 _11:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* AsyncFromSyncIteratorPrototype */
@@ -122330,7 +127061,9 @@ _11:
 _13:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* AsyncGeneratorPrototype */
@@ -122340,7 +127073,9 @@ _13:
 _15:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* AsyncGeneratorFunction */
@@ -122351,7 +127086,9 @@ _15:
 _17:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = obj1
@@ -122368,7 +127105,9 @@ _17:
 		}
 	}
 	r = _JS_SetConstructor2(tls, ctx1, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Fclass_proto + uintptr(EJS_CLASS_ASYNC_GENERATOR_FUNCTION)*8)), *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx1)).Fclass_proto + uintptr(EJS_CLASS_ASYNC_GENERATOR)*8)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -122446,7 +127185,10 @@ func _hex_decode(tls *libc.TLS, ctx uintptr, p uintptr, k int32) (r int32) {
 }
 
 func _js_global_decodeURI(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, isComponent int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v12, v9 uintptr
 	var c1, c11, c_min, k, n, v1 int32
@@ -122462,7 +127204,9 @@ func _js_global_decodeURI(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_string_buffer_init(tls, ctx1, b, 0)
@@ -122555,7 +127299,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -122575,7 +127321,9 @@ fail:
 	}
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -122590,7 +127338,10 @@ func _isURIUnescaped(tls *libc.TLS, c int32, isComponent int32) (r int32) {
 }
 
 func _encodeURI_hex(tls *libc.TLS, b uintptr, c int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var hex uintptr
 	var n, v1 int32
@@ -122619,12 +127370,17 @@ func _encodeURI_hex(tls *libc.TLS, b uintptr, c int32) (r int32) {
 	n = n + 1
 	(*(*[6]Tuint8_t)(unsafe.Pointer(bp)))[v1] = uint8(*(*uint8)(unsafe.Pointer(hex + uintptr(c>>0&int32(15)))))
 	r = _string_buffer_write8(tls, b, bp, n)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_global_encodeURI(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, isComponent int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v13, v16 uintptr
 	var c11, c2, k, v1 int32
@@ -122640,7 +127396,9 @@ func _js_global_encodeURI(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -122720,7 +127478,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -122740,12 +127500,17 @@ fail:
 	}
 	_string_buffer_free(tls, b)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_global_escape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v5, v8 uintptr
 	var c, i, len1, v1 int32
@@ -122759,7 +127524,9 @@ func _js_global_escape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int3
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p1 = uintptr(libc.Int32FromUint64(str))
@@ -122795,12 +127562,17 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_global_unescape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, p, p1, v12, v9 uintptr
 	var c, i, len1, n, v1 int32
@@ -122815,7 +127587,9 @@ func _js_global_unescape(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc in
 _2:
 	if v1 != 0 {
 		r = str
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_string_buffer_init(tls, ctx1, b, 0)
@@ -122866,7 +127640,9 @@ _2:
 		}
 	}
 	r = _string_buffer_end(tls, b)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -123398,7 +128174,10 @@ func _JS_ThisTimeValue(tls *libc.TLS, ctx uintptr, valp uintptr, this_val TJSVal
 }
 
 func _JS_SetThisTimeValue(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, v3 float64) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, p1, p2, v2, v5 uintptr
 	var v, v1, v7 TJSValue
@@ -123474,12 +128253,16 @@ func _JS_SetThisTimeValue(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, v3 flo
 			goto _15
 		_15:
 			r = v7
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	r = XJS_ThrowTypeError(tls, ctx4, __ccgo_ts+14317, 0)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -123539,7 +128322,10 @@ var _month_names = [37]uint8{'J', 'a', 'n', 'F', 'e', 'b', 'M', 'a', 'r', 'A', '
 var _day_names = [22]uint8{'S', 'u', 'n', 'M', 'o', 'n', 'T', 'u', 'e', 'W', 'e', 'd', 'T', 'h', 'u', 'F', 'r', 'i', 'S', 'a', 't'}
 
 func _get_date_fields(tls *libc.TLS, ctx uintptr, obj TJSValue, fields uintptr, is_local int32, force int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, h, i, m, md, ms, s, tz, wd, y Tint64_t
 	var v1 uint64
@@ -123554,7 +128340,9 @@ func _get_date_fields(tls *libc.TLS, ctx uintptr, obj TJSValue, fields uintptr, 
 	tz = 0
 	if _JS_ThisTimeValue(tls, ctx, bp+8, obj) != 0 {
 		r = -int32(1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 8))
@@ -123564,7 +128352,9 @@ _2:
 	if libc.BoolInt32(v1&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) > libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 {
 		if !(force != 0) {
 			r = int32(EFALSE)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		} /* NaN */
 		d = 0 /* initialize all fields to 0 */
@@ -123614,7 +128404,9 @@ _2:
 	*(*float64)(unsafe.Pointer(fields + 7*8)) = float64(wd)
 	*(*float64)(unsafe.Pointer(fields + 8*8)) = float64(tz)
 	r = int32(ETRUE)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -123632,7 +128424,10 @@ func _time_clip(tls *libc.TLS, t float64) (r float64) {
 //	/* The spec mandates the use of 'double' and it specifies the order
 //	   of the operations */
 func _set_date_fields(tls *libc.TLS, fields uintptr, is_local int32) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var day, dt, h, m, milli, mn, s, temp, time, tv, y, ym, v2 float64
 	var days, ti Tint64_t
@@ -123656,7 +128451,9 @@ func _set_date_fields(tls *libc.TLS, fields uintptr, is_local int32) (r float64)
 	}
 	if ym < float64(-libc.Int32FromInt32(271821)) || ym > libc.Float64FromInt32(275760) {
 		r = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	yi = int32(ym)
@@ -123707,7 +128504,9 @@ func _set_date_fields(tls *libc.TLS, fields uintptr, is_local int32) (r float64)
 _6:
 	if !(libc.BoolInt32(v5&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) < libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0) {
 		r = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* adjust for local time and clip */
@@ -123726,12 +128525,17 @@ _6:
 		tv = tv + float64(_getTimezoneOffset(tls, ti)*int32(60000))
 	}
 	r = _time_clip(tls, tv)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _set_date_fields_checked(tls *libc.TLS, fields uintptr, is_local int32) (r float64) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a float64
 	var i int32
@@ -123754,7 +128558,9 @@ func _set_date_fields_checked(tls *libc.TLS, fields uintptr, is_local int32) (r 
 	_3:
 		if !(libc.BoolInt32(v2&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) < libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0) {
 			r = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*float64)(unsafe.Pointer(fields + uintptr(i)*8)) = math.Trunc(a)
@@ -123767,12 +128573,17 @@ func _set_date_fields_checked(tls *libc.TLS, fields uintptr, is_local int32) (r 
 		i = i + 1
 	}
 	r = _set_date_fields(tls, fields, is_local)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _get_date_field(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_local, n, res int32
 	var v, v2, v4 TJSValue
@@ -123800,12 +128611,16 @@ func _get_date_field(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32,
 	res = _get_date_fields(tls, ctx2, this_val, bp+24, is_local, 0)
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(res != 0) {
 		r = libc.Uint64FromInt64(0x7ff8000000000000) - libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1))<<libc.Int32FromInt32(32)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if magic&int32(0x100) != 0 { // getYear
@@ -123835,12 +128650,17 @@ _5:
 	goto _3
 _3:
 	r = v2
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _set_date_field(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d float64
 	var end_field, first_field, i, is_local, n, res, res1, v1, v2, v3 int32
@@ -123860,7 +128680,9 @@ func _set_date_field(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, 
 	res = _get_date_fields(tls, ctx, this_val, bp+8, is_local, libc.BoolInt32(first_field == 0))
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	res1 = res
@@ -123883,7 +128705,9 @@ _4:
 		}
 		if XJS_ToFloat64(tls, ctx, bp+80, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(96)
+			if tlsDrop(tls, 96) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 80))
@@ -123901,14 +128725,18 @@ _4:
 	}
 	if !(res1 != 0) {
 		r = libc.Uint64FromInt64(0x7ff8000000000000) - libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1))<<libc.Int32FromInt32(32)
-		tls.Free(96)
+		if tlsDrop(tls, 96) {
+			tlsSignals(tls)
+		}
 		return
 	} /* thisTimeValue is NaN */
 	if res != 0 && argc > 0 {
 		d = _set_date_fields(tls, bp+8, is_local)
 	}
 	r = _JS_SetThisTimeValue(tls, ctx, this_val, d)
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -123923,7 +128751,10 @@ _4:
 //	   XXX: should use a variant of strftime().
 //	 */
 func _get_date_string(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr, magic int32) (r TJSValue) {
-	bp := tls.Alloc(192)
+	bp := tlsTake(tls, 192)
+	if bp == 0 {
+		bp = tls.Alloc(192)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, fmt, h, m, mon, ms, part, pos, res, s, tz, wd, y, v1 int32
 	var _ /* buf at bp+0 */ [64]uint8
@@ -123934,17 +128765,23 @@ func _get_date_string(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32,
 	res = _get_date_fields(tls, ctx, this_val, bp+64, fmt&int32(1), 0)
 	if res < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(192)
+		if tlsDrop(tls, 192) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(res != 0) {
 		if fmt == int32(2) {
 			r = XJS_ThrowRangeError(tls, ctx, __ccgo_ts+14335, 0)
-			tls.Free(192)
+			if tlsDrop(tls, 192) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			r = _js_new_string8(tls, ctx, __ccgo_ts+14353)
-			tls.Free(192)
+			if tlsDrop(tls, 192) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -124021,7 +128858,9 @@ func _get_date_string(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32,
 		}
 	}
 	r = XJS_NewStringLen(tls, ctx, bp, libc.Uint32FromInt32(pos))
-	tls.Free(192)
+	if tlsDrop(tls, 192) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -124034,17 +128873,25 @@ func _date_now(tls *libc.TLS) (r Tint64_t) {
 }
 
 func _date_now_libc(tls *libc.TLS) (r Tint64_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* tv at bp+0 */ Ttimeval
 	libc.Xgettimeofday(tls, bp, libc.UintptrFromInt32(0))
 	r = (*(*Ttimeval)(unsafe.Pointer(bp))).Ftv_sec*int64(1000) + (*(*Ttimeval)(unsafe.Pointer(bp))).Ftv_usec/int64(1000)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_date_constructor(tls *libc.TLS, ctx3 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(96)
+	bp := tlsTake(tls, 96)
+	if bp == 0 {
+		bp = tls.Alloc(96)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var dv, rv, s, v, v6, v9 TJSValue
 	var i, n, tag, v1, v3 int32
@@ -124094,7 +128941,9 @@ _2:
 				if v5 && v1 != 0 {
 					if XJS_ToFloat64(tls, ctx3, bp+24, *(*TJSValue)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))) != 0 {
 						r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-						tls.Free(96)
+						if tlsDrop(tls, 96) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					*(*float64)(unsafe.Pointer(bp + 24)) = _time_clip(tls, *(*float64)(unsafe.Pointer(bp + 24)))
@@ -124126,18 +128975,24 @@ _2:
 			_15:
 				if v1 != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(96)
+					if tlsDrop(tls, 96) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if _JS_ToFloat64Free(tls, ctx3, bp+24, dv) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(96)
+					if tlsDrop(tls, 96) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
 				if _JS_ToFloat64Free(tls, ctx3, bp+24, *(*TJSValue)(unsafe.Pointer(bp + 32))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(96)
+					if tlsDrop(tls, 96) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
@@ -124156,7 +129011,9 @@ _2:
 				}
 				if XJS_ToFloat64(tls, ctx3, bp+40+uintptr(i)*8, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(96)
+					if tlsDrop(tls, 96) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				goto _16
@@ -124227,12 +129084,17 @@ _25:
 		rv = s
 	}
 	r = rv
-	tls.Free(96)
+	if tlsDrop(tls, 96) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_Date_UTC(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, n int32
 	var v, v3, v5 TJSValue
@@ -124262,7 +129124,9 @@ func _js_Date_UTC(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, ar
 	n = argc
 	if n == 0 {
 		r = libc.Uint64FromInt64(0x7ff8000000000000) - libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1))<<libc.Int32FromInt32(32)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if n > int32(7) {
@@ -124275,7 +129139,9 @@ func _js_Date_UTC(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, ar
 		}
 		if XJS_ToFloat64(tls, ctx2, bp+24+uintptr(i)*8, *(*TJSValue)(unsafe.Pointer(argv + uintptr(i)*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _1
@@ -124307,7 +129173,9 @@ _6:
 	goto _4
 _4:
 	r = v3
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -124453,7 +129321,10 @@ func _upper_ascii(tls *libc.TLS, c Tuint8_t) (r Tuint8_t) {
 }
 
 func _string_get_tzoffset(tls *libc.TLS, sp uintptr, pp uintptr, tzp uintptr, strict TBOOL) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var n, sgn, tz, v1 int32
 	var _ /* hh at bp+0 */ int32
@@ -124469,13 +129340,17 @@ func _string_get_tzoffset(tls *libc.TLS, sp uintptr, pp uintptr, tzp uintptr, st
 		n = *(*int32)(unsafe.Pointer(bp + 8))
 		if !(_string_get_digits(tls, sp, bp+8, bp, int32(1), 0) != 0) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		n = *(*int32)(unsafe.Pointer(bp + 8)) - n
 		if strict != 0 && n != int32(2) && n != int32(4) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		for n > int32(4) {
@@ -124491,20 +129366,26 @@ func _string_get_tzoffset(tls *libc.TLS, sp uintptr, pp uintptr, tzp uintptr, st
 				/* optional separator */
 				if !(_string_get_digits(tls, sp, bp+8, bp+4, int32(2), int32(2)) != 0) {
 					r = int32(EFALSE)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
 				if strict != 0 {
 					r = int32(EFALSE)
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				} /* [+-]HH is not accepted in strict mode */
 			}
 		}
 		if *(*int32)(unsafe.Pointer(bp)) > int32(23) || *(*int32)(unsafe.Pointer(bp + 4)) > int32(59) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		tz = *(*int32)(unsafe.Pointer(bp))*int32(60) + *(*int32)(unsafe.Pointer(bp + 4))
@@ -124514,14 +129395,18 @@ func _string_get_tzoffset(tls *libc.TLS, sp uintptr, pp uintptr, tzp uintptr, st
 	} else {
 		if sgn != int32('Z') {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	*(*int32)(unsafe.Pointer(pp)) = *(*int32)(unsafe.Pointer(bp + 8))
 	*(*int32)(unsafe.Pointer(tzp)) = tz
 	r = int32(ETRUE)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -124587,7 +129472,10 @@ func _string_get_month(tls *libc.TLS, sp uintptr, pp uintptr, pval uintptr) (r T
 //
 //	/* parse toISOString format */
 func _js_date_parse_isostring(tls *libc.TLS, sp uintptr, fields uintptr, is_local uintptr) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, sgn int32
 	var _ /* p at bp+0 */ int32
@@ -124612,13 +129500,17 @@ func _js_date_parse_isostring(tls *libc.TLS, sp uintptr, fields uintptr, is_loca
 		*(*int32)(unsafe.Pointer(bp)) = *(*int32)(unsafe.Pointer(bp)) + 1
 		if !(_string_get_digits(tls, sp, bp, fields, int32(6), int32(6)) != 0) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if sgn == int32('-') {
 			if *(*int32)(unsafe.Pointer(fields)) == 0 {
 				r = int32(EFALSE)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			} // reject -000000
 			*(*int32)(unsafe.Pointer(fields)) = -*(*int32)(unsafe.Pointer(fields))
@@ -124626,31 +129518,41 @@ func _js_date_parse_isostring(tls *libc.TLS, sp uintptr, fields uintptr, is_loca
 	} else {
 		if !(_string_get_digits(tls, sp, bp, fields, int32(4), int32(4)) != 0) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if _string_skip_char(tls, sp, bp, int32('-')) != 0 {
 		if !(_string_get_digits(tls, sp, bp, fields+1*4, int32(2), int32(2)) != 0) { /* month */
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if *(*int32)(unsafe.Pointer(fields + 1*4)) < int32(1) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*int32)(unsafe.Pointer(fields + 1*4)) -= int32(1)
 		if _string_skip_char(tls, sp, bp, int32('-')) != 0 {
 			if !(_string_get_digits(tls, sp, bp, fields+2*4, int32(2), int32(2)) != 0) { /* day */
 				r = int32(EFALSE)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if *(*int32)(unsafe.Pointer(fields + 2*4)) < int32(1) {
 				r = int32(EFALSE)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -124660,13 +129562,17 @@ func _js_date_parse_isostring(tls *libc.TLS, sp uintptr, fields uintptr, is_loca
 		if !(_string_get_digits(tls, sp, bp, fields+3*4, int32(2), int32(2)) != 0) || !(_string_skip_char(tls, sp, bp, int32(':')) != 0) || !(_string_get_digits(tls, sp, bp, fields+4*4, int32(2), int32(2)) != 0) { /* minute */
 			*(*int32)(unsafe.Pointer(fields + 3*4)) = int32(100) // reject unconditionally
 			r = int32(ETRUE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if _string_skip_char(tls, sp, bp, int32(':')) != 0 {
 			if !(_string_get_digits(tls, sp, bp, fields+5*4, int32(2), int32(2)) != 0) { /* second */
 				r = int32(EFALSE)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_string_get_milliseconds(tls, sp, bp, fields+6*4)
@@ -124677,13 +129583,17 @@ func _js_date_parse_isostring(tls *libc.TLS, sp uintptr, fields uintptr, is_loca
 		*(*TBOOL)(unsafe.Pointer(is_local)) = int32(EFALSE)
 		if !(_string_get_tzoffset(tls, sp, bp, fields+8*4, int32(ETRUE)) != 0) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	/* error if extraneous characters */
 	r = libc.BoolInt32(libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(sp + uintptr(*(*int32)(unsafe.Pointer(bp)))))) == int32('\000'))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -124784,7 +129694,10 @@ func _string_get_tzabbr(tls *libc.TLS, sp uintptr, pp uintptr, offset uintptr) (
 //
 //	/* parse toString, toUTCString and other formats */
 func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_local uintptr) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, i, level, num_index, p_start, v2 int32
 	var has_mon, has_time, has_year TBOOL
@@ -124826,7 +129739,9 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 					if c == int32('-') {
 						if *(*int32)(unsafe.Pointer(bp)) == 0 {
 							r = int32(EFALSE)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						*(*int32)(unsafe.Pointer(bp)) = -*(*int32)(unsafe.Pointer(bp))
@@ -124842,13 +129757,17 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 					*(*int32)(unsafe.Pointer(fields + 3*4)) = *(*int32)(unsafe.Pointer(bp))
 					if !(_string_get_digits(tls, sp, bp+4, fields+4*4, int32(1), int32(2)) != 0) {
 						r = int32(EFALSE)
-						tls.Free(16)
+						if tlsDrop(tls, 16) {
+							tlsSignals(tls)
+						}
 						return
 					}
 					if _string_skip_char(tls, sp, bp+4, int32(':')) != 0 {
 						if !(_string_get_digits(tls, sp, bp+4, fields+5*4, int32(1), int32(2)) != 0) {
 							r = int32(EFALSE)
-							tls.Free(16)
+							if tlsDrop(tls, 16) {
+								tlsSignals(tls)
+							}
 							return
 						}
 						_string_get_milliseconds(tls, sp, bp+4, fields+6*4)
@@ -124868,7 +129787,9 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 						} else {
 							if num_index == int32(3) {
 								r = int32(EFALSE)
-								tls.Free(16)
+								if tlsDrop(tls, 16) {
+									tlsSignals(tls)
+								}
 								return
 							}
 							v2 = num_index
@@ -124915,18 +129836,24 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 									}
 									if level > 0 {
 										r = int32(EFALSE)
-										tls.Free(16)
+										if tlsDrop(tls, 16) {
+											tlsSignals(tls)
+										}
 										return
 									}
 								} else {
 									if c == int32(')') {
 										r = int32(EFALSE)
-										tls.Free(16)
+										if tlsDrop(tls, 16) {
+											tlsSignals(tls)
+										}
 										return
 									} else {
 										if has_year+has_mon+has_time+num_index != 0 {
 											r = int32(EFALSE)
-											tls.Free(16)
+											if tlsDrop(tls, 16) {
+												tlsSignals(tls)
+											}
 											return
 										}
 										/* skip a word */
@@ -124943,14 +129870,18 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 	}
 	if num_index+has_year+has_mon > int32(3) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	switch num_index {
 	case 0:
 		if !(has_year != 0) {
 			r = int32(EFALSE)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	case int32(1):
@@ -124978,22 +129909,31 @@ func _js_date_parse_otherstring(tls *libc.TLS, sp uintptr, fields uintptr, is_lo
 		*(*int32)(unsafe.Pointer(fields + 2*4)) = num[int32(1)]
 	default:
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*int32)(unsafe.Pointer(fields + 1*4)) < int32(1) || *(*int32)(unsafe.Pointer(fields + 2*4)) < int32(1) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(fields + 1*4)) -= int32(1)
 	r = int32(ETRUE)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_Date_parse(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(272)
+	bp := tlsTake(tls, 272)
+	if bp == 0 {
+		bp = tls.Alloc(272)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, i, v1 int32
 	var d2, v7 float64
@@ -125028,7 +129968,9 @@ func _js_Date_parse(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, 
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(272)
+		if tlsDrop(tls, 272) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	sp = uintptr(libc.Int32FromUint64(s))
@@ -125127,7 +130069,9 @@ _2:
 		}
 	}
 	r = rv
-	tls.Free(272)
+	if tlsDrop(tls, 272) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -125140,7 +130084,10 @@ var _field_max = [6]int32{
 }
 
 func _js_Date_now(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -125177,7 +130124,9 @@ func _js_Date_now(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, ar
 	goto _8
 _8:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -125222,7 +130171,10 @@ _5:
 }
 
 func _js_date_getTimezoneOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v5, v7, v9 TJSValue
 	var v11 uint64
@@ -125242,7 +130194,9 @@ func _js_date_getTimezoneOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, 
 	_, _, _, _, _, _, _, _ = v, v1, v11, v3, v4, v5, v7, v9
 	if _JS_ThisTimeValue(tls, ctx3, bp+16, this_val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = *(*float64)(unsafe.Pointer(bp + 16))
@@ -125251,7 +130205,9 @@ func _js_date_getTimezoneOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, 
 _2:
 	if libc.BoolInt32(v11&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) > libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 {
 		r = libc.Uint64FromInt64(0x7ff8000000000000) - libc.Uint64FromInt32(libc.Int32FromInt32(0x7ff80000)-int32(EJS_TAG_FIRST)+libc.Int32FromInt32(1))<<libc.Int32FromInt32(32)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		/* assuming -8.64e15 <= v <= -8.64e15 */
@@ -125280,15 +130236,22 @@ _2:
 		goto _10
 	_10:
 		r = v9
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_date_getTime(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v2, v4 TJSValue
 	var val Tint32_t
@@ -125312,7 +130275,9 @@ func _js_date_getTime(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32
 	_, _, _, _, _ = v, val, v1, v2, v4
 	if _JS_ThisTimeValue(tls, ctx2, bp+24, this_val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = *(*float64)(unsafe.Pointer(bp + 24))
@@ -125339,26 +130304,38 @@ _5:
 	goto _3
 _3:
 	r = v2
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_date_setTime(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* v at bp+0 */ float64
 	if _JS_ThisTimeValue(tls, ctx, bp, this_val) != 0 || XJS_ToFloat64(tls, ctx, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _JS_SetThisTimeValue(tls, ctx, this_val, _time_clip(tls, *(*float64)(unsafe.Pointer(bp))))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_date_setYear(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v4, v6 TJSValue
 	var val Tint32_t
@@ -125389,7 +130366,9 @@ func _js_date_setYear(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32
 	_, _, _, _, _, _ = v, val, v1, v3, v4, v6
 	if _JS_ThisTimeValue(tls, ctx2, bp+32, this_val) != 0 || XJS_ToFloat64(tls, ctx2, bp+32, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp + 32)) = +*(*float64)(unsafe.Pointer(bp + 32))
@@ -125428,12 +130407,17 @@ _7:
 _5:
 	(*(*[1]TJSValue)(unsafe.Pointer(bp + 40)))[0] = v4
 	r = _set_date_field(tls, ctx2, this_val, int32(1), bp+40, int32(0x011))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_date_toJSON(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var method, obj, rv, tv, v7, v8 TJSValue
 	var p, v13, v16 uintptr
@@ -125535,7 +130519,9 @@ done:
 		}
 	}
 	r = rv
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -127344,7 +132330,10 @@ var _js_date_proto_funcs = [47]TJSCFunctionListEntry{
 }
 
 func XJS_NewDate(tls *libc.TLS, ctx1 uintptr, epoch_ms float64) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v, v3 TJSValue
 	var v1 int32
@@ -127360,7 +132349,9 @@ func XJS_NewDate(tls *libc.TLS, ctx1 uintptr, epoch_ms float64) (r TJSValue) {
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx1
@@ -127375,7 +132366,9 @@ _2:
 _4:
 	_JS_SetObjectData(tls, ctx1, obj, v3)
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -127418,7 +132411,10 @@ func XJS_AddIntrinsicEval(tls *libc.TLS, ctx uintptr) (r int32) {
 /* BigInt */
 
 func _JS_ToBigIntCtorFree(tls *libc.TLS, ctx1 uintptr, val TJSValue) (r1 TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v3 float64
 	var p, r, v11, v8 uintptr
@@ -127506,11 +132502,15 @@ _2:
 			}
 		}
 		r1 = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+15200, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r1 = val
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -127658,7 +132658,10 @@ func _js_bigint_valueOf(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 }
 
 func _js_bigint_asUintN(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, asIntN int32) (r1 TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, res, v31 TJSValue
 	var i, len1, shift, shift1, v1 int32
@@ -127669,7 +132672,9 @@ func _js_bigint_asUintN(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int
 	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = a, i, len1, p, p1, r, res, shift, shift1, v2, v3, v1, v31, v4, v7
 	if XJS_ToIndex(tls, ctx2, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	a = _JS_ToBigInt(tls, ctx2, *(*TJSValue)(unsafe.Pointer(argv + 1*8)))
@@ -127678,7 +132683,9 @@ func _js_bigint_asUintN(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int
 _2:
 	if v1 != 0 {
 		r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint64_t)(unsafe.Pointer(bp)) == uint64(0) {
@@ -127742,7 +132749,9 @@ _2:
 						}
 					}
 					r1 = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				(*TJSBigInt)(unsafe.Pointer(r)).Flen1 = libc.Uint32FromInt32(len1)
@@ -127785,7 +132794,9 @@ _2:
 		}
 	}
 	r1 = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -128001,7 +133012,10 @@ _2:
 //	/* Minimum amount of objects to be able to compile code and display
 //	   error messages. */
 func _JS_AddIntrinsicBasicObjects(tls *libc.TLS, ctx3 uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var func_obj, obj, v5, v8 TJSValue
 	var funcs, name, p, p1, p2, p3, v20, v6 uintptr
@@ -128016,7 +133030,9 @@ func _JS_AddIntrinsicBasicObjects(tls *libc.TLS, ctx3 uintptr) (r int32) {
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_JS_SetImmutablePrototype(tls, ctx3, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx3)).Fclass_proto + uintptr(EJS_CLASS_OBJECT)*8)))
@@ -128027,7 +133043,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx3
@@ -128049,7 +133067,9 @@ _9:
 _11:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	obj = _JS_NewObjectProtoClassAlloc(tls, ctx3, libc.Uint64FromInt32(int32(EJS_TAG_NULL))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), uint32(EJS_CLASS_OBJECT), int32(4))
@@ -128061,7 +133081,9 @@ _11:
 _13:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Error */
@@ -128072,7 +133094,9 @@ _13:
 _15:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -128102,7 +133126,9 @@ _15:
 				}
 			}
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v5 = func_obj
@@ -128141,7 +133167,9 @@ _15:
 				}
 			}
 			r = -int32(1)
-			tls.Free(80)
+			if tlsDrop(tls, 80) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _16
@@ -128169,7 +133197,9 @@ _15:
 _45:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSContext)(unsafe.Pointer(ctx3)).Farray_ctor = obj
@@ -128178,63 +133208,88 @@ _45:
 	(*TJSContext)(unsafe.Pointer(ctx3)).Farray_shape = _js_new_shape2(tls, ctx3, _get_proto_obj(tls, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx3)).Fclass_proto + uintptr(EJS_CLASS_ARRAY)*8))), int32(MJS_PROP_INITIAL_HASH_SIZE), int32(1))
 	if !((*TJSContext)(unsafe.Pointer(ctx3)).Farray_shape != 0) {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+28, libc.UintptrFromInt32(0), uint32(EJS_ATOM_length), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSContext)(unsafe.Pointer(ctx3)).Farguments_shape = _js_new_shape2(tls, ctx3, _get_proto_obj(tls, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx3)).Fclass_proto + uintptr(EJS_CLASS_OBJECT)*8))), int32(MJS_PROP_INITIAL_HASH_SIZE), int32(3))
 	if !((*TJSContext)(unsafe.Pointer(ctx3)).Farguments_shape != 0) {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+32, libc.UintptrFromInt32(0), uint32(EJS_ATOM_length), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+32, libc.UintptrFromInt32(0), uint32(EJS_ATOM_Symbol_iterator), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+32, libc.UintptrFromInt32(0), uint32(EJS_ATOM_callee), libc.Int32FromInt32(1)<<libc.Int32FromInt32(4)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSContext)(unsafe.Pointer(ctx3)).Fmapped_arguments_shape = _js_new_shape2(tls, ctx3, _get_proto_obj(tls, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx3)).Fclass_proto + uintptr(EJS_CLASS_OBJECT)*8))), int32(MJS_PROP_INITIAL_HASH_SIZE), int32(3))
 	if !((*TJSContext)(unsafe.Pointer(ctx3)).Fmapped_arguments_shape != 0) {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+36, libc.UintptrFromInt32(0), uint32(EJS_ATOM_length), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+36, libc.UintptrFromInt32(0), uint32(EJS_ATOM_Symbol_iterator), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _add_shape_property(tls, ctx3, ctx3+36, libc.UintptrFromInt32(0), uint32(EJS_ATOM_callee), libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func XJS_AddIntrinsicBaseObjects(tls *libc.TLS, ctx6 uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj1, v1, v5 TJSValue
 	var p, p1, v6, v9 uintptr
@@ -128251,18 +133306,24 @@ _2:
 _4:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* add caller and arguments properties to throw a TypeError */
 	if XJS_DefineProperty(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Ffunction_proto, uint32(EJS_ATOM_caller), libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), (*TJSContext)(unsafe.Pointer(ctx6)).Fthrow_type_error, (*TJSContext)(unsafe.Pointer(ctx6)).Fthrow_type_error, libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_DefineProperty(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Ffunction_proto, uint32(EJS_ATOM_arguments), libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), (*TJSContext)(unsafe.Pointer(ctx6)).Fthrow_type_error, (*TJSContext)(unsafe.Pointer(ctx6)).Fthrow_type_error, libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(8)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = _js_object_seal(tls, ctx6, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), int32(1), ctx6+184, int32(1))
@@ -128285,7 +133346,9 @@ _4:
 _11:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128309,7 +133372,9 @@ _11:
 _18:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TJSContext)(unsafe.Pointer(ctx6)).Ffunction_ctor = obj1
@@ -128320,7 +133385,9 @@ _18:
 _20:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// quirk: Iterator.prototype.constructor is an accessor property
@@ -128346,7 +133413,9 @@ _22:
 			}
 		}
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_DefineProperty(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR)*8)), uint32(EJS_ATOM_constructor), libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), obj1, obj1, libc.Int32FromInt32(1)<<libc.Int32FromInt32(11)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(12)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) < 0 {
@@ -128377,7 +133446,9 @@ _22:
 			}
 		}
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128400,7 +133471,9 @@ _22:
 _44:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR_HELPER)*8)) = _JS_NewObjectProtoList(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR)*8)), uintptr(unsafe.Pointer(&_js_iterator_helper_proto_funcs)), libc.Int32FromUint32(libc.Uint32FromInt64(48)/libc.Uint32FromInt64(16)))
@@ -128409,7 +133482,9 @@ _44:
 _46:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR_WRAP)*8)) = _JS_NewObjectProtoList(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR)*8)), uintptr(unsafe.Pointer(&_js_iterator_wrap_proto_funcs)), libc.Int32FromUint32(libc.Uint32FromInt64(32)/libc.Uint32FromInt64(16)))
@@ -128418,7 +133493,9 @@ _46:
 _48:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* needed to initialize arguments[Symbol.iterator] */
@@ -128432,7 +133509,9 @@ _51:
 _53:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ARRAY_ITERATOR)*8)) = _JS_NewObjectProtoList(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR)*8)), uintptr(unsafe.Pointer(&_js_array_iterator_proto_funcs)), libc.Int32FromUint32(libc.Uint32FromInt64(32)/libc.Uint32FromInt64(16)))
@@ -128441,7 +133520,9 @@ _53:
 _55:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* parseFloat and parseInteger must be defined before Number
@@ -128449,7 +133530,9 @@ _55:
 	   aliases */
 	if XJS_SetPropertyFunctionList(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Fglobal_obj, uintptr(unsafe.Pointer(&_js_global_funcs)), libc.Int32FromUint32(libc.Uint32FromInt64(240)/libc.Uint32FromInt64(16))) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Number */
@@ -128459,7 +133542,9 @@ _55:
 _57:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128481,7 +133566,9 @@ _57:
 _64:
 	if _JS_SetObjectData(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_NUMBER)*8)), v1) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Boolean */
@@ -128491,7 +133578,9 @@ _64:
 _66:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128513,7 +133602,9 @@ _66:
 _73:
 	if _JS_SetObjectData(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_BOOLEAN)*8)), v1) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* String */
@@ -128523,7 +133614,9 @@ _73:
 _75:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128541,7 +133634,9 @@ _75:
 	}
 	if _JS_SetObjectData(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_STRING)*8)), XJS_AtomToString(tls, ctx6, uint32(EJS_ATOM_empty_string))) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_STRING_ITERATOR)*8)) = _JS_NewObjectProtoList(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_ITERATOR)*8)), uintptr(unsafe.Pointer(&_js_string_iterator_proto_funcs)), libc.Int32FromUint32(libc.Uint32FromInt64(32)/libc.Uint32FromInt64(16)))
@@ -128550,20 +133645,26 @@ _75:
 _82:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* Math: create as autoinit object */
 	_js_random_init(tls, ctx6)
 	if XJS_SetPropertyFunctionList(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Fglobal_obj, uintptr(unsafe.Pointer(&_js_math_obj)), libc.Int32FromUint32(libc.Uint32FromInt64(16)/libc.Uint32FromInt64(16))) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* ES6 Reflect: create as autoinit object */
 	if XJS_SetPropertyFunctionList(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Fglobal_obj, uintptr(unsafe.Pointer(&_js_reflect_obj)), libc.Int32FromUint32(libc.Uint32FromInt64(16)/libc.Uint32FromInt64(16))) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* ES6 Symbol */
@@ -128573,7 +133674,9 @@ _82:
 _84:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128596,7 +133699,9 @@ _84:
 _91:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp + 8)) = __ccgo_fp(_js_function_constructor)
@@ -128606,7 +133711,9 @@ _91:
 _93:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = obj1
@@ -128624,7 +133731,9 @@ _93:
 	}
 	if _JS_SetConstructor2(tls, ctx6, *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_GENERATOR_FUNCTION)*8)), *(*TJSValue)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx6)).Fclass_proto + uintptr(EJS_CLASS_GENERATOR)*8)), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0), libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* global properties */
@@ -128638,7 +133747,9 @@ _101:
 _103:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_ = ctx6
@@ -128655,17 +133766,23 @@ _103:
 _108:
 	if XJS_DefinePropertyValue(tls, ctx6, (*TJSContext)(unsafe.Pointer(ctx6)).Fglobal_obj, uint32(EJS_ATOM_globalThis), v5, libc.Int32FromInt32(1)<<libc.Int32FromInt32(0)|libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* BigInt */
 	if _JS_AddIntrinsicBigInt(tls, ctx6) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -128839,7 +133956,10 @@ func XJS_NewArrayBufferCopy(tls *libc.TLS, ctx uintptr, buf uintptr, len1 Tsize_
 }
 
 func _js_array_buffer_constructor0(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc int32, argv uintptr, class_id TJSClassID) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, val, v5, v6 TJSValue
 	var p, pmax_len, v12, v9 uintptr
@@ -128851,7 +133971,9 @@ func _js_array_buffer_constructor0(tls *libc.TLS, ctx2 uintptr, new_target TJSVa
 	pmax_len = libc.UintptrFromInt32(0)
 	if XJS_ToIndex(tls, ctx2, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if argc < int32(2) {
@@ -128869,7 +133991,9 @@ _2:
 _4:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v5 = obj
@@ -128895,7 +134019,9 @@ _7:
 _14:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = libc.BoolInt32(libc.Int32FromUint64(val>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -128906,13 +134032,17 @@ _16:
 	}
 	if _JS_ToInt64Free(tls, ctx2, bp+16, val) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// don't have to check i < 0 because len >= 0
 	if *(*Tuint64_t)(unsafe.Pointer(bp)) > libc.Uint64FromInt64(*(*Tint64_t)(unsafe.Pointer(bp + 16))) || *(*Tint64_t)(unsafe.Pointer(bp + 16)) > libc.Int64FromInt32(1)<<libc.Int32FromInt32(53)-libc.Int64FromInt32(1) {
 		r = XJS_ThrowRangeError(tls, ctx2, __ccgo_ts+15441, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tuint64_t)(unsafe.Pointer(bp + 8)) = libc.Uint64FromInt64(*(*Tint64_t)(unsafe.Pointer(bp + 16)))
@@ -128921,9 +134051,13 @@ _16:
 next:
 	;
 	r = _js_array_buffer_constructor2(tls, ctx2, new_target, *(*Tuint64_t)(unsafe.Pointer(bp)), pmax_len, class_id)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -129122,7 +134256,10 @@ _2:
 }
 
 func _js_array_buffer_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, v11 uintptr
 	var v, v1, v3, v5, v7 TJSValue
@@ -129136,7 +134273,9 @@ func _js_array_buffer_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSVa
 	abuf = XJS_GetOpaque2(tls, ctx3, this_val, libc.Uint32FromInt32(class_id))
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* return 0 if detached */
@@ -129165,12 +134304,17 @@ func _js_array_buffer_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSVa
 	goto _8
 _8:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_buffer_get_maxByteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, v11 uintptr
 	var v, v1, v3, v5, v7 TJSValue
@@ -129184,7 +134328,9 @@ func _js_array_buffer_get_maxByteLength(tls *libc.TLS, ctx3 uintptr, this_val TJ
 	abuf = XJS_GetOpaque2(tls, ctx3, this_val, libc.Uint32FromInt32(class_id))
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _array_buffer_is_resizable(tls, abuf) != 0 {
@@ -129213,7 +134359,9 @@ func _js_array_buffer_get_maxByteLength(tls *libc.TLS, ctx3 uintptr, this_val TJ
 		goto _8
 	_8:
 		r = v7
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v11 = ctx3
@@ -129241,7 +134389,9 @@ func _js_array_buffer_get_maxByteLength(tls *libc.TLS, ctx3 uintptr, this_val TJ
 	goto _16
 _16:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -129444,7 +134594,10 @@ func _array_buffer_is_resizable(tls *libc.TLS, abuf uintptr) (r TBOOL) {
 //
 //	// ES #sec-arraybuffer.prototype.transfer
 func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, transfer_to_fixed_length int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, new_abuf, new_abuf1, new_bs, p, pmax_len, v15, v18 uintptr
 	var old_len Tuint64_t
@@ -129457,12 +134610,16 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 	abuf = XJS_GetOpaque2(tls, ctx1, this_val, uint32(EJS_CLASS_ARRAY_BUFFER))
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fshared != 0 {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+15576, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if v3 = argc < int32(1); !v3 {
@@ -129475,13 +134632,17 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 	} else {
 		if XJS_ToIndex(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	pmax_len = libc.UintptrFromInt32(0)
@@ -129490,7 +134651,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 			*(*Tuint64_t)(unsafe.Pointer(bp + 8)) = libc.Uint64FromInt32((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fmax_byte_length)
 			if *(*Tuint64_t)(unsafe.Pointer(bp)) > *(*Tuint64_t)(unsafe.Pointer(bp + 8)) {
 				r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+15381, 0)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			// TODO(bnoordhuis) support externally managed RABs
@@ -129507,7 +134670,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 	_5:
 		if v1 != 0 {
 			r = res
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		XJS_DetachArrayBuffer(tls, ctx1, this_val)
@@ -129518,7 +134683,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 			/* XXX: we are currently limited to 2 GB */
 			if *(*Tuint64_t)(unsafe.Pointer(bp)) > libc.Uint64FromInt32(libc.Int32FromInt32(MINT32_MAX)) {
 				r = XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+15381, 0)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Ffree_func != __ccgo_fp(_js_array_buffer_free) {
@@ -129530,7 +134697,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 			_7:
 				if v1 != 0 {
 					r = res
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				new_abuf = XJS_GetOpaque2(tls, ctx1, res, uint32(EJS_CLASS_ARRAY_BUFFER))
@@ -129556,7 +134725,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 			_13:
 				if v1 != 0 {
 					r = res
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				new_bs = Xjs_realloc(tls, ctx1, (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdata, uint32(*(*Tuint64_t)(unsafe.Pointer(bp))))
@@ -129575,7 +134746,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 						}
 					}
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(16)
+					if tlsDrop(tls, 16) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if *(*Tuint64_t)(unsafe.Pointer(bp)) > old_len {
@@ -129594,7 +134767,9 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 		_20:
 			if v1 != 0 {
 				r = res
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -129605,12 +134780,17 @@ func _js_array_buffer_transfer(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, a
 		_js_array_buffer_update_typed_arrays(tls, abuf)
 	}
 	r = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_buffer_resize(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, data uintptr
 	var v2, v3, v4 int32
@@ -129619,28 +134799,38 @@ func _js_array_buffer_resize(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc
 	abuf = XJS_GetOpaque2(tls, ctx, this_val, libc.Uint32FromInt32(class_id))
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_ToInt64(tls, ctx, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(_array_buffer_is_resizable(tls, abuf) != 0) {
 		r = XJS_ThrowTypeError(tls, ctx, __ccgo_ts+15612, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// TODO(bnoordhuis) support externally managed RABs
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Ffree_func != __ccgo_fp(_js_array_buffer_free) {
 		r = XJS_ThrowTypeError(tls, ctx, __ccgo_ts+15642, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(*(*Tint64_t)(unsafe.Pointer(bp)) < 0 || *(*Tint64_t)(unsafe.Pointer(bp)) > int64((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fmax_byte_length)) {
@@ -129650,7 +134840,9 @@ func _js_array_buffer_resize(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc
 bad_length:
 	;
 	r = XJS_ThrowRangeError(tls, ctx, __ccgo_ts+15381, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
@@ -129683,7 +134875,9 @@ _1:
 		data = Xjs_realloc(tls, ctx, (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdata, libc.Uint32FromInt32(v4))
 		if !(data != 0) {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if *(*Tint64_t)(unsafe.Pointer(bp)) > int64((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length) {
@@ -129694,12 +134888,17 @@ _1:
 	}
 	_js_array_buffer_update_typed_arrays(tls, abuf)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_array_buffer_slice(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc int32, argv uintptr, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, new_abuf, p, v111, v20 uintptr
 	var ctor, new_obj, v, v1, v13, v15, v17 TJSValue
@@ -129717,18 +134916,24 @@ func _js_array_buffer_slice(tls *libc.TLS, ctx4 uintptr, this_val TJSValue, argc
 	abuf = XJS_GetOpaque2(tls, ctx4, this_val, libc.Uint32FromInt32(class_id))
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx4)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = int64((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length)
 	if XJS_ToInt64Clamp(tls, ctx4, bp+8, *(*TJSValue)(unsafe.Pointer(argv)), 0, len1, len1) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tint64_t)(unsafe.Pointer(bp + 16)) = len1
@@ -129738,7 +134943,9 @@ _2:
 	if !(v11 != 0) {
 		if XJS_ToInt64Clamp(tls, ctx4, bp+16, *(*TJSValue)(unsafe.Pointer(argv + 1*8)), 0, len1, len1) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -129759,7 +134966,9 @@ _6:
 _8:
 	if v11 != 0 {
 		r = ctor
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v11 = libc.BoolInt32(libc.Int32FromUint64(ctor>>libc.Int32FromInt32(32)) == int32(EJS_TAG_UNDEFINED))
@@ -129826,7 +135035,9 @@ _10:
 _30:
 	if v11 != 0 {
 		r = new_obj
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	new_abuf = XJS_GetOpaque2(tls, ctx4, new_obj, libc.Uint32FromInt32(class_id))
@@ -129852,7 +135063,9 @@ _30:
 	}
 	libc.Xmemcpy(tls, (*TJSArrayBuffer)(unsafe.Pointer(new_abuf)).Fdata, (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdata+uintptr(*(*Tint64_t)(unsafe.Pointer(bp + 8))), libc.Uint32FromInt64(new_len))
 	r = new_obj
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -129871,7 +135084,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -130640,7 +135855,10 @@ _5:
 }
 
 func _js_typed_array_get_byteLength(tls *libc.TLS, ctx4 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, ta, v3 uintptr
 	var size_log2 int32
@@ -130656,7 +135874,9 @@ func _js_typed_array_get_byteLength(tls *libc.TLS, ctx4 uintptr, this_val TJSVal
 	p = _get_typed_array(tls, ctx4, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p) != 0 {
@@ -130665,7 +135885,9 @@ func _js_typed_array_get_byteLength(tls *libc.TLS, ctx4 uintptr, this_val TJSVal
 		goto _2
 	_2:
 		r = v11
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ta = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
@@ -130695,7 +135917,9 @@ func _js_typed_array_get_byteLength(tls *libc.TLS, ctx4 uintptr, this_val TJSVal
 		goto _10
 	_10:
 		r = v7
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size_log2 = libc.Int32FromUint8(_typed_array_size_log2[libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id)-int32(EJS_CLASS_UINT8C_ARRAY)])
@@ -130746,12 +135970,17 @@ func _js_typed_array_get_byteLength(tls *libc.TLS, ctx4 uintptr, this_val TJSVal
 	goto _18
 _18:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, ta, v3 uintptr
 	var v, v1, v11, v5, v7 TJSValue
@@ -130765,7 +135994,9 @@ func _js_typed_array_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSVal
 	p = _get_typed_array(tls, ctx3, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p) != 0 {
@@ -130774,7 +136005,9 @@ func _js_typed_array_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSVal
 		goto _2
 	_2:
 		r = v11
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ta = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
@@ -130803,7 +136036,9 @@ func _js_typed_array_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSVal
 	goto _10
 _10:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -130869,7 +136104,10 @@ func _js_typed_array_get_toStringTag(tls *libc.TLS, ctx uintptr, this_val TJSVal
 }
 
 func _js_typed_array_set_internal(tls *libc.TLS, ctx1 uintptr, dst TJSValue, src TJSValue, off TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var dest_abuf, dest_ta, p, p1, src_abuf, src_p, src_ta, v11, v14 uintptr
 	var dst_len Tint64_t
@@ -131036,7 +136274,9 @@ done:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -131055,12 +136295,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_at(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tint64_t
 	var p uintptr
@@ -131069,12 +136314,16 @@ func _js_typed_array_at(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 	p = _get_typed_array(tls, ctx, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p) != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int64FromUint32((*(*struct {
@@ -131103,7 +136352,9 @@ func _js_typed_array_at(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 	// note: can change p->u.array.count
 	if XJS_ToInt64Sat(tls, ctx, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tint64_t)(unsafe.Pointer(bp)) < 0 {
@@ -131134,16 +136385,23 @@ func _js_typed_array_at(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int3
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))).Fcount)
 	if *(*Tint64_t)(unsafe.Pointer(bp)) < 0 || *(*Tint64_t)(unsafe.Pointer(bp)) >= len1 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _JS_GetPropertyInt64(tls, ctx, this_val, *(*Tint64_t)(unsafe.Pointer(bp)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_with(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, val, v5 TJSValue
 	var len1 Tint64_t
@@ -131154,12 +136412,16 @@ func _js_typed_array_with(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 	p1 = _get_typed_array(tls, ctx1, this_val)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int64FromUint32((*(*struct {
@@ -131187,7 +136449,9 @@ func _js_typed_array_with(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))).Fcount)
 	if XJS_ToInt64Sat(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tint64_t)(unsafe.Pointer(bp)) < 0 {
@@ -131199,7 +136463,9 @@ func _js_typed_array_with(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p1) != 0 || *(*Tint64_t)(unsafe.Pointer(bp)) < 0 || *(*Tint64_t)(unsafe.Pointer(bp)) >= libc.Int64FromUint32((*(*struct {
@@ -131226,7 +136492,9 @@ _2:
 		Fcount Tuint32_t
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))).Fcount) {
 		r = XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+2481, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* warning: 'this_val' may have been resized, so 'len' may be
@@ -131250,7 +136518,9 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_SetPropertyInt64(tls, ctx1, arr, *(*Tint64_t)(unsafe.Pointer(bp)), val) < 0 {
@@ -131268,11 +136538,15 @@ _4:
 			}
 		}
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = arr
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -131294,7 +136568,10 @@ func _js_create_typed_array_iterator(tls *libc.TLS, ctx uintptr, this_val TJSVal
 }
 
 func _js_typed_array_create(tls *libc.TLS, ctx2 uintptr, ctor TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var new_len, v1 int32
 	var p, p1, v11, v5 uintptr
@@ -131307,7 +136584,9 @@ func _js_typed_array_create(tls *libc.TLS, ctx2 uintptr, ctor TJSValue, argc int
 _2:
 	if v1 != 0 {
 		r = ret
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* validate the typed array */
@@ -131355,14 +136634,18 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _9:
 	;
 _3:
 	;
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -131419,7 +136702,10 @@ _8:
 }
 
 func _js_typed_array_from(tls *libc.TLS, ctx5 uintptr, this_val TJSValue, argc int32, argv uintptr) (r1 TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, items, iter, mapfn, r, this_arg, v, v1, v21, v6, v19, v3, v4 TJSValue
 	var k, v18 Tint64_t
@@ -131646,12 +136932,17 @@ done:
 		}
 	}
 	r1 = r
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_of(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v3 int32
 	var obj, v1, v6, v9 TJSValue
@@ -131669,7 +136960,9 @@ _2:
 _4:
 	if v3 != 0 {
 		r = obj
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -131704,7 +136997,9 @@ _4:
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto _5
@@ -131713,12 +137008,17 @@ _4:
 		i = i + 1
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_copyWithin(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var count, len1, shift, space, v1, v4, v5 int32
 	var p, p1, v17 uintptr
@@ -131731,12 +137031,16 @@ func _js_typed_array_copyWithin(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, 
 	p1 = _get_typed_array(tls, ctx1, this_val)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int32FromUint32((*(*struct {
@@ -131764,12 +137068,16 @@ func _js_typed_array_copyWithin(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, 
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p1)).Fu))).Fcount)
 	if XJS_ToInt32Clamp(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv)), 0, len1, len1) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if XJS_ToInt32Clamp(tls, ctx1, bp+4, *(*TJSValue)(unsafe.Pointer(argv + 1*8)), 0, len1, len1) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*int32)(unsafe.Pointer(bp + 8)) = len1
@@ -131781,13 +137089,17 @@ func _js_typed_array_copyWithin(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, 
 	if v3 && !(v1 != 0) {
 		if XJS_ToInt32Clamp(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 2*8)), 0, len1, len1) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// RAB may have been resized by evil .valueOf method
@@ -131863,12 +137175,17 @@ _15:
 	goto _20
 _20:
 	r = v19
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a1, addend, v8 Tuint64_t
 	var len1, shift, shift1, v12, v15, v6 int32
@@ -131897,12 +137214,16 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	p1 = _get_typed_array(tls, ctx2, this_val)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx2)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int32FromUint32((*(*struct {
@@ -131943,7 +137264,9 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	_5:
 		if _JS_ToUint8ClampFree(tls, ctx2, bp+24, v4) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*Tuint64_t)(unsafe.Pointer(bp + 16)) = libc.Uint64FromInt32(*(*Tint32_t)(unsafe.Pointer(bp + 24)))
@@ -131954,7 +137277,9 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 		_7:
 			if v6 != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*Tuint64_t)(unsafe.Pointer(bp + 16)) = uint64(*(*Tuint32_t)(unsafe.Pointer(bp + 28)))
@@ -131962,13 +137287,17 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 			if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p1)).Fclass_id) <= int32(EJS_CLASS_BIG_UINT64_ARRAY) {
 				if XJS_ToBigInt64(tls, ctx2, bp+16, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			} else {
 				if XJS_ToFloat64(tls, ctx2, bp+32, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				if libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p1)).Fclass_id) == int32(EJS_CLASS_FLOAT16_ARRAY) {
@@ -132020,7 +137349,9 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	if argc > int32(1) {
 		if XJS_ToInt32Clamp(tls, ctx2, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 1*8)), 0, len1, len1) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -132033,13 +137364,17 @@ func _js_typed_array_fill(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 	if v14 && !(v6 != 0) {
 		if XJS_ToInt32Clamp(tls, ctx2, bp+12, *(*TJSValue)(unsafe.Pointer(argv + 2*8)), 0, len1, len1) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx2)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// RAB may have been resized by evil .valueOf method
@@ -132157,12 +137492,17 @@ _24:
 	goto _34
 _34:
 	r = v4
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_find(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, mode int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var dir, end, k, len1, v4 int32
 	var func1, index_val, res, this_arg, val1, v2 TJSValue
@@ -132232,11 +137572,15 @@ func _js_typed_array_find(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 					}
 				}
 				r = index_val
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				r = val1
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -132264,11 +137608,15 @@ func _js_typed_array_find(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc i
 		goto _19
 	_19:
 		r = v2
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto exception
@@ -132288,12 +137636,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_indexOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr, special int32) (r TJSValue) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a1, addend, v10, v51 Tuint64_t
 	var d1, d3, v22, v56 float64
@@ -132339,12 +137692,16 @@ func _js_typed_array_indexOf(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, arg
 	p = _get_typed_array(tls, ctx2, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx2)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int32FromUint32((*(*struct {
@@ -132966,7 +138323,9 @@ done:
 		goto _77
 	_77:
 		r = v76
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		_ = ctx2
@@ -132974,21 +138333,30 @@ done:
 		goto _79
 	_79:
 		r = v76
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto exception
 exception:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_typed_array_join(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr, toLocaleString int32) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b2, p, p1, s, v26, v29 uintptr
 	var c, i, len1, newlen, oldlen, v1, v2, v3 int32
@@ -133002,12 +138370,16 @@ func _js_typed_array_join(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc i
 	p1 = _get_typed_array(tls, ctx1, this_val)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx1)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v2 = libc.Int32FromUint32((*(*struct {
@@ -133185,7 +138557,9 @@ _23:
 		}
 	}
 	r = _string_buffer_end(tls, b2)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -133208,9 +138582,13 @@ fail:
 exception:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -133377,7 +138755,10 @@ func _slice_memcpy(tls *libc.TLS, dst uintptr, src uintptr, len1 Tsize_t) {
 }
 
 func _js_typed_array_slice(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, val1, v7 TJSValue
 	var count, len1, n, shift, space, v1, v3, v4 int32
@@ -133393,7 +138774,9 @@ func _js_typed_array_slice(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc 
 	}
 	if _typed_array_is_oob(tls, p1) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx2)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = libc.Int32FromUint32((*(*struct {
@@ -133539,7 +138922,9 @@ _10:
 		}
 	}
 	r = arr
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
@@ -133558,12 +138943,17 @@ exception:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_subarray(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, ta_buffer, v9 TJSValue
 	var count, len1, offset, shift, v1, v3, v4 int32
@@ -133669,22 +139059,31 @@ _12:
 		}
 	}
 	r = arr
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto exception
 exception:
 	;
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 /* TypedArray.prototype.sort */
 
 func _js_cmp_doubles(tls *libc.TLS, x float64, y float64) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1, v4 uint64
 	var v3 int32
@@ -133709,7 +139108,9 @@ _2:
 			v3 = +libc.Int32FromInt32(1)
 		}
 		r = v3
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = y
@@ -133718,22 +139119,30 @@ _2:
 _7:
 	if libc.BoolInt32(v1&(-libc.Uint64FromUint64(1)>>libc.Int32FromInt32(1)) > libc.Uint64FromUint64(0x7ff)<<libc.Int32FromInt32(52)) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if x < y {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if x > y {
 		r = int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if x != libc.Float64FromInt32(0) {
 		r = 0
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*float64)(unsafe.Pointer(bp)) = x
@@ -133751,7 +139160,9 @@ _9:
 			v3 = -int32(1)
 		}
 		r = v3
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		*(*float64)(unsafe.Pointer(bp)) = y
@@ -133764,10 +139175,14 @@ _9:
 			v3 = 0
 		}
 		r = v3
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -133820,7 +139235,10 @@ func _js_TA_cmp_uint64(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) (r i
 }
 
 func _js_TA_cmp_float16(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v2, v4, v7, v9 float64
 	var v1 Tuint32_t
@@ -133858,7 +139276,9 @@ _8:
 	goto _10
 _10:
 	r = _js_cmp_doubles(tls, v4, v9)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -133921,7 +139341,10 @@ _2:
 }
 
 func _js_TA_get_uint32(tls *libc.TLS, ctx3 uintptr, a uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1, v3, v5, v7 TJSValue
 	var v11 uintptr
@@ -133957,7 +139380,9 @@ func _js_TA_get_uint32(tls *libc.TLS, ctx3 uintptr, a uintptr) (r TJSValue) {
 	goto _8
 _8:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -133970,7 +139395,10 @@ func _js_TA_get_uint64(tls *libc.TLS, ctx uintptr, a uintptr) (r TJSValue) {
 }
 
 func _js_TA_get_float16(tls *libc.TLS, ctx1 uintptr, a uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var d, v2, v4 float64
 	var v1, v6 TJSValue
@@ -134011,12 +139439,17 @@ _5:
 	goto _7
 _7:
 	r = v6
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_TA_get_float32(tls *libc.TLS, ctx1 uintptr, a uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1 TJSValue
 	var _ /* u at bp+0 */ struct {
@@ -134036,12 +139469,17 @@ func _js_TA_get_float32(tls *libc.TLS, ctx1 uintptr, a uintptr) (r TJSValue) {
 	goto _2
 _2:
 	r = v1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_TA_get_float64(tls *libc.TLS, ctx1 uintptr, a uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v1 TJSValue
 	var _ /* u at bp+0 */ struct {
@@ -134061,7 +139499,9 @@ func _js_TA_get_float64(tls *libc.TLS, ctx1 uintptr, a uintptr) (r TJSValue) {
 	goto _2
 _2:
 	r = v1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -134077,7 +139517,10 @@ type TTA_sort_context = struct {
 }
 
 func _js_TA_cmp_generic(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a_idx, b_idx Tuint32_t
 	var cmp, val, v1 int32
@@ -134150,12 +139593,17 @@ func _js_TA_cmp_generic(tls *libc.TLS, a uintptr, b uintptr, opaque uintptr) (r 
 		}
 	}
 	r = cmp
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_sort(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var array, array_idx, array_ptr, cmpfun, p, p1, v23 uintptr
 	var elt_size, i, j Tsize_t
@@ -134172,13 +139620,17 @@ _2:
 	;
 	if !(v1 != 0) && _check_function(tls, ctx1, (*(*TTA_sort_context)(unsafe.Pointer(bp))).Fcmp) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = _js_typed_array_get_length_unsafe(tls, ctx1, this_val)
 	if len1 < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if len1 > int32(1) {
@@ -134232,7 +139684,9 @@ _2:
 			array = Xjs_malloc(tls, ctx1, libc.Uint32FromInt32(len1)*elt_size)
 			if !(array != 0) {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			libc.Xmemcpy(tls, array, *(*uintptr)(unsafe.Pointer(p1 + 24 + 4)), libc.Uint32FromInt32(len1)*elt_size)
@@ -134241,7 +139695,9 @@ _2:
 			if !(array_idx != 0) {
 				Xjs_free(tls, ctx1, array)
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			i = uint32(0)
@@ -134263,7 +139719,9 @@ _2:
 					Xjs_free(tls, ctx1, array_idx)
 					Xjs_free(tls, ctx1, array)
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(32)
+					if tlsDrop(tls, 32) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* detached typed array during the sort: no error */
@@ -134390,7 +139848,9 @@ _2:
 			Xrqsort(tls, *(*uintptr)(unsafe.Pointer(p1 + 24 + 4)), libc.Uint32FromInt32(len1), elt_size, cmpfun, bp)
 			if (*(*TTA_sort_context)(unsafe.Pointer(bp))).Fexception != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
@@ -134408,7 +139868,9 @@ _2:
 	goto _26
 _26:
 	r = v25
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -135758,7 +141220,10 @@ _19:
 //
 //	/* Uint8Array.prototype.toBase64([options]) */
 func _js_uint8array_to_base64(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alphabet, omit_padding, v2, v7 int32
 	var dst, ostr, p, p1, v10, v13 uintptr
@@ -135771,7 +141236,9 @@ func _js_uint8array_to_base64(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, ar
 	p1 = _check_uint8array(tls, ctx2, this_val)
 	if !(p1 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if argc > 0 {
@@ -135782,13 +141249,17 @@ func _js_uint8array_to_base64(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, ar
 	options = v1
 	if _check_options_object(tls, ctx2, options) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	alphabet = _parse_alphabet_option(tls, ctx2, options)
 	if alphabet < 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	omit_padding = 0
@@ -135806,7 +141277,9 @@ _3:
 	_8:
 		if v7 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		omit_padding = XJS_ToBool(tls, ctx2, op_val)
@@ -135826,19 +141299,25 @@ _3:
 	}
 	if _get_uint8array_bytes(tls, ctx2, p1, bp, bp+4) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	out_len = uint32(4) * ((*(*Tsize_t)(unsafe.Pointer(bp + 4)) + uint32(2)) / uint32(3))
 	if expect32(!!(out_len > libc.Uint32FromInt32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(30)-libc.Int32FromInt32(1)))) {
 		r = XJS_ThrowRangeError(tls, ctx2, __ccgo_ts+16126, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ostr = _js_alloc_string(tls, ctx2, libc.Int32FromUint32(out_len), 0)
 	if !(ostr != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	dst = ostr + 12
@@ -135856,7 +141335,9 @@ _3:
 	*(*uint8)(unsafe.Pointer(dst + uintptr(written))) = uint8('\000')
 	libc.SetBitFieldPtr32Uint32(ostr+0, written, 0, 0x7fffffff)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_STRING))<<libc.Int32FromInt32(32) | uint64(uint32(ostr))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -135864,7 +141345,10 @@ _3:
 //
 //	/* Uint8Array.prototype.toHex() */
 func _js_uint8array_to_hex(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ostr, p uintptr
 	var out_len Tsize_t
@@ -135874,30 +141358,40 @@ func _js_uint8array_to_hex(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc i
 	p = _check_uint8array(tls, ctx, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_uint8array_bytes(tls, ctx, p, bp, bp+4) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	out_len = *(*Tsize_t)(unsafe.Pointer(bp + 4)) * uint32(2)
 	if expect32(!!(out_len > libc.Uint32FromInt32(libc.Int32FromInt32(1)<<libc.Int32FromInt32(30)-libc.Int32FromInt32(1)))) {
 		r = XJS_ThrowRangeError(tls, ctx, __ccgo_ts+16126, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ostr = _js_alloc_string(tls, ctx, libc.Int32FromUint32(out_len), 0)
 	if !(ostr != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_u8a_hex_encode(tls, *(*uintptr)(unsafe.Pointer(bp)), *(*Tsize_t)(unsafe.Pointer(bp + 4)), ostr+12)
 	*(*Tuint8_t)(unsafe.Pointer(ostr + 12 + uintptr(out_len))) = uint8('\000')
 	r = libc.Uint64FromInt32(int32(EJS_TAG_STRING))<<libc.Int32FromInt32(32) | uint64(uint32(ostr))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -135905,7 +141399,10 @@ func _js_uint8array_to_hex(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc i
 //
 //	/* Uint8Array.fromBase64(string[, options]) */
 func _js_uint8array_from_base64(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alphabet, last_chunk, v2 int32
 	var buf, str, v4 uintptr
@@ -135922,7 +141419,9 @@ func _js_uint8array_from_base64(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, 
 _3:
 	if !(v2 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+16143, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v4 = XJS_ToCStringLen2(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv)), 0)
@@ -135931,7 +141430,9 @@ _5:
 	str = v4
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if argc > int32(1) {
@@ -135943,21 +141444,27 @@ _5:
 	if _check_options_object(tls, ctx1, options) != 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	alphabet = _parse_alphabet_option(tls, ctx1, options)
 	if alphabet < 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	last_chunk = _parse_last_chunk_option(tls, ctx1, options)
 	if last_chunk < 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	out_cap = *(*Tsize_t)(unsafe.Pointer(bp))/uint32(4)*uint32(3) + uint32(3)
@@ -135965,7 +141472,9 @@ _5:
 	if !(buf != 0) {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if alphabet == int32(EB64_ALPHABET_BASE64URL) {
@@ -135978,13 +141487,17 @@ _5:
 	if *(*int32)(unsafe.Pointer(bp + 8)) != 0 {
 		Xjs_free(tls, ctx1, buf)
 		r = XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+16159, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	result = _JS_NewUint8ArrayCopy(tls, ctx1, buf, decoded_len)
 	Xjs_free(tls, ctx1, buf)
 	r = result
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -135992,7 +141505,10 @@ _5:
 //
 //	/* Uint8Array.fromHex(string) */
 func _js_uint8array_from_hex(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, str, v4 uintptr
 	var decoded_len, out_cap Tsize_t
@@ -136008,7 +141524,9 @@ func _js_uint8array_from_hex(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, arg
 _3:
 	if !(v2 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+16143, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v4 = XJS_ToCStringLen2(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv)), 0)
@@ -136017,7 +141535,9 @@ _5:
 	str = v4
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	out_cap = *(*Tsize_t)(unsafe.Pointer(bp))/uint32(2) + uint32(1)
@@ -136025,7 +141545,9 @@ _5:
 	if !(buf != 0) {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	decoded_len = _u8a_hex_decode(tls, str, *(*Tsize_t)(unsafe.Pointer(bp)), buf, out_cap, bp+4, bp+8)
@@ -136033,14 +141555,18 @@ _5:
 	if *(*int32)(unsafe.Pointer(bp + 8)) != 0 {
 		Xjs_free(tls, ctx1, buf)
 		r = XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+16181, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: could avoid the copy */
 	result = _JS_NewUint8ArrayCopy(tls, ctx1, buf, decoded_len)
 	Xjs_free(tls, ctx1, buf)
 	r = result
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -136048,7 +141574,10 @@ _5:
 //
 //	/* Return a { read, written } result object */
 func _js_make_read_written(tls *libc.TLS, ctx4 uintptr, read Tsize_t, written Tsize_t) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var obj, v, v1, v5, v7, v9 TJSValue
 	var p, v111, v3 uintptr
@@ -136066,7 +141595,9 @@ func _js_make_read_written(tls *libc.TLS, ctx4 uintptr, read Tsize_t, written Ts
 _2:
 	if v11 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = ctx4
@@ -136124,7 +141655,9 @@ _18:
 		goto fail
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -136143,7 +141676,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -136151,7 +141686,10 @@ fail:
 //
 //	/* Uint8Array.prototype.setFromBase64(string[, options]) */
 func _js_uint8array_set_from_base64(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var alphabet, last_chunk, v2 int32
 	var decoded_len Tsize_t
@@ -136167,7 +141705,9 @@ func _js_uint8array_set_from_base64(tls *libc.TLS, ctx1 uintptr, this_val TJSVal
 	p = _check_uint8array(tls, ctx1, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = *(*TJSValue)(unsafe.Pointer(argv))
@@ -136176,7 +141716,9 @@ func _js_uint8array_set_from_base64(tls *libc.TLS, ctx1 uintptr, this_val TJSVal
 _3:
 	if !(v2 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+16143, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v4 = XJS_ToCStringLen2(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv)), 0)
@@ -136185,7 +141727,9 @@ _5:
 	str = v4
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if argc > int32(1) {
@@ -136197,27 +141741,35 @@ _5:
 	if _check_options_object(tls, ctx1, options) != 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	alphabet = _parse_alphabet_option(tls, ctx1, options)
 	if alphabet < 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	last_chunk = _parse_last_chunk_option(tls, ctx1, options)
 	if last_chunk < 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_uint8array_bytes(tls, ctx1, p, bp, bp+4) != 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if alphabet == int32(EB64_ALPHABET_BASE64URL) {
@@ -136229,11 +141781,15 @@ _5:
 	XJS_FreeCString(tls, ctx1, str)
 	if *(*int32)(unsafe.Pointer(bp + 16)) != 0 {
 		r = XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+16159, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _js_make_read_written(tls, ctx1, *(*Tsize_t)(unsafe.Pointer(bp + 12)), decoded_len)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -136241,7 +141797,10 @@ _5:
 //
 //	/* Uint8Array.prototype.setFromHex(string) */
 func _js_uint8array_set_from_hex(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var decoded_len Tsize_t
 	var p, str, v4 uintptr
@@ -136256,7 +141815,9 @@ func _js_uint8array_set_from_hex(tls *libc.TLS, ctx1 uintptr, this_val TJSValue,
 	p = _check_uint8array(tls, ctx1, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = *(*TJSValue)(unsafe.Pointer(argv))
@@ -136265,7 +141826,9 @@ func _js_uint8array_set_from_hex(tls *libc.TLS, ctx1 uintptr, this_val TJSValue,
 _3:
 	if !(v2 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+16143, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v4 = XJS_ToCStringLen2(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv)), 0)
@@ -136274,24 +141837,32 @@ _5:
 	str = v4
 	if !(str != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _get_uint8array_bytes(tls, ctx1, p, bp, bp+4) != 0 {
 		XJS_FreeCString(tls, ctx1, str)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	decoded_len = _u8a_hex_decode(tls, str, *(*Tsize_t)(unsafe.Pointer(bp + 8)), *(*uintptr)(unsafe.Pointer(bp)), *(*Tsize_t)(unsafe.Pointer(bp + 4)), bp+12, bp+16)
 	XJS_FreeCString(tls, ctx1, str)
 	if *(*int32)(unsafe.Pointer(bp + 16)) != 0 {
 		r = XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+16181, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = _js_make_read_written(tls, ctx1, *(*Tsize_t)(unsafe.Pointer(bp + 12)), decoded_len)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -138147,7 +143718,10 @@ func _typed_array_init(tls *libc.TLS, ctx1 uintptr, obj TJSValue, buffer TJSValu
 }
 
 func _js_array_from_iterator(tls *libc.TLS, ctx2 uintptr, plen uintptr, obj TJSValue, method TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, iter, next_method, val, v5, v6 TJSValue
 	var k Tuint32_t
@@ -138163,7 +143737,9 @@ func _js_array_from_iterator(tls *libc.TLS, ctx2 uintptr, plen uintptr, obj TJSV
 _2:
 	if v1 != 0 {
 		r = arr
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	iter = _JS_GetIterator2(tls, ctx2, obj, method)
@@ -138231,7 +143807,9 @@ _9:
 	}
 	*(*Tuint32_t)(unsafe.Pointer(plen)) = k
 	r = arr
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -138276,12 +143854,17 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_typed_array_constructor_obj(tls *libc.TLS, ctx3 uintptr, new_target TJSValue, obj TJSValue, classid int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var arr, buffer, iter, ret, val, v3, v4 TJSValue
 	var i Tuint32_t
@@ -138299,7 +143882,9 @@ func _js_typed_array_constructor_obj(tls *libc.TLS, ctx3 uintptr, new_target TJS
 _2:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = obj
@@ -138406,7 +143991,9 @@ _26:
 		}
 	}
 	r = ret
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -138438,7 +144025,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -138539,7 +144128,10 @@ fail:
 }
 
 func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc int32, argv uintptr, classid int32) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, p, p1, p2, v16, v21 uintptr
 	var buffer, obj, v15, v18 TJSValue
@@ -138553,7 +144145,9 @@ func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValu
 	if libc.Int32FromUint64(*(*TJSValue)(unsafe.Pointer(argv))>>libc.Int32FromInt32(32)) != int32(EJS_TAG_OBJECT) {
 		if XJS_ToIndex(tls, ctx2, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		obj = _js_create_from_ctor(tls, ctx2, new_target, classid)
@@ -138562,7 +144156,9 @@ func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValu
 	_2:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		buffer = _js_array_buffer_constructor1(tls, ctx2, libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32)|uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0))), *(*Tuint64_t)(unsafe.Pointer(bp))<<size_log2, libc.UintptrFromInt32(0))
@@ -138584,7 +144180,9 @@ func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValu
 	_8:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if XJS_ToIndex(tls, ctx2, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0 {
@@ -138683,11 +144281,15 @@ func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValu
 				}
 				Fcount Tuint32_t
 			})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			r = _js_typed_array_constructor_obj(tls, ctx2, new_target, *(*TJSValue)(unsafe.Pointer(argv)), classid)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	_6:
@@ -138696,7 +144298,9 @@ func _js_typed_array_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValu
 		goto fail
 	}
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -138715,7 +144319,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -138766,7 +144372,10 @@ func _js_typed_array_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp_mar
 }
 
 func _js_dataview_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, p, p1, p2, ta, v13, v16, v18, v22 uintptr
 	var buffer, obj, v12, v17 TJSValue
@@ -138783,25 +144392,33 @@ func _js_dataview_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, 
 	abuf = _js_get_array_buffer(tls, ctx2, buffer)
 	if !(abuf != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*Tuint64_t)(unsafe.Pointer(bp)) = uint64(0)
 	if argc > int32(1) {
 		if XJS_ToIndex(tls, ctx2, bp, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx2)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint64_t)(unsafe.Pointer(bp)) > libc.Uint64FromInt32((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length) {
 		r = XJS_ThrowRangeError(tls, ctx2, __ccgo_ts+16364, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	len1 = uint32(libc.Uint64FromInt32((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length) - *(*Tuint64_t)(unsafe.Pointer(bp)))
@@ -138813,12 +144430,16 @@ func _js_dataview_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, 
 	if v3 && !(v1 != 0) {
 		if XJS_ToIndex(tls, ctx2, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 2*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if *(*Tuint64_t)(unsafe.Pointer(bp + 8)) > uint64(len1) {
 			r = XJS_ThrowRangeError(tls, ctx2, __ccgo_ts+16383, 0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		len1 = uint32(*(*Tuint64_t)(unsafe.Pointer(bp + 8)))
@@ -138832,7 +144453,9 @@ func _js_dataview_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, 
 _5:
 	if v1 != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
@@ -138890,7 +144513,9 @@ fail:
 		}
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _11:
 	;
@@ -138922,7 +144547,9 @@ _21:
 	(*Tlist_head)(unsafe.Pointer(v22)).Fprev = v16
 	*(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu)) = ta
 	r = obj
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -138991,7 +144618,10 @@ _5:
 }
 
 func _js_dataview_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, p, ta, v11 uintptr
 	var v, v1, v3, v5, v7 TJSValue
@@ -139005,12 +144635,16 @@ func _js_dataview_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue)
 	p = _get_dataview(tls, ctx3, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _dataview_is_oob(tls, p) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx3)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ta = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
@@ -139041,7 +144675,9 @@ func _js_dataview_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue)
 		goto _8
 	_8:
 		r = v7
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v11 = ctx3
@@ -139069,12 +144705,17 @@ func _js_dataview_get_byteLength(tls *libc.TLS, ctx3 uintptr, this_val TJSValue)
 	goto _16
 _16:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_dataview_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, ta, v11 uintptr
 	var v, v1, v3, v5, v7 TJSValue
@@ -139088,12 +144729,16 @@ func _js_dataview_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue)
 	p = _get_dataview(tls, ctx3, this_val)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _dataview_is_oob(tls, p) != 0 {
 		r = _JS_ThrowTypeErrorArrayBufferOOB(tls, ctx3)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ta = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))
@@ -139122,12 +144767,17 @@ func _js_dataview_get_byteOffset(tls *libc.TLS, ctx3 uintptr, this_val TJSValue)
 	goto _8
 _8:
 	r = v7
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int32, argv uintptr, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, ptr, ta, v311 uintptr
 	var d, v55, v57 float64
@@ -139161,13 +144811,17 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 	ta = XJS_GetOpaque2(tls, ctx3, this_obj, uint32(EJS_CLASS_DATAVIEW))
 	if !(ta != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size = int32(1) << _typed_array_size_log2[class_id-int32(EJS_CLASS_UINT8C_ARRAY)]
 	if XJS_ToIndex(tls, ctx3, bp+16, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	littleEndian = libc.BoolInt32(argc > int32(1) && XJS_ToBool(tls, ctx3, *(*TJSValue)(unsafe.Pointer(argv + 1*8))) != 0)
@@ -139175,13 +144829,17 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 	abuf = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer((*TJSTypedArray)(unsafe.Pointer(ta)).Fbuffer)).Fu))
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx3)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// order matters: this check should come before the next one
 	if *(*Tuint64_t)(unsafe.Pointer(bp + 16))+libc.Uint64FromInt32(size) > uint64((*TJSTypedArray)(unsafe.Pointer(ta)).Flength) {
 		r = XJS_ThrowRangeError(tls, ctx3, __ccgo_ts+16450, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// test262 expects a TypeError for this and V8, in its infinite wisdom,
@@ -139189,7 +144847,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 	// sense because the buffer is not in fact detached, it's still there
 	if libc.Int64FromUint32((*TJSTypedArray)(unsafe.Pointer(ta)).Foffset)+libc.Int64FromUint32((*TJSTypedArray)(unsafe.Pointer(ta)).Flength) > int64((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length) {
 		r = XJS_ThrowTypeError(tls, ctx3, __ccgo_ts+16450, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ptr = (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdata + uintptr((*TJSTypedArray)(unsafe.Pointer(ta)).Foffset) + uintptr(*(*Tuint64_t)(unsafe.Pointer(bp + 16)))
@@ -139200,7 +144860,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _2
 	_2:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT8_ARRAY):
 		_ = ctx3
@@ -139208,7 +144870,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _4
 	_4:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_INT16_ARRAY):
 		v51 = uint32((*Tpacked_u16)(unsafe.Pointer(ptr)).Fv)
@@ -139227,7 +144891,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _11
 	_11:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT16_ARRAY):
 		v51 = uint32((*Tpacked_u16)(unsafe.Pointer(ptr)).Fv)
@@ -139246,7 +144912,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _18
 	_18:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_INT32_ARRAY):
 		v51 = (*Tpacked_u32)(unsafe.Pointer(ptr)).Fv
@@ -139265,7 +144933,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _25
 	_25:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_UINT32_ARRAY):
 		v51 = (*Tpacked_u32)(unsafe.Pointer(ptr)).Fv
@@ -139304,7 +144974,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _38
 	_38:
 		r = v10
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_BIG_INT64_ARRAY):
 		v39 = (*Tpacked_u64)(unsafe.Pointer(ptr)).Fv
@@ -139319,7 +144991,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 			v6 = v41
 		}
 		r = XJS_NewBigInt64(tls, ctx3, libc.Int64FromUint64(v6))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_BIG_UINT64_ARRAY):
 		v39 = (*Tpacked_u64)(unsafe.Pointer(ptr)).Fv
@@ -139334,7 +145008,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 			v7 = v41
 		}
 		r = XJS_NewBigUint64(tls, ctx3, v7)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT16_ARRAY):
 		v51 = uint32((*Tpacked_u16)(unsafe.Pointer(ptr)).Fv)
@@ -139372,7 +145048,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _60
 	_60:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT32_ARRAY):
 		v51 = (*Tpacked_u32)(unsafe.Pointer(ptr)).Fv
@@ -139398,7 +145076,9 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _67
 	_67:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	case int32(EJS_CLASS_FLOAT64_ARRAY):
 		v39 = (*Tpacked_u64)(unsafe.Pointer(ptr)).Fv
@@ -139423,17 +145103,24 @@ func _js_dataview_getValue(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc 
 		goto _74
 	_74:
 		r = v1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	default:
 		libc.Xabort(tls)
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc int32, argv uintptr, class_id int32) (r TJSValue) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, addend, v13, v3 Tuint64_t
 	var abuf, ptr, ta uintptr
@@ -139460,13 +145147,17 @@ func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc 
 	ta = XJS_GetOpaque2(tls, ctx1, this_obj, uint32(EJS_CLASS_DATAVIEW))
 	if !(ta != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size = int32(1) << _typed_array_size_log2[class_id-int32(EJS_CLASS_UINT8C_ARRAY)]
 	if XJS_ToIndex(tls, ctx1, bp+24, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	val4 = *(*TJSValue)(unsafe.Pointer(argv + 1*8))
@@ -139478,20 +145169,26 @@ func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc 
 	_2:
 		if v1 != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		if class_id <= int32(EJS_CLASS_BIG_UINT64_ARRAY) {
 			if XJS_ToBigInt64(tls, ctx1, bp+8, val4) != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
 			if XJS_ToFloat64(tls, ctx1, bp+32, val4) != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if class_id == int32(EJS_CLASS_FLOAT16_ARRAY) {
@@ -139543,13 +145240,17 @@ func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc 
 	abuf = *(*uintptr)(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer((*TJSTypedArray)(unsafe.Pointer(ta)).Fbuffer)).Fu))
 	if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// order matters: this check should come before the next one
 	if *(*Tuint64_t)(unsafe.Pointer(bp + 24))+libc.Uint64FromInt32(size) > uint64((*TJSTypedArray)(unsafe.Pointer(ta)).Flength) {
 		r = XJS_ThrowRangeError(tls, ctx1, __ccgo_ts+16450, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	// test262 expects a TypeError for this and V8, in its infinite wisdom,
@@ -139557,7 +145258,9 @@ func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc 
 	// sense because the buffer is not in fact detached, it's still there
 	if libc.Int64FromUint32((*TJSTypedArray)(unsafe.Pointer(ta)).Foffset)+libc.Int64FromUint32((*TJSTypedArray)(unsafe.Pointer(ta)).Flength) > int64((*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fbyte_length) {
 		r = XJS_ThrowTypeError(tls, ctx1, __ccgo_ts+16450, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ptr = (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdata + uintptr((*TJSTypedArray)(unsafe.Pointer(ta)).Foffset) + uintptr(*(*Tuint64_t)(unsafe.Pointer(bp + 24)))
@@ -139609,7 +145312,9 @@ func _js_dataview_setValue(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc 
 		libc.Xabort(tls)
 	}
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -140582,7 +146287,10 @@ const EATOMICS_OP_COMPARE_EXCHANGE = 6
 const EATOMICS_OP_LOAD = 7
 
 func _js_atomics_get_buf(tls *libc.TLS, ctx uintptr, obj TJSValue, idx_val TJSValue, pidx uintptr, is_waitable int32) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, p, ta uintptr
 	var err TBOOL
@@ -140606,7 +146314,9 @@ fail:
 	;
 	XJS_ThrowTypeError(tls, ctx, __ccgo_ts+16698, 0)
 	r = libc.UintptrFromInt32(0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
@@ -140616,13 +146326,17 @@ _1:
 		if is_waitable == int32(2) {
 			XJS_ThrowTypeError(tls, ctx, __ccgo_ts+16726, 0)
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if (*TJSArrayBuffer)(unsafe.Pointer(abuf)).Fdetached != 0 {
 			_JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx)
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -140651,7 +146365,9 @@ _1:
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))).Fcount)
 	if XJS_ToIndex(tls, ctx, bp, idx_val) != 0 {
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint64_t)(unsafe.Pointer(bp)) >= libc.Uint64FromInt32(old_len) {
@@ -140664,7 +146380,9 @@ _1:
 	if _typed_array_is_oob(tls, p) != 0 {
 		_JS_ThrowTypeErrorArrayBufferOOB(tls, ctx)
 		r = libc.UintptrFromInt32(0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(*(*Tuint64_t)(unsafe.Pointer(bp)) >= uint64((*(*struct {
@@ -140697,7 +146415,9 @@ oob:
 	;
 	XJS_ThrowRangeError(tls, ctx, __ccgo_ts+16761, 0)
 	r = libc.UintptrFromInt32(0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _3:
 	;
@@ -140705,12 +146425,17 @@ _2:
 	;
 	*(*Tuint64_t)(unsafe.Pointer(pidx)) = *(*Tuint64_t)(unsafe.Pointer(bp))
 	r = p
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, argv uintptr, op int32) (r TJSValue) {
-	bp := tls.Alloc(112)
+	bp := tlsTake(tls, 112)
+	if bp == 0 {
+		bp = tls.Alloc(112)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var __atomic_compare_exchange_ptr, __atomic_compare_exchange_ptr1, __atomic_compare_exchange_ptr2, __atomic_compare_exchange_ptr3, __atomic_exchange_ptr, __atomic_exchange_ptr1, __atomic_exchange_ptr2, __atomic_exchange_ptr3, __atomic_load_ptr, __atomic_load_ptr1, __atomic_load_ptr2, __atomic_load_ptr3, p, ptr, v29 uintptr
 	var a, rep_val, v2, v8 Tuint64_t
@@ -140751,7 +146476,9 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 	p = _js_atomics_get_buf(tls, ctx4, *(*TJSValue)(unsafe.Pointer(argv)), *(*TJSValue)(unsafe.Pointer(argv + 1*8)), bp+8, 0)
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(112)
+		if tlsDrop(tls, 112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size_log2 = libc.Int32FromUint8(_typed_array_size_log2[libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id)-int32(EJS_CLASS_UINT8C_ARRAY)])
@@ -140762,14 +146489,18 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 		if size_log2 == int32(3) {
 			if XJS_ToBigInt64(tls, ctx4, bp+16, *(*TJSValue)(unsafe.Pointer(argv + 2*8))) != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(112)
+				if tlsDrop(tls, 112) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v2 = libc.Uint64FromInt64(*(*Tint64_t)(unsafe.Pointer(bp + 16)))
 			if op == int32(EATOMICS_OP_COMPARE_EXCHANGE) {
 				if XJS_ToBigInt64(tls, ctx4, bp+16, *(*TJSValue)(unsafe.Pointer(argv + 3*8))) != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(112)
+					if tlsDrop(tls, 112) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				rep_val = libc.Uint64FromInt64(*(*Tint64_t)(unsafe.Pointer(bp + 16)))
@@ -140780,7 +146511,9 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 		_2:
 			if v11 != 0 {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(112)
+				if tlsDrop(tls, 112) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v2 = uint64(*(*Tuint32_t)(unsafe.Pointer(bp + 24)))
@@ -140790,7 +146523,9 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 			_4:
 				if v11 != 0 {
 					r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-					tls.Free(112)
+					if tlsDrop(tls, 112) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				rep_val = uint64(*(*Tuint32_t)(unsafe.Pointer(bp + 24)))
@@ -140798,7 +146533,9 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 		}
 		if _typed_array_is_oob(tls, p) != 0 {
 			r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx4)
-			tls.Free(112)
+			if tlsDrop(tls, 112) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if *(*Tuint64_t)(unsafe.Pointer(bp + 8)) >= uint64((*(*struct {
@@ -140825,7 +146562,9 @@ func _js_atomics_op(tls *libc.TLS, ctx4 uintptr, this_obj TJSValue, argc int32, 
 			Fcount Tuint32_t
 		})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p)).Fu))).Fcount) {
 			r = XJS_ThrowRangeError(tls, ctx4, __ccgo_ts+16761, 0)
-			tls.Free(112)
+			if tlsDrop(tls, 112) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -141060,12 +146799,17 @@ _25:
 _26:
 	;
 	r = ret
-	tls.Free(112)
+	if tlsDrop(tls, 112) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var __atomic_store_ptr, __atomic_store_ptr1, __atomic_store_ptr2, __atomic_store_ptr3, p, p1, p2, ptr1, v2, v9 uintptr
 	var ret, v1, v4 TJSValue
@@ -141081,7 +146825,9 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 	p2 = _js_atomics_get_buf(tls, ctx3, *(*TJSValue)(unsafe.Pointer(argv)), *(*TJSValue)(unsafe.Pointer(argv + 1*8)), bp, 0)
 	if !(p2 != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size_log2 = libc.Int32FromUint8(_typed_array_size_log2[libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p2)).Fclass_id)-int32(EJS_CLASS_UINT8C_ARRAY)])
@@ -141104,7 +146850,9 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 	_7:
 		if v6 != 0 {
 			r = ret
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if XJS_ToBigInt64(tls, ctx3, bp+8, ret) != 0 {
@@ -141122,7 +146870,9 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -141145,7 +146895,9 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 	_19:
 		if v6 != 0 {
 			r = ret
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		v6 = XJS_ToInt32(tls, ctx3, bp+16, ret)
@@ -141166,14 +146918,18 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 				}
 			}
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(48)
+			if tlsDrop(tls, 48) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*Tint64_t)(unsafe.Pointer(bp + 8)) = libc.Int64FromUint32(*(*Tuint32_t)(unsafe.Pointer(bp + 16)))
 	}
 	if _typed_array_is_oob(tls, p2) != 0 {
 		r = _JS_ThrowTypeErrorDetachedArrayBuffer(tls, ctx3)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if *(*Tuint64_t)(unsafe.Pointer(bp)) >= uint64((*(*struct {
@@ -141200,7 +146956,9 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 		Fcount Tuint32_t
 	})(unsafe.Pointer(&(*TJSObject)(unsafe.Pointer(p2)).Fu))).Fcount) {
 		r = XJS_ThrowRangeError(tls, ctx3, __ccgo_ts+16761, 0)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ptr1 = *(*uintptr)(unsafe.Pointer(p2 + 24 + 4)) + uintptr(uint32(*(*Tuint64_t)(unsafe.Pointer(bp)))<<size_log2)
@@ -141233,12 +146991,17 @@ func _js_atomics_store(tls *libc.TLS, ctx3 uintptr, this_obj TJSValue, argc int3
 		libc.Xabort(tls)
 	}
 	r = ret
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_atomics_isLockFree(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ret int32
 	var v1 TJSValue
@@ -141246,7 +147009,9 @@ func _js_atomics_isLockFree(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc
 	_, _ = ret, v1
 	if XJS_ToInt32Sat(tls, ctx1, bp, *(*TJSValue)(unsafe.Pointer(argv))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = libc.BoolInt32(*(*int32)(unsafe.Pointer(bp)) == int32(1) || *(*int32)(unsafe.Pointer(bp)) == int32(2) || *(*int32)(unsafe.Pointer(bp)) == int32(4) || *(*int32)(unsafe.Pointer(bp)) == int32(8))
@@ -141255,7 +147020,9 @@ func _js_atomics_isLockFree(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc
 	goto _2
 _2:
 	r = v1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -141284,7 +147051,10 @@ func _cpu_pause(tls *libc.TLS) {
 //	// thread, only to hint the CPU that it should back off for a bit;
 //	// the amount of work we do here is a good enough substitute
 func _js_atomics_pause(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var tag Tuint32_t
 	var v1 int32
@@ -141333,7 +147103,9 @@ func _js_atomics_pause(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32
 			fallthrough
 		default:
 			r = XJS_ThrowTypeError(tls, ctx, __ccgo_ts+16781, 0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		case int32(EJS_TAG_UNDEFINED):
 			fallthrough
@@ -141343,12 +147115,17 @@ func _js_atomics_pause(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32
 	}
 	_cpu_pause(tls)
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_atomics_wait(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(128)
+	bp := tlsTake(tls, 128)
+	if bp == 0 {
+		bp = tls.Alloc(128)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var next1, p, prev1, ptr, waiter, v3, v4, v5, v6 uintptr
 	var res, ret, size_log2 int32
@@ -141369,7 +147146,9 @@ func _js_atomics_wait(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32,
 	p = _js_atomics_get_buf(tls, ctx, *(*TJSValue)(unsafe.Pointer(argv)), *(*TJSValue)(unsafe.Pointer(argv + 1*8)), bp+24, int32(2))
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size_log2 = libc.Int32FromUint8(_typed_array_size_log2[libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id)-int32(EJS_CLASS_UINT8C_ARRAY)])
@@ -141378,20 +147157,26 @@ func _js_atomics_wait(tls *libc.TLS, ctx uintptr, this_obj TJSValue, argc int32,
 	if size_log2 == int32(3) {
 		if XJS_ToBigInt64(tls, ctx, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 2*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(128)
+			if tlsDrop(tls, 128) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		if XJS_ToInt32(tls, ctx, bp+16, *(*TJSValue)(unsafe.Pointer(argv + 2*8))) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(128)
+			if tlsDrop(tls, 128) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*Tint64_t)(unsafe.Pointer(bp + 8)) = int64(*(*Tint32_t)(unsafe.Pointer(bp + 16)))
 	}
 	if XJS_ToFloat64(tls, ctx, bp+112, *(*TJSValue)(unsafe.Pointer(argv + 3*8))) != 0 {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* must use INT64_MAX + 1 because INT64_MAX cannot be exactly represented as a double */
@@ -141411,7 +147196,9 @@ _2:
 	}
 	if !(TBOOL(*(*uint8)(unsafe.Pointer((*TJSContext)(unsafe.Pointer(ctx)).Frt + 712))&0xff>>0)<<24>>24 != 0) {
 		r = XJS_ThrowTypeError(tls, ctx, __ccgo_ts+16804, 0)
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: inefficient if large number of waiters, should hash on
@@ -141426,7 +147213,9 @@ _2:
 	if res != 0 {
 		libc.Xpthread_mutex_unlock(tls, uintptr(unsafe.Pointer(&_js_atomics_mutex)))
 		r = XJS_AtomToString(tls, ctx, uint32(EJS_ATOM_not_equal))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	waiter = bp + 48
@@ -141469,19 +147258,28 @@ _2:
 	libc.Xpthread_cond_destroy(tls, waiter+12)
 	if ret == int32(METIMEDOUT) {
 		r = XJS_AtomToString(tls, ctx, uint32(EJS_ATOM_timed_out))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = XJS_AtomToString(tls, ctx, uint32(EJS_ATOM_ok))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(128)
+	if tlsDrop(tls, 128) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _js_atomics_notify(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, el11, el3, next1, p, prev1, ptr, waiter, v3, v5, v6, v7 uintptr
 	var n Tint32_t
@@ -141494,7 +147292,9 @@ func _js_atomics_notify(tls *libc.TLS, ctx1 uintptr, this_obj TJSValue, argc int
 	p = _js_atomics_get_buf(tls, ctx1, *(*TJSValue)(unsafe.Pointer(argv)), *(*TJSValue)(unsafe.Pointer(argv + 1*8)), bp+16, int32(1))
 	if !(p != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	size_log2 = libc.Int32FromUint8(_typed_array_size_log2[libc.Int32FromUint16((*TJSObject)(unsafe.Pointer(p)).Fclass_id)-int32(EJS_CLASS_UINT8C_ARRAY)])
@@ -141506,7 +147306,9 @@ _2:
 	} else {
 		if XJS_ToInt32Clamp(tls, ctx1, bp+8, *(*TJSValue)(unsafe.Pointer(argv + 2*8)), 0, int32(MINT32_MAX), 0) != 0 {
 			r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	}
@@ -141573,7 +147375,9 @@ _2:
 	goto _12
 _12:
 	r = v11
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -142125,7 +147929,10 @@ func _JS_AddIntrinsicAtomics(tls *libc.TLS, ctx uintptr) (r int32) {
 }
 
 func XJS_AddIntrinsicTypedArrays(tls *libc.TLS, ctx2 uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var bpe, name, p, v4, v7 uintptr
 	var i, ret, v1, v6 int32
@@ -142139,7 +147946,9 @@ func XJS_AddIntrinsicTypedArrays(tls *libc.TLS, ctx2 uintptr) (r int32) {
 _2:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = obj
@@ -142161,7 +147970,9 @@ _2:
 _9:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = obj
@@ -142183,7 +147994,9 @@ _9:
 _16:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* TypedArray.prototype.toString must be the same object as Array.prototype.toString */
@@ -142267,7 +148080,9 @@ fail:
 		}
 	}
 	r = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 _35:
 	;
@@ -142312,7 +148127,9 @@ _32:
 _54:
 	if v1 != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v3 = obj
@@ -142331,11 +148148,15 @@ _54:
 	/* Atomics */
 	if _JS_AddIntrinsicAtomics(tls, ctx2) != 0 {
 		r = -int32(1)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -142641,7 +148462,10 @@ func _js_finrec_job(tls *libc.TLS, ctx uintptr, argc int32, argv uintptr) (r TJS
 }
 
 func _finrec_delete_weakref(tls *libc.TLS, rt1 uintptr, wh uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var el1, el11, frd, fre, next, p, prev, v3, v6 uintptr
 	var v2 TJSValue
@@ -142695,7 +148519,9 @@ func _finrec_delete_weakref(tls *libc.TLS, rt1 uintptr, wh uintptr) {
 		el1 = el11
 		el11 = (*Tlist_head)(unsafe.Pointer(el1)).Fnext
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _js_finrec_constructor(tls *libc.TLS, ctx2 uintptr, new_target TJSValue, argc int32, argv uintptr) (r TJSValue) {
@@ -143345,7 +149171,10 @@ func _mp_shl1(tls *libc.TLS, tab_r uintptr, tab uintptr, n Tmp_size_t, shift int
 }
 
 func _mp_div1norm1(tls *libc.TLS, tabr uintptr, taba uintptr, n Tlimb_t, b Tlimb_t, _r Tlimb_t, b_inv Tlimb_t, shift int32) (r Tlimb_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tlimb_t)(unsafe.Pointer(bp)) = _r
 	var i Tslimb_t
@@ -143366,12 +149195,17 @@ func _mp_div1norm1(tls *libc.TLS, tabr uintptr, taba uintptr, n Tlimb_t, b Tlimb
 	}
 	*(*Tlimb_t)(unsafe.Pointer(bp)) = *(*Tlimb_t)(unsafe.Pointer(bp)) >> libc.Uint32FromInt32(shift)
 	r = *(*Tlimb_t)(unsafe.Pointer(bp))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _mpb_dump(tls *libc.TLS, str uintptr, a uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	_ = i
@@ -143391,7 +149225,9 @@ func _mpb_dump(tls *libc.TLS, str uintptr, a uintptr) {
 		i = i - 1
 	}
 	libc.Xprintf(tls, __ccgo_ts+140, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _mpb_renorm(tls *libc.TLS, r uintptr) {
@@ -143880,7 +149716,10 @@ func _limb_to_a1(tls *libc.TLS, buf uintptr, n Tlimb_t, radix uint32, len1 int32
 }
 
 func Xu32toa(tls *libc.TLS, buf uintptr, n Tuint32_t) (r Tsize_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 Tsize_t
 	var q, v1 uintptr
@@ -143896,7 +149735,9 @@ func Xu32toa(tls *libc.TLS, buf uintptr, n Tuint32_t) (r Tsize_t) {
 	len1 = libc.Uint32FromInt32(int32(bp+uintptr(10)) - int32(q))
 	libc.Xmemcpy(tls, buf, q, len1)
 	r = len1
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -143960,7 +149801,10 @@ func Xi64toa(tls *libc.TLS, buf uintptr, n Tint64_t) (r Tsize_t) {
 //
 //	/* XXX: only tested for 1 <= n < 2^53 */
 func Xu64toa_radix(tls *libc.TLS, buf uintptr, n Tuint64_t, radix uint32) (r Tsize_t) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var digit, l, radix_bits, v1 int32
 	var len1 Tsize_t
@@ -143969,7 +149813,9 @@ func Xu64toa_radix(tls *libc.TLS, buf uintptr, n Tuint64_t, radix uint32) (r Tsi
 	_, _, _, _, _, _, _ = digit, l, len1, q, radix_bits, v1, v5
 	if expect32(!!(radix == libc.Uint32FromInt32(10))) {
 		r = Xu64toa(tls, buf, n)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if radix&(radix-uint32(1)) == uint32(0) {
@@ -143987,7 +149833,9 @@ func Xu64toa_radix(tls *libc.TLS, buf uintptr, n Tuint64_t, radix uint32) (r Tsi
 		}
 		_u64toa_bin_len(tls, buf, n, libc.Uint32FromInt32(radix_bits), l)
 		r = libc.Uint32FromInt32(l)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		q = bp + uintptr(41)
@@ -144006,10 +149854,14 @@ func Xu64toa_radix(tls *libc.TLS, buf uintptr, n Tuint64_t, radix uint32) (r Tsi
 		len1 = libc.Uint32FromInt32(int32(bp+uintptr(41)) - int32(q))
 		libc.Xmemcpy(tls, buf, q, len1)
 		r = len1
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -144338,7 +150190,10 @@ func _output_digits(tls *libc.TLS, buf uintptr, a2 uintptr, radix int32, n_digit
 //	/* return (a, e_offset) such that a = a * (radix1*2^radix_shift)^f *
 //	   2^-e_offset. 'f' can be negative. */
 func _mul_pow(tls *libc.TLS, a2 uintptr, radix1 int32, radix_shift int32, f int32, is_int TBOOL, e int32) (r1 int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b2, b3, h, r, rem Tlimb_t
 	var d, e_offset, extra_bits, l, n, n0, v1, v2, v3 int32
@@ -144442,7 +150297,9 @@ func _mul_pow(tls *libc.TLS, a2 uintptr, radix1 int32, radix_shift int32, f int3
 		}
 	}
 	r1 = e_offset
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -144597,7 +150454,10 @@ func _dtoa_free(tls *libc.TLS, ptr uintptr) {
 //
 //	/* return the length */
 func Xjs_dtoa(tls *libc.TLS, buf uintptr, d1 float64, radix int32, n_digits int32, flags int32, tmp_mem uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var E, E0, E_found, E_max, P, P_found, P_max, e, fmt, i, l, len1, pow_shift, radix1, radix_shift, sgn, v1, v16, v17, v18, v20, v7 int32
 	var a4, m, m1, mant, mant_found, mant_max1, v3 Tuint64_t
@@ -144911,7 +150771,9 @@ done:
 	_dtoa_free(tls, mant_max)
 	_dtoa_free(tls, tmp1)
 	r = int32(q) - int32(buf)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -144966,7 +150828,10 @@ func _mpb_mul1_base(tls *libc.TLS, r uintptr, radix_base Tlimb_t, a Tlimb_t) {
 //
 //	/* XXX: add fast path for small integers */
 func Xjs_atod(tls *libc.TLS, str uintptr, pnext uintptr, radix int32, flags int32, tmp_mem uintptr) (r float64) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a1, m Tuint64_t
 	var c, cur_limb, extra_digits, radix_base Tlimb_t
@@ -145304,14 +151169,18 @@ done1:
 	}
 	_dtoa_free(tls, tmp0)
 	r = dval
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	dval = float64(libc.X__builtin_nanf(tls, __ccgo_ts+189))
 	goto done1
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -145650,7 +151519,10 @@ func _re_string_list_free(tls *libc.TLS, s uintptr) {
 }
 
 func _lre_print_char(tls *libc.TLS, c int32, is_range TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	if c == int32('\'') || c == int32('\\') || is_range != 0 && (c == int32('-') || c == int32(']')) {
 		libc.Xprintf(tls, __ccgo_ts+17091, libc.VaList(bp+8, c))
@@ -145661,11 +151533,16 @@ func _lre_print_char(tls *libc.TLS, c int32, is_range TBOOL) {
 			libc.Xprintf(tls, __ccgo_ts+17098, libc.VaList(bp+8, c))
 		}
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 }
 
 func _re_string_list_dump(tls *libc.TLS, str uintptr, s uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cr, p uintptr
 	var i, j, k int32
@@ -145724,7 +151601,9 @@ func _re_string_list_dump(tls *libc.TLS, str uintptr, s uintptr) {
 		;
 		i = i + 1
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func _re_string_find2(tls *libc.TLS, s uintptr, len1 int32, buf uintptr, h0 Tuint32_t, add_flag TBOOL) (r int32) {
@@ -145826,7 +151705,10 @@ func _re_string_find(tls *libc.TLS, s uintptr, len1 int32, buf uintptr, add_flag
 //
 //	/* return -1 if memory error, 0 if OK */
 func _re_string_add(tls *libc.TLS, s uintptr, len1 int32, buf uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v1 int32
 	var _ /* b_pt at bp+0 */ [2]Tuint32_t
@@ -145838,16 +151720,22 @@ func _re_string_add(tls *libc.TLS, s uintptr, len1 int32, buf uintptr) (r int32)
 		goto _2
 	_2:
 		r = v1
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _re_string_find(tls, s, len1, buf, int32(ETRUE)) < 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -145950,7 +151838,10 @@ _5:
 }
 
 func _re_string_list_canonicalize(tls *libc.TLS, s1 uintptr, s uintptr, is_unicode TBOOL) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a, p uintptr
 	var i, j int32
@@ -145958,7 +151849,9 @@ func _re_string_list_canonicalize(tls *libc.TLS, s1 uintptr, s uintptr, is_unico
 	_, _, _, _ = a, i, j, p
 	if Xcr_regexp_canonicalize(tls, s, is_unicode) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if (*TREStringList)(unsafe.Pointer(s)).Fn_strings != uint32(0) {
@@ -145997,7 +151890,9 @@ func _re_string_list_canonicalize(tls *libc.TLS, s1 uintptr, s uintptr, is_unico
 				if _re_string_add(tls, s, libc.Int32FromUint32((*TREString)(unsafe.Pointer(p)).Flen1), p+12) != 0 {
 					_re_string_list_free(tls, a)
 					r = -int32(1)
-					tls.Free(48)
+					if tlsDrop(tls, 48) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				goto _2
@@ -146013,7 +151908,9 @@ func _re_string_list_canonicalize(tls *libc.TLS, s1 uintptr, s uintptr, is_unico
 		_re_string_list_free(tls, a)
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -146468,20 +152365,27 @@ func _parse_digits(tls *libc.TLS, pp uintptr, allow_overflow TBOOL) (r int32) {
 }
 
 func _re_parse_expect(tls *libc.TLS, s uintptr, pp uintptr, c int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p uintptr
 	_ = p
 	p = *(*uintptr)(unsafe.Pointer(pp))
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p))) != c {
 		r = _re_parse_error(tls, s, __ccgo_ts+4115, libc.VaList(bp+8, c))
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = p + 1
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -146771,7 +152675,10 @@ func _seq_prop_cb(tls *libc.TLS, opaque uintptr, seq uintptr, seq_len int32) {
 }
 
 func _parse_unicode_property(tls *libc.TLS, s uintptr, cr uintptr, pp uintptr, is_inv TBOOL, allow_sequence_prop TBOOL) (r int32) {
-	bp := tls.Alloc(160)
+	bp := tlsTake(tls, 160)
+	if bp == 0 {
+		bp = tls.Alloc(160)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var p, q, v1, v2 uintptr
 	var ret int32
@@ -146783,7 +152690,9 @@ func _parse_unicode_property(tls *libc.TLS, s uintptr, cr uintptr, pp uintptr, i
 	p = *(*uintptr)(unsafe.Pointer(pp))
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p))) != int32('{') {
 		r = _re_parse_error(tls, s, __ccgo_ts+17141, 0)
-		tls.Free(160)
+		if tlsDrop(tls, 160) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = p + 1
@@ -146805,7 +152714,9 @@ func _parse_unicode_property(tls *libc.TLS, s uintptr, cr uintptr, pp uintptr, i
 		for _is_unicode_char(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p)))) != 0 {
 			if libc.Uint32FromInt32(int32(q)-t__predefined_ptrdiff_t(bp+64)) >= libc.Uint32FromInt64(64)-libc.Uint32FromInt32(1) {
 				r = _re_parse_error(tls, s, __ccgo_ts+17164, 0)
-				tls.Free(160)
+				if tlsDrop(tls, 160) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			v1 = q
@@ -146818,7 +152729,9 @@ func _parse_unicode_property(tls *libc.TLS, s uintptr, cr uintptr, pp uintptr, i
 	*(*uint8)(unsafe.Pointer(q)) = uint8('\000')
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p))) != int32('}') {
 		r = _re_parse_error(tls, s, __ccgo_ts+17195, 0)
-		tls.Free(160)
+		if tlsDrop(tls, 160) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = p + 1
@@ -146844,7 +152757,9 @@ do_script:
 		_re_string_list_free(tls, cr)
 		if ret == -int32(2) {
 			r = _re_parse_error(tls, s, __ccgo_ts+17241, 0)
-			tls.Free(160)
+			if tlsDrop(tls, 160) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			goto out_of_memory
@@ -146862,7 +152777,9 @@ _7:
 		_re_string_list_free(tls, cr)
 		if ret == -int32(2) {
 			r = _re_parse_error(tls, s, __ccgo_ts+17284, 0)
-			tls.Free(160)
+			if tlsDrop(tls, 160) {
+				tlsSignals(tls)
+			}
 			return
 		} else {
 			goto out_of_memory
@@ -146906,7 +152823,9 @@ _11:
 unknown_property_name:
 	;
 	r = _re_parse_error(tls, s, __ccgo_ts+17317, 0)
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 	return
 _12:
 	;
@@ -146940,20 +152859,29 @@ _6:
 	}
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = 0
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 	return
 	goto out_of_memory
 out_of_memory:
 	;
 	r = _re_parse_out_of_memory(tls, s)
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
 func _parse_class_string_disjunction(tls *libc.TLS, s1 uintptr, cr uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, v4 int32
 	var v2 uintptr
@@ -146964,7 +152892,9 @@ func _parse_class_string_disjunction(tls *libc.TLS, s1 uintptr, cr uintptr, pp u
 	*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(pp))
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('{') {
 		r = _re_parse_error(tls, s1, __ccgo_ts+17347, 0)
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	Xdbuf_init2(tls, bp+4, (*TREParseState)(unsafe.Pointer(s1)).Fopaque, __ccgo_fp(Xlre_realloc))
@@ -147014,7 +152944,9 @@ func _parse_class_string_disjunction(tls *libc.TLS, s1 uintptr, cr uintptr, pp u
 	Xdbuf_free(tls, bp+4)
 	*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp))
 	r = 0
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -147022,7 +152954,9 @@ fail:
 	Xdbuf_free(tls, bp+4)
 	_re_string_list_free(tls, cr)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -147032,7 +152966,10 @@ fail:
 //	   (CLASS_RANGE_BASE) if cr != NULL. In case of class range, 'cr' is
 //	   initialized. Otherwise, it is ignored. */
 func _get_class_atom(tls *libc.TLS, s uintptr, cr uintptr, pp uintptr, inclass TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c Tuint32_t
 	var ret int32
@@ -147203,7 +153140,9 @@ class_range:
 	}
 	if _cr_init_char_range(tls, s, cr, c) != 0 {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	c = c + uint32(MCLASS_RANGE_BASE)
@@ -147269,7 +153208,9 @@ _57:
 	if (*TREParseState)(unsafe.Pointer(s)).Fis_unicode != 0 && cr != 0 {
 		if _parse_unicode_property(tls, s, cr, bp, libc.BoolInt32(c == libc.Uint32FromUint8('P')), (*TREParseState)(unsafe.Pointer(s)).Funicode_sets) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		c = uint32(MCLASS_RANGE_BASE)
@@ -147281,7 +153222,9 @@ _59:
 	if (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 && cr != 0 && inclass != 0 {
 		if _parse_class_string_disjunction(tls, s, cr, bp) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		c = uint32(MCLASS_RANGE_BASE)
@@ -147309,7 +153252,9 @@ _62:
 invalid_escape:
 	;
 	r = _re_parse_error(tls, s, __ccgo_ts+17370, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 	goto _65
 _64:
@@ -147333,7 +153278,9 @@ _2:
 unexpected_end:
 	;
 	r = _re_parse_error(tls, s, __ccgo_ts+17416, 0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _66:
 	;
@@ -147380,7 +153327,9 @@ _3:
 	if (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 && uint32(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 1))) == c {
 		/* forbidden double characters */
 		r = _re_parse_error(tls, s, __ccgo_ts+17431, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto normal_char
@@ -147405,7 +153354,9 @@ _22:
 	if (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 {
 		/* invalid characters in unicode sets */
 		r = _re_parse_error(tls, s, __ccgo_ts+17481, 0)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto normal_char
@@ -147420,7 +153371,9 @@ normal_char:
 		if c > uint32(0xffff) && !((*TREParseState)(unsafe.Pointer(s)).Fis_unicode != 0) {
 			/* XXX: should handle non BMP-1 code points */
 			r = _re_parse_error(tls, s, __ccgo_ts+17530, 0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -147431,7 +153384,9 @@ _32:
 	;
 	*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp))
 	r = libc.Int32FromUint32(c)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -147691,7 +153646,10 @@ func _re_emit_string_list(tls *libc.TLS, s uintptr, sl uintptr) (r int32) {
 }
 
 func _re_parse_class_set_operand(tls *libc.TLS, s uintptr, cr1 uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c11, v1 int32
 	var p uintptr
@@ -147701,14 +153659,18 @@ func _re_parse_class_set_operand(tls *libc.TLS, s uintptr, cr1 uintptr, pp uintp
 	if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p))) == int32('[') {
 		if _re_parse_nested_class(tls, s, cr1, pp) != 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
 		c11 = _get_class_atom(tls, s, cr1, pp, int32(ETRUE))
 		if c11 < 0 {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if c11 < int32(MCLASS_RANGE_BASE) {
@@ -147725,18 +153687,25 @@ func _re_parse_class_set_operand(tls *libc.TLS, s uintptr, cr1 uintptr, pp uintp
 			if v1 != 0 {
 				_re_string_list_free(tls, cr1)
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _re_parse_nested_class(tls *libc.TLS, s uintptr, cr2 uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c12, c22 Tuint32_t
 	var cr11, cr21, v11, v13, v7 uintptr
@@ -147751,7 +153720,9 @@ func _re_parse_nested_class(tls *libc.TLS, s uintptr, cr2 uintptr, pp uintptr) (
 	cr11 = bp + 12
 	if Xlre_check_stack_overflow(tls, (*TREParseState)(unsafe.Pointer(s)).Fopaque, uint32(0)) != 0 {
 		r = _re_parse_error(tls, s, __ccgo_ts+1200, 0)
-		tls.Free(80)
+		if tlsDrop(tls, 80) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	_re_string_list_init(tls, s, cr2)
@@ -147991,7 +153962,9 @@ func _re_parse_nested_class(tls *libc.TLS, s uintptr, cr2 uintptr, pp uintptr) (
 		}
 	}
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto memory_error
 memory_error:
@@ -148002,12 +153975,17 @@ fail:
 	;
 	_re_string_list_free(tls, cr2)
 	r = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _re_parse_char_class(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cr uintptr
 	var _ /* cr_s at bp+0 */ TREStringList
@@ -148015,7 +153993,9 @@ func _re_parse_char_class(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
 	cr = bp
 	if _re_parse_nested_class(tls, s, cr, pp) != 0 {
 		r = -int32(1)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if _re_emit_string_list(tls, s, cr) != 0 {
@@ -148023,14 +154003,18 @@ func _re_parse_char_class(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
 	}
 	_re_string_list_free(tls, cr)
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
 	;
 	_re_string_list_free(tls, cr)
 	r = -int32(1)
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -148140,7 +154124,10 @@ done:
 //
 //	/* '*pp' is the first char after '<' */
 func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c6, d, v6 Tuint32_t
 	var q, v18 uintptr
@@ -148157,7 +154144,9 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 			*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(bp)) + 1
 			if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('u') {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			c6 = libc.Uint32FromInt32(Xlre_parse_escape(tls, bp, int32(2))) // accept surrogate pairs
@@ -148190,7 +154179,9 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 		}
 		if c6 > uint32(0x10FFFF) {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if q == buf {
@@ -148208,7 +154199,9 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 		_10:
 			if !(v9 != 0) {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -148230,13 +154223,17 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 		_15:
 			if !(v9 != 0) {
 				r = -int32(1)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 		if int32(q)-int32(buf)+int32(MUTF8_CHAR_LEN_MAX)+int32(1) > buf_size {
 			r = -int32(1)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		if c6 < uint32(128) {
@@ -148251,14 +154248,18 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 	}
 	if q == buf {
 		r = -int32(1)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uint8)(unsafe.Pointer(q)) = uint8('\000')
 	*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(bp)) + 1
 	*(*uintptr)(unsafe.Pointer(pp)) = *(*uintptr)(unsafe.Pointer(bp))
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -148267,7 +154268,10 @@ func _re_parse_group_name(tls *libc.TLS, buf uintptr, buf_size int32, pp uintptr
 //	/* if capture_name = NULL: return the number of captures + 1.
 //	   Otherwise, return the number of matching capture groups  */
 func _re_parse_captures(tls *libc.TLS, s1 uintptr, phas_named_captures uintptr, capture_name uintptr, emit_group_index TBOOL) (r int32) {
-	bp := tls.Alloc(144)
+	bp := tlsTake(tls, 144)
+	if bp == 0 {
+		bp = tls.Alloc(144)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var capture_index, n int32
 	var v10, v6 uintptr
@@ -148371,14 +154375,20 @@ done:
 	;
 	if capture_name != 0 {
 		r = n
-		tls.Free(144)
+		if tlsDrop(tls, 144) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		r = capture_index
-		tls.Free(144)
+		if tlsDrop(tls, 144) {
+			tlsSignals(tls)
+		}
 		return
 	}
-	tls.Free(144)
+	if tlsDrop(tls, 144) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -148462,7 +154472,10 @@ func _is_duplicate_group_name(tls *libc.TLS, s uintptr, name uintptr, scope int3
 }
 
 func _re_parse_modifiers(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var mask, val int32
 	var p uintptr
@@ -148485,7 +154498,9 @@ func _re_parse_modifiers(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
 		}
 		if mask&val != 0 {
 			r = _re_parse_error(tls, s, __ccgo_ts+17707, libc.VaList(bp+8, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(p)))))
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		mask = mask | val
@@ -148495,7 +154510,9 @@ func _re_parse_modifiers(tls *libc.TLS, s uintptr, pp uintptr) (r int32) {
 	}
 	*(*uintptr)(unsafe.Pointer(pp)) = p
 	r = mask
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -148510,7 +154527,10 @@ func _update_modifier(tls *libc.TLS, val TBOOL, add_mask int32, remove_mask int3
 }
 
 func _re_parse_term(tls *libc.TLS, s2 uintptr, is_backward_dir TBOOL) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var add_mask, c, capture_index, last_atom_start, last_capture_count, len1, n, pos, pos1, pos2, quant_max, quant_min, remove_mask, ret, v15 int32
 	var add_zero_advance_check, greedy, has_goto, is_backward_lookahead, is_forward, is_neg, saved_dotall, saved_ignore_case, saved_multi_line, v24 TBOOL
@@ -148600,7 +154620,9 @@ _4:
 	;
 	if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 {
 		r = _re_parse_error(tls, s2, __ccgo_ts+17732, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if !(_is_digit1(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 1)))) != 0) {
@@ -148630,7 +154652,9 @@ _6:
 _5:
 	;
 	r = _re_parse_error(tls, s2, __ccgo_ts+17745, 0)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _8:
 	;
@@ -148644,13 +154668,17 @@ _8:
 		(*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 		if _re_parse_disjunction(tls, s2, is_backward_dir) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*uintptr)(unsafe.Pointer(bp)) = (*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr
 		if _re_parse_expect(tls, s2, bp, int32(')')) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -148660,7 +154688,9 @@ _8:
 			add_mask = _re_parse_modifiers(tls, s2, bp)
 			if add_mask < 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) == int32('-') {
@@ -148668,18 +154698,24 @@ _8:
 				remove_mask = _re_parse_modifiers(tls, s2, bp)
 				if remove_mask < 0 {
 					r = -int32(1)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 			}
 			if add_mask == 0 && remove_mask == 0 || add_mask&remove_mask != 0 {
 				r = _re_parse_error(tls, s2, __ccgo_ts+17763, 0)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			if _re_parse_expect(tls, s2, bp, int32(':')) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			saved_ignore_case = (*TREParseState)(unsafe.Pointer(s2)).Fignore_case
@@ -148693,13 +154729,17 @@ _8:
 			(*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 			if _re_parse_disjunction(tls, s2, is_backward_dir) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*uintptr)(unsafe.Pointer(bp)) = (*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr
 			if _re_parse_expect(tls, s2, bp, int32(')')) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			(*TREParseState)(unsafe.Pointer(s2)).Fignore_case = saved_ignore_case
@@ -148736,13 +154776,17 @@ _8:
 			(*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 			if _re_parse_disjunction(tls, s2, is_backward_lookahead) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			*(*uintptr)(unsafe.Pointer(bp)) = (*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr
 			if _re_parse_expect(tls, s2, bp, int32(')')) != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			_re_emit_op(tls, s2, int32(EREOP_lookahead_match)+is_neg)
@@ -148752,7 +154796,9 @@ _8:
 		_25:
 			if v24 != 0 {
 				r = -int32(1)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			(*Tpacked_u32)(unsafe.Pointer((*TREParseState)(unsafe.Pointer(s2)).Fbyte_code.Fbuf + uintptr(pos))).Fv = (*TREParseState)(unsafe.Pointer(s2)).Fbyte_code.Fsize - libc.Uint32FromInt32(pos+libc.Int32FromInt32(4))
@@ -148763,7 +154809,9 @@ _8:
 				*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(bp)) + uintptr(3)
 				if _re_parse_group_name(tls, s2+104, int32(128), bp) != 0 {
 					r = _re_parse_error(tls, s2, __ccgo_ts+17781, 0)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* poor's man method to test duplicate group
@@ -148771,7 +154819,9 @@ _8:
 				/* XXX: this method does not catch all the errors*/
 				if _is_duplicate_group_name(tls, s2, s2+104, libc.Int32FromUint8((*TREParseState)(unsafe.Pointer(s2)).Fgroup_name_scope)) != 0 {
 					r = _re_parse_error(tls, s2, __ccgo_ts+17800, 0)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				}
 				/* group name with a trailing zero */
@@ -148795,7 +154845,9 @@ _8:
 				goto parse_capture
 			} else {
 				r = _re_parse_error(tls, s2, __ccgo_ts+17821, 0)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		_23:
@@ -148843,7 +154895,9 @@ parse_capture:
 	;
 	if (*TREParseState)(unsafe.Pointer(s2)).Fcapture_count >= int32(MCAPTURE_COUNT_MAX) {
 		r = _re_parse_error(tls, s2, __ccgo_ts+17835, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	last_atom_start = libc.Int32FromUint32((*TREParseState)(unsafe.Pointer(s2)).Fbyte_code.Fsize)
@@ -148856,14 +154910,18 @@ parse_capture:
 	(*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 	if _re_parse_disjunction(tls, s2, is_backward_dir) != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	*(*uintptr)(unsafe.Pointer(bp)) = (*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr
 	_re_emit_op_u8(tls, s2, int32(EREOP_save_start)+libc.Int32FromInt32(1)-is_backward_dir, libc.Uint32FromInt32(capture_index))
 	if _re_parse_expect(tls, s2, bp, int32(')')) != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 _19:
@@ -148899,7 +154957,9 @@ _9:
 			   definition */
 			if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 || _re_has_named_captures(tls, s2) != 0 {
 				r = _re_parse_error(tls, s2, __ccgo_ts+17853, 0)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				goto parse_class_atom
@@ -148909,7 +154969,9 @@ _9:
 		if _re_parse_group_name(tls, s2+104, int32(128), bp+44) != 0 {
 			if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 || _re_has_named_captures(tls, s2) != 0 {
 				r = _re_parse_error(tls, s2, __ccgo_ts+17781, 0)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			} else {
 				goto parse_class_atom
@@ -148924,7 +154986,9 @@ _9:
 			if n == 0 {
 				if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 || _re_has_named_captures(tls, s2) != 0 {
 					r = _re_parse_error(tls, s2, __ccgo_ts+17874, 0)
-					tls.Free(64)
+					if tlsDrop(tls, 64) {
+						tlsSignals(tls)
+					}
 					return
 				} else {
 					goto parse_class_atom
@@ -148948,7 +155012,9 @@ _9:
 		if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 {
 			if _is_digit1(tls, libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)))))) != 0 {
 				r = _re_parse_error(tls, s2, __ccgo_ts+17897, 0)
-				tls.Free(64)
+				if tlsDrop(tls, 64) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -149015,7 +155081,9 @@ _9:
 				goto normal_char
 			}
 			r = _re_parse_error(tls, s2, __ccgo_ts+17942, 0)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		last_atom_start = libc.Int32FromUint32((*TREParseState)(unsafe.Pointer(s2)).Fbyte_code.Fsize)
@@ -149049,7 +155117,9 @@ _10:
 	}
 	if _re_parse_char_class(tls, s2, bp) != 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if is_backward_dir != 0 {
@@ -149062,7 +155132,9 @@ _11:
 	;
 	if (*TREParseState)(unsafe.Pointer(s2)).Fis_unicode != 0 {
 		r = _re_parse_error(tls, s2, __ccgo_ts+17732, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto parse_class_atom
@@ -149074,7 +155146,9 @@ parse_class_atom:
 	c = _get_class_atom(tls, s2, cr, bp, int32(EFALSE))
 	if c < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	goto normal_char
@@ -149100,7 +155174,9 @@ normal_char:
 		_re_string_list_free(tls, cr)
 		if ret != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	} else {
@@ -149178,7 +155254,9 @@ _14:
 	invalid_quant_count:
 		;
 		r = _re_parse_error(tls, s2, __ccgo_ts+17992, 0)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	_66:
 		;
@@ -149197,7 +155275,9 @@ _14:
 		}
 		if _re_parse_expect(tls, s2, bp, int32('}')) != 0 {
 			r = -int32(1)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		goto quantifier
@@ -149210,7 +155290,9 @@ _14:
 		}
 		if last_atom_start < 0 {
 			r = _re_parse_error(tls, s2, __ccgo_ts+17745, 0)
-			tls.Free(64)
+			if tlsDrop(tls, 64) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		/* the spec tells that if there is no advance when
@@ -149361,15 +155443,21 @@ _14:
 	}
 	(*TREParseState)(unsafe.Pointer(s2)).Fbuf_ptr = *(*uintptr)(unsafe.Pointer(bp))
 	r = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 	goto out_of_memory
 out_of_memory:
 	;
 	r = _re_parse_out_of_memory(tls, s2)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -149532,7 +155620,10 @@ func _lre_bytecode_realloc(tls *libc.TLS, opaque uintptr, ptr uintptr, size Tsiz
 //	   otherwise the compiled bytecode and its length in plen.
 //	*/
 func Xlre_compile(tls *libc.TLS, plen uintptr, error_msg uintptr, error_msg_size int32, buf uintptr, buf_len Tsize_t, re_flags int32, opaque uintptr) (r uintptr) {
-	bp := tls.Alloc(240)
+	bp := tlsTake(tls, 240)
+	if bp == 0 {
+		bp = tls.Alloc(240)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var is_sticky, v18 TBOOL
 	var register_count int32
@@ -149641,7 +155732,9 @@ error:
 	Xpstrcpy(tls, error_msg, error_msg_size, s4+104)
 	*(*int32)(unsafe.Pointer(plen)) = 0
 	r = libc.UintptrFromInt32(0)
-	tls.Free(240)
+	if tlsDrop(tls, 240) {
+		tlsSignals(tls)
+	}
 	return
 _17:
 	;
@@ -149675,7 +155768,9 @@ _19:
 	*(*uint8)(unsafe.Pointer(error_msg)) = uint8('\000')
 	*(*int32)(unsafe.Pointer(plen)) = libc.Int32FromUint32((*TREParseState)(unsafe.Pointer(s4)).Fbyte_code.Fsize)
 	r = (*TREParseState)(unsafe.Pointer(s4)).Fbyte_code.Fbuf
-	tls.Free(240)
+	if tlsDrop(tls, 240) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -151140,7 +157235,10 @@ func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cin
 		return skip.index
 	}
 	cindex = skip.index
-	bp := tls.Alloc(176)
+	bp := tlsTake(tls, 176)
+	if bp == 0 {
+		bp = tls.Alloc(176)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cptr, p, s uintptr
 	var i, re_flags, ret int32
@@ -151194,7 +157292,9 @@ func Xlre_exec(tls *libc.TLS, capture uintptr, bc_buf uintptr, cbuf uintptr, cin
 		Xlre_realloc(tls, (*TREExecContext)(unsafe.Pointer(s)).Fopaque, (*TREExecContext)(unsafe.Pointer(s)).Fstack_buf, uint32(0))
 	}
 	r = ret
-	tls.Free(176)
+	if tlsDrop(tls, 176) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -181489,12 +187589,17 @@ const ERUN_TYPE_LF_EXT2 = 12
 const ERUN_TYPE_UF_EXT3 = 13
 
 func _lre_case_conv1(tls *libc.TLS, c Tuint32_t, conv_type int32) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* res at bp+0 */ [3]Tuint32_t
 	Xlre_case_conv(tls, bp, c, conv_type)
 	r = libc.Int32FromUint32((*(*[3]Tuint32_t)(unsafe.Pointer(bp)))[0])
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -181644,7 +187749,10 @@ func Xlre_case_conv(tls *libc.TLS, res uintptr, c Tuint32_t, conv_type int32) (r
 }
 
 func _lre_case_folding_entry(tls *libc.TLS, c Tuint32_t, idx Tuint32_t, v Tuint32_t, is_unicode TBOOL) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var len1 int32
 	var _ /* res at bp+0 */ [3]Tuint32_t
@@ -181682,7 +187790,9 @@ func _lre_case_folding_entry(tls *libc.TLS, c Tuint32_t, idx Tuint32_t, v Tuint3
 		}
 	}
 	r = libc.Int32FromUint32(c)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -181766,7 +187876,10 @@ func _get_index_pos(tls *libc.TLS, pcode uintptr, c Tuint32_t, index_table uintp
 }
 
 func _lre_is_in_table(tls *libc.TLS, c Tuint32_t, table uintptr, index_table uintptr, index_table_len int32) (r TBOOL) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, bit Tuint32_t
 	var p, v2 uintptr
@@ -181776,7 +187889,9 @@ func _lre_is_in_table(tls *libc.TLS, c Tuint32_t, table uintptr, index_table uin
 	pos = _get_index_pos(tls, bp, c, index_table, index_table_len)
 	if pos < 0 {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	} /* outside the table */
 	p = table + uintptr(pos)
@@ -181797,7 +187912,9 @@ func _lre_is_in_table(tls *libc.TLS, c Tuint32_t, table uintptr, index_table uin
 			*(*Tuint32_t)(unsafe.Pointer(bp)) = *(*Tuint32_t)(unsafe.Pointer(bp)) + (b>>libc.Int32FromInt32(3) + uint32(1))
 			if c < *(*Tuint32_t)(unsafe.Pointer(bp)) {
 				r = libc.Int32FromUint32(bit)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			bit = bit ^ uint32(1)
@@ -181817,14 +187934,18 @@ func _lre_is_in_table(tls *libc.TLS, c Tuint32_t, table uintptr, index_table uin
 		}
 		if c < *(*Tuint32_t)(unsafe.Pointer(bp)) {
 			r = libc.Int32FromUint32(bit)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		bit = bit ^ uint32(1)
 		goto _1
 	_1:
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -181859,7 +187980,10 @@ func Xlre_is_case_ignorable(tls *libc.TLS, c Tuint32_t) (r TBOOL) {
 /* character range */
 
 func _cr_dump(tls *libc.TLS, cr uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i int32
 	_ = i
@@ -181874,7 +187998,9 @@ func _cr_dump(tls *libc.TLS, cr uintptr) {
 		;
 		i = i + 1
 	}
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 }
 
 func _cr_default_realloc(tls *libc.TLS, opaque uintptr, ptr uintptr, size Tsize_t) (r uintptr) {
@@ -182070,7 +188196,10 @@ func Xcr_op(tls *libc.TLS, cr1 uintptr, a_pt uintptr, a_len int32, b_pt uintptr,
 }
 
 func Xcr_op1(tls *libc.TLS, cr uintptr, b_pt uintptr, b_len int32, op int32) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ret int32
 	var _ /* a at bp+0 */ TCharRange
@@ -182082,7 +188211,9 @@ func Xcr_op1(tls *libc.TLS, cr uintptr, b_pt uintptr, b_len int32, op int32) (r 
 	ret = Xcr_op(tls, cr, (*(*TCharRange)(unsafe.Pointer(bp))).Fpoints, (*(*TCharRange)(unsafe.Pointer(bp))).Flen1, b_pt, b_len, op)
 	Xcr_free(tls, bp)
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -182360,7 +188491,10 @@ func _cr_sort_and_remove_overlap(tls *libc.TLS, cr uintptr) {
 //	/* canonicalize a character set using the JS regex case folding rules
 //	   (see lre_canonicalize()) */
 func Xcr_regexp_canonicalize(tls *libc.TLS, cr1 uintptr, is_unicode TBOOL) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, code, d, d_end, d_start, end, i, idx, len1, start, v Tuint32_t
 	var v1, v7, v9 int32
@@ -182500,7 +188634,9 @@ func Xcr_regexp_canonicalize(tls *libc.TLS, cr1 uintptr, is_unicode TBOOL) (r in
 	Xcr_free(tls, bp+40)
 	Xcr_free(tls, bp+60)
 	r = 0
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -182510,7 +188646,9 @@ fail:
 	Xcr_free(tls, bp+40)
 	Xcr_free(tls, bp+60)
 	r = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -182927,7 +189065,10 @@ func _unicode_decomp_char(tls *libc.TLS, res uintptr, c Tuint32_t, is_compat1 TB
 //
 //	/* return 0 if no pair found */
 func _unicode_compose_pair(tls *libc.TLS, c0 Tuint32_t, c1 Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ch, code, d_idx, d_offset, idx1, len1, type1, v Tuint32_t
 	var d, idx, idx_max, idx_min int32
@@ -182958,13 +189099,17 @@ func _unicode_compose_pair(tls *libc.TLS, c0 Tuint32_t, c1 Tuint32_t) (r int32) 
 				idx_min = idx + int32(1)
 			} else {
 				r = libc.Int32FromUint32(ch)
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		}
 	}
 	r = 0
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -182972,7 +189117,10 @@ func _unicode_compose_pair(tls *libc.TLS, c0 Tuint32_t, c1 Tuint32_t) (r int32) 
 //
 //	/* return the combining class of character c (between 0 and 255) */
 func _unicode_get_cc(tls *libc.TLS, c Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, c1, cc, n, type1 Tuint32_t
 	var p, v2 uintptr
@@ -182982,7 +189130,9 @@ func _unicode_get_cc(tls *libc.TLS, c Tuint32_t) (r int32) {
 	pos = _get_index_pos(tls, bp, c, uintptr(unsafe.Pointer(&_unicode_cc_index)), libc.Int32FromUint32(libc.Uint32FromInt64(90)/libc.Uint32FromInt32(3)))
 	if pos < 0 {
 		r = 0
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	p = uintptr(unsafe.Pointer(&_unicode_cc_table)) + uintptr(pos)
@@ -183037,14 +189187,18 @@ func _unicode_get_cc(tls *libc.TLS, c Tuint32_t) (r int32) {
 				break
 			}
 			r = libc.Int32FromUint32(cc)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		*(*Tuint32_t)(unsafe.Pointer(bp)) = c1
 		goto _1
 	_1:
 	}
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -183087,7 +189241,10 @@ func _sort_cc(tls *libc.TLS, buf uintptr, len1 int32) {
 }
 
 func _to_nfd_rec(tls *libc.TLS, dbuf uintptr, src uintptr, src_len int32, is_compat int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, v, v3 Tuint32_t
 	var i, l int32
@@ -183168,7 +189325,9 @@ func _to_nfd_rec(tls *libc.TLS, dbuf uintptr, src uintptr, src_len int32, is_com
 		;
 		i = i + 1
 	}
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 }
 
 // C documentation
@@ -183191,7 +189350,10 @@ func _compose_pair(tls *libc.TLS, c0 Tuint32_t, c1 Tuint32_t) (r int32) {
 type t__ccgo_fp__Xunicode_normalize_5 = func(*libc.TLS, uintptr, uintptr, uint32) uintptr
 
 func Xunicode_normalize(tls *libc.TLS, pdst uintptr, src uintptr, src_len int32, n_type TUnicodeNormalizationEnum, opaque uintptr, __ccgo_fp_realloc_func uintptr) (r int32) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, dbuf uintptr
 	var buf_len, cc, i, last_cc, out_len, p, starter_pos, v11, v9 int32
@@ -183226,7 +189388,9 @@ func Xunicode_normalize(tls *libc.TLS, pdst uintptr, src uintptr, src_len int32,
 		}
 		*(*uintptr)(unsafe.Pointer(pdst)) = buf
 		r = src_len
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 		goto not_latin1
 	not_latin1:
@@ -183243,7 +189407,9 @@ fail:
 	;
 	*(*uintptr)(unsafe.Pointer(pdst)) = libc.UintptrFromInt32(0)
 	r = -int32(1)
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 _2:
 	;
@@ -183254,7 +189420,9 @@ _2:
 		/* NFD / NFKD */
 		*(*uintptr)(unsafe.Pointer(pdst)) = buf
 		r = buf_len
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = int32(1)
@@ -183306,7 +189474,9 @@ _5:
 	;
 	*(*uintptr)(unsafe.Pointer(pdst)) = buf
 	r = out_len
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -183348,7 +189518,10 @@ func _unicode_find_name(tls *libc.TLS, name_table uintptr, name uintptr) (r1 int
 //	/* 'cr' must be initialized and empty. Return 0 if OK, -1 if error, -2
 //	   if not found */
 func Xunicode_script(tls *libc.TLS, cr1 uintptr, script_name uintptr, is_ext TBOOL) (r int32) {
-	bp := tls.Alloc(48)
+	bp := tlsTake(tls, 48)
+	if bp == 0 {
+		bp = tls.Alloc(48)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var b, c, c11, i, n, type1, v, v_len Tuint32_t
 	var cr11, cr2, p, p_end, v1, v2, v3 uintptr
@@ -183361,7 +189534,9 @@ func Xunicode_script(tls *libc.TLS, cr1 uintptr, script_name uintptr, is_ext TBO
 	script_idx = _unicode_find_name(tls, uintptr(unsafe.Pointer(&_unicode_script_name_table)), script_name)
 	if script_idx < 0 {
 		r = -int32(2)
-		tls.Free(48)
+		if tlsDrop(tls, 48) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	is_common = libc.BoolInt32(script_idx == int32(EUNICODE_SCRIPT_Common) || script_idx == int32(EUNICODE_SCRIPT_Inherited))
@@ -183550,7 +189725,9 @@ func Xunicode_script(tls *libc.TLS, cr1 uintptr, script_name uintptr, is_ext TBO
 		Xcr_free(tls, cr2)
 	}
 	r = 0
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -183560,7 +189737,9 @@ fail:
 		Xcr_free(tls, cr2)
 	}
 	goto fail
-	tls.Free(48)
+	if tlsDrop(tls, 48) {
+		tlsSignals(tls)
+	}
 	return r
 }
 
@@ -183796,7 +189975,10 @@ const EPOP_INVERT = 6
 const EPOP_END = 7
 
 func _unicode_prop_ops(tls *libc.TLS, cr uintptr, va uintptr) (r int32) {
-	bp := tls.Alloc(80)
+	bp := tlsTake(tls, 80)
+	if bp == 0 {
+		bp = tls.Alloc(80)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var a Tuint32_t
 	var ap Tva_list
@@ -183870,7 +190052,9 @@ done:
 	ret = Xcr_copy(tls, cr, bp)
 	Xcr_free(tls, bp)
 	r = ret
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 	goto fail
 fail:
@@ -183887,7 +190071,9 @@ fail:
 		i = i + 1
 	}
 	r = -int32(1)
-	tls.Free(80)
+	if tlsDrop(tls, 80) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -183927,7 +190113,10 @@ func Xunicode_general_category(tls *libc.TLS, cr uintptr, gc_name uintptr) (r in
 //	/* 'cr' must be initialized and empty. Return 0 if OK, -1 if error, -2
 //	   if not found */
 func Xunicode_prop(tls *libc.TLS, cr1 uintptr, prop_name uintptr) (r int32) {
-	bp := tls.Alloc(160)
+	bp := tlsTake(tls, 160)
+	if bp == 0 {
+		bp = tls.Alloc(160)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var prop_idx, ret, v2, v4, v6 int32
 	var v1, v5, v7 uintptr
@@ -183935,7 +190124,9 @@ func Xunicode_prop(tls *libc.TLS, cr1 uintptr, prop_name uintptr) (r int32) {
 	prop_idx = _unicode_find_name(tls, uintptr(unsafe.Pointer(&_unicode_prop_name_table)), prop_name)
 	if prop_idx < 0 {
 		r = -int32(2)
-		tls.Free(160)
+		if tlsDrop(tls, 160) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	prop_idx = prop_idx + int32(EUNICODE_PROP_ASCII_Hex_Digit)
@@ -183962,7 +190153,9 @@ func Xunicode_prop(tls *libc.TLS, cr1 uintptr, prop_name uintptr) (r int32) {
 	_3:
 		if v2 != 0 {
 			r = -int32(1)
-			tls.Free(160)
+			if tlsDrop(tls, 160) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	case int32(EUNICODE_PROP_Any):
@@ -183986,7 +190179,9 @@ func Xunicode_prop(tls *libc.TLS, cr1 uintptr, prop_name uintptr) (r int32) {
 	_10:
 		if v2 != 0 {
 			r = -int32(1)
-			tls.Free(160)
+			if tlsDrop(tls, 160) {
+				tlsSignals(tls)
+			}
 			return
 		}
 	case int32(EUNICODE_PROP_Assigned):
@@ -184029,14 +190224,18 @@ func Xunicode_prop(tls *libc.TLS, cr1 uintptr, prop_name uintptr) (r int32) {
 	default:
 		if libc.Uint32FromInt32(prop_idx) >= libc.Uint32FromInt64(228)/libc.Uint32FromInt64(4) {
 			r = -int32(2)
-			tls.Free(160)
+			if tlsDrop(tls, 160) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		ret = _unicode_prop1(tls, cr1, prop_idx)
 		break
 	}
 	r = ret
-	tls.Free(160)
+	if tlsDrop(tls, 160) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -184094,7 +190293,10 @@ func Xlre_is_space_non_ascii(tls *libc.TLS, c Tuint32_t) (r TBOOL) {
 }
 
 func _unicode_sequence_prop1(tls *libc.TLS, seq_prop_idx int32, __ccgo_fp_cb uintptr, opaque uintptr, cr uintptr) (r int32) {
-	bp := tls.Alloc(64)
+	bp := tlsTake(tls, 64)
+	if bp == 0 {
+		bp = tls.Alloc(64)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, c0, c1, code, hc_idx, hc_pos, i, i0, i1, j, k, len1, mod, mod1, mod_count, mod_idx, n_hc, n_mod, pres, ret, v20 int32
 	var mod_pos [2]int32
@@ -184124,7 +190326,9 @@ _1:
 	;
 	if _unicode_prop1(tls, cr, int32(EUNICODE_PROP_Basic_Emoji1)) < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -184152,7 +190356,9 @@ _1:
 	(*TCharRange)(unsafe.Pointer(cr)).Flen1 = 0
 	if _unicode_prop1(tls, cr, int32(EUNICODE_PROP_Basic_Emoji2)) < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -184183,7 +190389,9 @@ _2:
 	;
 	if _unicode_prop1(tls, cr, int32(EUNICODE_PROP_Emoji_Modifier_Base)) < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -184224,7 +190432,9 @@ _3:
 	;
 	if _unicode_prop1(tls, cr, int32(EUNICODE_PROP_RGI_Emoji_Flag_Sequence)) < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -184415,7 +190625,9 @@ _6:
 	;
 	if _unicode_prop1(tls, cr, int32(EUNICODE_PROP_Emoji_Keycap_Sequence)) < 0 {
 		r = -int32(1)
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	i = 0
@@ -184455,7 +190667,9 @@ _41:
 	ret = _unicode_sequence_prop1(tls, i, __ccgo_fp_cb, opaque, cr)
 	if ret < 0 {
 		r = ret
-		tls.Free(64)
+		if tlsDrop(tls, 64) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*TCharRange)(unsafe.Pointer(cr)).Flen1 = 0
@@ -184471,12 +190685,16 @@ _39:
 _8:
 	;
 	r = -int32(2)
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 _9:
 	;
 	r = 0
-	tls.Free(64)
+	if tlsDrop(tls, 64) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -184642,38 +190860,58 @@ func Xdbuf_put_self(tls *libc.TLS, s uintptr, offset Tsize_t, len1 Tsize_t) (r i
 }
 
 func X__dbuf_putc(tls *libc.TLS, s uintptr, _c Tuint8_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint8_t)(unsafe.Pointer(bp)) = _c
 	r = Xdbuf_put(tls, s, bp, uint32(1))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func X__dbuf_put_u16(tls *libc.TLS, s uintptr, _val Tuint16_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint16_t)(unsafe.Pointer(bp)) = _val
 	r = Xdbuf_put(tls, s, bp, uint32(2))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func X__dbuf_put_u32(tls *libc.TLS, s uintptr, _val Tuint32_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint32_t)(unsafe.Pointer(bp)) = _val
 	r = Xdbuf_put(tls, s, bp, uint32(4))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func X__dbuf_put_u64(tls *libc.TLS, s uintptr, _val Tuint64_t) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	*(*Tuint64_t)(unsafe.Pointer(bp)) = _val
 	r = Xdbuf_put(tls, s, bp, uint32(8))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -184682,7 +190920,10 @@ func Xdbuf_putstr(tls *libc.TLS, s uintptr, str uintptr) (r int32) {
 }
 
 func Xdbuf_printf(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) (r int32) {
-	bp := tls.Alloc(128)
+	bp := tlsTake(tls, 128)
+	if bp == 0 {
+		bp = tls.Alloc(128)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var ap Tva_list
 	var len1 int32
@@ -184693,18 +190934,24 @@ func Xdbuf_printf(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) (r int32) {
 	_ = ap
 	if len1 < 0 {
 		r = -int32(1)
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if libc.Uint32FromInt32(len1) < uint32(128) {
 		/* fast case */
 		r = Xdbuf_put(tls, s, bp, libc.Uint32FromInt32(len1))
-		tls.Free(128)
+		if tlsDrop(tls, 128) {
+			tlsSignals(tls)
+		}
 		return
 	} else {
 		if Xdbuf_claim(tls, s, libc.Uint32FromInt32(len1+int32(1))) != 0 {
 			r = -int32(1)
-			tls.Free(128)
+			if tlsDrop(tls, 128) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		ap = va
@@ -184713,7 +190960,9 @@ func Xdbuf_printf(tls *libc.TLS, s uintptr, fmt uintptr, va uintptr) (r int32) {
 		*(*Tsize_t)(unsafe.Pointer(s + 4)) += libc.Uint32FromInt32(len1)
 	}
 	r = 0
-	tls.Free(128)
+	if tlsDrop(tls, 128) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -185318,7 +191567,10 @@ type t__ccgo_fp__Xrqsort_3 = func(*libc.TLS, uintptr, uintptr, uintptr) int32
 //
 //	/* pointer based version with local stack and insertion sort threshhold */
 func Xrqsort(tls *libc.TLS, base uintptr, nmemb Tsize_t, size Tsize_t, __ccgo_fp_cmp Tcmp_f, opaque uintptr) {
-	bp := tls.Alloc(608)
+	bp := tlsTake(tls, 608)
+	if bp == 0 {
+		bp = tls.Alloc(608)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var c, depth, v1 int32
 	var gt, i, lt, m4, span, span2, v2 Tsize_t
@@ -185335,7 +191587,9 @@ func Xrqsort(tls *libc.TLS, base uintptr, nmemb Tsize_t, size Tsize_t, __ccgo_fp
 	swap = _exchange_func(tls, base, size)
 	swap_block = _exchange_func(tls, base, size|uint32(128))
 	if nmemb < uint32(2) || size <= uint32(0) {
-		tls.Free(608)
+		if tlsDrop(tls, 608) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	(*struct {
@@ -185536,7 +191790,9 @@ func Xrqsort(tls *libc.TLS, base uintptr, nmemb Tsize_t, size Tsize_t, __ccgo_fp
 			pi = pi + uintptr(size)
 		}
 	}
-	tls.Free(608)
+	if tlsDrop(tls, 608) {
+		tlsSignals(tls)
+	}
 }
 
 // Changed by internal/fixlib: the functions and tables of quickjs-libc.c that only its std, os and Worker modules reach are dropped (see fixQuickJSLibc).
@@ -187061,7 +193317,10 @@ _1:
 //
 //	/* load and evaluate a file */
 func _js_loadScript(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, filename, v1 uintptr
 	var ret TJSValue
@@ -187073,7 +193332,9 @@ _2:
 	filename = v1
 	if !(filename != 0) {
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	buf = Xjs_load_file(tls, ctx1, bp, filename)
@@ -187081,19 +193342,26 @@ _2:
 		XJS_ThrowReferenceError(tls, ctx1, __ccgo_ts+18185, libc.VaList(bp+16, filename))
 		XJS_FreeCString(tls, ctx1, filename)
 		r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-		tls.Free(32)
+		if tlsDrop(tls, 32) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	ret = XJS_Eval(tls, ctx1, buf, *(*Tsize_t)(unsafe.Pointer(bp)), filename, libc.Int32FromInt32(0)<<libc.Int32FromInt32(0))
 	Xjs_free(tls, ctx1, buf)
 	XJS_FreeCString(tls, ctx1, filename)
 	r = ret
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_module_loader_so(tls *libc.TLS, ctx uintptr, module_name uintptr) (r uintptr) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var filename, hd, init1, m uintptr
 	_, _, _, _ = filename, hd, init1, m
@@ -187103,7 +193371,9 @@ func _js_module_loader_so(tls *libc.TLS, ctx uintptr, module_name uintptr) (r ui
 		filename = Xjs_malloc(tls, ctx, libc.Xstrlen(tls, module_name)+uint32(2)+uint32(1))
 		if !(filename != 0) {
 			r = libc.UintptrFromInt32(0)
-			tls.Free(16)
+			if tlsDrop(tls, 16) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		libc.Xstrcpy(tls, filename, __ccgo_ts+18205)
@@ -187137,17 +193407,24 @@ fail:
 		libc.Xdlclose(tls, hd)
 	}
 	r = libc.UintptrFromInt32(0)
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 _1:
 	;
 	r = m
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func Xjs_module_set_import_meta(tls *libc.TLS, ctx4 uintptr, func_val TJSValue, use_realpath int32, is_main int32) (r int32) {
-	bp := tls.Alloc(4112)
+	bp := tlsTake(tls, 4112)
+	if bp == 0 {
+		bp = tls.Alloc(4112)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var m, module_name, p, res, v1, v5 uintptr
 	var meta_obj, v6 TJSValue
@@ -187164,7 +193441,9 @@ _2:
 	XJS_FreeAtom(tls, ctx4, module_name_atom)
 	if !(module_name != 0) {
 		r = -int32(1)
-		tls.Free(4112)
+		if tlsDrop(tls, 4112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	if !(libc.Xstrchr(tls, module_name, int32(':')) != 0) {
@@ -187178,7 +193457,9 @@ _2:
 				XJS_ThrowTypeError(tls, ctx4, __ccgo_ts+18405, 0)
 				XJS_FreeCString(tls, ctx4, module_name)
 				r = -int32(1)
-				tls.Free(4112)
+				if tlsDrop(tls, 4112) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -187194,7 +193475,9 @@ _2:
 _4:
 	if v3 != 0 {
 		r = -int32(1)
-		tls.Free(4112)
+		if tlsDrop(tls, 4112) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v1 = bp
@@ -187221,7 +193504,9 @@ _9:
 		}
 	}
 	r = 0
-	tls.Free(4112)
+	if tlsDrop(tls, 4112) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -187265,7 +193550,10 @@ func _create_json_module(tls *libc.TLS, ctx1 uintptr, module_name uintptr, val T
 //
 //	/* return > 0 if the attributes indicate a JSON module */
 func Xjs_module_test_json(tls *libc.TLS, ctx2 uintptr, attributes TJSValue) (r int32) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var cstr, p, v6, v9 uintptr
 	var res TBOOL
@@ -187278,7 +193566,9 @@ func Xjs_module_test_json(tls *libc.TLS, ctx2 uintptr, attributes TJSValue) (r i
 _2:
 	if v1 != 0 {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	str = XJS_GetPropertyStr(tls, ctx2, attributes, __ccgo_ts+18439)
@@ -187288,7 +193578,9 @@ _2:
 _5:
 	if !(v1 != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	v6 = XJS_ToCStringLen2(tls, ctx2, bp, str, 0)
@@ -187310,7 +193602,9 @@ _7:
 	}
 	if !(cstr != 0) {
 		r = int32(EFALSE)
-		tls.Free(16)
+		if tlsDrop(tls, 16) {
+			tlsSignals(tls)
+		}
 		return
 	}
 	/* XXX: raise an error if unknown type ? */
@@ -187325,12 +193619,17 @@ _7:
 	}
 	XJS_FreeCString(tls, ctx2, cstr)
 	r = res
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func Xjs_module_loader(tls *libc.TLS, ctx1 uintptr, module_name uintptr, opaque uintptr, attributes TJSValue) (r uintptr) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var buf, m, p, v6, v9 uintptr
 	var flags, res, v1 int32
@@ -187344,7 +193643,9 @@ func Xjs_module_loader(tls *libc.TLS, ctx1 uintptr, module_name uintptr, opaque 
 		if !(buf != 0) {
 			XJS_ThrowReferenceError(tls, ctx1, __ccgo_ts+18498, libc.VaList(bp+16, module_name))
 			r = libc.UintptrFromInt32(0)
-			tls.Free(32)
+			if tlsDrop(tls, 32) {
+				tlsSignals(tls)
+			}
 			return
 		}
 		res = Xjs_module_test_json(tls, ctx1, attributes)
@@ -187361,13 +193662,17 @@ func Xjs_module_loader(tls *libc.TLS, ctx1 uintptr, module_name uintptr, opaque 
 		_2:
 			if v1 != 0 {
 				r = libc.UintptrFromInt32(0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			m = _create_json_module(tls, ctx1, module_name, val)
 			if !(m != 0) {
 				r = libc.UintptrFromInt32(0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 		} else {
@@ -187379,7 +193684,9 @@ func Xjs_module_loader(tls *libc.TLS, ctx1 uintptr, module_name uintptr, opaque 
 		_4:
 			if v1 != 0 {
 				r = libc.UintptrFromInt32(0)
-				tls.Free(32)
+				if tlsDrop(tls, 32) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			/* XXX: could propagate the exception */
@@ -187402,7 +193709,9 @@ func Xjs_module_loader(tls *libc.TLS, ctx1 uintptr, module_name uintptr, opaque 
 		}
 	}
 	r = m
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -187430,17 +193739,25 @@ func _get_time_ns(tls *libc.TLS) (r Tint64_t) {
 }
 
 func _get_time_ns_libc(tls *libc.TLS) (r Tint64_t) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* ts at bp+0 */ Ttimespec
 	libc.Xclock_gettime(tls, int32(MCLOCK_MONOTONIC), bp)
 	r = libc.Int64FromUint64(libc.Uint64FromInt64((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_sec)*uint64(1000000000) + libc.Uint64FromInt32((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_nsec))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
 func _js_os_now(tls *libc.TLS, ctx2 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(32)
+	bp := tlsTake(tls, 32)
+	if bp == 0 {
+		bp = tls.Alloc(32)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var v, v2, v4 TJSValue
 	var val Tint32_t
@@ -187485,7 +193802,9 @@ _5:
 	goto _3
 _3:
 	r = v2
-	tls.Free(32)
+	if tlsDrop(tls, 32) {
+		tlsSignals(tls)
+	}
 	return
 }
 
@@ -187516,7 +193835,10 @@ type t__ccgo_fp__Xjs_std_set_worker_new_context_func_0 = func(*libc.TLS, uintptr
 /**********************************************************/
 
 func _js_print(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv uintptr) (r TJSValue) {
-	bp := tls.Alloc(16)
+	bp := tlsTake(tls, 16)
+	if bp == 0 {
+		bp = tls.Alloc(16)
+	}
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var i, v3 int32
 	var str, v5 uintptr
@@ -187543,7 +193865,9 @@ func _js_print(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv 
 			str = v5
 			if !(str != 0) {
 				r = libc.Uint64FromInt32(int32(EJS_TAG_EXCEPTION))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-				tls.Free(16)
+				if tlsDrop(tls, 16) {
+					tlsSignals(tls)
+				}
 				return
 			}
 			libc.Xfwrite(tls, str, uint32(1), *(*Tsize_t)(unsafe.Pointer(bp)), libc.Xstdout)
@@ -187558,7 +193882,9 @@ func _js_print(tls *libc.TLS, ctx1 uintptr, this_val TJSValue, argc int32, argv 
 	}
 	libc.Xputchar(tls, int32('\n'))
 	r = libc.Uint64FromInt32(int32(EJS_TAG_UNDEFINED))<<libc.Int32FromInt32(32) | uint64(libc.Uint32FromInt32(libc.Int32FromInt32(0)))
-	tls.Free(16)
+	if tlsDrop(tls, 16) {
+		tlsSignals(tls)
+	}
 	return
 }
 
