@@ -50,16 +50,7 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
 
 ### Compare with the other engines again
 
-Every release runs the comparison with the other JavaScript engines for Go again, as [benchmarks.md](benchmarks.md) says:
-
-1. Run the comparison on the released version:
-
-   ```sh
-   # TODO: the commands of docs/benchmarks.md
-   ```
-
-2. Keep the results of the run under `compare/results/`, in the form [benchmarks.md](benchmarks.md) gives.
-3. Update the tables and the history of [benchmarks.md](benchmarks.md) from them, and add the run to `compare/CHANGELOG.md`.
+Every release runs the comparison with the other JavaScript engines for Go again, keeps the results of the run under `compare/results/` and adds the run to `compare/CHANGELOG.md`. The doc of that comparison, docs/benchmarks.md, with the commands to run and the tables to update, is not written yet.
 
 ### Upgrade tifa
 

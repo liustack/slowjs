@@ -33,10 +33,10 @@
    - [docs/testing.md](docs/testing.md), [docs/commit.md](docs/commit.md): checks and commit rules
    - [docs/upgrading.md](docs/upgrading.md): taking upstream releases and new intl data
    - [docs/performance.md](docs/performance.md): render speed of each release, measured in tifa
-   - [docs/benchmarks.md](docs/benchmarks.md): the comparison with other JavaScript engines for Go, with its history, run again at every release. Its results are kept under `compare/results/` and its changes in `compare/CHANGELOG.md`
+   - docs/benchmarks.md, not written yet: the comparison with other JavaScript engines for Go, with its history, run again at every release. It leaves out goja, sobek and otto. Its results will be kept under `compare/results/` and its changes in `compare/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
    - [docs/upstream.md](docs/upstream.md): the upstream README
-4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests, and what to do when `fixlib` stops on it. A change for speed also goes into [docs/performance.md](docs/performance.md). The comparison with other JavaScript engines for Go is [docs/benchmarks.md](docs/benchmarks.md): a claim about how this engine ranks among them, in the README or elsewhere, needs a measurement there first.
+4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests, and what to do when `fixlib` stops on it. A change for speed also goes into [docs/performance.md](docs/performance.md). A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first, which is not written yet.
 5. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
 6. Docs are written in English. README.md and CHANGELOG.md also have a `*.zh-CN.md` Chinese version: when you change one side, update the other to match. `scripts/docs-list.sh` skips `*.zh-CN.md` files.
 7. English: keep it short and direct, use everyday words, and do not invent terms. Chinese: do not use semicolons, and do not use dashes as punctuation.
@@ -61,4 +61,4 @@ See [docs/releasing.md](docs/releasing.md).
 - Release patch versions only (v0.26.17, v0.26.18, ...). Do not move to a new minor version for a small problem.
 - A release is a lightweight tag on the merge commit of `main`. There are no GitHub releases.
 - Ask the user before you create a tag, and again before you push one. Never push `main` or a tag on your own.
-- After a release, run the comparison with the other engines again and update [docs/benchmarks.md](docs/benchmarks.md), then upgrade tifa to it, collect tifa's engine profile again as tifa's docs/testing.md says ("The engine profile"), and measure the release on tifa's pages.
+- After a release, run the comparison with the other engines again and update docs/benchmarks.md (once it is written), then upgrade tifa to it, collect tifa's engine profile again as tifa's docs/testing.md says ("The engine profile"), and measure the release on tifa's pages.
