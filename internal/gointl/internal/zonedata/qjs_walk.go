@@ -1,0 +1,37 @@
+// Copyright 2026 The quickjs-go Authors. All rights reserved.
+// Use of the source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package zonedata
+
+import (
+	"fmt"
+
+	"github.com/liustack/quickjs/internal/gointl/internal/blob"
+)
+
+// Walk reads all of a locale's data, the tables Decode leaves in the pool
+// included, so that quickjs's pack tool learns which parts of the pool the
+// locale reaches.
+func Walk(data []byte, pool blob.Shared) error {
+	l, err := Decode(data, pool)
+	if err != nil {
+		return err
+	}
+	for _, k := range l.metazones.Keys() {
+		if _, ok := l.Metazone(k); !ok {
+			return fmt.Errorf("zonedata: metazone %s does not read", k)
+		}
+	}
+	for _, k := range l.zones.Keys() {
+		if _, ok := l.Zone(k); !ok {
+			return fmt.Errorf("zonedata: zone %s does not read", k)
+		}
+	}
+	for _, k := range l.regions.Keys() {
+		if _, ok := l.Region(k); !ok {
+			return fmt.Errorf("zonedata: region %s does not read", k)
+		}
+	}
+	return nil
+}

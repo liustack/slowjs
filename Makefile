@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark cover
+.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark cover gointl
 
 all: editor
 	golint 2>&1
@@ -35,6 +35,15 @@ test:
 
 shorttest:
 	go test -failfast -v -short -timeout 24h -count=1 ./...
+
+# The checks of internal/gointl that go test ./... does not run: the pack
+# tool's tests, which need its build tag, the build without the optional
+# packs, and that qjsdata/ is what go-intl's data gives (which clones go-intl).
+gointl:
+	go test -count=1 -tags gointl_walk ./internal/gointl/internal/...
+	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict ./internal/gointl/...
+	internal/gointl/qjs-sync.sh checkout
+	internal/gointl/qjs-sync.sh pack -check
 
 work:
 	rm -f go.work*

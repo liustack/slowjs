@@ -1,0 +1,6 @@
+# The go-intl release internal/gointl is copied from. qjs-sync.sh reads this
+# file; change it and run "qjs-sync.sh update" to move to another release.
+REPO=https://github.com/go-quickjs/go-intl
+MODULE=github.com/go-quickjs/go-intl
+VERSION=v0.6.1
+COMMIT=59e7b7a9f80bb90458f314e7d99efa4fb592dc3b
