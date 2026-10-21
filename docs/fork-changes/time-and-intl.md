@@ -198,6 +198,8 @@ Number formatting takes 41% to 42% less time than main, and date formatting 28% 
 
 Uncached Resolve takes 9.8 to 10.0 µs for numbers and 42.3 to 48.8 µs for dates. Before compiling and sharing plans it took about 25 to 26 µs and 108 to 109 µs. Locale and option resolution, currency spacing and digit rules still run for each new formatter. Date construction also chooses a pattern and builds its interval rules. Those option-dependent steps remain outside the data cache. The formatter registry avoids them when the complete request has been seen before.
 
+The final profiles still show Unicode property loading in number construction and zone decoding in date construction. This pass shares the four large locale-dependent data structures. Property and zone loaders have separate keys and error rules and remain outside those caches. Date pattern matching accounts for about 29% of uncached date construction CPU time. These are costs on a registry miss, not per Format call.
+
 Each memory case runs in five fresh processes and registers only Intl. VM memory is `VM.MemorySize` after first use and `RunGC`. The Go heap delta is measured after GC against the state before creating the VM. It includes registration, shared data loaded once per process and the first VM's Go state. It is not RSS and is not a cost to multiply by the VM count.
 
 | Case | Main VM, KiB | Branch VM, KiB | Main total first Go heap delta, KiB | Branch total first Go heap delta, KiB |
@@ -227,5 +229,7 @@ String formatting writes from the same rounding and calendar results as parts fo
 `CacheSource` shares decoded number data, date data, calendars and date pattern generators for an immutable source. Each of its four caches holds at most 64 entries. Entries are read-only, eviction does not invalidate a formatter, and different sources cannot share entries. The existing 1024-entry formatter registry is unchanged. Formatting does not lock these data caches. Currency metadata lookup finds the requested line directly.
 
 Profiles of English and Chinese Format calls found that part classification and the bridge copy accounted for about 56% of NumberFormat's allocated bytes. Date segments, parts and the bridge copy accounted for about 86% of DateTimeFormat's. All 74,868 golden answers and 5,097 migration and Temporal answers stay byte-for-byte unchanged, including existing documented Chromium differences. The same ten shop pages also keep their HTML, after normalizing only the router timestamp.
+
+The final profiles move the remaining number allocations to value-dependent grouping and assembly. Dates allocate their output, space replacement and numeric fields. These shared rounding and field routines still serve both strings and parts. The [page measurements](../performance.md#intl-formatting) do not establish a whole-page speedup.
 
 Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheBound`, the existing Chromium corpora, concurrent registry tests, tampering and link tests. `BenchmarkFormat` covers construction, formatting and uncached resolution with the inputs above. The upstream changes stay in `qjs.patch`. After updating go-intl, rebuild it from that patch, check source isolation and concurrent use, compare every recorded answer and repeat the focused measurements.
