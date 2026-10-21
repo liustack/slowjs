@@ -15,17 +15,48 @@ import (
 	"github.com/liustack/quickjs"
 )
 
-// The bridge between intl.js and the formatters. Each constructor is a ctor:
-// its options, in the order javascript reads them, and how Go resolves them
-// into a formatter. intl.js reads and converts the options, Go validates
-// them, keeps the formatter in the registry and hands javascript its id.
-// Every other call passes that id first.
+// The bridge between intl.js and the formatters.
 //
-// All calls go through Builtins, which convert nothing: a resolve takes
-// strings, numbers and booleans as arguments, a format a number or a string
-// and returns a string. Only results that are objects, resolvedOptions() and
-// formatToParts(), cross as json, which the engine's JSON.parse builds faster
-// than javascript would.
+// Each Intl constructor is a ctor: its options, in the order javascript
+// reads them, and how Go resolves them into a formatter. intl.js reads and
+// converts the options, Go validates them, keeps the formatter in the
+// registry (registry.go) and hands javascript its id, which every other call
+// passes first. Calls go through Builtins, which convert nothing: a resolve
+// takes strings, numbers and booleans, a format a number or a string, and
+// they return a string, a number or undefined. Results that are objects,
+// resolvedOptions() and formatToParts(), cross as json for JSON.parse, which
+// builds them faster than javascript would and calls no setter of the page.
+//
+// # Adding a constructor
+//
+// The steps for Intl.ListFormat, say, or a Temporal type:
+//
+//  1. The formatter: a type with the resolved state as json fields (fields
+//     only Go reads start with an underscore and stay out of
+//     resolvedOptions), an init method compiling what formatting needs, and
+//     a resolve function from a request. Once init has run, it is read only:
+//     every VM of the process shares it.
+//  2. A ctor for it here, with its options in the order ECMA-402 reads them,
+//     and its entry in ctors. resolveBuiltin(c) is its constructor's
+//     Builtin.
+//  3. Builtins for its methods, appended to bridge. Each takes the id first
+//     and starts with formatterOf, returning undefined when that says the
+//     registry dropped the formatter. Errors are jsErr(err): a rangeError or
+//     a typeError is thrown as that javascript error.
+//  4. In intl.js, a parameter for each new Builtin, in bridge order, and the
+//     constructor: a function declaration whose parameters all have
+//     defaults, so that its length is 0, which resolves through resolve()
+//     with pushLocales and pushOptions and keeps the result with new
+//     Slots(this, ...). defineConstructor(C, statics, methods) gives it its
+//     prototype: methods and getters written as methods of an object
+//     literal, each starting with internal(this, kind) and calling the
+//     Builtins through call(), which resolves a dropped formatter again.
+//  5. Nothing in intl.js may use a global or a method a page can change:
+//     only what P, from stub.js, holds, object literals, null-prototype
+//     arrays (bare) and descriptors ({__proto__: null, ...}), apply for
+//     calls, +v and `${v}` for conversions. A built-in it needs and P lacks
+//     goes into P in stub.js. TestTamper and TestBuiltinShape check against
+//     Node, in testdata/node: add the new constructor's uses there.
 
 // An option is one property of a constructor's options argument.
 type option struct {

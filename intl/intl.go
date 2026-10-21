@@ -100,7 +100,13 @@
 // share on the first use of any. Register itself only puts stand-ins on the
 // VM. The javascript half is installed the first time a page touches Intl or
 // a toLocale* method, from bytecode compiled once per process, so a VM that
-// never formats anything does not carry it.
+// never formats anything does not carry it. A formatter is resolved once per
+// process for the same locales and options, whichever VM asks, and kept for
+// all of them: the process keeps up to 1024 of them, dropping the oldest, and
+// an object whose formatter was dropped resolves it again on its next call.
+// The dropping is the process's, not a VM's: a page making formatters with
+// options made up in a loop makes the formatters of other VMs resolve again
+// too, which costs them time but changes no result.
 //
 // # License of the data
 //
