@@ -382,8 +382,13 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 
 	defer install.Free()
 
-	_, err = f.Call(quickjs.UndefinedValue, install, name)
-	return err
+	if _, err = f.Call(quickjs.UndefinedValue, install, name); err != nil {
+		return err
+	}
+
+	// For the toLocaleString of a Temporal.Instant (see temporal.go).
+	rememberZone(vm, name)
+	return nil
 }
 
 // installing holds the VMs an install is running on.

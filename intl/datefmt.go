@@ -107,7 +107,25 @@ type dateFormatter struct {
 }
 
 func (f *dateFormatter) format(ms float64) []part {
+	return f.formatTime(time.UnixMilli(int64(ms)).In(f.loc))
+}
+
+// formatAt formats ms as format does, but at offset seconds east of UTC
+// where f's zone has another offset then. The zone's name is then the
+// offset's, GMT-05:00 say, as for an offset zone: its names belong to the
+// offsets Go's data has for it.
+func (f *dateFormatter) formatAt(ms float64, offset int) []part {
 	t := time.UnixMilli(int64(ms)).In(f.loc)
+	if _, o := t.Zone(); o == offset {
+		return f.formatTime(t)
+	}
+	g := *f
+	g.zoneID = ""
+	g.loc = time.FixedZone("", offset)
+	return g.formatTime(t.In(g.loc))
+}
+
+func (f *dateFormatter) formatTime(t time.Time) []part {
 	d := fields(t, f.cal.name)
 	var r []part
 	for _, it := range f.items {
