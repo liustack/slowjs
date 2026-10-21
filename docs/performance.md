@@ -45,6 +45,7 @@ Unless a row says otherwise:
 | Unreleased | [One TLS frame per call on linux](fork-changes/calls-and-tls-frames.md#one-tls-frame-per-call-on-linux), with 22 more functions without a TLS frame and 12 more with frames per statement | About a fifth fewer TLS frames per render. 1.4% less than v0.26.16 without PGO, and 2.2% and 3.1% less on tifa's bench and mui test apps |
 | Unreleased | [Alternatives that cannot match are not pushed](fork-changes/regexp.md#alternatives-that-cannot-match-are-not-pushed) | About 1% to 2.5% less without PGO, and 3% to 5% less on the MUI pages of tifa's test apps. A `replace` with react-spring's regexp of 148 color names takes 5.9 µs rather than 44.5 |
 | Unreleased | [New functions get length and name at once](fork-changes/objects-and-shapes.md#new-functions-get-length-and-name-at-once) | 0.982 of the time without PGO, on top of the regexp change. 3,000 new functions make 2,000 shapes rather than 5,001 |
+| Unreleased | [Intl calls Go through Builtins](fork-changes/time-and-intl.md#intl-calls-go-through-builtins) | Not measured on a render. `new Intl.NumberFormat('en')` takes 2.7 µs rather than 16.5, a `DateTimeFormat` with a time zone 8.1 µs to make rather than 32.0, and a VM that has used `Intl` holds about 15 KB less |
 
 Whole releases, measured in tifa:
 

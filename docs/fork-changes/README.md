@@ -57,6 +57,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
 | Alternatives that cannot match are not pushed | Unreleased | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
 | New functions get length and name at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
+| Intl calls Go through Builtins | Unreleased | [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins) |
 | Builtin, a Go function called as a built-in | Unreleased | [go-api.md](go-api.md#builtin-a-go-function-called-as-a-built-in) |
 | Error() of an Error made in Go | Unreleased | [go-api.md](go-api.md#error-of-an-error-made-in-go) |
 | NewArray | Unreleased | [go-api.md](go-api.md#newarray) |
