@@ -2,7 +2,9 @@
 
 npm 上的现代 JavaScript 原样跑在一个静态 Go 程序里。
 
-引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
+给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React，不用 cgo，也不用 Node 进程。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
+
+它是引擎，不是 Node：没有 `require`、`fs`、`process`。npm 上的代码按浏览器的方式打包后就能原样运行，React 就是这样。
 
 [English](README.md) · 简体中文
 

@@ -2,7 +2,9 @@
 
 Run today's npm code unchanged inside one static Go binary.
 
-The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
+For Go programs that need to run JavaScript, such as rendering React on the server, with no cgo and no Node process. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
+
+It is an engine, not Node: there is no `require`, `fs` or `process`. Code from npm runs unchanged once it is bundled as for a browser, as React is.
 
 English · [简体中文](README.zh-CN.md)
 
