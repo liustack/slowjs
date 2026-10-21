@@ -6,12 +6,15 @@
 package intl
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf16"
+
+	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
 )
 
 // A qjsProbe uses one service the way a program does, from a source, and
@@ -259,5 +262,81 @@ func TestQJSInflatesOnlyWhatIsRead(t *testing.T) {
 	}
 	if total == 0 || total > 1<<20 {
 		t.Errorf("a NumberFormat inflated %d bytes", total)
+	}
+}
+
+// qjsTemporalFile says whether a file is one of those the temporal package
+// reads, which the tz pack holds.
+func qjsTemporalFile(name string) bool {
+	return strings.HasPrefix(name, "tz/") || name == "temporalzones.bin" || name == "temporalcalendars.bin"
+}
+
+// The tz pack holds the files Temporal reads, and no other pack does.
+func TestQJSTZPack(t *testing.T) {
+	built := qjsPackData()
+	packs, err := qjsOpenPacks(built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for i, p := range packs {
+		for _, name := range p.Names() {
+			if qjsTemporalFile(name) != (built[i].name == "tz") {
+				t.Errorf("%s is in %s.bin", name, built[i].name)
+			}
+			if built[i].name == "tz" {
+				seen++
+			}
+		}
+	}
+	if seen < 400 {
+		t.Errorf("the tz pack has %d files", seen)
+	}
+}
+
+// EmbeddedTemporalSource serves what Temporal reads and nothing else, and the
+// bytes it serves are Embedded's: one copy, inflated once.
+func TestQJSEmbeddedTemporal(t *testing.T) {
+	var src EmbeddedTemporalSource
+	for _, m := range []Marker{MarkerTemporalZones, MarkerTemporalCalendars, MarkerTimeZones + "/europe/paris"} {
+		got, err := src.Open(m, DataLocale{})
+		if err != nil {
+			t.Fatalf("%s: %v", m, err)
+		}
+		want, err := Embedded.Open(m, DataLocale{})
+		if err != nil {
+			t.Fatalf("%s: %v", m, err)
+		}
+		if len(got) == 0 || len(got) != len(want) || &got[0] != &want[0] {
+			t.Errorf("%s: EmbeddedTemporalSource serves other bytes than Embedded", m)
+		}
+	}
+	if _, err := src.Open(MarkerAvailable, DataLocale{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("EmbeddedTemporalSource serves %s: %v", MarkerAvailable, err)
+	}
+}
+
+// A panic opening the packs is kept: every later call panics with it too,
+// as with sync.OnceValues, where they would get no packs and no error.
+func TestQJSLazyKeepsPanic(t *testing.T) {
+	var l qjsLazy
+	calls := 0
+	open := func() ([]*qjspack.Pack, error) {
+		calls++
+		panic("broken pack")
+	}
+	for i := range 2 {
+		func() {
+			defer func() {
+				if r := recover(); r != "broken pack" {
+					t.Errorf("call %d: recovered %v", i, r)
+				}
+			}()
+			packs, err := l.get(open)
+			t.Errorf("call %d: no panic: %v %v", i, packs, err)
+		}()
+	}
+	if calls != 1 {
+		t.Errorf("open ran %d times", calls)
 	}
 }
