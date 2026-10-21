@@ -26,6 +26,7 @@ fork 保留 modernc.org/quickjs 的 Go API，以及 ccgo 生成的引擎。`lib/
 - **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/quickjs`，它的 `intl` 和 `fmt` 包跟着改。引擎是 `github.com/liustack/quickjs/lib`，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
 - **Go 版本。** 需要 Go 1.27，上游需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](fork-changes/time-and-intl.md#local-time-is-utc-in-every-vm)）。
+- **performance.now。** `StdAddHelpers` 的 `performance.now` 从进程启动开始计时。上游从系统启动开始，在 Windows 和 FreeBSD 上读的是墙上时钟，从 1970 年开始。在 macOS 上不计入系统睡眠的时间（[详情](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，上游只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](fork-changes/time-and-intl.md#intl-in-every-locale-chromium-has)）。
 - **限额一到，调用就结束。** 中断、执行时限和内存耗尽都不能再被脚本捕获，`catch`、promise、迭代器和 Go 函数都不行（[详情](fork-changes/uncatchable.md)）。
 - **错误信息更多。** `*Error` 有 `Uncatchable`、`OutOfMemory` 和 `Interrupted`。转换不了的字符串会作为错误返回，不再是 `""`。Go 里建的 `*Error` 的 `Error()` 是 `Name: Message`，不再是空字符串（[详情](fork-changes/go-api.md)）。

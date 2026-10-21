@@ -12,6 +12,10 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 - `VM.OnClose`: run a function when the VM is closed, so a package that keeps something per VM in a table of its own can drop it then.
 - Package `temporal`: `temporal.Register(vm)` adds `Temporal`, every type and method V8 ships, and `Date.prototype.toTemporalInstant`, computed in Go by go-intl with ICU's zones for tz 2026e built in, so the host's zoneinfo is never read. `Temporal.Now` uses the zone `intl.TimeZone` sets, and the clock `temporal.Clock` sets. test262 passes 9206 of the 9210 runs of `built-ins/Temporal` and 3972 of the 4058 runs of `intl402/Temporal`. It adds 0.84 MB to the example shop of tifa, and its first use takes 13.4 ms in a process and 1.1 ms in a later VM.
 
+### Changed
+
+- `performance.now()` of `StdAddHelpers`, `os.now()` and the timers of quickjs-libc's os module count from the start of the process. Before, they counted from the boot of the system on Linux and macOS, and from 1970 on Windows and FreeBSD, where they moved when the system clock was set. On macOS they no longer count the time the system sleeps. `Date.now()` and `new Date()` give the same values as before.
+
 ### Fixed
 
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
@@ -20,6 +24,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 - The first use of `Intl` keeps what a page did before it: its own `Date.prototype.toLocaleString` or `Number.prototype.toLocaleString` stays, so does an `Intl` it defined with `Object.defineProperty` or deleted, and a frozen `Date.prototype` or `globalThis` no longer makes that use throw a `TypeError`.
 - A zone whose CLDR name the host's zoneinfo lacks, such as `Asia/Calcutta` or `Europe/Kiev` on a Linux without tzdata-legacy, is loaded under its other names, so `Asia/Kolkata` and `Europe/Kyiv` work there too, and `Africa/Asmera`, which `Intl.supportedValuesOf('timeZone')` lists.
 - `EvalBytecode` of a module whose top-level await is still pending when no job is left to run, such as `await new Promise(() => {})`, returns an error that says so instead of crashing the process. If what the module waits for settles later, from Go for one, a later `ExecutePendingJobs` runs the rest of it. It waits for the module as `ExecutePendingJobs` runs jobs: a job that throws no longer stops it, the module runs to its end and the call returns the job's error, or the module's own rejection. The eval timeout, an interrupt, out of memory or a panic in a Go function after a module's first `await` ends the call at once, where it was printed to stderr and the process then crashed.
+- On Windows, `Date.now()` and `new Date()` no longer overflow in 2038.
 - test262's intl402 tests pass 6274 runs of 6764 (with Temporal's), against 912, none of those that passed before failing.
 
 ### Performance
@@ -27,6 +32,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 All without PGO, against v0.26.17.
 
 - A VM keeps the bytecode of the regexps it compiled, so code that makes the same regexps on every render compiles them once: the journal post of tifa's example shop that highlights CSS renders in 0.893 of the time, the other pages in the same time. A VM of the shop holds 12 KiB more, and one that rendered the CSS post keeps about 714 KiB of regexps.
+- `Date.now()`, `new Date()` and `performance.now()` read the time from Go instead of a system call of modernc.org/libc: 122 ns rather than 689, 261 rather than 870, and 107 rather than 686. A render of the shop does not change.
 
 ## [v0.26.17] - 2026-10-21
 
