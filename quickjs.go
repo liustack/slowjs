@@ -517,6 +517,8 @@ type vmState struct {
 	// entry is where the TLS stack was when the outermost call into
 	// javascript started (see tlsMark).
 	entry tlsMark
+	// onClose holds the functions OnClose was given, for Close to run.
+	onClose []func()
 	// broken is set once a Go panic went up through the engine, after
 	// which a call into javascript panics with brokenPanic.
 	broken bool
@@ -819,8 +821,25 @@ func (m *VM) Close() error {
 	lib.XJS_FreeContext(tls, ctx)
 	vms.remove(m.id)
 	r := m.runtime
+	onClose := m.onClose
 	m.vmState = vmState{}
-	return r.close()
+	err := r.close()
+	for _, f := range onClose {
+		f()
+	}
+	return err
+}
+
+// OnClose arranges for f to run when Close runs, after the VM is released,
+// so f must not use it. Close runs the functions once each, in the order
+// OnClose was given them. Nothing else runs them: a VM that is never closed
+// never runs them, and neither does the garbage collector.
+//
+// A package that keeps something per VM in a table of its own, such as a
+// closure that may reference the VM, removes it here, so that the table
+// does not keep the VM, or what it closes over, reachable after Close.
+func (m *VM) OnClose(f func()) {
+	m.onClose = append(m.onClose, f)
 }
 
 // Eval flags.

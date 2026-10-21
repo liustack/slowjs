@@ -35,10 +35,11 @@
 // display names, and cjdict.bin, the Chinese and Japanese dictionary of the
 // segmenter, which a build tag can leave out, tz.bin, the time zones and
 // calendar tables the temporal package reads, which a binary that uses only
-// Temporal links alone, dates.bin, zonenames.bin and hostzones.bin, the
-// files only DateTimeFormat, the zone names and the guess at the host's
-// zone read, which a binary links only with those readers (see
-// qjs_readers.go), and core.bin, the rest. Within a
+// Temporal links alone, with tzversion.bin, the tz release of its zones,
+// which qjs-sync.sh writes into the data directory with them, dates.bin,
+// zonenames.bin and hostzones.bin, the files only DateTimeFormat, the zone
+// names and the guess at the host's zone read, which a binary links only
+// with those readers (see qjs_readers.go), and core.bin, the rest. Within a
 // pack a file of 16 KB or more is a chunk of its own and the smaller files of
 // a directory share one. Every chunk is compressed except the files -store
 // names, which are served from the binary's read-only data.
@@ -133,7 +134,8 @@ func packOf(name string) string {
 		return "names"
 	case name == "brkitr/cjdict.bin":
 		return "cjdict"
-	case strings.HasPrefix(name, "tz/") || name == "temporalzones.bin" || name == "temporalcalendars.bin":
+	case strings.HasPrefix(name, "tz/") || name == "tzversion.bin" || name == "temporalzones.bin" ||
+		name == "temporalcalendars.bin":
 		return "tz"
 	case strings.HasPrefix(name, "dates/") || name == "datesshared.bin" || name == "patterncalendars.bin" ||
 		name == "rbnf.bin" || name == "ummalqura.bin" || name == "japaneseeras.bin":
@@ -250,6 +252,11 @@ func run() error {
 		if err := os.WriteFile(file, b, 0o644); err != nil {
 			return err
 		}
+	}
+	if v, ok := out["tzversion.bin"]; ok {
+		fmt.Printf("time zones: tz %s\n", v)
+	} else {
+		return errors.New("the data has no tzversion.bin: qjs-sync.sh writes it with the time zones")
 	}
 	if langs != nil && len(langs.added) > 0 {
 		sort.Strings(langs.added)

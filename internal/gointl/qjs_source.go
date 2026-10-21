@@ -110,7 +110,7 @@ func qjsOpen(m Marker, d DataLocale) ([]byte, error) {
 // reads: ICU's time zones (MarkerTimeZones), the names Temporal takes
 // (MarkerTemporalZones) and the calendars' tables (MarkerTemporalCalendars).
 // It serves the same bytes as Embedded, and a binary whose code reads only
-// it links 91 KB of data, not Embedded's 11 MB. Any other data set is
+// it links 92 KB of data, not Embedded's 11 MB. Any other data set is
 // ErrNotFound. Its one value is its zero value, and there is no variable of
 // it, as go-intl has no exported variable an importer could change.
 type EmbeddedTemporalSource struct{}

@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, Intl calling Go through Builtins with formatters shared across VMs, and the Intl constructors built on go-intl (Collator, Segmenter, RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat, Locale, supportedValuesOf, locale-aware case mapping) with what they cost'
+summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, Intl calling Go through Builtins with formatters shared across VMs, and the Intl constructors built on go-intl (Collator, Segmenter, RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat, Locale, supportedValuesOf, locale-aware case mapping) with what they cost, and stand-ins that leave what a page put in their place'
 read_when:
   - Changing package intl, fixTimezone, or the getTimezoneOffset hunk of the C patch
   - fixlib stops on _getTimezoneOffset or a call of libc's local time functions after an upstream release
@@ -8,6 +8,7 @@ read_when:
   - Changing intl/bridge.go, intl/registry.go, intl.js or stub.js, or adding a constructor to the bridge
   - A page changed a built-in and Intl gave another result
   - Changing a constructor built on go-intl, or chromiumData in intl/gointl.go
+  - A page replaced or deleted Intl or a toLocaleString method before the first use, and Intl put it back
 ---
 
 # Time and Intl
@@ -88,3 +89,13 @@ What it costs, on an AMD EPYC 7B13 core, without PGO, against the version before
 A program that imports `intl` now links `internal/gointl` and `internal/gointl/temporal`, and has to carry their notices (see [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)).
 
 Tests: `intl/golden_gointl_test.go`, `intl/chromiumroot_test.go`, `intl/registry_gointl_test.go`, `intl/values_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `intl/link_test.go`, `intl/nonames_test.go` (with `-tags quickjs_intl_nonames`), `internal/gointl/qjs_readers_test.go`, and `builtin_test.go` for `Args.WTF8`.
+
+## Stand-ins leave what a page put in their place
+
+Release: not released yet.
+
+`Register` puts stand-ins on the VM, for `Intl`, the three `toLocale*String` methods of `Date` and the `toLocaleString` of `Number` and `BigInt`, and the first use of one installs the real ones. That install used to write every stand-in's property: a page's own `Date.prototype.toLocaleString`, or an `Intl` it defined with `Object.defineProperty`, was lost at the first use, a property it deleted came back, and a frozen `Date.prototype` or `globalThis` made the first use throw a `TypeError`. Now the install replaces a property only while it still holds the stand-in and can be replaced: what a page put there, deleted or froze stays, as it would with V8's built-ins, and a stand-in left in place forwards to the real thing. `Temporal` installs its stand-ins the same way (see [temporal.md](temporal.md)).
+
+A zone whose CLDR name Go's zoneinfo lacks, such as `Asia/Calcutta` on a host with only `Asia/Kolkata`, resolves under the other names CLDR gives it.
+
+Tests: `TestStandInsKeepPageCode` in `intl/all_test.go`, `intl/zone_test.go`.

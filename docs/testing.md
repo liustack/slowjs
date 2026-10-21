@@ -31,6 +31,7 @@ go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib
 - The tests of `internal/fixlib` take about 16 minutes on two hyperthreads of one AMD EPYC 7B13 core, with 20 minutes of CPU, longer than the 10 minutes `go test` gives by default, so every command that runs them passes `-timeout 30m`. On cores other work is using they take much longer, past an hour.
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
+- A change to `temporal/` also runs `go test ./temporal` without `-short` (the Chromium comparison and the link test are part of it), and the Temporal lines of the focused checks, the memgrind section and the race detector section.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
 
 New behavior and bugs with a known cause: write the test first, see it fail, then write the fix. Tests live next to the code: a change to the engine is tested in `lib/` (through the C API) or in the root package (through the Go API), and a change of `fixlib` in `internal/fixlib`, which checks both the rewrite and that it stops on code it does not expect.
@@ -44,7 +45,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make shorttest` | The same with `-short`, which skips the long cases (test262 among them) |
 | `make leak` | `go test -v -run TestMemgrind2 -tags=libc.memgrind ./...` |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
-| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives (this clones go-intl) |
+| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
 | `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), the suite kept from upstream |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |
@@ -78,6 +79,9 @@ go test -run FuncShape ./lib                             # new functions get wha
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
+go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
+go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
+go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 ```
@@ -106,6 +110,7 @@ go test -vet=off -run Test262 -v .     # unpacks test262/, builds the runner, ru
 make leak                                             # TestMemgrind2 and the tests named after it, in every package
 go test -tags=libc.memgrind -run EnginePanic .        # the TLS stack is whole after a panic
 go test -vet=off -tags=libc.memgrind -run Memgrind2Objlit ./lib   # objlitDefine running out of memory
+go test -tags=libc.memgrind -run Memgrind ./temporal  # Temporal leaks nothing
 ```
 
 ## The race detector
@@ -117,6 +122,7 @@ go test -race -run 'TestInterrupt|TestConcurrentVMsMemory|TestErrorStackConcurre
 go test -race -run TestErrorStackFirstUseRace .       # on its own, so no other test made a stack first
 go test -race -run 'TestConcurrentVMs|TestRegistryConcurrent|TestRegistryGoIntlConcurrent' ./intl
 go test -race -run QJS ./internal/gointl               # the packs go-intl's loaders add to Embedded
+go test -race -run 'Concurrent|Tamper|Clock' ./temporal  # Temporal on VMs at once, pages changing built-ins, clocks per VM
 go test -race -vet=off -run 'TestShapeCacheRuntimes|TestFrontCacheRuntimes|TestBacktraceThrowStacklessOOM' ./lib
 ```
 

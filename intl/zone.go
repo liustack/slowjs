@@ -61,6 +61,9 @@ func timeZone(name string) (string, *time.Location, error) {
 	return cname, loc, err
 }
 
+// loadLocation is time.LoadLocation, which a test replaces.
+var loadLocation = time.LoadLocation
+
 func resolveTimeZone(name string) (string, *time.Location, error) {
 	// ECMA-402 rejects an unusable identifier with a RangeError, and code that
 	// probes a zone catches exactly that.
@@ -96,7 +99,19 @@ func resolveTimeZone(name string) (string, *time.Location, error) {
 		return "UTC", time.UTC, nil
 	}
 
-	loc, err := time.LoadLocation(cname)
+	loc, err := loadLocation(cname)
+	for _, id := range zoneAliases()[cname] {
+		if err == nil {
+			break
+		}
+		// CLDR's name is often a link of IANA's backward file, which a
+		// system without tzdata-legacy leaves out (Asia/Calcutta,
+		// Europe/Kiev): the zone loads under another of its names, IANA's
+		// own among them, and keeps CLDR's, which is what browsers report.
+		if l, e := loadLocation(id); e == nil {
+			loc, err = l, nil
+		}
+	}
 	if err != nil {
 		// CLDR knows the zone but the zoneinfo database Go reads does not:
 		// the host has none, or an old one, and the program does not import
@@ -123,6 +138,18 @@ var zoneNames = sync.OnceValue(func() map[string]string {
 
 		for _, id := range ids {
 			m[strings.ToUpper(id)] = ids[0]
+		}
+	}
+	return m
+})
+
+// zoneAliases maps the canonical identifier of each zone CLDR knows to its
+// other identifiers, in CLDR's order.
+var zoneAliases = sync.OnceValue(func() map[string][]string {
+	m := map[string][]string{}
+	for _, line := range strings.Split(cldr().supplemental().str("tz"), "\n") {
+		if ids := strings.Fields(line); len(ids) > 1 {
+			m[ids[0]] = ids[1:]
 		}
 	}
 	return m

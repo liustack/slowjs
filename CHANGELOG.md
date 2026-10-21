@@ -9,13 +9,17 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 - `Intl.Collator`, `Intl.Segmenter`, `Intl.RelativeTimeFormat`, `Intl.ListFormat`, `Intl.DisplayNames`, `Intl.DurationFormat`, `Intl.Locale` and `Intl.supportedValuesOf`, in every locale Chromium has, compared with Chromium 156 on 14,269 expressions. `localeCompare` sorts by the locale's collation, and `toLocaleUpperCase` and `toLocaleLowerCase` follow Turkish, Azeri, Lithuanian and Greek rules. They read go-intl's data, which makes a program that imports `intl` about 9.8 MB larger, or 5.8 MB with the build tags `quickjs_intl_nonames` and `quickjs_intl_nocjdict`, which give up the display names, so that `Intl.DisplayNames` answers each code with its fallback (the code, or `undefined` with `fallback: 'none'`), and the Chinese and Japanese word dictionary, so that a run of Chinese or Japanese is one word. A VM that has used `Intl` holds 151 KB more than after `Register`, against 77 KB, and its first use takes 0.49 ms, against 0.24 ms. A program that imports `intl` now has to carry the notices of `internal/gointl` (see `NOTICE.md`).
 - `Args.WTF8`: read a string argument of a Builtin with its lone surrogates as the engine holds them, where `Args.String` gives U+FFFD for each.
 - `VM.SetRegExpCache`, `DefaultRegExpCache` and `DefaultRegExpCacheBytes`: how many compiled regexps a VM keeps, and in how many bytes (256 in 1 MiB by default). The cache counts against the memory limit: give a VM that runs close to its limit a smaller cache, or none.
+- `VM.OnClose`: run a function when the VM is closed, so a package that keeps something per VM in a table of its own can drop it then.
+- Package `temporal`: `temporal.Register(vm)` adds `Temporal`, every type and method V8 ships, and `Date.prototype.toTemporalInstant`, computed in Go by go-intl with ICU's zones for tz 2026e built in, so the host's zoneinfo is never read. `Temporal.Now` uses the zone `intl.TimeZone` sets, and the clock `temporal.Clock` sets. test262 passes 9206 of the 9210 runs of `built-ins/Temporal` and 3972 of the 4058 runs of `intl402/Temporal`. It adds 0.84 MB to the example shop of tifa, and its first use takes 13.4 ms in a process and 1.1 ms in a later VM.
 
 ### Fixed
 
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
 - `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
 - A function in a list of locales is read as an object, as ECMA-402 has it, so `new Intl.NumberFormat([function () {}])` throws a RangeError, where v0.26.17 threw a TypeError.
-- test262's intl402 tests pass 2282 runs of 6764, against 912, none of those that passed before failing.
+- The first use of `Intl` keeps what a page did before it: its own `Date.prototype.toLocaleString` or `Number.prototype.toLocaleString` stays, so does an `Intl` it defined with `Object.defineProperty` or deleted, and a frozen `Date.prototype` or `globalThis` no longer makes that use throw a `TypeError`.
+- A zone whose CLDR name the host's zoneinfo lacks, such as `Asia/Calcutta` or `Europe/Kiev` on a Linux without tzdata-legacy, is loaded under its other names, so `Asia/Kolkata` and `Europe/Kyiv` work there too, and `Africa/Asmera`, which `Intl.supportedValuesOf('timeZone')` lists.
+- test262's intl402 tests pass 6274 runs of 6764 (with Temporal's), against 912, none of those that passed before failing.
 
 ### Performance
 
