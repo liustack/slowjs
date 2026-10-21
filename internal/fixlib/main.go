@@ -10,10 +10,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -atomkey, -oneframe and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -atomkey, -oneframe and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does twenty-eight things:
+// It does twenty-nine things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -73,6 +73,10 @@
 //   - In the lib/ccgo_*.go files of 64-bit targets, let the interpreter do
 //     the usual pairs of ===, !==, == and != without calling the slow
 //     paths (see fixEq).
+//   - In every lib/ccgo_*.go file, let JSON.stringify and JSON.parse copy
+//     the runs of characters of a string they keep as they are in a few
+//     calls, through jsonQuoteRun and jsonStringRun of lib/jsonstr.go,
+//     instead of one call for each character (see fixJSONStrings).
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement
 //     that passes an address in the frame on or can reach a stack check a
@@ -159,6 +163,7 @@ var (
 	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
 	bitwise   = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
 	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
+	jsonF     = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
 	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -184,7 +189,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *atomkey || *oneFrame || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *atomkey || *oneFrame || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -216,6 +221,8 @@ func main() {
 			err = fingerprintReport(files, hw, "bitwiseSites", bitwiseFingerprint)
 		} else if err == nil && *eq {
 			err = fingerprintReport(files, hw, "eqSites", eqFingerprint)
+		} else if err == nil && *jsonF {
+			err = fingerprintReport(files, hw, "jsonSites", jsonFingerprint)
 		} else if err == nil && *oneFrame {
 			err = fingerprintReport(files, hw, "oneFrameSites", oneFrameFingerprint)
 		} else if err == nil && *cells {
@@ -358,6 +365,9 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixEq(b, name); err != nil {
+		return nil, err
+	}
+	if b, err = fixJSONStrings(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.

@@ -3641,6 +3641,17 @@ func _string_get(tls *libc.TLS, p uintptr, idx int32) (r int32) {
 	return v1
 }
 
+// Changed by internal/fixlib: the length, the 16-bit flag and the characters of a JSString, as lib/jsonstr.go reads them (see fixJSONStrings).
+const (
+	jsonStrLenOff    = 0
+	jsonStrLenMask   = 0xfffffffe
+	jsonStrLenShift  = 1
+	jsonStrWideOff   = 0
+	jsonStrWideMask  = 0x1
+	jsonStrWideShift = 0
+	jsonStrData      = 12
+)
+
 type TJSClassShortDef = struct {
 	Fclass_name TJSAtom
 	Ffinalizer  uintptr
@@ -49654,6 +49665,10 @@ func _json_parse_string(tls *libc.TLS, s uintptr, pp uintptr, sep int32) (r int3
 	}
 	p = *(*uintptr)(unsafe.Pointer(pp))
 	for {
+		// Changed by internal/fixlib: copy the characters JSON.parse takes as they are in one run (see fixJSONStrings).
+		if p = jsonStringRun(tls, b, p, (*TJSParseState)(unsafe.Pointer(s)).Fbuf_end, sep); p == 0 {
+			goto fail
+		}
 		if p >= (*TJSParseState)(unsafe.Pointer(s)).Fbuf_end {
 			goto end_of_input
 		}
@@ -112036,6 +112051,10 @@ _2:
 	}
 	*(*int32)(unsafe.Pointer(bp + 32)) = 0
 	for {
+		// Changed by internal/fixlib: copy the characters JSON.stringify keeps as they are in one run (see fixJSONStrings).
+		if jsonQuoteRun(tls, b, p1, bp+32) != 0 {
+			goto fail
+		}
 		if !(*(*int32)(unsafe.Pointer(bp + 32)) < int32(*(*uint32)(unsafe.Pointer(p1 + 0))&0xfffffffe>>1)) {
 			break
 		}
