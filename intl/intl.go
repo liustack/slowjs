@@ -192,7 +192,9 @@ func (s *script) bytecode() ([]byte, error) {
 
 // compile compiles src on a VM of its own. The VM that needs the bytecode may
 // be short of memory, stack or time, and a compile there would fail for
-// reasons that have nothing to do with src.
+// reasons that have nothing to do with src. The functions are compiled
+// without their source and debug information: they stand for built-ins, whose
+// toString shows [native code], and each VM that loads them carries less.
 func compile(src string) ([]byte, error) {
 	vm, err := quickjs.NewVM()
 	if err != nil {
@@ -201,6 +203,7 @@ func compile(src string) ([]byte, error) {
 
 	defer vm.Close()
 
+	vm.SetStrip(quickjs.StripDebug)
 	return vm.Compile(src, quickjs.EvalGlobal)
 }
 

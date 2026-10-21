@@ -97,8 +97,10 @@
 	// standIn puts a stand-in for o[name] in place, which api[apiName]
 	// replaces.
 	function standIn(o, name, apiName) {
+		// A method, so shaped as the built-in it stands for, with no
+		// prototype property.
 		const f = {
-			[name]: function () {
+			[name]() {
 				ensure();
 				const real = o[name];
 				if (real === f) {
