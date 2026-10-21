@@ -45,7 +45,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make leak` | `go test -v -run TestMemgrind2 -tags=libc.memgrind ./...` |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
 | `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), and that `qjsdata/` is what go-intl's data gives (this clones go-intl) |
-| `make benchmark` | `make -C compare benchmark`: this engine against goja and fastschema/qjs |
+| `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), the suite kept from upstream |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |
 | `make clean` | Deletes test binaries, profiles and `go.work` |
@@ -162,4 +162,4 @@ While a `go.work` exists it must keep listing `./compare`. A workspace is found 
 
 ## Speed
 
-`go test -run '^$' -bench Call .` gives the cost of each kind of call, and `make benchmark` the comparison with other engines. Render speed is measured in tifa, on the pages of its example app: see [performance.md](performance.md#measuring-in-tifa).
+`go test -run '^$' -bench Call .` gives the cost of each kind of call, and `make benchmark` upstream's micro benchmarks on this engine, goja and fastschema/qjs. These micro benchmarks are not the comparison with other engines that a user choosing one would read. Render speed is measured in tifa, on the pages of its example app: see [performance.md](performance.md#measuring-in-tifa).

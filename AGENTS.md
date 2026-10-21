@@ -20,7 +20,7 @@
 - Root: the Go API (`quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `tlsstack_*.go`) and its tests.
 - `lib/`: the engine, merged from upstream libquickjs with `git subtree`, plus the fork's hand-written Go next to the generated files. `lib/README.md`, `lib/CLAUDE.md`, `lib/Makefile` and `lib/generator.go` are upstream's and kept as they are so that subtree merges stay clean: they describe libquickjs as a module of its own. Where they disagree with this file, this file wins. This fork does not regenerate `lib/` with `make generate`.
 - `internal/fixlib/`: the command that puts the fork's changes into the generated Go.
-- `intl/`: `Intl` for a VM, in every locale Chromium has. `fmt/`: Go's fmt for a VM. `compare/`: a module of its own that benchmarks against other engines.
+- `intl/`: `Intl` for a VM, in every locale Chromium has. `fmt/`: Go's fmt for a VM. `compare/`: a module of its own, kept from upstream, that runs QuickJS's micro benchmarks on this engine, goja and fastschema/qjs.
 - [docs/architecture.md](docs/architecture.md) has the full map, the core types and the rules of the Go API.
 
 ## Docs (`docs/`)
