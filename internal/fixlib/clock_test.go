@@ -93,14 +93,14 @@ func TestClockRejects(t *testing.T) {
 		in                  string
 	}{
 		{"date_now in seconds", "*int64(1000) + int64((*(*Ttimeval)(unsafe.Pointer(bp))).Ftv_usec/libc.Int32FromInt32(1000))", "*int64(1) + int64(0)", "changed (fingerprint", b},
-		{"get_time_ms on the wall clock", "libc.Xclock_gettime(tls, int32(E_CLOCK_MONOTONIC), bp)\n\treturn libc.Int64FromUint64(libc.Uint64FromInt64((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_sec)*uint64(1000) ", "libc.Xclock_gettime(tls, int32(E_CLOCK_REALTIME), bp)\n\treturn libc.Int64FromUint64(libc.Uint64FromInt64((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_sec)*uint64(1000) ", "changed (fingerprint", b},
+		{"get_time_ns on the wall clock", "libc.Xclock_gettime(tls, int32(E_CLOCK_MONOTONIC), bp)\n\treturn libc.Int64FromUint64(libc.Uint64FromInt64((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_sec)*uint64(1000000000) ", "libc.Xclock_gettime(tls, int32(E_CLOCK_REALTIME), bp)\n\treturn libc.Int64FromUint64(libc.Uint64FromInt64((*(*Ttimespec)(unsafe.Pointer(bp))).Ftv_sec)*uint64(1000000000) ", "changed (fingerprint", b},
 		{"another read of the time", "\nfunc _js_date_constructor(", "\nfunc _js_new_clock(tls *libc.TLS) {\n\tlibc.Xtime(tls, 0)\n}\n\nfunc _js_date_constructor(", "the engine reads the time some new way", b},
 		{"the address of a clock", "\nfunc _js_date_constructor(", "\nfunc _js_new_clock(tls *libc.TLS) {\n\t_ = __ccgo_fp(libc.Xgettimeofday)\n}\n\nfunc _js_date_constructor(", "the engine reads the time some new way", b},
 		{"a clock of Windows", "\nfunc _js_date_constructor(", "\nfunc _js_new_clock(tls *libc.TLS) {\n\tlibc.XQueryPerformanceCounter(tls, 0)\n}\n\nfunc _js_date_constructor(", "the engine reads the time some new way", b},
 		{"mingw's time", "\nfunc _js_date_constructor(", "\nfunc _js_new_clock(tls *libc.TLS) {\n\t__time64(tls, 0)\n}\n\nfunc _js_date_constructor(", "the engine reads the time some new way", b},
 		{"a second clock in Atomics.wait", "\t\tlibc.Xclock_gettime(tls, int32(E_CLOCK_REALTIME), bp+24)\n", "\t\tlibc.Xgettimeofday(tls, bp+24, 0)\n\t\tlibc.Xclock_gettime(tls, int32(E_CLOCK_REALTIME), bp+24)\n", "_js_atomics_wait: 2 reads of a clock of libc", b},
 		{"another timed wait", "\nfunc _js_date_constructor(", "\nfunc _js_new_wait(tls *libc.TLS) {\n\tlibc.Xpthread_cond_timedwait(tls, 0, 0, 0)\n}\n\nfunc _js_date_constructor(", "uses of pthread_cond_timedwait", b},
-		{"a function gone upstream", "\nfunc _get_time_ms(tls *libc.TLS)", "\nfunc _get_time_ms_gone(tls *libc.TLS)", "_get_time_ms is gone: upstream removed it, so it must leave clockFuncs", b},
+		{"a function gone upstream", "\nfunc _get_time_ns(tls *libc.TLS)", "\nfunc _get_time_ns_gone(tls *libc.TLS)", "_get_time_ns is gone: upstream removed it, so it must leave clockFuncs", b},
 		{"a part of the change", "\treturn monoNanos()\n", "\treturn monoNanos() + 1\n", "does not follow the function fixClock adds", string(fixed)},
 	} {
 		if !strings.Contains(c.in, c.old) {

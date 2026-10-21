@@ -20,8 +20,8 @@ import "time"
 //   - date_now, behind Date.now, new Date() and Date(), calls dateNow.
 //   - js_random_init, which seeds Math.random of a new context, calls
 //     randomSeed.
-//   - get_time_ns and get_time_ms of quickjs-libc, behind performance.now,
-//     os.now and the timers of the os module, call monoNanos.
+//   - get_time_ns of quickjs-libc, behind performance.now, calls
+//     monoNanos.
 //
 // Atomics.wait still reads libc's CLOCK_REALTIME: it hands the deadline to
 // libc's pthread_cond_timedwait, which measures it on that clock.
@@ -49,11 +49,11 @@ func randomSeed() uint64 {
 
 // monoNanos returns the time in nanoseconds on Go's monotonic clock, which
 // only goes forward whatever the wall clock does, since the package was
-// loaded. get_time_ns and get_time_ms read CLOCK_MONOTONIC, whose zero is
-// the boot of the system, and gettimeofday on Windows and FreeBSD, where a
-// change of the wall clock moved the timers of the os module. On darwin,
-// CLOCK_MONOTONIC goes on while the system sleeps, and Go's monotonic
-// clock, mach_absolute_time, does not.
+// loaded. get_time_ns read CLOCK_MONOTONIC, whose zero is the boot of the
+// system, and gettimeofday on Windows and FreeBSD, where a change of the
+// wall clock moved performance.now. On darwin, CLOCK_MONOTONIC goes on
+// while the system sleeps, and Go's monotonic clock, mach_absolute_time,
+// does not.
 func monoNanos() int64 {
 	return int64(time.Since(monoStart))
 }

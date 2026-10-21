@@ -20,7 +20,6 @@ var clockFuncs = []struct{ name, body string }{
 	{"_date_now", "\treturn dateNow()\n"},
 	{"_js_random_init", "\t(*TJSContext)(unsafe.Pointer(%s)).Frandom_state = randomSeed()\n"},
 	{"_get_time_ns", "\treturn monoNanos()\n"},
-	{"_get_time_ms", "\treturn monoNanos() / 1000000\n"},
 }
 
 const (
@@ -47,11 +46,10 @@ var (
 	// clockReads takes it only when it is called or passed (followed by
 	// "(", ")" or ","), so that a comment naming _time.h is not one.
 	reClockShim = regexp.MustCompile(`^_{1,3}(?:clock_gettime(?:32|64)?|gettimeofday|_?time(?:32|64)?|_?ftime(?:32|64)?|QueryPerformanceCounter|GetSystemTime\w*|GetTickCount(?:64)?|mach_absolute_time)$`)
-	// clockAllowed are the uses of reClockLibc that read no clock:
-	// setting the times of a file, the wait of Atomics.wait, which is
-	// checked on its own, and the local time functions, which fixTimezone
-	// governs (see reLocalTime).
-	clockAllowed = regexp.MustCompile(`^libc\.X(?:utimes|pthread_cond_timedwait|localtime(?:_r)?|mktime|strftime|ctime(?:_r)?|tzname|timezone|daylight)$`)
+	// clockAllowed are the uses of reClockLibc that read no clock: the
+	// wait of Atomics.wait, which is checked on its own, and the local time
+	// functions, which fixTimezone governs (see reLocalTime).
+	clockAllowed = regexp.MustCompile(`^libc\.X(?:pthread_cond_timedwait|localtime(?:_r)?|mktime|strftime|ctime(?:_r)?|tzname|timezone|daylight)$`)
 	// The wait of clockWait, which measures its deadline on the clock it
 	// reads.
 	reClockWait = regexp.MustCompile(`libc\.Xpthread_cond_timedwait\b`)

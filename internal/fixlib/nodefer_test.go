@@ -41,7 +41,14 @@ func TestNoDeferEveryFile(t *testing.T) {
 			t.Errorf("%s: fixNoDefer does not give the file", fn)
 		}
 		frames := bytes.Count(b, []byte("\tdefer tls.Free(")) + bytes.Count(b, []byte("\t"+allocaDefer))
-		if marks := bytes.Count(raw, []byte(noDeferMark)); marks != frames || marks < 600 {
+		// On 386 and arm a JSValue is a NaN-boxed uint64, which ccgo
+		// passes without a TLS frame, where on 64-bit targets it is a
+		// struct that a frame holds: those files free fewer frames.
+		floor := 800
+		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
+			floor = 500
+		}
+		if marks := bytes.Count(raw, []byte(noDeferMark)); marks != frames || marks < floor {
 			t.Errorf("%s: %d marks for %d frames freed by a defer", fn, marks, frames)
 		}
 		if err := checkFreed(raw); err != nil {
