@@ -150,6 +150,11 @@ orders it with `Close` (which frees the flag): `Close` clears only the embedded 
     never runs it) and in `-short` mode. The spec says what the options mean; only CLDR knows that
     a minute beside an hour grows a leading zero while a minute alone does not — do not "fix" a
     formatter against the prose without running this.
+- `internal/gointl/`: a copy of go-intl (pure Go ECMA-402 + Temporal) at the commit in
+  `internal/gointl/UPSTREAM`, not yet wired into JS. Only `qjs*` files and `UPSTREAM` are ours. Edit
+  go-intl's files only through `qjs.patch` and `qjs-sync.sh` (see README, "Updating go-intl"). Its
+  data is the packs in `qjsdata/`, written by `internal/qjspack/gen`, not go-intl's `data.pack`.
+  `make gointl` runs the checks that need build tags, and checks that the packs are current.
 - `compare/` — **separate module** (`modernc.org/quickjs/compare`, own `go.mod`) benchmarking this
   engine against `github.com/dop251/goja` and `github.com/fastschema/qjs`, plus the arewefastyet V8
   suite in `internal/arewefastyet/`. `make benchmark` runs here. It is its own module so that the
