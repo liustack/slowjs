@@ -29,7 +29,6 @@
 		Object: Object,
 		String: String,
 		Number: Number,
-		Boolean: Boolean,
 		Error: Error,
 		TypeError: TypeError,
 		RangeError: RangeError,

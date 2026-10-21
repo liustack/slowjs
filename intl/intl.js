@@ -21,7 +21,7 @@
 
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
-		Object, String, Number, Boolean, Error, TypeError, RangeError, toStringTag,
+		Object, String, Number, Error, TypeError, RangeError, toStringTag,
 		dateNow, dateValueOf, numberValueOf, bigintValueOf
 	} = P;
 	const lists = parse(optionLists);
@@ -126,14 +126,14 @@
 		if (locales === null) {
 			throw new TypeError('Cannot convert null to object');
 		}
-		const o = Object(locales), n = o.length >>> 0, r = bare([]);
+		const o = Object(locales), n = toLength(o.length), r = bare([]);
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
 				const v = o[i];
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				r[r.length] = String(v);
+				r[r.length] = `${v}`;
 			}
 		}
 		return r;
@@ -169,6 +169,17 @@
 		return o === undefined ? noOptions : Object(o);
 	}
 
+	// toLength is ECMA-262's ToLength. The conversions here are the spec's:
+	// +v is ToNumber and `${v}` ToString, which throw for a BigInt or a Symbol
+	// where Number() and String() convert them.
+	function toLength(v) {
+		const n = +v;
+		if (!(n > 0)) {
+			return 0;
+		}
+		return n < 9007199254740991 ? n - n % 1 : 9007199254740991;
+	}
+
 	// pushOptions appends the options of o in list, from optionLists, to
 	// args, converted as their kind says. Without options, nothing: a
 	// Builtin reads missing arguments as undefined.
@@ -182,17 +193,19 @@
 			if (v !== undefined) {
 				switch (kinds[i]) {
 				case 's':
-					v = String(v);
+					v = `${v}`;
 					break;
 				case 'n':
-					v = Number(v);
+					v = +v;
 					break;
 				case 'b':
-					v = Boolean(v);
+					v = !!v;
 					break;
 				default:
-					if (typeof v !== 'boolean') {
-						v = String(v);
+					// GetBooleanOrStringNumberFormatOption: true, false for
+					// anything falsy, else a string.
+					if (v !== true) {
+						v = v ? `${v}` : false;
 					}
 				}
 			}
@@ -225,7 +238,7 @@
 	}
 
 	function timeValue(date) {
-		return date === undefined ? dateNow() : Number(date);
+		return date === undefined ? dateNow() : +date;
 	}
 
 	defineConstructor(DateTimeFormat, {
@@ -313,14 +326,14 @@
 		}
 	}, {
 		select(value) {
-			return call(internal(this, 'PluralRules'), prSelect, Number(value));
+			return call(internal(this, 'PluralRules'), prSelect, +value);
 		},
 		selectRange(start, end) {
 			const i = internal(this, 'PluralRules');
 			if (start === undefined || end === undefined) {
 				throw new TypeError('start or end is undefined');
 			}
-			const x = Number(start), y = Number(end);
+			const x = +start, y = +end;
 			if (x !== x || y !== y) {
 				throw new RangeError('start or end is NaN');
 			}
