@@ -205,6 +205,19 @@ func TestStandInsKeepPageCode(t *testing.T) {
 	}
 }
 
+// A function in a locale list is an object, as ECMA-402's
+// CanonicalizeLocaleList has it: its string is no language tag, so it
+// throws a RangeError, not a TypeError.
+func TestLocaleListFunction(t *testing.T) {
+	vm := newVM(t)
+	evalTests(t, vm, [][2]string{
+		{`try { new Intl.NumberFormat([function () {}]) } catch (e) { e.name }`, "RangeError"},
+		{`try { (1).toLocaleString([() => 'en']) } catch (e) { e.name }`, "RangeError"},
+		{`try { new Intl.NumberFormat([1]) } catch (e) { e.name }`, "TypeError"},
+		{`var f = function () {}; f.toString = () => 'de'; new Intl.NumberFormat([f]).resolvedOptions().locale`, "de"},
+	})
+}
+
 func TestNumberFormat(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
