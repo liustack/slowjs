@@ -1,9 +1,10 @@
-The locale data of package intl (intl/cldr.bin, which programs that use the
-package embed, and intl/testdata/chromium/icu.json.gz and the values in
-intl/internal/gen/overrides.go, which it is generated with) comes from:
+The Chromium resource values in internal/gointl/qjsdata/, selected using
+intl/testdata/chromium/icu.json.gz, and the recorded Chromium answers in
+intl/testdata/chromium/ and temporal/testdata/ come from:
 
-  - Unicode CLDR 48.2, as cldr-json 48.2.3 publishes it
-    (https://github.com/unicode-org/cldr-json), under the first notice below.
+  - Unicode CLDR 48.2 through go-intl's data models, under Unicode
+    License V3. The first notice below is retained from the earlier
+    cldr-json data, which used the same license.
 
   - The ICU 78.2 data Chromium 156.0.8078.4 ships, from Chromium's copy of
     ICU (https://chromium.googlesource.com/chromium/deps/icu, commit
@@ -12,8 +13,8 @@ intl/internal/gen/overrides.go, which it is generated with) comes from:
     such as the Korean names of the North American time zones, which are
     also under the third notice below.
 
-intl/testdata/chromium/golden.json.gz and availability.json, which the tests
-and the generator read, hold what Chromium 156.0.8078.4 answered to Intl
+intl/testdata/chromium/golden*.json.gz and migration.json,
+which the tests and the generator read, hold what Chromium 156.0.8078.4 answered to Intl
 calls, recorded by intl/testdata/chromium/record.cjs: the formatted strings,
 resolved options and locale lists it made from the same ICU 78.2 data. They
 are under the same notices as icu.json.gz. The expressions in golden.json.gz

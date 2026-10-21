@@ -8,7 +8,7 @@ package intl
 import "time"
 
 // ChromiumPattern exposes the resolved ICU pattern to package intl's
-// legacy Date formatter, which shares ISO styles with Temporal.
+// registry key. Distinct patterns can have the same public resolved options.
 func (f *DateTimeFormat) ChromiumPattern() string { return f.patternText }
 
 // ForTemporalChromium keeps the original pattern when the type's skeleton
@@ -34,8 +34,8 @@ func (f *DateTimeFormat) ForTemporalChromium(kind TemporalKind) (*DateTimeFormat
 }
 
 // FormatTemporalZoned honors the offset already computed by Temporal.
-// When zone data versions disagree, its names no longer describe that
-// offset, so use the offset's name as package intl's formatAt does.
+// A supplied offset that differs from the zone uses an offset name.
+// Intl and Temporal normally read the same embedded zone pack.
 func (f *DateTimeFormat) FormatTemporalZoned(t time.Time, offset int) string {
 	if f.tz.offsetAt(t.UnixMilli()).total() == offset {
 		return f.Format(t)

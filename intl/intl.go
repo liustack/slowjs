@@ -55,54 +55,30 @@
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //
-// answers in the host's own zone before Register - a wrong time, silently -
+// ignores the requested zone before Register
 // and "12/31/1969, 7:00:00 PM" after it.
 //
 // # Locales
 //
-// The locale data is CLDR 48.2 (cldr-json 48.2.3), for every locale Chromium
-// has. A locale resolves as it does in Chromium: one with no data of its own
+// All constructors read go-intl's data packs, selected by Chromium 156
+// resource inventory, for every locale Chromium has. A locale resolves as it does in Chromium: one with no data of its own
 // falls back to its parent (en-XX to en) or, failing that, to en-US. With no
 // locale argument the locale is en-US and with no timeZone option the zone is
 // UTC: Intl and the toLocale* methods never read the host's language or zone.
 // Neither does the engine's own Date, whose local time is UTC in every VM.
 //
-// Dates support the Gregorian and ISO calendars, the buddhist one for th and the
-// persian one for fa, fa-AF, ps, uz-Arab and ckb-IR, whose default they are.
-// Another calendar asked for, with -u-ca- or the calendar option, such as
-// japanese or roc, is not supported: as ECMA-402 has it for a calendar an
-// implementation lacks, it is dropped from the resolved locale, the date is
-// in the locale's default calendar, and resolvedOptions().calendar says
-// which, so a page can tell. Nothing throws, which would break a page that
-// Chromium renders.
-//
-// Not implemented: NumberFormat.formatRange and formatRangeToParts. NumberFormat and
-// PluralRules accept roundingIncrement and roundingPriority but only
-// implement their defaults, which is what resolvedOptions reports: a value
-// out of range throws a RangeError, any other is ignored.
+// Dates support all 18 calendars Chromium lists. NumberFormat and PluralRules
+// implement roundingIncrement and roundingPriority through go-intl.
+// NumberFormat.formatRange and formatRangeToParts are not implemented.
 //
 // # Differences from Chromium
 //
-// The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
-// 48.1) on about 75,000 expressions recorded in testdata/chromium. The
-// 60,000 of DateTimeFormat, NumberFormat and PluralRules all match exactly
-// but those in a calendar other than the ones above, which format as
-// Chromium does without that calendar: in the locale's default calendar,
-// Gregorian but for th and the persian locales. Those of the other
-// constructors, in every language Chromium has for each, match but where
-// the paragraphs below say.
-//
-// Checks over every locale beyond those expressions found these other
-// differences, all in rare locales or options:
-//
-//   - sr-Cyrl-ME names currencies, units and time zones in Cyrillic, where
-//     Chromium writes them in Latin ("1 литар" for "1 litar").
-//   - uz-AF and uz-Arab-AF put an era, "AP", before the year of a date with
-//     time, which Chromium leaves out, and do not pad the hour of a time
-//     with a long zone name ("۵:۳۰" for "۰۵:۳۰").
-//   - en-IE and fr-MA with hourCycle h11 write the day period "am" and "AM"
-//     where Chromium writes "a.m.".
-//   - om-KE's short era is "BA" where Chromium's is "CE".
+// The output is compared with Chromium 156 (V8 over ICU 78.2) on 74,868
+// recorded expressions. DateTimeFormat, NumberFormat and PluralRules match
+// every expression, including calendars. The other constructors have the
+// known differences below. An additional 939 expressions cover the migration
+// to go-intl. Three Winnipeg answers differ because the embedded tz 2026e
+// keeps daylight time after October 2026, unlike Chromium's older tz data.
 //
 // Intl.Segmenter breaks words by ICU's rules, which Chromium changes: there a
 // full stop or a colon between letters ends a word, so "U.S.A" is five
@@ -126,10 +102,8 @@
 // "en-u-rg-xxzzzz", leaves the locale's own region in place for the hour
 // cycle and the week, where Chromium takes the world's.
 //
-// Intl.supportedValuesOf("calendar") lists gregory only, the calendar
-// DateTimeFormat formats in every locale, where Chromium lists 18. Its
-// currencies are go-intl's, 162, which has SLE, XCG and ZWG beyond
-// Chromium's 159.
+// Intl.supportedValuesOf("currency") lists go-intl's 162 currencies,
+// including SLE, XCG and ZWG beyond Chromium's 159.
 //
 // Intl.DurationFormat writes a fraction of more than 2**63 nanoseconds, as
 // in {nanoseconds: 1e20} with numeric seconds, as V8 does on x86-64:
@@ -154,33 +128,21 @@
 //
 // # Cost
 //
-// The locale data is embedded in the binary, about 1.3 MB, and stays in its
-// read only data. A language is decoded into the Go heap the first time a
-// formatter needs it, once per process, and every VM shares it: 100 to 180
-// KB per language, and about 1 MB for the index and the data all languages
-// share on the first use of any. Register itself only puts stand-ins on the
-// VM. The javascript half is installed the first time a page touches Intl or
-// a toLocale* method, from bytecode compiled once per process, so a VM that
-// never formats anything does not carry it. A formatter is resolved once per
-// process for the same locales and options, whichever VM asks, and kept for
-// all of them: the process keeps up to 1024 of them, dropping the oldest, and
-// an object whose formatter was dropped resolves it again on its next call.
-// The dropping is the process's, not a VM's: a page making formatters with
-// options made up in a loop makes the formatters of other VMs resolve again
-// too, which costs them time but changes no result.
+// The six embedded packs total 9.35 MB. Their shared tables stay in the
+// binary's read-only data. Other chunks inflate into the Go heap on first
+// use, once per process. Date and Temporal formatting use the same packs.
+// The build tags quickjs_intl_nonames and quickjs_intl_nocjdict omit display
+// names and the Chinese and Japanese word dictionary respectively.
 //
-// The other constructors read go-intl's data (internal/gointl), about 8.4 MB
-// more in the binary: 4.4 MB for collation, segmentation, relative times,
-// lists, durations and locale facts, 1.9 MB of display names, which the
-// build tag quickjs_intl_nonames leaves out (Intl.DisplayNames then answers
-// each code with its fallback), and 2.0 MB of the Chinese and Japanese word
-// dictionary, which quickjs_intl_nocjdict leaves out (a run of Chinese or
-// Japanese is then one word). Temporal values and date ranges also link
-// go-intl's dates and zone names, 2.83 MB. Single Date values use the existing
-// formatter, with ISO patterns from go-intl. The tables a
-// formatter reads only a little of stay in the binary's read only data, and
-// the rest is inflated into the Go heap the first time a formatter needs it,
-// once per process.
+// Register installs stand-ins. The first use installs the javascript half
+// from bytecode compiled once per process. Resolved formatters are shared
+// across VMs in a bounded registry of 1024 entries. Eviction makes an object
+// resolve its saved arguments again on its next call, without changing its
+// result. Date keys include the actual pattern because distinct patterns
+// can report identical public resolved options.
+//
+// See docs/fork-changes/time-and-intl.md for measured binary size, VM memory
+// and constructor and formatting times.
 //
 // # License of the data
 //
@@ -196,24 +158,8 @@
 //
 // # Time zones
 //
-// Resolving an IANA name needs the zoneinfo database, which Go reads from the
-// operating system or, when the program imports time/tzdata, from the copy
-// embedded in the binary:
-//
-//	import _ "time/tzdata"
-//
-// A binary that has to run on Windows or in a scratch container wants that
-// import - and it belongs in that binary's main package, not in a library.
-// Importing it from a library adds a few hundred KB to every program that
-// links the library and takes the choice away from the ones that would rather
-// use the host's database, so this package does not import it.
-//
-// Offsets come from that database. Whether a time is daylight saving time,
-// which picks a zone's daylight or standard name, is what the rearguard form
-// of the tz data says, as in ICU: Linux and time/tzdata ship the main form,
-// where Europe/Dublin's winter time is daylight saving time, and macOS the
-// rearguard one. For the few zones whose two forms differ, the answer comes
-// from a table of tzdb 2026d, the release in Chromium 156's ICU.
+// Names, offsets and daylight flags use go-intl's embedded ICU tz 2026e
+// pack, shared with Temporal. No host zoneinfo or time/tzdata is read.
 //
 // The default zone, which is also what
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
@@ -357,7 +303,7 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	if c.timeZone == "" {
 		c.timeZone = "UTC"
 	}
-	name, _, err := timeZone(c.timeZone)
+	name, err := resolveTimeZone(c.timeZone)
 	if err != nil {
 		return err
 	}

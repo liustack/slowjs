@@ -24,7 +24,7 @@ type temporalDateFormat struct {
 func (f *temporalDateFormat) init() error { return nil }
 
 var temporalDateFormatCtor = &ctor{
-	name: "TemporalDateTimeFormat", tag: 'T', svc: dateService,
+	name: "TemporalDateTimeFormat", tag: 'T',
 	fixed:   []string{"_kind", "_zone", "_required", "_defaults"},
 	options: dateTimeFormatCtor.options,
 	resolve: func(req request) (formatter, error) {

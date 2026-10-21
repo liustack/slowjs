@@ -12,8 +12,8 @@
 # script, qjs.patch, qjstz, qjs_*.go, qjsdata/, internal/qjspack/, the
 # qjs_walk.go of each data package), and UPSTREAM. Everything else is go-intl's, rewritten
 # from github.com/go-quickjs/go-intl to github.com/liustack/quickjs/internal/gointl
-# and changed only by qjs.patch, which is kept to the data loading layer and
-# to notices: source.go stops embedding data.pack and serves our packs
+# and changed only by qjs.patch, which covers data loading, Chromium style
+# construction and notices: source.go stops embedding data.pack and serves our packs
 # instead, internal/blob reports the pool parts it reads when the pack tool
 # walks the data, dictbe.go takes a missing break dictionary for none, so
 # that a build without the CJK dictionary still segments, the loaders of the

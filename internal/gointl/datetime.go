@@ -533,6 +533,9 @@ func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
 	chain := loc.Fallback()
 	if f, err := NewFallbacker(src); err == nil {
 		chain = f.ChainIn(treeLocales, loc.Data())
+		if _, err := src.Open(MarkerDates, loc.Data()); err == nil {
+			chain = f.Chain(loc.Data())
+		}
 	}
 	pool, err := openShared(src, MarkerDatesShared, datedata.Version)
 	if err != nil {

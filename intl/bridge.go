@@ -118,9 +118,7 @@ type option struct {
 type ctor struct {
 	name string // as in Intl.NumberFormat
 	tag  byte   // the first byte of its request keys
-	// svc is the service of a constructor built on cldr.bin, goSvc that of
-	// one built on go-intl, whose locales go-intl resolves.
-	svc   service
+	// goSvc selects the go-intl locale set for this constructor.
 	goSvc gointl.Service
 	// fixed names the leading string arguments of a resolve, which come
 	// from intl.js rather than from the page, such as the VM's default time
@@ -139,9 +137,9 @@ var (
 	// ECMA-402 converts the digit options of SetNumberFormatDigitOptions
 	// once it has read them all, where intl.js converts each as it reads it.
 	numberFormatCtor = &ctor{
-		name: "NumberFormat",
-		tag:  'N',
-		svc:  numberService,
+		name:  "NumberFormat",
+		tag:   'N',
+		goSvc: gointl.ServiceNumberFormat,
 		options: concat(
 			stringOptions("localeMatcher", "numberingSystem", "style", "currency", "currencyDisplay", "currencySign",
 				"unit", "unitDisplay", "notation"),
@@ -153,7 +151,7 @@ var (
 	dateTimeFormatCtor = &ctor{
 		name:  "DateTimeFormat",
 		tag:   'D',
-		svc:   dateService,
+		goSvc: gointl.ServiceDateTimeFormat,
 		fixed: []string{"_zone", "_required", "_defaults"},
 		options: concat(
 			stringOptions("localeMatcher", "calendar", "numberingSystem"), []option{{"hour12", 'b'}},
@@ -171,7 +169,7 @@ var (
 	pluralRulesCtor = &ctor{
 		name:    "PluralRules",
 		tag:     'P',
-		svc:     pluralService,
+		goSvc:   gointl.ServicePluralRules,
 		options: concat(stringOptions("localeMatcher", "type", "notation", "compactDisplay"), digitOptions()),
 		resolve: func(req request) (formatter, error) { return resolvePluralRules(req) },
 	}
@@ -464,8 +462,7 @@ func formatterOf[T formatter](a quickjs.Args) (f T, ok bool, err error) {
 	return f, true, nil
 }
 
-// numberArg returns argument i of a, a number or a string of digits, as
-// numberValue takes it.
+// numberArg returns argument i of a, a number or a numeric string.
 func numberArg(a quickjs.Args, i int) any {
 	if f, ok := a.Number(i); ok {
 		// An integer goes on as one, as the engine tags most of them, which
@@ -487,10 +484,10 @@ func numberArg(a quickjs.Args, i int) any {
 // The Builtins intl.js is made with, in the order of its parameters.
 var bridge = []*quickjs.Builtin{
 	resolveBuiltin(numberFormatCtor),
-	quickjs.NewBuiltin("format", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	quickjs.NewBuiltin("format", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		return numberFormatted(a, false)
 	}),
-	quickjs.NewBuiltin("formatToParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	quickjs.NewBuiltin("formatToParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		return numberFormatted(a, true)
 	}),
 	resolveBuiltin(dateTimeFormatCtor),
@@ -562,12 +559,7 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
-		var r []string
-		if c.goSvc != "" {
-			r, err = goSupported(c.goSvc, tags)
-		} else {
-			r, err = supportedLocales(tags, c.svc)
-		}
+		r, err := goSupported(c.goSvc, tags)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
@@ -821,10 +813,11 @@ func numberFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 		return quickjs.UndefinedValue, err
 	}
 
-	parts, err := f.format(numberArg(a, 1))
-	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+	v := numberArg(a, 1)
+	if isBigInt, _ := a.Bool(2); isBigInt {
+		v = bigintDecimal(v.(string))
 	}
+	parts := f.format(v)
 
 	return formatted(a.VM(), parts, wantParts)
 }

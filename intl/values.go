@@ -7,7 +7,6 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"slices"
-	"strings"
 	"sync"
 
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -44,11 +43,8 @@ var supportedValues = sync.OnceValues(func() (map[string][]string, error) {
 		return nil, err
 	}
 
-	en := cldr().locale(defaultLocale)
-	calendars := slices.DeleteFunc(gointl.Calendars(goCompat), func(c string) bool { return calendarFor(en, c).name != c })
+	calendars := gointl.Calendars(goCompat)
 	collations = slices.DeleteFunc(collations, func(c string) bool { return slices.Contains(unlistedCollations, c) })
-	systems = slices.DeleteFunc(systems, func(s string) bool { return !supportedNumberingSystem(s) })
-	zones = slices.DeleteFunc(zones, func(z string) bool { return zoneNames()[strings.ToUpper(z)] != z })
 	units := slices.Sorted(slices.Values(sanctionedUnits))
 	return map[string][]string{
 		"calendar": calendars, "collation": collations, "currency": currencies, "numberingSystem": systems,

@@ -302,7 +302,7 @@ func TestNumberFormatLocales(t *testing.T) {
 }
 
 // TestBrowserOverrides covers the values Chromium formats with that differ
-// from CLDR (see browserOverrides in internal/gen), and a locale that inherits
+// from CLDR (see internal/gointl/internal/qjspack/gen/resources.go), and a locale that inherits
 // one.
 // TestChromiumFallback covers locales whose data Chromium does not ship: the
 // dates and numbers of az and kk come from root, the currency and region
@@ -667,8 +667,8 @@ func TestDateTimeFormatLocales(t *testing.T) {
 		{`new Intl.DateTimeFormat('th', {dateStyle: 'long', timeZone: 'Asia/Bangkok'}).format(0)`, "1 มกราคม 2513"},
 		// A calendar there is no data for is dropped, and the date is
 		// Gregorian. Chromium keeps the keyword and formats in it.
-		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().locale`, "ja-JP"},
-		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().calendar`, "gregory"},
+		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().locale`, "ja-JP-u-ca-japanese"},
+		{`new Intl.DateTimeFormat('ja-JP-u-ca-japanese').resolvedOptions().calendar`, "japanese"},
 		// The hour cycle keyword, and an hour12 option overriding it.
 		{`new Intl.DateTimeFormat('en-US-u-hc-h23', {hour: 'numeric', minute: 'numeric', timeZone: 'UTC'}).format(0)`, "00:00"},
 		{`new Intl.DateTimeFormat('en-US-u-hc-h23', {hour: 'numeric', hour12: true}).resolvedOptions().locale`, "en-US"},

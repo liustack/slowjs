@@ -34,8 +34,8 @@
 // zoneinfo64 from ICU's time zone update for tz 2026e and ICU's calendar
 // data, the 92 KB pack of it that Temporal reads. The host's zoneinfo is never read, so Temporal gives the
 // same answers on every machine, a container without /usr/share/zoneinfo
-// included. Temporal date formatting reads the same zones. Named zones
-// still pass package intl's validation, which needs zoneinfo Go can read.
+// included. Temporal date formatting and named-zone validation read the
+// same embedded zones, without needing host zoneinfo.
 // ZonedDateTime.toLocaleString honors Temporal's offset even if the zone
 // data used for formatting ever differs, naming that offset instead.
 //
@@ -45,8 +45,8 @@
 // from package intl, whether or not the VM has intl registered. Plain values
 // ignore timeZone, an Instant uses the formatter's zone, and ZonedDateTime
 // uses its own zone. DateTimeFormat itself rejects ZonedDateTime.
-// Calendar support is limited to Gregorian, ISO and the existing Buddhist
-// and Persian locale data. A mismatched calendar throws RangeError.
+// Formatting supports all 18 calendars listed by Chromium. A mismatched
+// calendar throws RangeError.
 // ISO PlainYearMonth and PlainMonthDay need an explicit ISO calendar.
 // Duration.toLocaleString uses Intl.DurationFormat. Both paths read private
 // slots and captured built-ins, not properties a page can replace.

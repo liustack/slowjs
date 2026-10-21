@@ -195,6 +195,7 @@ func NewPluralRulesFrom(src Source, loc Locale, opts PluralRulesOptions) (*Plura
 // Serbian written in Latin, whose parent is the root, still counts as
 // Serbian does, so "1 sat" is singular.
 func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
+	var result plurdata.Locale
 	for _, d := range loc.Fallback() {
 		b, err := src.Open(MarkerPlurals, d)
 		if err != nil {
@@ -204,14 +205,28 @@ func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
 		if err != nil {
 			return nil, fmt.Errorf("intl: the plural rules for %s: %w", d, err)
 		}
-		return l, nil
+		if len(result.Cardinal) == 0 {
+			result.Cardinal = l.Cardinal
+		}
+		if len(result.Ordinal) == 0 {
+			result.Ordinal = l.Ordinal
+		}
+		if len(result.Ranges) == 0 {
+			result.Ranges = l.Ranges
+		}
+		if len(result.Cardinal) > 0 && len(result.Ordinal) > 0 && len(result.Ranges) > 0 {
+			return &result, nil
+		}
 	}
-	// Every language has "other", so having no rules at all is the same as
-	// having only that one.
-	return &plurdata.Locale{
-		Cardinal: []plurdata.Rule{{Category: "other"}},
-		Ordinal:  []plurdata.Rule{{Category: "other"}},
-	}, nil
+	// A missing regional set inherits its language's rules independently.
+	// The root supplies the unconditional category for an unlisted language.
+	if len(result.Cardinal) == 0 {
+		result.Cardinal = []plurdata.Rule{{Category: "other"}}
+	}
+	if len(result.Ordinal) == 0 {
+		result.Ordinal = []plurdata.Rule{{Category: "other"}}
+	}
+	return &result, nil
 }
 
 // Select returns the plural form a number calls for.

@@ -244,19 +244,6 @@ var goldenDifferences = []goldenDifference{
 		},
 	},
 	{
-		// DateTimeFormat writes dates in fewer calendars than Chromium (see
-		// the package doc), and lists those it does.
-		why: "DateTimeFormat has fewer calendars",
-		match: func(expr, got, want string, recorded map[string]string) bool {
-			if expr != `Intl.supportedValuesOf("calendar").join()` {
-				return false
-			}
-
-			en := cldr().locale(defaultLocale)
-			return got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(c string) bool { return calendarFor(en, c).name != c }), ",")
-		},
-	},
-	{
 		// go-intl lists the currencies that ICU names, which are more than
 		// Chromium's ICU data names, as with DisplayNames: those of the
 		// summary of Chromium's data.

@@ -56,7 +56,7 @@ func main() {
 }
 ```
 
-一个 VM 不能同时给多个 goroutine 用：每个 goroutine 各用一个，或者建一个池。机器上没有 zoneinfo 时，要解析时区名就在 main 包里 import `time/tzdata`。
+一个 VM 不能同时给多个 goroutine 用：每个 goroutine 各用一个，或者建一个池。Intl 和 Temporal 共用内嵌的 tz 2026e，不依赖主机的 zoneinfo。
 
 ## fork 在 API 上加了什么
 
@@ -68,7 +68,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **Go 里建的 `*Error` 的 `Error()`** 是 `Name: Message`，和 `Error.prototype.toString` 的写法一样，以前是空字符串。从 JavaScript 拿到的错误仍是引擎原来的文本。[详情](docs/fork-changes/go-api.md#error-of-an-error-made-in-go)
 - **`VM.RunGC()`、`VM.MemorySize()` 和 `VM.GCThreshold()`**：马上跑一次 GC，读 VM 占的内存和下次 GC 的阈值，这样程序可以在两次调用 JavaScript 之间回收，再给下一次设好阈值。[详情](docs/fork-changes/go-api.md#rungc-memorysize-and-gcthreshold)
 - **`VM.OnClose(f)`**：VM 关闭时运行 `f`，自己用表按 VM 存东西的包可以在这时删掉对应的项。[详情](docs/fork-changes/go-api.md#onclose)
-- **`temporal` 包**：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，由 go-intl 在 Go 里计算，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`temporal.Clock` 设定 `Temporal.Now` 用的时钟。tifa 的示例商店因此大 0.84 MB。[详情](docs/fork-changes/temporal.md)
+- **`temporal` 包**：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，由 go-intl 在 Go 里计算，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`temporal.Clock` 设定 `Temporal.Now` 用的时钟。当前程序体积测量见文档。[详情](docs/fork-changes/temporal.md)
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 

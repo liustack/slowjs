@@ -146,68 +146,39 @@ The VM puts libc's TLS stack back after a panic (`tlsstack_linux.go`, `tlsstack_
 
 ## Updating the intl locale data
 
-`intl/cldr.bin` is generated from cldr-json and `intl/tzdst_table.go` from tzdb, and both are checked in, so neither a build nor `go test` needs the network or Node. To generate them again:
+All Intl constructors use the go-intl packs below. `intl/cldr.bin`, its generator and the host-zone DST table have been removed. Builds and tests need no network or browser.
+
+The pack generator reads `intl/testdata/chromium/icu.json.gz`. It records ICU resource inheritance, raw calendar and zone strings, non-Latin number symbols and the RBNF bundles Chromium ships. The generator applies those choices to go-intl's models and encodes one shared pool for each data set. Missing RBNF data follows ICU's style-construction failure path. It does not substitute an invented value.
+
+To update the reference browser, use a cached Chromium executable and Playwright installation. Set `CHROMIUM` and `PLAYWRIGHT` for the commands below:
 
 ```sh
-go run ./intl/internal/gen -fetch    # downloads what is missing into a cache directory
-go test ./intl                       # includes the golden test against Chromium
+node intl/testdata/chromium/record.cjs icudtl
+go run -p 2 -tags gointl_walk ./internal/gointl/internal/qjspack/gen -icudtl /path/to/icudtl.dat
+internal/gointl/qjs-sync.sh chromium
+internal/gointl/qjs-sync.sh pack
+node intl/testdata/chromium/record.cjs golden
+node intl/testdata/chromium/record.cjs probes migration
+go test -short -p 2 ./intl/... ./temporal/...
 ```
 
-The tzdb step needs `make`, `awk` and `zic` (`-zic` names another zic). It unpacks the release in `tzdbVersion` in `intl/internal/gen/tzdb.go`, after checking its SHA-256 against `tzdbSHA256`, makes `main.zi` and `rearguard.zi` with the release's Makefile and compiles both. The table lists the zones and links whose daylight saving flag differs between the two forms before 2038, with their periods in the rearguard form, which is what ICU builds from. The generator also copies a few zones in both forms to `intl/testdata/tzdata` for the tests. To move to a new release, take the one in the ICU data of the Chromium the golden test records with: the `TZVersion` of `zoneinfo64.res` in its `icudtl.dat` (see below for where to get that file). Set `tzdbVersion` and `tzdbSHA256` (the SHA-256 of `tzdata<version>.tar.gz` from https://data.iana.org/time-zones/releases/, whose signature is the `.asc` next to it) and run the two commands.
+Record each other golden set with `record.cjs golden <set>`, as the recorder's header lists. Chromium 156.0.8078.4 uses ICU commit `5aa526207171ecadf31597f0980a7b7ad8872f33`. The pack tool now owns the ICU parser formerly in `intl/internal/gen`.
 
-To move to a new CLDR release, set `cldrTag` in `intl/internal/gen/main.go` to the cldr-json tag and run the two commands. The golden test then shows every expression whose output changed. Where the new CLDR changed a value Chromium does not have yet, add the value Chromium has to `browserOverrides` in `intl/internal/gen/overrides.go`, with where it comes from. The generator stops on an override CLDR has caught up with, so the list only ever holds live differences.
-
-To compare with a newer Chromium, record its answers again. This needs Node and a Chromium that Playwright drives. Set it up once:
-
-```sh
-npm install -g playwright@1.64.0                # Chromium 156.0.8078.4, as recorded here
-npx playwright@1.64.0 install chromium
-export PLAYWRIGHT="$(npm root -g)/playwright"   # what record.cjs loads
-```
-
-Each Playwright release drives one Chromium build, so a newer Chromium needs a newer Playwright: its `browsers.json` names the build.
-
-Then, from the repository root:
-
-```sh
-CLDR="$HOME/cldr-json"                                         # any directory for the downloads
-go run ./intl/internal/gen -fetch -cldr "$CLDR"                # the list of CLDR locales
-node intl/testdata/chromium/record.cjs availability "$CLDR"    # the locales Chromium has
-go run ./intl/internal/gen -icudtl "$(node intl/testdata/chromium/record.cjs icudtl)"
-go run ./intl/internal/gen -fetch -cldr "$CLDR"                # data for those locales
-go test ./intl -run TestGolden -args -golden.corpus            # writes corpus.json
-node intl/testdata/chromium/record.cjs golden                  # writes golden.json.gz and golden-<set>.json.gz
-node intl/testdata/chromium/record.cjs shape                   # writes shape.json
-node intl/testdata/chromium/record.cjs tamper                  # writes tamper.json
-go test ./intl
-rm -rf "$CLDR"
-```
-
-`record.cjs icudtl` prints where the browser keeps `icudtl.dat`, its ICU data file. The same file, byte for byte, is `common/icudtl.dat` in Chromium's copy of ICU, at the commit Chromium's `DEPS` pins for `src/third_party/icu` (5aa52620 for 156.0.8078.4), so summarizing it needs no browser:
-
-```sh
-curl -s 'https://chromium.googlesource.com/chromium/deps/icu/+/5aa526207171ecadf31597f0980a7b7ad8872f33/common/icudtl.dat?format=TEXT' |
-	base64 -d > icudtl.dat
-go run ./intl/internal/gen -icudtl icudtl.dat
-```
-
-The generator writes a summary of it to `intl/testdata/chromium/icu.json.gz` and makes every locale take each resource from where Chromium's ICU finds it, so a language whose data Chromium leaves out formats with root's or English data as it does in Chromium. To record another browser, set `CHROMIUM` to its executable for every `record.cjs` command.
-
-Update the Chromium and ICU versions in the package documentation of `intl` and in this doc, and look at each new difference: fix the code when Chromium is right, or add the cause to `goldenDifferences` when the difference is in the data.
+Keep the raw browser answers. Explain every changed expression before updating expectations. The three Winnipeg cases in `TestGoIntlMigration` name exact tz 2026e answers because the reference browser has older zones.
 
 ## Updating go-intl (`internal/gointl`)
 
-`internal/gointl` is a copy of [go-intl](https://github.com/go-quickjs/go-intl), a pure Go ECMA-402 and Temporal library, at the release and commit in `internal/gointl/UPSTREAM` (v0.6.1). Package `intl` uses it for Temporal date formatting, date ranges and the other constructors except `NumberFormat` and `PluralRules`. Single Date values keep the existing formatter, with ISO patterns from go-intl. Package `temporal` computes with its temporal package and reads its zones and calendars. It is internal because its API is go-intl's and changes between releases, and it sits at the module root so that `intl/` and `temporal/` can import it.
+`internal/gointl` is a copy of [go-intl](https://github.com/go-quickjs/go-intl), a pure Go ECMA-402 and Temporal library, at the release and commit in `internal/gointl/UPSTREAM` (v0.6.1). Package `intl` uses it for every constructor, Date and Temporal formatting, and date ranges. Package `temporal` computes with its temporal package and reads its zones and calendars. It is internal because its API is go-intl's and changes between releases, and it sits at the module root so that `intl/` and `temporal/` can import it.
 
-The files and directories named `qjs*`, and `UPSTREAM`, are ours. `qjs_temporalformat.go` keeps unchanged Temporal patterns as Chromium 156 does, shares ISO patterns with the legacy Date formatter and honors an offset supplied by Temporal. Rerun the focused formatting corpora after updating it. Everything else is go-intl's, with its import path rewritten, and is changed only by `internal/gointl/qjs.patch`, which keeps to loading data and notices: `source.go` serves our packs instead of go-intl's 18.9 MB `data.pack`, `internal/blob` tells the pack tool which pool parts a locale reads, `dictbe.go` takes a missing break dictionary for none, the loaders of the data in the readers' packs below call the function that links their pack, and `temporal/solar.go` and `temporal/zoneinfo.go` start with a header saying that parts are ported from calendrical_calculations and changed, which its Apache-2.0 license asks of a changed file. A file of a new go-intl release that ports from an Apache-2.0 project gets the same header through `qjs.patch`.
+The files and directories named `qjs*`, and `UPSTREAM`, are ours. `qjs_temporalformat.go` keeps unchanged Temporal patterns as Chromium 156 does, exposes the actual date pattern for registry keys and honors an offset supplied by Temporal. Rerun the focused formatting corpora after updating it. Everything else is go-intl's, with its import path rewritten, and is changed only by `internal/gointl/qjs.patch`, which covers data loading, Chromium style construction and notices: `source.go` serves our packs instead of go-intl's 18.9 MB `data.pack`, `internal/blob` tells the pack tool which pool parts a locale reads, `dictbe.go` takes a missing break dictionary for none, the loaders of the data in the readers' packs below call the function that links their pack, and `temporal/solar.go` and `temporal/zoneinfo.go` start with a header saying that parts are ported from calendrical_calculations and changed, which its Apache-2.0 license asks of a changed file. A file of a new go-intl release that ports from an Apache-2.0 project gets the same header through `qjs.patch`.
 
 The data is in `internal/gointl/qjsdata/`, written by `internal/gointl/internal/qjspack/gen` from go-intl's `data/` directory:
 
-- `core.bin` (4.4 MB), everything but those below.
+- `core.bin` (3.39 MB), everything but those below.
 - `names.bin` (1.9 MB), the display names. Build with `-tags quickjs_intl_nonames` to leave it out: `Intl.DisplayNames` then has no names, and `of` answers every code with its fallback, the code or `undefined` with `fallback: 'none'`.
 - `cjdict.bin` (2.0 MB), the Chinese and Japanese word dictionary. Build with `-tags quickjs_intl_nocjdict` to leave it out: a run of Chinese or Japanese is then one word, as in an ICU without the dictionary.
 - `tz.bin` (92 KB), what package `temporal` reads: ICU's time zones, the zone names Temporal takes, the tables of the Chinese, Korean and Umm al-Qura calendars, and `tzversion.bin`, the tz release of the zones. `Embedded` serves it with the rest, and `EmbeddedTemporalSource` serves it alone. The two share one copy: a chunk read through either is inflated once.
-- The readers' packs, each linked only into a binary that links a function reading it (`qjs_readers.go`): `dates.bin` (728 KB), what go-intl's `DateTimeFormat` reads, `zonenames.bin` (2.1 MB), the zone names, and `hostzones.bin` (6 KB), the tables of the guess at the host's zone. Package `intl` uses its existing formatter for single Date values, with ISO patterns from go-intl, and go-intl for Temporal values and date ranges, so it links the date and zone-name packs, but not the host-zone pack (`TestLinksOnlyReadData`). Each loader of their data calls `qjsUseDates`, `qjsUseZoneNames` or `qjsUseHostZones` first, through `qjs.patch`, and `TestQJSReadersUsePacks` fails when a function of a new go-intl release reads one of their data sets without that call: add it to the patch. A data set a new release adds for a new reader gets a pack of its own the same way, in `packOf` of the pack tool, a variable in `qjs_readers.go` and the calls in its loaders.
+- The readers' packs, each linked only into a binary that links a function reading it (`qjs_readers.go`): `dates.bin` (677 KB), what go-intl's `DateTimeFormat` reads, `zonenames.bin` (1.27 MB), the zone names, and `hostzones.bin` (6 KB), the tables of the guess at the host's zone. Package `intl` uses these packs for Date and Temporal values and ranges. It links the date and zone-name packs, but not the host-zone pack (`TestLinksOnlyReadData`). Each loader of their data calls `qjsUseDates`, `qjsUseZoneNames` or `qjsUseHostZones` first, through `qjs.patch`, and `TestQJSReadersUsePacks` fails when a function of a new go-intl release reads one of their data sets without that call: add it to the patch. A data set a new release adds for a new reader gets a pack of its own the same way, in `packOf` of the pack tool, a variable in `qjs_readers.go` and the calls in its loaders.
 
 The locales are those of Chromium 156. `qjsdata/chromium.json` records which locale Chromium resolves each of go-intl's available locales to, for every `Intl` constructor, and each service here has the locales Chromium resolves to themselves: `TestQJSResolveMatchesChromium` checks that every service resolves every one of those tags as Chromium does. A language's data is kept when Chromium has the bare language for a service, with the languages it inherits from, and its plural rules when Chromium has it for `PluralRules`. Chromium has some locales whose language it has no data for, such as `ha-GH` without `ha`: they format with the root's data there, and here. The pack tool prints the languages it drops and those it keeps the plural rules of only.
 
@@ -219,7 +190,7 @@ The bytes a formatter reads are never to be written: an uncompressed chunk is th
 
 ### Time zones
 
-go-intl v0.6.1 makes its zones from tz 2026c. The packs carry those of a later update, the one `internal/gointl/qjstz` names (2026e now), so that a zone that changed its rules since gives what browsers on the newer data give. `qjs-sync.sh checkout` downloads ICU's update for that release from the icu-data repository (`tzdata/icunew/<version>/44`: `zoneinfo64.txt`, `timezoneTypes.txt`, `windowsZones.txt`, `metaZones.txt`) and ICU's sources, checks their sha256 against `qjstz`, and runs go-intl's own `tzgen` on them in a copy of the checkout, `$GOINTL_UPSTREAM-tz<version>`. Only `data/tz/`, `data/windowszones.bin` and `data/abbreviationzones.bin` change, and the copy gets `data/tzversion.bin`, which goes into `tz.bin`. `pack` and `test-chromium` read that copy's `data/`. `test` makes its packs of go-intl's data as it is, zones included, since go-intl's corpora hold Node's answers at go-intl's tz release, and `test-chromium` leaves out the three tests that compare zones with Node (`tz_skips` in the script) while the releases differ. Between 2026c and 2026e those tests differ in Bogota (1992), Tehran (1979), Dublin (1925), Inuvik, Winnipeg and Rainy_River, and EST5EDT, CST6CDT, MST7MDT and PST8PDT, which 2026d made zones of their own: all changes the tz NEWS file lists. Zone names and metazones stay those of go-intl's data. `TestQJSTZVersion` checks the release `tz.bin` holds.
+go-intl v0.6.1 makes its zones from tz 2026c. The packs carry those of a later update, the one `internal/gointl/qjstz` names (2026e now), so that a zone that changed its rules since gives what browsers on the newer data give. `qjs-sync.sh checkout` downloads ICU's update for that release from the icu-data repository (`tzdata/icunew/<version>/44`: `zoneinfo64.txt`, `timezoneTypes.txt`, `windowsZones.txt`, `metaZones.txt`) and ICU's sources, checks their sha256 against `qjstz`, and runs go-intl's own `tzgen` on them in a copy of the checkout, `$GOINTL_UPSTREAM-tz<version>`. Only `data/tz/`, `data/windowszones.bin` and `data/abbreviationzones.bin` change, and the copy gets `data/tzversion.bin`, which goes into `tz.bin`. `pack` and `test-chromium` read that copy's `data/`. `test` makes its packs of go-intl's data as it is, zones included, since go-intl's corpora hold Node's answers at go-intl's tz release, and `test-chromium` leaves out the three tests that compare zones with Node (`tz_skips` in the script) while the releases differ. Between 2026c and 2026e those tests differ in Bogota (1992), Tehran (1979), Dublin (1925), Inuvik, Winnipeg and Rainy_River, and EST5EDT, CST6CDT, MST7MDT and PST8PDT, which 2026d made zones of their own: all changes the tz NEWS file lists. Zone names and metazones use go-intl's models with Chromium's resource choices. `TestQJSTZVersion` checks the release `tz.bin` holds.
 
 To move to a newer update, once ICU has published it:
 

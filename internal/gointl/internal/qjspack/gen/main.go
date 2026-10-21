@@ -27,9 +27,11 @@
 // (datesshared.bin and the like). A pool is cut down to the parts the kept
 // locales reach: the tool reads all of each kept locale's data with the data
 // package's Walk while internal/blob records the parts read, and empties the
-// rest. The parts keep their numbers, so the locales' files are go-intl's,
-// byte for byte. Before that it walks every locale and fails if a part is
+// rest. This first pass keeps the original part numbers and locale files.
+// Before that it walks every locale and fails if a part is
 // left that none reaches: a data package that reads something Walk does not.
+// Chromium resource selection then rebuilds number, date and zone-name models
+// into new pools, using the recorded ICU resource inventory.
 //
 // The files go into seven packs (see internal/qjspack): names.bin, the
 // display names, and cjdict.bin, the Chinese and Japanese dictionary of the
@@ -90,14 +92,16 @@ import (
 )
 
 var (
-	dataDir  = flag.String("data", "", "go-intl's data directory")
-	outDir   = flag.String("out", "internal/gointl/qjsdata", "where the packs go")
-	chromium = flag.String("chromium", "internal/gointl/qjsdata/chromium.json", "what a Chromium build resolves each available locale to")
-	locales  = flag.String("locales", "chromium", `the languages kept: "chromium" or "all"`)
-	store    = flag.String("store", strings.Join(defaultStore, ","), "comma-separated files kept uncompressed")
-	check    = flag.Bool("check", false, "write nothing; fail if the packs are not what the data gives")
-	listTags = flag.Bool("tags", false, "write nothing; print the tags of go-intl's available locales, for qjs-chromium.cjs")
-	corpus   = flag.String("cut-corpus", "", "take the cases of the languages left out of go-intl's test corpora in this directory")
+	icuSummaryFile = flag.String("icu", "intl/testdata/chromium/icu.json.gz", "Chromium ICU resource inventory")
+	icudtl         = flag.String("icudtl", "", "record the Chromium ICU data file into -icu and exit")
+	dataDir        = flag.String("data", "", "go-intl's data directory")
+	outDir         = flag.String("out", "internal/gointl/qjsdata", "where the packs go")
+	chromium       = flag.String("chromium", "internal/gointl/qjsdata/chromium.json", "what a Chromium build resolves each available locale to")
+	locales        = flag.String("locales", "chromium", `the languages kept: "chromium" or "all"`)
+	store          = flag.String("store", strings.Join(defaultStore, ","), "comma-separated files kept uncompressed")
+	check          = flag.Bool("check", false, "write nothing; fail if the packs are not what the data gives")
+	listTags       = flag.Bool("tags", false, "write nothing; print the tags of go-intl's available locales, for qjs-chromium.cjs")
+	corpus         = flag.String("cut-corpus", "", "take the cases of the languages left out of go-intl's test corpora in this directory")
 )
 
 // bigFile is the size from which a file is a chunk of its own.
@@ -167,6 +171,10 @@ func main() {
 }
 
 func run() error {
+	if *icudtl != "" {
+		writeICUSummary(*icudtl, *icuSummaryFile)
+		return nil
+	}
 	if !blob.Walking {
 		return errors.New("build with -tags gointl_walk, which records the pool parts a locale reads")
 	}
@@ -200,6 +208,11 @@ func run() error {
 	out, dropped, pluralOnly, err := cut(files, langs)
 	if err != nil {
 		return err
+	}
+	if langs != nil {
+		if err := chromiumResources(files, out); err != nil {
+			return err
+		}
 	}
 	if *corpus != "" {
 		unlisted, err := unlistedTags(files["available.bin"], out["available.bin"])

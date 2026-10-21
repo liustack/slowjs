@@ -470,18 +470,16 @@
 		new Slots(this, numberFormat(locales, options));
 	}
 
-	// numberValue is ECMA-402's ToIntlMathematicalValue. It keeps a BigInt
-	// and a numeric string exact by passing them on as a string, also when an
-	// object, such as Object(1n), converts to one: the host parses decimal
-	// digits, so nothing round trips through a double that did not start as
-	// one.
-	function numberValue(v) {
+	// numberCall applies ToIntlMathematicalValue's primitive conversion once.
+	// BigInts cross as decimal digits with a separate flag: unlike numeric
+	// strings, their magnitude must not be limited to the Number range.
+	function numberCall(i, fn, v) {
 		const p = isObject(v) ? toPrimitiveNumber(v) : v;
 		const t = typeof p;
-		if (t === 'bigint' || t === 'string') {
-			return String(p);
+		if (t === 'bigint') {
+			return call(i, fn, String(p), true);
 		}
-		return +p;
+		return call(i, fn, t === 'string' ? p : +p);
 	}
 
 	function isObject(v) {
@@ -526,12 +524,12 @@
 		get format() {
 			const i = internal(this, 'NumberFormat', NumberFormat);
 			if (i.bound === undefined) {
-				i.bound = (value) => call(i, nfFormat, numberValue(value));
+				i.bound = (value) => numberCall(i, nfFormat, value);
 			}
 			return i.bound;
 		},
 		formatToParts(value) {
-			return parts(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
+			return parts(numberCall(internal(this, 'NumberFormat'), nfParts, value));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
@@ -1167,7 +1165,7 @@
 	if (bigintValueOf !== undefined) {
 		api.bigintToLocaleString = {
 			toLocaleString(locales = undefined, options = undefined) {
-				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)));
+				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)), true);
 			}
 		}.toLocaleString;
 	}

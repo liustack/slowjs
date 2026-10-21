@@ -317,7 +317,13 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 		return nil, err
 	}
 
-	s := &icuSummary{ICU: p.name, Bundles: map[string]icuBundle{}}
+	s := &icuSummary{CalendarStrings: map[string]map[string][]string{}, ZoneStrings: map[string]map[string]string{}, ICU: p.name, Bundles: map[string]icuBundle{}}
+	for name := range p.items {
+		if rest, ok := strings.CutPrefix(name, "rbnf/"); ok && rest != "res_index.res" {
+			s.RBNF = append(s.RBNF, strings.TrimSuffix(rest, ".res"))
+		}
+	}
+	slices.Sort(s.RBNF)
 	type bundle struct {
 		item, tree, name string
 		r                *icuBundleData
@@ -374,6 +380,32 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 		}
 		key := icuKey(tree, name)
 		for _, path := range r.resources(tree, patterned) {
+
+			if tree == "" && strings.HasPrefix(path, "calendar/") {
+				res, _ := r.get(strings.Split(path, "/")...)
+				if values := r.stringArray(res); values != nil {
+					if s.CalendarStrings[name] == nil {
+						s.CalendarStrings[name] = map[string][]string{}
+					}
+					s.CalendarStrings[name][path] = values
+					overrides := make([]string, len(values))
+					hasOverrides := false
+					for i := range values {
+						v := r.arrayAt(res, i)
+						if r.arrayLen(v) > 1 {
+							text, e := r.str(r.arrayAt(v, 1))
+							if e != nil {
+								fail(e)
+							}
+							overrides[i] = text
+							hasOverrides = true
+						}
+					}
+					if hasOverrides {
+						s.CalendarStrings[name][path+"%numbers"] = overrides
+					}
+				}
+			}
 			paths[path] = true
 			has[key] = append(has[key], path)
 			if res, _ := r.get(strings.Split(path, "/")...); res>>28 == resAlias {
@@ -391,6 +423,13 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 					links[key] = map[string]string{}
 				}
 				links[key][path] = target
+			}
+		}
+
+		if tree == "zone" {
+			if res, ok := r.get("zoneStrings"); ok {
+				s.ZoneStrings[name] = map[string]string{}
+				r.flattenStrings(res, "", s.ZoneStrings[name])
 			}
 		}
 		s.Bundles[key] = bundle
@@ -436,13 +475,13 @@ func summarizeICU(b []byte) (*icuSummary, error) {
 // icuCalendars and icuCalendarParts are the calendar resources the data
 // comes from.
 var (
-	icuCalendars     = []string{"gregorian", "buddhist", "persian", "generic"}
+	icuCalendars     = []string{"gregorian", "buddhist", "persian", "generic", "hebrew"}
 	icuCalendarParts = []string{"monthNames", "dayNames", "eras", "AmPmMarkers", "AmPmMarkersAbbr", "AmPmMarkersNarrow",
 		"dayPeriod", "DateTimePatterns", "DateTimePatterns%atTime", "availableFormats", "appendItems"}
 )
 
 // resources returns the resources of the bundle the generator maps its keys
-// to (see icuPath). For the currencies in patterned it adds Currencies/<code>
+// to (listed in the recorded paths). For the currencies in patterned it adds Currencies/<code>
 // where the bundle has the currency, and Currencies/<code>/pattern where that
 // entry has a third element: a pattern, decimal separator and group
 // separator for formatting in that currency.
@@ -580,4 +619,49 @@ func (r *icuBundleData) numbers() (map[string]string, error) {
 		}
 	}
 	return m, nil
+}
+
+// arrayAt returns one resource of either ICU array encoding.
+func (r *icuBundleData) arrayAt(res uint32, i int) uint32 {
+	off := int(res & 0x0fffffff)
+	if res>>28 == resArray {
+		return binary.LittleEndian.Uint32(r.root[4*off+4+4*i:])
+	}
+	return resStringV2<<28 | uint32(binary.LittleEndian.Uint16(r.u16()[2*off+2+2*i:]))
+}
+func (r *icuBundleData) stringArray(res uint32) []string {
+	n := r.arrayLen(res)
+	if n < 0 {
+		return nil
+	}
+	values := make([]string, n)
+	for i := range n {
+		v := r.arrayAt(res, i)
+		if r.arrayLen(v) > 0 {
+			v = r.arrayAt(v, 0)
+		}
+		text, err := r.str(v)
+		if err != nil {
+			fail(err)
+		}
+		values[i] = text
+	}
+	return values
+}
+func (r *icuBundleData) flattenStrings(res uint32, path string, out map[string]string) {
+	if t := r.table(res); t != nil {
+		for k, v := range t {
+			next := k
+			if path != "" {
+				next = path + "/" + k
+			}
+			r.flattenStrings(v, next, out)
+		}
+		return
+	}
+	text, err := r.str(res)
+	if err != nil {
+		fail(fmt.Errorf("zoneStrings/%s: %w", path, err))
+	}
+	out[path] = text
 }

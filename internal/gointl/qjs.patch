@@ -23,7 +23,7 @@ index 6016e2f..fbb5f3a 100644
  	if err != nil {
  		return nil, fmt.Errorf("intl: the Umm al-Qura calendar: %w", err)
 diff --git a/datetime.go b/datetime.go
-index 54adb1b..f137d9e 100644
+index 54adb1b..dd4ad16 100644
 --- a/datetime.go
 +++ b/datetime.go
 @@ -507,6 +507,7 @@ func calendarAsked(loc Locale, option string) bool {
@@ -34,7 +34,7 @@ index 54adb1b..f137d9e 100644
  	b, err := src.Open(MarkerPatternCalendars, DataLocale{})
  	if err != nil {
  		return ""
-@@ -528,6 +529,7 @@ func patternCalendarOf(src Source, loc Locale) string {
+@@ -528,9 +529,13 @@ func patternCalendarOf(src Source, loc Locale) string {
  }
  
  func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
@@ -42,6 +42,12 @@ index 54adb1b..f137d9e 100644
  	chain := loc.Fallback()
  	if f, err := NewFallbacker(src); err == nil {
  		chain = f.ChainIn(treeLocales, loc.Data())
++		if _, err := src.Open(MarkerDates, loc.Data()); err == nil {
++			chain = f.Chain(loc.Data())
++		}
+ 	}
+ 	pool, err := openShared(src, MarkerDatesShared, datedata.Version)
+ 	if err != nil {
 diff --git a/dictbe.go b/dictbe.go
 index 19d93bd..b7bc846 100644
 --- a/dictbe.go
@@ -90,6 +96,92 @@ index 7e8f383..318f321 100644
  	// i is compared with the parts there are, not multiplied out, which
  	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
  	if i < 0 || i >= len(s.ends)/4 {
+diff --git a/number.go b/number.go
+index 236e08a..464d815 100644
+--- a/number.go
++++ b/number.go
+@@ -411,25 +411,22 @@ func (s *numberSources) numberFormat(opts NumberFormatOptions) (*NumberFormat, e
+ // loadNumbers walks the fallback chain until a locale has number data. The
+ // root always does, so this always finds something or the data is broken.
+ //
+-// The currency names are ICU's currency tree's, which sends a locale or two
+-// elsewhere than the number symbols' tree does: "sr-Cyrl-ME" writes Latin
+-// currency names. Where it does, they are read from there.
++// The pack generator resolves each ICU resource separately, including currency
++// names whose parent can differ from the parent of number symbols.
+ func loadNumbers(src Source, loc Locale) (*numdata.Locale, error) {
+ 	f, err := NewFallbacker(src)
+ 	if err != nil {
+ 		return loadNumbersAlong(src, loc, loc.Fallback())
+ 	}
+-	data, err := loadNumbersAlong(src, loc, f.ChainIn(treeLocales, loc.Data()))
++	chain := f.ChainIn(treeLocales, loc.Data())
++	if _, err := src.Open(MarkerNumbers, loc.Data()); err == nil {
++		chain = f.Chain(loc.Data())
++	}
++	data, err := loadNumbersAlong(src, loc, chain)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if curr := f.ChainIn(treeCurr, loc.Data()); curr[0] != f.ChainIn(treeLocales, loc.Data())[0] {
+-		names, err := loadNumbersAlong(src, loc, curr)
+-		if err != nil {
+-			return nil, err
+-		}
+-		data.TakeCurrencies(names)
+-	}
++
+ 	return data, nil
+ }
+ 
+diff --git a/plural.go b/plural.go
+index cbc412f..ca2e224 100644
+--- a/plural.go
++++ b/plural.go
+@@ -195,6 +195,7 @@ func NewPluralRulesFrom(src Source, loc Locale, opts PluralRulesOptions) (*Plura
+ // Serbian written in Latin, whose parent is the root, still counts as
+ // Serbian does, so "1 sat" is singular.
+ func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
++	var result plurdata.Locale
+ 	for _, d := range loc.Fallback() {
+ 		b, err := src.Open(MarkerPlurals, d)
+ 		if err != nil {
+@@ -204,14 +205,28 @@ func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
+ 		if err != nil {
+ 			return nil, fmt.Errorf("intl: the plural rules for %s: %w", d, err)
+ 		}
+-		return l, nil
++		if len(result.Cardinal) == 0 {
++			result.Cardinal = l.Cardinal
++		}
++		if len(result.Ordinal) == 0 {
++			result.Ordinal = l.Ordinal
++		}
++		if len(result.Ranges) == 0 {
++			result.Ranges = l.Ranges
++		}
++		if len(result.Cardinal) > 0 && len(result.Ordinal) > 0 && len(result.Ranges) > 0 {
++			return &result, nil
++		}
++	}
++	// A missing regional set inherits its language's rules independently.
++	// The root supplies the unconditional category for an unlisted language.
++	if len(result.Cardinal) == 0 {
++		result.Cardinal = []plurdata.Rule{{Category: "other"}}
++	}
++	if len(result.Ordinal) == 0 {
++		result.Ordinal = []plurdata.Rule{{Category: "other"}}
+ 	}
+-	// Every language has "other", so having no rules at all is the same as
+-	// having only that one.
+-	return &plurdata.Locale{
+-		Cardinal: []plurdata.Rule{{Category: "other"}},
+-		Ordinal:  []plurdata.Rule{{Category: "other"}},
+-	}, nil
++	return &result, nil
+ }
+ 
+ // Select returns the plural form a number calls for.
 diff --git a/rbnf.go b/rbnf.go
 index 5bfb587..5695a17 100644
 --- a/rbnf.go
@@ -102,6 +194,101 @@ index 5bfb587..5695a17 100644
  	b, err := src.Open(MarkerRBNF, DataLocale{})
  	if err != nil {
  		return nil, "", fmt.Errorf("intl: the rule-based numbering systems: %w", err)
+diff --git a/skeleton.go b/skeleton.go
+index 2cc9527..9503cbb 100644
+--- a/skeleton.go
++++ b/skeleton.go
+@@ -1,6 +1,7 @@
+ package intl
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"strings"
+ 
+@@ -46,15 +47,25 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
+ 			timePattern = fresh.bestPattern(timeStyleSkeletons[o.TimeStyle-1], 0)
+ 		}
+ 		pattern := f.stylePattern(timePattern)
++		err := f.styleOverrides(src, timePattern != "")
++		if errors.Is(err, ErrNotFound) {
++			// DateFormat::create uses SimpleDateFormat's default pattern
++			// when a style's algorithmic numbering rules are absent in ICU.
++			// Chromium omits Hebrew RBNF. V8 regenerates the result below
++			// only when a time style requests another hour cycle.
++			pattern = "yMMdd hh:mm a"
++			f.overrides = nil
++		} else if err != nil {
++			return "", HourCycleAuto, nil, err
++		}
+ 		if o.TimeStyle == LengthNone {
+-			f.styleOverrides(src, false)
+ 			return pattern, HourCycleAuto, g, nil
+ 		}
+ 		if hourCycleFromPattern(pattern) == hc {
+-			f.styleOverrides(src, timePattern != "")
+ 			return pattern, hc, g, nil
+ 		}
+ 		// A regenerated pattern is a new one, with no overrides.
++		f.overrides = nil
+ 		pattern = g.bestPattern(replaceSkeleton(staticSkeleton(pattern), hc), matchHourFieldLength)
+ 		return replaceHourCycleInPattern(pattern, hc), hc, g, nil
+ 	}
+@@ -287,7 +298,7 @@ func (f *DateTimeFormat) timeStyleAfresh(src Source) bool {
+ // styleOverrides takes the numbering overrides of the style patterns in use,
+ // as ICU's date formatter does when it builds one from styles; a time
+ // style made afresh has none.
+-func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
++func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) error {
+ 	o := &f.opts
+ 	overrides := map[byte]string{}
+ 	if o.DateStyle != LengthNone {
+@@ -297,7 +308,7 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
+ 		parseNumberingOverride(overrides, f.calendar.TimeNumbers[o.TimeStyle-1], false)
+ 	}
+ 	if len(overrides) == 0 {
+-		return
++		return nil
+ 	}
+ 	f.overrides = overrides
+ 	f.systems, _ = loadNumberingSystems(src)
+@@ -308,22 +319,28 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
+ 			numeric = numeric || s.Name == system
+ 		}
+ 		if !numeric {
+-			f.loadRules(src, system)
++			if err := f.loadRules(src, system); err != nil {
++				return err
++			}
+ 		}
+ 	}
++	return nil
+ }
+ 
+ // loadRules loads a rule-based numbering system an override names.
+-func (f *DateTimeFormat) loadRules(src Source, system string) {
++func (f *DateTimeFormat) loadRules(src Source, system string) error {
+ 	if f.rbnf[system].rules != nil {
+-		return
++		return nil
+ 	}
+-	if rules, set, err := loadRBNF(src, system); err == nil {
+-		if f.rbnf == nil {
+-			f.rbnf = map[string]rbnfSystem{}
+-		}
+-		f.rbnf[system] = rbnfSystem{rules, set}
++	rules, set, err := loadRBNF(src, system)
++	if err != nil {
++		return err
++	}
++	if f.rbnf == nil {
++		f.rbnf = map[string]rbnfSystem{}
+ 	}
++	f.rbnf[system] = rbnfSystem{rules, set}
++	return nil
+ }
+ 
+ // gannen reports whether a Japanese year is written by ICU's jpanyear rules,
 diff --git a/source.go b/source.go
 index 56a6838..bc096cf 100644
 --- a/source.go

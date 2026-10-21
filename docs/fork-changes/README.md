@@ -63,6 +63,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
 | SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
 | RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
+| All Intl formatters share go-intl and embedded tz 2026e | Unreleased | [time-and-intl.md](time-and-intl.md#all-intl-formatters-share-go-intl) |
 | Intl constructors on go-intl | Unreleased | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
 | Args.WTF8 | Unreleased | [go-api.md](go-api.md#argswtf8) |
 | Compiled regexps kept per VM | Unreleased | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |

@@ -303,7 +303,7 @@ var qjsReaderLoaders = []struct {
 	}},
 	{"loadUmmAlQura", func() error { _, err := loadUmmAlQura(Embedded); return err }},
 	{"loadJapaneseEras", func() error { _, err := loadJapaneseEras(Embedded); return err }},
-	{"loadRBNF", func() error { _, _, err := loadRBNF(Embedded, "roman"); return err }},
+	{"loadRBNF", func() error { _, _, err := loadRBNF(Embedded, "hans"); return err }},
 	{"loadZoneNames", func() error { _, err := loadZoneNames(Embedded, qjsLocale("de")); return err }},
 	{"windowsZone", func() error {
 		z, err := windowsZone(Embedded, "W. Europe Standard Time", "DE")

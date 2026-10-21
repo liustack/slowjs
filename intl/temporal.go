@@ -135,15 +135,13 @@ func resolveTemporal(k *temporalKind, req request, defaultZone, zone string) *te
 			return &temporalFormat{err: typeError("Invalid time zone specified: %s", zone)}
 		}
 		o["timeZone"] = zone
+		o["_temporalZone"] = true
 	}
 	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o}, defaultZone)
 	if err != nil {
 		return &temporalFormat{err: err}
 	}
-	base, err := temporalBase(k, main, o)
-	if err != nil {
-		return &temporalFormat{err: err}
-	}
+	base := main.f
 	r := &temporalFormat{base: base, kind: k}
 	r.f = base
 	if k.value != 0 {
@@ -154,41 +152,6 @@ func resolveTemporal(k *temporalKind, req request, defaultZone, zone string) *te
 		r.err = err
 	}
 	return r
-}
-
-// temporalBase also supplies ISO calendar patterns to the legacy formatter.
-// ISO has Gregorian fields but its own date styles in Chromium's CLDR data.
-func temporalBase(k *temporalKind, main *dateTimeFormat, o map[string]any) (*gointl.DateTimeFormat, error) {
-	// Chromium 156 writes plain fields at UTC, including skipped wall times.
-	opts := gointl.DateTimeFormatOptions{
-		Calendar: main.Calendar, NumberingSystem: main.NumberingSystem, TimeZone: main.TimeZone,
-		Hour12: nil, Compat: goCompat &^ gointl.PlainValueZone, ToLocaleStringTimeZone: k.name == "ZonedDateTime",
-	}
-	// Keep the caller's zone spelling, notably +00:00, which V8 names GMT.
-	if z, ok := o["timeZone"].(string); ok {
-		opts.TimeZone = z
-	}
-	if v, ok := o["hour12"].(bool); ok {
-		opts.Hour12 = &v
-	}
-	opts.HourCycle = map[string]gointl.HourCycle{"h11": gointl.H11, "h12": gointl.H12, "h23": gointl.H23, "h24": gointl.H24}[stringOpt(o, "hourCycle")]
-	widths := map[string]gointl.FieldWidth{"numeric": gointl.WidthNumeric, "2-digit": gointl.Width2Digit, "long": gointl.WidthLong, "short": gointl.WidthShort, "narrow": gointl.WidthNarrow}
-	for key, dest := range map[string]*gointl.FieldWidth{"weekday": &opts.Weekday, "era": &opts.Era, "year": &opts.Year, "month": &opts.Month, "day": &opts.Day, "dayPeriod": &opts.DayPeriod, "hour": &opts.Hour, "minute": &opts.Minute, "second": &opts.Second} {
-		*dest = widths[stringOpt(o, key)]
-	}
-	styles := map[string]gointl.DateTimeLength{"full": gointl.LengthFull, "long": gointl.LengthLong, "medium": gointl.LengthMedium, "short": gointl.LengthShort}
-	opts.DateStyle, opts.TimeStyle = styles[stringOpt(o, "dateStyle")], styles[stringOpt(o, "timeStyle")]
-	opts.TimeZoneName = map[string]gointl.ZoneStyle{"short": gointl.ZoneShort, "long": gointl.ZoneLong, "shortOffset": gointl.ZoneShortOffset, "longOffset": gointl.ZoneLongOffset, "shortGeneric": gointl.ZoneShortGeneric, "longGeneric": gointl.ZoneLongGeneric}[stringOpt(o, "timeZoneName")]
-	if n, ok := o["fractionalSecondDigits"].(float64); ok {
-		opts.FractionalSecondDigits = int(n)
-	}
-	components := map[string]gointl.DateTimeComponents{"date": gointl.ComponentsDate, "time": gointl.ComponentsTime, "any": gointl.ComponentsAny, "all": gointl.ComponentsAll}
-	opts.Required, opts.Defaults = components[stringOpt(o, "_required")], components[stringOpt(o, "_defaults")]
-	loc, err := gointl.ParseLocale(main.Locale)
-	if err != nil {
-		return nil, err
-	}
-	return gointl.NewDateTimeFormatFrom(chromiumData{}, loc, opts)
 }
 
 func stringOpt(o map[string]any, key string) string { s, _ := o[key].(string); return s }

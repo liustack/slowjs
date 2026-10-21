@@ -6,12 +6,12 @@
 
 ### 新增
 
-- `Intl.DateTimeFormat` 的四个格式化方法支持 Temporal 值，按类型补默认字段并检查日历。`formatRange` 和 `formatRangeToParts` 也支持 Date 和数字。Temporal 日期的本地化使用同一套格式，新增 ISO 日历支持。链接现有 go-intl 日期和时区名称数据包，增加约 2.83 MB 数据。
-- `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们读 go-intl 的数据，用了 `intl` 的程序因此大约大 9.8 MB，加构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 时大 5.8 MB，代价是没有显示名称（`Intl.DisplayNames` 对每个代码都按 fallback 回答：代码本身，`fallback: 'none'` 时是 `undefined`），也没有中文和日文的词典（一串中文或日文算一个词）。用过 `Intl` 的 VM 比刚 `Register` 时多占 151 KB，以前是 77 KB，第一次使用要 0.49 ms，以前是 0.24 ms。用了 `intl` 的程序现在还要附上 `internal/gointl` 的声明（见 `NOTICE.md`）。
+- `Intl.DateTimeFormat` 的四个格式化方法支持 Temporal 值，按类型补默认字段并检查日历。`formatRange` 和 `formatRangeToParts` 也支持 Date 和数字。Temporal 日期的本地化使用同一套格式，新增 ISO 日历支持。通过共用的 go-intl 数据包支持 Chromium 的全部 18 种日历。
+- `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们和其他构造器共用 go-intl 数据。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 可以省去显示名称及中文、日文词典。用了 `intl` 的程序需要附上 `NOTICE.md` 所列声明。当前体积和内存测量见 `docs/fork-changes/time-and-intl.md`。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
 - `VM.SetRegExpCache`、`DefaultRegExpCache` 和 `DefaultRegExpCacheBytes`：一个 VM 最多留多少个编译好的正则，占多少字节（默认 256 个、1 MiB）。缓存算进内存上限，贴着上限跑的 VM 可以把缓存调小或关掉。
 - `VM.OnClose`：VM 关闭时运行一个函数，自己用表按 VM 存东西的包可以在这时删掉对应的项。
-- `temporal` 包：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，还有 `Date.prototype.toTemporalInstant`。计算由 go-intl 在 Go 里完成，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 用 `intl.TimeZone` 设的时区和 `temporal.Clock` 设的时钟。test262 的 `built-ins/Temporal` 通过 9210 次中的 9206 次，`intl402/Temporal` 通过 4058 次中的 3972 次。tifa 的示例商店因此大 0.84 MB，进程里第一次用要 13.4 ms，之后每个新 VM 第一次用要 1.1 ms。
+- `temporal` 包：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，还有 `Date.prototype.toTemporalInstant`。计算由 go-intl 在 Go 里完成，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 用 `intl.TimeZone` 设的时区和 `temporal.Clock` 设的时钟。原始 test262 `built-ins/Temporal` 测量通过 9210 次中的 9206 次。当前 `intl402/Temporal` 通过 4058 次中的 4038 次。原始实现的测量中，进程里第一次用要 13.4 ms，之后每个新 VM 第一次用要 1.1 ms。当前体积测量见 fork-changes 文档。
 
 ### 变更
 
@@ -29,10 +29,11 @@
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
-- CLDR 用的时区名主机的 zoneinfo 里没有时（比如没装 tzdata-legacy 的 Linux 上的 `Asia/Calcutta` 和 `Europe/Kiev`），改用它的其他名字加载，所以那里 `Asia/Kolkata` 和 `Europe/Kyiv` 也能用了，`Intl.supportedValuesOf('timeZone')` 列出的 `Africa/Asmera` 也一样。
+- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。
+- Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
 - 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
 - 在 Windows 上，`Date.now()` 和 `new Date()` 到 2038 年不再溢出。
-- test262 的 intl402 测试通过 6764 次中的 6274 次（加上 Temporal 的用例），以前是 912 次，以前通过的都没有变成失败。
+- 完整 Intl402 test262 通过 6764 次中的 6618 次，main `641e996` 为 6276 次。新增的 24 次失败断言在 Chromium 156 中也失败。已有 golden 集没有新增未解释的差异。
 
 ### 性能
 

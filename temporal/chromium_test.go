@@ -13,9 +13,7 @@ import (
 
 // differFromChromium are the cases of testdata/corpus.js whose answers are
 // not Chromium's, and why.
-var differFromChromium = map[string]string{
-	`Temporal.PlainDate.from("2024-01-05[u-ca=japanese]").toLocaleString("ja-JP-u-ca-japanese")`: "package intl does not support the Japanese calendar",
-}
+var differFromChromium = map[string]string{}
 
 // TestChromium runs the cases of testdata/corpus.js and compares their
 // answers, values or errors with their messages, byte for byte with
