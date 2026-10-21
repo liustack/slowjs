@@ -1,11 +1,13 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, and SetShapeCache'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, NewArray, SetStrip and the text of an Error made in Go'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
   - Telling an interrupt or out of memory from an error a script threw
   - Registering a Go function under a name the global object already has
   - Calling VM.SetShapeCache
+  - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
+  - Hiding the source of a script's functions (SetStrip)
 ---
 
 # The Go API
@@ -71,3 +73,39 @@ Test: `TestNewVMContextFailure` in `close_test.go`, also run under memgrind.
 Release: v0.26.16.
 
 `DefaultShapeCache` (2048) is the number of shapes a new VM keeps once their objects are gone, and `VM.SetShapeCache(n)` changes it for one VM, 0 turning it off. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Kept shapes](objects-and-shapes.md#kept-shapes) has what it gains and costs.
+
+## Builtin, a Go function called as a built-in
+
+Release: not released yet.
+
+`Builtin` is a Go function javascript calls as a built-in function, without the reflection and conversions of `RegisterFunc` and `RegisterHostFunc`. `NewBuiltin(name, length, fn)` makes one, once per process, and `VM.NewBuiltinFunction` makes a function object of it in any VM: it has its name and length and nothing else of its own, no `prototype`, it cannot be called with `new` and its `toString` shows `[native code]`, like `Math.max`. `fn` reads the arguments it wants from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on several goroutines call it at once, so it has to be safe for that, and keeps what it needs per VM by `Args.VM()`.
+
+An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`, and any other name as `Error`), with a stack that starts at the Builtin, any other error as a `TypeError`.
+
+On an Apple M4 a call that adds two numbers takes about 55 ns, loop included, where the same call of a `RegisterHostFunc` function takes about 470 ns. A VM's context now carries an id, which is how a call finds its VM without a lock. Package `intl` calls Go this way (see [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins)).
+
+Test: `builtin_test.go`.
+
+## Error() of an Error made in Go
+
+Release: not released yet.
+
+`Error()` of an `*Error` made in Go is now `Name: Message`, as `Error.prototype.toString` writes it, where it was empty before, so the `TypeError` a `RegisterHostFunc` function throws for such an error now has that message too. `Error()` of an error taken from javascript is as before.
+
+Test: `builtin_test.go`.
+
+## NewArray
+
+Release: not released yet.
+
+`VM.NewArray(vals...)` makes an array of values made in Go, as an array literal makes one: its elements are its own properties, so a setter a page put on `Array.prototype` never runs, and it costs no JSON. It borrows the values, as `SetPropertyValue` does, and refuses a value of another VM, a number too. A Builtin returns a list this way.
+
+Test: `builtin_test.go`.
+
+## SetStrip
+
+Release: not released yet.
+
+`VM.SetStrip(StripSource)` compiles functions without their source, so their `toString` shows `[native code]` as the engine's built-ins do, and `StripDebug` leaves out line and column numbers too. Both are values of `type Strip`. It wraps `JS_SetStripInfo`: the engine ignores a `"use strip"` directive. It applies to every function the VM compiles from then on, those of the page's `eval` and `new Function` too. Bytecode from `Compile` keeps it in any VM that loads it, which is what a polyfill playing built-ins wants.
+
+Test: `strip_test.go`.

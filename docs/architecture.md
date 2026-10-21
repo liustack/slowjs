@@ -31,7 +31,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 
 | Path | What it holds |
 | --- | --- |
-| `quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `etc.go` | The Go API |
+| `quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `builtin.go`, `etc.go` | The Go API |
 | `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
 | `lib/ccgo_*.go` | The generated engine. Never edited by hand: `internal/fixlib` rewrites them |
 | `lib/*.go` (the rest) | Hand-written Go the generated engine calls: `backtrace.go` (lazy error stacks), `uncatchable.go`, `outofmemory.go`, `objlit.go`, `regexskip.go`, `poll.go`, `runtime.go` (the fork's state at the end of `JSRuntime`), `frontcache.go`, `shapecache.go`, `forin.go`, `bitwise.go`, `eq.go`, `atomkey.go`, `jsonstr.go`, `funcshape.go`, `test262_runner.go` |
@@ -55,6 +55,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 - `VM`, the main handle: wraps a `lib.TJSContext` (a JS realm). Made by `NewVM()`, released by `Close()`. Not safe for concurrent use by several goroutines, and neither is `runtime`.
 - `Value`: wraps a reference-counted `lib.TJSValue`. `Dup()` and `Free()` must be strictly paired and properly nested (the type's doc says how this breaks across goroutines and channels). Getting it wrong causes leaks or use after free, which the memgrind tests catch.
 - `Object`, `Atom` (`lib.TJSAtom`) and `HostFunc` (`func(args []any) (any, error)`).
+- `Builtin`, a Go function javascript calls as a built-in, and `Args`, the arguments of its call (see [Go functions called from javascript](#go-functions-called-from-javascript)).
 
 ## 32-bit and 64-bit values
 
@@ -70,6 +71,8 @@ linux/s390x is the only big-endian target, and there the layout of the 64-bit un
 ## Go functions called from javascript
 
 `fp(f)` takes the raw code pointer out of a Go func value (the second word of the interface) so that it can be handed to C as a function pointer: the interrupt handler, host functions and module loaders use it. Go functions given to javascript with `RegisterFunc` or `RegisterHostFunc` are kept alive in registries for the whole process, keyed by an int32 "magic": `goFuncs` (and `freeMagic` for reuse) under `goFuncsMu`, with magics handed out by the atomic counter `staticMagic`. Module loaders live in `customLoaders` under `customLoadersMu`. These are global to the process, not per VM.
+
+A `Builtin` (`builtin.go`) is the fast path: made once per process by `NewBuiltin`, kept in the copy-on-write `builtins.list` indexed by its magic, and turned into a function object per VM by `VM.NewBuiltinFunction`. `callBuiltin` finds its VM from the context's opaque, the VM's id in `vms`, a table read without a lock. It keeps the `host` count, the TLS mark and the panic and uncatchable handling of `callGo`: change one, change the other. `VM.NewArray` builds an array with `JS_DefinePropertyValueUint32`, so no setter on `Array.prototype` runs: a Builtin returns a list with it.
 
 ## The eval timeout and Interrupt
 

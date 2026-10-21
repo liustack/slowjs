@@ -56,6 +56,19 @@ func main() {
 
 A VM is not safe for several goroutines at once: give each goroutine its own, or keep a pool. To resolve time zone names on a machine without zoneinfo, import `time/tzdata` in your main package.
 
+## What the fork adds to the API
+
+The API is that of modernc.org/quickjs, documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs), with these additions:
+
+- **`NewBuiltin(name, length, fn)` and `VM.NewBuiltinFunction(b)`**: a Go function javascript calls as it calls `Math.max`, with no reflection. `fn` reads its arguments from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert nothing, and returns a `Value`. A call that adds two numbers takes about 55 ns on an Apple M4, against about 470 ns through `RegisterHostFunc`. Make a Builtin once per process: VMs on several goroutines call it at once. An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`), any other error as a `TypeError`. [More](docs/fork-changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
+- **`VM.NewArray(vals...)`**: an array of values made in Go, made as an array literal makes one, so a setter a page put on `Array.prototype` never runs. [More](docs/fork-changes/go-api.md#newarray)
+- **`VM.SetStrip(s)`** with `type Strip`: `StripSource` compiles functions without their source, so their `toString` shows `[native code]`, and `StripDebug` leaves out line and column numbers. [More](docs/fork-changes/go-api.md#setstrip)
+- **`Error()` of an `*Error` made in Go** is `Name: Message`, as `Error.prototype.toString` writes it, where it was empty. An error taken from javascript keeps the engine's text. [More](docs/fork-changes/go-api.md#error-of-an-error-made-in-go)
+- **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`**: why a call ended, which no script can fake. [More](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
+- **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
+
+The first four are on `main` and not in a release yet.
+
 ## What changes for you
 
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.

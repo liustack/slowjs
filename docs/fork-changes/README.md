@@ -57,6 +57,10 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
 | Alternatives that cannot match are not pushed | Unreleased | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
 | New functions get length and name at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
+| Builtin, a Go function called as a built-in | Unreleased | [go-api.md](go-api.md#builtin-a-go-function-called-as-a-built-in) |
+| Error() of an Error made in Go | Unreleased | [go-api.md](go-api.md#error-of-an-error-made-in-go) |
+| NewArray | Unreleased | [go-api.md](go-api.md#newarray) |
+| SetStrip | Unreleased | [go-api.md](go-api.md#setstrip) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
