@@ -1167,6 +1167,23 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   change gives the same), the shapes it holds and lets go, and a context
   that only they hold alive, `lib/funcshape_memgrind_test.go` and
   `internal/fixlib/funcshape_test.go`.
+- `Builtin` is a Go function javascript calls as a built-in function,
+  without the reflection and conversions of `RegisterFunc` and
+  `RegisterHostFunc`. `NewBuiltin(name, length, fn)` makes one, once per
+  process, and `VM.NewBuiltinFunction` makes a function object of it in
+  any VM: it has its name and length and nothing else of its own, no
+  `prototype`, it cannot be called with `new` and its `toString` shows
+  `[native code]`, like `Math.max`. `fn` reads the arguments it wants from
+  `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`), which convert
+  nothing, and returns a `Value` (the zero `Value` is `undefined`). VMs on
+  several goroutines call it at once, so it has to be safe for that, and
+  keeps what it needs per VM by `Args.VM()`. An `*Error` it returns is
+  thrown as the constructor its `Name` says (`Error`, `RangeError`,
+  `TypeError`, ...), with a stack that starts at the Builtin, any other
+  error as a `TypeError`. On an Apple M4 a call that adds two numbers takes
+  about 55 ns, loop included, where the same call of a `RegisterHostFunc`
+  function takes about 470 ns. A VM's context now carries an id, which is
+  how a call finds its VM without a lock. Test: `builtin_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
