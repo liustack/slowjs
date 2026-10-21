@@ -3,81 +3,60 @@
 // license that can be found in the LICENSE file.
 //
 // What Register puts on a VM: stand-ins for Intl and the toLocale* methods.
-// The first time a page touches any of them, install() runs intl.js, which
-// replaces them all with the real thing. A VM that never formats anything
-// never pays for the shim.
+// The first time a page touches any of them, install() returns the real
+// things, made by intl.js, and they replace the stand-ins. A VM that never
+// formats anything never pays for the shim.
+//
+// Register calls this function with the install Builtin and the VM's
+// default time zone.
 
-(function () {
+(function (install, zone) {
 	'use strict';
 
-	const hostNames = [
-		'__quickjs_intl_dtfResolve__', '__quickjs_intl_dtfFormat__', '__quickjs_intl_nfResolve__',
-		'__quickjs_intl_nfFormat__', '__quickjs_intl_canonicalLocales__', '__quickjs_intl_prResolve__',
-		'__quickjs_intl_prSelect__'
-	];
-
 	const g = globalThis;
-	const install = g.__quickjs_intl_install__;
-	const installRunning = g.__quickjs_intl_installRunning__;
-	delete g.__quickjs_intl_install__;
-	delete g.__quickjs_intl_installRunning__;
-
-	// The host functions wait out of sight until intl.js comes to take them.
-	const host = [];
-	for (let i = 0; i < hostNames.length; i++) {
-		host.push(g[hostNames[i]]);
-		delete g[hostNames[i]];
-	}
 
 	let installed = false, installing = false;
 	let userIntl, userSetIntl = false;
 	const standIns = [];
 
 	// ensure installs the shim, once it works. An install that fails, say for
-	// want of stack, rolls back to the stand-ins and throws, so that this use
-	// fails and the next one tries again.
+	// want of stack, throws, so that this use fails and the next one tries
+	// again.
 	//
 	// An interrupt, from vm.Interrupt or a timeout, and running out of memory
 	// are no exception a catch or finally sees: one that lands here leaves
-	// installing set with nothing rolled back, and the host functions
-	// possibly in sight. The host knows
-	// whether an install is running, so the next use tells a nested call
-	// from an install cut short, rolls the latter back and starts over.
+	// installing set and maybe some of the real things in place. The next use
+	// rolls those back and starts over.
 	function ensure() {
 		if (installed) {
 			return;
 		}
-		if (installing) {
-			if (installRunning()) {
-				throw new Error('intl: used while being installed');
-			}
+		const retry = installing;
+		if (retry) {
 			rollBack();
 		}
 		installing = true;
+		let api;
 		try {
-			for (let i = 0; i < hostNames.length; i++) {
-				Object.defineProperty(g, hostNames[i], {value: host[i], writable: true, enumerable: false, configurable: true});
-			}
-			install();
+			api = install(zone, retry);
 		} catch (e) {
-			rollBack();
 			installing = false;
 			throw e;
 		}
-		if (userSetIntl) {
-			setIntl(userIntl);
+		if (!userSetIntl) {
+			setIntl(api.Intl);
+		}
+		for (let i = 0; i < standIns.length; i++) {
+			const s = standIns[i];
+			Object.defineProperty(s.o, s.name, {value: api[s.api], writable: true, enumerable: false, configurable: true});
 		}
 		installed = true;
 		installing = false;
 	}
 
-	// rollBack undoes what a failed install got done: the host functions go
-	// back out of sight and the stand-ins, or the page's own Intl, back in
-	// place.
+	// rollBack undoes what an install cut short got done: the stand-ins, or
+	// the page's own Intl, go back in place.
 	function rollBack() {
-		for (let i = 0; i < hostNames.length; i++) {
-			delete g[hostNames[i]];
-		}
 		if (userSetIntl) {
 			setIntl(userIntl);
 		} else {
@@ -115,7 +94,9 @@
 	};
 	Object.defineProperty(g, 'Intl', intlStandIn);
 
-	function standIn(o, name) {
+	// standIn puts a stand-in for o[name] in place, which api[apiName]
+	// replaces.
+	function standIn(o, name, apiName) {
 		const f = {
 			[name]: function () {
 				ensure();
@@ -126,19 +107,19 @@
 				return real.apply(this, arguments);
 			}
 		}[name];
-		standIns.push({o: o, name: name, f: f});
+		standIns.push({o: o, name: name, api: apiName, f: f});
 		Object.defineProperty(o, name, {value: f, writable: true, enumerable: false, configurable: true});
 	}
 
-	standIn(Date.prototype, 'toLocaleString');
-	standIn(Date.prototype, 'toLocaleDateString');
-	standIn(Date.prototype, 'toLocaleTimeString');
-	standIn(Number.prototype, 'toLocaleString');
+	standIn(Date.prototype, 'toLocaleString', 'dateToLocaleString');
+	standIn(Date.prototype, 'toLocaleDateString', 'dateToLocaleDateString');
+	standIn(Date.prototype, 'toLocaleTimeString', 'dateToLocaleTimeString');
+	standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString');
 	if (typeof BigInt === 'function') {
-		standIn(BigInt.prototype, 'toLocaleString');
+		standIn(BigInt.prototype, 'toLocaleString', 'bigintToLocaleString');
 	}
 
 	// How the host recognizes a VM it has registered, without installing
 	// anything: keyed by the import path, invisible to enumeration and JSON.
 	Object.defineProperty(g, Symbol.for('modernc.org/quickjs/intl'), {value: true});
-})();
+})

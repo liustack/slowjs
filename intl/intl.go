@@ -140,12 +140,8 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	_ "embed"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -216,24 +212,10 @@ var (
 	// tests.
 	shimInstalls atomic.Int64
 
-	// interruptedInstalls counts the installs stub.js found cut short by an
-	// interrupt, for the tests.
+	// interruptedInstalls counts the installs that started over after an
+	// interrupt or running out of memory cut one short, for the tests.
 	interruptedInstalls atomic.Int64
 )
-
-// hostFuncs are the names the shim reads its host functions from. stub.js
-// takes them off the global object as soon as Register has put them there,
-// and puts them back only for the moment the shim takes them for good. Both
-// scripts list the same names.
-var hostFuncs = []string{
-	"__quickjs_intl_dtfResolve__",
-	"__quickjs_intl_dtfFormat__",
-	"__quickjs_intl_nfResolve__",
-	"__quickjs_intl_nfFormat__",
-	"__quickjs_intl_canonicalLocales__",
-	"__quickjs_intl_prResolve__",
-	"__quickjs_intl_prSelect__",
-}
 
 type config struct {
 	timeZone string
@@ -265,9 +247,9 @@ func TimeZone(name string) Option { return func(c *config) { c.timeZone = name }
 // ReferenceError.
 //
 // Registering a second time on the same VM is an error rather than a silent
-// no-op, because it would otherwise drop that call's options. The formatters
-// hold no state outside the VM, so nothing has to be released; vm.Close does
-// it all.
+// no-op, because it would otherwise drop that call's options. Nothing has to
+// be released: vm.Close does it all. The formatters themselves belong to the
+// process, which shares them between VMs and keeps a bounded number of them.
 func Register(vm *quickjs.VM, opts ...Option) error {
 	switch already, err := registered(vm); {
 	case err != nil:
@@ -288,49 +270,79 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 		return err
 	}
 
-	c.timeZone = name
-	for i, fn := range []quickjs.HostFunc{
-		c.dtfResolve,
-		c.dtfFormat,
-		c.nfResolve,
-		c.nfFormat,
-		c.canonicalLocales,
-		c.prResolve,
-		c.prSelect,
-	} {
-		if err := vm.RegisterHostFunc(hostFuncs[i], fn); err != nil {
-			return err
-		}
-	}
-	// The shim is installed the first time the page touches Intl or a
-	// toLocale* method, from inside that call. Until then the VM carries only
-	// the stand-ins stub.js defines.
-	// stub.js asks whether an install is running when it finds one started
-	// and not finished: the shim's own code may use Intl while it installs,
-	// otherwise an interrupt cut that install short.
-	running := false
-	install := func([]any) (any, error) {
-		shimInstalls.Add(1)
-		running = true
-		defer func() { running = false }()
-		return nil, shimScript.eval(vm)
-	}
-	installRunning := func([]any) (any, error) {
-		if !running {
-			interruptedInstalls.Add(1)
-		}
-		return running, nil
-	}
-	if err := vm.RegisterHostFunc("__quickjs_intl_install__", install); err != nil {
+	// stub.js is a function of the install Builtin and the zone, which puts
+	// the stand-ins in place. The shim is installed the first time the page
+	// touches Intl or a toLocale* method, from inside that call.
+	code, err := stubScript.bytecode()
+	if err != nil {
 		return err
 	}
 
-	if err := vm.RegisterHostFunc("__quickjs_intl_installRunning__", installRunning); err != nil {
+	f, err := vm.EvalBytecodeValue(code)
+	if err != nil {
 		return err
 	}
 
-	return stubScript.eval(vm)
+	defer f.Free()
+
+	install, err := vm.NewBuiltinFunction(installBuiltin)
+	if err != nil {
+		return err
+	}
+
+	defer install.Free()
+
+	_, err = f.Call(quickjs.UndefinedValue, install, name)
+	return err
 }
+
+// installing holds the VMs an install is running on.
+var installing sync.Map
+
+// installBuiltin installs the shim: it evaluates intl.js, a function of the
+// zone, the option lists and the bridge, and returns what calling it returns,
+// the objects stub.js then puts in place. Its second argument says the
+// previous install was cut short.
+var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	vm := a.VM()
+	if _, busy := installing.LoadOrStore(vm, true); busy {
+		// The shim calls no code of the page while it installs, so nothing
+		// can get here.
+		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: used while being installed"}
+	}
+
+	defer installing.Delete(vm)
+
+	if retry, _ := a.Bool(1); retry {
+		interruptedInstalls.Add(1)
+	}
+	shimInstalls.Add(1)
+	code, err := shimScript.bytecode()
+	if err != nil {
+		return quickjs.Value{}, err
+	}
+
+	f, err := vm.EvalBytecodeValue(code)
+	if err != nil {
+		return quickjs.Value{}, err
+	}
+
+	defer f.Free()
+
+	args := make([]any, 0, 2+len(bridge))
+	args = append(args, a.Value(0), optionLists)
+	for _, b := range bridge {
+		v, err := vm.NewBuiltinFunction(b)
+		if err != nil {
+			return quickjs.Value{}, err
+		}
+
+		defer v.Free()
+
+		args = append(args, v)
+	}
+	return f.CallValue(quickjs.UndefinedValue, args...)
+})
 
 // marker is the well known symbol stub.js stamps on the global object of a VM
 // it registers, keyed by this package's import path.
@@ -345,262 +357,4 @@ func registered(vm *quickjs.VM) (bool, error) {
 
 	b, _ := v.(bool)
 	return b, nil
-}
-
-// dtfResolve resolves the options of a new Intl.DateTimeFormat and returns the
-// state format calls will be made with.
-func (c *config) dtfResolve(args []any) (any, error) {
-	var req request
-	if err := unmarshalArg(args, 0, &req); err != nil {
-		return failure(err)
-	}
-
-	f, err := resolveDateTimeFormat(req, c.timeZone)
-	if err != nil {
-		return failure(err)
-	}
-
-	return resolved(f)
-}
-
-// dtfFormat formats a time value with the state dtfResolve produced.
-func (c *config) dtfFormat(args []any) (any, error) {
-	f, err := cached(args, &dateTimeFormats)
-	if err != nil {
-		return failure(err)
-	}
-
-	ms, ok := timeArg(arg(args, 1))
-	if !ok {
-		return failure(rangeError("invalid time value"))
-	}
-
-	parts, err := f.format(ms)
-	if err != nil {
-		return failure(err)
-	}
-
-	return formatted(parts, arg(args, 2) == true)
-}
-
-// nfResolve resolves the options of a new Intl.NumberFormat and returns the
-// state format calls will be made with.
-func (c *config) nfResolve(args []any) (any, error) {
-	var req request
-	if err := unmarshalArg(args, 0, &req); err != nil {
-		return failure(err)
-	}
-
-	f, err := resolveNumberFormat(req)
-	if err != nil {
-		return failure(err)
-	}
-
-	return resolved(f)
-}
-
-// nfFormat formats a number with the state nfResolve produced.
-func (c *config) nfFormat(args []any) (any, error) {
-	f, err := cached(args, &numberFormats)
-	if err != nil {
-		return failure(err)
-	}
-
-	parts, err := f.format(arg(args, 1))
-	if err != nil {
-		return failure(err)
-	}
-
-	return formatted(parts, arg(args, 2) == true)
-}
-
-// prResolve resolves the options of a new Intl.PluralRules.
-func (c *config) prResolve(args []any) (any, error) {
-	var req request
-	if err := unmarshalArg(args, 0, &req); err != nil {
-		return failure(err)
-	}
-
-	p, err := resolvePluralRules(req)
-	if err != nil {
-		return failure(err)
-	}
-
-	return resolved(p)
-}
-
-// prSelect implements select, given one number, and selectRange, given two.
-func (c *config) prSelect(args []any) (any, error) {
-	p, err := cached(args, &pluralFormats)
-	if err != nil {
-		return failure(err)
-	}
-
-	if len(args) > 2 {
-		return p.selectRange(args[1], args[2]), nil
-	}
-
-	return p.selectNumber(arg(args, 1)), nil
-}
-
-// canonicalLocales implements Intl.getCanonicalLocales.
-func (c *config) canonicalLocales(args []any) (any, error) {
-	var tags []string
-	if err := unmarshalArg(args, 0, &tags); err != nil {
-		return failure(err)
-	}
-
-	if svc, ok := arg(args, 1).(string); ok {
-		// supportedLocalesOf, for the constructor named by svc.
-		r, err := supportedLocales(tags, map[string]service{
-			"NumberFormat":   numberService,
-			"DateTimeFormat": dateService,
-			"PluralRules":    pluralService,
-		}[svc])
-		if err != nil {
-			return failure(err)
-		}
-
-		return marshal(r)
-	}
-
-	r := []string{}
-	for _, tag := range tags {
-		s, err := canonicalLocale(tag)
-		if err != nil {
-			return failure(err)
-		}
-
-		if !slices.Contains(r, s) {
-			r = append(r, s)
-		}
-	}
-	return marshal(r)
-}
-
-// formatCache memoizes the formatters parsed back from the json state the shim
-// keeps, which would otherwise be unmarshaled again on every single format
-// call - the largest cost of one. A resolved formatter is immutable, so the
-// cache is shared by every VM in the process.
-type formatCache[T any] struct {
-	mu sync.Mutex
-	m  map[string]*T
-}
-
-// formatCacheLimit bounds the two caches. Nothing evicts by age: the entries
-// are small and a program cycling through more than this many distinct
-// formatters is not one the cache can help anyway.
-const formatCacheLimit = 256
-
-var (
-	dateTimeFormats formatCache[dateTimeFormat]
-	numberFormats   formatCache[numberFormat]
-	pluralFormats   formatCache[pluralFormat]
-)
-
-// cached returns the formatter the json in args[0] describes.
-func cached[T any](args []any, c *formatCache[T]) (*T, error) {
-	s, ok := arg(args, 0).(string)
-	if !ok {
-		return nil, errors.New("internal error: expected a json argument")
-	}
-
-	c.mu.Lock()
-
-	defer c.mu.Unlock()
-
-	if f, ok := c.m[s]; ok {
-		return f, nil
-	}
-
-	f := new(T)
-	if err := json.Unmarshal([]byte(s), f); err != nil {
-		return nil, err
-	}
-
-	if i, ok := any(f).(interface{ init() error }); ok {
-		if err := i.init(); err != nil {
-			return nil, err
-		}
-	}
-
-	if c.m == nil || len(c.m) >= formatCacheLimit {
-		c.m = map[string]*T{}
-	}
-	c.m[s] = f
-	return f, nil
-}
-
-func arg(args []any, i int) any {
-	if i >= len(args) {
-		return nil
-	}
-
-	return args[i]
-}
-
-// timeArg returns a javascript time value. QuickJS tags a small integral one as
-// an int, so both cases have to be handled.
-func timeArg(v any) (float64, bool) {
-	switch x := v.(type) {
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case float64:
-		return x, true
-	}
-	return 0, false
-}
-
-func unmarshalArg(args []any, i int, v any) error {
-	s, ok := arg(args, i).(string)
-	if !ok {
-		return errors.New("internal error: expected a json argument")
-	}
-
-	return json.Unmarshal([]byte(s), v)
-}
-
-// resolved returns f, the resolved state of a formatter, as the json string the
-// shim keeps and hands back on every format call.
-func resolved(f any) (any, error) { return marshal(f) }
-
-// formatted returns parts either as the json formatToParts result or, joined,
-// as the format one. The format result crosses back as itself rather than
-// wrapped in json: it is the hot path, and a JSON.parse of it in the shim
-// costs about as much as the call.
-func formatted(parts []part, wantParts bool) (any, error) {
-	if wantParts {
-		return marshal(parts)
-	}
-
-	var b strings.Builder
-	for _, v := range parts {
-		b.WriteString(v.Value)
-	}
-	return b.String(), nil
-}
-
-// failure returns the string form telling the shim which javascript error to
-// throw. errorMark cannot occur in anything a formatter produces.
-func failure(err error) (any, error) {
-	e := &jsError{ctor: "Error", msg: err.Error()}
-	errors.As(err, &e)
-	return errorMark + e.ctor + errorMark + e.msg, nil
-}
-
-// errorMark is the first byte of a host function result that is an error
-// rather than a value, and the separator between the error type and message.
-const errorMark = "\x01"
-
-func marshal(v any) (any, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		// Nothing here can fail to marshal, but a Go error is still better than
-		// handing the shim something it cannot parse.
-		return nil, err
-	}
-
-	return string(b), nil
 }

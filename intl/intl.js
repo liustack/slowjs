@@ -4,34 +4,42 @@
 //
 // The javascript half of modernc.org/quickjs/intl. It owns the ECMA-402
 // surface - the constructors, their prototypes and the option plumbing the
-// spec makes observable - and leaves every formatting decision to the Go host
-// functions it is called with. See call() below for what crosses between them.
+// spec makes observable - and leaves every formatting decision to the Go
+// Builtins it is called with (see bridge.go). It evaluates to a function of
+// the VM's default time zone, the json of each constructor's options and the
+// Builtins, which returns what stub.js puts in place.
 
-(function (dtfResolve, dtfFormat, nfResolve, nfFormat, canonicalLocales, prResolve, prSelect) {
+(function (zone, optionLists,
+	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
+	optionsOf, canonicalLocales, supportedLocales) {
 	'use strict';
 
 	const g = globalThis;
 	const internals = new WeakMap();
+	const lists = JSON.parse(optionLists);
 
-	// A host function answers with its result as a string. An error instead
-	// answers with '\x01' + the error constructor's name + '\x01' + the
-	// message, a shape no formatted result can have. Nothing is wrapped in json
-	// so that format(), the call a page makes per row of a table, does not pay
-	// for a JSON.parse of its own answer.
-	const errorMark = '\u0001';
-
-	function call(fn, args) {
-		const r = fn.apply(null, args);
-		if (r.charCodeAt(0) === 1) {
-			const i = r.indexOf(errorMark, 1);
-			const ctor = g[r.slice(1, i)];
-			throw new (typeof ctor === 'function' ? ctor : Error)(r.slice(i + 1));
-		}
-		return r;
+	// A formatter is a record: the Builtin that resolves it, the arguments it
+	// was resolved with and the id of what that resolved to, which every
+	// other call passes on. A Builtin answers undefined for an id the
+	// process has since dropped (see registry.go): call then resolves the
+	// same arguments again and repeats the call. Other VMs making formatters
+	// fast enough can drop the new one too before the call gets to it, so
+	// call tries a few times, then throws: it never returns undefined.
+	function resolve(kind, fn, args) {
+		return {kind: kind, fn: fn, args: args, id: fn.apply(undefined, args), bound: undefined};
 	}
 
-	function callJSON(fn, args) {
-		return JSON.parse(call(fn, args));
+	const tries = 8;
+
+	function call(r, fn, x, y) {
+		for (let i = 0; i < tries; i++) {
+			const v = fn(r.id, x, y);
+			if (v !== undefined) {
+				return v;
+			}
+			r.id = r.fn.apply(undefined, r.args);
+		}
+		throw new Error('Intl.' + r.kind + ': other code made formatters too fast to keep this one');
 	}
 
 	function internal(o, kind) {
@@ -55,12 +63,6 @@
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
 	// themselves are canonicalized by the host.
 	function localeList(locales) {
-		if (locales === undefined) {
-			return [];
-		}
-		if (typeof locales === 'string') {
-			return [locales];
-		}
 		const o = Object(locales), n = o.length >>> 0, r = [];
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
@@ -74,17 +76,23 @@
 		return r;
 	}
 
-	// publicOptions turns the host's resolved state into a resolvedOptions()
-	// result, dropping the underscore prefixed keys the host keeps for itself.
-	function publicOptions(json) {
-		const o = JSON.parse(json);
-		const keys = Object.keys(o);
-		for (let i = 0; i < keys.length; i++) {
-			if (keys[i].charAt(0) === '_') {
-				delete o[keys[i]];
+	// pushLocales appends the two locale arguments of a Builtin to args: a
+	// single tag as itself, a list as one string of the tags each preceded by
+	// its length and a colon.
+	function pushLocales(args, locales) {
+		if (locales === undefined) {
+			args.push(undefined, undefined);
+		} else if (typeof locales === 'string') {
+			args.push(locales, undefined);
+		} else {
+			const l = localeList(locales);
+			let s = '';
+			for (let i = 0; i < l.length; i++) {
+				s += l[i].length + ':' + l[i];
 			}
+			args.push(undefined, s);
 		}
-		return o;
+		return args;
 	}
 
 	function options(o) {
@@ -94,56 +102,60 @@
 		return o === undefined ? {} : Object(o);
 	}
 
+	// pushOptions appends the options of o in list, from optionLists, to
+	// args, converted as their kind says.
+	function pushOptions(args, o, list) {
+		for (let i = 0; i < list.length; i++) {
+			let v = o[list[i][0]];
+			if (v !== undefined) {
+				switch (list[i][1]) {
+				case 's':
+					v = String(v);
+					break;
+				case 'n':
+					v = Number(v);
+					break;
+				case 'b':
+					v = Boolean(v);
+					break;
+				default:
+					if (typeof v !== 'boolean') {
+						v = String(v);
+					}
+				}
+			}
+			args.push(v);
+		}
+		return args;
+	}
+
+	function parse(json) {
+		return JSON.parse(json);
+	}
+
 	function supportedLocalesOf(service) {
 		return function (locales) {
-			return callJSON(canonicalLocales, [JSON.stringify(localeList(locales)), service]);
+			return parse(supportedLocales.apply(undefined, pushLocales([service], locales)));
 		};
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
 
-	const dateTimeKeys = [
-		'localeMatcher', 'calendar', 'numberingSystem', 'timeZone', 'hourCycle', 'weekday', 'era', 'year',
-		'month', 'day', 'dayPeriod', 'hour', 'minute', 'second', 'timeZoneName', 'formatMatcher',
-		'dateStyle', 'timeStyle'
-	];
-
-	// readDateTimeOptions copies the options a DateTimeFormat reads. required
-	// and defaults are ECMA-402's ToDateTimeOptions arguments: they are what
-	// make toLocaleDateString a date and toLocaleTimeString a time. The host
+	// dateFormat resolves a DateTimeFormat. required and defaults are
+	// ECMA-402's ToDateTimeOptions arguments: they are what make
+	// toLocaleDateString a date and toLocaleTimeString a time. The host
 	// applies them, because the defaults it adds depend on the locale's hour
 	// cycle.
-	function readDateTimeOptions(o, required, defaults) {
-		o = o === undefined ? {} : options(o);
-		const r = {_required: required, _defaults: defaults};
-		for (let i = 0; i < dateTimeKeys.length; i++) {
-			const v = o[dateTimeKeys[i]];
-			if (v !== undefined) {
-				r[dateTimeKeys[i]] = String(v);
-			}
-		}
-		if (o.hour12 !== undefined) {
-			r.hour12 = Boolean(o.hour12);
-		}
-		if (o.fractionalSecondDigits !== undefined) {
-			r.fractionalSecondDigits = Number(o.fractionalSecondDigits);
-		}
-		return r;
-	}
-
-	function initDateTimeFormat(f, locales, opts, required, defaults) {
-		internals.set(f, {
-			kind: 'DateTimeFormat',
-			resolved: call(dtfResolve, [JSON.stringify({locales: localeList(locales), options: readDateTimeOptions(opts, required, defaults)})])
-		});
-		return f;
+	function dateFormat(locales, opts, required, defaults) {
+		const args = pushLocales([zone, required, defaults], locales);
+		return resolve('DateTimeFormat', dtfResolve, pushOptions(args, options(opts), lists.DateTimeFormat));
 	}
 
 	function DateTimeFormat(locales, opts) {
 		if (!(this instanceof DateTimeFormat)) {
 			return new DateTimeFormat(locales, opts);
 		}
-		initDateTimeFormat(this, locales, opts, 'any', 'date');
+		internals.set(this, dateFormat(locales, opts, 'any', 'date'));
 	}
 
 	function timeValue(date) {
@@ -159,7 +171,7 @@
 			const i = internal(this, 'DateTimeFormat');
 			if (i.bound === undefined) {
 				i.bound = function (date) {
-					return call(dtfFormat, [i.resolved, timeValue(date), false]);
+					return call(i, dtfFormat, timeValue(date));
 				};
 			}
 			return i.bound;
@@ -167,11 +179,11 @@
 	});
 
 	defineMethod(DateTimeFormat.prototype, 'formatToParts', function (date) {
-		return callJSON(dtfFormat, [internal(this, 'DateTimeFormat').resolved, timeValue(date), true]);
+		return parse(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
 	});
 
 	defineMethod(DateTimeFormat.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'DateTimeFormat').resolved);
+		return parse(call(internal(this, 'DateTimeFormat'), optionsOf));
 	});
 
 	defineMethod(DateTimeFormat, 'supportedLocalesOf', supportedLocalesOf('DateTimeFormat'));
@@ -179,46 +191,16 @@
 
 	// ------------------------------------------------------------ NumberFormat
 
-	const numberKeys = [
-		'localeMatcher', 'style', 'currency', 'currencyDisplay', 'currencySign', 'unit', 'unitDisplay',
-		'numberingSystem', 'notation', 'compactDisplay', 'signDisplay', 'roundingMode', 'trailingZeroDisplay'
-	];
-
-	const numberDigitKeys = [
-		'minimumIntegerDigits', 'minimumFractionDigits', 'maximumFractionDigits',
-		'minimumSignificantDigits', 'maximumSignificantDigits'
-	];
-
-	function readNumberOptions(o) {
-		o = options(o);
-		const r = {};
-		let i;
-		for (i = 0; i < numberKeys.length; i++) {
-			const v = o[numberKeys[i]];
-			if (v !== undefined) {
-				r[numberKeys[i]] = String(v);
-			}
-		}
-		for (i = 0; i < numberDigitKeys.length; i++) {
-			const v = o[numberDigitKeys[i]];
-			if (v !== undefined) {
-				r[numberDigitKeys[i]] = Number(v);
-			}
-		}
-		if (o.useGrouping !== undefined) {
-			r.useGrouping = typeof o.useGrouping === 'boolean' ? o.useGrouping : String(o.useGrouping);
-		}
-		return r;
+	function numberFormat(locales, opts) {
+		const args = pushLocales([], locales);
+		return resolve('NumberFormat', nfResolve, pushOptions(args, options(opts), lists.NumberFormat));
 	}
 
 	function NumberFormat(locales, opts) {
 		if (!(this instanceof NumberFormat)) {
 			return new NumberFormat(locales, opts);
 		}
-		internals.set(this, {
-			kind: 'NumberFormat',
-			resolved: call(nfResolve, [JSON.stringify({locales: localeList(locales), options: readNumberOptions(opts)})])
-		});
+		internals.set(this, numberFormat(locales, opts));
 	}
 
 	// numberValue keeps a BigInt and a numeric string exact by passing them on
@@ -239,7 +221,7 @@
 			const i = internal(this, 'NumberFormat');
 			if (i.bound === undefined) {
 				i.bound = function (value) {
-					return call(nfFormat, [i.resolved, numberValue(value), false]);
+					return call(i, nfFormat, numberValue(value));
 				};
 			}
 			return i.bound;
@@ -247,11 +229,11 @@
 	});
 
 	defineMethod(NumberFormat.prototype, 'formatToParts', function (value) {
-		return callJSON(nfFormat, [internal(this, 'NumberFormat').resolved, numberValue(value), true]);
+		return parse(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
 	});
 
 	defineMethod(NumberFormat.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'NumberFormat').resolved);
+		return parse(call(internal(this, 'NumberFormat'), optionsOf));
 	});
 
 	defineMethod(NumberFormat, 'supportedLocalesOf', supportedLocalesOf('NumberFormat'));
@@ -259,39 +241,16 @@
 
 	// ------------------------------------------------------------- PluralRules
 
-	const pluralKeys = ['localeMatcher', 'type', 'notation', 'roundingMode', 'roundingPriority', 'trailingZeroDisplay'];
-
-	function readPluralOptions(o) {
-		o = options(o);
-		const r = {};
-		let i;
-		for (i = 0; i < pluralKeys.length; i++) {
-			const v = o[pluralKeys[i]];
-			if (v !== undefined) {
-				r[pluralKeys[i]] = String(v);
-			}
-		}
-		for (i = 0; i < numberDigitKeys.length; i++) {
-			const v = o[numberDigitKeys[i]];
-			if (v !== undefined) {
-				r[numberDigitKeys[i]] = Number(v);
-			}
-		}
-		return r;
-	}
-
 	function PluralRules(locales, opts) {
 		if (new.target === undefined) {
 			throw new TypeError("Constructor Intl.PluralRules requires 'new'");
 		}
-		internals.set(this, {
-			kind: 'PluralRules',
-			resolved: call(prResolve, [JSON.stringify({locales: localeList(locales), options: readPluralOptions(opts)})])
-		});
+		const args = pushLocales([], locales);
+		internals.set(this, resolve('PluralRules', prResolve, pushOptions(args, options(opts), lists.PluralRules)));
 	}
 
 	defineMethod(PluralRules.prototype, 'select', function (value) {
-		return call(prSelect, [internal(this, 'PluralRules').resolved, Number(value)]);
+		return call(internal(this, 'PluralRules'), prSelect, Number(value));
 	});
 
 	defineMethod(PluralRules.prototype, 'selectRange', function (start, end) {
@@ -303,11 +262,11 @@
 		if (x !== x || y !== y) {
 			throw new RangeError('start or end is NaN');
 		}
-		return call(prSelect, [i.resolved, x, y]);
+		return call(i, prSelectRange, x, y);
 	});
 
 	defineMethod(PluralRules.prototype, 'resolvedOptions', function () {
-		return publicOptions(internal(this, 'PluralRules').resolved);
+		return parse(call(internal(this, 'PluralRules'), optionsOf));
 	});
 
 	defineMethod(PluralRules, 'supportedLocalesOf', supportedLocalesOf('PluralRules'));
@@ -321,9 +280,8 @@
 	defineMethod(Intl, 'NumberFormat', NumberFormat);
 	defineMethod(Intl, 'PluralRules', PluralRules);
 	defineMethod(Intl, 'getCanonicalLocales', function (locales) {
-		return callJSON(canonicalLocales, [JSON.stringify(localeList(locales))]);
+		return parse(canonicalLocales.apply(undefined, pushLocales([], locales)));
 	});
-	Object.defineProperty(g, 'Intl', {value: Intl, writable: true, enumerable: false, configurable: true});
 
 	// ------------------------------------------- the toLocale* methods ECMA-402
 	// replaces. Without them the engine's own fallbacks stay in place, and those
@@ -335,8 +293,8 @@
 	const numberValueOf = Number.prototype.valueOf;
 
 	// Formatters are memoized for the common shapes because toLocaleString is
-	// called per row of a table and constructing one costs a host call. Only
-	// argument shapes that are safe to use as a cache key take part.
+	// called per row of a table. Only argument shapes that are safe to use as
+	// a cache key take part.
 	const cache = new Map();
 
 	function cached(key, make) {
@@ -358,61 +316,49 @@
 		if (opts !== undefined || (locales !== undefined && typeof locales !== 'string')) {
 			return null;
 		}
-		return kind + ' ' + (locales === undefined ? '' : locales);
+		return kind + ' ' + (locales === undefined ? '' : locales);
 	}
 
 	function dateFormatter(locales, opts, required, defaults) {
 		return cached(cacheKey(required, locales, opts), function () {
-			return initDateTimeFormat(Object.create(DateTimeFormat.prototype), locales, opts, required, defaults);
+			return dateFormat(locales, opts, required, defaults);
 		});
 	}
 
-	defineMethod(Date.prototype, 'toLocaleString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'any', 'all').format(t);
-	});
-
-	defineMethod(Date.prototype, 'toLocaleDateString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'date', 'date').format(t);
-	});
-
-	defineMethod(Date.prototype, 'toLocaleTimeString', function (locales, opts) {
-		const t = dateValueOf.call(this);
-		return t !== t ? 'Invalid Date' : dateFormatter(locales, opts, 'time', 'time').format(t);
-	});
-
-	defineMethod(Number.prototype, 'toLocaleString', function (locales, opts) {
-		const v = numberValueOf.call(this);
+	function numberFormatter(locales, opts) {
 		return cached(cacheKey('number', locales, opts), function () {
-			return new NumberFormat(locales, opts);
-		}).format(v);
-	});
+			return numberFormat(locales, opts);
+		});
+	}
+
+	const api = {Intl: Intl};
+
+	api.dateToLocaleString = function toLocaleString(locales, opts) {
+		const t = dateValueOf.call(this);
+		return t !== t ? 'Invalid Date' : call(dateFormatter(locales, opts, 'any', 'all'), dtfFormat, t);
+	};
+
+	api.dateToLocaleDateString = function toLocaleDateString(locales, opts) {
+		const t = dateValueOf.call(this);
+		return t !== t ? 'Invalid Date' : call(dateFormatter(locales, opts, 'date', 'date'), dtfFormat, t);
+	};
+
+	api.dateToLocaleTimeString = function toLocaleTimeString(locales, opts) {
+		const t = dateValueOf.call(this);
+		return t !== t ? 'Invalid Date' : call(dateFormatter(locales, opts, 'time', 'time'), dtfFormat, t);
+	};
+
+	api.numberToLocaleString = function toLocaleString(locales, opts) {
+		const v = numberValueOf.call(this);
+		return call(numberFormatter(locales, opts), nfFormat, v);
+	};
 
 	if (typeof BigInt === 'function') {
 		const bigintValueOf = BigInt.prototype.valueOf;
-		defineMethod(BigInt.prototype, 'toLocaleString', function (locales, opts) {
+		api.bigintToLocaleString = function toLocaleString(locales, opts) {
 			const v = bigintValueOf.call(this);
-			return cached(cacheKey('number', locales, opts), function () {
-				return new NumberFormat(locales, opts);
-			}).format(v);
-		});
+			return call(numberFormatter(locales, opts), nfFormat, String(v));
+		};
 	}
-})(...(function () {
-	// Take the host functions out of sight before the body puts anything in
-	// place. An interrupt or running out of memory can cut the install short
-	// anywhere, and the next use must find none of them left behind (see
-	// ensure in stub.js).
-	const g = globalThis;
-	const names = [
-		'__quickjs_intl_dtfResolve__', '__quickjs_intl_dtfFormat__', '__quickjs_intl_nfResolve__',
-		'__quickjs_intl_nfFormat__', '__quickjs_intl_canonicalLocales__', '__quickjs_intl_prResolve__',
-		'__quickjs_intl_prSelect__'
-	];
-	const host = [];
-	for (let i = 0; i < names.length; i++) {
-		host.push(g[names[i]]);
-		delete g[names[i]];
-	}
-	return host;
-})());
+	return api;
+})

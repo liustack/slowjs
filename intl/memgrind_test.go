@@ -15,10 +15,9 @@ import (
 
 // TestMemgrind2 checks that registering Intl and formatting with it leaks
 // nothing, whether or not the page ever touches Intl and whether or not the first
-// install fails. The formatters hold no
-// javascript Value of their own: the shim keeps its state in javascript and
-// the host functions trade json strings. But Register hands eight Go
-// functions to the VM, and those own libc memory that only Close releases.
+// install fails. The formatters, which the process shares, hold no
+// javascript Value: the shim keeps its state in javascript and the Builtins
+// it calls trade strings and numbers.
 //
 // The name matches the root package's so that a single -run selects both.
 func TestMemgrind2(t *testing.T) {

@@ -143,9 +143,13 @@ orders it with `Close` (which frees the flag): `Close` clears only the embedded 
   Register also replaces the `toLocale*` methods, which ECMA-402 redefines in terms of those two
   constructors and whose QuickJS fallbacks silently ignore the `timeZone` argument.
   - The javascript surface lives in `intl.js` (`go:embed`ed by `intl.go`) and every formatting
-    decision in Go; they trade JSON over five `RegisterHostFunc` bridges that the shim deletes from
-    `globalThis` once it holds them. Nothing here touches a `Value`, so there is no `Dup`/`Free`
-    discipline to get wrong — `intl/memgrind_test.go` guards that (and `make leak` now runs `./...`).
+    decision in Go. `intl.js` is a function of the `Builtin`s in `bridge.go`, which `stub.js`'s
+    install calls it with, so none of them is ever on `globalThis`. A constructor resolves its
+    locales and options into an id in the process-wide `registry.go` (bounded, shared by all VMs);
+    every later call passes the id, and a Builtin answers `undefined` for an id the registry
+    dropped, on which `intl.js` resolves the same arguments again. Values cross as strings,
+    numbers and booleans, results that are objects as JSON for `JSON.parse`.
+    `intl/memgrind_test.go` guards the `Value` handling (and `make leak` now runs `./...`).
   - Locale data is en-US only: Go ships zoneinfo but no CLDR. The tables in `data.go` were extracted
     from ICU, not hand-written. Where CLDR data is missing the code falls back to something
     derivable (a GMT offset for a long time zone name, the code for a currency name), never to a
