@@ -177,6 +177,22 @@ var nestedEntries = map[string]func(m *VM) error{
 		_, err = m.EvalBytecode(code)
 		return err
 	},
+	"EvalBytecode of a module": func(m *VM) error {
+		// Compiled in a VM of its own (see moduleBytecode), and run in a job.
+		c, err := NewVM()
+		if err != nil {
+			return err
+		}
+
+		defer c.Close()
+		code, err := c.Compile("await null; loop()\n", EvalModule)
+		if err != nil {
+			return err
+		}
+
+		_, err = m.EvalBytecode(code)
+		return err
+	},
 	"ExecutePendingJobs": func(m *VM) error {
 		// A job that throws rejects its promise, so the catch reports it.
 		if _, err := m.Eval(`globalThis.jobError = ''; Promise.resolve().then(loop).catch(e => { jobError = String(e) })`, EvalGlobal); err != nil {
