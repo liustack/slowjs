@@ -44,3 +44,34 @@ func TestConversions(t *testing.T) {
 		}
 	}
 }
+
+// TestOptionOrder checks the order the constructors read their options in,
+// and the rounding options they check. The expected values are Node 24's,
+// but for PluralRules' order, which is test262's: Node 24 has no notation
+// for PluralRules and reads neither it nor compactDisplay.
+func TestOptionOrder(t *testing.T) {
+	vm := newVM(t)
+	reads := func(c string) string {
+		return `(() => { const r = []; new Intl.` + c + `('en', new Proxy({}, {get(o, k) { r.push(k) }})); return r.join(' ') })()`
+	}
+	catch := func(src string) string {
+		return fmt.Sprintf("(() => {try {return String(%s)} catch (e) {return e.name}})()", src)
+	}
+	evalTests(t, vm, [][2]string{
+		{reads("NumberFormat"), "localeMatcher numberingSystem style currency currencyDisplay currencySign unit unitDisplay notation " +
+			"minimumIntegerDigits minimumFractionDigits maximumFractionDigits minimumSignificantDigits maximumSignificantDigits " +
+			"roundingIncrement roundingMode roundingPriority trailingZeroDisplay compactDisplay useGrouping signDisplay"},
+		{reads("PluralRules"), "localeMatcher type notation compactDisplay minimumIntegerDigits minimumFractionDigits maximumFractionDigits " +
+			"minimumSignificantDigits maximumSignificantDigits roundingIncrement roundingMode roundingPriority trailingZeroDisplay"},
+		{reads("DateTimeFormat"), "localeMatcher calendar numberingSystem hour12 hourCycle timeZone weekday era year month day dayPeriod " +
+			"hour minute second fractionalSecondDigits timeZoneName formatMatcher dateStyle timeStyle"},
+		{catch(`new Intl.NumberFormat('en', {roundingPriority: 'x'})`), "RangeError"},
+		{catch(`new Intl.PluralRules('en', {roundingPriority: 'x'})`), "RangeError"},
+		{catch(`new Intl.NumberFormat('en', {compactDisplay: 'x'})`), "RangeError"},
+		{catch(`new Intl.NumberFormat('en', {roundingIncrement: 0})`), "RangeError"},
+		{catch(`new Intl.NumberFormat('en', {roundingIncrement: 3})`), "RangeError"},
+		{catch(`new Intl.PluralRules('en', {roundingIncrement: 5001})`), "RangeError"},
+		{catch(`new Intl.NumberFormat('en', {roundingIncrement: 'abc'})`), "RangeError"},
+		{catch(`new Intl.NumberFormat('en', {roundingPriority: 'morePrecision'}).format(1)`), "1"},
+	})
+}

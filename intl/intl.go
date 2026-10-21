@@ -51,9 +51,10 @@
 // Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
 // Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
 // Intl.supportedValuesOf and formatRange. String.prototype.localeCompare keeps
-// QuickJS's code point ordering. NumberFormat accepts roundingIncrement and
-// roundingPriority but only implements their defaults, which is what
-// resolvedOptions reports.
+// QuickJS's code point ordering. NumberFormat and PluralRules accept
+// roundingIncrement and roundingPriority but only implement their defaults,
+// which is what resolvedOptions reports: a value out of range throws a
+// RangeError, any other is ignored.
 //
 // # Differences from Chromium
 //

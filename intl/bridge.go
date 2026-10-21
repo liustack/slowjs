@@ -37,7 +37,8 @@ import (
 //     resolvedOptions), an init method compiling what formatting needs, and
 //     a resolve function from a request. Once init has run, it is read only:
 //     every VM of the process shares it.
-//  2. A ctor for it here, with its options in the order ECMA-402 reads them,
+//  2. A ctor for it here, with its options in the order ECMA-402 reads them
+//     (see the note on numberFormatCtor for how the checks differ),
 //     and its entry in ctors. resolveBuiltin(c) is its constructor's
 //     Builtin.
 //  3. Builtins for its methods, appended to bridge. Each takes the id first
@@ -107,14 +108,22 @@ type ctor struct {
 }
 
 var (
+	// The options are in the order ECMA-402 reads them, which test262
+	// checks. Where ECMA-402 checks each as it reads it, so that a bad
+	// option stops the reading, intl.js reads and converts them all and Go
+	// checks them after, in the order it reads them: the same options throw
+	// the same errors, only the getters of later options run too. And
+	// ECMA-402 converts the digit options of SetNumberFormatDigitOptions
+	// once it has read them all, where intl.js converts each as it reads it.
 	numberFormatCtor = &ctor{
 		name: "NumberFormat",
 		tag:  'N',
 		svc:  numberService,
-		options: append(stringOptions("localeMatcher", "style", "currency", "currencyDisplay", "currencySign", "unit",
-			"unitDisplay", "numberingSystem", "notation", "compactDisplay", "signDisplay", "roundingMode",
-			"trailingZeroDisplay"),
-			append(digitOptions(), option{"useGrouping", 'g'})...),
+		options: concat(
+			stringOptions("localeMatcher", "numberingSystem", "style", "currency", "currencyDisplay", "currencySign",
+				"unit", "unitDisplay", "notation"),
+			digitOptions(),
+			stringOptions("compactDisplay"), []option{{"useGrouping", 'g'}}, stringOptions("signDisplay")),
 		resolve: func(req request) (formatter, error) { return resolveNumberFormat(req) },
 	}
 
@@ -123,10 +132,12 @@ var (
 		tag:   'D',
 		svc:   dateService,
 		fixed: []string{"_zone", "_required", "_defaults"},
-		options: append(stringOptions("localeMatcher", "calendar", "numberingSystem", "timeZone", "hourCycle",
-			"weekday", "era", "year", "month", "day", "dayPeriod", "hour", "minute", "second", "timeZoneName",
-			"formatMatcher", "dateStyle", "timeStyle"),
-			option{"hour12", 'b'}, option{"fractionalSecondDigits", 'n'}),
+		options: concat(
+			stringOptions("localeMatcher", "calendar", "numberingSystem"), []option{{"hour12", 'b'}},
+			stringOptions("hourCycle", "timeZone", "weekday", "era", "year", "month", "day", "dayPeriod", "hour",
+				"minute", "second"),
+			[]option{{"fractionalSecondDigits", 'n'}},
+			stringOptions("timeZoneName", "formatMatcher", "dateStyle", "timeStyle")),
 		resolve: func(req request) (formatter, error) {
 			zone, _ := req.Options["_zone"].(string)
 			delete(req.Options, "_zone")
@@ -138,7 +149,7 @@ var (
 		name:    "PluralRules",
 		tag:     'P',
 		svc:     pluralService,
-		options: append(stringOptions("localeMatcher", "type", "notation", "roundingMode", "roundingPriority", "trailingZeroDisplay"), digitOptions()...),
+		options: concat(stringOptions("localeMatcher", "type", "notation", "compactDisplay"), digitOptions()),
 		resolve: func(req request) (formatter, error) { return resolvePluralRules(req) },
 	}
 
@@ -153,11 +164,21 @@ func stringOptions(names ...string) []option {
 	return r
 }
 
+// digitOptions are those SetNumberFormatDigitOptions reads.
 func digitOptions() []option {
 	return []option{
 		{"minimumIntegerDigits", 'n'}, {"minimumFractionDigits", 'n'}, {"maximumFractionDigits", 'n'},
-		{"minimumSignificantDigits", 'n'}, {"maximumSignificantDigits", 'n'},
+		{"minimumSignificantDigits", 'n'}, {"maximumSignificantDigits", 'n'}, {"roundingIncrement", 'n'},
+		{"roundingMode", 's'}, {"roundingPriority", 's'}, {"trailingZeroDisplay", 's'},
 	}
+}
+
+func concat(lists ...[]option) []option {
+	var r []option
+	for _, l := range lists {
+		r = append(r, l...)
+	}
+	return r
 }
 
 // optionLists tells intl.js the options of each constructor, as json: the

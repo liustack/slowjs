@@ -118,15 +118,22 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 		return nil, err
 	}
 
+	if err := roundingOptions(o); err != nil {
+		return nil, err
+	}
+
 	// roundingIncrement and roundingPriority are reported at their defaults,
-	// which is what this implementation does. A request for anything else is
-	// ignored rather than rejected - see the package documentation.
+	// which is what this implementation does. A request for anything else
+	// valid is ignored rather than rejected - see the package documentation.
 	f.RoundingIncrement, f.RoundingPriority = 1, "auto"
 
+	compactDisplay, err := optDefault(o, "compactDisplay", "short", "short", "long")
+	if err != nil {
+		return nil, err
+	}
+
 	if f.Notation == "compact" {
-		if f.CompactDisplay, err = optDefault(o, "compactDisplay", "short", "short", "long"); err != nil {
-			return nil, err
-		}
+		f.CompactDisplay = compactDisplay
 	}
 
 	currencyDigits := 2
@@ -180,6 +187,25 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 	}
 
 	return f, nil
+}
+
+// roundingIncrements are the values ECMA-402 allows roundingIncrement.
+var roundingIncrements = []int{1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000}
+
+// roundingOptions checks roundingIncrement and roundingPriority as
+// SetNumberFormatDigitOptions does: a value out of range is a RangeError.
+func roundingOptions(o map[string]any) error {
+	n, ok, err := optInt(o, "roundingIncrement", 1, 5000)
+	if err != nil {
+		return err
+	}
+
+	if ok && !slices.Contains(roundingIncrements, n) {
+		return rangeError("value %v out of range for Intl options property roundingIncrement", o["roundingIncrement"])
+	}
+
+	_, err = optString(o, "roundingPriority", "auto", "morePrecision", "lessPrecision")
+	return err
 }
 
 // numberingSystemOption reads the numberingSystem option, which must be a

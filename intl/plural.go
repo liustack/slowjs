@@ -327,6 +327,14 @@ func resolvePluralRules(req request) (*pluralFormat, error) {
 		return nil, err
 	}
 
+	if _, err := optString(o, "compactDisplay", "short", "long"); err != nil {
+		return nil, err
+	}
+
+	if err := roundingOptions(o); err != nil {
+		return nil, err
+	}
+
 	nf := &numberFormat{Style: "decimal", Notation: p.Notation, RoundingIncrement: 1, RoundingPriority: "auto"}
 	if nf.RoundingMode, err = optDefault(o, "roundingMode", "halfExpand", "ceil", "floor", "expand", "trunc",
 		"halfCeil", "halfFloor", "halfExpand", "halfTrunc", "halfEven"); err != nil {
