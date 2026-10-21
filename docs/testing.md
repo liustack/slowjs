@@ -29,6 +29,7 @@ go test -short -p 2 . ./lib ./internal/fixlib
 - `go vet` on the root package and on `lib/` reports the `unsafe.Pointer` conversions of the tests and of the generated code, so nothing runs it there. Upstream's Makefile of `lib/` passes `-vet=off` to its tests, since vet is slow on the generated files, and so do some commands below.
 - `-p 2` builds at most two packages at once: the generated files are large, and building several of them together takes much memory.
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
+- A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
 
 New behavior and bugs with a known cause: write the test first, see it fail, then write the fix. Tests live next to the code: a change to the engine is tested in `lib/` (through the C API) or in the root package (through the Go API), and a change of `fixlib` in `internal/fixlib`, which checks both the rewrite and that it stops on code it does not expect.
@@ -42,6 +43,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make shorttest` | The same with `-short`, which skips the long cases (test262 among them) |
 | `make leak` | `go test -v -run TestMemgrind2 -tags=libc.memgrind ./...` |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
+| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), and that `qjsdata/` is what go-intl's data gives (this clones go-intl) |
 | `make benchmark` | `make -C compare benchmark`: this engine against goja and fastschema/qjs |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |

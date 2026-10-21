@@ -1,11 +1,12 @@
 ---
-summary: 'How to take a new upstream release: remotes and branches, merging a libquickjs release with git subtree, putting the fork changes back with fixlib, the order in which to update its lists, which doc to read for each report, the C patch, a new release of the Go API, a new modernc.org/libc, and new CLDR, tzdb or Chromium data for intl'
+summary: 'How to take a new upstream release: remotes and branches, merging a libquickjs release with git subtree, putting the fork changes back with fixlib, the order in which to update its lists, which doc to read for each report, the C patch, a new release of the Go API, a new modernc.org/libc, new CLDR, tzdb or Chromium data for intl, and a new release of go-intl in internal/gointl'
 read_when:
   - Setting up a fresh clone that will follow upstream
   - Taking a new release of libquickjs, modernc.org/quickjs or modernc.org/libc
   - go run ./internal/fixlib or its -check reports something after an upstream merge
   - Changing lib/internal/patch/quickjs.diff
   - Moving intl to a new CLDR, tzdb or Chromium release
+  - Moving internal/gointl to a new go-intl release, or changing qjs.patch, qjs-sync.sh or the packs in qjsdata/
 ---
 
 # Upgrading from upstream
@@ -182,3 +183,37 @@ go run ./intl/internal/gen -icudtl icudtl.dat
 The generator writes a summary of it to `intl/testdata/chromium/icu.json.gz` and makes every locale take each resource from where Chromium's ICU finds it, so a language whose data Chromium leaves out formats with root's or English data as it does in Chromium. To record another browser, set `CHROMIUM` to its executable for every `record.cjs` command.
 
 Update the Chromium and ICU versions in the package documentation of `intl` and in this doc, and look at each new difference: fix the code when Chromium is right, or add the cause to `goldenDifferences` when the difference is in the data.
+
+## Updating go-intl (`internal/gointl`)
+
+`internal/gointl` is a copy of [go-intl](https://github.com/go-quickjs/go-intl), a pure Go ECMA-402 and Temporal library, at the release and commit in `internal/gointl/UPSTREAM` (v0.6.1). Nothing in JS uses it yet. It is internal because its API is go-intl's and changes between releases, and it sits at the module root so that `intl/` and a later Temporal package can import it.
+
+The files and directories named `qjs*`, and `UPSTREAM`, are ours. Everything else is go-intl's, with its import path rewritten, and is changed only by `internal/gointl/qjs.patch`, which keeps to loading data: `source.go` serves our packs instead of go-intl's 18.9 MB `data.pack`, `internal/blob` tells the pack tool which pool parts a locale reads, and `dictbe.go` takes a missing break dictionary for none.
+
+The data is in `internal/gointl/qjsdata/`, written by `internal/gointl/internal/qjspack/gen` from go-intl's `data/` directory:
+
+- `core.bin` (7.3 MB), everything but the two below.
+- `names.bin` (1.9 MB), the display names. Build with `-tags quickjs_intl_nonames` to leave it out: `Intl.DisplayNames` then has no data.
+- `cjdict.bin` (2.0 MB), the Chinese and Japanese word dictionary. Build with `-tags quickjs_intl_nocjdict` to leave it out: a run of Chinese or Japanese is then one word, as in an ICU without the dictionary.
+
+The locales are those of Chromium 156. `qjsdata/chromium.json` records which locale Chromium resolves each of go-intl's available locales to, for every `Intl` constructor, and each service here has the locales Chromium resolves to themselves: `TestQJSResolveMatchesChromium` checks that every service resolves every one of those tags as Chromium does. A language's data is kept when Chromium has the bare language for a service, with the languages it inherits from, and its plural rules when Chromium has it for `PluralRules`. Chromium has some locales whose language it has no data for, such as `ha-GH` without `ha`: they format with the root's data there, and here. The pack tool prints the languages it drops and those it keeps the plural rules of only.
+
+The shared pools of strings, the collation root and the break dictionaries are kept uncompressed, because a formatter reads only a little of each and the pages of the binary it does not touch stay on disk. The rest is DEFLATE in chunks, and a chunk is inflated into the heap, once per process, the first time a formatter reads a file in it. `QJSInflated` reports how much that is.
+
+The bytes a formatter reads are never to be written: an uncompressed chunk is the binary's read-only data, where a write faults, and an inflated one is shared by every formatter and VM in the process. Code that hands such bytes to JS, as an `ArrayBuffer` or the like, copies them first.
+
+`make gointl` runs the checks `go test ./...` does not: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs, and that `qjsdata/` is what go-intl's data gives.
+
+To move to a new go-intl release, set `VERSION` and `COMMIT` in `internal/gointl/UPSTREAM`, then:
+
+```sh
+internal/gointl/qjs-sync.sh checkout       # clones go-intl into $GOINTL_UPSTREAM (default ~/.cache/quickjs-gointl/go-intl)
+internal/gointl/qjs-sync.sh update         # copies its runtime sources here and applies qjs.patch
+internal/gointl/qjs-sync.sh chromium       # records what Chromium resolves the new tags to
+internal/gointl/qjs-sync.sh pack           # writes qjsdata/ again
+internal/gointl/qjs-sync.sh test -p 2      # go-intl's own tests, on packs of every language
+internal/gointl/qjs-sync.sh test-chromium -p 2  # and on the packs built in
+go test ./internal/gointl/... && make gointl
+```
+
+`chromium` needs Node and the Chromium that Playwright drives, set up as for the intl golden test in [Updating the intl locale data](#updating-the-intl-locale-data) (`PLAYWRIGHT`, and `CHROMIUM` for another browser). Run it again for a newer Chromium too. Where `qjs.patch` no longer applies, make the change by hand and run `qjs-sync.sh patch` to write the patch again. When `pack` fails with parts of a pool that no locale reaches, a data package has started reading something its `qjs_walk.go` does not: make that walk read it. `test` leaves out `pack_test.go` and `TestGeneratedTablesAreWellFormed`, which read go-intl's `data.pack` and `data/`. `test-chromium` takes out of go-intl's corpora the cases of the locales the packs leave out, and leaves out the tests that name such a locale in their code or count locales or cases (`chromium_skips` in the script).
