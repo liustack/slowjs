@@ -158,6 +158,32 @@ func TestBuiltinString(t *testing.T) {
 	}
 }
 
+// WTF8 gives a string as the engine holds it: a lone surrogate as the three
+// bytes of its code point, which is not UTF-8, so that a Builtin can tell
+// '\ud800' from '\ufffd' and from '\udc00', and a pair as its one character.
+func TestBuiltinWTF8(t *testing.T) {
+	m := newTestVM(t)
+	defineBuiltin(t, m, "bytes", NewBuiltin("bytes", 1, func(a Args) (Value, error) {
+		s, ok := a.WTF8(0)
+		return a.VM().NewString(fmt.Sprintf("%v %x", ok, s))
+	}))
+	for _, c := range [][2]string{
+		{`bytes('')`, `true `},
+		{`bytes('a\0b')`, `true 610062`},
+		{`bytes('\ud800x')`, `true eda08078`},
+		{`bytes('x\udc00')`, `true 78edb080`},
+		{`bytes('\udbff\udfff')`, `true f48fbfbf`},
+		{`bytes('\ufffd')`, `true efbfbd`},
+		{`bytes('\ud83d' + '\ude00')`, `true f09f9880`},
+		{`bytes(1)`, `false `},
+		{`bytes(new String('a'))`, `false `},
+	} {
+		if got := evalString(t, m, c[0]); got != c[1] {
+			t.Errorf("%s: got %s, want %s", c[0], got, c[1])
+		}
+	}
+}
+
 // An error a Builtin returns is thrown: an *Error as the constructor its Name
 // says, if javascript has that one, and anything else as a TypeError, as
 // RegisterHostFunc throws it.

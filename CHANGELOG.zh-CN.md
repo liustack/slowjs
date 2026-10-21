@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
+
 ### 修复
 
 - 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。

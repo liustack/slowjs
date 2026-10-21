@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Added
+
+- `Args.WTF8`: read a string argument of a Builtin with its lone surrogates as the engine holds them, where `Args.String` gives U+FFFD for each.
+
 ### Fixed
 
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.

@@ -187,6 +187,19 @@ func (a Args) String(i int) (s string, ok bool) {
 	return "", false
 }
 
+// WTF8 is String, but with each lone surrogate as the three bytes of its
+// code point (0xED, then 0xA0 to 0xBF, then a continuation byte), the form
+// the engine writes it in, which is not UTF-8. A surrogate pair is its one
+// character in UTF-8, as in String. A Builtin that has to tell lone
+// surrogates apart, as a collator orders them, reads its string this way.
+func (a Args) WTF8(i int) (s string, ok bool) {
+	switch v := a.arg(i); tag(v) {
+	case lib.EJS_TAG_STRING, lib.EJS_TAG_STRING_ROPE:
+		return cWTF8(a.vm.runtime.tls, a.vm.cContext, v)
+	}
+	return "", false
+}
+
 // typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 func callBuiltin(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uintptr, magic int32) (r lib.TJSValue) {
 	b := (*builtins.list.Load())[magic]
