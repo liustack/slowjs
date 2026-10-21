@@ -103842,6 +103842,11 @@ func _xorshift64star(tls *libc.TLS, pstate uintptr) (r Tuint64_t) {
 }
 
 func _js_random_init(tls *libc.TLS, ctx uintptr) {
+	// Added by internal/fixlib: the clock is Go's, see lib/clock.go (fixClock). _js_random_init_libc is the function it replaces, kept for fixlib to check.
+	(*TJSContext)(unsafe.Pointer(ctx)).Frandom_state = randomSeed()
+}
+
+func _js_random_init_libc(tls *libc.TLS, ctx uintptr) {
 	bp := tls.Alloc(16)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* tv at bp+0 */ Ttimeval
@@ -130426,6 +130431,11 @@ func _get_date_string(tls *libc.TLS, ctx uintptr, this_val TJSValue, argc int32,
 //
 //	/* OS dependent: return the UTC time in ms since 1970. */
 func _date_now(tls *libc.TLS) (r Tint64_t) {
+	// Added by internal/fixlib: the clock is Go's, see lib/clock.go (fixClock). _date_now_libc is the function it replaces, kept for fixlib to check.
+	return dateNow()
+}
+
+func _date_now_libc(tls *libc.TLS) (r Tint64_t) {
 	bp := tls.Alloc(16)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* tv at bp+0 */ Ttimeval
@@ -199295,6 +199305,11 @@ _4:
 }
 
 func _get_time_ms(tls *libc.TLS) (r Tint64_t) {
+	// Added by internal/fixlib: the clock is Go's, see lib/clock.go (fixClock). _get_time_ms_libc is the function it replaces, kept for fixlib to check.
+	return monoNanos() / 1000000
+}
+
+func _get_time_ms_libc(tls *libc.TLS) (r Tint64_t) {
 	bp := tls.Alloc(16)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* ts at bp+0 */ Ttimespec
@@ -199305,6 +199320,11 @@ func _get_time_ms(tls *libc.TLS) (r Tint64_t) {
 }
 
 func _get_time_ns(tls *libc.TLS) (r Tint64_t) {
+	// Added by internal/fixlib: the clock is Go's, see lib/clock.go (fixClock). _get_time_ns_libc is the function it replaces, kept for fixlib to check.
+	return monoNanos()
+}
+
+func _get_time_ns_libc(tls *libc.TLS) (r Tint64_t) {
 	bp := tls.Alloc(16)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var _ /* ts at bp+0 */ Ttimespec

@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -oneframe and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -clock, -oneframe and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty-one things:
+// It does thirty-two things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -111,10 +111,14 @@
 //   - In every lib/ccgo_*.go file, let js_compile_regexp take the bytecode
 //     of a pattern and flags it compiled before from the regexp cache of
 //     lib/regexcache.go, kept in that state (see fixRegexCache).
-//     The first step undoes these seven, as the other changes match the
+//   - In every lib/ccgo_*.go file, make the functions that read a clock,
+//     behind Date.now, new Date(), Math.random's seed and performance.now,
+//     read Go's clocks through lib/clock.go instead of libc's system calls
+//     (see fixClock).
+//     The first step undoes these eight, as the other changes match the
 //     polls, JSRuntime, the allocator, the shape functions, the functions
-//     funcShape is called from, JS_ValueToAtom and js_compile_regexp as
-//     ccgo writes them.
+//     funcShape is called from, JS_ValueToAtom, js_compile_regexp and the
+//     clock functions as ccgo writes them.
 //   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
 //     JS_CallInternal take its TLS frame with the room of a small alloca
 //     once at its entry, instead of taking it again before the stack check
@@ -177,6 +181,7 @@ var (
 	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
 	jsonF     = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
 	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
+	clock     = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
 	fnShape   = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -202,7 +207,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *oneFrame || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *clock || *oneFrame || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -240,6 +245,8 @@ func main() {
 			err = fingerprintReport(files, hw, "jsonSites", jsonFingerprint)
 		} else if err == nil && *oneFrame {
 			err = fingerprintReport(files, hw, "oneFrameSites", oneFrameFingerprint)
+		} else if err == nil && *clock {
+			err = fingerprintReport(files, hw, "clockSites", clockFingerprint)
 		} else if err == nil && *fnShape {
 			err = fingerprintReport(files, hw, "funcShapeSites", funcShapeFingerprint)
 		} else if err == nil && *cells {
@@ -433,7 +440,7 @@ func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixRegexCache} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixRegexCache, fixClock} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -444,7 +451,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreRegexCache, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreClock, restoreRegexCache, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}
