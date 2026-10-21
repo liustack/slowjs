@@ -1916,13 +1916,13 @@ the tests that name such a locale in their code or count locales or cases
 ### Checks
 
 ```sh
-go test -short ./...                                     # all packages
+go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes 8 to 13 minutes)
 go test -vet=off -run 'TestToCString' ./lib              # the leak reproduction
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
 go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
-go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
+go test -timeout 30m ./internal/fixlib                   # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
 go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
