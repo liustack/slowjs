@@ -8,6 +8,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 - `Intl.Collator`, `Intl.Segmenter`, `Intl.RelativeTimeFormat`, `Intl.ListFormat`, `Intl.DisplayNames`, `Intl.DurationFormat`, `Intl.Locale` and `Intl.supportedValuesOf`, in every locale Chromium has, compared with Chromium 156 on 14,269 expressions. `localeCompare` sorts by the locale's collation, and `toLocaleUpperCase` and `toLocaleLowerCase` follow Turkish, Azeri, Lithuanian and Greek rules. They read go-intl's data, which makes a program that imports `intl` about 9.8 MB larger, or 5.8 MB with the build tags `quickjs_intl_nonames` and `quickjs_intl_nocjdict`, which give up the display names, so that `Intl.DisplayNames` answers each code with its fallback (the code, or `undefined` with `fallback: 'none'`), and the Chinese and Japanese word dictionary, so that a run of Chinese or Japanese is one word. A VM that has used `Intl` holds 151 KB more than after `Register`, against 77 KB, and its first use takes 0.49 ms, against 0.24 ms. A program that imports `intl` now has to carry the notices of `internal/gointl` (see `NOTICE.md`).
 - `Args.WTF8`: read a string argument of a Builtin with its lone surrogates as the engine holds them, where `Args.String` gives U+FFFD for each.
+- `VM.SetRegExpCache`, `DefaultRegExpCache` and `DefaultRegExpCacheBytes`: how many compiled regexps a VM keeps, and in how many bytes (256 in 1 MiB by default). The cache counts against the memory limit: give a VM that runs close to its limit a smaller cache, or none.
 
 ### Fixed
 
@@ -15,6 +16,12 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 - `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
 - A function in a list of locales is read as an object, as ECMA-402 has it, so `new Intl.NumberFormat([function () {}])` throws a RangeError, where v0.26.17 threw a TypeError.
 - test262's intl402 tests pass 2282 runs of 6764, against 912, none of those that passed before failing.
+
+### Performance
+
+All without PGO, against v0.26.17.
+
+- A VM keeps the bytecode of the regexps it compiled, so code that makes the same regexps on every render compiles them once: the journal post of tifa's example shop that highlights CSS renders in 0.893 of the time, the other pages in the same time. A VM of the shop holds 12 KiB more, and one that rendered the CSS post keeps about 714 KiB of regexps.
 
 ## [v0.26.17] - 2026-10-21
 

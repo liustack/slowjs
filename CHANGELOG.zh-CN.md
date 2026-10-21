@@ -8,6 +8,7 @@
 
 - `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们读 go-intl 的数据，用了 `intl` 的程序因此大约大 9.8 MB，加构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 时大 5.8 MB，代价是没有显示名称（`Intl.DisplayNames` 对每个代码都按 fallback 回答：代码本身，`fallback: 'none'` 时是 `undefined`），也没有中文和日文的词典（一串中文或日文算一个词）。用过 `Intl` 的 VM 比刚 `Register` 时多占 151 KB，以前是 77 KB，第一次使用要 0.49 ms，以前是 0.24 ms。用了 `intl` 的程序现在还要附上 `internal/gointl` 的声明（见 `NOTICE.md`）。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
+- `VM.SetRegExpCache`、`DefaultRegExpCache` 和 `DefaultRegExpCacheBytes`：一个 VM 最多留多少个编译好的正则，占多少字节（默认 256 个、1 MiB）。缓存算进内存上限，贴着上限跑的 VM 可以把缓存调小或关掉。
 
 ### 修复
 
@@ -15,6 +16,12 @@
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - test262 的 intl402 测试通过 6764 次中的 2282 次，以前是 912 次，以前通过的都没有变成失败。
+
+### 性能
+
+都是不开 PGO，和 v0.26.17 比。
+
+- VM 留下编译好的正则字节码，每次渲染都新建同样正则的代码只编译一次：tifa 示例商店里高亮 CSS 的那篇文章渲染耗时为原来的 0.893，其他页面不变。商店页面的 VM 多占 12 KiB，渲染过那篇 CSS 文章的 VM 留着约 714 KiB 的正则。
 
 ## [v0.26.17] - 2026-10-21
 

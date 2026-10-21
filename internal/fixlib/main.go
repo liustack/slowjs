@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -oneframe and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -oneframe and -up print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty things:
+// It does thirty-one things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -108,9 +108,13 @@
 //     string key that is already an atom and no index through atomKey of
 //     lib/atomkey.go, without a TLS frame and the four calls of the
 //     generic path (see fixAtomKey).
-//     The first step undoes these six, as the other changes match the
+//   - In every lib/ccgo_*.go file, let js_compile_regexp take the bytecode
+//     of a pattern and flags it compiled before from the regexp cache of
+//     lib/regexcache.go, kept in that state (see fixRegexCache).
+//     The first step undoes these seven, as the other changes match the
 //     polls, JSRuntime, the allocator, the shape functions, the functions
-//     funcShape is called from and JS_ValueToAtom as ccgo writes them.
+//     funcShape is called from, JS_ValueToAtom and js_compile_regexp as
+//     ccgo writes them.
 //   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
 //     JS_CallInternal take its TLS frame with the room of a small alloca
 //     once at its entry, instead of taking it again before the stack check
@@ -165,6 +169,7 @@ var (
 	runtimeF  = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
 	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
 	shape     = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
+	recache   = flag.Bool("recache", false, "print the fingerprints of the functions lib/regexcache.go relies on, in the form of regexCacheSites, to update it after a review")
 	atomkey   = flag.Bool("atomkey", false, "print the fingerprints of JS_ValueToAtom and the functions lib/atomkey.go repeats, in the form of atomKeySites, to update it after a review")
 	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
 	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
@@ -197,7 +202,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *oneFrame || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *oneFrame || *up || *cells {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -221,6 +226,8 @@ func main() {
 			err = fingerprintReport(files, hw, "shapeSites", shapeFingerprint)
 		} else if err == nil && *atomkey {
 			err = fingerprintReport(files, hw, "atomKeySites", atomKeyFingerprint)
+		} else if err == nil && *recache {
+			err = fingerprintReport(files, hw, "regexCacheSites", regexCacheFingerprint)
 		} else if err == nil && *inline {
 			err = fingerprintReport(files, hw, "inlineSites", inlineFingerprint)
 		} else if err == nil && *forIn {
@@ -426,7 +433,7 @@ func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixRegexCache} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -437,7 +444,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreRegexCache, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

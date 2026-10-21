@@ -4381,6 +4381,8 @@ func XJS_FreeRuntime(tls *libc.TLS, rt1 uintptr) {
 	var v1 TJSValue
 	var _ /* ms at bp+16 */ TJSMallocState
 	_, _, _, _, _, _, _, _, _, _, _ = cl, e, el, el1, i, p, p1, v1, v2, v4, v5
+	// Changed by internal/fixlib: let go of the bytecode the regexp cache keeps (see fixRegexCache).
+	regexpCacheOff(tls, rt1)
 	// Changed by internal/fixlib: let go of the shapes the shape cache keeps (see fixShapeCache).
 	shapeCacheOff(tls, rt1)
 	// Changed by internal/fixlib: give the front cache back and turn it off (see fixFrontCache).
@@ -105528,6 +105530,12 @@ func _js_compile_regexp(tls *libc.TLS, ctx1 uintptr, pattern TJSValue, flags TJS
 	var _ /* len at bp+0 */ Tsize_t
 	var _ /* re_bytecode_len at bp+8 */ int32
 	_, _, _, _, _, _, _, _ = i, mask, re_bytecode_buf, re_flags, ret, str, v1, v3
+	// Changed by internal/fixlib: take the bytecode the regexp cache keeps (see fixRegexCache).
+	if bc, ok := regexpCacheGet(tls, ctx1, pattern, flags); ok {
+		r = bc
+		tls.Free(96)
+		return
+	}
 	re_flags = 0
 	v1 = libc.BoolInt32(int32(flags.Ftag) == int32(EJS_TAG_UNDEFINED))
 	goto _2
@@ -105631,6 +105639,8 @@ _9:
 	}
 	ret = _js_new_string8_len(tls, ctx1, re_bytecode_buf, *(*int32)(unsafe.Pointer(bp + 8)))
 	Xjs_free(tls, ctx1, re_bytecode_buf)
+	// Changed by internal/fixlib: keep the bytecode in the regexp cache (see fixRegexCache).
+	regexpCachePut(tls, ctx1, pattern, flags, ret)
 	r = ret
 	tls.Free(96)
 	return

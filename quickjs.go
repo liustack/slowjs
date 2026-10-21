@@ -575,6 +575,37 @@ func (m *VM) SetShapeCache(n int) error {
 	return nil
 }
 
+// DefaultRegExpCache and DefaultRegExpCacheBytes are how many compiled
+// regexps a new VM keeps at most, and in how many bytes (see
+// [VM.SetRegExpCache]).
+const (
+	DefaultRegExpCache      = lib.RegExpCacheEntries
+	DefaultRegExpCacheBytes = lib.RegExpCacheBytes
+)
+
+// SetRegExpCache sets how many compiled regexps m keeps at most, n, and in
+// how many bytes, 0 for none, and lets go of the ones it kept. Compiling a
+// regexp whose pattern and flags are strings (a literal, new RegExp, RegExp,
+// RegExp.prototype.compile, and the copy split makes of its regexp) takes
+// the bytecode m kept for the same pattern and flags instead of compiling
+// again. Code that makes a new RegExp of the same pattern on every call, as
+// a syntax highlighter made anew for each render does, then compiles each
+// pattern once. When a new one does not fit, m lets go of the one used
+// least recently. A new VM keeps DefaultRegExpCache regexps in
+// DefaultRegExpCacheBytes bytes, and n can be at most math.MaxInt32/8.
+//
+// What m keeps counts against the limit of SetMemoryLimit, the patterns and
+// flags as well as the bytecode, and is not let go when an allocation
+// fails. So a script that runs close to its memory limit can run out of
+// memory with the cache on where it would not without it.
+func (m *VM) SetRegExpCache(n, bytes int) error {
+	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^lib.Tsize_t(0)) {
+		return fmt.Errorf("quickjs: a regexp cache of %d regexps in %d bytes", n, bytes)
+	}
+	lib.XJS_SetRegExpCache(m.runtime.tls, m.runtime.cRuntime, int32(n), lib.Tsize_t(bytes))
+	return nil
+}
+
 // SetEvalTimeout sets the timeout for the various eval functions. Passing
 // zero 'd' disables timeouts. The timeout starts with the outermost call into
 // javascript: a host function that evaluates more javascript on m runs inside
