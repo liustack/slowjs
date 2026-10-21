@@ -115,9 +115,8 @@ func TestMathRandomSeed(t *testing.T) {
 	}
 }
 
-// performance.now (and os.now and the timers of the os module, through
-// get_time_ns and get_time_ms) reads a monotonic clock in milliseconds
-// with a fraction: it goes on when the wall clock stands still, never goes
+// performance.now (through get_time_ns) reads a monotonic clock in
+// milliseconds with a fraction: it goes on when the wall clock stands still, never goes
 // back, keeps pace with Go's monotonic clock, and counts from the start
 // of the process, as in Node. Before it read the engine's own clocks it
 // counted from the boot of the system, or from 1970 on Windows and
@@ -156,10 +155,10 @@ func TestMonotonicClock(t *testing.T) {
 		t.Errorf("10000 reads of performance.now: %s", got)
 	}
 
-	ms0 := _get_time_ms(tls)
+	m0 := monoNanos()
 	ns := _get_time_ns(tls)
-	ms1 := _get_time_ms(tls)
-	if ns/1e6 < ms0 || ns/1e6 > ms1 {
-		t.Errorf("get_time_ms %d, get_time_ns %d, get_time_ms %d: not the same clock", ms0, ns, ms1)
+	m1 := monoNanos()
+	if ns < m0 || ns > m1 {
+		t.Errorf("monoNanos %d, get_time_ns %d, monoNanos %d: not the same clock", m0, ns, m1)
 	}
 }

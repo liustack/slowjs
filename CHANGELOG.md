@@ -14,7 +14,11 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ### Changed
 
-- `performance.now()` of `StdAddHelpers`, `os.now()` and the timers of quickjs-libc's os module count from the start of the process. Before, they counted from the boot of the system on Linux and macOS, and from 1970 on Windows and FreeBSD, where they moved when the system clock was set. On macOS they no longer count the time the system sleeps. `Date.now()` and `new Date()` give the same values as before.
+- `performance.now()` of `StdAddHelpers` counts from the start of the process. Before, it counted from the boot of the system on Linux and macOS, and from 1970 on Windows and FreeBSD, where it moved when the system clock was set. On macOS it no longer counts the time the system sleeps. `Date.now()` and `new Date()` give the same values as before.
+
+### Removed
+
+- `lib` no longer has the `std`, `os` and `Worker` modules of QuickJS's shell (`quickjs-libc.c`), which the Go API never registered: `js_init_module_std`, `js_init_module_os`, `js_module_check_attributes`, `js_std_set_worker_new_context_func`, `js_std_init_handlers`, `js_std_free_handlers`, `js_std_promise_rejection_tracker`, `js_std_await`, `js_std_loop`, `js_std_eval_binary` and `js_std_eval_binary_json_module` are gone. `StdAddHelpers`, `SetDefaultModuleLoader` and the bytecode of modules work as before. A program no longer links that code, nor the parts of libc only it called (`fork`, `execve`, `popen`, `setenv`, files, the terminal): one that only calls `Eval` is 354 KB smaller on linux/amd64, and the server of tifa's example shop 181 KB smaller, built as `tifa build` builds it (`-ldflags=-w` with the shop's PGO profile, linux/amd64).
 
 ### Fixed
 

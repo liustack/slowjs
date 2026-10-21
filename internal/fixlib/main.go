@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -clock, -oneframe and -up print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty-two things:
+// It does thirty-four things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -51,6 +51,10 @@
 //   - In every lib/ccgo_*.go file, write each conversion ccgo makes
 //     through __ccgo_up as a plain unsafe.Pointer conversion, which keeps
 //     the stack frames of the big functions small (see fixUp).
+//   - In every lib/ccgo_*.go file, drop the functions and tables of
+//     quickjs-libc.c that only its std, os and Worker modules reach, which
+//     the Go API cannot register, so that a program does not link them and
+//     the parts of libc they call (see fixQuickJSLibc).
 //   - In the lib/ccgo_*.go files of 64-bit targets, keep the JSValue that
 //     the interpreter's inlined JS_DupValue and JS_FreeValue go through in
 //     a Go variable instead of the TLS frame (see fixCells).
@@ -183,6 +187,7 @@ var (
 	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
 	clock     = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
 	fnShape   = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
+	qjsLibc   = flag.Bool("qjslibc", false, "print the fingerprints of the functions and variables of quickjs-libc.c and of those that stay, in the form of quickjsLibcSites, with what stays and what goes, from the files as taken from upstream, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -207,7 +212,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *clock || *oneFrame || *up || *cells {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -249,6 +254,8 @@ func main() {
 			err = fingerprintReport(files, hw, "clockSites", clockFingerprint)
 		} else if err == nil && *fnShape {
 			err = fingerprintReport(files, hw, "funcShapeSites", funcShapeFingerprint)
+		} else if err == nil && *qjsLibc {
+			err = quickjsLibcReport(files, hw)
 		} else if err == nil && *cells {
 			var report string
 			if report, err = cellsReport(files, hw); err == nil {
@@ -359,6 +366,12 @@ func fixEngine(b []byte, hw []*ast.File, name string) ([]byte, error) {
 	// The changes before fixUp accept both forms of a conversion, so it
 	// goes after them.
 	if b, err = fixUp(b); err != nil {
+		return nil, err
+	}
+	// The fingerprint of what stays of quickjs-libc.c is of the text fixUp
+	// leaves, and nothing before fixUp checks a list that names a function
+	// of quickjs-libc.c that goes.
+	if b, err = fixQuickJSLibc(b, name); err != nil {
 		return nil, err
 	}
 	// fixColdFrames reads the conversions as fixUp leaves them.
@@ -696,6 +709,23 @@ func backtraceFingerprint(b []byte) (string, error) {
 // it, with each C string written out in place of its offset, which a new
 // string anywhere before it moves.
 func funcsFingerprint(b []byte, names []string, strip func([]byte) []byte) (string, error) {
+	table, err := cStrings(b)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	for _, name := range names {
+		text, err := funcBody(b, funcHead(name), name)
+		if err != nil {
+			return "", err
+		}
+		h.Write(withStrings(strip(bytes.Clone(text)), table))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
+}
+
+// cStrings returns __ccgo_ts1, the C strings of the generated file b.
+func cStrings(b []byte) (string, error) {
 	m := reStringTable.FindSubmatch(b)
 	if m == nil {
 		return "", fmt.Errorf("cannot find __ccgo_ts1")
@@ -704,24 +734,20 @@ func funcsFingerprint(b []byte, names []string, strip func([]byte) []byte) (stri
 	if err != nil {
 		return "", fmt.Errorf("__ccgo_ts1: %v", err)
 	}
-	h := sha256.New()
-	for _, name := range names {
-		text, err := funcBody(b, funcHead(name), name)
-		if err != nil {
-			return "", err
+	return table, nil
+}
+
+// withStrings writes each C string of text out in place of its offset in
+// table, which a new string anywhere before it moves.
+func withStrings(text []byte, table string) []byte {
+	return reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
+		off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
+		if off >= len(table) {
+			return use
 		}
-		text = strip(bytes.Clone(text))
-		text = reStringUse.ReplaceAllFunc(text, func(use []byte) []byte {
-			off, _ := strconv.Atoi(string(reStringUse.FindSubmatch(use)[1]))
-			if off >= len(table) {
-				return use
-			}
-			str, _, _ := strings.Cut(table[off:], "\x00")
-			return []byte(strconv.Quote(str))
-		})
-		h.Write(text)
-	}
-	return fmt.Sprintf("%x", h.Sum(nil))[:16], nil
+		str, _, _ := strings.Cut(table[off:], "\x00")
+		return []byte(strconv.Quote(str))
+	})
 }
 
 // checkBacktraceSites checks backtraceFuncs against backtraceSites. The

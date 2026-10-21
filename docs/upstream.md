@@ -41,6 +41,7 @@ What a program that used modernc.org/quickjs v0.25.0 runs into:
 - **Strings.** A Go string from javascript is always valid UTF-8, and invalid UTF-8 from Go becomes one U+FFFD per byte ([details](fork-changes/go-api.md#valid-utf-8-for-lone-surrogates)).
 - **Panics.** A panic in the engine itself, or a Go function that calls `runtime.Goexit`, leaves the VM good only for `Close` ([details](fork-changes/calls-and-tls-frames.md#frames-freed-without-defer)).
 - **Endless recursion** throws a `RangeError` rather than killing the process ([details](fork-changes/errors-and-stacks.md#endless-recursion-throws-rangeerror)).
+- **No std, os or Worker in `lib`.** The engine leaves out the parts of QuickJS's shell that the Go API never reached: `lib` no longer has `js_init_module_std`, `js_init_module_os`, `js_std_loop`, `js_std_init_handlers` and six more. `StdAddHelpers`, `SetDefaultModuleLoader` and the bytecode of modules work as before, and a program is a few hundred KB smaller ([details](fork-changes/trimmed.md)).
 - **New API.** `NewBuiltin`, `VM.NewBuiltinFunction` and `Args`, `VM.NewArray`, `VM.SetStrip` with `type Strip`, `VM.RunGC`, `VM.MemorySize` and `VM.GCThreshold`, and `VM.SetShapeCache` with `DefaultShapeCache` ([details](fork-changes/go-api.md)).
 
 The [changelog](../CHANGELOG.md) has every change of each release.

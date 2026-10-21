@@ -33,6 +33,7 @@ fork 保留 modernc.org/quickjs 的 Go API，以及 ccgo 生成的引擎。`lib/
 - **字符串。** 从 JavaScript 拿到的 Go 字符串一定是合法的 UTF-8，Go 传过去的非法 UTF-8 每个字节变成一个 U+FFFD（[详情](fork-changes/go-api.md#valid-utf-8-for-lone-surrogates)）。
 - **panic。** 引擎自身 panic，或者 Go 函数调用了 `runtime.Goexit`，这个 VM 之后只能 `Close`（[详情](fork-changes/calls-and-tls-frames.md#frames-freed-without-defer)）。
 - **无限递归** 抛 `RangeError`，不会让进程退出（[详情](fork-changes/errors-and-stacks.md#endless-recursion-throws-rangeerror)）。
+- **`lib` 里没有 std、os 和 Worker。** 引擎去掉了 QuickJS 命令行里 Go API 从来走不到的部分：`lib` 不再有 `js_init_module_std`、`js_init_module_os`、`js_std_loop`、`js_std_init_handlers` 等 10 个函数。`StdAddHelpers`、`SetDefaultModuleLoader` 和模块的字节码照常可用，程序小几百 KB（[详情](fork-changes/trimmed.md)）。
 - **新 API。** `NewBuiltin`、`VM.NewBuiltinFunction` 和 `Args`，`VM.NewArray`，`VM.SetStrip` 和 `type Strip`，`VM.RunGC`、`VM.MemorySize` 和 `VM.GCThreshold`，以及 `VM.SetShapeCache` 和 `DefaultShapeCache`（[详情](fork-changes/go-api.md)）。
 
 每个版本的所有改动见[更新记录](../CHANGELOG.zh-CN.md)。
