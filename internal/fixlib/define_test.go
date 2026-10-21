@@ -117,9 +117,9 @@ func TestFingerprintReportMatchesSites(t *testing.T) {
 	}
 }
 
-// -forin, -bitwise and -eq print the fingerprints even when the table
-// does not match the files, which is when they are needed: the check of
-// the table must not stop the report.
+// -forin, -bitwise, -eq, -lazyaddr, -json and -atomkey print the
+// fingerprints even when the table does not match the files, which is when
+// they are needed: the check of the table must not stop the report.
 func TestFingerprintReportIgnoresSites(t *testing.T) {
 	hw, err := handWritten(filepath.Join("..", "..", "lib"))
 	if err != nil {
@@ -136,6 +136,8 @@ func TestFingerprintReportIgnoresSites(t *testing.T) {
 		{"-forin", forIn, forInSites, forInFingerprint},
 		{"-bitwise", bitwise, bitwiseSites, bitwiseFingerprint},
 		{"-eq", eq, eqSites, eqFingerprint},
+		{"-json", jsonF, jsonSites, jsonFingerprint},
+		{"-atomkey", atomkey, atomKeySites, atomKeyFingerprint},
 		{"-lazyaddr", lazyAddr, lazyAddrSites, lazyAddrFingerprint},
 	} {
 		want := c.table[name]
