@@ -21,7 +21,7 @@
 
 	const {
 		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
-		Object, String, Number, Error, TypeError, RangeError, toStringTag,
+		Object, String, Number, Error, TypeError, RangeError, Symbol, toStringTag, hasInstance,
 		dateNow, dateValueOf, numberValueOf, bigintValueOf
 	} = P;
 	const lists = parse(optionLists);
@@ -81,12 +81,33 @@
 		throw new Error('Intl.' + r.kind + ': other code made formatters too fast to keep this one');
 	}
 
-	function internal(o, kind) {
-		const i = Slots.of(o);
+	// internal returns the internal slots of o, a kind object. For the format
+	// getter and resolvedOptions of DateTimeFormat and NumberFormat, C is the
+	// constructor: an o that is not one, but inherits from C.prototype, may
+	// hold one at the fallback symbol (see chain).
+	function internal(o, kind, C) {
+		let i = Slots.of(o);
+		if (i === undefined && C !== undefined && apply(hasInstance, C, [o])) {
+			i = Slots.of(o[fallback]);
+		}
 		if (i === undefined || i.kind !== kind) {
 			throw new TypeError('Intl.' + kind + '.prototype method called on an incompatible receiver');
 		}
 		return i;
+	}
+
+	// chain is ECMA-402's ChainNumberFormat and ChainDateTimeFormat, the
+	// normative optional mode browsers implement: C called as a function on o,
+	// an object that inherits from C.prototype, keeps f, the formatter it
+	// made, at a symbol property of o and returns o.
+	const fallback = Symbol('IntlLegacyConstructedSymbol');
+
+	function chain(C, f, o) {
+		if (!apply(hasInstance, C, [o])) {
+			return f;
+		}
+		defineProperty(o, fallback, {__proto__: null, value: f, writable: false, enumerable: false, configurable: false});
+		return o;
 	}
 
 	// define puts the properties of the object literal props on o as ECMA-402
@@ -232,7 +253,7 @@
 
 	function DateTimeFormat(locales = undefined, options = undefined) {
 		if (new.target === undefined) {
-			return new DateTimeFormat(locales, options);
+			return chain(DateTimeFormat, new DateTimeFormat(locales, options), this);
 		}
 		new Slots(this, dateFormat(locales, options, 'any', 'date'));
 	}
@@ -249,7 +270,7 @@
 		get format() {
 			// The spec hands out a bound function so that [d1, d2].map(f.format)
 			// keeps working. Code in the wild does exactly that.
-			const i = internal(this, 'DateTimeFormat');
+			const i = internal(this, 'DateTimeFormat', DateTimeFormat);
 			if (i.bound === undefined) {
 				i.bound = (date) => call(i, dtfFormat, timeValue(date));
 			}
@@ -259,7 +280,7 @@
 			return parse(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
 		},
 		resolvedOptions() {
-			return parse(call(internal(this, 'DateTimeFormat'), optionsOf));
+			return parse(call(internal(this, 'DateTimeFormat', DateTimeFormat), optionsOf));
 		},
 		[toStringTag]: 'Intl.DateTimeFormat'
 	});
@@ -273,7 +294,7 @@
 
 	function NumberFormat(locales = undefined, options = undefined) {
 		if (new.target === undefined) {
-			return new NumberFormat(locales, options);
+			return chain(NumberFormat, new NumberFormat(locales, options), this);
 		}
 		new Slots(this, numberFormat(locales, options));
 	}
@@ -295,7 +316,7 @@
 		}
 	}, {
 		get format() {
-			const i = internal(this, 'NumberFormat');
+			const i = internal(this, 'NumberFormat', NumberFormat);
 			if (i.bound === undefined) {
 				i.bound = (value) => call(i, nfFormat, numberValue(value));
 			}
@@ -305,7 +326,7 @@
 			return parse(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
 		},
 		resolvedOptions() {
-			return parse(call(internal(this, 'NumberFormat'), optionsOf));
+			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
 		},
 		[toStringTag]: 'Intl.NumberFormat'
 	});
