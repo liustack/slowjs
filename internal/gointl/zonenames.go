@@ -48,6 +48,7 @@ type zoneNames struct {
 }
 
 func loadZoneNames(src Source, loc Locale) (*zoneNames, error) {
+	qjsUseZoneNames()
 	chain := loc.Fallback()
 	fb, fbErr := NewFallbacker(src)
 	if fbErr == nil {

@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, and Intl calling Go through Builtins with formatters shared across VMs'
+summary: 'The fork changes to time and Intl: javascript local time is UTC in every VM, Intl in every locale Chromium has with what it costs, fraction digits as ECMA-402 reads them since 2021, daylight saving time named as ICU does on every system, Intl calling Go through Builtins with formatters shared across VMs, and the Intl constructors built on go-intl (Collator, Segmenter, RelativeTimeFormat, ListFormat, DisplayNames, DurationFormat, Locale, supportedValuesOf, locale-aware case mapping) with what they cost'
 read_when:
   - Changing package intl, fixTimezone, or the getTimezoneOffset hunk of the C patch
   - fixlib stops on _getTimezoneOffset or a call of libc's local time functions after an upstream release
@@ -7,6 +7,7 @@ read_when:
   - Asking what Intl costs in program size, VM memory and time
   - Changing intl/bridge.go, intl/registry.go, intl.js or stub.js, or adding a constructor to the bridge
   - A page changed a built-in and Intl gave another result
+  - Changing a constructor built on go-intl, or chromiumData in intl/gointl.go
 ---
 
 # Time and Intl
@@ -68,3 +69,22 @@ On an AMD EPYC 7B13 core: `new Intl.NumberFormat('en')` takes 2.7 µs (16.5 µs 
 How it works is in [architecture.md](../architecture.md#packages-next-to-the-engine), and the comment at the top of `intl/bridge.go` says how to add a constructor.
 
 Tests: `intl/registry_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `intl/convert_test.go`, `intl/legacy_test.go`.
+
+## Intl constructors on go-intl
+
+Release: not released yet.
+
+Package `intl` adds `Intl.Collator`, `Intl.Segmenter`, `Intl.RelativeTimeFormat`, `Intl.ListFormat`, `Intl.DisplayNames`, `Intl.DurationFormat`, `Intl.Locale` and `Intl.supportedValuesOf`, built on go-intl (`internal/gointl`, see [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)) over the same bridge and registry as the others. `localeCompare` sorts by the locale's collation, and `toLocaleUpperCase` and `toLocaleLowerCase` follow Turkish, Azeri, Lithuanian and Greek rules as V8 does, where QuickJS ordered by code point and mapped case alike in every language. An `Intl.Locale` stands for its tag wherever a constructor takes locales. `DateTimeFormat`, `NumberFormat` and `PluralRules` still use `cldr.bin`.
+
+Each constructor takes the locales Chromium 156 has, and serves the data Chromium serves for them: where Chromium's ICU data leaves out a language's relative times, lists or units, which it does for az, bs, kk, kok, pa, sd, uz and some of their scripts and regions, the output is root's or English, as in Chromium (`chromiumData` in `intl/gointl.go`, derived by `TestChromiumData`). The output is compared with Chromium's on 14,269 expressions in every one of those languages (`intl/golden_gointl_test.go`, recorded with `record.cjs golden <set>`). 13,474 match exactly. The other 795 differ for causes the package documentation lists, each matched by a rule of `goldenDifferences` in `intl/golden_test.go`: 104 of the 2,901 of `Segmenter` (Chromium's own word break rules and Lao and Khmer dictionaries), 671 of the 1,635 of `DisplayNames` (Chromium's ICU data has fewer names, and a few of its own), 6 of the 1,042 of `DurationFormat` (V8 overflows past 2\*\*63 nanoseconds by the machine's rules), 2 of the 23 of `supportedValuesOf` (fewer calendars, more currencies) and 12 of the 1,415 of `Locale` (five zones of 001, `-u-va-posix` in `baseName`, unknown regions). `Collator` (1,372), `RelativeTimeFormat` (1,247), `ListFormat` (1,298) and the case mapping (3,336) match in full. Where test262 reads ECMA-402 otherwise than V8, the answer is V8's: a `-u-` keyword with the value `yes`, `getTextInfo` of a script with no known direction, `toLocaleUpperCase` checking only the first locale, and two `DurationFormat` cases. The functions have the shape of built-ins and ignore a page's changes to built-ins, as the others do: `shape.json` and `tamper.json` are recorded in Chromium. test262's intl402 tests pass 2282 runs of 6764 (912 before), none of those that passed before failing. What still fails needs `Temporal`, a second realm, `formatRange`, calendars other than the Gregorian, `roundingIncrement` or `roundingPriority`, or answers as V8 does.
+
+What it costs, on an AMD EPYC 7B13 core, without PGO, against the version before:
+
+- Size: tifa's example shop, built for linux/amd64, is 9.8 MB larger (37.6 MB against 27.9 MB), nearly all of it go-intl's data: `core.bin` (4.4 MB), `names.bin` (1.9 MB), `cjdict.bin` (2.0 MB) and `tz.bin` (91 KB). Built with `-tags quickjs_intl_nonames,quickjs_intl_nocjdict`, which leave out the display names (`Intl.DisplayNames` then answers each code with its fallback) and the Chinese and Japanese word dictionary (a run of Chinese or Japanese is then one word), it is 5.8 MB larger. go-intl's dates and zone names (2.8 MB), which only its `DateTimeFormat` reads, stay out of the binary (see [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)): with them the shop was 12.6 MB larger.
+- Memory and start: `Register` takes 0.01 ms and 4 KB more. The first use in a VM takes 0.49 ms (0.24 ms before), and a VM that has used `Intl` holds 151 KB more than after `Register` (77 KB before). The javascript it installs went from 17 KB to 36 KB of source. The first collation in the process takes 4.7 ms and the first segmentation 2.7 ms, to read their data.
+- Calls: `new Intl.Collator('de')` 2.8 µs and `compare` 2.4 µs, `new Intl.Segmenter('en', {granularity: 'word'})` 4.0 µs and iterating the words of 60 characters 78 µs (its graphemes 185 µs), `RelativeTimeFormat.format` 2.4 µs, `ListFormat.format` of three items 6.5 µs, `DisplayNames.of` 1.6 µs, `DurationFormat.format` 11 to 16 µs, `new Intl.Locale` 19 µs, `maximize` 18 µs, `getWeekInfo` 105 µs, `supportedValuesOf('timeZone')` 61 µs, and `toLocaleUpperCase('tr')` of 60 characters 4.8 µs (1.4 µs without a locale).
+- Making a `NumberFormat` or `PluralRules` takes 0.1 µs more and a `DateTimeFormat` 0.3 µs more. Formatting takes no longer.
+
+A program that imports `intl` now links `internal/gointl` and `internal/gointl/temporal`, and has to carry their notices (see [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)).
+
+Tests: `intl/golden_gointl_test.go`, `intl/chromiumroot_test.go`, `intl/registry_gointl_test.go`, `intl/values_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `intl/link_test.go`, `intl/nonames_test.go` (with `-tags quickjs_intl_nonames`), `internal/gointl/qjs_readers_test.go`, and `builtin_test.go` for `Args.WTF8`.

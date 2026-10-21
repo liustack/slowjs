@@ -13,16 +13,16 @@ import (
 )
 
 // TestBuiltinShape compares the functions and objects of Intl and the
-// toLocale* methods, before and after the install, with Node 24's: names,
+// toLocale* methods, before and after the install, with Chromium's: names,
 // lengths, own properties and their attributes, prototype properties,
 // constructors and toString.
 func TestBuiltinShape(t *testing.T) {
-	src, err := os.ReadFile("testdata/node/shape.js")
+	src, err := os.ReadFile("testdata/chromium/shape.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	b, err := os.ReadFile("testdata/node/shape.json")
+	b, err := os.ReadFile("testdata/chromium/shape.json")
 	if err != nil {
 		t.Fatal(err)
 	}

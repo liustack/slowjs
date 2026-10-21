@@ -1397,6 +1397,16 @@ func (m *VM) call(f, this lib.TJSValue, args ...any) (r any, err error) {
 // toString throws. ok is then false and the exception is left pending: use
 // [VM.goString], or [errString] on the paths that read an exception.
 func cString(tls *libc.TLS, ctx uintptr, v lib.TJSValue) (s string, ok bool) {
+	return toCString(tls, ctx, v, false)
+}
+
+// cWTF8 is cString without wellFormed: a lone surrogate stays the three bytes
+// of its code point.
+func cWTF8(tls *libc.TLS, ctx uintptr, v lib.TJSValue) (s string, ok bool) {
+	return toCString(tls, ctx, v, true)
+}
+
+func toCString(tls *libc.TLS, ctx uintptr, v lib.TJSValue, wtf8 bool) (s string, ok bool) {
 	// The out-parameter lives on the emulated C stack, never the Go stack: the
 	// transpiled callee holds it as a uintptr, which a Go stack move would leave
 	// dangling. It is freed before cString returns, not in a defer (see
@@ -1412,7 +1422,11 @@ func cString(tls *libc.TLS, ctx uintptr, v lib.TJSValue) (s string, ok bool) {
 
 	defer lib.XJS_FreeCString(tls, ctx, p)
 
-	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), n)), true
+	b := unsafe.Slice((*byte)(unsafe.Pointer(p)), n)
+	if wtf8 {
+		return string(b), true
+	}
+	return wellFormed(b), true
 }
 
 // wellFormed returns the UTF-8 b as a Go string with U+FFFD for each lone

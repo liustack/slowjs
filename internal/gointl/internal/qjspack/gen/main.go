@@ -31,9 +31,14 @@
 // byte for byte. Before that it walks every locale and fails if a part is
 // left that none reaches: a data package that reads something Walk does not.
 //
-// The files go into three packs (see internal/qjspack), so that a build tag
-// can leave one out: names.bin, the display names, cjdict.bin, the Chinese
-// and Japanese dictionary of the segmenter, and core.bin, the rest. Within a
+// The files go into seven packs (see internal/qjspack): names.bin, the
+// display names, and cjdict.bin, the Chinese and Japanese dictionary of the
+// segmenter, which a build tag can leave out, tz.bin, the time zones and
+// calendar tables the temporal package reads, which a binary that uses only
+// Temporal links alone, dates.bin, zonenames.bin and hostzones.bin, the
+// files only DateTimeFormat, the zone names and the guess at the host's
+// zone read, which a binary links only with those readers (see
+// qjs_readers.go), and core.bin, the rest. Within a
 // pack a file of 16 KB or more is a chunk of its own and the smaller files of
 // a directory share one. Every chunk is compressed except the files -store
 // names, which are served from the binary's read-only data.
@@ -128,11 +133,20 @@ func packOf(name string) string {
 		return "names"
 	case name == "brkitr/cjdict.bin":
 		return "cjdict"
+	case strings.HasPrefix(name, "tz/") || name == "temporalzones.bin" || name == "temporalcalendars.bin":
+		return "tz"
+	case strings.HasPrefix(name, "dates/") || name == "datesshared.bin" || name == "patterncalendars.bin" ||
+		name == "rbnf.bin" || name == "ummalqura.bin" || name == "japaneseeras.bin":
+		return "dates"
+	case strings.HasPrefix(name, "zonenames/") || name == "zonenamesshared.bin" || name == "metazones.bin":
+		return "zonenames"
+	case name == "windowszones.bin" || name == "abbreviationzones.bin":
+		return "hostzones"
 	}
 	return "core"
 }
 
-var packs = []string{"core", "names", "cjdict"}
+var packs = []string{"core", "names", "cjdict", "tz", "dates", "zonenames", "hostzones"}
 
 // defaultStore are the files kept uncompressed unless -store says otherwise.
 var defaultStore = []string{

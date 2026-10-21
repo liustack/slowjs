@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, and RunGC, MemorySize and GCThreshold'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -7,6 +7,7 @@ read_when:
   - Registering a Go function under a name the global object already has
   - Calling VM.SetShapeCache
   - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
+  - Reading a string argument whose lone surrogates matter, such as one to collate (Args.WTF8)
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
 ---
@@ -84,6 +85,14 @@ Release: v0.26.17.
 An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`, and any other name as `Error`), with a stack that starts at the Builtin, any other error as a `TypeError`.
 
 On an Apple M4 a call that adds two numbers takes about 55 ns, loop included, where the same call of a `RegisterHostFunc` function takes about 470 ns. A VM's context now carries an id, which is how a call finds its VM without a lock. Package `intl` calls Go this way (see [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins)).
+
+Test: `builtin_test.go`.
+
+## Args.WTF8
+
+Release: not released yet.
+
+`Args.WTF8(i)` reads a string argument as the engine holds it: a lone surrogate is the three bytes of its code point (0xED, then 0xA0 to 0xBF, then a continuation byte), where `Args.String` gives U+FFFD for it, and a surrogate pair is its one character in UTF-8, as before. The result is not valid UTF-8 when the string has a lone surrogate. A Builtin that has to tell lone surrogates apart reads its strings this way, as `Intl.Collator` does to order them as Chromium does.
 
 Test: `builtin_test.go`.
 

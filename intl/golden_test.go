@@ -12,23 +12,28 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/liustack/quickjs"
 )
 
 // The golden test compares this package with a browser. testdata/chromium
-// holds what Chromium answered for a few thousand expressions, recorded by
-// record.cjs; go test only reads it. To record again, after changing the
-// corpus or for a new browser:
+// holds what Chromium answered for some tens of thousands of expressions,
+// recorded by record.cjs; go test only reads it. The expressions come in
+// sets, each recorded in a file of its own: the first, of NumberFormat,
+// DateTimeFormat and PluralRules, in golden.json.gz, and each of the others,
+// one per constructor built on go-intl, in golden-<name>.json.gz. To record
+// again, after changing a corpus or for a new browser:
 //
-//	go test ./intl -run TestGolden -args -golden.corpus   # writes corpus.json
-//	node intl/testdata/chromium/record.cjs golden   # writes golden.json.gz
+//	go test ./intl -run TestGolden -args -golden.corpus   # writes corpus*.json
+//	node intl/testdata/chromium/record.cjs golden   # writes golden*.json.gz
 
 var (
-	goldenCorpus = flag.Bool("golden.corpus", false, "write testdata/chromium/corpus.json and skip the comparison")
+	goldenCorpus = flag.Bool("golden.corpus", false, "write testdata/chromium/corpus*.json and skip the comparison")
 	goldenRun    = flag.String("golden.run", "", "compare only the expressions matching this regular expression")
 	goldenShow   = flag.Int("golden.show", 40, "report at most this many unexplained differences")
 )
@@ -80,6 +85,61 @@ func goldenDropCalendar(expr string) string {
 	})
 }
 
+// goldenWordsAsChromium takes the json of word segments as the Segmenter
+// golden expressions write them, [segment, index, isWordLike], and returns
+// them with every word cut at its full stops and colons and every run of
+// Lao and Khmer words joined, which both break rules agree on.
+func goldenWordsAsChromium(answer string) (string, bool) {
+	var segs [][3]any
+	if json.Unmarshal([]byte(answer), &segs) != nil {
+		return "", false
+	}
+
+	laoKhmer := func(s string) bool {
+		for _, r := range s {
+			if unicode.In(r, unicode.Lao, unicode.Khmer) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []string
+	joinable := false
+	for _, seg := range segs {
+		s, _ := seg[0].(string)
+		word, _ := seg[2].(bool)
+		if word && laoKhmer(s) {
+			if joinable {
+				out[len(out)-1] += s
+				continue
+			}
+			out = append(out, s)
+			joinable = true
+			continue
+		}
+
+		joinable = false
+		if !word {
+			out = append(out, s)
+			continue
+		}
+
+		start := 0
+		for i, r := range s {
+			if r == '.' || r == ':' {
+				out = append(out, s[start:i], string(r))
+				start = i + 1
+			}
+		}
+		out = append(out, s[start:])
+	}
+	return strings.Join(out, "|"), true
+}
+
+// goldenDurationOverflow finds INT64_MIN nanoseconds as a number of
+// seconds, which x86-64 writes where arm64 writes INT64_MAX's.
+var goldenDurationOverflow = regexp.MustCompile(`-?(9223372036[.,]854775)808`)
+
 // goldenDifference is a difference from Chromium that is understood: the
 // expression, Chromium's answer and ours match a known cause. Anything else
 // fails the test. recorded holds Chromium's answer to every expression of
@@ -90,6 +150,30 @@ type goldenDifference struct {
 }
 
 var goldenDifferences = []goldenDifference{
+	{
+		// Chromium patches ICU's word break rules: a full stop is MidNum
+		// rather than MidNumLet, and a colon no MidLetter, so "U.S.A" and
+		// "a:b" are words apart there ("3.14" is one in both). And it ships
+		// Lao and Khmer dictionaries of its own, smaller than ICU's, which
+		// break some runs into other words. go-intl has ICU's rules and
+		// dictionaries. The answers have to be the same once words are cut
+		// at full stops and colons and runs of Lao and Khmer words are
+		// joined.
+		why: "Chromium's word break rules and Lao and Khmer dictionaries are its own",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, `granularity:"word"`) {
+				return false
+			}
+
+			g, ok := goldenWordsAsChromium(got)
+			if !ok {
+				return false
+			}
+
+			w, ok := goldenWordsAsChromium(want)
+			return ok && g == w
+		},
+	},
 	{
 		// Only the Gregorian calendar has data everywhere. buddhist and
 		// persian have it where they are the default (th, fa). Any other
@@ -102,6 +186,160 @@ var goldenDifferences = []goldenDifference{
 			return goldenOtherCalendar(expr) && ok && got == stripped
 		},
 	},
+	{
+		// Chromium's ICU data has fewer names than CLDR: none for some
+		// languages, the numeric regions but 419, variants, and currencies
+		// that are no longer used, which it writes as their codes. It has
+		// none at all for ak, az, bs, kk, kok, pa, sd and uz, which it
+		// names as root and English do. And a few English names are its
+		// own: "Hong Kong" for "Hong Kong SAR China". go-intl has CLDR's
+		// names. Every name that differs has to differ that way.
+		why: "Chromium's ICU data has fewer names, and a few of its own",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			items, ok := dnItems(expr, got, want)
+			if !ok || len(items) == 0 {
+				return false
+			}
+
+			english := dnEnglish(expr, recorded)
+			for _, it := range items {
+				if !dnExplained(it, english) {
+					return false
+				}
+			}
+			return true
+		},
+	},
+	{
+		// go-intl falls back to other narrow names of fields than ICU does
+		// in two locales: de-CH's era and th's time zone, which Node 77
+		// writes as Chromium does.
+		why: "go-intl's narrow names of two fields",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			items, ok := dnItems(expr, got, want)
+			if !ok || len(items) == 0 {
+				return false
+			}
+
+			for _, it := range items {
+				if !dnGoIntlFields[[3]string{it.loc, it.style, it.code}] {
+					return false
+				}
+			}
+			return true
+		},
+	},
+	{
+		// V8 sums the sub-second units of a duration in nanoseconds, a
+		// double it converts to an int64, which C++ leaves undefined past
+		// 2**63: x86-64 gives INT64_MIN, where Node runs, and arm64, where
+		// this Chromium ran, INT64_MAX. go-intl converts as x86-64 does.
+		why: "V8 overflows durations of more than 2**63 nanoseconds by the machine's rules",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, "Intl.DurationFormat") {
+				return false
+			}
+
+			return goldenDurationOverflow.ReplaceAllString(got, "${1}807") == want
+		},
+	},
+	{
+		// DateTimeFormat writes dates in fewer calendars than Chromium (see
+		// the package doc), and lists those it does.
+		why: "DateTimeFormat has fewer calendars",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if expr != `Intl.supportedValuesOf("calendar").join()` {
+				return false
+			}
+
+			en := cldr().locale(defaultLocale)
+			return got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(c string) bool { return calendarFor(en, c).name != c }), ",")
+		},
+	},
+	{
+		// go-intl lists the currencies that ICU names, which are more than
+		// Chromium's ICU data names, as with DisplayNames: those of the
+		// summary of Chromium's data.
+		why: "Chromium's ICU data names fewer currencies",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if expr != `Intl.supportedValuesOf("currency").join()` {
+				return false
+			}
+
+			named := goldenChromiumCurrencies()
+			return want == strings.Join(slices.DeleteFunc(strings.Split(got, ","), func(c string) bool { return !slices.Contains(named, c) }), ",") &&
+				strings.Join(named, ",") == want
+		},
+	},
+	{
+		// ICU's zones of region 001 have five that go-intl's data puts in
+		// no region: the POSIX style zones, such as EST5EDT, and Factory.
+		why: "Chromium's ICU data has five zones more in 001",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeTimeZones && got == strings.Join(slices.DeleteFunc(strings.Split(want, ","), func(z string) bool {
+					return slices.Contains([]string{"CST6CDT", "EST5EDT", "Factory", "MST7MDT", "PST8PDT"}, z)
+				}), ",")
+			})
+		},
+	},
+	{
+		// V8 takes the baseName from ICU, which reads -u-va-posix as the
+		// variant POSIX, and keeps the extension in it too.
+		why: "V8 reads -u-va-posix as a variant",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeBaseName && want == got+"-u-va-posix" || field == localeVariants && want == "posix"
+			})
+		},
+	},
+	{
+		// Chromium's ICU, 78, reads the region of an unknown -u-rg- value,
+		// "xx", as a region without data, and takes the hour cycle and the
+		// week of the world, 001; go-intl, as Node's ICU, the locale's own.
+		// And it takes h12 for und-ZZ, where go-intl takes 001's h23.
+		why: "Chromium's ICU reads unknown regions otherwise",
+		match: func(expr, got, want string, recorded map[string]string) bool {
+			if !strings.Contains(expr, `Locale("en-u-rg-xxzzzz")`) && !strings.Contains(expr, `Locale("und-ZZ")`) &&
+				!strings.Contains(expr, `Locale("und-Zzzz-ZZ")`) {
+				return false
+			}
+
+			return localeDiffers(expr, got, want, func(field int, got, want string) bool {
+				return field == localeHourCycles || field == localeWeekInfo
+			})
+		},
+	},
+}
+
+// The fields of localeShow's answer, by index, that the differences of
+// Intl.Locale look at.
+const (
+	localeBaseName   = 1
+	localeVariants   = 5
+	localeHourCycles = 17
+	localeTimeZones  = 19
+	localeWeekInfo   = 21
+)
+
+// localeDiffers reports whether expr writes out an Intl.Locale with
+// localeShow and each field of got that is not want's is explained.
+func localeDiffers(expr, got, want string, explained func(field int, got, want string) bool) bool {
+	if !strings.HasPrefix(expr, localeShow) {
+		return false
+	}
+
+	g, w := strings.Split(got, " | "), strings.Split(want, " | ")
+	if len(g) != len(w) {
+		return false
+	}
+
+	for i := range g {
+		if g[i] != w[i] && !explained(i, g[i], w[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 type golden struct {
@@ -110,8 +348,36 @@ type golden struct {
 	Cases     [][2]string `json:"cases"`
 }
 
-func readGolden(tb testing.TB) *golden {
-	f, err := os.Open(filepath.Join(goldenDir, "golden.json.gz"))
+// goldenSets are the sets of expressions: name, which names the files of
+// all but the first, and the expressions.
+var goldenSets = []struct {
+	name  string
+	exprs func() []string
+}{
+	{"", goldenExprs},
+	{"collator", collatorExprs},
+	{"segmenter", segmenterExprs},
+	{"relativetime", rtfExprs},
+	{"list", listExprs},
+	{"displaynames", dnExprs},
+	{"duration", durationExprs},
+	{"values", valuesExprs},
+	{"locale", localeExprs},
+	{"case", caseExprs},
+}
+
+// goldenFile returns the name of a file of the set name: corpus.json for
+// "corpus", ".json" and "", corpus-collator.json for "collator".
+func goldenFile(base, ext, name string) string {
+	if name == "" {
+		return base + ext
+	}
+
+	return base + "-" + name + ext
+}
+
+func readGolden(tb testing.TB, name string) *golden {
+	f, err := os.Open(filepath.Join(goldenDir, goldenFile("golden", ".json.gz", name)))
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -133,19 +399,30 @@ func readGolden(tb testing.TB) *golden {
 
 func TestGolden(t *testing.T) {
 	if *goldenCorpus {
-		b, err := json.MarshalIndent(goldenExprs(), "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
+		for _, set := range goldenSets {
+			b, err := json.MarshalIndent(set.exprs(), "", "\t")
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		if err := os.WriteFile(filepath.Join(goldenDir, "corpus.json"), append(b, '\n'), 0o644); err != nil {
-			t.Fatal(err)
+			if err := os.WriteFile(filepath.Join(goldenDir, goldenFile("corpus", ".json", set.name)), append(b, '\n'), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
-
-		t.Skip("wrote corpus.json")
+		t.Skip("wrote corpus*.json")
 	}
 
-	g := readGolden(t)
+	for _, set := range goldenSets {
+		name := set.name
+		if name == "" {
+			name = "base"
+		}
+		t.Run(name, func(t *testing.T) { testGolden(t, set.name) })
+	}
+}
+
+func testGolden(t *testing.T, set string) {
+	g := readGolden(t, set)
 	recorded := map[string]string{}
 	for _, c := range g.Cases {
 		recorded[c[0]] = c[1]

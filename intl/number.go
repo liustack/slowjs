@@ -812,8 +812,10 @@ func (f *numberFormat) compactScale(d dec) (dec, int, int) {
 }
 
 // pluralOperands returns the plural operands of d as the formatter would
-// show it, sign aside: the rounded digits and, in compact and scientific
-// notation, the exponent.
+// show it, sign aside. In compact and scientific notation they are those of
+// the whole number the digits shown stand for, as ICU has them: "1,5 M" has
+// an i of 1500000, a v of 0 and an e of 6, "1.5E-4" an i of 0, an f of 15, a
+// v of 5 and an e of -4.
 func (f *numberFormat) pluralOperands(d dec) pluralOperands {
 	d.neg = false
 	var (
@@ -832,7 +834,25 @@ func (f *numberFormat) pluralOperands(d dec) pluralOperands {
 		r, minFrac = f.round(d)
 	}
 	ip, fp := r.render(1, minFrac)
+	ip, fp = shiftPoint(ip, fp, e)
 	return operandsOf(ip, fp, e)
+}
+
+// shiftPoint moves the decimal point of ip.fp e places to the right, or to
+// the left for a negative e, keeping every digit: 1.50 by 6 is 1500000, 1.5 by
+// -4 is 0.00015.
+func shiftPoint(ip, fp string, e int) (string, string) {
+	switch {
+	case e > 0:
+		n := min(e, len(fp))
+		ip, fp = ip+fp[:n], fp[n:]
+		ip += strings.Repeat("0", e-n)
+	case e < 0:
+		n := min(-e, len(ip))
+		ip, fp = ip[:len(ip)-n], ip[len(ip)-n:]+fp
+		fp = strings.Repeat("0", -e-n) + fp
+	}
+	return ip, fp
 }
 
 func (f *numberFormat) compactPattern(magnitude int, r dec, minFrac int) *numPattern {

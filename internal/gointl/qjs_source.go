@@ -32,7 +32,7 @@ type qjsBuiltIn struct{ name, data string }
 // leaves out.
 func qjsPackData() []qjsBuiltIn {
 	var out []qjsBuiltIn
-	for _, p := range []qjsBuiltIn{{"core", qjsCore}, {"names", qjsNames}, {"cjdict", qjsCJDict}} {
+	for _, p := range []qjsBuiltIn{{"core", qjsCore}, {"names", qjsNames}, {"cjdict", qjsCJDict}, {"tz", qjsTZ}} {
 		if p.data != "" {
 			out = append(out, p)
 		}
@@ -52,15 +52,76 @@ func qjsOpenPacks(built []qjsBuiltIn) ([]*qjspack.Pack, error) {
 	return packs, nil
 }
 
-var qjsPacks = sync.OnceValues(func() ([]*qjspack.Pack, error) { return qjsOpenPacks(qjsPackData()) })
+// qjsLazy opens packs the first time they are asked for, with a
+// sync.OnceValues made then, not when the package starts, so that the linker
+// keeps a pack only in a binary whose code can read it: one that uses only
+// EmbeddedTemporalSource links tz.bin and none of the others. As with any
+// sync.OnceValues, a panic of open comes back on every call.
+type qjsLazy struct {
+	once sync.Once
+	open func() ([]*qjspack.Pack, error)
+}
 
-// qjsOpen serves Embedded.
+func (l *qjsLazy) get(open func() ([]*qjspack.Pack, error)) ([]*qjspack.Pack, error) {
+	l.once.Do(func() { l.open = sync.OnceValues(open) })
+	return l.open()
+}
+
+var qjsAll, qjsTemporal qjsLazy
+
+// qjsTemporalPacks is the tz pack alone, which EmbeddedTemporalSource serves.
+func qjsTemporalPacks() ([]*qjspack.Pack, error) {
+	return qjsTemporal.get(func() ([]*qjspack.Pack, error) {
+		return qjsOpenPacks([]qjsBuiltIn{{"tz", qjsTZ}})
+	})
+}
+
+// qjsPacks is every pack built in, which Embedded serves. The tz pack in it
+// is EmbeddedTemporalSource's, so that a chunk both read is inflated once.
+func qjsPacks() ([]*qjspack.Pack, error) {
+	return qjsAll.get(func() ([]*qjspack.Pack, error) {
+		var packs []*qjspack.Pack
+		for _, b := range qjsPackData() {
+			open := func() ([]*qjspack.Pack, error) { return qjsOpenPacks([]qjsBuiltIn{b}) }
+			if b.name == "tz" {
+				open = qjsTemporalPacks
+			}
+			p, err := open()
+			if err != nil {
+				return nil, err
+			}
+			packs = append(packs, p...)
+		}
+		return packs, nil
+	})
+}
+
+// qjsOpen serves Embedded: the packs built in, and the readers' packs in
+// use (see qjs_readers.go).
 func qjsOpen(m Marker, d DataLocale) ([]byte, error) {
 	packs, err := qjsPacks()
 	if err != nil {
 		return nil, err
 	}
-	return openFiles(qjsFiles{packs}, m, d)
+	return openFiles(qjsFiles{packs: packs, readers: true}, m, d)
+}
+
+// EmbeddedTemporalSource is the part of Embedded that the temporal package
+// reads: ICU's time zones (MarkerTimeZones), the names Temporal takes
+// (MarkerTemporalZones) and the calendars' tables (MarkerTemporalCalendars).
+// It serves the same bytes as Embedded, and a binary whose code reads only
+// it links 91 KB of data, not Embedded's 11 MB. Any other data set is
+// ErrNotFound. Its one value is its zero value, and there is no variable of
+// it, as go-intl has no exported variable an importer could change.
+type EmbeddedTemporalSource struct{}
+
+// Open serves the embedded time zones and calendar tables.
+func (EmbeddedTemporalSource) Open(m Marker, d DataLocale) ([]byte, error) {
+	packs, err := qjsTemporalPacks()
+	if err != nil {
+		return nil, err
+	}
+	return openFiles(qjsFiles{packs: packs}, m, d)
 }
 
 // QJSInflated reports how many chunks of the built-in data have been
@@ -71,7 +132,11 @@ func QJSInflated() (chunks, bytes int) {
 	if err != nil {
 		return 0, 0
 	}
-	for _, p := range packs {
+	readers, err := qjsReaderPacks()
+	if err != nil {
+		return 0, 0
+	}
+	for _, p := range append(packs[:len(packs):len(packs)], readers...) {
 		n, size := p.Inflated()
 		chunks += n
 		bytes += size
@@ -79,8 +144,12 @@ func QJSInflated() (chunks, bytes int) {
 	return chunks, bytes
 }
 
-// qjsFiles finds a data file in packs.
-type qjsFiles struct{ packs []*qjspack.Pack }
+// qjsFiles finds a data file in packs, and then, with readers, in the
+// readers' packs in use.
+type qjsFiles struct {
+	packs   []*qjspack.Pack
+	readers bool
+}
 
 func (f qjsFiles) readFile(name string) ([]byte, error) {
 	for _, p := range f.packs {
@@ -89,7 +158,10 @@ func (f qjsFiles) readFile(name string) ([]byte, error) {
 			return b, err
 		}
 	}
-	return nil, fs.ErrNotExist
+	if !f.readers {
+		return nil, fs.ErrNotExist
+	}
+	return qjsReadersFile(name)
 }
 
 // qjsSource serves packs of its own, for tests that watch what is inflated.

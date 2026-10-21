@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/liustack/quickjs"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // The bridge between intl.js and the formatters.
@@ -57,20 +58,38 @@ import (
 //  5. Nothing in intl.js may use a global or a method a page can change:
 //     only what P, from stub.js, holds, object literals, null-prototype
 //     arrays (bare) and descriptors ({__proto__: null, ...}), apply for
-//     calls, +v and `${v}` for conversions. A built-in it needs and P lacks
+//     calls, +v and toString(v) for conversions: not a template literal,
+//     which QuickJS compiles into a call of String.prototype.concat. A
+//     built-in it needs and P lacks
 //     goes into P in stub.js. TestTamper and TestBuiltinShape check against
-//     Node, in testdata/node: add the new constructor's uses there.
+//     Chromium, in testdata/chromium: add the new constructor's uses to
+//     tamper.js and shape.js there and record them again (record.cjs).
+//
+// # Objects that are not formatters
+//
+// An Intl.Locale is a tag and what its getters answer, which localeNew works
+// out once and javascript keeps in the object's slots. Nothing of it goes in
+// the registry: its methods pass the tag to localeInfo, which answers from
+// go-intl's LocaleInfo, and Intl.supportedValuesOf answers lists made once
+// per process.
 //
 // # Formatters from internal/gointl
 //
 // A go-intl formatter, such as a *gointl.NumberFormat or a *gointl.Collator,
 // is the kind of formatter the registry wants: once made it never changes and
 // any number of goroutines may use it at once. So its formatter type here
-// holds the resolved state as json fields, as in step 1, and makes the go-intl
-// object in init, from the resolved locale and options, which keeps the
-// registry the only cache: two requests that resolve alike share one go-intl
-// object across all VMs. A few rules on top of the steps above:
+// holds the resolved state as json fields, as in step 1, and keeps the go-intl
+// object in an unexported field, which keeps the registry the only cache: two
+// requests that resolve alike share one go-intl object across all VMs. A few
+// rules on top of the steps above:
 //
+//   - go-intl resolves the locale as well (gointl.go): the ctor names its
+//     gointl.Service in goSvc, which supportedLocalesOf answers from too, and
+//     resolve makes the go-intl object, so init has nothing left to do.
+//     resolvedOptions is the go-intl object's, in the json fields.
+//   - Strings from javascript are Args.String, with U+FFFD for each lone
+//     surrogate, or Args.WTF8 where a lone surrogate must stay itself, as it
+//     does in Collator.compare.
 //   - The default locale and time zone come from the request, as _zone,
 //     the zone Register hands intl.js, does for DateTimeFormat, never from
 //     gointl.HostLocale or gointl.HostTimeZone, which read the machine the
@@ -99,7 +118,10 @@ type option struct {
 type ctor struct {
 	name string // as in Intl.NumberFormat
 	tag  byte   // the first byte of its request keys
-	svc  service
+	// svc is the service of a constructor built on cldr.bin, goSvc that of
+	// one built on go-intl, whose locales go-intl resolves.
+	svc   service
+	goSvc gointl.Service
 	// fixed names the leading string arguments of a resolve, which come
 	// from intl.js rather than from the page, such as the VM's default time
 	// zone. They go into the options with these names.
@@ -154,7 +176,57 @@ var (
 		resolve: func(req request) (formatter, error) { return resolvePluralRules(req) },
 	}
 
-	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor}
+	collatorCtor = &ctor{
+		name:  "Collator",
+		tag:   'C',
+		goSvc: gointl.ServiceCollator,
+		options: []option{{"usage", 's'}, {"localeMatcher", 's'}, {"collation", 's'}, {"numeric", 'b'},
+			{"caseFirst", 's'}, {"sensitivity", 's'}, {"ignorePunctuation", 'b'}},
+		resolve: func(req request) (formatter, error) { return resolveCollator(req) },
+	}
+
+	segmenterCtor = &ctor{
+		name:    "Segmenter",
+		tag:     'S',
+		goSvc:   gointl.ServiceSegmenter,
+		options: stringOptions("localeMatcher", "granularity"),
+		resolve: func(req request) (formatter, error) { return resolveSegmenter(req) },
+	}
+
+	relativeTimeFormatCtor = &ctor{
+		name:    "RelativeTimeFormat",
+		tag:     'R',
+		goSvc:   gointl.ServiceRelativeTimeFormat,
+		options: stringOptions("localeMatcher", "numberingSystem", "style", "numeric"),
+		resolve: func(req request) (formatter, error) { return resolveRelativeTimeFormat(req) },
+	}
+
+	listFormatCtor = &ctor{
+		name:    "ListFormat",
+		tag:     'L',
+		goSvc:   gointl.ServiceListFormat,
+		options: stringOptions("localeMatcher", "type", "style"),
+		resolve: func(req request) (formatter, error) { return resolveListFormat(req) },
+	}
+
+	displayNamesCtor = &ctor{
+		name:    "DisplayNames",
+		tag:     'I',
+		goSvc:   gointl.ServiceDisplayNames,
+		options: stringOptions("localeMatcher", "style", "type", "fallback", "languageDisplay"),
+		resolve: func(req request) (formatter, error) { return resolveDisplayNames(req) },
+	}
+
+	durationFormatCtor = &ctor{
+		name:    "DurationFormat",
+		tag:     'U',
+		goSvc:   gointl.ServiceDurationFormat,
+		options: concat(stringOptions("localeMatcher", "numberingSystem", "style"), durationOptions(), []option{{"fractionalDigits", 'n'}}),
+		resolve: func(req request) (formatter, error) { return resolveDurationFormat(req) },
+	}
+
+	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor,
+		relativeTimeFormatCtor, listFormatCtor, displayNamesCtor, durationFormatCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -172,6 +244,16 @@ func digitOptions() []option {
 		{"minimumSignificantDigits", 'n'}, {"maximumSignificantDigits", 'n'}, {"roundingIncrement", 'n'},
 		{"roundingMode", 's'}, {"roundingPriority", 's'}, {"trailingZeroDisplay", 's'},
 	}
+}
+
+// durationOptions are those GetDurationUnitOptions reads, each unit's style
+// and display in turn.
+func durationOptions() []option {
+	var r []option
+	for _, u := range durationUnits {
+		r = append(r, option{u, 's'}, option{u + "Display", 's'})
+	}
+	return r
 }
 
 func concat(lists ...[]option) []option {
@@ -480,12 +562,251 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
-		r, err := supportedLocales(tags, c.svc)
+		var r []string
+		if c.goSvc != "" {
+			r, err = goSupported(c.goSvc, tags)
+		} else {
+			r, err = supportedLocales(tags, c.svc)
+		}
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
 
 		return stringArray(a.VM(), r)
+	}),
+	resolveBuiltin(collatorCtor),
+	quickjs.NewBuiltin("compare", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		c, ok, err := formatterOf[*collator](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		// go-intl weighs a lone surrogate by its code point, as ICU does, so
+		// the strings keep theirs.
+		x, _ := a.WTF8(1)
+		y, _ := a.WTF8(2)
+		return a.VM().NewInt(c.c.Compare(x, y)), nil
+	}),
+	resolveBuiltin(segmenterCtor),
+	quickjs.NewBuiltin("breaks", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		s, ok, err := formatterOf[*segmenter](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		text, _ := a.WTF8(1)
+		return intArray(a.VM(), s.breaks(text))
+	}),
+	resolveBuiltin(relativeTimeFormatCtor),
+	// rtfFormat and rtfParts take the value, a number, and the unit, a
+	// string. The parts are their type, value and unit in turn, the unit
+	// empty for the text around the number.
+	quickjs.NewBuiltin("rtfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*relativeTimeFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		v, _ := a.Number(1)
+		u, _ := a.String(2)
+		unit, err := f.unit(v, u)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return a.VM().NewString(f.f.Format(v, unit))
+	}),
+	quickjs.NewBuiltin("rtfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*relativeTimeFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		v, _ := a.Number(1)
+		u, _ := a.String(2)
+		unit, err := f.unit(v, u)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		parts := f.f.FormatToParts(v, unit)
+		l := make([]string, 0, 3*len(parts))
+		for _, p := range parts {
+			l = append(l, string(p.Kind), p.Value, p.Unit)
+		}
+		return stringArray(a.VM(), l)
+	}),
+	resolveBuiltin(listFormatCtor),
+	// lfParts takes the items as listItems reads them and answers as
+	// listParts writes them.
+	quickjs.NewBuiltin("lfParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*listFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		items, ok := listItems(s)
+		if !ok {
+			return quickjs.Value{}, typeError("malformed list")
+		}
+
+		return listParts(a.VM(), items, f.f.FormatToParts(items))
+	}),
+	resolveBuiltin(displayNamesCtor),
+	// dnOf answers the name, or the number 0 for none.
+	quickjs.NewBuiltin("dnOf", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		d, ok, err := formatterOf[*displayNames](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		code, _ := a.String(1)
+		name, ok, err := d.of(code)
+		switch {
+		case err != nil:
+			return quickjs.Value{}, jsErr(err)
+		case !ok:
+			return a.VM().NewInt(0), nil
+		}
+		return a.VM().NewString(name)
+	}),
+	resolveBuiltin(durationFormatCtor),
+	// dfFormat and dfParts take the duration as durationOf does: the
+	// string, and true for fields. The parts are their type, value and
+	// unit in turn, the unit empty for the list's own text.
+	quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*durationFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		fields, _ := a.Bool(2)
+		d, err := durationOf(s, fields)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		r, err := f.f.Format(d)
+		if err != nil {
+			return quickjs.Value{}, jsErr(rangeError("%s", err))
+		}
+
+		return a.VM().NewString(r)
+	}),
+	quickjs.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*durationFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		fields, _ := a.Bool(2)
+		d, err := durationOf(s, fields)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		parts, err := f.f.FormatToParts(d)
+		if err != nil {
+			return quickjs.Value{}, jsErr(rangeError("%s", err))
+		}
+
+		l := make([]string, 0, 3*len(parts))
+		for _, p := range parts {
+			l = append(l, string(p.Kind), p.Value, p.Unit)
+		}
+		return stringArray(a.VM(), l)
+	}),
+	// supportedValuesOf answers a new array of the list of the key.
+	quickjs.NewBuiltin("supportedValuesOf", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		key, _ := a.String(0)
+		values, err := supportedValues()
+		if err != nil {
+			return quickjs.Value{}, err
+		}
+
+		l, ok := values[key]
+		if !ok {
+			return quickjs.Value{}, jsErr(rangeError("Invalid key : %s", key))
+		}
+
+		return stringArray(a.VM(), l)
+	}),
+	// localeCheck throws the RangeError of Intl.Locale for its tag or one of
+	// the options checkLocale checks.
+	quickjs.NewBuiltin("localeCheck", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		kind, _ := a.String(0)
+		s, _ := a.String(1)
+		if err := checkLocale(kind, s); err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return quickjs.UndefinedValue, nil
+	}),
+	// localeNew takes the tag and the options of Intl.Locale, each a string
+	// or undefined, and answers the json of the new Locale's slots.
+	quickjs.NewBuiltin("localeNew", 1+locOptions, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		var opts [locOptions]*string
+		for i := range opts {
+			if s, ok := a.String(1 + i); ok {
+				opts[i] = &s
+			}
+		}
+		r, err := newLocale(tag, &opts)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		s, err := localeJSON(r)
+		if err != nil {
+			return quickjs.Value{}, err
+		}
+
+		return a.VM().NewString(s)
+	}),
+	// localeInfo answers what the method of Intl.Locale named by its second
+	// argument answers for the tag of a Locale, its first: maximize and
+	// minimize the tag of the Locale to make.
+	quickjs.NewBuiltin("localeInfo", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		what, _ := a.String(1)
+		return localeInfo(a.VM(), tag, what)
+	}),
+	// caseLanguage answers the language whose case rules toLocaleUpperCase
+	// and toLocaleLowerCase follow for a tag, or "" for the default ones.
+	quickjs.NewBuiltin("caseLanguage", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := a.String(0)
+		lang, err := caseLanguage(tag)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+
+		return a.VM().NewString(lang)
+	}),
+	// casePremap takes a string, a language from caseLanguage and whether to
+	// map to upper case, and answers what the language's rules make of the
+	// string, for the engine to map the rest: a string, or an array of
+	// strings and the code units of lone surrogates; undefined where they
+	// change nothing.
+	quickjs.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		s, _ := a.WTF8(0)
+		lang, _ := a.String(1)
+		upper, _ := a.Bool(2)
+		pieces, ok, err := premapCase(s, lang, upper)
+		switch {
+		case err != nil:
+			return quickjs.Value{}, err
+		case !ok:
+			return quickjs.UndefinedValue, nil
+		case len(pieces) == 1:
+			if s, ok := pieces[0].(string); ok {
+				return a.VM().NewString(s)
+			}
+		}
+		return mixedArray(a.VM(), pieces)
 	}),
 }
 
@@ -584,6 +905,45 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 	a, err := vm.NewArray(vals...)
 	free()
 	return a, err
+}
+
+// mixedArray is l, strings and ints, as a javascript array.
+func mixedArray(vm *quickjs.VM, l []any) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, 0, len(l))
+	free := func() {
+		for i := range vals {
+			vals[i].Free()
+		}
+	}
+	for _, x := range l {
+		var v quickjs.Value
+		switch x := x.(type) {
+		case string:
+			var err error
+			if v, err = vm.NewString(x); err != nil {
+				free()
+				return quickjs.Value{}, err
+			}
+		case int:
+			v = vm.NewInt(x)
+		default:
+			free()
+			return quickjs.Value{}, errors.New("intl: internal error: a value of another type in an array")
+		}
+		vals = append(vals, v)
+	}
+	a, err := vm.NewArray(vals...)
+	free()
+	return a, err
+}
+
+// intArray is l as a javascript array of numbers.
+func intArray(vm *quickjs.VM, l []int) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, len(l))
+	for i, n := range l {
+		vals[i] = vm.NewInt(n)
+	}
+	return vm.NewArray(vals...)
 }
 
 // jsErr returns err as the javascript error ECMA-402 has for it: a jsError's

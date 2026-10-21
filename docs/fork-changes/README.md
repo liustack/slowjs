@@ -63,6 +63,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
 | SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
 | RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
+| Intl constructors on go-intl | Unreleased | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
+| Args.WTF8 | Unreleased | [go-api.md](go-api.md#argswtf8) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

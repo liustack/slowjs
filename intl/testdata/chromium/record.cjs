@@ -10,9 +10,16 @@
 //   node record.cjs availability <cldr-json dir>
 //       writes availability.json: the locales Chromium has for each
 //       constructor, out of every locale cldr-json has.
-//   node record.cjs golden
-//       evaluates corpus.json (go test -run TestGolden -golden.corpus writes
-//       it) and writes golden.json.gz.
+//   node record.cjs golden [name ...]
+//       evaluates corpus.json and each corpus-<name>.json (go test -run
+//       TestGolden -golden.corpus writes them) and writes golden.json.gz and
+//       golden-<name>.json.gz. With names, only those sets: "" is the first.
+//   node record.cjs shape
+//       evaluates shape.js and writes shape.json: the names, lengths and
+//       property attributes of Intl's built-ins (TestBuiltinShape).
+//   node record.cjs tamper
+//       runs each script of tamper.js in a realm of its own, an iframe, and
+//       writes their answers to tamper.json (TestTamper).
 //   node record.cjs icudtl
 //       prints the path of the browser's ICU data file, for the generator's
 //       -icudtl.
@@ -90,17 +97,54 @@ async function availability(cldr) {
 	});
 }
 
-async function golden() {
-	const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'corpus.json'), 'utf8'));
+async function golden(names) {
+	if (names.length === 0) {
+		names = fs.readdirSync(dir).filter((f) => /^corpus(-[\w-]+)?\.json$/.test(f))
+			.map((f) => f.replace(/^corpus-?/, '').replace(/\.json$/, ''));
+	}
 	await withPage(async (page, version) => {
-		const results = [];
-		for (let i = 0; i < corpus.length; i += 2000) {
-			results.push(...await evaluate(page, corpus.slice(i, i + 2000)));
-		}
 		const ua = await page.evaluate(() => navigator.userAgent);
-		const out = { browser: 'Chromium ' + version, userAgent: ua, cases: corpus.map((e, i) => [e, results[i]]) };
-		fs.writeFileSync(path.join(dir, 'golden.json.gz'), zlib.gzipSync(JSON.stringify(out), { level: 9 }));
-		console.log(`${out.browser}: ${corpus.length} expressions`);
+		for (const name of names) {
+			const suffix = name === '' ? '' : '-' + name;
+			const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'corpus' + suffix + '.json'), 'utf8'));
+			const results = [];
+			for (let i = 0; i < corpus.length; i += 2000) {
+				results.push(...await evaluate(page, corpus.slice(i, i + 2000)));
+			}
+			const out = { browser: 'Chromium ' + version, userAgent: ua, cases: corpus.map((e, i) => [e, results[i]]) };
+			fs.writeFileSync(path.join(dir, 'golden' + suffix + '.json.gz'), zlib.gzipSync(JSON.stringify(out), { level: 9 }));
+			console.log(`${out.browser}: golden${suffix}, ${corpus.length} expressions`);
+		}
+	});
+}
+
+async function shape() {
+	const src = fs.readFileSync(path.join(dir, 'shape.js'), 'utf8');
+	await withPage(async (page, version) => {
+		const out = await page.evaluate((src) => (0, eval)(src + '\nshape()'), src);
+		fs.writeFileSync(path.join(dir, 'shape.json'), out + '\n');
+		console.log(`Chromium ${version}: shape.json`);
+	});
+}
+
+// tamper runs the scripts in iframes, so that what they change stays out of
+// the realm that collects the answers.
+async function tamper() {
+	const src = fs.readFileSync(path.join(dir, 'tamper.js'), 'utf8');
+	await withPage(async (page, version) => {
+		const out = await page.evaluate((src) => {
+			const scripts = (0, eval)(src + '\nscripts');
+			const r = {};
+			for (const [name, script] of scripts) {
+				const frame = document.createElement('iframe');
+				document.body.appendChild(frame);
+				r[name] = String(frame.contentWindow.eval(script));
+				frame.remove();
+			}
+			return r;
+		}, src);
+		fs.writeFileSync(path.join(dir, 'tamper.json'), JSON.stringify(out, null, '\t') + '\n');
+		console.log(`Chromium ${version}: ${Object.keys(out).length} scripts`);
 	});
 }
 
@@ -145,10 +189,16 @@ function icudtl() {
 		await availability(process.argv[3]);
 		break;
 	case 'golden':
-		await golden();
+		await golden(process.argv.slice(3));
+		break;
+	case 'shape':
+		await shape();
+		break;
+	case 'tamper':
+		await tamper();
 		break;
 	default:
-		console.error('usage: node record.cjs availability <cldr-json dir> | golden | icudtl');
+		console.error('usage: node record.cjs availability <cldr-json dir> | golden | shape | tamper | icudtl');
 		process.exit(2);
 	}
 })().catch((err) => {

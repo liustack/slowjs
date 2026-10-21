@@ -44,7 +44,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make shorttest` | The same with `-short`, which skips the long cases (test262 among them) |
 | `make leak` | `go test -v -run TestMemgrind2 -tags=libc.memgrind ./...` |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
-| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), and that `qjsdata/` is what go-intl's data gives (this clones go-intl) |
+| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives (this clones go-intl) |
 | `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), the suite kept from upstream |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |
@@ -114,9 +114,12 @@ The engine itself has no shared state, but the registries of Go functions, the l
 ```sh
 go test -race -run 'TestInterrupt|TestConcurrentVMsMemory|TestErrorStackConcurrent' .
 go test -race -run TestErrorStackFirstUseRace .       # on its own, so no other test made a stack first
-go test -race -run TestConcurrentVMs ./intl
+go test -race -run 'TestConcurrentVMs|TestRegistryConcurrent|TestRegistryGoIntlConcurrent' ./intl
+go test -race -run QJS ./internal/gointl               # the packs go-intl's loaders add to Embedded
 go test -race -vet=off -run 'TestShapeCacheRuntimes|TestFrontCacheRuntimes|TestBacktraceThrowStacklessOOM' ./lib
 ```
+
+The whole of `./intl` under `-race` takes about 25 minutes on one core of an EPYC, most of it the golden test: give it `-timeout 60m`.
 
 The race detector ignores atomic operations on memory outside Go's heap, such as the interrupt flag in C memory. `Interrupt` and `Close` meet at a mutex on Go's heap for that reason (see [architecture.md](architecture.md#the-eval-timeout-and-interrupt)).
 

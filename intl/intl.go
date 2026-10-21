@@ -17,13 +17,41 @@
 //     modes, percent, currency, unit, compact and scientific notation, and
 //     numbering systems.
 //   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
+//   - Intl.Collator, and String.prototype.localeCompare through it: the
+//     collation types, sensitivity, numeric, caseFirst, ignorePunctuation
+//     and search usage, from go-intl (internal/gointl), which is ICU's
+//     collation in Go over the data Chromium ships.
+//   - Intl.Segmenter: graphemes, words, with the dictionaries of Thai, Lao,
+//     Khmer, Burmese, Chinese and Japanese, and sentences.
+//   - Intl.RelativeTimeFormat: every unit and style, words such as
+//     "yesterday" with numeric auto, and numbering systems.
+//   - Intl.ListFormat: conjunctions, disjunctions and unit lists in every
+//     style, with the joins that depend on the next item, as Spanish "e"
+//     and "u" and Hebrew "ו-".
+//   - Intl.DisplayNames: the names of languages, with dialect names such
+//     as "British English" or without, of regions, scripts, currencies,
+//     calendars and date fields, in every style.
+//   - Intl.DurationFormat: every style and each unit's own, digital
+//     clocks with fractional seconds, and durations given as objects or as
+//     Temporal's duration strings ("PT1H30M"), as Chromium takes them.
+//   - Intl.Locale: tags built from options, likely subtags added and
+//     removed, every getter, and the calendars, collations, hour cycles,
+//     numbering systems, time zones, text direction and week of a locale.
+//     A Locale stands for its tag wherever a constructor takes locales.
+//   - Intl.supportedValuesOf, which lists the calendars, collations,
+//     currencies, numbering systems, time zones and units the constructors
+//     take.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
-// toLocaleTimeString along with Number.prototype.toLocaleString and
-// BigInt.prototype.toLocaleString, which ECMA-402 redefines in terms of those
-// constructors. QuickJS ships fallbacks for them that ignore their arguments,
-// so
+// toLocaleTimeString along with Number.prototype.toLocaleString,
+// BigInt.prototype.toLocaleString and String.prototype.localeCompare, which
+// ECMA-402 redefines in terms of those constructors, and
+// String.prototype.toLocaleUpperCase and toLocaleLowerCase, which map case
+// by the rules of Turkish and Azeri ("i" to "İ"), Lithuanian and, to upper
+// case, Greek ("άδικος" to "ΑΔΙΚΟΣ"), as V8 does, and by Unicode's default
+// rules in other languages. QuickJS ships fallbacks for them that ignore
+// their arguments, so
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //
@@ -48,21 +76,21 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
-// Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
-// Intl.supportedValuesOf and formatRange. String.prototype.localeCompare keeps
-// QuickJS's code point ordering. NumberFormat and PluralRules accept
-// roundingIncrement and roundingPriority but only implement their defaults,
-// which is what resolvedOptions reports: a value out of range throws a
-// RangeError, any other is ignored.
+// Not implemented: formatRange. NumberFormat and
+// PluralRules accept roundingIncrement and roundingPriority but only
+// implement their defaults, which is what resolvedOptions reports: a value
+// out of range throws a RangeError, any other is ignored.
 //
 // # Differences from Chromium
 //
 // The output is compared with Chromium 156 (V8 over ICU 78.2, which has CLDR
-// 48.1) on about 60,000 expressions recorded in testdata/chromium. All
-// match exactly but those in a calendar other than the ones above, which
-// format as Chromium does without that calendar: in the locale's default
-// calendar, Gregorian but for th and the persian locales.
+// 48.1) on about 75,000 expressions recorded in testdata/chromium. The
+// 60,000 of DateTimeFormat, NumberFormat and PluralRules all match exactly
+// but those in a calendar other than the ones above, which format as
+// Chromium does without that calendar: in the locale's default calendar,
+// Gregorian but for th and the persian locales. Those of the other
+// constructors, in every language Chromium has for each, match but where
+// the paragraphs below say.
 //
 // Checks over every locale beyond those expressions found these other
 // differences, all in rare locales or options:
@@ -75,6 +103,38 @@
 //   - en-IE and fr-MA with hourCycle h11 write the day period "am" and "AM"
 //     where Chromium writes "a.m.".
 //   - om-KE's short era is "BA" where Chromium's is "CE".
+//
+// Intl.Segmenter breaks words by ICU's rules, which Chromium changes: there a
+// full stop or a colon between letters ends a word, so "U.S.A" is five
+// segments and "a:b" three, and Lao and Khmer break by smaller dictionaries
+// of Chromium's own, which find other words in some runs.
+//
+// Intl.DisplayNames names more than Chromium, whose ICU data leaves names
+// out: of some languages ("tlh" for Klingon), of variants ("German (1996)"),
+// of numeric regions but 419, and of currencies no longer in use, which it
+// writes as their codes, or leaves undefined with fallback none. It has no
+// names at all for ak, az, bs, kk, kok, pa, sd and uz, which it names as
+// root does, by codes, or in English. And it has names of its own for Hong
+// Kong, Macao, Palestine and the Falkland Islands ("Hong Kong" for "Hong
+// Kong SAR China"). Here the names are CLDR's. The narrow names of de-CH's
+// era and th's time zone are go-intl's, which ICU writes otherwise.
+//
+// Intl.Locale's getTimeZones for the world, 001, leaves out five zones that
+// Chromium lists, EST5EDT, CST6CDT, MST7MDT, PST8PDT and Factory. Its
+// baseName of a tag with -u-va-posix leaves the extension out, which V8
+// keeps ("en-US-u-va-posix"). An unknown region in -u-rg-, as in
+// "en-u-rg-xxzzzz", leaves the locale's own region in place for the hour
+// cycle and the week, where Chromium takes the world's.
+//
+// Intl.supportedValuesOf("calendar") lists gregory only, the calendar
+// DateTimeFormat formats in every locale, where Chromium lists 18. Its
+// currencies are go-intl's, 162, which has SLE, XCG and ZWG beyond
+// Chromium's 159.
+//
+// Intl.DurationFormat writes a fraction of more than 2**63 nanoseconds, as
+// in {nanoseconds: 1e20} with numeric seconds, as V8 does on x86-64:
+// "9223372036.854775808" seconds. V8 on arm64 writes
+// "9223372036.854775807".
 //
 // Error messages are worded differently, though the errors thrown are the
 // same.
@@ -109,6 +169,18 @@
 // options made up in a loop makes the formatters of other VMs resolve again
 // too, which costs them time but changes no result.
 //
+// The other constructors read go-intl's data (internal/gointl), about 8.4 MB
+// more in the binary: 4.4 MB for collation, segmentation, relative times,
+// lists, durations and locale facts, 1.9 MB of display names, which the
+// build tag quickjs_intl_nonames leaves out (Intl.DisplayNames then answers
+// each code with its fallback), and 2.0 MB of the Chinese and Japanese word
+// dictionary, which quickjs_intl_nocjdict leaves out (a run of Chinese or
+// Japanese is then one word). go-intl's dates and zone names are not
+// linked: this package formats dates with its own data. The tables a
+// formatter reads only a little of stay in the binary's read only data, and
+// the rest is inflated into the Go heap the first time a formatter needs it,
+// once per process.
+//
 // # License of the data
 //
 // The embedded locale data comes from Unicode CLDR and from the ICU data
@@ -116,7 +188,10 @@
 // Chromium made to it under Chromium's BSD license. A program that imports
 // this package distributes that data, and has to include the notices in
 // LICENSE-DATA, in this package's directory, in its documentation or with
-// its copies.
+// its copies. It also links internal/gointl and internal/gointl/temporal,
+// and has to include their notices too: internal/gointl/LICENSE and the
+// NOTICE-ICU, NOTICE-ICU4X, NOTICE-TEMPORAL and NOTICE-V8 files in
+// internal/gointl/qjsdata, as NOTICE.md at the module root says.
 //
 // # Time zones
 //
