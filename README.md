@@ -989,6 +989,46 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   look like numbers, index strings, symbols, the text of symbols and
   constant atoms through every way a key goes, against Node, and the atom
   count after keys are dropped) and `internal/fixlib/atomkey_test.go`.
+- `JSON.stringify` and `JSON.parse` copy the plain characters of a string
+  in runs. Both went through a string one character at a time: `JSON.stringify`
+  read each with `string_getc` and wrote it with `string_buffer_putc`, and
+  `JSON.parse` put each byte of its text into the new string the same way,
+  decoding UTF-8 with `unicode_from_utf8`. Now, at the start of each turn
+  of those loops, `jsonQuoteRun` and `jsonStringRun` (`lib/jsonstr.go`)
+  copy the run of characters the loop would put as they are, in one Go
+  copy, and leave the loop the character that ended the run: one to
+  escape, the end of the string, a surrogate (`JSON.stringify` decides how
+  to write it) or a byte that is not valid UTF-8 (`JSON.parse` throws the
+  same error at the same place). The new string grows and becomes 16-bit
+  as with `string_buffer_write8` and `string_buffer_write16`, so it is
+  the same string, and running out of memory in a run fails the call as
+  before. A run of `JSON.parse` stops at the length of the longest
+  string, so a text of `JS_ParseJSON` with a longer string still throws
+  "string too long". Reviver, replacer, `toJSON`, `space` and the other
+  paths are not touched. On linux/amd64 without PGO (AMD EPYC 7B13, one
+  core), against 4a4103b (v0.26.16 and 9 later commits), quoting the JSON
+  text of each route's data of tifa's example shop as one string again,
+  as tifa does, takes 41% less time, and `JSON.parse` of its render data
+  9.5% less, while a document of many short strings and numbers parses in
+  the same time and stringifies in 2% less. JSON is about 1% of a render,
+  so a render can gain at most about 0.3%. The 8 rounds measured 0.2% to
+  1.7% less, inside the spread of a round. The HTML and the memory are the
+  same.
+  `fixlib` puts the two calls into all 13 files and takes the length, the
+  16-bit flag and the offset of the characters of a `JSString` from each
+  file's `JS_ToQuotedString` and `string_get`, so the big-endian target
+  gets its own bit fields. Generated Go only, no C hunk
+  (`internal/fixlib/jsonstr.go`). Tests: `lib/jsonstr_test.go`, whose
+  `testdata/jsonstr.txt` is what Node 24 prints for `testdata/jsonstr.js`
+  (strings of every kind of character at the lengths around the runs, as
+  ropes, substrings and keys, through `stringify`, `parse`, reviver,
+  replacer and `toJSON`), the errors and their positions and the invalid
+  UTF-8 cases against the engine before the change, both runs called
+  directly on buffers of every room, 8-bit and 16-bit (the characters,
+  where the run stops, and a buffer never filled past its room), each way
+  a run grows or widens a buffer failing for lack of memory, and a run
+  past the longest string, `lib/jsonstr_memgrind_test.go` (no C memory
+  left behind) and `internal/fixlib/jsonstr_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -1085,7 +1125,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go`, the frame of
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go`, the calls into `lib/jsonstr.go`, the frame of
   `JS_CallInternal` taken once on linux and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
@@ -1106,7 +1146,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq` and `-atomkey`. Each of these runs
+  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json` and `-atomkey`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
   statement changed", means that list is out of date, not the one the
@@ -1462,6 +1502,18 @@ Conflicts to expect:
   pointers into the frame the block made, except on a path that returns
   or jumps past the block. Then put the new fingerprints in (`go run
   ./internal/fixlib -oneframe` prints them).
+  If it reports that a function of `jsonFuncs` changed
+  (`internal/fixlib/jsonsites.go`), read them against `lib/jsonstr.go`:
+  `JS_ToQuotedString` must still write every character that is not `"`,
+  `\`, below 0x20 or a surrogate as it is, `json_parse_string` must
+  still put every byte from 0x20 to 0x7f that is not the quote or `\` as
+  it is and decode the others with `unicode_from_utf8`, which must still
+  take the forms `jsonUTF8` takes, and `string_buffer_write8` and
+  `string_buffer_write16` must still grow and widen the buffer as
+  `jsonWrite8` and `jsonWrite16` do. Then run `-json`. If it reports that
+  a loop or `string_get` changed shape, update `reQuoteLoop`,
+  `reParseLoop` or `reJSONWide` in `internal/fixlib/jsonstr.go`, and run
+  `go test -run JSONString ./lib`.
   `fixlib` frees every TLS frame before each return instead of in a
   defer, as its last change (`fixNoDefer` in `internal/fixlib/nodefer.go`).
   It first puts the defers back (`restoreDefer`), so every other change,
@@ -1506,7 +1558,7 @@ Conflicts to expect:
   interpreter loop, the calls into `lib/objlit.go` and
   `lib/regexskip.go`, the cold paths moved out, the frames taken by
   statement, the calls written out in the interpreter, the calls into
-  `lib/forin.go`, `lib/bitwise.go` and `lib/atomkey.go`, the comparisons written out in the
+  `lib/forin.go`, `lib/bitwise.go`, `lib/atomkey.go` and `lib/jsonstr.go`, the comparisons written out in the
   interpreter, the frame of `JS_CallInternal` taken once and the frames
   freed without a defer have no C form: they
   are changes to what ccgo generates, so `fixlib` applies them after every
