@@ -6,6 +6,7 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,8 +18,12 @@ var pluralCategories = [...]string{"zero", "one", "two", "few", "many", "other"}
 
 // pluralRules is the compiled rule set of one language, cardinal or ordinal.
 type pluralRules struct {
-	rules []pluralRule // in pluralCategories order, without "other"
-	cats  []string     // the categories the language uses, "other" included
+	// rules are tried in the order of their categories' names, without
+	// "other", as ICU tries them: its rules come from a resource table,
+	// which sorts its keys. A number with an exponent can match two, and
+	// fr's 0.5 in scientific notation, 5E-1, is many and not one.
+	rules []pluralRule
+	cats  []string // the categories the language uses, "other" included
 }
 
 type pluralRule struct {
@@ -94,6 +99,7 @@ func pluralRulesFor(locale string, ordinal bool) *pluralRules {
 	if len(r.cats) == 0 {
 		r.cats = []string{"other"}
 	}
+	slices.SortFunc(r.rules, func(a, b pluralRule) int { return strings.Compare(a.category, b.category) })
 	v, _ := pluralCache.LoadOrStore(key, r)
 	return v.(*pluralRules)
 }
