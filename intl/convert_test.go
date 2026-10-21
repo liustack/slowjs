@@ -75,3 +75,30 @@ func TestOptionOrder(t *testing.T) {
 		{catch(`new Intl.NumberFormat('en', {roundingPriority: 'morePrecision'}).format(1)`), "1"},
 	})
 }
+
+// TestNumberValue checks that format converts an object as Number does, to a
+// primitive with the hint number, and keeps a BigInt or a string it converts
+// to exact. The expected values are Node 24's.
+func TestNumberValue(t *testing.T) {
+	vm := newVM(t)
+	catch := func(src string) string {
+		return fmt.Sprintf("(() => {try {return String(new Intl.NumberFormat('en').format(%s))} catch (e) {return e.name}})()", src)
+	}
+	evalTests(t, vm, [][2]string{
+		{catch(`Object(12345678901234567891n)`), "12,345,678,901,234,567,891"},
+		{catch(`{valueOf() { return '12345678901234567891' }}`), "12,345,678,901,234,567,891"},
+		{catch(`{[Symbol.toPrimitive](h) { return h }}`), "NaN"},
+		{catch(`{valueOf() { return {} }, toString() { return '5' }}`), "5"},
+		{catch(`{valueOf: 1, toString() { return 7n }}`), "7"},
+		{catch(`new Date(5)`), "5"},
+		{catch(`Object(2.5)`), "2.5"},
+		{catch(`Object('1e3')`), "1,000"},
+		{catch(`{[Symbol.toPrimitive]: 1}`), "TypeError"},
+		{catch(`Object(Symbol())`), "TypeError"},
+		{catch(`{valueOf() { return {} }, toString() { return {} }}`), "TypeError"},
+		{catch(`{[Symbol.toPrimitive]() { return {} }}`), "TypeError"},
+		{`const log = []; try { new Intl.NumberFormat('en').format(new Proxy({}, {get(o, k) { log.push(String(k)) }})) } catch (e) { log.push(e.name) } log.join(' ')`,
+			"Symbol(Symbol.toPrimitive) valueOf toString TypeError"},
+		{`new Intl.NumberFormat('en').formatToParts(Object(12345678901234567891n)).map(p => p.value).join('')`, "12,345,678,901,234,567,891"},
+	})
+}

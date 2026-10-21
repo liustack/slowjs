@@ -313,15 +313,52 @@
 		new Slots(this, numberFormat(locales, options));
 	}
 
-	// numberValue keeps a BigInt and a numeric string exact by passing them on
-	// as a string: the host parses decimal digits, so nothing round trips
-	// through a double that did not start as one.
+	// numberValue is ECMA-402's ToIntlMathematicalValue. It keeps a BigInt
+	// and a numeric string exact by passing them on as a string, also when an
+	// object, such as Object(1n), converts to one: the host parses decimal
+	// digits, so nothing round trips through a double that did not start as
+	// one.
 	function numberValue(v) {
-		const t = typeof v;
+		const p = isObject(v) ? toPrimitiveNumber(v) : v;
+		const t = typeof p;
 		if (t === 'bigint' || t === 'string') {
-			return String(v);
+			return String(p);
 		}
-		return Number(v);
+		return +p;
+	}
+
+	function isObject(v) {
+		return typeof v === 'object' ? v !== null : typeof v === 'function';
+	}
+
+	// toPrimitiveNumber is ToPrimitive(o, number), for an object o: what
+	// Number(o) does before it converts the result to a number.
+	const toPrimitive = Symbol.toPrimitive;
+	const hintNumber = bare(['number']);
+	const ordinary = bare(['valueOf', 'toString']);
+
+	function toPrimitiveNumber(o) {
+		const exotic = o[toPrimitive];
+		if (exotic !== undefined && exotic !== null) {
+			if (typeof exotic !== 'function') {
+				throw new TypeError('Symbol.toPrimitive is not a function');
+			}
+			const r = apply(exotic, o, hintNumber);
+			if (isObject(r)) {
+				throw new TypeError('Cannot convert object to primitive value');
+			}
+			return r;
+		}
+		for (let i = 0; i < ordinary.length; i++) {
+			const f = o[ordinary[i]];
+			if (typeof f === 'function') {
+				const r = apply(f, o, noArgs);
+				if (!isObject(r)) {
+					return r;
+				}
+			}
+		}
+		throw new TypeError('Cannot convert object to primitive value');
 	}
 
 	defineConstructor(NumberFormat, {
