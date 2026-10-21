@@ -8,50 +8,75 @@
 // formats anything never pays for the shim.
 //
 // Register calls this function with the install Builtin and the VM's
-// default time zone.
+// default time zone, before any code of the page runs. So it takes here the
+// built-ins Intl's code uses, which a page may change later, and that code
+// uses nothing else.
 
 (function (install, zone) {
 	'use strict';
 
 	const g = globalThis;
+	const {apply} = Reflect;
+	const {defineProperty} = Object;
+	const P = {
+		__proto__: null,
+		apply: apply,
+		defineProperty: defineProperty,
+		getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+		ownKeys: Reflect.ownKeys,
+		setPrototypeOf: Object.setPrototypeOf,
+		parse: JSON.parse,
+		Object: Object,
+		String: String,
+		Number: Number,
+		Boolean: Boolean,
+		Error: Error,
+		TypeError: TypeError,
+		RangeError: RangeError,
+		toStringTag: Symbol.toStringTag,
+		dateNow: Date.now,
+		dateValueOf: Date.prototype.valueOf,
+		numberValueOf: Number.prototype.valueOf,
+		bigintValueOf: typeof BigInt === 'function' ? BigInt.prototype.valueOf : undefined
+	};
 
-	let installed = false, installing = false;
+	let api, installing = false;
 	let userIntl, userSetIntl = false;
-	const standIns = [];
 
-	// ensure installs the shim, once it works. An install that fails, say for
-	// want of stack, throws, so that this use fails and the next one tries
-	// again.
+	// ensure installs the shim, once it works, and returns what it made. An
+	// install that fails, say for want of stack, throws, so that this use
+	// fails and the next one tries again.
 	//
 	// An interrupt, from vm.Interrupt or a timeout, and running out of memory
 	// are no exception a catch or finally sees: one that lands here leaves
 	// installing set and maybe some of the real things in place. The next use
 	// rolls those back and starts over.
 	function ensure() {
-		if (installed) {
-			return;
+		if (api !== undefined) {
+			return api;
 		}
 		const retry = installing;
 		if (retry) {
 			rollBack();
 		}
 		installing = true;
-		let api;
+		let a;
 		try {
-			api = install(zone, retry);
+			a = install(P, zone, retry);
 		} catch (e) {
 			installing = false;
 			throw e;
 		}
 		if (!userSetIntl) {
-			setIntl(api.Intl);
+			setIntl(a.Intl);
 		}
 		for (let i = 0; i < standIns.length; i++) {
 			const s = standIns[i];
-			Object.defineProperty(s.o, s.name, {value: api[s.api], writable: true, enumerable: false, configurable: true});
+			defineProperty(s.o, s.name, {__proto__: null, value: a[s.api], writable: true, enumerable: false, configurable: true});
 		}
-		installed = true;
+		api = a;
 		installing = false;
+		return a;
 	}
 
 	// rollBack undoes what an install cut short got done: the stand-ins, or
@@ -60,31 +85,27 @@
 		if (userSetIntl) {
 			setIntl(userIntl);
 		} else {
-			Object.defineProperty(g, 'Intl', intlStandIn);
+			defineProperty(g, 'Intl', intlStandIn);
 		}
 		for (let i = 0; i < standIns.length; i++) {
 			const s = standIns[i];
-			Object.defineProperty(s.o, s.name, {value: s.f, writable: true, enumerable: false, configurable: true});
+			defineProperty(s.o, s.name, {__proto__: null, value: s.f, writable: true, enumerable: false, configurable: true});
 		}
 	}
 
 	function setIntl(v) {
-		Object.defineProperty(g, 'Intl', {value: v, writable: true, enumerable: false, configurable: true});
+		defineProperty(g, 'Intl', {__proto__: null, value: v, writable: true, enumerable: false, configurable: true});
 	}
 
 	const intlStandIn = {
+		__proto__: null,
 		enumerable: false,
 		configurable: true,
-		get: function getIntl() {
-			ensure();
-			// Reading g.Intl through the stand-in itself would recurse.
-			const d = Object.getOwnPropertyDescriptor(g, 'Intl');
-			if (d !== undefined && d.get === getIntl) {
-				throw new Error('intl: Intl was not installed');
-			}
-			return g.Intl;
+		get() {
+			const a = ensure();
+			return userSetIntl ? userIntl : a.Intl;
 		},
-		set: function (v) {
+		set(v) {
 			// A page assigning its own Intl keeps it, before or after the
 			// real one is installed.
 			userIntl = v;
@@ -92,7 +113,7 @@
 			setIntl(v);
 		}
 	};
-	Object.defineProperty(g, 'Intl', intlStandIn);
+	defineProperty(g, 'Intl', intlStandIn);
 
 	// standIn puts a stand-in for o[name] in place, which api[apiName]
 	// replaces.
@@ -101,27 +122,24 @@
 		// prototype property.
 		const f = {
 			[name]() {
-				ensure();
-				const real = o[name];
-				if (real === f) {
-					throw new Error('intl: ' + name + ' was not installed');
-				}
-				return real.apply(this, arguments);
+				return apply(ensure()[apiName], this, arguments);
 			}
 		}[name];
-		standIns.push({o: o, name: name, api: apiName, f: f});
-		Object.defineProperty(o, name, {value: f, writable: true, enumerable: false, configurable: true});
+		defineProperty(o, name, {__proto__: null, value: f, writable: true, enumerable: false, configurable: true});
+		return {__proto__: null, o: o, name: name, api: apiName, f: f};
 	}
 
-	standIn(Date.prototype, 'toLocaleString', 'dateToLocaleString');
-	standIn(Date.prototype, 'toLocaleDateString', 'dateToLocaleDateString');
-	standIn(Date.prototype, 'toLocaleTimeString', 'dateToLocaleTimeString');
-	standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString');
+	const standIns = [
+		standIn(Date.prototype, 'toLocaleString', 'dateToLocaleString'),
+		standIn(Date.prototype, 'toLocaleDateString', 'dateToLocaleDateString'),
+		standIn(Date.prototype, 'toLocaleTimeString', 'dateToLocaleTimeString'),
+		standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString')
+	];
 	if (typeof BigInt === 'function') {
-		standIn(BigInt.prototype, 'toLocaleString', 'bigintToLocaleString');
+		standIns[standIns.length] = standIn(BigInt.prototype, 'toLocaleString', 'bigintToLocaleString');
 	}
 
 	// How the host recognizes a VM it has registered, without installing
 	// anything: keyed by the import path, invisible to enumeration and JSON.
-	Object.defineProperty(g, Symbol.for('modernc.org/quickjs/intl'), {value: true});
+	defineProperty(g, Symbol.for('modernc.org/quickjs/intl'), {__proto__: null, value: true});
 })

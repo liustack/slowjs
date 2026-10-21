@@ -6,16 +6,56 @@
 // surface - the constructors, their prototypes and the option plumbing the
 // spec makes observable - and leaves every formatting decision to the Go
 // Builtins it is called with (see bridge.go). It evaluates to a function of
-// the VM's default time zone, the json of each constructor's options and the
-// Builtins, which returns what stub.js puts in place.
+// the built-ins stub.js took before the page ran, the VM's default time zone,
+// the json of each constructor's options and the Builtins, which returns what
+// stub.js puts in place.
+//
+// Nothing here may depend on what a page can change: it uses only what it is
+// called with, reads only own properties of its own objects, and builds
+// property descriptors and the arrays it passes on without a prototype.
 
-(function (zone, optionLists,
+(function (P, zone, optionLists,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales) {
 	'use strict';
 
-	const internals = new WeakMap();
-	const lists = JSON.parse(optionLists);
+	const {
+		apply, defineProperty, getOwnPropertyDescriptor, ownKeys, setPrototypeOf, parse,
+		Object, String, Number, Boolean, Error, TypeError, RangeError, toStringTag,
+		dateNow, dateValueOf, numberValueOf, bigintValueOf
+	} = P;
+	const lists = parse(optionLists);
+	const noArgs = [];
+	const noOptions = setPrototypeOf({}, null);
+
+	// bare returns the array a without a prototype, so that adding to it calls
+	// no setter a page put on Array.prototype.
+	function bare(a) {
+		return setPrototypeOf(a, null);
+	}
+
+	// Slots holds the internal slots of the objects Intl makes, in a private
+	// field, which nothing outside this function can read, forge or replace.
+	// Its base class returns the object it is given, so that the field goes on
+	// that object.
+	class Stamp {
+		constructor(o) {
+			return o;
+		}
+	}
+
+	class Slots extends Stamp {
+		#slots;
+
+		constructor(o, slots) {
+			super(o);
+			this.#slots = slots;
+		}
+
+		static of(o) {
+			return typeof o === 'object' && o !== null && #slots in o ? o.#slots : undefined;
+		}
+	}
 
 	// A formatter is a record: the Builtin that resolves it, the arguments it
 	// was resolved with and the id of what that resolved to, which every
@@ -25,7 +65,7 @@
 	// fast enough can drop the new one too before the call gets to it, so
 	// call tries a few times, then throws: it never returns undefined.
 	function resolve(kind, fn, args) {
-		return {kind: kind, fn: fn, args: args, id: fn.apply(undefined, args), bound: undefined};
+		return {__proto__: null, kind: kind, fn: fn, args: args, id: apply(fn, undefined, args), bound: undefined};
 	}
 
 	const tries = 8;
@@ -36,13 +76,13 @@
 			if (v !== undefined) {
 				return v;
 			}
-			r.id = r.fn.apply(undefined, r.args);
+			r.id = apply(r.fn, undefined, r.args);
 		}
 		throw new Error('Intl.' + r.kind + ': other code made formatters too fast to keep this one');
 	}
 
 	function internal(o, kind) {
-		const i = internals.get(o);
+		const i = Slots.of(o);
 		if (i === undefined || i.kind !== kind) {
 			throw new TypeError('Intl.' + kind + '.prototype method called on an incompatible receiver');
 		}
@@ -57,14 +97,14 @@
 	// method's ("get format" for a getter) and its length the number of its
 	// parameters before the first one with a default (x = undefined).
 	function define(o, props) {
-		const keys = Reflect.ownKeys(props);
+		const keys = ownKeys(props);
 		for (let i = 0; i < keys.length; i++) {
-			const d = Object.getOwnPropertyDescriptor(props, keys[i]);
+			const d = setPrototypeOf(getOwnPropertyDescriptor(props, keys[i]), null);
 			d.enumerable = false;
 			if ('value' in d) {
 				d.writable = typeof d.value === 'function';
 			}
-			Object.defineProperty(o, keys[i], d);
+			defineProperty(o, keys[i], d);
 		}
 		return o;
 	}
@@ -74,7 +114,7 @@
 	// prototype property becomes read only, statics go on C and methods on
 	// its prototype, both through define.
 	function defineConstructor(C, statics, methods) {
-		Object.defineProperty(C, 'prototype', {writable: false});
+		defineProperty(C, 'prototype', {__proto__: null, writable: false});
 		define(C, statics);
 		define(C.prototype, methods);
 		return C;
@@ -83,14 +123,14 @@
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
 	// themselves are canonicalized by the host.
 	function localeList(locales) {
-		const o = Object(locales), n = o.length >>> 0, r = [];
+		const o = Object(locales), n = o.length >>> 0, r = bare([]);
 		for (let i = 0; i < n; i++) {
 			if (i in o) {
 				const v = o[i];
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				r.push(String(v));
+				r[r.length] = String(v);
 			}
 		}
 		return r;
@@ -100,17 +140,21 @@
 	// single tag as itself, a list as one string of the tags each preceded by
 	// its length and a colon.
 	function pushLocales(args, locales) {
-		if (locales === undefined) {
-			args.push(undefined, undefined);
-		} else if (typeof locales === 'string') {
-			args.push(locales, undefined);
+		const n = args.length;
+		if (typeof locales === 'string') {
+			args[n] = locales;
+			args[n + 1] = undefined;
+		} else if (locales === undefined) {
+			args[n] = undefined;
+			args[n + 1] = undefined;
 		} else {
 			const l = localeList(locales);
 			let s = '';
 			for (let i = 0; i < l.length; i++) {
 				s += l[i].length + ':' + l[i];
 			}
-			args.push(undefined, s);
+			args[n] = undefined;
+			args[n + 1] = s;
 		}
 		return args;
 	}
@@ -119,12 +163,13 @@
 		if (o === null) {
 			throw new TypeError('Options must be an object');
 		}
-		return o === undefined ? {} : Object(o);
+		return o === undefined ? noOptions : Object(o);
 	}
 
 	// pushOptions appends the options of o in list, from optionLists, to
 	// args, converted as their kind says.
 	function pushOptions(args, o, list) {
+		const n = args.length;
 		for (let i = 0; i < list.length; i++) {
 			let v = o[list[i][0]];
 			if (v !== undefined) {
@@ -144,17 +189,13 @@
 					}
 				}
 			}
-			args.push(v);
+			args[n + i] = v;
 		}
 		return args;
 	}
 
-	function parse(json) {
-		return JSON.parse(json);
-	}
-
 	function supportedLocalesOf(service, locales) {
-		return parse(supportedLocales.apply(undefined, pushLocales([service], locales)));
+		return parse(apply(supportedLocales, undefined, pushLocales(bare([service]), locales)));
 	}
 
 	// ---------------------------------------------------------- DateTimeFormat
@@ -165,7 +206,7 @@
 	// applies them, because the defaults it adds depend on the locale's hour
 	// cycle.
 	function dateFormat(locales, opts, required, defaults) {
-		const args = pushLocales([zone, required, defaults], locales);
+		const args = pushLocales(bare([zone, required, defaults]), locales);
 		return resolve('DateTimeFormat', dtfResolve, pushOptions(args, toOptions(opts), lists.DateTimeFormat));
 	}
 
@@ -173,11 +214,11 @@
 		if (new.target === undefined) {
 			return new DateTimeFormat(locales, options);
 		}
-		internals.set(this, dateFormat(locales, options, 'any', 'date'));
+		new Slots(this, dateFormat(locales, options, 'any', 'date'));
 	}
 
 	function timeValue(date) {
-		return date === undefined ? Date.now() : Number(date);
+		return date === undefined ? dateNow() : Number(date);
 	}
 
 	defineConstructor(DateTimeFormat, {
@@ -200,13 +241,13 @@
 		resolvedOptions() {
 			return parse(call(internal(this, 'DateTimeFormat'), optionsOf));
 		},
-		[Symbol.toStringTag]: 'Intl.DateTimeFormat'
+		[toStringTag]: 'Intl.DateTimeFormat'
 	});
 
 	// ------------------------------------------------------------ NumberFormat
 
 	function numberFormat(locales, opts) {
-		const args = pushLocales([], locales);
+		const args = pushLocales(bare([]), locales);
 		return resolve('NumberFormat', nfResolve, pushOptions(args, toOptions(opts), lists.NumberFormat));
 	}
 
@@ -214,7 +255,7 @@
 		if (new.target === undefined) {
 			return new NumberFormat(locales, options);
 		}
-		internals.set(this, numberFormat(locales, options));
+		new Slots(this, numberFormat(locales, options));
 	}
 
 	// numberValue keeps a BigInt and a numeric string exact by passing them on
@@ -246,7 +287,7 @@
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat'), optionsOf));
 		},
-		[Symbol.toStringTag]: 'Intl.NumberFormat'
+		[toStringTag]: 'Intl.NumberFormat'
 	});
 
 	// ------------------------------------------------------------- PluralRules
@@ -255,8 +296,8 @@
 		if (new.target === undefined) {
 			throw new TypeError("Constructor Intl.PluralRules requires 'new'");
 		}
-		const args = pushLocales([], locales);
-		internals.set(this, resolve('PluralRules', prResolve, pushOptions(args, toOptions(options), lists.PluralRules)));
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('PluralRules', prResolve, pushOptions(args, toOptions(options), lists.PluralRules)));
 	}
 
 	defineConstructor(PluralRules, {
@@ -281,7 +322,7 @@
 		resolvedOptions() {
 			return parse(call(internal(this, 'PluralRules'), optionsOf));
 		},
-		[Symbol.toStringTag]: 'Intl.PluralRules'
+		[toStringTag]: 'Intl.PluralRules'
 	});
 
 	// ------------------------------------------------------------------- Intl
@@ -291,9 +332,9 @@
 		NumberFormat: NumberFormat,
 		PluralRules: PluralRules,
 		getCanonicalLocales(locales) {
-			return parse(canonicalLocales.apply(undefined, pushLocales([], locales)));
+			return parse(apply(canonicalLocales, undefined, pushLocales(bare([]), locales)));
 		},
-		[Symbol.toStringTag]: 'Intl'
+		[toStringTag]: 'Intl'
 	});
 
 	// ------------------------------------------- the toLocale* methods ECMA-402
@@ -302,25 +343,24 @@
 	// zone whatever zone was asked for, which is a wrong time rather than a
 	// missing one.
 
-	const dateValueOf = Date.prototype.valueOf;
-	const numberValueOf = Number.prototype.valueOf;
-
 	// Formatters are memoized for the common shapes because toLocaleString is
 	// called per row of a table. Only argument shapes that are safe to use as
 	// a cache key take part.
-	const cache = new Map();
+	let cache = setPrototypeOf({}, null), cacheSize = 0;
 
 	function cached(key, make) {
 		if (key === null) {
 			return make();
 		}
-		let f = cache.get(key);
+		let f = cache[key];
 		if (f === undefined) {
-			if (cache.size >= 64) {
-				cache.clear();
+			if (cacheSize >= 64) {
+				cache = setPrototypeOf({}, null);
+				cacheSize = 0;
 			}
 			f = make();
-			cache.set(key, f);
+			cache[key] = f;
+			cacheSize++;
 		}
 		return f;
 	}
@@ -346,37 +386,37 @@
 
 	const date = {
 		toLocaleString(locales = undefined, options = undefined) {
-			const t = dateValueOf.call(this);
+			const t = apply(dateValueOf, this, noArgs);
 			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'any', 'all'), dtfFormat, t);
 		},
 		toLocaleDateString(locales = undefined, options = undefined) {
-			const t = dateValueOf.call(this);
+			const t = apply(dateValueOf, this, noArgs);
 			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'date', 'date'), dtfFormat, t);
 		},
 		toLocaleTimeString(locales = undefined, options = undefined) {
-			const t = dateValueOf.call(this);
+			const t = apply(dateValueOf, this, noArgs);
 			return t !== t ? 'Invalid Date' : call(dateFormatter(locales, options, 'time', 'time'), dtfFormat, t);
 		}
 	};
 
 	const number = {
 		toLocaleString(locales = undefined, options = undefined) {
-			return call(numberFormatter(locales, options), nfFormat, numberValueOf.call(this));
+			return call(numberFormatter(locales, options), nfFormat, apply(numberValueOf, this, noArgs));
 		}
 	};
 
 	const api = {
+		__proto__: null,
 		Intl: Intl,
 		dateToLocaleString: date.toLocaleString,
 		dateToLocaleDateString: date.toLocaleDateString,
 		dateToLocaleTimeString: date.toLocaleTimeString,
 		numberToLocaleString: number.toLocaleString
 	};
-	if (typeof BigInt === 'function') {
-		const bigintValueOf = BigInt.prototype.valueOf;
+	if (bigintValueOf !== undefined) {
 		api.bigintToLocaleString = {
 			toLocaleString(locales = undefined, options = undefined) {
-				return call(numberFormatter(locales, options), nfFormat, String(bigintValueOf.call(this)));
+				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)));
 			}
 		}.toLocaleString;
 	}

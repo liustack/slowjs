@@ -148,7 +148,7 @@ orders it with `Close` (which frees the flag): `Close` clears only the embedded 
     locales and options into an id in the process-wide `registry.go` (bounded, shared by all VMs);
     every later call passes the id, and a Builtin answers `undefined` for an id the registry
     dropped, on which `intl.js` resolves the same arguments again. Values cross as strings,
-    numbers and booleans, results that are objects as JSON for `JSON.parse`.
+    numbers and booleans, results that are objects as JSON. `stub.js` takes the built-ins both scripts use before any page code runs (Register time), and `intl.js` uses only those, null-prototype descriptors and arrays, and private fields for internal slots: `intl/testdata/node/tamper.js` lists what a page may change.
     `intl/memgrind_test.go` guards the `Value` handling (and `make leak` now runs `./...`).
   - Locale data is en-US only: Go ships zoneinfo but no CLDR. The tables in `data.go` were extracted
     from ICU, not hand-written. Where CLDR data is missing the code falls back to something

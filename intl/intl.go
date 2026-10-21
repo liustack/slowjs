@@ -249,6 +249,11 @@ func TimeZone(name string) Option { return func(c *config) { c.timeZone = name }
 // document rather than once at startup, or the second document is back to a
 // ReferenceError.
 //
+// Call it before any code of the page runs on vm. It takes then the
+// built-ins Intl's code uses, so that a page changing Array.prototype,
+// Object.prototype, JSON and the like afterwards changes nothing Intl does:
+// called later, it takes what the page changed them to.
+//
 // Registering a second time on the same VM is an error rather than a silent
 // no-op, because it would otherwise drop that call's options. Nothing has to
 // be released: vm.Close does it all. The formatters themselves belong to the
@@ -303,10 +308,10 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 var installing sync.Map
 
 // installBuiltin installs the shim: it evaluates intl.js, a function of the
-// zone, the option lists and the bridge, and returns what calling it returns,
-// the objects stub.js then puts in place. Its second argument says the
-// previous install was cut short.
-var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quickjs.Value, error) {
+// built-ins stub.js took, the zone, the option lists and the bridge, and
+// returns what calling it returns, the objects stub.js then puts in place.
+// Its third argument says the previous install was cut short.
+var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quickjs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
 		// The shim calls no code of the page while it installs, so nothing
@@ -316,7 +321,7 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 
 	defer installing.Delete(vm)
 
-	if retry, _ := a.Bool(1); retry {
+	if retry, _ := a.Bool(2); retry {
 		interruptedInstalls.Add(1)
 	}
 	shimInstalls.Add(1)
@@ -332,8 +337,8 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 
 	defer f.Free()
 
-	args := make([]any, 0, 2+len(bridge))
-	args = append(args, a.Value(0), optionLists)
+	args := make([]any, 0, 3+len(bridge))
+	args = append(args, a.Value(0), a.Value(1), optionLists)
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
