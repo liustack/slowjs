@@ -164,8 +164,12 @@
 				if (typeof v !== 'string' && (v === null || typeof v !== 'object')) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				const tag = localeTag(v);
-				r[r.length] = tag !== undefined ? tag : toString(v);
+				if (typeof v === 'string') {
+					r[r.length] = v;
+				} else {
+					const tag = localeTag(v);
+					r[r.length] = tag !== undefined ? tag : toString(v);
+				}
 			}
 		}
 		return r;
@@ -176,9 +180,11 @@
 	// its length and a colon. A single Intl.Locale is its tag.
 	function pushLocales(args, locales) {
 		const n = args.length;
-		const tag = localeTag(locales);
-		if (tag !== undefined) {
-			locales = tag;
+		if (typeof locales === 'object') {
+			const tag = localeTag(locales);
+			if (tag !== undefined) {
+				locales = tag;
+			}
 		}
 		if (typeof locales === 'string') {
 			args[n] = locales;
