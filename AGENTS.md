@@ -35,14 +35,14 @@
    - [docs/performance.md](docs/performance.md): render speed of each release, measured in tifa
    - docs/benchmarks.md, not written yet: the comparison with other JavaScript engines for Go, with its history, run again at every release. It leaves out goja, sobek and otto. Its results will be kept under `compare/results/` and its changes in `compare/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
-   - [docs/upstream.md](docs/upstream.md): the upstream README
+   - [docs/upstream.md](docs/upstream.md): where the code comes from, and what changes when switching from modernc.org/quickjs
 4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests, and what to do when `fixlib` stops on it. A change for speed also goes into [docs/performance.md](docs/performance.md).
    - New fork changes are written into [docs/fork-changes](docs/fork-changes/README.md), never into README.md. The README is a landing page: it only links to the docs, and it lists new Go API in its section on what the fork adds to the API, in both languages.
    - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/fork-changes with a row in the index ("Unreleased" until it ships), what to do when `fixlib` stops on it into its "When upstream changes it" and the tables of [docs/upgrading.md](docs/upgrading.md), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
 
    A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first, which is not written yet.
 5. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
-6. Docs are written in English. README.md and CHANGELOG.md also have a `*.zh-CN.md` Chinese version: when you change one side, update the other to match. `scripts/docs-list.sh` skips `*.zh-CN.md` files.
+6. Docs are written in English. README.md, CHANGELOG.md and docs/upstream.md also have a `*.zh-CN.md` Chinese version: when you change one side, update the other to match. `scripts/docs-list.sh` skips `*.zh-CN.md` files.
 7. English: keep it short and direct, use everyday words, and do not invent terms. Chinese: do not use semicolons, and do not use dashes as punctuation.
 8. Code comments and error messages point to a doc by its path, such as `docs/upgrading.md`, never to a section of the README.
 

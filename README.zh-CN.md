@@ -86,14 +86,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 
 ## 来自哪里
 
-这个仓库 fork 了 modernc.org 的两个模块，合并成一个 Go 模块：
-
-| 上游模块 | 上游仓库 | 本仓库位置 |
-|---|---|---|
-| `modernc.org/quickjs`（Go API） | https://gitlab.com/cznic/quickjs | 仓库根目录，包 `github.com/liustack/quickjs` |
-| `modernc.org/libquickjs`（ccgo 转译成 Go 的 QuickJS） | https://gitlab.com/cznic/libquickjs | `lib/`，包 `github.com/liustack/quickjs/lib` |
-
-起点是 quickjs v0.25.0 和 libquickjs v0.13.1（QuickJS 2026-06-04 版，提交 `3d5e064`），改动列在 [docs/fork-changes](docs/fork-changes/README.md)。
+引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。Jan Mercl 用 ccgo 把它转译成 Go，就是 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)（这里用 v0.13.1，在 `lib/` 下），quickjs-go 的作者们在它上面写了 Go API，就是 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs)（这里用 v0.25.0，在根目录）。这个 fork 把两者合成一个模块，修引擎可以和 Go API 一起发布，不用等任何一个上游发版。确切版本、fork 保留和改动了什么、从 modernc.org/quickjs 换过来会遇到什么，见 [docs/upstream.zh-CN.md](docs/upstream.zh-CN.md)。
 
 ## 文档
 
@@ -108,12 +101,10 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 | [Testing](docs/testing.md) | 准备提交，或者想拿 fork 和上游对照 |
 | [Upgrading](docs/upgrading.md) | 要合入上游新版本，或者更新语言数据 |
 | [Releasing](docs/releasing.md)、[Commits](docs/commit.md) | 要发版或提交 |
-| [The upstream README](docs/upstream.md) | 想看上游自己对这个包的说明 |
+| [上游](docs/upstream.zh-CN.md) | 要从 modernc.org/quickjs 换过来，或者想知道代码从哪来 |
 
 API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。
 
-## 上游与许可证
-
-Go API 来自 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs)，引擎来自 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)，两者的作者都是 quickjs-go authors（Jan Mercl 等人），引擎由 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs) 转译而来。引擎和 Go API 放在同一个模块里，这样修引擎可以和 Go API 一起发布，不用等任何一个上游模块发版。
+## 许可证
 
 两个项目的许可证文件都保留着：根目录的 [LICENSE](LICENSE) 和 [LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)，以及引擎的 [lib/LICENSE](lib/LICENSE)、[lib/LICENSE-LIBQUICKJS](lib/LICENSE-LIBQUICKJS) 和 [lib/LICENSE_TEST262](lib/LICENSE_TEST262)。[intl/LICENSE-DATA](intl/LICENSE-DATA) 是 `intl` 内嵌的语言数据的版权声明，数据来自 Unicode CLDR 和 Chromium 的 ICU 数据：import 了 `intl` 的程序会分发这些数据，必须在文档里或随副本附上这些声明。`internal/gointl` 是 go-intl 的副本，保留了 go-intl 的 [LICENSE](internal/gointl/LICENSE)，即 Unicode License V3，它是这份代码和其中内嵌数据的版权声明，数据由 Unicode CLDR 48.2、ICU 78.3 和 IANA 时区数据库（公有领域）生成，[internal/gointl/SOURCES.md](internal/gointl/SOURCES.md) 列出了来源：import 了它的程序要用同样的方式附上这份声明。

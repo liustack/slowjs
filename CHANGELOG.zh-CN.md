@@ -16,7 +16,7 @@
 - `Intl` 的格式化器由进程里所有 VM 共用，最多 1024 个，满了先丢最早的。用过 `Intl` 的 VM 少占约 15 KB。
 - `Intl` 的函数和内置函数一个样子：`length` 和 `name` 按 ECMA-402 给，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
 - 对继承了 `Intl.NumberFormat` 或 `Intl.DateTimeFormat` 原型的 `o` 调用 `Intl.NumberFormat.call(o)` 或 `Intl.DateTimeFormat.call(o)`，新的格式化器挂在 `o` 上并返回 `o`，和 V8 一样。
-- README 改成一页简短的落地页，有英文和中文两版。原来的内容挪进了 `docs/`：按领域分的 fork 改动、测试、合入上游、性能、发版，以及上游的 README。
+- README 改成一页简短的落地页，有英文和中文两版。原来的内容挪进了 `docs/`：按领域分的 fork 改动、测试、合入上游、性能、发版，以及代码从哪来、从 modernc.org/quickjs 换过来会遇到什么。
 
 ### 修复
 

@@ -86,16 +86,7 @@ The first four are on `main` and not in a release yet.
 
 ## Where it comes from
 
-This repository is a fork of two modernc.org modules, merged into one Go module:
-
-| Upstream module | Upstream repository | Here |
-|---|---|---|
-| `modernc.org/quickjs` (the Go API) | https://gitlab.com/cznic/quickjs | repository root, package `github.com/liustack/quickjs` |
-| `modernc.org/libquickjs` (QuickJS transpiled to Go by ccgo) | https://gitlab.com/cznic/libquickjs | `lib/`, package `github.com/liustack/quickjs/lib` |
-
-It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
-2026-06-04, commit `3d5e064`), with the changes listed in
-[docs/fork-changes](docs/fork-changes/README.md).
+The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. Jan Mercl translated it to Go with ccgo as [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) (v0.13.1 here, under `lib/`), and the quickjs-go authors wrote the Go API over it, [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) (v0.25.0 here, at the root). This fork merges the two into one module, so that a fix to the engine ships with the Go API without waiting for an upstream release of either. [docs/upstream.md](docs/upstream.md) has the exact versions, what the fork kept and changed, and what changes when you switch from modernc.org/quickjs.
 
 ## Documentation
 
@@ -108,12 +99,10 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
 | [Testing](docs/testing.md) | You are about to commit, or want to check the fork against upstream |
 | [Upgrading](docs/upgrading.md) | You are taking a new upstream release, or new locale data |
 | [Releasing](docs/releasing.md), [Commits](docs/commit.md) | You are making a release or a commit |
-| [The upstream README](docs/upstream.md) | You want upstream's own description of the package |
+| [Upstream](docs/upstream.md) | You are switching from modernc.org/quickjs, or want to know where the code comes from |
 
 The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs).
 
-## Upstream and license
-
-The Go API is [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and the engine [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), both by the quickjs-go authors (Jan Mercl and others), the engine translated from [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon. The engine lives in the same module as the Go API so that a fix to it ships together with the Go API, without waiting for an upstream release of either module.
+## License
 
 The license files of both projects are kept: [LICENSE](LICENSE) and [LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS) at the root, and [lib/LICENSE](lib/LICENSE), [lib/LICENSE-LIBQUICKJS](lib/LICENSE-LIBQUICKJS) and [lib/LICENSE_TEST262](lib/LICENSE_TEST262) for the engine. [intl/LICENSE-DATA](intl/LICENSE-DATA) holds the notices of the locale data `intl` embeds, from Unicode CLDR and Chromium's ICU data: a program that imports `intl` distributes that data and has to include those notices in its documentation or with its copies. `internal/gointl`, a copy of go-intl, keeps go-intl's [LICENSE](internal/gointl/LICENSE), the Unicode License V3, which is the notice for its code and for the data it embeds, generated from Unicode CLDR 48.2, ICU 78.3 and the IANA tz database (public domain), as [internal/gointl/SOURCES.md](internal/gointl/SOURCES.md) lists: a program that imports it includes that notice in the same way.
