@@ -25,6 +25,9 @@
 //     Khmer, Burmese, Chinese and Japanese, and sentences.
 //   - Intl.RelativeTimeFormat: every unit and style, words such as
 //     "yesterday" with numeric auto, and numbering systems.
+//   - Intl.ListFormat: conjunctions, disjunctions and unit lists in every
+//     style, with the joins that depend on the next item, as Spanish "e"
+//     and "u" and Hebrew "ו-".
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
@@ -56,7 +59,7 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
+// Not implemented: Intl.DisplayNames, Intl.DurationFormat,
 // Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
 // roundingIncrement and roundingPriority but only implement their defaults,
 // which is what resolvedOptions reports: a value out of range throws a

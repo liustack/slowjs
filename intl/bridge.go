@@ -193,8 +193,16 @@ var (
 		resolve: func(req request) (formatter, error) { return resolveRelativeTimeFormat(req) },
 	}
 
+	listFormatCtor = &ctor{
+		name:    "ListFormat",
+		tag:     'L',
+		goSvc:   gointl.ServiceListFormat,
+		options: stringOptions("localeMatcher", "type", "style"),
+		resolve: func(req request) (formatter, error) { return resolveListFormat(req) },
+	}
+
 	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor, segmenterCtor,
-		relativeTimeFormatCtor}
+		relativeTimeFormatCtor, listFormatCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -593,6 +601,23 @@ var bridge = []*quickjs.Builtin{
 			l = append(l, string(p.Kind), p.Value, p.Unit)
 		}
 		return stringArray(a.VM(), l)
+	}),
+	resolveBuiltin(listFormatCtor),
+	// lfParts takes the items as listItems reads them and answers as
+	// listParts writes them.
+	quickjs.NewBuiltin("lfParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		f, ok, err := formatterOf[*listFormat](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		s, _ := a.WTF8(1)
+		items, ok := listItems(s)
+		if !ok {
+			return quickjs.Value{}, typeError("malformed list")
+		}
+
+		return listParts(a.VM(), items, f.f.FormatToParts(items))
 	}),
 }
 

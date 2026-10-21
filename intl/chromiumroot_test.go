@@ -18,9 +18,11 @@ import (
 	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
-// chromiumRootDataSources are, for each service of chromiumRootData, the
-// resource of Chromium's ICU data it formats with, as the summary in
-// testdata/chromium/icu.json.gz names it, and the go-intl data it is.
+// chromiumRootDataSources are, for the services of chromiumRootData whose
+// resource the summary of Chromium's ICU data in
+// testdata/chromium/icu.json.gz has, that resource and the go-intl data it
+// is. The summary has no list patterns: the golden test's lists in every
+// language check ListFormat's.
 var chromiumRootDataSources = map[gointl.Service]struct {
 	tree, path string
 	marker     gointl.Marker
@@ -67,10 +69,6 @@ func TestChromiumRootData(t *testing.T) {
 	}
 	if err := json.Unmarshal(b, &cj); err != nil {
 		t.Fatal(err)
-	}
-
-	if len(chromiumRootDataSources) != len(chromiumRootData) {
-		t.Fatalf("%d sources for %d services", len(chromiumRootDataSources), len(chromiumRootData))
 	}
 
 	for svc, src := range chromiumRootDataSources {

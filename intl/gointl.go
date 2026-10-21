@@ -176,13 +176,16 @@ func withoutLackedCollation(l gointl.Locale) gointl.Locale {
 // chromiumRootData are, by service, the languages Chromium has the locales
 // of but ships none of the service's data for: a locale whose data would
 // come from the language's own takes root's there, as if it were und,
-// while resolvedOptions names it. go-intl has the language's data.
-// TestChromiumRootData derives the lists from Chromium's ICU data.
+// while resolvedOptions names it. go-intl has the language's data. The
+// golden test formats in every language Chromium has for each service,
+// and TestChromiumRootData derives the lists it can from the summary of
+// Chromium's ICU data.
 var chromiumRootData = map[gointl.Service]struct {
 	tree  string // the ICU tree of the data, as gointl.Fallbacker.ChainIn takes it
 	langs []string
 }{
 	gointl.ServiceRelativeTimeFormat: {"locales", []string{"az", "bs", "kk", "kok", "pa", "sd", "uz"}},
+	gointl.ServiceListFormat:         {"locales", []string{"bs", "kk", "kok"}},
 }
 
 var goFallbacker = sync.OnceValues(func() (*gointl.Fallbacker, error) { return gointl.NewFallbacker(gointl.Embedded) })

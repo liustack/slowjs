@@ -63,6 +63,11 @@ var uses = `(() => {
 	use(() => new Intl.RelativeTimeFormat('ar').formatToParts(-1234, 'minute').map((p) => p.type + ':' + p.value + ':' + p.unit).join('|'));
 	use(() => show(new Intl.RelativeTimeFormat('zh', {numberingSystem: 'hanidec'}).resolvedOptions()));
 	use(() => new Intl.RelativeTimeFormat('en').format(1, 'fortnight'));
+	use(() => new Intl.ListFormat('es').format(['agua', 'hielo', 'Iglesia']));
+	use(() => new Intl.ListFormat('en', {type: 'disjunction'}).formatToParts(['a', '', 'b']).map((p) => p.type + ':' + p.value).join('|'));
+	use(() => new Intl.ListFormat('de', {type: 'unit', style: 'narrow'}).format(new Set(['1 m', '2 cm'])));
+	use(() => show(new Intl.ListFormat('kk').resolvedOptions()) + ' ' + new Intl.ListFormat('kk').format(['a', 'b']));
+	use(() => new Intl.ListFormat().format(['a', 1]));
 	use(() => {
 		const it = new Intl.Segmenter('en', {granularity: 'sentence'}).segment('A. B.')[Symbol.iterator]();
 		const a = it.next(), b = it.next(), c = it.next();
@@ -88,7 +93,8 @@ var tamper = [
 	['Object.prototype options', `
 		for (const k of ['style', 'currency', 'localeMatcher', 'type', 'timeZone', 'hour12', 'useGrouping',
 			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation',
-			'granularity', 'segment', 'index', 'input', 'isWordLike', 'done', 'next', 'numeric', 'unit']) {
+			'granularity', 'segment', 'index', 'input', 'isWordLike', 'done', 'next', 'numeric', 'unit',
+			'items', 's', 'element', 'literal']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Object.prototype slots', `

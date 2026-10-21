@@ -86,6 +86,7 @@ function shape() {
 		Collator: ['compare', 'resolvedOptions'],
 		Segmenter: ['segment', 'resolvedOptions'],
 		RelativeTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
+		ListFormat: ['format', 'formatToParts', 'resolvedOptions'],
 	};
 	for (const name of Object.keys(ctors)) {
 		const C = Intl[name], p = 'Intl.' + name;
@@ -157,6 +158,7 @@ function shape() {
 		'Collator resolvedOptions': new Intl.Collator('en').resolvedOptions(),
 		'RelativeTimeFormat formatToParts': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[1],
 		'RelativeTimeFormat formatToParts literal': new Intl.RelativeTimeFormat('en').formatToParts(1, 'day')[0],
+		'ListFormat formatToParts': new Intl.ListFormat('en').formatToParts(['a'])[0],
 	};
 	for (const k of Object.keys(kinds)) {
 		const o = kinds[k];

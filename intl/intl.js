@@ -17,7 +17,8 @@
 (function (P, zone, optionLists,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
-	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts) {
+	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
+	lfResolve, lfParts) {
 	'use strict';
 
 	const {
@@ -653,6 +654,58 @@
 		[toStringTag]: 'Intl.RelativeTimeFormat'
 	});
 
+	// -------------------------------------------------------------- ListFormat
+
+	function ListFormat(locales = undefined, options = undefined) {
+		requireNew(new.target, 'ListFormat');
+		const args = pushLocales(bare([]), locales);
+		new Slots(this, resolve('ListFormat', lfResolve, pushOptions(args, optionsObject(options), lists.ListFormat)));
+	}
+
+	// listOf is ECMA-402's StringListFromIterable, the items as one string
+	// for the lfParts Builtin, each its length, a colon and the item, and
+	// the items themselves.
+	function listOf(iterable) {
+		const items = bare([]);
+		let s = '';
+		if (iterable !== undefined) {
+			for (const v of iterable) {
+				if (typeof v !== 'string') {
+					throw new TypeError('Iterable yielded ' + (typeof v === 'symbol' ? 'a symbol' : toString(v)) + ' which is not a string');
+				}
+				items[items.length] = v;
+				s += v.length + ':' + v;
+			}
+		}
+		return {__proto__: null, items: items, s: s};
+	}
+
+	defineConstructor(ListFormat, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('ListFormat', locales, options);
+		}
+	}, {
+		format(list) {
+			const i = internal(this, 'ListFormat'), l = listOf(list), a = call(i, lfParts, l.s);
+			let s = '';
+			for (let k = 0; k < a.length; k++) {
+				s += typeof a[k] === 'number' ? l.items[a[k]] : a[k];
+			}
+			return s;
+		},
+		formatToParts(list) {
+			const i = internal(this, 'ListFormat'), l = listOf(list), a = call(i, lfParts, l.s);
+			for (let k = 0; k < a.length; k++) {
+				a[k] = typeof a[k] === 'number' ? {type: 'element', value: l.items[a[k]]} : {type: 'literal', value: a[k]};
+			}
+			return a;
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'ListFormat'), optionsOf));
+		},
+		[toStringTag]: 'Intl.ListFormat'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
@@ -661,6 +714,7 @@
 		Collator: Collator,
 		PluralRules: PluralRules,
 		RelativeTimeFormat: RelativeTimeFormat,
+		ListFormat: ListFormat,
 		Segmenter: Segmenter,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));

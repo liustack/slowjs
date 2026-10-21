@@ -26,6 +26,9 @@ var goIntlUses = []struct{ make, use, want string }{
 	{`var rtf = new Intl.RelativeTimeFormat('de', {numeric: 'auto', style: 'short'})`,
 		`rtf.format(-1, 'day') + ' ' + rtf.format(3, 'hours') + ' ' + rtf.formatToParts(2, 'week').length + ' ' + rtf.resolvedOptions().style`,
 		"gestern in 3 Std. 3 short"},
+	{`var lf = new Intl.ListFormat('es', {type: 'disjunction'})`,
+		`lf.format(['siete', 'ocho']) + ' ' + lf.formatToParts(['a', 'b', 'c']).length + ' ' + lf.resolvedOptions().type`,
+		"siete u ocho 5 disjunction"},
 }
 
 // goIntlHold makes the objects of goIntlUses, and goIntlCheck uses them: it

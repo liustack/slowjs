@@ -389,3 +389,76 @@ func rtfExprs() (r []string) {
 	return r
 }
 
+// listLocales are the locales lists are joined in.
+var listLocales = []string{
+	"en", "en-US", "en-GB", "en-IN", "de", "fr", "fr-CA", "es", "es-MX", "it", "pt", "pt-PT", "nl", "sv", "da",
+	"nb", "fi", "pl", "cs", "sk", "sl", "hr", "sr", "sr-Latn", "hu", "ro", "lt", "lv", "et", "tr", "ru", "uk",
+	"bg", "el", "he", "ar", "fa", "ur", "hi", "mr", "bn", "ta", "te", "kn", "ml", "gu", "th", "vi", "id", "ms",
+	"fil", "sw", "zu", "af", "am", "ca", "ja", "ko", "zh", "zh-TW", "zh-HK", "kk", "az", "uz", "km", "lo", "my",
+	"ka", "hy", "mn", "ne", "si", "yue", "root", "xx",
+}
+
+func listExprs() (r []string) {
+	add := func(format string, args ...any) { r = append(r, fmt.Sprintf(format, args...)) }
+	tags := append(chromiumTags(4), "und", "xx", "EN-us", "en-u-nu-arab", "en-u-ca-japanese", "x-private", "sr-ME",
+		"iw", "in", "mo", "es-u-co-trad")
+	for _, tag := range tags {
+		add(`JSON.stringify(new Intl.ListFormat(%q).resolvedOptions())`, tag)
+	}
+	for _, tag := range []string{"en", "es", "he", "xx"} {
+		for _, o := range []string{`{type:'conjunction'}`, `{type:'disjunction'}`, `{type:'unit'}`, `{style:'long'}`,
+			`{style:'short'}`, `{style:'narrow'}`, `{type:'unit',style:'narrow'}`, `{localeMatcher:'lookup'}`, `undefined`} {
+			add(`JSON.stringify(new Intl.ListFormat(%q,%s).resolvedOptions())`, tag, o)
+		}
+	}
+
+	// Lists of every length in every locale, type and style.
+	const lists = `[[], ['a'], ['a', 'b'], ['a', 'b', 'c'], ['one', 'two', 'three', 'four'], ['1', '2', '3', '4', '5', '6']]`
+	for _, l := range listLocales {
+		for _, typ := range []string{"conjunction", "disjunction", "unit"} {
+			for _, style := range []string{"long", "short", "narrow"} {
+				add(`(() => {const f = new Intl.ListFormat(%q,{type:%q,style:%q}); return %s.map((l) => f.format(l)).join('|')})()`, l, typ, style, lists)
+			}
+		}
+	}
+
+	// Every language Chromium has lists for.
+	for _, l := range chromiumLanguages("ListFormat") {
+		add(`(() => {const l = ['a', 'b', 'c']; return ['conjunction', 'disjunction', 'unit'].map((type) => new Intl.ListFormat(%q, {type}).format(l)).join('|')})()`, l)
+	}
+
+	// Joins that depend on the next item, empty items, and lone surrogates.
+	for _, l := range []string{"es", "he", "en", "de", "zh"} {
+		for _, typ := range []string{"conjunction", "disjunction", "unit"} {
+			add(`(() => {const f = new Intl.ListFormat(%q,{type:%q}); return JSON.stringify([['agua', 'hielo'], ['agua', 'Iglesia'], ['agua', 'hierro'], ['agua', 'hiato'], ['siete', 'ocho'], ['siete', 'Hora'], ['siete', 'otro', 'once'], ['a', '11'], ['a', '8'], ['a', '800'], ['a', 'ib'], ['שלום', 'world'], ['שלום', 'עולם'], ['שלום', '1'], ['', ''], ['a', '', 'b'], ['', 'a'], ['\ud800', 'x\udc00'], ['a\u0000', 'b']].map((l) => [f.format(l), f.formatToParts(l)]))})()`, l, typ)
+		}
+	}
+
+	for _, e := range []string{
+		`new Intl.ListFormat().format()`, `new Intl.ListFormat().format(undefined)`, `new Intl.ListFormat().format('abc')`,
+		`new Intl.ListFormat().format(new Set(['x', 'y', 'x']))`, `new Intl.ListFormat().format(new Map([['a', 1]]).keys())`,
+		`new Intl.ListFormat().format({[Symbol.iterator]: function* () { yield 'p'; yield 'q'; }})`,
+		`JSON.stringify(new Intl.ListFormat().formatToParts(['a', 'b']))`, `JSON.stringify(new Intl.ListFormat().formatToParts([]))`,
+		`JSON.stringify(Intl.ListFormat.supportedLocalesOf(['en', 'de', 'xx', 'zh-Hant-TW', 'kk', 'az']))`,
+		`JSON.stringify(Intl.ListFormat.supportedLocalesOf(['en-US', 'ar-EG'], {localeMatcher:'lookup'}))`,
+		`Object.prototype.toString.call(new Intl.ListFormat())`,
+	} {
+		add(`%s`, e)
+	}
+	add(`JSON.stringify(Intl.ListFormat.supportedLocalesOf(%s))`, validTags(chromiumTags(3)))
+
+	for _, src := range []string{
+		`Intl.ListFormat()`, `new Intl.ListFormat('en-')`, `new Intl.ListFormat(null)`, `new Intl.ListFormat('en', null)`,
+		`new Intl.ListFormat('en', 5)`, `new Intl.ListFormat('en', 'x')`, `new Intl.ListFormat('en', {type:'x'})`,
+		`new Intl.ListFormat('en', {style:'x'})`, `new Intl.ListFormat('en', {localeMatcher:'x'})`,
+		`new Intl.ListFormat().format(null)`, `new Intl.ListFormat().format(5)`, `new Intl.ListFormat().format(['a', 1])`,
+		`new Intl.ListFormat().format([undefined])`, `new Intl.ListFormat().format([new String('a')])`,
+		`new Intl.ListFormat().format({})`, `new Intl.ListFormat().formatToParts(['a', null])`,
+		`Intl.ListFormat.prototype.format([])`, `Intl.ListFormat.prototype.resolvedOptions()`,
+		`Intl.ListFormat.prototype.formatToParts.call(new Intl.NumberFormat(), [])`,
+		`Intl.ListFormat.supportedLocalesOf('en', null)`,
+	} {
+		add(`(() => {try {%s; return 'ok'} catch (e) {return e.constructor.name}})()`, src)
+	}
+	return r
+}
