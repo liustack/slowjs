@@ -63,16 +63,18 @@ go run ./intl/internal/gen -fetch -check                 # intl data is what the
 go test ./internal/fixlib                                # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
-go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
-go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
+go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
+go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
 go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
 go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -run JSON ./lib                                  # JSON strings give what Node gives, and runs stay in their buffer
+go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -run '^$' -bench Call .                          # the cost of each kind of call
+go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 ```
 
 Each doc under [fork-changes](fork-changes/README.md) names the tests of its changes.

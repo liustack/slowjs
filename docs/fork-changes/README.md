@@ -55,6 +55,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Bitwise operators on floats skip the slow path | Unreleased | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | Unreleased | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
 | One TLS frame per call on linux, and 34 more functions with fewer frames | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#one-tls-frame-per-call-on-linux) |
+| Alternatives that cannot match are not pushed | Unreleased | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
+| New functions get length and name at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
