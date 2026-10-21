@@ -126,3 +126,11 @@ Release: not released yet.
 A zone whose CLDR name Go's zoneinfo lacks, such as `Asia/Calcutta` on a host with only `Asia/Kolkata`, resolves under the other names CLDR gives it.
 
 Tests: `TestStandInsKeepPageCode` in `intl/all_test.go`, `intl/zone_test.go`.
+
+## Temporal durations use DurationFormat
+
+Release: not released yet.
+
+`Temporal.Duration.prototype.toLocaleString` uses the same formatter registry and Builtins as `Intl.DurationFormat`. It reads locales and options once, in constructor order, and formats the private duration fields without calling public getters or `toString`. It also works without `intl.Register`. This replaces the ISO duration string with localized units or a digital duration, without adding data packs or changing `fixlib`.
+
+Tests: `TestDurationLocaleString`, `TestChromium` and `TestTamper` in `temporal`. The focused corpus is recorded with `node intl/testdata/chromium/record.cjs temporal duration-locale` using Chromium 156.

@@ -41,6 +41,18 @@ func init() {
 		panic(err)
 	}
 	intlhook.Options = string(b)
+	l.Names, l.Kinds = []string{}, ""
+	for _, o := range durationFormatCtor.options {
+		l.Names = append(l.Names, o.name)
+		l.Kinds += string(o.kind)
+	}
+	b, err = json.Marshal(l)
+	if err != nil {
+		panic(err)
+	}
+	intlhook.DurationOptions = string(b)
+	intlhook.DurationResolve = resolveBuiltin(durationFormatCtor)
+	intlhook.DurationFormat = durationFormatBuiltin
 }
 
 // vmZones are the default zones of the VMs Register was given one for.

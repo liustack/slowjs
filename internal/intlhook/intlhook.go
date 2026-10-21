@@ -30,4 +30,8 @@ var (
 	// order: {"names": [...], "kinds": "..."}, a kind being a byte of
 	// "snbg" as in package intl.
 	Options string
+
+	// Duration uses the same registry and formatter as Intl.DurationFormat.
+	DurationOptions                 string
+	DurationResolve, DurationFormat *quickjs.Builtin
 )

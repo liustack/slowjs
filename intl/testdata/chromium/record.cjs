@@ -14,6 +14,8 @@
 //       evaluates corpus.json and each corpus-<name>.json (go test -run
 //       TestGolden -golden.corpus writes them) and writes golden.json.gz and
 //       golden-<name>.json.gz. With names, only those sets: "" is the first.
+//   node record.cjs temporal <name>
+//       evaluates temporal/testdata/<name>.js and writes <name>.json.
 //   node record.cjs shape
 //       evaluates shape.js and writes shape.json: the names, lengths and
 //       property attributes of Intl's built-ins (TestBuiltinShape).
@@ -118,6 +120,19 @@ async function golden(names) {
 	});
 }
 
+async function temporal(name) {
+    const target = path.resolve(dir, '../../../temporal/testdata');
+    const src = fs.readFileSync(path.join(target, name + '.js'), 'utf8');
+    await withPage(async (page, version) => {
+        if (!version.startsWith('156.')) throw new Error('expected Chromium 156, got ' + version);
+        const corpus = await page.evaluate(src => (0, eval)(src + '\ncases'), src);
+        const answers = await evaluate(page, corpus);
+        const out = { browser: 'Chromium ' + version, cases: corpus.map((e, i) => [e, answers[i]]) };
+        fs.writeFileSync(path.join(target, name + '.json'), JSON.stringify(out, null, '\t') + '\n');
+        console.log(out.browser + ': ' + name + ', ' + corpus.length + ' expressions');
+    });
+}
+
 async function shape() {
 	const src = fs.readFileSync(path.join(dir, 'shape.js'), 'utf8');
 	await withPage(async (page, version) => {
@@ -191,6 +206,9 @@ function icudtl() {
 	case 'golden':
 		await golden(process.argv.slice(3));
 		break;
+	case 'temporal':
+        await temporal(process.argv[3]);
+        break;
 	case 'shape':
 		await shape();
 		break;

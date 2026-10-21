@@ -17,7 +17,7 @@
 // is called with, reads only own properties of its own objects, and builds
 // the arrays it passes on without a prototype.
 
-(function (P, opNames, T, dtfOptions, format, defaultZone) {
+(function (P, opNames, T, dtfOptions, format, defaultZone, dfOptions, dfResolve, dfFormat) {
 	'use strict';
 
 	const {
@@ -33,7 +33,7 @@
 			O[names[i]] = i;
 		}
 	}
-	const dtfList = parse(dtfOptions);
+	const dtfList = parse(dtfOptions), dfList = parse(dfOptions);
 	const noArgs = bare([]);
 	const noOptions = setPrototypeOf({}, null);
 
@@ -1308,14 +1308,14 @@
 
 	// pushDateTimeOptions appends Intl.DateTimeFormat's options of opts,
 	// converted as package intl does.
-	function pushDateTimeOptions(a, opts) {
+	function pushFormatOptions(a, opts, list) {
 		if (opts === null) {
 			throw new TypeError('Options must be an object');
 		}
 		if (opts === undefined) {
 			return a;
 		}
-		const o = Object(opts), names = dtfList.names, kinds = dtfList.kinds;
+		const o = Object(opts), names = list.names, kinds = list.kinds;
 		for (let i = 0; i < names.length; i++) {
 			let v = o[names[i]];
 			if (v !== undefined) {
@@ -1338,7 +1338,7 @@
 
 	function localeString(kind, cal, ms, zone, locales, options, offset) {
 		const a = pushLocales(bare([kind, cal, ms, zone, offset]), locales);
-		return apply(format, undefined, pushDateTimeOptions(a, options));
+		return apply(format, undefined, pushFormatOptions(a, options, dtfList));
 	}
 
 	// epochDays is the days of an ISO date since 1970-01-01.
@@ -2437,7 +2437,15 @@
 		},
 		toLocaleString(locales = undefined, options = undefined) {
 			const s = slot(this, KDU, 'toLocaleString');
-			return call(push(push(push(pushDuration(bare([O.dStr]), s.f), -1), 0), 0));
+			const a = pushFormatOptions(pushLocales(bare([]), locales), optionsObject(options), dfList);
+			let fields = '' + s.f[0];
+			for (let j = 1; j < s.f.length; j++) fields += ',' + s.f[j];
+			for (let j = 0; j < 8; j++) {
+				const id = apply(dfResolve, undefined, a);
+				const result = dfFormat(id, fields, true);
+				if (result !== undefined) return result;
+			}
+			throw new Error('Intl.DurationFormat: other code made formatters too fast to keep this one');
 		},
 		toString(options = undefined) {
 			const s = slot(this, KDU, 'toString');

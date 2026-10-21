@@ -51,8 +51,7 @@
 // in its own calendar, throws a RangeError where Chromium formats it, and so
 // does a PlainYearMonth or PlainMonthDay in the ISO calendar, as it does in
 // Chromium without a calendar option. Duration.prototype.toLocaleString
-// does not go through Intl.DurationFormat yet, and returns what toString
-// does, as ECMA-262 has it for an engine without ECMA-402.
+// uses Intl.DurationFormat, reading the duration from its private slots.
 //
 // # Cost
 //
@@ -271,7 +270,18 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 
 	defer format.Free()
 
-	return f.CallValue(quickjs.UndefinedValue, a.Value(0), opNames, b, intlhook.Options, format, intlhook.DefaultZone(vm))
+	resolveDuration, err := vm.NewBuiltinFunction(intlhook.DurationResolve)
+	if err != nil {
+		return quickjs.Value{}, err
+	}
+	defer resolveDuration.Free()
+	formatDuration, err := vm.NewBuiltinFunction(intlhook.DurationFormat)
+	if err != nil {
+		return quickjs.Value{}, err
+	}
+	defer formatDuration.Free()
+	return f.CallValue(quickjs.UndefinedValue, a.Value(0), opNames, b, intlhook.Options, format, intlhook.DefaultZone(vm),
+		intlhook.DurationOptions, resolveDuration, formatDuration)
 })
 
 // marker is the well known symbol stub.js stamps on the global object of a

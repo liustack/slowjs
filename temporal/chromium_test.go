@@ -22,7 +22,6 @@ var differFromChromium = map[string]string{
 	`Temporal.PlainYearMonth.from({year: 2024, month: 1, calendar: "gregory"}).toLocaleString("zh-CN", {month: "long", day: "numeric"})`: "ECMA-402 drops the day and formats the month alone, " +
 		"as Chromium's Intl.DateTimeFormat does with {month: 'long'}, V8 takes the pattern of month and day and drops the day from it",
 	`Temporal.PlainDate.from("2024-01-05[u-ca=japanese]").toLocaleString("ja-JP-u-ca-japanese")`: "package intl formats in the Gregorian calendar only",
-	`Temporal.Duration.from("P1DT2H").toLocaleString("en-US")`:                                   "Duration.prototype.toLocaleString does not go through Intl.DurationFormat yet",
 }
 
 const eraAlone = "ECMA-402 adds the date to an era alone (GetDateTimeFormat, needDefaults), V8 formats the era only"

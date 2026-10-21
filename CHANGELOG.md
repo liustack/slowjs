@@ -22,6 +22,8 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ### Fixed
 
+- `Temporal.Duration.prototype.toLocaleString` formats through `Intl.DurationFormat`, including styles, unit options and fractional digits, instead of returning an ISO duration string.
+
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
 - `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
 - A function in a list of locales is read as an object, as ECMA-402 has it, so `new Intl.NumberFormat([function () {}])` throws a RangeError, where v0.26.17 threw a TypeError.

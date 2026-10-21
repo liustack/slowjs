@@ -675,26 +675,7 @@ var bridge = []*quickjs.Builtin{
 	// dfFormat and dfParts take the duration as durationOf does: the
 	// string, and true for fields. The parts are their type, value and
 	// unit in turn, the unit empty for the list's own text.
-	quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
-		f, ok, err := formatterOf[*durationFormat](a)
-		if !ok {
-			return quickjs.UndefinedValue, err
-		}
-
-		s, _ := a.WTF8(1)
-		fields, _ := a.Bool(2)
-		d, err := durationOf(s, fields)
-		if err != nil {
-			return quickjs.Value{}, jsErr(err)
-		}
-
-		r, err := f.f.Format(d)
-		if err != nil {
-			return quickjs.Value{}, jsErr(rangeError("%s", err))
-		}
-
-		return a.VM().NewString(r)
-	}),
+	durationFormatBuiltin,
 	quickjs.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		f, ok, err := formatterOf[*durationFormat](a)
 		if !ok {
@@ -956,3 +937,24 @@ func jsErr(err error) error {
 
 	return &quickjs.Error{Name: "Error", Message: err.Error()}
 }
+
+var durationFormatBuiltin = quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	f, ok, err := formatterOf[*durationFormat](a)
+	if !ok {
+		return quickjs.UndefinedValue, err
+	}
+
+	s, _ := a.WTF8(1)
+	fields, _ := a.Bool(2)
+	d, err := durationOf(s, fields)
+	if err != nil {
+		return quickjs.Value{}, jsErr(err)
+	}
+
+	r, err := f.f.Format(d)
+	if err != nil {
+		return quickjs.Value{}, jsErr(rangeError("%s", err))
+	}
+
+	return a.VM().NewString(r)
+})

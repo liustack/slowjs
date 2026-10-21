@@ -22,6 +22,8 @@
 
 ### 修复
 
+- `Temporal.Duration.prototype.toLocaleString` 通过 `Intl.DurationFormat` 输出本地化时长，支持样式、单位选项和小数位，以前返回 ISO 时长字符串。
+
 - 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。

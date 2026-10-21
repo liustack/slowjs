@@ -1,0 +1,881 @@
+{
+	"browser": "Chromium 156.0.8078.4",
+	"cases": [
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-US\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"de\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"fr\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"zh-CN\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ar\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",{style:\"digital\"})",
+			"0:00:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"ja\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",undefined)",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",{style:\"long\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",{style:\"narrow\"})",
+			""
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\"})",
+			"٠:٠٠:٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\",fractionalDigits:9})",
+			"٠:٠٠:٠٠٫٠٠٠٠٠٠٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT0S\").toLocaleString(\"en-u-nu-arab\",{seconds:\"numeric\", fractionalDigits:3})",
+			"٠٫٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",undefined)",
+			"1 yr, 2 mths, 3 wks, 4 days, 5 hr, 6 min, 7 sec, 8 ms, 9 μs, 1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",{style:\"long\"})",
+			"1 year, 2 months, 3 weeks, 4 days, 5 hours, 6 minutes, 7 seconds, 8 milliseconds, 9 microseconds, 1 nanosecond"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",{style:\"narrow\"})",
+			"1y 2m 3w 4d 5h 6m 7s 8ms 9μs 1ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",{style:\"digital\"})",
+			"1 yr, 2 mths, 3 wks, 4 days, 5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",{style:\"digital\",fractionalDigits:9})",
+			"1 yr, 2 mths, 3 wks, 4 days, 5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-US\",{seconds:\"numeric\", fractionalDigits:3})",
+			"1 yr, 2 mths, 3 wks, 4 days, 5 hr, 6 min:7.008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",undefined)",
+			"1 J, 2 Mon., 3 Wo., 4 Tg., 5 Std., 6 Min., 7 Sek., 8 ms, 9 μs und 1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",{style:\"long\"})",
+			"1 Jahr, 2 Monate, 3 Wochen, 4 Tage, 5 Stunden, 6 Minuten, 7 Sekunden, 8 Millisekunden, 9 Mikrosekunden und 1 Nanosekunde"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",{style:\"narrow\"})",
+			"1 J, 2 M, 3 W, 4 T, 5h, 6 Min., 7 Sek., 8 ms, 9 μs und 1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",{style:\"digital\"})",
+			"1 J, 2 Mon., 3 Wo., 4 Tg. und 5:06:07,008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",{style:\"digital\",fractionalDigits:9})",
+			"1 J, 2 Mon., 3 Wo., 4 Tg. und 5:06:07,008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"de\",{seconds:\"numeric\", fractionalDigits:3})",
+			"1 J, 2 Mon., 3 Wo., 4 Tg., 5 Std. und 6 Min.:7,008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",undefined)",
+			"1 an, 2 m., 3 sem., 4 j, 5 h, 6 min, 7 s, 8 ms, 9 μs et 1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",{style:\"long\"})",
+			"1 an, 2 mois, 3 semaines, 4 jours, 5 heures, 6 minutes, 7 secondes, 8 millisecondes, 9 microsecondes et 1 nanoseconde"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",{style:\"narrow\"})",
+			"1a 2m. 3sem. 4j 5h 6min 7s 8ms 9μs 1ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",{style:\"digital\"})",
+			"1 an, 2 m., 3 sem., 4 j et 5:06:07,008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",{style:\"digital\",fractionalDigits:9})",
+			"1 an, 2 m., 3 sem., 4 j et 5:06:07,008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"fr\",{seconds:\"numeric\", fractionalDigits:3})",
+			"1 an, 2 m., 3 sem., 4 j, 5 h et 6 min:7,008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",undefined)",
+			"1年2个月3周4天5小时6分钟7秒8毫秒9微秒1纳秒"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",{style:\"long\"})",
+			"1年2个月3周4天5小时6分钟7秒钟8毫秒9微秒1纳秒"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",{style:\"narrow\"})",
+			"1年2个月3周4天5小时6分钟7秒8ms9μs1ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",{style:\"digital\"})",
+			"1年2个月3周4天5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",{style:\"digital\",fractionalDigits:9})",
+			"1年2个月3周4天5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"zh-CN\",{seconds:\"numeric\", fractionalDigits:3})",
+			"1年2个月3周4天5小时6分钟:7.008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",undefined)",
+			"سنة واحدة، وشهران، و3 أسابيع، و4 أيام، و5 س، و6 د، و7 ث، و8 ملي ث، و9 م.ث.، و1 ن.ث."
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",{style:\"long\"})",
+			"سنة، وشهران، و3 أسابيع، و4 أيام، و5 ساعات، و6 دقائق، و7 ثوان، و8 ملي ثانية، و9 ميكروثانية، و1 نانو ثانية"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",{style:\"narrow\"})",
+			"1 سنة وشهران و3 أ و4 ي و5 س و6 د و7 ث و8 ملي ث و9 م.ث. و1 ن.ث."
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",{style:\"digital\"})",
+			"سنة واحدة، وشهران، و3 أسابيع، و4 أيام، و5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",{style:\"digital\",fractionalDigits:9})",
+			"سنة واحدة، وشهران، و3 أسابيع، و4 أيام، و5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ar\",{seconds:\"numeric\", fractionalDigits:3})",
+			"سنة واحدة، وشهران، و3 أسابيع، و4 أيام، و5 س، و6 د:7.008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",undefined)",
+			"1 年 2 か月 3 週間 4 日 5 時間 6 分 7 秒 8 ms 9 μs 1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",{style:\"long\"})",
+			"1 年 2 か月 3 週間 4 日 5 時間 6 分 7 秒 8 ミリ秒 9 マイクロ秒 1 ナノ秒"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",{style:\"narrow\"})",
+			"1y2m3w4d5h6m7s8ms9μs1ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",{style:\"digital\"})",
+			"1 年 2 か月 3 週間 4 日 5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",{style:\"digital\",fractionalDigits:9})",
+			"1 年 2 か月 3 週間 4 日 5:06:07.008009001"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"ja\",{seconds:\"numeric\", fractionalDigits:3})",
+			"1 年 2 か月 3 週間 4 日 5 時間 6 分:7.008"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",undefined)",
+			"١ yr, ٢ mths, ٣ wks, ٤ days, ٥ hr, ٦ min, ٧ sec, ٨ ms, ٩ μs, ١ ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",{style:\"long\"})",
+			"١ year, ٢ months, ٣ weeks, ٤ days, ٥ hours, ٦ minutes, ٧ seconds, ٨ milliseconds, ٩ microseconds, ١ nanosecond"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",{style:\"narrow\"})",
+			"١y ٢m ٣w ٤d ٥h ٦m ٧s ٨ms ٩μs ١ns"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\"})",
+			"١ yr, ٢ mths, ٣ wks, ٤ days, ٥:٠٦:٠٧٫٠٠٨٠٠٩٠٠١"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\",fractionalDigits:9})",
+			"١ yr, ٢ mths, ٣ wks, ٤ days, ٥:٠٦:٠٧٫٠٠٨٠٠٩٠٠١"
+		],
+		[
+			"Temporal.Duration.from(\"P1Y2M3W4DT5H6M7.008009001S\").toLocaleString(\"en-u-nu-arab\",{seconds:\"numeric\", fractionalDigits:3})",
+			"١ yr, ٢ mths, ٣ wks, ٤ days, ٥ hr, ٦ min:٧٫٠٠٨"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",undefined)",
+			"-1 day, 2 hr, 3 min"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",{style:\"long\"})",
+			"-1 day, 2 hours, 3 minutes"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",{style:\"narrow\"})",
+			"-1d 2h 3m"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",{style:\"digital\"})",
+			"-1 day, 2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",{style:\"digital\",fractionalDigits:9})",
+			"-1 day, 2:03:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-US\",{seconds:\"numeric\", fractionalDigits:3})",
+			"-1 day, 2 hr, 3 min:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",undefined)",
+			"-1 Tg., 2 Std. und 3 Min."
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",{style:\"long\"})",
+			"-1 Tag, 2 Stunden und 3 Minuten"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",{style:\"narrow\"})",
+			"-1 T, 2h und 3 Min."
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",{style:\"digital\"})",
+			"-1 Tg., 2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",{style:\"digital\",fractionalDigits:9})",
+			"-1 Tg., 2:03:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"de\",{seconds:\"numeric\", fractionalDigits:3})",
+			"-1 Tg., 2 Std. und 3 Min.:0,000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",undefined)",
+			"-1 j, 2 h et 3 min"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",{style:\"long\"})",
+			"-1 jour, 2 heures et 3 minutes"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",{style:\"narrow\"})",
+			"-1j 2h 3min"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",{style:\"digital\"})",
+			"-1 j et 2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",{style:\"digital\",fractionalDigits:9})",
+			"-1 j et 2:03:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"fr\",{seconds:\"numeric\", fractionalDigits:3})",
+			"-1 j, 2 h et 3 min:0,000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",undefined)",
+			"-1天2小时3分钟"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",{style:\"long\"})",
+			"-1天2小时3分钟"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",{style:\"narrow\"})",
+			"-1天2小时3分钟"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",{style:\"digital\"})",
+			"-1天2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",{style:\"digital\",fractionalDigits:9})",
+			"-1天2:03:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"zh-CN\",{seconds:\"numeric\", fractionalDigits:3})",
+			"-1天2小时3分钟:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",undefined)",
+			"يوم، و2 س، و3 د"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",{style:\"long\"})",
+			"يوم، وساعتان، و3 دقائق"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",{style:\"narrow\"})",
+			"‎-1 ي و2 س و3 د"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",{style:\"digital\"})",
+			"يوم و2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",{style:\"digital\",fractionalDigits:9})",
+			"يوم و2:03:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ar\",{seconds:\"numeric\", fractionalDigits:3})",
+			"يوم، و2 س، و3 د:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",undefined)",
+			"-1 日 2 時間 3 分"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",{style:\"long\"})",
+			"-1 日 2 時間 3 分"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",{style:\"narrow\"})",
+			"-1d2h3m"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",{style:\"digital\"})",
+			"-1 日 2:03:00"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",{style:\"digital\",fractionalDigits:9})",
+			"-1 日 2:03:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"ja\",{seconds:\"numeric\", fractionalDigits:3})",
+			"-1 日 2 時間 3 分:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",undefined)",
+			"؜-١ day, ٢ hr, ٣ min"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",{style:\"long\"})",
+			"؜-١ day, ٢ hours, ٣ minutes"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",{style:\"narrow\"})",
+			"؜-١d ٢h ٣m"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\"})",
+			"؜-١ day, ٢:٠٣:٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\",fractionalDigits:9})",
+			"؜-١ day, ٢:٠٣:٠٠٫٠٠٠٠٠٠٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"-P1DT2H3M\").toLocaleString(\"en-u-nu-arab\",{seconds:\"numeric\", fractionalDigits:3})",
+			"؜-١ day, ٢ hr, ٣ min:٠٫٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",undefined)",
+			"1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",{style:\"long\"})",
+			"1 nanosecond"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",{style:\"narrow\"})",
+			"1ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",{style:\"digital\"})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-US\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",undefined)",
+			"1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",{style:\"long\"})",
+			"1 Nanosekunde"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",{style:\"narrow\"})",
+			"1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",{style:\"digital\"})",
+			"0:00:00,000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00,000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"de\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",undefined)",
+			"1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",{style:\"long\"})",
+			"1 nanoseconde"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",{style:\"narrow\"})",
+			"1ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",{style:\"digital\"})",
+			"0:00:00,000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00,000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"fr\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",undefined)",
+			"1纳秒"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",{style:\"long\"})",
+			"1纳秒"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",{style:\"narrow\"})",
+			"1ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",{style:\"digital\"})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"zh-CN\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",undefined)",
+			"1 ن.ث."
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",{style:\"long\"})",
+			"1 نانو ثانية"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",{style:\"narrow\"})",
+			"1 ن.ث."
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",{style:\"digital\"})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ar\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",undefined)",
+			"1 ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",{style:\"long\"})",
+			"1 ナノ秒"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",{style:\"narrow\"})",
+			"1ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",{style:\"digital\"})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",{style:\"digital\",fractionalDigits:9})",
+			"0:00:00.000000001"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"ja\",{seconds:\"numeric\", fractionalDigits:3})",
+			"0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",undefined)",
+			"١ ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",{style:\"long\"})",
+			"١ nanosecond"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",{style:\"narrow\"})",
+			"١ns"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\"})",
+			"٠:٠٠:٠٠٫٠٠٠٠٠٠٠٠١"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\",fractionalDigits:9})",
+			"٠:٠٠:٠٠٫٠٠٠٠٠٠٠٠١"
+		],
+		[
+			"Temporal.Duration.from(\"PT0.000000001S\").toLocaleString(\"en-u-nu-arab\",{seconds:\"numeric\", fractionalDigits:3})",
+			"٠٫٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",undefined)",
+			"25 hr, 90 min"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",{style:\"long\"})",
+			"25 hours, 90 minutes"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",{style:\"narrow\"})",
+			"25h 90m"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-US\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25 hr, 90 min:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",undefined)",
+			"25 Std., 90 Min."
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",{style:\"long\"})",
+			"25 Stunden, 90 Minuten"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",{style:\"narrow\"})",
+			"25h, 90 Min."
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"de\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25 Std., 90 Min.:0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",undefined)",
+			"25 h et 90 min"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",{style:\"long\"})",
+			"25 heures et 90 minutes"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",{style:\"narrow\"})",
+			"25h 90min"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00,000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"fr\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25 h et 90 min:0,000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",undefined)",
+			"25小时90分钟"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",{style:\"long\"})",
+			"25小时90分钟"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",{style:\"narrow\"})",
+			"25小时90分钟"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"zh-CN\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25小时90分钟:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",undefined)",
+			"25 س و90 د"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",{style:\"long\"})",
+			"25 ساعة و90 دقيقة"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",{style:\"narrow\"})",
+			"25 س و90 د"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ar\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25 س و90 د:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",undefined)",
+			"25 時間 90 分"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",{style:\"long\"})",
+			"25 時間 90 分"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",{style:\"narrow\"})",
+			"25h90m"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",{style:\"digital\"})",
+			"25:90:00"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",{style:\"digital\",fractionalDigits:9})",
+			"25:90:00.000000000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"ja\",{seconds:\"numeric\", fractionalDigits:3})",
+			"25 時間 90 分:0.000"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",undefined)",
+			"٢٥ hr, ٩٠ min"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",{style:\"long\"})",
+			"٢٥ hours, ٩٠ minutes"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",{style:\"narrow\"})",
+			"٢٥h ٩٠m"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\"})",
+			"٢٥:٩٠:٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",{style:\"digital\",fractionalDigits:9})",
+			"٢٥:٩٠:٠٠٫٠٠٠٠٠٠٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"PT25H90M\").toLocaleString(\"en-u-nu-arab\",{seconds:\"numeric\", fractionalDigits:3})",
+			"٢٥ hr, ٩٠ min:٠٫٠٠٠"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"en\", null)",
+			"ERR:TypeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"en\", 1)",
+			"ERR:TypeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(null)",
+			"ERR:TypeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"bad_tag\")",
+			"ERR:RangeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"en\", {style:\"bad\"})",
+			"ERR:RangeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"en\", {fractionalDigits:10})",
+			"ERR:RangeError"
+		],
+		[
+			"Temporal.Duration.from(\"P1DT2H\").toLocaleString(\"en\", {hours:\"2-digit\", minutes:\"long\"})",
+			"ERR:RangeError"
+		],
+		[
+			"(() => {\n    const d = Temporal.Duration.from('P1DT2H');\n    for (const k of ['years','months','weeks','days','hours','minutes','seconds','milliseconds','microseconds','nanoseconds','toString'])\n        Object.defineProperty(d, k, {get() { throw new Error('read ' + k); }});\n    return d.toLocaleString('en', {style:'long'});\n})()",
+			"1 day, 2 hours"
+		],
+		[
+			"(() => {\n    const reads = [];\n    const o = new Proxy({}, {get(t, p) { reads.push(p); }});\n    Temporal.Duration.from('P1DT2H').toLocaleString('en', o);\n    return reads.join(',');\n})()",
+			"localeMatcher,numberingSystem,style,years,yearsDisplay,months,monthsDisplay,weeks,weeksDisplay,days,daysDisplay,hours,hoursDisplay,minutes,minutesDisplay,seconds,secondsDisplay,milliseconds,millisecondsDisplay,microseconds,microsecondsDisplay,nanoseconds,nanosecondsDisplay,fractionalDigits"
+		]
+	]
+}
