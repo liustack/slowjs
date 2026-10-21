@@ -37,6 +37,9 @@ Unless a row says otherwise:
 | v0.26.16 | [The interrupt countdown inside the interpreter](fork-changes/interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter) | 0.6% less with PGO, about the same without |
 | v0.26.16 | [A front cache for small blocks](fork-changes/memory-and-allocation.md#a-front-cache-for-small-blocks) | 0.9% less with PGO alone, about the same without |
 | v0.26.16 | [Kept shapes](fork-changes/objects-and-shapes.md#kept-shapes) | 3.6% less alone, without PGO. With the front cache and the interrupt countdown, 4.5% less than without the three. Two VMs on two hyperthreads of one core render 2.9% more pages a second |
+| Unreleased | [for in skips prototypes with no enumerable property](fork-changes/objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) | The shop barely changes (0.996). The spiral and table pages of tifa's bench app, which run many for in loops, 0.983 and 0.971 of the time, without PGO |
+| Unreleased | [Bitwise operators on floats skip the slow path](fork-changes/operators.md#bitwise-operators-on-floats-skip-the-slow-path) | The shop has nothing to gain. The pages of tifa's MUI app take 0.952 to 0.960 of the time, without PGO |
+| Unreleased | [The usual comparisons answered in the interpreter](fork-changes/operators.md#the-usual-comparisons-answered-in-the-interpreter) | 0.982 of the time without PGO. The bench pages 0.940 and 0.942, the MUI pages 0.982 to 0.985 |
 | Unreleased | [One TLS frame per call on linux](fork-changes/calls-and-tls-frames.md#one-tls-frame-per-call-on-linux), with 22 more functions without a TLS frame and 12 more with frames per statement | About a fifth fewer TLS frames per render. 1.4% less than v0.26.16 without PGO, and 2.2% and 3.1% less on tifa's bench and mui test apps |
 
 Whole releases, measured in tifa:

@@ -66,6 +66,9 @@ go test -run EnginePanic .                               # the TLS stack after a
 go test -run Regex ./lib                                 # regexps give what they gave before lreSkip
 go test -run RegexScanStops .                            # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
+go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
+go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
+go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 ```

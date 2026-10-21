@@ -36,7 +36,7 @@ git subtree pull --prefix lib upstream-lib <libquickjs tag, e.g. v0.13.2>
 
 ### Conflicts to expect
 
-`lib/ccgo_*.go`: every upstream release regenerates these files, so the two lines added to `XJS_ToCStringLen2`, the calls into `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that answers 0 (local time is UTC) and the calls into `lib/uncatchable.go` (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the compiler's out of memory checks, the stack limit of a new runtime, the call paths without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the call into `lib/objlit.go`, the call into `lib/regexskip.go`, the cold paths moved out, the TLS frames taken per statement, `set_value` written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the frame of `JS_CallInternal` taken once on linux and the frames freed without a defer conflict. Take the upstream version of every generated file, then put the changes back:
+`lib/ccgo_*.go`: every upstream release regenerates these files, so the two lines added to `XJS_ToCStringLen2`, the calls into `lib/backtrace.go` (lazy error stacks), the `getTimezoneOffset` that answers 0 (local time is UTC) and the calls into `lib/uncatchable.go` (uncatchable exceptions) and `lib/outofmemory.go` (out of memory), the compiler's out of memory checks, the stack limit of a new runtime, the call paths without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the call into `lib/objlit.go`, the call into `lib/regexskip.go`, the cold paths moved out, the TLS frames taken per statement, `set_value` written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the frame of `JS_CallInternal` taken once on linux and the frames freed without a defer conflict. Take the upstream version of every generated file, then put the changes back:
 
 ```sh
 git checkout --theirs -- 'lib/ccgo_*.go' 'lib/internal/run-test262/ccgo_*.go'
@@ -47,7 +47,7 @@ go run ./internal/fixlib
 
 ### The order of the reports
 
-Some steps check the code against a list kept in `internal/fixlib`, and a flag prints the list as the files have it. A report fails while a list it depends on is out of date, so update them in this order: `-frames`, then `-up` (on the files as taken from upstream), then `-cells`, then `-slots`. Then fix `lazySites` (`internal/fixlib/lazy.go`) and `inlineCallees` (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports: no flag prints them. Last come the fingerprints, `-define`, `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`, `-front`, `-shape` and `-oneframe`. Each of these runs every change of `fixlib` and skips only the fingerprint checks, so a report that stops on another list, such as "TLS frames taken by statement changed", means that list is out of date, not the one the flag prints. Read every new line before you put it in.
+Some steps check the code against a list kept in `internal/fixlib`, and a flag prints the list as the files have it. A report fails while a list it depends on is out of date, so update them in this order: `-frames`, then `-up` (on the files as taken from upstream), then `-cells`, then `-slots`. Then fix `lazySites` (`internal/fixlib/lazy.go`) and `inlineCallees` (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports: no flag prints them. Last come the fingerprints, `-define`, `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`, `-front`, `-shape`, `-forin`, `-bitwise`, `-eq` and `-oneframe`. Each of these runs every change of `fixlib` and skips only the fingerprint checks, so a report that stops on another list, such as "TLS frames taken by statement changed", means that list is out of date, not the one the flag prints. Read every new line before you put it in.
 
 ### When fixlib stops
 
@@ -73,6 +73,9 @@ Some steps check the code against a list kept in `internal/fixlib`, and a flag p
 | `JSRuntime`, `JS_NewRuntime2` (`-runtime`), `frontFuncs`, `JSMallocBlockHeader` (`-front`) | [memory-and-allocation.md](fork-changes/memory-and-allocation.md#a-front-cache-for-small-blocks) |
 | `JS_DefinePropertyValue` and the define path (`-define`), `JS_NewObjectFromShape`, `objectBits` | [objects-and-shapes.md](fork-changes/objects-and-shapes.md#new-properties-of-plain-objects-skip-the-generic-path) |
 | `shapeFuncs`, `JSShape` (`-shape`), `gc_phase` | [objects-and-shapes.md](fork-changes/objects-and-shapes.md#kept-shapes) |
+| `js_for_in_prepare_prototype_chain_enum` and `forInSites` (`-forin`), the enumerable flag, `is_exotic` | [objects-and-shapes.md](fork-changes/objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) |
+| `js_binary_logic_slow`, `js_shr_slow` and `bitwiseSites` (`-bitwise`) | [operators.md](fork-changes/operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
+| `js_strict_eq_slow`, `js_eq_slow` and `eqSites` (`-eq`), the bit fields of a string, `JS_FreeValue` | [operators.md](fork-changes/operators.md#the-usual-comparisons-answered-in-the-interpreter) |
 | `Xlre_compile`, `Xlre_exec`, `_lre_exec_backtrack` (`-regex`) | [regexp.md](fork-changes/regexp.md#skip-to-where-a-regexp-can-match) |
 
 fixlib takes a change of its own as made only when its whole text is where it puts it. If it reports that such a text is somewhere else, is there twice, or that `_resolve_labels` has a label `out_of_memory` or part of the change, upstream has likely written part of the change itself: read the new code, then drop that part of fixlib or teach it the new place.
@@ -99,7 +102,7 @@ fixlib takes a change of its own as made only when its whole text is where it pu
 
 After a regeneration that includes them, `lib/backtrace.go`, `lib/uncatchable.go`, `lib/outofmemory.go` and their wiring in `fixlib` are no longer needed.
 
-The calls without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the calls into `lib/objlit.go` and `lib/regexskip.go`, the cold paths moved out, the frames taken by statement, the calls written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the frame of `JS_CallInternal` taken once and the frames freed without a defer have no C form: they are changes to what ccgo generates, so `fixlib` applies them after every regeneration.
+The calls without `alloca`, the functions without a TLS frame, the changes to the interpreter loop, the calls into `lib/objlit.go` and `lib/regexskip.go`, the cold paths moved out, the frames taken by statement, the calls written out in the interpreter, the interrupt countdown, the front cache, the shape cache, the calls into `lib/forin.go` and `lib/bitwise.go`, the comparisons written out in the interpreter, the frame of `JS_CallInternal` taken once and the frames freed without a defer have no C form: they are changes to what ccgo generates, so `fixlib` applies them after every regeneration.
 
 ## Other files of an engine release
 

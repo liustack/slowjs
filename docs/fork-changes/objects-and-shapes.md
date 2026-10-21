@@ -1,8 +1,8 @@
 ---
-summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, and shapes kept once their objects are gone, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
+summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, and for in loops that skip prototypes with no enumerable property, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
 read_when:
-  - Changing lib/objlit.go, lib/shapecache.go, fixDefine or fixShapeCache
-  - fixlib stops on defineSites, objectBits or shapeSites after an upstream release
+  - Changing lib/objlit.go, lib/shapecache.go, lib/forin.go, fixDefine, fixShapeCache or fixForIn
+  - fixlib stops on defineSites, objectBits, shapeSites or forInSites after an upstream release
   - A VM runs close to its memory limit and you wonder whether to give it a smaller shape cache
   - Calling VM.SetShapeCache, or asking what DefaultShapeCache costs
   - Planning more work on property access or object creation
@@ -10,7 +10,7 @@ read_when:
 
 # Objects and shapes
 
-A shape is the list of an object's keys in order, shared by objects with the same keys. Both changes here change only the generated Go, through `internal/fixlib`, with no C form.
+A shape is the list of an object's keys in order, shared by objects with the same keys. All the changes here change only the generated Go, through `internal/fixlib`, with no C form.
 
 ## New properties of plain objects skip the generic path
 
@@ -39,3 +39,19 @@ Tests: `lib/shapecache_test.go` (reuse, which shapes are kept, symbol keys, the 
 ### When upstream changes it
 
 If it reports that the functions of `shapeFuncs` or `JSShape` changed (`internal/fixlib/shapesites.go`), read them against `lib/shapecache.go`: `add_property` must still copy a shape whose count is not one, link the copy into the hash table, and take a shape it finds there on the line `shapeFound` is put before. A shape whose count is not one must still never change in place: `js_shape_prepare_update` copies it, and `resize_properties` and `compact_properties` change only a shape of count one that an object has. Outside the cycle collector a shape must still be freed only through `js_free_shape0` (`free_object` frees the shape of an object that way, and `JS_NewObjectFromShape` takes the count it is given), `js_new_shape2` must still grow the hash table when it is half full, `__JS_NewAtom` must still put the index of a symbol that is not registered in its `hash_next`, where `js_get_atom_index` and `JS_FreeAtomStruct` read it and which `JS_ResizeAtomHash` leaves alone, and the cycle collector must still free the shapes of a cycle itself while `gc_phase` is `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it reports that `gc_phase` is not the byte right after `tmp_obj_list`, change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
+
+## for in skips prototypes with no enumerable property
+
+Release: not released yet.
+
+A `for in` loop no longer lists the property names of each prototype to find out that it has no enumerable property. When a loop runs out of the object's own properties, the engine checks the objects of its prototype chain for enumerable string keys, to know whether it must walk the chain. It did that with `JS_GetOwnPropertyNamesInternal`, which mallocs a list, takes a reference to each name and frees it all again, in every loop and for every prototype, mostly for `Object.prototype`, which has dozens of names and none of them enumerable. `js_for_in_prepare_prototype_chain_enum` now first calls `forInNoEnum` (`lib/forin.go`), which reads the shape of a prototype that is not exotic: when no property of the shape has a name and the enumerable flag, it gives the same empty list without allocating, and the loop goes on as before.
+
+Why this is safe: for an object that is not exotic, `JS_GetOwnPropertyNamesInternal` with these flags counts only shape properties with a name, the enumerable flag and a string key, calls no method of the class and throws for nothing it does not count, so with no such property its list is empty. `forInNoEnum` answers no for every exotic object (arrays, `String` objects, proxies, ...) and for every object with an enumerable property, symbols included, and the engine lists the names as before, so the traps of a proxy in the chain run as they did. The only difference is out of memory: the empty list needs no memory, where the engine mallocs one entry, so with no memory left the loop goes on where it used to fail. `fixlib` puts the call into all 13 files and takes the two bit fields `forInNoEnum` reads, the flags of a shape property and the `is_exotic` bit of an object, from each file's own `JS_GetOwnPropertyNamesInternal`, so 32-bit and big-endian targets get their own layout. It pins the text of `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` and `JS_FreePropertyEnum` by fingerprints (`forInSites`). This changes only the generated Go, with no C hunk (`internal/fixlib/forin.go`).
+
+On linux/amd64 without PGO, against v0.26.16 over 10 rounds, the spiral page of tifa's bench app, which runs many for in loops, renders in 0.983 of the time (a wide range, 0.888 to 1.041) and the table page in 0.971 (0.871 to 1.035). tifa's example shop barely changes (0.996, 0.987 to 1.001), nor do the MUI pages. The HTML and the memory of a VM stay the same.
+
+Tests: `lib/forin_test.go`, whose `testdata/forin.txt` is what the engine gave before the change, and `internal/fixlib/forin_test.go`.
+
+### When upstream changes it
+
+If it reports that `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or `JS_FreePropertyEnum` changed (a fingerprint other than the one in `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for an object that is not exotic, the names listed with `JS_GPN_STRING_MASK` and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name and the enumerable flag, the loop must still go on to the next prototype when the list is empty, and freeing an empty list must still do nothing. If it reports that the reads of the enumerable flag or the test of `is_exotic` changed shape, find where the bits are now and update the patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in (`go run ./internal/fixlib -forin` prints them) and run `go test -run ForIn ./lib`.
