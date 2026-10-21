@@ -7,13 +7,14 @@
 // generator. It is a maintainer tool: go test and the generator only read
 // the files it writes, and need neither node nor a browser.
 //
-//   node record.cjs availability <cldr-json dir>
-//       writes availability.json: the locales Chromium has for each
-//       constructor, out of every locale cldr-json has.
 //   node record.cjs golden [name ...]
 //       evaluates corpus.json and each corpus-<name>.json (go test -run
 //       TestGolden -golden.corpus writes them) and writes golden.json.gz and
 //       golden-<name>.json.gz. With names, only those sets: "" is the first.
+//   node record.cjs temporal <name>
+//       evaluates temporal/testdata/<name>.js and writes <name>.json.
+//   node record.cjs probes <name>
+//       evaluates testdata/chromium/<name>.js and writes <name>.json.
 //   node record.cjs shape
 //       evaluates shape.js and writes shape.json: the names, lengths and
 //       property attributes of Intl's built-ins (TestBuiltinShape).
@@ -66,37 +67,6 @@ function evaluate(page, exprs) {
 	}), exprs);
 }
 
-async function availability(cldr) {
-	const read = (f) => JSON.parse(fs.readFileSync(path.join(cldr, f), 'utf8'));
-	const set = new Set(read('cldr-core/availableLocales.json').availableLocales.full);
-	for (const l of read('cldr-core/defaultContent.json').defaultContent) {
-		set.add(l);
-	}
-	for (const l of [...set]) {
-		// V8 also offers a locale with its script dropped: zh-Hans-CN as zh-CN.
-		const p = l.split('-');
-		if (p.length === 3 && p[1].length === 4) {
-			set.add(p[0] + '-' + p[2]);
-		}
-	}
-	const all = JSON.stringify([...set].sort());
-	await withPage(async (page, version) => {
-		// A locale is available when a formatter asked for it resolves to it.
-		// supportedLocalesOf would not do: it also lists a locale that is
-		// only supported through a shorter one, as zh-CN is for PluralRules.
-		const [nf, dtf, pr] = await evaluate(page, ['NumberFormat', 'DateTimeFormat', 'PluralRules']
-			.map((c) => `JSON.stringify(${all}.filter((l) => new Intl.${c}(l).resolvedOptions().locale === l))`));
-		const out = {
-			browser: 'Chromium ' + version,
-			numberFormat: JSON.parse(nf),
-			dateTimeFormat: JSON.parse(dtf),
-			pluralRules: JSON.parse(pr),
-		};
-		fs.writeFileSync(path.join(dir, 'availability.json'), JSON.stringify(out, null, '\t') + '\n');
-		console.log(`${out.browser}: ${out.numberFormat.length} NumberFormat, ${out.dateTimeFormat.length} DateTimeFormat, ${out.pluralRules.length} PluralRules locales`);
-	});
-}
-
 async function golden(names) {
 	if (names.length === 0) {
 		names = fs.readdirSync(dir).filter((f) => /^corpus(-[\w-]+)?\.json$/.test(f))
@@ -116,6 +86,18 @@ async function golden(names) {
 			console.log(`${out.browser}: golden${suffix}, ${corpus.length} expressions`);
 		}
 	});
+}
+
+async function probes(target, name) {
+    const src = fs.readFileSync(path.join(target, name + '.js'), 'utf8');
+    await withPage(async (page, version) => {
+        if (!version.startsWith('156.')) throw new Error('expected Chromium 156, got ' + version);
+        const corpus = await page.evaluate(src => (0, eval)(src + '\ncases'), src);
+        const answers = await evaluate(page, corpus);
+        const out = { browser: 'Chromium ' + version, cases: corpus.map((e, i) => [e, answers[i]]) };
+        fs.writeFileSync(path.join(target, name + '.json'), JSON.stringify(out, null, '\t') + '\n');
+        console.log(out.browser + ': ' + name + ', ' + corpus.length + ' expressions');
+    });
 }
 
 async function shape() {
@@ -185,11 +167,14 @@ function icudtl() {
 	case 'icudtl':
 		icudtl();
 		break;
-	case 'availability':
-		await availability(process.argv[3]);
-		break;
 	case 'golden':
 		await golden(process.argv.slice(3));
+		break;
+	case 'temporal':
+		await probes(path.resolve(dir, '../../../temporal/testdata'), process.argv[3]);
+		break;
+	case 'probes':
+		await probes(dir, process.argv[3]);
 		break;
 	case 'shape':
 		await shape();
@@ -198,7 +183,7 @@ function icudtl() {
 		await tamper();
 		break;
 	default:
-		console.error('usage: node record.cjs availability <cldr-json dir> | golden | shape | tamper | icudtl');
+		console.error('usage: node record.cjs golden [set] | temporal <name> | probes <name> | shape | tamper | icudtl');
 		process.exit(2);
 	}
 })().catch((err) => {

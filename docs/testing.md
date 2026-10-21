@@ -64,7 +64,7 @@ go test -vet=off -run 'TestToCString' ./lib              # the leak of JS_ToCStr
 go test -run 'TestErrorStack' .                          # stack text and memory of lazy error stacks
 go test -vet=off -run 'TestBacktrace' ./lib              # shapes, retries and writes of pending stacks
 go run ./internal/fixlib -check                          # fork changes present in lib/
-go run ./intl/internal/gen -fetch -check                 # intl data is what the generator makes
+internal/gointl/qjs-sync.sh pack -check                  # shared Intl data is what the generator makes
 go test -timeout 30m ./internal/fixlib                   # fixlib notices new reads of property values and new shapes of what it changes
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
@@ -81,6 +81,9 @@ go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and t
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
+go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
+go test -p 2 ./intl -run 'GoIntlMigration|EmbeddedZonePack|FormatStringMatchesParts' # rounding, calendars and embedded time zones
+go test -p 2 ./internal/intlhook                        # private state across GC and Close
 go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
 go test -run 'DateNow|RandomSeed|Monotonic' ./lib        # Date.now, the seed of Math.random and performance.now read Go's clocks

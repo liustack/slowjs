@@ -13,19 +13,7 @@ import (
 
 // differFromChromium are the cases of testdata/corpus.js whose answers are
 // not Chromium's, and why.
-var differFromChromium = map[string]string{
-	`Temporal.PlainDate.from("2024-01-05").toLocaleString("en-US", {era: "short"})`:                                     eraAlone,
-	`Temporal.PlainDateTime.from("2024-01-05T13:05:07").toLocaleString("en-US", {era: "short"})`:                        eraAlone,
-	`Temporal.ZonedDateTime.from("2024-01-05T13:05:07[America/New_York]").toLocaleString("en-US", {era: "short"})`:      eraAlone,
-	`Temporal.Instant.from("2024-01-05T13:05:07Z").toLocaleString("en-US", {era: "short"})`:                             eraAlone,
-	`Temporal.PlainYearMonth.from({year: 2024, month: 1, calendar: "gregory"}).toLocaleString("en-US", {era: "short"})`: eraAlone,
-	`Temporal.PlainYearMonth.from({year: 2024, month: 1, calendar: "gregory"}).toLocaleString("zh-CN", {month: "long", day: "numeric"})`: "ECMA-402 drops the day and formats the month alone, " +
-		"as Chromium's Intl.DateTimeFormat does with {month: 'long'}, V8 takes the pattern of month and day and drops the day from it",
-	`Temporal.PlainDate.from("2024-01-05[u-ca=japanese]").toLocaleString("ja-JP-u-ca-japanese")`: "package intl formats in the Gregorian calendar only",
-	`Temporal.Duration.from("P1DT2H").toLocaleString("en-US")`:                                   "Duration.prototype.toLocaleString does not go through Intl.DurationFormat yet",
-}
-
-const eraAlone = "ECMA-402 adds the date to an era alone (GetDateTimeFormat, needDefaults), V8 formats the era only"
+var differFromChromium = map[string]string{}
 
 // TestChromium runs the cases of testdata/corpus.js and compares their
 // answers, values or errors with their messages, byte for byte with

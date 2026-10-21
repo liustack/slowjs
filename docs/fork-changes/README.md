@@ -63,12 +63,16 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
 | SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
 | RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
+| Compiled Intl formatting plans and shared decoded data | Unreleased | [time-and-intl.md](time-and-intl.md#compiled-intl-formatting-plans) |
+| All Intl formatters share go-intl and embedded tz 2026e | Unreleased | [time-and-intl.md](time-and-intl.md#all-intl-formatters-share-go-intl) |
 | Intl constructors on go-intl | Unreleased | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
 | Args.WTF8 | Unreleased | [go-api.md](go-api.md#argswtf8) |
 | Compiled regexps kept per VM | Unreleased | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | SetRegExpCache and DefaultRegExpCache | Unreleased | [go-api.md](go-api.md#setregexpcache-and-defaultregexpcache) |
 | OnClose | Unreleased | [go-api.md](go-api.md#onclose) |
 | Intl leaves what a page put in place of a stand-in | Unreleased | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
+| DateTimeFormat takes Temporal values and formats ranges | Unreleased | [time-and-intl.md](time-and-intl.md#datetimeformat-takes-temporal-values) |
+| Temporal durations use DurationFormat | Unreleased | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
 | Temporal on go-intl | Unreleased | [temporal.md](temporal.md#temporal-on-go-intl) |
 | EvalBytecode waits for a module's top-level await in Go | Unreleased | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |
 | The engine reads Go's clocks | Unreleased | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |

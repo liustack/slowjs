@@ -50,6 +50,7 @@ Unless a row says otherwise:
 | Unreleased | [The engine reads Go's clocks](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks) | The shop does not change (0.994 to 1.009 over 6 rounds, median 1.000), without PGO. `Date.now()` takes 122 ns rather than 689, `new Date()` 261 rather than 870 and `performance.now()` 107 rather than 686 |
 | Unreleased | [Likely and unlikely tests branch on their condition](fork-changes/interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) | 0.983 of the time without PGO (0.976 to 0.984), the bench pages of tifa 0.976 to 0.987. 1.6% fewer instructions |
 | Unreleased | [TLS frames taken without a call on linux](fork-changes/calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) | 0.998 of the time on top of the row above (0.995 to 1.004), the bench pages 0.990. 1.9% fewer instructions. With the row above, 0.979 of the time of v0.26.17 and the bench pages 0.967 |
+| Unreleased | [Compiled Intl formatting plans](fork-changes/time-and-intl.md#compiled-intl-formatting-plans) | NumberFormat takes 41% to 42% less time than main and DateTimeFormat 28% to 37% less on the fixed inputs. [Ten shop pages](#intl-formatting) render in 0.9998 to 1.0081 of main's time without PGO |
 
 Whole releases, measured in tifa:
 
@@ -84,6 +85,29 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 - Remove the `replace` before committing in tifa: `TestEngineProfileMatchesTheDependencies` fails for a profile made with a `replace`.
 
 After a release, upgrade tifa and collect its engine profile again (see [releasing.md](releasing.md#after-the-release)).
+
+## Intl formatting
+
+Unreleased, against main `641e996`, with tifa shop `fb31f616`. The shared go-intl formatters use [compiled plans and direct string output](fork-changes/time-and-intl.md#compiled-intl-formatting-plans). The fixed-input NumberFormat cases take 41% to 42% less time than main and DateTimeFormat 28% to 37% less. The [full call table](fork-changes/time-and-intl.md#focused-timing-and-memory-costs) includes construction, uncached resolution, allocation and memory costs.
+
+The ten shop pages were measured on an AMD EPYC 7B13, Linux, Go 1.27.2, `CGO_ENABLED=0`, with `-pgo=off`. Both builds use the same SSR bundle and captured navigation inputs. The driver follows BenchmarkShop: one VM, 256 warm renders, then 200 measured renders per page in each of six alternating main and branch rounds. It includes the six workbench pages plus the storefront list and product page in both languages. HTTP and data fetching are outside the timer. HTML is equal after masking only the router's `u:` timestamp.
+
+Each engine runs at nice 19 on CPU 1, with sibling 5 idle, in a 4 GiB systemd scope with no swap. A run starts only after both CPUs stay below 1% busy for three seconds. Samples are rejected and repeated if sibling 5 averages at least 1% busy or reaches 5% in a one-second sample, or another application runs on CPU 1. Rounds 1 to 5 run all ten subbenchmarks in one process per build. Round 6 invokes each page separately and alternates the two builds for that page, so activity outside that page cannot discard its sample. Each subbenchmark still creates its own VM pool and uses the same warmup and sample counts. The table uses six valid samples per build for every page. Values are the median of each round's P50, with the minimum and maximum. Ratios below 1 favor the branch. The last column pairs the builds within each round.
+
+| Page | Main P50, ms | Branch P50, ms | Branch / main | Paired ratio median and range |
+| --- | ---: | ---: | ---: | ---: |
+| `/projects/studio` | 29.165 (28.480 to 29.400) | 29.400 (28.500 to 29.980) | 1.0081 | 1.008 (0.981 to 1.021) |
+| `/projects/weekend` | 28.125 (27.770 to 28.330) | 28.120 (27.880 to 28.940) | 0.9998 | 1.006 (0.989 to 1.022) |
+| `/projects/studio/orders/SH-1042` | 10.455 (10.360 to 10.570) | 10.515 (10.440 to 10.560) | 1.0057 | 1.002 (0.994 to 1.017) |
+| `/projects/weekend/orders/WK-0201` | 10.210 (10.150 to 10.240) | 10.270 (10.200 to 10.590) | 1.0059 | 1.009 (0.998 to 1.036) |
+| `/projects/studio/stats` | 8.477 (8.407 to 8.528) | 8.492 (8.455 to 8.525) | 1.0017 | 1.003 (0.991 to 1.012) |
+| `/projects/weekend/stats` | 8.465 (8.398 to 8.499) | 8.524 (8.406 to 8.635) | 1.0069 | 1.009 (0.989 to 1.025) |
+| `/store/en-US/products` | 69.395 (68.710 to 70.150) | 69.450 (69.020 to 70.080) | 1.0008 | 1.002 (0.993 to 1.009) |
+| `/store/en-US/products/pour-over-kettle` | 41.040 (40.350 to 41.530) | 41.030 (40.650 to 41.950) | 0.9998 | 0.999 (0.981 to 1.031) |
+| `/store/zh-CN/products` | 69.315 (68.720 to 70.230) | 69.815 (69.680 to 70.020) | 1.0072 | 1.008 (0.994 to 1.016) |
+| `/store/zh-CN/products/pour-over-kettle` | 41.155 (40.670 to 41.690) | 41.475 (41.080 to 41.570) | 1.0078 | 1.005 (0.997 to 1.016) |
+
+The page ratios range from 0.9998 to 1.0081. The call-level gain does not establish a whole-page speedup. Page differences should be read with the paired sample spread, not rounded into a claim that every page is faster.
 
 ## What was tried and not done
 

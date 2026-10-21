@@ -185,11 +185,11 @@ func withoutLackedCollation(l gointl.Locale) gointl.Locale {
 // data where it can, and the golden test formats in them.
 type chromiumData struct{}
 
+var goData = gointl.CacheSource(chromiumData{})
+
 // chromiumMissing are, by data set, the locales Chromium has other data
 // for, and the data it has.
 var chromiumMissing = map[gointl.Marker]map[string]gointl.DataLocale{
-	gointl.MarkerNumbers: missingAs(gointl.DataLocale{}, "az", "az-Latn", "bs", "bs-Latn", "kk", "kk-Cyrl", "kk-KZ", "kok",
-		"kok-Deva", "pa", "pa-Guru", "sd", "sd-Arab", "sd-Deva", "uz", "uz-Latn"),
 	gointl.MarkerRelativeTime: missingAs(gointl.DataLocale{}, chromiumMissingFields...),
 	gointl.MarkerLists:        missingAs(gointl.DataLocale{}, chromiumMissingFields...),
 	gointl.MarkerUnits:        chromiumMissingUnits(),

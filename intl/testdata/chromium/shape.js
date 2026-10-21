@@ -82,7 +82,7 @@ function shape() {
 	fn('Intl.supportedValuesOf', Intl.supportedValuesOf);
 
 	const ctors = {
-		DateTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
+		DateTimeFormat: ['format', 'formatToParts', 'formatRange', 'formatRangeToParts', 'resolvedOptions'],
 		NumberFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		PluralRules: ['select', 'selectRange', 'resolvedOptions'],
 		Collator: ['compare', 'resolvedOptions'],

@@ -15,6 +15,7 @@ import (
 // probes are what TestTamper asks Temporal, each an expression whose value
 // is a string or a number.
 var probes = []string{
+	`Temporal.Duration.from("P1DT2H3M4.005S").toLocaleString("de", {style: "digital", fractionalDigits: 3})`,
 	`Temporal.PlainDate.from('2024-01-05').add({months: 1, days: 3}).toString()`,
 	`new Temporal.PlainDate(2024, 1, 31).with({month: 2}).toString()`,
 	`Temporal.PlainDate.from({year: 2024, month: 2, day: 30}).toString()`,
@@ -81,7 +82,7 @@ var tampers = map[string]string{
 		Symbol.prototype.toString = () => 'x'; Object.defineProperty(Symbol.prototype, 'description', {get() { throw new Error('description'); }});`,
 	"Date.prototype": `Date.prototype.valueOf = Date.prototype.getTime = () => 0;`,
 	"Intl": `Intl.DateTimeFormat = function () { throw new Error('dtf'); }; Intl.DateTimeFormat.prototype.format = () => 'x';
-		Intl.getCanonicalLocales = () => { throw new Error('locales'); };`,
+		Intl.DurationFormat = function () { throw new Error('df'); }; Intl.getCanonicalLocales = () => { throw new Error('locales'); };`,
 }
 
 // TestTamper runs probeScript on a VM a page has changed built-ins of,

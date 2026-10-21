@@ -14,11 +14,11 @@
 // called with, reads only own properties of its own objects, and builds
 // property descriptors and the arrays it passes on without a prototype.
 
-(function (P, zone, optionLists,
+(function (P, zone, optionLists, state,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
-	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo, caseLanguage, casePremap) {
+	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo, caseLanguage, casePremap, tfResolve, tfFormat, tfParts, tfRange, tfRangeParts) {
 	'use strict';
 
 	const {
@@ -73,9 +73,9 @@
 
 	const tries = 8;
 
-	function call(r, fn, x, y) {
+	function call(r, fn, x, y, z, w) {
 		for (let i = 0; i < tries; i++) {
-			const v = fn(r.id, x, y);
+			const v = fn(r.id, x, y, z, w);
 			if (v !== undefined) {
 				return v;
 			}
@@ -149,6 +149,8 @@
 		const i = Slots.of(o);
 		return i !== undefined && i.kind === 'Locale' ? i.locale : undefined;
 	}
+
+	state.locale = localeTag;
 
 	// localeList implements CanonicalizeLocaleList's argument handling. The tags
 	// themselves are canonicalized by the host. An Intl.Locale is its tag,
@@ -370,6 +372,61 @@
 		return date === undefined ? dateNow() : +date;
 	}
 
+	function temporalValue(v) {
+		const r = state.temporal === undefined ? undefined : state.temporal(v);
+		return r !== undefined && r.kind === 'duration' ? undefined : r;
+	}
+
+	function rejectZoned(r) {
+		if (r !== undefined && r.kind === 'zoned') {
+			throw new TypeError('Temporal.ZonedDateTime is not supported in Intl.DateTimeFormat. Use toLocaleString instead.');
+		}
+	}
+
+	function temporalFormatter(i, kind) {
+		if (i.temporal === undefined) i.temporal = {__proto__: null};
+		let f = i.temporal[kind];
+		if (f === undefined) {
+			const a = bare([kind]);
+			for (let j = 0; j < i.args.length; j++) a[a.length] = i.args[j];
+			f = resolve('DateTimeFormat', tfResolve, a);
+			i.temporal[kind] = f;
+		}
+		return f;
+	}
+
+	function formatDate(i, value, wantParts) {
+		const r = temporalValue(value);
+		if (r === undefined) return call(i, wantParts ? dtfParts : dtfFormat, timeValue(value));
+		rejectZoned(r);
+		return call(temporalFormatter(i, r.kind), wantParts ? tfParts : tfFormat, r.ms, r.cal);
+	}
+
+	function rangeValue(value) {
+		const r = temporalValue(value);
+		return r === undefined ? {__proto__: null, kind: 'legacy', ms: +value, cal: undefined} : r;
+	}
+
+	function formatDateRange(i, start, end, wantParts) {
+		if (start === undefined || end === undefined) throw new TypeError('Invalid time value');
+		// ToDateTimeFormattable converts both endpoints before checking their
+		// types, even when one is a ZonedDateTime or converts to NaN.
+		const a = rangeValue(start), b = rangeValue(end);
+		if (a.kind !== b.kind) throw new TypeError('Invalid type for formatRange');
+		rejectZoned(a);
+		return call(temporalFormatter(i, a.kind), wantParts ? tfRangeParts : tfRange, a.ms, a.cal, b.ms, b.cal);
+	}
+
+	// Compact the host's triples in place, as parts() does.
+	function rangeParts(a) {
+		const n = a.length / 3;
+		for (let i = 0; i < n; i++) {
+			a[i] = {type: a[3 * i], value: a[3 * i + 1], source: a[3 * i + 2]};
+		}
+		a.length = n;
+		return a;
+	}
+
 	defineConstructor(DateTimeFormat, {
 		supportedLocalesOf(locales, options = undefined) {
 			return supportedLocalesOf('DateTimeFormat', locales, options);
@@ -380,12 +437,18 @@
 			// keeps working. Code in the wild does exactly that.
 			const i = internal(this, 'DateTimeFormat', DateTimeFormat);
 			if (i.bound === undefined) {
-				i.bound = (date) => call(i, dtfFormat, timeValue(date));
+				i.bound = (date) => formatDate(i, date, false);
 			}
 			return i.bound;
 		},
 		formatToParts(date) {
-			return parts(call(internal(this, 'DateTimeFormat'), dtfParts, timeValue(date)));
+			return parts(formatDate(internal(this, 'DateTimeFormat'), date, true));
+		},
+		formatRange(startDate, endDate) {
+			return formatDateRange(internal(this, 'DateTimeFormat'), startDate, endDate, false);
+		},
+		formatRangeToParts(startDate, endDate) {
+			return rangeParts(formatDateRange(internal(this, 'DateTimeFormat'), startDate, endDate, true));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'DateTimeFormat', DateTimeFormat), optionsOf));
@@ -407,18 +470,16 @@
 		new Slots(this, numberFormat(locales, options));
 	}
 
-	// numberValue is ECMA-402's ToIntlMathematicalValue. It keeps a BigInt
-	// and a numeric string exact by passing them on as a string, also when an
-	// object, such as Object(1n), converts to one: the host parses decimal
-	// digits, so nothing round trips through a double that did not start as
-	// one.
-	function numberValue(v) {
+	// numberCall applies ToIntlMathematicalValue's primitive conversion once.
+	// BigInts cross as decimal digits with a separate flag: unlike numeric
+	// strings, their magnitude must not be limited to the Number range.
+	function numberCall(i, fn, v) {
 		const p = isObject(v) ? toPrimitiveNumber(v) : v;
 		const t = typeof p;
-		if (t === 'bigint' || t === 'string') {
-			return String(p);
+		if (t === 'bigint') {
+			return call(i, fn, String(p), true);
 		}
-		return +p;
+		return call(i, fn, t === 'string' ? p : +p);
 	}
 
 	function isObject(v) {
@@ -463,12 +524,12 @@
 		get format() {
 			const i = internal(this, 'NumberFormat', NumberFormat);
 			if (i.bound === undefined) {
-				i.bound = (value) => call(i, nfFormat, numberValue(value));
+				i.bound = (value) => numberCall(i, nfFormat, value);
 			}
 			return i.bound;
 		},
 		formatToParts(value) {
-			return parts(call(internal(this, 'NumberFormat'), nfParts, numberValue(value)));
+			return parts(numberCall(internal(this, 'NumberFormat'), nfParts, value));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));
@@ -772,6 +833,10 @@
 		}
 		if (d === null || typeof d !== 'object' && typeof d !== 'function') {
 			throw new TypeError('Invalid duration: ' + typeof d);
+		}
+		const temporal = state.temporal === undefined ? undefined : state.temporal(d);
+		if (temporal !== undefined && temporal.kind === 'duration') {
+			return [temporal.fields, true];
 		}
 		const fields = bare(['', '', '', '', '', '', '', '', '', '']);
 		for (let i = 0; i < durationFields.length; i++) {
@@ -1100,7 +1165,7 @@
 	if (bigintValueOf !== undefined) {
 		api.bigintToLocaleString = {
 			toLocaleString(locales = undefined, options = undefined) {
-				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)));
+				return call(numberFormatter(locales, options), nfFormat, String(apply(bigintValueOf, this, noArgs)), true);
 			}
 		}.toLocaleString;
 	}

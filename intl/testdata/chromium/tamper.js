@@ -27,6 +27,8 @@ var uses = `(() => {
 	use(() => new Intl.NumberFormat('en').format(0.5));
 	use(() => new Intl.DateTimeFormat('en', {dateStyle: 'medium', timeZone: 'UTC'}).format(0));
 	use(() => new Intl.DateTimeFormat('en', {timeZone: 'UTC'}).formatToParts(0).map((p) => p.type).join());
+	use(() => new Intl.DateTimeFormat('en').formatRange(0, 86400000));
+	use(() => new Intl.DateTimeFormat('de').formatRangeToParts(0, 86400000).map(p => p.type + ':' + p.value + ':' + p.source).join());
 	use(() => show(new Intl.DateTimeFormat('de', {timeZone: 'UTC'}).resolvedOptions()));
 	use(() => new Intl.DateTimeFormat('en', {year: 'numeric', timeZone: 'UTC'}).format() !== '1970');
 	use(() => [0, 86400000].map(new Intl.DateTimeFormat('en', {timeZone: 'UTC'}).format).join());

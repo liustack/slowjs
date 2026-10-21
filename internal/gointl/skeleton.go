@@ -1,6 +1,7 @@
 package intl
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -33,7 +34,7 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
 	if err != nil {
 		return "", HourCycleAuto, nil, err
 	}
-	g := newDTPG(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
+	g := f.qjsGenerator(hourChar, allowed, true)
 	hc := f.resolveHourCycle(g.defaultHourCycle(), allowed)
 	f.clock = hc
 
@@ -42,19 +43,29 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
 		// DateTimeStylePattern.
 		timePattern := ""
 		if o.TimeStyle != LengthNone && f.timeStyleAfresh(src) {
-			fresh := newDTPGWithoutStyles(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
+			fresh := f.qjsGenerator(hourChar, allowed, false)
 			timePattern = fresh.bestPattern(timeStyleSkeletons[o.TimeStyle-1], 0)
 		}
 		pattern := f.stylePattern(timePattern)
+		err := f.styleOverrides(src, timePattern != "")
+		if errors.Is(err, ErrNotFound) {
+			// DateFormat::create uses SimpleDateFormat's default pattern
+			// when a style's algorithmic numbering rules are absent in ICU.
+			// Chromium omits Hebrew RBNF. V8 regenerates the result below
+			// only when a time style requests another hour cycle.
+			pattern = "yMMdd hh:mm a"
+			f.overrides = nil
+		} else if err != nil {
+			return "", HourCycleAuto, nil, err
+		}
 		if o.TimeStyle == LengthNone {
-			f.styleOverrides(src, false)
 			return pattern, HourCycleAuto, g, nil
 		}
 		if hourCycleFromPattern(pattern) == hc {
-			f.styleOverrides(src, timePattern != "")
 			return pattern, hc, g, nil
 		}
 		// A regenerated pattern is a new one, with no overrides.
+		f.overrides = nil
 		pattern = g.bestPattern(replaceSkeleton(staticSkeleton(pattern), hc), matchHourFieldLength)
 		return replaceHourCycleInPattern(pattern, hc), hc, g, nil
 	}
@@ -287,7 +298,7 @@ func (f *DateTimeFormat) timeStyleAfresh(src Source) bool {
 // styleOverrides takes the numbering overrides of the style patterns in use,
 // as ICU's date formatter does when it builds one from styles; a time
 // style made afresh has none.
-func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
+func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) error {
 	o := &f.opts
 	overrides := map[byte]string{}
 	if o.DateStyle != LengthNone {
@@ -297,7 +308,7 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
 		parseNumberingOverride(overrides, f.calendar.TimeNumbers[o.TimeStyle-1], false)
 	}
 	if len(overrides) == 0 {
-		return
+		return nil
 	}
 	f.overrides = overrides
 	f.systems, _ = loadNumberingSystems(src)
@@ -308,22 +319,28 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
 			numeric = numeric || s.Name == system
 		}
 		if !numeric {
-			f.loadRules(src, system)
+			if err := f.loadRules(src, system); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // loadRules loads a rule-based numbering system an override names.
-func (f *DateTimeFormat) loadRules(src Source, system string) {
+func (f *DateTimeFormat) loadRules(src Source, system string) error {
 	if f.rbnf[system].rules != nil {
-		return
+		return nil
 	}
-	if rules, set, err := loadRBNF(src, system); err == nil {
-		if f.rbnf == nil {
-			f.rbnf = map[string]rbnfSystem{}
-		}
-		f.rbnf[system] = rbnfSystem{rules, set}
+	rules, set, err := loadRBNF(src, system)
+	if err != nil {
+		return err
 	}
+	if f.rbnf == nil {
+		f.rbnf = map[string]rbnfSystem{}
+	}
+	f.rbnf[system] = rbnfSystem{rules, set}
+	return nil
 }
 
 // gannen reports whether a Japanese year is written by ICU's jpanyear rules,

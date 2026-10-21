@@ -29,7 +29,6 @@ var chromiumMissingSources = map[gointl.Marker]struct {
 	tree, path string
 }{
 	gointl.MarkerRelativeTime: {"", "fields"},
-	gointl.MarkerNumbers:      {"", "NumberElements/latn/"},
 	gointl.MarkerUnits:        {"unit", ""},
 }
 

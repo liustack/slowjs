@@ -118,7 +118,7 @@ func resolveDurationFormat(req request) (*durationFormat, error) {
 		d := int(f)
 		opts.FractionalDigits = &d
 	}
-	f, err := gointl.NewDurationFormatFrom(chromiumData{}, loc, opts)
+	f, err := gointl.NewDurationFormatFrom(goData, loc, opts)
 	switch {
 	case errors.Is(err, gointl.ErrNotFound):
 		return nil, err

@@ -17,7 +17,7 @@
 // is called with, reads only own properties of its own objects, and builds
 // the arrays it passes on without a prototype.
 
-(function (P, opNames, T, dtfOptions, format, defaultZone) {
+(function (P, opNames, T, dtfOptions, format, defaultZone, dfOptions, dfResolve, dfFormat, state) {
 	'use strict';
 
 	const {
@@ -33,7 +33,7 @@
 			O[names[i]] = i;
 		}
 	}
-	const dtfList = parse(dtfOptions);
+	const dtfList = parse(dtfOptions), dfList = parse(dfOptions);
 	const noArgs = bare([]);
 	const noOptions = setPrototypeOf({}, null);
 
@@ -1283,6 +1283,8 @@
 	// single tag as itself, a list as one string of the tags each preceded
 	// by its length and a colon (CanonicalizeLocaleList's argument handling).
 	function pushLocales(a, locales) {
+		const tag = state.locale === undefined ? undefined : state.locale(locales);
+		if (tag !== undefined) locales = tag;
 		if (typeof locales === 'string' || locales === undefined) {
 			push(a, locales);
 			return push(a, undefined);
@@ -1298,7 +1300,8 @@
 				if (typeof v !== 'string' && !isObject(v)) {
 					throw new TypeError('Language ID should be string or object');
 				}
-				const t = toStr(v);
+				const tag = state.locale === undefined ? undefined : state.locale(v);
+				const t = tag === undefined ? toStr(v) : tag;
 				s += t.length + ':' + t;
 			}
 		}
@@ -1306,16 +1309,16 @@
 		return push(a, s);
 	}
 
-	// pushDateTimeOptions appends Intl.DateTimeFormat's options of opts,
+	// pushFormatOptions appends the formatter's options of opts,
 	// converted as package intl does.
-	function pushDateTimeOptions(a, opts) {
+	function pushFormatOptions(a, opts, list) {
 		if (opts === null) {
 			throw new TypeError('Options must be an object');
 		}
 		if (opts === undefined) {
 			return a;
 		}
-		const o = Object(opts), names = dtfList.names, kinds = dtfList.kinds;
+		const o = Object(opts), names = list.names, kinds = list.kinds;
 		for (let i = 0; i < names.length; i++) {
 			let v = o[names[i]];
 			if (v !== undefined) {
@@ -1338,7 +1341,7 @@
 
 	function localeString(kind, cal, ms, zone, locales, options, offset) {
 		const a = pushLocales(bare([kind, cal, ms, zone, offset]), locales);
-		return apply(format, undefined, pushDateTimeOptions(a, options));
+		return apply(format, undefined, pushFormatOptions(a, options, dtfList));
 	}
 
 	// epochDays is the days of an ISO date since 1970-01-01.
@@ -1354,6 +1357,34 @@
 	function timeMs(s) {
 		return s.h * 3600000 + s.mi * 60000 + s.s * 1000 + s.ms;
 	}
+
+	function durationFieldsString(fields) {
+		let text = '' + fields[0];
+		for (let i = 1; i < fields.length; i++) text += ',' + fields[i];
+		return text;
+	}
+
+	state.temporal = function (value) {
+		const s = Slots.of(value);
+		if (s === undefined) return undefined;
+		if (s.kind === KDU) return {__proto__: null, kind: 'duration', fields: durationFieldsString(s.f)};
+		let kind, ms, cal = 'iso8601';
+		switch (s.kind) {
+		case KD: kind = 'date'; break;
+		case KT: kind = 'time'; ms = timeMs(s); break;
+		case KDT: kind = 'dateTime'; break;
+		case KYM: kind = 'yearMonth'; break;
+		case KMD: kind = 'monthDay'; break;
+		case KI: kind = 'instant'; ms = s.ems; break;
+		case KZ: kind = 'zoned'; ms = s.ems; break;
+		default: throw new Error('temporal: unknown internal kind');
+		}
+		if (s.kind === KD || s.kind === KDT || s.kind === KYM || s.kind === KMD) {
+			cal = s.cal;
+			ms = epochDays(s.y, s.m, s.d) * 86400000 + (s.kind === KDT ? timeMs(s) : 43200000);
+		}
+		return {__proto__: null, kind: kind, cal: cal, ms: ms};
+	};
 
 	// ----------------------------------------------------- calendar getters
 
@@ -2437,7 +2468,14 @@
 		},
 		toLocaleString(locales = undefined, options = undefined) {
 			const s = slot(this, KDU, 'toLocaleString');
-			return call(push(push(push(pushDuration(bare([O.dStr]), s.f), -1), 0), 0));
+			const a = pushFormatOptions(pushLocales(bare([]), locales), optionsObject(options), dfList);
+			const fields = durationFieldsString(s.f);
+			for (let j = 0; j < 8; j++) {
+				const id = apply(dfResolve, undefined, a);
+				const result = dfFormat(id, fields, true);
+				if (result !== undefined) return result;
+			}
+			throw new Error('Intl.DurationFormat: other code made formatters too fast to keep this one');
 		},
 		toString(options = undefined) {
 			const s = slot(this, KDU, 'toString');

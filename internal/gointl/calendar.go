@@ -194,8 +194,10 @@ func gregorianYearLength(year int) int {
 	return 365
 }
 
-// reckon turns an instant into the fields of a date in one calendar.
-func reckon(t time.Time, system CalendarSystem, rules calendarRules) dateParts {
+// reckon turns local wall-clock fields into a date in one calendar. The
+// astronomical Islamic calendars also need the original instant for the
+// moon's age, independently of the local civil day.
+func reckon(t, instant time.Time, system CalendarSystem, rules calendarRules) dateParts {
 	p := partsOf(t)
 	// The Gregorian calendar's own fields, which the Buddhist one keeps:
 	// its extended year is the Gregorian one, counting on through 0 for
@@ -258,7 +260,7 @@ func reckon(t time.Time, system CalendarSystem, rules calendarRules) dateParts {
 		p.yearLength = islamicTabularYearLength
 		return p
 	case Islamic, IslamicRGSA:
-		p.year, p.month, p.day, p.dayOfYear = islamicAstroDate(julianDay(t), float64(t.UnixMilli()))
+		p.year, p.month, p.day, p.dayOfYear = islamicAstroDate(julianDay(t), float64(instant.UnixMilli()))
 		p.era, p.extYear = 0, p.year
 		p.relatedYear = islamicRelatedYear(p.year)
 		p.yearLength = islamicAstroYearLength

@@ -7,13 +7,16 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"runtime"
 	"strconv"
 	"sync"
+	"time"
 	"weak"
 
 	"github.com/liustack/quickjs"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 	"github.com/liustack/quickjs/internal/intlhook"
 )
 
@@ -41,6 +44,18 @@ func init() {
 		panic(err)
 	}
 	intlhook.Options = string(b)
+	l.Names, l.Kinds = []string{}, ""
+	for _, o := range durationFormatCtor.options {
+		l.Names = append(l.Names, o.name)
+		l.Kinds += string(o.kind)
+	}
+	b, err = json.Marshal(l)
+	if err != nil {
+		panic(err)
+	}
+	intlhook.DurationOptions = string(b)
+	intlhook.DurationResolve = resolveBuiltin(durationFormatCtor)
+	intlhook.DurationFormat = durationFormatBuiltin
 }
 
 // vmZones are the default zones of the VMs Register was given one for.
@@ -66,83 +81,30 @@ func defaultZoneOf(vm *quickjs.VM) string {
 // default components of its toLocaleString, and those of its format.
 type temporalKind struct {
 	name               string
-	required, defaults string // of CreateDateTimeFormat
-	// fRequired, fDefaults and inherit are GetDateTimeFormat's arguments
-	// for the format of the type.
-	fRequired, fDefaults string
-	inherit              bool // all, rather than relevant
-	// allowed are the components AdjustDateTimeStyleFormat keeps, nil for
-	// the style's own format; style says which style the format needs.
-	allowed []string
-	style   string // "date", "time", or "" for either
-	plain   bool
-	// anyCalendar says the value's calendar may be iso8601 too, rather
-	// than only the formatter's.
-	anyCalendar bool
+	required, defaults string
+	value              gointl.TemporalKind
+	plain              bool
 }
 
-var (
-	dateComponents = []string{"weekday", "era", "year", "month", "day"}
-	timeComponents = []string{"dayPeriod", "hour", "minute", "second", "fractionalSecondDigits"}
-	// anyComponents are those GetDateTimeFormat tells present by.
-	anyComponents = []string{"weekday", "year", "month", "day", "dayPeriod", "hour", "minute", "second",
-		"fractionalSecondDigits"}
-	allComponents = []string{"weekday", "era", "year", "month", "day", "dayPeriod", "hour", "minute", "second",
-		"fractionalSecondDigits", "timeZoneName"}
-
-	temporalKinds = map[string]*temporalKind{
-		"date": {name: "PlainDate", required: "date", defaults: "date", fRequired: "date", fDefaults: "date",
-			allowed: dateComponents, style: "date", plain: true, anyCalendar: true},
-		"yearMonth": {name: "PlainYearMonth", required: "date", defaults: "date", fRequired: "year-month",
-			fDefaults: "year-month", allowed: []string{"era", "year", "month"}, style: "date", plain: true},
-		"monthDay": {name: "PlainMonthDay", required: "date", defaults: "date", fRequired: "month-day",
-			fDefaults: "month-day", allowed: []string{"month", "day"}, style: "date", plain: true},
-		"time": {name: "PlainTime", required: "time", defaults: "time", fRequired: "time", fDefaults: "time",
-			allowed: timeComponents, style: "time", plain: true, anyCalendar: true},
-		"dateTime": {name: "PlainDateTime", required: "any", defaults: "all", fRequired: "any", fDefaults: "all",
-			allowed: append(append([]string{}, dateComponents...), timeComponents...), plain: true, anyCalendar: true},
-		"instant": {name: "Instant", required: "any", defaults: "all", fRequired: "any", fDefaults: "all",
-			inherit: true, anyCalendar: true},
-		"zoned": {name: "ZonedDateTime", required: "any", defaults: "all", fRequired: "any",
-			fDefaults: "zoned-date-time", inherit: true, anyCalendar: true},
-	}
-)
-
-func requiredComponents(required string) []string {
-	switch required {
-	case "date":
-		return []string{"weekday", "year", "month", "day"}
-	case "time":
-		return timeComponents
-	case "year-month":
-		return []string{"year", "month"}
-	case "month-day":
-		return []string{"month", "day"}
-	}
-	return anyComponents
-}
-
-func defaultComponents(defaults string) []string {
-	switch defaults {
-	case "date":
-		return []string{"year", "month", "day"}
-	case "time":
-		return []string{"hour", "minute", "second"}
-	case "year-month":
-		return []string{"year", "month"}
-	case "month-day":
-		return []string{"month", "day"}
-	}
-	return []string{"year", "month", "day", "hour", "minute", "second"}
+var temporalKinds = map[string]*temporalKind{
+	"legacy":    {name: "Date"},
+	"date":      {"PlainDate", "date", "date", gointl.TemporalPlainDate, true},
+	"time":      {"PlainTime", "time", "time", gointl.TemporalPlainTime, true},
+	"dateTime":  {"PlainDateTime", "any", "all", gointl.TemporalPlainDateTime, true},
+	"yearMonth": {"PlainYearMonth", "date", "date", gointl.TemporalPlainYearMonth, true},
+	"monthDay":  {"PlainMonthDay", "date", "date", gointl.TemporalPlainMonthDay, true},
+	"instant":   {"Instant", "any", "all", gointl.TemporalInstant, false},
+	"zoned":     {"ZonedDateTime", "any", "all", gointl.TemporalInstant, false},
 }
 
 // temporalFormat is a type's format resolved from a request: nil where
 // the DateTimeFormat has none for it, and the error of a request
 // CreateDateTimeFormat rejects.
 type temporalFormat struct {
-	f        *dateTimeFormat
-	calendar string // the DateTimeFormat's
-	err      error
+	f    *gointl.DateTimeFormat
+	base *gointl.DateTimeFormat
+	kind *temporalKind
+	err  error
 }
 
 var (
@@ -162,137 +124,69 @@ func copyOptions(o map[string]any) map[string]any {
 	return r
 }
 
-func isComponent(name string) bool { return contains(allComponents, name) }
-
-// resolveTemporal resolves the format of kind k for req, as
-// CreateDateTimeFormat and then GetDateTimeFormat or
-// AdjustDateTimeStyleFormat do. zone is a ZonedDateTime's zone, "" for the
-// other kinds.
+// resolveTemporal builds the same type-specific formatter for public Intl
+// methods and Temporal.toLocaleString. The legacy resolver validates the
+// options and chooses the calendars this package supports. go-intl supplies
+// V8's Temporal patterns and interval patterns from the same CLDR release.
 func resolveTemporal(k *temporalKind, req request, defaultZone, zone string) *temporalFormat {
-	o := req.Options
+	o := copyOptions(req.Options)
 	if k.name == "ZonedDateTime" {
 		if _, ok := o["timeZone"]; ok {
 			return &temporalFormat{err: typeError("Invalid time zone specified: %s", zone)}
 		}
-		o = copyOptions(o)
 		o["timeZone"] = zone
+		o["_temporalZone"] = true
 	}
-	mainOptions := copyOptions(o)
-	mainOptions["_required"] = k.required
-	mainOptions["_defaults"] = k.defaults
-	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: mainOptions}, defaultZone)
+	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o}, defaultZone)
 	if err != nil {
 		return &temporalFormat{err: err}
 	}
-
-	r := &temporalFormat{calendar: main.Calendar}
-	// The options that are no component or style, which every format of
-	// the DateTimeFormat shares.
-	base := map[string]any{}
-	for name, v := range o {
-		if !isComponent(name) && name != "dateStyle" && name != "timeStyle" {
-			base[name] = v
-		}
-	}
-	if k.plain {
-		base["timeZone"] = "UTC"
-	}
-
-	var opts map[string]any
-	if main.DateStyle != "" || main.TimeStyle != "" {
-		switch {
-		case k.style == "date" && main.DateStyle == "", k.style == "time" && main.TimeStyle == "":
-			return r
-		case k.allowed == nil:
-			r.f = main
+	base := main.f
+	r := &temporalFormat{base: base, kind: k}
+	r.f = base
+	if k.value != 0 {
+		r.f, err = base.ForTemporalChromium(k.value)
+		if errors.Is(err, gointl.ErrTemporalFormat) {
 			return r
 		}
-		// AdjustDateTimeStyleFormat: the style's format if it has only
-		// components the type has, else the closest one that has.
-		got := &dateTimeFormat{Pattern: main.Pattern}
-		got.readComponents()
-		values := map[string]string{"weekday": got.Weekday, "era": got.Era, "year": got.Year, "month": got.Month,
-			"day": got.Day, "dayPeriod": got.DayPeriod, "hour": got.Hour, "minute": got.Minute, "second": got.Second,
-			"timeZoneName": got.TimeZoneName}
-		if got.FractionalSecondDigits != 0 {
-			values["fractionalSecondDigits"] = strconv.Itoa(got.FractionalSecondDigits)
-		}
-		conflict := false
-		for _, c := range allComponents {
-			if values[c] != "" && !contains(k.allowed, c) {
-				conflict = true
-			}
-		}
-		if !conflict && !k.plain {
-			r.f = main
-			return r
-		}
-		opts = copyOptions(base)
-		if conflict {
-			for _, c := range k.allowed {
-				switch v := values[c]; {
-				case v == "":
-				case c == "fractionalSecondDigits":
-					n, _ := strconv.Atoi(v)
-					opts[c] = float64(n)
-				default:
-					opts[c] = v
-				}
-			}
-		} else {
-			opts["dateStyle"], opts["timeStyle"] = o["dateStyle"], o["timeStyle"]
-			for _, s := range []string{"dateStyle", "timeStyle"} {
-				if opts[s] == nil {
-					delete(opts, s)
-				}
-			}
-		}
-	} else {
-		// GetDateTimeFormat.
-		opts = copyOptions(base)
-		if k.inherit {
-			for _, c := range allComponents {
-				if v, ok := o[c]; ok {
-					opts[c] = v
-				}
-			}
-		} else if v, ok := o["era"]; ok && (k.fRequired == "date" || k.fRequired == "year-month" || k.fRequired == "any") {
-			opts["era"] = v
-		}
-		anyPresent := false
-		for _, c := range anyComponents {
-			if _, ok := o[c]; ok {
-				anyPresent = true
-			}
-		}
-		needDefaults := true
-		for _, c := range requiredComponents(k.fRequired) {
-			if v, ok := o[c]; ok {
-				opts[c] = v
-				needDefaults = false
-			}
-		}
-		if needDefaults {
-			if anyPresent && !k.inherit {
-				return r
-			}
-			for _, c := range defaultComponents(k.fDefaults) {
-				opts[c] = "numeric"
-			}
-			if _, ok := opts["timeZoneName"]; !ok && k.fDefaults == "zoned-date-time" {
-				opts["timeZoneName"] = "short"
-			}
-		}
+		r.err = err
 	}
-	f, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: opts}, defaultZone)
-	if err != nil {
-		return &temporalFormat{err: err}
-	}
-	if err := f.init(); err != nil {
-		return &temporalFormat{err: err}
-	}
-	r.f = f
 	return r
+}
+
+func stringOpt(o map[string]any, key string) string { s, _ := o[key].(string); return s }
+
+func (f *temporalFormat) checkCalendar(cal string) error {
+	if f.err != nil {
+		return f.err
+	}
+	kind := f.kind.value
+	if f.kind.name == "ZonedDateTime" {
+		// Zoned values use instant formatting, but their calendar must
+		// match by the same rule as PlainDateTime.
+		kind = gointl.TemporalPlainDateTime
+	}
+	if kind != 0 && !f.base.CalendarMatches(kind, cal) {
+		return rangeError("Mismatched calendars.")
+	}
+	if f.f == nil {
+		return typeError("Invalid argument for Temporal [object Temporal.%s]", f.kind.name)
+	}
+	return nil
+}
+
+func (f *temporalFormat) instant(ms float64) (time.Time, error) {
+	// TimeClip belongs to legacy Date values. Temporal constructors already
+	// checked their own limits, which allow plain fields beyond Date's last
+	// instant and a YearMonth's reference day before its first one.
+	if math.IsNaN(ms) || math.IsInf(ms, 0) || f.kind.value == 0 && math.Abs(ms) > maxTimeValue {
+		return time.Time{}, rangeError("Invalid time value")
+	}
+	t := time.UnixMilli(int64(ms)).UTC()
+	if f.kind.plain {
+		t = f.f.PlainInstant(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond())
+	}
+	return t, nil
 }
 
 // The arguments of temporalFormatBuiltin, see intlhook.Format.
@@ -379,6 +273,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 				}
 			}
 		}
+		req.Options["_required"], req.Options["_defaults"] = k.required, k.defaults
 		tf = resolveTemporal(k, req, defaultZone, zone)
 		temporalFormatsMu.Lock()
 		if len(temporalFormats) >= maxTemporalFormats {
@@ -388,20 +283,16 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 		temporalFormatsMu.Unlock()
 	}
 
-	if tf.err != nil {
-		return quickjs.Value{}, jsErr(tf.err)
+	if err := tf.checkCalendar(cal); err != nil {
+		return quickjs.Value{}, jsErr(err)
 	}
-	if cal != tf.calendar && !(k.anyCalendar && cal == "iso8601") {
-		return quickjs.Value{}, &quickjs.Error{Name: "RangeError", Message: "Mismatched calendars."}
-	}
-	if tf.f == nil {
-		return quickjs.Value{}, &quickjs.Error{Name: "TypeError", Message: "Invalid argument for Temporal [object Temporal." + k.name + "]"}
+	t, err := tf.instant(ms)
+	if err != nil {
+		return quickjs.Value{}, jsErr(err)
 	}
 	if k.name == "ZonedDateTime" {
-		// The offset Temporal computed, so that toString and toLocaleString
-		// of a value agree where Go's zone data and Temporal's differ.
-		off, _ := a.Number(tfOffset)
-		return formatted(a.VM(), tf.f.f.formatAt(ms, int(off/1e9)), false)
+		offset, _ := a.Number(tfOffset)
+		return a.VM().NewString(plainSpaces.Replace(tf.f.FormatTemporalZoned(t, int(offset/1e9))))
 	}
-	return formatted(a.VM(), tf.f.f.format(ms), false)
+	return a.VM().NewString(plainSpaces.Replace(tf.f.Format(t)))
 })

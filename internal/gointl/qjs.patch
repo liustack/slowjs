@@ -1,8 +1,30 @@
 diff --git a/calendar.go b/calendar.go
-index 492875a..e89a1b7 100644
+index 492875a..0eebc28 100644
 --- a/calendar.go
 +++ b/calendar.go
-@@ -409,6 +409,7 @@ type eraStart struct {
+@@ -194,8 +194,10 @@ func gregorianYearLength(year int) int {
+ 	return 365
+ }
+ 
+-// reckon turns an instant into the fields of a date in one calendar.
+-func reckon(t time.Time, system CalendarSystem, rules calendarRules) dateParts {
++// reckon turns local wall-clock fields into a date in one calendar. The
++// astronomical Islamic calendars also need the original instant for the
++// moon's age, independently of the local civil day.
++func reckon(t, instant time.Time, system CalendarSystem, rules calendarRules) dateParts {
+ 	p := partsOf(t)
+ 	// The Gregorian calendar's own fields, which the Buddhist one keeps:
+ 	// its extended year is the Gregorian one, counting on through 0 for
+@@ -258,7 +260,7 @@ func reckon(t time.Time, system CalendarSystem, rules calendarRules) dateParts {
+ 		p.yearLength = islamicTabularYearLength
+ 		return p
+ 	case Islamic, IslamicRGSA:
+-		p.year, p.month, p.day, p.dayOfYear = islamicAstroDate(julianDay(t), float64(t.UnixMilli()))
++		p.year, p.month, p.day, p.dayOfYear = islamicAstroDate(julianDay(t), float64(instant.UnixMilli()))
+ 		p.era, p.extYear = 0, p.year
+ 		p.relatedYear = islamicRelatedYear(p.year)
+ 		p.yearLength = islamicAstroYearLength
+@@ -409,6 +411,7 @@ type eraStart struct {
  
  // loadJapaneseEras reads the Japanese calendar's eras, in order.
  func loadJapaneseEras(src Source) ([]eraStart, error) {
@@ -22,10 +44,104 @@ index 6016e2f..fbb5f3a 100644
  	b, err := src.Open(MarkerUmmAlQura, DataLocale{})
  	if err != nil {
  		return nil, fmt.Errorf("intl: the Umm al-Qura calendar: %w", err)
+diff --git a/datepattern.go b/datepattern.go
+index 6c7393a..15a5a9e 100644
+--- a/datepattern.go
++++ b/datepattern.go
+@@ -502,8 +502,11 @@ type dateSeg struct {
+ // instant reckons a moment in the formatter's zone and calendar.
+ func (f *DateTimeFormat) instant(t time.Time) dateParts {
+ 	offset := f.tz.offsetAt(t.UnixMilli()).total()
+-	local := t.In(time.FixedZone("", offset))
+-	p := reckon(local, f.system, f.rules)
++	// Calendar arithmetic needs wall-clock fields. Astronomical calendars
++	// and zone names also need the original instant. Keeping them separate
++	// avoids a Location allocation for uncached offsets, including historical ones.
++	local := t.UTC().Add(time.Duration(offset) * time.Second)
++	p := reckon(local, t, f.system, f.rules)
+ 	if p.year < 1 && isIslamic(f.system) && !f.opts.Compat.Has(IslamicEras) {
+ 		// CLDR's era before the Hijrah, the year counted back from 1 AH,
+ 		// where ICU4C writes a year of the era after it (IslamicEras).
+@@ -516,7 +519,7 @@ func (f *DateTimeFormat) instant(t time.Time) dateParts {
+ 		p.era, p.year = 1, 1-p.year
+ 	}
+ 	p.zoneOffset = offset
+-	p.instant = local
++	p.instant = t
+ 	return p
+ }
+ 
+diff --git a/daterange.go b/daterange.go
+index 42ac57f..01b60c0 100644
+--- a/daterange.go
++++ b/daterange.go
+@@ -62,7 +62,7 @@ func (f *DateTimeFormat) newRangeFormat(src Source, g *dtpg, skeleton string) (*
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		g = newDTPG(f.patterns, f.calendar, f.data.FieldNames, f.decimal, letter, allowed)
++		g = f.qjsGenerator(letter, allowed, true)
+ 	}
+ 	r := &rangeFormat{info: newIntervalInfo(f.patterns), skeleton: skeleton}
+ 	r.pattern = g.bestPattern(r.skeleton, 0)
 diff --git a/datetime.go b/datetime.go
-index 54adb1b..f137d9e 100644
+index 54adb1b..fbd7e53 100644
 --- a/datetime.go
 +++ b/datetime.go
+@@ -235,8 +235,8 @@ type DateTimeFormat struct {
+ // numberDigits is the little a date formatter needs from the number data: the
+ // digits to write, which are not the ASCII ones in every locale.
+ type numberDigits struct {
+-	digits string
+ 	system string
++	table  []rune
+ }
+ 
+ // NewDateTimeFormat builds a formatter from the data built into the package.
+@@ -268,14 +268,14 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	cal, ok, err := data.Calendar(string(system))
++	cal, ok, err := qjsCalendar(src, data, string(system))
+ 	if err != nil {
+ 		return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
+ 	}
+ 	if !ok {
+ 		// A locale with no data for the calendar its region uses falls back to
+ 		// the Gregorian one rather than to nothing.
+-		if cal, ok, err = data.Calendar(string(Gregory)); err != nil {
++		if cal, ok, err = qjsCalendar(src, data, string(Gregory)); err != nil {
+ 			return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
+ 		}
+ 		if !ok {
+@@ -288,7 +288,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
+ 		// on one AvailableCalendars lists, the tabular civil one; the
+ 		// locale keeps the keyword it was asked with.
+ 		system = IslamicCivil
+-		if cal, ok, err = data.Calendar(string(system)); err != nil || !ok {
++		if cal, ok, err = qjsCalendar(src, data, string(system)); err != nil || !ok {
+ 			return nil, fmt.Errorf("intl: the dates for %s: no %s calendar: %w", loc, system, ErrNotFound)
+ 		}
+ 	}
+@@ -300,7 +300,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
+ 		patterns: cal, system: system}
+ 	if opts.Compat.Has(PatternCalendar) && !calendarAsked(loc, opts.Calendar) {
+ 		if name := patternCalendarOf(src, loc); name != "" && name != string(system) {
+-			if pc, ok, err := data.Calendar(name); err != nil {
++			if pc, ok, err := qjsCalendar(src, data, name); err != nil {
+ 				return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
+ 			} else if ok {
+ 				f.patterns = pc
+@@ -335,7 +335,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		f.numbers = &numberDigits{digits: chosen.Digits, system: chosen.NumberingSystem}
++		f.numbers = &numberDigits{system: chosen.NumberingSystem, table: digitRunes(chosen.Digits)}
+ 		f.locale = f.locale.withKeyword("nu", nu)
+ 		f.decimal = chosen.Symbols.Decimal
+ 		f.minus = chosen.Symbols.MinusSign
 @@ -507,6 +507,7 @@ func calendarAsked(loc Locale, option string) bool {
  // locale's patterns from when none is asked for, where that is not the one
  // it reckons in (dategen's patternCalendars); "" for almost every locale.
@@ -34,14 +150,98 @@ index 54adb1b..f137d9e 100644
  	b, err := src.Open(MarkerPatternCalendars, DataLocale{})
  	if err != nil {
  		return ""
-@@ -528,6 +529,7 @@ func patternCalendarOf(src Source, loc Locale) string {
+@@ -528,9 +529,17 @@ func patternCalendarOf(src Source, loc Locale) string {
  }
  
  func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
++	if c, ok := src.(*qjsCachedSource); ok {
++		return c.dates.get(loc.Data(), func() (*datedata.Locale, error) { return loadDates(c.Source, loc) })
++	}
++
 +	qjsUseDates()
  	chain := loc.Fallback()
  	if f, err := NewFallbacker(src); err == nil {
  		chain = f.ChainIn(treeLocales, loc.Data())
++		if _, err := src.Open(MarkerDates, loc.Data()); err == nil {
++			chain = f.Chain(loc.Data())
++		}
+ 	}
+ 	pool, err := openShared(src, MarkerDatesShared, datedata.Version)
+ 	if err != nil {
+@@ -792,7 +801,7 @@ func (f *DateTimeFormat) digits(s string) string {
+ 	if f.numbers == nil {
+ 		return s
+ 	}
+-	return mapDigits(s, f.numbers.digits)
++	return mapDigitRunes(s, f.numbers.table)
+ }
+ 
+ // check refuses what InitializeDateTimeFormat refuses: a field written in a
+@@ -870,11 +879,23 @@ func (f *DateTimeFormat) Check(t time.Time) error {
+ 
+ // Format writes an instant.
+ func (f *DateTimeFormat) Format(t time.Time) string {
++	p := f.instant(t)
++	dp := &f.pattern
++	p.hasMinute, p.hasSecond, p.overrides = dp.hasMinute, dp.hasSecond, dp.overrides
+ 	var b strings.Builder
+-	for _, p := range f.FormatToParts(t) {
+-		b.WriteString(p.Value)
++	b.Grow(len(f.patternText) + 24)
++	for _, fd := range dp.fields {
++		if fd.letter == 0 {
++			b.WriteString(fd.literal)
++		} else {
++			b.WriteString(f.writeField(fd, &p))
++		}
+ 	}
+-	return b.String()
++	s := b.String()
++	if f.opts.Compat.Has(NarrowSpace) {
++		s = strings.ReplaceAll(s, "\u202f", " ")
++	}
++	return s
+ }
+ 
+ // FormatToParts writes an instant as the pieces it is made of.
+diff --git a/datetime_temporal.go b/datetime_temporal.go
+index f132f6a..adda119 100644
+--- a/datetime_temporal.go
++++ b/datetime_temporal.go
+@@ -115,7 +115,7 @@ func (f *DateTimeFormat) ForTemporal(kind TemporalKind) (*DateTimeFormat, error)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	g := newDTPG(f.patterns, f.calendar, f.data.FieldNames, f.decimal, hourChar, allowed)
++	g := f.qjsGenerator(hourChar, allowed, true)
+ 	var pattern string
+ 	if node || dateStyle || timeStyle || !strings.ContainsAny(skeleton, "hHkKj") {
+ 		pattern = g.bestPattern(skeleton, 0)
+diff --git a/decimal.go b/decimal.go
+index 6b1629b..6dfe5bf 100644
+--- a/decimal.go
++++ b/decimal.go
+@@ -117,10 +117,17 @@ func groupPositions(digits int, primary, secondary, minGrouping int) []int {
+ // mapDigits writes ASCII digits in another numbering system's digits. An empty
+ // table means the ASCII ones, which is most locales.
+ func mapDigits(s string, digits string) string {
+-	if digits == "" || s == "" {
+-		return s
++	return mapDigitRunes(s, digitRunes(digits))
++}
++
++func digitRunes(digits string) []rune {
++	if digits == "" || digits == "0123456789" {
++		return nil
+ 	}
+-	table := []rune(digits)
++	return []rune(digits)
++}
++
++func mapDigitRunes(s string, table []rune) string {
+ 	if len(table) != 10 {
+ 		return s
+ 	}
 diff --git a/dictbe.go b/dictbe.go
 index 19d93bd..b7bc846 100644
 --- a/dictbe.go
@@ -90,6 +290,368 @@ index 7e8f383..318f321 100644
  	// i is compared with the parts there are, not multiplied out, which
  	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
  	if i < 0 || i >= len(s.ends)/4 {
+diff --git a/number.go b/number.go
+index 236e08a..d3ce06e 100644
+--- a/number.go
++++ b/number.go
+@@ -1,6 +1,7 @@
+ package intl
+ 
+ import (
++	"bytes"
+ 	"fmt"
+ 	"strconv"
+ 	"strings"
+@@ -168,8 +169,12 @@ type NumberFormat struct {
+ 	decimalSep     string
+ 	groupSep       string
+ 	minGrouping    int
+-	beforeCurrency *spacingRule
+-	afterCurrency  *spacingRule
++	digitRunes     []rune
++	// Affixes are tokens already, including a placeholder for the sign.
++	prefix, suffix   [2][]Part
++	negativeHasMinus bool
++	beforeCurrency   *spacingRule
++	afterCurrency    *spacingRule
+ 	// props are the Unicode properties the currency spacing and the parts'
+ 	// trimming read.
+ 	props     *unicodeProps
+@@ -405,30 +410,52 @@ func (s *numberSources) numberFormat(opts NumberFormatOptions) (*NumberFormat, e
+ 			f.decimalSep, f.groupSep = format.Decimal, format.Group
+ 		}
+ 	}
++	sign := []Part{{Kind: PartMinusSign}}
++	f.prefix[0] = f.affixParts(f.pattern.posPrefix, sign)
++	f.prefix[1] = f.affixParts(f.pattern.negPrefix, sign)
++	f.suffix[0] = f.affixParts(f.pattern.posSuffix, sign)
++	f.suffix[1] = f.affixParts(f.pattern.negSuffix, sign)
++	f.negativeHasMinus = f.pattern.explicitNeg && strings.ContainsRune(f.pattern.negPrefix+f.pattern.negSuffix, '-')
++	f.digitRunes = digitRunes(f.data.Digits)
+ 	return f, nil
+ }
+ 
+ // loadNumbers walks the fallback chain until a locale has number data. The
+ // root always does, so this always finds something or the data is broken.
+ //
+-// The currency names are ICU's currency tree's, which sends a locale or two
+-// elsewhere than the number symbols' tree does: "sr-Cyrl-ME" writes Latin
+-// currency names. Where it does, they are read from there.
++// Chromium packs resolve each resource before encoding. Raw go-intl sources
++// still need ICU's separate number-symbol and currency-name fallback trees.
+ func loadNumbers(src Source, loc Locale) (*numdata.Locale, error) {
++	if c, ok := src.(*qjsCachedSource); ok {
++		return c.numbers.get(loc.Data(), func() (*numdata.Locale, error) { return loadNumbers(c.Source, loc) })
++	}
++
++	resolved, err := qjsResolvedNumbers(src)
++	if err != nil {
++		return nil, err
++	}
+ 	f, err := NewFallbacker(src)
+ 	if err != nil {
+ 		return loadNumbersAlong(src, loc, loc.Fallback())
+ 	}
+-	data, err := loadNumbersAlong(src, loc, f.ChainIn(treeLocales, loc.Data()))
++	chain := f.ChainIn(treeLocales, loc.Data())
++	if resolved {
++		if _, err := src.Open(MarkerNumbers, loc.Data()); err == nil {
++			chain = f.Chain(loc.Data())
++		}
++	}
++	data, err := loadNumbersAlong(src, loc, chain)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if curr := f.ChainIn(treeCurr, loc.Data()); curr[0] != f.ChainIn(treeLocales, loc.Data())[0] {
+-		names, err := loadNumbersAlong(src, loc, curr)
+-		if err != nil {
+-			return nil, err
++	if !resolved {
++		if curr := f.ChainIn(treeCurr, loc.Data()); curr[0] != chain[0] {
++			names, err := loadNumbersAlong(src, loc, curr)
++			if err != nil {
++				return nil, err
++			}
++			data.TakeCurrencies(names)
+ 		}
+-		data.TakeCurrencies(names)
+ 	}
+ 	return data, nil
+ }
+@@ -569,17 +596,13 @@ type Part struct {
+ 
+ // Format writes a number.
+ func (f *NumberFormat) Format(v float64) string {
+-	var b strings.Builder
+-	for _, p := range f.FormatToParts(v) {
+-		b.WriteString(p.Value)
+-	}
+-	return b.String()
++	return f.FormatDecimal(DecimalFromFloat(v))
+ }
+ 
+ // AppendFormat appends a number to dst, for a caller who would rather not
+ // allocate a string for every value.
+ func (f *NumberFormat) AppendFormat(dst []byte, v float64) []byte {
+-	for _, p := range f.FormatToParts(v) {
++	for _, p := range f.assemble(f.layers(DecimalFromFloat(v), false, false)) {
+ 		dst = append(dst, p.Value...)
+ 	}
+ 	return dst
+@@ -597,8 +620,16 @@ func (f *NumberFormat) FormatToParts(v float64) []Part {
+ // FormatDecimal writes a number given exactly: a string or a BigInt, as
+ // ECMA-402's formatters take them, with as many digits as it has.
+ func (f *NumberFormat) FormatDecimal(d Decimal) string {
++	// Trimming and merging classify parts without changing their text.
++	// A string needs neither those copies nor a range's comparison key.
++	parts := f.assemble(f.layers(d, false, false))
++	n := 0
++	for _, p := range parts {
++		n += len(p.Value)
++	}
+ 	var b strings.Builder
+-	for _, p := range f.FormatDecimalToParts(d) {
++	b.Grow(n)
++	for _, p := range parts {
+ 		b.WriteString(p.Value)
+ 	}
+ 	return b.String()
+@@ -607,7 +638,7 @@ func (f *NumberFormat) FormatDecimal(d Decimal) string {
+ // FormatDecimalToParts writes a number given exactly as the pieces it is
+ // made of.
+ func (f *NumberFormat) FormatDecimalToParts(d Decimal) []Part {
+-	return mergeParts(trimParts(f.props, f.assemble(f.layers(d, false))))
++	return mergeParts(trimParts(f.props, f.assemble(f.layers(d, false, false))))
+ }
+ 
+ // numberLayers is a number written, in the layers ICU's number formatter
+@@ -630,7 +661,7 @@ type numberLayers struct {
+ // layers writes a number in its layers. Approximately puts the approximately
+ // sign where the sign goes, as ICU does for a range whose ends are written
+ // alike.
+-func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
++func (f *NumberFormat) layers(d Decimal, approximately, rangeValue bool) numberLayers {
+ 	negative := d.neg
+ 	magnitude := d.m
+ 	if d.fromFloat && f.opts.Compat.Has(ApproximateIncrement) &&
+@@ -649,7 +680,10 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+ 	var l numberLayers
+ 	// Whether the number is zero is asked of it as written: 0.0001 at two
+ 	// decimals is "0", which signDisplay "exceptZero" writes without a sign.
+-	zero := d.kind == decimalNaN || d.kind == decimalFinite && f.roundsToZero(magnitude, negative)
++	zero := d.kind == decimalNaN
++	if d.kind == decimalFinite && (f.opts.SignDisplay == SignExceptZero || f.opts.SignDisplay == SignNegative) {
++		zero = f.roundsToZero(magnitude, negative)
++	}
+ 	sign, showSign := f.signFor(zero, negative)
+ 
+ 	// PatternStringUtils::patternInfoToStringBuilder: the sign goes where
+@@ -669,13 +703,11 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+ 	case minusShown || !approximately:
+ 		symbols = append(symbols, Part{PartMinusSign, f.data.Symbols.MinusSign})
+ 	}
+-	negativeHasMinus := f.pattern.explicitNeg &&
+-		strings.ContainsRune(f.pattern.negPrefix+f.pattern.negSuffix, '-')
+ 	useNegative := f.pattern.explicitNeg &&
+-		(minusShown || negativeHasMinus && (plusShown || approximately))
+-	prefix, suffix := f.pattern.posPrefix, f.pattern.posSuffix
++		(minusShown || f.negativeHasMinus && (plusShown || approximately))
++	prefix, suffix := f.prefix[0], f.suffix[0]
+ 	if useNegative {
+-		prefix, suffix = f.pattern.negPrefix, f.pattern.negSuffix
++		prefix, suffix = f.prefix[1], f.suffix[1]
+ 	}
+ 	// A compact pattern with a negative form of its own places the sign
+ 	// likewise, in place of the pattern's.
+@@ -691,13 +723,13 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+ 			// where its own negative form puts it, or before everything,
+ 			// "-$1.2K".
+ 			useNegative = false
+-			prefix, suffix = "", ""
++			prefix, suffix = nil, nil
+ 		}
+ 	}
+ 	if !useNegative && !compactNegative && (minusShown || plusShown || approximately) {
+ 		l.pre = append(l.pre, symbols...)
+ 	}
+-	l.pre = append(l.pre, f.affixParts(prefix, symbols)...)
++	l.pre = appendNumberAffix(l.pre, prefix, symbols)
+ 
+ 	switch {
+ 	case d.kind == decimalNaN:
+@@ -714,7 +746,7 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+ 	default:
+ 		l.body = f.numberParts(magnitude, negative)
+ 	}
+-	l.post = append(l.post, f.affixParts(suffix, symbols)...)
++	l.post = appendNumberAffix(l.post, suffix, symbols)
+ 
+ 	// NaN and the infinities are "other" in every language, as ICU's plural
+ 	// rules answer for them.
+@@ -723,6 +755,9 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+ 		l.outer = true
+ 		l.count = f.outerCount(magnitude, negative, finite)
+ 	}
++	if !rangeValue {
++		return l
++	}
+ 	var b strings.Builder
+ 	if negative {
+ 		b.WriteByte('-')
+@@ -966,7 +1001,8 @@ func (f *NumberFormat) groupedInteger(integer string) []Part {
+ 	if f.grouping {
+ 		at = groupPositions(len(integer), f.primaryGroup, f.secondaryGroup, f.minGrouping)
+ 	}
+-	var parts []Part
++	// Leave room for the decimal and fraction too.
++	parts := make([]Part, 0, 2*len(at)+3)
+ 	last := 0
+ 	for _, pos := range at {
+ 		parts = append(parts, Part{PartInteger, f.digits(integer[last:pos])})
+@@ -976,8 +1012,19 @@ func (f *NumberFormat) groupedInteger(integer string) []Part {
+ 	return append(parts, Part{PartInteger, f.digits(integer[last:])})
+ }
+ 
++func appendNumberAffix(dst, affix, sign []Part) []Part {
++	for _, p := range affix {
++		if p.Kind == PartMinusSign {
++			dst = append(dst, sign...)
++		} else {
++			dst = append(dst, p)
++		}
++	}
++	return dst
++}
++
+ func (f *NumberFormat) digits(s string) string {
+-	return mapDigits(s, f.data.Digits)
++	return mapDigitRunes(s, f.digitRunes)
+ }
+ 
+ // affixParts turns a pattern's prefix or suffix into pieces, replacing the
+@@ -1089,11 +1136,8 @@ func currencyFormat(src Source, loc Locale, data *numdata.Locale, code string,
+ 	if err != nil {
+ 		return numdata.CurrencyFormat{}, false
+ 	}
+-	region := loc.Region.String()
+-	for line := range strings.SplitSeq(strings.TrimRight(string(b), "\n"), "\n") {
+-		if name, currency, ok := strings.Cut(line, ":"); ok && name == region {
+-			return data.CurrencyFormat(currency)
+-		}
++	if currency, ok := currencyTableValue(b, loc.Region.String()); ok {
++		return data.CurrencyFormat(string(currency))
+ 	}
+ 	return numdata.CurrencyFormat{}, false
+ }
+@@ -1109,12 +1153,8 @@ func currencyDigits(src Source, code string) (int, error) {
+ 		return 2, nil
+ 	}
+ 	want := strings.ToUpper(code)
+-	for line := range strings.SplitSeq(strings.TrimRight(string(b), "\n"), "\n") {
+-		name, digits, ok := strings.Cut(line, ":")
+-		if !ok || name != want {
+-			continue
+-		}
+-		n, err := strconv.Atoi(digits)
++	if digits, ok := currencyTableValue(b, want); ok {
++		n, err := strconv.Atoi(string(digits))
+ 		if err != nil {
+ 			return 0, fmt.Errorf("intl: the digits for %s: %w", want, err)
+ 		}
+@@ -1123,6 +1163,22 @@ func currencyDigits(src Source, code string) (int, error) {
+ 	return 2, nil
+ }
+ 
++// These tables have one key:value per line. Search the line boundary and
++// key together instead of splitting and parsing every preceding entry.
++func currencyTableValue(data []byte, key string) ([]byte, bool) {
++	prefix := key + ":"
++	start := 0
++	if !bytes.HasPrefix(data, []byte(prefix)) {
++		at := bytes.Index(data, []byte("\n"+prefix))
++		if at < 0 {
++			return nil, false
++		}
++		start = at + 1
++	}
++	value, _, _ := bytes.Cut(data[start+len(prefix):], []byte{'\n'})
++	return value, true
++}
++
+ // CurrencyDigits is ECMA-402's CurrencyDigits: how many decimals a currency
+ // is written with by default, from ISO 4217 as CLDR has it, two for a code it
+ // does not list.
+diff --git a/numrange.go b/numrange.go
+index 1f9acfa..275e53c 100644
+--- a/numrange.go
++++ b/numrange.go
+@@ -102,7 +102,7 @@ func (f *NumberFormat) FormatDecimalRangeToParts(start, end Decimal) ([]RangePar
+ 	// (roundToInfinity), where formatDouble keeps it: ApproximateIncrement
+ 	// is never made of a range's ends.
+ 	start.fromFloat, end.fromFloat = false, false
+-	a, b := f.layers(start, false), f.layers(end, false)
++	a, b := f.layers(start, false, true), f.layers(end, false, true)
+ 	innerSame := sameParts(a.inner, b.inner)
+ 	middleSame := sameParts(a.pre, b.pre) && sameParts(a.post, b.post)
+ 	outerSame := a.outer == b.outer
+@@ -110,7 +110,7 @@ func (f *NumberFormat) FormatDecimalRangeToParts(start, end Decimal) ([]RangePar
+ 	// NumberRangeFormatterImpl::format: ends written alike are one number,
+ 	// marked approximate, written from the start as given.
+ 	if innerSame && middleSame && outerSame && (a.rounded == b.rounded || sameBefore) {
+-		return f.rangeParts(f.assemble(f.layers(start, true))), nil
++		return f.rangeParts(f.assemble(f.layers(start, true, false))), nil
+ 	}
+ 
+ 	// formatRange: which layers are written once. The middle one is shared
+diff --git a/plural.go b/plural.go
+index cbc412f..ca2e224 100644
+--- a/plural.go
++++ b/plural.go
+@@ -195,6 +195,7 @@ func NewPluralRulesFrom(src Source, loc Locale, opts PluralRulesOptions) (*Plura
+ // Serbian written in Latin, whose parent is the root, still counts as
+ // Serbian does, so "1 sat" is singular.
+ func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
++	var result plurdata.Locale
+ 	for _, d := range loc.Fallback() {
+ 		b, err := src.Open(MarkerPlurals, d)
+ 		if err != nil {
+@@ -204,14 +205,28 @@ func loadPlurals(src Source, loc Locale) (*plurdata.Locale, error) {
+ 		if err != nil {
+ 			return nil, fmt.Errorf("intl: the plural rules for %s: %w", d, err)
+ 		}
+-		return l, nil
++		if len(result.Cardinal) == 0 {
++			result.Cardinal = l.Cardinal
++		}
++		if len(result.Ordinal) == 0 {
++			result.Ordinal = l.Ordinal
++		}
++		if len(result.Ranges) == 0 {
++			result.Ranges = l.Ranges
++		}
++		if len(result.Cardinal) > 0 && len(result.Ordinal) > 0 && len(result.Ranges) > 0 {
++			return &result, nil
++		}
++	}
++	// A missing regional set inherits its language's rules independently.
++	// The root supplies the unconditional category for an unlisted language.
++	if len(result.Cardinal) == 0 {
++		result.Cardinal = []plurdata.Rule{{Category: "other"}}
++	}
++	if len(result.Ordinal) == 0 {
++		result.Ordinal = []plurdata.Rule{{Category: "other"}}
+ 	}
+-	// Every language has "other", so having no rules at all is the same as
+-	// having only that one.
+-	return &plurdata.Locale{
+-		Cardinal: []plurdata.Rule{{Category: "other"}},
+-		Ordinal:  []plurdata.Rule{{Category: "other"}},
+-	}, nil
++	return &result, nil
+ }
+ 
+ // Select returns the plural form a number calls for.
 diff --git a/rbnf.go b/rbnf.go
 index 5bfb587..5695a17 100644
 --- a/rbnf.go
@@ -102,6 +664,115 @@ index 5bfb587..5695a17 100644
  	b, err := src.Open(MarkerRBNF, DataLocale{})
  	if err != nil {
  		return nil, "", fmt.Errorf("intl: the rule-based numbering systems: %w", err)
+diff --git a/skeleton.go b/skeleton.go
+index 2cc9527..25e21b2 100644
+--- a/skeleton.go
++++ b/skeleton.go
+@@ -1,6 +1,7 @@
+ package intl
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"strings"
+ 
+@@ -33,7 +34,7 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
+ 	if err != nil {
+ 		return "", HourCycleAuto, nil, err
+ 	}
+-	g := newDTPG(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
++	g := f.qjsGenerator(hourChar, allowed, true)
+ 	hc := f.resolveHourCycle(g.defaultHourCycle(), allowed)
+ 	f.clock = hc
+ 
+@@ -42,19 +43,29 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
+ 		// DateTimeStylePattern.
+ 		timePattern := ""
+ 		if o.TimeStyle != LengthNone && f.timeStyleAfresh(src) {
+-			fresh := newDTPGWithoutStyles(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
++			fresh := f.qjsGenerator(hourChar, allowed, false)
+ 			timePattern = fresh.bestPattern(timeStyleSkeletons[o.TimeStyle-1], 0)
+ 		}
+ 		pattern := f.stylePattern(timePattern)
++		err := f.styleOverrides(src, timePattern != "")
++		if errors.Is(err, ErrNotFound) {
++			// DateFormat::create uses SimpleDateFormat's default pattern
++			// when a style's algorithmic numbering rules are absent in ICU.
++			// Chromium omits Hebrew RBNF. V8 regenerates the result below
++			// only when a time style requests another hour cycle.
++			pattern = "yMMdd hh:mm a"
++			f.overrides = nil
++		} else if err != nil {
++			return "", HourCycleAuto, nil, err
++		}
+ 		if o.TimeStyle == LengthNone {
+-			f.styleOverrides(src, false)
+ 			return pattern, HourCycleAuto, g, nil
+ 		}
+ 		if hourCycleFromPattern(pattern) == hc {
+-			f.styleOverrides(src, timePattern != "")
+ 			return pattern, hc, g, nil
+ 		}
+ 		// A regenerated pattern is a new one, with no overrides.
++		f.overrides = nil
+ 		pattern = g.bestPattern(replaceSkeleton(staticSkeleton(pattern), hc), matchHourFieldLength)
+ 		return replaceHourCycleInPattern(pattern, hc), hc, g, nil
+ 	}
+@@ -287,7 +298,7 @@ func (f *DateTimeFormat) timeStyleAfresh(src Source) bool {
+ // styleOverrides takes the numbering overrides of the style patterns in use,
+ // as ICU's date formatter does when it builds one from styles; a time
+ // style made afresh has none.
+-func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
++func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) error {
+ 	o := &f.opts
+ 	overrides := map[byte]string{}
+ 	if o.DateStyle != LengthNone {
+@@ -297,7 +308,7 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
+ 		parseNumberingOverride(overrides, f.calendar.TimeNumbers[o.TimeStyle-1], false)
+ 	}
+ 	if len(overrides) == 0 {
+-		return
++		return nil
+ 	}
+ 	f.overrides = overrides
+ 	f.systems, _ = loadNumberingSystems(src)
+@@ -308,22 +319,28 @@ func (f *DateTimeFormat) styleOverrides(src Source, freshTime bool) {
+ 			numeric = numeric || s.Name == system
+ 		}
+ 		if !numeric {
+-			f.loadRules(src, system)
++			if err := f.loadRules(src, system); err != nil {
++				return err
++			}
+ 		}
+ 	}
++	return nil
+ }
+ 
+ // loadRules loads a rule-based numbering system an override names.
+-func (f *DateTimeFormat) loadRules(src Source, system string) {
++func (f *DateTimeFormat) loadRules(src Source, system string) error {
+ 	if f.rbnf[system].rules != nil {
+-		return
++		return nil
+ 	}
+-	if rules, set, err := loadRBNF(src, system); err == nil {
+-		if f.rbnf == nil {
+-			f.rbnf = map[string]rbnfSystem{}
+-		}
+-		f.rbnf[system] = rbnfSystem{rules, set}
++	rules, set, err := loadRBNF(src, system)
++	if err != nil {
++		return err
++	}
++	if f.rbnf == nil {
++		f.rbnf = map[string]rbnfSystem{}
+ 	}
++	f.rbnf[system] = rbnfSystem{rules, set}
++	return nil
+ }
+ 
+ // gannen reports whether a Japanese year is written by ICU's jpanyear rules,
 diff --git a/source.go b/source.go
 index 56a6838..bc096cf 100644
 --- a/source.go
