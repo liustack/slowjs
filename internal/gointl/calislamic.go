@@ -114,6 +114,7 @@ type ummAlQura struct {
 
 // loadUmmAlQura reads the table.
 func loadUmmAlQura(src Source) (*ummAlQura, error) {
+	qjsUseDates()
 	b, err := src.Open(MarkerUmmAlQura, DataLocale{})
 	if err != nil {
 		return nil, fmt.Errorf("intl: the Umm al-Qura calendar: %w", err)

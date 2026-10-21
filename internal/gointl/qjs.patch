@@ -1,3 +1,47 @@
+diff --git a/calendar.go b/calendar.go
+index 492875a..e89a1b7 100644
+--- a/calendar.go
++++ b/calendar.go
+@@ -409,6 +409,7 @@ type eraStart struct {
+ 
+ // loadJapaneseEras reads the Japanese calendar's eras, in order.
+ func loadJapaneseEras(src Source) ([]eraStart, error) {
++	qjsUseDates()
+ 	b, err := src.Open(MarkerJapaneseEras, DataLocale{})
+ 	if err != nil {
+ 		return nil, fmt.Errorf("intl: the Japanese eras: %w", err)
+diff --git a/calislamic.go b/calislamic.go
+index 6016e2f..fbb5f3a 100644
+--- a/calislamic.go
++++ b/calislamic.go
+@@ -114,6 +114,7 @@ type ummAlQura struct {
+ 
+ // loadUmmAlQura reads the table.
+ func loadUmmAlQura(src Source) (*ummAlQura, error) {
++	qjsUseDates()
+ 	b, err := src.Open(MarkerUmmAlQura, DataLocale{})
+ 	if err != nil {
+ 		return nil, fmt.Errorf("intl: the Umm al-Qura calendar: %w", err)
+diff --git a/datetime.go b/datetime.go
+index 54adb1b..f137d9e 100644
+--- a/datetime.go
++++ b/datetime.go
+@@ -507,6 +507,7 @@ func calendarAsked(loc Locale, option string) bool {
+ // locale's patterns from when none is asked for, where that is not the one
+ // it reckons in (dategen's patternCalendars); "" for almost every locale.
+ func patternCalendarOf(src Source, loc Locale) string {
++	qjsUseDates()
+ 	b, err := src.Open(MarkerPatternCalendars, DataLocale{})
+ 	if err != nil {
+ 		return ""
+@@ -528,6 +529,7 @@ func patternCalendarOf(src Source, loc Locale) string {
+ }
+ 
+ func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
++	qjsUseDates()
+ 	chain := loc.Fallback()
+ 	if f, err := NewFallbacker(src); err == nil {
+ 		chain = f.ChainIn(treeLocales, loc.Data())
 diff --git a/dictbe.go b/dictbe.go
 index 19d93bd..b7bc846 100644
 --- a/dictbe.go
@@ -22,6 +66,18 @@ index 19d93bd..b7bc846 100644
  		if err != nil {
  			return nil, fmt.Errorf("intl: the %s dictionary: %w", name, err)
  		}
+diff --git a/hostabbrev.go b/hostabbrev.go
+index a677e99..dc1ff67 100644
+--- a/hostabbrev.go
++++ b/hostabbrev.go
+@@ -68,6 +68,7 @@ func abbreviationsOf(loc *time.Location) hostAbbreviation {
+ // OFFSET_ZONE_MAPPINGS for the abbreviations, the daylight saving and the
+ // standard offset, in seconds east, else the standard abbreviation.
+ func guessHostZone(src Source, a hostAbbreviation, raw int) string {
++	qjsUseHostZones()
+ 	if b, err := src.Open(MarkerAbbreviationZones, DataLocale{}); err == nil {
+ 		west := strconv.Itoa(-raw)
+ 		daylight := strconv.Itoa(a.daylight)
 diff --git a/internal/blob/blob.go b/internal/blob/blob.go
 index 7e8f383..318f321 100644
 --- a/internal/blob/blob.go
@@ -34,6 +90,18 @@ index 7e8f383..318f321 100644
  	// i is compared with the parts there are, not multiplied out, which
  	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
  	if i < 0 || i >= len(s.ends)/4 {
+diff --git a/rbnf.go b/rbnf.go
+index 5bfb587..5695a17 100644
+--- a/rbnf.go
++++ b/rbnf.go
+@@ -51,6 +51,7 @@ type rbnfPart struct {
+ 
+ // loadRBNF reads a numbering system's rules.
+ func loadRBNF(src Source, system string) (*rbnfRules, string, error) {
++	qjsUseDates()
+ 	b, err := src.Open(MarkerRBNF, DataLocale{})
+ 	if err != nil {
+ 		return nil, "", fmt.Errorf("intl: the rule-based numbering systems: %w", err)
 diff --git a/source.go b/source.go
 index 56a6838..bc096cf 100644
 --- a/source.go
@@ -126,3 +194,27 @@ index f50f688..0dcbf6f 100644
  package temporal
  
  import (
+diff --git a/zone.go b/zone.go
+index 1871817..8560bbf 100644
+--- a/zone.go
++++ b/zone.go
+@@ -292,6 +292,7 @@ func DefaultTimeZone(src Source, compat Compat) string {
+ // windowsZone is ICU's mapping of a Windows zone to one ICU knows: the
+ // first zone CLDR lists for the region, else for 001.
+ func windowsZone(src Source, windows, region string) (string, error) {
++	qjsUseHostZones()
+ 	b, err := src.Open(MarkerWindowsZones, DataLocale{})
+ 	if err != nil {
+ 		return "", err
+diff --git a/zonenames.go b/zonenames.go
+index d8543c4..699e885 100644
+--- a/zonenames.go
++++ b/zonenames.go
+@@ -48,6 +48,7 @@ type zoneNames struct {
+ }
+ 
+ func loadZoneNames(src Source, loc Locale) (*zoneNames, error) {
++	qjsUseZoneNames()
+ 	chain := loc.Fallback()
+ 	fb, fbErr := NewFallbacker(src)
+ 	if fbErr == nil {

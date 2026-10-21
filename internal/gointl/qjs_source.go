@@ -96,13 +96,14 @@ func qjsPacks() ([]*qjspack.Pack, error) {
 	})
 }
 
-// qjsOpen serves Embedded.
+// qjsOpen serves Embedded: the packs built in, and the readers' packs in
+// use (see qjs_readers.go).
 func qjsOpen(m Marker, d DataLocale) ([]byte, error) {
 	packs, err := qjsPacks()
 	if err != nil {
 		return nil, err
 	}
-	return openFiles(qjsFiles{packs}, m, d)
+	return openFiles(qjsFiles{packs: packs, readers: true}, m, d)
 }
 
 // EmbeddedTemporalSource is the part of Embedded that the temporal package
@@ -120,7 +121,7 @@ func (EmbeddedTemporalSource) Open(m Marker, d DataLocale) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return openFiles(qjsFiles{packs}, m, d)
+	return openFiles(qjsFiles{packs: packs}, m, d)
 }
 
 // QJSInflated reports how many chunks of the built-in data have been
@@ -131,7 +132,11 @@ func QJSInflated() (chunks, bytes int) {
 	if err != nil {
 		return 0, 0
 	}
-	for _, p := range packs {
+	readers, err := qjsReaderPacks()
+	if err != nil {
+		return 0, 0
+	}
+	for _, p := range append(packs[:len(packs):len(packs)], readers...) {
 		n, size := p.Inflated()
 		chunks += n
 		bytes += size
@@ -139,8 +144,12 @@ func QJSInflated() (chunks, bytes int) {
 	return chunks, bytes
 }
 
-// qjsFiles finds a data file in packs.
-type qjsFiles struct{ packs []*qjspack.Pack }
+// qjsFiles finds a data file in packs, and then, with readers, in the
+// readers' packs in use.
+type qjsFiles struct {
+	packs   []*qjspack.Pack
+	readers bool
+}
 
 func (f qjsFiles) readFile(name string) ([]byte, error) {
 	for _, p := range f.packs {
@@ -149,7 +158,10 @@ func (f qjsFiles) readFile(name string) ([]byte, error) {
 			return b, err
 		}
 	}
-	return nil, fs.ErrNotExist
+	if !f.readers {
+		return nil, fs.ErrNotExist
+	}
+	return qjsReadersFile(name)
 }
 
 // qjsSource serves packs of its own, for tests that watch what is inflated.

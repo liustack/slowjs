@@ -247,7 +247,7 @@ func TestQJSInflatesOnlyWhatIsRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := qjsSource{qjsFiles{packs}}
+	src := qjsSource{qjsFiles{packs: packs}}
 	if _, err := NewNumberFormatFrom(src, qjsLocale("de"), NumberFormatOptions{}); err != nil {
 		t.Fatal(err)
 	}

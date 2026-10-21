@@ -68,6 +68,7 @@ func abbreviationsOf(loc *time.Location) hostAbbreviation {
 // OFFSET_ZONE_MAPPINGS for the abbreviations, the daylight saving and the
 // standard offset, in seconds east, else the standard abbreviation.
 func guessHostZone(src Source, a hostAbbreviation, raw int) string {
+	qjsUseHostZones()
 	if b, err := src.Open(MarkerAbbreviationZones, DataLocale{}); err == nil {
 		west := strconv.Itoa(-raw)
 		daylight := strconv.Itoa(a.daylight)

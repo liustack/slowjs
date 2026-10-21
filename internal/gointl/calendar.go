@@ -409,6 +409,7 @@ type eraStart struct {
 
 // loadJapaneseEras reads the Japanese calendar's eras, in order.
 func loadJapaneseEras(src Source) ([]eraStart, error) {
+	qjsUseDates()
 	b, err := src.Open(MarkerJapaneseEras, DataLocale{})
 	if err != nil {
 		return nil, fmt.Errorf("intl: the Japanese eras: %w", err)

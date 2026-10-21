@@ -51,6 +51,7 @@ type rbnfPart struct {
 
 // loadRBNF reads a numbering system's rules.
 func loadRBNF(src Source, system string) (*rbnfRules, string, error) {
+	qjsUseDates()
 	b, err := src.Open(MarkerRBNF, DataLocale{})
 	if err != nil {
 		return nil, "", fmt.Errorf("intl: the rule-based numbering systems: %w", err)

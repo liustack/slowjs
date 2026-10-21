@@ -507,6 +507,7 @@ func calendarAsked(loc Locale, option string) bool {
 // locale's patterns from when none is asked for, where that is not the one
 // it reckons in (dategen's patternCalendars); "" for almost every locale.
 func patternCalendarOf(src Source, loc Locale) string {
+	qjsUseDates()
 	b, err := src.Open(MarkerPatternCalendars, DataLocale{})
 	if err != nil {
 		return ""
@@ -528,6 +529,7 @@ func patternCalendarOf(src Source, loc Locale) string {
 }
 
 func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
+	qjsUseDates()
 	chain := loc.Fallback()
 	if f, err := NewFallbacker(src); err == nil {
 		chain = f.ChainIn(treeLocales, loc.Data())

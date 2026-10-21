@@ -292,6 +292,7 @@ func DefaultTimeZone(src Source, compat Compat) string {
 // windowsZone is ICU's mapping of a Windows zone to one ICU knows: the
 // first zone CLDR lists for the region, else for 001.
 func windowsZone(src Source, windows, region string) (string, error) {
+	qjsUseHostZones()
 	b, err := src.Open(MarkerWindowsZones, DataLocale{})
 	if err != nil {
 		return "", err
