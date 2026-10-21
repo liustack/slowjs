@@ -17,13 +17,17 @@
 //     modes, percent, currency, unit, compact and scientific notation, and
 //     numbering systems.
 //   - Intl.PluralRules: cardinal and ordinal rules, select and selectRange.
+//   - Intl.Collator, and String.prototype.localeCompare through it: the
+//     collation types, sensitivity, numeric, caseFirst, ignorePunctuation
+//     and search usage, from go-intl (internal/gointl), which is ICU's
+//     collation in Go over the data Chromium ships.
 //   - Intl.getCanonicalLocales and each constructor's supportedLocalesOf.
 //
 // Register also replaces Date.prototype.toLocaleString, toLocaleDateString and
-// toLocaleTimeString along with Number.prototype.toLocaleString and
-// BigInt.prototype.toLocaleString, which ECMA-402 redefines in terms of those
-// constructors. QuickJS ships fallbacks for them that ignore their arguments,
-// so
+// toLocaleTimeString along with Number.prototype.toLocaleString,
+// BigInt.prototype.toLocaleString and String.prototype.localeCompare, which
+// ECMA-402 redefines in terms of those constructors. QuickJS ships fallbacks
+// for them that ignore their arguments, so
 //
 //	new Date(0).toLocaleString("en-US", {timeZone: "America/New_York"})
 //
@@ -48,10 +52,9 @@
 // which, so a page can tell. Nothing throws, which would break a page that
 // Chromium renders.
 //
-// Not implemented: Intl.Collator, Intl.Segmenter, Intl.RelativeTimeFormat,
+// Not implemented: Intl.Segmenter, Intl.RelativeTimeFormat,
 // Intl.ListFormat, Intl.DisplayNames, Intl.DurationFormat,
-// Intl.supportedValuesOf and formatRange. String.prototype.localeCompare keeps
-// QuickJS's code point ordering. NumberFormat and PluralRules accept
+// Intl.supportedValuesOf and formatRange. NumberFormat and PluralRules accept
 // roundingIncrement and roundingPriority but only implement their defaults,
 // which is what resolvedOptions reports: a value out of range throws a
 // RangeError, any other is ignored.

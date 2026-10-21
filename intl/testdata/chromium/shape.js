@@ -61,6 +61,7 @@ function shape() {
 		['Date.prototype', Date.prototype, ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']],
 		['Number.prototype', Number.prototype, ['toLocaleString']],
 		['BigInt.prototype', BigInt.prototype, ['toLocaleString']],
+		['String.prototype', String.prototype, ['localeCompare']],
 	];
 	for (const [name, o, keys] of methods) {
 		for (const k of keys) {
@@ -82,6 +83,7 @@ function shape() {
 		DateTimeFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		NumberFormat: ['format', 'formatToParts', 'resolvedOptions'],
 		PluralRules: ['select', 'selectRange', 'resolvedOptions'],
+		Collator: ['compare', 'resolvedOptions'],
 	};
 	for (const name of Object.keys(ctors)) {
 		const C = Intl[name], p = 'Intl.' + name;
@@ -106,9 +108,12 @@ function shape() {
 		const o = new C('en');
 		r[p + ' instance toString'] = Object.prototype.toString.call(o);
 		r[p + ' instance keys'] = Reflect.ownKeys(o).map(String).join(' ');
-		if (typeof o.format === 'function') {
-			fn(p + ' bound format', o.format);
-			r[p + ' bound format same'] = o.format === o.format;
+		for (const k of ['format', 'compare']) {
+			const d = Object.getOwnPropertyDescriptor(P, k);
+			if (d !== undefined && d.get !== undefined) {
+				fn(p + ' bound ' + k, o[k]);
+				r[p + ' bound ' + k + ' same'] = o[k] === o[k];
+			}
 		}
 		try {
 			P.resolvedOptions();
@@ -116,6 +121,16 @@ function shape() {
 		} catch (e) {
 			r[p + '.prototype.resolvedOptions()'] = e.constructor.name;
 		}
+	}
+
+	// The objects the other methods return.
+	const kinds = {
+		'Collator resolvedOptions': new Intl.Collator('en').resolvedOptions(),
+	};
+	for (const k of Object.keys(kinds)) {
+		const o = kinds[k];
+		r[k] = Reflect.ownKeys(o).map((p) => p + ':' + attrs(Object.getOwnPropertyDescriptor(o, p)).replace(/ .*/, '')).join(', ');
+		r[k + ' proto'] = Object.getPrototypeOf(o) === Object.prototype;
 	}
 
 	for (const [name, o, keys] of methods) {

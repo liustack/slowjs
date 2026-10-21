@@ -49,6 +49,16 @@
 		"proto": true,
 		"native": true
 	},
+	"before String.prototype.localeCompare property": "-cw function",
+	"before String.prototype.localeCompare": {
+		"name": "-c- \"localeCompare\"",
+		"length": "-c- 1",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
 	"typeof Intl": "object",
 	"globalThis.Intl property": "-cw {}",
 	"Intl proto": true,
@@ -260,6 +270,67 @@
 	"Intl.PluralRules instance toString": "[object Intl.PluralRules]",
 	"Intl.PluralRules instance keys": "",
 	"Intl.PluralRules.prototype.resolvedOptions()": "TypeError",
+	"Intl.Collator property": "-cw function",
+	"Intl.Collator": {
+		"name": "-c- \"Collator\"",
+		"length": "-c- 0",
+		"prototype": "--- {}",
+		"keys": "length name prototype supportedLocalesOf",
+		"constructor": true,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Collator.prototype property": "--- {}",
+	"Intl.Collator.supportedLocalesOf property": "-cw function",
+	"Intl.Collator.supportedLocalesOf": {
+		"name": "-c- \"supportedLocalesOf\"",
+		"length": "-c- 1",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Collator.prototype proto": true,
+	"Intl.Collator.prototype toString": "[object Intl.Collator]",
+	"Intl.Collator.prototype.constructor property": "-cw function",
+	"Intl.Collator.prototype.constructor is Collator": true,
+	"Intl.Collator.prototype[@@toStringTag] property": "-c- \"Intl.Collator\"",
+	"Intl.Collator.prototype.compare property": "-c get:function set:undefined",
+	"Intl.Collator.prototype.compare getter": {
+		"name": "-c- \"get compare\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Collator.prototype.resolvedOptions property": "-cw function",
+	"Intl.Collator.prototype.resolvedOptions": {
+		"name": "-c- \"resolvedOptions\"",
+		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Collator instance toString": "[object Intl.Collator]",
+	"Intl.Collator instance keys": "",
+	"Intl.Collator bound compare": {
+		"name": "-c- \"\"",
+		"length": "-c- 2",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"Intl.Collator bound compare same": true,
+	"Intl.Collator.prototype.resolvedOptions()": "TypeError",
+	"Collator resolvedOptions": "locale:ecw, usage:ecw, sensitivity:ecw, ignorePunctuation:ecw, collation:ecw, numeric:ecw, caseFirst:ecw",
+	"Collator resolvedOptions proto": true,
 	"Date.prototype.toLocaleString property": "-cw function",
 	"Date.prototype.toLocaleString": {
 		"name": "-c- \"toLocaleString\"",
@@ -304,6 +375,16 @@
 	"BigInt.prototype.toLocaleString": {
 		"name": "-c- \"toLocaleString\"",
 		"length": "-c- 0",
+		"prototype": "absent",
+		"keys": "length name",
+		"constructor": false,
+		"proto": true,
+		"native": true
+	},
+	"String.prototype.localeCompare property": "-cw function",
+	"String.prototype.localeCompare": {
+		"name": "-c- \"localeCompare\"",
+		"length": "-c- 1",
 		"prototype": "absent",
 		"keys": "length name",
 		"constructor": false,

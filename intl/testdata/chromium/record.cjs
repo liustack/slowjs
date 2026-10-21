@@ -10,9 +10,10 @@
 //   node record.cjs availability <cldr-json dir>
 //       writes availability.json: the locales Chromium has for each
 //       constructor, out of every locale cldr-json has.
-//   node record.cjs golden
-//       evaluates corpus.json (go test -run TestGolden -golden.corpus writes
-//       it) and writes golden.json.gz.
+//   node record.cjs golden [name ...]
+//       evaluates corpus.json and each corpus-<name>.json (go test -run
+//       TestGolden -golden.corpus writes them) and writes golden.json.gz and
+//       golden-<name>.json.gz. With names, only those sets: "" is the first.
 //   node record.cjs shape
 //       evaluates shape.js and writes shape.json: the names, lengths and
 //       property attributes of Intl's built-ins (TestBuiltinShape).
@@ -96,17 +97,24 @@ async function availability(cldr) {
 	});
 }
 
-async function golden() {
-	const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'corpus.json'), 'utf8'));
+async function golden(names) {
+	if (names.length === 0) {
+		names = fs.readdirSync(dir).filter((f) => /^corpus(-[\w-]+)?\.json$/.test(f))
+			.map((f) => f.replace(/^corpus-?/, '').replace(/\.json$/, ''));
+	}
 	await withPage(async (page, version) => {
-		const results = [];
-		for (let i = 0; i < corpus.length; i += 2000) {
-			results.push(...await evaluate(page, corpus.slice(i, i + 2000)));
-		}
 		const ua = await page.evaluate(() => navigator.userAgent);
-		const out = { browser: 'Chromium ' + version, userAgent: ua, cases: corpus.map((e, i) => [e, results[i]]) };
-		fs.writeFileSync(path.join(dir, 'golden.json.gz'), zlib.gzipSync(JSON.stringify(out), { level: 9 }));
-		console.log(`${out.browser}: ${corpus.length} expressions`);
+		for (const name of names) {
+			const suffix = name === '' ? '' : '-' + name;
+			const corpus = JSON.parse(fs.readFileSync(path.join(dir, 'corpus' + suffix + '.json'), 'utf8'));
+			const results = [];
+			for (let i = 0; i < corpus.length; i += 2000) {
+				results.push(...await evaluate(page, corpus.slice(i, i + 2000)));
+			}
+			const out = { browser: 'Chromium ' + version, userAgent: ua, cases: corpus.map((e, i) => [e, results[i]]) };
+			fs.writeFileSync(path.join(dir, 'golden' + suffix + '.json.gz'), zlib.gzipSync(JSON.stringify(out), { level: 9 }));
+			console.log(`${out.browser}: golden${suffix}, ${corpus.length} expressions`);
+		}
 	});
 }
 
@@ -181,7 +189,7 @@ function icudtl() {
 		await availability(process.argv[3]);
 		break;
 	case 'golden':
-		await golden();
+		await golden(process.argv.slice(3));
 		break;
 	case 'shape':
 		await shape();

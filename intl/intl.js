@@ -16,7 +16,8 @@
 
 (function (P, zone, optionLists,
 	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
-	optionsOf, canonicalLocales, supportedLocales) {
+	optionsOf, canonicalLocales, supportedLocales,
+	colResolve, colCompare) {
 	'use strict';
 
 	const {
@@ -456,11 +457,45 @@
 		[toStringTag]: 'Intl.PluralRules'
 	});
 
+	// ---------------------------------------------------------------- Collator
+
+	function collator(locales, opts) {
+		const args = pushLocales(bare([]), locales);
+		return resolve('Collator', colResolve, pushOptions(args, toOptions(opts), lists.Collator));
+	}
+
+	function Collator(locales = undefined, options = undefined) {
+		if (new.target === undefined) {
+			return new Collator(locales, options);
+		}
+		new Slots(this, collator(locales, options));
+	}
+
+	defineConstructor(Collator, {
+		supportedLocalesOf(locales, options = undefined) {
+			return supportedLocalesOf('Collator', locales, options);
+		}
+	}, {
+		get compare() {
+			// Bound, as format is, because it is handed to sort.
+			const i = internal(this, 'Collator');
+			if (i.bound === undefined) {
+				i.bound = (x, y) => call(i, colCompare, toString(x), toString(y));
+			}
+			return i.bound;
+		},
+		resolvedOptions() {
+			return parse(call(internal(this, 'Collator'), optionsOf));
+		},
+		[toStringTag]: 'Intl.Collator'
+	});
+
 	// ------------------------------------------------------------------- Intl
 
 	const Intl = define({}, {
 		DateTimeFormat: DateTimeFormat,
 		NumberFormat: NumberFormat,
+		Collator: Collator,
 		PluralRules: PluralRules,
 		getCanonicalLocales(locales) {
 			return apply(canonicalLocales, undefined, pushLocales(bare([]), locales));
@@ -536,13 +571,31 @@
 		}
 	};
 
+	function thisString(s, method) {
+		if (s === undefined || s === null) {
+			throw new TypeError('String.prototype.' + method + ' called on null or undefined');
+		}
+		return toString(s);
+	}
+
+	const string = {
+		localeCompare(that, locales = undefined, options = undefined) {
+			const s = thisString(this, 'localeCompare'), t = toString(that);
+			const c = cached(cacheKey('collator', locales, options), function () {
+				return collator(locales, options);
+			});
+			return call(c, colCompare, s, t);
+		}
+	};
+
 	const api = {
 		__proto__: null,
 		Intl: Intl,
 		dateToLocaleString: date.toLocaleString,
 		dateToLocaleDateString: date.toLocaleDateString,
 		dateToLocaleTimeString: date.toLocaleTimeString,
-		numberToLocaleString: number.toLocaleString
+		numberToLocaleString: number.toLocaleString,
+		stringLocaleCompare: string.localeCompare
 	};
 	if (bigintValueOf !== undefined) {
 		api.bigintToLocaleString = {

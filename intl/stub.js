@@ -3,7 +3,8 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 //
-// What Register puts on a VM: stand-ins for Intl and the toLocale* methods.
+// What Register puts on a VM: stand-ins for Intl, the toLocale* methods and
+// String.prototype.localeCompare.
 // The first time a page touches any of them, install() returns the real
 // things, made by intl.js, and they replace the stand-ins. A VM that never
 // formats anything never pays for the shim.
@@ -118,8 +119,8 @@
 	defineProperty(g, 'Intl', intlStandIn);
 
 	// standIn puts a stand-in for o[name] in place, which api[apiName]
-	// replaces.
-	function standIn(o, name, apiName) {
+	// replaces. length is the built-in's.
+	function standIn(o, name, apiName, length = 0) {
 		// A method, so shaped as the built-in it stands for, with no
 		// prototype property.
 		const f = {
@@ -127,6 +128,9 @@
 				return apply(ensure()[apiName], this, arguments);
 			}
 		}[name];
+		if (length !== 0) {
+			defineProperty(f, 'length', {__proto__: null, value: length});
+		}
 		defineProperty(o, name, {__proto__: null, value: f, writable: true, enumerable: false, configurable: true});
 		return {__proto__: null, o: o, name: name, api: apiName, f: f};
 	}
@@ -135,7 +139,8 @@
 		standIn(Date.prototype, 'toLocaleString', 'dateToLocaleString'),
 		standIn(Date.prototype, 'toLocaleDateString', 'dateToLocaleDateString'),
 		standIn(Date.prototype, 'toLocaleTimeString', 'dateToLocaleTimeString'),
-		standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString')
+		standIn(Number.prototype, 'toLocaleString', 'numberToLocaleString'),
+		standIn(String.prototype, 'localeCompare', 'stringLocaleCompare', 1)
 	];
 	if (typeof BigInt === 'function') {
 		standIns[standIns.length] = standIn(BigInt.prototype, 'toLocaleString', 'bigintToLocaleString');

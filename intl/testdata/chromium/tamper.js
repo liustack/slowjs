@@ -47,6 +47,13 @@ var uses = `(() => {
 	use(() => apply(getDescriptor(Intl.NumberFormat.prototype, 'format').get, new Intl.PluralRules('en'), []));
 	use(() => apply(Intl.PluralRules.prototype.select, create(Intl.PluralRules.prototype), [1]));
 	use(() => typeof Intl.NumberFormat.prototype + ' ' + (getPrototypeOf(new Intl.NumberFormat('en')) === Intl.NumberFormat.prototype));
+	use(() => ['b', 'a', 'ä', 'A'].sort(new Intl.Collator('de').compare).join());
+	use(() => new Intl.Collator('sv', {sensitivity: 'base'}).compare('a', 'á'));
+	use(() => show(new Intl.Collator('de-u-co-phonebk').resolvedOptions()));
+	use(() => Intl.Collator.supportedLocalesOf(['de', 'xx']).join());
+	use(() => 'ä'.localeCompare('z', 'sv') + ' ' + 'ä'.localeCompare('z', 'de'));
+	use(() => 'a'.localeCompare('B', undefined, {caseFirst: 'upper'}));
+	use(() => apply(getDescriptor(Intl.Collator.prototype, 'compare').get, new Intl.NumberFormat('en'), []));
 	return r;
 })()`;
 
@@ -66,7 +73,7 @@ var tamper = [
 		Object.prototype.writable = true;`],
 	['Object.prototype options', `
 		for (const k of ['style', 'currency', 'localeMatcher', 'type', 'timeZone', 'hour12', 'useGrouping',
-			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation']) {
+			'minimumFractionDigits', 'dateStyle', 'year', 'numberingSystem', 'notation', 'sensitivity', 'collation']) {
 			Object.defineProperty(Object.prototype, k, {get: ${throws}, set: ${throws}, configurable: true});
 		}`],
 	['Object.prototype slots', `

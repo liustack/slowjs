@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/liustack/quickjs"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // The bridge between intl.js and the formatters.
@@ -69,11 +70,18 @@ import (
 // A go-intl formatter, such as a *gointl.NumberFormat or a *gointl.Collator,
 // is the kind of formatter the registry wants: once made it never changes and
 // any number of goroutines may use it at once. So its formatter type here
-// holds the resolved state as json fields, as in step 1, and makes the go-intl
-// object in init, from the resolved locale and options, which keeps the
-// registry the only cache: two requests that resolve alike share one go-intl
-// object across all VMs. A few rules on top of the steps above:
+// holds the resolved state as json fields, as in step 1, and keeps the go-intl
+// object in an unexported field, which keeps the registry the only cache: two
+// requests that resolve alike share one go-intl object across all VMs. A few
+// rules on top of the steps above:
 //
+//   - go-intl resolves the locale as well (gointl.go): the ctor names its
+//     gointl.Service in goSvc, which supportedLocalesOf answers from too, and
+//     resolve makes the go-intl object, so init has nothing left to do.
+//     resolvedOptions is the go-intl object's, in the json fields.
+//   - Strings from javascript are Args.String, with U+FFFD for each lone
+//     surrogate, or Args.WTF8 where a lone surrogate must stay itself, as it
+//     does in Collator.compare.
 //   - The default locale and time zone come from the request, as _zone,
 //     the zone Register hands intl.js, does for DateTimeFormat, never from
 //     gointl.HostLocale or gointl.HostTimeZone, which read the machine the
@@ -102,7 +110,10 @@ type option struct {
 type ctor struct {
 	name string // as in Intl.NumberFormat
 	tag  byte   // the first byte of its request keys
-	svc  service
+	// svc is the service of a constructor built on cldr.bin, goSvc that of
+	// one built on go-intl, whose locales go-intl resolves.
+	svc   service
+	goSvc gointl.Service
 	// fixed names the leading string arguments of a resolve, which come
 	// from intl.js rather than from the page, such as the VM's default time
 	// zone. They go into the options with these names.
@@ -157,7 +168,16 @@ var (
 		resolve: func(req request) (formatter, error) { return resolvePluralRules(req) },
 	}
 
-	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor}
+	collatorCtor = &ctor{
+		name:  "Collator",
+		tag:   'C',
+		goSvc: gointl.ServiceCollator,
+		options: []option{{"usage", 's'}, {"localeMatcher", 's'}, {"collation", 's'}, {"numeric", 'b'},
+			{"caseFirst", 's'}, {"sensitivity", 's'}, {"ignorePunctuation", 'b'}},
+		resolve: func(req request) (formatter, error) { return resolveCollator(req) },
+	}
+
+	ctors = []*ctor{numberFormatCtor, dateTimeFormatCtor, pluralRulesCtor, collatorCtor}
 )
 
 func stringOptions(names ...string) []option {
@@ -483,12 +503,30 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
-		r, err := supportedLocales(tags, c.svc)
+		var r []string
+		if c.goSvc != "" {
+			r, err = goSupported(c.goSvc, tags)
+		} else {
+			r, err = supportedLocales(tags, c.svc)
+		}
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
 
 		return stringArray(a.VM(), r)
+	}),
+	resolveBuiltin(collatorCtor),
+	quickjs.NewBuiltin("compare", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		c, ok, err := formatterOf[*collator](a)
+		if !ok {
+			return quickjs.UndefinedValue, err
+		}
+
+		// go-intl weighs a lone surrogate by its code point, as ICU does, so
+		// the strings keep theirs.
+		x, _ := a.WTF8(1)
+		y, _ := a.WTF8(2)
+		return a.VM().NewInt(c.c.Compare(x, y)), nil
 	}),
 }
 

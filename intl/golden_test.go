@@ -20,15 +20,18 @@ import (
 )
 
 // The golden test compares this package with a browser. testdata/chromium
-// holds what Chromium answered for a few thousand expressions, recorded by
-// record.cjs; go test only reads it. To record again, after changing the
-// corpus or for a new browser:
+// holds what Chromium answered for some tens of thousands of expressions,
+// recorded by record.cjs; go test only reads it. The expressions come in
+// sets, each recorded in a file of its own: the first, of NumberFormat,
+// DateTimeFormat and PluralRules, in golden.json.gz, and each of the others,
+// one per constructor built on go-intl, in golden-<name>.json.gz. To record
+// again, after changing a corpus or for a new browser:
 //
-//	go test ./intl -run TestGolden -args -golden.corpus   # writes corpus.json
-//	node intl/testdata/chromium/record.cjs golden   # writes golden.json.gz
+//	go test ./intl -run TestGolden -args -golden.corpus   # writes corpus*.json
+//	node intl/testdata/chromium/record.cjs golden   # writes golden*.json.gz
 
 var (
-	goldenCorpus = flag.Bool("golden.corpus", false, "write testdata/chromium/corpus.json and skip the comparison")
+	goldenCorpus = flag.Bool("golden.corpus", false, "write testdata/chromium/corpus*.json and skip the comparison")
 	goldenRun    = flag.String("golden.run", "", "compare only the expressions matching this regular expression")
 	goldenShow   = flag.Int("golden.show", 40, "report at most this many unexplained differences")
 )
@@ -110,8 +113,28 @@ type golden struct {
 	Cases     [][2]string `json:"cases"`
 }
 
-func readGolden(tb testing.TB) *golden {
-	f, err := os.Open(filepath.Join(goldenDir, "golden.json.gz"))
+// goldenSets are the sets of expressions: name, which names the files of
+// all but the first, and the expressions.
+var goldenSets = []struct {
+	name  string
+	exprs func() []string
+}{
+	{"", goldenExprs},
+	{"collator", collatorExprs},
+}
+
+// goldenFile returns the name of a file of the set name: corpus.json for
+// "corpus", ".json" and "", corpus-collator.json for "collator".
+func goldenFile(base, ext, name string) string {
+	if name == "" {
+		return base + ext
+	}
+
+	return base + "-" + name + ext
+}
+
+func readGolden(tb testing.TB, name string) *golden {
+	f, err := os.Open(filepath.Join(goldenDir, goldenFile("golden", ".json.gz", name)))
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -133,19 +156,30 @@ func readGolden(tb testing.TB) *golden {
 
 func TestGolden(t *testing.T) {
 	if *goldenCorpus {
-		b, err := json.MarshalIndent(goldenExprs(), "", "\t")
-		if err != nil {
-			t.Fatal(err)
-		}
+		for _, set := range goldenSets {
+			b, err := json.MarshalIndent(set.exprs(), "", "\t")
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		if err := os.WriteFile(filepath.Join(goldenDir, "corpus.json"), append(b, '\n'), 0o644); err != nil {
-			t.Fatal(err)
+			if err := os.WriteFile(filepath.Join(goldenDir, goldenFile("corpus", ".json", set.name)), append(b, '\n'), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
-
-		t.Skip("wrote corpus.json")
+		t.Skip("wrote corpus*.json")
 	}
 
-	g := readGolden(t)
+	for _, set := range goldenSets {
+		name := set.name
+		if name == "" {
+			name = "base"
+		}
+		t.Run(name, func(t *testing.T) { testGolden(t, set.name) })
+	}
+}
+
+func testGolden(t *testing.T, set string) {
+	g := readGolden(t, set)
 	recorded := map[string]string{}
 	for _, c := range g.Cases {
 		recorded[c[0]] = c[1]
