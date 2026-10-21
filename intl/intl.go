@@ -169,14 +169,17 @@
 // options made up in a loop makes the formatters of other VMs resolve again
 // too, which costs them time but changes no result.
 //
-// The other constructors read go-intl's data (internal/gointl), about 11 MB
-// more in the binary: 7.3 MB for collation, segmentation, relative times,
+// The other constructors read go-intl's data (internal/gointl), about 8.4 MB
+// more in the binary: 4.4 MB for collation, segmentation, relative times,
 // lists, durations and locale facts, 1.9 MB of display names, which the
-// build tag quickjs_intl_nonames leaves out, and 2.0 MB of the Chinese and
-// Japanese word dictionary, which quickjs_intl_nocjdict leaves out. The
-// tables a formatter reads only a little of stay in the binary's read only
-// data, and the rest is inflated into the Go heap the first time a formatter
-// needs it, once per process.
+// build tag quickjs_intl_nonames leaves out (Intl.DisplayNames then answers
+// each code with its fallback), and 2.0 MB of the Chinese and Japanese word
+// dictionary, which quickjs_intl_nocjdict leaves out (a run of Chinese or
+// Japanese is then one word). go-intl's dates and zone names are not
+// linked: this package formats dates with its own data. The tables a
+// formatter reads only a little of stay in the binary's read only data, and
+// the rest is inflated into the Go heap the first time a formatter needs it,
+// once per process.
 //
 // # License of the data
 //

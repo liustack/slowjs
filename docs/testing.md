@@ -114,9 +114,12 @@ The engine itself has no shared state, but the registries of Go functions, the l
 ```sh
 go test -race -run 'TestInterrupt|TestConcurrentVMsMemory|TestErrorStackConcurrent' .
 go test -race -run TestErrorStackFirstUseRace .       # on its own, so no other test made a stack first
-go test -race -run TestConcurrentVMs ./intl
+go test -race -run 'TestConcurrentVMs|TestRegistryConcurrent|TestRegistryGoIntlConcurrent' ./intl
+go test -race -run QJS ./internal/gointl               # the packs go-intl's loaders add to Embedded
 go test -race -vet=off -run 'TestShapeCacheRuntimes|TestFrontCacheRuntimes|TestBacktraceThrowStacklessOOM' ./lib
 ```
+
+The whole of `./intl` under `-race` takes about 25 minutes on one core of an EPYC, most of it the golden test: give it `-timeout 60m`.
 
 The race detector ignores atomic operations on memory outside Go's heap, such as the interrupt flag in C memory. `Interrupt` and `Close` meet at a mutex on Go's heap for that reason (see [architecture.md](architecture.md#the-eval-timeout-and-interrupt)).
 
