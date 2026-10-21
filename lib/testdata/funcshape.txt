@@ -1,0 +1,393 @@
+0 decl [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 decl last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 decl all the same true
+0 expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 expr last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 expr all the same true
+0 namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 namedExpr last [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 namedExpr all the same true
+0 arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 arrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 arrow all the same true
+0 arrowNoArgs [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 arrowNoArgs last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 arrowNoArgs all the same true
+0 rest [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 rest last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 rest all the same true
+0 defaults [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 defaults last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 defaults all the same true
+0 method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 method last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 method all the same true
+0 computed [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 computed last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 computed all the same true
+0 symbolName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 symbolName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 symbolName all the same true
+0 symbolNoDesc [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 symbolNoDesc last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 symbolNoDesc all the same true
+0 indexName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 indexName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 indexName all the same true
+0 indexName2 [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 indexName2 last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 indexName2 all the same true
+0 getter [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 getter last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 getter all the same true
+0 setter [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 setter last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 setter all the same true
+0 async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 async last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 async all the same true
+0 asyncArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 asyncArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 asyncArrow all the same true
+0 asyncMethod [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 asyncMethod last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 asyncMethod all the same true
+0 generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+0 generator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+0 generator all the same true
+0 generatorMethod [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+0 generatorMethod last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+0 generatorMethod all the same true
+0 asyncGenerator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+0 asyncGenerator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+0 asyncGenerator all the same true
+0 klass [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 klass last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 klass all the same true
+0 anonClass [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 anonClass last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 anonClass all the same true
+0 derived [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+0 derived last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+0 derived all the same true
+0 staticMethod [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 staticMethod last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 staticMethod all the same true
+0 classMethod [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 classMethod last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 classMethod all the same true
+0 classField [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 classField last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 classField all the same true
+0 newFunction [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 newFunction last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 newFunction all the same true
+0 newAsync [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 newAsync last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 newAsync all the same true
+0 bound [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 bound last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 bound all the same true
+0 boundArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 boundArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 boundArrow all the same true
+0 resolve [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 resolve last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 resolve all the same true
+0 reject [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 reject last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 reject all the same true
+0 revoke [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 revoke last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 revoke all the same true
+0 builtin [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 builtin last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 builtin all the same true
+0 closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 closure last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 closure all the same true
+0 delete length true
+0 write name TypeError
+0 write length TypeError
+0 changed f [["length","name","prototype","extra"],["length","name","prototype","extra"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 changed g [["name","prototype"],["name","prototype"],null,["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 changed h [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["renamed",true,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 changed k [["length","name"],["length","name"],[null,null,false,true,"function","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 changed m [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","null",true]
+0 frozen [["length","name","prototype"],["length","name","prototype"],[1,false,false,false,"undefined","undefined"],["",false,false,false,"undefined","undefined"],"object","Function.prototype",false]
+0 sealed [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",false]
+0 names ["renamed",7,0,1,"",1]
+0 after expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 after namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 after arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 after async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+0 after generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+0 after closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 after method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+0 read prototype [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 not read [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 prototype [["constructor"],true,true]
+0 after Function.prototype changed [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+0 shared 0
+1 decl [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 decl last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 decl all the same true
+1 expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 expr last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 expr all the same true
+1 namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 namedExpr last [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 namedExpr all the same true
+1 arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 arrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 arrow all the same true
+1 arrowNoArgs [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 arrowNoArgs last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 arrowNoArgs all the same true
+1 rest [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 rest last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 rest all the same true
+1 defaults [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 defaults last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 defaults all the same true
+1 method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 method last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 method all the same true
+1 computed [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 computed last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 computed all the same true
+1 symbolName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 symbolName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 symbolName all the same true
+1 symbolNoDesc [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 symbolNoDesc last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 symbolNoDesc all the same true
+1 indexName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 indexName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 indexName all the same true
+1 indexName2 [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 indexName2 last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 indexName2 all the same true
+1 getter [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 getter last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 getter all the same true
+1 setter [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 setter last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 setter all the same true
+1 async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 async last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 async all the same true
+1 asyncArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 asyncArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 asyncArrow all the same true
+1 asyncMethod [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 asyncMethod last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 asyncMethod all the same true
+1 generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+1 generator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+1 generator all the same true
+1 generatorMethod [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+1 generatorMethod last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+1 generatorMethod all the same true
+1 asyncGenerator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+1 asyncGenerator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+1 asyncGenerator all the same true
+1 klass [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 klass last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 klass all the same true
+1 anonClass [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 anonClass last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 anonClass all the same true
+1 derived [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+1 derived last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+1 derived all the same true
+1 staticMethod [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 staticMethod last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 staticMethod all the same true
+1 classMethod [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 classMethod last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 classMethod all the same true
+1 classField [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 classField last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 classField all the same true
+1 newFunction [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 newFunction last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 newFunction all the same true
+1 newAsync [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 newAsync last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 newAsync all the same true
+1 bound [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 bound last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 bound all the same true
+1 boundArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 boundArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 boundArrow all the same true
+1 resolve [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 resolve last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 resolve all the same true
+1 reject [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 reject last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 reject all the same true
+1 revoke [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 revoke last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 revoke all the same true
+1 builtin [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 builtin last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 builtin all the same true
+1 closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 closure last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 closure all the same true
+1 delete length true
+1 write name TypeError
+1 write length TypeError
+1 changed f [["length","name","prototype","extra"],["length","name","prototype","extra"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 changed g [["name","prototype"],["name","prototype"],null,["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 changed h [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["renamed",true,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 changed k [["length","name"],["length","name"],[null,null,false,true,"function","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 changed m [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","null",true]
+1 frozen [["length","name","prototype"],["length","name","prototype"],[1,false,false,false,"undefined","undefined"],["",false,false,false,"undefined","undefined"],"object","Function.prototype",false]
+1 sealed [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",false]
+1 names ["renamed",7,0,1,"",1]
+1 after expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 after namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 after arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 after async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+1 after generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+1 after closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 after method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+1 read prototype [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 not read [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 prototype [["constructor"],true,true]
+1 after Function.prototype changed [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+1 shared 1
+2 decl [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 decl last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 decl all the same true
+2 expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 expr last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 expr all the same true
+2 namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 namedExpr last [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 namedExpr all the same true
+2 arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 arrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 arrow all the same true
+2 arrowNoArgs [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 arrowNoArgs last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 arrowNoArgs all the same true
+2 rest [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 rest last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 rest all the same true
+2 defaults [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 defaults last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 defaults all the same true
+2 method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 method last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 method all the same true
+2 computed [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 computed last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["c1",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 computed all the same true
+2 symbolName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 symbolName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["[Symbol.iterator]",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 symbolName all the same true
+2 symbolNoDesc [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 symbolNoDesc last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 symbolNoDesc all the same true
+2 indexName [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 indexName last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["1",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 indexName all the same true
+2 indexName2 [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 indexName2 last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["2",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 indexName2 all the same true
+2 getter [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 getter last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["get x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 getter all the same true
+2 setter [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 setter last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["set x",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 setter all the same true
+2 async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 async last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 async all the same true
+2 asyncArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 asyncArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 asyncArrow all the same true
+2 asyncMethod [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 asyncMethod last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 asyncMethod all the same true
+2 generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+2 generator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+2 generator all the same true
+2 generatorMethod [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+2 generatorMethod last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["g",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+2 generatorMethod all the same true
+2 asyncGenerator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+2 asyncGenerator last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","AsyncGeneratorFunction.prototype",true]
+2 asyncGenerator all the same true
+2 klass [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 klass last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["K",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 klass all the same true
+2 anonClass [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 anonClass last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 anonClass all the same true
+2 derived [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+2 derived last [["length","name","prototype"],["length","name","prototype"],[0,false,false,true,"undefined","undefined"],["D",false,false,true,"undefined","undefined"],"object","function",true]
+2 derived all the same true
+2 staticMethod [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 staticMethod last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["s",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 staticMethod all the same true
+2 classMethod [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 classMethod last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 classMethod all the same true
+2 classField [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 classField last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["f",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 classField all the same true
+2 newFunction [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 newFunction last [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 newFunction all the same true
+2 newAsync [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 newAsync last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["anonymous",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 newAsync all the same true
+2 bound [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 bound last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound bf",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 bound all the same true
+2 boundArrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 boundArrow last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["bound ",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 boundArrow all the same true
+2 resolve [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 resolve last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 resolve all the same true
+2 reject [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 reject last [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 reject all the same true
+2 revoke [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 revoke last [["length","name"],["length","name"],[0,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 revoke all the same true
+2 builtin [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 builtin last [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["max",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 builtin all the same true
+2 closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 closure last [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 closure all the same true
+2 delete length true
+2 write name TypeError
+2 write length TypeError
+2 changed f [["length","name","prototype","extra"],["length","name","prototype","extra"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 changed g [["name","prototype"],["name","prototype"],null,["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 changed h [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["renamed",true,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 changed k [["length","name"],["length","name"],[null,null,false,true,"function","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 changed m [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","null",true]
+2 frozen [["length","name","prototype"],["length","name","prototype"],[1,false,false,false,"undefined","undefined"],["",false,false,false,"undefined","undefined"],"object","Function.prototype",false]
+2 sealed [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",false]
+2 names ["renamed",7,0,1,"",1]
+2 after expr [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 after namedExpr [["length","name","prototype"],["length","name","prototype"],[3,false,false,true,"undefined","undefined"],["inner",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 after arrow [["length","name"],["length","name"],[2,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 after async [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],null,"AsyncFunction.prototype",true]
+2 after generator [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","GeneratorFunction.prototype",true]
+2 after closure [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 after method [["length","name"],["length","name"],[1,false,false,true,"undefined","undefined"],["m",false,false,true,"undefined","undefined"],null,"Function.prototype",true]
+2 read prototype [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 not read [["length","name","prototype"],["length","name","prototype"],[2,false,false,true,"undefined","undefined"],["named",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 prototype [["constructor"],true,true]
+2 after Function.prototype changed [["length","name","prototype"],["length","name","prototype"],[1,false,false,true,"undefined","undefined"],["",false,false,true,"undefined","undefined"],"object","Function.prototype",true]
+2 shared 2

@@ -1100,6 +1100,46 @@ It starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release
   a run grows or widens a buffer failing for lack of memory, and a run
   past the longest string, `lib/jsonstr_memgrind_test.go` (no C memory
   left behind) and `internal/fixlib/jsonstr_test.go`.
+- A new function gets its `length` and `name` without the shapes in
+  between. `js_function_set_properties` gave every new function the two
+  through `JS_DefinePropertyValue` and `add_property`, one at a time: the
+  function went from the empty shape of its prototype, through a shape
+  with `length` only, to the shape with both. Nothing held the empty shape
+  or the one with `length` only for long, so they were made again for each
+  function and freed again a moment later (3,000 arrows, methods and
+  constructors made 5,001 shapes). Now `js_function_set_properties` calls
+  `funcShape` first (`lib/funcshape.go`). For each of the four prototypes
+  of new functions (`Function.prototype` and those of async, generator and
+  async generator functions) it remembers the empty shape and the shape
+  with both, the first time a function goes through `add_property`, and
+  puts the next functions with that empty shape straight onto the shape
+  with both, and writes the two values (the same 3,000 functions made
+  2,000 shapes, for the object literals and the `prototype` of the
+  constructors). Why this is safe: a shape is shared and never changes in
+  place while more than one object holds it (`add_property` and
+  `js_shape_prepare_update` copy it first), and `funcShape` holds both, so
+  they stay as they were and the empty shape cannot be freed and its
+  memory taken by another shape. The shape with both is the one
+  `add_property` gives, with the same prototype, keys, order, flags and
+  size of the property array, and the name is made before the function
+  changes, so the cycle collector, which can run there, finds it as it
+  is. The shapes are held for the context, as it holds the shapes of its
+  arrays and `arguments` objects: `JS_MarkContext` marks them, so the
+  cycle collector frees a context that only they hold alive, and
+  `JS_FreeContext` lets them go. Everything else, an object that is not
+  an ordinary extensible one or has another shape, takes the old path.
+  `fixlib` puts the three calls into all 13 files, and checks the text of
+  `js_function_set_properties`, `add_property`, `find_hashed_shape_prop`,
+  `add_shape_property`, `js_shape_prepare_update`, `js_clone_shape`,
+  `JS_NewObjectFromShape`, `JS_AtomToString`, `JS_MarkContext`,
+  `JS_FreeContext` and `JSShape` against fingerprints. This changes only
+  the generated Go, with no C hunk (`internal/fixlib/funcshape.go`).
+  Tests: `lib/funcshape_test.go`, whose `testdata/funcshape.txt` holds
+  what Node gives for the own properties of 36 kinds of new functions,
+  made many times and changed after they were made (the engine before the
+  change gives the same), the shapes it holds and lets go, and a context
+  that only they hold alive, `lib/funcshape_memgrind_test.go` and
+  `internal/fixlib/funcshape_test.go`.
 
 The engine lives in the same module so that a fix to it ships together with
 the Go API, without waiting for an upstream release of either module.
@@ -1196,7 +1236,7 @@ Conflicts to expect:
   changes to the interpreter loop, the call into `lib/objlit.go`, the
   call into `lib/regexskip.go`, the cold paths moved out, the TLS frames
   taken per statement, `set_value` written out in the interpreter, the
-  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the call into `lib/atomkey.go`, the calls into `lib/jsonstr.go`, the frame of
+  interrupt countdown, the front cache, the shape cache, the call into `lib/forin.go`, the calls into `lib/bitwise.go`, the comparisons written out in the interpreter, the calls into `lib/funcshape.go`, the call into `lib/atomkey.go`, the calls into `lib/jsonstr.go`, the frame of
   `JS_CallInternal` taken once on linux and the frames
   freed without a defer conflict. Take the upstream version of every generated file, then put
   the changes back:
@@ -1217,7 +1257,7 @@ Conflicts to expect:
   (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports:
   no flag prints them. Last come the fingerprints, `-define`,
   `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`,
-  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json`, `-atomkey` and
+  `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-json`, `-funcshape`, `-atomkey` and
   `-oneframe`. Each of these runs
   every change of `fixlib` and skips only the fingerprint checks, so a
   report that stops on another list, such as "TLS frames taken by
@@ -1517,6 +1557,18 @@ Conflicts to expect:
   `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it
   reports that `gc_phase` is not the byte right after `tmp_obj_list`,
   change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
+  If it reports that the functions of `funcShapeFuncs` or `JSShape`
+  changed (`internal/fixlib/funcshapesites.go`), read them against
+  `lib/funcshape.go`: `js_function_set_properties` must still give
+  `length` and then `name`, both configurable only, through
+  `JS_DefinePropertyValue`, `add_property` must still move an object onto
+  a shape it finds in the hash table as `funcShape` does (`shapeFound`, a
+  new count, the old shape freed, the property array kept when the sizes
+  match), a shape whose count is not one must still never change in
+  place, `JS_NewObjectFromShape` must still give an object a property
+  array of the size of its shape, and `JS_MarkContext` and
+  `JS_FreeContext` must still mark and free the shape of arrays where
+  `funcShapesMark` and `funcShapesFree` are put. Then run `-funcshape`.
   If it reports that `js_for_in_prepare_prototype_chain_enum`,
   `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or
   `JS_FreePropertyEnum` changed (a fingerprint other than the one in
@@ -1852,6 +1904,7 @@ go test -run ColdPath ./lib                              # ===, Object.is and ke
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
 go test -run Eq ./lib                                    # comparisons give what they gave before fixEq, and free each value once
+go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do

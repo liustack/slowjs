@@ -5369,6 +5369,8 @@ func _JS_MarkContext(tls *libc.TLS, rt uintptr, ctx uintptr, __ccgo_fp_mark_func
 	if (*TJSContext)(unsafe.Pointer(ctx)).Farray_shape != 0 {
 		(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{__ccgo_fp_mark_func})))(tls, rt, (*TJSContext)(unsafe.Pointer(ctx)).Farray_shape)
 	}
+	// Changed by internal/fixlib: mark the shapes of new functions held for the context (see fixFuncShape).
+	funcShapesMark(tls, rt, ctx, __ccgo_fp_mark_func)
 	if (*TJSContext)(unsafe.Pointer(ctx)).Farguments_shape != 0 {
 		(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{__ccgo_fp_mark_func})))(tls, rt, (*TJSContext)(unsafe.Pointer(ctx)).Farguments_shape)
 	}
@@ -5615,6 +5617,8 @@ func XJS_FreeContext(tls *libc.TLS, ctx1 uintptr) {
 			x__JS_FreeValue(tls, ctx1, v3)
 		}
 	}
+	// Changed by internal/fixlib: let go of the shapes of new functions held for the context (see fixFuncShape).
+	funcShapesFree(tls, ctx1)
 	_js_free_shape_null(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, (*TJSContext)(unsafe.Pointer(ctx1)).Farray_shape)
 	_js_free_shape_null(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, (*TJSContext)(unsafe.Pointer(ctx1)).Farguments_shape)
 	_js_free_shape_null(tls, (*TJSContext)(unsafe.Pointer(ctx1)).Frt, (*TJSContext)(unsafe.Pointer(ctx1)).Fmapped_arguments_shape)
@@ -10949,6 +10953,10 @@ func XJS_NewObject(tls *libc.TLS, ctx uintptr) (r TJSValue) {
 func _js_function_set_properties(tls *libc.TLS, ctx1 uintptr, func_obj TJSValue, name TJSAtom, len1 int32) {
 	var v1 TJSValue
 	_ = v1
+	// Changed by internal/fixlib: put a new function straight onto the shape with length and name (see fixFuncShape).
+	if funcShape(tls, ctx1, func_obj, name, len1) {
+		return
+	}
 	/* ES6 feature non compatible with ES5.1: length is configurable */
 	_ = ctx1
 	v1 = TJSValue{
