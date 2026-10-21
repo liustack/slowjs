@@ -235,8 +235,8 @@ type DateTimeFormat struct {
 // numberDigits is the little a date formatter needs from the number data: the
 // digits to write, which are not the ASCII ones in every locale.
 type numberDigits struct {
-	digits string
 	system string
+	table  []rune
 }
 
 // NewDateTimeFormat builds a formatter from the data built into the package.
@@ -268,14 +268,14 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
 	if err != nil {
 		return nil, err
 	}
-	cal, ok, err := data.Calendar(string(system))
+	cal, ok, err := qjsCalendar(src, data, string(system))
 	if err != nil {
 		return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
 	}
 	if !ok {
 		// A locale with no data for the calendar its region uses falls back to
 		// the Gregorian one rather than to nothing.
-		if cal, ok, err = data.Calendar(string(Gregory)); err != nil {
+		if cal, ok, err = qjsCalendar(src, data, string(Gregory)); err != nil {
 			return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
 		}
 		if !ok {
@@ -288,7 +288,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
 		// on one AvailableCalendars lists, the tabular civil one; the
 		// locale keeps the keyword it was asked with.
 		system = IslamicCivil
-		if cal, ok, err = data.Calendar(string(system)); err != nil || !ok {
+		if cal, ok, err = qjsCalendar(src, data, string(system)); err != nil || !ok {
 			return nil, fmt.Errorf("intl: the dates for %s: no %s calendar: %w", loc, system, ErrNotFound)
 		}
 	}
@@ -300,7 +300,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
 		patterns: cal, system: system}
 	if opts.Compat.Has(PatternCalendar) && !calendarAsked(loc, opts.Calendar) {
 		if name := patternCalendarOf(src, loc); name != "" && name != string(system) {
-			if pc, ok, err := data.Calendar(name); err != nil {
+			if pc, ok, err := qjsCalendar(src, data, name); err != nil {
 				return nil, fmt.Errorf("intl: the dates for %s: %w", loc, err)
 			} else if ok {
 				f.patterns = pc
@@ -335,7 +335,7 @@ func NewDateTimeFormatFrom(src Source, loc Locale, opts DateTimeFormatOptions) (
 		if err != nil {
 			return nil, err
 		}
-		f.numbers = &numberDigits{digits: chosen.Digits, system: chosen.NumberingSystem}
+		f.numbers = &numberDigits{system: chosen.NumberingSystem, table: digitRunes(chosen.Digits)}
 		f.locale = f.locale.withKeyword("nu", nu)
 		f.decimal = chosen.Symbols.Decimal
 		f.minus = chosen.Symbols.MinusSign
@@ -529,6 +529,10 @@ func patternCalendarOf(src Source, loc Locale) string {
 }
 
 func loadDates(src Source, loc Locale) (*datedata.Locale, error) {
+	if c, ok := src.(*qjsCachedSource); ok {
+		return c.dates.get(loc.Data(), func() (*datedata.Locale, error) { return loadDates(c.Source, loc) })
+	}
+
 	qjsUseDates()
 	chain := loc.Fallback()
 	if f, err := NewFallbacker(src); err == nil {
@@ -797,7 +801,7 @@ func (f *DateTimeFormat) digits(s string) string {
 	if f.numbers == nil {
 		return s
 	}
-	return mapDigits(s, f.numbers.digits)
+	return mapDigitRunes(s, f.numbers.table)
 }
 
 // check refuses what InitializeDateTimeFormat refuses: a field written in a
@@ -875,11 +879,23 @@ func (f *DateTimeFormat) Check(t time.Time) error {
 
 // Format writes an instant.
 func (f *DateTimeFormat) Format(t time.Time) string {
+	p := f.instant(t)
+	dp := &f.pattern
+	p.hasMinute, p.hasSecond, p.overrides = dp.hasMinute, dp.hasSecond, dp.overrides
 	var b strings.Builder
-	for _, p := range f.FormatToParts(t) {
-		b.WriteString(p.Value)
+	b.Grow(len(f.patternText) + 24)
+	for _, fd := range dp.fields {
+		if fd.letter == 0 {
+			b.WriteString(fd.literal)
+		} else {
+			b.WriteString(f.writeField(fd, &p))
+		}
 	}
-	return b.String()
+	s := b.String()
+	if f.opts.Compat.Has(NarrowSpace) {
+		s = strings.ReplaceAll(s, "\u202f", " ")
+	}
+	return s
 }
 
 // FormatToParts writes an instant as the pieces it is made of.

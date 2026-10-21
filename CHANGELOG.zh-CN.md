@@ -29,7 +29,7 @@
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
-- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.16 MB。指定用例中，预热后的数字格式化约慢 11%，日期格式化约慢 29.4% 至 39.5%，命中缓存的构造基本不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
+- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.11 MB。通过预编译格式方案和直接生成字符串，指定用例中预热后的数字格式化比 main 耗时减少 41% 至 42%，日期格式化耗时减少 28% 至 37%。本次提速保持全部已记录答案不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
 - Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
 - 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
 - 在 Windows 上，`Date.now()` 和 `new Date()` 到 2038 年不再溢出。

@@ -85,6 +85,12 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 After a release, upgrade tifa and collect its engine profile again (see [releasing.md](releasing.md#after-the-release)).
 
+## Intl formatting
+
+Unreleased, against main `641e996`, on an AMD EPYC 7B13 with Go 1.27.2 and PGO off. The shared go-intl formatters use [compiled plans and direct string output](fork-changes/time-and-intl.md#compiled-intl-formatting-plans). Six alternating rounds on CPU 1 with sibling 5 idle show NumberFormat taking 41% to 42% less time and DateTimeFormat 28% to 37% less on the fixed English and Chinese inputs. Every paired Format ratio is below 1.
+
+The [full call table](fork-changes/time-and-intl.md#focused-timing-and-memory-costs) records the inputs, sample spread, allocation counts, construction costs, retained memory and application size. Uncached construction still costs more than main. These call measurements do not establish a whole-page speedup.
+
 ## What was tried and not done
 
 Each item says what it would give and why it was dropped. Check here before trying one of them again. The numbers come from tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) and [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md), and from the docs of the changes.

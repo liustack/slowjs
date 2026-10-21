@@ -1,6 +1,7 @@
 package intl
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -168,8 +169,12 @@ type NumberFormat struct {
 	decimalSep     string
 	groupSep       string
 	minGrouping    int
-	beforeCurrency *spacingRule
-	afterCurrency  *spacingRule
+	digitRunes     []rune
+	// Affixes are tokens already, including a placeholder for the sign.
+	prefix, suffix   [2][]Part
+	negativeHasMinus bool
+	beforeCurrency   *spacingRule
+	afterCurrency    *spacingRule
 	// props are the Unicode properties the currency spacing and the parts'
 	// trimming read.
 	props     *unicodeProps
@@ -405,6 +410,13 @@ func (s *numberSources) numberFormat(opts NumberFormatOptions) (*NumberFormat, e
 			f.decimalSep, f.groupSep = format.Decimal, format.Group
 		}
 	}
+	sign := []Part{{Kind: PartMinusSign}}
+	f.prefix[0] = f.affixParts(f.pattern.posPrefix, sign)
+	f.prefix[1] = f.affixParts(f.pattern.negPrefix, sign)
+	f.suffix[0] = f.affixParts(f.pattern.posSuffix, sign)
+	f.suffix[1] = f.affixParts(f.pattern.negSuffix, sign)
+	f.negativeHasMinus = f.pattern.explicitNeg && strings.ContainsRune(f.pattern.negPrefix+f.pattern.negSuffix, '-')
+	f.digitRunes = digitRunes(f.data.Digits)
 	return f, nil
 }
 
@@ -414,6 +426,10 @@ func (s *numberSources) numberFormat(opts NumberFormatOptions) (*NumberFormat, e
 // Chromium packs resolve each resource before encoding. Raw go-intl sources
 // still need ICU's separate number-symbol and currency-name fallback trees.
 func loadNumbers(src Source, loc Locale) (*numdata.Locale, error) {
+	if c, ok := src.(*qjsCachedSource); ok {
+		return c.numbers.get(loc.Data(), func() (*numdata.Locale, error) { return loadNumbers(c.Source, loc) })
+	}
+
 	resolved, err := qjsResolvedNumbers(src)
 	if err != nil {
 		return nil, err
@@ -580,17 +596,13 @@ type Part struct {
 
 // Format writes a number.
 func (f *NumberFormat) Format(v float64) string {
-	var b strings.Builder
-	for _, p := range f.FormatToParts(v) {
-		b.WriteString(p.Value)
-	}
-	return b.String()
+	return f.FormatDecimal(DecimalFromFloat(v))
 }
 
 // AppendFormat appends a number to dst, for a caller who would rather not
 // allocate a string for every value.
 func (f *NumberFormat) AppendFormat(dst []byte, v float64) []byte {
-	for _, p := range f.FormatToParts(v) {
+	for _, p := range f.assemble(f.layers(DecimalFromFloat(v), false, false)) {
 		dst = append(dst, p.Value...)
 	}
 	return dst
@@ -608,8 +620,16 @@ func (f *NumberFormat) FormatToParts(v float64) []Part {
 // FormatDecimal writes a number given exactly: a string or a BigInt, as
 // ECMA-402's formatters take them, with as many digits as it has.
 func (f *NumberFormat) FormatDecimal(d Decimal) string {
+	// Trimming and merging classify parts without changing their text.
+	// A string needs neither those copies nor a range's comparison key.
+	parts := f.assemble(f.layers(d, false, false))
+	n := 0
+	for _, p := range parts {
+		n += len(p.Value)
+	}
 	var b strings.Builder
-	for _, p := range f.FormatDecimalToParts(d) {
+	b.Grow(n)
+	for _, p := range parts {
 		b.WriteString(p.Value)
 	}
 	return b.String()
@@ -618,7 +638,7 @@ func (f *NumberFormat) FormatDecimal(d Decimal) string {
 // FormatDecimalToParts writes a number given exactly as the pieces it is
 // made of.
 func (f *NumberFormat) FormatDecimalToParts(d Decimal) []Part {
-	return mergeParts(trimParts(f.props, f.assemble(f.layers(d, false))))
+	return mergeParts(trimParts(f.props, f.assemble(f.layers(d, false, false))))
 }
 
 // numberLayers is a number written, in the layers ICU's number formatter
@@ -641,7 +661,7 @@ type numberLayers struct {
 // layers writes a number in its layers. Approximately puts the approximately
 // sign where the sign goes, as ICU does for a range whose ends are written
 // alike.
-func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
+func (f *NumberFormat) layers(d Decimal, approximately, rangeValue bool) numberLayers {
 	negative := d.neg
 	magnitude := d.m
 	if d.fromFloat && f.opts.Compat.Has(ApproximateIncrement) &&
@@ -660,7 +680,10 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
 	var l numberLayers
 	// Whether the number is zero is asked of it as written: 0.0001 at two
 	// decimals is "0", which signDisplay "exceptZero" writes without a sign.
-	zero := d.kind == decimalNaN || d.kind == decimalFinite && f.roundsToZero(magnitude, negative)
+	zero := d.kind == decimalNaN
+	if d.kind == decimalFinite && (f.opts.SignDisplay == SignExceptZero || f.opts.SignDisplay == SignNegative) {
+		zero = f.roundsToZero(magnitude, negative)
+	}
 	sign, showSign := f.signFor(zero, negative)
 
 	// PatternStringUtils::patternInfoToStringBuilder: the sign goes where
@@ -680,13 +703,11 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
 	case minusShown || !approximately:
 		symbols = append(symbols, Part{PartMinusSign, f.data.Symbols.MinusSign})
 	}
-	negativeHasMinus := f.pattern.explicitNeg &&
-		strings.ContainsRune(f.pattern.negPrefix+f.pattern.negSuffix, '-')
 	useNegative := f.pattern.explicitNeg &&
-		(minusShown || negativeHasMinus && (plusShown || approximately))
-	prefix, suffix := f.pattern.posPrefix, f.pattern.posSuffix
+		(minusShown || f.negativeHasMinus && (plusShown || approximately))
+	prefix, suffix := f.prefix[0], f.suffix[0]
 	if useNegative {
-		prefix, suffix = f.pattern.negPrefix, f.pattern.negSuffix
+		prefix, suffix = f.prefix[1], f.suffix[1]
 	}
 	// A compact pattern with a negative form of its own places the sign
 	// likewise, in place of the pattern's.
@@ -702,13 +723,13 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
 			// where its own negative form puts it, or before everything,
 			// "-$1.2K".
 			useNegative = false
-			prefix, suffix = "", ""
+			prefix, suffix = nil, nil
 		}
 	}
 	if !useNegative && !compactNegative && (minusShown || plusShown || approximately) {
 		l.pre = append(l.pre, symbols...)
 	}
-	l.pre = append(l.pre, f.affixParts(prefix, symbols)...)
+	l.pre = appendNumberAffix(l.pre, prefix, symbols)
 
 	switch {
 	case d.kind == decimalNaN:
@@ -725,7 +746,7 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
 	default:
 		l.body = f.numberParts(magnitude, negative)
 	}
-	l.post = append(l.post, f.affixParts(suffix, symbols)...)
+	l.post = appendNumberAffix(l.post, suffix, symbols)
 
 	// NaN and the infinities are "other" in every language, as ICU's plural
 	// rules answer for them.
@@ -733,6 +754,9 @@ func (f *NumberFormat) layers(d Decimal, approximately bool) numberLayers {
 	if f.opts.Style == StyleCurrency && f.opts.CurrencyDisplay == CurrencyName || f.unit != "" {
 		l.outer = true
 		l.count = f.outerCount(magnitude, negative, finite)
+	}
+	if !rangeValue {
+		return l
 	}
 	var b strings.Builder
 	if negative {
@@ -977,7 +1001,8 @@ func (f *NumberFormat) groupedInteger(integer string) []Part {
 	if f.grouping {
 		at = groupPositions(len(integer), f.primaryGroup, f.secondaryGroup, f.minGrouping)
 	}
-	var parts []Part
+	// Leave room for the decimal and fraction too.
+	parts := make([]Part, 0, 2*len(at)+3)
 	last := 0
 	for _, pos := range at {
 		parts = append(parts, Part{PartInteger, f.digits(integer[last:pos])})
@@ -987,8 +1012,19 @@ func (f *NumberFormat) groupedInteger(integer string) []Part {
 	return append(parts, Part{PartInteger, f.digits(integer[last:])})
 }
 
+func appendNumberAffix(dst, affix, sign []Part) []Part {
+	for _, p := range affix {
+		if p.Kind == PartMinusSign {
+			dst = append(dst, sign...)
+		} else {
+			dst = append(dst, p)
+		}
+	}
+	return dst
+}
+
 func (f *NumberFormat) digits(s string) string {
-	return mapDigits(s, f.data.Digits)
+	return mapDigitRunes(s, f.digitRunes)
 }
 
 // affixParts turns a pattern's prefix or suffix into pieces, replacing the
@@ -1100,11 +1136,8 @@ func currencyFormat(src Source, loc Locale, data *numdata.Locale, code string,
 	if err != nil {
 		return numdata.CurrencyFormat{}, false
 	}
-	region := loc.Region.String()
-	for line := range strings.SplitSeq(strings.TrimRight(string(b), "\n"), "\n") {
-		if name, currency, ok := strings.Cut(line, ":"); ok && name == region {
-			return data.CurrencyFormat(currency)
-		}
+	if currency, ok := currencyTableValue(b, loc.Region.String()); ok {
+		return data.CurrencyFormat(string(currency))
 	}
 	return numdata.CurrencyFormat{}, false
 }
@@ -1120,18 +1153,30 @@ func currencyDigits(src Source, code string) (int, error) {
 		return 2, nil
 	}
 	want := strings.ToUpper(code)
-	for line := range strings.SplitSeq(strings.TrimRight(string(b), "\n"), "\n") {
-		name, digits, ok := strings.Cut(line, ":")
-		if !ok || name != want {
-			continue
-		}
-		n, err := strconv.Atoi(digits)
+	if digits, ok := currencyTableValue(b, want); ok {
+		n, err := strconv.Atoi(string(digits))
 		if err != nil {
 			return 0, fmt.Errorf("intl: the digits for %s: %w", want, err)
 		}
 		return n, nil
 	}
 	return 2, nil
+}
+
+// These tables have one key:value per line. Search the line boundary and
+// key together instead of splitting and parsing every preceding entry.
+func currencyTableValue(data []byte, key string) ([]byte, bool) {
+	prefix := key + ":"
+	start := 0
+	if !bytes.HasPrefix(data, []byte(prefix)) {
+		at := bytes.Index(data, []byte("\n"+prefix))
+		if at < 0 {
+			return nil, false
+		}
+		start = at + 1
+	}
+	value, _, _ := bytes.Cut(data[start+len(prefix):], []byte{'\n'})
+	return value, true
 }
 
 // CurrencyDigits is ECMA-402's CurrencyDigits: how many decimals a currency

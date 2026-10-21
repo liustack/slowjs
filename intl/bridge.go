@@ -817,6 +817,9 @@ func numberFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 	if isBigInt, _ := a.Bool(2); isBigInt {
 		v = bigintDecimal(v.(string))
 	}
+	if !wantParts {
+		return a.VM().NewString(f.formatString(v))
+	}
 	parts := f.format(v)
 
 	return formatted(a.VM(), parts, wantParts)
@@ -829,6 +832,13 @@ func dateFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 	}
 
 	ms, _ := a.Number(1)
+	if !wantParts {
+		s, err := f.formatString(ms)
+		if err != nil {
+			return quickjs.Value{}, jsErr(err)
+		}
+		return a.VM().NewString(s)
+	}
 	parts, err := f.format(ms)
 	if err != nil {
 		return quickjs.Value{}, jsErr(err)

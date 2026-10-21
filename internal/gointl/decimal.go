@@ -117,10 +117,17 @@ func groupPositions(digits int, primary, secondary, minGrouping int) []int {
 // mapDigits writes ASCII digits in another numbering system's digits. An empty
 // table means the ASCII ones, which is most locales.
 func mapDigits(s string, digits string) string {
-	if digits == "" || s == "" {
-		return s
+	return mapDigitRunes(s, digitRunes(digits))
+}
+
+func digitRunes(digits string) []rune {
+	if digits == "" || digits == "0123456789" {
+		return nil
 	}
-	table := []rune(digits)
+	return []rune(digits)
+}
+
+func mapDigitRunes(s string, table []rune) string {
 	if len(table) != 10 {
 		return s
 	}

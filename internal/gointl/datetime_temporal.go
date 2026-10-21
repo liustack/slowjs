@@ -115,7 +115,7 @@ func (f *DateTimeFormat) ForTemporal(kind TemporalKind) (*DateTimeFormat, error)
 	if err != nil {
 		return nil, err
 	}
-	g := newDTPG(f.patterns, f.calendar, f.data.FieldNames, f.decimal, hourChar, allowed)
+	g := f.qjsGenerator(hourChar, allowed, true)
 	var pattern string
 	if node || dateStyle || timeStyle || !strings.ContainsAny(skeleton, "hHkKj") {
 		pattern = g.bestPattern(skeleton, 0)

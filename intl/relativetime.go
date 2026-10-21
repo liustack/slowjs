@@ -56,7 +56,7 @@ func resolveRelativeTimeFormat(req request) (*relativeTimeFormat, error) {
 	case s == "auto":
 		opts.Numeric = gointl.RelativeAuto
 	}
-	f, err := gointl.NewRelativeTimeFormatFrom(chromiumData{}, loc, opts)
+	f, err := gointl.NewRelativeTimeFormatFrom(goData, loc, opts)
 	if err != nil {
 		return nil, err
 	}

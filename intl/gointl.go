@@ -185,6 +185,8 @@ func withoutLackedCollation(l gointl.Locale) gointl.Locale {
 // data where it can, and the golden test formats in them.
 type chromiumData struct{}
 
+var goData = gointl.CacheSource(chromiumData{})
+
 // chromiumMissing are, by data set, the locales Chromium has other data
 // for, and the data it has.
 var chromiumMissing = map[gointl.Marker]map[string]gointl.DataLocale{

@@ -171,47 +171,61 @@ On GCP linux/amd64, test262 `2e0a5676` runs every Intl402 file in both modes wit
 
 The number pack records that its ICU resources are already resolved. Raw go-intl sources keep their separate number and currency alias rules. `qjs-sync.sh test` checks raw full data against upstream corpora, while `test-chromium` checks the shipped packs against the fork's browser corpora.
 
-The six linked data packs total 9,352,287 bytes. The host-zone guessing pack remains unlinked. On GCP linux/amd64 with Go 1.27.2, tifa shop `fb31f616` built by `go tool tifa build` with `-ldflags=-w` and the same application PGO profile is 31,914,341 bytes, against 32,078,049 on main `641e996`. This is 163,708 bytes smaller, about 0.51%. The profile SHA256 is `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`.
+The six linked data packs total 9,352,287 bytes. The host-zone guessing pack remains unlinked. On GCP linux/amd64 with Go 1.27.2, tifa shop `fb31f616` built by `go tool tifa build` with `-ldflags=-w` and the same application PGO profile is 31,967,614 bytes, against 32,078,049 on main `641e996`. This is 110,435 bytes smaller, about 0.34%. The profile SHA256 is `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`.
 
 ### Focused timing and memory costs
 
-Against main `641e996` on the same GCP AMD EPYC 7B13, without PGO, the comparison uses logical CPU 1 with sibling 5 idle, nice 19 and a 4 GiB memory limit with no swap. Each row has five alternating main and branch samples, one second per sample. The values are medians, with the minimum and maximum in parentheses.
+Against main `641e996` on the same GCP AMD EPYC 7B13, without PGO, the comparison uses logical CPU 1 with sibling 5 idle, nice 19 and a 4 GiB memory limit with no swap. Each timing row has six alternating main and branch samples, one second per sample. The values are medians, with the minimum and maximum in parentheses.
 
 NumberFormat uses USD currency and `1234567.891`. DateTimeFormat uses medium date and short time styles, UTC and `1755324309123`. `New` measures JavaScript construction after the shared registry is warm. `Format` uses a prepared formatter. `Resolve` constructs the Go formatter without the registry, with locale data already loaded. It excludes the JavaScript bridge. Parsing the test source is outside all three measurements.
 
-| Operation | Main, µs | Branch, µs | Median change |
+| Operation | Main, µs | Branch, µs | Branch / main |
 | --- | ---: | ---: | ---: |
-| NumberFormat/en-US/New | 7.865 (7.826 to 7.889) | 7.898 (7.840 to 8.007) | +0.4% |
-| NumberFormat/en-US/Format | 3.798 (3.792 to 3.847) | 4.197 (4.186 to 4.222) | +10.5% |
-| NumberFormat/en-US/Resolve | 3.418 (3.401 to 3.454) | 26.381 (26.062 to 26.451) | +671.8% |
-| DateTimeFormat/en-US/New | 8.280 (8.225 to 8.343) | 8.313 (8.251 to 8.329) | +0.4% |
-| DateTimeFormat/en-US/Format | 3.063 (3.040 to 3.075) | 3.964 (3.950 to 3.970) | +29.4% |
-| DateTimeFormat/en-US/Resolve | 10.559 (10.497 to 10.623) | 108.693 (108.534 to 109.464) | +929.4% |
-| NumberFormat/zh-CN/New | 7.873 (7.856 to 7.906) | 7.875 (7.818 to 7.946) | +0.0% |
-| NumberFormat/zh-CN/Format | 3.792 (3.742 to 3.799) | 4.235 (4.203 to 4.298) | +11.7% |
-| NumberFormat/zh-CN/Resolve | 3.437 (3.408 to 3.461) | 25.355 (25.183 to 25.575) | +637.7% |
-| DateTimeFormat/zh-CN/New | 8.306 (8.258 to 8.389) | 8.329 (8.217 to 8.393) | +0.3% |
-| DateTimeFormat/zh-CN/Format | 2.827 (2.799 to 2.835) | 3.943 (3.897 to 4.032) | +39.5% |
-| DateTimeFormat/zh-CN/Resolve | 10.302 (10.264 to 10.376) | 108.034 (107.381 to 109.518) | +948.7% |
+| NumberFormat/en-US/New | 7.732 (7.693 to 7.756) | 7.915 (7.766 to 8.026) | 1.024 |
+| NumberFormat/en-US/Format | 3.744 (3.728 to 3.763) | 2.176 (2.162 to 2.192) | 0.581 |
+| NumberFormat/en-US/Resolve | 3.420 (3.392 to 3.459) | 9.959 (9.866 to 10.117) | 2.912 |
+| DateTimeFormat/en-US/New | 8.169 (8.095 to 8.245) | 8.258 (8.233 to 8.397) | 1.011 |
+| DateTimeFormat/en-US/Format | 3.061 (3.027 to 3.092) | 1.915 (1.911 to 1.938) | 0.626 |
+| DateTimeFormat/en-US/Resolve | 10.531 (10.409 to 10.606) | 48.794 (48.166 to 49.137) | 4.633 |
+| NumberFormat/zh-CN/New | 7.785 (7.756 to 7.827) | 7.814 (7.766 to 7.985) | 1.004 |
+| NumberFormat/zh-CN/Format | 3.728 (3.702 to 3.785) | 2.189 (2.184 to 2.239) | 0.587 |
+| NumberFormat/zh-CN/Resolve | 3.436 (3.399 to 3.535) | 9.799 (9.724 to 9.854) | 2.852 |
+| DateTimeFormat/zh-CN/New | 8.207 (8.189 to 8.243) | 8.338 (8.243 to 8.461) | 1.016 |
+| DateTimeFormat/zh-CN/Format | 2.791 (2.771 to 2.829) | 2.008 (1.998 to 2.020) | 0.719 |
+| DateTimeFormat/zh-CN/Resolve | 10.275 (10.257 to 10.380) | 42.288 (41.645 to 43.010) | 4.115 |
 
-JavaScript construction stays within the observed spread. Number formatting is about 11% slower, and date formatting 29.4% to 39.5% slower in these cases. Constructing a Go formatter without the registry takes about 7.4 to 10.5 times as long. These are fixed-input costs, not page-render timings.
+Number formatting takes 41% to 42% less time than main, and date formatting 28% to 37% less. NumberFormat allocates 600 bytes in 8 allocations per call, against main's 1888 bytes in 24. DateTimeFormat allocates 152 bytes in 7 allocations for English and 128 bytes in 7 for Chinese, against 1220 bytes in 25 and 1144 bytes in 22. Cached JavaScript construction is 0.4% to 2.4% slower in this run. These are fixed-input costs. [Performance](../performance.md#intl-formatting) describes the comparison.
+
+Uncached Resolve takes 9.8 to 10.0 µs for numbers and 42.3 to 48.8 µs for dates. Before compiling and sharing plans it took about 25 to 26 µs and 108 to 109 µs. Locale and option resolution, currency spacing and digit rules still run for each new formatter. Date construction also chooses a pattern and builds its interval rules. Those option-dependent steps remain outside the data cache. The formatter registry avoids them when the complete request has been seen before.
 
 Each memory case runs in five fresh processes and registers only Intl. VM memory is `VM.MemorySize` after first use and `RunGC`. The Go heap delta is measured after GC against the state before creating the VM. It includes registration, shared data loaded once per process and the first VM's Go state. It is not RSS and is not a cost to multiply by the VM count.
 
 | Case | Main VM, KiB | Branch VM, KiB | Main total first Go heap delta, KiB | Branch total first Go heap delta, KiB |
 | --- | ---: | ---: | ---: | ---: |
-| NumberFormat/en-US | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1203.305 (1203.148 to 1203.305) | 677.852 (677.695 to 678.320) |
-| DateTimeFormat/en-US | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1274.445 (1274.133 to 1274.602) | 772.078 (771.922 to 772.078) |
-| NumberFormat/zh-CN | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1177.359 (1177.203 to 1177.516) | 678.414 (678.258 to 678.727) |
-| DateTimeFormat/zh-CN | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1249.047 (1248.891 to 1249.203) | 774.242 (774.086 to 774.711) |
+| DateTimeFormat/en-US | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1274.289 (1274.289 to 1274.602) | 786.328 (786.016 to 786.484) |
+| DateTimeFormat/zh-CN | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1248.891 (1248.734 to 1249.203) | 790.445 (790.445 to 790.602) |
+| NumberFormat/en-US | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1203.305 (1202.992 to 1203.461) | 678.273 (677.867 to 678.336) |
+| NumberFormat/zh-CN | 358.586 (358.586 to 358.586) | 371.617 (371.617 to 371.617) | 1177.516 (1177.359 to 1177.984) | 678.898 (678.898 to 679.055) |
 
-A used VM retains 13.031 KiB more engine memory. The first process use retains about 475 to 525 KiB less Go heap. With the data warm, 32 more VMs retain about 1.08 KiB of Go heap each on main and 1.35 to 1.37 KiB here. The full sample spread for that estimate is below.
+A used VM retains 13.031 KiB more engine memory. The first process use retains about 458 to 525 KiB less Go heap. With the data warm, 32 more VMs retain about 1.08 KiB of Go heap each on main and 1.36 to 1.38 KiB here. The full sample spread for that estimate is below.
 
 | Case | Main warm Go heap per VM, bytes | Branch warm Go heap per VM, bytes |
 | --- | ---: | ---: |
-| NumberFormat/en-US | 1109 (1109 to 1109) | 1385 (1385 to 1410) |
-| DateTimeFormat/en-US | 1116 (1116 to 1117) | 1407 (1382 to 1419) |
-| NumberFormat/zh-CN | 1109 (1109 to 1109) | 1385 (1375 to 1410) |
-| DateTimeFormat/zh-CN | 1116 (1116 to 1116) | 1407 (1399 to 1412) |
+| DateTimeFormat/en-US | 1116.000 (1116.000 to 1116.000) | 1412.000 (1392.000 to 1412.000) |
+| DateTimeFormat/zh-CN | 1116.000 (1116.000 to 1116.000) | 1407.000 (1397.000 to 1422.000) |
+| NumberFormat/en-US | 1109.000 (1109.000 to 1109.000) | 1395.000 (1375.000 to 1405.000) |
+| NumberFormat/zh-CN | 1109.000 (1109.000 to 1109.000) | 1405.000 (1390.000 to 1410.000) |
 
 Tests: `TestGoIntlMigration`, `TestEmbeddedZonePack`, every Intl golden set, Temporal formatting corpora, constructor shape, tampering, registry sharing and eviction, and link tests. `qjs-sync.sh pack -check` checks reproducibility, and the pack tests check shared-pool references. No generated engine code, C patch or fixlib rewrite changes. After a go-intl or Chromium update, rerecord the ICU inventory, rebuild the packs and review every changed expression. See [upgrading.md](../upgrading.md#updating-the-intl-locale-data).
+
+## Compiled Intl formatting plans
+
+Release: not released yet.
+
+String formatting writes from the same rounding and calendar results as parts formatting. It skips parts classification, Unicode trimming and merging that only assign part types, and avoids copying parts across the Go bridge. Number affixes and digit tables are compiled at construction. Grouping reserves its parts once, and a value is rounded again for sign selection only when the sign depends on rounded zero. Date formatting writes the compiled fields directly. It keeps wall-clock calendar arithmetic separate from the instant used for astronomical calendars and zone names, so it needs no per-value fixed-zone object. `TestIslamicCalendarInstant` checks both astronomical Islamic calendars against fixed answers at month boundaries in positive and negative offset zones, for strings, parts and ranges.
+
+`CacheSource` shares decoded number data, date data, calendars and date pattern generators for an immutable source. Each of its four caches holds at most 64 entries. Entries are read-only, eviction does not invalidate a formatter, and different sources cannot share entries. The existing 1024-entry formatter registry is unchanged. Formatting does not lock these data caches. Currency metadata lookup finds the requested line directly.
+
+Profiles of English and Chinese Format calls found that part classification and the bridge copy accounted for about 56% of NumberFormat's allocated bytes. Date segments, parts and the bridge copy accounted for about 86% of DateTimeFormat's. All 74,868 golden answers and 5,097 migration and Temporal answers stay byte-for-byte unchanged, including existing documented Chromium differences. The same ten shop pages also keep their HTML, after normalizing only the router timestamp.
+
+Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheBound`, the existing Chromium corpora, concurrent registry tests, tampering and link tests. `BenchmarkFormat` covers construction, formatting and uncached resolution with the inputs above. The upstream changes stay in `qjs.patch`. After updating go-intl, rebuild it from that patch, check source isolation and concurrent use, compare every recorded answer and repeat the focused measurements.

@@ -102,7 +102,7 @@ func (f *NumberFormat) FormatDecimalRangeToParts(start, end Decimal) ([]RangePar
 	// (roundToInfinity), where formatDouble keeps it: ApproximateIncrement
 	// is never made of a range's ends.
 	start.fromFloat, end.fromFloat = false, false
-	a, b := f.layers(start, false), f.layers(end, false)
+	a, b := f.layers(start, false, true), f.layers(end, false, true)
 	innerSame := sameParts(a.inner, b.inner)
 	middleSame := sameParts(a.pre, b.pre) && sameParts(a.post, b.post)
 	outerSame := a.outer == b.outer
@@ -110,7 +110,7 @@ func (f *NumberFormat) FormatDecimalRangeToParts(start, end Decimal) ([]RangePar
 	// NumberRangeFormatterImpl::format: ends written alike are one number,
 	// marked approximate, written from the start as given.
 	if innerSame && middleSame && outerSame && (a.rounded == b.rounded || sameBefore) {
-		return f.rangeParts(f.assemble(f.layers(start, true))), nil
+		return f.rangeParts(f.assemble(f.layers(start, true, false))), nil
 	}
 
 	// formatRange: which layers are written once. The middle one is shared

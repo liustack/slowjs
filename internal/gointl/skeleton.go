@@ -34,7 +34,7 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
 	if err != nil {
 		return "", HourCycleAuto, nil, err
 	}
-	g := newDTPG(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
+	g := f.qjsGenerator(hourChar, allowed, true)
 	hc := f.resolveHourCycle(g.defaultHourCycle(), allowed)
 	f.clock = hc
 
@@ -43,7 +43,7 @@ func (f *DateTimeFormat) choosePattern(src Source, decimal string) (string, Hour
 		// DateTimeStylePattern.
 		timePattern := ""
 		if o.TimeStyle != LengthNone && f.timeStyleAfresh(src) {
-			fresh := newDTPGWithoutStyles(f.patterns, f.calendar, f.data.FieldNames, decimal, hourChar, allowed)
+			fresh := f.qjsGenerator(hourChar, allowed, false)
 			timePattern = fresh.bestPattern(timeStyleSkeletons[o.TimeStyle-1], 0)
 		}
 		pattern := f.stylePattern(timePattern)

@@ -53,7 +53,7 @@ func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, er
 	if err != nil {
 		return nil, err
 	}
-	f, err := gointl.NewDateTimeFormatFrom(chromiumData{}, loc, opts)
+	f, err := gointl.NewDateTimeFormatFrom(goData, loc, opts)
 	if err != nil {
 		return nil, formatOptionError(err)
 	}
@@ -173,4 +173,11 @@ func (f *dateTimeFormat) format(ms float64) ([]part, error) {
 		parts[i] = part{Type: string(p.Kind), Value: plainSpaces.Replace(p.Value)}
 	}
 	return parts, nil
+}
+
+func (f *dateTimeFormat) formatString(ms float64) (string, error) {
+	if math.IsNaN(ms) || math.IsInf(ms, 0) || math.Abs(ms) > maxTimeValue {
+		return "", rangeError("Invalid time value")
+	}
+	return plainSpaces.Replace(f.f.Format(time.UnixMilli(int64(ms)))), nil
 }

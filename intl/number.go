@@ -49,7 +49,7 @@ func resolveNumberFormat(req request) (*numberFormat, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := gointl.NewNumberFormatFrom(chromiumData{}, loc, opts)
+	f, err := gointl.NewNumberFormatFrom(goData, loc, opts)
 	if err != nil {
 		return nil, formatOptionError(err)
 	}
@@ -223,6 +223,21 @@ func (f *numberFormat) format(v any) []part {
 		panic("intl: unexpected number bridge value")
 	}
 	return numberParts(pieces)
+}
+
+func (f *numberFormat) formatString(v any) string {
+	switch v := v.(type) {
+	case float64:
+		return f.f.Format(v)
+	case int64:
+		return f.f.FormatDecimal(gointl.ParseExactDecimal(strconv.FormatInt(v, 10)))
+	case string:
+		return f.f.FormatDecimal(gointl.ParseDecimal(v))
+	case bigintDecimal:
+		return f.f.FormatDecimal(gointl.ParseExactDecimal(string(v)))
+	default:
+		panic("intl: unexpected number bridge value")
+	}
 }
 
 func numberParts(pieces []gointl.Part) []part {
