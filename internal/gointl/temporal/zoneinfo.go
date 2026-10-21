@@ -1,3 +1,7 @@
+// Parts of this file are ported to Go from calendrical_calculations 0.2.4
+// (Apache-2.0, Copyright 2023 The Unicode Consortium) and changed. See
+// internal/gointl/qjsdata/NOTICE-ICU4X.
+
 package temporal
 
 import (

@@ -39,6 +39,8 @@ go-intl's own [LICENSE](internal/gointl/LICENSE) names the Unicode License V3, f
 | [NOTICE-TEMPORAL](internal/gointl/qjsdata/NOTICE-TEMPORAL) | boa-dev's crates: temporal_rs 0.2.3, temporal_capi 0.2.3, timezone_provider 0.2.3 | MIT or Apache-2.0, at the user's choice. No NOTICE file |
 | [NOTICE-V8](internal/gointl/qjsdata/NOTICE-V8) | V8 as Node v26.10.0 vendors it | BSD-3-Clause |
 
+Apache-2.0 asks three things of a program that passes on a changed work (section 4): (a) give its recipients a copy of the license, which NOTICE-ICU4X holds, (b) make each changed file say that it was changed, which the header that `qjs.patch` puts on `temporal/solar.go` and `temporal/zoneinfo.go`, the files ported from calendrical_calculations, does, and (c) keep the copyright notices of the source, which that header and NOTICE-ICU4X do. For temporal_rs, temporal_capi and timezone_provider this module takes the MIT license, one of the two they offer.
+
 Which package needs which:
 
 | Package | What it took | Notices |

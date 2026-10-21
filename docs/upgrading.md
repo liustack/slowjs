@@ -188,7 +188,7 @@ Update the Chromium and ICU versions in the package documentation of `intl` and 
 
 `internal/gointl` is a copy of [go-intl](https://github.com/go-quickjs/go-intl), a pure Go ECMA-402 and Temporal library, at the release and commit in `internal/gointl/UPSTREAM` (v0.6.1). Nothing in JS uses it yet. It is internal because its API is go-intl's and changes between releases, and it sits at the module root so that `intl/` and a later Temporal package can import it.
 
-The files and directories named `qjs*`, and `UPSTREAM`, are ours. Everything else is go-intl's, with its import path rewritten, and is changed only by `internal/gointl/qjs.patch`, which keeps to loading data: `source.go` serves our packs instead of go-intl's 18.9 MB `data.pack`, `internal/blob` tells the pack tool which pool parts a locale reads, and `dictbe.go` takes a missing break dictionary for none.
+The files and directories named `qjs*`, and `UPSTREAM`, are ours. Everything else is go-intl's, with its import path rewritten, and is changed only by `internal/gointl/qjs.patch`, which keeps to loading data and notices: `source.go` serves our packs instead of go-intl's 18.9 MB `data.pack`, `internal/blob` tells the pack tool which pool parts a locale reads, `dictbe.go` takes a missing break dictionary for none, and `temporal/solar.go` and `temporal/zoneinfo.go` start with a header saying that parts are ported from calendrical_calculations and changed, which its Apache-2.0 license asks of a changed file. A file of a new go-intl release that ports from an Apache-2.0 project gets the same header through `qjs.patch`.
 
 The data is in `internal/gointl/qjsdata/`, written by `internal/gointl/internal/qjspack/gen` from go-intl's `data/` directory:
 
