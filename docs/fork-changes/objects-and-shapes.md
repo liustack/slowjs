@@ -1,8 +1,8 @@
 ---
-summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, and new functions put onto their shape at once, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
+summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, new functions put onto their shape at once, and methods of strings, numbers and arrays found in the interpreter, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe and what to do when upstream changes it'
 read_when:
-  - Changing lib/objlit.go, lib/shapecache.go, lib/forin.go, lib/atomkey.go, lib/funcshape.go, fixDefine, fixShapeCache, fixForIn, fixAtomKey or fixFuncShape
-  - fixlib stops on defineSites, objectBits, shapeSites, forInSites, atomKeySites or funcShapeSites after an upstream release
+  - Changing lib/objlit.go, lib/shapecache.go, lib/forin.go, lib/atomkey.go, lib/funcshape.go, lib/fieldchain.go, fixDefine, fixShapeCache, fixForIn, fixAtomKey, fixFuncShape or fixFieldChain
+  - fixlib stops on defineSites, objectBits, shapeSites, forInSites, atomKeySites, funcShapeSites or fieldChainSites after an upstream release
   - A VM runs close to its memory limit and you wonder whether to give it a smaller shape cache
   - Calling VM.SetShapeCache, or asking what DefaultShapeCache costs
   - Planning more work on property access or object creation
@@ -89,3 +89,21 @@ Tests: `lib/funcshape_test.go`, whose `testdata/funcshape.txt` holds what Node g
 ### When upstream changes it
 
 If it reports that the functions of `funcShapeFuncs` or `JSShape` changed (`internal/fixlib/funcshapesites.go`), read them against `lib/funcshape.go`: `js_function_set_properties` must still give `length` and then `name`, both configurable only, through `JS_DefinePropertyValue`, `add_property` must still move an object onto a shape it finds in the hash table as `funcShape` does (`shapeFound`, a new count, the old shape freed, the property array kept when the sizes match), a shape whose count is not one must still never change in place, `JS_NewObjectFromShape` must still give an object a property array of the size of its shape, and `JS_MarkContext` and `JS_FreeContext` must still mark and free the shape of arrays where `funcShapesMark` and `funcShapesFree` are put. Then run `-funcshape`.
+
+## Methods of strings, numbers and arrays found in the interpreter
+
+Release: Unreleased.
+
+`s.charCodeAt(i)`, `n.toFixed(2)` and `a.push(x)` find their method in the interpreter. `get_field` and `get_field2`, the opcodes of `o.x` and `o.x(...)`, look for the key on the object and its prototypes in a loop of their own, and handed everything else to `JS_GetPropertyInternal`: every value that is not an object, and every object with exotic behavior, arrays included. The CSS-in-JS code of tifa's MUI pages reads string methods about 320000 times in a render of the order list, and both of tifa's apps read array methods a few thousand times. Now the loop starts at `String.prototype` for a string and a key that is no index and not `length`, and at `Number.prototype` for a number, through `fieldProto` (`lib/fieldchain.go`), and goes on past a fast array that is not a typed array for a key that is no index, through `fieldGoesOn`. Every other value or object takes `JS_GetPropertyInternal` as before.
+
+Why this is safe: those are the keys for which `JS_GetPropertyInternal` itself goes straight to the prototype. A string has its indexes and `length` of its own and nothing else, and a number nothing. A fast array has its elements at indexes, and a typed array also answers `undefined` for a key that is a number in canonical form, such as `Infinity`, so typed arrays stay on the old path. The value stays on the interpreter's stack, so a getter, a proxy or another exotic object further up the chain still takes the slow path with the value as `this`, and a method or getter added to the prototype later is found where it is. Nothing is cached, so memory use is the same.
+
+Without PGO, on linux/amd64 (AMD EPYC 7B13, one core), against v0.27.0 with the same HTML, the four MUI pages of tifa's test app render in 0.975 of the time (0.966 to 0.986 over 6 rounds in 3 code layouts) and the six pages of the shop in 0.996 (0.992 to 0.998). Under callgrind the engine runs 1.0% fewer instructions on the MUI pages and under 0.1% fewer on the shop. The time drops more than the instruction count: `JS_GetPropertyInternal` and its property lookup were mostly waiting on memory.
+
+`fixlib` puts the calls into the 11 files of 64-bit targets, where `fieldProto` reads the struct form of a `JSValue`, and takes the fast array bit from each file's `JS_GetPropertyInternal`, so the big-endian target gets its own. Generated Go only, no C hunk (`internal/fixlib/fieldchain.go`).
+
+Tests: `fieldchain_test.go`, whose `testdata/field_chain.js` reads methods, missing keys and keys added later on strings, ropes, numbers and arrays, with getters in sloppy and strict mode, read-only keys, a proxy and a frozen object above `String.prototype`, frozen, sealed, sparse and typed arrays, `arguments`, String objects, symbols, `with` and `eval`, against Node, and checks that an interrupt or running out of memory in such a getter or method cannot be caught. `internal/fixlib/fieldchain_test.go` checks the rule.
+
+### When upstream changes it
+
+If it reports that `JS_GetPropertyInternal`, `JS_GetPrototypePrimitive` or `__JS_AtomIsTaggedInt` changed (`internal/fixlib/fieldchainsites.go`), read them against `lib/fieldchain.go`: for a string and a key that is no index and not `length`, and for a number, `JS_GetPropertyInternal` must still look for the key from the prototype `JS_GetPrototypePrimitive` gives with the value as `this`, and for a fast array that is not a typed array and a key that is no index it must still go on to the prototype. Then run `-fieldchain`. If it reports that the loop of `get_field` or `get_field2`, their test of exotic behavior or their slow path changed shape, update `reFieldEntry`, `reFieldExotic` or `reFieldSlow` in `internal/fixlib/fieldchain.go`.

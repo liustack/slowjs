@@ -4,6 +4,12 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Performance
+
+Without PGO, against v0.27.0.
+
+- `o.x` and `o.x(...)` of a string, a number or an array find a method on the prototype in the interpreter, without the generic property read: 0.996 of the time, and 0.975 on the MUI pages of tifa's test app, whose CSS-in-JS code reads string methods up to about 320000 times a render. Memory use does not change.
+
 ## [v0.27.0] - 2026-10-22
 
 ### Added
