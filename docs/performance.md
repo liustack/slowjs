@@ -128,7 +128,7 @@ Keeping native computed goto raises the score by 12.3% with gcc and 12.6% with c
 
 Each timing invocation used one of CPUs 1, 2 or 3, with its sibling 5, 6 or 7 idle. It started after 30 samples taken once a second in which both CPUs averaged below 1.5% busy and stayed below 10% in every sample. A sample was rejected if the sibling reached either threshold or process CPU time was below 92% of wall time. Builds, tests and Callgrind collection used CPUs 0 and 4. JavaScript ran at nice 19 in a 4 GiB systemd scope without swap.
 
-Callgrind used fixed work instead of the adaptive score harness. Each benchmark ran setup, a fixed number of operations, and teardown. The repeat counts were Richards 4, DeltaBlue 4, Crypto 1, RayTrace 2, EarleyBoyer 1, RegExp 1, Splay 2 and NavierStokes 1. These weights differ from the geometric V8 score, so instruction percentages are not timing percentages.
+Callgrind used fixed work instead of the adaptive score harness. Each benchmark ran setup, a fixed number of operations, and teardown. The repeat counts were Richards 4, DeltaBlue 4, Crypto 1, RayTrace 2, EarleyBoyer 1, RegExp 1, Splay 2 and NavierStokes 1. These weights differ from the geometric V8 score, so instruction percentages are not timing percentages. V8 collection covers the whole fixed workload process, including startup and script compilation. The scored benchmark timers exclude startup compilation.
 
 | C source | gcc instructions | clang instructions |
 | --- | ---: | ---: |
@@ -139,9 +139,42 @@ Callgrind used fixed work instead of the adaptive score harness. Each benchmark 
 
 Retaining all behavior changes while restoring native dispatch reduces the excess over unpatched C from 4.90% to 0.44% for gcc, and from 15.68% to 1.28% for clang. The switch adds range checking and address calculation around a central indirect jump. Hardware branch prediction and cache effects were not measured.
 
+After restoring native dispatch, six further alternating rounds removed one feature group at a time. The score ratios below compare each diagnostic binary with the complete patch using computed goto. Higher is faster. Each range crosses 1.0000, and none of these groups reproduces the large dispatch regression. The instruction columns use the same fixed workload, relative to that complete patch.
+
+| Removed feature group | gcc score ratio | clang score ratio | gcc instruction change | clang instruction change |
+| --- | ---: | ---: | ---: | ---: |
+| Lazy error stacks | 1.0035 (0.9931 to 1.0085) | 1.0077 (0.9954 to 1.0156) | -0.310% | -0.221% |
+| Pending exception protection | 1.0112 (0.9923 to 1.0247) | 0.9916 (0.9877 to 1.0164) | -0.250% | -1.105% |
+| Compiler allocation failure hunks | 1.0062 (0.9954 to 1.0193) | 0.9992 (0.9870 to 1.0156) | +0.341% | -0.011% |
+
+These diagnostic variants change behavior and cannot ship. The compiler group includes adjacent failure handling in combined hunks. Ordinary interrupt polling and the OOM flag remain when pending protection is removed.
+
 Feature differences are not additive. For example, an unchanged regexp execution function has one fewer alignment NOP in a loop in the complete patch, accounting for 17,745,900 fewer instructions there. Removing compiler allocation failure guards also changes gcc's inlining of `js_malloc` into object allocation. These code generation effects must be distinguished from executing the guards themselves.
 
 The retained fix disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`. Native preprocessing is identical to the measured native computed goto variant. ccgo still takes the switch branch, and the committed Go engine is unchanged. Its incremental behavior costs need their own measurements rather than the native C percentage. Native C limits stack bytes, not recursive call counts. A separate 1 MiB recursion probe reaches 1423 calls with the old gcc patch and 1393 with native computed goto, and 1926 against 1073 with clang. Both throw the same RangeError and message. Go's TLS slot checks and depth contract do not change.
+
+### What the behavior changes cost the Go engine
+
+The dispatch fix does not reach Go: ccgo always generated a switch, and the generated Go is unchanged. The behavior changes themselves are in Go through `fixlib`. To price them, diagnostic builds made `_js_uncatchable_pending` return false, turned off the lazy backtrace helpers so stacks are built at once, or both. Interrupt polling and the OOM flag stayed. These builds break behavior and cannot ship.
+
+All hosts were static `CGO_ENABLED=0` builds with `-pgo=off`, Go 1.27.2 and tifa `b1cb68f6`. V8 counts cover the whole fixed workload process above. SSR counts cover two renders of each page after two warmups, in one VM for the six shop workbench pages or the four MUI pages, counted with Callgrind client requests around the render loop only. Counting the base again at the end moved the shop by 0.008% and MUI by 0.006%.
+
+| Go variant | V8 instructions | Shop instructions | MUI instructions |
+| --- | ---: | ---: | ---: |
+| Base | 19,613,250,952 | 1,286,286,893 | 7,247,686,905 |
+| Pending check removed | +1.11% | +1.00% | +1.52% |
+| Lazy backtrace helpers off | +0.04% | +0.10% | -0.05% |
+| Both | +1.09% | +1.04% | +1.48% |
+
+Six alternating timing rounds, 32 warmups and 80 renders per page, one build of each. V8 is a score ratio, higher is faster. SSR is the sum of page P50 times, lower is faster. Ranges are the smallest and largest paired ratio.
+
+| Go variant | V8 / base | Shop / base | MUI / base |
+| --- | ---: | ---: | ---: |
+| Pending check removed | 1.0101 (0.9870 to 1.0531) | 1.0165 (0.9977 to 1.0259) | 1.0043 (0.9919 to 1.0071) |
+| Lazy backtrace helpers off | 1.0059 (1.0000 to 1.0457) | 1.0018 (0.9855 to 1.0110) | 0.9882 (0.9729 to 0.9913) |
+| Both | 0.9513 (0.9468 to 0.9852) | 1.0171 (0.9934 to 1.0223) | 1.0195 (1.0088 to 1.0277) |
+
+No row shows a cost that removing the feature wins back on both page sets. Removing the pending check adds instructions because it changes the code Go generates: in the V8 binary an alignment NOP lands on the dispatch path and runs 152,120,292 times. The check's own instructions are 0.19% of V8, 0.30% of the shop and 0.35% of MUI. That is the most removing its call could save, below what these timings can resolve. The hot SSR profiles reach only the backtrace attribute and settle helpers, never stack capture or formatting, so pages that make many errors were not measured.
 
 ## What was tried and not done
 
@@ -159,6 +192,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Taking the room of large calls from a stack per runtime**: a call whose arguments, locals and stack need more than 768 bytes mallocs them, about 6000 times in a render of tifa's bench pages, through libc's allocator and its lock. Cutting them from a block of 64 KiB per runtime instead, as calls return in reverse order, saves as many instructions as the cut itself costs, the lock is not contended with one VM, and the bench pages took 1.009 of the time (0.998 to 1.020 over 8 rounds, six builds at different addresses), the shop's 1.003.
 - **Taking the TLS frame of `JS_CallInternal` without a call**: Go does not inline the fast path into the interpreter, and the frees inlined at its returns made renders of tifa's bench pages take 1.6% more time. [TLS frames taken without a call on linux](fork-changes/calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) leaves it out.
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005).
+- **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
 - **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules.
 - **Keeping the in-between shapes of every object literal**, before v0.26.16: about 2% more on top of the new property fast path, but the two list pages ran out of VM memory, because the kept shapes held their prototypes and everything those reach. v0.26.16 keeps only shapes whose prototype is `Object.prototype`, at most 32 keys and no unregistered symbol key, in a ring of 2048 (see [Kept shapes](fork-changes/objects-and-shapes.md#kept-shapes)).
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.
