@@ -6948,6 +6948,8 @@ func _string_buffer_init2(tls *libc.TLS, ctx uintptr, s uintptr, size int32, is_
 	(*TStringBuffer)(unsafe.Pointer(s)).Flen1 = 0
 	(*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char = is_wide
 	(*TStringBuffer)(unsafe.Pointer(s)).Ferror_status = 0
+	// Changed by internal/fixlib: count the characters toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts(ctx, Tsize_t(size>>3))
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = _js_alloc_string(tls, ctx, size, is_wide)
 	if expect32(!!!((*TStringBuffer)(unsafe.Pointer(s)).Fstr != 0)) {
 		(*TStringBuffer)(unsafe.Pointer(s)).Fsize = 0
@@ -7100,6 +7102,8 @@ _8:
 	}
 _12:
 	new_size = v3
+	// Changed by internal/fixlib: count the characters added toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts((*TStringBuffer)(unsafe.Pointer(s)).Fctx, Tsize_t((new_size-(*TStringBuffer)(unsafe.Pointer(s)).Fsize)>>3))
 	(*TStringBuffer)(unsafe.Pointer(s)).Fsize = new_size
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = new_str
 	r = 0
@@ -71452,6 +71456,8 @@ func _js_parse_init(tls *libc.TLS, ctx uintptr, s uintptr, input uintptr, input_
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fbuf_start = (*TJSParseState)(unsafe.Pointer(s)).Fbuf_start
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fline_num = 0
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fcol_num = 0
+	// Changed by internal/fixlib: count the source toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts(ctx, input_len)
 }
 
 func _JS_EvalFunctionInternal(tls *libc.TLS, ctx1 uintptr, fun_obj TJSValue, this_obj TJSValue, var_refs uintptr, sf uintptr) (r TJSValue) {

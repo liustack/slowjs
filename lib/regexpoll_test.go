@@ -152,3 +152,28 @@ func classAtoms(n int) []rune {
 	}
 	return r
 }
+
+// A lookup in the regexp cache counts a step for each 32 bytes of the
+// pattern it hashes and compares, so a loop that takes a long pattern from
+// the cache reaches the interrupt check as soon as one that compiles a
+// short one.
+func TestRegexCacheCountsSteps(t *testing.T) {
+	v := newReVM(t, 16, 1<<20)
+	defer v.close()
+	counter := &(*TJSContext)(unsafe.Pointer(v.ctx)).Finterrupt_counter
+	for _, c := range []struct {
+		pattern string
+		steps   int32
+	}{
+		{"'a'.repeat(32000)", 1000},
+		{"'\u4e2d'.repeat(32000)", 2000}, // 16-bit characters
+	} {
+		v.run("var p = " + c.pattern + "; new RegExp(p); 0")
+		*counter = 1 << 30
+		v.run("new RegExp(p); 0")
+		// The script itself polls a few times.
+		if got := 1<<30 - *counter; got < c.steps || got > c.steps+20 {
+			t.Errorf("%s from the cache: %d steps, want %d", c.pattern, got, c.steps)
+		}
+	}
+}

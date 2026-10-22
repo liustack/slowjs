@@ -24,6 +24,9 @@ package libquickjs // import "github.com/liustack/quickjs/lib"
 //   - When the handler asks to stop, the parser fails with the message
 //     "interrupted", and js_compile_regexp throws the interrupt for it, as
 //     js_regexp_exec does when lre_exec times out.
+//   - A lookup in the regexp cache of lib/regexcache.go counts a step for
+//     each 32 bytes of the pattern it hashes and compares, through
+//     _js_charge_interrupts of lib/charge.go. That change has no C form, as the cache has none.
 //
 // internal/fixlib wires these into every ccgo_*.go file (see fixRegexPoll).
 
@@ -45,6 +48,14 @@ func Xlre_poll_interrupts(tls *libc.TLS, opaque uintptr, cost int32) int32 {
 	}
 	ctx.Finterrupt_counter = MJS_INTERRUPT_COUNTER_INIT
 	return Xlre_check_timeout(tls, opaque)
+}
+
+// stringBytes returns the bytes of the characters of the string p, a
+// JSString: the length is the low 31 bits of its first word, and the top
+// bit says the characters are 16-bit (see _hash_string).
+func stringBytes(p uintptr) uint32 {
+	w := *(*uint32)(unsafe.Pointer(p))
+	return (w & 0x7fffffff) << (w >> 31)
 }
 
 // reInterrupted is the message the regexp parser fails with when the
