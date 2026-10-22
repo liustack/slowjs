@@ -141,7 +141,7 @@ Retaining all behavior changes while restoring native dispatch reduces the exces
 
 Feature differences are not additive. For example, an unchanged regexp execution function has one fewer alignment NOP in a loop in the complete patch, accounting for 17,745,900 fewer instructions there. Removing compiler allocation failure guards also changes gcc's inlining of `js_malloc` into object allocation. These code generation effects must be distinguished from executing the guards themselves.
 
-The retained fix disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`. Native preprocessing is identical to the measured native computed goto variant. ccgo still takes the switch branch, and the committed Go engine is unchanged. Its incremental behavior costs need their own measurements rather than the native C percentage.
+The retained fix disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`. Native preprocessing is identical to the measured native computed goto variant. ccgo still takes the switch branch, and the committed Go engine is unchanged. Its incremental behavior costs need their own measurements rather than the native C percentage. Native C limits stack bytes, not recursive call counts. A separate 1 MiB recursion probe reaches 1423 calls with the old gcc patch and 1393 with native computed goto, and 1926 against 1073 with clang. Both throw the same RangeError and message. Go's TLS slot checks and depth contract do not change.
 
 ## What was tried and not done
 

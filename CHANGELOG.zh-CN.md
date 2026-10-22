@@ -6,7 +6,7 @@
 
 ### 修复
 
-- 使用 `lib/internal/patch/quickjs.diff` 的原生 C 构建保留上游的 computed goto 分发，仅为 ccgo 和 Emscripten 禁用。生成的 Go 引擎和分支已有的行为修改保持不变。
+- 使用 `lib/internal/patch/quickjs.diff` 的原生 C 构建保留上游的 computed goto 分发，仅为 ccgo 和 Emscripten 禁用。生成的 Go 引擎保持不变，保留不可捕获异常、递归 RangeError 和错误栈规则。原生 C 在相同字节栈限额下的递归次数会随编译器帧大小改变。
 
 ## [v0.27.0] - 2026-10-22
 

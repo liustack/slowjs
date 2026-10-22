@@ -82,7 +82,7 @@ If it reports a number of tests other than `expectSites` has for a file, read th
 
 Release: Unreleased.
 
-The C patch used to set `DIRECT_DISPATCH` to zero for every compiler. It now disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`, retaining upstream's dispatch table for native C. A native interpreter using the patch therefore keeps the same dispatch mechanism as the unpatched source. The uncatchable exception, allocation failure, recursion and error stack changes remain in both builds.
+The C patch used to set `DIRECT_DISPATCH` to zero for every compiler. It now disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`, retaining upstream's dispatch table for native C. A native interpreter using the patch therefore keeps the same dispatch mechanism as the unpatched source. The uncatchable exception, allocation failure, recursion and error stack changes remain in both builds. Native stack limits still count bytes. Because the compiler changes frame sizes, native recursion can reach the limit after a different number of calls. The Go TLS slot limit does not change.
 
 ccgo defines `__CCGO__` automatically and still sees `DIRECT_DISPATCH` as zero. The committed Go engine and `fixlib` rules remain unchanged. See [performance.md](../performance.md#native-c-patch-cost) for the native measurements and the scope of the Go comparison.
 
