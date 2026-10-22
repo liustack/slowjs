@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"testing"
 	"time"
 )
@@ -91,11 +90,17 @@ func TestRegExpCacheMemoryLimit(t *testing.T) {
 }
 
 // The eval timeout and Interrupt stop a loop that makes regexps the cache
-// keeps, as one that compiles them.
+// keeps, as one that compiles them, within a few milliseconds: compiling a
+// long pattern counts its steps toward the interrupt check, so the check
+// does not wait for thousands of compiles, and one long compile stops in
+// the middle. A catch block does not take the interrupt.
 func TestRegExpCacheStops(t *testing.T) {
 	for _, js := range []string{
 		`for (;;) new RegExp(p, 'g')`,
 		`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`,
+		`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`,
+		`for (let i = 0; ; i++) eval('/' + p + i + '/g')`,
+		`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`,
 	} {
 		for _, c := range []struct {
 			name string
@@ -118,10 +123,12 @@ func TestRegExpCacheStops(t *testing.T) {
 				defer c.arm(m)()
 				start := time.Now()
 				_, err := m.Eval(js, EvalGlobal)
-				if err == nil || !strings.Contains(err.Error(), "interrupted") {
+				took := time.Since(start)
+				var e *Error
+				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || e.Message != "interrupted" {
 					t.Fatalf("%s: got %v, want interrupted", js, err)
 				}
-				if took := time.Since(start); took > 500*time.Millisecond {
+				if took > 50*time.Millisecond {
 					t.Errorf("%s: stopped %v after the call started, want about 10ms", js, took)
 				}
 			})
