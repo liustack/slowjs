@@ -11,7 +11,7 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
 // changes are checked against, to update them after a review.
 //
 // It does thirty-four things:
@@ -112,6 +112,11 @@
 //     string key that is already an atom and no index through atomKey of
 //     lib/atomkey.go, without a TLS frame and the four calls of the
 //     generic path (see fixAtomKey).
+//   - In every lib/ccgo_*.go file of a 64-bit target, let get_field and
+//     get_field2 of the interpreter look for a method of a string, a number
+//     or a fast array on its prototype through fieldProto and fieldGoesOn
+//     of lib/fieldchain.go, rather than in JS_GetPropertyInternal (see
+//     fixFieldChain).
 //   - In every lib/ccgo_*.go file, let js_compile_regexp take the bytecode
 //     of a pattern and flags it compiled before from the regexp cache of
 //     lib/regexcache.go, kept in that state (see fixRegexCache).
@@ -119,9 +124,10 @@
 //     behind Date.now, new Date(), Math.random's seed and performance.now,
 //     read Go's clocks through lib/clock.go instead of libc's system calls
 //     (see fixClock).
-//     The first step undoes these eight, as the other changes match the
+//     The first step undoes these nine, as the other changes match the
 //     polls, JSRuntime, the allocator, the shape functions, the functions
-//     funcShape is called from, JS_ValueToAtom, js_compile_regexp and the
+//     funcShape is called from, JS_ValueToAtom, the property reads of the
+//     interpreter, js_compile_regexp and the
 //     clock functions as ccgo writes them.
 //   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
 //     JS_CallInternal take its TLS frame with the room of a small alloca
@@ -164,30 +170,31 @@ const (
 )
 
 var (
-	check     = flag.Bool("check", false, "report missing changes without writing files")
-	slots     = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
-	define    = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
-	frames    = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
-	up        = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
-	cells     = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
-	backtrace = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
-	regex     = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
-	inline    = flag.Bool("inline", false, "print the fingerprints of set_value, which fixInline writes out in the interpreter, in the form of inlineSites, to update it after a review")
-	poll      = flag.Bool("poll", false, "print the fingerprints of the function lib/poll.go repeats, in the form of pollSites, to update it after a review")
-	runtimeF  = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
-	front     = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
-	shape     = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
-	recache   = flag.Bool("recache", false, "print the fingerprints of the functions lib/regexcache.go relies on, in the form of regexCacheSites, to update it after a review")
-	atomkey   = flag.Bool("atomkey", false, "print the fingerprints of JS_ValueToAtom and the functions lib/atomkey.go repeats, in the form of atomKeySites, to update it after a review")
-	lazyAddr  = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
-	forIn     = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
-	bitwise   = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
-	eq        = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
-	jsonF     = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
-	oneFrame  = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
-	clock     = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
-	fnShape   = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
-	qjsLibc   = flag.Bool("qjslibc", false, "print the fingerprints of the functions and variables of quickjs-libc.c and of those that stay, in the form of quickjsLibcSites, with what stays and what goes, from the files as taken from upstream, to update it after a review")
+	check      = flag.Bool("check", false, "report missing changes without writing files")
+	slots      = flag.Bool("slots", false, "print the slot uses of lib/ccgo_darwin_arm64.go in the form of slotSites, to update it after a review")
+	define     = flag.Bool("define", false, "print the fingerprints of the functions objlitDefine stands for, in the form of defineSites, to update it after a review")
+	frames     = flag.Bool("frames", false, "print the TLS frames of lib/ccgo_darwin_arm64.go and whether each can be dropped, to update frameSites after a review")
+	up         = flag.Bool("up", false, "print the statements where fixUp drops an order of reads and calls, in the form of upSites, to update it after a review")
+	cells      = flag.Bool("cells", false, "print the uses of the frame of JS_CallInternal in the form of cellsFrameUses, to update it after a review")
+	backtrace  = flag.Bool("backtrace", false, "print the fingerprints of the functions lib/backtrace.go repeats, in the form of backtraceSites, to update it after a review")
+	regex      = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
+	inline     = flag.Bool("inline", false, "print the fingerprints of set_value, which fixInline writes out in the interpreter, in the form of inlineSites, to update it after a review")
+	poll       = flag.Bool("poll", false, "print the fingerprints of the function lib/poll.go repeats, in the form of pollSites, to update it after a review")
+	runtimeF   = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
+	front      = flag.Bool("front", false, "print the fingerprints of the functions and the struct lib/frontcache.go relies on, in the form of frontSites, to update it after a review")
+	shape      = flag.Bool("shape", false, "print the fingerprints of the functions and the struct lib/shapecache.go relies on, in the form of shapeSites, to update it after a review")
+	fieldchain = flag.Bool("fieldchain", false, "print the fingerprints of the functions lib/fieldchain.go repeats, in the form of fieldChainSites, to update it after a review")
+	recache    = flag.Bool("recache", false, "print the fingerprints of the functions lib/regexcache.go relies on, in the form of regexCacheSites, to update it after a review")
+	atomkey    = flag.Bool("atomkey", false, "print the fingerprints of JS_ValueToAtom and the functions lib/atomkey.go repeats, in the form of atomKeySites, to update it after a review")
+	lazyAddr   = flag.Bool("lazyaddr", false, "print the fingerprints of the functions that get an address in a TLS frame fixLazyFrames keeps, in the form of lazyAddrSites, to update it after a review")
+	forIn      = flag.Bool("forin", false, "print the fingerprints of the functions lib/forin.go repeats or is called from, in the form of forInSites, to update it after a review")
+	bitwise    = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
+	eq         = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
+	jsonF      = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
+	oneFrame   = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
+	clock      = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
+	fnShape    = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
+	qjsLibc    = flag.Bool("qjslibc", false, "print the fingerprints of the functions and variables of quickjs-libc.c and of those that stay, in the form of quickjsLibcSites, with what stays and what goes, from the files as taken from upstream, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
 	// without the fix already in place.
@@ -215,7 +222,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
+	if *define || *backtrace || *regex || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -239,6 +246,8 @@ func main() {
 			err = fingerprintReport(files, hw, "shapeSites", shapeFingerprint)
 		} else if err == nil && *atomkey {
 			err = fingerprintReport(files, hw, "atomKeySites", atomKeyFingerprint)
+		} else if err == nil && *fieldchain {
+			err = fingerprintReport(files, hw, "fieldChainSites", fieldChainFingerprint)
 		} else if err == nil && *recache {
 			err = fingerprintReport(files, hw, "regexCacheSites", regexCacheFingerprint)
 		} else if err == nil && *inline {
@@ -477,7 +486,7 @@ func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixRegexCache, fixClock} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixFieldChain, fixRegexCache, fixClock} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -488,7 +497,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreClock, restoreRegexCache, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreClock, restoreRegexCache, restoreFieldChain, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

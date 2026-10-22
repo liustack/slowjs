@@ -80,6 +80,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | quickjs-libc.c keeps only what the Go API calls | v0.27.0 | [trimmed.md](trimmed.md#quickjs-libcc-keeps-only-what-the-go-api-calls) |
 | Likely and unlikely tests branch on their condition | v0.27.0 | [interpreter-loop.md](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) |
 | TLS frames taken without a call on linux | v0.27.0 | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
+| Methods of strings, numbers and arrays found in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

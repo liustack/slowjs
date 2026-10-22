@@ -1,0 +1,106 @@
+string method: 101
+string method get_field: "HELLO"
+string length: 5
+string missing: undefined
+rope method: 98
+rope slice: "aabb"
+rope missing: undefined
+int method: "101001"
+float method: "1.3"
+NaN method: "NaN"
+minus zero: "0"
+int missing: undefined
+float missing: undefined
+number constructor: true
+string constructor: true
+string __proto__: true
+number __proto__: true
+string valueOf: "hello"
+string hasOwnProperty: "true,false"
+number toString radix: "ff"
+string NaN key: undefined
+string Infinity key: undefined
+bool method: "true"
+bigint method: "101"
+symbol description: "d"
+null read: throws TypeError
+undefined read: throws TypeError
+null call: throws TypeError
+string from Object.prototype: "op"
+number from Object.prototype: "op"
+array from Object.prototype: "op"
+sloppy method this: "object"
+strict method this: "string:hello"
+rope strict method this: 607
+sloppy getter: "object"
+strict getter: "string:hello"
+number strict getter: "number:41"
+float strict getter: "number:1.25"
+string getter on Object.prototype: "string"
+number getter on Object.prototype: "number"
+array getter on Object.prototype: "object"
+string getter throws: throws RangeError
+string getter throws on call: throws RangeError
+string not a function: throws TypeError
+shadowed method: "mine"
+restored method: "h"
+deleted method: "undefined"
+method copied: "1.250"
+method deleted: "undefined"
+read-only read: "ro"
+read-only sloppy write: "ro"
+read-only strict write: throws TypeError
+primitive strict write: throws TypeError
+string through proxy: "proxied:hello"
+rope through proxy: 608
+string method through proxy: 104
+string Object.prototype through proxy: "op"
+proxy receivers: "string,string"
+string through frozen prototype: "fk"
+string past frozen prototype: "op"
+string prototype back: "undefined,op"
+array method: [2,4,6]
+array method get_field: "function"
+array length: 3
+array missing: undefined
+array symbol: true
+array method added later: 3
+array getter added later: 1
+array Infinity: undefined
+array Infinity on Object.prototype: "infinity"
+array NaN on Object.prototype: "nan"
+typed array Infinity: undefined
+typed array NaN: undefined
+typed array method: "1-2"
+typed array missing: undefined
+typed array from Object.prototype: "op"
+string Infinity on Object.prototype: "infinity"
+number NaN on Object.prototype: "nan"
+frozen array method: "4+5"
+frozen array missing: undefined
+sealed array method: 1
+sparse array method: [1,2,3]
+sparse array length: 101
+array with element accessor: "g0,2"
+array own method: "own join"
+array subclass method: 3
+array with other prototype: "custom,undefined"
+array through proxy: "array proxy:true,2"
+arguments: "0,op,function"
+strict arguments callee: throws TypeError
+mapped arguments: "op,undefined"
+String object method: "b"
+String object length: 3
+String object missing: undefined
+String object getter: "object:obj"
+function method: "function"
+function name: "named"
+number symbol key: "number symbol"
+string iterator: "2,true"
+string toStringTag: undefined
+with String object: "y2"
+with array: "1-22"
+eval: "ABC7.0"
+indirect eval: "c9"
+new Function: "abab2"
+after clean up: "undefined,undefined,undefined,undefined"

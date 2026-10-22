@@ -42498,9 +42498,14 @@ restart:
 		}
 		*(*TJSValue)(unsafe.Pointer(bp + 272)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 		if !(expect64(!!(int32((*(*TJSValue)(unsafe.Pointer(bp + 272))).Ftag) == int32(EJS_TAG_OBJECT)))) {
-			goto _972
+			// Changed by internal/fixlib: a string or a number looks for the key from its prototype (see fixFieldChain).
+			p3 = fieldProto(tls, ctx10, *(*TJSValue)(unsafe.Pointer(bp + 272)), atom3)
+			if p3 == 0 {
+				goto _972
+			}
+		} else {
+			p3 = *(*uintptr)(unsafe.Pointer(bp + 272))
 		}
-		p3 = *(*uintptr)(unsafe.Pointer(bp + 272))
 		for {
 			prs = _find_own_property(tls, bp+288, p3, atom3)
 			if prs != 0 { /* found */
@@ -42526,7 +42531,8 @@ restart:
 				val10 = v121
 				break
 			}
-			if expect64(!!(int32(*(*uint8)(unsafe.Pointer(p3 + 16))&0x10>>4) != 0)) { /* XXX: should avoid the slow path for arrays                                and typed arrays by ensuring that 'prop' is                                not numeric */
+			// Changed by internal/fixlib: a fast array goes on to its prototype for a key that is no index (see fixFieldChain).
+			if expect64(!!(int32(*(*uint8)(unsafe.Pointer(p3 + 16))&0x10>>4) != 0)) && !fieldGoesOn(tls, p3, atom3) { /* XXX: should avoid the slow path for arrays                                and typed arrays by ensuring that 'prop' is                                not numeric */
 				*(*TJSValue)(unsafe.Pointer(bp + 272)) = TJSValue{
 					Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p3})),
 					Ftag: int64(EJS_TAG_OBJECT),
@@ -42595,9 +42601,14 @@ restart:
 		}
 		*(*TJSValue)(unsafe.Pointer(bp + 296)) = *(*TJSValue)(unsafe.Pointer(sp + uintptr(-libc.Int32FromInt32(1))*16))
 		if !(expect64(!!(int32((*(*TJSValue)(unsafe.Pointer(bp + 296))).Ftag) == int32(EJS_TAG_OBJECT)))) {
-			goto _990
+			// Changed by internal/fixlib: a string or a number looks for the key from its prototype (see fixFieldChain).
+			p4 = fieldProto(tls, ctx10, *(*TJSValue)(unsafe.Pointer(bp + 296)), atom4)
+			if p4 == 0 {
+				goto _990
+			}
+		} else {
+			p4 = *(*uintptr)(unsafe.Pointer(bp + 296))
 		}
-		p4 = *(*uintptr)(unsafe.Pointer(bp + 296))
 		for {
 			prs1 = _find_own_property(tls, bp+312, p4, atom4)
 			if prs1 != 0 { /* found */
@@ -42623,7 +42634,8 @@ restart:
 				val11 = v121
 				break
 			}
-			if expect64(!!(int32(*(*uint8)(unsafe.Pointer(p4 + 16))&0x10>>4) != 0)) { /* XXX: should avoid the slow path for arrays                                and typed arrays by ensuring that 'prop' is                                not numeric */
+			// Changed by internal/fixlib: a fast array goes on to its prototype for a key that is no index (see fixFieldChain).
+			if expect64(!!(int32(*(*uint8)(unsafe.Pointer(p4 + 16))&0x10>>4) != 0)) && !fieldGoesOn(tls, p4, atom4) { /* XXX: should avoid the slow path for arrays                                and typed arrays by ensuring that 'prop' is                                not numeric */
 				*(*TJSValue)(unsafe.Pointer(bp + 296)) = TJSValue{
 					Fu:   *(*TJSValueUnion)(unsafe.Pointer(&struct{ f uintptr }{f: p4})),
 					Ftag: int64(EJS_TAG_OBJECT),
@@ -203889,4 +203901,10 @@ const (
 	atomKeyTypeShift = 0
 	atomKeyLenMask   = 0xfffffffe
 	atomKeyLenShift  = 1
+)
+
+// Changed by internal/fixlib: the fast_array bit of a JSObject, as lib/fieldchain.go reads it (see fixFieldChain).
+const (
+	fieldFastArrayOff  = 16
+	fieldFastArrayMask = 0x8
 )
