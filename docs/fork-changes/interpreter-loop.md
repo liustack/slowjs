@@ -1,6 +1,7 @@
 ---
-summary: 'The fork changes to the interpreter loop JS_CallInternal: plain pointer conversions instead of __ccgo_up, the cells of Dup and Free as Go variables, values pinned in their stack slots on amd64, set_value written out, the interrupt countdown inline, and likely and unlikely tests that branch on their condition, with what each gains, why it is safe and what to do when upstream changes it'
+summary: 'Native C dispatch and the fork changes to the Go interpreter loop JS_CallInternal: plain pointer conversions instead of __ccgo_up, the cells of Dup and Free as Go variables, values pinned in their stack slots on amd64, set_value written out, the interrupt countdown inline, and likely and unlikely tests that branch on their condition, with what each gains, why it is safe and what to do when upstream changes it'
 read_when:
+  - Changing the DIRECT_DISPATCH condition in the C patch
   - Changing fixUp, fixCells, fixPin, fixInline, fixPoll or fixExpect in internal/fixlib
   - fixlib stops on upSites, the cells of JS_CallInternal, pinVars, set_value, inlineCallees, js_poll_interrupts or expectSites after an upstream release
   - About to add a fast path or a helper to the interpreter loop
@@ -9,7 +10,7 @@ read_when:
 
 # The interpreter loop
 
-`JS_CallInternal` runs the bytecode. It is far too large for Go to inline anything into it but the smallest functions (a cost of 20 or less, with or without PGO), so a helper there is one more real call, and the size of its Go stack frame matters. All of these change only the generated Go, through `internal/fixlib`, with no C form.
+`JS_CallInternal` runs the bytecode. It is far too large for Go to inline anything into it but the smallest functions (a cost of 20 or less, with or without PGO), so a helper there is one more real call, and the size of its Go stack frame matters. The Go changes below use `internal/fixlib`. The native C dispatch condition affects only the source patch.
 
 ## Less stack work in the interpreter loop
 
@@ -76,3 +77,17 @@ Tests: `internal/fixlib/expect_test.go`, with test262 and the tests of the root 
 ### When upstream changes it
 
 If it reports a number of tests other than `expectSites` has for a file, read the new or the missing ones: each must still be a test of `__builtin_expect`, `libc.BoolInt64(!!(x)) != 0` or `libc.BoolInt32(!!(x)) != 0`. Then put the new numbers in (`go run ./internal/fixlib -expect` prints them).
+
+## Native C keeps computed goto
+
+Release: Unreleased.
+
+The C patch used to set `DIRECT_DISPATCH` to zero for every compiler. It now disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`, retaining upstream's dispatch table for native C. A native interpreter using the patch therefore keeps the same dispatch mechanism as the unpatched source. The uncatchable exception, allocation failure, recursion and error stack changes remain in both builds.
+
+ccgo defines `__CCGO__` automatically and still sees `DIRECT_DISPATCH` as zero. The committed Go engine and `fixlib` rules remain unchanged. See [performance.md](../performance.md#native-c-patch-cost) for the native measurements and the scope of the Go comparison.
+
+Verification compares preprocessing with no translation macro, with `__CCGO__`, with `__EMSCRIPTEN__` and with both. `DIRECT_DISPATCH` must be `1` for native C and `0` for the other three configurations. Native behavior checks exercise interrupts and allocation failures through catch, finally, promises, generators and iterators, plus recursion and error stack descriptors. The existing Go behavior, translation and test262 suites check the Go engine.
+
+### When upstream changes it
+
+Keep upstream's native dispatch choice when updating the patch. If ccgo learns computed goto, review its translation before removing the `__CCGO__` condition. Do not infer native C performance from the generated Go switch, or vice versa.

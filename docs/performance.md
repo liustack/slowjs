@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa, which engine ideas were tried and dropped and why, and where to continue'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -108,6 +108,40 @@ Each engine runs at nice 19 on CPU 1, with sibling 5 idle, in a 4 GiB systemd sc
 | `/store/zh-CN/products/pour-over-kettle` | 41.155 (40.670 to 41.690) | 41.475 (41.080 to 41.570) | 1.0078 | 1.005 (0.997 to 1.016) |
 
 The page ratios range from 0.9998 to 1.0081. The call-level gain does not establish a whole-page speedup. Page differences should be read with the paired sample spread, not rounded into a claim that every page is faster.
+
+## Native C patch cost
+
+Measured on 2026-10-22, using the pinned Bellard source `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` and the fork at `620658c`. The old C patch unconditionally set `DIRECT_DISPATCH` to zero. That translation setting predates the fork's exception changes. Native C therefore used a central switch instead of upstream's computed goto dispatch.
+
+The machine was the AMD EPYC 7B13 VM described above. Both compilers used the upstream Makefile at `-O2`, gcc 15.3 and clang 22.1.8. The V8-v7 harness was `tests/bench-v8/combined.js` from Bellard's 2026-06-04 extras, retaining strict mode, as in [goc's comparison](https://github.com/LoyieKing/goc/blob/8482979acbc8f10f76d9715d88c1beed55df230b/docs/benchmark/README.md). Native invocations passed `--stack-size 16M` in every variant.
+
+Eight alternating rounds gave the following results. Scores are medians. Ratios are the median and range of the eight paired ratios, not the quotient of the displayed score medians. Higher scores are faster.
+
+| C source | gcc score | gcc / unpatched | clang score | clang / unpatched |
+| --- | ---: | ---: | ---: | ---: |
+| Unpatched | 1313.0 | 1.0000 | 1295.5 | 1.0000 |
+| Old complete patch | 1172.5 | 0.8886 (0.8591 to 0.9077) | 1161.5 | 0.8941 (0.8423 to 0.9072) |
+| Only disable computed goto | 1204.5 | 0.9102 (0.9018 to 0.9307) | 1136.0 | 0.8780 (0.8609 to 0.8983) |
+| Complete patch with native computed goto | 1312.0 | 0.9932 (0.9871 to 1.0162) | 1303.5 | 1.0046 (0.9924 to 1.0171) |
+
+Keeping native computed goto raises the score by 12.3% with gcc and 12.6% with clang relative to the old patch, using paired medians. The remaining difference from unpatched C is small compared with the spread of the rounds. This confirms a substantial regression, but not a universal 7% cost. The goc result used an Intel Xeon VM, gcc 14.2 and clang 19. Near equality of the total does not imply equality of each suite. After restoring native dispatch, RegExp remains at 0.935 of unpatched gcc's score and 1.106 of unpatched clang's score. Crypto and NavierStokes account for the largest losses with the old dispatch.
+
+Each timing invocation used one of CPUs 1, 2 or 3, with its sibling 5, 6 or 7 idle. It started after 30 samples taken once a second in which both CPUs averaged below 1.5% busy and stayed below 10% in every sample. A sample was rejected if the sibling reached either threshold or process CPU time was below 92% of wall time. Builds, tests and Callgrind collection used CPUs 0 and 4. JavaScript ran at nice 19 in a 4 GiB systemd scope without swap.
+
+Callgrind used fixed work instead of the adaptive score harness. Each benchmark ran setup, a fixed number of operations, and teardown. The repeat counts were Richards 4, DeltaBlue 4, Crypto 1, RayTrace 2, EarleyBoyer 1, RegExp 1, Splay 2 and NavierStokes 1. These weights differ from the geometric V8 score, so instruction percentages are not timing percentages.
+
+| C source | gcc instructions | clang instructions |
+| --- | ---: | ---: |
+| Unpatched | 12,138,113,565 | 12,050,493,307 |
+| Old complete patch | 12,733,447,857 | 13,940,102,751 |
+| Only disable computed goto | 12,696,016,426 | 13,983,292,132 |
+| Complete patch with native computed goto | 12,191,769,505 | 12,204,400,477 |
+
+Retaining all behavior changes while restoring native dispatch reduces the excess over unpatched C from 4.90% to 0.44% for gcc, and from 15.68% to 1.28% for clang. The switch adds range checking and address calculation around a central indirect jump. Hardware branch prediction and cache effects were not measured.
+
+Feature differences are not additive. For example, an unchanged regexp execution function has one fewer alignment NOP in a loop in the complete patch, accounting for 17,745,900 fewer instructions there. Removing compiler allocation failure guards also changes gcc's inlining of `js_malloc` into object allocation. These code generation effects must be distinguished from executing the guards themselves.
+
+The retained fix disables computed goto only for `__CCGO__` and `__EMSCRIPTEN__`. Native preprocessing is identical to the measured native computed goto variant. ccgo still takes the switch branch, and the committed Go engine is unchanged. Its incremental behavior costs need their own measurements rather than the native C percentage.
 
 ## What was tried and not done
 

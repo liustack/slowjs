@@ -10,10 +10,11 @@ read_when:
 
 The fork starts from quickjs v0.25.0 and libquickjs v0.13.1 (QuickJS release 2026-06-04, commit `3d5e064`). Each doc below takes one area. For each change it says what the change does, why it is safe, what it gains or costs and how that was measured, which tests check it, and, under "When upstream changes it", what to do when `fixlib` stops on it after an upstream release. [upgrading.md](../upgrading.md) has the procedure of an upgrade, and [CHANGELOG.md](../../CHANGELOG.md) what each release changed for users.
 
-Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](../upgrading.md)). A change that also has a C form is in `lib/internal/patch/quickjs.diff`, so a regeneration of `lib/` keeps it. The changes made for speed have no C form.
+Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](../upgrading.md)). A change that also has a C form is in `lib/internal/patch/quickjs.diff`, so a regeneration of `lib/` keeps it. The Go changes made for speed have no C form. The native dispatch condition below changes only the C patch.
 
 | Change | Release | Doc |
 | --- | --- | --- |
+| Native C keeps computed goto | Unreleased | [interpreter-loop.md](interpreter-loop.md#native-c-keeps-computed-goto) |
 | No leak when converting a string runs out of memory | v0.26.0 | [uncatchable.md](uncatchable.md#no-leak-when-converting-a-string-runs-out-of-memory) |
 | Call reports the exception of the function expression | v0.26.0 | [go-api.md](go-api.md#call-reports-the-exception-of-the-function-expression) |
 | Error stacks formatted when first read | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.md#error-stacks-formatted-when-first-read) |

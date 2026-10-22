@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 使用 `lib/internal/patch/quickjs.diff` 的原生 C 构建保留上游的 computed goto 分发，仅为 ccgo 和 Emscripten 禁用。生成的 Go 引擎和分支已有的行为修改保持不变。
+
 ## [v0.27.0] - 2026-10-22
 
 ### 新增

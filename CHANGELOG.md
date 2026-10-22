@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Fixed
+
+- Native C builds using `lib/internal/patch/quickjs.diff` retain upstream's computed goto dispatch. The patch disables it only for ccgo and Emscripten. The generated Go engine and the fork's behavior changes are unchanged.
+
 ## [v0.27.0] - 2026-10-22
 
 ### Added

@@ -58,6 +58,8 @@ To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'T
 
 ## Focused checks
 
+For the native C dispatch condition, apply `lib/internal/patch/quickjs.diff` to the pinned C source and inspect `DIRECT_DISPATCH` with both gcc and clang preprocessing. It must be `1` with neither translation macro, and `0` with `__CCGO__`, `__EMSCRIPTEN__`, or both. Build the native interpreter with the upstream Makefile and check interrupt and allocation failure propagation, recursion RangeError and error stack descriptors with computed goto enabled. The [native dispatch notes](fork-changes/interpreter-loop.md#native-c-keeps-computed-goto) explain why the Go translation remains unchanged.
+
 ```sh
 go test -short -timeout 30m ./...                        # all packages (internal/fixlib takes about 16 minutes)
 go test -vet=off -run 'TestToCString' ./lib              # the leak of JS_ToCStringLen2 out of memory
