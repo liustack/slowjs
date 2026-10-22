@@ -12,10 +12,11 @@ import "unsafe"
 // C struct, which keep their offsets (see fixRuntimeField). JS_NewRuntime2
 // allocates it with the C struct and clears it.
 type TforkRuntime struct {
-	front  TfrontCache  // see frontcache.go
-	shape  TshapeCache  // see shapecache.go
-	fn     TfuncShapes  // see funcshape.go
-	regexp TregexpCache // see regexcache.go
+	ephemeron uint8        // temporary collector phase, see ephemeron.go
+	front     TfrontCache  // see frontcache.go
+	shape     TshapeCache  // see shapecache.go
+	fn        TfuncShapes  // see funcshape.go
+	regexp    TregexpCache // see regexcache.go
 }
 
 // forkRuntimeSize is the size of TforkRuntime, which JS_NewRuntime2

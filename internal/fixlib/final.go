@@ -30,6 +30,7 @@ type finalChange struct {
 var finalChanges = []finalChange{
 	{"fixExpect", fixExpect, restoreExpect, expectF, expectReport},
 	{"fixFastFrames", fixFastFrames, restoreFastFrames, fastFramesF, fastFrameReport},
+	{"fixEphemeron", fixEphemeron, restoreEphemeron, ephemeronF, ephemeronReport},
 }
 
 // fixFinal makes the final changes in b, the generated file name.

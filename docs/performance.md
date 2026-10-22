@@ -53,6 +53,7 @@ Unless a row says otherwise:
 | v0.27.0 | [Compiled Intl formatting plans](fork-changes/time-and-intl.md#compiled-intl-formatting-plans) | NumberFormat takes 41% to 42% less time than main and DateTimeFormat 28% to 37% less on the fixed inputs. [Ten shop pages](#intl-formatting) render in 0.9998 to 1.0081 of main's time without PGO |
 | v0.27.1 | [Methods of strings, numbers and arrays found in the interpreter](fork-changes/objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) | 0.996 of the time without PGO (0.992 to 0.998 over 6 rounds in 3 code layouts), and 0.975 (0.966 to 0.986) on the MUI pages of tifa's test app, whose order list reads string methods about 320000 times a render. 1.0% fewer instructions on the MUI pages, under 0.1% on the shop |
 | v0.27.1 | [js_malloc takes cached blocks itself](fork-changes/memory-and-allocation.md#js_malloc-takes-cached-blocks-itself) | 0.985 of the time without PGO (0.971 to 0.992 over 6 rounds in 3 code layouts), the MUI pages of tifa's test apps 0.983. 2.1% to 2.3% fewer instructions on the shop, 1.3% on the MUI pages. Memory the same |
+| Unreleased | [WeakMap entries freed in one full GC](fork-changes/weak-collections.md#what-it-costs) | A fix, not a speedup. Without PGO, renders take 0.977 of the time on the shop and 0.969 on the MUI pages, and a full GC after each render 0.989 and 1.046 (1.0% and 0.3% more instructions). Large weak maps collect slower: 2.9 times as long for a chain of 100,000 live entries |
 
 Whole releases, measured in tifa:
 

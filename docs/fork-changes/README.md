@@ -84,6 +84,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | js_malloc takes cached blocks itself | v0.27.1 | [memory-and-allocation.md](memory-and-allocation.md#js_malloc-takes-cached-blocks-itself) |
 | Compiling a regexp counts toward the interrupt check | Unreleased | [uncatchable.md](uncatchable.md#compiling-a-regexp-counts-toward-the-interrupt-check) |
 | Parsing and building strings count toward the interrupt check | Unreleased | [uncatchable.md](uncatchable.md#parsing-and-building-strings-count-toward-the-interrupt-check) |
+| WeakMap ephemeron collection | Unreleased | [weak-collections.md](weak-collections.md) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
