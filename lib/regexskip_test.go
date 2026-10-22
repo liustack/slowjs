@@ -279,8 +279,10 @@ func TestRegexSkipInterrupt(t *testing.T) {
 		{"a", "x", 2 * lreSkipChunk, 0, 0, 0, 1},
 	} {
 		name := fmt.Sprintf("/%s/ on %d of %q, interrupt %d", c.re, c.units, c.s, c.stop)
-		skipChecks, skipStop = 0, c.stop
+		// The compile counts steps toward the interrupt check too.
+		skipStop = 0
 		bc := compileRegexp(t, tls, ctx, c.re, 0)
+		skipChecks, skipStop = 0, c.stop
 		buf, clen, cbufType := regexpInput(t, tls, strings.Repeat(c.s, c.units), false)
 		capture := cAlloc(t, tls, 2*unsafe.Sizeof(uintptr(0)))
 		st := lreSkip(tls, capture, bc, buf, 0, clen, cbufType, ctx)

@@ -230,6 +230,10 @@ func regexpCacheGet(tls *libc.TLS, ctx uintptr, pattern, flags TJSValue) (bc TJS
 		return bc, false
 	}
 	h := regexpHash(tls, p, f)
+	// The hash and the compare read the whole pattern, which the
+	// interpreter counts as one instruction: count a step for each 32
+	// bytes too.
+	_js_charge_interrupts(ctx, Tsize_t(stringBytes(p)>>5))
 	for e := *rc.chain(h); e != 0; e = regexpEntryOf(e).chain {
 		en := regexpEntryOf(e)
 		if en.hash != h || !sameString(tls, ctx, en.pattern, p) || !sameString(tls, ctx, en.flags, f) {

@@ -12654,6 +12654,8 @@ func _string_buffer_init2(tls *libc.TLS, ctx uintptr, s uintptr, size int32, is_
 	(*TStringBuffer)(unsafe.Pointer(s)).Flen1 = 0
 	(*TStringBuffer)(unsafe.Pointer(s)).Fis_wide_char = is_wide
 	(*TStringBuffer)(unsafe.Pointer(s)).Ferror_status = 0
+	// Changed by internal/fixlib: count the characters toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts(ctx, Tsize_t(size>>3))
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = _js_alloc_string(tls, ctx, size, is_wide)
 	if expect64(!!!((*TStringBuffer)(unsafe.Pointer(s)).Fstr != 0)) {
 		(*TStringBuffer)(unsafe.Pointer(s)).Fsize = 0
@@ -12786,6 +12788,8 @@ _8:
 	}
 _12:
 	new_size = v3
+	// Changed by internal/fixlib: count the characters added toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts((*TStringBuffer)(unsafe.Pointer(s)).Fctx, Tsize_t((new_size-(*TStringBuffer)(unsafe.Pointer(s)).Fsize)>>3))
 	(*TStringBuffer)(unsafe.Pointer(s)).Fsize = new_size
 	(*TStringBuffer)(unsafe.Pointer(s)).Fstr = new_str
 	r = 0
@@ -77563,6 +77567,8 @@ func _js_parse_init(tls *libc.TLS, ctx uintptr, s uintptr, input uintptr, input_
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fbuf_start = (*TJSParseState)(unsafe.Pointer(s)).Fbuf_start
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fline_num = 0
 	(*TJSParseState)(unsafe.Pointer(s)).Fget_line_col_cache.Fcol_num = 0
+	// Changed by internal/fixlib: count the source toward the interrupt counter (see fixWorkCharge).
+	_js_charge_interrupts(ctx, input_len)
 }
 
 func _JS_EvalFunctionInternal(tls *libc.TLS, ctx1 uintptr, _fun_obj TJSValue, this_obj TJSValue, var_refs uintptr, sf uintptr) (r TJSValue) {
@@ -111364,6 +111370,9 @@ _9:
 	if !(re_bytecode_buf != 0) {
 		if _js_regexp_out_of_memory(bp+12) {
 			XJS_ThrowOutOfMemory(tls, ctx1)
+		} else if _js_regexp_interrupted(bp+12) {
+			// Changed by internal/fixlib: the regexp parser was interrupted (see fixRegexPoll).
+			_JS_ThrowInterrupted(tls, ctx1)
 		} else {
 			XJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12059, libc.VaList(bp+88, bp+12))
 		}
@@ -160637,6 +160646,10 @@ func _re_parse_nested_class(tls *libc.TLS, s uintptr, cr2 uintptr, pp uintptr) (
 		if libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8))))) == int32(']') {
 			break
 		}
+		// Changed by internal/fixlib: count the atom and the ranges its union copies (see fixRegexPoll).
+		if _re_poll_interrupts(tls, s, Tsize_t((*TREStringList)(unsafe.Pointer(cr2)).Fcr.Flen1)*4) != 0 {
+			goto fail
+		}
 		if !(libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp + 8))))) == int32('[') && (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0) {
 			goto _2
 		}
@@ -162257,6 +162270,10 @@ func _re_parse_alternative(tls *libc.TLS, s uintptr, is_backward_dir TBOOL) (r i
 			break
 		}
 		term_start = (*TREParseState)(unsafe.Pointer(s)).Fbyte_code.Fsize
+		// Changed by internal/fixlib: count the term toward the interrupt counter (see fixRegexPoll).
+		if _re_poll_interrupts(tls, s, 0) != 0 {
+			return -int32(1)
+		}
 		ret = _re_parse_term(tls, s, is_backward_dir)
 		if ret != 0 {
 			return ret
@@ -162266,6 +162283,10 @@ func _re_parse_alternative(tls *libc.TLS, s uintptr, is_backward_dir TBOOL) (r i
 			   speed is not really critical here) */
 			end = (*TREParseState)(unsafe.Pointer(s)).Fbyte_code.Fsize
 			term_size = end - term_start
+			// Changed by internal/fixlib: count the code the term moves (see fixRegexPoll).
+			if _re_poll_interrupts(tls, s, end-start) != 0 {
+				return -int32(1)
+			}
 			if Xdbuf_claim(tls, s, term_size) != 0 {
 				return -int32(1)
 			}
@@ -162291,6 +162312,10 @@ func _re_parse_disjunction(tls *libc.TLS, s uintptr, is_backward_dir TBOOL) (r i
 	for libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer((*TREParseState)(unsafe.Pointer(s)).Fbuf_ptr))) == int32('|') {
 		(*TREParseState)(unsafe.Pointer(s)).Fbuf_ptr = (*TREParseState)(unsafe.Pointer(s)).Fbuf_ptr + 1
 		len1 = libc.Int32FromUint64((*TREParseState)(unsafe.Pointer(s)).Fbyte_code.Fsize - libc.Uint64FromInt32(start))
+		// Changed by internal/fixlib: count the alternative and the code its split moves (see fixRegexPoll).
+		if _re_poll_interrupts(tls, s, Tsize_t(len1)) != 0 {
+			return -int32(1)
+		}
 		/* insert a split before the first alternative */
 		if _dbuf_insert(tls, s, start, int32(5)) != 0 {
 			return _re_parse_out_of_memory(tls, s)

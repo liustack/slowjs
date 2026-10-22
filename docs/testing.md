@@ -82,6 +82,9 @@ go test -run JSON ./lib                                  # JSON strings give wha
 go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
+go test -vet=off -run 'RegExpCacheStops|BuiltinWorkStops' . # a timeout stops loops of regexp compiles, parsing and string building within 50ms
+go test -run 'RegexCompilePoll|RegexCacheCounts|Charge' ./lib # the steps the regexp parser, the regexp cache and the string builder count
+go test -run 'RegexPoll|WorkCharge' ./internal/fixlib    # fixRegexPoll and fixWorkCharge put their counts back and stop on a changed site
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
 go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
