@@ -92,7 +92,7 @@ If it reports that the functions of `funcShapeFuncs` or `JSShape` changed (`inte
 
 ## Methods of strings, numbers and arrays found in the interpreter
 
-Release: Unreleased.
+Release: v0.27.1.
 
 `s.charCodeAt(i)`, `n.toFixed(2)` and `a.push(x)` find their method in the interpreter. `get_field` and `get_field2`, the opcodes of `o.x` and `o.x(...)`, look for the key on the object and its prototypes in a loop of their own, and handed everything else to `JS_GetPropertyInternal`: every value that is not an object, and every object with exotic behavior, arrays included. The CSS-in-JS code of tifa's MUI pages reads string methods about 320000 times in a render of the order list, and both of tifa's apps read array methods a few thousand times. Now the loop starts at `String.prototype` for a string and a key that is no index and not `length`, and at `Number.prototype` for a number, through `fieldProto` (`lib/fieldchain.go`), and goes on past a fast array that is not a typed array for a key that is no index, through `fieldGoesOn`. Every other value or object takes `JS_GetPropertyInternal` as before.
 

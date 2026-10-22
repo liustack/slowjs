@@ -40,7 +40,7 @@ If it reports that the functions of `frontFuncs` or `JSMallocBlockHeader` change
 
 ## js_malloc takes cached blocks itself
 
-Release: Unreleased.
+Release: v0.27.1.
 
 An allocation the front cache could serve still went through four calls (`js_malloc`, `js_malloc_rt`, `__js_malloc` and the cache), about 78 instructions, and a free through two, about 43. Go inlines only small functions, and the cache was too large for it. Now the cache is two small functions, `frontTake` and `frontGive` in `lib/frontcache.go`, which Go inlines into `js_malloc`, `js_malloc_rt`, `__js_malloc` and `__js_free`. So `js_malloc` takes a cached block without a call, and `__js_free` keeps one with fewer checks. A size is turned into its list with a table of 64 entries, and there are 32 lists so that an index needs no bounds check. While the cache is off or gives its blocks back, every list counts as full, so `frontGive` tests no flag. The blocks the cache holds and when it gives them back do not change, and neither does the memory a VM holds.
 

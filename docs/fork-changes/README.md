@@ -14,7 +14,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| Native C keeps computed goto | Unreleased | [interpreter-loop.md](interpreter-loop.md#native-c-keeps-computed-goto) |
+| Native C keeps computed goto | v0.27.1 | [interpreter-loop.md](interpreter-loop.md#native-c-keeps-computed-goto) |
 | No leak when converting a string runs out of memory | v0.26.0 | [uncatchable.md](uncatchable.md#no-leak-when-converting-a-string-runs-out-of-memory) |
 | Call reports the exception of the function expression | v0.26.0 | [go-api.md](go-api.md#call-reports-the-exception-of-the-function-expression) |
 | Error stacks formatted when first read | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.md#error-stacks-formatted-when-first-read) |
@@ -80,8 +80,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | quickjs-libc.c keeps only what the Go API calls | v0.27.0 | [trimmed.md](trimmed.md#quickjs-libcc-keeps-only-what-the-go-api-calls) |
 | Likely and unlikely tests branch on their condition | v0.27.0 | [interpreter-loop.md](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) |
 | TLS frames taken without a call on linux | v0.27.0 | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
-| Methods of strings, numbers and arrays found in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
-| js_malloc takes cached blocks itself | Unreleased | [memory-and-allocation.md](memory-and-allocation.md#js_malloc-takes-cached-blocks-itself) |
+| Methods of strings, numbers and arrays found in the interpreter | v0.27.1 | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
+| js_malloc takes cached blocks itself | v0.27.1 | [memory-and-allocation.md](memory-and-allocation.md#js_malloc-takes-cached-blocks-itself) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
