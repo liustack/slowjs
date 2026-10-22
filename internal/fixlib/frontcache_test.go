@@ -21,7 +21,7 @@ func TestFrontCacheEveryFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		name := filepath.Base(fn)
-		for _, text := range []string{frontPopHook, frontPushHook, frontOffHook, frontGCHook, frontMallocNew, frontReallocNew} {
+		for _, text := range []string{frontTakeHook, frontGiveHook, frontCtxHook, frontOffHook, frontGCHook, frontMallocNew, frontReallocNew} {
 			if n := bytes.Count(b, []byte(text)); n != 1 {
 				t.Errorf("%s: %d copies of %q", name, n, text)
 			}
@@ -39,7 +39,7 @@ func TestFrontCacheIdempotent(t *testing.T) {
 			t.Fatal(err)
 		}
 		name := filepath.Base(fn)
-		for _, s := range []string{"frontPop(", "frontPush(", "frontDrain(", "frontRetry(", "frontOff("} {
+		for _, s := range []string{"frontTake(", "frontGive(", "frontDrain(", "frontRetry(", "frontOff("} {
 			if bytes.Contains(b, []byte(s)) {
 				t.Fatalf("%s: readEngine leaves a call of %s in", name, s)
 			}
@@ -83,8 +83,10 @@ func TestFrontCacheRejects(t *testing.T) {
 		{"another limit", b, "Fmalloc_size+size > (*TJSMallocState)(unsafe.Pointer(s)).Fmalloc_limit)", "Fmalloc_size+size >= (*TJSMallocState)(unsafe.Pointer(s)).Fmalloc_limit)", "changed (fingerprint"},
 		{"another realloc limit", b, "Fmalloc_size+size-old_size > (*TJSMallocState)(unsafe.Pointer(s)).Fmalloc_limit {", "Fmalloc_size+size-old_size >= (*TJSMallocState)(unsafe.Pointer(s)).Fmalloc_limit {", "changed (fingerprint"},
 		{"another large block", b, "\t*(*Tuint16_t)(unsafe.Pointer(b)) = uint16(MFREE_NIL)\n\t(*TJSMallocLargeBlockHeader)(unsafe.Pointer(b)).Fheader.Fblock_size_idx = uint8(0xff) /* fail safe */\n\treturn b + 8\n", "\t(*TJSMallocLargeBlockHeader)(unsafe.Pointer(b)).Fheader.Fblock_size_idx = uint8(0xff) /* fail safe */\n\treturn b + 8\n", "changed (fingerprint"},
-		{"no pop", string(fixed), frontPopHook, "", "a part of the change"},
+		{"no take", string(fixed), frontTakeHook, "", "a part of the change"},
 		{"no retry", string(fixed), frontMallocNew, frontMallocOld, "a part of the change"},
+		{"no take in js_malloc", string(fixed), frontCtxHook, "", "a part of the change"},
+		{"another js_malloc", b, "\tptr = Xjs_malloc_rt(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, size)\n", "\tptr = Xjs_mallocz_rt(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, size)\n", "changed (fingerprint"},
 		{"a call left", string(fixed), frontGCHook, "\tfrontDrain(tls, rt)\n", "a call of frontDrain is left"},
 	} {
 		if !strings.Contains(c.in, c.old) {

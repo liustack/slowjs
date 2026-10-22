@@ -111,6 +111,78 @@ func TestFrontCacheReuse(t *testing.T) {
 	}
 }
 
+// frontTake sizes a block as __js_malloc does: for every size of a small
+// block it takes back the block of that size freed last, and for a size of
+// 0 or too large for a small block it takes nothing. js_malloc takes from
+// the cache of the runtime of its context.
+func TestFrontTake(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	rt := XJS_NewRuntime(tls)
+	defer XJS_FreeRuntime(tls, rt)
+	ctx := XJS_NewContext(tls, rt)
+	defer XJS_FreeContext(tls, ctx)
+
+	for size := Tsize_t(0); size <= 600; size++ {
+		p := Xjs_malloc_rt(tls, rt, size)
+		if p == 0 {
+			t.Fatal("out of memory")
+		}
+		small := size != 0 && size <= frontLargest
+		if small {
+			want := _get_block_size_index(tls, (size+MJS_MALLOC_ALIGN-1)&^(MJS_MALLOC_ALIGN-1)+frontHeader)
+			if got := (*TJSMallocBlockHeader)(unsafe.Pointer(p - frontHeader)).Fblock_size_idx; int32(got) != want {
+				t.Fatalf("size %d: block size index %d, want %d", size, got, want)
+			}
+		}
+		Xjs_free_rt(tls, rt, p)
+		q := frontTake(rt, size)
+		if small && q != p || !small && q != 0 {
+			t.Fatalf("size %d: frontTake gave %#x after %#x was freed", size, q, p)
+		}
+		Xjs_free_rt(tls, rt, q)
+	}
+
+	p := Xjs_malloc(tls, ctx, 40)
+	Xjs_free(tls, ctx, p)
+	if q := Xjs_malloc(tls, ctx, 40); q != p {
+		t.Errorf("js_malloc gave %#x after %#x was freed", q, p)
+	} else {
+		Xjs_free(tls, ctx, q)
+	}
+}
+
+// Once the cache is off, frontGive keeps no block and frontTake gives
+// none, and a GC leaves the cache on.
+func TestFrontCacheOff(t *testing.T) {
+	tls := libc.NewTLS()
+	defer tls.Close()
+	rt := XJS_NewRuntime(tls)
+	defer XJS_FreeRuntime(tls, rt)
+	fc := frontCacheOf(rt)
+
+	XJS_RunGC(tls, rt)
+	p := Xjs_malloc_rt(tls, rt, 40)
+	if !frontGive(rt, p) || frontTake(rt, 40) != p {
+		t.Fatal("after a GC the cache is off")
+	}
+	frontOff(tls, rt)
+	if frontGive(rt, p) {
+		t.Fatal("frontGive kept a block with the cache off")
+	}
+	Xjs_free_rt(tls, rt, p)
+	for i, b := range fc.head {
+		if b != 0 {
+			t.Errorf("size index %d: a block in the cache after frontOff", i)
+		}
+	}
+	if q := Xjs_malloc_rt(tls, rt, 40); frontTake(rt, 40) != 0 {
+		t.Error("frontTake gave a block with the cache off")
+	} else {
+		Xjs_free_rt(tls, rt, q)
+	}
+}
+
 // JS_RunGC gives every cached block back to its arena, so an arena with no
 // block in use is freed, and memory is back where it was. The blocks go to
 // their arenas even when their lists in the cache have room for them.
