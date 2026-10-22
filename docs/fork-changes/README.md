@@ -82,6 +82,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | TLS frames taken without a call on linux | v0.27.0 | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
 | Methods of strings, numbers and arrays found in the interpreter | v0.27.1 | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
 | js_malloc takes cached blocks itself | v0.27.1 | [memory-and-allocation.md](memory-and-allocation.md#js_malloc-takes-cached-blocks-itself) |
+| Strings of Builtins converted in Go | Unreleased | [go-api.md](go-api.md#strings-of-builtins-converted-in-go) |
+| Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | Unreleased | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

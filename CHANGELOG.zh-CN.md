@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `Args.Latin1` 和 `Args.UTF16`：按引擎存放的样子拿到 Builtin 字符串参数的字符，每个字符一个字节或一个 16 位单元，不复制。`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 用这样的字符造字符串。只看短字符串、常常原样返回参数（`a.Value(0).Dup()`）的 Builtin 这样写就什么都不用转换：这样写的 React HTML 转义处理 16 个字符的字符串每次调用 99 ns，React 自己的 JavaScript 要 200 ns。
+
+### 性能
+
+- `Args.String`、`Args.WTF8` 和 `VM.NewString`（以及所有变成 JavaScript 字符串的 Go 字符串）在 Go 里直接读写引擎的字符，结果不变。读一个 16 字符的字符串再返回新字符串的 Builtin 从 230 ns 降到 134 ns，1,024 个 ASCII 字符从 1338 ns 降到 521 ns。`Value.Dup` 不再占 TLS 帧：原样返回参数的 Builtin 从 97 ns 降到 81 ns。
+
 ## [v0.27.1] - 2026-10-23
 
 ### 修复

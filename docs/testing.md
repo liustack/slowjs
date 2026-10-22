@@ -84,6 +84,7 @@ go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and t
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
+go test -run 'SameAsEngine|UTF8Units|BuiltinStringRoundTrip|BuiltinLatin1UTF16|EscapeView' . # strings of Builtins converted in Go give what the engine gives (also with -tags=libc.memgrind)
 go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
 go test -p 2 ./intl -run 'GoIntlMigration|EmbeddedZonePack|FormatStringMatchesParts' # rounding, calendars and embedded time zones
 go test -p 2 ./internal/intlhook                        # private state across GC and Close
