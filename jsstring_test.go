@@ -237,3 +237,67 @@ func TestUTF8Units(t *testing.T) {
 		check(b[:4+r.Intn(3)])
 	}
 }
+
+// Latin1 and UTF16 give the characters of a string as the engine holds them,
+// one of the two for a string in one piece and neither for a rope or another
+// value, and NewStringLatin1 and NewStringUTF16 make the same string of them
+// again, lone surrogates included.
+func TestBuiltinLatin1UTF16(t *testing.T) {
+	m := newTestVM(t)
+	defineBuiltin(t, m, "chars", NewBuiltin("chars", 1, func(a Args) (Value, error) {
+		b, isLatin1 := a.Latin1(0)
+		u, isUTF16 := a.UTF16(0)
+		switch {
+		case isLatin1 && isUTF16:
+			return Value{}, fmt.Errorf("both")
+		case isLatin1:
+			return a.VM().NewStringLatin1(b)
+		case isUTF16:
+			return a.VM().NewStringUTF16(u)
+		}
+		return a.VM().NewString("neither")
+	}))
+	defineBuiltin(t, m, "fromUnits", NewBuiltin("fromUnits", 1, func(a Args) (Value, error) {
+		s, _ := a.String(0)
+		u := make([]uint16, len(s)/4)
+		for i := range u {
+			fmt.Sscanf(s[4*i:4*i+4], "%04x", &u[i])
+		}
+		return a.VM().NewStringUTF16(u)
+	}))
+	defineBuiltin(t, m, "fromBytes", NewBuiltin("fromBytes", 1, func(a Args) (Value, error) {
+		s, _ := a.String(0)
+		b := make([]byte, len(s)/2)
+		for i := range b {
+			fmt.Sscanf(s[2*i:2*i+2], "%02x", &b[i])
+		}
+		return a.VM().NewStringLatin1(b)
+	}))
+	for _, c := range [][2]string{
+		{`chars('')`, ``},
+		{`chars('abc')`, `abc`},
+		{`chars('a\0é\xff')`, "a\x00é\u00ff"},
+		{`chars('中\ud800x\udc00')`, "中\ufffdx\ufffd"},
+		{`chars('😀')`, "😀"},
+		{`chars('r'.repeat(600) + 'é'.repeat(600)) === 'neither'`, `true`},
+		{`chars(1)`, `neither`},
+		{`chars(new String('a'))`, `neither`},
+		{`(() => { const s = '\ud800a\udfff中'; return chars(s) === s })()`, `true`},
+		{`fromUnits('0061d83dde00d800') === 'a😀\ud800'`, `true`},
+		{`fromBytes('00e9ff41') === '\0éÿA'`, `true`},
+	} {
+		if got := evalString(t, m, c[0]); got != c[1] {
+			t.Errorf("%s: got %q, want %q", c[0], got, c[1])
+		}
+	}
+
+	// A string of 16-bit units below U+0100 is held one byte each, as the
+	// engine holds it.
+	defineBuiltin(t, m, "form", NewBuiltin("form", 1, func(a Args) (Value, error) {
+		_, isLatin1 := a.Latin1(0)
+		return a.VM().NewString(fmt.Sprint(isLatin1))
+	}))
+	if got := evalString(t, m, `form(fromUnits('006100e9'))`); got != "true" {
+		t.Errorf("NewStringUTF16 of units below U+0100 is held one byte each: %s", got)
+	}
+}

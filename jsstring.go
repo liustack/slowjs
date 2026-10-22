@@ -7,6 +7,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math/bits"
 	"unicode/utf8"
 	"unsafe"
@@ -277,4 +278,54 @@ func maxRune(a, b rune) rune {
 		return b
 	}
 	return a
+}
+
+// NewStringLatin1 returns a new string of the characters b, one byte each:
+// a byte is the character of its value, U+0000 to U+00FF. Unlike
+// [VM.NewString] it decodes no UTF-8, so a [Builtin] that read its argument
+// with [Args.Latin1] returns what it made of it this way, as one copy.
+func (m *VM) NewStringLatin1(b []byte) (Value, error) {
+	if len(b) > lib.MJS_STRING_LEN_MAX {
+		return Value{}, errStringTooLong(len(b))
+	}
+	v, p := lib.NewStringChars(m.runtime.tls, m.cContext, len(b), false)
+	if p != 0 {
+		copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
+	}
+	return Value{vm: m, v: v}, nil
+}
+
+// NewStringUTF16 returns a new string of the 16-bit units u, lone
+// surrogates as they are. A [Builtin] that read its argument with
+// [Args.UTF16] returns what it made of it this way, as one copy.
+func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
+	if len(u) > lib.MJS_STRING_LEN_MAX {
+		return Value{}, errStringTooLong(len(u))
+	}
+	// The engine holds a string whose characters are all below U+0100 one
+	// byte each, as JS_NewStringLen and the string buffers make it.
+	wide := false
+	for _, c := range u {
+		if c >= 0x100 {
+			wide = true
+			break
+		}
+	}
+	v, p := lib.NewStringChars(m.runtime.tls, m.cContext, len(u), wide)
+	if p == 0 {
+		return Value{vm: m, v: v}, nil
+	}
+	if wide {
+		copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(u)), u)
+	} else {
+		out := unsafe.Slice((*byte)(unsafe.Pointer(p)), len(u))
+		for i, c := range u {
+			out[i] = byte(c)
+		}
+	}
+	return Value{vm: m, v: v}, nil
+}
+
+func errStringTooLong(n int) error {
+	return fmt.Errorf("quickjs: a string of %d characters is longer than javascript allows (%d)", n, lib.MJS_STRING_LEN_MAX)
 }

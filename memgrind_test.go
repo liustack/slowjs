@@ -105,6 +105,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("builtinArgs", TestBuiltinArgs)
 	t.Run("builtinString", TestBuiltinString)
 	t.Run("builtinStringRoundTrip", TestBuiltinStringRoundTrip)
+	t.Run("builtinLatin1UTF16", TestBuiltinLatin1UTF16)
 	t.Run("argStringSameAsEngine", TestArgStringSameAsEngine)
 	t.Run("newStringSameAsEngine", TestNewStringSameAsEngine)
 	t.Run("builtinErrors", TestBuiltinErrors)

@@ -200,6 +200,35 @@ func (a Args) WTF8(i int) (s string, ok bool) {
 	return "", false
 }
 
+// Latin1 returns the characters of argument i, one byte each, when it is a
+// string the engine holds that way: all its characters are below U+0100
+// and it was not left in pieces by concatenation (a rope). Nothing is
+// copied: the bytes are the engine's, valid until the Builtin returns, and
+// must not be changed. ok is false for any other argument, which [Args.UTF16]
+// or [Args.String] reads. A Builtin that looks at the characters of short
+// strings, and often returns its argument as it is, reads them this way.
+func (a Args) Latin1(i int) (b []byte, ok bool) {
+	p, n, wide, ok := lib.StringChars(a.arg(i))
+	if !ok || wide {
+		return nil, false
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(p)), n), true
+}
+
+// UTF16 returns the 16-bit units of argument i when it is a string the
+// engine holds that way, lone surrogates as they are: a string with a
+// character from U+0100 on, not left in pieces by concatenation (a rope).
+// Nothing is copied: the units are the engine's, valid until the Builtin
+// returns, and must not be changed. ok is false for any other argument,
+// which [Args.Latin1] or [Args.String] reads.
+func (a Args) UTF16(i int) (u []uint16, ok bool) {
+	p, n, wide, ok := lib.StringChars(a.arg(i))
+	if !ok || !wide {
+		return nil, false
+	}
+	return unsafe.Slice((*uint16)(unsafe.Pointer(p)), n), true
+}
+
 // typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 func callBuiltin(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uintptr, magic int32) (r lib.TJSValue) {
 	b := (*builtins.list.Load())[magic]
