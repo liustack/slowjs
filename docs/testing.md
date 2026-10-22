@@ -79,6 +79,7 @@ go test -run Eq ./lib                                    # comparisons give what
 go test -vet=off -run AtomKey ./lib . ./internal/fixlib  # string keys give the atoms and counts of the generic path
 go test -vet=off -run FieldChain . ./internal/fixlib     # o.x of strings, numbers and arrays gives what Node gives
 go test -run JSON ./lib                                  # JSON strings give what Node gives, and runs stay in their buffer
+go test -run 'StringSearch|StringFind' ./lib ./internal/fixlib # includes, indexOf and the other searches find what a search with charCodeAt finds
 go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits

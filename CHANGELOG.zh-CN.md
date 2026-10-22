@@ -10,6 +10,12 @@
 - `JSON.parse`、`JSON.stringify`、`eval`、`new Function`、`repeat`、`padStart`、`replaceAll`、`join` 以及其他解析源码或拼字符串的内置函数，放在循环里也能在超时后几毫秒内停下，以前输入在 60 KB 到 1 MB 时要多跑 5 到 37 s。单次调用仍会跑完。只扫描或排序、不拼字符串的内置函数（`indexOf`、`split`、`fill`、`sort`）放在循环里仍会晚停。渲染耗时和内存不变（不开 PGO，和 v0.27.1 比，商店页面为原来的 0.993，MUI 页面为 0.997）。在一次很长的编译里超过截止时间的脚本，现在编译完就收到中断，以前可能直接跑完。
 - 完整 GC 在一次回收中释放不可达的 WeakMap 条目，包括 value 指回 key 的循环和条目链。仍然可达的 key 会保留其 value。Symbol key、WeakSet、WeakRef 和 FinalizationRegistry 按同样的规则处理。tifa 页面上的完整 GC 耗时和以前差不多，WeakMap 很大时更慢：10 万个存活条目连成的链约为原来的 2.9 倍，10 万个存活 key 约为 1.9 倍。
 
+### 性能
+
+都是不开 PGO，和 v0.27.1 比。
+
+- 字符串的 `includes`、`indexOf` 和 `lastIndexOf` 用 Go 标准库 bytes 包的查找直接定位目标串，上游是逐个位置比较：在 100 KB 的 HTML 里找一个不存在的串从 320 µs 降到 81 µs。商店渲染耗时为原来的 0.995，tifa 测试应用的 MUI 页面为 1.003，都在代码布局带来的波动之内。结果不变。
+
 ## [v0.27.1] - 2026-10-23
 
 ### 修复
