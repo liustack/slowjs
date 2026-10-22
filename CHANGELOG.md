@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+## [v0.27.1] - 2026-10-23
+
 ### Fixed
 
 - Native C builds using `lib/internal/patch/quickjs.diff` retain upstream's computed goto dispatch. The patch disables it only for ccgo and Emscripten. The generated Go engine is unchanged. Uncatchable exceptions, recursion RangeError and error stack rules are retained. Native recursion depth can differ because compiler frame sizes change under the same byte limit.
@@ -269,7 +271,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.0...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.1...main
+[v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
 [v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16

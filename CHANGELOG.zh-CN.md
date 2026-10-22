@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.27.1] - 2026-10-23
+
 ### 修复
 
 - 使用 `lib/internal/patch/quickjs.diff` 的原生 C 构建保留上游的 computed goto 分发，仅为 ccgo 和 Emscripten 禁用。生成的 Go 引擎保持不变，保留不可捕获异常、递归 RangeError 和错误栈规则。原生 C 在相同字节栈限额下的递归次数会随编译器帧大小改变。
@@ -269,7 +271,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.0...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.1...main
+[v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
 [v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16
