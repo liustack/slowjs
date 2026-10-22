@@ -11,7 +11,7 @@ read_when:
 
 ## quickjs-libc.c keeps only what the Go API calls
 
-Release: Unreleased.
+Release: v0.27.0.
 
 `quickjs-libc.c` is the C file of QuickJS's shell, `qjs`: the `std`, `os` and `Worker` modules, the event loop and a few helpers. Only `js_init_module_std` and `js_init_module_os` register the modules, and the Go API calls neither, so no script run through it can reach them. They were in every program all the same: ccgo writes the tables of the modules as package variables that hold the addresses of their functions, and the Go linker keeps whatever a package variable refers to, and with those functions the parts of libc they call, such as `fork`, `execve`, `popen`, `setenv`, the file functions and the terminal ones.
 

@@ -38,7 +38,7 @@ If it reports that `_getTimezoneOffset` changed shape, or that the engine calls 
 
 ## The engine reads Go's clocks
 
-Release: not released yet.
+Release: v0.27.0.
 
 Every function of the engine that reads the time asks Go instead of libc. The `gettimeofday` and `clock_gettime` of modernc.org/libc v1.77.1 are system calls, while Go's `time.Now` reads the clock without entering the kernel where the system allows it (the vDSO on Linux), so `Date.now()` cost several times what it costs in other Go engines. `fixClock` gives these functions a body that calls `lib/clock.go`:
 
@@ -100,7 +100,7 @@ Tests: `intl/registry_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `in
 
 ## Intl constructors on go-intl
 
-Release: not released yet.
+Release: v0.27.0.
 
 Package `intl` adds `Intl.Collator`, `Intl.Segmenter`, `Intl.RelativeTimeFormat`, `Intl.ListFormat`, `Intl.DisplayNames`, `Intl.DurationFormat`, `Intl.Locale` and `Intl.supportedValuesOf`, built on go-intl (`internal/gointl`, see [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)) over the same bridge and registry as the others. `localeCompare` sorts by the locale's collation, and `toLocaleUpperCase` and `toLocaleLowerCase` follow Turkish, Azeri, Lithuanian and Greek rules as V8 does, where QuickJS ordered by code point and mapped case alike in every language. An `Intl.Locale` stands for its tag wherever a constructor takes locales. The remaining constructors now use the same packs, as described below.
 
@@ -119,7 +119,7 @@ Tests: `intl/golden_gointl_test.go`, `intl/chromiumroot_test.go`, `intl/registry
 
 ## Stand-ins leave what a page put in their place
 
-Release: not released yet.
+Release: v0.27.0.
 
 `Register` puts stand-ins on the VM, for `Intl`, the three `toLocale*String` methods of `Date` and the `toLocaleString` of `Number` and `BigInt`, and the first use of one installs the real ones. That install used to write every stand-in's property: a page's own `Date.prototype.toLocaleString`, or an `Intl` it defined with `Object.defineProperty`, was lost at the first use, a property it deleted came back, and a frozen `Date.prototype` or `globalThis` made the first use throw a `TypeError`. Now the install replaces a property only while it still holds the stand-in and can be replaced: what a page put there, deleted or froze stays, as it would with V8's built-ins, and a stand-in left in place forwards to the real thing. `Temporal` installs its stand-ins the same way (see [temporal.md](temporal.md)).
 
@@ -129,7 +129,7 @@ Tests: `TestStandInsKeepPageCode` in `intl/all_test.go`, `intl/zonepack_test.go`
 
 ## Temporal durations use DurationFormat
 
-Release: not released yet.
+Release: v0.27.0.
 
 `Temporal.Duration.prototype.toLocaleString` uses the same formatter registry and Builtins as `Intl.DurationFormat`. It reads locales and options once, in constructor order, and formats the private duration fields without calling public getters or `toString`. It also works without `intl.Register`. This replaces the ISO duration string with localized units or a digital duration, without adding data packs or changing `fixlib`.
 
@@ -137,7 +137,7 @@ Tests: `TestDurationLocaleString`, `TestChromium` and `TestTamper` in `temporal`
 
 ## DateTimeFormat takes Temporal values
 
-Release: not released yet.
+Release: v0.27.0.
 
 `Intl.DateTimeFormat` accepts `PlainDate`, `PlainTime`, `PlainDateTime`, `PlainYearMonth`, `PlainMonthDay` and `Instant` in `format`, `formatToParts`, `formatRange` and `formatRangeToParts`. A `ZonedDateTime` or different Temporal types in a range throw `TypeError`. Each type gets its own default fields. Calendar checks use the resolved calendar, and ISO year-month and month-day values work with an explicit ISO calendar. Plain types keep their wall-clock fields regardless of `timeZone`. Valid plain values at Temporal's bounds are not clipped to Date's smaller range. The range methods also accept legacy Date and numeric inputs. As in Chromium 156, reversed ranges keep the caller's order.
 
@@ -153,7 +153,7 @@ Tests: `temporal/formatting_test.go`, `temporal/chromium_test.go`, `intl/tempora
 
 ## All Intl formatters share go-intl
 
-Release: not released yet.
+Release: v0.27.0.
 
 `NumberFormat`, `DateTimeFormat` for Date values, and `PluralRules` now use go-intl, as do Number and Date locale methods. Number and plural rounding use the full `roundingIncrement` and `roundingPriority` rules. Date formatting supports all 18 calendars Chromium lists. The old `intl/cldr.bin` (1,275,236 bytes), its generator, the host zone loader and its DST table are removed.
 
@@ -222,7 +222,7 @@ Tests: `TestGoIntlMigration`, `TestEmbeddedZonePack`, every Intl golden set, Tem
 
 ## Compiled Intl formatting plans
 
-Release: not released yet.
+Release: v0.27.0.
 
 String formatting writes from the same rounding and calendar results as parts formatting. It skips parts classification, Unicode trimming and merging that only assign part types, and avoids copying parts across the Go bridge. Number affixes and digit tables are compiled at construction. Grouping reserves its parts once, and a value is rounded again for sign selection only when the sign depends on rounded zero. Date formatting writes the compiled fields directly. It keeps wall-clock calendar arithmetic separate from the instant used for astronomical calendars and zone names, so it needs no per-value fixed-zone object. `TestIslamicCalendarInstant` checks both astronomical Islamic calendars against fixed answers at month boundaries in positive and negative offset zones, for strings, parts and ranges.
 

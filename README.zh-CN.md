@@ -72,7 +72,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 
-前五项是 v0.26.17 加的。接下来两项在 `main` 上，还没进任何发布版本。
+前五项是 v0.26.17 加的，接下来两项是 v0.27.0 加的。
 
 ## 用了以后有什么不同
 

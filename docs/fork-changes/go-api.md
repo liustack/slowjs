@@ -80,7 +80,7 @@ Release: v0.26.16.
 
 ## SetRegExpCache and DefaultRegExpCache
 
-Release: not released yet.
+Release: v0.27.0.
 
 `DefaultRegExpCache` (256) and `DefaultRegExpCacheBytes` (1 MiB) are how many compiled regexps a new VM keeps at most, and in how many bytes, counting their patterns and flags. `VM.SetRegExpCache(n, bytes)` changes both for one VM and lets go of what it kept, 0 turning it off. `n` can be at most `math.MaxInt32/8`, as for `SetShapeCache`. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Compiled regexps kept per VM](regexp.md#compiled-regexps-kept-per-vm) has what it gains and costs.
 
@@ -98,7 +98,7 @@ Test: `builtin_test.go`.
 
 ## Args.WTF8
 
-Release: not released yet.
+Release: v0.27.0.
 
 `Args.WTF8(i)` reads a string argument as the engine holds it: a lone surrogate is the three bytes of its code point (0xED, then 0xA0 to 0xBF, then a continuation byte), where `Args.String` gives U+FFFD for it, and a surrogate pair is its one character in UTF-8, as before. The result is not valid UTF-8 when the string has a lone surrogate. A Builtin that has to tell lone surrogates apart reads its strings this way, as `Intl.Collator` does to order them as Chromium does.
 
@@ -140,7 +140,7 @@ Test: `gc_test.go`.
 
 ## OnClose
 
-Release: not released yet.
+Release: v0.27.0.
 
 `VM.OnClose(f)` has `Close` run `f`, after the VM is released, so `f` must not use it. `Close` runs the functions once each, in the order given. Nothing else runs them: not the garbage collector, and not a VM that is never closed.
 
@@ -150,7 +150,7 @@ Test: `onclose_test.go`.
 
 ## EvalBytecode waits for a module's top-level await in Go
 
-Release: Unreleased.
+Release: v0.27.0.
 
 `EvalBytecode` and `EvalBytecodeValue` of a module run pending jobs until the module's promise settles, in Go, and follow the rule of `ExecutePendingJobs`:
 

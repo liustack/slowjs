@@ -12,7 +12,7 @@ read_when:
 
 ## Versions
 
-- Releases are patch versions: v0.26.0, v0.26.1, and so on. A fix or a speedup, even a large one, is the next patch version. Do not move to a new minor version for a small problem: that is for the owner of the repository to decide.
+- Releases are patch versions: v0.26.0, v0.26.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the functions it removed from `lib`. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
 - `github.com/liustack/quickjs` has no GitHub releases. A release is a tag, and users get it with `go get github.com/liustack/quickjs@<version>`.
 
 ## Before the release

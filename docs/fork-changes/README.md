@@ -63,22 +63,22 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | NewArray | v0.26.17 | [go-api.md](go-api.md#newarray) |
 | SetStrip | v0.26.17 | [go-api.md](go-api.md#setstrip) |
 | RunGC, MemorySize and GCThreshold | v0.26.17 | [go-api.md](go-api.md#rungc-memorysize-and-gcthreshold) |
-| Compiled Intl formatting plans and shared decoded data | Unreleased | [time-and-intl.md](time-and-intl.md#compiled-intl-formatting-plans) |
-| All Intl formatters share go-intl and embedded tz 2026e | Unreleased | [time-and-intl.md](time-and-intl.md#all-intl-formatters-share-go-intl) |
-| Intl constructors on go-intl | Unreleased | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
-| Args.WTF8 | Unreleased | [go-api.md](go-api.md#argswtf8) |
-| Compiled regexps kept per VM | Unreleased | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
-| SetRegExpCache and DefaultRegExpCache | Unreleased | [go-api.md](go-api.md#setregexpcache-and-defaultregexpcache) |
-| OnClose | Unreleased | [go-api.md](go-api.md#onclose) |
-| Intl leaves what a page put in place of a stand-in | Unreleased | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
-| DateTimeFormat takes Temporal values and formats ranges | Unreleased | [time-and-intl.md](time-and-intl.md#datetimeformat-takes-temporal-values) |
-| Temporal durations use DurationFormat | Unreleased | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
-| Temporal on go-intl | Unreleased | [temporal.md](temporal.md#temporal-on-go-intl) |
-| EvalBytecode waits for a module's top-level await in Go | Unreleased | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |
-| The engine reads Go's clocks | Unreleased | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
-| quickjs-libc.c keeps only what the Go API calls | Unreleased | [trimmed.md](trimmed.md#quickjs-libcc-keeps-only-what-the-go-api-calls) |
-| Likely and unlikely tests branch on their condition | Unreleased | [interpreter-loop.md](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) |
-| TLS frames taken without a call on linux | Unreleased | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
+| Compiled Intl formatting plans and shared decoded data | v0.27.0 | [time-and-intl.md](time-and-intl.md#compiled-intl-formatting-plans) |
+| All Intl formatters share go-intl and embedded tz 2026e | v0.27.0 | [time-and-intl.md](time-and-intl.md#all-intl-formatters-share-go-intl) |
+| Intl constructors on go-intl | v0.27.0 | [time-and-intl.md](time-and-intl.md#intl-constructors-on-go-intl) |
+| Args.WTF8 | v0.27.0 | [go-api.md](go-api.md#argswtf8) |
+| Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
+| SetRegExpCache and DefaultRegExpCache | v0.27.0 | [go-api.md](go-api.md#setregexpcache-and-defaultregexpcache) |
+| OnClose | v0.27.0 | [go-api.md](go-api.md#onclose) |
+| Intl leaves what a page put in place of a stand-in | v0.27.0 | [time-and-intl.md](time-and-intl.md#stand-ins-leave-what-a-page-put-in-their-place) |
+| DateTimeFormat takes Temporal values and formats ranges | v0.27.0 | [time-and-intl.md](time-and-intl.md#datetimeformat-takes-temporal-values) |
+| Temporal durations use DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
+| Temporal on go-intl | v0.27.0 | [temporal.md](temporal.md#temporal-on-go-intl) |
+| EvalBytecode waits for a module's top-level await in Go | v0.27.0 | [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go) |
+| The engine reads Go's clocks | v0.27.0 | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
+| quickjs-libc.c keeps only what the Go API calls | v0.27.0 | [trimmed.md](trimmed.md#quickjs-libcc-keeps-only-what-the-go-api-calls) |
+| Likely and unlikely tests branch on their condition | v0.27.0 | [interpreter-loop.md](interpreter-loop.md#likely-and-unlikely-tests-branch-on-their-condition) |
+| TLS frames taken without a call on linux | v0.27.0 | [calls-and-tls-frames.md](calls-and-tls-frames.md#tls-frames-taken-without-a-call-on-linux) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

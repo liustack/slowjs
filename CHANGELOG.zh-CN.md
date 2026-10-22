@@ -1,8 +1,10 @@
 # 更新记录
 
-记录 `github.com/liustack/quickjs` 里用它的程序看得到的变化。每个版本都是补丁版本，tag 打在 `main` 上。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/fork-changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
+记录 `github.com/liustack/quickjs` 里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/fork-changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
 ## [Unreleased]
+
+## [v0.27.0] - 2026-10-22
 
 ### 新增
 
@@ -16,6 +18,9 @@
 ### 变更
 
 - `StdAddHelpers` 的 `performance.now()` 改为从进程启动开始计时。以前在 Linux 和 macOS 上从系统启动开始，在 Windows 和 FreeBSD 上从 1970 年开始，还会随系统时钟的调整而跳动。在 macOS 上不再计入系统睡眠的时间。`Date.now()` 和 `new Date()` 的值和原来一样。
+- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.11 MB。通过预编译格式方案和直接生成字符串，指定用例中预热后的数字格式化比 main 耗时减少 41% 至 42%，日期格式化耗时减少 28% 至 37%。本次提速保持全部已记录答案不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
+- Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
+- 完整 Intl402 test262 通过 6764 次中的 6618 次，main `641e996` 为 6276 次。新增的 24 次失败断言在 Chromium 156 中也失败。已有 golden 集没有新增未解释的差异。
 
 ### 移除
 
@@ -24,16 +29,12 @@
 ### 修复
 
 - `Temporal.Duration.prototype.toLocaleString` 通过 `Intl.DurationFormat` 输出本地化时长，支持样式、单位选项和小数位，以前返回 ISO 时长字符串。
-
 - 页面替换了 `String.prototype.concat`（QuickJS 用它实现模板字符串）时，`Intl` 不再抛错：v0.26.17 里 `Intl.NumberFormat`、`Intl.DateTimeFormat` 和 `toLocale` 系列方法在这种页面上会抛错。
 - `Intl.PluralRules` 给紧凑记数法和科学记数法的数选复数形式时和 ICU 一样，每个 `supportedLocalesOf` 都会读 `localeMatcher` 选项。
 - 语言列表里的函数按 ECMA-402 当作对象读，所以 `new Intl.NumberFormat([function () {}])` 抛 RangeError，v0.26.17 抛的是 TypeError。
 - 第一次用 `Intl` 时保留页面在那之前做的改动：页面自己的 `Date.prototype.toLocaleString` 或 `Number.prototype.toLocaleString` 留着，用 `Object.defineProperty` 定义或删掉的 `Intl` 也留着，冻结了 `Date.prototype` 或 `globalThis` 时这次使用也不再抛 `TypeError`。
-- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.11 MB。通过预编译格式方案和直接生成字符串，指定用例中预热后的数字格式化比 main 耗时减少 41% 至 42%，日期格式化耗时减少 28% 至 37%。本次提速保持全部已记录答案不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
-- Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
 - 模块的顶层 await 还没完成、又没有任务可跑时（比如 `await new Promise(() => {})`），`EvalBytecode` 返回一个说明这种情况的错误，不再让进程崩溃。模块等的东西之后如果完成了（比如由 Go 完成），之后的 `ExecutePendingJobs` 会跑完模块剩下的部分。它等模块的方式和 `ExecutePendingJobs` 跑任务一样：某个任务抛错不再让它停下，模块会跑到底，调用返回那个任务的错误，模块自己被拒绝时返回模块的错误。模块第一个 `await` 之后碰上超时、中断、内存耗尽或 Go 函数 panic，现在立即结束调用，以前会打印到 stderr，然后进程崩溃。
 - 在 Windows 上，`Date.now()` 和 `new Date()` 到 2038 年不再溢出。
-- 完整 Intl402 test262 通过 6764 次中的 6618 次，main `641e996` 为 6276 次。新增的 24 次失败断言在 Chromium 156 中也失败。已有 golden 集没有新增未解释的差异。
 
 ### 性能
 
@@ -257,7 +258,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.17...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.0...main
+[v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16
 [v0.26.15]: https://github.com/liustack/quickjs/compare/v0.26.14...v0.26.15

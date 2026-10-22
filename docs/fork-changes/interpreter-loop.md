@@ -63,7 +63,7 @@ If it reports that `js_poll_interrupts` changed (a fingerprint other than the on
 
 ## Likely and unlikely tests branch on their condition
 
-Release: not released yet.
+Release: v0.27.0.
 
 QuickJS marks its hot tests as likely or unlikely with `__builtin_expect(!!(x), c)`, which returns a `long`. ccgo writes such a test as `libc.BoolInt64(!!(x)) != 0`, or `libc.BoolInt32(!!(x)) != 0` where a `long` has 32 bits (386, arm and windows). When `x` has `&&` or `||`, Go makes the integer of the condition and then tests it, where it could branch on `x` itself: a `SETcc` and a `TEST` more on each such test. `fixlib` writes each of these tests as `expect64(!!(x))` or `expect32(!!(x))`, of `lib/expect.go`, which return their argument and which Go inlines everywhere, also in `JS_CallInternal`. 728 tests in each file change (862 on linux/386 and linux/arm), 144 of them in `JS_CallInternal`.
 

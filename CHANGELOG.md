@@ -1,8 +1,10 @@
 # Changelog
 
-What changed in `github.com/liustack/quickjs` that programs using it can see. Each release is a patch version, tagged on `main`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/fork-changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
+What changed in `github.com/liustack/quickjs` that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/fork-changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
 ## [Unreleased]
+
+## [v0.27.0] - 2026-10-22
 
 ### Added
 
@@ -16,6 +18,9 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 ### Changed
 
 - `performance.now()` of `StdAddHelpers` counts from the start of the process. Before, it counted from the boot of the system on Linux and macOS, and from 1970 on Windows and FreeBSD, where it moved when the system clock was set. On macOS it no longer counts the time the system sleeps. `Date.now()` and `new Date()` give the same values as before.
+- All Intl constructors, including NumberFormat, DateTimeFormat and PluralRules, now use go-intl. Number and Date locale methods share the same data. Rounding increments and priorities work, and all date calendars are available. The separate `intl/cldr.bin` and its generator are removed. Against main `641e996`, the shop built with its application PGO profile is 0.11 MB smaller. Compiled plans and direct string output cut the measured warm number formatting time by 41% to 42% and date formatting time by 28% to 37% against main. The speedup leaves all recorded answers unchanged. See [measured costs](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs).
+- Intl resolves named zones, offsets and daylight flags from the embedded tz 2026e pack shared with Temporal. It no longer reads host zoneinfo or needs a DST correction table. Winnipeg follows tz 2026e's permanent daylight time, newer than Chromium 156's data.
+- The full Intl402 test262 run passes 6618 of 6764 cases, against 6276 on main `641e996`. All 24 newly failing assertions also fail in Chromium 156. Existing golden sets have no new unexplained differences.
 
 ### Removed
 
@@ -24,16 +29,12 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 ### Fixed
 
 - `Temporal.Duration.prototype.toLocaleString` formats through `Intl.DurationFormat`, including styles, unit options and fractional digits, instead of returning an ISO duration string.
-
 - `Intl` no longer throws on a page that replaced `String.prototype.concat`, which QuickJS calls for a template literal: `Intl.NumberFormat`, `Intl.DateTimeFormat` and the `toLocale` methods threw there in v0.26.17.
 - `Intl.PluralRules` selects the plural of a compact or scientific number as ICU does, and every `supportedLocalesOf` reads its `localeMatcher` option.
 - A function in a list of locales is read as an object, as ECMA-402 has it, so `new Intl.NumberFormat([function () {}])` throws a RangeError, where v0.26.17 threw a TypeError.
 - The first use of `Intl` keeps what a page did before it: its own `Date.prototype.toLocaleString` or `Number.prototype.toLocaleString` stays, so does an `Intl` it defined with `Object.defineProperty` or deleted, and a frozen `Date.prototype` or `globalThis` no longer makes that use throw a `TypeError`.
-- All Intl constructors, including NumberFormat, DateTimeFormat and PluralRules, now use go-intl. Number and Date locale methods share the same data. Rounding increments and priorities work, and all date calendars are available. The separate `intl/cldr.bin` and its generator are removed. Against main `641e996`, the shop built with its application PGO profile is 0.11 MB smaller. Compiled plans and direct string output cut the measured warm number formatting time by 41% to 42% and date formatting time by 28% to 37% against main. The speedup leaves all recorded answers unchanged. See [measured costs](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs).
-- Intl resolves named zones, offsets and daylight flags from the embedded tz 2026e pack shared with Temporal. It no longer reads host zoneinfo or needs a DST correction table. Winnipeg follows tz 2026e's permanent daylight time, newer than Chromium 156's data.
 - `EvalBytecode` of a module whose top-level await is still pending when no job is left to run, such as `await new Promise(() => {})`, returns an error that says so instead of crashing the process. If what the module waits for settles later, from Go for one, a later `ExecutePendingJobs` runs the rest of it. It waits for the module as `ExecutePendingJobs` runs jobs: a job that throws no longer stops it, the module runs to its end and the call returns the job's error, or the module's own rejection. The eval timeout, an interrupt, out of memory or a panic in a Go function after a module's first `await` ends the call at once, where it was printed to stderr and the process then crashed.
 - On Windows, `Date.now()` and `new Date()` no longer overflow in 2038.
-- The full Intl402 test262 run passes 6618 of 6764 cases, against 6276 on main `641e996`. All 24 newly failing assertions also fail in Chromium 156. Existing golden sets have no new unexplained differences.
 
 ### Performance
 
@@ -257,7 +258,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.26.17...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.0...main
+[v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
 [v0.26.16]: https://github.com/liustack/quickjs/compare/v0.26.15...v0.26.16
 [v0.26.15]: https://github.com/liustack/quickjs/compare/v0.26.14...v0.26.15

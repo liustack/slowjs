@@ -49,7 +49,7 @@ The checks under [Skip to where a regexp can match](#when-upstream-changes-it) c
 
 ## Compiled regexps kept per VM
 
-Release: not released yet.
+Release: v0.27.0.
 
 A VM keeps the bytecode of the regexps it compiled. Code that makes a new `RegExp` of the same pattern on every call compiled it every time: a syntax highlighter made anew for each render, as react-markdown makes one, compiles the regexps of its grammar again on each page. Now `js_compile_regexp`, which compiles every regexp (a literal when the parser meets it, `new RegExp`, `RegExp`, `RegExp.prototype.compile`, and the copy `split` and the other built-ins make of a regexp with new flags), first looks the pattern and the flags up in a cache of the runtime, and keeps there what it compiled (`lib/regexcache.go`).
 
