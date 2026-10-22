@@ -2928,9 +2928,10 @@ func (v Value) MarshalJSON() (r []byte, err error) {
 
 // Dup returns a copy of 'v' while updating its reference count.
 func (v Value) Dup() Value {
+	_ = v.vm.runtime // a Value of no VM, such as the zero Value, panics
 	return Value{
 		vm: v.vm,
-		v:  lib.XDupValue(v.vm.runtime.tls, v.vm.cContext, v.v),
+		v:  lib.DupValue(v.v),
 	}
 }
 

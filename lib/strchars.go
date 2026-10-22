@@ -61,3 +61,13 @@ func NewStringChars(tls *libc.TLS, ctx uintptr, n int, wide bool) (v TJSValue, p
 	}
 	return jsvMkPtr(EJS_TAG_STRING, s), s + jsonStrData
 }
+
+// DupValue is JS_DupValue: it adds a reference to v when v has a reference
+// count, and returns v. XDupValue does the same in a TLS frame, which it
+// takes for its copy of v.
+func DupValue(v TJSValue) TJSValue {
+	if t := jsvTag(v); t < 0 && t >= EJS_TAG_FIRST {
+		(*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(nil, jsvPtr(v)))).Fref_count++
+	}
+	return v
+}
