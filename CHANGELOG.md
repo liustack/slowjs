@@ -4,6 +4,12 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Performance
+
+Without PGO, against v0.27.0.
+
+- `js_malloc` takes a block from the cache of freed small blocks itself, without the four calls it took before: 0.985 of the time, and 0.983 on the MUI pages of tifa's test apps. Memory does not change.
+
 ## [v0.27.0] - 2026-10-22
 
 ### Added
