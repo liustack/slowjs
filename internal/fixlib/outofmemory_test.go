@@ -196,7 +196,8 @@ func TestOutOfMemoryChecksFixedFile(t *testing.T) {
 // message: the name of the helper elsewhere in it is not enough.
 func TestOutOfMemoryRejectsRegexpTextElsewhere(t *testing.T) {
 	b := engineFile(t)
-	wrapped := "\t\tif _js_regexp_out_of_memory(bp+12) {\n\t\t\tXJS_ThrowOutOfMemory(tls, ctx1)\n\t\t} else {\n\t\t\tXJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12059, libc.VaList(bp+88, bp+12))\n\t\t}\n"
+	// With the branch of fixRegexPoll for an interrupt.
+	wrapped := "\t\tif _js_regexp_out_of_memory(bp+12) {\n\t\t\tXJS_ThrowOutOfMemory(tls, ctx1)\n\t\t" + regexInterruptBranch("bp+12", "ctx1") + "} else {\n\t\t\tXJS_ThrowSyntaxError(tls, ctx1, __ccgo_ts+12059, libc.VaList(bp+88, bp+12))\n\t\t}\n"
 	if bytes.Count(b, []byte(wrapped)) != 1 {
 		t.Fatal("no fixed test of the message in _js_compile_regexp")
 	}

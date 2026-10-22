@@ -33,11 +33,77 @@ index 6a3aeca..ba15777 100644
              return -1;
          }
          s->buf = new_buf;
+diff --git a/fuzz/fuzz_regexp.c b/fuzz/fuzz_regexp.c
+index ae929e8..90b7fbf 100644
+--- a/fuzz/fuzz_regexp.c
++++ b/fuzz/fuzz_regexp.c
+@@ -31,6 +31,8 @@ int lre_check_timeout(void *opaque)
+     return (nbinterrupts > 100);
+  }
+ 
++int lre_poll_interrupts(void *opaque, int cost) { return 0; }
++
+ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+     int len, ret, i;
+     uint8_t *bc;
 diff --git a/libregexp.c b/libregexp.c
-index c387f00..042a098 100644
+index c387f00..be04cef 100644
 --- a/libregexp.c
 +++ b/libregexp.c
-@@ -2564,6 +2564,11 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
+@@ -684,6 +684,16 @@ static int re_parse_out_of_memory(REParseState *s)
+     return re_parse_error(s, "out of memory");
+ }
+ 
++/* Count one step toward the interrupt counter, and one more for each 256
++   bytes the step moves, so that compiling a long pattern counts its work
++   as running code does. The caller throws the interrupt on the message. */
++static int re_poll_interrupts(REParseState *s, size_t moved)
++{
++    if (lre_poll_interrupts(s->opaque, 1 + (int)(moved >> 8)))
++        return re_parse_error(s, "interrupted");
++    return 0;
++}
++
+ /* If allow_overflow is false, return -1 in case of
+    overflow. Otherwise return INT32_MAX. */
+ static int parse_digits(const uint8_t **pp, BOOL allow_overflow)
+@@ -1405,6 +1415,8 @@ static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_
+     for(;;) {
+         if (*p == ']')
+             break;
++        if (re_poll_interrupts(s, cr->cr.len * sizeof(cr->cr.points[0])))
++            goto fail;
+         if (*p == '[' && s->unicode_sets) {
+             if (re_parse_nested_class(s, cr1, &p))
+                 goto fail;
+@@ -2383,6 +2395,8 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
+         if (*p == '|' || *p == ')')
+             break;
+         term_start = s->byte_code.size;
++        if (re_poll_interrupts(s, 0))
++            return -1;
+         ret = re_parse_term(s, is_backward_dir);
+         if (ret)
+             return ret;
+@@ -2391,6 +2405,8 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
+                speed is not really critical here) */
+             end = s->byte_code.size;
+             term_size = end - term_start;
++            if (re_poll_interrupts(s, end - start))
++                return -1;
+             if (dbuf_claim(&s->byte_code, term_size))
+                 return -1;
+             memmove(s->byte_code.buf + start + term_size,
+@@ -2417,6 +2433,8 @@ static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
+         s->buf_ptr++;
+ 
+         len = s->byte_code.size - start;
++        if (re_poll_interrupts(s, len))
++            return -1;
+ 
+         /* insert a split before the first alternative */
+         if (dbuf_insert(&s->byte_code, start, 5)) {
+@@ -2564,6 +2582,11 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
  
      if (re_parse_disjunction(s, FALSE)) {
      error:
@@ -49,6 +115,20 @@ index c387f00..042a098 100644
          dbuf_free(&s->byte_code);
          dbuf_free(&s->group_names);
          pstrcpy(error_msg, error_msg_size, s->u.error_msg);
+diff --git a/libregexp.h b/libregexp.h
+index 0905bcb..2d12c1a 100644
+--- a/libregexp.h
++++ b/libregexp.h
+@@ -60,6 +60,9 @@ int lre_parse_escape(const uint8_t **pp, int allow_utf16);
+ int lre_check_stack_overflow(void *opaque, size_t alloca_size);
+ /* must be provided by the user, return non zero if time out */
+ int lre_check_timeout(void *opaque);
++/* must be provided by the user: count 'cost' steps toward the interrupt
++   counter of the user, return non zero if time out */
++int lre_poll_interrupts(void *opaque, int cost);
+ void *lre_realloc(void *opaque, void *ptr, size_t size);
+ 
+ #endif /* LIBREGEXP_H */
 diff --git a/qjs.c b/qjs.c
 index 3ee6340..0acd5d5 100644
 --- a/qjs.c
@@ -111,7 +191,7 @@ index 26e9683..419c233 100644
      ret = js_get_errno(mkdir(path, mode));
  #endif
 diff --git a/quickjs.c b/quickjs.c
-index fa5a7a9..988a485 100644
+index fa5a7a9..aa35224 100644
 --- a/quickjs.c
 +++ b/quickjs.c
 @@ -49,11 +49,11 @@
@@ -1467,19 +1547,40 @@ index fa5a7a9..988a485 100644
  }
  
  #if 0
-@@ -47404,7 +48021,10 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
+@@ -47404,7 +48021,12 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                    sizeof(error_msg), str, len, re_flags, ctx);
      JS_FreeCString(ctx, str);
      if (!re_bytecode_buf) {
 -        JS_ThrowSyntaxError(ctx, "%s", error_msg);
 +        if (!strcmp(error_msg, "out of memory"))
 +            JS_ThrowOutOfMemory(ctx);
++        else if (!strcmp(error_msg, "interrupted"))
++            JS_ThrowInterrupted(ctx);
 +        else
 +            JS_ThrowSyntaxError(ctx, "%s", error_msg);
          return JS_EXCEPTION;
      }
  
-@@ -47943,7 +48563,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
+@@ -47784,6 +48406,18 @@ int lre_check_timeout(void *opaque)
+             rt->interrupt_handler(rt, rt->interrupt_opaque));
+ }
+ 
++/* The regexp compiler counts its steps on the interrupt counter of the
++   interpreter: a compile is one instruction, however long it takes. */
++int lre_poll_interrupts(void *opaque, int cost)
++{
++    JSContext *ctx = opaque;
++    ctx->interrupt_counter -= cost;
++    if (likely(ctx->interrupt_counter > 0))
++        return 0;
++    ctx->interrupt_counter = JS_INTERRUPT_COUNTER_INIT;
++    return lre_check_timeout(opaque);
++}
++
+ void *lre_realloc(void *opaque, void *ptr, size_t size)
+ {
+     JSContext *ctx = opaque;
+@@ -47943,7 +48577,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
              if (rc == LRE_RET_TIMEOUT) {
                  JS_ThrowInterrupted(ctx);
              } else {
@@ -1488,7 +1589,7 @@ index fa5a7a9..988a485 100644
              }
              goto fail;
          }
-@@ -48169,7 +48789,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
+@@ -48169,7 +48803,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
                  if (ret == LRE_RET_TIMEOUT) {
                      JS_ThrowInterrupted(ctx);
                  } else {
@@ -1497,7 +1598,7 @@ index fa5a7a9..988a485 100644
                  }
                  goto fail;
              }
-@@ -50564,7 +51184,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
+@@ -50564,7 +51198,7 @@ static int js_proxy_has(JSContext *ctx, JSValueConst obj, JSAtom atom)
      if (!ret) {
          JSPropertyDescriptor desc;
          p = JS_VALUE_GET_OBJ(s->target);
@@ -1506,7 +1607,7 @@ index fa5a7a9..988a485 100644
          if (res < 0)
              return -1;
          if (res) {
-@@ -50955,7 +51575,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
+@@ -50955,7 +51589,7 @@ static int js_proxy_delete_property(JSContext *ctx, JSValueConst obj,
      res = JS_ToBoolFree(ctx, ret);
      if (res) {
          JSPropertyDescriptor desc;
@@ -1515,7 +1616,7 @@ index fa5a7a9..988a485 100644
          if (res2 < 0)
              return -1;
          if (res2) {
-@@ -51067,7 +51687,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
+@@ -51067,7 +51701,7 @@ static int js_proxy_get_own_property_names(JSContext *ctx,
              JS_ThrowTypeErrorRevokedProxy(ctx);
              goto fail;
          }
@@ -1524,7 +1625,7 @@ index fa5a7a9..988a485 100644
                                  tab2[i].atom);
          if (res < 0)
              goto fail;
-@@ -53182,7 +53802,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
+@@ -53182,7 +53816,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
      }
      is_reject = JS_IsException(res);
      if (is_reject)
@@ -1533,7 +1634,7 @@ index fa5a7a9..988a485 100644
      func = argv[is_reject];
      /* as an extension, we support undefined as value to avoid
         creating a dummy promise in the 'await' implementation of async
-@@ -53271,7 +53891,7 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
+@@ -53271,7 +53905,7 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
          return JS_EXCEPTION;
      res = JS_Call(ctx, then, thenable, 2, (JSValueConst *)args);
      if (JS_IsException(res)) {
@@ -1542,7 +1643,7 @@ index fa5a7a9..988a485 100644
          res = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
      }
-@@ -53385,7 +54005,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
+@@ -53385,7 +54019,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
      if (JS_IsException(then)) {
          JSValue error;
      fail_reject:
@@ -1551,7 +1652,7 @@ index fa5a7a9..988a485 100644
          reject_promise(ctx, s->promise, error);
          JS_FreeValue(ctx, error);
      } else if (!JS_IsFunction(ctx, then)) {
-@@ -53471,7 +54091,7 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
+@@ -53471,7 +54105,7 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
      ret = JS_Call(ctx, executor, JS_UNDEFINED, 2, (JSValueConst *)args);
      if (JS_IsException(ret)) {
          JSValue ret2, error;
@@ -1560,7 +1661,7 @@ index fa5a7a9..988a485 100644
          ret2 = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
          if (JS_IsException(ret2))
-@@ -53639,7 +54259,7 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
+@@ -53639,7 +54273,7 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
      ret = JS_Call(ctx, argv[0], JS_UNDEFINED, argc - 1, argv + 1);
      if (JS_IsException(ret)) {
          is_reject = 1;
@@ -1569,7 +1670,7 @@ index fa5a7a9..988a485 100644
      }
      ret2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, (JSValueConst *)&ret);
      JS_FreeValue(ctx, resolving_funcs[0]);
-@@ -53771,7 +54391,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
+@@ -53771,7 +54405,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
      if (JS_IsException(iter)) {
          JSValue error;
      fail_reject:
@@ -1578,7 +1679,7 @@ index fa5a7a9..988a485 100644
          ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                         (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
-@@ -53913,7 +54533,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
+@@ -53913,7 +54547,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
      if (JS_IsException(iter)) {
          JSValue error;
      fail_reject:
@@ -1587,7 +1688,7 @@ index fa5a7a9..988a485 100644
          ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                         (JSValueConst *)&error);
          JS_FreeValue(ctx, error);
-@@ -54321,7 +54941,7 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
+@@ -54321,7 +54955,7 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
                  JS_IteratorClose(ctx, s->sync_iter, TRUE);
              }
          reject:
@@ -1596,7 +1697,7 @@ index fa5a7a9..988a485 100644
              is_reject = 1;
          done_resolve:
              res2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED,
-@@ -60589,6 +61209,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
+@@ -60589,6 +61223,11 @@ static pthread_mutex_t js_atomics_mutex = PTHREAD_MUTEX_INITIALIZER;
  static struct list_head js_atomics_waiter_list =
      LIST_HEAD_INIT(js_atomics_waiter_list);
  
@@ -1608,7 +1709,7 @@ index fa5a7a9..988a485 100644
  #if defined(__aarch64__)
  static inline void cpu_pause(void)
  {
-@@ -60604,6 +61229,7 @@ static inline void cpu_pause(void)
+@@ -60604,6 +61243,7 @@ static inline void cpu_pause(void)
  {
  }
  #endif
@@ -1616,7 +1717,7 @@ index fa5a7a9..988a485 100644
  
  // no-op: Atomics.pause() is not allowed to block or yield to another
  // thread, only to hint the CPU that it should back off for a bit;
-@@ -61195,3 +61821,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
+@@ -61195,3 +61835,35 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
      JS_FreeValue(ctx, obj);
      return 0;
  }

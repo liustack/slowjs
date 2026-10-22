@@ -98,8 +98,10 @@ func fixOutOfMemory(b []byte) ([]byte, error) {
 	msg := string(m[1])
 	syntax := `(XJS_ThrowSyntaxError\(tls, ` + ctx + fmt.Sprintf(`, __ccgo_ts\+%d, libc\.VaList\(bp\+\d+, `, strs["%s"]) + regexp.QuoteMeta(msg) + `\)\))`
 	test := regexp.QuoteMeta("\n\tif !(re_bytecode_buf != 0) {\n\t\t")
-	// Fixed only with fixlib's whole test around the SyntaxError.
-	wrapped := regexp.MustCompile(test + regexp.QuoteMeta(fmt.Sprintf("if _js_regexp_out_of_memory(%s) {\n\t\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\t} else {\n\t\t\t", msg, ctx)) + syntax + `\n\t\t\}\n`)
+	// Fixed only with fixlib's whole test around the SyntaxError, with or
+	// without the branch of fixRegexPoll for an interrupt.
+	wrapped := regexp.MustCompile(test + regexp.QuoteMeta(fmt.Sprintf("if _js_regexp_out_of_memory(%s) {\n\t\t\tXJS_ThrowOutOfMemory(tls, %s)\n\t\t", msg, ctx)) +
+		`(?:` + regexp.QuoteMeta(regexInterruptBranch(msg, ctx)) + `)?` + regexp.QuoteMeta("} else {\n\t\t\t") + syntax + `\n\t\t\}\n`)
 	switch n := bytes.Count(body, []byte("_js_regexp_out_of_memory(")); {
 	case n == 1 && len(findAll(wrapped, body)) == 1:
 	case n != 0:
