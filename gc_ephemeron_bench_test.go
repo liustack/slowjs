@@ -13,7 +13,7 @@ import (
 // Setup is excluded. Each sample collects a new graph, not an already empty VM.
 func BenchmarkEphemeronGC(b *testing.B) {
 	for _, count := range []int{10000, 100000} {
-		for _, kind := range []string{"plain", "dead", "live-chain"} {
+		for _, kind := range []string{"plain", "dead", "live-chain", "live-keys", "many-maps"} {
 			b.Run(fmt.Sprintf("%s/%d", kind, count), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					b.StopTimer()
@@ -25,6 +25,12 @@ func BenchmarkEphemeronGC(b *testing.B) {
 					body := `globalThis.wm=new WeakMap(); (()=>{for(let i=0;i<N;i++){let k={};wm.set(k,{k})}})();`
 					if kind == "plain" {
 						body = `(()=>{for(let i=0;i<N;i++){let k={};k.self=k}})();`
+					}
+					if kind == "live-keys" {
+						body = `globalThis.wm=new WeakMap();globalThis.keys=Array.from({length:N},()=>({}));for(const k of keys)wm.set(k,{});`
+					}
+					if kind == "many-maps" {
+						body = `globalThis.maps=Array.from({length:N/10},()=>new WeakMap());(()=>{let keys=Array.from({length:N+1},()=>({}));globalThis.key=keys[0];for(let i=N-1;i>=0;i--)maps[i%maps.length].set(keys[i],keys[i+1]);})();`
 					}
 					if kind == "live-chain" {
 						body = `globalThis.wm=new WeakMap();(()=>{let keys=Array.from({length:N+1},()=>({}));globalThis.key=keys[0];for(let i=N-1;i>=0;i--)wm.set(keys[i],keys[i+1]);})();`

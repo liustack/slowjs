@@ -15,12 +15,166 @@ import (
 	"modernc.org/libc"
 )
 
+// Phases of gcEphemeron, kept in forkRuntime.ephemeron.
+const (
+	ephemeronCount       = 1 // counting the references to symbol keys
+	ephemeronScanSymbols = 2 // live scan, symbol keys reported to the callback
+	ephemeronScan        = 3 // live scan without symbol keys
+)
+
 // Symbols are not GC list nodes. Only the symbol accounting and live scan
 // ask JS_MarkValue to report them. Ordinary marking keeps its original path.
 func gcEphemeronSymbol(tls *libc.TLS, rt, p, mark uintptr) {
-	if forkOf(rt).ephemeron != 0 {
+	if phase := forkOf(rt).ephemeron; phase == ephemeronCount || phase == ephemeronScanSymbols {
 		(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{mark})))(tls, rt, p|1)
 	}
+}
+
+// gcEphemeronScan is the state of the live scan of gcEphemeron.
+type gcEphemeronScan struct {
+	tls     *libc.TLS
+	rt      uintptr
+	mark    uintptr // the ccgo function the scan marks children with
+	symbols map[uintptr]*gcEphemeronSymbolState
+	records int // entries of all weak maps and sets, to size pending
+	// Entries whose key is not known to be reachable yet, indexed by key:
+	// pending gives the last of a key's entries in wait, and each entry
+	// links to the one before of the same key. Neither holds a Go pointer,
+	// so the Go collector does not scan them. A key is reached once at most
+	// (an object is scanned once, a symbol is queued once), so nothing is
+	// removed from the index.
+	pending gcEphemeronIndex
+	wait    []gcEphemeronWait
+	queue   []uintptr // symbol keys reached and not activated yet
+}
+
+// object is the rest of the scan of p, a weak map or set, or an object
+// with weak references.
+func (st *gcEphemeronScan) object(p uintptr) {
+	obj := (*TJSObject)(unsafe.Pointer(p))
+	if obj.Fweakref_count != 0 {
+		st.activate(p)
+	}
+	if obj.Fclass_id != EJS_CLASS_WEAKMAP && obj.Fclass_id != EJS_CLASS_WEAKSET {
+		return
+	}
+	s := obj.Fu.Fopaque
+	if s == 0 {
+		return
+	}
+	list := s + unsafe.Offsetof(TJSMapState{}.Frecords)
+	// Marking a value cannot add entries: wait is only appended to here.
+	wait := st.wait
+	for el := (*Tlist_head)(unsafe.Pointer(list)).Fnext; el != list; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
+		mr := el - unsafe.Offsetof(TJSMapRecord{}.Flink)
+		rec := (*TJSMapRecord)(unsafe.Pointer(mr))
+		key := jsvPtr(rec.Fkey)
+		var live bool
+		if jsvTag(rec.Fkey) == EJS_TAG_SYMBOL {
+			// Every symbol key of a weak collection is in symbols.
+			live = st.symbols[key].live
+		} else {
+			live = gcEphemeronCount(st.tls, key) > 0
+		}
+		if live {
+			XJS_MarkValue(st.tls, st.rt, rec.Fvalue, st.mark)
+			continue
+		}
+		if wait == nil {
+			st.pending.init(st.records)
+			wait = make([]gcEphemeronWait, 0, st.records)
+		}
+		slot := st.pending.find(key)
+		next := int32(-1)
+		if slot.key != 0 {
+			next = slot.last
+		} else {
+			slot.key = key
+			st.pending.n++
+		}
+		slot.last = int32(len(wait))
+		wait = append(wait, gcEphemeronWait{record: mr, state: s, next: next})
+	}
+	st.wait = wait
+}
+
+// activate marks the values of the entries waiting for key.
+func (st *gcEphemeronScan) activate(key uintptr) {
+	if st.pending.n == 0 {
+		return
+	}
+	slot := st.pending.find(key)
+	if slot.key == 0 {
+		return
+	}
+	wait := st.wait
+	for i := slot.last; i >= 0; {
+		w := &wait[i]
+		w.done = true
+		i = w.next
+		XJS_MarkValue(st.tls, st.rt, (*TJSMapRecord)(unsafe.Pointer(w.record)).Fvalue, st.mark)
+	}
+}
+
+// symbol notes that the scan reached p, a symbol.
+func (st *gcEphemeronScan) symbol(p uintptr) {
+	if sym := st.symbols[p]; sym != nil && !sym.live {
+		sym.live = true
+		st.queue = append(st.queue, p)
+	}
+}
+
+// drain activates the entries of the symbol keys reached.
+func (st *gcEphemeronScan) drain() {
+	for len(st.queue) != 0 {
+		key := st.queue[len(st.queue)-1]
+		st.queue = st.queue[:len(st.queue)-1]
+		st.activate(key)
+	}
+}
+
+// gcEphemeronIndex finds the waiting entries of a key: an open addressed
+// table with linear probing, keyed by the address of the key (never 0).
+type gcEphemeronIndex struct {
+	slots []gcEphemeronSlot
+	shift uint
+	n     int
+}
+
+type gcEphemeronSlot struct {
+	key  uintptr
+	last int32 // the last entry of the key in wait
+}
+
+// init sizes the table for up to n keys, at most half full.
+func (x *gcEphemeronIndex) init(n int) {
+	bits := uint(4)
+	for 1<<bits < 2*n {
+		bits++
+	}
+	x.slots = make([]gcEphemeronSlot, 1<<bits)
+	x.shift = 64 - bits
+}
+
+// find returns the slot of key, or the empty slot where it would go.
+func (x *gcEphemeronIndex) find(key uintptr) *gcEphemeronSlot {
+	mask := uintptr(len(x.slots) - 1)
+	i := uintptr(uint64(key)*0x9e3779b97f4a7c15>>x.shift) & mask
+	for {
+		s := &x.slots[i]
+		if s.key == key || s.key == 0 {
+			return s
+		}
+		i = (i + 1) & mask
+	}
+}
+
+// gcEphemeronWait is a weak map entry whose value waits for its key.
+type gcEphemeronWait struct {
+	record uintptr // the JSMapRecord
+	state  uintptr // the JSMapState of its map
+	next   int32   // the entry before of the same key, or -1
+	done   bool    // the key was reached and the value marked
 }
 
 type gcEphemeronSymbolState struct {
@@ -48,7 +202,7 @@ func gcEphemeronAtoms(tls *libc.TLS, rt, p, mark uintptr) {
 }
 
 func gcEphemeronMap(tls *libc.TLS, rt uintptr, val TJSValue, mark uintptr) bool {
-	if forkOf(rt).ephemeron != 2 {
+	if forkOf(rt).ephemeron < ephemeronScanSymbols {
 		return false
 	}
 	s := (*TJSObject)(unsafe.Pointer(jsvPtr(val))).Fu.Fopaque
@@ -57,18 +211,6 @@ func gcEphemeronMap(tls *libc.TLS, rt uintptr, val TJSValue, mark uintptr) bool 
 
 func gcEphemeronCount(tls *libc.TLS, p uintptr) int32 {
 	return (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, p))).Fref_count
-}
-func gcEphemeronDead(tls *libc.TLS, key TJSValue, symbols map[uintptr]*gcEphemeronSymbolState) bool {
-	if sym := symbols[jsvPtr(key)]; sym != nil {
-		return !sym.live
-	}
-	if jsvTag(key) == EJS_TAG_OBJECT {
-		// The preliminary weak pass can drop a target after an earlier map
-		// was visited. Such a dead shell is outside the GC lists and has no
-		// trial-deletion mark, so its zero strong count matters as well.
-		return gcEphemeronCount(tls, jsvPtr(key)) == 0 || *(*byte)(unsafe.Pointer(_js_rc(tls, jsvPtr(key)) + 3))&ephemeronMarkMask != 0
-	}
-	return _js_weakref_is_live(tls, key) == 0
 }
 
 // gcEphemeron runs only for a runtime with weak observers. The ordinary
@@ -81,7 +223,6 @@ func gcEphemeron(tls *libc.TLS, rt uintptr, remove TBOOL) bool {
 	if remove == 0 || (*Tlist_head)(unsafe.Pointer(weakHead)).Fnext == weakHead {
 		return false
 	}
-	_gc_remove_weak_objects(tls, rt)
 	hasEntries := false
 	for el := (*Tlist_head)(unsafe.Pointer(weakHead)).Fnext; el != weakHead; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
 		if (*TJSWeakRefHeader)(unsafe.Pointer(el)).Fweakref_type == EJS_WEAKREF_TYPE_MAP {
@@ -93,28 +234,33 @@ func gcEphemeron(tls *libc.TLS, rt uintptr, remove TBOOL) bool {
 		}
 	}
 	if !hasEntries {
+		_gc_remove_weak_objects(tls, rt)
 		_gc_decref(tls, rt)
 		_gc_scan(tls, rt)
 		_gc_free_cycles(tls, rt)
 		_gc_remove_weak_objects(tls, rt)
 		return true
 	}
+	// The first weak pass leaves the weak maps and sets alone. An entry
+	// whose key is a shell, with weak references only, is pending like any
+	// key the scan does not reach, and is removed with them below.
+	gcEphemeronObservers(tls, rt)
 	head := rt + unsafe.Offsetof(TJSRuntime{}.Fgc_obj_list)
 	deadHead := rt + unsafe.Offsetof(TJSRuntime{}.Ftmp_obj_list)
 	// Keep function values in pinned heap cells. Their ccgo uintptr form
 	// must remain valid if a marking call grows the goroutine stack.
 	var callbacks runtime.Pinner
 	defer callbacks.Unpin()
-	pending := make(map[uintptr][]uintptr)
-	var maps []uintptr
 	symbols := make(map[uintptr]*gcEphemeronSymbolState)
+	records := 0
 	for el := (*Tlist_head)(unsafe.Pointer(weakHead)).Fnext; el != weakHead; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
 		if (*TJSWeakRefHeader)(unsafe.Pointer(el)).Fweakref_type != EJS_WEAKREF_TYPE_MAP {
 			continue
 		}
 		state := el - unsafe.Offsetof(TJSMapState{}.Fweakref_header)
-		records := state + unsafe.Offsetof(TJSMapState{}.Frecords)
-		for r := (*Tlist_head)(unsafe.Pointer(records)).Fnext; r != records; r = (*Tlist_head)(unsafe.Pointer(r)).Fnext {
+		records += int((*TJSMapState)(unsafe.Pointer(state)).Frecord_count)
+		list := state + unsafe.Offsetof(TJSMapState{}.Frecords)
+		for r := (*Tlist_head)(unsafe.Pointer(list)).Fnext; r != list; r = (*Tlist_head)(unsafe.Pointer(r)).Fnext {
 			rec := (*TJSMapRecord)(unsafe.Pointer(r - unsafe.Offsetof(TJSMapRecord{}.Flink)))
 			if jsvTag(rec.Fkey) == EJS_TAG_SYMBOL {
 				p := jsvPtr(rec.Fkey)
@@ -130,7 +276,7 @@ func gcEphemeron(tls *libc.TLS, rt uintptr, remove TBOOL) bool {
 		}
 		callbacks.Pin(&count)
 		fp := __ccgo_fp(count)
-		forkOf(rt).ephemeron = 1
+		forkOf(rt).ephemeron = ephemeronCount
 		for p := (*Tlist_head)(unsafe.Pointer(head)).Fnext; p != head; p = (*Tlist_head)(unsafe.Pointer(p)).Fnext {
 			_mark_children(tls, rt, p, fp)
 			gcEphemeronAtoms(tls, rt, p, fp)
@@ -142,82 +288,63 @@ func gcEphemeron(tls *libc.TLS, rt uintptr, remove TBOOL) bool {
 		}
 	}
 	_gc_decref(tls, rt)
-	var symbolQueue []uintptr
-	scan := func(tls *libc.TLS, rt, p uintptr) {
-		if p&1 != 0 {
-			sym := symbols[p&^1]
-			if sym == nil {
+	st := &gcEphemeronScan{tls: tls, rt: rt, symbols: symbols, records: records}
+	hasSymbols := len(symbols) != 0
+	phase := uint8(ephemeronScan)
+	if hasSymbols {
+		phase = ephemeronScanSymbols
+		scan := func(tls *libc.TLS, rt, p uintptr) {
+			if p&1 != 0 {
+				st.symbol(p &^ 1)
 				return
 			}
-			if !sym.live {
-				sym.live = true
-				symbolQueue = append(symbolQueue, p&^1)
-			}
-			return
+			_gc_scan_incref_child(tls, rt, p)
 		}
-		_gc_scan_incref_child(tls, rt, p)
+		callbacks.Pin(&scan)
+		st.mark = __ccgo_fp(scan)
+		defer runtime.KeepAlive(scan)
+	} else {
+		// Without symbol keys the live scan marks as _gc_scan does.
+		st.mark = __ccgo_fp(_gc_scan_incref_child)
 	}
-	callbacks.Pin(&scan)
-	mark := __ccgo_fp(scan)
-	forkOf(rt).ephemeron = 2
-	scanObject := func(p uintptr) {
-		*(*byte)(unsafe.Pointer(_js_rc(tls, p) + 3)) &^= ephemeronMarkMask
-		_mark_children(tls, rt, p, mark)
-		if len(symbols) != 0 {
+	mark := st.mark
+	forkOf(rt).ephemeron = phase
+	// The loop of _gc_scan. Everything else is out of line: only weak maps
+	// and sets, and objects with weak references, which may be keys, need
+	// more.
+	if hasSymbols {
+		for p := (*Tlist_head)(unsafe.Pointer(head)).Fnext; p != head; p = (*Tlist_head)(unsafe.Pointer(p)).Fnext {
+			hdr := (*byte)(unsafe.Pointer(_js_rc(tls, p) + 3))
+			*hdr &^= ephemeronMarkMask
+			_mark_children(tls, rt, p, mark)
 			gcEphemeronAtoms(tls, rt, p, mark)
-		}
-		if records := pending[p]; len(records) != 0 {
-			for _, mr := range records {
-				XJS_MarkValue(tls, rt, (*TJSMapRecord)(unsafe.Pointer(mr)).Fvalue, mark)
+			if *hdr&ephemeronTypeMask>>ephemeronTypeShift == EJS_GC_OBJ_TYPE_JS_OBJECT {
+				obj := (*TJSObject)(unsafe.Pointer(p))
+				if obj.Fweakref_count != 0 || obj.Fclass_id == EJS_CLASS_WEAKMAP || obj.Fclass_id == EJS_CLASS_WEAKSET {
+					st.object(p)
+				}
 			}
-			delete(pending, p)
+			st.drain()
 		}
-		if *(*byte)(unsafe.Pointer(_js_rc(tls, p) + 3))&ephemeronTypeMask>>ephemeronTypeShift != EJS_GC_OBJ_TYPE_JS_OBJECT {
-			return
-		}
-		obj := (*TJSObject)(unsafe.Pointer(p))
-		if obj.Fclass_id != EJS_CLASS_WEAKMAP && obj.Fclass_id != EJS_CLASS_WEAKSET {
-			return
-		}
-		s := obj.Fu.Fopaque
-		if s == 0 {
-			return
-		}
-		maps = append(maps, s)
-		records := s + unsafe.Offsetof(TJSMapState{}.Frecords)
-		for el := (*Tlist_head)(unsafe.Pointer(records)).Fnext; el != records; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
-			mr := el - unsafe.Offsetof(TJSMapRecord{}.Flink)
-			rec := (*TJSMapRecord)(unsafe.Pointer(mr))
-			key := jsvPtr(rec.Fkey)
-			live := gcEphemeronCount(tls, key) > 0
-			if sym := symbols[key]; sym != nil {
-				live = sym.live
-			}
-			if live {
-				XJS_MarkValue(tls, rt, rec.Fvalue, mark)
-			} else {
-				pending[key] = append(pending[key], mr)
-			}
-		}
-	}
-	for p := (*Tlist_head)(unsafe.Pointer(head)).Fnext; p != head; p = (*Tlist_head)(unsafe.Pointer(p)).Fnext {
-		scanObject(p)
-		for len(symbolQueue) != 0 {
-			key := symbolQueue[len(symbolQueue)-1]
-			symbolQueue = symbolQueue[:len(symbolQueue)-1]
-			entries := pending[key]
-			delete(pending, key)
-			for _, mr := range entries {
-				XJS_MarkValue(tls, rt, (*TJSMapRecord)(unsafe.Pointer(mr)).Fvalue, mark)
+	} else {
+		for p := (*Tlist_head)(unsafe.Pointer(head)).Fnext; p != head; p = (*Tlist_head)(unsafe.Pointer(p)).Fnext {
+			hdr := (*byte)(unsafe.Pointer(_js_rc(tls, p) + 3))
+			*hdr &^= ephemeronMarkMask
+			_mark_children(tls, rt, p, mark)
+			if *hdr&ephemeronTypeMask>>ephemeronTypeShift == EJS_GC_OBJ_TYPE_JS_OBJECT {
+				obj := (*TJSObject)(unsafe.Pointer(p))
+				if obj.Fweakref_count != 0 || obj.Fclass_id == EJS_CLASS_WEAKMAP || obj.Fclass_id == EJS_CLASS_WEAKSET {
+					st.object(p)
+				}
 			}
 		}
 	}
 	forkOf(rt).ephemeron = 0
-	runtime.KeepAlive(scan)
+	wait := st.wait
 	// Restore every withheld edge before anything can be freed.
-	for _, records := range pending {
-		for _, mr := range records {
-			XJS_MarkValue(tls, rt, (*TJSMapRecord)(unsafe.Pointer(mr)).Fvalue, __ccgo_fp(_gc_scan_incref_child2))
+	for i := range wait {
+		if !wait[i].done {
+			XJS_MarkValue(tls, rt, (*TJSMapRecord)(unsafe.Pointer(wait[i].record)).Fvalue, __ccgo_fp(_gc_scan_incref_child2))
 		}
 	}
 	for p := (*Tlist_head)(unsafe.Pointer(deadHead)).Fnext; p != deadHead; p = (*Tlist_head)(unsafe.Pointer(p)).Fnext {
@@ -226,33 +353,61 @@ func gcEphemeron(tls *libc.TLS, rt uintptr, remove TBOOL) bool {
 	// Dead keys still carry the trial-deletion mark. Removing their entries
 	// in the sweep phase cannot recursively free a node on either GC list.
 	*(*byte)(unsafe.Pointer(rt + gcPhaseOffset)) = EJS_GC_PHASE_REMOVE_CYCLES
-	for _, s := range maps {
-		gcEphemeronPrune(tls, rt, s, symbols)
+	// The keys of the entries still waiting were never reached: they are
+	// the dead keys, whether they carry the trial-deletion mark, are a
+	// shell with no strong reference left, or are symbols nothing reached.
+	// The entries of each map are together in wait, as each map is
+	// scanned once.
+	last := uintptr(0)
+	for i := range wait {
+		if wait[i].done {
+			continue
+		}
+		_map_delete_record_internal(tls, rt, wait[i].state, wait[i].record)
+		if wait[i].state != last && last != 0 {
+			gcEphemeronRehash(tls, last)
+		}
+		last = wait[i].state
+	}
+	if last != 0 {
+		gcEphemeronRehash(tls, last)
 	}
 	_gc_free_cycles(tls, rt)
 	// Clear WeakRefs and enqueue registry jobs only after all dead targets
 	// have been swept. This also releases the weak target shells in this GC.
-	_gc_remove_weak_objects(tls, rt)
+	gcEphemeronObservers(tls, rt)
 	return true
 }
 
-func gcEphemeronPrune(tls *libc.TLS, rt, s uintptr, symbols map[uintptr]*gcEphemeronSymbolState) {
+// gcEphemeronObservers is _gc_remove_weak_objects for WeakRefs and
+// FinalizationRegistry records only. gcEphemeron removes the entries of
+// weak maps and sets with dead keys itself, after its scan. Before the
+// scan they wait for it, and after the sweep they are gone.
+func gcEphemeronObservers(tls *libc.TLS, rt uintptr) {
+	weakHead := rt + unsafe.Offsetof(TJSRuntime{}.Fweakref_list)
+	*(*byte)(unsafe.Pointer(rt + gcPhaseOffset)) = EJS_GC_PHASE_DECREF
+	for el := (*Tlist_head)(unsafe.Pointer(weakHead)).Fnext; el != weakHead; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
+		switch (*TJSWeakRefHeader)(unsafe.Pointer(el)).Fweakref_type {
+		case EJS_WEAKREF_TYPE_MAP:
+		case EJS_WEAKREF_TYPE_WEAKREF:
+			_weakref_delete_weakref(tls, rt, el)
+		case EJS_WEAKREF_TYPE_FINREC:
+			_finrec_delete_weakref(tls, rt, el)
+		default:
+			libc.Xabort(tls)
+		}
+	}
+	*(*byte)(unsafe.Pointer(rt + gcPhaseOffset)) = EJS_GC_PHASE_NONE
+	_free_zero_refcount(tls, rt)
+}
+
+// gcEphemeronRehash rebuilds the hash table of a map after its entries
+// with dead keys were deleted, once rather than searching each collision
+// chain per deletion. A weak map has no iterators or forEach, so none of
+// its records is a zombie kept for one.
+func gcEphemeronRehash(tls *libc.TLS, s uintptr) {
 	state := (*TJSMapState)(unsafe.Pointer(s))
 	head := s + unsafe.Offsetof(TJSMapState{}.Frecords)
-	changed := false
-	for el := (*Tlist_head)(unsafe.Pointer(head)).Fnext; el != head; {
-		next := (*Tlist_head)(unsafe.Pointer(el)).Fnext
-		mr := el - unsafe.Offsetof(TJSMapRecord{}.Flink)
-		if gcEphemeronDead(tls, (*TJSMapRecord)(unsafe.Pointer(mr)).Fkey, symbols) {
-			_map_delete_record_internal(tls, rt, s, mr)
-			changed = true
-		}
-		el = next
-	}
-	if !changed {
-		return
-	}
-	// Rebuild once, rather than searching each collision chain per deletion.
 	table := unsafe.Slice((*uintptr)(unsafe.Pointer(state.Fhash_table)), int(state.Fhash_size))
 	clear(table)
 	for el := (*Tlist_head)(unsafe.Pointer(head)).Fnext; el != head; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
