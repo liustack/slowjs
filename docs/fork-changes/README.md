@@ -85,6 +85,8 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Compiling a regexp counts toward the interrupt check | Unreleased | [uncatchable.md](uncatchable.md#compiling-a-regexp-counts-toward-the-interrupt-check) |
 | Parsing and building strings count toward the interrupt check | Unreleased | [uncatchable.md](uncatchable.md#parsing-and-building-strings-count-toward-the-interrupt-check) |
 | WeakMap ephemeron collection | Unreleased | [weak-collections.md](weak-collections.md) |
+| Strings of Builtins converted in Go | Unreleased | [go-api.md](go-api.md#strings-of-builtins-converted-in-go) |
+| Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | Unreleased | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

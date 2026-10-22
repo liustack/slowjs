@@ -87,6 +87,7 @@ go test -run 'RegexCompilePoll|RegexCacheCounts|Charge' ./lib # the steps the re
 go test -run 'RegexPoll|WorkCharge' ./internal/fixlib    # fixRegexPoll and fixWorkCharge put their counts back and stop on a changed site
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
+go test -run 'SameAsEngine|UTF8Units|BuiltinStringRoundTrip|BuiltinLatin1UTF16|EscapeView' . # strings of Builtins converted in Go give what the engine gives (also with -tags=libc.memgrind)
 go test -p 2 ./temporal -run 'DateTimeFormatTemporal|DurationLocaleString|Chromium' # Temporal formatting against Chromium 156
 go test -p 2 ./intl -run 'GoIntlMigration|EmbeddedZonePack|FormatStringMatchesParts' # rounding, calendars and embedded time zones
 go test -p 2 ./internal/intlhook                        # private state across GC and Close

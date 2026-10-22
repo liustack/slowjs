@@ -265,6 +265,16 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 }
 
 func (m *VM) newString(s string) (r lib.TJSValue, err error) {
+	if v, ok := newStringFast(m.runtime.tls, m.cContext, s); ok {
+		return v, nil
+	}
+
+	return m.newStringEngine(s)
+}
+
+// newStringEngine is newString through JS_NewStringLen, for a string longer
+// than newStringFast makes.
+func (m *VM) newStringEngine(s string) (r lib.TJSValue, err error) {
 	tls := m.runtime.tls
 	ctx := m.cContext
 	s = validUTF8(s)
@@ -1380,15 +1390,11 @@ func (m *VM) convertArgs(goArgs ...any) (jsArgs, free []lib.TJSValue, err error)
 		case bool:
 			jsArgs = append(jsArgs, newBool(x))
 		case string:
-			x = validUTF8(x)
-			p, err := libc.CString(x)
+			jv, err := m.newString(x)
 			if err != nil {
 				return nil, free, err
 			}
 
-			defer libc.Xfree(tls, p)
-
-			jv := lib.XJS_NewStringLen(tls, ctx, p, libc.Tsize_t(len(x)))
 			free = append(free, jv)
 			jsArgs = append(jsArgs, jv)
 		case *big.Int:
@@ -2922,9 +2928,10 @@ func (v Value) MarshalJSON() (r []byte, err error) {
 
 // Dup returns a copy of 'v' while updating its reference count.
 func (v Value) Dup() Value {
+	_ = v.vm.runtime // a Value of no VM, such as the zero Value, panics
 	return Value{
 		vm: v.vm,
-		v:  lib.XDupValue(v.vm.runtime.tls, v.vm.cContext, v.v),
+		v:  lib.DupValue(v.v),
 	}
 }
 

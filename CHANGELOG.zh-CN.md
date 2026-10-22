@@ -4,11 +4,20 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `Args.Latin1` 和 `Args.UTF16`：按引擎存放的样子拿到 Builtin 字符串参数的字符，每个字符一个字节或一个 16 位单元，不复制。`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 用这样的字符造字符串。只看短字符串、常常原样返回参数（`a.Value(0).Dup()`）的 Builtin 这样写就什么都不用转换：这样写的 React HTML 转义处理 16 个字符的字符串每次调用 99 ns，React 自己的 JavaScript 要 200 ns。
+
+
 ### 修复
 
 - eval 超时和 `Interrupt` 能在几毫秒内停下反复编译正则的循环，单次很长的编译也能在中途停下，抛出的是同一个不可捕获的中断。以前编译一个正则不管模式多长都只算中断检查的一步，所以 10 ms 超时下，每次用新的长模式 `new RegExp` 的循环要晚 225 ms 到 184 s 才停（看模式而定），一次编译 10 万个分支要跑满 8.5 s。现在都在 10 到 12 ms 停下。
 - `JSON.parse`、`JSON.stringify`、`eval`、`new Function`、`repeat`、`padStart`、`replaceAll`、`join` 以及其他解析源码或拼字符串的内置函数，放在循环里也能在超时后几毫秒内停下，以前输入在 60 KB 到 1 MB 时要多跑 5 到 37 s。单次调用仍会跑完。只扫描或排序、不拼字符串的内置函数（`indexOf`、`split`、`fill`、`sort`）放在循环里仍会晚停。渲染耗时和内存不变（不开 PGO，和 v0.27.1 比，商店页面为原来的 0.993，MUI 页面为 0.997）。在一次很长的编译里超过截止时间的脚本，现在编译完就收到中断，以前可能直接跑完。
 - 完整 GC 在一次回收中释放不可达的 WeakMap 条目，包括 value 指回 key 的循环和条目链。仍然可达的 key 会保留其 value。Symbol key、WeakSet、WeakRef 和 FinalizationRegistry 按同样的规则处理。tifa 页面上的完整 GC 耗时和以前差不多，WeakMap 很大时更慢：10 万个存活条目连成的链约为原来的 2.9 倍，10 万个存活 key 约为 1.9 倍。
+
+### 性能
+
+- `Args.String`、`Args.WTF8` 和 `VM.NewString`（以及所有变成 JavaScript 字符串的 Go 字符串）在 Go 里直接读写引擎的字符，结果不变。读一个 16 字符的字符串再返回新字符串的 Builtin 从 230 ns 降到 134 ns，1,024 个 ASCII 字符从 1338 ns 降到 521 ns。`Value.Dup` 不再占 TLS 帧：原样返回参数的 Builtin 从 97 ns 降到 81 ns。
 
 ## [v0.27.1] - 2026-10-23
 

@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, and how EvalBytecode waits for a module's top-level await'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, and how EvalBytecode waits for a module's top-level await'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -8,6 +8,7 @@ read_when:
   - Calling VM.SetShapeCache or VM.SetRegExpCache
   - Giving javascript a Go function that it calls often, or returning a list from Go (Builtin, NewArray)
   - Reading a string argument whose lone surrogates matter, such as one to collate (Args.WTF8)
+  - A Builtin that takes or returns strings is slow, or looks at the characters of short strings and often returns them as they are (Args.Latin1, Args.UTF16, NewStringLatin1, NewStringUTF16)
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
   - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
@@ -103,6 +104,41 @@ Release: v0.27.0.
 `Args.WTF8(i)` reads a string argument as the engine holds it: a lone surrogate is the three bytes of its code point (0xED, then 0xA0 to 0xBF, then a continuation byte), where `Args.String` gives U+FFFD for it, and a surrogate pair is its one character in UTF-8, as before. The result is not valid UTF-8 when the string has a lone surrogate. A Builtin that has to tell lone surrogates apart reads its strings this way, as `Intl.Collator` does to order them as Chromium does.
 
 Test: `builtin_test.go`.
+
+## Strings of Builtins converted in Go
+
+Release: Unreleased.
+
+`Args.String`, `Args.WTF8` and `VM.NewString` convert in Go, with the same results. `Args.String` and `Args.WTF8` read a string the engine holds in one piece straight from its characters, where `JS_ToCStringLen2` scanned every string in engine code, made a UTF-8 copy in engine memory of any string that was not ASCII, and Go copied that again. `NewString` (and every Go string that becomes a JS string: arguments of `Call`, results of Go functions and the rest) writes the characters straight into the new string, where it copied the Go string to C memory for `JS_NewStringLen` to decode. A string the engine left in pieces by concatenation (a rope) is still joined by the engine, and a string longer than javascript allows still goes through `JS_NewStringLen`, which throws as before. `Value.Dup` adds its reference in Go, where `JS_DupValue` took a TLS frame to do it.
+
+It is safe because the results are the same strings: the tests convert each string both ways and compare. For reading, every form the engine holds (8-bit and 16-bit, ASCII, Latin-1, every UTF-8 length, surrogate pairs, lone surrogates at the start, middle and end, ropes, strings up to 65,000 characters and 2,000 random ones). For making strings, the same strings with each kind of invalid UTF-8, where the new string must also be 8-bit or 16-bit as `JS_NewStringLen` made it. The UTF-8 check is compared with Go's on every string of up to three bytes. Reading a string in one piece no longer needs engine memory, so near the memory limit it can no longer fail there: only a rope still can.
+
+Measured with `BenchmarkBuiltinString` on linux/amd64 (AMD EPYC 7B13, one pinned core, 6 rounds in 3 code layouts, times per call with the loop that makes it, where a call of a javascript function takes 60 ns):
+
+| Call | Before | After |
+| --- | --- | --- |
+| A Builtin returning its argument as it is | 97 ns | 81 ns |
+| Reading a 16-character ASCII string | 131 ns | 105 ns |
+| Reading and returning it as a new string | 230 ns | 134 ns |
+| The same with 16 characters of Latin-1, or of CJK | 359, 484 ns | 211, 314 ns |
+| Reading 1,024 characters of ASCII, Latin-1, CJK | 865, 1685, 4098 ns | 316, 1096, 3387 ns |
+| Reading and returning them as a new string | 1338, 7243, 13699 ns | 522, 4792, 11286 ns |
+
+A Builtin that adds two numbers took 72 ns before and 75 to 81 ns after, depending on the code layout: nothing on its path changed, and the same layouts move it by as much.
+
+Tests: `TestArgStringSameAsEngine`, `TestNewStringSameAsEngine`, `TestUTF8Units` and `TestBuiltinStringRoundTrip` in `jsstring_test.go`, also run under memgrind.
+
+When upstream changes it: `lib/strchars.go` reads and writes a string with the offsets of its length, its wide bit and its characters that fixlib takes from `JSString` for [the JSON strings](json.md), so a new layout reaches it through those constants, and it makes strings with `js_alloc_string`. If upstream changes how `JS_ToCStringLen2` or `JS_NewStringLen` convert, change `jsstring.go` to match: the tests above compare the two on every form of string and fail first.
+
+## Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16
+
+Release: Unreleased.
+
+`Args.Latin1(i)` gives the characters of a string argument one byte each, and `Args.UTF16(i)` its 16-bit units, lone surrogates as they are, without a copy: the bytes and units are the engine's, valid until the Builtin returns, and must not be changed. The engine holds a string one way or the other, so for a string in one piece exactly one of the two answers. A rope gives neither, and so does any value that is not a string: read those with `Args.String`. `VM.NewStringLatin1(b)` makes a string of bytes that are characters U+0000 to U+00FF, and `VM.NewStringUTF16(u)` one of 16-bit units, each with one copy. `NewStringUTF16` of units all below U+0100 makes a string of 8-bit characters, as the engine makes it. A string longer than javascript allows is an error.
+
+A Builtin that looks at the characters of short strings and often returns its argument as it is, such as an escape for HTML, converts nothing this way: it reads the characters in place and returns `a.Value(0).Dup()`. React's escape of text written that way takes 99 ns a call for a 16-character string without a character to escape, against 200 ns for React's own javascript and 156 ns before (125 ns after the change above) for one that reads with `Args.WTF8`. For a string with three characters to escape it takes 163 ns, where React's javascript takes 3.3 µs.
+
+Test: `TestBuiltinLatin1UTF16` in `jsstring_test.go`, also run under memgrind, and `TestEscapeView` in `builtinstring_test.go`.
 
 ## Error() of an Error made in Go
 
