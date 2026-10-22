@@ -25,7 +25,8 @@ import (
 //   - The cache is in the state of the runtime (see runtime.go), so each
 //     runtime has its own, used only by the goroutine that runs the
 //     runtime, as the allocator itself is.
-//   - __js_malloc calls frontPop first, __js_free calls frontPush first.
+//   - js_malloc, js_malloc_rt and __js_malloc call frontTake first,
+//     __js_free calls frontGive first.
 //   - JS_RunGC calls frontDrain last, which gives every cached block back
 //     to its arena, so that after a GC an arena with no block in use is
 //     freed and the memory in use is what it was without the cache.
@@ -50,12 +51,30 @@ const frontMax = 256
 // frontHeader is the size of the header of a block, JSMallocBlockHeader.
 const frontHeader = 8
 
+// frontLargest is the largest size of an allocation that gets a small
+// block: with its header, aligned, it takes MJS_MALLOC_MAX_SMALL_SIZE.
+const frontLargest = MJS_MALLOC_MAX_SMALL_SIZE - frontHeader
+
+// frontLists is the number of lists of a cache, a power of two at least
+// MJS_MALLOC_BLOCK_SIZE_COUNT, so that an index masked with frontLists-1
+// needs no bounds check.
+const frontLists = 32
+
 // TfrontCache is the front cache of a runtime.
 type TfrontCache struct {
-	head  [MJS_MALLOC_BLOCK_SIZE_COUNT]uintptr // the header of the first block of each list
-	count [MJS_MALLOC_BLOCK_SIZE_COUNT]int32   // the length of each list
-	off   int32                                // nonzero while frontPush must free to the arena
+	head  [frontLists]uintptr // the header of the first block of each list
+	count [frontLists]int32   // the length of each list, frontMax while the cache is off
+	off   bool                // the cache is turned off for good
 }
+
+// frontIndex maps (size+7)>>3 of an allocation of 1 to frontLargest bytes
+// to the index of its block size, as __js_malloc sizes the block.
+var frontIndex = func() (t [64]uint8) {
+	for i := 1; i < len(t); i++ {
+		t[i] = uint8(_get_block_size_index(nil, Tsize_t(i)*MJS_MALLOC_ALIGN+frontHeader))
+	}
+	return t
+}()
 
 // frontCacheOf returns the front cache of the runtime whose malloc_ctx is
 // at s.
@@ -63,18 +82,15 @@ func frontCacheOf(s uintptr) *TfrontCache {
 	return &forkOf(s).front
 }
 
-// frontPop returns a cached block for an allocation of size, or 0. It sizes
-// the block as __js_malloc does.
-func frontPop(tls *libc.TLS, s uintptr, size Tsize_t) uintptr {
-	if size == 0 {
+// frontTake returns a cached block for an allocation of size, or 0. It sizes
+// the block as __js_malloc does. It is small enough for Go to inline it
+// into js_malloc, js_malloc_rt and __js_malloc.
+func frontTake(s uintptr, size Tsize_t) uintptr {
+	if MJS_MALLOC_LARGE_BLOCKS_ONLY != 0 || size-1 >= frontLargest {
 		return 0
 	}
-	total := (size+MJS_MALLOC_ALIGN-1)&^(MJS_MALLOC_ALIGN-1) + frontHeader
-	if MJS_MALLOC_LARGE_BLOCKS_ONLY != 0 || total > MJS_MALLOC_MAX_SMALL_SIZE {
-		return 0
-	}
-	fc := frontCacheOf(s)
-	idx := _get_block_size_index(tls, total)
+	fc := &(*TJSRuntime)(unsafe.Pointer(s)).Ffork.front
+	idx := frontIndex[(size+MJS_MALLOC_ALIGN-1)/MJS_MALLOC_ALIGN%64] % frontLists
 	b := fc.head[idx]
 	if b == 0 {
 		return 0
@@ -84,19 +100,17 @@ func frontPop(tls *libc.TLS, s uintptr, size Tsize_t) uintptr {
 	return b + frontHeader
 }
 
-// frontPush puts the block at ptr into the cache and reports whether it
+// frontGive puts the block at ptr into the cache and reports whether it
 // did. A large block, the block of size 0, and a block of a full list are
-// left to __js_free.
-func frontPush(s, ptr uintptr) bool {
-	if ptr == 0 {
-		return false
-	}
-	fc := frontCacheOf(s)
+// left to __js_free, and so is every block while the cache is off. It is
+// small enough for Go to inline it into __js_free.
+func frontGive(s, ptr uintptr) bool {
 	b := ptr - frontHeader
-	if fc.off != 0 || *(*Tuint16_t)(unsafe.Pointer(b)) == MFREE_NIL {
+	if ptr == 0 || *(*Tuint16_t)(unsafe.Pointer(b)) == MFREE_NIL {
 		return false
 	}
-	idx := (*TJSMallocBlockHeader)(unsafe.Pointer(b)).Fblock_size_idx
+	fc := &(*TJSRuntime)(unsafe.Pointer(s)).Ffork.front
+	idx := (*TJSMallocBlockHeader)(unsafe.Pointer(b)).Fblock_size_idx % frontLists
 	if fc.count[idx] >= frontMax {
 		return false
 	}
@@ -107,11 +121,13 @@ func frontPush(s, ptr uintptr) bool {
 }
 
 // frontDrain gives every block in the cache of the runtime at s back to its
-// arena and reports whether there was any.
+// arena and reports whether there was any. While it does, every list counts
+// as full, so that __js_free does not put the blocks back into the cache.
 func frontDrain(tls *libc.TLS, s uintptr) bool {
 	fc := frontCacheOf(s)
-	off := fc.off
-	fc.off = 1
+	for i := range fc.count {
+		fc.count[i] = frontMax
+	}
 	any := false
 	for i := range fc.head {
 		for b := fc.head[i]; b != 0; {
@@ -120,9 +136,11 @@ func frontDrain(tls *libc.TLS, s uintptr) bool {
 			b = next
 			any = true
 		}
-		fc.head[i], fc.count[i] = 0, 0
+		fc.head[i] = 0
 	}
-	fc.off = off
+	if !fc.off {
+		fc.count = [frontLists]int32{}
+	}
 	return any
 }
 
@@ -140,6 +158,6 @@ func frontRetry(tls *libc.TLS, s uintptr) bool {
 
 // frontOff gives the cache of the runtime at s back and turns it off.
 func frontOff(tls *libc.TLS, s uintptr) {
+	frontCacheOf(s).off = true
 	frontDrain(tls, s)
-	frontCacheOf(s).off = 1
 }

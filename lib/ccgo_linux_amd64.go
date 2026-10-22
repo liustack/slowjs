@@ -3274,7 +3274,7 @@ func ___js_malloc(tls *libc.TLS, s uintptr, size Tsize_t) (r uintptr) {
 	var total_size Tsize_t
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, b1, block_idx, block_size, block_size_idx, el1, head, next, prev, total_size, v1
 	// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).
-	if p := frontPop(tls, s, size); p != 0 {
+	if p := frontTake(s, size); p != 0 {
 		return p
 	}
 	if expect64(!!(size == libc.Uint64FromInt32(0))) {
@@ -3322,7 +3322,7 @@ func ___js_free(tls *libc.TLS, s uintptr, ptr uintptr) {
 	var block_idx, block_size, block_size_idx uint32
 	_, _, _, _, _, _, _, _, _, _, _, _ = ar, b, block_idx, block_size, block_size_idx, lb, next1, prev1, v1, v2, v3, v4
 	// Changed by internal/fixlib: keep the block in the front cache (see fixFrontCache).
-	if frontPush(s, ptr) {
+	if frontGive(s, ptr) {
 		return
 	}
 	if !(ptr != 0) {
@@ -3512,6 +3512,10 @@ func _js_trigger_gc(tls *libc.TLS, rt uintptr, size Tsize_t) {
 }
 
 func Xjs_malloc_rt(tls *libc.TLS, rt uintptr, size Tsize_t) (r uintptr) {
+	// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).
+	if r = frontTake(rt, size); r != 0 {
+		return r
+	}
 	// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).
 	if r = ___js_malloc(tls, rt, size); r == 0 && frontRetry(tls, rt) {
 		r = ___js_malloc(tls, rt, size)
@@ -3551,6 +3555,10 @@ func Xjs_mallocz_rt(tls *libc.TLS, rt uintptr, size Tsize_t) (r uintptr) {
 func Xjs_malloc(tls *libc.TLS, ctx uintptr, size Tsize_t) (r uintptr) {
 	var ptr uintptr
 	_ = ptr
+	// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).
+	if r = frontTake((*TJSContext)(unsafe.Pointer(ctx)).Frt, size); r != 0 {
+		return r
+	}
 	ptr = Xjs_malloc_rt(tls, (*TJSContext)(unsafe.Pointer(ctx)).Frt, size)
 	if expect64(!!!(ptr != 0)) {
 		XJS_ThrowOutOfMemory(tls, ctx)

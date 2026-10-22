@@ -15,14 +15,18 @@ import (
 
 // The text fixFrontCache adds.
 const (
-	frontPopHook  = "\t// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).\n\tif p := frontPop(tls, s, size); p != 0 {\n\t\treturn p\n\t}\n"
-	frontPushHook = "\t// Changed by internal/fixlib: keep the block in the front cache (see fixFrontCache).\n\tif frontPush(s, ptr) {\n\t\treturn\n\t}\n"
+	frontTakeHook = "\t// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).\n\tif p := frontTake(s, size); p != 0 {\n\t\treturn p\n\t}\n"
+	frontGiveHook = "\t// Changed by internal/fixlib: keep the block in the front cache (see fixFrontCache).\n\tif frontGive(s, ptr) {\n\t\treturn\n\t}\n"
+	// js_malloc and js_malloc_rt take a cached block themselves, so that
+	// most allocations make no call further down (see fixFrontCache).
+	frontCtxHook  = "\t// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).\n\tif r = frontTake((*TJSContext)(unsafe.Pointer(ctx)).Frt, size); r != 0 {\n\t\treturn r\n\t}\n"
+	frontRtHook   = "\t// Changed by internal/fixlib: take a block of the front cache first (see fixFrontCache).\n\tif r = frontTake(rt, size); r != 0 {\n\t\treturn r\n\t}\n"
 	frontOffHook  = "\t// Changed by internal/fixlib: give the front cache back and turn it off (see fixFrontCache).\n\tfrontOff(tls, rt1)\n"
 	frontGCHook   = "\t// Changed by internal/fixlib: give the front cache back to the arenas (see fixFrontCache).\n\tfrontDrain(tls, rt)\n"
 	frontRetryDoc = "\t// Changed by internal/fixlib: past the memory limit, give the front cache back and try again (see fixFrontCache).\n"
 
 	frontMallocOld  = "\treturn ___js_malloc(tls, rt, size)\n"
-	frontMallocNew  = frontRetryDoc + "\tif r = ___js_malloc(tls, rt, size); r == 0 && frontRetry(tls, rt) {\n\t\tr = ___js_malloc(tls, rt, size)\n\t}\n\treturn r\n"
+	frontMallocNew  = frontRtHook + frontRetryDoc + "\tif r = ___js_malloc(tls, rt, size); r == 0 && frontRetry(tls, rt) {\n\t\tr = ___js_malloc(tls, rt, size)\n\t}\n\treturn r\n"
 	frontReallocOld = "\treturn ___js_realloc(tls, rt, ptr, size)\n"
 	// A realloc to size 0 frees the block and returns 0: that is no
 	// failure to try again.
@@ -34,21 +38,25 @@ var (
 	reRunGC       = regexp.MustCompile(`^\{\n\t_JS_RunGCInternal\(tls, rt, int32\([EM]TRUE\)\)\n`)
 
 	// The functions whose work lib/frontcache.go repeats or relies on.
-	frontFuncs = []string{"___js_malloc", "___js_free", "___js_realloc", "_js_malloc_large", "_get_block_size_index", "_js_def_malloc", "_js_def_realloc", "Xjs_malloc_rt", "Xjs_realloc_rt", "XJS_RunGC"}
+	frontFuncs = []string{"___js_malloc", "___js_free", "___js_realloc", "_js_malloc_large", "_get_block_size_index", "_js_def_malloc", "_js_def_realloc", "Xjs_malloc", "Xjs_malloc_rt", "Xjs_realloc_rt", "XJS_RunGC"}
 )
 
 // fixFrontCache wires the front cache of lib/frontcache.go, in the field
 // that fixRuntimeField adds to JSRuntime, into the small block allocator:
-// it calls frontPop and frontPush at the start of __js_malloc and
-// __js_free, frontDrain at the end of JS_RunGC, frontRetry when
-// js_malloc_rt or js_realloc_rt runs out of memory, and frontOff at the
-// start of JS_FreeRuntime.
+// it calls frontTake at the start of js_malloc, js_malloc_rt and
+// __js_malloc and frontGive at the start of __js_free, frontDrain at the end
+// of JS_RunGC, frontRetry when js_malloc_rt or js_realloc_rt runs out of
+// memory, and frontOff at the start of JS_FreeRuntime. Go inlines frontTake
+// and frontGive, so that an allocation js_malloc finds in the cache makes no
+// call further down, where it went through js_malloc_rt, __js_malloc and a
+// function of the cache before.
 //
 // lib/frontcache.go sizes a block as __js_malloc does, reads the header of
 // a block as __js_free does, tells a large block by the MFREE_NIL that
 // js_malloc_large writes in its header, counts on __js_realloc moving a
 // small block through __js_malloc and __js_free, and on js_def_malloc and
-// js_def_realloc failing past the memory limit only. So the text of frontFuncs and of JSMallocBlockHeader
+// js_def_realloc failing past the memory limit only, and js_malloc must still
+// get its block from js_malloc_rt. So the text of frontFuncs and of JSMallocBlockHeader
 // is pinned in frontSites: when a release changes one of them,
 // fixFrontCache stops, and the new code must be read against
 // lib/frontcache.go before the fingerprints are updated (go run
@@ -86,8 +94,9 @@ func fixFrontCache(b []byte, file string) ([]byte, error) {
 func addFrontCache(b []byte) ([]byte, error) {
 	var err error
 	for _, h := range []struct{ name, hook string }{
-		{"___js_malloc", frontPopHook},
-		{"___js_free", frontPushHook},
+		{"___js_malloc", frontTakeHook},
+		{"___js_free", frontGiveHook},
+		{"Xjs_malloc", frontCtxHook},
 		{"XJS_FreeRuntime", frontOffHook},
 	} {
 		if b, err = insertAfterDecls(b, h.name, h.hook); err != nil {
@@ -125,8 +134,9 @@ func addFrontCache(b []byte) ([]byte, error) {
 // restoreFrontCache undoes fixFrontCache.
 func restoreFrontCache(b []byte) ([]byte, error) {
 	for _, r := range []struct{ new, old string }{
-		{frontPopHook, ""},
-		{frontPushHook, ""},
+		{frontTakeHook, ""},
+		{frontGiveHook, ""},
+		{frontCtxHook, ""},
 		{frontOffHook, ""},
 		{frontGCHook, ""},
 		{frontMallocNew, frontMallocOld},
@@ -137,7 +147,7 @@ func restoreFrontCache(b []byte) ([]byte, error) {
 		}
 		b = bytes.Replace(b, []byte(r.new), []byte(r.old), 1)
 	}
-	for _, name := range []string{"frontPop(", "frontPush(", "frontDrain(", "frontRetry(", "frontOff("} {
+	for _, name := range []string{"frontTake(", "frontGive(", "frontDrain(", "frontRetry(", "frontOff("} {
 		if bytes.Contains(b, []byte(name)) {
 			return nil, fmt.Errorf("restoreFrontCache: a call of %s is left", name[:len(name)-1])
 		}

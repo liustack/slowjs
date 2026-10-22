@@ -1,5 +1,5 @@
 ---
-summary: "The fork changes to how the engine allocates: one block of TLS stack kept per VM outside linux so VMs stop waiting on libc's allocator lock, and a front cache of freed small blocks per runtime, with what each gains and costs in memory, why it is safe and what to do when upstream or libc changes"
+summary: "The fork changes to how the engine allocates: one block of TLS stack kept per VM outside linux so VMs stop waiting on libc's allocator lock, and a front cache of freed small blocks per runtime that js_malloc takes from without a call, with what each gains and costs in memory, why it is safe and what to do when upstream or libc changes"
 read_when:
   - Changing tlsstack_other.go, lib/runtime.go, lib/frontcache.go, fixRuntimeField or fixFrontCache
   - fixlib stops on runtimeSites or frontSites after an upstream release
@@ -36,4 +36,18 @@ What to do when `go run ./internal/fixlib` stops on this change after an upstrea
 
 If it reports that `JSRuntime` or `JS_NewRuntime2` changed (`internal/fixlib/runtimesites.go`), check that `malloc_ctx` is still the first field and that `JS_NewRuntime2` still allocates and clears the runtime with `sizeof(JSRuntime)`, then run `-runtime`.
 
-If it reports that the functions of `frontFuncs` or `JSMallocBlockHeader` changed (`internal/fixlib/frontsites.go`), read them against `lib/frontcache.go`: `__js_malloc` must still size a block as `frontPop` does, a large block must still have `MFREE_NIL` in its header (`js_malloc_large` writes it), `__js_realloc` must still move a small block through `__js_malloc` and `__js_free`, and `js_def_malloc` and `js_def_realloc` must still fail only past the memory limit or when libc fails. Then run `-front`.
+If it reports that the functions of `frontFuncs` or `JSMallocBlockHeader` changed (`internal/fixlib/frontsites.go`), read them against `lib/frontcache.go`: `__js_malloc` must still size a block as `frontTake` does, `js_malloc` must still get its block from `js_malloc_rt`, a large block must still have `MFREE_NIL` in its header (`js_malloc_large` writes it), `__js_realloc` must still move a small block through `__js_malloc` and `__js_free`, and `js_def_malloc` and `js_def_realloc` must still fail only past the memory limit or when libc fails. Then run `-front`.
+
+## js_malloc takes cached blocks itself
+
+Release: Unreleased.
+
+An allocation the front cache could serve still went through four calls (`js_malloc`, `js_malloc_rt`, `__js_malloc` and the cache), about 78 instructions, and a free through two, about 43. Go inlines only small functions, and the cache was too large for it. Now the cache is two small functions, `frontTake` and `frontGive` in `lib/frontcache.go`, which Go inlines into `js_malloc`, `js_malloc_rt`, `__js_malloc` and `__js_free`. So `js_malloc` takes a cached block without a call, and `__js_free` keeps one with fewer checks. A size is turned into its list with a table of 64 entries, and there are 32 lists so that an index needs no bounds check. While the cache is off or gives its blocks back, every list counts as full, so `frontGive` tests no flag. The blocks the cache holds and when it gives them back do not change, and neither does the memory a VM holds.
+
+On linux/amd64 (AMD EPYC), counted with callgrind over 4 renders after warmup, a render of the 6 workbench pages of tifa's shop takes 2.1% to 2.3% fewer instructions, and the pages of tifa's MUI test app 1.3% fewer. What the allocator takes of a render of the studio list goes from 16.0M instructions to 11.6M. Timed without PGO on one thread of an idle core pair, 6 rounds of main and the branch taking turns in 3 code layouts, the 6 shop pages render in 0.985 of the time at the median (0.971 to 0.992, below 1 in every round) and the 4 MUI pages in 0.983 (0.966 to 0.992). The memory of a VM after loading, after the renders and after a GC is the same to the KiB. Generated Go only, no C hunk (`internal/fixlib/frontcache.go`).
+
+Tests: `lib/frontcache_test.go` (`TestFrontTake` for every size up to 600 bytes and through a context, `TestFrontCacheOff`) and `internal/fixlib/frontcache_test.go`.
+
+### When upstream changes it
+
+Same as [A front cache for small blocks](#a-front-cache-for-small-blocks): the fingerprints of `frontFuncs` cover `js_malloc` too.
