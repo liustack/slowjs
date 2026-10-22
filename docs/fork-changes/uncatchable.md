@@ -1,8 +1,8 @@
 ---
-summary: 'The fork changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, and Interrupt during Close'
+summary: 'The fork changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, and regexp compiles, parsing and string building counted toward the interrupt check'
 read_when:
-  - Changing lib/uncatchable.go, lib/outofmemory.go, fixUncatchable, fixOutOfMemory, fixCompile or fixToCString
-  - fixlib stops on XJS_Throw, exceptionHandlers, exceptionWriters, the out of memory error, the compiler or XJS_ToCStringLen2 after an upstream release
+  - Changing lib/uncatchable.go, lib/outofmemory.go, lib/regexpoll.go, lib/charge.go, fixUncatchable, fixOutOfMemory, fixCompile, fixToCString, fixRegexPoll or fixWorkCharge
+  - fixlib stops on XJS_Throw, exceptionHandlers, exceptionWriters, the out of memory error, the compiler, XJS_ToCStringLen2, regexPollSites or workChargeSites after an upstream release
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
   - Calling Interrupt from another goroutine, or setting the eval timeout
@@ -101,3 +101,37 @@ Release: v0.26.10.
 `VM.Interrupt` can be called from any goroutine while the VM closes and after `Close`, where it does nothing. It used to read the address of the interrupt flag, which `Close` frees and then clears, so a watchdog firing just as the script finished could write to freed memory or panic on a nil pointer. The race detector also reported a race when `Interrupt` stopped a script and the VM was closed after the call returned. That one was not real: the two goroutines are ordered by the atomic flag, but the flag is in C memory, outside Go's heap, where the race detector ignores atomic operations. `Interrupt` and `Close` now meet at a mutex in Go memory that `Close` never clears.
 
 Test: `interrupt_test.go`.
+
+## Compiling a regexp counts toward the interrupt check
+
+Release: Unreleased.
+
+The eval timeout and `Interrupt` stop a loop that compiles regexps within a few milliseconds, and stop one long compile in the middle. The interpreter calls the interrupt handler once every 10000 polls (see [interpreter-loop.md](interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter)), and a compile was one poll however long the pattern, as it is upstream. A loop that built `new RegExp` from a new long pattern each time ran thousands of compiles between two checks: with a 10 ms timeout, `'(a|b|c)+d'.repeat(200)` stopped after 170 ms on a Mac, 225 ms on linux/amd64 (AMD EPYC) and over 2 s on a loaded machine, a pattern of 2000 alternatives after 3.6 s, and a class of 3000 CJK characters after 184 s. One compile of 100000 alternatives ran its full 8.5 s.
+
+The regexp parser now counts a step on the counter of the context for each term, alternative and atom of a class, and one more for each 256 bytes of code or ranges the step moves (an alternative moves the code before it to insert its split, an atom of a class copies the ranges before it, a term of a lookbehind moves in front of the terms before it), through `lre_poll_interrupts`. When the counter runs out it calls the handler through `lre_check_timeout`, as `lre_exec` does. When the handler asks to stop, the parse fails with the message `interrupted`, the compile frees what it built as for any syntax error, and `js_compile_regexp` throws the uncatchable interrupt, the same error the interpreter throws, so a catch block does not see it. A lookup in the regexp cache counts the bytes of the pattern it hashes and compares (see below). On the same machine every one of those loops now stops 10 to 12 ms after it started, and the long compile at 10 ms.
+
+The C form is `re_poll_interrupts` in `libregexp.c` and `lre_poll_interrupts` in `quickjs.c` in `lib/internal/patch/quickjs.diff`. `fixRegexPoll` (`internal/fixlib/regexpoll.go`) writes the Go form, with `_re_poll_interrupts` in `lib/regexpoll.go`, and accepts the branch it adds next to the out of memory test of `_js_compile_regexp`.
+
+Tests: `regexcache_test.go` (`TestRegExpCacheStops`), `lib/regexpoll_test.go`, `internal/fixlib/regexpoll_test.go`.
+
+### When upstream changes it
+
+If it reports that the regexp parser, `lre_check_timeout` or `__js_poll_interrupts` changed (a fingerprint other than the one in `internal/fixlib/regexpollsites.go`), read the new `re_parse_alternative`, `re_parse_disjunction` and `re_parse_nested_class` against `lib/regexpoll.go`: every loop of the parser that can run once per character of the pattern must count a step, and a step that moves code must count what it moves. A new loop of that kind needs its own step in `fixRegexPoll` and in the C patch. Then put the new fingerprints in (`go run ./internal/fixlib -repoll` prints them). If it cannot find the test of running out of memory in `_js_compile_regexp`, read [Out of memory is uncatchable](#out-of-memory-is-uncatchable) first: the interrupt branch goes right after it.
+
+## Parsing and building strings count toward the interrupt check
+
+Release: Unreleased.
+
+A loop of built-in calls that parse source or build long strings stops within a few milliseconds of the eval timeout or `Interrupt`. Each such call was one poll of the interrupt check however much it did, so with a 10 ms timeout on linux/amd64 (AMD EPYC) a loop of `JSON.parse` of 60 KB stopped after 8.6 s, `JSON.stringify` after 11.7 s, `eval` of 500 functions after 10 s, `new Function` after 5.3 s, `'x'.repeat(1e6)` after 13 s, `padStart` after 18 s, `replaceAll` after 18.7 s and `join` of 100000 numbers after 37.5 s.
+
+`js_charge_interrupts` counts steps on the counter of the context and leaves the call of the handler to the next poll of the interpreter, so it throws nothing where it is called. The counter stops at 0, so a huge charge cannot wrap it to a large count. `js_parse_init` counts a step for each byte of the source it is given, for `eval`, `new Function`, scripts, modules and `JSON.parse`: parsing and compiling cost far more for each byte than copying, and one step for each 32 bytes left a loop of `eval` 10 to 15 ms late, and 130 ms late on a loaded machine. `string_buffer_init2` and `string_buffer_realloc` count a step for each 8 characters of room they make, for `JSON.stringify`, `join`, `repeat`, `padStart`, `replaceAll` and every other built-in that builds a string in a `StringBuffer`. The regexp cache counts a step for each 32 bytes of each pattern it looks up. A step counted too many only calls the handler, which reads a flag and the clock, a little earlier. Those loops now stop 10 to 15 ms after they started on the same machine. One call still runs to its end: one `JSON.parse` of 13 MB takes 385 ms, one `repeat` of 200 million characters 620 ms, one `eval` of 50000 functions 1.1 s, and the timeout stops the script right after. Built-ins that scan or sort without building a string (`indexOf`, `includes`, `split`, `fill`, `sort` of arrays and typed arrays) do not count yet: a loop of them stops 3 to 29 s late with such inputs.
+
+Neither change slows a render. Without PGO, on linux/amd64 (AMD EPYC), against v0.27.1, in 6 rounds over 3 code layouts with the order of the two builds flipped each round, the sums of the P50 render times take 0.993 of the time on the pages of tifa's example shop (0.978 to 1.002) and 0.997 on the MUI pages of its test app (0.989 to 1.007), with the same HTML and the same memory. Compiling one regexp of 900 KB takes 23 ms where it took 21 ms, and a compile of 100000 alternatives no longer than before. A script that ran past its deadline inside one long compile used to finish when nothing polled after it: `eval` of 50000 functions under a 10 ms timeout returned after 1.1 s, and now throws the interrupt right after the compile.
+
+The C form is `js_charge_interrupts` in `quickjs.c` in `lib/internal/patch/quickjs.diff`. `fixWorkCharge` (`internal/fixlib/workcharge.go`) writes the Go form, with `_js_charge_interrupts` in `lib/charge.go`. The count in the regexp cache (`lib/regexcache.go`) has no C form, as the cache has none.
+
+Tests: `workstop_test.go` (`TestBuiltinWorkStops`), `lib/charge_test.go`, `lib/regexpoll_test.go` (`TestRegexCacheCountsSteps`), `internal/fixlib/workcharge_test.go`.
+
+### When upstream changes it
+
+If it reports that `js_parse_init`, `string_buffer_init2`, `string_buffer_realloc` or `__js_poll_interrupts` changed (a fingerprint other than the one in `internal/fixlib/workchargesites.go`), read the new code against `lib/charge.go`: the parser must still be given its whole source at `js_parse_init`, the string buffer must still make its room in those two functions, and the counter must still be the one the interpreter counts down. If it cannot find where a count goes, find the new place of the last field set in `js_parse_init`, of the error status set in `string_buffer_init2`, or of the new size stored in `string_buffer_realloc`, and move the anchor in `workCharges`. Then put the new fingerprints in (`go run ./internal/fixlib -charge` prints them). `jsonSites` pins `string_buffer_realloc` after this change, so its fingerprints move with it.
