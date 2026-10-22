@@ -182,7 +182,7 @@ func (a Args) Bool(i int) (bool, bool) {
 func (a Args) String(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
 	case lib.EJS_TAG_STRING, lib.EJS_TAG_STRING_ROPE:
-		return cString(a.vm.runtime.tls, a.vm.cContext, v)
+		return argString(a.vm.runtime.tls, a.vm.cContext, v, false)
 	}
 	return "", false
 }
@@ -195,7 +195,7 @@ func (a Args) String(i int) (s string, ok bool) {
 func (a Args) WTF8(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
 	case lib.EJS_TAG_STRING, lib.EJS_TAG_STRING_ROPE:
-		return cWTF8(a.vm.runtime.tls, a.vm.cContext, v)
+		return argString(a.vm.runtime.tls, a.vm.cContext, v, true)
 	}
 	return "", false
 }
