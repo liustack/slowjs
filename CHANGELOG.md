@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Fixed
+
+- Full GC releases unreachable WeakMap entries in one collection, including values that point back to their keys and chains of entries. Live keys keep their values. Symbol keys, WeakSet, WeakRef and FinalizationRegistry follow the same rule. A full GC of a VM with WeakMap entries takes longer: about 16% on tifa's shop pages, and 9 times as long for 100,000 live entries.
+
 ## [v0.27.1] - 2026-10-23
 
 ### Fixed

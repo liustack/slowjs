@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 完整 GC 在一次回收中释放不可达的 WeakMap 条目，包括 value 指回 key 的循环和条目链。仍然可达的 key 会保留其 value。Symbol key、WeakSet、WeakRef 和 FinalizationRegistry 按同样的规则处理。有 WeakMap 条目的 VM 做完整 GC 更慢：tifa 示例商店的页面约慢 16%，10 万个存活条目时约为原来的 9 倍。
+
 ## [v0.27.1] - 2026-10-23
 
 ### 修复

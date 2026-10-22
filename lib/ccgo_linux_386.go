@@ -11342,6 +11342,8 @@ func XJS_MarkValue(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp_mark_func 
 			fallthrough
 		case int32(EJS_TAG_MODULE):
 			(*(*func(*libc.TLS, uintptr, uintptr))(unsafe.Pointer(&struct{ uintptr }{__ccgo_fp_mark_func})))(tls, rt, uintptr(libc.Int32FromUint64(val)))
+		case int32(EJS_TAG_SYMBOL):
+			gcEphemeronSymbol(tls, rt, jsvPtr(val), __ccgo_fp_mark_func)
 		default:
 			break
 		}
@@ -11681,6 +11683,10 @@ func _gc_free_cycles(tls *libc.TLS, rt uintptr) {
 }
 
 func _JS_RunGCInternal(tls *libc.TLS, rt uintptr, remove_weak_objects TBOOL) {
+	// Added by internal/fixlib: conditional WeakMap edges (lib/ephemeron.go).
+	if gcEphemeron(tls, rt, remove_weak_objects) {
+		return
+	}
 	if remove_weak_objects != 0 {
 		/* free the weakly referenced object or symbol structures, delete
 		   the associated Map/Set entries and queue the finalization
@@ -117785,6 +117791,10 @@ func _js_map_finalizer(tls *libc.TLS, rt1 uintptr, val TJSValue) {
 }
 
 func _js_map_mark(tls *libc.TLS, rt uintptr, val TJSValue, __ccgo_fp_mark_func uintptr) {
+	// Added by internal/fixlib: WeakMap values are scanned from reachable keys.
+	if gcEphemeronMap(tls, rt, val, __ccgo_fp_mark_func) {
+		return
+	}
 	var el, mr, p, s uintptr
 	_, _, _, _ = el, mr, p, s
 	p = uintptr(libc.Int32FromUint64(val))
