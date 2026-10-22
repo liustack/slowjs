@@ -105,6 +105,7 @@ fixlib takes a change of its own as made only when its whole text is where it pu
 
 `lib/internal/patch/quickjs.diff` holds the same changes in C, so that a regeneration keeps them. Keep these hunks:
 
+- the `DIRECT_DISPATCH` condition: disable computed goto for `__CCGO__` and `__EMSCRIPTEN__`, and keep upstream's computed goto for native C builds. This condition does not change the generated Go or need a `fixlib` rewrite
 - the `JS_ToCStringLen2` hunk, unless upstream QuickJS has fixed the bug
 - the `getTimezoneOffset` hunk
 - the lazy stack hunks: `JSBacktrace`, the built-in `JS_CLASS_BACKTRACE` class, `js_backtrace_build` and the `js_backtrace_*` calls in `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`, `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need the attributes of a property (`js_get_own_property_flags`)
