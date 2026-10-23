@@ -4,6 +4,7 @@
 # root of this repository.
 """Check that Go linking preserved the offline body, except CALL relocations."""
 import pathlib,struct,sys,json
+import checks
 
 def elf(path):
  b=pathlib.Path(path).read_bytes()
@@ -25,10 +26,12 @@ def verify(obj,binary):
    if info&0xffffffff!=4 or add!=-4 or original[off-1]!=0xe8:raise ValueError('unexpected relocation')
    relocations.append(off)
  sections,named,data,string=elf(binary)
- symbols=named['.symtab'];strings=data(sections[symbols[6]]);raw=data(symbols);symbol=None
+ symbols=named['.symtab'];strings=data(sections[symbols[6]]);raw=data(symbols);symbol=None;morestack=None;poll=None
  for p in range(0,len(raw),24):
   name,info,other,index,value,size=struct.unpack_from('<IBBHQQ',raw,p)
   if string(strings,name)=='github.com/liustack/slowjs/lib.goasmRun.abi0':symbol=(index,value,size)
+  if string(strings,name)=='runtime.morestack_noctxt.abi0':morestack=value
+  if string(strings,name)=='github.com/liustack/slowjs/lib.___js_poll_interrupts':poll=(index,value,size)
  if symbol is None:raise ValueError('assembly interpreter absent')
  index,address,size=symbol;s=sections[index];function=data(s)[address-s[3]:address-s[3]+size]
  prefix=bytes(original[:16]);start=function.find(prefix)
@@ -40,6 +43,12 @@ def verify(obj,binary):
  if original!=actual:
   mismatch=next((i for i,(a,b) in enumerate(zip(original,actual)) if a!=b),len(actual))
   raise ValueError('linked body changed at byte '+str(mismatch))
+ if morestack is None:raise ValueError('runtime.morestack_noctxt absent')
+ checks.morestack(function,address,start,len(original),morestack)
+ # The interrupt countdown calls the slow poll: the place GC can stop a
+ # loop that calls nothing else, if the poll has its stack check.
+ if poll is None:raise ValueError('___js_poll_interrupts absent')
+ i,a,z=poll;ps=sections[i];checks.morestack(data(ps)[a-ps[3]:a-ps[3]+z],a,0,0,morestack)
  return dict(binary=str(binary),symbol_address=address,body_offset=start,body_bytes=len(original),calls=len(relocations))
 
 if __name__=='__main__':

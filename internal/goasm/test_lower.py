@@ -65,6 +65,16 @@ class FrameTests(unittest.TestCase):
  def test_access_outside_fixed_frame_is_rejected(self):
   r,_=self.lower('movq -104(%rbp), %rax')
   self.assertNotEqual(r.returncode,0)
+ def test_go_arguments_are_never_read(self):
+  # 16(%rbp) is past the compiler frame: the Go arguments, among them the
+  # typed TLS pointer, which must not reach the frame without a pointer map.
+  r,_=self.lower('movq 16(%rbp), %rax')
+  self.assertNotEqual(r.returncode,0)
+ def test_stack_address_never_escapes(self):
+  for bad in ('movq %rsp, %rax','leaq 8(%rsp), %rdi','pushq %rax','popq %rax','addq $8, %rsp'):
+   with self.subTest(bad=bad):
+    r,_=self.lower(bad)
+    self.assertNotEqual(r.returncode,0)
  def test_stack_and_frame_subregisters_are_rejected(self):
   for register,op,source in (('esp','movl','eax'),('sp','movw','ax'),('spl','movb','al'),('ebp','movl','eax'),('bp','movw','ax'),('bpl','movb','al')):
    with self.subTest(register=register):

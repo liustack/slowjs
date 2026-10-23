@@ -4,6 +4,7 @@
 # root of this repository.
 """Generate fixed SysV to ABI0 bridges from Clang and Go signatures."""
 import json,pathlib,sys
+import checks
 
 def typ(c):
  if '*' in c or c in ('uintptr_t','size_t'):return 'uintptr'
@@ -102,5 +103,7 @@ def generate(registry,signatures,out):
  asm += ['MOVQ 0(DI), AX','MOVQ AX, 0(SP)','MOVQ DI, 8(SP)','MOVQ SI, 16(SP)','CALL ·goasmRun(SB)']
  for i,r in enumerate(SAVED):asm.append('MOVQ %d(SP), %s'%(24+i*8,r))
  asm += ['RET']
- (out/'goasm_bridges_linux_amd64.s').write_text('\n'.join(asm)+'\n')
+ text='\n'.join(asm)+'\n'
+ checks.bridge_stack(text);checks.reenter(text)
+ (out/'goasm_bridges_linux_amd64.s').write_text(text)
 if __name__=='__main__':generate(json.load(open(sys.argv[1])),json.load(open(sys.argv[2])),pathlib.Path(sys.argv[3]))

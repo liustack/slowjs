@@ -9,6 +9,7 @@ headers. Input is the pinned QuickJS source after lib/internal/patch/quickjs.dif
 Every subprocess inherits CPU affinity and priority from the caller.
 """
 import argparse,pathlib,subprocess,os,shutil,json,re,hashlib
+import checks
 p=argparse.ArgumentParser();p.add_argument('--source',required=True);p.add_argument('--work',required=True);p.add_argument('--llvm',required=True);p.add_argument('--plugin',required=True);p.add_argument('--signatures',required=True);p.add_argument('--out',required=True);a=p.parse_args()
 here=pathlib.Path(__file__).resolve().parent;work=pathlib.Path(a.work).resolve();work.mkdir(parents=True,exist_ok=True)
 llvm=pathlib.Path(a.llvm).resolve();source=pathlib.Path(a.source).resolve();out=pathlib.Path(a.out).resolve()
@@ -27,6 +28,7 @@ with open(work/'allocas.log','w') as f:run([llvm/'opt-22','-load-pass-plugin='+s
 # the C locals, then an alloca of up to 768 bytes (allocas.cpp).
 m=re.fullmatch(r'GOASM_LOCALS_SIZE=(\d+)',(work/'allocas.log').read_text().strip())
 if not m or 192+int(m[1])+768>2048:raise RuntimeError('C locals do not fit the TLS slot: '+(work/'allocas.log').read_text())
+checks.no_allocas((work/'external.ll').read_text())
 run([llvm/'llc-22','-O2','-relocation-model=pic',work/'external.ll','-o',work/'external.s'])
 run(['python3',here/'lower.py',work/'external.s',work/'lowered.s'])
 run([llvm/'clang-22','-c',work/'lowered.s','-o',work/'lowered.o'])
