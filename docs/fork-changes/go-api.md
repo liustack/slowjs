@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, and how EvalBytecode waits for a module's top-level await'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, and how EvalBytecode waits for a module's top-level await'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -12,6 +12,7 @@ read_when:
   - Hiding the source of a script's functions (SetStrip)
   - Running a GC between two calls into javascript, or reading how much memory a VM takes (RunGC, MemorySize, GCThreshold)
   - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
+  - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
   - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
 ---
 
@@ -198,3 +199,14 @@ Release: v0.27.0.
 They called `js_std_await` of `quickjs-libc.c`, the helper of the `qjs` shell. When the job queue ran dry with the promise pending, it read the state that `js_std_init_handlers` sets up, which a VM never sets up, and the process crashed with a nil pointer dereference. A job that failed was printed to stderr and dropped, so the eval timeout after a module's first `await` crashed the same way once the queue was empty. The `qjs` shell does not crash there, it spins on the empty queue for good, and Node ends a module whose top-level await never settles with exit code 13.
 
 Test: `moduleawait_test.go`, also run under memgrind, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
+
+## SharedBytecode
+
+Release: Unreleased.
+
+`NewSharedBytecode(bytecode)` copies bytecode from `Compile` once, and `VM.EvalSharedBytecode(b)` and `VM.EvalSharedBytecodeValue(b)` load it as `EvalBytecode` and `EvalBytecodeValue` do, but leave the source text and line table of each function in that one copy instead of copying them into the VM. A pool of VMs that load one bundle holds them once: a VM of tifa's example shop holds 2.36 MiB less. `toString`, error stacks and line numbers do not change. `MemorySize` and the memory limit no longer count those bytes, and `SharedBytecode.Len` returns what the copy takes.
+
+`SharedBytecode.Close` gives up the hold of the `SharedBytecode`, and each VM that loaded it holds it until `VM.Close`: the last of them frees the copy, so a VM can outlive the pool that made it. Loading after `Close` returns an error. A `SharedBytecode` is safe for several goroutines at once. [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) has how it works and what it saves.
+
+Test: `sharedbytecode_test.go`.
+

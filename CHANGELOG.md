@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Added
+
+- `NewSharedBytecode`, `VM.EvalSharedBytecode` and `VM.EvalSharedBytecodeValue`: VMs that load the same bytecode keep the source text of its functions and the tables that give error stacks their line numbers in one copy for the process, where each VM copied them into its own memory. After loading, a VM of tifa's example shop holds 2.36 MiB less (8.99 MB rather than 11.46) and one of tifa's MUI test app 1.22 MiB less (4.16 MB rather than 5.44). `toString`, error stacks and line numbers stay the same. `MemorySize` and the memory limit no longer count those bytes. The copy is freed when the `SharedBytecode` and every VM that loaded it are closed, so a VM can outlive it. Render time and HTML do not change.
+
 ## [v0.28.0] - 2026-10-23
 
 ### Changed

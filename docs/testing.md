@@ -122,6 +122,15 @@ go test -p 2 -vet=off -tags=libc.memgrind -run 'YoungGC|Ephemeron' . ./lib
 go test -p 2 -timeout 120m -run 'YoungGC|Ephemeron' ./internal/fixlib
 ```
 
+Focused checks of shared source text and line tables (see [memory-and-allocation.md](fork-changes/memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm)):
+
+```sh
+go test -p 2 -vet=off -run 'SharedBytecode|SharedDebug' . ./lib
+go test -p 2 -vet=off -race -run SharedBytecode .
+go test -p 2 -vet=off -tags=libc.memgrind -run 'Memgrind2Shared' . ./lib
+go test -p 2 -run SharedDebug ./internal/fixlib
+```
+
 ## test262
 
 `Test262` in `lib/` runs the test262 suite on the engine in `lib/`. It is skipped with `-short` and when the test262 archive is missing:
