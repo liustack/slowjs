@@ -18,6 +18,9 @@ const goasmFrame = 2048
 // slot: after goasmArgs and 48 bytes for the arguments of varargs calls.
 // An alloca of up to 768 bytes follows the locals, placed by the
 // generated code itself (internal/goasm/build.py checks that both fit).
+// The generated code addresses the locals from env at this offset and
+// ignores the locals argument of goasmRun. build.py checks that this
+// matches GOASM_LOCALS of prepare.py.
 const goasmLocals = 192
 
 //go:noescape

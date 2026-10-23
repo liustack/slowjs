@@ -13,8 +13,13 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
+// The locals sit at a fixed offset in the TLS slot that the first argument
+// points to. Addressing them from that argument, not from the locals
+// argument, keeps one register free for the interpreter.
+static cl::opt<unsigned> LocalsOffset("goasm-locals",cl::desc("offset of the C locals from the goasm_args pointer"),cl::Required);
 static void relativeDispatch(Module &M, Function *F) {
  auto &C=M.getContext(); auto *I32=Type::getInt32Ty(C); auto *I64=Type::getInt64Ty(C);
  SmallVector<GlobalVariable *> tables;
@@ -72,14 +77,23 @@ struct ExternalAllocas : PassInfoMixin<ExternalAllocas> {
   // Fixed allocas share the locals area. A variable one of up to
   // GOASM_SMALL bytes takes the space right after it, inline. A larger one
   // calls goasm_alloca, which mallocs it.
+  // Each use computes its local's address from the slot start right where
+  // it needs it. One address made at the entry and kept for the whole
+  // function would be spilled to the frame on every call.
+  Value *slot=F->getArg(0);
   uint64_t offset=0;
   SmallVector<AllocaInst *> variable;
   for(auto *A:work) {
    auto *N=dyn_cast<ConstantInt>(A->getArraySize());
    if(!N) { variable.push_back(A); continue; }
-   IRBuilder<> B(A);
    offset=alignTo(offset,A->getAlign().value());
-   A->replaceAllUsesWith(B.CreateConstGEP1_64(B.getInt8Ty(),F->getArg(1),offset));
+   for(Use &U:make_early_inc_range(A->uses())) {
+    auto *I=cast<Instruction>(U.getUser());
+    Instruction *at=I;
+    if(auto *P=dyn_cast<PHINode>(I)) at=P->getIncomingBlock(U)->getTerminator();
+    IRBuilder<> B(at);
+    U.set(B.CreateConstGEP1_64(B.getInt8Ty(),slot,LocalsOffset+offset));
+   }
    offset+=DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()*N->getZExtValue();
    A->eraseFromParent();
   }
@@ -92,7 +106,7 @@ struct ExternalAllocas : PassInfoMixin<ExternalAllocas> {
    auto callee=M.getOrInsertFunction("goasm_alloca",FunctionType::get(B.getPtrTy(),{B.getPtrTy(),B.getInt64Ty()},false));
    Value *size=B.CreateZExtOrTrunc(A->getArraySize(),B.getInt64Ty());
    size=B.CreateMul(size,B.getInt64(DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()));
-   Value *inl=B.CreateConstGEP1_64(B.getInt8Ty(),F->getArg(1),area);
+   Value *inl=B.CreateConstGEP1_64(B.getInt8Ty(),slot,LocalsOffset+area);
    Value *big=B.CreateICmpUGT(size,B.getInt64(small));
    Instruction *then=SplitBlockAndInsertIfThen(big,A,false);
    B.SetInsertPoint(then);

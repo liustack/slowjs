@@ -13,6 +13,10 @@ import checks
 p=argparse.ArgumentParser();p.add_argument('--source',required=True);p.add_argument('--work',required=True);p.add_argument('--llvm',required=True);p.add_argument('--plugin',required=True);p.add_argument('--signatures',required=True);p.add_argument('--out',required=True);a=p.parse_args()
 here=pathlib.Path(__file__).resolve().parent;work=pathlib.Path(a.work).resolve();work.mkdir(parents=True,exist_ok=True)
 llvm=pathlib.Path(a.llvm).resolve();source=pathlib.Path(a.source).resolve();out=pathlib.Path(a.out).resolve()
+# Where the C locals start in the TLS slot. prepare.py and the Go side must
+# agree, since the generated code addresses the locals from the slot start.
+LOCALS=int(re.search(r'^#define GOASM_LOCALS (\d+)$',(here/'prepare.py').read_text(),re.M)[1])
+if f'const goasmLocals = {LOCALS}\n' not in (here.parent.parent/'lib/goasm_linux_amd64.go').read_text():raise RuntimeError('goasmLocals in lib/goasm_linux_amd64.go differs from GOASM_LOCALS')
 def run(cmd,**kw):subprocess.run([str(x) for x in cmd],check=True,**kw)
 version=subprocess.check_output([str(llvm/'clang-22'),'--version'],text=True)
 if '22.1.8' not in version:raise RuntimeError('generator requires LLVM 22.1.8')
@@ -23,11 +27,11 @@ run(['python3',here/'prepare.py',work/'quickjs.i',work/'ast.json',work])
 run([llvm/'clang-22','-O2','-fno-builtin','-fno-omit-frame-pointer','-mno-red-zone','-fwrapv','-S','-emit-llvm',work/'interpreter.c','-o',work/'interpreter.ll'])
 definitions=re.findall(r'^define .*?@([^(]+)\(', (work/'interpreter.ll').read_text(),re.M)
 if definitions!=['goasm_run']:raise RuntimeError('unexpected out-of-line C functions: '+str(definitions))
-with open(work/'allocas.log','w') as f:run([llvm/'opt-22','-load-pass-plugin='+str(pathlib.Path(a.plugin).resolve()),'-passes=goasm-external-allocas','-S',work/'interpreter.ll','-o',work/'external.ll'],stderr=f)
+with open(work/'allocas.log','w') as f:run([llvm/'opt-22','-load-pass-plugin='+str(pathlib.Path(a.plugin).resolve()),'-passes=goasm-external-allocas','-goasm-locals=%d'%LOCALS,'-S',work/'interpreter.ll','-o',work/'external.ll'],stderr=f)
 # The TLS slot of a call holds goasm_args and varargs space (GOASM_LOCALS),
 # the C locals, then an alloca of up to 768 bytes (allocas.cpp).
 m=re.fullmatch(r'GOASM_LOCALS_SIZE=(\d+)',(work/'allocas.log').read_text().strip())
-if not m or 192+int(m[1])+768>2048:raise RuntimeError('C locals do not fit the TLS slot: '+(work/'allocas.log').read_text())
+if not m or LOCALS+int(m[1])+768>2048:raise RuntimeError('C locals do not fit the TLS slot: '+(work/'allocas.log').read_text())
 checks.no_allocas((work/'external.ll').read_text())
 run([llvm/'llc-22','-O2','-relocation-model=pic',work/'external.ll','-o',work/'external.s'])
 run(['python3',here/'lower.py',work/'external.s',work/'lowered.s'])

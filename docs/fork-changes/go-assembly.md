@@ -21,9 +21,11 @@ version. It does not use goc or c2goasm. See its README for the pipeline.
 All addressable C locals move to stable TLS memory after LLVM optimization.
 The interpreter takes one 2048-byte TLS slot, matching the existing linux/amd64
 slot count. A dynamic allocation of up to 768 bytes shares that slot. Larger
-ones use libc's allocator, as the ccgo interpreter does. The fixed Go frame
-is 608 bytes. Go emits its stack growth prologue and frame pointer
-maintenance.
+ones use libc's allocator, as the ccgo interpreter does. The body addresses
+the locals at a fixed offset from the start of the slot, so they take no
+register of their own, and it computes each address where it is used, so
+the addresses are not spilled to the frame. The fixed Go frame is 352
+bytes. Go emits its stack growth prologue and frame pointer maintenance.
 
 The generated body uses R14 as an ordinary C register. Go's ABI0 leaves R14
 undefined: Go reloads g from thread local storage after an ABI0 call and in
@@ -61,7 +63,7 @@ Each check has a test with a small input it rejects
 
 | Rule | Checked by |
 | --- | --- |
-| goasmRun has a fixed frame with no pointer map. The body reads only its `env` and `locals` arguments, both C memory, never the typed TLS argument, so no Go pointer lands in the frame. | `lower.py` (frame shape, accesses outside the compiler frame), `checks.text_header` |
+| goasmRun has a fixed frame with no pointer map. The body reads only its `env` and `locals` arguments, both C memory (it addresses the locals from `env`), never the typed TLS argument, so no Go pointer lands in the frame. | `lower.py` (frame shape, accesses outside the compiler frame), `checks.text_header` |
 | The body never changes SP and never takes the address of a stack slot. Bridges neither. | `lower.py`, `checks.bridge_stack` |
 | Every addressable C local lives in the TLS slot. | `checks.no_allocas` on the IR after `allocas.cpp` |
 | goasmRun is not NOSPLIT, so Go gives it the stack check prologue. | `checks.text_header`, and `verify_linked.py` finds the call to `runtime.morestack_noctxt` in the linked function |
@@ -97,6 +99,13 @@ from `/sched/pauses/stopping/gc:seconds` (the histogram gives a range):
 | MUI | default | 21 to 25 µs | 131 to 164 µs | 164 to 197 µs |
 | MUI | goasm | 21 to 25 µs | 41 to 49 µs | 164 to 197 µs |
 
+On four CPUs (two cores) with GOMAXPROCS=4, P50 is 33 to 41 µs and P99 164
+to 197 µs for both builds, and the largest stop is 197 to 229 µs, apart from
+one stop of 2.1 to 2.6 ms in one of eight MUI rounds of the goasm build.
+With GOMAXPROCS=8 on the same four CPUs, the operating system decides the
+largest stops: 2.6 to 3.1 ms on shop for both builds, about 1 ms for MUI on
+the default build and 0.7 ms on the goasm build.
+
 The interpreter calls Go often enough (more than 100 thousand bridge calls
 for one render of the six shop pages) that the assembly is no slower to stop
 than the Go interpreter, so it has no extra preemption point. Measure again when a change
@@ -110,16 +119,21 @@ updating the fingerprint. New C types, call signatures, compiler prologues,
 stack instructions or relocations require generator changes, not acceptance
 of unknown output.
 
-Run the generator tests, the short Go suite with `-tags goasm`, CallDepth,
-TLS, EnginePanic, EngineGoexit, StackGrowth and GCStops checks, memgrind,
-and test262 with `-xtags goasm`. Compare rendered HTML, then measure the
+Run the generator tests, the short Go suite with `-tags goasm`, the full
+fixlib tests (about 35 minutes, so pass `-timeout 40m`), CallDepth, TLS,
+EnginePanic, EngineGoexit, StackGrowth and GCStops checks, memgrind, the
+race build of the root package and `lib`, and test262 with `-xtags goasm`.
+Build every supported target with and without the tag: targets other than
+linux/amd64 use the Go interpreter either way. Compare rendered HTML, then measure the
 default and tagged builds across three layouts and six alternating rounds.
 Check CPU profiles and GC stopping latency in the final linked application.
 
 Measured on 2026-10-23 (no PGO, three layouts, six alternating rounds, sum
 of the P50 render times): the tagged build renders the six shop workbench
-pages 4.2% faster than the default build and the three MUI pages 11.0%
-faster.
+pages 5.9% faster than the default build and the three MUI pages 14.3%
+faster. PGO does not close the gap: in four rounds of one layout, the
+previous generated code was 4.0% and 12.9% faster without PGO and 6.1% and
+14.2% faster with PGO on both sides, each build using its own profile.
 
 Darwin/arm64 uses the Go fallback. Native ARM assembly needs a separate ABI
 bridge and register and frame lowering implementation. It is not produced by

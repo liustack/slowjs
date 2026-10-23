@@ -25,8 +25,9 @@ compiler are required only to regenerate the assembly.
    to a native function takes the slot and calls the function directly. The
    stack depth check reads the TLS slot index in C.
 3. Optimize at `-O2`, with a frame pointer, no red zone and signed wrapping.
-   `allocas.cpp` moves all addressable locals to the caller's TLS slot and
-   turns the computed goto table into offsets from itself. A dynamic alloca
+   `allocas.cpp` moves all addressable locals to the caller's TLS slot, at
+   a fixed offset from the slot start so they need no register of their
+   own, and turns the computed goto table into offsets from itself. A dynamic alloca
    of up to 768 bytes follows the locals in the slot. A larger one calls
    `goasmAllocate`, which mallocs it.
 4. `lower.py` checks the compiler frame shape, converts its local addresses
