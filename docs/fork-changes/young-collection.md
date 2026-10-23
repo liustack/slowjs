@@ -8,7 +8,7 @@ read_when:
 
 # Young collection
 
-Release: Unreleased.
+Release: v0.27.3.
 
 `JS_RunYoungGC` in `lib/` and `VM.RunYoungGC` collect the reference cycles among the GC objects made since the last collection, young or full, and make the objects they keep old. They visit only those objects. A full collection, `JS_RunGC`, visits every object twice, and on a VM of tifa's example shop that is about 30,000 objects of the bundle before any garbage. An embedder that runs one unit of work at a time, such as a page render, can run a young collection after each and a full one now and then, and spend on each collection about as long as the garbage of that unit.
 
