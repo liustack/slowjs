@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -178,6 +179,17 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 			}
 		}
 		d := make([]time.Duration, 0, n)
+		var profile *os.File
+		if dir := os.Getenv("GOASM_PROFILE"); dir != "" {
+			var err error
+			profile, err = os.Create(filepath.Join(dir, p.Input+".pprof"))
+			if err != nil {
+				panic(err)
+			}
+			if err = pprof.StartCPUProfile(profile); err != nil {
+				panic(err)
+			}
+		}
 		c0 := cpuTime()
 		for i := 0; i < n && p.Err == ""; i++ {
 			t := time.Now()
@@ -191,6 +203,10 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 			} else if len(h) != len(html) {
 				p.Err = "output changed between renders"
 			}
+		}
+		if profile != nil {
+			pprof.StopCPUProfile()
+			profile.Close()
 		}
 		if p.Err == "" && n > 0 {
 			p.CPUMS = ms(cpuTime()-c0) / float64(n)

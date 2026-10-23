@@ -37868,6 +37868,10 @@ const EOP_SPECIAL_OBJECT_IMPORT_META = 6
 //
 //	/* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 func _JS_CallInternal(tls *libc.TLS, caller_ctx uintptr, _func_obj TJSValue, this_obj1 TJSValue, new_target TJSValue, argc int32, argv uintptr, flags int32) (r5 TJSValue) {
+	// Changed by internal/fixlib: optional LLVM interpreter (see fixGoasm).
+	if goasmEnabled {
+		return goasmCall(tls, caller_ctx, _func_obj, this_obj1, new_target, argc, argv, flags)
+	}
 	// Changed by internal/fixlib: the frame has the room of a small alloca from the entry (see fixOneFrame).
 	frame_size := 1280 + 768
 	var frame_malloc uintptr
