@@ -13,6 +13,7 @@ import "unsafe"
 // allocates it with the C struct and clears it.
 type TforkRuntime struct {
 	ephemeron uint8        // temporary collector phase, see ephemeron.go
+	clock     bool         // whether clocks holds a custom clock for this runtime
 	front     TfrontCache  // see frontcache.go
 	shape     TshapeCache  // see shapecache.go
 	fn        TfuncShapes  // see funcshape.go

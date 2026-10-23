@@ -310,7 +310,7 @@ var coreOps = []op{
 	{"now", func(c *args) (slowjs.Value, error) {
 		// Seconds and nanoseconds, not UnixNano, which holds only the years
 		// 1678 to 2262. An Instant is at most 8.64e12 s from the epoch.
-		t := clockOf(c.a.VM())()
+		t := clockNow(c.a.VM())
 		sec, nsec := t.Unix(), int64(t.Nanosecond())
 		if sec < -maxInstantSec || sec > maxInstantSec || sec == maxInstantSec && nsec > 0 {
 			return slowjs.Value{}, rangeErr("Temporal.Now: the clock reads " + t.UTC().Format(time.RFC3339Nano) + ", outside the range of Temporal.Instant")

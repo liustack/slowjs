@@ -137677,7 +137677,7 @@ _2:
 	}
 	n = argc
 	if n == 0 {
-		*(*float64)(unsafe.Pointer(bp + 48)) = float64(_date_now(tls))
+		*(*float64)(unsafe.Pointer(bp + 48)) = float64(dateNowContext(ctx3))
 	} else {
 		if n == int32(1) {
 			if int32((*(*TJSValue)(unsafe.Pointer(argv))).Ftag) == int32(EJS_TAG_OBJECT) {
@@ -138862,7 +138862,7 @@ func _js_Date_now(tls *libc.TLS, ctx3 uintptr, this_val TJSValue, argc int32, ar
 	_, _, _, _, _, _ = v1, v11, v2, v3, v5, v7
 	// now()
 	v11 = ctx3
-	v2 = _date_now(tls)
+	v2 = dateNowContext(ctx3)
 	if v2 == int64(int32(v2)) {
 		_ = v11
 		v3 = TJSValue{

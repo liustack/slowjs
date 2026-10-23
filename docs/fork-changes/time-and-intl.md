@@ -1,7 +1,8 @@
 ---
 summary: 'Go clocks, UTC local time, Intl formatting on shared go-intl data and tz 2026e, Chromium compatibility, and measured costs'
 read_when:
-  - Changing package intl, fixTimezone, fixClock, lib/clock.go, or the getTimezoneOffset hunk of the C patch
+  - Changing package intl, fixTimezone, fixClock, fixVMClock, lib/clock.go, or the getTimezoneOffset hunk of the C patch
+  - Making Date, Intl and Temporal read a clock you control, such as a fixed time in a test or a server render
   - fixlib stops on _getTimezoneOffset, a call of libc's local time functions, clockSites or a call of a clock of libc after an upstream release
   - Date.now, new Date() or performance.now is slow, or gives a time other than Go's time.Now
   - A page shows another date or time on the server than in the browser, or a zone name differs from Chromium
@@ -56,11 +57,41 @@ On one core of an AMD EPYC 7B13 (linux/amd64, without PGO, `BenchmarkClock`, 6 r
 
 This changes only the generated Go, with no C hunk (`internal/fixlib/clock.go`).
 
-Tests: `lib/clock_test.go` (the values of `Date.now`, `new Date()` and `Date()` for a given `time.Now`, rounding before 1970, agreement with Go's clock, the seed of `Math.random`, and a monotonic `performance.now` that counts from the start of the process, with a fraction that goes on while the wall clock stands still), `internal/fixlib/clock_test.go`, and `BenchmarkClock` in `clock_test.go`.
+Tests: `lib/clock_test.go` (the values of `Date.now`, `new Date()` and `Date()` for a given wall clock, rounding before 1970, agreement with Go's clock, the seed of `Math.random`, and a monotonic `performance.now` that counts from the start of the process, with a fraction that goes on while the wall clock stands still), `internal/fixlib/clock_test.go`, and `BenchmarkClock` in `clock_test.go`.
 
 ### When upstream changes it
 
 If it reports that a function of `clockFuncs` changed (a fingerprint other than the one in `internal/fixlib/clocksites.go`), read it against `lib/clock.go`: `date_now` must still give milliseconds since 1970 from the wall clock, `js_random_init` the time in microseconds with 1 for 0, and `get_time_ns` a monotonic clock in nanoseconds. Then put the new fingerprints in (`go run ./internal/fixlib -clock` prints them). If it reports that the engine reads the time some new way, upstream uses a function of libc whose name says it deals with time (`gettimeofday`, `clock_gettime`, `time`, `QueryPerformanceCounter`, `mach_absolute_time`, ...), called or only by address, or a shim such as mingw's `_time64`, outside these functions and `_js_atomics_wait`: make it call `lib/clock.go` too and add it to `clockFuncs`. A function of libc that reads no clock goes in `clockAllowed` instead. `pthread_cond_timedwait` may appear only in `_js_atomics_wait`: a new timed wait must be read against the clock it measures its deadline on. If it reports that a function of `clockFuncs` is gone, upstream removed it: take it out of `clockFuncs`, then update the fingerprints and this page.
+
+## One wall clock per VM
+
+Release: Unreleased.
+
+`VM.SetClock(func() time.Time)` sets the wall clock of one VM. `Date.now()`, `new Date()`, `Date()`, `Intl.DateTimeFormat` without a date (`format()`, `formatToParts()`) and `Temporal.Now` all read it, and `VM.Now()` reads it from Go with full `time.Time` precision. `SetClock(nil)` goes back to the live `time.Now`. Date and Intl take whole milliseconds, rounded down, also before 1970. Temporal keeps the nanoseconds.
+
+```go
+at := time.Date(2026, 10, 22, 12, 0, 0, 123456789, time.UTC)
+vm.SetClock(func() time.Time { return at })
+// Run the module or the render here, and drain its jobs.
+vm.SetClock(nil)
+```
+
+- Set it between calls into JavaScript. Never set it while the VM runs, from a callback inside it, or from another goroutine. Set it before evaluating module bytecode to control the module's initialization too.
+- The callback must not block, since the eval timeout cannot cut it short. When VMs share one callback, it must be safe for concurrent calls. A panic in it follows the rules of a panic in the engine: close that VM.
+- A non-nil `temporal.Clock` keeps overriding `Temporal.Now` alone and wins over the VM clock. Without it, or with `Clock(nil)`, Temporal reads the VM clock at each call, also after a later `SetClock`.
+- Saved functions read the clock current at the call: a `Date.now` kept at module load, a `Temporal.Now` method, an `Intl` formatter. Intl takes the native `Date.now` when it registers, so a page that replaces `Date.now` does not change what Intl reads.
+- It is a wall clock only. `performance.now()` stays monotonic, counted from the start of the process. The eval timeout, `Atomics.wait` and the seed of `Math.random` keep their clocks.
+- `Close` and `SetClock(nil)` release the callback, also when it refers to the VM.
+
+How it works: `fixVMClock` changes the two callers of `date_now` (`js_date_constructor` and `js_Date_now`) to call `dateNowContext` of `lib/clock.go`, which takes the runtime of the context. A runtime holds one flag in `TforkRuntime`, never a Go pointer, since runtime memory is outside Go's heap. A VM with a clock has its callback in a Go registry keyed by the runtime, which keeps it alive until it is replaced, reset or closed. Without a clock the call reads Go's clock as before: one flag test, with no lookup, lock or allocation. `fixClock` still replaces `date_now` itself. This is a rewrite of the generated Go with no C hunk (`internal/fixlib/vmclock.go`). It checks that each caller holds one call, that the file holds two, and that `restoreVMClock` gives the file back byte for byte.
+
+Cost, on one core pair of an AMD EPYC 7B13 (linux/amd64, Go 1.27.2, without PGO, no custom clock), against the same code without this change: 3 builds with different code layouts, 6 rounds of before and after in turn, each pair on a pair of threads that had been idle for 30 seconds. `BenchmarkClock` gives 116.6 ns before and 115.7 ns after for `Date.now()` (paired median 0.991), 227.6 and 229.2 ns for `new Date()` (0.986), and 99.6 and 100.3 ns for `performance.now()` (1.005), which this change does not touch and which shows the spread of the method. All three stay at 0 B/op and 0 allocs/op. On the six pages of tifa's example shop (one warm VM, 500 renders per page), the sum of the six P50 came out at 0.980 to 1.022 of the time before over the 18 pairs, median 1.0035: no change that stands out from the layout spread.
+
+Tests: `vmclock_test.go` (a fixed clock does not delay the eval timeout, the registry releases what the callback captured on reset, replace and Close), `lib/vmclock_test.go` (reset, and a monotonic `performance.now` under a fixed wall clock), `temporal/vmclock_test.go` (Date, Intl and Temporal agree: milliseconds and nanoseconds, before 1970, module initialization, saved functions and formatters, jobs, reset, the `temporal.Clock` override, 16 VMs at once) and `internal/fixlib/vmclock_test.go` (every target, the round trip, and a stop on a changed, missing or extra call).
+
+### When upstream changes it
+
+If `fixVMClock` reports a wrong count or a function without a context parameter, read `js_date_constructor`, `js_Date_now` and every call of `date_now`. Make each read of the current time that a script can see use the context's clock, then update `vmClockCallers`. Do not loosen the count or the byte for byte check.
 
 ## Intl in every locale Chromium has
 

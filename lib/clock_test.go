@@ -26,6 +26,7 @@ func newClockContext(t *testing.T) (*libc.TLS, uintptr) {
 	ctx := XJS_NewContext(tls, rt)
 	Xjs_std_add_helpers(tls, ctx, -1, 0)
 	t.Cleanup(func() {
+		SetClock(rt, nil)
 		XJS_FreeContext(tls, ctx)
 		XJS_FreeRuntime(tls, rt)
 		tls.Close()
