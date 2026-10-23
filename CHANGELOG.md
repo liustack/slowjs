@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.0] - 2026-10-23
+
 ### Changed
 
 - **Breaking:** the module is now `github.com/liustack/slowjs` with package `slowjs`, and it supports linux and darwin on amd64 and arm64 and windows on amd64.
@@ -307,7 +309,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.27.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.0...main
+[v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
