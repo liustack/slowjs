@@ -192,3 +192,51 @@ func TestYoungGCWeakObservers(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A young closure drops the last reference to an old, attached var-ref.
+// Unlike ordinary objects, _free_var_ref frees it during REMOVE_CYCLES,
+// dropping the suspended async frame's last reference in that phase too.
+func TestYoungGCDefersSuspendedAsyncFrame(t *testing.T) {
+	v := newShapeVM(t, 0)
+	defer v.close()
+	XJS_SetGCThreshold(v.tls, v.rt, ^Tsize_t(0))
+	v.run(`(async () => {
+		let payload = {text: 'held by the suspended frame'};
+		globalThis.make = () => () => payload;
+		globalThis.wr = new WeakRef(payload);
+		await new Promise(() => {});
+	})(); void 0`)
+	XJS_RunGC(v.tls, v.rt)
+	v.run(`(() => { const f = make(); f.self = f; make = null; })(); void 0`)
+	// The attached var-ref is now the frame's only owner, and the frame
+	// is old. Check this before collecting so the test cannot silently
+	// turn into a young-frame or completed-async case.
+	var frame uintptr
+	head := v.rt + unsafe.Offsetof(TJSRuntime{}.Fgc_obj_list)
+	for el := (*Tlist_head)(unsafe.Pointer(head)).Fnext; el != head; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
+		kind := (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(v.tls, el))).F__ccgo3 & ephemeronTypeMask >> ephemeronTypeShift
+		if kind == EJS_GC_OBJ_TYPE_ASYNC_FUNCTION {
+			if frame != 0 {
+				t.Fatal("more than one old async frame")
+			}
+			frame = el
+		}
+	}
+	if frame == 0 {
+		t.Fatal("no old async frame")
+	}
+	if count := *youngCount(v.tls, frame); count != 1 {
+		t.Fatalf("old async frame has %d references, want 1", count)
+	}
+	if (*TJSAsyncFunctionState)(unsafe.Pointer(frame)).Fis_completed != 0 {
+		t.Fatal("async frame already completed")
+	}
+	XJS_RunYoungGC(v.tls, v.rt)
+	v.youngLists()
+	if v.inGCList(frame) {
+		t.Fatal("suspended async frame was not freed")
+	}
+	if got := v.run(`String(wr.deref() === undefined)`); got != "true" {
+		t.Fatalf("suspended frame still holds its payload: %s", got)
+	}
+}
