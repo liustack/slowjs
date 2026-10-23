@@ -95,7 +95,8 @@
 //   - In every lib/ccgo_*.go file, let String.prototype.includes, indexOf
 //     and the other searches for a string in a string skip to the next
 //     index where it is, found by stringFind of lib/stringsearch.go with
-//     the search of package bytes, instead of comparing at each index (see
+//     the search of package bytes, instead of comparing at each index, and
+//     count the indexes it looks through toward the interrupt counter (see
 //     fixStringSearch).
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement

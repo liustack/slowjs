@@ -103477,7 +103477,7 @@ _4:
 		i = start
 		for {
 			// Changed by internal/fixlib: skip to where the string is, in one search (see fixStringSearch).
-			if i = stringFind(p1, p11, i, stop, inc); i < 0 {
+			if i = stringFind(ctx2, p1, p11, i, stop, inc); i < 0 {
 				break
 			}
 			if !(_string_cmp(tls, p1, p11, i, 0, v_len) != 0) {
@@ -103658,7 +103658,7 @@ _4:
 		i = start
 		for {
 			// Changed by internal/fixlib: skip to where the string is, in one search (see fixStringSearch).
-			if i = stringFind(p1, p11, i, stop, int32(1)); i < 0 {
+			if i = stringFind(ctx2, p1, p11, i, stop, int32(1)); i < 0 {
 				break
 			}
 			if !(_string_cmp(tls, p1, p11, i, 0, v_len) != 0) {

@@ -37,20 +37,25 @@ const stringFindRoom = 64
 // as string_cmp does. A string of 16-bit characters may hold only
 // characters below 0x100, so p2 may be found in p1 whatever their widths.
 //
+// It counts a step for each 8 indexes it looks through toward the
+// interrupt counter of ctx, as the string buffer counts the characters it
+// makes room for (see lib/charge.go), so that a loop of searches in a long
+// string stops on time.
+//
 // The jsonStrLen and jsonStrWide constants are where the length and the
 // 16-bit flag of a JSString are, and jsonStrData the offset of its
 // characters (see fixJSONStrings).
-func stringFind(p1, p2 uintptr, i, stop, inc int32) int32 {
+func stringFind(ctx, p1, p2 uintptr, i, stop, inc int32) int32 {
 	// Small enough for Go to inline, so that startsWith and endsWith, which
 	// compare at one index, pay no call.
 	if i == stop {
 		return i
 	}
-	return stringFindRange(p1, p2, i, stop, inc)
+	return stringFindRange(ctx, p1, p2, i, stop, inc)
 }
 
 // stringFindRange is stringFind from i to a stop other than i.
-func stringFindRange(p1, p2 uintptr, i, stop, inc int32) int32 {
+func stringFindRange(ctx, p1, p2 uintptr, i, stop, inc int32) int32 {
 	lo, hi := i, stop
 	if inc < 0 {
 		lo, hi = stop, i
@@ -82,7 +87,7 @@ func stringFindRange(p1, p2 uintptr, i, stop, inc int32) int32 {
 			}
 			needle = room[:n2]
 		} else {
-			return stringFindSlow(p1, p2, i, stop, inc)
+			return stringCounted(ctx, i, stringFindSlow(p1, p2, i, stop, inc), stop, inc)
 		}
 		var k int
 		if inc > 0 {
@@ -91,9 +96,9 @@ func stringFindRange(p1, p2 uintptr, i, stop, inc int32) int32 {
 			k = bytes.LastIndex(hay, needle)
 		}
 		if k < 0 {
-			return -1
+			return stringCounted(ctx, i, -1, stop, inc)
 		}
-		return lo + int32(k)
+		return stringCounted(ctx, i, lo+int32(k), stop, inc)
 	}
 	var needle []byte
 	if wide2 {
@@ -105,17 +110,17 @@ func stringFindRange(p1, p2 uintptr, i, stop, inc int32) int32 {
 		}
 		needle = unsafe.Slice((*byte)(unsafe.Pointer(&room[0])), 2*int(n2))
 	} else {
-		return stringFindSlow(p1, p2, i, stop, inc)
+		return stringCounted(ctx, i, stringFindSlow(p1, p2, i, stop, inc), stop, inc)
 	}
 	hay := unsafe.Slice((*byte)(unsafe.Pointer(data1+2*uintptr(lo))), 2*int(hi-lo+n2))
 	if inc > 0 {
 		for from := 0; ; {
 			k := bytes.Index(hay[from:], needle)
 			if k < 0 {
-				return -1
+				return stringCounted(ctx, i, -1, stop, inc)
 			}
 			if k += from; k&1 == 0 {
-				return lo + int32(k/2)
+				return stringCounted(ctx, i, lo+int32(k/2), stop, inc)
 			}
 			from = k + 1
 		}
@@ -123,13 +128,25 @@ func stringFindRange(p1, p2 uintptr, i, stop, inc int32) int32 {
 	for end := len(hay); ; {
 		k := bytes.LastIndex(hay[:end], needle)
 		if k < 0 {
-			return -1
+			return stringCounted(ctx, i, -1, stop, inc)
 		}
 		if k&1 == 0 {
-			return lo + int32(k/2)
+			return stringCounted(ctx, i, lo+int32(k/2), stop, inc)
 		}
 		end = k + len(needle) - 1
 	}
+}
+
+// stringCounted returns k, the index a search from i toward stop by step
+// inc found, or -1, and counts a step for each 8 indexes it looked through
+// toward the interrupt counter of ctx.
+func stringCounted(ctx uintptr, i, k, stop, inc int32) int32 {
+	end := k
+	if k < 0 {
+		end = stop
+	}
+	_js_charge_interrupts(ctx, Tsize_t(uint32((end-i)*inc)>>3))
+	return k
 }
 
 // stringFindSlow is stringFind for a string of 8-bit characters longer

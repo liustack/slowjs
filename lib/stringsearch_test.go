@@ -108,6 +108,8 @@ func newFakeString(units []uint16, wide bool) *fakeString {
 // below 0x100, characters whose bytes match at odd offsets, needles longer
 // than stringFindRoom, and both directions.
 func TestStringFindWidths(t *testing.T) {
+	vm := newReVM(t, -1, 0)
+	defer vm.close()
 	r := rand.New(rand.NewSource(1))
 	narrow := []uint16{0x00, 0x61, 0x62, 0xe9}
 	wideSet := []uint16{0x00, 0x61, 0x62, 0xe9, 0x6100, 0x6161, 0x0161, 0x6200}
@@ -170,7 +172,7 @@ func TestStringFindWidths(t *testing.T) {
 			want = i
 		}
 		f1, f2 := newFakeString(h, wide1), newFakeString(v, wide2)
-		if got := stringFind(f1.p, f2.p, i, stop, inc); got != want {
+		if got := stringFind(vm.ctx, f1.p, f2.p, i, stop, inc); got != want {
 			t.Fatalf("stringFind(%x wide %v, %x wide %v, %d, %d, %d) = %d, want %d", h, wide1, v, wide2, i, stop, inc, got, want)
 		}
 		runtime.KeepAlive(f1)
@@ -181,18 +183,50 @@ func TestStringFindWidths(t *testing.T) {
 // From past stop, stringFind finds nothing and reads nothing. At stop,
 // it leaves the one comparison to the loop.
 func TestStringFindPastStop(t *testing.T) {
+	vm := newReVM(t, -1, 0)
+	defer vm.close()
 	h, v := newFakeString([]uint16{'a', 'b'}, false), newFakeString([]uint16{'b', 'c', 'd'}, false)
-	if got := stringFind(h.p, v.p, 0, -1, 1); got != -1 {
+	if got := stringFind(vm.ctx, h.p, v.p, 0, -1, 1); got != -1 {
 		t.Errorf("forward past stop: %d", got)
 	}
-	if got := stringFind(h.p, h.p, 0, 1, -1); got != -1 {
+	if got := stringFind(vm.ctx, h.p, h.p, 0, 1, -1); got != -1 {
 		t.Errorf("backward past stop: %d", got)
 	}
 	x := newFakeString([]uint16{'x'}, false)
-	if got := stringFind(h.p, x.p, 1, 1, 1); got != 1 {
+	if got := stringFind(vm.ctx, h.p, x.p, 1, 1, 1); got != 1 {
 		t.Errorf("at stop: %d", got)
 	}
 	runtime.KeepAlive(h)
 	runtime.KeepAlive(v)
 	runtime.KeepAlive(x)
+}
+
+// A search counts a step for each 8 indexes it looks through toward the
+// interrupt counter, found or not, in both directions and for 16-bit
+// strings, so that a loop of searches in a long string stops on time. A
+// comparison at one index, as in startsWith, counts nothing. r is a rope,
+// made one string by its first search, which the string buffer counts.
+func TestStringFindCountsSteps(t *testing.T) {
+	v := newReVM(t, -1, 0)
+	defer v.close()
+	counter := &(*TJSContext)(unsafe.Pointer(v.ctx)).Finterrupt_counter
+	v.run("var s = 'a'.repeat(32000), w = '\\u0100'.repeat(32000), r = 'a'.repeat(16000) + 'b' + 'a'.repeat(15999); r.includes('c'); 0")
+	for _, c := range []struct {
+		name     string
+		js       string
+		min, max int32
+	}{
+		{"indexOf", "s.indexOf('b'); 0", 3990, 4100},
+		{"lastIndexOf", "s.lastIndexOf('b'); 0", 3990, 4100},
+		{"includes", "s.includes('b'); 0", 3990, 4100},
+		{"16-bit", "w.indexOf('b'); 0", 3990, 4100},
+		{"found halfway", "r.indexOf('b'); 0", 1990, 2100},
+		{"startsWith", "s.startsWith('b'); 0", 0, 100},
+	} {
+		*counter = 1 << 30
+		v.run(c.js)
+		if got := 1<<30 - *counter; got < c.min || got > c.max {
+			t.Errorf("%s: %d steps, want %d to %d", c.name, got, c.min, c.max)
+		}
+	}
 }

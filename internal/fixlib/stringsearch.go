@@ -26,9 +26,11 @@ var reSearchLoop = regexp.MustCompile(`\n\t\ti = start\n\t\tfor \{\n(\t\t\tif !\
 const searchMark = "\t\t\t// Changed by internal/fixlib: skip to where the string is, in one search (see fixStringSearch).\n"
 
 // searchCall is the call fixStringSearch puts at the start of the loop,
-// which looks for p11 in p1 from i to stop by step inc.
+// which looks for p11 in p1 from i to stop by step inc and counts the
+// indexes it looks through on the context, which ccgo names ctx2 in both
+// functions (searchSites pins their text, the parameters included).
 func searchCall(inc string) string {
-	return searchMark + "\t\t\tif i = stringFind(p1, p11, i, stop, " + inc + "); i < 0 {\n\t\t\t\tbreak\n\t\t\t}\n"
+	return searchMark + "\t\t\tif i = stringFind(ctx2, p1, p11, i, stop, " + inc + "); i < 0 {\n\t\t\t\tbreak\n\t\t\t}\n"
 }
 
 // The calls fixStringSearch writes, in js_string_includes and in

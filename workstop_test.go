@@ -45,3 +45,33 @@ func TestBuiltinWorkStops(t *testing.T) {
 		})
 	}
 }
+
+// The eval timeout stops a loop of searches in a long string within a few
+// milliseconds: each search counts the indexes it looks through toward the
+// interrupt check.
+func TestStringSearchStops(t *testing.T) {
+	for _, c := range []struct{ name, setup, loop string }{
+		{"indexOf", `var s = 'a'.repeat(1 << 20)`, `for (;;) s.indexOf('b')`},
+		{"lastIndexOf", `var s = 'a'.repeat(1 << 20)`, `for (;;) s.lastIndexOf('b')`},
+		{"includes", `var s = 'a'.repeat(1 << 20)`, `for (;;) s.includes('b')`},
+		{"16-bit", `var s = '\u0100'.repeat(1 << 20)`, `for (;;) s.indexOf('b')`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			if _, err := m.Eval(c.setup+`; 0`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			m.SetEvalTimeout(10 * time.Millisecond)
+			start := time.Now()
+			_, err := m.Eval(c.loop, EvalGlobal)
+			took := time.Since(start)
+			var e *Error
+			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
+				t.Fatalf("got %v, want interrupted", err)
+			}
+			if took > 50*time.Millisecond {
+				t.Errorf("stopped %v after the call started, want about 10ms", took)
+			}
+		})
+	}
+}
