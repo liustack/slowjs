@@ -832,6 +832,7 @@ func (m *VM) Close() error {
 	libc.Xfree(tls, m.toStringArgv)
 	// The kept shapes hold the context.
 	lib.XJS_SetShapeCache(tls, ctx, 0)
+	lib.SetClock(m.runtime.cRuntime, nil)
 	lib.XJS_FreeContext(tls, ctx)
 	vms.remove(m.id)
 	r := m.runtime

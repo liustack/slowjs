@@ -19,9 +19,8 @@
 //
 // # Time and zones
 //
-// Temporal.Now reads the clock [Clock] sets, the host's by default. Only
-// Temporal.Now reads it: Date.now, new Date() and Intl keep the host's
-// clock.
+// Temporal.Now reads [slowjs.VM.Now], including changes made with SetClock.
+// A non-nil [Clock] overrides it for Temporal.Now only.
 //
 // Temporal.Now.timeZoneId() is the VM's default time zone, the one package
 // intl formats in (intl.TimeZone, "UTC" without it), which is ECMA-402's
@@ -146,8 +145,8 @@ type config struct {
 type Option func(*config)
 
 // Clock returns an Option setting the clock Temporal.Now reads, which is
-// time.Now without it. A server rendering a page at a fixed time, or a test,
-// sets one. now is called on the goroutine running the VM, once per
+// the VM clock without it. Prefer VM.SetClock to control Date and Intl too.
+// A non-nil option takes precedence over VM.SetClock. now is called once per
 // Temporal.Now call, and must be safe for concurrent use when VMs share it.
 // A time outside Temporal.Instant's range, 1e8 days either side of 1970,
 // makes Temporal.Now throw a RangeError.
@@ -158,8 +157,8 @@ type Option func(*config)
 // Eval, as a panic in any Go function the VM calls does, and the VM can be
 // used again after it.
 //
-// Clock drives Temporal.Now only: Date.now, new Date() and Intl keep the
-// host's clock.
+// Clock drives Temporal.Now only. Date and Intl keep the VM clock.
+// Clock(nil) uses the VM clock, including later SetClock changes.
 func Clock(now func() time.Time) Option { return func(c *config) { c.clock = now } }
 
 // clocks are the clocks of the VMs registered with one, until they are
@@ -168,11 +167,11 @@ func Clock(now func() time.Time) Option { return func(c *config) { c.clock = now
 // the garbage collector.
 var clocks sync.Map // *slowjs.VM -> func() time.Time
 
-func clockOf(vm *slowjs.VM) func() time.Time {
+func clockNow(vm *slowjs.VM) time.Time {
 	if c, ok := clocks.Load(vm); ok {
-		return c.(func() time.Time)
+		return c.(func() time.Time)()
 	}
-	return time.Now
+	return vm.Now()
 }
 
 // Register installs Temporal on vm's global object, and
