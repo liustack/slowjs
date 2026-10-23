@@ -4,6 +4,14 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Fixed
+
+- Loops of `indexOf`, `lastIndexOf` and `includes` of strings stop within 20 ms of a 10 ms timeout: each search counts the characters it looks through toward the interrupt check. In a string of 1 MB that holds no match they ran on for 170 ms, 6.9 s and 170 ms.
+
+### Performance
+
+- `includes`, `indexOf` and `lastIndexOf` of a string find what they look for with the search of Go's package bytes, where upstream compares at one index after the other: a search through 100 KB of HTML takes 81 µs rather than 320. A render of the shop takes 0.995 of the time and the MUI pages of tifa's test app 1.003, both inside the spread of code layouts. Results do not change.
+
 ## [v0.27.2] - 2026-10-23
 
 ### Added
@@ -14,7 +22,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 ### Fixed
 
 - The eval timeout and `Interrupt` stop a loop that compiles regexps within a few milliseconds, and stop one long compile in the middle, with the same uncatchable interrupt. Compiling a regexp was one step of the interrupt check however long the pattern, so with a 10 ms timeout a loop of `new RegExp` on a new long pattern each time stopped 225 ms to 184 s late, depending on the pattern, and one compile of 100000 alternatives ran its full 8.5 s. Now they stop at 10 to 12 ms.
-- Loops of `JSON.parse`, `JSON.stringify`, `eval`, `new Function`, `repeat`, `padStart`, `replaceAll`, `join` and the other built-ins that parse source or build a string stop within a few milliseconds of the timeout too, where they ran on for 5 to 37 s with inputs of 60 KB to 1 MB. One call still runs to its end. Loops of built-ins that scan or sort without building a string (`indexOf`, `split`, `fill`, `sort`) still stop late. Render time and memory do not change (0.993 of the time on the shop pages and 0.997 on the MUI pages, without PGO, against v0.27.1). A script that overran its deadline inside one long compile now gets the interrupt right after it, where it could finish.
+- Loops of `JSON.parse`, `JSON.stringify`, `eval`, `new Function`, `repeat`, `padStart`, `replaceAll`, `join` and the other built-ins that parse source or build a string stop within a few milliseconds of the timeout too, where they ran on for 5 to 37 s with inputs of 60 KB to 1 MB. One call still runs to its end. Loops of built-ins that scan or sort without building a string (`indexOf` and `includes` of arrays, `split`, `fill`, `sort`) still stop late. Render time and memory do not change (0.993 of the time on the shop pages and 0.997 on the MUI pages, without PGO, against v0.27.1). A script that overran its deadline inside one long compile now gets the interrupt right after it, where it could finish.
 - Full GC releases unreachable WeakMap entries in one collection, including values that point back to their keys and chains of entries. Live keys keep their values. Symbol keys, WeakSet, WeakRef and FinalizationRegistry follow the same rule. A full GC takes about as long as before on tifa's pages, and longer with large weak maps: 2.9 times as long for a chain of 100,000 live entries, 1.9 times for 100,000 live keys.
 
 ### Performance
