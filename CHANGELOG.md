@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.4] - 2026-10-24
+
 ### Changed
 
 - `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` and `EvalSharedBytecodeValue` free the top-level function of a module once it has run to its end, with the variables of the top level that no function of the module uses. A VM that loaded a module held them until it was closed. A VM that loads the SSR bundle of tifa's example shop as a module holds 8.66 MiB rather than 9.44 MiB, about what the same bundle as a script gives (8.63 MiB). A module that is still pending or failed keeps its function.

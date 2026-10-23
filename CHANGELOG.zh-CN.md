@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.28.4] - 2026-10-24
+
 ### 变更
 
 - `EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode` 和 `EvalSharedBytecodeValue` 把一个模块跑完后，释放它的顶层函数，连同顶层里没有被模块中任何函数用到的变量。以前加载过模块的 VM 要到关闭时才释放它们。把 tifa 示例商店的 SSR 包当模块加载，一个 VM 占 8.66 MiB，原来 9.44 MiB，和同一个包当脚本加载（8.63 MiB）差不多。还在等待中或失败的模块保留它的顶层函数。
