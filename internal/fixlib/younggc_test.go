@@ -67,9 +67,66 @@ func TestYoungGCRewrite(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		reader := append(bytes.Clone(bare), "\nfunc _js_new_reader(tls *libc.TLS, rt uintptr) uintptr {\n\treturn (*Tlist_head)(unsafe.Pointer(rt + "+off+")).Fnext\n}\n"...)
-		if _, err := fixYoungGC(reader, name); err == nil || !strings.Contains(err.Error(), "_js_new_reader") {
-			t.Fatalf("accepted a new function that uses gc_obj_list: %v", err)
+		for _, arg := range []string{"rt", "rt2", "runtime"} {
+			t.Run(name+"/"+arg, func(t *testing.T) {
+				reader := append(bytes.Clone(bare), "\nfunc _js_new_reader(tls *libc.TLS, "+arg+" uintptr) uintptr {\n\treturn (*Tlist_head)(unsafe.Pointer("+arg+" + "+off+")).Fnext\n}\n"...)
+				if _, err := fixYoungGC(reader, name); err == nil || !strings.Contains(err.Error(), "_js_new_reader") {
+					t.Fatalf("accepted a new function that uses gc_obj_list: %v", err)
+				}
+			})
 		}
+	}
+}
+
+// Numeric offsets alone do not identify a runtime. TLS slots and pointers
+// whose declared struct has no gc_obj_list are unrelated, even with the
+// same offset. Unknown uintptrs and mixed origins must still stop the audit.
+func TestYoungReadersOrigins(t *testing.T) {
+	for _, tc := range []struct {
+		name, params, body string
+		want               bool
+	}{
+		{"alias", "runtime uintptr", `alias := runtime; return (*Tlist_head)(unsafe.Pointer(alias + 1136)).Fnext`, true},
+		{"compact", "runtime uintptr", `return (*Tlist_head)(unsafe.Pointer(runtime+1136)).Fnext`, true},
+		{"reverse", "runtime uintptr", `return (*Tlist_head)(unsafe.Pointer(1136 + runtime)).Fnext`, true},
+		{"unsafe_add", "runtime unsafe.Pointer", `return (*Tlist_head)(unsafe.Add(runtime, 1136)).Fnext`, true},
+		{"field", "runtime *TJSRuntime", `return runtime.Fgc_obj_list.Fnext`, true},
+		{"typed_runtime", "runtime *TJSRuntime", `return (*Tlist_head)(unsafe.Pointer(uintptr(unsafe.Pointer(runtime)) + 1136)).Fnext`, true},
+		{"global_table", "", `p := unsafe.Pointer(&table); return (*Tlist_head)(unsafe.Add(p, 1136)).Fnext`, false},
+		{"shadowed_table", "table uintptr", `p := uintptr(unsafe.Pointer(&table)); return (*Tlist_head)(unsafe.Pointer(p + 1136)).Fnext`, true},
+		{"other_struct", "object *TOther", `return (*Tlist_head)(unsafe.Pointer(uintptr(unsafe.Pointer(object)) + 1136)).Fnext`, false},
+		{"other_alias", "object *TOther", `p := uintptr(unsafe.Pointer(object)); alias := p; return (*Tlist_head)(unsafe.Pointer(alias + 1136)).Fnext`, false},
+		{"other_cast_is_not_proof", "object uintptr", `_ = (*TOther)(unsafe.Pointer(object)); return (*Tlist_head)(unsafe.Pointer(object + 1136)).Fnext`, true},
+		{"stack", "tls *libc.TLS", `stack := tls.Alloc(2048); return (*Tlist_head)(unsafe.Pointer(stack + 1136)).Fnext`, false},
+		{"stack_reallocated", "tls *libc.TLS", `stack := tls.Alloc(2048); stack = tls.Alloc(2048); return (*Tlist_head)(unsafe.Pointer(stack + 1136)).Fnext`, false},
+		{"stack_reassigned", "tls *libc.TLS, runtime uintptr", `stack := tls.Alloc(2048); stack = runtime; return (*Tlist_head)(unsafe.Pointer(stack + 1136)).Fnext`, true},
+		{"escaped_stack", "tls *libc.TLS", `stack := tls.Alloc(2048); change(&stack); return (*Tlist_head)(unsafe.Pointer(stack + 1136)).Fnext`, true},
+		{"comment", "runtime uintptr", "// runtime + 1136\n return 0", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := []byte("package p\ntype TOther = struct {\n padding [1136]byte\n list Tlist_head\n}\ntype TJSRuntime = struct {\n Fgc_obj_list Tlist_head\n}\nvar table = [100]TOther{}\nfunc probe(" + tc.params + ") uintptr {\n" + tc.body + "\n}\n")
+			got, err := youngReaders(src, "1136")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (len(got) != 0) != tc.want {
+				t.Fatalf("readers = %v, want reader %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestYoungReadersRepeatedInit(t *testing.T) {
+	src := []byte(`package p
+func init() {
+ runtime := getRuntime()
+ _ = (*Tlist_head)(unsafe.Pointer(runtime + 1136)).Fnext
+}
+func init() {
+}
+`)
+	got, err := youngReaders(src, "1136")
+	if err != nil || len(got) != 1 || got[0] != "init" {
+		t.Fatalf("readers = %v, %v, want init", got, err)
 	}
 }

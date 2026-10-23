@@ -10,9 +10,12 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/token"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -31,8 +34,6 @@ const (
 var (
 	// The list of every GC object, gc_obj_list, read where _gc_scan starts.
 	reYoungOldList = regexp.MustCompile(`\n\tel = \(\*Tlist_head\)\(unsafe\.Pointer\(rt \+ (\d+)\)\)\.Fnext\n`)
-	// A function and its text up to the next one.
-	reYoungFunc = regexp.MustCompile(`\nfunc ([A-Za-z_0-9]+)\(`)
 	// The object __JS_FreeValueRT frees when its count gets to 0.
 	reYoungFreeObj = regexp.MustCompile(`\n\t\t(p\d+) = [^\n]*\n\t\tif TJSGCPhaseEnum\(\*\(\*uint8\)\(unsafe\.Pointer\(rt1 \+ \d+\)\)&0xff>>0\) != int32\(EJS_GC_PHASE_REMOVE_CYCLES\) \{\n`)
 	reYoungDefer   = regexp.MustCompile(` else \{\n` + regexp.QuoteMeta(youngDeferDoc) + `\t\t\tyoungDefer\(tls, (rt1?), ([a-z0-9]+)\)\n\t\t\}`)
@@ -71,23 +72,196 @@ func youngOldList(b []byte) (string, error) {
 	return string(m[1]), nil
 }
 
-// youngReaders returns the functions of b that use gc_obj_list, at offset
-// off of JSRuntime.
-func youngReaders(b []byte, off string) []string {
-	re := regexp.MustCompile(`\brt1? \+ ` + off + `\b|\.Fgc_obj_list\b`)
-	locs := reYoungFunc.FindAllSubmatchIndex(b, -1)
+// youngReaders audits every use of the numeric offset, regardless of the
+// name of its base. ccgo erases C pointer types to uintptr, so an unknown
+// base must be reviewed too. Only proven TLS storage or a pointer parameter
+// to a different struct can be excluded. A cast at the read site alone is
+// not evidence: gc_obj_list itself is read through a Tlist_head cast.
+func youngReaders(b []byte, off string) ([]string, error) {
+	offset, err := strconv.ParseInt(off, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	// ccgo writes its struct definitions in this form. Aliases and unknown
+	// types are deliberately not proof of a different struct.
+	otherStruct := map[string]bool{}
+	reStruct := regexp.MustCompile(`(?m)^type (\w+) = struct \{(?s:.*?)\n\}`)
+	for _, m := range reStruct.FindAllSubmatch(b, -1) {
+		otherStruct[string(m[1])] = !bytes.Contains(m[0], []byte("Fgc_obj_list"))
+	}
+	// Initializers can have the same name. Audit each declaration rather
+	// than indexing functions by name.
+	globals := map[string]bool{}
+	reArray := regexp.MustCompile(`(?m)^var (\w+) = \[\d+\](\w+)\{`)
+	for _, m := range reArray.FindAllSubmatch(b, -1) {
+		globals[string(m[1])] = otherStruct[string(m[2])]
+	}
 	var names []string
-	for i, loc := range locs {
-		end := len(b)
-		if i+1 < len(locs) {
-			end = locs[i+1][0]
+	reFunc := regexp.MustCompile(`\nfunc ([A-Za-z_0-9]+)\(`)
+	for _, loc := range reFunc.FindAllSubmatchIndex(b, -1) {
+		text := b[loc[0]+1:]
+		if end := bytes.Index(text, []byte("\n}\n")); end >= 0 {
+			text = text[:end+2]
 		}
-		if re.Match(b[loc[0]:end]) {
-			names = append(names, string(b[loc[2]:loc[3]]))
+		f := &slotFunc{name: string(b[loc[2]:loc[3]]), text: text}
+
+		if !bytes.Contains(f.text, []byte(off)) && !bytes.Contains(f.text, []byte(fmt.Sprintf("0x%x", offset))) && !bytes.Contains(f.text, []byte("Fgc_obj_list")) {
+			continue
+		}
+		if err := f.parse(); err != nil {
+			return nil, err
+		}
+		nonRuntime := youngNonRuntimeBases(f.decl, otherStruct, globals)
+		reader := false
+		isOffset := func(e ast.Expr) bool {
+			n, ok := ast.Unparen(e).(*ast.BasicLit)
+			if !ok || n.Kind != token.INT {
+				return false
+			}
+			v, err := strconv.ParseInt(n.Value, 0, 64)
+			return err == nil && v == offset
+		}
+		ast.Inspect(f.decl.Body, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.SelectorExpr:
+				if n.Sel.Name == "Fgc_obj_list" {
+					reader = true
+				}
+			case *ast.BinaryExpr:
+				if n.Op == token.ADD && ((isOffset(n.Y) && !nonRuntime(n.X)) || (isOffset(n.X) && !nonRuntime(n.Y))) {
+					reader = true
+				}
+			case *ast.CallExpr:
+				if fun, ok := n.Fun.(*ast.SelectorExpr); ok && youngIdent(fun.X, "unsafe") && fun.Sel.Name == "Add" && len(n.Args) == 2 && isOffset(n.Args[1]) && !nonRuntime(n.Args[0]) {
+					reader = true
+				}
+			}
+			return true
+		})
+		if reader {
+			names = append(names, f.name)
 		}
 	}
 	slices.Sort(names)
-	return slices.Compact(names)
+	return slices.Compact(names), nil
+}
+
+func youngIdent(e ast.Expr, name string) bool {
+	id, ok := ast.Unparen(e).(*ast.Ident)
+	return ok && id.Name == name
+}
+
+// Prove origins only when every definition has a non-runtime origin and
+// the variable has no address escape. This is not a general type inference
+// pass, and an unknown origin never exempts a read.
+func youngNonRuntimeBases(f *ast.FuncDecl, otherStruct, globals map[string]bool) func(ast.Expr) bool {
+	writes := map[string]int{}
+	locals := map[string]bool{}
+	defs := map[string][]ast.Expr{}
+	typed := map[string]bool{}
+	tls := map[string]bool{}
+	for _, field := range f.Type.Params.List {
+		ptr, ok := field.Type.(*ast.StarExpr)
+		for _, id := range field.Names {
+			writes[id.Name]++
+			locals[id.Name] = true
+			if !ok {
+				continue
+			}
+			if typ, ok := ptr.X.(*ast.Ident); ok {
+				typed[id.Name] = otherStruct[typ.Name]
+			}
+			if typ, ok := ptr.X.(*ast.SelectorExpr); ok {
+				tls[id.Name] = youngIdent(typ.X, "libc") && typ.Sel.Name == "TLS"
+			}
+		}
+	}
+	ast.Inspect(f.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.AssignStmt:
+			for i, lhs := range n.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					writes[id.Name]++
+					locals[id.Name] = true
+					if len(n.Lhs) == len(n.Rhs) && (n.Tok == token.ASSIGN || n.Tok == token.DEFINE) {
+						defs[id.Name] = append(defs[id.Name], n.Rhs[i])
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for i, id := range n.Names {
+				locals[id.Name] = true
+				if len(n.Values) == len(n.Names) {
+					writes[id.Name]++
+					defs[id.Name] = append(defs[id.Name], n.Values[i])
+				}
+			}
+		case *ast.RangeStmt:
+			for _, e := range []ast.Expr{n.Key, n.Value} {
+				if id, ok := e.(*ast.Ident); ok {
+					locals[id.Name] = true
+					writes[id.Name] += 2
+				}
+			}
+		case *ast.IncDecStmt:
+			if id, ok := n.X.(*ast.Ident); ok {
+				writes[id.Name] += 2
+			}
+		case *ast.UnaryExpr:
+			if n.Op == token.AND {
+				if id, ok := n.X.(*ast.Ident); ok {
+					writes[id.Name] += 2
+				}
+			}
+		}
+		return true
+	})
+	visiting := map[string]bool{}
+	var proven func(ast.Expr) bool
+	proven = func(e ast.Expr) bool {
+		switch e := ast.Unparen(e).(type) {
+		case *ast.UnaryExpr:
+			if e.Op == token.AND {
+				if id, ok := e.X.(*ast.Ident); ok {
+					return globals[id.Name] && !locals[id.Name]
+				}
+			}
+		case *ast.Ident:
+			if visiting[e.Name] {
+				return false
+			}
+			if typed[e.Name] && writes[e.Name] == 1 {
+				return true
+			}
+			origins := defs[e.Name]
+			if len(origins) == 0 || writes[e.Name] != len(origins) {
+				return false
+			}
+			visiting[e.Name] = true
+			defer delete(visiting, e.Name)
+			for _, origin := range origins {
+				if !proven(origin) {
+					return false
+				}
+			}
+			return true
+
+		case *ast.CallExpr:
+			if fun, ok := e.Fun.(*ast.SelectorExpr); ok {
+				if id, ok := fun.X.(*ast.Ident); ok && tls[id.Name] && writes[id.Name] == 1 && fun.Sel.Name == "Alloc" {
+					return true
+				}
+				if youngIdent(fun.X, "unsafe") && fun.Sel.Name == "Pointer" && len(e.Args) == 1 {
+					return proven(e.Args[0])
+				}
+			}
+			if youngIdent(e.Fun, "uintptr") && len(e.Args) == 1 {
+				return proven(e.Args[0])
+			}
+		}
+		return false
+	}
+	return proven
 }
 
 // youngFingerprint is the fingerprint of youngFuncs in b, which has none of
@@ -138,7 +312,11 @@ func fixYoungGC(b []byte, name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if readers := youngReaders(bare, off); !slices.Equal(readers, youngListReaders) {
+	readers, err := youngReaders(bare, off)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Equal(readers, youngListReaders) {
 		return nil, fmt.Errorf("%s: the functions that use gc_obj_list are %s, want %s: read the new ones against lib/younggc.go, they may need the young objects too", name, strings.Join(readers, ", "), strings.Join(youngListReaders, ", "))
 	}
 	out, err := addYoungGC(bare, off)
