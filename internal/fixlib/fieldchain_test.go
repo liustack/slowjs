@@ -15,8 +15,7 @@ import (
 
 // Every 64-bit target calls fieldProto and fieldGoesOn once in get_field
 // and once in get_field2, with the fast_array bit of its own
-// JS_GetPropertyInternal: s390x is big-endian, so ccgo numbers the bit
-// fields from the other end. The 32-bit targets call neither.
+// JS_GetPropertyInternal.
 func TestFieldChainEveryFile(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		b, err := os.ReadFile(fn)
@@ -43,10 +42,7 @@ func TestFieldChainEveryFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		wantMask := "0x10"
-		if name == "ccgo_linux_s390x.go" {
-			wantMask = "0x8"
-		}
+		const wantMask = "0x10"
 		if off != "16" || mask != wantMask {
 			t.Errorf("%s: fast_array at %s mask %s, want 16 mask %s", name, off, mask, wantMask)
 		}

@@ -8,7 +8,7 @@ package main
 // upSites are the statements of each generated file where fixUp drops the
 // order between a read of memory in the address of a conversion and a call
 // after it, and how many times each comes (see upOrderOf). Each was
-// reviewed: no call after the read changes what it reads. The 13 files
+// reviewed: no call after the read changes what it reads. The 5 files
 // have the same list.
 var upSites = map[string]int{
 	// ctx->class_proto[i] = f(...): the calls make objects and strings and

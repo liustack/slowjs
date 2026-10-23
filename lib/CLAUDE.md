@@ -40,17 +40,16 @@ Running individual tests (add `-vet=off`):
 
 **Generated vs. hand-written.** The bulk of the repo is the `ccgo_<goos>_<goarch>.go`
 files (~180K lines / ~5MB each), one per platform, each marked `DO NOT EDIT` and
-carrying a `//go:build <goos> && <goarch>` constraint (`ccgo_windows.go` covers
-`windows && (amd64 || arm64)`). **Never hand-edit these — regenerate instead.**
+carrying a `//go:build <goos> && <goarch>` constraint (`ccgo_windows.go` carries
+`windows && (amd64 || arm64)`, and `0unsupported.go` stops a windows/arm64 build). **Never hand-edit these — regenerate instead.**
 Fixes to transpilation belong in the patches (`internal/patch/quickjs.diff`,
 `internal/patch/test262.diff`) or the generator, not in the output.
 
 The only hand-written package files are small: `libquickjs.go` (package doc,
 `init`, `MaxStackSlots`, the `_js_check_stack_overflow` override), `etc.go`
 (`origin`/`todo`/`trc` debug helpers), `types_{linux,other}.go` (the `Size_t`
-alias), and `{32,64}_test.go` (the `TJSValue` `tag`/`float64` decode helpers,
-split by NaN-boxing layout). `libquickjs_{freebsd,windows}.go` provide
-platform-specific libc stubs.
+alias), and `64_test.go` (the `TJSValue` `tag`/`float64` decode helpers).
+`libquickjs_windows.go` provides platform-specific libc stubs.
 
 **The generation pipeline** (`generator.go`, `//go:build ignore`, run via
 `go generate` / `make generate`): unzips the pinned QuickJS + test262 sources →
@@ -95,7 +94,6 @@ baseline. When a QuickJS bump changes conformance, update `test262_errors.txt`
 
 ## Supported platforms
 
-darwin/{amd64,arm64}, freebsd/{amd64,arm64},
-linux/{386,amd64,arm,arm64,loong64,ppc64le,riscv64,s390x}, windows/{amd64,arm64}.
+darwin/{amd64,arm64}, linux/{amd64,arm64}, windows/amd64.
 Building for a platform requires its `ccgo_<goos>_<goarch>.go` to be present in the
 repo.

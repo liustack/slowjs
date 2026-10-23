@@ -66,8 +66,8 @@ func TestCellsEveryFile(t *testing.T) {
 			}
 		}
 	}
-	if len(cellFiles) != 11 {
-		t.Errorf("%d files listed, want the 11 of 64-bit targets", len(cellFiles))
+	if len(cellFiles) != 5 {
+		t.Errorf("%d files listed, want the 5 targets", len(cellFiles))
 	}
 }
 

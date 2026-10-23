@@ -247,15 +247,12 @@ func TestToCStringRejects(t *testing.T) {
 		}
 	}
 	head := "func XJS_ToCStringLen2("
-	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_386.go"} {
+	for _, name := range []string{"ccgo_darwin_arm64.go"} {
 		b, err := readEngine(filepath.Join("..", "..", "lib", name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		val := "val"
-		if name == "ccgo_darwin_arm64.go" {
-			val = "*(*TJSValue)(unsafe.Pointer(bp + 32))"
-		}
+		const val = "*(*TJSValue)(unsafe.Pointer(bp + 32))"
 		for _, c := range []struct{ name, at, text string }{
 			{"free at the label", "\tif plen != 0 {\n\t\t*(*Tsize_t)(unsafe.Pointer(plen)) = uint", "\tXFreeValue(tls, ctx2, " + val + ")\n"},
 			{"a new way to fail", "\tlen1 = ", "\tif plen == 0 {\n\t\tgoto fail\n\t}\n"},
@@ -339,29 +336,6 @@ func TestOwnFlagsRejectsValueRead(t *testing.T) {
 		t.Error("a descriptor pdesc went through")
 	}
 
-	// On linux/386 the value is bytes 4 to 12 and the getter starts at 12.
-	b32, err := readEngine(filepath.Join("..", "..", "lib", "ccgo_linux_386.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	at32 := "\t\t\t_js_free_desc(tls, ctx2, bp+8)\n"
-	for _, c := range []struct {
-		text string
-		ok   bool
-	}{
-		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 8 + 8))\n", false},
-		{"\t\t\t_ = *(*uint32)(unsafe.Pointer(bp + 16))\n", false},
-		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 8 + 12))\n", true},
-		{"\t\t\t_ = *(*TJSValue)(unsafe.Pointer(bp + 20))\n", true},
-	} {
-		_, err := fixBacktrace(mutate(t, b32, head, at32, c.text))
-		if c.ok && err != nil {
-			t.Errorf("linux/386: %q: %v", c.text, err)
-		}
-		if !c.ok && err == nil {
-			t.Errorf("linux/386: %q went through", c.text)
-		}
-	}
 }
 
 // descUses reads both forms of a field access, before and after fixUp.
@@ -408,8 +382,7 @@ func TestBacktraceRejectsTextElsewhere(t *testing.T) {
 	}
 }
 
-// The value of a descriptor ends at byte 24 of 56 on 64-bit targets, 12 of
-// 28 on linux/386, which aligns a uint64 to 4, and 16 of 32 on linux/arm.
+// The value of a descriptor ends at byte 24 of 56.
 func TestDescLayout(t *testing.T) {
 	for _, fn := range libFiles(t) {
 		b, err := readEngine(fn)
@@ -421,12 +394,6 @@ func TestDescLayout(t *testing.T) {
 			t.Fatalf("%s: %v", fn, err)
 		}
 		want := descLayout{valueEnd: 24, size: 56}
-		switch filepath.Base(fn) {
-		case "ccgo_linux_386.go":
-			want = descLayout{valueEnd: 12, size: 28}
-		case "ccgo_linux_arm.go":
-			want = descLayout{valueEnd: 16, size: 32}
-		}
 		if got != want {
 			t.Errorf("%s: %+v, want %+v", fn, got, want)
 		}

@@ -17,8 +17,8 @@ import (
 // fields back into a file without them, on every target.
 func TestDefineIdempotent(t *testing.T) {
 	files := libFiles(t)
-	if len(files) != 13 {
-		t.Fatalf("%d generated files, want 13", len(files))
+	if len(files) != 5 {
+		t.Fatalf("%d generated files, want 5", len(files))
 	}
 	for _, fn := range files {
 		b, err := readEngine(fn)

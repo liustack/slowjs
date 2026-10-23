@@ -170,7 +170,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root: the tests of `lib/` use the value form, which is not a struct on 32-bit targets), each package to a test binary of its own, as two packages share the name `gen`, for all 14 targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the four main targets:
+It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the main ones:
 
 ```sh
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
@@ -178,7 +178,7 @@ for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 done
 ```
 
-`internal/fixlib/macros_test.go` checks that every macro constant the generated code and the Go files next to it use is declared in each generated file. v0.26.6 and v0.26.7 did not build on linux and freebsd because of one that only the darwin and windows files declared.
+`internal/fixlib/macros_test.go` checks that every macro constant the generated code and the Go files next to it use is declared in each generated file. v0.26.6 and v0.26.7 did not build on linux because of one that only the darwin and windows files declared.
 
 ## Same as upstream after fixlib
 

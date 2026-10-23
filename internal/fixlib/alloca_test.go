@@ -44,11 +44,7 @@ func TestAllocaEveryFile(t *testing.T) {
 				framed++
 			}
 		}
-		// The bound function has a frame on 64-bit targets only.
-		want := 3
-		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			want = 2
-		}
+		const want = 3
 		if framed != want {
 			t.Errorf("%s: %d alloca in a frame, want %d", fn, framed, want)
 		}

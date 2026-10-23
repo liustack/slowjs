@@ -174,7 +174,7 @@ func upWrite(out *bytes.Buffer, b []byte, convs []upConv, start, end, i int) int
 // read in its address and a call to the right of that address, and names it
 // by its function, its addresses with reads, in the form fixUp writes, and
 // the functions it calls after them, with spaces and numbers made uniform,
-// so that the 13 files give the same names. upSites lists them, reviewed:
+// so that the 5 files give the same names. upSites lists them, reviewed:
 // a new one stops fixlib.
 
 // upPure matches the libc helpers that convert a number and touch no

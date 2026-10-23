@@ -31,7 +31,7 @@ func TestExpectReportUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_386.go", "ccgo_windows.go"} {
+	for _, name := range []string{"ccgo_darwin_arm64.go", "ccgo_linux_amd64.go", "ccgo_windows.go"} {
 		t.Run(name, func(t *testing.T) {
 			want := expectSites[name]
 			expectSites[name] = want + 1

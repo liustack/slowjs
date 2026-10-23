@@ -6,8 +6,6 @@
 // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
 // lib/LICENSE).
 
-//go:build !(386 || arm)
-
 package libquickjs // import "github.com/liustack/quickjs/lib"
 
 import "unsafe"

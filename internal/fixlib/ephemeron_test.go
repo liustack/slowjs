@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 )
 
@@ -55,11 +54,7 @@ func TestEphemeronRewrite(t *testing.T) {
 // Compile-only cross-target checks cannot notice reversed C bitfields.
 func TestEphemeronHeaderBits(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		source := "ephemeronbits.go"
-		if strings.Contains(fn, "_s390x.") {
-			source = "ephemeronbits_s390x.go"
-		}
-		constants, err := os.ReadFile(filepath.Join("..", "..", "lib", source))
+		constants, err := os.ReadFile(filepath.Join("..", "..", "lib", "ephemeronbits.go"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,14 +71,14 @@ func TestEphemeronHeaderBits(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(values) != 3 || !bytes.Contains(mark, []byte("& "+values["TypeMask"]+" >> "+values["TypeShift"])) {
-			t.Fatalf("%s: GC type bits differ from %s", fn, source)
+			t.Fatalf("%s: GC type bits differ from ephemeronbits.go", fn)
 		}
 		scan, err := funcBody(b, funcHead("_gc_scan"), "_gc_scan")
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !bytes.Contains(scan, []byte(", "+values["MarkMask"]+") /* reset the mark")) {
-			t.Fatalf("%s: GC mark bit differs from %s", fn, source)
+			t.Fatalf("%s: GC mark bit differs from ephemeronbits.go", fn)
 		}
 	}
 }

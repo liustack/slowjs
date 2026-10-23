@@ -361,16 +361,6 @@ func TestMem(t *testing.T) {
 		t.Skip("-short")
 	}
 
-	switch target {
-	case
-		"freebsd/arm64",
-		"linux/riscv64",
-		"linux/s390x",
-		"windows/arm64":
-
-		t.Skip("target too slow")
-	}
-
 	if !memgrind {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 

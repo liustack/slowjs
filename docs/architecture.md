@@ -1,8 +1,8 @@
 ---
-summary: 'How the module is built: the three layers from the Go API down to libc, what each folder holds, the core types and their rules, the 32-bit and 64-bit value forms, how Go functions are called from javascript, how the eval timeout and Interrupt work, and which platforms must keep building'
+summary: 'How the module is built: the three layers from the Go API down to libc, what each folder holds, the core types and their rules, the value form, how Go functions are called from javascript, how the eval timeout and Interrupt work, and which platforms must keep building'
 read_when:
   - Starting work in this repository for the first time
-  - Changing quickjs.go, quickjs32.go or quickjs64.go, or adding a method that runs javascript
+  - Changing quickjs.go or quickjs64.go, or adding a method that runs javascript
   - Looking for where a piece of the engine, a fork change or a tool lives
   - Touching how a value is encoded, or reading a JSValue by hand
   - Changing the intl, temporal, fmt or compare packages, internal/gointl, internal/intlhook, generator.go or internal/autogen
@@ -23,7 +23,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 
 ## The three layers
 
-1. **`lib/`**: QuickJS as ccgo transpiled it, in `lib/ccgo_<goos>_<goarch>.go` (one file per target, `ccgo_windows.go` for both windows targets), plus the fork's hand-written Go next to it. Symbol conventions to know when editing the wrapper: `lib.X*` are exported C functions (`XJS_NewRuntime`, `XJS_Eval`), `lib.T*` C types (`TJSValue`, `TJSRuntime`, `TJSContext`, `TJSAtom`), `lib.E*` enum constants (`EJS_TAG_NULL`), `lib.M*` macro constants (`MJS_EVAL_TYPE_GLOBAL`, `MCONFIG_VERSION`). Every transpiled C function takes a `*libc.TLS` as its first argument.
+1. **`lib/`**: QuickJS as ccgo transpiled it, in `lib/ccgo_<goos>_<goarch>.go` (one file per target, `ccgo_windows.go` for windows/amd64), plus the fork's hand-written Go next to it. Symbol conventions to know when editing the wrapper: `lib.X*` are exported C functions (`XJS_NewRuntime`, `XJS_Eval`), `lib.T*` C types (`TJSValue`, `TJSRuntime`, `TJSContext`, `TJSAtom`), `lib.E*` enum constants (`EJS_TAG_NULL`), `lib.M*` macro constants (`MJS_EVAL_TYPE_GLOBAL`, `MCONFIG_VERSION`). Every transpiled C function takes a `*libc.TLS` as its first argument.
 2. **`modernc.org/libc`** (external): the C runtime in Go. `libc.TLS` is the emulated thread-local storage and C stack, where the engine keeps C locals whose address is taken (its "TLS frames"). Memory the engine touches is allocated with `libc.Xcalloc`, `libc.Xmalloc` and `libc.Xfree`, and strings with `libc.CString`, not on Go's heap.
 3. **The Go API** (`quickjs.go` and the files next to it): what users import.
 
@@ -31,7 +31,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 
 | Path | What it holds |
 | --- | --- |
-| `quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `builtin.go`, `etc.go` | The Go API |
+| `quickjs.go`, `quickjs64.go`, `promise.go`, `builtin.go`, `etc.go` | The Go API |
 | `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
 | `lib/ccgo_*.go` | The generated engine. Never edited by hand: `internal/fixlib` rewrites them |
 | `lib/*.go` (the rest) | Hand-written Go the generated engine calls: `backtrace.go` (lazy error stacks), `uncatchable.go`, `outofmemory.go`, `objlit.go`, `regexskip.go`, `poll.go`, `runtime.go` (the fork's state at the end of `JSRuntime`), `frontcache.go`, `shapecache.go`, `forin.go`, `bitwise.go`, `eq.go`, `atomkey.go`, `jsonstr.go`, `stringsearch.go` (string searches), `funcshape.go`, `regexcache.go`, `clock.go` (the engine's clocks), `expect.go` (likely and unlikely tests), `fastframes_linux.go` (TLS frames without a call on linux), `test262_runner.go` |
@@ -61,16 +61,11 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 - `Object`, `Atom` (`lib.TJSAtom`) and `HostFunc` (`func(args []any) (any, error)`).
 - `Builtin`, a Go function javascript calls as a built-in, and `Args`, the arguments of its call (see [Go functions called from javascript](#go-functions-called-from-javascript)).
 
-## 32-bit and 64-bit values
+## Values
 
-`JSValue` is NaN-boxed, and its layout depends on the pointer size. It is split across two files with opposite build tags, and any change to how values are encoded must be made in both:
+`JSValue` is NaN-boxed. Every supported target is 64-bit and little-endian, so `TJSValue` is a struct with an `.Ftag` field, and `quickjs64.go` defines the helpers that read and build it: `sizeofJsValue`, `null`, `undefined`, `newFloat`, `newBool`, `tag`, `isException`, `jsvToInt32`, `jsvSetInt32`, `jsvToFloat64`, `jsvToPtr`.
 
-- `quickjs64.go` (`//go:build !(386 || arm)`): `TJSValue` is a struct with an `.Ftag` field.
-- `quickjs32.go` (`//go:build 386 || arm`): `TJSValue` is a `uint64` with the NaN-boxing done by bit math.
-
-Both define the same set: `sizeofJsValue`, `null`, `undefined`, `newFloat`, `newBool`, `tag`, `isException`, `jsvToInt32`, `jsvSetInt32`, `jsvToFloat64`, `jsvToPtr`.
-
-linux/s390x is the only big-endian target, and there the layout of the 64-bit union shows. ccgo represents `JSValueUnion` as its widest member, a `uint64`, and reads the narrow members as values (`JS_MKVAL` zero-extends into the low 32 bits, `JS_VALUE_GET_INT` truncates). So the `int32` or bool payload lives in the low 32 bits, which are the last four bytes of the union on s390x. Read and write it only through `jsvToInt32` and `jsvSetInt32`: a raw `*(*int32)(unsafe.Pointer(&v))` reads every JS integer and boolean as 0 or false there. The float64 and pointer payloads are as wide as the union, so those stay plain casts.
+ccgo represents `JSValueUnion` as its widest member, a `uint64`, and reads the narrow members as values (`JS_MKVAL` zero-extends into the low 32 bits, `JS_VALUE_GET_INT` truncates). So the `int32` or bool payload lives in the low 32 bits of the union. Read and write it through `jsvToInt32` and `jsvSetInt32`, not through the address of the union. The float64 and pointer payloads are as wide as the union, so those stay plain casts.
 
 ## Go functions called from javascript
 
@@ -91,10 +86,10 @@ Each `VM` has an `interruptData` struct, allocated in libc memory, that holds `i
 - **`internal/gointl/`**: a copy of go-intl (pure Go ECMA-402 and Temporal) at the commit in `internal/gointl/UPSTREAM`, which `intl` uses for every constructor, including Date and Temporal formatting and date ranges, and `temporal` for all of Temporal. Only the `qjs*` files and `UPSTREAM` are ours. Edit go-intl's files only through `qjs.patch` and `qjs-sync.sh` (see [Updating go-intl](upgrading.md#updating-go-intl-internalgointl)). Its data is the packs in `qjsdata/`, written by `internal/qjspack/gen`, not go-intl's `data.pack`. `make gointl` runs the checks that need build tags, and checks that the packs are current.
 - **`fmt/`**: package `github.com/liustack/quickjs/fmt`, part of this module (it has no `go.mod` of its own). It gives a VM Go's `fmt.Printf`, `Println`, `Sprintf` and `Sprintln` with `Register(obj Value)`, with lower-case names in javascript (`fmt.println`).
 - **`compare/`**: a module of its own (`github.com/liustack/quickjs/compare`) that runs the micro benchmarks of QuickJS in `compare/testdata/` on this engine, on `github.com/dop251/goja` and on `github.com/fastschema/qjs`, leaving out the 6 that goja or qjs fails. `make benchmark` runs there. It is a module of its own so that its dependencies (goja, qjs, wazero, regexp2 and so on) stay out of the library's `go.mod`, where every user would see them. `compare/go.mod` has `replace github.com/liustack/quickjs => ../`, so the benchmarks always build the work tree and `go mod tidy` takes the versions of `libc` and the rest from the root `go.mod`: never copy those versions by hand. Its indirect requirements are only lower bounds, and a newer version in the root `go.mod` stops the benchmarks with `updates to go.mod needed`, so the `benchmark` target runs `go mod tidy` first. The `github.com/liustack/quickjs` require line is not resolved (the replace wins) and nothing reads it.
-- **`internal/autogen/*.mod`**: 14 copies of `go.mod`, one per `GOOS_GOARCH`, kept by the "autogen" feature of upstream's modernc.org builder fleet (see `builder.json`). The "<arch> auto generate" commits before the fork are these. Do not edit them by hand.
+- **`internal/autogen/*.mod`**: 5 copies of `go.mod`, one per `GOOS_GOARCH`, kept by the "autogen" feature of upstream's modernc.org builder fleet (see `builder.json`). The "<arch> auto generate" commits before the fork are these. Do not edit them by hand.
 - **`testdata/benchmarks/<os>_<arch>.txt`**: recorded benchmark output, one file per platform. The first line, `# root go.mod sha256 <hex>`, says what it was measured against.
 - **`generator.go`** (`//go:build ignore`, run by `//go:generate go run generator.go`): runs `make benchmark` for the host platform and writes the `# Performance` table in the package doc of `quickjs.go` from the geomean rows of every `testdata/benchmarks/*.txt`. A table edited by hand is overwritten. It benchmarks only when the file of the host platform is missing or was measured against another root `go.mod`, then writes the table again either way. So a local `go generate` after a dependency upgrade runs the whole benchmark suite. The `CCGO:` label is the engine in `lib/`, and the `GOJA:` and `QJS:` labels come from `compare/go.mod`. This table compares engines on micro benchmarks only: [performance.md](performance.md) has render speed in tifa.
 
 ## Platforms
 
-14 targets (see the package doc of `quickjs.go` and `builder.json`): darwin/{amd64,arm64}, freebsd/{amd64,arm64}, linux/{386,amd64,arm,arm64,loong64,ppc64le,riscv64,s390x} and windows/{amd64,arm64}. A change must keep `make build_all_targets` passing on all of them (see [testing.md](testing.md#every-target)).
+5 targets (see the package doc of `quickjs.go` and `builder.json`): darwin/{amd64,arm64}, linux/{amd64,arm64} and windows/amd64. Other targets are not supported: the module has no generated engine for them, so a build for one stops with an error that names the supported targets (`lib/0unsupported.go`). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).

@@ -13,12 +13,8 @@ import (
 	"testing"
 )
 
-// The atom type and the length of a JSString on every target: s390x is
-// big-endian, so ccgo numbers the bit fields from the other end.
-var atomKeyWant = map[bool]atomKeyBits{
-	false: {typeOff: "4", typeMask: "0xc0000000", typeShift: "30", lenMask: "0x7fffffff", lenShift: "0"},
-	true:  {typeOff: "4", typeMask: "0x3", typeShift: "0", lenMask: "0xfffffffe", lenShift: "1"},
-}
+// The atom type and the length of a JSString on every target.
+var atomKeyWant = atomKeyBits{typeOff: "4", typeMask: "0xc0000000", typeShift: "30", lenMask: "0x7fffffff", lenShift: "0"}
 
 // Every target calls atomKey once, at the start of JS_ValueToAtom and only
 // for a string, with the bit fields of its own JSString.
@@ -44,7 +40,7 @@ func TestAtomKeyEveryFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if want := atomKeyWant[name == "ccgo_linux_s390x.go"]; got != want {
+		if want := atomKeyWant; got != want {
 			t.Errorf("%s: bit fields %+v, want %+v", name, got, want)
 		}
 	}

@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !s390x
-
 package libquickjs
 
 // The collector header layout is checked against every generated target by

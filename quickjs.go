@@ -34,18 +34,9 @@
 //		-----------------------------------------------
 //		        darwin/amd64    1.000    1.575    1.300
 //		        darwin/arm64    1.000    1.069    1.080
-//		       freebsd/amd64    1.000    1.943    1.472    (qemu)
-//		       freebsd/arm64    1.000    1.803    1.030    (qemu)
-//		           linux/386    1.000    3.082   95.312    (qemu)
 //		         linux/amd64    1.000    1.419    1.213
-//		           linux/arm    1.000    3.859  139.339
 //		         linux/arm64    1.000    1.611    1.267
-//		       linux/loong64    1.000    1.555   85.539
-//		       linux/ppc64le    1.000    2.286   75.183
-//		       linux/riscv64    1.000    1.656   76.609
-//		         linux/s390x    1.000    2.016   68.871    (qemu)
 //		       windows/amd64    1.000    2.254    1.438
-//		       windows/arm64    1.000    2.002    1.610
 //		-----------------------------------------------
 //		                        CCGO     GOJA     QJS
 //
@@ -62,22 +53,9 @@
 //	-------------
 //	darwin  amd64
 //	darwin  arm64
-//	freebsd amd64
-//	freebsd arm64
-//	linux   386
 //	linux   amd64
-//	linux   arm
 //	linux   arm64
-//	linux   loong64
-//	linux   ppc64le
-//	linux   riscv64
-//	linux   s390x
 //	windows amd64
-//	windows arm64
-//
-// # Builders
-//
-// Builder results are available [here].
 //
 // # Change Log
 //
@@ -89,7 +67,6 @@
 //
 // [C QuickJS]: https://bellard.org/quickjs
 // [ES2023]: https://tc39.es/ecma262/2023/
-// [here]: https://modern-c.appspot.com/-/builder/?importpath=modernc.org%2fquickjs
 package quickjs // import "github.com/liustack/quickjs"
 
 import (

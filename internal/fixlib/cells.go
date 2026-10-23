@@ -45,17 +45,11 @@ import (
 
 // cellFiles are the generated files of 64-bit targets.
 var cellFiles = map[string]bool{
-	"ccgo_darwin_amd64.go":  true,
-	"ccgo_darwin_arm64.go":  true,
-	"ccgo_freebsd_amd64.go": true,
-	"ccgo_freebsd_arm64.go": true,
-	"ccgo_linux_amd64.go":   true,
-	"ccgo_linux_arm64.go":   true,
-	"ccgo_linux_loong64.go": true,
-	"ccgo_linux_ppc64le.go": true,
-	"ccgo_linux_riscv64.go": true,
-	"ccgo_linux_s390x.go":   true,
-	"ccgo_windows.go":       true,
+	"ccgo_darwin_amd64.go": true,
+	"ccgo_darwin_arm64.go": true,
+	"ccgo_linux_amd64.go":  true,
+	"ccgo_linux_arm64.go":  true,
+	"ccgo_windows.go":      true,
 }
 
 // cellsFrameUses are the uses of bp in _JS_CallInternal other than a read

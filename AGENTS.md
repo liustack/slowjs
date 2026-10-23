@@ -6,7 +6,7 @@
 
 ## Hard constraints
 
-- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library, on all 14 targets. Do not bring in a cgo engine.
+- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library, on all 5 supported targets (darwin and linux on amd64 and arm64, windows on amd64). Do not bring in a cgo engine.
 - The generated engine (`lib/ccgo_*.go`, `lib/internal/run-test262/ccgo_*.go`) is never edited by hand. A change to the engine is one of two kinds:
   - a mechanical rewrite of the generated Go by `internal/fixlib`, which runs again after every upstream release
   - a change in C, kept in `lib/internal/patch/quickjs.diff` so that a regeneration of `lib/` keeps it, with its Go form put in by `fixlib`

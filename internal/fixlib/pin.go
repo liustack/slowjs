@@ -32,10 +32,9 @@ import (
 
 // pinFiles are the generated files fixPin changes.
 var pinFiles = map[string]bool{
-	"ccgo_darwin_amd64.go":  true,
-	"ccgo_freebsd_amd64.go": true,
-	"ccgo_linux_amd64.go":   true,
-	"ccgo_windows.go":       true,
+	"ccgo_darwin_amd64.go": true,
+	"ccgo_linux_amd64.go":  true,
+	"ccgo_windows.go":      true,
 }
 
 // pinVars are the parameters and locals of JS_CallInternal that fixPin
