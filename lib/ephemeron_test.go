@@ -12,22 +12,26 @@ import (
 	"unsafe"
 )
 
+// ephemeronCases are weak collections whose payload one full collection must
+// free, and what must stay reachable until drop runs.
+var ephemeronCases = []struct{ name, setup, live, drop string }{
+	{"prepass-cascade", `globalThis.wmA=new WeakMap(); globalThis.wmB=new WeakMap(); (()=>{let a={},b={};wmA.set(a,{payload});wmB.set(b,a)})();`, `true`, ``},
+	{"prepass-cascade-reverse", `globalThis.wmB=new WeakMap(); globalThis.wmA=new WeakMap(); (()=>{let a={},b={};wmA.set(a,{payload});wmB.set(b,a)})();`, `true`, ``},
+	{"cycle", `globalThis.wm = new WeakMap(); (() => {let k = {}; wm.set(k, {k, payload});})();`, `true`, ``},
+	{"plain-key", `globalThis.wm = new WeakMap(); (() => {let k = {}; wm.set(k, {payload});})();`, `true`, ``},
+	{"no-backref", `globalThis.wm = new WeakMap(); (() => {let k = {}; k.self=k; wm.set(k, {payload});})();`, `true`, ``},
+	{"chain", `globalThis.wm = new WeakMap(); (() => {let a={}, b={}, c={}; wm.set(a,b); wm.set(b,c); wm.set(c,{a,payload});})();`, `true`, ``},
+	{"live-key-chain", `globalThis.wm = new WeakMap(); globalThis.key = {}; (() => {let b={}, c={}; wm.set(key,b); wm.set(b,c); wm.set(c,{key,payload});})();`, `wm.get(wm.get(wm.get(key))).payload.length === 2097152`, `key=null;`},
+	{"weakset", `globalThis.ws = new WeakSet(); (() => {let k={payload}; k.self=k; ws.add(k);})();`, `true`, ``},
+	{"weakset-live", `globalThis.ws = new WeakSet(); globalThis.key={payload}; key.self=key; ws.add(key);`, `ws.has(key) && key.payload.length === 2097152`, `key=null;`},
+	{"symbol-cycle", `globalThis.wm = new WeakMap(); (()=>{let k=Symbol(); wm.set(k,{k,payload});})();`, `true`, ``},
+	{"symbol-property-cycle", `globalThis.wm = new WeakMap(); (()=>{let k=Symbol(); wm.set(k,{[k]:payload});})();`, `true`, ``},
+	{"symbol", `globalThis.wm = new WeakMap(); globalThis.key = Symbol(); wm.set(key,{payload});`, `wm.get(key).payload.length === 2097152`, `key=null;`},
+	{"dead-map", `globalThis.key={}; (() => {let m=new WeakMap(); m.set(key,{m,payload});})();`, `true`, ``},
+}
+
 func TestEphemeron(t *testing.T) {
-	for _, tc := range []struct{ name, setup, live, drop string }{
-		{"prepass-cascade", `globalThis.wmA=new WeakMap(); globalThis.wmB=new WeakMap(); (()=>{let a={},b={};wmA.set(a,{payload});wmB.set(b,a)})();`, `true`, ``},
-		{"prepass-cascade-reverse", `globalThis.wmB=new WeakMap(); globalThis.wmA=new WeakMap(); (()=>{let a={},b={};wmA.set(a,{payload});wmB.set(b,a)})();`, `true`, ``},
-		{"cycle", `globalThis.wm = new WeakMap(); (() => {let k = {}; wm.set(k, {k, payload});})();`, `true`, ``},
-		{"plain-key", `globalThis.wm = new WeakMap(); (() => {let k = {}; wm.set(k, {payload});})();`, `true`, ``},
-		{"no-backref", `globalThis.wm = new WeakMap(); (() => {let k = {}; k.self=k; wm.set(k, {payload});})();`, `true`, ``},
-		{"chain", `globalThis.wm = new WeakMap(); (() => {let a={}, b={}, c={}; wm.set(a,b); wm.set(b,c); wm.set(c,{a,payload});})();`, `true`, ``},
-		{"live-key-chain", `globalThis.wm = new WeakMap(); globalThis.key = {}; (() => {let b={}, c={}; wm.set(key,b); wm.set(b,c); wm.set(c,{key,payload});})();`, `wm.get(wm.get(wm.get(key))).payload.length === 2097152`, `key=null;`},
-		{"weakset", `globalThis.ws = new WeakSet(); (() => {let k={payload}; k.self=k; ws.add(k);})();`, `true`, ``},
-		{"weakset-live", `globalThis.ws = new WeakSet(); globalThis.key={payload}; key.self=key; ws.add(key);`, `ws.has(key) && key.payload.length === 2097152`, `key=null;`},
-		{"symbol-cycle", `globalThis.wm = new WeakMap(); (()=>{let k=Symbol(); wm.set(k,{k,payload});})();`, `true`, ``},
-		{"symbol-property-cycle", `globalThis.wm = new WeakMap(); (()=>{let k=Symbol(); wm.set(k,{[k]:payload});})();`, `true`, ``},
-		{"symbol", `globalThis.wm = new WeakMap(); globalThis.key = Symbol(); wm.set(key,{payload});`, `wm.get(key).payload.length === 2097152`, `key=null;`},
-		{"dead-map", `globalThis.key={}; (() => {let m=new WeakMap(); m.set(key,{m,payload});})();`, `true`, ``},
-	} {
+	for _, tc := range ephemeronCases {
 		t.Run(tc.name, func(t *testing.T) {
 			v := newShapeVM(t, 0)
 			defer v.close()
@@ -137,79 +141,88 @@ func TestEphemeronRegistryUnregister(t *testing.T) {
 func TestEphemeronMixedGraph(t *testing.T) {
 	for seed := uint64(1); seed <= 20; seed++ {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
-			const n = 64
-			type edge struct{ from, to int }
-			type ephemeron struct{ owner, key, value int }
-			next := seed
-			rand := func(limit int) int {
-				next = next*6364136223846793005 + 1442695040888963407
-				return int((next >> 32) % uint64(limit))
-			}
-			var strong []edge
-			var weak []ephemeron
-			for range 40 {
-				strong = append(strong, edge{rand(n), rand(n)})
-			}
-			for range 80 {
-				weak = append(weak, ephemeron{rand(8), rand(n), rand(n)})
-			}
-			// WeakMap.set replaces an earlier entry with the same owner and key.
-			entries := map[[2]int]int{}
-			for _, e := range weak {
-				entries[[2]int{e.owner, e.key}] = e.value
-			}
-			live := make([]bool, n)
-			roots := []int{rand(n), rand(n), rand(n), rand(n)}
-			for _, r := range roots {
-				live[r] = true
-			}
-			for changed := true; changed; {
-				changed = false
-				mark := func(i int) {
-					if !live[i] {
-						live[i] = true
-						changed = true
-					}
-				}
-				for _, e := range strong {
-					if live[e.from] {
-						mark(e.to)
-					}
-				}
-				for key, value := range entries {
-					if live[key[0]] && live[key[1]] {
-						mark(value)
-					}
-				}
-			}
-			var js strings.Builder
-			js.WriteString(`(()=>{const nodes=Array.from({length:64},(_,i)=>i<8?new WeakMap():{});`)
-			for i, e := range strong {
-				fmt.Fprintf(&js, "nodes[%d].p%d=nodes[%d];", e.from, i, e.to)
-			}
-			for _, e := range weak {
-				fmt.Fprintf(&js, "nodes[%d].set(nodes[%d],nodes[%d]);", e.owner, e.key, e.value)
-			}
-			fmt.Fprintf(&js, "globalThis.roots=[nodes[%d],nodes[%d],nodes[%d],nodes[%d]];", roots[0], roots[1], roots[2], roots[3])
-			js.WriteString(`globalThis.observers=nodes.map(n=>new WeakRef(n));})();void 0`)
-			var want strings.Builder
-			for _, alive := range live {
-				if alive {
-					want.WriteByte('1')
-				} else {
-					want.WriteByte('0')
-				}
-			}
+			js, want := ephemeronGraph(seed)
 			v := newShapeVM(t, 0)
 			defer v.close()
 			XJS_SetGCThreshold(v.tls, v.rt, ^Tsize_t(0))
-			if got := v.run(js.String()); got != "<undefined>" {
+			if got := v.run(js); got != "<undefined>" {
 				t.Fatal(got)
 			}
 			XJS_RunGC(v.tls, v.rt)
-			if got := v.run(`observers.map(r=>r.deref()===undefined?'0':'1').join('')`); got != want.String() {
-				t.Fatalf("reachability got %s want %s", got, want.String())
+			if got := v.run(`observers.map(r=>r.deref()===undefined?'0':'1').join('')`); got != want {
+				t.Fatalf("reachability got %s want %s", got, want)
 			}
 		})
 	}
+}
+
+// ephemeronGraph returns a random graph of seed, of 64 nodes, the first 8 of
+// them weak maps, with roots and strong and weak edges, and which nodes it
+// leaves reachable, as a string of 0 and 1 by node, which the WeakRefs in
+// observers must give.
+func ephemeronGraph(seed uint64) (string, string) {
+	const n = 64
+	type edge struct{ from, to int }
+	type ephemeron struct{ owner, key, value int }
+	next := seed
+	rand := func(limit int) int {
+		next = next*6364136223846793005 + 1442695040888963407
+		return int((next >> 32) % uint64(limit))
+	}
+	var strong []edge
+	var weak []ephemeron
+	for range 40 {
+		strong = append(strong, edge{rand(n), rand(n)})
+	}
+	for range 80 {
+		weak = append(weak, ephemeron{rand(8), rand(n), rand(n)})
+	}
+	// WeakMap.set replaces an earlier entry with the same owner and key.
+	entries := map[[2]int]int{}
+	for _, e := range weak {
+		entries[[2]int{e.owner, e.key}] = e.value
+	}
+	live := make([]bool, n)
+	roots := []int{rand(n), rand(n), rand(n), rand(n)}
+	for _, r := range roots {
+		live[r] = true
+	}
+	for changed := true; changed; {
+		changed = false
+		mark := func(i int) {
+			if !live[i] {
+				live[i] = true
+				changed = true
+			}
+		}
+		for _, e := range strong {
+			if live[e.from] {
+				mark(e.to)
+			}
+		}
+		for key, value := range entries {
+			if live[key[0]] && live[key[1]] {
+				mark(value)
+			}
+		}
+	}
+	var js strings.Builder
+	js.WriteString(`(()=>{const nodes=Array.from({length:64},(_,i)=>i<8?new WeakMap():{});`)
+	for i, e := range strong {
+		fmt.Fprintf(&js, "nodes[%d].p%d=nodes[%d];", e.from, i, e.to)
+	}
+	for _, e := range weak {
+		fmt.Fprintf(&js, "nodes[%d].set(nodes[%d],nodes[%d]);", e.owner, e.key, e.value)
+	}
+	fmt.Fprintf(&js, "globalThis.roots=[nodes[%d],nodes[%d],nodes[%d],nodes[%d]];", roots[0], roots[1], roots[2], roots[3])
+	js.WriteString(`globalThis.observers=nodes.map(n=>new WeakRef(n));})();void 0`)
+	var want strings.Builder
+	for _, alive := range live {
+		if alive {
+			want.WriteByte('1')
+		} else {
+			want.WriteByte('0')
+		}
+	}
+	return js.String(), want.String()
 }
