@@ -4,6 +4,12 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.1] - 2026-10-23
+
+### Added
+
+- `NewSharedBytecode`, `VM.EvalSharedBytecode` and `VM.EvalSharedBytecodeValue`: VMs that load the same bytecode keep the source text of its functions and the tables that give error stacks their line numbers in one copy for the process, where each VM copied them into its own memory. After loading, a VM of tifa's example shop holds 2.36 MiB less (8.99 MB rather than 11.46) and one of tifa's MUI test app 1.22 MiB less (4.16 MB rather than 5.44). `toString`, error stacks and line numbers stay the same. `MemorySize` and the memory limit no longer count those bytes. The copy is freed when the `SharedBytecode` and every VM that loaded it are closed, so a VM can outlive it. Render time and HTML do not change.
+
 ## [v0.28.0] - 2026-10-23
 
 ### Changed
@@ -309,7 +315,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.1...main
+[v0.28.1]: https://github.com/liustack/slowjs/compare/v0.28.0...v0.28.1
 [v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2

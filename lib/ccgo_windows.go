@@ -12664,11 +12664,11 @@ func _compute_bytecode_size(tls *libc.TLS, b uintptr, hp uintptr) {
 	}
 	if int32(*(*uint8)(unsafe.Pointer(b + 18))&0x4>>2) != 0 {
 		js_func_size = int32(uint64(js_func_size) + (libc.Uint64FromInt64(128) - Tsize_t(libc.UintptrFromInt32(0)+96)))
-		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource != 0 {
+		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource != 0 && !debugShared(b) {
 			memory_used_count = memory_used_count + 1
 			js_func_size = js_func_size + ((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len + int32(1))
 		}
-		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len != 0 {
+		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len != 0 && !debugShared(b) {
 			memory_used_count = memory_used_count + 1
 			*(*Tint64_t)(unsafe.Pointer(hp + 48)) += int64(1)
 			*(*Tint64_t)(unsafe.Pointer(hp + 56)) += int64((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len)
@@ -71529,8 +71529,8 @@ func _free_function_bytecode(tls *libc.TLS, rt1 uintptr, b uintptr) {
 	XJS_FreeAtomRT(tls, rt1, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Ffunc_name)
 	if int32(*(*uint8)(unsafe.Pointer(b + 18))&0x4>>2) != 0 {
 		XJS_FreeAtomRT(tls, rt1, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Ffilename)
-		Xjs_free_rt(tls, rt1, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf)
-		Xjs_free_rt(tls, rt1, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource)
+		debugFree(tls, rt1, b, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf)
+		debugFree(tls, rt1, b, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource)
 	}
 	_remove_gc_object(tls, b)
 	if TJSGCPhaseEnum(*(*uint8)(unsafe.Pointer(rt1 + 1184))&0xff>>0) == int32(EJS_GC_PHASE_REMOVE_CYCLES) && (*TJSMallocBlockHeader)(unsafe.Pointer(_js_rc(tls, b))).Fref_count != 0 {
@@ -75062,11 +75062,11 @@ func _JS_ReadFunctionTag(tls *libc.TLS, s uintptr) (r TJSValue) {
 			goto fail
 		}
 		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len != 0 {
-			(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf = Xjs_mallocz(tls, ctx1, uint64((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len))
+			(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf = debugAlloc(tls, s, b, uint64((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len))
 			if !((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf != 0) {
 				goto fail
 			}
-			if _bc_get_buf(tls, s, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf, uint32((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len)) != 0 {
+			if debugGetBuf(tls, s, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_buf, uint32((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fpc2line_len)) != 0 {
 				goto fail
 			}
 		}
@@ -75074,11 +75074,11 @@ func _JS_ReadFunctionTag(tls *libc.TLS, s uintptr) (r TJSValue) {
 			goto fail
 		}
 		if (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len != 0 {
-			(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource = Xjs_mallocz(tls, ctx1, uint64((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len))
+			(*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource = debugAlloc(tls, s, b, uint64((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len))
 			if !((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource != 0) {
 				goto fail
 			}
-			if _bc_get_buf(tls, s, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource, uint32((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len)) != 0 {
+			if debugGetBuf(tls, s, (*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource, uint32((*TJSFunctionBytecode)(unsafe.Pointer(b)).Fdebug.Fsource_len)) != 0 {
 				goto fail
 			}
 		}
@@ -76406,6 +76406,8 @@ func XJS_ReadObject(tls *libc.TLS, ctx uintptr, buf uintptr, buf_len Tsize_t, fl
 	libc.SetBitFieldPtr32Int32(s+52, libc.BoolInt32(flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(1)) != libc.Int32FromInt32(0)), 16, 0xff0000)
 	libc.SetBitFieldPtr32Int32(s+52, libc.BoolInt32(flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(2)) != libc.Int32FromInt32(0)), 0, 0xff)
 	libc.SetBitFieldPtr32Int32(s+52, libc.BoolInt32(flags&(libc.Int32FromInt32(1)<<libc.Int32FromInt32(3)) != libc.Int32FromInt32(0)), 24, 0xff000000)
+	// Added by internal/fixlib: read the debug information shared or not (lib/shareddebug.go).
+	readSharedDebug(ctx, flags)
 	if TBOOL(*(*uint32)(unsafe.Pointer(s + 52))&0xff00>>8)<<24>>24 != 0 {
 		(*TBCReaderState)(unsafe.Pointer(s)).Ffirst_atom = uint32(EJS_ATOM_END)
 	} else {

@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [v0.28.1] - 2026-10-23
+
+### 新增
+
+- `NewSharedBytecode`、`VM.EvalSharedBytecode` 和 `VM.EvalSharedBytecodeValue`：加载同一份字节码的多个 VM 共用一份函数源码和给错误栈提供行号的表，整个进程只存一份，以前每个 VM 各复制一份到自己的内存里。加载后，tifa 示例商店的一个 VM 少占 2.36 MiB（8.99 MB，原来 11.46 MB），tifa 的 MUI 测试应用少占 1.22 MiB（4.16 MB，原来 5.44 MB）。`toString`、错误栈和行号不变。`MemorySize` 和内存上限不再算这部分。`SharedBytecode` 和所有用它加载过的 VM 都关闭后，这份副本才释放，所以 VM 可以比它活得久。渲染时间和 HTML 不变。
+
 ## [v0.28.0] - 2026-10-23
 
 ### 变更
@@ -309,7 +315,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.1...main
+[v0.28.1]: https://github.com/liustack/slowjs/compare/v0.28.0...v0.28.1
 [v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2

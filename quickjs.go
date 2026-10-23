@@ -510,6 +510,9 @@ type vmState struct {
 	// broken is set once a Go panic went up through the engine, after
 	// which a call into javascript panics with brokenPanic.
 	broken bool
+	// shared holds the SharedBytecode the VM loaded, whose bytes its
+	// functions point into, until Close has freed the runtime.
+	shared []*SharedBytecode
 }
 
 // NewVM returns a newly created VM.
@@ -833,8 +836,12 @@ func (m *VM) Close() error {
 	vms.remove(m.id)
 	r := m.runtime
 	onClose := m.onClose
+	shared := m.shared
 	m.vmState = vmState{}
 	err := r.close()
+	for _, b := range shared {
+		b.drop()
+	}
 	for _, f := range onClose {
 		f()
 	}
@@ -1046,17 +1053,23 @@ func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
 	ps, err := libc.CString(string(bytecode))
 	if err != nil {
 		return r, fmt.Errorf("OOM")
 	}
 
-	defer libc.Xfree(tls, ps)
+	defer libc.Xfree(m.runtime.tls, ps)
 
+	return m.evalBytecode(ps, len(bytecode), lib.MJS_READ_OBJ_BYTECODE)
+}
+
+// evalBytecode reads the n bytes of bytecode at p with the flags of
+// JS_ReadObject and runs what it read.
+func (m *VM) evalBytecode(p uintptr, n int, flags int32) (r Value, err error) {
+	tls := m.runtime.tls
+	ctx := m.cContext
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
-	obj := lib.XJS_ReadObject(tls, ctx, ps, lib.Tsize_t(len(bytecode)), lib.MJS_READ_OBJ_BYTECODE)
+	obj := lib.XJS_ReadObject(tls, ctx, p, lib.Tsize_t(n), flags)
 	if isException(obj) {
 		return r, m.errFromException()
 	}

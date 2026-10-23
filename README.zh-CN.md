@@ -75,6 +75,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`VM.RunGC()`、`VM.MemorySize()` 和 `VM.GCThreshold()`**：马上跑一次 GC，读 VM 占的内存和下次 GC 的阈值，这样程序可以在两次调用 JavaScript 之间回收，再给下一次设好阈值。[详情](docs/fork-changes/go-api.md#rungc-memorysize-and-gcthreshold)
 - **`VM.RunYoungGC()`**：只回收上次 GC 以后新建的对象。服务端每次渲染后跑一次年轻 GC、隔一阵跑一次完整 GC，每次 GC 花的时间就和一次渲染的垃圾差不多。[详情](docs/fork-changes/young-collection.md)
 - **`VM.OnClose(f)`**：VM 关闭时运行 `f`，自己用表按 VM 存东西的包可以在这时删掉对应的项。[详情](docs/fork-changes/go-api.md#onclose)
+- **`NewSharedBytecode(bytecode)` 和 `VM.EvalSharedBytecode(b)`**：加载同一份字节码的多个 VM 共用一份函数源码和行号表，tifa 示例商店的每个 VM 少占 2.36 MiB，`toString` 和错误栈不变。[详情](docs/fork-changes/go-api.md#sharedbytecode)
 - **`temporal` 包**：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，由 go-intl 在 Go 里计算，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`temporal.Clock` 设定 `Temporal.Now` 用的时钟。当前程序体积测量见文档。[详情](docs/fork-changes/temporal.md)
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)

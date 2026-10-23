@@ -32,6 +32,7 @@ var finalChanges = []finalChange{
 	{"fixFastFrames", fixFastFrames, restoreFastFrames, fastFramesF, fastFrameReport},
 	{"fixEphemeron", fixEphemeron, restoreEphemeron, ephemeronF, ephemeronReport},
 	{"fixYoungGC", fixYoungGC, restoreYoungGC, youngF, youngReport},
+	{"fixSharedDebug", fixSharedDebug, restoreSharedDebug, sharedDebugF, sharedDebugReport},
 }
 
 // fixFinal makes the final changes in b, the generated file name.
