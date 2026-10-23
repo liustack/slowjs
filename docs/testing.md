@@ -114,6 +114,14 @@ go test -p 2 -timeout 120m -run Ephemeron ./internal/fixlib
 go test -p 2 -vet=off -run '^$' -bench EphemeronGC -benchtime 20x .
 ```
 
+Focused young collection checks (see [young-collection.md](fork-changes/young-collection.md#tests)):
+
+```sh
+go test -p 2 -vet=off -run 'YoungGC|Ephemeron' . ./lib
+go test -p 2 -vet=off -tags=libc.memgrind -run 'YoungGC|Ephemeron' . ./lib
+go test -p 2 -timeout 120m -run 'YoungGC|Ephemeron' ./internal/fixlib
+```
+
 ## test262
 
 `Test262` in `lib/` runs the test262 suite on the engine in `lib/`. It is skipped with `-short` and when the test262 archive is missing:

@@ -42,7 +42,7 @@ What a program that used modernc.org/quickjs v0.25.0 runs into:
 - **Panics.** A panic in the engine itself, or a Go function that calls `runtime.Goexit`, leaves the VM good only for `Close` ([details](fork-changes/calls-and-tls-frames.md#frames-freed-without-defer)).
 - **Endless recursion** throws a `RangeError` rather than killing the process ([details](fork-changes/errors-and-stacks.md#endless-recursion-throws-rangeerror)).
 - **No std, os or Worker in `lib`.** The engine leaves out the parts of QuickJS's shell that the Go API never reached: `lib` no longer has `js_init_module_std`, `js_init_module_os`, `js_std_loop`, `js_std_init_handlers` and six more. `StdAddHelpers`, `SetDefaultModuleLoader` and the bytecode of modules work as before, and a program is a few hundred KB smaller ([details](fork-changes/trimmed.md)).
-- **New API.** `NewBuiltin`, `VM.NewBuiltinFunction` and `Args`, `VM.NewArray`, `VM.SetStrip` with `type Strip`, `VM.RunGC`, `VM.MemorySize` and `VM.GCThreshold`, and `VM.SetShapeCache` with `DefaultShapeCache` ([details](fork-changes/go-api.md)).
+- **New API.** `NewBuiltin`, `VM.NewBuiltinFunction` and `Args`, `VM.NewArray`, `VM.SetStrip` with `type Strip`, `VM.RunGC`, `VM.RunYoungGC` ([details](fork-changes/young-collection.md)), `VM.MemorySize` and `VM.GCThreshold`, and `VM.SetShapeCache` with `DefaultShapeCache` ([details](fork-changes/go-api.md)).
 
 The [changelog](../CHANGELOG.md) has every change of each release.
 

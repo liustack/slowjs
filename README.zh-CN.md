@@ -67,6 +67,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`VM.SetStrip(s)`** 和 `type Strip`：`StripSource` 编译函数时不留源码，函数的 `toString` 显示 `[native code]`，`StripDebug` 不留行号和列号。[详情](docs/fork-changes/go-api.md#setstrip)
 - **Go 里建的 `*Error` 的 `Error()`** 是 `Name: Message`，和 `Error.prototype.toString` 的写法一样，以前是空字符串。从 JavaScript 拿到的错误仍是引擎原来的文本。[详情](docs/fork-changes/go-api.md#error-of-an-error-made-in-go)
 - **`VM.RunGC()`、`VM.MemorySize()` 和 `VM.GCThreshold()`**：马上跑一次 GC，读 VM 占的内存和下次 GC 的阈值，这样程序可以在两次调用 JavaScript 之间回收，再给下一次设好阈值。[详情](docs/fork-changes/go-api.md#rungc-memorysize-and-gcthreshold)
+- **`VM.RunYoungGC()`**：只回收上次 GC 以后新建的对象。服务端每次渲染后跑一次年轻 GC、隔一阵跑一次完整 GC，每次 GC 花的时间就和一次渲染的垃圾差不多。[详情](docs/fork-changes/young-collection.md)
 - **`VM.OnClose(f)`**：VM 关闭时运行 `f`，自己用表按 VM 存东西的包可以在这时删掉对应的项。[详情](docs/fork-changes/go-api.md#onclose)
 - **`temporal` 包**：`temporal.Register(vm)` 加上 `Temporal`，V8 有的类型和方法都有，由 go-intl 在 Go 里计算，内嵌 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`temporal.Clock` 设定 `Temporal.Now` 用的时钟。当前程序体积测量见文档。[详情](docs/fork-changes/temporal.md)
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
