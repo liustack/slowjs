@@ -1,7 +1,9 @@
 ---
-summary: 'The fork changes to regular expressions: skipping to where a regexp can start to match, not pushing the alternatives that cannot match at a position, and keeping the bytecode of compiled regexps per VM, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, and what to do when upstream changes the regexp engine'
+summary: 'The fork changes to regular expressions: skipping to where a regexp can start to match, not pushing the alternatives that cannot match at a position, keeping the bytecode of compiled regexps per VM, and parsing the classes of regexps with the v flag as the specification does, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, why a regexp still holds at most 254 capture groups, and what to do when upstream changes the regexp engine'
 read_when:
   - Changing lib/regexskip.go or fixRegexSkip
+  - Changing fixClassEscapes, or a regexp with the v flag throws a SyntaxError that Node does not
+  - A regexp throws "too many captures"
   - Changing lib/regexcache.go or fixRegexCache, or calling VM.SetRegExpCache
   - Measuring a regexp with BenchmarkRegexColors
   - fixlib stops on regexSites or regexCacheSites after an upstream release
@@ -10,7 +12,7 @@ read_when:
 
 # Regular expressions
 
-The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. All of them change only the generated Go, through `internal/fixlib`, with no C form.
+The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. These three change only the generated Go, through `internal/fixlib`, with no C form. The change to the classes of regexps with the v flag is a fix of the parser, with a C form in `lib/internal/patch/quickjs.diff`.
 
 ## Skip to where a regexp can match
 
@@ -68,3 +70,31 @@ Tests: `lib/regexcache_test.go`, whose `testdata/regexcache.txt` is what Node 24
 ### When upstream changes it
 
 If `fixlib` reports that a function of `regexCacheFuncs` changed (a fingerprint other than the one in `internal/fixlib/regexcachesites.go`), read the new code against `lib/regexcache.go`: `js_compile_regexp` must still only read a pattern and flags that are flat strings, return the bytecode as a new 8-bit string and not change it after, and every other return must still be of an exception. `hash_string`, `js_string_compare` and `js_string_memcmp` must still read a string as the cache hashes and compares it, `js_free_string` and the reference count (`js_rc`) must still free a string as the cache frees its entries, and `js_malloc_usable_size_rt` must still give the size the memory limit counts. Then put the new fingerprints in (`go run ./internal/fixlib -recache` prints them, even while the table is wrong) and run `go test -vet=off -run 'RegexCache|RegExpCache' ./lib .`. If it reports that the bytecode is not returned at the end of `js_compile_regexp`, or that it has another number of returns of `ret`, read the new end of the function and teach `addRegexCache` where the bytecode is made.
+
+## Classes of regexps with the v flag
+
+Release: Unreleased.
+
+The parser reads a class of a regexp with the v flag (unicodeSets) as the specification does. It threw a SyntaxError for three things the specification allows and Node accepts:
+
+- In a class, `\` before one of ``& ! # % , : ; < = > @ ` ~`` (a ClassSetReservedPunctuator) is that character, as in `[\&\;]` or `[\!\|]`. `get_class_atom` took `\-` already, and threw "invalid escape sequence" for the others. Outside a class, and in a class of a regexp with the u flag, these escapes stay a SyntaxError, as the specification says.
+- `get_class_atom` also reads a character outside a class, and checked it as in a class: a doubled punctuator such as `&&`, and `( ) [ ] { } / - |`, threw there too, so `/-/v`, `/a&&b/v` and `new RegExp('/', 'v')` did not compile. This is upstream's commit a479eff ("fixed regexp unicode set parsing", after the release this fork follows), which checks them only in a class.
+- `\q{...}` read its characters as outside a class. With a479eff alone, `\q{(}`, `\q{-}` and `\q{&&}` would then compile, which Node rejects. It reads them as in a class instead, which also lets `\q{\-}` and `\q{\&}` compile.
+
+shiki's JavaScript engine, which shiki offers in place of its Oniguruma engine where there is no WebAssembly, as in this engine, turns the grammars it highlights with into regexps with the v flag full of such escapes: of the 552 regexps it makes for its grammars of bash, css, go, html, json, typescript and yaml, the engine threw for 204. Now it compiles all of them but 3, which have more capture groups than a regexp can hold (see [At most 254 capture groups](#at-most-254-capture-groups)).
+
+Why this is safe: a pattern that compiled before compiles to the same bytecode. Only patterns that threw now compile, and only those the specification allows, as `TestRegexpVSemantics` checks against Node for every punctuator escaped and not, in and out of classes and `\q{}`, with the v flag, the u flag and neither. A native build of the patched C gives the same transcripts as Node.
+
+The change is in C, in `lib/internal/patch/quickjs.diff`, and `fixlib` makes its Go form in all 5 files: it puts the test of the punctuators before the switch over the character after `\` in `_get_class_atom`, adds `inclass != 0` to the two tests of a v regexp there, and passes `TRUE` for `inclass` in `_parse_class_string_disjunction`. It pins the text of `get_class_atom`, `parse_class_string_disjunction` and `lre_parse_escape`, which reads every other escape (`internal/fixlib/classescape.go`).
+
+Tests: `lib/regexpv_test.go`. `TestRegexpVSemantics` compares `testdata/regexpv.txt`, what Node prints for `testdata/regexpv.js`, line by line. `TestRegexpShiki` compiles the regexps of shiki in `testdata/shiki/regexps.json`, which `testdata/shiki/record.mjs` recorded while shiki 4.5.0 highlighted `testdata/shiki/input.md`, and runs each from every position of every line of that input: `testdata/shikire.txt` is what Node prints. `internal/fixlib/classescape_test.go` checks that `fixClassEscapes` makes its change once, takes it out and puts it back the same, and stops on a changed function.
+
+### When upstream changes it
+
+If `fixlib` reports that `get_class_atom`, `parse_class_string_disjunction` or `lre_parse_escape` changed (a fingerprint other than the one in `internal/fixlib/classescapesites.go`), read the new code against the three parts above. A release with upstream's commit a479eff has `inclass &&` in the two tests already: drop that part of `fixClassEscapes` and of the C hunk, keep the other two, and check that `\q{(}` still throws. Then put the new fingerprints in (`go run ./internal/fixlib -classescape` prints them) and run `go test -run 'RegexpV|RegexpShiki' ./lib` and `go test -run ClassEscapes ./internal/fixlib`.
+
+## At most 254 capture groups
+
+A regexp holds at most 254 capture groups, as in upstream QuickJS and QuickJS-NG, and throws `SyntaxError: too many captures` past that. V8 allows 32,767. shiki's JavaScript engine makes three regexps with more, for its grammars of typescript (551 and 555 groups) and html (912), so those two grammars still fail to highlight in this engine.
+
+The limit stays, as raising it changes the format of the bytecode of every regexp. The bytecode keeps the index of a group in one byte: in the ops that save where a group starts and ends, in the op that clears groups before a quantifier repeats, in the list of groups of a back reference, and in the header, which holds the count. Two bytes for each costs 2 bytes more for each group, 2 for each clearing op and 1 for each group of a back reference, and the header grows by 2. A match takes 16 bytes of heap for each group, for the array of where groups start and end, and the backtracking stack saves a group only when the match changes it, so no stack grows with the number of groups. A native build of the C with two-byte indices and a limit of 32,767 gives Node's transcripts, highlights the code of `testdata/shiki/input.md` with shiki as Node does, typescript and html included, and runs regexps with and without groups in the same time within the noise. The cost is the Go form: 10 functions of the generated files (`re_parse_captures`, `find_group_name`, `re_need_check_adv_and_capture_init`, `re_parse_term`, `compute_register_count`, `lre_compile`, `lre_exec_backtrack`, `lre_exec`, `lre_get_alloc_count` and `lre_get_capture_count`), in all 5 files and pinned by `fixlib`, the header constants, the table of op sizes, `BC_VERSION` (bytecode saved by an older engine holds regexps of the old format), and `lib/regexskip.go`, which reads the header and the sizes of the save ops. tifa's pages do not run shiki when they render: the journal of its example shop highlights with highlight.js, whose regexps the engine compiles.

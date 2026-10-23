@@ -71,6 +71,8 @@ go test -timeout 30m ./internal/fixlib                   # fixlib notices new re
 go test -run 'CallDepth|TLSStackBalance|CallAllocs' .    # depth limits, TLS balance, no Go allocation per call
 go test -run EnginePanic .                               # the TLS stack after a panic in the engine (also with -tags=libc.memgrind)
 go test -run 'Regex|Canonicalize' ./lib                 # regexps give what they gave before lreSkip, and what Node gives
+go test -vet=off -run 'RegexpV|RegexpShiki' ./lib        # classes of v regexps and shiki's regexps give what Node gives
+go test -run ClassEscapes ./internal/fixlib              # fixClassEscapes puts its change back and stops on a changed function
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
