@@ -23,9 +23,12 @@ Native C inlines JS_AtomToValue into the interpreter. Here it would be a
 call into Go, so the string or symbol of an atom that is not an integer is
 taken in C, as __JS_AtomToValue takes it.
 
-The other interpreter rules of fixlib (cells, pin, inline, poll, oneframe,
-alloca, expect, fastframes) work around Go's compiler and have no meaning
-for LLVM. Every replacement must match exactly once.
+goasmInterpreterRules in internal/fixlib/goasm.go lists every file of fixlib
+that changes the Go interpreter and says what the generated one does instead:
+a fast path written here, behavior the patched C already has, or a change
+that only works around Go's compiler. TestGoasmCoversInterpreterRules fails
+when a file has no row, or when a row names a change this file does not.
+Every replacement must match the number of times it gives.
 """
 import pathlib,sys
 
