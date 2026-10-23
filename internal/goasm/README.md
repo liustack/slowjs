@@ -51,12 +51,13 @@ compiler are required only to regenerate the assembly.
 the checks for what it can break, and generation stops on a violation. See
 the Stack rules section of `docs/fork-changes/go-assembly.md`.
 
-`build.py --help` lists the input paths. Build `allocas.cpp` as a shared LLVM
-pass plugin, then pass it with `--plugin`. Produce the Go signature JSON with:
+`regenerate.py` runs the whole pipeline from the repository: it unpacks the
+pinned QuickJS archive, applies the patch, builds `allocas.cpp` as an LLVM
+pass plugin, collects the Go signatures and runs `build.py`.
 
 ```sh
-GOOS=linux GOARCH=amd64 go list -tags goasm -json ./lib modernc.org/libc |
-  go run ./internal/goasm/cmd/signatures > signatures.json
+python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin           # write lib/goasm_*
+python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check   # fail on drift
 ```
 
 Run `python3 -m unittest discover -s internal/goasm` for generator checks.
