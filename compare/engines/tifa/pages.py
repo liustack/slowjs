@@ -236,7 +236,7 @@ def table(kind, title, engines, base_kind=None, tag=None):
         r = load_merged(f"{e}-{k}")
         name = LABEL.get(e, e)
         if callable(kind):
-            name += f" ({'own Intl' if k == 'native' else 'polyfill'})"
+            name += f" ({'own Intl' if k.endswith('native') else 'polyfill'})"
         if r is None:
             print(f"| {name} | {NOT_RUN.get((e, k), 'not run')} | | | |")
             continue
