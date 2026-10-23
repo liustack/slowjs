@@ -74,12 +74,14 @@ func (v *shapeVM) shapes() int64 {
 }
 
 // inGCList reports whether the GC object at p is in the list of GC objects
-// of the runtime, where a live shape is.
+// of the runtime or in its young list (see younggc.go), where a live shape
+// is.
 func (v *shapeVM) inGCList(p uintptr) bool {
-	head := v.rt + unsafe.Offsetof(TJSRuntime{}.Fgc_obj_list)
-	for el := (*Tlist_head)(unsafe.Pointer(head)).Fnext; el != head; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
-		if el == p {
-			return true
+	for _, head := range []uintptr{v.rt + unsafe.Offsetof(TJSRuntime{}.Fgc_obj_list), youngHead(v.rt)} {
+		for el := (*Tlist_head)(unsafe.Pointer(head)).Fnext; el != head; el = (*Tlist_head)(unsafe.Pointer(el)).Fnext {
+			if el == p {
+				return true
+			}
 		}
 	}
 	return false

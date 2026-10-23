@@ -4446,6 +4446,8 @@ func XJS_NewRuntime2(tls *libc.TLS, mf uintptr, opaque uintptr) (r uintptr) {
 	v1 = rt + 1136
 	(*Tlist_head)(unsafe.Pointer(v1)).Fprev = v1
 	(*Tlist_head)(unsafe.Pointer(v1)).Fnext = v1
+	// Added by internal/fixlib: set up the young list (lib/younggc.go).
+	youngInit(rt)
 	v1 = rt + 1152
 	(*Tlist_head)(unsafe.Pointer(v1)).Fprev = v1
 	(*Tlist_head)(unsafe.Pointer(v1)).Fnext = v1
@@ -12113,6 +12115,9 @@ func x__JS_FreeValueRT(tls *libc.TLS, rt1 uintptr, _v TJSValue) {
 			if TJSGCPhaseEnum(*(*uint8)(unsafe.Pointer(rt1 + 1184))&0xff>>0) == int32(EJS_GC_PHASE_NONE) {
 				_free_zero_refcount(tls, rt1)
 			}
+		} else {
+			// Added by internal/fixlib: an object only the garbage of a young collection held (lib/younggc.go).
+			youngDefer(tls, rt1, p3)
 		}
 	case libc.Uint32FromInt32(EJS_TAG_BIG_INT):
 		p4 = *(*uintptr)(unsafe.Add(unsafe.Pointer(&localbp), 16))
@@ -12168,7 +12173,8 @@ func _add_gc_object(tls *libc.TLS, rt uintptr, h uintptr, type1 TJSGCObjectTypeE
 	_, _, _, _ = v1, v2, v3, v4
 	libc.SetBitFieldPtr8Uint8(_js_rc(tls, h)+3, libc.Uint8FromInt32(0), 7, 0x80)
 	libc.SetBitFieldPtr8Uint8(_js_rc(tls, h)+3, uint8(type1), 0, 0x7f)
-	v1 = rt + 1136
+	// Added by internal/fixlib: a new GC object is young (lib/younggc.go).
+	v1 = youngHead(rt)
 	v2 = h
 	v3 = (*Tlist_head)(unsafe.Pointer(v1)).Fprev
 	v4 = v1
@@ -12548,6 +12554,8 @@ func _gc_free_cycles(tls *libc.TLS, rt uintptr) {
 }
 
 func _JS_RunGCInternal(tls *libc.TLS, rt uintptr, remove_weak_objects TBOOL) {
+	// Added by internal/fixlib: the young objects become old first (lib/younggc.go).
+	youngSplice(rt)
 	// Added by internal/fixlib: conditional WeakMap edges (lib/ephemeron.go).
 	if gcEphemeron(tls, rt, remove_weak_objects) {
 		return
@@ -12686,6 +12694,8 @@ func _compute_value_size(tls *libc.TLS, _val TJSValue, hp uintptr) {
 }
 
 func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
+	// Added by internal/fixlib: the young objects become old first (lib/younggc.go).
+	youngSplice(rt)
 	bp := tls.Alloc(64)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var abuf, b, bf, ctx, el, el1, fd, gp, hp, it, m, me, p, p1, pr, prs, sh, sh1, sh2, var_refs, v2 uintptr
@@ -13263,6 +13273,10 @@ func XJS_ComputeMemoryUsage(tls *libc.TLS, rt uintptr, s uintptr) {
 }
 
 func XJS_DumpMemoryUsage(tls *libc.TLS, fp uintptr, s uintptr, rt uintptr) {
+	// Added by internal/fixlib: the young objects become old first (lib/younggc.go).
+	if rt != 0 {
+		youngSplice(rt)
+	}
 	bp := tls.Alloc(112)
 	// Changed by internal/fixlib: the frame is freed before each return, not by a defer (see fixNoDefer).
 	var class_id, i, usage_size_ok int32
@@ -44766,6 +44780,9 @@ func _async_func_free(tls *libc.TLS, rt uintptr, s uintptr) {
 			if TJSGCPhaseEnum(*(*uint8)(unsafe.Pointer(rt + 1184))&0xff>>0) == int32(EJS_GC_PHASE_NONE) {
 				_free_zero_refcount(tls, rt)
 			}
+		} else {
+			// Added by internal/fixlib: an object only the garbage of a young collection held (lib/younggc.go).
+			youngDefer(tls, rt, s)
 		}
 	}
 }
