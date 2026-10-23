@@ -11,33 +11,46 @@ compiler are required only to regenerate the assembly.
 
 ## Pipeline
 
-1. Preprocess the patched C and ask Clang for its typed AST. `prepare.py`
+1. `cpatch.py` gives the C interpreter the fast paths that `internal/fixlib`
+   adds only to the Go interpreter: property reads that walk the prototype
+   chain past exotic objects (fixFieldChain), the usual `===` and `==` pairs
+   (fixEq), and bitwise operators on two numbers (fixBitwise). It also takes
+   the string or symbol of an atom in C. Each replacement must match the
+   expected number of times.
+2. Preprocess the patched C and ask Clang for its typed AST. `prepare.py`
    retains the interpreter and selected inline helpers. Every remaining
-   call becomes an explicitly typed external function with the SysV ABI.
-2. Optimize at `-O2`, with a frame pointer, no red zone and signed wrapping.
-   `allocas.cpp` moves all addressable locals to the caller's TLS allocation.
-   A dynamic alloca calls `goasmAllocate`. Both small locals and a small alloca
-   share the same TLS slot, preserving the fork's recursion accounting.
-3. `lower.py` checks the compiler frame shape, converts its local addresses
+   call becomes an explicitly typed external function with the SysV ABI. A
+   call of the interpreter to itself takes the next TLS slot in C and enters
+   the new frame through `goasm_reenter`, with no Go code in between. A call
+   to a native function takes the slot and calls the function directly. The
+   stack depth check reads the TLS slot index in C.
+3. Optimize at `-O2`, with a frame pointer, no red zone and signed wrapping.
+   `allocas.cpp` moves all addressable locals to the caller's TLS slot and
+   turns the computed goto table into offsets from itself. A dynamic alloca
+   of up to 768 bytes follows the locals in the slot. A larger one calls
+   `goasmAllocate`, which mallocs it.
+4. `lower.py` checks the compiler frame shape, converts its local addresses
    to fixed offsets in a Go frame and rejects escaping Go stack addresses.
-   It replaces C's R14 with a fixed stack slot. Scratch registers are saved
-   and restored using MOV, preserving flags. The actual R14 remains Go's g.
-   Computed goto tables use relative offsets within the emitted text.
-4. Assemble the transformed GNU syntax offline. `elf2go.py` emits machine
+   R14 is an ordinary C register: Go's ABI0 leaves R14 undefined, and Go
+   reloads g from thread local storage around ABI0 calls and in signal
+   handlers. Dispatch must jump through a register.
+5. Assemble the transformed GNU syntax offline. `elf2go.py` emits machine
    bytes as Go assembler directives, with real symbolic Go CALL instructions
    for every external relocation. It rejects other relocations. Go supplies
    the stack growth prologue, frame pointer and return sequence.
-5. `bridges.py` emits SysV argument marshaling, callee-saved register saves,
-   ABI0 calls and typed Go wrappers. Signatures come from the active Go files,
-   including libc. The wrappers make indirect calls using ccgo's function
-   value representation. The external engine memory contains no movable Go
-   stack addresses.
+6. `bridges.py` emits, for each external call, a stub that saves the SysV
+   callee-saved registers (R14 included), moves the arguments to an ABI0
+   frame and calls Go. When the target is a function of `lib` with matching
+   argument sizes, the stub calls it directly with the TLS in place of the
+   environment. Other targets get a typed Go wrapper. Indirect calls use
+   ccgo's function value representation. The external engine memory
+   contains no movable Go stack addresses.
 
 `build.py --help` lists the input paths. Build `allocas.cpp` as a shared LLVM
 pass plugin, then pass it with `--plugin`. Produce the Go signature JSON with:
 
 ```sh
-GOOS=linux GOARCH=amd64 go list -json ./lib modernc.org/libc |
+GOOS=linux GOARCH=amd64 go list -tags goasm -json ./lib modernc.org/libc |
   go run ./internal/goasm/cmd/signatures > signatures.json
 ```
 

@@ -20,19 +20,29 @@ version. It does not use goc or c2goasm. See its README for the pipeline.
 
 All addressable C locals move to stable TLS memory after LLVM optimization.
 The interpreter takes one 2048-byte TLS slot, matching the existing linux/amd64
-slot count. Small dynamic allocations share that slot. Larger ones use libc's
-allocator, as the ccgo interpreter does. The fixed Go frame is 560 bytes.
-Go emits its stack growth prologue and frame pointer maintenance.
+slot count. A dynamic allocation of up to 768 bytes shares that slot. Larger
+ones use libc's allocator, as the ccgo interpreter does. The fixed Go frame
+is 608 bytes. Go emits its stack growth prologue and frame pointer
+maintenance.
 
-The generated body never uses the actual R14 or RBP as C registers. A fixed
-stack slot represents LLVM's R14, with checked instruction rewrites. RBP stays
-Go's frame pointer. The generator rejects dynamic SP changes and addresses of
-Go stack locals. The compiler red zone is disabled.
+The generated body uses R14 as an ordinary C register. Go's ABI0 leaves R14
+undefined: Go reloads g from thread local storage after an ABI0 call and in
+signal handlers, and every bridge saves R14 with the other SysV callee-saved
+registers. RBP stays Go's frame pointer. The generator rejects dynamic SP
+changes and addresses of Go stack locals. The compiler red zone is disabled.
 
-Typed bridges convert SysV arguments and results to Go ABI0 and preserve C's
-callee-saved registers across Go calls. They pass the current TLS to the Go
-engine. The entry's typed TLS argument keeps that Go pointer reachable. The
-raw assembly frame contains no Go heap pointers or published Go stack pointers.
+A call of the interpreter to itself stays in assembly: it takes the next TLS
+slot as the Go interpreter does and enters the new frame through a small
+stub, so Go still checks the goroutine stack. A call to a native function
+takes the slot and calls the function through a bridge. Typed bridges convert
+SysV arguments and results to Go ABI0. A bridge to a function of `lib` calls
+it directly, with the TLS in place of the environment. The raw assembly frame
+contains no Go heap pointers or published Go stack pointers.
+
+The C interpreter carries the fast paths that `internal/fixlib` adds to the
+Go interpreter for property reads along the prototype chain, `===` and `==`,
+and bitwise operators on numbers. Fast paths that live in Go helpers, such as
+atom lookup, shape caches and object literals, apply to both interpreters.
 
 Computed goto remains enabled. Relative jump tables stay inside the generated
 text. External calls are symbolic Go CALL instructions. Other ELF relocations
