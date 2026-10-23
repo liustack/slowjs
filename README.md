@@ -2,7 +2,7 @@
 
 Run today's npm code unchanged inside one static Go binary.
 
-slowjs is a pure Go JavaScript engine for rendering React on the server, with no cgo and no Node process. It is QuickJS translated to Go, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it.
+slowjs renders React slower than Node and faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS translated to Go and tuned for server rendering, built for tifa, a Go framework for React pages.
 
 It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
 

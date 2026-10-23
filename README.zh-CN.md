@@ -1,8 +1,8 @@
 # slowjs
 
-npm 上的现代 JavaScript 原样跑在一个静态 Go 程序里。
+在一个静态 Go 程序里原样运行今天的 npm 代码。
 
-slowjs 是纯 Go 写的 JavaScript 引擎，用来在服务端渲染 React，不用 cgo，也不用 Node 进程。它是转成 Go 的 QuickJS，为 [tifa](https://github.com/liustack/tifa) 而做并一直维护，tifa 是一个用它渲染 React 页面的 Go 框架。
+slowjs 渲染 React 比 Node 慢，比其他任何纯 Go JavaScript 引擎都快，不用 cgo，也不用 Node 进程。它是翻译成 Go、为服务端渲染调优过的 QuickJS，为 tifa 而做，tifa 是一个渲染 React 页面的 Go 框架。
 
 给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
 
