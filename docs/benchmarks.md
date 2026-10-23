@@ -1,5 +1,5 @@
 ---
-summary: 'How liustack/quickjs compares with the other pure Go JavaScript engines that run current JavaScript: what each supports, how fast each is on server-side rendering and on general workloads, where liustack/quickjs is far behind, what limits each has, and how to run the comparison again'
+summary: 'How slowjs compares with the other pure Go JavaScript engines that run current JavaScript: what each supports, how fast each is on server-side rendering and on general workloads, where slowjs is far behind, what limits each has, and how to run the comparison again'
 read_when:
   - Saying anything in public about how this engine compares with other Go engines
   - Choosing a pure Go JavaScript engine for a job
@@ -10,29 +10,29 @@ read_when:
 
 # Pure Go JavaScript engines compared
 
-Run of 2026-10-23: liustack/quickjs v0.27.2 against four other engines that
+Run of 2026-10-23: slowjs v0.27.2 (named liustack/quickjs then, and `liustack-quickjs` in the tables of the results files) against four other engines that
 build with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
 GCP c2d-standard-8 (AMD EPYC 7B13), Linux 7.3, Go 1.27.2, every engine
 process on one CPU with its hyperthread sibling idle, GOMAXPROCS=1. The full
 tables are in
 [`compare/engines/results/2026-10-23-v0.27.2-gcp.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp.md),
-the raw numbers in the `.json` next to it. The liustack/quickjs numbers are
+the raw numbers in the `.json` next to it. The slowjs numbers are
 from the engine code of the v0.27.2 tag. The earlier runs are in
 [History](#history).
 
 ## In short
 
 - **Support.** go-quickjs and goant pass 99.3% of test262 (language,
-  built-ins and intl402), Temporal and Intl included. liustack/quickjs
+  built-ins and intl402), Temporal and Intl included. slowjs
   passes 83.1%: its Intl now has every constructor, but the comparison
   runs it without Temporal (package `temporal` is not registered), and
   Temporal is 13426 of the runs. moejs passes 79.6% and has no Intl. On
   ES2023 and older, every engine passes 99.1% to 99.3%.
 - **Server-side rendering.** On the server bundles of real tifa apps,
-  liustack/quickjs needs the least CPU of the pure Go engines (see
+  slowjs needs the least CPU of the pure Go engines (see
   [tifa pages](#tifa-pages)). On the smaller React page of the speed table,
   moejs needs 7% less CPU than us and go-quickjs 5% more.
-- **General speed.** liustack/quickjs is not the fastest pure Go engine.
+- **General speed.** slowjs is not the fastest pure Go engine.
   go-quickjs without its JIT (its default) scores 1.8 times as high on the
   V8 suite, parses and writes JSON in 56% to 62% of the time, runs regular
   expressions 3.5 times faster and is faster on 55 of 63 QuickJS micro
@@ -41,10 +41,10 @@ from the engine code of the v0.27.2 tag. The earlier runs are in
 - **Far behind.** Empty loops and number arithmetic take 2.0 to 2.9 times
   the median of the other pure Go engines, V8's Crypto 2.1 times, property
   reads, array reads and strings to integers about 2 times (see
-  [Where liustack/quickjs is far behind](#where-liustackquickjs-is-far-behind)).
+  [Where slowjs is far behind](#where-slowjs-is-far-behind)).
   `Date.now()`, at 6.9 times in the v0.26.17 run, is now 1.07 times: since
   v0.27.0 the engine reads Go's clocks.
-- **Where liustack/quickjs leads.** The tifa pages, little memory per VM
+- **Where slowjs leads.** The tifa pages, little memory per VM
   (1.2 MiB, modernc 1.1 MiB, moejs 1.4 MiB, go-quickjs 2.1 MiB), and a
   memory limit that counts live memory and stops a script exactly at it,
   which only modernc shares. It is about twice as fast as
@@ -84,7 +84,7 @@ small scripts with a known answer, Intl compared with Node 24. Between two
 runs of the same code a few tests change (modernc-quickjs 4 fewer,
 goant-interp 9 fewer in the v0.26.17 run).
 
-liustack/quickjs has had Temporal since v0.27.0, in package `temporal`, but
+slowjs has had Temporal since v0.27.0, in package `temporal`, but
 the comparison registers only package `intl`, so Temporal and the intl402
 tests of Temporal (4058 of the 6742 intl402 runs) fail. Apart from them,
 intl402 passes 2448 of 2684 (91.2%). Since v0.27.0 its Intl has every constructor,
@@ -159,7 +159,7 @@ liustack-quickjs's, with the router's render timestamps (`u:` and 13
 digits) masked. Every page per engine:
 [`compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md).
 
-On these pages liustack/quickjs is the fastest pure Go JS engine for SSR:
+On these pages slowjs is the fastest pure Go JS engine for SSR:
 every other pure Go engine needs more CPU per page, or does not render it.
 
 - Pages without Intl: go-quickjs-interp needs 24% more, moejs 26% more,
@@ -279,7 +279,7 @@ the polyfill alike. go-quickjs-jit fails on the same two with its own Intl,
 and on 18 of the 20 pages on the polyfill (see
 [Problems found](#problems-found-in-other-engines)).
 
-## Where liustack/quickjs is far behind
+## Where slowjs is far behind
 
 Every QuickJS micro benchmark, V8 suite benchmark and workload of the speed
 table where liustack-quickjs needs at least twice the time of the median of
@@ -420,7 +420,7 @@ File and line numbers are for the versions in the Engines table.
   program, fast JSON and strings, little memory. Its fixed call depth, its
   register limit and the lack of Intl rule out large bundles like the tifa
   shop.
-- **modernc-quickjs:** the upstream of liustack/quickjs. Slower on every
+- **modernc-quickjs:** the upstream of slowjs. Slower on every
   workload.
 
 ## Problems found in other engines
@@ -595,7 +595,7 @@ At each release, follow "Engine comparison" in
 
 ## History
 
-| Run | liustack/quickjs | Machine | Notes |
+| Run | slowjs | Machine | Notes |
 |---|---|---|---|
 | [2026-10-23-v0.27.2-gcp](../compare/engines/results/2026-10-23-v0.27.2-gcp.md) | v0.27.2 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in, the same 80215 runs pass. React page 15.1 ms of CPU rather than 14.9, V8 score 835 rather than 854, JSON and regexps 1% to 3% faster. `string_to_int` and `array_read` cross the far-behind line, `string_to_float` drops under it |
 | [2026-10-22-v0.27.1-gcp](../compare/engines/results/2026-10-22-v0.27.1-gcp.md) | v0.27.1 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-22-v0.27.1-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in. React page 14.9 ms of CPU rather than 16.3, V8 score 854 rather than 800, `Date.now()` no longer far behind, all 13 Intl probes pass |

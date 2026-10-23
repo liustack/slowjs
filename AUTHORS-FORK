@@ -1,4 +1,5 @@
-# This file lists the authors of github.com/liustack/quickjs, the fork, for
+# This file lists the authors of github.com/liustack/slowjs (named
+# github.com/liustack/quickjs until v0.27.x), the fork, for
 # copyright purposes: "The liustack/quickjs Authors" in LICENSE-MIT and in the
 # headers of the files the fork created. AUTHORS lists the authors of
 # modernc.org/quickjs, as upstream has it.

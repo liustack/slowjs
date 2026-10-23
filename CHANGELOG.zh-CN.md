@@ -1,8 +1,16 @@
 # 更新记录
 
-记录 `github.com/liustack/quickjs` 里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/fork-changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
+记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/fork-changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
 ## [Unreleased]
+
+### Changed
+
+- **不兼容：** 模块从 `github.com/liustack/quickjs` 改名为 `github.com/liustack/slowjs`，根包从 `quickjs` 改名为 `slowjs`。迁移方法：把 import 路径（`lib`、`intl`、`temporal`、`fmt` 也一样）和包名都换掉，比如 `slowjs.NewVM()`。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 现在是 `slowjs_intl_nonames` 和 `slowjs_intl_nocjdict`，以 `quickjs:` 开头的错误和 panic 信息现在以 `slowjs:` 开头。引擎还是同一个。v0.27.x 及更早的版本仍可在旧路径 `github.com/liustack/quickjs` 下使用。
+
+### Removed
+
+- **不兼容：** 去掉 freebsd/amd64、freebsd/arm64、linux/386、linux/arm、linux/loong64、linux/ppc64le、linux/riscv64、linux/s390x 和 windows/arm64。slowjs 支持 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。需要被去掉的平台，请留在旧路径下的 v0.27.x。
 
 ## [v0.27.3] - 2026-10-23
 
@@ -303,7 +311,7 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.27.3...main
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
