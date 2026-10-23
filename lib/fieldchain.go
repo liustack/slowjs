@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT AND BSD-3-Clause
 // The fork's code here is under the MIT license in LICENSE-MIT at the root of
 // this repository. Parts follow QuickJS (Copyright (c) 2017-2021 Fabrice

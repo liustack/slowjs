@@ -1,4 +1,4 @@
-<!-- Copyright (c) 2026 The liustack/quickjs Authors. -->
+<!-- Copyright (c) 2026 The slowjs Authors. -->
 <!-- SPDX-License-Identifier: MIT -->
 <!-- The generator and inventory are MIT under LICENSE-MIT at the repository root. -->
 <!-- The copied third-party notices below retain their own terms. -->

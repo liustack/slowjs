@@ -1,4 +1,4 @@
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
@@ -101,7 +101,7 @@ def generate(root):
         add(meta, texts, 'polyfill')
         pending.extend(item.get('dependencies', {}))
 
-    lines = ['<!-- Copyright (c) 2026 The liustack/quickjs Authors. -->',
+    lines = ['<!-- Copyright (c) 2026 The slowjs Authors. -->',
              '<!-- SPDX-License-Identifier: MIT -->',
              '<!-- The generator and inventory are MIT under LICENSE-MIT at the repository root. -->',
              '<!-- The copied third-party notices below retain their own terms. -->', '',
