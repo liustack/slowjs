@@ -10,15 +10,15 @@ read_when:
 
 # Pure Go JavaScript engines compared
 
-Run of 2026-10-22: liustack/quickjs v0.27.1 against four other engines that
+Run of 2026-10-23: liustack/quickjs v0.27.2 against four other engines that
 build with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
 GCP c2d-standard-8 (AMD EPYC 7B13), Linux 7.3, Go 1.27.2, every engine
 process on one CPU with its hyperthread sibling idle, GOMAXPROCS=1. The full
 tables are in
-[`compare/engines/results/2026-10-22-v0.27.1-gcp.md`](../compare/engines/results/2026-10-22-v0.27.1-gcp.md),
+[`compare/engines/results/2026-10-23-v0.27.2-gcp.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp.md),
 the raw numbers in the `.json` next to it. The liustack/quickjs numbers are
-from the engine code of the v0.27.1 tag. The runs on v0.26.16 and v0.26.17
-are in [History](#history).
+from the engine code of the v0.27.2 tag. The earlier runs are in
+[History](#history).
 
 ## In short
 
@@ -31,21 +31,21 @@ are in [History](#history).
 - **Server-side rendering.** On the server bundles of real tifa apps,
   liustack/quickjs needs the least CPU of the pure Go engines (see
   [tifa pages](#tifa-pages)). On the smaller React page of the speed table,
-  moejs needs 7% less CPU than us and go-quickjs 3% more.
+  moejs needs 7% less CPU than us and go-quickjs 5% more.
 - **General speed.** liustack/quickjs is not the fastest pure Go engine.
   go-quickjs without its JIT (its default) scores 1.8 times as high on the
-  V8 suite, parses and writes JSON in 55% to 62% of the time, runs regular
+  V8 suite, parses and writes JSON in 56% to 62% of the time, runs regular
   expressions 3.5 times faster and is faster on 55 of 63 QuickJS micro
-  benchmarks. moejs writes JSON 3.8 times faster and builds strings 1.3
+  benchmarks. moejs writes JSON 3.7 times faster and builds strings 1.3
   times faster.
-- **Far behind.** Empty loops and number arithmetic take 2.1 to 2.8 times
-  the median of the other pure Go engines, V8's Crypto 2.0 times, property
-  reads and strings to floats about 2 times (see
+- **Far behind.** Empty loops and number arithmetic take 2.0 to 2.9 times
+  the median of the other pure Go engines, V8's Crypto 2.1 times, property
+  reads, array reads and strings to integers about 2 times (see
   [Where liustack/quickjs is far behind](#where-liustackquickjs-is-far-behind)).
-  `Date.now()`, at 6.9 times in the v0.26.17 run, is now 1.08 times: since
+  `Date.now()`, at 6.9 times in the v0.26.17 run, is now 1.07 times: since
   v0.27.0 the engine reads Go's clocks.
 - **Where liustack/quickjs leads.** The tifa pages, little memory per VM
-  (1.2 MiB, modernc 1.1 MiB, moejs 1.5 MiB, go-quickjs 2.0 MiB), and a
+  (1.2 MiB, modernc 1.1 MiB, moejs 1.4 MiB, go-quickjs 2.1 MiB), and a
   memory limit that counts live memory and stops a script exactly at it,
   which only modernc shares. It is about twice as fast as
   modernc.org/quickjs, the C-to-Go translation it started from.
@@ -54,7 +54,7 @@ are in [History](#history).
 
 | Engine | Version | What it is | How the comparison uses it |
 |---|---|---|---|
-| liustack-quickjs | v0.27.1 | Bellard's QuickJS 2026-06-04 translated from C to Go (ccgo), with hand-written fast paths | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
+| liustack-quickjs | v0.27.2 | Bellard's QuickJS 2026-06-04 translated from C to Go (ccgo), with hand-written fast paths | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
 | modernc-quickjs | v0.25.0 | the same translation, upstream of the fork | as above |
 | go-quickjs-interp | v0.28.0 | QuickJS-NG rewritten in Go | `quickjs.Compile` once, `RunProgram`, JIT off, the default |
 | go-quickjs-jit | v0.28.0 | the same with `-tags quickjs_jit` and `WithJIT()` | as above, the JIT is marked experimental |
@@ -105,30 +105,30 @@ against liustack-quickjs.
 
 | Engine | React SSR render | V8 suite score | JSON.parse | JSON.stringify | String building | RegExp | QuickJS micro benchmarks (geomean time) |
 |---|---|---|---|---|---|---|---|
-| liustack-quickjs | 14.9 | 854 | 3.86 | 5.15 | 6.45 | 48.1 | 1.00 |
-| modernc-quickjs | 31.7 (2.13) | 383 (0.45) | 6.37 (1.65) | 9.32 (1.81) | 12.9 (2.00) | 84.1 (1.75) | 2.08 |
-| go-quickjs-interp | 15.4 (1.03) | 1517 (1.78) | 2.13 (0.55) | 3.17 (0.62) | 8.20 (1.27) | 13.6 (0.28) | 0.62 |
-| go-quickjs-jit | 18.5 (1.24) | 3737 (4.38) | 2.19 (0.57) | 3.27 (0.63) | 7.67 (1.19) | 13.6 (0.28) | 0.33 |
-| goant-interp | 34.2 (2.30) | 350 (0.41) | 1.43 (0.37) | 2.66 (0.52) | 12.2 (1.89) | 61.9 (1.29) | 3.35 |
-| goant-jit | 27.8 (1.87) | 1142 (1.34) | 1.40 (0.36) | 2.67 (0.52) | 10.3 (1.60) | 61.0 (1.27) | 1.15 |
-| moejs | 13.9 (0.93) | 692 (0.81) | 1.86 (0.48) | 1.35 (0.26) | 4.83 (0.75) | 40.1 (0.83) | 0.85 |
+| liustack-quickjs | 15.1 | 835 | 3.75 | 5.08 | 6.37 | 47.3 | 1.00 |
+| modernc-quickjs | 31.6 (2.09) | 376 (0.45) | 6.31 (1.68) | 9.31 (1.83) | 12.6 (1.98) | 84.4 (1.78) | 2.07 |
+| go-quickjs-interp | 15.8 (1.05) | 1522 (1.82) | 2.09 (0.56) | 3.15 (0.62) | 8.04 (1.26) | 13.7 (0.29) | 0.61 |
+| go-quickjs-jit | 18.6 (1.23) | 3718 (4.45) | 2.20 (0.59) | 3.30 (0.65) | 7.64 (1.20) | 13.4 (0.28) | 0.32 |
+| goant-interp | 34.5 (2.28) | 347 (0.42) | 1.42 (0.38) | 2.68 (0.53) | 12.5 (1.96) | 60.6 (1.28) | 3.29 |
+| goant-jit | 27.9 (1.85) | 1144 (1.37) | 1.42 (0.38) | 2.71 (0.53) | 10.3 (1.62) | 61.4 (1.30) | 1.13 |
+| moejs | 14.0 (0.93) | 703 (0.84) | 1.90 (0.51) | 1.39 (0.27) | 4.82 (0.76) | 39.6 (0.84) | 0.84 |
 
 Wall time tells the same story with one difference: go-quickjs's median
 render takes less wall time than its CPU time, because its garbage
 collector also works between operations. On the React page its median is
-13.8 ms against our 14.9 ms. CPU time is what a busy server pays.
+13.9 ms against our 15.0 ms. CPU time is what a busy server pays.
 
 Cold start and memory, with the React bundle (117 KB):
 
 | Engine | New VM, ms | New VM + load from source | New VM + load compiled program | First render | RSS per VM, MiB | Go heap per VM, MiB |
 |---|---|---|---|---|---|---|
-| liustack-quickjs | 0.221 | 14.4 | 1.68 | 15.2 | 1.2 | 0 |
-| modernc-quickjs | 0.269 | 17.6 | 2.25 | 32.1 | 1.1 | 0 |
-| go-quickjs-interp | 0.208 | 12.9 | 1.22 | 22.0 | 2.0 | 5.5 |
-| go-quickjs-jit | 0.272 | 13.2 | 1.29 | 82.8 | 18.8 | 17.8 |
-| goant-interp | 0.614 | 17.3 | n/a | 39.9 | 8.3 | 7.1 |
-| goant-jit | 0.573 | 16.5 | n/a | 42.3 | 9.0 | 7.2 |
-| moejs | 0.100 | 15.4 | 0.563 | 12.2 | 1.5 | 1.1 |
+| liustack-quickjs | 0.209 | 13.9 | 1.68 | 15.5 | 1.2 | 0 |
+| modernc-quickjs | 0.279 | 17.5 | 2.28 | 31.7 | 1.1 | 0 |
+| go-quickjs-interp | 0.231 | 13.0 | 1.23 | 22.3 | 2.1 | 5.5 |
+| go-quickjs-jit | 0.274 | 13.2 | 1.30 | 82.9 | 18.9 | 17.8 |
+| goant-interp | 0.629 | 17.3 | n/a | 39.9 | 7.6 | 6.9 |
+| goant-jit | 0.580 | 16.2 | n/a | 42.2 | 8.9 | 7.2 |
+| moejs | 0.104 | 15.3 | 0.565 | 12.1 | 1.4 | 1.1 |
 
 Memory: what the process grows by per VM with 100 VMs alive, each with the
 bundle loaded and one page rendered. goant's Program serves only the runtime
@@ -157,15 +157,15 @@ C QuickJS (`qjs`, built with its own Makefile) is timed in the script with
 wall time on a CPU of its own. Every page's HTML is compared with
 liustack-quickjs's, with the router's render timestamps (`u:` and 13
 digits) masked. Every page per engine:
-[`compare/engines/results/2026-10-22-v0.27.1-gcp-pages.md`](../compare/engines/results/2026-10-22-v0.27.1-gcp-pages.md).
+[`compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md).
 
 On these pages liustack/quickjs is the fastest pure Go JS engine for SSR:
 every other pure Go engine needs more CPU per page, or does not render it.
 
-- Pages without Intl: go-quickjs-interp needs 22% more, moejs 25% more,
-  go-quickjs-jit 29% more, the others 2.3 to 3.1 times as much.
-- The shop, as each engine would deploy it: go-quickjs-interp needs 26%
-  more on the 18 pages it renders, go-quickjs-jit 46% more on the same 18,
+- Pages without Intl: go-quickjs-interp needs 24% more, moejs 26% more,
+  go-quickjs-jit 34% more, the others 2.3 to 3.1 times as much.
+- The shop, as each engine would deploy it: go-quickjs-interp needs 28%
+  more on the 18 pages it renders, go-quickjs-jit 51% more on the same 18,
   the others 2.4 to 3.7 times as much. moejs cannot load the shop bundle
   (its functions are limited to 256 registers).
 
@@ -190,23 +190,23 @@ engine would deploy it.
 
 | Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
 |---|---|---|---|---|
-| liustack-quickjs | 67 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
-| modernc-quickjs | 77 | 2 of 2 | 2 of 2 | 2.32 (2.32–2.33) |
-| go-quickjs-interp | 70 | 2 of 2 | 2 of 2 | 1.22 (1.19–1.26) |
-| go-quickjs-jit | 70 | 2 of 2 | 2 of 2 | 1.29 (1.28–1.31) |
-| goant-interp | 77 | 2 of 2 | 2 of 2 | 3.07 (2.78–3.38) |
-| goant-jit | 80 | 2 of 2 | 2 of 2 | 2.64 (2.33–2.98) |
-| moejs | 95 | 2 of 2 | 2 of 2 | 1.25 (1.20–1.31) |
-| C QuickJS 2026-06-04 (reference) | 42 | 2 of 2 | 2 of 2 | 0.68 (0.64–0.71) |
-| C QuickJS master 7d1c13c5d8 (reference) | 41 | 2 of 2 | 2 of 2 | 0.66 (0.64–0.70) |
-| QuickJS-NG v0.17.0 (reference) | 35 | 2 of 2 | 2 of 2 | 0.91 (0.87–0.96) |
-| Node v24.11.1 (reference) | 44 | 2 of 2 | 2 of 2 | 0.10 (0.09–0.13) |
-| Node v24.11.1 --jitless (reference) | 74 | 2 of 2 | 2 of 2 | 0.36 (0.35–0.36) |
+| liustack-quickjs | 65 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
+| modernc-quickjs | 79 | 2 of 2 | 2 of 2 | 2.33 (2.32–2.34) |
+| go-quickjs-interp | 71 | 2 of 2 | 2 of 2 | 1.24 (1.23–1.25) |
+| go-quickjs-jit | 73 | 2 of 2 | 2 of 2 | 1.34 (1.32–1.36) |
+| goant-interp | 83 | 2 of 2 | 2 of 2 | 3.13 (2.91–3.38) |
+| goant-jit | 73 | 2 of 2 | 2 of 2 | 2.67 (2.36–3.01) |
+| moejs | 90 | 2 of 2 | 2 of 2 | 1.26 (1.23–1.29) |
+| C QuickJS 2026-06-04 (reference) | 47 | 2 of 2 | 2 of 2 | 0.68 (0.64–0.71) |
+| C QuickJS master 7d1c13c5d8 (reference) | 39 | 2 of 2 | 2 of 2 | 0.66 (0.63–0.70) |
+| QuickJS-NG v0.17.0 (reference) | 36 | 2 of 2 | 2 of 2 | 0.89 (0.85–0.94) |
+| Node v24.11.1 (reference) | 44 | 2 of 2 | 2 of 2 | 0.11 (0.09–0.13) |
+| Node v24.11.1 --jitless (reference) | 73 | 2 of 2 | 2 of 2 | 0.36 (0.36–0.36) |
 
 | Page | liustack-quickjs | modernc-quickjs | go-quickjs-interp | go-quickjs-jit | goant-interp | goant-jit | moejs | quickjs-2026-06-04 | quickjs-master | quickjs-ng | node-jit | node-jitless |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| spiral | 30.8 (1.00) | 71.9 (2.33) | 38.7 (1.26) | 40.3 (1.31) | 104 (3.38) | 91.8 (2.98) | 40.3 (1.31) | 19.8 (0.64) | 19.6 (0.64) | 26.8 (0.87) | 3.95 (0.13) | 11.2 (0.36) |
-| table | 28.1 (1.00) | 65.1 (2.32) | 33.4 (1.19) | 35.9 (1.28) | 78.2 (2.78) | 65.7 (2.33) | 33.7 (1.20) | 20.1 (0.71) | 19.5 (0.70) | 26.9 (0.96) | 2.4 (0.09) | 9.81 (0.35) |
+| spiral | 31.2 (1.00) | 72.3 (2.32) | 38.9 (1.25) | 41.3 (1.32) | 105 (3.38) | 94 (3.01) | 40.3 (1.29) | 20.1 (0.64) | 19.6 (0.63) | 26.7 (0.85) | 4.04 (0.13) | 11.2 (0.36) |
+| table | 27.7 (1.00) | 65 (2.34) | 34.2 (1.23) | 37.7 (1.36) | 80.7 (2.91) | 65.5 (2.36) | 34 (1.23) | 19.8 (0.71) | 19.5 (0.70) | 26 (0.94) | 2.38 (0.09) | 9.88 (0.36) |
 
 The C QuickJS rows show what the translation from C to Go costs: on these
 pages liustack-quickjs takes 1.5 times the time of the C it is translated
@@ -219,18 +219,18 @@ one, so all run the same JavaScript. Load ms: the polyfill, then the bundle.
 
 | Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
 |---|---|---|---|---|
-| liustack-quickjs | 794 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
-| modernc-quickjs | 947 | 20 of 20 | 20 of 20 | 1.88 (1.78–2.03) |
-| go-quickjs-interp | 760 | 18 of 20 | 18 of 18 | 1.24 (1.16–1.30). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| go-quickjs-jit | 807 | 2 of 20 | 2 of 2 | 1.34 (1.33–1.35). every page but store-en-US-products, store-zh-CN-products fails, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| goant-interp | 1068 | 20 of 20 | 20 of 20 | 2.85 (2.61–3.12) |
-| goant-jit | 1064 | 20 of 20 | 20 of 20 | 2.81 (2.28–3.14) |
+| liustack-quickjs | 655 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
+| modernc-quickjs | 938 | 20 of 20 | 20 of 20 | 1.85 (1.75–2.00) |
+| go-quickjs-interp | 793 | 18 of 20 | 18 of 18 | 1.23 (1.14–1.33). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| go-quickjs-jit | 796 | 2 of 20 | 2 of 2 | 1.30 (1.27–1.33). every page but store-en-US-products, store-zh-CN-products fails, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| goant-interp | 1085 | 20 of 20 | 20 of 20 | 2.85 (2.62–3.21) |
+| goant-jit | 1119 | 20 of 20 | 20 of 20 | 2.70 (2.16–3.04) |
 | moejs | load: SyntaxError: function needs more than 256 registers is not supported yet (see TODO.md) | 0 of 20 | | |
-| C QuickJS 2026-06-04 (reference) | 405 | 20 of 20 | 20 of 20 | 0.73 (0.68–0.81) |
-| C QuickJS master 7d1c13c5d8 (reference) | 377 | 20 of 20 | 20 of 20 | 0.71 (0.65–0.80) |
-| QuickJS-NG v0.17.0 (reference) | 360 | 20 of 20 | 18 of 20 | 0.87 (0.80–0.98) |
-| Node v24.11.1 (reference) | 265 | 20 of 20 | 20 of 20 | 0.16 (0.13–0.21) |
-| Node v24.11.1 --jitless (reference) | 275 | 20 of 20 | 20 of 20 | 0.41 (0.37–0.44) |
+| C QuickJS 2026-06-04 (reference) | 386 | 20 of 20 | 20 of 20 | 0.70 (0.65–0.79) |
+| C QuickJS master 7d1c13c5d8 (reference) | 379 | 20 of 20 | 20 of 20 | 0.69 (0.63–0.78) |
+| QuickJS-NG v0.17.0 (reference) | 368 | 20 of 20 | 18 of 20 | 0.87 (0.83–0.94) |
+| Node v24.11.1 (reference) | 260 | 20 of 20 | 20 of 20 | 0.16 (0.13–0.21) |
+| Node v24.11.1 --jitless (reference) | 273 | 20 of 20 | 20 of 20 | 0.41 (0.37–0.44) |
 
 QuickJS-NG's two different pages (`wb-order-studio`, `wb-order-weekend`)
 have one more React text separator (`<!-- -->`) after "选择快递公司" in the
@@ -244,34 +244,34 @@ Against liustack-quickjs with its own Intl.
 
 | Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
 |---|---|---|---|---|
-| liustack-quickjs (own Intl) | 305 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
-| modernc-quickjs (polyfill) | 947 | 20 of 20 | 20 of 20 | 2.42 (1.79–2.79) |
-| go-quickjs-interp (own Intl) | 543 | 18 of 20 | 18 of 18 | 1.26 (1.06–1.37). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| go-quickjs-jit (own Intl) | 555 | 18 of 20 | 18 of 18 | 1.46 (1.29–1.84). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| goant-interp (polyfill) | 1068 | 20 of 20 | 20 of 20 | 3.67 (2.65–4.23) |
-| goant-jit (polyfill) | 1064 | 20 of 20 | 20 of 20 | 3.61 (2.32–4.13) |
+| liustack-quickjs (own Intl) | 302 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
+| modernc-quickjs (polyfill) | 938 | 20 of 20 | 20 of 20 | 2.43 (1.98–2.78) |
+| go-quickjs-interp (own Intl) | 542 | 18 of 20 | 18 of 18 | 1.28 (1.18–1.39). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| go-quickjs-jit (own Intl) | 556 | 18 of 20 | 18 of 18 | 1.51 (1.35–1.81). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| goant-interp (polyfill) | 1085 | 20 of 20 | 20 of 20 | 3.74 (2.70–4.39) |
+| goant-jit (polyfill) | 1119 | 20 of 20 | 20 of 20 | 3.55 (2.30–4.20) |
 | moejs (polyfill) | load: SyntaxError: function needs more than 256 registers is not supported yet (see TODO.md) | 0 of 20 | | |
-| C QuickJS 2026-06-04 (reference) (polyfill) | 405 | 20 of 20 | 20 of 20 | 0.94 (0.69–1.10) |
-| C QuickJS master 7d1c13c5d8 (reference) (polyfill) | 377 | 20 of 20 | 20 of 20 | 0.91 (0.66–1.10) |
-| QuickJS-NG v0.17.0 (reference) (polyfill) | 360 | 20 of 20 | 18 of 20 | 1.12 (0.86–1.30) |
-| Node v24.11.1 (reference) (own Intl) | 184 | 20 of 20 | 20 of 20 | 0.16 (0.12–0.24) |
-| Node v24.11.1 --jitless (reference) (own Intl) | 145 | 20 of 20 | 20 of 20 | 0.41 (0.33–0.44) |
+| C QuickJS 2026-06-04 (reference) (polyfill) | 386 | 20 of 20 | 20 of 20 | 0.92 (0.68–1.06) |
+| C QuickJS master 7d1c13c5d8 (reference) (polyfill) | 379 | 20 of 20 | 20 of 20 | 0.91 (0.65–1.06) |
+| QuickJS-NG v0.17.0 (reference) (polyfill) | 368 | 20 of 20 | 18 of 20 | 1.14 (0.88–1.32) |
+| Node v24.11.1 (reference) (own Intl) | 127 | 20 of 20 | 20 of 20 | 0.16 (0.13–0.24) |
+| Node v24.11.1 --jitless (reference) (own Intl) | 150 | 20 of 20 | 20 of 20 | 0.41 (0.36–0.44) |
 
 ### What the polyfill costs
 
 On liustack-quickjs, from the same runs:
 
-- Loading it: 384 ms per VM before the bundle. The bundle then loads in
-  411 ms, 305 ms without the polyfill. In the v0.26.17 run the bundle
-  loaded in 294 ms after the polyfill: why it now takes longer after the
-  polyfill was not looked into.
+- Loading it: 371 ms per VM before the bundle. The bundle then loads in
+  284 ms, 302 ms without the polyfill. In the v0.27.1 run it took 411 ms
+  after the polyfill, and 294 ms in the v0.26.17 run: why that run was
+  slower was not looked into.
 - Memory per VM (20 VMs, each with the bundle loaded, the polyfill too
   where named, and the zh-CN cart page rendered):
-  34.5 MiB RSS with the polyfill against 12.6 MiB with its own Intl.
-  go-quickjs-interp: 107.5 MiB against 51.1 MiB (Go heap 80.9 against
-  41.0 MiB).
-- Share of a render: summed over the 20 pages, 215 of 928 ms of a render is
-  spent inside the polyfill (23%, 1354 calls), against 5.6 of 697 ms inside
+  34.7 MiB RSS with the polyfill against 12.8 MiB with its own Intl.
+  go-quickjs-interp: 116.1 MiB against 48.0 MiB (Go heap 82.6 against
+  40.4 MiB).
+- Share of a render: summed over the 20 pages, 217 of 939 ms of a render is
+  spent inside the polyfill (23%, 1354 calls), against 5.6 of 710 ms inside
   its own Intl (1%) for the same calls.
 
 go-quickjs-interp fails on the two blog post pages, with its own Intl and on
@@ -288,25 +288,29 @@ suspected causes come from our CPU profiles, and are what to look at first.
 
 | Item | Ours vs the median | Fastest | Suspected cause |
 |---|---|---|---|
-| `empty_loop` | 2.8 | go-quickjs-jit | dispatching each bytecode through the translated interpreter loop, with the operand stack in C memory |
-| `int_arith` | 2.5 | go-quickjs-jit | the same dispatch, and a tag check and a 16-byte value per operand where others keep int32 or NaN-boxed numbers |
-| `empty_down_loop` | 2.5 | go-quickjs-jit | as `empty_loop` |
+| `empty_loop` | 2.9 | go-quickjs-jit | dispatching each bytecode through the translated interpreter loop, with the operand stack in C memory |
+| `int_arith` | 2.6 | go-quickjs-jit | the same dispatch, and a tag check and a 16-byte value per operand where others keep int32 or NaN-boxed numbers |
+| `empty_down_loop` | 2.6 | go-quickjs-jit | as `empty_loop` |
+| `empty_down_loop2` | 2.4 | go-quickjs-jit | as `empty_loop` |
 | `float_arith` | 2.4 | go-quickjs-jit | as `int_arith` |
-| `empty_down_loop2` | 2.3 | go-quickjs-jit | as `empty_loop` |
 | `array_for` | 2.3 | go-quickjs-jit | each element read goes through the generic `get_array_el` path |
 | `prop_read` | 2.1 | go-quickjs-jit | every property read hashes into the object's shape (`find_own_property`), with no cache at the access site |
-| `empty_do_loop` | 2.1 | go-quickjs-jit | as `empty_loop` |
-| V8 Crypto | 2.0 (score) | go-quickjs-jit | integer arithmetic in loops and array element reads, as above |
-| `string_to_float` | 2.0 | moejs | `js_atod` and its multiprecision code for every conversion |
+| V8 Crypto | 2.1 (score) | go-quickjs-jit | integer arithmetic in loops and array element reads, as above |
+| `string_to_int` | 2.1 | go-quickjs-jit | `js_atod` and its multiprecision code for every conversion, where go-quickjs has a path for plain integers |
+| `array_read` | 2.0 | go-quickjs-jit | as `array_for` |
+| `empty_do_loop` | 2.0 | go-quickjs-jit | as `empty_loop` |
 
 The medians are of modernc-quickjs, go-quickjs-interp, go-quickjs-jit,
 goant-interp, goant-jit and moejs. `python3 behind.py
 results/<run>.json` in `compare/engines` makes the list again.
 
-Just under the line: JSON.parse (1.93), `string_to_int` (1.92, where
-go-quickjs has a path for plain integers), `array_read` (1.86) and
-JSON.stringify (1.76). `date_now` was on the list at 6.9 in the v0.26.17
-run and is 1.08 now: since v0.27.0 the engine reads Go's clocks instead of
+Just under the line: `string_to_float` (1.99, fastest moejs), JSON.parse
+(1.88), V8 NavierStokes (1.75), JSON.stringify (1.74) and
+`typed_array_read` (1.71). `string_to_int` and `array_read` were at 1.92
+and 1.86 in the v0.27.1 run: they took 11% and 10% more time in this run,
+which was not looked into (see the note on single tests below).
+`date_now` was on the list at 6.9 in the v0.26.17
+run and is 1.07 now: since v0.27.0 the engine reads Go's clocks instead of
 calling libc's `gettimeofday`, which modernc.org/libc made as a real
 system call. Single micro benchmarks of tiny loops move
 between two builds of the same code, as the code lands at other addresses:
@@ -350,8 +354,8 @@ from that run, not measured CPU shares for v0.26.17.
   `gettimeofday`, which modernc.org/libc v1.77.1 makes as a real system
   call instead of going through the vDSO. go-quickjs calls `time.Now`
   (`internal/vm/builtins_date.go` 116), which uses the vDSO. Fixed in
-  v0.27.0, where the engine reads Go's clocks: in the v0.27.1 run
-  `date_now` takes 1.08 times the median of the others.
+  v0.27.0, where the engine reads Go's clocks: in the v0.27.2 run
+  `date_now` takes 1.07 times the median of the others.
 - **Copying arrays** (`array_slice`, go-quickjs 2.9 times faster, moejs 12.6
   times). Ours
   defines each element as a property (`JS_DefineProperty`), with
@@ -446,7 +450,7 @@ on the versions above.
 - **goant: `string_build_large2` exceeds the 4 GiB cap.** The QuickJS micro
   benchmark that prepends to a string in a loop goes over the 4 GiB cap
   in all five rounds of the [archived v0.26.17 run](../compare/engines/results/2026-10-21-v0.26.17-gcp.json),
-  and again in the v0.27.1 run. Those runs do not
+  and again in the v0.27.1 and v0.27.2 runs. Those runs do not
   measure its uncapped peak memory or successful call time. goant keeps
   strings flat, so each prepend copies. Reproduce: `./bin/goant upstream -dir ../testdata -only string_build_large2`.
 
@@ -593,6 +597,7 @@ At each release, follow "Engine comparison" in
 
 | Run | liustack/quickjs | Machine | Notes |
 |---|---|---|---|
+| [2026-10-23-v0.27.2-gcp](../compare/engines/results/2026-10-23-v0.27.2-gcp.md) | v0.27.2 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in, the same 80215 runs pass. React page 15.1 ms of CPU rather than 14.9, V8 score 835 rather than 854, JSON and regexps 1% to 3% faster. `string_to_int` and `array_read` cross the far-behind line, `string_to_float` drops under it |
 | [2026-10-22-v0.27.1-gcp](../compare/engines/results/2026-10-22-v0.27.1-gcp.md) | v0.27.1 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-22-v0.27.1-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in. React page 14.9 ms of CPU rather than 16.3, V8 score 854 rather than 800, `Date.now()` no longer far behind, all 13 Intl probes pass |
 | [2026-10-21-v0.26.17-gcp](../compare/engines/results/2026-10-21-v0.26.17-gcp.md) | v0.26.17 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again, go-quickjs at v0.28.0 ([pages](../compare/engines/results/2026-10-21-v0.26.17-gcp-pages.md)) |
 | [2026-10-21-v0.26.16-gcp](../compare/engines/results/2026-10-21-v0.26.16-gcp.md) | v0.26.16 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | first run, with the tifa pages ([pages](../compare/engines/results/2026-10-21-v0.26.16-gcp-pages.md)). moejs added the same day. jsc2go and fastschema/qjs taken out after the run |
