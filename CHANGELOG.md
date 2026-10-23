@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.3] - 2026-10-24
+
 ### Fixed
 
 - Regexps with the v flag no longer throw a SyntaxError for what the specification allows and Node accepts: `\` before one of ``& ! # % , : ; < = > @ ` ~`` in a class, as in `[\&\;]` or `[\!\|]`, a `-`, a `/` or a doubled punctuator such as `&&` outside a class, as in `/-/v`, and `\-` or `\&` in `\q{...}`. shiki's JavaScript engine failed on 204 of the 552 regexps it makes for bash, css, go, html, json, typescript and yaml. All but 3 compile now: those have more than 254 capture groups, the most a regexp holds. Patterns that compiled before compile to the same bytecode.
