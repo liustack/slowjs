@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.27.3] - 2026-10-23
+
 ### 新增
 
 - `VM.RunYoungGC`（`lib/` 里是 `JS_RunYoungGC`）：只回收上次回收（年轻或完整的都算）以后新建的对象。它释放这些对象之间的循环，留下的对象变成老对象。完整回收 `VM.RunGC` 要看 VM 里的每个对象，tifa 示例商店的 bundle 在还没有垃圾时就有约 30,000 个。一次只做一件事（比如渲染一个页面）的程序，可以每做完一件跑一次年轻回收，隔一阵再跑一次完整回收。完整回收能释放的东西，跑过多少次年轻回收它照样能释放。经过老对象的循环和 WeakMap 的值，年轻回收会留到下一次完整回收。不调用它的程序回收方式不变。
@@ -301,7 +303,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.2...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.3...main
+[v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
 [v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0

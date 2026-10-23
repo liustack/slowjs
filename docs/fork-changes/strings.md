@@ -10,7 +10,7 @@ read_when:
 
 ## Searches skip to where the string is
 
-Release: Unreleased.
+Release: v0.27.3.
 
 `String.prototype.includes`, `startsWith`, `endsWith`, `indexOf` and `lastIndexOf` find the string they look for with the search of package bytes. Upstream compares the whole string with `string_cmp` at one index after the other, and `string_cmp` reads each character of both strings through `string_get`, so a search that finds nothing costs a call and a few character reads for each character of the string it looks through: about 3 ns a character. tifa looks for the marker of a Suspense boundary in the whole HTML of a page after each render, which was about 1% of a render of tifa's example shop.
 
