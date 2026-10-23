@@ -7,6 +7,7 @@ package slowjs
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -244,4 +245,31 @@ func TestModuleAwaitOutOfMemory(t *testing.T) {
 	wantKind(t, err, outOfMemory)
 	wantNoPendingException(t, m)
 	wantEval(t, m, "1 + 1", 2)
+}
+
+// moduleGarbage is the size of the array a module's top level holds in a
+// variable no function captures.
+const moduleGarbage = 4 << 20
+
+// TestModuleFreesItsTopLevel loads a module whose top level holds a large
+// array in a variable no function captures, as a script's top-level function
+// holds its locals. Once the module has run, nothing can call its top-level
+// function again: the function goes, and the array with it, while the
+// functions the module made keep the variables they use.
+func TestModuleFreesItsTopLevel(t *testing.T) {
+	for _, src := range []string{
+		"const big = new Uint8Array(" + strconv.Itoa(moduleGarbage) + ").fill(1); let kept = big[0] + 1;\nglobalThis.get = () => kept++\n",
+		"const big = new Uint8Array(" + strconv.Itoa(moduleGarbage) + ").fill(1); let kept = big[0] + 1;\nawait null;\nglobalThis.get = () => kept++\n",
+	} {
+		code := moduleBytecode(t, src)
+		m := newTestVM(t)
+		if _, err := m.EvalBytecode(code); err != nil {
+			t.Fatal(err)
+		}
+		m.RunGC()
+		if size := m.MemorySize(); size > moduleGarbage/2 {
+			t.Errorf("%q: the VM holds %d bytes after the module ran, want the %d of the array freed", src, size, moduleGarbage)
+		}
+		wantEval(t, m, "get() + get()", 5)
+	}
 }

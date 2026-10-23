@@ -1086,6 +1086,10 @@ func (m *VM) evalBytecode(p uintptr, n int, flags int32) (r Value, err error) {
 		}
 
 		lib.Xjs_module_set_import_meta(tls, ctx, obj, 0, 1)
+		// JS_EvalFunction takes obj. The hold kept here lets freeTopLevel
+		// reach the module after it ran.
+		lib.XDupValue(tls, ctx, obj)
+		defer lib.XFreeValue(tls, ctx, obj)
 		// 'this' is set to ctx->global_obj
 		// see https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs.c#L36045
 		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
@@ -1093,6 +1097,7 @@ func (m *VM) evalBytecode(p uintptr, n int, flags int32) (r Value, err error) {
 			if v, err = m.await(v); err != nil {
 				return r, err
 			}
+			freeTopLevel(tls, ctx, obj)
 		}
 	} else {
 		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
@@ -1104,6 +1109,21 @@ func (m *VM) evalBytecode(p uintptr, n int, flags int32) (r Value, err error) {
 	}
 
 	return Value{vm: m, v: v}, nil
+}
+
+// freeTopLevel frees the function of the module mod, which has run to its
+// end: the code of its top level, and the variables of the top level that no
+// function of the module captures, which the function holds as long as the
+// module does. Nothing calls it again: a module runs once, and the module
+// keeps the variables it exports apart from the function. So a module holds
+// what a script holds once its top-level code returned. QuickJS keeps the
+// function until the module is freed, which for a module in the context is
+// when the VM closes.
+func freeTopLevel(tls *libc.TLS, ctx uintptr, mod lib.TJSValue) {
+	def := (*lib.TJSModuleDef)(unsafe.Pointer(jsvToPtr(mod)))
+	f := def.Ffunc_obj
+	def.Ffunc_obj = lib.TJSValue{Ftag: lib.EJS_TAG_UNDEFINED}
+	lib.XFreeValue(tls, ctx, f)
 }
 
 // errAwaitPending is the error of EvalBytecode and EvalBytecodeValue for a

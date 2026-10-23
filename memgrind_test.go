@@ -151,6 +151,7 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("moduleAwaitInterruptInBuiltin", TestModuleAwaitInterruptInBuiltin)
 	t.Run("moduleAwaitPanic", TestModuleAwaitPanic)
 	t.Run("moduleAwaitOutOfMemory", TestModuleAwaitOutOfMemory)
+	t.Run("moduleFreesItsTopLevel", TestModuleFreesItsTopLevel)
 	t.Run("interruptUncatchable", TestInterruptUncatchable)
 	t.Run("outOfMemoryUncatchable", TestOutOfMemoryUncatchable)
 	t.Run("uncatchableNull", TestUncatchableNullIsOutOfMemory)
