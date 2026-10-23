@@ -7,7 +7,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ import (
 // uses gc_obj_list.
 func TestYoungGCRewrite(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readAfter(fn, "fixYoungGC")
 		if err != nil {
 			t.Fatal(err)
 		}
