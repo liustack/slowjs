@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [v0.28.2] - 2026-10-24
+
+### 新增
+
+- `VM.SetClock` 和 `VM.Now` 给一个 VM 设一个墙上时钟，`Date.now()`、`new Date()`、`Date()`、Intl 不传日期的格式化和 `Temporal.Now` 都读它。传 nil 恢复实时时钟。非 nil 的 `temporal.Clock` 仍只覆盖 `Temporal.Now`。`performance.now`、eval 超时、`Atomics.wait` 和 `Math.random` 的种子继续用各自的时钟。
+
 ## [v0.28.1] - 2026-10-23
 
 ### 新增
@@ -315,7 +321,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.1...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.2...main
+[v0.28.2]: https://github.com/liustack/slowjs/compare/v0.28.1...v0.28.2
 [v0.28.1]: https://github.com/liustack/slowjs/compare/v0.28.0...v0.28.1
 [v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3

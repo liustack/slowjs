@@ -68,6 +68,7 @@ The final changes have separate printers. `-expect` reads either raw upstream or
 | `Xdbuf_claim`, `_push_scope`, `_pop_scope`, `_resolve_labels` and the rest of the compiler | [uncatchable.md](fork-changes/uncatchable.md#compiling-with-little-memory-left) |
 | `_build_backtrace`, `_get_prop_string`, `_JS_GetFunctionBytecode`, `js_print_error`, `JS_ComputeMemoryUsage`, `ownFlagsCallers`, the slot audit (`-slots`) | [errors-and-stacks.md](fork-changes/errors-and-stacks.md#error-stacks-formatted-when-first-read) |
 | `XJS_NewRuntime2`, `_JS_ThrowStackOverflow`, the stack check of a tokenizer, the uses of `"stack overflow"` | [errors-and-stacks.md](fork-changes/errors-and-stacks.md#endless-recursion-throws-rangeerror) |
+| `vmClockCallers`, a missing or extra Date clock call | [time-and-intl.md](fork-changes/time-and-intl.md#one-wall-clock-per-vm) |
 | `_getTimezoneOffset`, libc's local time functions | [time-and-intl.md](fork-changes/time-and-intl.md#local-time-is-utc-in-every-vm) |
 | `clockFuncs` (`-clock`), a use of a time function of libc outside them and `_js_atomics_wait`, a function of `clockFuncs` gone | [time-and-intl.md](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks) |
 | The `alloca` of the four call functions, `framesites.go` (`-frames`) | [calls-and-tls-frames.md](fork-changes/calls-and-tls-frames.md#calls-allocate-no-go-memory) |

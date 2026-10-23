@@ -4,6 +4,12 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.2] - 2026-10-24
+
+### Added
+
+- `VM.SetClock` and `VM.Now` give one VM a wall clock that `Date.now()`, `new Date()`, `Date()`, Intl formatting without a date and `Temporal.Now` all read. nil restores the live clock. A non-nil `temporal.Clock` still overrides `Temporal.Now` alone. `performance.now`, the eval timeout, `Atomics.wait` and the `Math.random` seed keep their own clocks.
+
 ## [v0.28.1] - 2026-10-23
 
 ### Added
@@ -315,7 +321,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.1...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.2...main
+[v0.28.2]: https://github.com/liustack/slowjs/compare/v0.28.1...v0.28.2
 [v0.28.1]: https://github.com/liustack/slowjs/compare/v0.28.0...v0.28.1
 [v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3

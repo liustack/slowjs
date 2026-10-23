@@ -14,6 +14,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 
 | Change | Release | Doc |
 | --- | --- | --- |
+| One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | Unreleased | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
 | Native C keeps computed goto | v0.27.1 | [interpreter-loop.md](interpreter-loop.md#native-c-keeps-computed-goto) |
 | No leak when converting a string runs out of memory | v0.26.0 | [uncatchable.md](uncatchable.md#no-leak-when-converting-a-string-runs-out-of-memory) |
 | Call reports the exception of the function expression | v0.26.0 | [go-api.md](go-api.md#call-reports-the-exception-of-the-function-expression) |

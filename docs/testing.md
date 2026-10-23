@@ -95,6 +95,8 @@ go test -p 2 ./internal/intlhook                        # private state across G
 go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
 go test -run 'DateNow|RandomSeed|Monotonic' ./lib        # Date.now, the seed of Math.random and performance.now read Go's clocks
+go test -p 2 -vet=off -run VMClock . ./lib ./temporal    # VM.SetClock: Date, Intl and Temporal share one clock, reset, Close and timeouts
+go test -timeout 30m -run VMClock ./internal/fixlib      # fixVMClock puts its two calls back and stops on a moved, missing or extra one
 go test -run QuickJSLibc . ./internal/fixlib            # what stays of quickjs-libc.c works, and what goes is not linked
 go test -run Expect ./internal/fixlib                    # every likely and unlikely test branches on its condition
 go test -run FastFrame ./lib ./internal/fixlib           # TLS frames taken and freed as libc does, on linux (lib) and in the rewrite
