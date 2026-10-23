@@ -4,13 +4,9 @@
 
 ## [Unreleased]
 
-### Changed
+### 变更
 
-- **不兼容：** 模块从 `github.com/liustack/quickjs` 改名为 `github.com/liustack/slowjs`，根包从 `quickjs` 改名为 `slowjs`。迁移方法：把 import 路径（`lib`、`intl`、`temporal`、`fmt` 也一样）和包名都换掉，比如 `slowjs.NewVM()`。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 现在是 `slowjs_intl_nonames` 和 `slowjs_intl_nocjdict`，以 `quickjs:` 开头的错误和 panic 信息现在以 `slowjs:` 开头。引擎还是同一个。v0.27.x 及更早的版本仍可在旧路径 `github.com/liustack/quickjs` 下使用。
-
-### Removed
-
-- **不兼容：** 去掉 freebsd/amd64、freebsd/arm64、linux/386、linux/arm、linux/loong64、linux/ppc64le、linux/riscv64、linux/s390x 和 windows/arm64。slowjs 支持 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。需要被去掉的平台，请留在旧路径下的 v0.27.x。
+- **不兼容：** 模块现在是 `github.com/liustack/slowjs`，包名是 `slowjs`，支持 amd64 和 arm64 上的 linux 与 darwin，以及 amd64 上的 windows。
 
 ## [v0.27.3] - 2026-10-23
 

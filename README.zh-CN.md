@@ -20,11 +20,7 @@ go get github.com/liustack/slowjs
 
 ## 支持的平台
 
-linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。如果你需要 freebsd、32 位平台、linux 的 riscv64、ppc64le、s390x 或 loong64，或者 windows 的 arm64，请用 v0.27.x，它们在旧的 import 路径 `github.com/liustack/quickjs` 下。
-
-## 从 github.com/liustack/quickjs 迁移
-
-从 v0.28.0 起，引擎还是同一个，只是改了名字叫 slowjs。把 import 路径 `github.com/liustack/quickjs` 换成 `github.com/liustack/slowjs`（`lib`、`intl`、`temporal`、`fmt` 包也一样），把包名 `quickjs` 换成 `slowjs`，比如 `slowjs.NewVM()`。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 现在是 `slowjs_intl_nonames` 和 `slowjs_intl_nocjdict`。v0.27.x 仍可在旧路径下使用。
+linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。
 
 ## 第一个 VM
 

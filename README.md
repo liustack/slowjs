@@ -20,11 +20,7 @@ Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and c
 
 ## Platforms
 
-linux and darwin on amd64 and arm64, and windows on amd64. A build for any other target stops with an error that names these. If you need freebsd, a 32-bit target, linux on riscv64, ppc64le, s390x or loong64, or windows on arm64, v0.27.x supports them, at the old import path `github.com/liustack/quickjs`.
-
-## Moving from github.com/liustack/quickjs
-
-slowjs is the same engine under a new name, from v0.28.0. Replace the import path `github.com/liustack/quickjs` with `github.com/liustack/slowjs` (the `lib`, `intl`, `temporal` and `fmt` packages too) and the package name `quickjs` with `slowjs`, as in `slowjs.NewVM()`. The build tags `quickjs_intl_nonames` and `quickjs_intl_nocjdict` are now `slowjs_intl_nonames` and `slowjs_intl_nocjdict`. v0.27.x stays available at the old path.
+linux and darwin on amd64 and arm64, and windows on amd64. A build for any other target stops with an error that names these.
 
 ## A first VM
 

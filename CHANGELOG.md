@@ -6,11 +6,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ### Changed
 
-- **Breaking:** the module is renamed from `github.com/liustack/quickjs` to `github.com/liustack/slowjs`, and the root package from `quickjs` to `slowjs`. To migrate, replace the import path (`lib`, `intl`, `temporal` and `fmt` too) and the package name, as in `slowjs.NewVM()`. The build tags `quickjs_intl_nonames` and `quickjs_intl_nocjdict` are now `slowjs_intl_nonames` and `slowjs_intl_nocjdict`, and the messages of errors and panics that began `quickjs:` begin `slowjs:`. It is the same engine. v0.27.x and earlier stay available at the old path `github.com/liustack/quickjs`.
-
-### Removed
-
-- **Breaking:** the targets freebsd/amd64, freebsd/arm64, linux/386, linux/arm, linux/loong64, linux/ppc64le, linux/riscv64, linux/s390x and windows/arm64. slowjs supports linux and darwin on amd64 and arm64, and windows on amd64. A build for any other target stops with an error that names these. For the removed targets, stay on v0.27.x at the old path.
+- **Breaking:** the module is now `github.com/liustack/slowjs` with package `slowjs`, and it supports linux and darwin on amd64 and arm64 and windows on amd64.
 
 ## [v0.27.3] - 2026-10-23
 
