@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -repoll, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -search, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -repoll, -classescape, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -search, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty-seven things:
+// It does thirty-eight things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -74,6 +74,11 @@
 //     toward the interrupt counter, through _re_poll_interrupts of
 //     lib/regexpoll.go, and let js_compile_regexp throw the interrupt when
 //     the parser was interrupted (see fixRegexPoll).
+//   - In every lib/ccgo_*.go file, let the regexp parser take \ and a
+//     punctuator such as & or ; as that character in a class of a regexp
+//     with the v flag, check doubled punctuators and the characters such a
+//     class cannot hold only in a class, and read the characters of
+//     \q{...} as in a class (see fixClassEscapes).
 //   - In every lib/ccgo_*.go file, let js_parse_init and the string buffer
 //     count the source they parse and the characters they make room for
 //     toward the interrupt counter, through _js_charge_interrupts of
@@ -194,6 +199,7 @@ var (
 	regex      = flag.Bool("regex", false, "print the fingerprints of the functions lib/regexskip.go repeats, in the form of regexSites, to update it after a review")
 	charge     = flag.Bool("charge", false, "print the fingerprints of the functions fixWorkCharge changes, in the form of workChargeSites, to update it after a review")
 	repoll     = flag.Bool("repoll", false, "print the fingerprints of the functions lib/regexpoll.go relies on or fixRegexPoll changes, in the form of regexPollSites, to update it after a review")
+	classEsc   = flag.Bool("classescape", false, "print the fingerprints of the functions fixClassEscapes changes or relies on, in the form of classEscapeSites, to update it after a review")
 	inline     = flag.Bool("inline", false, "print the fingerprints of set_value, which fixInline writes out in the interpreter, in the form of inlineSites, to update it after a review")
 	poll       = flag.Bool("poll", false, "print the fingerprints of the function lib/poll.go repeats, in the form of pollSites, to update it after a review")
 	runtimeF   = flag.Bool("runtime", false, "print the fingerprints of JSRuntime and JS_NewRuntime2, which lib/runtime.go relies on, in the form of runtimeSites, to update it after a review")
@@ -239,7 +245,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *repoll || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *search || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
+	if *define || *backtrace || *regex || *repoll || *classEsc || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *search || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -253,6 +259,8 @@ func main() {
 			err = fingerprintReport(files, hw, "regexSites", regexFingerprint)
 		} else if err == nil && *repoll {
 			err = fingerprintReport(files, hw, "regexPollSites", regexPollFingerprint)
+		} else if err == nil && *classEsc {
+			err = fingerprintReport(files, hw, "classEscapeSites", classEscapeFingerprint)
 		} else if err == nil && *charge {
 			err = fingerprintReport(files, hw, "workChargeSites", workChargeFingerprint)
 		} else if err == nil && *lazyAddr {
@@ -447,6 +455,9 @@ func fixBeforeFinal(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixRegexPoll(b, name); err != nil {
+		return nil, err
+	}
+	if b, err = fixClassEscapes(b, name); err != nil {
 		return nil, err
 	}
 	if b, err = fixWorkCharge(b, name); err != nil {

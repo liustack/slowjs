@@ -1,0 +1,1734 @@
+1733 lines
+"[\\&]" /v "&" []
+"[x\\&y]" /v "&xy" []
+"[^\\&]" /v " !\"#$%'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\&]" /vi "&" []
+"[x\\&y]" /vi "&XYxy" []
+"[^\\&]" /vi " !\"#$%'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\&]" /u SyntaxError
+"[x\\&y]" /u SyntaxError
+"[^\\&]" /u SyntaxError
+"[\\&]" / "&" []
+"[x\\&y]" / "&xy" []
+"[^\\&]" / " !\"#$%'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\-]" /v "-" []
+"[x\\-y]" /v "-xy" []
+"[^\\-]" /v " !\"#$%&'()*+,./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\-]" /vi "-" []
+"[x\\-y]" /vi "-XYxy" []
+"[^\\-]" /vi " !\"#$%&'()*+,./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\-]" /u "-" []
+"[x\\-y]" /u "-xy" []
+"[^\\-]" /u " !\"#$%&'()*+,./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\-]" / "-" []
+"[x\\-y]" / "-xy" []
+"[^\\-]" / " !\"#$%&'()*+,./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\!]" /v "!" []
+"[x\\!y]" /v "!xy" []
+"[^\\!]" /v " \"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\!]" /vi "!" []
+"[x\\!y]" /vi "!XYxy" []
+"[^\\!]" /vi " \"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\!]" /u SyntaxError
+"[x\\!y]" /u SyntaxError
+"[^\\!]" /u SyntaxError
+"[\\!]" / "!" []
+"[x\\!y]" / "!xy" []
+"[^\\!]" / " \"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\#]" /v "#" []
+"[x\\#y]" /v "#xy" []
+"[^\\#]" /v " !\"$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\#]" /vi "#" []
+"[x\\#y]" /vi "#XYxy" []
+"[^\\#]" /vi " !\"$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\#]" /u SyntaxError
+"[x\\#y]" /u SyntaxError
+"[^\\#]" /u SyntaxError
+"[\\#]" / "#" []
+"[x\\#y]" / "#xy" []
+"[^\\#]" / " !\"$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\%]" /v "%" []
+"[x\\%y]" /v "%xy" []
+"[^\\%]" /v " !\"#$&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\%]" /vi "%" []
+"[x\\%y]" /vi "%XYxy" []
+"[^\\%]" /vi " !\"#$&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\%]" /u SyntaxError
+"[x\\%y]" /u SyntaxError
+"[^\\%]" /u SyntaxError
+"[\\%]" / "%" []
+"[x\\%y]" / "%xy" []
+"[^\\%]" / " !\"#$&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\,]" /v "," []
+"[x\\,y]" /v ",xy" []
+"[^\\,]" /v " !\"#$%&'()*+-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\,]" /vi "," []
+"[x\\,y]" /vi ",XYxy" []
+"[^\\,]" /vi " !\"#$%&'()*+-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\,]" /u SyntaxError
+"[x\\,y]" /u SyntaxError
+"[^\\,]" /u SyntaxError
+"[\\,]" / "," []
+"[x\\,y]" / ",xy" []
+"[^\\,]" / " !\"#$%&'()*+-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\:]" /v ":" []
+"[x\\:y]" /v ":xy" []
+"[^\\:]" /v " !\"#$%&'()*+,-./0123456789;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\:]" /vi ":" []
+"[x\\:y]" /vi ":XYxy" []
+"[^\\:]" /vi " !\"#$%&'()*+,-./0123456789;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\:]" /u SyntaxError
+"[x\\:y]" /u SyntaxError
+"[^\\:]" /u SyntaxError
+"[\\:]" / ":" []
+"[x\\:y]" / ":xy" []
+"[^\\:]" / " !\"#$%&'()*+,-./0123456789;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\;]" /v ";" []
+"[x\\;y]" /v ";xy" []
+"[^\\;]" /v " !\"#$%&'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\;]" /vi ";" []
+"[x\\;y]" /vi ";XYxy" []
+"[^\\;]" /vi " !\"#$%&'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\;]" /u SyntaxError
+"[x\\;y]" /u SyntaxError
+"[^\\;]" /u SyntaxError
+"[\\;]" / ";" []
+"[x\\;y]" / ";xy" []
+"[^\\;]" / " !\"#$%&'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\<]" /v "<" []
+"[x\\<y]" /v "<xy" []
+"[^\\<]" /v " !\"#$%&'()*+,-./0123456789:;=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\<]" /vi "<" []
+"[x\\<y]" /vi "<XYxy" []
+"[^\\<]" /vi " !\"#$%&'()*+,-./0123456789:;=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\<]" /u SyntaxError
+"[x\\<y]" /u SyntaxError
+"[^\\<]" /u SyntaxError
+"[\\<]" / "<" []
+"[x\\<y]" / "<xy" []
+"[^\\<]" / " !\"#$%&'()*+,-./0123456789:;=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\=]" /v "=" []
+"[x\\=y]" /v "=xy" []
+"[^\\=]" /v " !\"#$%&'()*+,-./0123456789:;<>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\=]" /vi "=" []
+"[x\\=y]" /vi "=XYxy" []
+"[^\\=]" /vi " !\"#$%&'()*+,-./0123456789:;<>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\=]" /u SyntaxError
+"[x\\=y]" /u SyntaxError
+"[^\\=]" /u SyntaxError
+"[\\=]" / "=" []
+"[x\\=y]" / "=xy" []
+"[^\\=]" / " !\"#$%&'()*+,-./0123456789:;<>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\>]" /v ">" []
+"[x\\>y]" /v ">xy" []
+"[^\\>]" /v " !\"#$%&'()*+,-./0123456789:;<=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\>]" /vi ">" []
+"[x\\>y]" /vi ">XYxy" []
+"[^\\>]" /vi " !\"#$%&'()*+,-./0123456789:;<=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\>]" /u SyntaxError
+"[x\\>y]" /u SyntaxError
+"[^\\>]" /u SyntaxError
+"[\\>]" / ">" []
+"[x\\>y]" / ">xy" []
+"[^\\>]" / " !\"#$%&'()*+,-./0123456789:;<=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\@]" /v "@" []
+"[x\\@y]" /v "@xy" []
+"[^\\@]" /v " !\"#$%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\@]" /vi "@" []
+"[x\\@y]" /vi "@XYxy" []
+"[^\\@]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\@]" /u SyntaxError
+"[x\\@y]" /u SyntaxError
+"[^\\@]" /u SyntaxError
+"[\\@]" / "@" []
+"[x\\@y]" / "@xy" []
+"[^\\@]" / " !\"#$%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\`]" /v "`" []
+"[x\\`y]" /v "`xy" []
+"[^\\`]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\`]" /vi "`" []
+"[x\\`y]" /vi "XY`xy" []
+"[^\\`]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\`]" /u SyntaxError
+"[x\\`y]" /u SyntaxError
+"[^\\`]" /u SyntaxError
+"[\\`]" / "`" []
+"[x\\`y]" / "`xy" []
+"[^\\`]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\~]" /v "~" []
+"[x\\~y]" /v "xy~" []
+"[^\\~]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}\b\u0000\u0001\u001fé" []
+"[\\~]" /vi "~" []
+"[x\\~y]" /vi "XYxy~" []
+"[^\\~]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}\b\u0000\u0001\u001fé" []
+"[\\~]" /u SyntaxError
+"[x\\~y]" /u SyntaxError
+"[^\\~]" /u SyntaxError
+"[\\~]" / "~" []
+"[x\\~y]" / "xy~" []
+"[^\\~]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}\b\u0000\u0001\u001fé" []
+"[\\^]" /v "^" []
+"[x\\^y]" /v "^xy" []
+"[^\\^]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\^]" /vi "^" []
+"[x\\^y]" /vi "XY^xy" []
+"[^\\^]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\^]" /u "^" []
+"[x\\^y]" /u "^xy" []
+"[^\\^]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\^]" / "^" []
+"[x\\^y]" / "^xy" []
+"[^\\^]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\$]" /v "$" []
+"[x\\$y]" /v "$xy" []
+"[^\\$]" /v " !\"#%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\$]" /vi "$" []
+"[x\\$y]" /vi "$XYxy" []
+"[^\\$]" /vi " !\"#%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\$]" /u "$" []
+"[x\\$y]" /u "$xy" []
+"[^\\$]" /u " !\"#%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\$]" / "$" []
+"[x\\$y]" / "$xy" []
+"[^\\$]" / " !\"#%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\\\]" /v "\\" []
+"[x\\\\y]" /v "\\xy" []
+"[^\\\\]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\\\]" /vi "\\" []
+"[x\\\\y]" /vi "XY\\xy" []
+"[^\\\\]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\\\]" /u "\\" []
+"[x\\\\y]" /u "\\xy" []
+"[^\\\\]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\\\]" / "\\" []
+"[x\\\\y]" / "\\xy" []
+"[^\\\\]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\.]" /v "." []
+"[x\\.y]" /v ".xy" []
+"[^\\.]" /v " !\"#$%&'()*+,-/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\.]" /vi "." []
+"[x\\.y]" /vi ".XYxy" []
+"[^\\.]" /vi " !\"#$%&'()*+,-/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\.]" /u "." []
+"[x\\.y]" /u ".xy" []
+"[^\\.]" /u " !\"#$%&'()*+,-/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\.]" / "." []
+"[x\\.y]" / ".xy" []
+"[^\\.]" / " !\"#$%&'()*+,-/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\*]" /v "*" []
+"[x\\*y]" /v "*xy" []
+"[^\\*]" /v " !\"#$%&'()+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\*]" /vi "*" []
+"[x\\*y]" /vi "*XYxy" []
+"[^\\*]" /vi " !\"#$%&'()+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\*]" /u "*" []
+"[x\\*y]" /u "*xy" []
+"[^\\*]" /u " !\"#$%&'()+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\*]" / "*" []
+"[x\\*y]" / "*xy" []
+"[^\\*]" / " !\"#$%&'()+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\+]" /v "+" []
+"[x\\+y]" /v "+xy" []
+"[^\\+]" /v " !\"#$%&'()*,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\+]" /vi "+" []
+"[x\\+y]" /vi "+XYxy" []
+"[^\\+]" /vi " !\"#$%&'()*,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\+]" /u "+" []
+"[x\\+y]" /u "+xy" []
+"[^\\+]" /u " !\"#$%&'()*,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\+]" / "+" []
+"[x\\+y]" / "+xy" []
+"[^\\+]" / " !\"#$%&'()*,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\?]" /v "?" []
+"[x\\?y]" /v "?xy" []
+"[^\\?]" /v " !\"#$%&'()*+,-./0123456789:;<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\?]" /vi "?" []
+"[x\\?y]" /vi "?XYxy" []
+"[^\\?]" /vi " !\"#$%&'()*+,-./0123456789:;<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\?]" /u "?" []
+"[x\\?y]" /u "?xy" []
+"[^\\?]" /u " !\"#$%&'()*+,-./0123456789:;<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\?]" / "?" []
+"[x\\?y]" / "?xy" []
+"[^\\?]" / " !\"#$%&'()*+,-./0123456789:;<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\(]" /v "(" []
+"[x\\(y]" /v "(xy" []
+"[^\\(]" /v " !\"#$%&')*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\(]" /vi "(" []
+"[x\\(y]" /vi "(XYxy" []
+"[^\\(]" /vi " !\"#$%&')*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\(]" /u "(" []
+"[x\\(y]" /u "(xy" []
+"[^\\(]" /u " !\"#$%&')*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\(]" / "(" []
+"[x\\(y]" / "(xy" []
+"[^\\(]" / " !\"#$%&')*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\)]" /v ")" []
+"[x\\)y]" /v ")xy" []
+"[^\\)]" /v " !\"#$%&'(*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\)]" /vi ")" []
+"[x\\)y]" /vi ")XYxy" []
+"[^\\)]" /vi " !\"#$%&'(*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\)]" /u ")" []
+"[x\\)y]" /u ")xy" []
+"[^\\)]" /u " !\"#$%&'(*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\)]" / ")" []
+"[x\\)y]" / ")xy" []
+"[^\\)]" / " !\"#$%&'(*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\[]" /v "[" []
+"[x\\[y]" /v "[xy" []
+"[^\\[]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\[]" /vi "[" []
+"[x\\[y]" /vi "XY[xy" []
+"[^\\[]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\[]" /u "[" []
+"[x\\[y]" /u "[xy" []
+"[^\\[]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\[]" / "[" []
+"[x\\[y]" / "[xy" []
+"[^\\[]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\]]" /v "]" []
+"[x\\]y]" /v "]xy" []
+"[^\\]]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\]]" /vi "]" []
+"[x\\]y]" /vi "XY]xy" []
+"[^\\]]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\]]" /u "]" []
+"[x\\]y]" /u "]xy" []
+"[^\\]]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\]]" / "]" []
+"[x\\]y]" / "]xy" []
+"[^\\]]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\{]" /v "{" []
+"[x\\{y]" /v "xy{" []
+"[^\\{]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz|}~\b\u0000\u0001\u001fé" []
+"[\\{]" /vi "{" []
+"[x\\{y]" /vi "XYxy{" []
+"[^\\{]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz|}~\b\u0000\u0001\u001fé" []
+"[\\{]" /u "{" []
+"[x\\{y]" /u "xy{" []
+"[^\\{]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz|}~\b\u0000\u0001\u001fé" []
+"[\\{]" / "{" []
+"[x\\{y]" / "xy{" []
+"[^\\{]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz|}~\b\u0000\u0001\u001fé" []
+"[\\}]" /v "}" []
+"[x\\}y]" /v "xy}" []
+"[^\\}]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|~\b\u0000\u0001\u001fé" []
+"[\\}]" /vi "}" []
+"[x\\}y]" /vi "XYxy}" []
+"[^\\}]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|~\b\u0000\u0001\u001fé" []
+"[\\}]" /u "}" []
+"[x\\}y]" /u "xy}" []
+"[^\\}]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|~\b\u0000\u0001\u001fé" []
+"[\\}]" / "}" []
+"[x\\}y]" / "xy}" []
+"[^\\}]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|~\b\u0000\u0001\u001fé" []
+"[\\|]" /v "|" []
+"[x\\|y]" /v "xy|" []
+"[^\\|]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{}~\b\u0000\u0001\u001fé" []
+"[\\|]" /vi "|" []
+"[x\\|y]" /vi "XYxy|" []
+"[^\\|]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{}~\b\u0000\u0001\u001fé" []
+"[\\|]" /u "|" []
+"[x\\|y]" /u "xy|" []
+"[^\\|]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{}~\b\u0000\u0001\u001fé" []
+"[\\|]" / "|" []
+"[x\\|y]" / "xy|" []
+"[^\\|]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{}~\b\u0000\u0001\u001fé" []
+"[\\/]" /v "/" []
+"[x\\/y]" /v "/xy" []
+"[^\\/]" /v " !\"#$%&'()*+,-.0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\/]" /vi "/" []
+"[x\\/y]" /vi "/XYxy" []
+"[^\\/]" /vi " !\"#$%&'()*+,-.0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\/]" /u "/" []
+"[x\\/y]" /u "/xy" []
+"[^\\/]" /u " !\"#$%&'()*+,-.0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\/]" / "/" []
+"[x\\/y]" / "/xy" []
+"[^\\/]" / " !\"#$%&'()*+,-.0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\b]" /v "\b" []
+"[x\\by]" /v "xy\b" []
+"[^\\b]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u0000\u0001\u001fé" []
+"[\\b]" /vi "\b" []
+"[x\\by]" /vi "XYxy\b" []
+"[^\\b]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u0000\u0001\u001fé" []
+"[\\b]" /u "\b" []
+"[x\\by]" /u "xy\b" []
+"[^\\b]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u0000\u0001\u001fé" []
+"[\\b]" / "\b" []
+"[x\\by]" / "xy\b" []
+"[^\\b]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u0000\u0001\u001fé" []
+"[\\d]" /v "0123456789" []
+"[x\\dy]" /v "0123456789xy" []
+"[^\\d]" /v " !\"#$%&'()*+,-./:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\d]" /vi "0123456789" []
+"[x\\dy]" /vi "0123456789XYxy" []
+"[^\\d]" /vi " !\"#$%&'()*+,-./:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\d]" /u "0123456789" []
+"[x\\dy]" /u "0123456789xy" []
+"[^\\d]" /u " !\"#$%&'()*+,-./:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\d]" / "0123456789" []
+"[x\\dy]" / "0123456789xy" []
+"[^\\d]" / " !\"#$%&'()*+,-./:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\s]" /v " " []
+"[x\\sy]" /v " xy" []
+"[^\\s]" /v "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\s]" /vi " " []
+"[x\\sy]" /vi " XYxy" []
+"[^\\s]" /vi "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\s]" /u " " []
+"[x\\sy]" /u " xy" []
+"[^\\s]" /u "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\s]" / " " []
+"[x\\sy]" / " xy" []
+"[^\\s]" / "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\w]" /v "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[x\\wy]" /v "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[^\\w]" /v " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001fé" []
+"[\\w]" /vi "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[x\\wy]" /vi "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[^\\w]" /vi " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001fé" []
+"[\\w]" /u "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[x\\wy]" /u "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[^\\w]" /u " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001fé" []
+"[\\w]" / "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[x\\wy]" / "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" []
+"[^\\w]" / " !\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001fé" []
+"[\\0]" /v "\u0000" []
+"[x\\0y]" /v "xy\u0000" []
+"[^\\0]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0001\u001fé" []
+"[\\0]" /vi "\u0000" []
+"[x\\0y]" /vi "XYxy\u0000" []
+"[^\\0]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0001\u001fé" []
+"[\\0]" /u "\u0000" []
+"[x\\0y]" /u "xy\u0000" []
+"[^\\0]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0001\u001fé" []
+"[\\0]" / "\u0000" []
+"[x\\0y]" / "xy\u0000" []
+"[^\\0]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0001\u001fé" []
+"[\\']" /v SyntaxError
+"[x\\'y]" /v SyntaxError
+"[^\\']" /v SyntaxError
+"[\\']" /vi SyntaxError
+"[x\\'y]" /vi SyntaxError
+"[^\\']" /vi SyntaxError
+"[\\']" /u SyntaxError
+"[x\\'y]" /u SyntaxError
+"[^\\']" /u SyntaxError
+"[\\']" / "'" []
+"[x\\'y]" / "'xy" []
+"[^\\']" / " !\"#$%&()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\\"]" /v SyntaxError
+"[x\\\"y]" /v SyntaxError
+"[^\\\"]" /v SyntaxError
+"[\\\"]" /vi SyntaxError
+"[x\\\"y]" /vi SyntaxError
+"[^\\\"]" /vi SyntaxError
+"[\\\"]" /u SyntaxError
+"[x\\\"y]" /u SyntaxError
+"[^\\\"]" /u SyntaxError
+"[\\\"]" / "\"" []
+"[x\\\"y]" / "\"xy" []
+"[^\\\"]" / " !#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\_]" /v SyntaxError
+"[x\\_y]" /v SyntaxError
+"[^\\_]" /v SyntaxError
+"[\\_]" /vi SyntaxError
+"[x\\_y]" /vi SyntaxError
+"[^\\_]" /vi SyntaxError
+"[\\_]" /u SyntaxError
+"[x\\_y]" /u SyntaxError
+"[^\\_]" /u SyntaxError
+"[\\_]" / "_" []
+"[x\\_y]" / "_xy" []
+"[^\\_]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\ ]" /v SyntaxError
+"[x\\ y]" /v SyntaxError
+"[^\\ ]" /v SyntaxError
+"[\\ ]" /vi SyntaxError
+"[x\\ y]" /vi SyntaxError
+"[^\\ ]" /vi SyntaxError
+"[\\ ]" /u SyntaxError
+"[x\\ y]" /u SyntaxError
+"[^\\ ]" /u SyntaxError
+"[\\ ]" / " " []
+"[x\\ y]" / " xy" []
+"[^\\ ]" / "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\a]" /v SyntaxError
+"[x\\ay]" /v SyntaxError
+"[^\\a]" /v SyntaxError
+"[\\a]" /vi SyntaxError
+"[x\\ay]" /vi SyntaxError
+"[^\\a]" /vi SyntaxError
+"[\\a]" /u SyntaxError
+"[x\\ay]" /u SyntaxError
+"[^\\a]" /u SyntaxError
+"[\\a]" / "a" []
+"[x\\ay]" / "axy" []
+"[^\\a]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`bcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\A]" /v SyntaxError
+"[x\\Ay]" /v SyntaxError
+"[^\\A]" /v SyntaxError
+"[\\A]" /vi SyntaxError
+"[x\\Ay]" /vi SyntaxError
+"[^\\A]" /vi SyntaxError
+"[\\A]" /u SyntaxError
+"[x\\Ay]" /u SyntaxError
+"[^\\A]" /u SyntaxError
+"[\\A]" / "A" []
+"[x\\Ay]" / "Axy" []
+"[^\\A]" / " !\"#$%&'()*+,-./0123456789:;<=>?@BCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[\\z]" /v SyntaxError
+"[x\\zy]" /v SyntaxError
+"[^\\z]" /v SyntaxError
+"[\\z]" /vi SyntaxError
+"[x\\zy]" /vi SyntaxError
+"[^\\z]" /vi SyntaxError
+"[\\z]" /u SyntaxError
+"[x\\zy]" /u SyntaxError
+"[^\\z]" /u SyntaxError
+"[\\z]" / "z" []
+"[x\\zy]" / "xyz" []
+"[^\\z]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxy{|}~\b\u0000\u0001\u001fé" []
+"[\\Z]" /v SyntaxError
+"[x\\Zy]" /v SyntaxError
+"[^\\Z]" /v SyntaxError
+"[\\Z]" /vi SyntaxError
+"[x\\Zy]" /vi SyntaxError
+"[^\\Z]" /vi SyntaxError
+"[\\Z]" /u SyntaxError
+"[x\\Zy]" /u SyntaxError
+"[^\\Z]" /u SyntaxError
+"[\\Z]" / "Z" []
+"[x\\Zy]" / "Zxy" []
+"[^\\Z]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXY[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"\\&" /v SyntaxError
+"\\&" /vi SyntaxError
+"\\&" /u SyntaxError
+"\\&" / "&" [[1,["&"]],[0,["&"]],[1,["&"]]]
+"\\-" /v SyntaxError
+"\\-" /vi SyntaxError
+"\\-" /u SyntaxError
+"\\-" / "-" [[1,["-"]],[0,["-"]],[1,["-"]]]
+"\\!" /v SyntaxError
+"\\!" /vi SyntaxError
+"\\!" /u SyntaxError
+"\\!" / "!" [[1,["!"]],[0,["!"]],[1,["!"]]]
+"\\#" /v SyntaxError
+"\\#" /vi SyntaxError
+"\\#" /u SyntaxError
+"\\#" / "#" [[1,["#"]],[0,["#"]],[1,["#"]]]
+"\\%" /v SyntaxError
+"\\%" /vi SyntaxError
+"\\%" /u SyntaxError
+"\\%" / "%" [[1,["%"]],[0,["%"]],[1,["%"]]]
+"\\," /v SyntaxError
+"\\," /vi SyntaxError
+"\\," /u SyntaxError
+"\\," / "," [[1,[","]],[0,[","]],[1,[","]]]
+"\\:" /v SyntaxError
+"\\:" /vi SyntaxError
+"\\:" /u SyntaxError
+"\\:" / ":" [[1,[":"]],[0,[":"]],[1,[":"]]]
+"\\;" /v SyntaxError
+"\\;" /vi SyntaxError
+"\\;" /u SyntaxError
+"\\;" / ";" [[1,[";"]],[0,[";"]],[1,[";"]]]
+"\\<" /v SyntaxError
+"\\<" /vi SyntaxError
+"\\<" /u SyntaxError
+"\\<" / "<" [[1,["<"]],[0,["<"]],[1,["<"]]]
+"\\=" /v SyntaxError
+"\\=" /vi SyntaxError
+"\\=" /u SyntaxError
+"\\=" / "=" [[1,["="]],[0,["="]],[1,["="]]]
+"\\>" /v SyntaxError
+"\\>" /vi SyntaxError
+"\\>" /u SyntaxError
+"\\>" / ">" [[1,[">"]],[0,[">"]],[1,[">"]]]
+"\\@" /v SyntaxError
+"\\@" /vi SyntaxError
+"\\@" /u SyntaxError
+"\\@" / "@" [[1,["@"]],[0,["@"]],[1,["@"]]]
+"\\`" /v SyntaxError
+"\\`" /vi SyntaxError
+"\\`" /u SyntaxError
+"\\`" / "`" [[1,["`"]],[0,["`"]],[1,["`"]]]
+"\\~" /v SyntaxError
+"\\~" /vi SyntaxError
+"\\~" /u SyntaxError
+"\\~" / "~" [[1,["~"]],[0,["~"]],[1,["~"]]]
+"\\^" /v "^" [[1,["^"]],[0,["^"]],[1,["^"]]]
+"\\^" /vi "^" [[1,["^"]],[0,["^"]],[1,["^"]]]
+"\\^" /u "^" [[1,["^"]],[0,["^"]],[1,["^"]]]
+"\\^" / "^" [[1,["^"]],[0,["^"]],[1,["^"]]]
+"\\$" /v "$" [[1,["$"]],[0,["$"]],[1,["$"]]]
+"\\$" /vi "$" [[1,["$"]],[0,["$"]],[1,["$"]]]
+"\\$" /u "$" [[1,["$"]],[0,["$"]],[1,["$"]]]
+"\\$" / "$" [[1,["$"]],[0,["$"]],[1,["$"]]]
+"\\\\" /v "\\" [[0,["\\"]],[0,["\\"]],[1,["\\"]]]
+"\\\\" /vi "\\" [[0,["\\"]],[0,["\\"]],[1,["\\"]]]
+"\\\\" /u "\\" [[0,["\\"]],[0,["\\"]],[1,["\\"]]]
+"\\\\" / "\\" [[0,["\\"]],[0,["\\"]],[1,["\\"]]]
+"\\." /v "." [[1,["."]],[0,["."]],[1,["."]]]
+"\\." /vi "." [[1,["."]],[0,["."]],[1,["."]]]
+"\\." /u "." [[1,["."]],[0,["."]],[1,["."]]]
+"\\." / "." [[1,["."]],[0,["."]],[1,["."]]]
+"\\*" /v "*" [[1,["*"]],[0,["*"]],[1,["*"]]]
+"\\*" /vi "*" [[1,["*"]],[0,["*"]],[1,["*"]]]
+"\\*" /u "*" [[1,["*"]],[0,["*"]],[1,["*"]]]
+"\\*" / "*" [[1,["*"]],[0,["*"]],[1,["*"]]]
+"\\+" /v "+" [[1,["+"]],[0,["+"]],[1,["+"]]]
+"\\+" /vi "+" [[1,["+"]],[0,["+"]],[1,["+"]]]
+"\\+" /u "+" [[1,["+"]],[0,["+"]],[1,["+"]]]
+"\\+" / "+" [[1,["+"]],[0,["+"]],[1,["+"]]]
+"\\?" /v "?" [[1,["?"]],[0,["?"]],[1,["?"]]]
+"\\?" /vi "?" [[1,["?"]],[0,["?"]],[1,["?"]]]
+"\\?" /u "?" [[1,["?"]],[0,["?"]],[1,["?"]]]
+"\\?" / "?" [[1,["?"]],[0,["?"]],[1,["?"]]]
+"\\(" /v "(" [[1,["("]],[0,["("]],[1,["("]]]
+"\\(" /vi "(" [[1,["("]],[0,["("]],[1,["("]]]
+"\\(" /u "(" [[1,["("]],[0,["("]],[1,["("]]]
+"\\(" / "(" [[1,["("]],[0,["("]],[1,["("]]]
+"\\)" /v ")" [[1,[")"]],[0,[")"]],[1,[")"]]]
+"\\)" /vi ")" [[1,[")"]],[0,[")"]],[1,[")"]]]
+"\\)" /u ")" [[1,[")"]],[0,[")"]],[1,[")"]]]
+"\\)" / ")" [[1,[")"]],[0,[")"]],[1,[")"]]]
+"\\[" /v "[" [[1,["["]],[0,["["]],[1,["["]]]
+"\\[" /vi "[" [[1,["["]],[0,["["]],[1,["["]]]
+"\\[" /u "[" [[1,["["]],[0,["["]],[1,["["]]]
+"\\[" / "[" [[1,["["]],[0,["["]],[1,["["]]]
+"\\]" /v "]" [[1,["]"]],[0,["]"]],[1,["]"]]]
+"\\]" /vi "]" [[1,["]"]],[0,["]"]],[1,["]"]]]
+"\\]" /u "]" [[1,["]"]],[0,["]"]],[1,["]"]]]
+"\\]" / "]" [[1,["]"]],[0,["]"]],[1,["]"]]]
+"\\{" /v "{" [[1,["{"]],[0,["{"]],[1,["{"]]]
+"\\{" /vi "{" [[1,["{"]],[0,["{"]],[1,["{"]]]
+"\\{" /u "{" [[1,["{"]],[0,["{"]],[1,["{"]]]
+"\\{" / "{" [[1,["{"]],[0,["{"]],[1,["{"]]]
+"\\}" /v "}" [[1,["}"]],[0,["}"]],[1,["}"]]]
+"\\}" /vi "}" [[1,["}"]],[0,["}"]],[1,["}"]]]
+"\\}" /u "}" [[1,["}"]],[0,["}"]],[1,["}"]]]
+"\\}" / "}" [[1,["}"]],[0,["}"]],[1,["}"]]]
+"\\|" /v "|" [[1,["|"]],[0,["|"]],[1,["|"]]]
+"\\|" /vi "|" [[1,["|"]],[0,["|"]],[1,["|"]]]
+"\\|" /u "|" [[1,["|"]],[0,["|"]],[1,["|"]]]
+"\\|" / "|" [[1,["|"]],[0,["|"]],[1,["|"]]]
+"\\/" /v "/" [[1,["/"]],[0,["/"]],[1,["/"]]]
+"\\/" /vi "/" [[1,["/"]],[0,["/"]],[1,["/"]]]
+"\\/" /u "/" [[1,["/"]],[0,["/"]],[1,["/"]]]
+"\\/" / "/" [[1,["/"]],[0,["/"]],[1,["/"]]]
+"\\'" /v SyntaxError
+"\\'" /vi SyntaxError
+"\\'" /u SyntaxError
+"\\'" / "'" [[1,["'"]],[0,["'"]],[1,["'"]]]
+"\\\"" /v SyntaxError
+"\\\"" /vi SyntaxError
+"\\\"" /u SyntaxError
+"\\\"" / "\"" [[1,["\""]],[0,["\""]],[1,["\""]]]
+"\\_" /v SyntaxError
+"\\_" /vi SyntaxError
+"\\_" /u SyntaxError
+"\\_" / "_" [[1,["_"]],[0,["_"]],[1,["_"]]]
+"\\ " /v SyntaxError
+"\\ " /vi SyntaxError
+"\\ " /u SyntaxError
+"\\ " / " " [[1,[" "]],[0,[" "]],[1,[" "]]]
+"[&]" /v "&" []
+"[a&&b]" /v "" []
+"[a\\&&b]" /v "&ab" []
+"[a&\\&b]" /v "&ab" []
+"[a\\&\\&b]" /v "&ab" []
+"[&]" /vi "&" []
+"[a&&b]" /vi "" []
+"[a\\&&b]" /vi "&ABab" []
+"[a&\\&b]" /vi "&ABab" []
+"[a\\&\\&b]" /vi "&ABab" []
+"[&]" /u "&" []
+"[a&&b]" /u "&ab" []
+"[a\\&&b]" /u SyntaxError
+"[a&\\&b]" /u SyntaxError
+"[a\\&\\&b]" /u SyntaxError
+"[&]" / "&" []
+"[a&&b]" / "&ab" []
+"[a\\&&b]" / "&ab" []
+"[a&\\&b]" / "&ab" []
+"[a\\&\\&b]" / "&ab" []
+"[-]" /v SyntaxError
+"[a--b]" /v "a" []
+"[a\\--b]" /v "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`ab" []
+"[a-\\-b]" /v SyntaxError
+"[a\\-\\-b]" /v "-ab" []
+"[-]" /vi SyntaxError
+"[a--b]" /vi "Aa" []
+"[a\\--b]" /vi "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz" []
+"[a-\\-b]" /vi SyntaxError
+"[a\\-\\-b]" /vi "-ABab" []
+"[-]" /u "-" []
+"[a--b]" /u SyntaxError
+"[a\\--b]" /u "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`ab" []
+"[a-\\-b]" /u SyntaxError
+"[a\\-\\-b]" /u "-ab" []
+"[-]" / "-" []
+"[a--b]" / SyntaxError
+"[a\\--b]" / "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`ab" []
+"[a-\\-b]" / SyntaxError
+"[a\\-\\-b]" / "-ab" []
+"[!]" /v "!" []
+"[a!!b]" /v SyntaxError
+"[a\\!!b]" /v "!ab" []
+"[a!\\!b]" /v "!ab" []
+"[a\\!\\!b]" /v "!ab" []
+"[!]" /vi "!" []
+"[a!!b]" /vi SyntaxError
+"[a\\!!b]" /vi "!ABab" []
+"[a!\\!b]" /vi "!ABab" []
+"[a\\!\\!b]" /vi "!ABab" []
+"[!]" /u "!" []
+"[a!!b]" /u "!ab" []
+"[a\\!!b]" /u SyntaxError
+"[a!\\!b]" /u SyntaxError
+"[a\\!\\!b]" /u SyntaxError
+"[!]" / "!" []
+"[a!!b]" / "!ab" []
+"[a\\!!b]" / "!ab" []
+"[a!\\!b]" / "!ab" []
+"[a\\!\\!b]" / "!ab" []
+"[#]" /v "#" []
+"[a##b]" /v SyntaxError
+"[a\\##b]" /v "#ab" []
+"[a#\\#b]" /v "#ab" []
+"[a\\#\\#b]" /v "#ab" []
+"[#]" /vi "#" []
+"[a##b]" /vi SyntaxError
+"[a\\##b]" /vi "#ABab" []
+"[a#\\#b]" /vi "#ABab" []
+"[a\\#\\#b]" /vi "#ABab" []
+"[#]" /u "#" []
+"[a##b]" /u "#ab" []
+"[a\\##b]" /u SyntaxError
+"[a#\\#b]" /u SyntaxError
+"[a\\#\\#b]" /u SyntaxError
+"[#]" / "#" []
+"[a##b]" / "#ab" []
+"[a\\##b]" / "#ab" []
+"[a#\\#b]" / "#ab" []
+"[a\\#\\#b]" / "#ab" []
+"[%]" /v "%" []
+"[a%%b]" /v SyntaxError
+"[a\\%%b]" /v "%ab" []
+"[a%\\%b]" /v "%ab" []
+"[a\\%\\%b]" /v "%ab" []
+"[%]" /vi "%" []
+"[a%%b]" /vi SyntaxError
+"[a\\%%b]" /vi "%ABab" []
+"[a%\\%b]" /vi "%ABab" []
+"[a\\%\\%b]" /vi "%ABab" []
+"[%]" /u "%" []
+"[a%%b]" /u "%ab" []
+"[a\\%%b]" /u SyntaxError
+"[a%\\%b]" /u SyntaxError
+"[a\\%\\%b]" /u SyntaxError
+"[%]" / "%" []
+"[a%%b]" / "%ab" []
+"[a\\%%b]" / "%ab" []
+"[a%\\%b]" / "%ab" []
+"[a\\%\\%b]" / "%ab" []
+"[,]" /v "," []
+"[a,,b]" /v SyntaxError
+"[a\\,,b]" /v ",ab" []
+"[a,\\,b]" /v ",ab" []
+"[a\\,\\,b]" /v ",ab" []
+"[,]" /vi "," []
+"[a,,b]" /vi SyntaxError
+"[a\\,,b]" /vi ",ABab" []
+"[a,\\,b]" /vi ",ABab" []
+"[a\\,\\,b]" /vi ",ABab" []
+"[,]" /u "," []
+"[a,,b]" /u ",ab" []
+"[a\\,,b]" /u SyntaxError
+"[a,\\,b]" /u SyntaxError
+"[a\\,\\,b]" /u SyntaxError
+"[,]" / "," []
+"[a,,b]" / ",ab" []
+"[a\\,,b]" / ",ab" []
+"[a,\\,b]" / ",ab" []
+"[a\\,\\,b]" / ",ab" []
+"[:]" /v ":" []
+"[a::b]" /v SyntaxError
+"[a\\::b]" /v ":ab" []
+"[a:\\:b]" /v ":ab" []
+"[a\\:\\:b]" /v ":ab" []
+"[:]" /vi ":" []
+"[a::b]" /vi SyntaxError
+"[a\\::b]" /vi ":ABab" []
+"[a:\\:b]" /vi ":ABab" []
+"[a\\:\\:b]" /vi ":ABab" []
+"[:]" /u ":" []
+"[a::b]" /u ":ab" []
+"[a\\::b]" /u SyntaxError
+"[a:\\:b]" /u SyntaxError
+"[a\\:\\:b]" /u SyntaxError
+"[:]" / ":" []
+"[a::b]" / ":ab" []
+"[a\\::b]" / ":ab" []
+"[a:\\:b]" / ":ab" []
+"[a\\:\\:b]" / ":ab" []
+"[;]" /v ";" []
+"[a;;b]" /v SyntaxError
+"[a\\;;b]" /v ";ab" []
+"[a;\\;b]" /v ";ab" []
+"[a\\;\\;b]" /v ";ab" []
+"[;]" /vi ";" []
+"[a;;b]" /vi SyntaxError
+"[a\\;;b]" /vi ";ABab" []
+"[a;\\;b]" /vi ";ABab" []
+"[a\\;\\;b]" /vi ";ABab" []
+"[;]" /u ";" []
+"[a;;b]" /u ";ab" []
+"[a\\;;b]" /u SyntaxError
+"[a;\\;b]" /u SyntaxError
+"[a\\;\\;b]" /u SyntaxError
+"[;]" / ";" []
+"[a;;b]" / ";ab" []
+"[a\\;;b]" / ";ab" []
+"[a;\\;b]" / ";ab" []
+"[a\\;\\;b]" / ";ab" []
+"[<]" /v "<" []
+"[a<<b]" /v SyntaxError
+"[a\\<<b]" /v "<ab" []
+"[a<\\<b]" /v "<ab" []
+"[a\\<\\<b]" /v "<ab" []
+"[<]" /vi "<" []
+"[a<<b]" /vi SyntaxError
+"[a\\<<b]" /vi "<ABab" []
+"[a<\\<b]" /vi "<ABab" []
+"[a\\<\\<b]" /vi "<ABab" []
+"[<]" /u "<" []
+"[a<<b]" /u "<ab" []
+"[a\\<<b]" /u SyntaxError
+"[a<\\<b]" /u SyntaxError
+"[a\\<\\<b]" /u SyntaxError
+"[<]" / "<" []
+"[a<<b]" / "<ab" []
+"[a\\<<b]" / "<ab" []
+"[a<\\<b]" / "<ab" []
+"[a\\<\\<b]" / "<ab" []
+"[=]" /v "=" []
+"[a==b]" /v SyntaxError
+"[a\\==b]" /v "=ab" []
+"[a=\\=b]" /v "=ab" []
+"[a\\=\\=b]" /v "=ab" []
+"[=]" /vi "=" []
+"[a==b]" /vi SyntaxError
+"[a\\==b]" /vi "=ABab" []
+"[a=\\=b]" /vi "=ABab" []
+"[a\\=\\=b]" /vi "=ABab" []
+"[=]" /u "=" []
+"[a==b]" /u "=ab" []
+"[a\\==b]" /u SyntaxError
+"[a=\\=b]" /u SyntaxError
+"[a\\=\\=b]" /u SyntaxError
+"[=]" / "=" []
+"[a==b]" / "=ab" []
+"[a\\==b]" / "=ab" []
+"[a=\\=b]" / "=ab" []
+"[a\\=\\=b]" / "=ab" []
+"[>]" /v ">" []
+"[a>>b]" /v SyntaxError
+"[a\\>>b]" /v ">ab" []
+"[a>\\>b]" /v ">ab" []
+"[a\\>\\>b]" /v ">ab" []
+"[>]" /vi ">" []
+"[a>>b]" /vi SyntaxError
+"[a\\>>b]" /vi ">ABab" []
+"[a>\\>b]" /vi ">ABab" []
+"[a\\>\\>b]" /vi ">ABab" []
+"[>]" /u ">" []
+"[a>>b]" /u ">ab" []
+"[a\\>>b]" /u SyntaxError
+"[a>\\>b]" /u SyntaxError
+"[a\\>\\>b]" /u SyntaxError
+"[>]" / ">" []
+"[a>>b]" / ">ab" []
+"[a\\>>b]" / ">ab" []
+"[a>\\>b]" / ">ab" []
+"[a\\>\\>b]" / ">ab" []
+"[@]" /v "@" []
+"[a@@b]" /v SyntaxError
+"[a\\@@b]" /v "@ab" []
+"[a@\\@b]" /v "@ab" []
+"[a\\@\\@b]" /v "@ab" []
+"[@]" /vi "@" []
+"[a@@b]" /vi SyntaxError
+"[a\\@@b]" /vi "@ABab" []
+"[a@\\@b]" /vi "@ABab" []
+"[a\\@\\@b]" /vi "@ABab" []
+"[@]" /u "@" []
+"[a@@b]" /u "@ab" []
+"[a\\@@b]" /u SyntaxError
+"[a@\\@b]" /u SyntaxError
+"[a\\@\\@b]" /u SyntaxError
+"[@]" / "@" []
+"[a@@b]" / "@ab" []
+"[a\\@@b]" / "@ab" []
+"[a@\\@b]" / "@ab" []
+"[a\\@\\@b]" / "@ab" []
+"[`]" /v "`" []
+"[a``b]" /v SyntaxError
+"[a\\``b]" /v "`ab" []
+"[a`\\`b]" /v "`ab" []
+"[a\\`\\`b]" /v "`ab" []
+"[`]" /vi "`" []
+"[a``b]" /vi SyntaxError
+"[a\\``b]" /vi "AB`ab" []
+"[a`\\`b]" /vi "AB`ab" []
+"[a\\`\\`b]" /vi "AB`ab" []
+"[`]" /u "`" []
+"[a``b]" /u "`ab" []
+"[a\\``b]" /u SyntaxError
+"[a`\\`b]" /u SyntaxError
+"[a\\`\\`b]" /u SyntaxError
+"[`]" / "`" []
+"[a``b]" / "`ab" []
+"[a\\``b]" / "`ab" []
+"[a`\\`b]" / "`ab" []
+"[a\\`\\`b]" / "`ab" []
+"[~]" /v "~" []
+"[a~~b]" /v SyntaxError
+"[a\\~~b]" /v "ab~" []
+"[a~\\~b]" /v "ab~" []
+"[a\\~\\~b]" /v "ab~" []
+"[~]" /vi "~" []
+"[a~~b]" /vi SyntaxError
+"[a\\~~b]" /vi "ABab~" []
+"[a~\\~b]" /vi "ABab~" []
+"[a\\~\\~b]" /vi "ABab~" []
+"[~]" /u "~" []
+"[a~~b]" /u "ab~" []
+"[a\\~~b]" /u SyntaxError
+"[a~\\~b]" /u SyntaxError
+"[a\\~\\~b]" /u SyntaxError
+"[~]" / "~" []
+"[a~~b]" / "ab~" []
+"[a\\~~b]" / "ab~" []
+"[a~\\~b]" / "ab~" []
+"[a\\~\\~b]" / "ab~" []
+"[^]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[a^^b]" /v SyntaxError
+"[a\\^^b]" /v "^ab" []
+"[a^\\^b]" /v "^ab" []
+"[a\\^\\^b]" /v "^ab" []
+"[^]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[a^^b]" /vi SyntaxError
+"[a\\^^b]" /vi "AB^ab" []
+"[a^\\^b]" /vi "AB^ab" []
+"[a\\^\\^b]" /vi "AB^ab" []
+"[^]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[a^^b]" /u "^ab" []
+"[a\\^^b]" /u "^ab" []
+"[a^\\^b]" /u "^ab" []
+"[a\\^\\^b]" /u "^ab" []
+"[^]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[a^^b]" / "^ab" []
+"[a\\^^b]" / "^ab" []
+"[a^\\^b]" / "^ab" []
+"[a\\^\\^b]" / "^ab" []
+"[$]" /v "$" []
+"[a$$b]" /v SyntaxError
+"[a\\$$b]" /v "$ab" []
+"[a$\\$b]" /v "$ab" []
+"[a\\$\\$b]" /v "$ab" []
+"[$]" /vi "$" []
+"[a$$b]" /vi SyntaxError
+"[a\\$$b]" /vi "$ABab" []
+"[a$\\$b]" /vi "$ABab" []
+"[a\\$\\$b]" /vi "$ABab" []
+"[$]" /u "$" []
+"[a$$b]" /u "$ab" []
+"[a\\$$b]" /u "$ab" []
+"[a$\\$b]" /u "$ab" []
+"[a\\$\\$b]" /u "$ab" []
+"[$]" / "$" []
+"[a$$b]" / "$ab" []
+"[a\\$$b]" / "$ab" []
+"[a$\\$b]" / "$ab" []
+"[a\\$\\$b]" / "$ab" []
+"[.]" /v "." []
+"[a..b]" /v SyntaxError
+"[a\\..b]" /v ".ab" []
+"[a.\\.b]" /v ".ab" []
+"[a\\.\\.b]" /v ".ab" []
+"[.]" /vi "." []
+"[a..b]" /vi SyntaxError
+"[a\\..b]" /vi ".ABab" []
+"[a.\\.b]" /vi ".ABab" []
+"[a\\.\\.b]" /vi ".ABab" []
+"[.]" /u "." []
+"[a..b]" /u ".ab" []
+"[a\\..b]" /u ".ab" []
+"[a.\\.b]" /u ".ab" []
+"[a\\.\\.b]" /u ".ab" []
+"[.]" / "." []
+"[a..b]" / ".ab" []
+"[a\\..b]" / ".ab" []
+"[a.\\.b]" / ".ab" []
+"[a\\.\\.b]" / ".ab" []
+"[*]" /v "*" []
+"[a**b]" /v SyntaxError
+"[a\\**b]" /v "*ab" []
+"[a*\\*b]" /v "*ab" []
+"[a\\*\\*b]" /v "*ab" []
+"[*]" /vi "*" []
+"[a**b]" /vi SyntaxError
+"[a\\**b]" /vi "*ABab" []
+"[a*\\*b]" /vi "*ABab" []
+"[a\\*\\*b]" /vi "*ABab" []
+"[*]" /u "*" []
+"[a**b]" /u "*ab" []
+"[a\\**b]" /u "*ab" []
+"[a*\\*b]" /u "*ab" []
+"[a\\*\\*b]" /u "*ab" []
+"[*]" / "*" []
+"[a**b]" / "*ab" []
+"[a\\**b]" / "*ab" []
+"[a*\\*b]" / "*ab" []
+"[a\\*\\*b]" / "*ab" []
+"[+]" /v "+" []
+"[a++b]" /v SyntaxError
+"[a\\++b]" /v "+ab" []
+"[a+\\+b]" /v "+ab" []
+"[a\\+\\+b]" /v "+ab" []
+"[+]" /vi "+" []
+"[a++b]" /vi SyntaxError
+"[a\\++b]" /vi "+ABab" []
+"[a+\\+b]" /vi "+ABab" []
+"[a\\+\\+b]" /vi "+ABab" []
+"[+]" /u "+" []
+"[a++b]" /u "+ab" []
+"[a\\++b]" /u "+ab" []
+"[a+\\+b]" /u "+ab" []
+"[a\\+\\+b]" /u "+ab" []
+"[+]" / "+" []
+"[a++b]" / "+ab" []
+"[a\\++b]" / "+ab" []
+"[a+\\+b]" / "+ab" []
+"[a\\+\\+b]" / "+ab" []
+"[?]" /v "?" []
+"[a??b]" /v SyntaxError
+"[a\\??b]" /v "?ab" []
+"[a?\\?b]" /v "?ab" []
+"[a\\?\\?b]" /v "?ab" []
+"[?]" /vi "?" []
+"[a??b]" /vi SyntaxError
+"[a\\??b]" /vi "?ABab" []
+"[a?\\?b]" /vi "?ABab" []
+"[a\\?\\?b]" /vi "?ABab" []
+"[?]" /u "?" []
+"[a??b]" /u "?ab" []
+"[a\\??b]" /u "?ab" []
+"[a?\\?b]" /u "?ab" []
+"[a\\?\\?b]" /u "?ab" []
+"[?]" / "?" []
+"[a??b]" / "?ab" []
+"[a\\??b]" / "?ab" []
+"[a?\\?b]" / "?ab" []
+"[a\\?\\?b]" / "?ab" []
+"[(]" /v SyntaxError
+"[a((b]" /v SyntaxError
+"[a\\((b]" /v SyntaxError
+"[a(\\(b]" /v SyntaxError
+"[a\\(\\(b]" /v "(ab" []
+"[(]" /vi SyntaxError
+"[a((b]" /vi SyntaxError
+"[a\\((b]" /vi SyntaxError
+"[a(\\(b]" /vi SyntaxError
+"[a\\(\\(b]" /vi "(ABab" []
+"[(]" /u "(" []
+"[a((b]" /u "(ab" []
+"[a\\((b]" /u "(ab" []
+"[a(\\(b]" /u "(ab" []
+"[a\\(\\(b]" /u "(ab" []
+"[(]" / "(" []
+"[a((b]" / "(ab" []
+"[a\\((b]" / "(ab" []
+"[a(\\(b]" / "(ab" []
+"[a\\(\\(b]" / "(ab" []
+"[)]" /v SyntaxError
+"[a))b]" /v SyntaxError
+"[a\\))b]" /v SyntaxError
+"[a)\\)b]" /v SyntaxError
+"[a\\)\\)b]" /v ")ab" []
+"[)]" /vi SyntaxError
+"[a))b]" /vi SyntaxError
+"[a\\))b]" /vi SyntaxError
+"[a)\\)b]" /vi SyntaxError
+"[a\\)\\)b]" /vi ")ABab" []
+"[)]" /u ")" []
+"[a))b]" /u ")ab" []
+"[a\\))b]" /u ")ab" []
+"[a)\\)b]" /u ")ab" []
+"[a\\)\\)b]" /u ")ab" []
+"[)]" / ")" []
+"[a))b]" / ")ab" []
+"[a\\))b]" / ")ab" []
+"[a)\\)b]" / ")ab" []
+"[a\\)\\)b]" / ")ab" []
+"[[]" /v SyntaxError
+"[a[[b]" /v SyntaxError
+"[a\\[[b]" /v SyntaxError
+"[a[\\[b]" /v SyntaxError
+"[a\\[\\[b]" /v "[ab" []
+"[[]" /vi SyntaxError
+"[a[[b]" /vi SyntaxError
+"[a\\[[b]" /vi SyntaxError
+"[a[\\[b]" /vi SyntaxError
+"[a\\[\\[b]" /vi "AB[ab" []
+"[[]" /u "[" []
+"[a[[b]" /u "[ab" []
+"[a\\[[b]" /u "[ab" []
+"[a[\\[b]" /u "[ab" []
+"[a\\[\\[b]" /u "[ab" []
+"[[]" / "[" []
+"[a[[b]" / "[ab" []
+"[a\\[[b]" / "[ab" []
+"[a[\\[b]" / "[ab" []
+"[a\\[\\[b]" / "[ab" []
+"[{]" /v SyntaxError
+"[a{{b]" /v SyntaxError
+"[a\\{{b]" /v SyntaxError
+"[a{\\{b]" /v SyntaxError
+"[a\\{\\{b]" /v "ab{" []
+"[{]" /vi SyntaxError
+"[a{{b]" /vi SyntaxError
+"[a\\{{b]" /vi SyntaxError
+"[a{\\{b]" /vi SyntaxError
+"[a\\{\\{b]" /vi "ABab{" []
+"[{]" /u "{" []
+"[a{{b]" /u "ab{" []
+"[a\\{{b]" /u "ab{" []
+"[a{\\{b]" /u "ab{" []
+"[a\\{\\{b]" /u "ab{" []
+"[{]" / "{" []
+"[a{{b]" / "ab{" []
+"[a\\{{b]" / "ab{" []
+"[a{\\{b]" / "ab{" []
+"[a\\{\\{b]" / "ab{" []
+"[}]" /v SyntaxError
+"[a}}b]" /v SyntaxError
+"[a\\}}b]" /v SyntaxError
+"[a}\\}b]" /v SyntaxError
+"[a\\}\\}b]" /v "ab}" []
+"[}]" /vi SyntaxError
+"[a}}b]" /vi SyntaxError
+"[a\\}}b]" /vi SyntaxError
+"[a}\\}b]" /vi SyntaxError
+"[a\\}\\}b]" /vi "ABab}" []
+"[}]" /u "}" []
+"[a}}b]" /u "ab}" []
+"[a\\}}b]" /u "ab}" []
+"[a}\\}b]" /u "ab}" []
+"[a\\}\\}b]" /u "ab}" []
+"[}]" / "}" []
+"[a}}b]" / "ab}" []
+"[a\\}}b]" / "ab}" []
+"[a}\\}b]" / "ab}" []
+"[a\\}\\}b]" / "ab}" []
+"[|]" /v SyntaxError
+"[a||b]" /v SyntaxError
+"[a\\||b]" /v SyntaxError
+"[a|\\|b]" /v SyntaxError
+"[a\\|\\|b]" /v "ab|" []
+"[|]" /vi SyntaxError
+"[a||b]" /vi SyntaxError
+"[a\\||b]" /vi SyntaxError
+"[a|\\|b]" /vi SyntaxError
+"[a\\|\\|b]" /vi "ABab|" []
+"[|]" /u "|" []
+"[a||b]" /u "ab|" []
+"[a\\||b]" /u "ab|" []
+"[a|\\|b]" /u "ab|" []
+"[a\\|\\|b]" /u "ab|" []
+"[|]" / "|" []
+"[a||b]" / "ab|" []
+"[a\\||b]" / "ab|" []
+"[a|\\|b]" / "ab|" []
+"[a\\|\\|b]" / "ab|" []
+"[/]" /v SyntaxError
+"[a//b]" /v SyntaxError
+"[a\\//b]" /v SyntaxError
+"[a/\\/b]" /v SyntaxError
+"[a\\/\\/b]" /v "/ab" []
+"[/]" /vi SyntaxError
+"[a//b]" /vi SyntaxError
+"[a\\//b]" /vi SyntaxError
+"[a/\\/b]" /vi SyntaxError
+"[a\\/\\/b]" /vi "/ABab" []
+"[/]" /u "/" []
+"[a//b]" /u "/ab" []
+"[a\\//b]" /u "/ab" []
+"[a/\\/b]" /u "/ab" []
+"[a\\/\\/b]" /u "/ab" []
+"[/]" / "/" []
+"[a//b]" / "/ab" []
+"[a\\//b]" / "/ab" []
+"[a/\\/b]" / "/ab" []
+"[a\\/\\/b]" / "/ab" []
+"[&&]" /v SyntaxError
+"[&&]" /vi SyntaxError
+"[&&]" /u "&" []
+"[&&]" / "&" []
+"[!!]" /v SyntaxError
+"[!!]" /vi SyntaxError
+"[!!]" /u "!" []
+"[!!]" / "!" []
+"[##]" /v SyntaxError
+"[##]" /vi SyntaxError
+"[##]" /u "#" []
+"[##]" / "#" []
+"[$$]" /v SyntaxError
+"[$$]" /vi SyntaxError
+"[$$]" /u "$" []
+"[$$]" / "$" []
+"[%%]" /v SyntaxError
+"[%%]" /vi SyntaxError
+"[%%]" /u "%" []
+"[%%]" / "%" []
+"[**]" /v SyntaxError
+"[**]" /vi SyntaxError
+"[**]" /u "*" []
+"[**]" / "*" []
+"[++]" /v SyntaxError
+"[++]" /vi SyntaxError
+"[++]" /u "+" []
+"[++]" / "+" []
+"[,,]" /v SyntaxError
+"[,,]" /vi SyntaxError
+"[,,]" /u "," []
+"[,,]" / "," []
+"[..]" /v SyntaxError
+"[..]" /vi SyntaxError
+"[..]" /u "." []
+"[..]" / "." []
+"[::]" /v SyntaxError
+"[::]" /vi SyntaxError
+"[::]" /u ":" []
+"[::]" / ":" []
+"[;;]" /v SyntaxError
+"[;;]" /vi SyntaxError
+"[;;]" /u ";" []
+"[;;]" / ";" []
+"[<<]" /v SyntaxError
+"[<<]" /vi SyntaxError
+"[<<]" /u "<" []
+"[<<]" / "<" []
+"[==]" /v SyntaxError
+"[==]" /vi SyntaxError
+"[==]" /u "=" []
+"[==]" / "=" []
+"[>>]" /v SyntaxError
+"[>>]" /vi SyntaxError
+"[>>]" /u ">" []
+"[>>]" / ">" []
+"[??]" /v SyntaxError
+"[??]" /vi SyntaxError
+"[??]" /u "?" []
+"[??]" / "?" []
+"[@@]" /v SyntaxError
+"[@@]" /vi SyntaxError
+"[@@]" /u "@" []
+"[@@]" / "@" []
+"[^^]" /v " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[^^]" /vi " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[^^]" /u " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[^^]" / " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" []
+"[``]" /v SyntaxError
+"[``]" /vi SyntaxError
+"[``]" /u "`" []
+"[``]" / "`" []
+"[~~]" /v SyntaxError
+"[~~]" /vi SyntaxError
+"[~~]" /u "~" []
+"[~~]" / "~" []
+"&" /v "&" [[0,["&"]],[0,["&"]],[1,["&"]]]
+"&&" /v "" [[0,["&&"]],null]
+"&[[a-z]--[c]]" /v "" [[0,["&a"]],null]
+"[a]&" /v "" [[0,["a&"]]]
+"&" /vi "&" [[0,["&"]],[0,["&"]],[1,["&"]]]
+"&&" /vi "" [[0,["&&"]],null]
+"&[[a-z]--[c]]" /vi "" [[0,["&a"]],null]
+"[a]&" /vi "" [[0,["a&"]]]
+"&" /u "&" [[0,["&"]],[0,["&"]],[1,["&"]]]
+"&&" /u "" [[0,["&&"]],null]
+"&[[a-z]--[c]]" /u SyntaxError
+"[a]&" /u "" [[0,["a&"]]]
+"&" / "&" [[0,["&"]],[0,["&"]],[1,["&"]]]
+"&&" / "" [[0,["&&"]],null]
+"&[[a-z]--[c]]" / "" [null,null]
+"[a]&" / "" [[0,["a&"]]]
+"-" /v "-" [[0,["-"]],[0,["-"]],[1,["-"]]]
+"--" /v "" [[0,["--"]],null]
+"-[[a-z]--[c]]" /v "" [[0,["-a"]],null]
+"[a]-" /v "" [[0,["a-"]]]
+"-" /vi "-" [[0,["-"]],[0,["-"]],[1,["-"]]]
+"--" /vi "" [[0,["--"]],null]
+"-[[a-z]--[c]]" /vi "" [[0,["-a"]],null]
+"[a]-" /vi "" [[0,["a-"]]]
+"-" /u "-" [[0,["-"]],[0,["-"]],[1,["-"]]]
+"--" /u "" [[0,["--"]],null]
+"-[[a-z]--[c]]" /u SyntaxError
+"[a]-" /u "" [[0,["a-"]]]
+"-" / "-" [[0,["-"]],[0,["-"]],[1,["-"]]]
+"--" / "" [[0,["--"]],null]
+"-[[a-z]--[c]]" / "" [null,null]
+"[a]-" / "" [[0,["a-"]]]
+"!" /v "!" [[0,["!"]],[0,["!"]],[1,["!"]]]
+"!!" /v "" [[0,["!!"]],null]
+"![[a-z]--[c]]" /v "" [[0,["!a"]],null]
+"[a]!" /v "" [[0,["a!"]]]
+"!" /vi "!" [[0,["!"]],[0,["!"]],[1,["!"]]]
+"!!" /vi "" [[0,["!!"]],null]
+"![[a-z]--[c]]" /vi "" [[0,["!a"]],null]
+"[a]!" /vi "" [[0,["a!"]]]
+"!" /u "!" [[0,["!"]],[0,["!"]],[1,["!"]]]
+"!!" /u "" [[0,["!!"]],null]
+"![[a-z]--[c]]" /u SyntaxError
+"[a]!" /u "" [[0,["a!"]]]
+"!" / "!" [[0,["!"]],[0,["!"]],[1,["!"]]]
+"!!" / "" [[0,["!!"]],null]
+"![[a-z]--[c]]" / "" [null,null]
+"[a]!" / "" [[0,["a!"]]]
+"#" /v "#" [[0,["#"]],[0,["#"]],[1,["#"]]]
+"##" /v "" [[0,["##"]],null]
+"#[[a-z]--[c]]" /v "" [[0,["#a"]],null]
+"[a]#" /v "" [[0,["a#"]]]
+"#" /vi "#" [[0,["#"]],[0,["#"]],[1,["#"]]]
+"##" /vi "" [[0,["##"]],null]
+"#[[a-z]--[c]]" /vi "" [[0,["#a"]],null]
+"[a]#" /vi "" [[0,["a#"]]]
+"#" /u "#" [[0,["#"]],[0,["#"]],[1,["#"]]]
+"##" /u "" [[0,["##"]],null]
+"#[[a-z]--[c]]" /u SyntaxError
+"[a]#" /u "" [[0,["a#"]]]
+"#" / "#" [[0,["#"]],[0,["#"]],[1,["#"]]]
+"##" / "" [[0,["##"]],null]
+"#[[a-z]--[c]]" / "" [null,null]
+"[a]#" / "" [[0,["a#"]]]
+"%" /v "%" [[0,["%"]],[0,["%"]],[1,["%"]]]
+"%%" /v "" [[0,["%%"]],null]
+"%[[a-z]--[c]]" /v "" [[0,["%a"]],null]
+"[a]%" /v "" [[0,["a%"]]]
+"%" /vi "%" [[0,["%"]],[0,["%"]],[1,["%"]]]
+"%%" /vi "" [[0,["%%"]],null]
+"%[[a-z]--[c]]" /vi "" [[0,["%a"]],null]
+"[a]%" /vi "" [[0,["a%"]]]
+"%" /u "%" [[0,["%"]],[0,["%"]],[1,["%"]]]
+"%%" /u "" [[0,["%%"]],null]
+"%[[a-z]--[c]]" /u SyntaxError
+"[a]%" /u "" [[0,["a%"]]]
+"%" / "%" [[0,["%"]],[0,["%"]],[1,["%"]]]
+"%%" / "" [[0,["%%"]],null]
+"%[[a-z]--[c]]" / "" [null,null]
+"[a]%" / "" [[0,["a%"]]]
+"," /v "," [[0,[","]],[0,[","]],[1,[","]]]
+",," /v "" [[0,[",,"]],null]
+",[[a-z]--[c]]" /v "" [[0,[",a"]],null]
+"[a]," /v "" [[0,["a,"]]]
+"," /vi "," [[0,[","]],[0,[","]],[1,[","]]]
+",," /vi "" [[0,[",,"]],null]
+",[[a-z]--[c]]" /vi "" [[0,[",a"]],null]
+"[a]," /vi "" [[0,["a,"]]]
+"," /u "," [[0,[","]],[0,[","]],[1,[","]]]
+",," /u "" [[0,[",,"]],null]
+",[[a-z]--[c]]" /u SyntaxError
+"[a]," /u "" [[0,["a,"]]]
+"," / "," [[0,[","]],[0,[","]],[1,[","]]]
+",," / "" [[0,[",,"]],null]
+",[[a-z]--[c]]" / "" [null,null]
+"[a]," / "" [[0,["a,"]]]
+":" /v ":" [[0,[":"]],[0,[":"]],[1,[":"]]]
+"::" /v "" [[0,["::"]],null]
+":[[a-z]--[c]]" /v "" [[0,[":a"]],null]
+"[a]:" /v "" [[0,["a:"]]]
+":" /vi ":" [[0,[":"]],[0,[":"]],[1,[":"]]]
+"::" /vi "" [[0,["::"]],null]
+":[[a-z]--[c]]" /vi "" [[0,[":a"]],null]
+"[a]:" /vi "" [[0,["a:"]]]
+":" /u ":" [[0,[":"]],[0,[":"]],[1,[":"]]]
+"::" /u "" [[0,["::"]],null]
+":[[a-z]--[c]]" /u SyntaxError
+"[a]:" /u "" [[0,["a:"]]]
+":" / ":" [[0,[":"]],[0,[":"]],[1,[":"]]]
+"::" / "" [[0,["::"]],null]
+":[[a-z]--[c]]" / "" [null,null]
+"[a]:" / "" [[0,["a:"]]]
+";" /v ";" [[0,[";"]],[0,[";"]],[1,[";"]]]
+";;" /v "" [[0,[";;"]],null]
+";[[a-z]--[c]]" /v "" [[0,[";a"]],null]
+"[a];" /v "" [[0,["a;"]]]
+";" /vi ";" [[0,[";"]],[0,[";"]],[1,[";"]]]
+";;" /vi "" [[0,[";;"]],null]
+";[[a-z]--[c]]" /vi "" [[0,[";a"]],null]
+"[a];" /vi "" [[0,["a;"]]]
+";" /u ";" [[0,[";"]],[0,[";"]],[1,[";"]]]
+";;" /u "" [[0,[";;"]],null]
+";[[a-z]--[c]]" /u SyntaxError
+"[a];" /u "" [[0,["a;"]]]
+";" / ";" [[0,[";"]],[0,[";"]],[1,[";"]]]
+";;" / "" [[0,[";;"]],null]
+";[[a-z]--[c]]" / "" [null,null]
+"[a];" / "" [[0,["a;"]]]
+"<" /v "<" [[0,["<"]],[0,["<"]],[1,["<"]]]
+"<<" /v "" [[0,["<<"]],null]
+"<[[a-z]--[c]]" /v "" [[0,["<a"]],null]
+"[a]<" /v "" [[0,["a<"]]]
+"<" /vi "<" [[0,["<"]],[0,["<"]],[1,["<"]]]
+"<<" /vi "" [[0,["<<"]],null]
+"<[[a-z]--[c]]" /vi "" [[0,["<a"]],null]
+"[a]<" /vi "" [[0,["a<"]]]
+"<" /u "<" [[0,["<"]],[0,["<"]],[1,["<"]]]
+"<<" /u "" [[0,["<<"]],null]
+"<[[a-z]--[c]]" /u SyntaxError
+"[a]<" /u "" [[0,["a<"]]]
+"<" / "<" [[0,["<"]],[0,["<"]],[1,["<"]]]
+"<<" / "" [[0,["<<"]],null]
+"<[[a-z]--[c]]" / "" [null,null]
+"[a]<" / "" [[0,["a<"]]]
+"=" /v "=" [[0,["="]],[0,["="]],[1,["="]]]
+"==" /v "" [[0,["=="]],null]
+"=[[a-z]--[c]]" /v "" [[0,["=a"]],null]
+"[a]=" /v "" [[0,["a="]]]
+"=" /vi "=" [[0,["="]],[0,["="]],[1,["="]]]
+"==" /vi "" [[0,["=="]],null]
+"=[[a-z]--[c]]" /vi "" [[0,["=a"]],null]
+"[a]=" /vi "" [[0,["a="]]]
+"=" /u "=" [[0,["="]],[0,["="]],[1,["="]]]
+"==" /u "" [[0,["=="]],null]
+"=[[a-z]--[c]]" /u SyntaxError
+"[a]=" /u "" [[0,["a="]]]
+"=" / "=" [[0,["="]],[0,["="]],[1,["="]]]
+"==" / "" [[0,["=="]],null]
+"=[[a-z]--[c]]" / "" [null,null]
+"[a]=" / "" [[0,["a="]]]
+">" /v ">" [[0,[">"]],[0,[">"]],[1,[">"]]]
+">>" /v "" [[0,[">>"]],null]
+">[[a-z]--[c]]" /v "" [[0,[">a"]],null]
+"[a]>" /v "" [[0,["a>"]]]
+">" /vi ">" [[0,[">"]],[0,[">"]],[1,[">"]]]
+">>" /vi "" [[0,[">>"]],null]
+">[[a-z]--[c]]" /vi "" [[0,[">a"]],null]
+"[a]>" /vi "" [[0,["a>"]]]
+">" /u ">" [[0,[">"]],[0,[">"]],[1,[">"]]]
+">>" /u "" [[0,[">>"]],null]
+">[[a-z]--[c]]" /u SyntaxError
+"[a]>" /u "" [[0,["a>"]]]
+">" / ">" [[0,[">"]],[0,[">"]],[1,[">"]]]
+">>" / "" [[0,[">>"]],null]
+">[[a-z]--[c]]" / "" [null,null]
+"[a]>" / "" [[0,["a>"]]]
+"@" /v "@" [[0,["@"]],[0,["@"]],[1,["@"]]]
+"@@" /v "" [[0,["@@"]],null]
+"@[[a-z]--[c]]" /v "" [[0,["@a"]],null]
+"[a]@" /v "" [[0,["a@"]]]
+"@" /vi "@" [[0,["@"]],[0,["@"]],[1,["@"]]]
+"@@" /vi "" [[0,["@@"]],null]
+"@[[a-z]--[c]]" /vi "" [[0,["@a"]],null]
+"[a]@" /vi "" [[0,["a@"]]]
+"@" /u "@" [[0,["@"]],[0,["@"]],[1,["@"]]]
+"@@" /u "" [[0,["@@"]],null]
+"@[[a-z]--[c]]" /u SyntaxError
+"[a]@" /u "" [[0,["a@"]]]
+"@" / "@" [[0,["@"]],[0,["@"]],[1,["@"]]]
+"@@" / "" [[0,["@@"]],null]
+"@[[a-z]--[c]]" / "" [null,null]
+"[a]@" / "" [[0,["a@"]]]
+"`" /v "`" [[0,["`"]],[0,["`"]],[1,["`"]]]
+"``" /v "" [[0,["``"]],null]
+"`[[a-z]--[c]]" /v "" [[0,["`a"]],null]
+"[a]`" /v "" [[0,["a`"]]]
+"`" /vi "`" [[0,["`"]],[0,["`"]],[1,["`"]]]
+"``" /vi "" [[0,["``"]],null]
+"`[[a-z]--[c]]" /vi "" [[0,["`a"]],null]
+"[a]`" /vi "" [[0,["a`"]]]
+"`" /u "`" [[0,["`"]],[0,["`"]],[1,["`"]]]
+"``" /u "" [[0,["``"]],null]
+"`[[a-z]--[c]]" /u SyntaxError
+"[a]`" /u "" [[0,["a`"]]]
+"`" / "`" [[0,["`"]],[0,["`"]],[1,["`"]]]
+"``" / "" [[0,["``"]],null]
+"`[[a-z]--[c]]" / "" [null,null]
+"[a]`" / "" [[0,["a`"]]]
+"~" /v "~" [[0,["~"]],[0,["~"]],[1,["~"]]]
+"~~" /v "" [[0,["~~"]],null]
+"~[[a-z]--[c]]" /v "" [[0,["~a"]],null]
+"[a]~" /v "" [[0,["a~"]]]
+"~" /vi "~" [[0,["~"]],[0,["~"]],[1,["~"]]]
+"~~" /vi "" [[0,["~~"]],null]
+"~[[a-z]--[c]]" /vi "" [[0,["~a"]],null]
+"[a]~" /vi "" [[0,["a~"]]]
+"~" /u "~" [[0,["~"]],[0,["~"]],[1,["~"]]]
+"~~" /u "" [[0,["~~"]],null]
+"~[[a-z]--[c]]" /u SyntaxError
+"[a]~" /u "" [[0,["a~"]]]
+"~" / "~" [[0,["~"]],[0,["~"]],[1,["~"]]]
+"~~" / "" [[0,["~~"]],null]
+"~[[a-z]--[c]]" / "" [null,null]
+"[a]~" / "" [[0,["a~"]]]
+"/" /v "/" [[0,["/"]],[0,["/"]],[1,["/"]]]
+"//" /v "" [[0,["//"]],null]
+"/[[a-z]--[c]]" /v "" [[0,["/a"]],null]
+"[a]/" /v "" [[0,["a/"]]]
+"/" /vi "/" [[0,["/"]],[0,["/"]],[1,["/"]]]
+"//" /vi "" [[0,["//"]],null]
+"/[[a-z]--[c]]" /vi "" [[0,["/a"]],null]
+"[a]/" /vi "" [[0,["a/"]]]
+"/" /u "/" [[0,["/"]],[0,["/"]],[1,["/"]]]
+"//" /u "" [[0,["//"]],null]
+"/[[a-z]--[c]]" /u SyntaxError
+"[a]/" /u "" [[0,["a/"]]]
+"/" / "/" [[0,["/"]],[0,["/"]],[1,["/"]]]
+"//" / "" [[0,["//"]],null]
+"/[[a-z]--[c]]" / "" [null,null]
+"[a]/" / "" [[0,["a/"]]]
+"-&&" /v "" [[0,["-&&"]],null]
+"]" /v SyntaxError
+"}" /v SyntaxError
+"{" /v SyntaxError
+")" /v SyntaxError
+"[\\!-\\#]" /v "!\"#" []
+"[\\#-\\&]" /v "#$%&" []
+"[\\<-\\@]" /v "<=>?@" []
+"[\\--\\:]" /v "-./0123456789:" []
+"[ -\\&]" /v " !\"#$%&" []
+"[\\&-z]" /v "&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz" []
+"[\\@-\\`]" /v "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" []
+"[\\#-\\!]" /v SyntaxError
+"[\\--0]" /v "-./0" []
+"[\\---]" /v SyntaxError
+"[!-\\-]" /v "!\"#$%&'()*+,-" []
+"[\\!-\\#]" /vi "!\"#" []
+"[\\#-\\&]" /vi "#$%&" []
+"[\\<-\\@]" /vi "<=>?@" []
+"[\\--\\:]" /vi "-./0123456789:" []
+"[ -\\&]" /vi " !\"#$%&" []
+"[\\&-z]" /vi "&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz" []
+"[\\@-\\`]" /vi "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz" []
+"[\\#-\\!]" /vi SyntaxError
+"[\\--0]" /vi "-./0" []
+"[\\---]" /vi SyntaxError
+"[!-\\-]" /vi "!\"#$%&'()*+,-" []
+"[\\!-\\#]" /u SyntaxError
+"[\\#-\\&]" /u SyntaxError
+"[\\<-\\@]" /u SyntaxError
+"[\\--\\:]" /u SyntaxError
+"[ -\\&]" /u SyntaxError
+"[\\&-z]" /u SyntaxError
+"[\\@-\\`]" /u SyntaxError
+"[\\#-\\!]" /u SyntaxError
+"[\\--0]" /u "-./0" []
+"[\\---]" /u "-" []
+"[!-\\-]" /u "!\"#$%&'()*+,-" []
+"[\\!-\\#]" / "!\"#" []
+"[\\#-\\&]" / "#$%&" []
+"[\\<-\\@]" / "<=>?@" []
+"[\\--\\:]" / "-./0123456789:" []
+"[ -\\&]" / " !\"#$%&" []
+"[\\&-z]" / "&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz" []
+"[\\@-\\`]" / "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`" []
+"[\\#-\\!]" / SyntaxError
+"[\\--0]" / "-./0" []
+"[\\---]" / "-" []
+"[!-\\-]" / "!\"#$%&'()*+,-" []
+"[\\w--\\-]" /v "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\w--\\-]" /vi "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\w--\\-]" /u SyntaxError
+"[\\w--\\-]" / "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\w--[\\-\\_]]" /v SyntaxError
+"[\\w--[\\-\\_]]" /vi SyntaxError
+"[\\w--[\\-\\_]]" /u SyntaxError
+"[\\w--[\\-\\_]]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\w&&\\&]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\w&&\\&]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\w&&\\&]" /u SyntaxError
+"[\\w&&\\&]" / "&0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [[0,["&"]],null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,[0,["&"]],null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\&&&\\&]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&&\\&]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&&\\&]" /u SyntaxError
+"[\\&&&\\&]" / "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&&[\\&\\!]]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&&[\\&\\!]]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&&[\\&\\!]]" /u SyntaxError
+"[\\&&&[\\&\\!]]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[[\\&\\!]&&[\\!\\#]]" /v "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[[\\&\\!]&&[\\!\\#]]" /vi "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[[\\&\\!]&&[\\!\\#]]" /u SyntaxError
+"[[\\&\\!]&&[\\!\\#]]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[[\\&\\!]--[\\!]]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[[\\&\\!]--[\\!]]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[[\\&\\!]--[\\!]]" /u SyntaxError
+"[[\\&\\!]--[\\!]]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\p{ASCII}--[\\w\\s]--\\&--\\-]" /v "!\"#$%'()*+,./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001f" [null,null,[0,["!"]],[0,["#"]],null,[1,["!"]],[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,[0,["\b"]],[0,["\u0001"]],null,[0,["\u0000"]],[0,["@"]],[0,["@"]],[0,["'"]],null,[0,["."]],null,null,null,[0,[";"]],[7,[":"]],null]
+"[\\p{ASCII}--[\\w\\s]--\\&--\\-]" /vi "!\"#$%'()*+,./:;<=>?@[\\]^`{|}~\b\u0000\u0001\u001f" [null,null,[0,["!"]],[0,["#"]],null,[1,["!"]],[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,[0,["\b"]],[0,["\u0001"]],null,[0,["\u0000"]],[0,["@"]],[0,["@"]],[0,["'"]],null,[0,["."]],null,null,null,[0,[";"]],[7,[":"]],null]
+"[\\p{ASCII}--[\\w\\s]--\\&--\\-]" /u SyntaxError
+"[\\p{ASCII}--[\\w\\s]--\\&--\\-]" / SyntaxError
+"[\\&--\\&]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\&--\\&]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\&--\\&]" /u SyntaxError
+"[\\&--\\&]" / "&'()*+,-" [[0,["&"]],[0,["-"]],null,null,null,null,[0,["("]],[0,[")"]],null,null,null,[0,["&"]],null,null,null,null,null,null,[0,["'"]],null,[1,["*"]],null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\-\\-]" /v "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\-\\-]" /vi "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\-\\-]" /u "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\-\\-]" / "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\&\\&]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&\\&]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&\\&]" /u SyntaxError
+"[\\&\\&]" / "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\&&]" /u SyntaxError
+"[\\&&]" / "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[&\\&]" /v "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[&\\&]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[&\\&]" /u SyntaxError
+"[&\\&]" / "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\!\\!\\!]" /v "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\!\\!\\!]" /vi "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\!\\!\\!]" /u SyntaxError
+"[\\!\\!\\!]" / "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\~\\~]" /v "~" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[2,["~"]],null,null,null,null,null,null,null,null,null,null]
+"[\\~\\~]" /vi "~" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[2,["~"]],null,null,null,null,null,null,null,null,null,null]
+"[\\~\\~]" /u SyntaxError
+"[\\~\\~]" / "~" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[2,["~"]],null,null,null,null,null,null,null,null,null,null]
+"[\\&--&]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\&--&]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\&--&]" /u SyntaxError
+"[\\&--&]" / "&'()*+,-" [[0,["&"]],[0,["-"]],null,null,null,null,[0,["("]],[0,[")"]],null,null,null,[0,["&"]],null,null,null,null,null,null,[0,["'"]],null,[1,["*"]],null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\-&&\\-]" /v "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\-&&\\-]" /vi "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[\\-&&\\-]" /u "&-" [[0,["&"]],[0,["-"]],null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\-&&\\-]" / "&-" [[0,["&"]],[0,["-"]],null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],[1,["&"]]]
+"[[\\-]&&[\\-]]" /v "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[[\\-]&&[\\-]]" /vi "-" [null,[0,["-"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],null]
+"[[\\-]&&[\\-]]" /u SyntaxError
+"[[\\-]&&[\\-]]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\&&&&]" /v SyntaxError
+"[\\&&&&]" /vi SyntaxError
+"[\\&&&&]" /u SyntaxError
+"[\\&&&&]" / "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\q{\\&|\\-|a\\!b}]" /v "&-" [[0,["&"]],[0,["-"]],null,null,null,[0,["a!b"]],null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\q{\\&|\\-|a\\!b}]" /vi "&-" [[0,["&"]],[0,["-"]],null,null,null,[0,["a!b"]],null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\q{\\&|\\-|a\\!b}]" /u SyntaxError
+"[\\q{\\&|\\-|a\\!b}]" / "!&-abq{|}" [[0,["&"]],[0,["-"]],[0,["!"]],null,[0,["a"]],[0,["a"]],null,null,null,[0,["|"]],null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[3,["-"]],[1,["&"]]]
+"[\\q{\\(|\\)|\\{|\\}|\\/|\\||\\\\}]" /v "()/\\{|}" [null,null,null,null,null,null,[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\(|\\)|\\{|\\}|\\/|\\||\\\\}]" /vi "()/\\{|}" [null,null,null,null,null,null,[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\(|\\)|\\{|\\}|\\/|\\||\\\\}]" /u SyntaxError
+"[\\q{\\(|\\)|\\{|\\}|\\/|\\||\\\\}]" / "()/\\q{|}" [null,null,null,null,null,null,[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{(}]" /v SyntaxError
+"[\\q{(}]" /vi SyntaxError
+"[\\q{(}]" /u SyntaxError
+"[\\q{(}]" / "(q{}" [null,null,null,null,null,null,[0,["("]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{-}]" /v SyntaxError
+"[\\q{-}]" /vi SyntaxError
+"[\\q{-}]" /u SyntaxError
+"[\\q{-}]" / "q{|}" [null,null,null,null,null,null,null,null,null,[0,["|"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{&&}]" /v SyntaxError
+"[\\q{&&}]" /vi SyntaxError
+"[\\q{&&}]" /u SyntaxError
+"[\\q{&&}]" / "&q{}" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\q{\\&\\&}]" /v "" [null,null,null,null,null,null,null,null,null,null,null,[0,["&&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\&\\&}]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,[0,["&&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\&\\&}]" /u SyntaxError
+"[\\q{\\&\\&}]" / "&q{}" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[\\q{a&b}]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{a&b}]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{a&b}]" /u SyntaxError
+"[\\q{a&b}]" / "&abq{}" [[0,["&"]],null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,[4,["b"]],[1,["&"]]]
+"[\\q{!}]" /v "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{!}]" /vi "!" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{!}]" /u SyntaxError
+"[\\q{!}]" / "!q{}" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{[}]" /v SyntaxError
+"[\\q{[}]" /vi SyntaxError
+"[\\q{[}]" /u SyntaxError
+"[\\q{[}]" / "[q{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{]}]" /v SyntaxError
+"[\\q{]}]" /vi SyntaxError
+"[\\q{]}]" /u SyntaxError
+"[\\q{]}]" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\b}]" /v "\b" [null,null,null,null,null,null,null,null,null,null,null,null,[0,["\b"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\b}]" /vi "\b" [null,null,null,null,null,null,null,null,null,null,null,null,[0,["\b"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\b}]" /u SyntaxError
+"[\\q{\\b}]" / "q{}\b" [null,null,null,null,null,null,null,null,null,null,null,null,[0,["\b"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\d}]" /v SyntaxError
+"[\\q{\\d}]" /vi SyntaxError
+"[\\q{\\d}]" /u SyntaxError
+"[\\q{\\d}]" / "0123456789q{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\q{a}}]" /v SyntaxError
+"[\\q{\\q{a}}]" /vi SyntaxError
+"[\\q{\\q{a}}]" /u SyntaxError
+"[\\q{\\q{a}}]" / "aq{}" [null,null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[5,["a"]],null]
+"[\\q{\\p{L}}]" /v SyntaxError
+"[\\q{\\p{L}}]" /vi SyntaxError
+"[\\q{\\p{L}}]" /u SyntaxError
+"[\\q{\\p{L}}]" / "Lpq{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\x41\\u0042\\u{43}}]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\x41\\u0042\\u{43}}]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\x41\\u0042\\u{43}}]" /u SyntaxError
+"[\\q{\\x41\\u0042\\u{43}}]" / "34ABqu{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\cA}]" /v "\u0001" [null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0001"]],null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\cA}]" /vi "\u0001" [null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0001"]],null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\cA}]" /u SyntaxError
+"[\\q{\\cA}]" / "q{}\u0001" [null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0001"]],null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\0}]" /v "\u0000" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0000"]],null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\0}]" /vi "\u0000" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0000"]],null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\0}]" /u SyntaxError
+"[\\q{\\0}]" / "q{}\u0000" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["\u0000"]],null,null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\@\\`\\~}]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["@`~"]],null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\@\\`\\~}]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["@`~"]],null,null,null,null,null,null,null,null,null,null]
+"[\\q{\\@\\`\\~}]" /u SyntaxError
+"[\\q{\\@\\`\\~}]" / "@`q{}~" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["@"]],[0,["@"]],null,null,null,null,null,null,null,null,null]
+"[\\q{\\'}]" /v SyntaxError
+"[\\q{\\'}]" /vi SyntaxError
+"[\\q{\\'}]" /u SyntaxError
+"[\\q{\\'}]" / "'q{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["'"]],null,null,null,null,null,null,null,null]
+"[\\q{\\_}]" /v SyntaxError
+"[\\q{\\_}]" /vi SyntaxError
+"[\\q{\\_}]" /u SyntaxError
+"[\\q{\\_}]" / "_q{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["_"]],null,null,null,null,null,null,null]
+"[\\q{\\.\\*\\+\\?\\^\\$}]" /v "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,[".*+?^$"]],null,null,null,null,null,null]
+"[\\q{\\.\\*\\+\\?\\^\\$}]" /vi "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,[".*+?^$"]],null,null,null,null,null,null]
+"[\\q{\\.\\*\\+\\?\\^\\$}]" /u SyntaxError
+"[\\q{\\.\\*\\+\\?\\^\\$}]" / "$*+.?^q{}" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["."]],null,null,null,null,null,null]
+"[\\&\\;\\p{space}]" /v " &;" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,[0,[" "]],[0,[";"]],null,[1,["&"]]]
+"[\\&\\;\\p{space}]" /vi " &;" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,[0,[" "]],[0,[";"]],null,[1,["&"]]]
+"[\\&\\;\\p{space}]" /u SyntaxError
+"[\\&\\;\\p{space}]" / "&;aceps{}" [[0,["&"]],null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,[0,[";"]],[5,["a"]],[1,["&"]]]
+"[\\-0-9A-Z_a-z]" /v "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\-0-9A-Z_a-z]" /vi "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\-0-9A-Z_a-z]" /u "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\-0-9A-Z_a-z]" / "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,null,null,null,[0,["A"]],null,null,null,null,[0,["_"]],null,null,null,null,null,[0,["f"]],[0,["x"]]]
+"[\\!\\|]" /v "!|" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,[0,["|"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\!\\|]" /vi "!|" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,[0,["|"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[\\!\\|]" /u SyntaxError
+"[\\!\\|]" / "!|" [null,null,[0,["!"]],null,null,[1,["!"]],null,null,null,[0,["|"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null]
+"[^\\&\\;\\p{space}]" /v "!\"#$%'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" [null,[0,["-"]],[0,["!"]],[0,["#"]],[0,["a"]],[0,["a"]],[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,[0,["\b"]],[0,["\u0001"]],[0,["A"]],[0,["\u0000"]],[0,["@"]],[0,["@"]],[0,["'"]],[0,["_"]],[0,["."]],[0,["é"]],[0,["É"]],null,null,[0,["f"]],[0,["x"]]]
+"[^\\&\\;\\p{space}]" /vi "!\"#$%'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\b\u0000\u0001\u001fé" [null,[0,["-"]],[0,["!"]],[0,["#"]],[0,["a"]],[0,["a"]],[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,[0,["\b"]],[0,["\u0001"]],[0,["A"]],[0,["\u0000"]],[0,["@"]],[0,["@"]],[0,["'"]],[0,["_"]],[0,["."]],[0,["é"]],[0,["É"]],null,null,[0,["f"]],[0,["x"]]]
+"[^\\&\\;\\p{space}]" /u SyntaxError
+"[^\\&\\;\\p{space}]" / " !\"#$%'()*+,-./0123456789:<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`bdfghijklmnoqrtuvwxyz|~\b\u0000\u0001\u001fé" [null,[0,["-"]],[0,["!"]],[0,["#"]],null,[1,["!"]],[0,["("]],[0,[")"]],[0,["/"]],[0,["|"]],[0,["\\"]],null,[0,["\b"]],[0,["\u0001"]],[0,["A"]],[0,["\u0000"]],[0,["@"]],[0,["@"]],[0,["'"]],[0,["_"]],[0,["."]],[0,["é"]],[0,["É"]],[0,[" "]],null,[0,["f"]],[0,["x"]]]
+"(?:[\\&\\;]+)" /v "&;" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&&"]],null,null,null,null,null,null,null,null,null,null,null,null,[0,[";"]],null,[1,["&"]]]
+"(?:[\\&\\;]+)" /vi "&;" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&&"]],null,null,null,null,null,null,null,null,null,null,null,null,[0,[";"]],null,[1,["&"]]]
+"(?:[\\&\\;]+)" /u SyntaxError
+"(?:[\\&\\;]+)" / "&;" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&&"]],null,null,null,null,null,null,null,null,null,null,null,null,[0,[";"]],null,[1,["&"]]]
+"^[\\-\\w]+$" /v "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,[0,["_"]],null,null,null,null,null,null,null]
+"^[\\-\\w]+$" /vi "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,[0,["_"]],null,null,null,null,null,null,null]
+"^[\\-\\w]+$" /u "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,[0,["_"]],null,null,null,null,null,null,null]
+"^[\\-\\w]+$" / "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz" [null,[0,["-"]],null,null,[0,["a"]],null,null,null,null,null,null,null,null,null,[0,["ABC"]],null,null,null,null,[0,["_"]],null,null,null,null,null,null,null]
+"[\\-\\w]+(?=\\:)" /v SyntaxError
+"[\\-\\w]+(?=\\:)" /vi SyntaxError
+"[\\-\\w]+(?=\\:)" /u SyntaxError
+"[\\-\\w]+(?=\\:)" / "" [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,[0,["foo-bar"]],null]
+"[[\\p{L}--\\p{Lu}]\\&]" /v "&abcdefghijklmnopqrstuvwxyzé" [[0,["&"]],null,null,null,[0,["a"]],[0,["a"]],null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,[0,["é"]],null,null,null,[0,["f"]],[0,["x"]]]
+"[[\\p{L}--\\p{Lu}]\\&]" /vi "&" [[0,["&"]],null,null,null,null,null,null,null,null,null,null,[0,["&"]],null,null,null,null,null,null,null,null,null,null,null,null,null,null,[1,["&"]]]
+"[[\\p{L}--\\p{Lu}]\\&]" /u SyntaxError
+"[[\\p{L}--\\p{Lu}]\\&]" / SyntaxError

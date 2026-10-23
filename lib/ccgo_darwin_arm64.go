@@ -159888,7 +159888,8 @@ func _parse_class_string_disjunction(tls *libc.TLS, s1 uintptr, cr uintptr, pp u
 	for {
 		(*(*TDynBuf)(unsafe.Pointer(bp + 8))).Fsize = uint64(0)
 		for libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('}') && libc.Int32FromUint8(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp))))) != int32('|') {
-			c = _get_class_atom(tls, s1, libc.UintptrFromInt32(0), bp, int32(EFALSE))
+			// Changed by internal/fixlib: the characters of \q{...} are read as in a class (see fixClassEscapes).
+			c = _get_class_atom(tls, s1, libc.UintptrFromInt32(0), bp, int32(ETRUE))
 			if c < 0 {
 				goto fail
 			}
@@ -160030,6 +160031,13 @@ _1:
 	v33 = *(*uintptr)(unsafe.Pointer(bp))
 	*(*uintptr)(unsafe.Pointer(bp)) = *(*uintptr)(unsafe.Pointer(bp)) + 1
 	c = uint32(*(*Tuint8_t)(unsafe.Pointer(v33)))
+	// Changed by internal/fixlib: \ and a ClassSetReservedPunctuator is that character in a class of a v regexp (see fixClassEscapes).
+	if inclass != 0 && (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 {
+		switch c {
+		case uint32('&'), uint32('!'), uint32('#'), uint32('%'), uint32(','), uint32(':'), uint32(';'), uint32('<'), uint32('='), uint32('>'), uint32('@'), uint32('`'), uint32('~'):
+			goto _61
+		}
+	}
 	switch c {
 	case uint32('d'):
 		goto _34
@@ -160292,7 +160300,8 @@ _4:
 	;
 _3:
 	;
-	if (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 && uint32(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 1))) == c {
+	// Changed by internal/fixlib: only a class of a v regexp is checked (see fixClassEscapes).
+	if inclass != 0 && (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 && uint32(*(*Tuint8_t)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(bp)) + 1))) == c {
 		/* forbidden double characters */
 		r = _re_parse_error(tls, s, __ccgo_ts+17442, 0)
 		tls.Free(16)
@@ -160317,7 +160326,8 @@ _23:
 	;
 _22:
 	;
-	if (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 {
+	// Changed by internal/fixlib: only a class of a v regexp is checked (see fixClassEscapes).
+	if inclass != 0 && (*TREParseState)(unsafe.Pointer(s)).Funicode_sets != 0 {
 		/* invalid characters in unicode sets */
 		r = _re_parse_error(tls, s, __ccgo_ts+17492, 0)
 		tls.Free(16)
