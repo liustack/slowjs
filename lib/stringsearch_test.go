@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"testing"
 	"unsafe"
+
+	"modernc.org/libc"
 )
 
 // stringSearchJS checks every method whose loop calls stringFind, and
@@ -79,15 +81,24 @@ func TestStringSearch(t *testing.T) {
 }
 
 // fakeString is a JSString of units, of 16-bit characters with wide, with
-// the room around it that stringFind reads nothing of.
+// the room around it that stringFind reads nothing of. It lives in C memory,
+// as the engine's strings do, so that the race build's pointer checks accept
+// the engine's arithmetic on it. The test frees it.
 type fakeString struct {
-	buf []uint64
-	p   uintptr
+	p uintptr
 }
 
-func newFakeString(units []uint16, wide bool) *fakeString {
-	f := &fakeString{buf: make([]uint64, 4+len(units))}
-	f.p = uintptr(unsafe.Pointer(&f.buf[1]))
+func newFakeString(t *testing.T, units []uint16, wide bool) *fakeString {
+	tls := libc.NewTLS()
+	base := libc.Xcalloc(tls, Size_t(4+len(units)), 8)
+	if base == 0 {
+		t.Fatal("out of memory")
+	}
+	t.Cleanup(func() {
+		libc.Xfree(tls, base)
+		tls.Close()
+	})
+	f := &fakeString{p: base + 8}
 	head := (*uint32)(unsafe.Pointer(f.p + jsonStrLenOff))
 	*head |= uint32(len(units)) << jsonStrLenShift & jsonStrLenMask
 	if wide {
@@ -171,7 +182,7 @@ func TestStringFindWidths(t *testing.T) {
 		if i == stop {
 			want = i
 		}
-		f1, f2 := newFakeString(h, wide1), newFakeString(v, wide2)
+		f1, f2 := newFakeString(t, h, wide1), newFakeString(t, v, wide2)
 		if got := stringFind(vm.ctx, f1.p, f2.p, i, stop, inc); got != want {
 			t.Fatalf("stringFind(%x wide %v, %x wide %v, %d, %d, %d) = %d, want %d", h, wide1, v, wide2, i, stop, inc, got, want)
 		}
@@ -185,14 +196,14 @@ func TestStringFindWidths(t *testing.T) {
 func TestStringFindPastStop(t *testing.T) {
 	vm := newReVM(t, -1, 0)
 	defer vm.close()
-	h, v := newFakeString([]uint16{'a', 'b'}, false), newFakeString([]uint16{'b', 'c', 'd'}, false)
+	h, v := newFakeString(t, []uint16{'a', 'b'}, false), newFakeString(t, []uint16{'b', 'c', 'd'}, false)
 	if got := stringFind(vm.ctx, h.p, v.p, 0, -1, 1); got != -1 {
 		t.Errorf("forward past stop: %d", got)
 	}
 	if got := stringFind(vm.ctx, h.p, h.p, 0, 1, -1); got != -1 {
 		t.Errorf("backward past stop: %d", got)
 	}
-	x := newFakeString([]uint16{'x'}, false)
+	x := newFakeString(t, []uint16{'x'}, false)
 	if got := stringFind(vm.ctx, h.p, x.p, 1, 1, 1); got != 1 {
 		t.Errorf("at stop: %d", got)
 	}

@@ -39,7 +39,7 @@ func TestBuiltinWorkStops(t *testing.T) {
 			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
 				t.Fatalf("got %v, want interrupted", err)
 			}
-			if took > 50*time.Millisecond {
+			if took > stopLimit {
 				t.Errorf("stopped %v after the call started, want about 10ms", took)
 			}
 		})
@@ -69,7 +69,7 @@ func TestStringSearchStops(t *testing.T) {
 			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
 				t.Fatalf("got %v, want interrupted", err)
 			}
-			if took > 50*time.Millisecond {
+			if took > stopLimit {
 				t.Errorf("stopped %v after the call started, want about 10ms", took)
 			}
 		})

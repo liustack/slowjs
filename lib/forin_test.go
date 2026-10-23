@@ -88,9 +88,14 @@ func TestForInNoEnum(t *testing.T) {
 		if tag(obj) != EJS_TAG_OBJECT {
 			t.Fatalf("%s: %s is no object", c.name, c.js)
 		}
-		var tab uintptr = 1
-		var n uint32 = 1
-		got := forInNoEnum(tls, jsvPtr(obj), uintptr(unsafe.Pointer(&tab)), uintptr(unsafe.Pointer(&n)))
+		// The answer goes to C memory, as it does for the engine.
+		ptab, plen := tls.Alloc(16), tls.Alloc(16)
+		*(*uintptr)(unsafe.Pointer(ptab)) = 1
+		*(*uint32)(unsafe.Pointer(plen)) = 1
+		got := forInNoEnum(tls, jsvPtr(obj), ptab, plen)
+		tab, n := *(*uintptr)(unsafe.Pointer(ptab)), *(*uint32)(unsafe.Pointer(plen))
+		tls.Free(16)
+		tls.Free(16)
 		if got != c.quiet {
 			t.Errorf("%s: forInNoEnum = %v, want %v", c.name, got, c.quiet)
 		}
