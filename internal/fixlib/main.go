@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -repoll, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -repoll, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -search, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty-six things:
+// It does thirty-seven things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -92,6 +92,12 @@
 //     the runs of characters of a string they keep as they are in a few
 //     calls, through jsonQuoteRun and jsonStringRun of lib/jsonstr.go,
 //     instead of one call for each character (see fixJSONStrings).
+//   - In every lib/ccgo_*.go file, let String.prototype.includes, indexOf
+//     and the other searches for a string in a string skip to the next
+//     index where it is, found by stringFind of lib/stringsearch.go with
+//     the search of package bytes, instead of comparing at each index, and
+//     count the indexes it looks through toward the interrupt counter (see
+//     fixStringSearch).
 //   - In every lib/ccgo_*.go file, replace the TLS frame of the hot
 //     functions of lazySites with a Go array, and give each statement
 //     that passes an address in the frame on or can reach a stack check a
@@ -201,6 +207,7 @@ var (
 	bitwise    = flag.Bool("bitwise", false, "print the fingerprints of the functions lib/bitwise.go repeats, in the form of bitwiseSites, to update it after a review")
 	eq         = flag.Bool("eq", false, "print the fingerprints of the functions fixEq writes out in the interpreter, in the form of eqSites, to update it after a review")
 	jsonF      = flag.Bool("json", false, "print the fingerprints of the functions lib/jsonstr.go repeats, in the form of jsonSites, to update it after a review")
+	search     = flag.Bool("search", false, "print the fingerprints of the functions lib/stringsearch.go repeats or is called from, in the form of searchSites, to update it after a review")
 	oneFrame   = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
 	clock      = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
 	fnShape    = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
@@ -232,7 +239,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *repoll || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
+	if *define || *backtrace || *regex || *repoll || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *search || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -274,6 +281,8 @@ func main() {
 			err = fingerprintReport(files, hw, "eqSites", eqFingerprint)
 		} else if err == nil && *jsonF {
 			err = fingerprintReport(files, hw, "jsonSites", jsonFingerprint)
+		} else if err == nil && *search {
+			err = fingerprintReport(files, hw, "searchSites", searchFingerprint)
 		} else if err == nil && *oneFrame {
 			err = fingerprintReport(files, hw, "oneFrameSites", oneFrameFingerprint)
 		} else if err == nil && *clock {
@@ -453,6 +462,10 @@ func fixBeforeFinal(b []byte, hw []*ast.File, name string) ([]byte, error) {
 		return nil, err
 	}
 	if b, err = fixJSONStrings(b, name); err != nil {
+		return nil, err
+	}
+	// stringFind reads a JSString with the constants fixJSONStrings adds.
+	if b, err = fixStringSearch(b, name); err != nil {
 		return nil, err
 	}
 	// None of the changes after fixBacktrace moves a property slot.
