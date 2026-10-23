@@ -23,7 +23,10 @@ run([llvm/'clang-22','-O2','-fno-builtin','-fno-omit-frame-pointer','-mno-red-zo
 definitions=re.findall(r'^define .*?@([^(]+)\(', (work/'interpreter.ll').read_text(),re.M)
 if definitions!=['goasm_run']:raise RuntimeError('unexpected out-of-line C functions: '+str(definitions))
 with open(work/'allocas.log','w') as f:run([llvm/'opt-22','-load-pass-plugin='+str(pathlib.Path(a.plugin).resolve()),'-passes=goasm-external-allocas','-S',work/'interpreter.ll','-o',work/'external.ll'],stderr=f)
-if (work/'allocas.log').read_text().strip()!='GOASM_LOCALS_SIZE=528':raise RuntimeError('review TLS frame layout before changing local size')
+# The TLS slot of a call holds goasm_args and varargs space (GOASM_LOCALS),
+# the C locals, then an alloca of up to 768 bytes (allocas.cpp).
+m=re.fullmatch(r'GOASM_LOCALS_SIZE=(\d+)',(work/'allocas.log').read_text().strip())
+if not m or 192+int(m[1])+768>2048:raise RuntimeError('C locals do not fit the TLS slot: '+(work/'allocas.log').read_text())
 run([llvm/'llc-22','-O2','-relocation-model=pic',work/'external.ll','-o',work/'external.s'])
 run(['python3',here/'lower.py',work/'external.s',work/'lowered.s'])
 run([llvm/'clang-22','-c',work/'lowered.s','-o',work/'lowered.o'])

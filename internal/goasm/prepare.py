@@ -85,6 +85,8 @@ def rewrite(n,isentry=False):
   ret=x['type']['qualType']
   if name=='JS_CallInternal':
    target='goasm_js_call';first='goasm_env'
+  elif name=='js_check_stack_overflow':
+   target='goasm_check_stack_overflow';first='goasm_env'
   elif name in used:
    target='goasm_inline_'+name;first='goasm_env'
   elif name:
@@ -127,6 +129,9 @@ entrybody=rewrite(entry,True)
 fn=funcs['JS_CallInternal']
 slow=bridge('direct','JS_CallInternal','JSValue',[q['type']['qualType'] for q in params(fn)])
 leave=bridge('direct','goasm_leave','void',['goasm_args *'])
+native=bridge('indirect','indirect','JSValue',['uintptr_t','JSContext *','JSValue','JSValue','int','JSValue *','int'])
+fn=funcs['js_check_stack_overflow']
+stackslow=bridge('direct','js_check_stack_overflow','int',[q['type']['qualType'] for q in params(fn)])
 # The TLS slot is taken and given back as tlsTake and tlsDrop do. The new
 # frame is entered through goasm_reenter, an assembly stub that calls the Go
 # entry of goasmRun, so Go checks the goroutine stack as for any call.
@@ -140,6 +145,27 @@ static inline __attribute__((always_inline)) JSValue goasm_js_call(goasm_args *g
   goasm_args *e = (goasm_args *)st->p[sp].p;
   JSValue r;
   *goasm_env->tls_sp = sp + 1;
+  e->allocated = 0;
+  /* A function that is not bytecode: what JS_CallInternal does before its
+     frame, with the TLS slot taken as the Go engine takes it. The text is
+     past the preprocessor, so it spells out what the macros would. */
+  if ((int32_t)func_obj.tag == JS_TAG_OBJECT &&
+      ((JSObject *)func_obj.u.ptr)->class_id != JS_CLASS_BYTECODE_FUNCTION) {
+   JSRuntime *rt = ctx->rt;
+   JSClassCall *call_func = rt->class_array[((JSObject *)func_obj.u.ptr)->class_id].call;
+   if (call_func) {
+    if (goasm_inline_js_poll_interrupts(goasm_env, ctx) ||
+        goasm_inline_js_uncatchable_pending(goasm_env, rt))
+     r = (JSValue){ (JSValueUnion){ .uint64 = 0 }, JS_TAG_EXCEPTION };
+    else
+     r = NATIVE(goasm_env, (uintptr_t)call_func, ctx, func_obj, this_obj, argc, argv, flags);
+    if (__builtin_expect(!*goasm_env->tls_signals, 1))
+     *goasm_env->tls_sp = sp;
+    else
+     SLOW_LEAVE(goasm_env, e);
+    return r;
+   }
+  }
   e->tls = goasm_env->tls;
   e->caller_ctx = ctx;
   e->func_obj = func_obj;
@@ -148,7 +174,6 @@ static inline __attribute__((always_inline)) JSValue goasm_js_call(goasm_args *g
   e->argc = argc;
   e->argv = argv;
   e->flags = flags;
-  e->allocated = 0;
   e->tls_sp = goasm_env->tls_sp;
   e->tls_stack = st;
   e->tls_signals = goasm_env->tls_signals;
@@ -162,7 +187,15 @@ static inline __attribute__((always_inline)) JSValue goasm_js_call(goasm_args *g
  }
  return SLOW_CALL(goasm_env, ctx, func_obj, this_obj, new_target, argc, argv, flags);
 }
-'''.replace('SLOW_LEAVE',leave).replace('SLOW_CALL',slow)
+/* js_check_stack_overflow of lib/libquickjs.go: the TLS slots in use
+   against the limit of the runtime, which fixStack always sets. */
+static inline __attribute__((always_inline)) int goasm_check_stack_overflow(goasm_args *goasm_env, JSRuntime *rt, size_t alloca_size)
+{
+ if (__builtin_expect(rt->stack_size != 0, 1))
+  return (uintptr_t)*goasm_env->tls_sp >= rt->stack_size;
+ return STACK_SLOW(goasm_env, rt, alloca_size);
+}
+'''.replace('SLOW_LEAVE',leave).replace('SLOW_CALL',slow).replace('NATIVE',native).replace('STACK_SLOW',stackslow)
 protos=[]
 for d in bridges:
  ty=['goasm_args *']+d['args'];protos.append('extern '+d['ret']+' goasm_c_'+str(d['id'])+'('+', '.join(ty)+');')

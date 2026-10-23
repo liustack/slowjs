@@ -16,7 +16,8 @@ const goasmFrame = 2048
 
 // goasmLocals is where the C locals of the interpreter start in its TLS
 // slot: after goasmArgs and 48 bytes for the arguments of varargs calls.
-// The small alloca follows the 528 bytes of locals.
+// An alloca of up to 768 bytes follows the locals, placed by the
+// generated code itself (internal/goasm/build.py checks that both fit).
 const goasmLocals = 192
 
 //go:noescape
@@ -74,10 +75,9 @@ func goasmCall(tls *libc.TLS, ctx uintptr, fn, this, newTarget TJSValue, argc in
 	}
 	return result
 }
+
+// goasmAllocate mallocs an alloca larger than 768 bytes.
 func goasmAllocate(env, size uintptr) uintptr {
-	if size <= 768 {
-		return env + goasmLocals + 528
-	}
 	tls := *(**libc.TLS)(unsafe.Pointer(env))
 	p := libc.Xmalloc(tls, uint64(size))
 	(*goasmArgs)(unsafe.Pointer(env)).Allocated = p

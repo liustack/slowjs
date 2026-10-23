@@ -15,6 +15,13 @@ how Go compiles it, and are written here in C with the same cases:
     there anyway (lib/fieldchain.go).
   - fixEq: the usual pairs of ===, !==, == and != are answered without
     calling js_strict_eq_slow or js_eq_slow (internal/fixlib/eq.go).
+  - fixBitwise: &, |, ^, <<, >> and >>> of two numbers that are not both
+    ints, as bitwiseNumbers of lib/bitwise.go does at the entry of the slow
+    functions, here before calling them.
+
+Native C inlines JS_AtomToValue into the interpreter. Here it would be a
+call into Go, so the string or symbol of an atom that is not an integer is
+taken in C, as __JS_AtomToValue takes it.
 
 The other interpreter rules of fixlib (cells, pin, inline, poll, oneframe,
 alloca, expect, fastframes) work around Go's compiler and have no meaning
@@ -98,6 +105,71 @@ static inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL strict)
     return -1;
 }
 
+static inline BOOL goasm_number_to_int32(JSValueConst v, int32_t *r)
+{
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_INT:
+        *r = JS_VALUE_GET_INT(v);
+        return TRUE;
+    case JS_TAG_FLOAT64: {
+        union { double d; uint64_t u; } x;
+        int e;
+        x.d = JS_VALUE_GET_FLOAT64(v);
+        e = (x.u >> 52) & 0x7ff;
+        if (e <= 1023 + 30) {
+            *r = (int32_t)x.d;
+        } else if (e <= 1023 + 30 + 53) {
+            uint64_t m = ((x.u & (((uint64_t)1 << 52) - 1)) | ((uint64_t)1 << 52)) << (e - 1023 - 52 + 32);
+            uint32_t y = (uint32_t)(m >> 32);
+            *r = (int32_t)((x.u >> 63) ? 0u - y : y);
+        } else {
+            *r = 0; /* also NaN and the infinities */
+        }
+        return TRUE;
+    }
+    default:
+        return FALSE;
+    }
+}
+
+static inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
+{
+    int32_t x, y, r;
+    if (!goasm_number_to_int32(sp[-2], &x) || !goasm_number_to_int32(sp[-1], &y))
+        return FALSE;
+    switch (op) {
+    case OP_shl: r = (int32_t)((uint32_t)x << (y & 0x1f)); break;
+    case OP_sar: r = x >> (y & 0x1f); break;
+    case OP_and: r = x & y; break;
+    case OP_or: r = x | y; break;
+    case OP_xor: r = x ^ y; break;
+    case OP_shr: {
+        uint32_t u = (uint32_t)x >> (y & 0x1f);
+        if (u > INT32_MAX) {
+            sp[-2] = __JS_NewFloat64(ctx, (double)u);
+            return TRUE;
+        }
+        r = (int32_t)u;
+        break;
+    }
+    default:
+        return FALSE;
+    }
+    sp[-2] = JS_MKVAL(JS_TAG_INT, r);
+    return TRUE;
+}
+
+static inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
+{
+    if (!__JS_AtomIsTaggedInt(atom)) {
+        JSAtomStruct *p = ctx->rt->atom_array[atom];
+        if (p->atom_type == JS_ATOM_TYPE_STRING)
+            return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
+        return JS_DupValue(ctx, JS_MKPTR(JS_TAG_SYMBOL, p));
+    }
+    return JS_AtomToValue(ctx, atom);
+}
+
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags)
@@ -158,12 +230,17 @@ REPLACEMENTS = [
             GOASM_OP_EQ(OP_neq, !=, js_eq_slow(ctx, sp, 1), 0, 1);
             GOASM_OP_EQ(OP_strict_eq, ==, js_strict_eq_slow(ctx, sp, 0), 1, 0);
             GOASM_OP_EQ(OP_strict_neq, !=, js_strict_eq_slow(ctx, sp, 1), 1, 1);'''),
+ ('if (js_binary_logic_slow(ctx, sp, opcode))','if (!goasm_bitwise_numbers(ctx, sp, opcode) && js_binary_logic_slow(ctx, sp, opcode))',5),
+ ('if (js_shr_slow(ctx, sp))','if (!goasm_bitwise_numbers(ctx, sp, OP_shr) && js_shr_slow(ctx, sp))'),
+ ('*sp++ = JS_AtomToValue(ctx, get_u32(pc));','*sp++ = goasm_atom_to_value(ctx, get_u32(pc));'),
+ ('*sp++ = JS_AtomToValue(ctx, atom);','*sp++ = goasm_atom_to_value(ctx, atom);',2),
 ]
 
 def patch(text):
-    for old,new in REPLACEMENTS:
+    for r in REPLACEMENTS:
+        old,new=r[:2];want=r[2] if len(r)>2 else 1
         n=text.count(old)
-        if n!=1:raise ValueError('expected one match, found %d: %s'%(n,old.splitlines()[0]))
+        if n!=want:raise ValueError('expected %d matches, found %d: %s'%(want,n,old.splitlines()[0]))
         text=text.replace(old,new)
     return text
 

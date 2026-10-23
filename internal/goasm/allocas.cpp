@@ -7,6 +7,7 @@
 // absolute addresses, which would need relocations Go cannot express inside
 // the assembled body. The address is base plus offset, computed in IR, so the
 // register allocator picks the scratch register of each dispatch.
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PassManager.h"
@@ -68,22 +69,41 @@ struct ExternalAllocas : PassInfoMixin<ExternalAllocas> {
   for(auto &B:*F) for(auto &I:B) if(auto *II=dyn_cast<IntrinsicInst>(&I))
    if(II->getIntrinsicID()==Intrinsic::lifetime_start || II->getIntrinsicID()==Intrinsic::lifetime_end) lifetimes.push_back(II);
   for(auto *I:lifetimes) I->eraseFromParent();
+  // Fixed allocas share the locals area. A variable one of up to
+  // GOASM_SMALL bytes takes the space right after it, inline. A larger one
+  // calls goasm_alloca, which mallocs it.
   uint64_t offset=0;
+  SmallVector<AllocaInst *> variable;
   for(auto *A:work) {
-   IRBuilder<> B(A); Value *replacement;
-   if(auto *N=dyn_cast<ConstantInt>(A->getArraySize())) {
-    offset=alignTo(offset,A->getAlign().value());
-    replacement=B.CreateConstGEP1_64(B.getInt8Ty(),F->getArg(1),offset);
-    offset+=DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()*N->getZExtValue();
-   } else {
-    auto callee=M.getOrInsertFunction("goasm_alloca",FunctionType::get(B.getPtrTy(),{B.getPtrTy(),B.getInt64Ty()},false));
-    Value *size=B.CreateZExtOrTrunc(A->getArraySize(),B.getInt64Ty());
-    size=B.CreateMul(size,B.getInt64(DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()));
-    replacement=B.CreateCall(callee,{F->getArg(0),size});
-   }
-   A->replaceAllUsesWith(replacement); A->eraseFromParent();
+   auto *N=dyn_cast<ConstantInt>(A->getArraySize());
+   if(!N) { variable.push_back(A); continue; }
+   IRBuilder<> B(A);
+   offset=alignTo(offset,A->getAlign().value());
+   A->replaceAllUsesWith(B.CreateConstGEP1_64(B.getInt8Ty(),F->getArg(1),offset));
+   offset+=DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()*N->getZExtValue();
+   A->eraseFromParent();
   }
-  errs()<<"GOASM_LOCALS_SIZE="<<alignTo(offset,16)<<"\n";
+  // The inline space is one, so it is only right for a single variable
+  // alloca: the frame's own, in JS_CallInternal.
+  if(variable.size()>1) report_fatal_error("more than one variable alloca");
+  const uint64_t small=768, area=alignTo(offset,16);
+  for(auto *A:variable) {
+   IRBuilder<> B(A);
+   auto callee=M.getOrInsertFunction("goasm_alloca",FunctionType::get(B.getPtrTy(),{B.getPtrTy(),B.getInt64Ty()},false));
+   Value *size=B.CreateZExtOrTrunc(A->getArraySize(),B.getInt64Ty());
+   size=B.CreateMul(size,B.getInt64(DL.getTypeAllocSize(A->getAllocatedType()).getFixedValue()));
+   Value *inl=B.CreateConstGEP1_64(B.getInt8Ty(),F->getArg(1),area);
+   Value *big=B.CreateICmpUGT(size,B.getInt64(small));
+   Instruction *then=SplitBlockAndInsertIfThen(big,A,false);
+   B.SetInsertPoint(then);
+   Value *heap=B.CreateCall(callee,{F->getArg(0),size});
+   B.SetInsertPoint(A);
+   PHINode *phi=B.CreatePHI(B.getPtrTy(),2);
+   phi->addIncoming(inl,cast<Instruction>(big)->getParent());
+   phi->addIncoming(heap,then->getParent());
+   A->replaceAllUsesWith(phi); A->eraseFromParent();
+  }
+  errs()<<"GOASM_LOCALS_SIZE="<<area<<"\n";
   return PreservedAnalyses::none();
  }
 };

@@ -12,36 +12,36 @@ import (
 	"unsafe"
 )
 
-func goasmBridge3(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
+func goasmBridge4(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	va := a0 + 136
 	return TJSValue(XJS_ThrowTypeError(tls, uintptr(a1), uintptr(a2), va))
 }
-func goasmBridge4(a0 uintptr, a1 uintptr, a2 uintptr, a3 TJSValue, a4 TJSValue, a5 int32, a6 uintptr, a7 int32) TJSValue {
+func goasmBridge5(a0 uintptr, a1 uintptr, a2 uintptr, a3 TJSValue, a4 TJSValue, a5 int32, a6 uintptr, a7 int32) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	return TJSValue((*(*func(*libc.TLS, uintptr, TJSValue, TJSValue, int32, uintptr, int32) TJSValue)(unsafe.Pointer(&struct{ p uintptr }{a1})))(tls, a2, a3, a4, a5, a6, a7))
 }
-func goasmBridge16(a0 uintptr) {
+func goasmBridge15(a0 uintptr) {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	libc.Xabort(tls)
 }
-func goasmBridge29(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
+func goasmBridge28(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	va := a0 + 136
 	return TJSValue(XJS_ThrowReferenceError(tls, uintptr(a1), uintptr(a2), va))
 }
-func goasmBridge30(a0 uintptr, a1 uintptr, a2 uintptr, a3 int32) TJSValue {
+func goasmBridge29(a0 uintptr, a1 uintptr, a2 uintptr, a3 int32) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	va := a0 + 136
 	*(*int32)(unsafe.Pointer(va + 0)) = a3
 	return TJSValue(XJS_ThrowInternalError(tls, uintptr(a1), uintptr(a2), va))
 }
-func goasmBridge48(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
+func goasmBridge47(a0 uintptr, a1 uintptr, a2 uintptr) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	va := a0 + 136
 	return TJSValue(XJS_ThrowInternalError(tls, uintptr(a1), uintptr(a2), va))
 }
-func goasmBridge98(a0 uintptr, a1 uintptr, a2 uintptr, a3 int32, a4 int32) TJSValue {
+func goasmBridge97(a0 uintptr, a1 uintptr, a2 uintptr, a3 int32, a4 int32) TJSValue {
 	tls := *(**libc.TLS)(unsafe.Pointer(a0))
 	va := a0 + 136
 	*(*int32)(unsafe.Pointer(va + 0)) = a3
