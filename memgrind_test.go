@@ -171,6 +171,8 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("defaultStackLimit", TestDefaultStackLimit)
 	t.Run("newVMContextFailure", TestNewVMContextFailure)
 	t.Run("enginePanicCall", testEnginePanicCall)
+	t.Run("ownKeys", TestOwnKeys)
+	t.Run("ownKeysModuleNamespace", TestOwnKeysModuleNamespace)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
