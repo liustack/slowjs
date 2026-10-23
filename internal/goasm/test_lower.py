@@ -25,16 +25,30 @@ popq %rbp
 retq
 '''
 class FrameTests(unittest.TestCase):
- def lower(self,body):
+ def lower(self,body,data=''):
   with tempfile.TemporaryDirectory() as tmp:
-   p=pathlib.Path(tmp);(p/'input.s').write_text(PROLOGUE+body+EPILOGUE)
+   p=pathlib.Path(tmp);(p/'input.s').write_text(PROLOGUE+body+EPILOGUE+data)
    r=subprocess.run([sys.executable,str(pathlib.Path(__file__).with_name('lower.py')),str(p/'input.s'),str(p/'output.s')],capture_output=True,text=True)
    return r,(p/'output.s').read_text() if r.returncode==0 else ''
  def test_frame_local_is_rebased_without_changing_go_frame_pointer(self):
   r,s=self.lower('movq -48(%rbp), %r14\nmovq %r14, (%rdi)')
   self.assertEqual(r.returncode,0,r.stderr)
-  self.assertNotIn('%rbp',s);self.assertNotIn('%r14',s)
+  self.assertNotIn('%rbp',s)
   self.assertIn('48(%rsp)',s)
+ def test_r14_is_an_ordinary_c_register(self):
+  r,s=self.lower('movq %rdi, %r14\naddl %r14d, %r10d')
+  self.assertEqual(r.returncode,0,r.stderr)
+  self.assertIn('movq %rdi, %r14\naddl %r14d, %r10d',s)
+ def test_dispatch_through_register_is_kept(self):
+  r,s=self.lower('jmpq *%rax')
+  self.assertEqual(r.returncode,0,r.stderr)
+  self.assertIn('jmpq *%rax',s)
+ def test_dispatch_through_memory_is_rejected(self):
+  r,_=self.lower('jmpq *(%r15,%r14,8)')
+  self.assertNotEqual(r.returncode,0)
+ def test_absolute_label_table_is_rejected(self):
+  r,_=self.lower('nop','.section .rodata\n.quad .Ltmp0\n')
+  self.assertNotEqual(r.returncode,0)
  def test_dynamic_stack_mutation_is_rejected(self):
   r,_=self.lower('subq %rax, %rsp')
   self.assertNotEqual(r.returncode,0)

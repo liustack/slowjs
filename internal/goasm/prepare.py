@@ -43,6 +43,15 @@ edits=[(pos(body(n)),pos(body(n),True),';') for n in defs.values()]
 prefix=src
 for a,b,t in sorted(edits,reverse=True):prefix=prefix[:a]+t+prefix[b:]
 header='''
+/* The TLS slot of a call: goasm_args, 48 bytes of varargs, the locals moved
+   off the Go stack at GOASM_LOCALS, then the room of a small alloca. */
+#define GOASM_FRAME 2048
+#define GOASM_LOCALS 192
+typedef struct goasm_tls_slot { uintptr_t p, sz; } goasm_tls_slot;
+typedef struct goasm_tls_slots { goasm_tls_slot *p; intptr_t len, cap; } goasm_tls_slots;
+/* goasmArgs of lib/goasm_linux_amd64.go. The tls fields point into libc's
+   TLS: the index of its next slot, its slots and whether a free checks for
+   signals (lib/fastframes_linux.go). */
 typedef struct goasm_args {
  void *tls;
  JSContext *caller_ctx;
@@ -52,6 +61,9 @@ typedef struct goasm_args {
  int flags;
  JSValue result;
  void *allocated;
+ intptr_t *tls_sp;
+ goasm_tls_slots *tls_stack;
+ _Bool *tls_signals;
 } goasm_args;
 '''
 bridges=[];registry={}
@@ -71,7 +83,9 @@ def rewrite(n,isentry=False):
   if name and name.startswith('__builtin_'):continue
   argnodes=children[1:]
   ret=x['type']['qualType']
-  if name in used:
+  if name=='JS_CallInternal':
+   target='goasm_js_call';first='goasm_env'
+  elif name in used:
    target='goasm_inline_'+name;first='goasm_env'
   elif name:
    fn=funcs[name];types=[q['type']['qualType'] for q in params(fn)]
@@ -110,10 +124,49 @@ bodies=[]
 for name in sorted(used,key=lambda k:pos(defs[k])):
  n=defs[name];bodies.append('static inline __attribute__((always_inline)) '+signature(n,'goasm_inline_'+name)+rewrite(n))
 entrybody=rewrite(entry,True)
+fn=funcs['JS_CallInternal']
+slow=bridge('direct','JS_CallInternal','JSValue',[q['type']['qualType'] for q in params(fn)])
+leave=bridge('direct','goasm_leave','void',['goasm_args *'])
+# The TLS slot is taken and given back as tlsTake and tlsDrop do. The new
+# frame is entered through goasm_reenter, an assembly stub that calls the Go
+# entry of goasmRun, so Go checks the goroutine stack as for any call.
+reenter='''
+extern void goasm_reenter(goasm_args *env, void *locals);
+static inline __attribute__((always_inline)) JSValue goasm_js_call(goasm_args *goasm_env, JSContext *ctx, JSValue func_obj, JSValue this_obj, JSValue new_target, int argc, JSValue *argv, int flags)
+{
+ intptr_t sp = *goasm_env->tls_sp;
+ goasm_tls_slots *st = goasm_env->tls_stack;
+ if (__builtin_expect((uintptr_t)sp < (uintptr_t)st->len && st->p[sp].sz >= GOASM_FRAME, 1)) {
+  goasm_args *e = (goasm_args *)st->p[sp].p;
+  JSValue r;
+  *goasm_env->tls_sp = sp + 1;
+  e->tls = goasm_env->tls;
+  e->caller_ctx = ctx;
+  e->func_obj = func_obj;
+  e->this_obj = this_obj;
+  e->new_target = new_target;
+  e->argc = argc;
+  e->argv = argv;
+  e->flags = flags;
+  e->allocated = 0;
+  e->tls_sp = goasm_env->tls_sp;
+  e->tls_stack = st;
+  e->tls_signals = goasm_env->tls_signals;
+  goasm_reenter(e, (char *)e + GOASM_LOCALS);
+  r = e->result;
+  if (__builtin_expect(e->allocated == 0 && !*goasm_env->tls_signals, 1))
+   *goasm_env->tls_sp = sp;
+  else
+   SLOW_LEAVE(goasm_env, e);
+  return r;
+ }
+ return SLOW_CALL(goasm_env, ctx, func_obj, this_obj, new_target, argc, argv, flags);
+}
+'''.replace('SLOW_LEAVE',leave).replace('SLOW_CALL',slow)
 protos=[]
 for d in bridges:
  ty=['goasm_args *']+d['args'];protos.append('extern '+d['ret']+' goasm_c_'+str(d['id'])+'('+', '.join(ty)+');')
 inlineprotos=['static inline __attribute__((always_inline)) '+signature(defs[n],'goasm_inline_'+n)+';' for n in sorted(used)]
-text=prefix+header+'\n'.join(protos+inlineprotos+bodies)+'\nvoid goasm_run(goasm_args *goasm_env, void *goasm_locals) '+entrybody+'\n'
+text=prefix+header+'\n'.join(protos+inlineprotos)+reenter+'\n'.join(bodies)+'\nvoid goasm_run(goasm_args *goasm_env, void *goasm_locals) '+entrybody+'\n'
 (out/'interpreter.c').write_text(text);(out/'bridges.json').write_text(json.dumps(bridges,indent=2));(out/'inline.json').write_text(json.dumps(sorted(used),indent=2))
 print('boundaries',len(bridges))
