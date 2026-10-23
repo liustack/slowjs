@@ -42,6 +42,9 @@ type tifaResult struct {
 	Err       string     `json:"err,omitempty"`
 	Pages     []tifaPage `json:"pages"`
 	Mem       *memResult `json:"mem,omitempty"`
+	// Host counts what a Host VM did (GCs between renders, calls of the Go
+	// functions a bundle uses), at the end of the run.
+	Host map[string]int `json:"host,omitempty"`
 }
 
 // tifaOpts are the tifa-ssr flags besides the bundle and inputs.
@@ -78,6 +81,13 @@ func tifaVM(e *engine.Engine, bundle string, o tifaOpts, r *tifaResult) (engine.
 	if r != nil {
 		r.LoadMS = ms(time.Since(t))
 	}
+	if h, ok := vm.(engine.Host); ok {
+		if err := h.Loaded(); err != nil {
+			vm.Close()
+			return nil, fmt.Errorf("loaded: %v", errString(err))
+		}
+		return vm, nil
+	}
 	if _, err := vm.Eval("glue.js", tifaGlue); err != nil {
 		vm.Close()
 		return nil, fmt.Errorf("glue: %v", errString(err))
@@ -85,7 +95,12 @@ func tifaVM(e *engine.Engine, bundle string, o tifaOpts, r *tifaResult) (engine.
 	return vm, nil
 }
 
-func tifaRender(vm engine.VM) (string, error) {
+// tifaRender renders the page of input. A Host VM does it its own way, the
+// others through the glue, which needs tifaInput first.
+func tifaRender(vm engine.VM, input string) (string, error) {
+	if h, ok := vm.(engine.Host); ok {
+		return h.Render(input)
+	}
 	if _, err := vm.Call("__go"); err != nil {
 		return "", err
 	}
@@ -95,7 +110,18 @@ func tifaRender(vm engine.VM) (string, error) {
 	return vm.Call("__res")
 }
 
+// tifaSettle is the work a Host VM does after a render.
+func tifaSettle(vm engine.VM) error {
+	if h, ok := vm.(engine.Host); ok {
+		return h.Settle()
+	}
+	return nil
+}
+
 func tifaInput(vm engine.VM, in string) error {
+	if _, ok := vm.(engine.Host); ok {
+		return nil
+	}
 	lit, _ := json.Marshal(readFile(in))
 	_, err := vm.Eval("input.js", "globalThis.__in = "+string(lit))
 	return err
@@ -108,7 +134,8 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 		return
 	}
 	defer vm.Close()
-	render := func() (string, error) { return tifaRender(vm) }
+	var input string
+	render := func() (string, error) { return tifaRender(vm, input) }
 	probe := func() string {
 		if o.probe == "" {
 			return ""
@@ -121,12 +148,16 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 	}
 	for _, in := range inputs {
 		p := tifaPage{Input: filepath.Base(in)}
+		input = readFile(in)
 		if err := tifaInput(vm, in); err != nil {
 			p.Err = errString(err)
 			r.Pages = append(r.Pages, p)
 			continue
 		}
 		html, err := render()
+		if err == nil {
+			err = tifaSettle(vm)
+		}
 		p.Probe = probe()
 		if err != nil {
 			p.Err = errString(err)
@@ -138,7 +169,11 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 			os.WriteFile(filepath.Join(outDir, e.Name+o.tag+"-"+strings.TrimSuffix(p.Input, ".json")+".html"), []byte(html), 0o644)
 		}
 		for i := 0; i < warm && p.Err == ""; i++ {
-			if _, err := render(); err != nil {
+			_, err := render()
+			if err == nil {
+				err = tifaSettle(vm)
+			}
+			if err != nil {
 				p.Err = errString(err)
 			}
 		}
@@ -148,6 +183,9 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 			t := time.Now()
 			h, err := render()
 			d = append(d, time.Since(t))
+			if err == nil {
+				err = tifaSettle(vm)
+			}
 			if err != nil {
 				p.Err = errString(err)
 			} else if len(h) != len(html) {
@@ -160,6 +198,9 @@ func runTifaSSR(e *engine.Engine, bundle string, inputs []string, outDir string,
 			p.ProbeN = probe()
 		}
 		r.Pages = append(r.Pages, p)
+	}
+	if h, ok := vm.(engine.Host); ok {
+		r.Host = h.Counters()
 	}
 	if o.mem > 0 && len(inputs) > 0 {
 		r.Mem = tifaMem(e, bundle, inputs[0], o)
@@ -177,7 +218,7 @@ func tifaMem(e *engine.Engine, bundle, input string, o tifaOpts) *memResult {
 			return nil, err
 		}
 		if err := tifaInput(vm, input); err == nil {
-			_, err = tifaRender(vm)
+			_, err = tifaRender(vm, readFile(input))
 		}
 		return vm, err
 	}

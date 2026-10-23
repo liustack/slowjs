@@ -174,3 +174,20 @@ func Str(v any) string {
 		return fmt.Sprint(x)
 	}
 }
+
+// Host is a VM that runs a page the way the application's host does, with a
+// render and the housekeeping after it of its own (liustack-tifa). The tifa
+// page runs use it when a VM has it, and otherwise call startRender through
+// the glue.
+type Host interface {
+	// Loaded is called once the bundle is loaded.
+	Loaded() error
+	// Render runs startRender(input), the promise jobs and the read of the
+	// result, and returns the HTML.
+	Render(input string) (string, error)
+	// Settle runs after each render that succeeded, outside its wall time and
+	// inside its CPU time.
+	Settle() error
+	// Counters report how often the host did what it does, for the results.
+	Counters() map[string]int
+}
