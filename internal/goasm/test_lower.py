@@ -25,9 +25,9 @@ popq %rbp
 retq
 '''
 class FrameTests(unittest.TestCase):
- def lower(self,body,data=''):
+ def lower(self,body,data='',after=''):
   with tempfile.TemporaryDirectory() as tmp:
-   p=pathlib.Path(tmp);(p/'input.s').write_text(PROLOGUE+body+EPILOGUE+data)
+   p=pathlib.Path(tmp);(p/'input.s').write_text(PROLOGUE+body+EPILOGUE+after+'.Lfunc_end0:\n'+data)
    r=subprocess.run([sys.executable,str(pathlib.Path(__file__).with_name('lower.py')),str(p/'input.s'),str(p/'output.s')],capture_output=True,text=True)
    return r,(p/'output.s').read_text() if r.returncode==0 else ''
  def test_frame_local_is_rebased_without_changing_go_frame_pointer(self):
@@ -43,6 +43,13 @@ class FrameTests(unittest.TestCase):
   r,s=self.lower('jmpq *%rax')
   self.assertEqual(r.returncode,0,r.stderr)
   self.assertIn('jmpq *%rax',s)
+ def test_blocks_after_the_epilogue_are_rebased_code(self):
+  r,s=self.lower('jmp .LBB0_2\n.LBB0_1:\nnop','','.LBB0_2:\nmovq -48(%rbp), %rax\njmp .LBB0_1\n')
+  self.assertEqual(r.returncode,0,r.stderr)
+  self.assertIn('jmp .Lgoasm_return\n.LBB0_2:\nmovq 48(%rsp), %rax\njmp .LBB0_1',s)
+ def test_blocks_after_the_epilogue_are_checked(self):
+  r,_=self.lower('nop','','.LBB0_2:\nsubq %rax, %rsp\n')
+  self.assertNotEqual(r.returncode,0)
  def test_dispatch_through_memory_is_rejected(self):
   r,_=self.lower('jmpq *(%r15,%r14,8)')
   self.assertNotEqual(r.returncode,0)

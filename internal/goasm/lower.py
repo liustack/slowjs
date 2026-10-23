@@ -25,8 +25,10 @@ def clean(line):
  if not line:return None
  if line.startswith(('.cfi_','.file','.section','.text','.globl','.type','.size','.ident','.addrsig')):return None
  return line
+# Blocks LLVM places after the epilogue are code too, up to the function end.
+fend=next(i for i in range(ret,len(src)) if src[i].startswith('.Lfunc_end'))
 body=[]
-for raw in src[sub+1:end]:
+for raw in src[sub+1:end]+['jmp .Lgoasm_return']+src[ret+1:fend]:
  line=clean(raw)
  if not line:continue
  if re.search(r'%(?:esp|sp|spl|ebp|bp|bpl)\b',line):raise ValueError('stack or frame subregister '+line)
@@ -40,9 +42,8 @@ for raw in src[sub+1:end]:
  # Computed gotos jump through a register holding table base plus offset.
  if line.startswith('jmp') and '*' in line and not re.fullmatch(r'jmpq\s+\*%r\w+',line):raise ValueError('unreviewed indirect jump '+line)
  body.append(line)
-body+=['jmp .Lgoasm_return']
 data=[]
-for raw in src[ret+1:]+src[:entry]:
+for raw in src[fend:]+src[:entry]:
  line=clean(raw)
  if not line:continue
  if re.match(r'\.quad\s+\.Ltmp',line):raise ValueError('absolute label address '+line)
