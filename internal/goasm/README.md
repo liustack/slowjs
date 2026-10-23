@@ -46,6 +46,10 @@ compiler are required only to regenerate the assembly.
    ccgo's function value representation. The external engine memory
    contains no movable Go stack addresses.
 
+`checks.py` holds the stack rules Go's movable stack needs. Each step runs
+the checks for what it can break, and generation stops on a violation. See
+the Stack rules section of `docs/fork-changes/go-assembly.md`.
+
 `build.py --help` lists the input paths. Build `allocas.cpp` as a shared LLVM
 pass plugin, then pass it with `--plugin`. Produce the Go signature JSON with:
 
@@ -78,5 +82,6 @@ python3 internal/goasm/verify_linked.py output/lowered.o application
 ```
 
 This permits only the four relocated displacement bytes of each symbolic CALL.
-It checks the body alignment and rejects any other byte change. Run it on each
+It checks the body alignment and rejects any other byte change. It also checks
+that goasmRun and `__js_poll_interrupts` keep their stack check prologue. Run it on each
 code layout used for timing.

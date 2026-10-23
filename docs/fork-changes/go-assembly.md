@@ -46,13 +46,61 @@ atom lookup, shape caches and object literals, apply to both interpreters.
 
 Computed goto remains enabled. Relative jump tables stay inside the generated
 text. External calls are symbolic Go CALL instructions. Other ELF relocations
-are rejected. The interrupt countdown calls Go every 10000 instructions.
-Assembly itself has no asynchronous safe points, so GC stopping latency must
-be measured under real load when changing this implementation.
+are rejected.
 
 An engine panic or Goexit retains the existing rule: the VM may only Close.
 A nil fault in the assembly is tested for recovery and a Go stack trace naming
 `goasmRun`. This does not promise recovery from arbitrary memory corruption.
+
+## Stack rules
+
+Go moves a goroutine stack when it grows, and its GC scans each frame by its
+pointer map. The generator enforces these rules and stops when one breaks.
+Each check has a test with a small input it rejects
+(`internal/goasm/test_checks.py`, `test_lower.py`).
+
+| Rule | Checked by |
+| --- | --- |
+| goasmRun has a fixed frame with no pointer map. The body reads only its `env` and `locals` arguments, both C memory, never the typed TLS argument, so no Go pointer lands in the frame. | `lower.py` (frame shape, accesses outside the compiler frame), `checks.text_header` |
+| The body never changes SP and never takes the address of a stack slot. Bridges neither. | `lower.py`, `checks.bridge_stack` |
+| Every addressable C local lives in the TLS slot. | `checks.no_allocas` on the IR after `allocas.cpp` |
+| goasmRun is not NOSPLIT, so Go gives it the stack check prologue. | `checks.text_header`, and `verify_linked.py` finds the call to `runtime.morestack_noctxt` in the linked function |
+| The interpreter enters itself only through `goasm_reenter`, which calls goasmRun and so passes that prologue. | `checks.call_targets`, `checks.reenter` |
+
+The bridges and `goasm_reenter` are NOSPLIT with small fixed frames. The Go
+linker checks that every chain of NOSPLIT frames fits the stack guard.
+`TestStackGrowthInDeepRecursion` renders HTML through 1500 nested JS calls on
+a new goroutine, directly and through `Array.prototype.map`, and checks that
+the stack moved and the HTML is right.
+
+## GC stopping
+
+The assembly has no asynchronous safe points: the signal Go sends to stop a
+goroutine finds no safe point in goasmRun. GC stops the goroutine at the
+next stack check prologue of a Go function the interpreter calls. A script
+that calls nothing still reaches one: every call and every goto, if_true
+and if_false, which include every loop back edge, count the interrupt
+countdown down, and every
+10000 counts the countdown calls `__js_poll_interrupts`, a Go function with
+a prologue. `verify_linked.py` checks that prologue in the linked binary, and
+`TestGCStopsLoopWithoutCalls` runs GC against the three kinds of loop.
+
+Measured on tifa's pages (2026-10-23, 8 vCPU AMD EPYC 7B13, GOMAXPROCS=2 on
+one core's two threads): four VMs render on four goroutines while another
+goroutine forces 300 GCs, three rounds per build. The time to stop the world,
+from `/sched/pauses/stopping/gc:seconds` (the histogram gives a range):
+
+| Pages | Build | P50 | P99 | Max |
+| --- | --- | --- | --- | --- |
+| shop | default | 25 to 29 µs | 164 to 197 µs | 197 to 229 µs |
+| shop | goasm | 25 to 29 µs | 66 to 82 µs | 197 to 229 µs |
+| MUI | default | 21 to 25 µs | 131 to 164 µs | 164 to 197 µs |
+| MUI | goasm | 21 to 25 µs | 41 to 49 µs | 164 to 197 µs |
+
+The interpreter calls Go often enough (more than 100 thousand bridge calls
+for one render of the six shop pages) that the assembly is no slower to stop
+than the Go interpreter, so it has no extra preemption point. Measure again when a change
+removes Go calls from hot paths.
 
 ## Verification and maintenance
 
@@ -63,10 +111,15 @@ stack instructions or relocations require generator changes, not acceptance
 of unknown output.
 
 Run the generator tests, the short Go suite with `-tags goasm`, CallDepth,
-TLS, EnginePanic and EngineGoexit checks, memgrind, and test262 with
-`-xtags goasm`. Compare rendered HTML, then measure the default and tagged
-builds across three layouts and six alternating rounds. Check CPU profiles
-and GC stopping latency in the final linked application.
+TLS, EnginePanic, EngineGoexit, StackGrowth and GCStops checks, memgrind,
+and test262 with `-xtags goasm`. Compare rendered HTML, then measure the
+default and tagged builds across three layouts and six alternating rounds.
+Check CPU profiles and GC stopping latency in the final linked application.
+
+Measured on 2026-10-23 (no PGO, three layouts, six alternating rounds, sum
+of the P50 render times): the tagged build renders the six shop workbench
+pages 4.2% faster than the default build and the three MUI pages 11.0%
+faster.
 
 Darwin/arm64 uses the Go fallback. Native ARM assembly needs a separate ABI
 bridge and register and frame lowering implementation. It is not produced by
