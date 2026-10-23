@@ -1,13 +1,13 @@
-module github.com/liustack/quickjs/compare/engines
+module github.com/liustack/slowjs/compare/engines
 
 go 1.27.0
 
-replace github.com/liustack/quickjs => ../../
+replace github.com/liustack/slowjs => ../../
 
 require (
 	github.com/Calcium-Ion/moejs v0.1.0-alpha.9
 	github.com/go-quickjs/go-quickjs v0.28.0
-	github.com/liustack/quickjs v0.26.16
+	github.com/liustack/slowjs v0.26.16
 	github.com/robomotionio/goant v0.2.1
 	modernc.org/quickjs v0.25.0
 )

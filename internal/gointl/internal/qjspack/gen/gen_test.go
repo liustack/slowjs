@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
-	"github.com/liustack/quickjs/internal/gointl/internal/namedata"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/namedata"
 )
 
 // names builds a display names data set of two locales in one pool, as

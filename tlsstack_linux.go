@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build linux && (amd64 || arm64 || loong64 || ppc64le || s390x || riscv64 || 386 || arm)
+//go:build linux && (amd64 || arm64)
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ func (mk tlsMark) restore(tls *libc.TLS) bool {
 		return false
 	}
 	if n < mk.slots {
-		panic(fmt.Sprintf("quickjs: %d TLS stack slots, fewer than the %d where the call started", n, mk.slots))
+		panic(fmt.Sprintf("slowjs: %d TLS stack slots, fewer than the %d where the call started", n, mk.slots))
 	}
 	for ; n > mk.slots; n-- {
 		tls.Free(0)

@@ -76,7 +76,7 @@ To measure a branch of the fork before it is released, point tifa at the checkou
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/quickjs=../quickjs
+go mod edit -replace github.com/liustack/slowjs=../quickjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr

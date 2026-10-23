@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -40,13 +40,7 @@ func TestNoDeferEveryFile(t *testing.T) {
 			t.Errorf("%s: fixNoDefer does not give the file", fn)
 		}
 		frames := bytes.Count(b, []byte("\tdefer tls.Free(")) + bytes.Count(b, []byte("\t"+allocaDefer))
-		// On 386 and arm a JSValue is a NaN-boxed uint64, which ccgo
-		// passes without a TLS frame, where on 64-bit targets it is a
-		// struct that a frame holds: those files free fewer frames.
-		floor := 800
-		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			floor = 500
-		}
+		const floor = 800
 		if marks := bytes.Count(raw, []byte(noDeferMark)); marks != frames || marks < floor {
 			t.Errorf("%s: %d marks for %d frames freed by a defer", fn, marks, frames)
 		}

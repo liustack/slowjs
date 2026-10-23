@@ -1,12 +1,12 @@
-# quickjs (project notes for AI agents)
+# slowjs (project notes for AI agents)
 
 ## Goal
 
-`github.com/liustack/quickjs` is a pure Go QuickJS kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. It is a fork of `modernc.org/quickjs` (the Go API, at the root) and `modernc.org/libquickjs` (QuickJS translated to Go by ccgo, under `lib/`), merged into one module. The fork makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine, while staying close enough to upstream to take its releases.
+`github.com/liustack/slowjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. Until v0.27.x it was named `github.com/liustack/quickjs`, and those versions stay at the old path. It is a fork of `modernc.org/quickjs` (the Go API, at the root) and `modernc.org/libquickjs` (QuickJS translated to Go by ccgo, under `lib/`), merged into one module. slowjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine, while staying close enough to upstream to take its releases.
 
 ## Hard constraints
 
-- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library, on all 14 targets. Do not bring in a cgo engine.
+- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library, on all 5 supported targets (darwin and linux on amd64 and arm64, windows on amd64). Do not bring in a cgo engine.
 - The generated engine (`lib/ccgo_*.go`, `lib/internal/run-test262/ccgo_*.go`) is never edited by hand. A change to the engine is one of two kinds:
   - a mechanical rewrite of the generated Go by `internal/fixlib`, which runs again after every upstream release
   - a change in C, kept in `lib/internal/patch/quickjs.diff` so that a regeneration of `lib/` keeps it, with its Go form put in by `fixlib`
@@ -16,8 +16,8 @@
 
 ## Current state of the repository
 
-- `main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs and get no commits of their own. Releases v0.26.0 to v0.26.16 are lightweight tags on merge commits of `main`.
-- Root: the Go API (`quickjs.go`, `quickjs32.go`, `quickjs64.go`, `promise.go`, `tlsstack_*.go`) and its tests.
+- `main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs and get no commits of their own. Releases v0.26.0 to v0.27.3 are lightweight tags on merge commits of `main`.
+- Root: the Go API, package `slowjs` (`quickjs.go`, `quickjs64.go`, `promise.go`, `tlsstack_*.go`, whose file names come from upstream) and its tests.
 - `lib/`: the engine, merged from upstream libquickjs with `git subtree`, plus the fork's hand-written Go next to the generated files. `lib/README.md`, `lib/CLAUDE.md`, `lib/Makefile` and `lib/generator.go` are upstream's and kept as they are so that subtree merges stay clean: they describe libquickjs as a module of its own. Where they disagree with this file, this file wins. This fork does not regenerate `lib/` with `make generate`.
 - `internal/fixlib/`: the command that puts the fork's changes into the generated Go.
 - `intl/`: `Intl` for a VM, in every locale Chromium has. `temporal/`: `Temporal` for a VM, computed by go-intl. `internal/gointl/`: a copy of go-intl, which `intl/` and `temporal/` use. `internal/intlhook/`: what `temporal/` takes from `intl/`. `fmt/`: Go's fmt for a VM. `compare/`: a module of its own, kept from upstream, with QuickJS's micro benchmarks. `compare/engines/`: another module, the comparison with the other pure Go engines that docs/benchmarks.md reports.
@@ -51,7 +51,7 @@
 - A new file written in this fork starts with this header, in the comment syntax of its language and with the year it was created:
 
   ```go
-  // Copyright (c) 2026 The liustack/quickjs Authors.
+  // Copyright (c) 2026 The slowjs Authors.
   // SPDX-License-Identifier: MIT
   // Use of this source code is governed by the MIT license in LICENSE-MIT at the
   // root of this repository.
@@ -60,7 +60,7 @@
 - A new file whose code repeats parts of the engine as ccgo translated it, such as a Go form of an engine function that `internal/fixlib` calls instead, takes this header and a row in [NOTICE.md](NOTICE.md):
 
   ```go
-  // Copyright (c) 2026 The liustack/quickjs Authors.
+  // Copyright (c) 2026 The slowjs Authors.
   // SPDX-License-Identifier: MIT AND BSD-3-Clause
   // The fork's code here is under the MIT license in LICENSE-MIT at the root of
   // this repository. Parts follow QuickJS (Copyright (c) 2017-2021 Fabrice

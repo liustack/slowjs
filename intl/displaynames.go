@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"strings"
 
-	gointl "github.com/liustack/quickjs/internal/gointl"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // displayNames is a resolved Intl.DisplayNames.
@@ -20,7 +20,7 @@ type displayNames struct {
 	LanguageDisplay string `json:"languageDisplay,omitempty"`
 
 	// d is nil in a build without the display names
-	// (quickjs_intl_nonames), where every code falls back.
+	// (slowjs_intl_nonames), where every code falls back.
 	d *gointl.DisplayNames
 	// long names a region code ICU has replaced, in any style, as ICU
 	// does: it looks the short name up by the code asked for, finds none,

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -70,12 +70,10 @@ func TestEqIdempotent(t *testing.T) {
 	}
 }
 
-// The bit fields are those of each target: s390x keeps the length of a
-// string in the top 31 bits and IsHTMLDDA in the top bit of its byte.
+// The bit fields of the string length, the atom type and IsHTMLDDA.
 func TestEqBits(t *testing.T) {
 	for _, c := range []struct{ file, len, atom, htmldda string }{
 		{"ccgo_linux_amd64.go", "&0x7fffffff>>0", "+ 4))&0xc0000000>>30", "+ 17))&0x1 != 0"},
-		{"ccgo_linux_s390x.go", "&0xfffffffe>>1", "+ 4))&0x3>>0", "+ 17))&0x80 != 0"},
 	} {
 		b, err := readEngine(filepath.Join("..", "..", "lib", c.file))
 		if err != nil {

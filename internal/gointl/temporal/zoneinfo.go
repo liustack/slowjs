@@ -7,7 +7,7 @@ package temporal
 import (
 	"sort"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Time zones as Node's Temporal reckons them: ICU4X's zoneinfo64 crate

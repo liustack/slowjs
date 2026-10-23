@@ -5,7 +5,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/datedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
 )
 
 // Ranges of two moments: formatRange and formatRangeToParts.

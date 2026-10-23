@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/datedata"
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
 )
 
 // CacheSource shares decoded number and date data and pattern generators.

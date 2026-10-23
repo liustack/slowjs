@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 
 	_ "time/tzdata" // The test expectations name IANA zones.
 )
@@ -21,9 +21,9 @@ func TestMain(m *testing.M) {
 }
 
 // newVM returns a VM with Intl registered, in UTC unless opts say otherwise.
-func newVM(tb testing.TB, opts ...Option) *quickjs.VM {
+func newVM(tb testing.TB, opts ...Option) *slowjs.VM {
 	tb.Helper()
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -39,9 +39,9 @@ func newVM(tb testing.TB, opts ...Option) *quickjs.VM {
 	return vm
 }
 
-func eval(tb testing.TB, vm *quickjs.VM, src string) any {
+func eval(tb testing.TB, vm *slowjs.VM, src string) any {
 	tb.Helper()
-	v, err := vm.Eval(src, quickjs.EvalGlobal)
+	v, err := vm.Eval(src, slowjs.EvalGlobal)
 	if err != nil {
 		tb.Fatalf("%s: %v", src, err)
 	}
@@ -50,11 +50,11 @@ func eval(tb testing.TB, vm *quickjs.VM, src string) any {
 }
 
 // evalTests runs src/want pairs, each in the same VM.
-func evalTests(t *testing.T, vm *quickjs.VM, tests [][2]string) {
+func evalTests(t *testing.T, vm *slowjs.VM, tests [][2]string) {
 	t.Helper()
 	for _, test := range tests {
 		src, want := test[0], test[1]
-		got, err := vm.Eval(src, quickjs.EvalGlobal)
+		got, err := vm.Eval(src, slowjs.EvalGlobal)
 		switch {
 		case err != nil:
 			t.Errorf("%s\n\tgot error %v\n\twant %q", src, err, want)
@@ -838,7 +838,7 @@ func TestDefaultTimeZone(t *testing.T) {
 // whatever the host's is: a server renders the same page wherever it runs.
 func TestUTCByDefault(t *testing.T) {
 	t.Setenv("TZ", "Asia/Tokyo")
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -865,7 +865,7 @@ func TestRegisterPerRealm(t *testing.T) {
 	}
 
 	// The replacement realm starts without it.
-	next, err := quickjs.NewVM()
+	next, err := slowjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +901,7 @@ func TestInstallOnUse(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
 		{`typeof Object.getOwnPropertyDescriptor(globalThis, 'Intl').get`, "function"},
-		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__slowjs_intl')).length`, "0"},
 	})
 	if n := shimInstalls.Load() - before; n != 0 {
 		t.Fatalf("Register installed the shim %d times, want 0", n)
@@ -913,7 +913,7 @@ func TestInstallOnUse(t *testing.T) {
 		{`'value' in Object.getOwnPropertyDescriptor(globalThis, 'Intl')`, "true"},
 		{`Date.prototype.toLocaleDateString === f`, "false"},
 		{`f.call(new Date(0), 'de', {timeZone: 'UTC'})`, "1.1.1970"},
-		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__slowjs_intl')).length`, "0"},
 	})
 	if n := shimInstalls.Load() - before; n != 1 {
 		t.Fatalf("the shim was installed %d times, want 1", n)
@@ -948,7 +948,7 @@ func TestConcurrentVMs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -962,7 +962,7 @@ func TestConcurrentVMs(t *testing.T) {
 			}
 
 			for _, e := range exprs {
-				v, err := vm.Eval(e, quickjs.EvalGlobal)
+				v, err := vm.Eval(e, slowjs.EvalGlobal)
 				if err != nil {
 					t.Errorf("%s: %v", e, err)
 				}
@@ -1021,7 +1021,7 @@ func BenchmarkNewDateTimeFormat(b *testing.B) {
 }
 
 func ExampleRegister() {
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -1038,7 +1038,7 @@ func ExampleRegister() {
 		`Intl.DateTimeFormat().resolvedOptions().timeZone`,
 		`new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD'}).format(1234.5)`,
 	} {
-		v, err := vm.Eval(src, quickjs.EvalGlobal)
+		v, err := vm.Eval(src, slowjs.EvalGlobal)
 		if err != nil {
 			panic(err)
 		}

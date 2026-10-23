@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package compare // import "github.com/liustack/quickjs/compare"
+package compare // import "github.com/liustack/slowjs/compare"
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/fastschema/qjs"
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 var (
@@ -92,7 +92,7 @@ func BenchmarkCCGO(b *testing.B) {
 		fn := v.Name()
 		b.Run(fn, func(b *testing.B) {
 			js := getTest(b, fn, b.N)
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				b.Fatal(fn, err)
 			}
@@ -101,7 +101,7 @@ func BenchmarkCCGO(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			if out, err := vm.Eval(js, quickjs.EvalGlobal); err != nil {
+			if out, err := vm.Eval(js, slowjs.EvalGlobal); err != nil {
 				b.Fatalf("err=%v out=%v", err, out)
 			}
 		})

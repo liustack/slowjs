@@ -3,7 +3,7 @@ package temporal
 import (
 	"math"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Temporal's options, as temporal_rs 0.2.3 takes them once the engine has

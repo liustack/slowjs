@@ -9,7 +9,7 @@ all: editor
 	staticcheck 2>&1
 
 # The indirect requires here are only lower bounds; go mod tidy re-derives them
-# from ../go.mod, which "replace github.com/liustack/quickjs => ../" makes authoritative.
+# from ../go.mod, which "replace github.com/liustack/slowjs => ../" makes authoritative.
 # Without it a dependency bump in ../go.mod fails with "updates to go.mod needed".
 benchmark:
 	go mod tidy

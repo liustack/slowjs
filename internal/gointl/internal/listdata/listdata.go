@@ -7,7 +7,7 @@
 package listdata
 
 import (
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
 )
 
 // Version is the encoding's version.

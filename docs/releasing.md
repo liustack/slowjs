@@ -13,7 +13,8 @@ read_when:
 ## Versions
 
 - Releases are patch versions: v0.26.0, v0.26.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the functions it removed from `lib`. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
-- `github.com/liustack/quickjs` has no GitHub releases. A release is a tag, and users get it with `go get github.com/liustack/quickjs@<version>`.
+- `github.com/liustack/slowjs` has no GitHub releases. A release is a tag, and users get it with `go get github.com/liustack/slowjs@<version>`.
+- v0.28.0 renamed the module from `github.com/liustack/quickjs`. The `go.mod` of every tag up to v0.27.x names the old path, so those versions stay available only at the old path, and the Go module proxy keeps serving them there.
 
 ## Before the release
 
@@ -44,7 +45,7 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
    git push origin v0.26.17
    ```
 
-3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@v0.26.17`.
+3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/slowjs@v0.26.17`.
 
 ## After the release
 
@@ -89,7 +90,7 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 
 The fork exists for tifa, so every release goes into tifa next:
 
-1. In tifa, `go get github.com/liustack/quickjs@v0.26.17` and `go mod tidy`.
+1. In tifa, `go get github.com/liustack/slowjs@v0.26.17` and `go mod tidy`.
 2. Collect tifa's engine profile again, as tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#the-engine-profile) says under "The engine profile": PGO finds call sites by line, so a profile of the old engine matches fewer of them. `TestEngineProfileMatchesTheDependencies` in tifa's `internal/codegen` fails until it is collected again.
 3. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
 4. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.

@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"encoding/binary"
@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 
@@ -327,5 +327,5 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 }
 
 func errStringTooLong(n int) error {
-	return fmt.Errorf("quickjs: a string of %d characters is longer than javascript allows (%d)", n, lib.MJS_STRING_LEN_MAX)
+	return fmt.Errorf("slowjs: a string of %d characters is longer than javascript allows (%d)", n, lib.MJS_STRING_LEN_MAX)
 }

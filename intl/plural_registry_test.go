@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 func TestPluralRulesRoundingRegistry(t *testing.T) {
@@ -17,7 +17,7 @@ func TestPluralRulesRoundingRegistry(t *testing.T) {
 		for _, order := range [][2]int{{0, 2}, {2, 0}} {
 			t.Run(fmt.Sprintf("separateVMs=%t/first=%d", separate, order[0]), func(t *testing.T) {
 				first := newVM(t)
-				vms := []*quickjs.VM{first, first}
+				vms := []*slowjs.VM{first, first}
 				if separate {
 					vms[1] = newVM(t)
 				}

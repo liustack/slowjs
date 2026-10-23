@@ -1,7 +1,7 @@
 package intl
 
 import (
-	"github.com/liustack/quickjs/internal/gointl/internal/colldata"
+	"github.com/liustack/slowjs/internal/gointl/internal/colldata"
 )
 
 // Collation elements, and comparing strings by them.

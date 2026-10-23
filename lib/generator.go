@@ -156,7 +156,6 @@ func main() {
 		defer func() {
 			shell(gmake, "w64")
 			copyFile("internal/autogen/windows_amd64.mod", "go.mod")
-			copyFile("internal/autogen/windows_arm64.mod", "go.mod")
 		}()
 	}
 

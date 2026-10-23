@@ -2,13 +2,13 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs
+package slowjs
 
 import (
 	"fmt"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 

@@ -9,7 +9,7 @@
 1. **[QuickJS](https://bellard.org/quickjs)**：Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎。这个 fork 的引擎是 QuickJS 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`（见 `lib/generator.go` 里的 `qjsCommit`）。
 2. **[modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)**：ccgo 把这份 C 转译成的 Go，不用 cgo。fork 用 `git subtree` 把 v0.13.1（2026-07-31）放进了 `lib/`。
 3. **[modernc.org/quickjs](https://gitlab.com/cznic/quickjs)**：libquickjs 之上的 Go API。fork 从 v0.25.0（2026-10-01）开始，也就是本仓库历史里的提交 `ea7b851`。
-4. **这个 fork**：`github.com/liustack/quickjs`，把 Go API 和引擎合成一个模块。
+4. **这个 fork**：`github.com/liustack/slowjs`（v0.27.x 之前叫 `github.com/liustack/quickjs`），把 Go API 和引擎合成一个模块。
 
 modernc.org/libquickjs 和 modernc.org/quickjs 出自 quickjs-go 的作者们。它们的 `AUTHORS` 文件按上游原样保留为 [AUTHORS](../AUTHORS) 和 [lib/AUTHORS](../lib/AUTHORS)，两个模块都列了 Jan Mercl，modernc.org/quickjs 还列了 Dan Kortschak。这个 fork 的作者列在 [AUTHORS-FORK](../AUTHORS-FORK)。
 
@@ -23,10 +23,10 @@ fork 保留 modernc.org/quickjs 的 Go API，以及 ccgo 生成的引擎。`lib/
 
 用过 modernc.org/quickjs v0.25.0 的程序会遇到这些：
 
-- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/quickjs`，它的 `intl` 和 `fmt` 包跟着改。引擎是 `github.com/liustack/quickjs/lib`，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
+- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/slowjs`，包名 `quickjs` 改成 `slowjs`，它的 `intl` 和 `fmt` 包跟着改。引擎是 `github.com/liustack/slowjs/lib`，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
 - **Go 版本。** 需要 Go 1.27，上游需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](fork-changes/time-and-intl.md#local-time-is-utc-in-every-vm)）。
-- **performance.now。** `StdAddHelpers` 的 `performance.now` 从进程启动开始计时。上游从系统启动开始，在 Windows 和 FreeBSD 上读的是墙上时钟，从 1970 年开始。在 macOS 上不计入系统睡眠的时间（[详情](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)）。
+- **performance.now。** `StdAddHelpers` 的 `performance.now` 从进程启动开始计时。上游从系统启动开始，在 Windows 上读的是墙上时钟，从 1970 年开始。在 macOS 上不计入系统睡眠的时间（[详情](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，上游只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](fork-changes/time-and-intl.md#intl-in-every-locale-chromium-has)）。
 - **限额一到，调用就结束。** 中断、执行时限和内存耗尽都不能再被脚本捕获，`catch`、promise、迭代器和 Go 函数都不行（[详情](fork-changes/uncatchable.md)）。
 - **错误信息更多。** `*Error` 有 `Uncatchable`、`OutOfMemory` 和 `Interrupted`。转换不了的字符串会作为错误返回，不再是 `""`。Go 里建的 `*Error` 的 `Error()` 是 `Name: Message`，不再是空字符串（[详情](fork-changes/go-api.md)）。

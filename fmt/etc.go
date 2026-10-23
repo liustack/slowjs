@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package fmt // import "github.com/liustack/quickjs/fmt"
+package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
 	"fmt"

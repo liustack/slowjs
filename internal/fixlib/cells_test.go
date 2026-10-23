@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -66,8 +66,8 @@ func TestCellsEveryFile(t *testing.T) {
 			}
 		}
 	}
-	if len(cellFiles) != 11 {
-		t.Errorf("%d files listed, want the 11 of 64-bit targets", len(cellFiles))
+	if len(cellFiles) != 5 {
+		t.Errorf("%d files listed, want the 5 targets", len(cellFiles))
 	}
 }
 

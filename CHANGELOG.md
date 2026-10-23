@@ -1,8 +1,14 @@
 # Changelog
 
-What changed in `github.com/liustack/quickjs` that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/fork-changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
+What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/fork-changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
 ## [Unreleased]
+
+## [v0.28.0] - 2026-10-23
+
+### Changed
+
+- **Breaking:** the module is now `github.com/liustack/slowjs` with package `slowjs`, and it supports linux and darwin on amd64 and arm64 and windows on amd64.
 
 ## [v0.27.3] - 2026-10-23
 
@@ -303,7 +309,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.0...main
+[v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
 [v0.27.3]: https://github.com/liustack/quickjs/compare/v0.27.2...v0.27.3
 [v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1

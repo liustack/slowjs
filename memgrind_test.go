@@ -4,7 +4,7 @@
 
 //go:build libc.memgrind
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"os"

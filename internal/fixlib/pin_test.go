@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -40,8 +40,8 @@ func TestPinEveryFile(t *testing.T) {
 			t.Errorf("%s: the parameters are not kept", fn)
 		}
 	}
-	if len(pinFiles) != 4 || len(pinVars) != 15 {
-		t.Errorf("%d files and %d values, want 4 and 15", len(pinFiles), len(pinVars))
+	if len(pinFiles) != 3 || len(pinVars) != 15 {
+		t.Errorf("%d files and %d values, want 3 and 15", len(pinFiles), len(pinVars))
 	}
 }
 

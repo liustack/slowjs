@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -71,12 +71,8 @@ func TestFramesEveryFile(t *testing.T) {
 			t.Fatalf("%s: fixFrames changed a fixed file", fn)
 		}
 		// The functions of coldSites have the rest of their frame changed
-		// too, except __JS_AtomToValue on 32-bit targets, which has none
-		// left.
+		// too.
 		want := len(frameSites) + len(coldSites)
-		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			want = 3 + 1
-		}
 		if n := bytes.Count(b, []byte(framesInGo)); n != want {
 			t.Errorf("%s: %d frames changed, want %d", fn, n, want)
 		}

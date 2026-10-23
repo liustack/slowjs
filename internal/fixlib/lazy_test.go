@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -38,12 +38,7 @@ func TestLazyFramesFixedFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The functions of lazyFrameless have no TLS frame on 32-bit
-		// targets.
 		want := len(lazySites)
-		if strings.HasSuffix(name, "_386.go") || strings.HasSuffix(name, "_arm.go") {
-			want -= len(lazyFrameless)
-		}
 		if n := bytes.Count(raw, []byte("each statement that needs a TLS frame takes one of its own")); n != want {
 			t.Errorf("%s: %d functions changed by fixLazyFrames, want %d", name, n, want)
 		}
@@ -168,19 +163,6 @@ func TestLazyFramesRejects(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, c.want)
 			}
 		})
-	}
-}
-
-// On 32-bit targets fixLazyFrames leaves only the functions of
-// lazyFrameless without a TLS frame as they are.
-func TestLazyFramesFrameless(t *testing.T) {
-	b, hw := lazyInput(t, "ccgo_linux_386.go")
-	if _, err := lazyFrames(bytes.Clone(b), hw, map[string]lazySite{"_JS_ToObject": lazySites["_JS_ToObject"]}, false); err != nil {
-		t.Errorf("_JS_ToObject: %v", err)
-	}
-	_, err := lazyFrames(bytes.Clone(b), hw, map[string]lazySite{"_js_new_string8_len": {}}, false)
-	if want := "_js_new_string8_len: no TLS frame"; err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("got %v, want %q", err, want)
 	}
 }
 

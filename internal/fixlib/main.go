@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -153,7 +153,7 @@
 //     step undoes it, so that the others see the defers as ccgo writes
 //     them.
 //   - In the hand-written Go files under lib/, replace the import path
-//     modernc.org/libquickjs with github.com/liustack/quickjs/lib.
+//     modernc.org/libquickjs with github.com/liustack/slowjs/lib.
 //   - In every lib/internal/run-test262/ccgo_*.go file, make the engine API
 //     functions of the test262 runner call the engine in lib/ (see
 //     fixRunner), so that the runner tests that engine and not the copy ccgo
@@ -180,7 +180,7 @@ import (
 
 const (
 	oldPath = "modernc.org/libquickjs"
-	newPath = "github.com/liustack/quickjs/lib"
+	newPath = "github.com/liustack/slowjs/lib"
 )
 
 var (
@@ -1502,7 +1502,7 @@ func funcBody(b []byte, re *regexp.Regexp, name string) ([]byte, error) {
 
 var reFuncHead = regexp.MustCompile(`(?m)^func ([xX]\w+)\((.*?)\)( \(r [^()]+\))? \{$`)
 
-const linkedImport = "\tlibquickjs \"github.com/liustack/quickjs/lib\"\n"
+const linkedImport = "\tlibquickjs \"github.com/liustack/slowjs/lib\"\n"
 
 // fixRunner makes the test262 runner call the engine in lib/. ccgo linked a
 // whole copy of the engine into the runner. Every exported engine function

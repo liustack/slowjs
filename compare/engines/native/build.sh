@@ -1,11 +1,11 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 # build.sh <dir>: downloads and builds the native reference engines into
 # <dir>, each with its own build as shipped: Bellard's QuickJS 2026-06-04
-# (the release modernc.org/libquickjs v0.13.1 and so liustack/quickjs are
+# (the release modernc.org/libquickjs v0.13.1 and so liustack/slowjs are
 # translated from) and master at 7d1c13c5d8 with `make qjs` (gcc -O2, no
 # LTO), QuickJS-NG v0.17.0 with `make` (CMake Release), and Node v24.11.1
 # (linux-x64 binary). CMake 3.31.6 is fetched for QuickJS-NG.

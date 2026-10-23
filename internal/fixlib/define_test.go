@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -17,8 +17,8 @@ import (
 // fields back into a file without them, on every target.
 func TestDefineIdempotent(t *testing.T) {
 	files := libFiles(t)
-	if len(files) != 13 {
-		t.Fatalf("%d generated files, want 13", len(files))
+	if len(files) != 5 {
+		t.Fatalf("%d generated files, want 5", len(files))
 	}
 	for _, fn := range files {
 		b, err := readEngine(fn)

@@ -49,8 +49,8 @@ shorttest:
 # (which clones go-intl).
 gointl:
 	go test -count=1 -tags gointl_walk ./internal/gointl/internal/...
-	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict ./internal/gointl/...
-	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict -run WithoutNames ./intl/
+	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict ./internal/gointl/...
+	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict -run WithoutNames ./intl/
 	internal/gointl/qjs-sync.sh checkout
 	internal/gointl/qjs-sync.sh pack -check
 

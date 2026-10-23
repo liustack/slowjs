@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
 )
 
 // MetaVersion is the encoding version of the shared zone table.

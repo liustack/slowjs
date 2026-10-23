@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/engine"
+	"github.com/liustack/slowjs/compare/engines/engine"
 )
 
 func main() {

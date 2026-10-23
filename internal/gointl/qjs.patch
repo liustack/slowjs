@@ -787,9 +787,9 @@ index 56a6838..bc096cf 100644
  	"io/fs"
 -	"unsafe"
  
- 	"github.com/liustack/quickjs/internal/gointl/internal/blob"
--	"github.com/liustack/quickjs/internal/gointl/internal/datapack"
- 	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+ 	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+-	"github.com/liustack/slowjs/internal/gointl/internal/datapack"
+ 	"github.com/liustack/slowjs/internal/gointl/internal/layout"
  )
  
 @@ -168,16 +165,12 @@ type Source interface {

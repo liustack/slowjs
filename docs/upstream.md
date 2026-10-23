@@ -17,7 +17,7 @@ The code was built in four steps, each on the one before:
 1. **[QuickJS](https://bellard.org/quickjs)**, the JavaScript engine in C by Fabrice Bellard and Charlie Gordon. This fork's engine is the QuickJS release of 2026-06-04, commit `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` (see `qjsCommit` in `lib/generator.go`).
 2. **[modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)**, that C translated to Go by ccgo, with no cgo. The fork took v0.13.1 (2026-07-31) into `lib/` with `git subtree`.
 3. **[modernc.org/quickjs](https://gitlab.com/cznic/quickjs)**, the Go API over libquickjs. The fork starts from v0.25.0 (2026-10-01), which is commit `ea7b851` in this repository's history.
-4. **This fork**, `github.com/liustack/quickjs`, which merges the Go API and the engine into one module.
+4. **This fork**, `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` until v0.27.x), which merges the Go API and the engine into one module.
 
 modernc.org/libquickjs and modernc.org/quickjs are by the quickjs-go authors. Their `AUTHORS` files, kept as upstream has them in [AUTHORS](../AUTHORS) and [lib/AUTHORS](../lib/AUTHORS), list Jan Mercl for both and Dan Kortschak for modernc.org/quickjs. The authors of this fork are in [AUTHORS-FORK](../AUTHORS-FORK).
 
@@ -31,10 +31,10 @@ What it changed is listed one change at a time in [fork-changes](fork-changes/RE
 
 What a program that used modernc.org/quickjs v0.25.0 runs into:
 
-- **Import paths.** `modernc.org/quickjs` becomes `github.com/liustack/quickjs`, and its `intl` and `fmt` packages move with it. The engine is `github.com/liustack/quickjs/lib`, so `modernc.org/libquickjs` leaves your `go.mod`.
+- **Import paths.** `modernc.org/quickjs` becomes `github.com/liustack/slowjs`, and the package name `quickjs` becomes `slowjs`. Its `intl` and `fmt` packages move with it. The engine is `github.com/liustack/slowjs/lib`, so `modernc.org/libquickjs` leaves your `go.mod`.
 - **Go version.** The module needs Go 1.27, where upstream needs 1.26.
 - **Local time is UTC.** A script's local time is UTC in every VM, whatever `TZ` the process has. Name a zone to `Intl` to show another one ([details](fork-changes/time-and-intl.md#local-time-is-utc-in-every-vm)).
-- **performance.now.** The `performance.now` of `StdAddHelpers` counts from the start of the process, where upstream counts from the boot of the system, or from 1970 on Windows and FreeBSD (it reads the wall clock there), and on macOS it leaves out the time the system sleeps ([details](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)).
+- **performance.now.** The `performance.now` of `StdAddHelpers` counts from the start of the process, where upstream counts from the boot of the system, or from 1970 on Windows (it reads the wall clock there), and on macOS it leaves out the time the system sleeps ([details](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)).
 - **Intl in every locale.** Package `intl` formats in every locale Chromium has, where upstream formats en-US only. Programs that import it embed the locale data and its notices ([details](fork-changes/time-and-intl.md#intl-in-every-locale-chromium-has)).
 - **Limits end the call.** An interrupt, the eval timeout and running out of memory can no longer be caught by the script, through `catch`, promises, iterators or Go functions ([details](fork-changes/uncatchable.md)).
 - **Errors say more.** `*Error` has `Uncatchable`, `OutOfMemory` and `Interrupted`. A string that cannot be converted comes back as an error rather than `""`. `Error()` of an `*Error` made in Go is `Name: Message` rather than empty ([details](fork-changes/go-api.md)).

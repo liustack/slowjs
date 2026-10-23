@@ -26,7 +26,6 @@ import (
 const (
 	docFn = "quickjs.go"
 	modFn = "go.mod"
-	qemu  = "    (qemu)"
 
 	// fingerprintPrefix starts the first line of a results file, recording the
 	// root go.mod the numbers below it were measured against. The benchmarks
@@ -41,14 +40,6 @@ var (
 	goarch     = runtime.GOARCH
 	target     = fmt.Sprintf("%s_%s", goos, goarch) + ".txt"
 	resultsDir = path.Join("testdata", "benchmarks")
-	notes      = map[string]string{
-		"freebsd/amd64": qemu,
-		"freebsd/arm64": qemu,
-		"linux/386":     qemu,
-		"linux/s390x":   qemu,
-		"openbsd/amd64": qemu,
-		"windows/386":   qemu,
-	}
 )
 
 func fail(rc int, s string, args ...any) {
@@ -230,12 +221,12 @@ func document() error {
 //	                        CCGO     GOJA     QJS
 //	-----------------------------------------------
 `,
-				"github.com/liustack/quickjs/lib",
+				"github.com/liustack/slowjs/lib",
 				ver("github.com/dop251/goja", compare),
 				ver("github.com/fastschema/qjs", compare),
 			)
 			for _, v := range results {
-				fmt.Fprintf(buf, "//	%20s%9s%9s%9s%s\n", v[0], v[1], v[2], v[3], notes[v[0]])
+				fmt.Fprintf(buf, "//	%20s%9s%9s%9s\n", v[0], v[1], v[2], v[3])
 			}
 			fmt.Fprintf(buf, `//	-----------------------------------------------
 //	                        CCGO     GOJA     QJS

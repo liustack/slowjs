@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -29,12 +29,8 @@ func oneFrameInput(t *testing.T, name string) []byte {
 // oneFrameFiles are the files fixOneFrame changes: linux on 64-bit
 // targets, where the frame of JS_CallInternal is 1280 bytes.
 var oneFrameFiles = map[string]bool{
-	"ccgo_linux_amd64.go":   true,
-	"ccgo_linux_arm64.go":   true,
-	"ccgo_linux_loong64.go": true,
-	"ccgo_linux_ppc64le.go": true,
-	"ccgo_linux_riscv64.go": true,
-	"ccgo_linux_s390x.go":   true,
+	"ccgo_linux_amd64.go": true,
+	"ccgo_linux_arm64.go": true,
 }
 
 // In the files of linux on 64-bit targets JS_CallInternal takes one TLS

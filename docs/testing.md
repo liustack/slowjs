@@ -45,7 +45,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make shorttest` | The same with `-short`, which skips the long cases (test262 among them) |
 | `make leak` | `go test -v -run TestMemgrind2 -tags=libc.memgrind ./...` |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
-| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
+| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags slowjs_intl_nonames,slowjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
 | `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), the suite kept from upstream |
 | `make compare-engines` | `go run ./cmd/compare $(ARGS)` in `compare/engines`: the comparison with the other pure Go JavaScript engines in [benchmarks.md](benchmarks.md) (support, speed, memory, limits, tifa pages), each engine in a binary of its own |
 | `make cover` | Coverage of the root package, shown as HTML |
@@ -170,7 +170,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root: the tests of `lib/` use the value form, which is not a struct on 32-bit targets), each package to a test binary of its own, as two packages share the name `gen`, for all 14 targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the four main targets:
+It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the main ones:
 
 ```sh
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
@@ -178,7 +178,7 @@ for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
 done
 ```
 
-`internal/fixlib/macros_test.go` checks that every macro constant the generated code and the Go files next to it use is declared in each generated file. v0.26.6 and v0.26.7 did not build on linux and freebsd because of one that only the darwin and windows files declared.
+`internal/fixlib/macros_test.go` checks that every macro constant the generated code and the Go files next to it use is declared in each generated file. v0.26.6 and v0.26.7 did not build on linux because of one that only the darwin and windows files declared.
 
 ## Same as upstream after fixlib
 
@@ -203,7 +203,7 @@ There is normally no `go.work`. The whole repository, `make benchmark` in `compa
 
 Make one with `make work` for one case only: working on a checkout of `modernc.org/libc` next to this one (`../libc`), when a change here needs an unreleased libc. Delete it (`make clean`, or `rm -f go.work go.work.sum`) once the change is in a libc release, or the tree keeps building against whatever is in the working copy next door instead of the version in `go.mod`.
 
-While a `go.work` exists it must keep listing `./compare`. A workspace is found by walking up from the current folder, so it also governs builds inside `compare/`, which then fail with `main module (github.com/liustack/quickjs) does not contain package github.com/liustack/quickjs/compare`. `make work` writes the current toolchain into the `go` line: a `go.work` left over from an older toolchain, below the `go` version of `compare/go.mod`, breaks `make benchmark` with `module . listed in go.work file requires go >= …`.
+While a `go.work` exists it must keep listing `./compare`. A workspace is found by walking up from the current folder, so it also governs builds inside `compare/`, which then fail with `main module (github.com/liustack/slowjs) does not contain package github.com/liustack/slowjs/compare`. `make work` writes the current toolchain into the `go` line: a `go.work` left over from an older toolchain, below the `go` version of `compare/go.mod`, breaks `make benchmark` with `module . listed in go.work file requires go >= …`.
 
 ## Speed
 

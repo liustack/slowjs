@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -103,7 +103,7 @@ func TestUncatchableRejectsTextElsewhere(t *testing.T) {
 
 // A use of the address of the runtime's exception stops fixlib, as a store
 // through it would not show as a store of the field: rt + its offset in
-// TJSRuntime (1240 on 64-bit targets, 636 on linux/386), unsafe.Add, & of
+// TJSRuntime (1240 bytes), unsafe.Add, & of
 // the field, and a store of a part of it.
 func TestUncatchableRejectsExceptionAddress(t *testing.T) {
 	head := "func XJS_RunGC(tls *libc.TLS, rt uintptr) {\n"
@@ -127,8 +127,6 @@ func TestUncatchableRejectsExceptionAddress(t *testing.T) {
 		{"ccgo_darwin_arm64.go", "\t(*TJSRuntime)(unsafe.Pointer(rt)).Fcurrent_exception.Ftag = 0\n", false},
 		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1256))\n", true},
 		{"ccgo_darwin_arm64.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 636))\n", true},
-		{"ccgo_linux_386.go", "\t*(*TJSValue)(unsafe.Pointer(rt + 636)) = 0\n", false},
-		{"ccgo_linux_386.go", "\t_ = *(*uintptr)(unsafe.Pointer(rt + 1240))\n", true},
 	} {
 		b, err := readEngine(filepath.Join("..", "..", "lib", c.file))
 		if err != nil {

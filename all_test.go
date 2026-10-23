@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 	_ "golang.org/x/mod/modfile" // generator.go
 	util "modernc.org/fileutil/ccgo"
 )
@@ -359,16 +359,6 @@ func newBigInt(t *testing.T, s string) *big.Int {
 func TestMem(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short")
-	}
-
-	switch target {
-	case
-		"freebsd/arm64",
-		"linux/riscv64",
-		"linux/s390x",
-		"windows/arm64":
-
-		t.Skip("target too slow")
 	}
 
 	if !memgrind {

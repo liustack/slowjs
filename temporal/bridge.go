@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	"encoding/json"
 	"errors"
 	"time"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/gointl/temporal"
 )
 
 // maxInstantSec is how far from the epoch an Instant can be, in seconds:
@@ -34,7 +34,7 @@ const maxInstantSec = 8_640_000_000_000
 // An op is an operation of the bridge.
 type op struct {
 	name string
-	fn   func(c *args) (quickjs.Value, error)
+	fn   func(c *args) (slowjs.Value, error)
 }
 
 // opNames is the json of the names of ops, in order, which temporal.js
@@ -51,26 +51,26 @@ var opNames = func() string {
 	return string(b)
 }()
 
-var bridge = quickjs.NewBuiltin("temporal", 0, func(a quickjs.Args) (quickjs.Value, error) {
+var bridge = slowjs.NewBuiltin("temporal", 0, func(a slowjs.Args) (slowjs.Value, error) {
 	n, _ := a.Number(0)
 	i := int(n)
 	if float64(i) != n || i < 0 || i >= len(ops) {
-		return quickjs.Value{}, errors.New("temporal: internal error: no such operation")
+		return slowjs.Value{}, errors.New("temporal: internal error: no such operation")
 	}
 	v, err := ops[i].fn(&args{a: a, i: 1})
 	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 	return v, nil
 })
 
 func ret(c *args) *results { return newResults(c.a.VM()) }
 
-func str(c *args, s string) (quickjs.Value, error) { return c.a.VM().NewString(s) }
+func str(c *args, s string) (slowjs.Value, error) { return c.a.VM().NewString(s) }
 
-func num(c *args, f float64) (quickjs.Value, error) { return ret(c).num(f).single() }
+func num(c *args, f float64) (slowjs.Value, error) { return ret(c).num(f).single() }
 
-func boolean(c *args, b bool) (quickjs.Value, error) {
+func boolean(c *args, b bool) (slowjs.Value, error) {
 	if b {
 		return c.a.VM().NewInt(1), nil
 	}
@@ -78,17 +78,17 @@ func boolean(c *args, b bool) (quickjs.Value, error) {
 }
 
 // single is the one value collected.
-func (r *results) single() (quickjs.Value, error) { return r.vals[0], r.err }
+func (r *results) single() (slowjs.Value, error) { return r.vals[0], r.err }
 
 // deferred returns err as temporal.js throws it later, or nil where err is
 // nil.
-func deferred(c *args, err error) (quickjs.Value, bool, error) {
+func deferred(c *args, err error) (slowjs.Value, bool, error) {
 	if err == nil {
-		return quickjs.Value{}, false, nil
+		return slowjs.Value{}, false, nil
 	}
-	var qe *quickjs.Error
+	var qe *slowjs.Error
 	if !errors.As(jsErr(err), &qe) {
-		return quickjs.Value{}, true, err
+		return slowjs.Value{}, true, err
 	}
 	v, err := ret(c).str(qe.Name).str(qe.Message).array()
 	return v, true, err
@@ -233,116 +233,116 @@ func calendarOf(id string) (*temporal.Calendar, error) {
 
 var coreOps = []op{
 	// ---- Calendars, zones and offsets.
-	{"calCanon", func(c *args) (quickjs.Value, error) {
+	{"calCanon", func(c *args) (slowjs.Value, error) {
 		s := c.str()
 		id, ok := temporal.CalendarID(lowerASCII(s))
 		if !ok {
-			return quickjs.Value{}, rangeErr("Temporal error: Unknown calendar type " + s + ".")
+			return slowjs.Value{}, rangeErr("Temporal error: Unknown calendar type " + s + ".")
 		}
 		cal, err := calendarOf(id)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return str(c, cal.ID())
 	}},
-	{"calParse", func(c *args) (quickjs.Value, error) {
+	{"calParse", func(c *args) (slowjs.Value, error) {
 		id, ok := temporal.ParseCalendarString([]byte(c.str()))
 		if !ok {
-			return quickjs.Value{}, rangeErr("Temporal error: Invalid calendar string")
+			return slowjs.Value{}, rangeErr("Temporal error: Invalid calendar string")
 		}
 		cal, err := calendarOf(id)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return str(c, cal.ID())
 	}},
-	{"calEras", func(c *args) (quickjs.Value, error) {
+	{"calEras", func(c *args) (slowjs.Value, error) {
 		cal, err := c.calendar()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return boolean(c, cal.HasEras())
 	}},
-	{"tzParse", func(c *args) (quickjs.Value, error) {
+	{"tzParse", func(c *args) (slowjs.Value, error) {
 		d, err := data()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		tz, err := d.Zones.TimeZoneFromString([]byte(c.str()))
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		id := tz.Identifier()
 		zones.LoadOrStore(id, tz)
 		return str(c, id)
 	}},
-	{"tzIdent", func(c *args) (quickjs.Value, error) {
+	{"tzIdent", func(c *args) (slowjs.Value, error) {
 		d, err := data()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		tz, err := d.Zones.TimeZoneFromIdentifier([]byte(c.str()))
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		id := tz.Identifier()
 		zones.LoadOrStore(id, tz)
 		return str(c, id)
 	}},
-	{"tzEquals", func(c *args) (quickjs.Value, error) {
+	{"tzEquals", func(c *args) (slowjs.Value, error) {
 		a, err := c.timeZone()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		b, err := c.timeZone()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return boolean(c, a.Equals(b))
 	}},
-	{"offsetCheck", func(c *args) (quickjs.Value, error) {
+	{"offsetCheck", func(c *args) (slowjs.Value, error) {
 		ns, err := temporal.ParseOffset([]byte(c.str()))
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return num(c, float64(ns))
 	}},
-	{"now", func(c *args) (quickjs.Value, error) {
+	{"now", func(c *args) (slowjs.Value, error) {
 		// Seconds and nanoseconds, not UnixNano, which holds only the years
 		// 1678 to 2262. An Instant is at most 8.64e12 s from the epoch.
 		t := clockOf(c.a.VM())()
 		sec, nsec := t.Unix(), int64(t.Nanosecond())
 		if sec < -maxInstantSec || sec > maxInstantSec || sec == maxInstantSec && nsec > 0 {
-			return quickjs.Value{}, rangeErr("Temporal.Now: the clock reads " + t.UTC().Format(time.RFC3339Nano) + ", outside the range of Temporal.Instant")
+			return slowjs.Value{}, rangeErr("Temporal.Now: the clock reads " + t.UTC().Format(time.RFC3339Nano) + ", outside the range of Temporal.Instant")
 		}
 		ms := sec*1000 + nsec/1_000_000
 		return ret(c).num(float64(ms)).num(float64(nsec % 1_000_000)).array()
 	}},
 
 	// ---- PlainDate.
-	{"pdNew", func(c *args) (quickjs.Value, error) {
+	{"pdNew", func(c *args) (slowjs.Value, error) {
 		y, m, d := c.num(), c.num(), c.num()
 		cal, err := c.calendar()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		if !validISODate(y, m, d) {
-			return quickjs.Value{}, rangeErr("Temporal error: Invalid ISO date.")
+			return slowjs.Value{}, rangeErr("Temporal error: Invalid ISO date.")
 		}
 		pd, err := temporal.NewPlainDate(int(y), int(m), int(d), cal, temporal.Reject)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		return ret(c).date(pd).array()
 	}},
-	{"pdParse", func(c *args) (quickjs.Value, error) {
+	{"pdParse", func(c *args) (slowjs.Value, error) {
 		p, err := temporal.ParseDate(c.bytes())
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		cal, err := calendarOf(p.Calendar())
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		d, err := temporal.PlainDateFromParsed(p, cal)
 		if v, ok, err := deferred(c, err); ok {

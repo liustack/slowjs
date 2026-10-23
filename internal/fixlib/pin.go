@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -32,10 +32,9 @@ import (
 
 // pinFiles are the generated files fixPin changes.
 var pinFiles = map[string]bool{
-	"ccgo_darwin_amd64.go":  true,
-	"ccgo_freebsd_amd64.go": true,
-	"ccgo_linux_amd64.go":   true,
-	"ccgo_windows.go":       true,
+	"ccgo_darwin_amd64.go": true,
+	"ccgo_linux_amd64.go":  true,
+	"ccgo_windows.go":      true,
 }
 
 // pinVars are the parameters and locals of JS_CallInternal that fixPin

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -13,7 +13,7 @@ import (
 )
 
 // Walking reports whether the pool parts read are recorded, which only the
-// gointl_walk build tag does, for quickjs's pack tool.
+// gointl_walk build tag does, for slowjs's pack tool.
 const Walking = true
 
 var walk struct {

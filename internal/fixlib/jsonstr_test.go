@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -12,12 +12,8 @@ import (
 	"testing"
 )
 
-// The constants fixJSONStrings writes on every target: s390x is
-// big-endian, so ccgo numbers the bit fields from the other end.
-var jsonLayoutWant = map[bool]string{
-	false: "const (\n\tjsonStrLenOff    = 0\n\tjsonStrLenMask   = 0x7fffffff\n\tjsonStrLenShift  = 0\n\tjsonStrWideOff   = 0\n\tjsonStrWideMask  = 0x80000000\n\tjsonStrWideShift = 31\n\tjsonStrData      = 12\n)\n",
-	true:  "const (\n\tjsonStrLenOff    = 0\n\tjsonStrLenMask   = 0xfffffffe\n\tjsonStrLenShift  = 1\n\tjsonStrWideOff   = 0\n\tjsonStrWideMask  = 0x1\n\tjsonStrWideShift = 0\n\tjsonStrData      = 12\n)\n",
-}
+// The constants fixJSONStrings writes on every target.
+const jsonLayoutWant = "const (\n\tjsonStrLenOff    = 0\n\tjsonStrLenMask   = 0x7fffffff\n\tjsonStrLenShift  = 0\n\tjsonStrWideOff   = 0\n\tjsonStrWideMask  = 0x80000000\n\tjsonStrWideShift = 31\n\tjsonStrData      = 12\n)\n"
 
 // On every target, JS_ToQuotedString and json_parse_string each call their
 // run once, at the start of the loop over the characters, and the file has
@@ -43,7 +39,7 @@ func TestJSONStringsEveryFile(t *testing.T) {
 				t.Errorf("%s: %s: %d calls of a run, want one at the start of the loop", name, c.fn, n)
 			}
 		}
-		if !bytes.Contains(b, []byte(jsonLayout+jsonLayoutWant[name == "ccgo_linux_s390x.go"])) {
+		if !bytes.Contains(b, []byte(jsonLayout+jsonLayoutWant)) {
 			t.Errorf("%s: not the layout of a JSString on this target", name)
 		}
 

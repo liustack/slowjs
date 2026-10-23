@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -10,7 +10,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // The original options, including omitted fields, distinguish Temporal
@@ -44,30 +44,30 @@ var temporalDateFormatCtor = &ctor{
 	},
 }
 
-func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Value, error) {
+func temporalDateFormatted(a slowjs.Args, wantParts, isRange bool) (slowjs.Value, error) {
 	r, ok, err := formatterOf[*temporalDateFormat](a)
 	if !ok {
-		return quickjs.UndefinedValue, err
+		return slowjs.UndefinedValue, err
 	}
 	f := r.f
 	cal, _ := a.String(2)
 	if err := f.checkCalendar(cal); err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 	ms, _ := a.Number(1)
 	start, err := f.instant(ms)
 	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 	if isRange {
 		cal, _ = a.String(4)
 		if err := f.checkCalendar(cal); err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 		endMS, _ := a.Number(3)
 		end, err := f.instant(endMS)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 		parts := f.f.FormatRangeToParts(start, end)
 		list := make([]string, 0, 3*len(parts))

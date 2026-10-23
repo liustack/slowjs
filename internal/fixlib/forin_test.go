@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -54,13 +54,11 @@ func TestForInIdempotent(t *testing.T) {
 	}
 }
 
-// The constants are the bit fields of each target: little-endian targets
-// keep the flags of a shape property in the top 6 bits, s390x in the low 6.
+// The constants are the bit fields of the targets: the flags of a shape
+// property are in the top 6 bits.
 func TestForInBits(t *testing.T) {
 	for _, c := range []struct{ file, want string }{
 		{"ccgo_linux_amd64.go", "forInFlagsMask  = 0xfc000000\n\tforInFlagsShift = 26\n"},
-		{"ccgo_linux_386.go", "forInFlagsMask  = 0xfc000000\n\tforInFlagsShift = 26\n"},
-		{"ccgo_linux_s390x.go", "forInFlagsMask  = 0x3f\n\tforInFlagsShift = 0\n"},
 	} {
 		b, err := readEngine(filepath.Join("..", "..", "lib", c.file))
 		if err != nil {

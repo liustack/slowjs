@@ -48,7 +48,7 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against main `453def5` (th
 
 The `TestMemgrind2Ephemeron` tests in both packages audit those paths with `-tags=libc.memgrind`. `BenchmarkEphemeronGC` measures fresh graphs of 10,000 and 100,000 entries, with setup and teardown outside the timer, including reverse-order live chains in one map and spread over 1 map per 10 entries, live keys held from an array, and ordinary cycles without weak collections.
 
-`internal/fixlib/ephemeron_test.go` checks every target's rewrite, exact inverse, idempotence, altered collector rejection and partial-hook rejection. It also compares the header masks in `ephemeronbits*.go` against each generated collector, including the reversed bitfields on s390x. The focused and full test262 results and render measurements must be checked when changing these paths.
+`internal/fixlib/ephemeron_test.go` checks every target's rewrite, exact inverse, idempotence, altered collector rejection and partial-hook rejection. It also compares the header masks in `ephemeronbits.go` against each generated collector. The focused and full test262 results and render measurements must be checked when changing these paths.
 
 ## When upstream changes it
 

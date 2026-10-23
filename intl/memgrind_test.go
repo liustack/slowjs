@@ -4,12 +4,12 @@
 
 //go:build libc.memgrind
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 	"modernc.org/libc"
 )
 
@@ -27,7 +27,7 @@ func TestMemgrind2(t *testing.T) {
 
 	libc.MemAuditStart()
 	for i := range 8 {
-		vm, err := quickjs.NewVM()
+		vm, err := slowjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,7 +65,7 @@ func TestMemgrind2(t *testing.T) {
 			srcs = []string{deepFirstUse}
 		}
 		for _, src := range srcs {
-			if _, err := vm.Eval(src, quickjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(src, slowjs.EvalGlobal); err != nil {
 				vm.Close()
 				t.Fatal(src, err)
 			}

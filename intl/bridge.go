@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"encoding/json"
@@ -13,8 +13,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // The bridge between intl.js and the formatters.
@@ -293,7 +293,7 @@ var optionLists = func() string {
 
 // key appends the request key of the arguments a, which tells two requests
 // apart exactly when the arguments differ.
-func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
+func (c *ctor) key(b []byte, a slowjs.Args) ([]byte, error) {
 	b = append(b, c.tag)
 	n := len(c.fixed) + 2 + len(c.options)
 	for i := range n {
@@ -329,7 +329,7 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 }
 
 // request returns the request the arguments a make.
-func (c *ctor) request(a quickjs.Args) (request, error) {
+func (c *ctor) request(a slowjs.Args) (request, error) {
 	req := request{Options: map[string]any{}}
 	for i, name := range c.fixed {
 		s, _ := a.String(i)
@@ -416,28 +416,28 @@ func splitLocales(s string) ([]string, bool) {
 
 // resolveBuiltin returns the Builtin resolving the arguments of a new c into
 // the id of its formatter.
-func resolveBuiltin(c *ctor) *quickjs.Builtin {
-	return quickjs.NewBuiltin(c.name, 0, func(a quickjs.Args) (quickjs.Value, error) {
+func resolveBuiltin(c *ctor) *slowjs.Builtin {
+	return slowjs.NewBuiltin(c.name, 0, func(a slowjs.Args) (slowjs.Value, error) {
 		var buf [256]byte
 		key, err := c.key(buf[:0], a)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		e := formatters.lookup(key)
 		if e == nil {
 			req, err := c.request(a)
 			if err != nil {
-				return quickjs.Value{}, err
+				return slowjs.Value{}, err
 			}
 
 			f, err := c.resolve(req)
 			if err != nil {
-				return quickjs.Value{}, jsErr(err)
+				return slowjs.Value{}, jsErr(err)
 			}
 
 			if e, err = formatters.add(key, f); err != nil {
-				return quickjs.Value{}, jsErr(err)
+				return slowjs.Value{}, jsErr(err)
 			}
 		}
 		// Ids go past 2^31, which an int of 32 bits does not hold.
@@ -448,7 +448,7 @@ func resolveBuiltin(c *ctor) *quickjs.Builtin {
 // formatterOf returns the formatter whose id is argument 0 of a, and false
 // when the registry has dropped it: javascript then resolves it again and
 // repeats the call.
-func formatterOf[T formatter](a quickjs.Args) (f T, ok bool, err error) {
+func formatterOf[T formatter](a slowjs.Args) (f T, ok bool, err error) {
 	id, _ := a.Number(0)
 	e := formatters.entry(id)
 	if e == nil {
@@ -463,7 +463,7 @@ func formatterOf[T formatter](a quickjs.Args) (f T, ok bool, err error) {
 }
 
 // numberArg returns argument i of a, a number or a numeric string.
-func numberArg(a quickjs.Args, i int) any {
+func numberArg(a slowjs.Args, i int) any {
 	if f, ok := a.Number(i); ok {
 		// An integer goes on as one, as the engine tags most of them, which
 		// is faster to format and exact.
@@ -482,58 +482,58 @@ func numberArg(a quickjs.Args, i int) any {
 }
 
 // The Builtins intl.js is made with, in the order of its parameters.
-var bridge = []*quickjs.Builtin{
+var bridge = []*slowjs.Builtin{
 	resolveBuiltin(numberFormatCtor),
-	quickjs.NewBuiltin("format", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("format", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		return numberFormatted(a, false)
 	}),
-	quickjs.NewBuiltin("formatToParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("formatToParts", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		return numberFormatted(a, true)
 	}),
 	resolveBuiltin(dateTimeFormatCtor),
-	quickjs.NewBuiltin("format", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("format", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		return dateFormatted(a, false)
 	}),
-	quickjs.NewBuiltin("formatToParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("formatToParts", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		return dateFormatted(a, true)
 	}),
 	resolveBuiltin(pluralRulesCtor),
-	quickjs.NewBuiltin("select", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("select", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		return a.VM().NewString(p.selectNumber(numberArg(a, 1)))
 	}),
-	quickjs.NewBuiltin("selectRange", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("selectRange", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		return a.VM().NewString(p.selectRange(numberArg(a, 1), numberArg(a, 2)))
 	}),
-	quickjs.NewBuiltin("resolvedOptions", 1, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("resolvedOptions", 1, func(a slowjs.Args) (slowjs.Value, error) {
 		id, _ := a.Number(0)
 		e := formatters.entry(id)
 		if e == nil {
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		}
 
 		return a.VM().NewString(e.options)
 	}),
-	quickjs.NewBuiltin("getCanonicalLocales", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("getCanonicalLocales", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		tags, err := localesArg(a, 0)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		r := []string{}
 		for _, tag := range tags {
 			s, err := canonicalLocale(tag)
 			if err != nil {
-				return quickjs.Value{}, jsErr(err)
+				return slowjs.Value{}, jsErr(err)
 			}
 
 			if !contains(r, s) {
@@ -542,7 +542,7 @@ var bridge = []*quickjs.Builtin{
 		}
 		return stringArray(a.VM(), r)
 	}),
-	quickjs.NewBuiltin("supportedLocalesOf", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("supportedLocalesOf", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		name, _ := a.String(0)
 		var c *ctor
 		for _, v := range ctors {
@@ -551,26 +551,26 @@ var bridge = []*quickjs.Builtin{
 			}
 		}
 		if c == nil {
-			return quickjs.Value{}, errors.New("intl: internal error: no constructor " + name)
+			return slowjs.Value{}, errors.New("intl: internal error: no constructor " + name)
 		}
 
 		tags, err := localesArg(a, 1)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		r, err := goSupported(c.goSvc, tags)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		return stringArray(a.VM(), r)
 	}),
 	resolveBuiltin(collatorCtor),
-	quickjs.NewBuiltin("compare", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("compare", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		c, ok, err := formatterOf[*collator](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		// go-intl weighs a lone surrogate by its code point, as ICU does, so
@@ -580,10 +580,10 @@ var bridge = []*quickjs.Builtin{
 		return a.VM().NewInt(c.c.Compare(x, y)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
-	quickjs.NewBuiltin("breaks", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("breaks", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		s, ok, err := formatterOf[*segmenter](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		text, _ := a.WTF8(1)
@@ -593,32 +593,32 @@ var bridge = []*quickjs.Builtin{
 	// rtfFormat and rtfParts take the value, a number, and the unit, a
 	// string. The parts are their type, value and unit in turn, the unit
 	// empty for the text around the number.
-	quickjs.NewBuiltin("rtfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("rtfFormat", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
 		u, _ := a.String(2)
 		unit, err := f.unit(v, u)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		return a.VM().NewString(f.f.Format(v, unit))
 	}),
-	quickjs.NewBuiltin("rtfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("rtfParts", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
 		u, _ := a.String(2)
 		unit, err := f.unit(v, u)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		parts := f.f.FormatToParts(v, unit)
@@ -631,33 +631,33 @@ var bridge = []*quickjs.Builtin{
 	resolveBuiltin(listFormatCtor),
 	// lfParts takes the items as listItems reads them and answers as
 	// listParts writes them.
-	quickjs.NewBuiltin("lfParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("lfParts", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		f, ok, err := formatterOf[*listFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		s, _ := a.WTF8(1)
 		items, ok := listItems(s)
 		if !ok {
-			return quickjs.Value{}, typeError("malformed list")
+			return slowjs.Value{}, typeError("malformed list")
 		}
 
 		return listParts(a.VM(), items, f.f.FormatToParts(items))
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.
-	quickjs.NewBuiltin("dnOf", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("dnOf", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		d, ok, err := formatterOf[*displayNames](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		code, _ := a.String(1)
 		name, ok, err := d.of(code)
 		switch {
 		case err != nil:
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		case !ok:
 			return a.VM().NewInt(0), nil
 		}
@@ -668,22 +668,22 @@ var bridge = []*quickjs.Builtin{
 	// string, and true for fields. The parts are their type, value and
 	// unit in turn, the unit empty for the list's own text.
 	durationFormatBuiltin,
-	quickjs.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("dfParts", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		f, ok, err := formatterOf[*durationFormat](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		s, _ := a.WTF8(1)
 		fields, _ := a.Bool(2)
 		d, err := durationOf(s, fields)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		parts, err := f.f.FormatToParts(d)
 		if err != nil {
-			return quickjs.Value{}, jsErr(rangeError("%s", err))
+			return slowjs.Value{}, jsErr(rangeError("%s", err))
 		}
 
 		l := make([]string, 0, 3*len(parts))
@@ -693,34 +693,34 @@ var bridge = []*quickjs.Builtin{
 		return stringArray(a.VM(), l)
 	}),
 	// supportedValuesOf answers a new array of the list of the key.
-	quickjs.NewBuiltin("supportedValuesOf", 1, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("supportedValuesOf", 1, func(a slowjs.Args) (slowjs.Value, error) {
 		key, _ := a.String(0)
 		values, err := supportedValues()
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		l, ok := values[key]
 		if !ok {
-			return quickjs.Value{}, jsErr(rangeError("Invalid key : %s", key))
+			return slowjs.Value{}, jsErr(rangeError("Invalid key : %s", key))
 		}
 
 		return stringArray(a.VM(), l)
 	}),
 	// localeCheck throws the RangeError of Intl.Locale for its tag or one of
 	// the options checkLocale checks.
-	quickjs.NewBuiltin("localeCheck", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("localeCheck", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		kind, _ := a.String(0)
 		s, _ := a.String(1)
 		if err := checkLocale(kind, s); err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}),
 	// localeNew takes the tag and the options of Intl.Locale, each a string
 	// or undefined, and answers the json of the new Locale's slots.
-	quickjs.NewBuiltin("localeNew", 1+locOptions, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("localeNew", 1+locOptions, func(a slowjs.Args) (slowjs.Value, error) {
 		tag, _ := a.String(0)
 		var opts [locOptions]*string
 		for i := range opts {
@@ -730,12 +730,12 @@ var bridge = []*quickjs.Builtin{
 		}
 		r, err := newLocale(tag, &opts)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		s, err := localeJSON(r)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		return a.VM().NewString(s)
@@ -743,18 +743,18 @@ var bridge = []*quickjs.Builtin{
 	// localeInfo answers what the method of Intl.Locale named by its second
 	// argument answers for the tag of a Locale, its first: maximize and
 	// minimize the tag of the Locale to make.
-	quickjs.NewBuiltin("localeInfo", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("localeInfo", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		tag, _ := a.String(0)
 		what, _ := a.String(1)
 		return localeInfo(a.VM(), tag, what)
 	}),
 	// caseLanguage answers the language whose case rules toLocaleUpperCase
 	// and toLocaleLowerCase follow for a tag, or "" for the default ones.
-	quickjs.NewBuiltin("caseLanguage", 1, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("caseLanguage", 1, func(a slowjs.Args) (slowjs.Value, error) {
 		tag, _ := a.String(0)
 		lang, err := caseLanguage(tag)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 
 		return a.VM().NewString(lang)
@@ -764,16 +764,16 @@ var bridge = []*quickjs.Builtin{
 	// string, for the engine to map the rest: a string, or an array of
 	// strings and the code units of lone surrogates; undefined where they
 	// change nothing.
-	quickjs.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	slowjs.NewBuiltin("casePremap", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		s, _ := a.WTF8(0)
 		lang, _ := a.String(1)
 		upper, _ := a.Bool(2)
 		pieces, ok, err := premapCase(s, lang, upper)
 		switch {
 		case err != nil:
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		case !ok:
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		case len(pieces) == 1:
 			if s, ok := pieces[0].(string); ok {
 				return a.VM().NewString(s)
@@ -782,14 +782,14 @@ var bridge = []*quickjs.Builtin{
 		return mixedArray(a.VM(), pieces)
 	}),
 	resolveBuiltin(temporalDateFormatCtor),
-	quickjs.NewBuiltin("temporalFormat", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, false) }),
-	quickjs.NewBuiltin("temporalParts", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, false) }),
-	quickjs.NewBuiltin("temporalRange", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, true) }),
-	quickjs.NewBuiltin("temporalRangeParts", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, true) }),
+	slowjs.NewBuiltin("temporalFormat", 3, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, false, false) }),
+	slowjs.NewBuiltin("temporalParts", 3, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, true, false) }),
+	slowjs.NewBuiltin("temporalRange", 5, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, false, true) }),
+	slowjs.NewBuiltin("temporalRangeParts", 5, func(a slowjs.Args) (slowjs.Value, error) { return temporalDateFormatted(a, true, true) }),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.
-func localesArg(a quickjs.Args, i int) ([]string, error) {
+func localesArg(a slowjs.Args, i int) ([]string, error) {
 	if s, ok := a.String(i); ok {
 		return []string{s}, nil
 	}
@@ -807,10 +807,10 @@ func localesArg(a quickjs.Args, i int) ([]string, error) {
 	return l, nil
 }
 
-func numberFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
+func numberFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	f, ok, err := formatterOf[*numberFormat](a)
 	if !ok {
-		return quickjs.UndefinedValue, err
+		return slowjs.UndefinedValue, err
 	}
 
 	v := numberArg(a, 1)
@@ -825,23 +825,23 @@ func numberFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 	return formatted(a.VM(), parts, wantParts)
 }
 
-func dateFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
+func dateFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	f, ok, err := formatterOf[*dateTimeFormat](a)
 	if !ok {
-		return quickjs.UndefinedValue, err
+		return slowjs.UndefinedValue, err
 	}
 
 	ms, _ := a.Number(1)
 	if !wantParts {
 		s, err := f.formatString(ms)
 		if err != nil {
-			return quickjs.Value{}, jsErr(err)
+			return slowjs.Value{}, jsErr(err)
 		}
 		return a.VM().NewString(s)
 	}
 	parts, err := f.format(ms)
 	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 
 	return formatted(a.VM(), parts, wantParts)
@@ -850,7 +850,7 @@ func dateFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 // formatted returns parts either as the array of their types and values, in
 // turn, which parts() in intl.js makes the formatToParts result of, or,
 // joined, as the format one.
-func formatted(vm *quickjs.VM, parts []part, wantParts bool) (quickjs.Value, error) {
+func formatted(vm *slowjs.VM, parts []part, wantParts bool) (slowjs.Value, error) {
 	if wantParts {
 		l := make([]string, 0, 2*len(parts))
 		for _, p := range parts {
@@ -875,8 +875,8 @@ func formatted(vm *quickjs.VM, parts []part, wantParts bool) (quickjs.Value, err
 }
 
 // stringArray returns a javascript array of l.
-func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, 0, len(l))
+func stringArray(vm *slowjs.VM, l []string) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(l))
 	free := func() {
 		for i := range vals {
 			vals[i].Free()
@@ -886,7 +886,7 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 		v, err := vm.NewString(s)
 		if err != nil {
 			free()
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		vals = append(vals, v)
@@ -897,27 +897,27 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 }
 
 // mixedArray is l, strings and ints, as a javascript array.
-func mixedArray(vm *quickjs.VM, l []any) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, 0, len(l))
+func mixedArray(vm *slowjs.VM, l []any) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(l))
 	free := func() {
 		for i := range vals {
 			vals[i].Free()
 		}
 	}
 	for _, x := range l {
-		var v quickjs.Value
+		var v slowjs.Value
 		switch x := x.(type) {
 		case string:
 			var err error
 			if v, err = vm.NewString(x); err != nil {
 				free()
-				return quickjs.Value{}, err
+				return slowjs.Value{}, err
 			}
 		case int:
 			v = vm.NewInt(x)
 		default:
 			free()
-			return quickjs.Value{}, errors.New("intl: internal error: a value of another type in an array")
+			return slowjs.Value{}, errors.New("intl: internal error: a value of another type in an array")
 		}
 		vals = append(vals, v)
 	}
@@ -927,8 +927,8 @@ func mixedArray(vm *quickjs.VM, l []any) (quickjs.Value, error) {
 }
 
 // intArray is l as a javascript array of numbers.
-func intArray(vm *quickjs.VM, l []int) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, len(l))
+func intArray(vm *slowjs.VM, l []int) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, len(l))
 	for i, n := range l {
 		vals[i] = vm.NewInt(n)
 	}
@@ -940,28 +940,28 @@ func intArray(vm *quickjs.VM, l []int) (quickjs.Value, error) {
 func jsErr(err error) error {
 	var e *jsError
 	if errors.As(err, &e) {
-		return &quickjs.Error{Name: e.ctor, Message: e.msg}
+		return &slowjs.Error{Name: e.ctor, Message: e.msg}
 	}
 
-	return &quickjs.Error{Name: "Error", Message: err.Error()}
+	return &slowjs.Error{Name: "Error", Message: err.Error()}
 }
 
-var durationFormatBuiltin = quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+var durationFormatBuiltin = slowjs.NewBuiltin("dfFormat", 3, func(a slowjs.Args) (slowjs.Value, error) {
 	f, ok, err := formatterOf[*durationFormat](a)
 	if !ok {
-		return quickjs.UndefinedValue, err
+		return slowjs.UndefinedValue, err
 	}
 
 	s, _ := a.WTF8(1)
 	fields, _ := a.Bool(2)
 	d, err := durationOf(s, fields)
 	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 
 	r, err := f.f.Format(d)
 	if err != nil {
-		return quickjs.Value{}, jsErr(rangeError("%s", err))
+		return slowjs.Value{}, jsErr(rangeError("%s", err))
 	}
 
 	return a.VM().NewString(r)

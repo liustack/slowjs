@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -44,11 +44,7 @@ func TestAllocaEveryFile(t *testing.T) {
 				framed++
 			}
 		}
-		// The bound function has a frame on 64-bit targets only.
-		want := 3
-		if strings.HasSuffix(fn, "_386.go") || strings.HasSuffix(fn, "_arm.go") {
-			want = 2
-		}
+		const want = 3
 		if framed != want {
 			t.Errorf("%s: %d alloca in a frame, want %d", fn, framed, want)
 		}

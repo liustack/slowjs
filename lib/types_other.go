@@ -4,7 +4,7 @@
 
 //go:build !linux
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 import (
 	"modernc.org/libc/sys/types"

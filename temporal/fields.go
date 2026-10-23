@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	"math"
 
-	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/slowjs/internal/gointl/temporal"
 )
 
 // What V8 does to the fields of a property bag once javascript has read and
