@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, and how EvalBytecode waits for a module's top-level await'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, and how a module frees its top level once it has run'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -199,6 +199,18 @@ Release: v0.27.0.
 They called `js_std_await` of `quickjs-libc.c`, the helper of the `qjs` shell. When the job queue ran dry with the promise pending, it read the state that `js_std_init_handlers` sets up, which a VM never sets up, and the process crashed with a nil pointer dereference. A job that failed was printed to stderr and dropped, so the eval timeout after a module's first `await` crashed the same way once the queue was empty. The `qjs` shell does not crash there, it spins on the empty queue for good, and Node ends a module whose top-level await never settles with exit code 13.
 
 Test: `moduleawait_test.go`, also run under memgrind, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
+
+## A module frees its top level once it has run
+
+Release: Unreleased.
+
+When `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` or `EvalSharedBytecodeValue` has run a module to its end, it frees the module's top-level function: the code of the top level, and the variables of the top level that no function of the module uses, with what they hold. The functions the module made keep the variables they use, and the module keeps the ones it exports apart from the function. A module runs once, so nothing calls that function again. Upstream keeps it as long as the module, and a module in the context lives until the VM is closed, so a VM that loaded a module held more than one that ran the same code as a script, whose top-level function goes when it returns.
+
+A module that is still pending when the call returns, and one that failed, keep the function.
+
+The SSR bundle of tifa's example shop as a module: a VM holds 8.66 MiB after loading rather than 9.44 MiB, where the same bundle as a script (an IIFE) gives 8.63 MiB. Measured on darwin/arm64 with `MemorySize` after `RunGC`.
+
+Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`, also run under memgrind.
 
 ## SharedBytecode
 
