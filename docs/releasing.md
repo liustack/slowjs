@@ -69,7 +69,7 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
    go run ./cmd/compare -cpu 1 -sibling 5 -name "$run"
    tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
    page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
-   tifa/run.sh "$page_dir" bin "$HOME/jsnative"
+   tifa/run.sh "$page_dir" bin "$HOME/jsnative"    # TIFA_ONLY=a,b runs only some engines
    python3 behind.py "results/$run.json"
    ```
 

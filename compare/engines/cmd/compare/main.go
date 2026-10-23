@@ -55,6 +55,14 @@ var variants = []variant{
 	{"moejs", "moejs", "eng_moejs", nil, true},
 }
 
+// pagesOnly are variants for the tifa page runs (tifa/run.sh). Their binaries
+// are built with the others, but a run of cmd/compare leaves them out unless
+// -engines names them: they are the same engine as one above, set up another
+// way.
+var pagesOnly = []variant{
+	{"liustack-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
+}
+
 var (
 	flagPhases   = flag.String("phases", "features,concurrent,react,micro,v8,upstream,cold,mem,t262", "workloads to run")
 	flagEngines  = flag.String("engines", "", "comma-separated engines (default all)")
@@ -106,7 +114,11 @@ func main() {
 	}
 	vs := selected()
 	if !*flagNoBuild {
-		build(vs)
+		if *flagEngines == "" {
+			build(append(slices.Clone(vs), pagesOnly...))
+		} else {
+			build(vs)
+		}
 	}
 	if *flagBuildOnl {
 		return
@@ -257,7 +269,7 @@ func selected() []variant {
 	var out []variant
 	for _, n := range strings.Split(*flagEngines, ",") {
 		found := false
-		for _, v := range variants {
+		for _, v := range slices.Concat(variants, pagesOnly) {
 			if v.Name == n || v.Bin == n {
 				out, found = append(out, v), true
 			}
