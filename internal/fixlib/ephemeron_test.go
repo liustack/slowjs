@@ -16,7 +16,7 @@ import (
 
 func TestEphemeronRewrite(t *testing.T) {
 	for _, fn := range libFiles(t) {
-		b, err := os.ReadFile(fn)
+		b, err := readAfter(fn, "fixEphemeron")
 		if err != nil {
 			t.Fatal(err)
 		}

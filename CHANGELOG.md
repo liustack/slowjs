@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+### Added
+
+- `VM.RunYoungGC` (`JS_RunYoungGC` in `lib/`): a garbage collection of only the objects made since the last collection, young or full. It frees the cycles among them and keeps the rest, which become old. A full collection, `VM.RunGC`, visits every object of the VM, about 30,000 for the bundle of tifa's example shop before any garbage. A program that runs one piece of work at a time, such as a page render, can run a young collection after each and a full one now and then. What a full collection frees, it still frees after any number of young ones. Young collections keep cycles through old objects and the values of weak maps until the next full one. Programs that do not call it collect as before.
+
 ### Fixed
 
 - Loops of `indexOf`, `lastIndexOf` and `includes` of strings stop within 20 ms of a 10 ms timeout: each search counts the characters it looks through toward the interrupt check. In a string of 1 MB that holds no match they ran on for 170 ms, 6.9 s and 170 ms.
@@ -11,6 +15,7 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 ### Performance
 
 - `includes`, `indexOf` and `lastIndexOf` of a string find what they look for with the search of Go's package bytes, where upstream compares at one index after the other: a search through 100 KB of HTML takes 81 µs rather than 320. A render of the shop takes 0.995 of the time and the MUI pages of tifa's test app 1.003, both inside the spread of code layouts. Results do not change.
+- With tifa running `RunYoungGC` after each render and a full collection now and then, where it ran a full collection every few renders, the P99 of a render of the shop is 0.748 of what it was with one VM and 0.796 with two VMs, and that of the MUI pages of tifa's test app 0.940 and 0.919. The P50 and total CPU stay within 2.1%, and peak memory is 0.82 to 0.88 of what it was. Without PGO.
 
 ## [v0.27.2] - 2026-10-23
 

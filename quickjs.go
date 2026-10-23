@@ -739,6 +739,29 @@ func (m *VM) RunGC() {
 	lib.XJS_RunGC(m.runtime.tls, m.runtime.cRuntime)
 }
 
+// RunYoungGC performs a young GC now: it frees the reference cycles among
+// the objects made since the last GC, young or full, and makes the objects
+// it keeps old. It visits only those objects, so it takes about as long as
+// the young objects are many, where [VM.RunGC] visits every object twice. It
+// is meant to run after each unit of work, such as a page render, whose
+// objects are mostly garbage once it ends.
+//
+// It frees no object RunGC would keep. It is conservative where RunGC is
+// not: a cycle that runs through an old object, and a value of a WeakMap
+// entry, with what it holds, while its map is reachable or old, stay until the
+// next RunGC or the GC the engine runs by itself. So memory can grow over
+// many young GCs: run RunGC from time to time, such as when [VM.MemorySize]
+// after a young GC has grown well past what it was after the last RunGC.
+//
+// Like RunGC, it removes the weak references to what it frees, queues the
+// callbacks of a FinalizationRegistry for the next [VM.ExecutePendingJobs],
+// gives the small blocks the runtime keeps for reuse back to their arenas,
+// runs no javascript and leaves [VM.GCThreshold] as it is. No other
+// goroutine may use m meanwhile (see [VM]), and a call after Close panics.
+func (m *VM) RunYoungGC() {
+	lib.XJS_RunYoungGC(m.runtime.tls, m.runtime.cRuntime)
+}
+
 // MemorySize returns the memory m takes, in bytes, as [VM.SetMemoryLimit] and
 // [VM.SetGCThreshold] count it. After [VM.RunGC] it is what the objects that
 // javascript can still reach take, with the arenas they are in, plus the

@@ -88,6 +88,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Strings of Builtins converted in Go | v0.27.2 | [go-api.md](go-api.md#strings-of-builtins-converted-in-go) |
 | Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | v0.27.2 | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 | Searches skip to where the string is | Unreleased | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
+| Young collection, VM.RunYoungGC | Unreleased | [young-collection.md](young-collection.md) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

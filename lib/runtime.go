@@ -17,6 +17,7 @@ type TforkRuntime struct {
 	shape     TshapeCache  // see shapecache.go
 	fn        TfuncShapes  // see funcshape.go
 	regexp    TregexpCache // see regexcache.go
+	young     Tyoung       // see younggc.go
 }
 
 // forkRuntimeSize is the size of TforkRuntime, which JS_NewRuntime2

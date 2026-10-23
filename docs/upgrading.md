@@ -51,7 +51,7 @@ go run ./internal/fixlib
 
 Some steps check the code against a list kept in `internal/fixlib`, and a flag prints the list as the files have it. A report fails while a list it depends on is out of date, so update them in this order: `-frames`, then `-up` and `-qjslibc` (both on the files as taken from upstream), then `-cells`, then `-slots`. Then fix `lazySites` (`internal/fixlib/lazy.go`) and `inlineCallees` (`internal/fixlib/inline.go`) by hand from the numbers `fixlib` reports: no flag prints them. Last come the fingerprints, `-define`, `-backtrace`, `-regex`, `-lazyaddr`, `-inline`, `-poll`, `-runtime`, `-front`, `-shape`, `-forin`, `-bitwise`, `-eq`, `-atomkey`, `-fieldchain`, `-oneframe`, `-json`, `-search`, `-funcshape`, `-recache`, `-repoll`, `-charge` and `-clock`. Each of these runs every change of `fixlib` and skips only the fingerprint checks, so a report that stops on another list, such as "TLS frames taken by statement changed", means that list is out of date, not the one the flag prints. Read every new line before you put it in.
 
-The final changes have separate printers. `-expect` reads either raw upstream or already generated files and runs the earlier changes in memory through `dropDefers`, including the trim of `quickjs-libc.c`. It then counts the likely and unlikely tests before applying the final changes, without checking `expectSites` or writing any file. All checks of the earlier changes still apply, so update their lists first. `-fastframes` prints the fingerprint of the TLS structs and methods in the libc release of `go.mod`. `-ephemeron` prints the collector fingerprints after the earlier final rewrites, without applying its own hooks. Read every new or removed site before updating these lists.
+The final changes have separate printers. `-expect` reads either raw upstream or already generated files and runs the earlier changes in memory through `dropDefers`, including the trim of `quickjs-libc.c`. It then counts the likely and unlikely tests before applying the final changes, without checking `expectSites` or writing any file. All checks of the earlier changes still apply, so update their lists first. `-fastframes` prints the fingerprint of the TLS structs and methods in the libc release of `go.mod`. `-ephemeron` prints the collector fingerprints after the earlier final rewrites, without applying its own hooks, and `-young` the fingerprints of `youngSites` after them, with `fixEphemeron` applied. Read every new or removed site before updating these lists.
 
 ### When fixlib stops
 
@@ -60,6 +60,7 @@ The final changes have separate printers. `-expect` reads either raw upstream or
 | `fixlib` reports a change to | Read |
 | --- | --- |
 | `ephemeronSites`, the collector or weak-reference hooks | [weak-collections.md](fork-changes/weak-collections.md) |
+| `youngSites`, `youngListReaders`, the young collection hooks | [young-collection.md](fork-changes/young-collection.md#when-upstream-changes-it) |
 | `XJS_ToCStringLen2` | [uncatchable.md](fork-changes/uncatchable.md#no-leak-when-converting-a-string-runs-out-of-memory) |
 | `XJS_Throw`, `_JS_CallInternal`, `_JS_IteratorClose`, a call of `XJS_GetException`, a store of `current_exception` | [uncatchable.md](fork-changes/uncatchable.md#interrupts-cannot-be-caught-through-promises-or-iterators) |
 | `XJS_ThrowOutOfMemory`, `_JS_ThrowError2`, the regexp functions, the string table, the uses of `"out of memory"` | [uncatchable.md](fork-changes/uncatchable.md#out-of-memory-is-uncatchable) |
@@ -112,6 +113,7 @@ fixlib takes a change of its own as made only when its whole text is where it pu
 
 - the `DIRECT_DISPATCH` condition: disable computed goto for `__CCGO__` and `__EMSCRIPTEN__`, and keep upstream's computed goto for native C builds. This condition does not change the generated Go or need a `fixlib` rewrite
 - the ephemeron collector, symbol marking, runtime scratch pointer and conditional map marking hunks
+- the young collection hunks: `young_obj_list`, `young_dead_list` and `young_sweep` in `JSRuntime`, `add_gc_object`, `young_splice` in `JS_RunGCInternal`, `JS_ComputeMemoryUsage` and `JS_DumpMemoryUsage`, `young_defer` in `__JS_FreeValueRT` and `async_func_free`, and `JS_RunYoungGC` with its declaration in `quickjs.h`
 - the `JS_ToCStringLen2` hunk, unless upstream QuickJS has fixed the bug
 - the `getTimezoneOffset` hunk
 - the lazy stack hunks: `JSBacktrace`, the built-in `JS_CLASS_BACKTRACE` class, `js_backtrace_build` and the `js_backtrace_*` calls in `JS_GetPropertyInternal`, `JS_GetOwnPropertyInternal`, `JS_DefineProperty`, the interpreter's `GET_FIELD_INLINE`, `get_prop_string`, `js_print_error`, `js_print_object`, `JS_ComputeMemoryUsage`, the callers that only need the attributes of a property (`js_get_own_property_flags`)

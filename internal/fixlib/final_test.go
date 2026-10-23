@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -18,4 +19,22 @@ func readNoDefer(fn string) ([]byte, error) {
 		return nil, err
 	}
 	return restoreFinal(b, filepath.Base(fn))
+}
+
+// readAfter reads the generated file fn of lib/ as the final change named
+// change leaves it, with the final changes made after it undone.
+func readAfter(fn, change string) ([]byte, error) {
+	b, err := os.ReadFile(fn)
+	if err != nil {
+		return nil, err
+	}
+	for i := len(finalChanges) - 1; i >= 0; i-- {
+		if finalChanges[i].name == change {
+			return b, nil
+		}
+		if b, err = finalChanges[i].restore(b, filepath.Base(fn)); err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("no final change %s", change)
 }
