@@ -78,3 +78,35 @@ version of the comparison made it (the commit of this repository).
   Bundle bytes stay unchanged because their whitespace occurs in strings.
 - Bundle package versions and license texts are in `tifa/THIRD_PARTY_NOTICES.md`.
   Unsupported precise profile and historical claims were removed from the docs.
+
+## 2026-10-24: slowjs as tifa runs it, and the MUI pages
+
+- New row `liustack-tifa` in the tifa page runs: slowjs set up the way tifa
+  sets up a VM of its pool (packages `intl` and `temporal`, no polyfill,
+  `__tifa_murmur2__` and `__tifa_random_bytes__` as Go functions, a memory
+  limit of 128 MiB, a stack of 10000 slots, a time budget of 3 s, tifa's GC
+  rules, a shared compiled bundle). The Go is copied from `internal/ssr` of
+  tifa, not imported. `liustack-quickjs` keeps its rows, with the same
+  JavaScript on the polyfill as every engine. The tifa row has bench, shop and
+  MUI runs on its own Intl and no polyfill run, and the C QuickJS and Node
+  rows have no counterpart: they cannot take Go functions or a Go `Intl`.
+  Docs say what each row measures (docs/benchmarks.md, "slowjs as tifa runs
+  it").
+- A bundle with `@emotion/hash` (MUI) gets the one-line change the tifa plugin
+  makes to `murmur2`, in the adapter, since the pinned bundles were built
+  before the plugin had it. Its results file counts the rewrites and the calls
+  of the Go functions.
+- The bundle's work after a render (young GC, full GC by the pool's rules) is
+  in the CPU time per render of this row and not in its wall time, as in tifa.
+- The MUI bundle is timed for the first time, on the polyfill in every engine
+  and on own Intl where there is one (`mui-pf`, `mui-native`).
+- `pages.py` compares the tifa row's HTML with the polyfill row's and counts
+  pages that differ only in U+202F (the polyfill writes it before AM and PM,
+  Go's Intl and Node write a plain space), and gives each bundle as a ratio to
+  C QuickJS 2026-06-04.
+- `tifa/run.sh` takes `TIFA_ONLY` (run some engines) and `pagerun.sh` takes
+  `TIFA_CPU` and `TIFA_SIBLING` (another CPU pair than 1 and 5).
+- `cmd/compare` builds the tifa row with the other engines and leaves it out of
+  the other workloads unless `-engines` names it.
+- Runs of 2026-10-24 (`results/2026-10-24-main-tifa-row-gcp-pages`) cover the
+  tifa pages for five rows only. The other engines were not run again.
