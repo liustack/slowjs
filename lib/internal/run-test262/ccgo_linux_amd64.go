@@ -5,7 +5,7 @@
 package main
 
 import (
-	libquickjs "github.com/liustack/quickjs/lib"
+	libquickjs "github.com/liustack/slowjs/lib"
 	"math"
 	"reflect"
 	"unsafe"

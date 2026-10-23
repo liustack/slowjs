@@ -26,7 +26,7 @@ func TestLinksOnlyReadData(t *testing.T) {
 		{"linkprobedtf", []string{"qjsCore", "qjsDates", "qjsZoneNames"}, []string{"qjsHostZones"}},
 	} {
 		linked := linkedSymbols(t, probe.dir)
-		const pkg = "github.com/liustack/quickjs/internal/gointl."
+		const pkg = "github.com/liustack/slowjs/internal/gointl."
 		for _, name := range probe.links {
 			if !linked[pkg+name] {
 				t.Errorf("%s does not link %s", probe.dir, name)

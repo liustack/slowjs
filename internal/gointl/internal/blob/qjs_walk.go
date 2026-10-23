@@ -5,7 +5,7 @@
 
 package blob
 
-// Keys lists a table's keys in order. quickjs's pack tool reads every record
+// Keys lists a table's keys in order. slowjs's pack tool reads every record
 // of a table with them, to learn which parts of a pool a locale's data
 // reaches.
 func (t Table) Keys() []string {

@@ -12,13 +12,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/intl"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/intl"
 )
 
 // The focused corpora use the Intl recorder's error names. Error wording is
 // not part of the Intl bridge's contract.
-func checkFormattingCorpus(t *testing.T, name string, vm *quickjs.VM) {
+func checkFormattingCorpus(t *testing.T, name string, vm *slowjs.VM) {
 	t.Helper()
 	b, err := os.ReadFile("testdata/" + name + ".json")
 	if err != nil {
@@ -35,10 +35,10 @@ func checkFormattingCorpus(t *testing.T, name string, vm *quickjs.VM) {
 		t.Fatal("missing Chromium 156 corpus")
 	}
 	for _, c := range corpus.Cases {
-		got, err := vm.Eval(c[0], quickjs.EvalGlobal)
+		got, err := vm.Eval(c[0], slowjs.EvalGlobal)
 		value := ""
 		if err != nil {
-			e, ok := err.(*quickjs.Error)
+			e, ok := err.(*slowjs.Error)
 			if !ok {
 				t.Fatal(err)
 			}
@@ -56,7 +56,7 @@ func checkFormattingCorpus(t *testing.T, name string, vm *quickjs.VM) {
 func TestDurationLocaleString(t *testing.T) {
 	checkFormattingCorpus(t, "duration-locale", newVM(t))
 	t.Run("without Intl registration", func(t *testing.T) {
-		vm, err := quickjs.NewVM()
+		vm, err := slowjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,7 +76,7 @@ func TestDateTimeFormatTemporal(t *testing.T) {
 func TestDateTimeFormatTemporalInstallOrder(t *testing.T) {
 	for _, temporalFirst := range []bool{false, true} {
 		for _, first := range []string{"new Intl.DateTimeFormat('en')", "Temporal.PlainDate.from('2024-01-05')"} {
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				t.Fatal(err)
 			}

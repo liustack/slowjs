@@ -5,7 +5,7 @@
 
 //go:build !(linux && (amd64 || arm64))
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
@@ -80,11 +80,11 @@ func (mk tlsMark) restore(tls *libc.TLS) bool {
 		return false
 	}
 	if n < mk.slots {
-		panic(fmt.Sprintf("quickjs: %d TLS stack slots, fewer than the %d where the call started", n, mk.slots))
+		panic(fmt.Sprintf("slowjs: %d TLS stack slots, fewer than the %d where the call started", n, mk.slots))
 	}
 	for i := 0; tlsTop(tls) != mk.top; i++ {
 		if i == tlsRewindMax {
-			panic("quickjs: cannot find where the TLS stack was when the call started")
+			panic("slowjs: cannot find where the TLS stack was when the call started")
 		}
 		tls.Free(16)
 	}

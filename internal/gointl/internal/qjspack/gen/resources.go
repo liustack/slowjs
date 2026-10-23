@@ -12,14 +12,14 @@ import (
 	"slices"
 	"strings"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/datedata"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
-	"github.com/liustack/quickjs/internal/gointl/internal/namedata"
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
-	"github.com/liustack/quickjs/internal/gointl/internal/rbnfdata"
-	"github.com/liustack/quickjs/internal/gointl/internal/zonedata"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/namedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/rbnfdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/zonedata"
 )
 
 // chromiumResources selects resources from the same go-intl models the runtime

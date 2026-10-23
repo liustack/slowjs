@@ -260,7 +260,7 @@ func renderMarkdown(res *Results) string {
 	p("# Pure Go JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
-	p("- liustack/quickjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
+	p("- liustack/slowjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
 	if len(res.Drivers) > 0 {
 		p("- Driver (`cmd/compare`) at %s, the engine binaries are from the commit above\n", strings.Join(res.Drivers, ", "))
 	}

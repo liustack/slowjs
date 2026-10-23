@@ -11,10 +11,10 @@ import (
 	"io/fs"
 	"sync"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
 )
 
-// The data quickjs builds in, in place of go-intl's data.pack: the packs
+// The data slowjs builds in, in place of go-intl's data.pack: the packs
 // internal/qjspack/gen writes into qjsdata/ from go-intl's data directory,
 // cut down to Chromium's locales. A pack is read where it lies, and a
 // chunk of it is inflated into the heap the first time a formatter reads one

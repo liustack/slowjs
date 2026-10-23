@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/engine"
-	"github.com/liustack/quickjs/compare/engines/t262"
+	"github.com/liustack/slowjs/compare/engines/engine"
+	"github.com/liustack/slowjs/compare/engines/t262"
 )
 
 type t262Result struct {

@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 // expect64 and expect32 stand for the likely and unlikely of QuickJS,
 // __builtin_expect(!!(x), c), which ccgo writes as

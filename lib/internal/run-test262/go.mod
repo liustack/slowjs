@@ -1,14 +1,14 @@
-module github.com/liustack/quickjs/lib/internal/run-test262
+module github.com/liustack/slowjs/lib/internal/run-test262
 
 go 1.27.0
 
 // The test262 runner is a module of its own, so its transpiled sources
-// (about 69 MiB) stay out of the github.com/liustack/quickjs module zip.
+// (about 69 MiB) stay out of the github.com/liustack/slowjs module zip.
 // It always builds against the engine in this work tree.
-replace github.com/liustack/quickjs => ../../..
+replace github.com/liustack/slowjs => ../../..
 
 require (
-	github.com/liustack/quickjs v0.0.0-00010101000000-000000000000
+	github.com/liustack/slowjs v0.0.0-00010101000000-000000000000
 	modernc.org/libc v1.77.1
 )
 

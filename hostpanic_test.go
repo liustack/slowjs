@@ -3,14 +3,14 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"testing"
 	"time"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 )
 
 // evalRecover evaluates js and returns what it panicked with.

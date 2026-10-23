@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"compress/gzip"
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	gointl "github.com/liustack/quickjs/internal/gointl"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // The corpora of the constructors built on go-intl. Their locales are a

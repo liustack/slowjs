@@ -13,7 +13,7 @@ import (
 	"unicode/utf16"
 )
 
-// Built with quickjs_intl_nonames, Intl.DisplayNames has no data and says
+// Built with slowjs_intl_nonames, Intl.DisplayNames has no data and says
 // so, and the rest is as before.
 func TestQJSWithoutNames(t *testing.T) {
 	_, err := NewDisplayNames(qjsLocale("zh"), DisplayNamesOptions{Kind: DisplayRegion})
@@ -28,7 +28,7 @@ func TestQJSWithoutNames(t *testing.T) {
 	}
 }
 
-// Built with quickjs_intl_nocjdict, a run of Chinese or Japanese is one
+// Built with slowjs_intl_nocjdict, a run of Chinese or Japanese is one
 // word, as in an ICU without the dictionary, and Thai still goes by its
 // own.
 func TestQJSWithoutCJDict(t *testing.T) {

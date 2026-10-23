@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/colldata"
+	"github.com/liustack/slowjs/internal/gointl/internal/colldata"
 )
 
 // Comparing strings the way a language sorts them.

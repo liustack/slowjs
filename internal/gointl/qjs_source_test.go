@@ -14,7 +14,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
 )
 
 // A qjsProbe uses one service the way a program does, from a source, and

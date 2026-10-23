@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	"errors"
@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/temporal"
 )
 
 // How the values of temporal.js cross to Go. A Temporal object keeps its
@@ -44,7 +44,7 @@ var zones sync.Map // string -> temporal.TimeZone
 
 // args reads the arguments of a Builtin in turn.
 type args struct {
-	a quickjs.Args
+	a slowjs.Args
 	i int
 }
 
@@ -230,12 +230,12 @@ func epochParts(i temporal.Instant) (ms, sub float64) {
 
 // results collects the values a Builtin returns as an array.
 type results struct {
-	vm   *quickjs.VM
-	vals []quickjs.Value
+	vm   *slowjs.VM
+	vals []slowjs.Value
 	err  error
 }
 
-func newResults(vm *quickjs.VM) *results { return &results{vm: vm, vals: make([]quickjs.Value, 0, 16)} }
+func newResults(vm *slowjs.VM) *results { return &results{vm: vm, vals: make([]slowjs.Value, 0, 16)} }
 
 func (r *results) num(f float64) *results {
 	if f == math.Trunc(f) && f >= math.MinInt32 && f <= math.MaxInt32 && (f != 0 || !math.Signbit(f)) {
@@ -249,7 +249,7 @@ func (r *results) num(f float64) *results {
 func (r *results) int(n int) *results { return r.num(float64(n)) }
 
 func (r *results) undefined() *results {
-	r.vals = append(r.vals, quickjs.UndefinedValue)
+	r.vals = append(r.vals, slowjs.UndefinedValue)
 	return r
 }
 
@@ -292,7 +292,7 @@ func (r *results) duration(d temporal.Duration) *results {
 }
 
 // array is the results as a javascript array.
-func (r *results) array() (quickjs.Value, error) {
+func (r *results) array() (slowjs.Value, error) {
 	defer func() {
 		for i := range r.vals {
 			// UndefinedValue belongs to no VM, and undefined needs no
@@ -303,7 +303,7 @@ func (r *results) array() (quickjs.Value, error) {
 		}
 	}()
 	if r.err != nil {
-		return quickjs.Value{}, r.err
+		return slowjs.Value{}, r.err
 	}
 	return r.vm.NewArray(r.vals...)
 }
@@ -337,21 +337,21 @@ func jsErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var qe *quickjs.Error
+	var qe *slowjs.Error
 	if errors.As(err, &qe) {
 		return err
 	}
 	msg := err.Error()
 	switch {
 	case errors.Is(err, temporal.ErrRange):
-		return &quickjs.Error{Name: "RangeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "RangeError: ")}
+		return &slowjs.Error{Name: "RangeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "RangeError: ")}
 	case errors.Is(err, temporal.ErrType):
-		return &quickjs.Error{Name: "TypeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "TypeError: ")}
+		return &slowjs.Error{Name: "TypeError", Message: "Temporal error: " + strings.TrimPrefix(msg, "TypeError: ")}
 	case errors.Is(err, temporal.ErrInternal):
-		return &quickjs.Error{Name: "Error", Message: "Temporal error: Internal error: " + strings.TrimPrefix(msg, "Error: ") + "."}
+		return &slowjs.Error{Name: "Error", Message: "Temporal error: Internal error: " + strings.TrimPrefix(msg, "Error: ") + "."}
 	}
 	return err
 }
 
-func rangeErr(msg string) error { return &quickjs.Error{Name: "RangeError", Message: msg} }
-func typeErr(msg string) error  { return &quickjs.Error{Name: "TypeError", Message: msg} }
+func rangeErr(msg string) error { return &slowjs.Error{Name: "RangeError", Message: msg} }
+func typeErr(msg string) error  { return &slowjs.Error{Name: "TypeError", Message: msg} }

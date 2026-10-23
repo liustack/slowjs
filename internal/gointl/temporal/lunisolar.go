@@ -1,6 +1,6 @@
 package temporal
 
-import "github.com/liustack/quickjs/internal/gointl/internal/eastasian"
+import "github.com/liustack/slowjs/internal/gointl/internal/eastasian"
 
 // The lunisolar calendars, whose years have a thirteenth month: the Hebrew,
 // and the Chinese and Korean, as icu_calendar 2.2.1 reckons them.

@@ -11,7 +11,7 @@
 # What is ours: every file or directory whose name starts with "qjs" (this
 # script, qjs.patch, qjstz, qjs_*.go, qjsdata/, internal/qjspack/, the
 # qjs_walk.go of each data package), and UPSTREAM. Everything else is go-intl's, rewritten
-# from github.com/go-quickjs/go-intl to github.com/liustack/quickjs/internal/gointl
+# from github.com/go-quickjs/go-intl to github.com/liustack/slowjs/internal/gointl
 # and changed only by qjs.patch, which covers data loading, Chromium style
 # construction and notices: source.go stops embedding data.pack and serves our packs
 # instead, internal/blob reports the pool parts it reads when the pack tool
@@ -64,7 +64,7 @@ cache=$(dirname "$upstream")
 # qjstz's update, which the pack tool reads (see tz_data).
 tzdata=$upstream-tz$TZ_VERSION
 tzstamp="$COMMIT $TZ_VERSION $TZ_ZONEINFO64 $TZ_TIMEZONETYPES $TZ_WINDOWSZONES $TZ_METAZONES"
-ours=github.com/liustack/quickjs/internal/gointl
+ours=github.com/liustack/slowjs/internal/gointl
 
 die() {
 	echo "qjs-sync.sh: $*" >&2
@@ -242,7 +242,7 @@ test)
 	(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
 		-data "$data" -out "$mod/qjsdata" -locales all >/dev/null)
 	skip="$skip|TestQJSAvailable|TestQJSResolveMatchesChromium|TestQJSTZVersion"
-	printf 'module github.com/liustack/quickjs\n\ngo 1.24\n' >"$tmp/go.mod"
+	printf 'module github.com/liustack/slowjs\n\ngo 1.24\n' >"$tmp/go.mod"
 	(cd "$tmp" && go test -skip "^($skip)\$" "$@" ./internal/gointl/...)
 	;;
 test-chromium)

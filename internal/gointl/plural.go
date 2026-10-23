@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/plurdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/plurdata"
 )
 
 // Intl.PluralRules.

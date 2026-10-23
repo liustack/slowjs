@@ -6,7 +6,7 @@
 // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
 // lib/LICENSE).
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 import "unsafe"
 

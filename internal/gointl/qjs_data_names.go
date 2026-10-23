@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !quickjs_intl_nonames
+//go:build !slowjs_intl_nonames
 
 package intl
 

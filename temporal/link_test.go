@@ -35,7 +35,7 @@ func TestLinksOnlyReadData(t *testing.T) {
 			linked[f[len(f)-1]] = true
 		}
 	}
-	const pkg = "github.com/liustack/quickjs/internal/gointl."
+	const pkg = "github.com/liustack/slowjs/internal/gointl."
 	for _, name := range []string{"qjsTZ", "qjsCore", "qjsNames", "qjsCJDict", "qjsDates", "qjsZoneNames"} {
 		if !linked[pkg+name] {
 			t.Errorf("the program does not link %s", name)

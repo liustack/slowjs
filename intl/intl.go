@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package intl implements ECMA-402, the ECMAScript Internationalization API,
-// for a [quickjs.VM].
+// for a [slowjs.VM].
 //
 // QuickJS has no Intl. It is not a disabled build option: neither Bellard's
 // engine nor quickjs-ng implements ECMA-402, so a page or bundle that reaches
@@ -131,7 +131,7 @@
 // The six embedded packs total 9.35 MB. Their shared tables stay in the
 // binary's read-only data. Other chunks inflate into the Go heap on first
 // use, once per process. Date and Temporal formatting use the same packs.
-// The build tags quickjs_intl_nonames and quickjs_intl_nocjdict omit display
+// The build tags slowjs_intl_nonames and slowjs_intl_nocjdict omit display
 // names and the Chinese and Japanese word dictionary respectively.
 //
 // Register installs stand-ins. The first use installs the javascript half
@@ -165,7 +165,7 @@
 // Intl.DateTimeFormat().resolvedOptions().timeZone reports, is UTC unless
 // [TimeZone] sets another. Intl never consults the host's zone (see Locales
 // for the engine's Date, which does).
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	_ "embed"
@@ -174,8 +174,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 //go:embed intl.js
@@ -193,7 +193,7 @@ type script struct {
 	code []byte // nil until a compile works
 }
 
-func (s *script) eval(vm *quickjs.VM) error {
+func (s *script) eval(vm *slowjs.VM) error {
 	code, err := s.bytecode()
 	if err != nil {
 		return err
@@ -226,15 +226,15 @@ func (s *script) bytecode() ([]byte, error) {
 // without their source and debug information: they stand for built-ins, whose
 // toString shows [native code], and each VM that loads them carries less.
 func compile(src string) ([]byte, error) {
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
 
 	defer vm.Close()
 
-	vm.SetStrip(quickjs.StripDebug)
-	return vm.Compile(src, quickjs.EvalGlobal)
+	vm.SetStrip(slowjs.StripDebug)
+	return vm.Compile(src, slowjs.EvalGlobal)
 }
 
 var (
@@ -275,7 +275,7 @@ func TimeZone(name string) Option { return func(c *config) { c.timeZone = name }
 // Call it on every VM that is to have Intl, including one created to replace
 // another. A VM is a javascript realm, Intl lives on that realm's global
 // object and it does not migrate: an embedder that gives each document a fresh
-// realm - the only way to empty one, see [quickjs.VM] - has to register per
+// realm - the only way to empty one, see [slowjs.VM] - has to register per
 // document rather than once at startup, or the second document is back to a
 // ReferenceError.
 //
@@ -288,7 +288,7 @@ func TimeZone(name string) Option { return func(c *config) { c.timeZone = name }
 // no-op, because it would otherwise drop that call's options. Nothing has to
 // be released: vm.Close does it all. The formatters themselves belong to the
 // process, which shares them between VMs and keeps a bounded number of them.
-func Register(vm *quickjs.VM, opts ...Option) error {
+func Register(vm *slowjs.VM, opts ...Option) error {
 	switch already, err := registered(vm); {
 	case err != nil:
 		return err
@@ -336,7 +336,7 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	}
 	defer state.Free()
 
-	if _, err = f.Call(quickjs.UndefinedValue, install, name, state); err != nil {
+	if _, err = f.Call(slowjs.UndefinedValue, install, name, state); err != nil {
 		return err
 	}
 
@@ -352,12 +352,12 @@ var installing sync.Map
 // built-ins stub.js took, the zone, the option lists and the bridge, and
 // returns what calling it returns, the objects stub.js then puts in place.
 // Its third argument says the previous install was cut short.
-var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quickjs.Value, error) {
+var installBuiltin = slowjs.NewBuiltin("install", 3, func(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
 		// The shim calls no code of the page while it installs, so nothing
 		// can get here.
-		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: used while being installed"}
+		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: used while being installed"}
 	}
 
 	defer installing.Delete(vm)
@@ -368,12 +368,12 @@ var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quic
 	shimInstalls.Add(1)
 	code, err := shimScript.bytecode()
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	f, err := vm.EvalBytecodeValue(code)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	defer f.Free()
@@ -383,14 +383,14 @@ var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quic
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		defer v.Free()
 
 		args = append(args, v)
 	}
-	return f.CallValue(quickjs.UndefinedValue, args...)
+	return f.CallValue(slowjs.UndefinedValue, args...)
 })
 
 // marker is the well known symbol stub.js stamps on the global object of a VM
@@ -398,8 +398,8 @@ var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quic
 const marker = "modernc.org/quickjs/intl"
 
 // registered reports whether this package has already installed Intl on vm.
-func registered(vm *quickjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
+func registered(vm *slowjs.VM) (bool, error) {
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}

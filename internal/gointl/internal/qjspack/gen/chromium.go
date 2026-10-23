@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // Chromium does not ship all of its ICU's locale data: some languages have

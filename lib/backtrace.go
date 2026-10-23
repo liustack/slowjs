@@ -6,7 +6,7 @@
 // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
 // lib/LICENSE).
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 // Lazy error stacks.
 //
@@ -530,7 +530,7 @@ func _js_backtrace_gc_mark(tls *libc.TLS, rt uintptr, val TJSValue, mark_func ui
 // Like the engine, the Go code under lib/ frees its TLS frames before it
 // returns and not in a defer: a Go panic that goes up through the engine
 // leaves the engine's frames on the TLS stack, which a defer would free in
-// place of its own (see tlsMark in the quickjs package).
+// place of its own (see tlsMark in the slowjs package).
 func backtraceFormat(tls *libc.TLS, ctx uintptr, bt uintptr) TJSValue {
 	dbufSize := int(unsafe.Sizeof(TDynBuf{}))
 	dbuf := tls.Alloc(dbufSize)

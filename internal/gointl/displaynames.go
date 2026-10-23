@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/namedata"
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/namedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
 )
 
 // Intl.DisplayNames.

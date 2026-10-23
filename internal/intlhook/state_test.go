@@ -8,16 +8,16 @@ package intlhook
 import (
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 func TestStateLifetime(t *testing.T) {
 	for range 3 {
-		vm, err := quickjs.NewVM()
+		vm, err := slowjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
-		keys, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", quickjs.EvalGlobal)
+		keys, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", slowjs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -26,11 +26,11 @@ func TestStateLifetime(t *testing.T) {
 			t.Fatal(err)
 		}
 		state.Free()
-		after, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", quickjs.EvalGlobal)
+		after, err := vm.Eval("JSON.stringify(Reflect.ownKeys(globalThis).map(String))", slowjs.EvalGlobal)
 		if err != nil || after != keys {
 			t.Fatalf("private state exposed: %v %v", after, err)
 		}
-		if _, err := vm.Eval("globalThis.globalThis = null", quickjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval("globalThis.globalThis = null", slowjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		vm.RunGC()
@@ -38,11 +38,11 @@ func TestStateLifetime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		get, err := vm.EvalValue("s => s.temporal === undefined && s.locale === undefined", quickjs.EvalGlobal)
+		get, err := vm.EvalValue("s => s.temporal === undefined && s.locale === undefined", slowjs.EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := get.Call(quickjs.UndefinedValue, state)
+		got, err := get.Call(slowjs.UndefinedValue, state)
 		get.Free()
 		state.Free()
 		if err != nil || got != true {

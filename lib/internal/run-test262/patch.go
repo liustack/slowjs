@@ -5,7 +5,7 @@
 package main
 
 import (
-	"github.com/liustack/quickjs/lib"
+	"github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 

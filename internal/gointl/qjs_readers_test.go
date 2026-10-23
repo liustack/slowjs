@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
 )
 
 // qjsReaderHooks are the readers' packs and the function that puts each in

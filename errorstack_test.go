@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 	"testing"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 )
 
 var updateErrorStack = flag.Bool("update-error-stack", false, "rewrite the testdata/error_stack*.golden files")

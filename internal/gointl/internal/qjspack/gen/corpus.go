@@ -17,8 +17,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // cutCorpus takes out of go-intl's test corpora in dir (its testdata) the

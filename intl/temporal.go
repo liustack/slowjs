@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"encoding/json"
@@ -15,9 +15,9 @@ import (
 	"time"
 	"weak"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // The toLocaleString of the Temporal types, for package temporal: ECMA-402's
@@ -59,18 +59,18 @@ func init() {
 }
 
 // vmZones are the default zones of the VMs Register was given one for.
-var vmZones sync.Map // weak.Pointer[quickjs.VM] -> string
+var vmZones sync.Map // weak.Pointer[slowjs.VM] -> string
 
-func rememberZone(vm *quickjs.VM, name string) {
+func rememberZone(vm *slowjs.VM, name string) {
 	if name == "UTC" {
 		return
 	}
 	key := weak.Make(vm)
 	vmZones.Store(key, name)
-	runtime.AddCleanup(vm, func(k weak.Pointer[quickjs.VM]) { vmZones.Delete(k) }, key)
+	runtime.AddCleanup(vm, func(k weak.Pointer[slowjs.VM]) { vmZones.Delete(k) }, key)
 }
 
-func defaultZoneOf(vm *quickjs.VM) string {
+func defaultZoneOf(vm *slowjs.VM) string {
 	if z, ok := vmZones.Load(weak.Make(vm)); ok {
 		return z.(string)
 	}
@@ -200,11 +200,11 @@ const (
 	tfOptions = tfLocales + 2
 )
 
-var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
+var temporalFormatBuiltin = slowjs.NewBuiltin("toLocaleString", 0, func(a slowjs.Args) (slowjs.Value, error) {
 	kindName, _ := a.String(tfKind)
 	k := temporalKinds[kindName]
 	if k == nil {
-		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
+		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
 	}
 	cal, _ := a.String(tfCalendar)
 	ms, _ := a.Number(tfTime)
@@ -235,7 +235,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 			} else if ok {
 				key = append(key, 'f')
 			} else {
-				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: an argument of toLocaleString has the wrong type"}
+				return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: internal error: an argument of toLocaleString has the wrong type"}
 			}
 		default:
 			key = append(key, 'u')
@@ -252,7 +252,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 		} else if s, ok := a.String(tfLocales + 1); ok {
 			l, ok := splitLocales(s)
 			if !ok {
-				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
+				return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
 			}
 			req.Locales = l
 		}
@@ -284,11 +284,11 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 	}
 
 	if err := tf.checkCalendar(cal); err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 	t, err := tf.instant(ms)
 	if err != nil {
-		return quickjs.Value{}, jsErr(err)
+		return slowjs.Value{}, jsErr(err)
 	}
 	if k.name == "ZonedDateTime" {
 		offset, _ := a.Number(tfOffset)

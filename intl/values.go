@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"slices"
 	"sync"
 
-	gointl "github.com/liustack/quickjs/internal/gointl"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // unlistedCollations are the collations go-intl's list names that no

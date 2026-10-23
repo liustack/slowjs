@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"testing"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 )
 
 // cycles defines garbage(n), which leaves n pairs of objects that point at

@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // probes are what TestTamper asks Temporal, each an expression whose value
@@ -106,7 +106,7 @@ func TestTamper(t *testing.T) {
 				if after {
 					eval(t, vm, `Temporal.PlainDate.from('2024-01-05').toString(); new Date(0).toTemporalInstant(); Temporal.PlainDate.from('2024-01-05').toLocaleString()`)
 				}
-				if _, err := vm.Eval(src+";undefined", quickjs.EvalGlobal); err != nil {
+				if _, err := vm.Eval(src+";undefined", slowjs.EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				// The probes compare errors by constructor, which a page

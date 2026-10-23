@@ -5,7 +5,7 @@
 
 //go:build unix
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"time"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 

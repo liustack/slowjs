@@ -6,7 +6,7 @@
 package intl
 
 // QJSNoNames reports that Embedded has no display names: the build tag
-// quickjs_intl_nonames leaves them out, and NewDisplayNames then fails.
+// slowjs_intl_nonames leaves them out, and NewDisplayNames then fails.
 func QJSNoNames() bool { return qjsNoNames }
 
 // QJSDisplayNamesLocale is the locale a DisplayNames made for loc resolves

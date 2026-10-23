@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/t262"
+	"github.com/liustack/slowjs/compare/engines/t262"
 )
 
 type variant struct {
@@ -136,7 +136,7 @@ func main() {
 	}
 	res.MemCap = capDesc()
 	if res.Name == "" {
-		// The version of liustack/quickjs: the tag of the commit the
+		// The version of liustack/slowjs: the tag of the commit the
 		// binaries were built from.
 		ver := strings.SplitN(res.Source.Describe, "-", 2)[0]
 		if ver == "" || ver == "unknown" {

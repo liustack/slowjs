@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"compress/gzip"
@@ -18,7 +18,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // The golden test compares this package with a browser. testdata/chromium
@@ -472,9 +472,9 @@ func testGolden(t *testing.T, set string) {
 
 // goldenEval evaluates expr, returning an error's type rather than failing:
 // the two implementations have to agree on what throws, not on the wording.
-func goldenEval(t *testing.T, vm *quickjs.VM, expr string) string {
+func goldenEval(t *testing.T, vm *slowjs.VM, expr string) string {
 	t.Helper()
-	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", quickjs.EvalGlobal)
+	v, err := vm.Eval("(() => {try {return String("+expr+")} catch (e) {return 'ERR:' + e.constructor.name}})()", slowjs.EvalGlobal)
 	if err != nil {
 		return "EVAL FAILED: " + err.Error()
 	}

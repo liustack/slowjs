@@ -5,7 +5,7 @@
 
 //go:build linux && (amd64 || arm64)
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 import (
 	"reflect"

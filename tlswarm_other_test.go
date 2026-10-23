@@ -5,7 +5,7 @@
 
 //go:build !(linux && (amd64 || arm64))
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import "testing"
 

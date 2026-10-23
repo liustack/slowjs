@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // Choosing a pattern, as V8 asks ICU for one.

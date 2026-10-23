@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // unicodeProps are the Unicode properties formatting reads, in the Unicode

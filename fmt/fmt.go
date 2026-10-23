@@ -3,13 +3,13 @@
 // license that can be found in the LICENSE file.
 
 // Package fmt exposes some functionality of the Go stdlib fmt package to a
-// [quickjs.VM].
-package fmt // import "github.com/liustack/quickjs/fmt"
+// [slowjs.VM].
+package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
 	"fmt"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 const pkg = "fmt"
@@ -26,11 +26,11 @@ const pkg = "fmt"
 // The javascript functions follow the usual conventions where the first letter
 // of a function name is not capitalized. So [fmt.Println] becomes
 // 'fmt.println' in javascript, for example.
-func Register(obj quickjs.Value) (err error) {
+func Register(obj slowjs.Value) (err error) {
 	defer obj.Free()
 
 	vm := obj.VM()
-	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), quickjs.EvalGlobal)
+	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), slowjs.EvalGlobal)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func Register(obj quickjs.Value) (err error) {
 			return err
 		}
 
-		if _, err := vm.EvalThis(mod.Dup(), fmt.Sprintf("this.%s = %s", v.nm, longName), quickjs.EvalGlobal); err != nil {
+		if _, err := vm.EvalThis(mod.Dup(), fmt.Sprintf("this.%s = %s", v.nm, longName), slowjs.EvalGlobal); err != nil {
 			return err
 		}
 	}

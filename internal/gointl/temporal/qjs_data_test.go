@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // qjsTemporal reads Temporal's data from src and says the offsets of some

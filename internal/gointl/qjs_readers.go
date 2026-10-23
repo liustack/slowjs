@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
 )
 
 // The packs only some loaders read. Each is referenced from one function,

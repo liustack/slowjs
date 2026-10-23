@@ -5,7 +5,7 @@
 
 //go:build !(((darwin || linux) && (amd64 || arm64)) || (windows && amd64))
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 // The engine is generated for darwin and linux on amd64 and arm64, and for
 // windows on amd64. Building for any other target stops here: the import

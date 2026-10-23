@@ -4,7 +4,7 @@
 // root of this repository.
 
 // Package temporal implements Temporal, the ECMAScript date and time API,
-// for a [quickjs.VM].
+// for a [slowjs.VM].
 //
 // QuickJS has no Temporal. [Register] installs all of it: Temporal.Now,
 // Instant, ZonedDateTime, PlainDate, PlainTime, PlainDateTime,
@@ -70,7 +70,7 @@
 // internal/gointl/qjsdata: NOTICE-ICU, NOTICE-ICU4X, NOTICE-TEMPORAL and
 // NOTICE-V8. It imports package intl, so intl's LICENSE-DATA as well.
 // NOTICE.md, at the root of the module, says which notice covers what.
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	_ "embed"
@@ -80,9 +80,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/intlhook"
-	_ "github.com/liustack/quickjs/intl" // toLocaleString
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/intlhook"
+	_ "github.com/liustack/slowjs/intl" // toLocaleString
 )
 
 //go:embed temporal.js
@@ -118,15 +118,15 @@ func (s *script) bytecode() ([]byte, error) {
 // information: the functions stand for built-ins, whose toString shows
 // [native code].
 func compile(src string) ([]byte, error) {
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
 
 	defer vm.Close()
 
-	vm.SetStrip(quickjs.StripDebug)
-	return vm.Compile(src, quickjs.EvalGlobal)
+	vm.SetStrip(slowjs.StripDebug)
+	return vm.Compile(src, slowjs.EvalGlobal)
 }
 
 var (
@@ -166,9 +166,9 @@ func Clock(now func() time.Time) Option { return func(c *config) { c.clock = now
 // closed. Close drops the entry (VM.OnClose): a clock may reference its VM,
 // so the entry would keep the VM reachable if it were left to a cleanup of
 // the garbage collector.
-var clocks sync.Map // *quickjs.VM -> func() time.Time
+var clocks sync.Map // *slowjs.VM -> func() time.Time
 
-func clockOf(vm *quickjs.VM) func() time.Time {
+func clockOf(vm *slowjs.VM) func() time.Time {
 	if c, ok := clocks.Load(vm); ok {
 		return c.(func() time.Time)
 	}
@@ -183,7 +183,7 @@ func clockOf(vm *quickjs.VM) func() time.Time {
 // before any code of the page runs, so that it takes the built-ins its code
 // uses before a page can change them. Registering a second time on the
 // same VM is an error. Nothing has to be released: vm.Close does it all.
-func Register(vm *quickjs.VM, opts ...Option) error {
+func Register(vm *slowjs.VM, opts ...Option) error {
 	switch already, err := registered(vm); {
 	case err != nil:
 		return err
@@ -221,7 +221,7 @@ func Register(vm *quickjs.VM, opts ...Option) error {
 	}
 	defer state.Free()
 
-	if _, err := f.Call(quickjs.UndefinedValue, install, state); err != nil {
+	if _, err := f.Call(slowjs.UndefinedValue, install, state); err != nil {
 		return err
 	}
 
@@ -239,10 +239,10 @@ var installing sync.Map
 // the built-ins stub.js took, the names of the operations, the bridge and
 // what toLocaleString needs of package intl, and returns what calling it
 // returns, the objects stub.js then puts in place.
-var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quickjs.Value, error) {
+var installBuiltin = slowjs.NewBuiltin("install", 2, func(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
-		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "temporal: used while being installed"}
+		return slowjs.Value{}, &slowjs.Error{Name: "Error", Message: "temporal: used while being installed"}
 	}
 
 	defer installing.Delete(vm)
@@ -250,41 +250,41 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 	shimInstalls.Add(1)
 	code, err := shimScript.bytecode()
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	f, err := vm.EvalBytecodeValue(code)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	defer f.Free()
 
 	b, err := vm.NewBuiltinFunction(bridge)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	defer b.Free()
 
 	format, err := vm.NewBuiltinFunction(intlhook.Format)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	defer format.Free()
 
 	resolveDuration, err := vm.NewBuiltinFunction(intlhook.DurationResolve)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 	defer resolveDuration.Free()
 	formatDuration, err := vm.NewBuiltinFunction(intlhook.DurationFormat)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 	defer formatDuration.Free()
-	return f.CallValue(quickjs.UndefinedValue, a.Value(0), opNames, b, intlhook.Options, format, intlhook.DefaultZone(vm),
+	return f.CallValue(slowjs.UndefinedValue, a.Value(0), opNames, b, intlhook.Options, format, intlhook.DefaultZone(vm),
 		intlhook.DurationOptions, resolveDuration, formatDuration, a.Value(1))
 })
 
@@ -292,8 +292,8 @@ var installBuiltin = quickjs.NewBuiltin("install", 2, func(a quickjs.Args) (quic
 // VM it registers.
 const marker = "modernc.org/quickjs/temporal"
 
-func registered(vm *quickjs.VM) (bool, error) {
-	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", quickjs.EvalGlobal)
+func registered(vm *slowjs.VM) (bool, error) {
+	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)
 	if err != nil {
 		return false, err
 	}

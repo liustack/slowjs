@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // TestTemporalHook formats through intlhook.Format as package temporal

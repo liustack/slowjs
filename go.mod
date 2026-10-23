@@ -1,4 +1,4 @@
-module github.com/liustack/quickjs
+module github.com/liustack/slowjs
 
 go 1.27.0
 

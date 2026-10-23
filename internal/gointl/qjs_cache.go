@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/datedata"
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
 )
 
 // CacheSource shares decoded number and date data and pattern generators.

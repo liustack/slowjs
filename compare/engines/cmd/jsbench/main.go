@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/engine"
+	"github.com/liustack/slowjs/compare/engines/engine"
 )
 
 func main() {

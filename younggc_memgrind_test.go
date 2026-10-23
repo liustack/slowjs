@@ -5,7 +5,7 @@
 
 //go:build libc.memgrind
 
-package quickjs
+package slowjs
 
 import (
 	"testing"

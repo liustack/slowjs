@@ -221,7 +221,7 @@ func document() error {
 //	                        CCGO     GOJA     QJS
 //	-----------------------------------------------
 `,
-				"github.com/liustack/quickjs/lib",
+				"github.com/liustack/slowjs/lib",
 				ver("github.com/dop251/goja", compare),
 				ver("github.com/fastschema/qjs", compare),
 			)

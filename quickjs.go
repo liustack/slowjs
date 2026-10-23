@@ -4,7 +4,7 @@
 
 //go:generate go run generator.go
 
-// Package quickjs is a pure Go embeddable Javascript engine. It supports the
+// Package slowjs is a pure Go embeddable Javascript engine. It supports the
 // ECMA script 14 ([ES2023]) specification including modules, asynchronous
 // generators, proxies and BigInt.
 //
@@ -15,7 +15,7 @@
 // The engine has no Intl. ECMA-402 is not implemented by the C library this
 // package wraps, so a page or bundle reaching for Intl.DateTimeFormat gets a
 // ReferenceError, and the toLocale* methods it ships ignore both their locale
-// and their timeZone argument. Package [github.com/liustack/quickjs/intl] adds
+// and their timeZone argument. Package [github.com/liustack/slowjs/intl] adds
 // Intl.DateTimeFormat, Intl.NumberFormat and Intl.PluralRules, with CLDR data
 // for every locale Chromium has, and replaces those toLocale* methods, for a VM
 // that opts in by calling its Register. With no locale argument the locale is
@@ -26,7 +26,7 @@
 // Geomeans of time/op over a set of benchmarks, relative to CCGO, lower number
 // is better. Detailed results available in the testdata/benchmarks directory.
 //
-//	 CCGO: github.com/liustack/quickjs/lib
+//	 CCGO: github.com/liustack/slowjs/lib
 //	 GOJA: github.com/dop251/goja@v0.0.0-20260723142020-b4aef50fa347
 //	  QJS: github.com/fastschema/qjs@v0.0.6
 //
@@ -67,7 +67,7 @@
 //
 // [C QuickJS]: https://bellard.org/quickjs
 // [ES2023]: https://tc39.es/ecma262/2023/
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"bytes"
@@ -86,7 +86,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	lib "github.com/liustack/quickjs/lib"
+	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 
@@ -326,7 +326,7 @@ func (u Undefined) String() string {
 // returned by [VM.Eval], [VM.Call] and the other eval-family methods is an
 // *Error; recover the fields with [errors.As]:
 //
-//	var e *quickjs.Error
+//	var e *slowjs.Error
 //	if errors.As(err, &e) {
 //		fmt.Println(e.Stack)
 //	}
@@ -557,10 +557,10 @@ const DefaultShapeCache = 2048
 // Kept shapes are not let go when an allocation fails.
 func (m *VM) SetShapeCache(n int) error {
 	if n < 0 || n > math.MaxInt32/8 {
-		return fmt.Errorf("quickjs: a shape cache of %d shapes", n)
+		return fmt.Errorf("slowjs: a shape cache of %d shapes", n)
 	}
 	if lib.XJS_SetShapeCache(m.runtime.tls, m.cContext, int32(n)) != 0 {
-		return fmt.Errorf("quickjs: out of memory for a shape cache of %d shapes", n)
+		return fmt.Errorf("slowjs: out of memory for a shape cache of %d shapes", n)
 	}
 	return nil
 }
@@ -590,7 +590,7 @@ const (
 // memory with the cache on where it would not without it.
 func (m *VM) SetRegExpCache(n, bytes int) error {
 	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^lib.Tsize_t(0)) {
-		return fmt.Errorf("quickjs: a regexp cache of %d regexps in %d bytes", n, bytes)
+		return fmt.Errorf("slowjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
 	lib.XJS_SetRegExpCache(m.runtime.tls, m.runtime.cRuntime, int32(n), lib.Tsize_t(bytes))
 	return nil
@@ -943,7 +943,7 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 	}
 
 	if err == nil {
-		err = fmt.Errorf("quickjs: aborted draining after %d pending jobs", maxJobs)
+		err = fmt.Errorf("slowjs: aborted draining after %d pending jobs", maxJobs)
 	}
 	return n, err
 }
@@ -1097,7 +1097,7 @@ func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
 // What it waits for may still settle from outside the job queue, such as a
 // promise that a Go function returned and Go resolves later. Then
 // ExecutePendingJobs runs the rest of the module.
-var errAwaitPending = errors.New("quickjs: the module's top-level await is still pending and no job is left to run")
+var errAwaitPending = errors.New("slowjs: the module's top-level await is still pending and no job is left to run")
 
 // await runs pending jobs until the promise v, which it frees, settles, and
 // returns its result, or the exception of a rejected promise. It follows the
@@ -1916,10 +1916,10 @@ func (m *VM) hostEnded(mark tlsMark, returned bool) bool {
 const (
 	// framesLeftPanic is what the VM panics with when engine frames are
 	// left on the TLS stack after javascript returned to Go.
-	framesLeftPanic = "quickjs: the engine returned with frames left on its TLS stack: a frame was not freed, or a Go function recovered a panic that went up through the engine"
+	framesLeftPanic = "slowjs: the engine returned with frames left on its TLS stack: a frame was not freed, or a Go function recovered a panic that went up through the engine"
 	// brokenPanic is what a call into javascript panics with after a Go
 	// panic went up through the engine.
-	brokenPanic = "quickjs: a Go panic went up through the engine of this VM, which is good only for Close"
+	brokenPanic = "slowjs: a Go panic went up through the engine of this VM, which is good only for Close"
 )
 
 // hostPanicked keeps p, what the Go function name called from javascript
@@ -2957,8 +2957,8 @@ func (v Value) IsUndefined() bool {
 // resulting (value, error). 'v' must be a Javascript function. Pass
 // [UndefinedValue] as 'this' when the function does not use it.
 //
-//	resolve.Call(quickjs.UndefinedValue, "done")
-//	reject.Call(quickjs.UndefinedValue, err.Error())
+//	resolve.Call(slowjs.UndefinedValue, "done")
+//	reject.Call(slowjs.UndefinedValue, err.Error())
 //
 // Argument types are converted using the same rules as in [VM.Call] and the
 // result is unpacked using the same rules as there are for the return value of

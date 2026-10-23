@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/engine"
+	"github.com/liustack/slowjs/compare/engines/engine"
 )
 
 func readFile(p string) string {

@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build quickjs_intl_nonames
+//go:build slowjs_intl_nonames
 
 package intl
 
 import "testing"
 
-// Built with quickjs_intl_nonames, Intl.DisplayNames has no names: of
+// Built with slowjs_intl_nonames, Intl.DisplayNames has no names: of
 // answers what the option fallback says, the code or undefined, and nothing
 // throws but for a code that is not one.
 func TestDisplayNamesWithoutNames(t *testing.T) {

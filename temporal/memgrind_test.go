@@ -5,12 +5,12 @@
 
 //go:build libc.memgrind
 
-package temporal // import "github.com/liustack/quickjs/temporal"
+package temporal // import "github.com/liustack/slowjs/temporal"
 
 import (
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 	"modernc.org/libc"
 )
 
@@ -27,7 +27,7 @@ func TestMemgrind3(t *testing.T) {
 	probe := probeScript()
 	libc.MemAuditStart()
 	for i := range 6 {
-		vm, err := quickjs.NewVM()
+		vm, err := slowjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,7 +45,7 @@ func TestMemgrind3(t *testing.T) {
 			srcs = []string{`const f = Date.prototype.toTemporalInstant; f.call(new Date(0)).toString()`}
 		}
 		for _, src := range srcs {
-			if _, err := vm.Eval(src, quickjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(src, slowjs.EvalGlobal); err != nil {
 				vm.Close()
 				t.Fatal(src, err)
 			}

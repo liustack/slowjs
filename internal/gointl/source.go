@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // Where the data comes from.
@@ -169,7 +169,7 @@ type Source interface {
 // simple path needs no setting up, and it is only a default: anything taking a
 // Source can be given another.
 //
-// In quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
+// In slowjs it is not go-intl's data.pack but the packs of qjsdata/, which
 // qjs_source.go serves.
 var Embedded EmbeddedSource
 

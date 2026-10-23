@@ -2,14 +2,14 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"math"
 	"strings"
 	"time"
 
-	gointl "github.com/liustack/quickjs/internal/gointl"
+	gointl "github.com/liustack/slowjs/internal/gointl"
 )
 
 const maxTimeValue = 8.64e15

@@ -6,7 +6,7 @@
 // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
 // lib/LICENSE).
 
-package libquickjs // import "github.com/liustack/quickjs/lib"
+package libquickjs // import "github.com/liustack/slowjs/lib"
 
 import (
 	"unsafe"
@@ -45,7 +45,7 @@ func NewStringChars(tls *libc.TLS, ctx uintptr, n int, wide bool) (v TJSValue, p
 		return XJS_AtomToString(tls, ctx, EJS_ATOM_empty_string), 0
 	}
 	if n < 0 || n > MJS_STRING_LEN_MAX {
-		panic("quickjs: NewStringChars of a length the engine cannot hold")
+		panic("slowjs: NewStringChars of a length the engine cannot hold")
 	}
 	w := int32(0)
 	if wide {

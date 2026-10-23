@@ -10,9 +10,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/blob"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
 )
 
 // Raw sources resolve number and currency trees independently. A generated

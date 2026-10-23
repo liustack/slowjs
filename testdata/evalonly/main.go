@@ -12,17 +12,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 func main() {
-	m, err := quickjs.NewVM()
+	m, err := slowjs.NewVM()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	defer m.Close()
-	v, err := m.Eval("[1, 2, 3].map(x => x * 2).join()", quickjs.EvalGlobal)
+	v, err := m.Eval("[1, 2, 3].map(x => x * 2).join()", slowjs.EvalGlobal)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
