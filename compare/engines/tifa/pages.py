@@ -10,6 +10,11 @@ Times are per render: the mean of the CPU time of the timed renders where
 the engine reports it, else the mean wall time (the C QuickJS rows, timed in
 the script on a CPU of their own). Ratios are against liustack-quickjs on the
 same page, as a geometric mean over the pages with the range in brackets.
+
+liustack-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
+tifa's Go functions, no polyfill), so it has no pf runs. Its pages are
+compared with the pages of liustack-quickjs on the polyfill, where the Intl
+output of the two may differ in U+202F (see tifa_row_check).
 """
 import glob
 import argparse
@@ -23,9 +28,9 @@ import re
 import sys
 from pathlib import Path
 
-GO = ["liustack-quickjs", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
+GO = ["liustack-quickjs", "liustack-tifa", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
 REF = ["quickjs-2026-06-04", "quickjs-master", "quickjs-ng", "node-jit", "node-jitless"]
-OWN_INTL = {"liustack-quickjs", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
+OWN_INTL = {"liustack-quickjs", "liustack-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 LABEL = {
     "quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
     "quickjs-master": "C QuickJS master 7d1c13c5d8 (reference)",
@@ -35,7 +40,7 @@ LABEL = {
 }
 
 # Runs left out of run.sh, and why.
-NOT_RUN = {}
+NOT_RUN = {("liustack-tifa", "pf"): "not run: this row has no polyfill", ("liustack-tifa", "mui-pf"): "not run: this row has no polyfill"}
 
 out = None
 mask = lambda b: re.sub(rb"\bu:\d{13}\b", b"u:0", b)
@@ -102,6 +107,33 @@ def comparisons(kind, base_kind=None):
     return result
 
 
+TIFA_KINDS = [("bench", "bench", "bench"), ("mui", "mui-native", "mui-pf"), ("shop", "native", "pf")]
+NARROW_SPACE = "\u202f".encode()
+
+
+def tifa_row_evidence():
+    """The pages of liustack-tifa against those of liustack-quickjs on the
+    polyfill (the same JavaScript on another Intl). `same` is byte for byte
+    after masking. `same_but_u202f` says the pages are the same once the
+    narrow no-break space U+202F, which the FormatJS polyfill writes before
+    AM and PM where Go's Intl and Node write a plain space, is a plain space."""
+    result = {}
+    for app, tifa_kind, pf_kind in TIFA_KINDS:
+        ps = pages(load_merged(f"liustack-tifa-{tifa_kind}"))
+        refs = pages(load_merged(f"liustack-quickjs-{pf_kind}"))
+        for pg in sorted(ps.keys() | refs.keys()):
+            a = html("liustack-tifa", tifa_kind, pg) if ps.get(pg, {}).get("ok") else None
+            b = html("liustack-quickjs", pf_kind, pg) if refs.get(pg, {}).get("ok") else None
+            e = equality(a, b)
+            same = e.pop("same_as_liustack")
+            e["same"] = same
+            e["same_but_u202f"] = (a.replace(NARROW_SPACE, b" ") == b.replace(NARROW_SPACE, b" ")) if a is not None and b is not None else None
+            e["u202f_in_polyfill_page"] = b.count(NARROW_SPACE) if b is not None else None
+            e["u202f_in_tifa_page"] = a.count(NARROW_SPACE) if a is not None else None
+            result[f"{app}/{pg}"] = e
+    return result
+
+
 def check_equality(app, page):
     def read(tag):
         p = os.path.join(out, "check", f"liustack-quickjs-{app}-{tag}-{page}.html")
@@ -122,7 +154,10 @@ def archive():
             "bench": comparisons("bench"),
             "pf": comparisons("pf"),
             "deployed": comparisons(lambda e: "native" if e in OWN_INTL else "pf", "native"),
+            "mui_pf": comparisons("mui-pf"),
+            "mui_deployed": comparisons(lambda e: "mui-native" if e in OWN_INTL else "mui-pf", "mui-native"),
         },
+        "tifa_vs_polyfill": tifa_row_evidence(),
         "checks": {app: {pg: check_equality(app, pg) for pg in sorted(pages(load(f"check/{app}-normal")))}
                    for app in ("bench", "mui", "shop")},
     }
@@ -228,11 +263,11 @@ def table(kind, title, engines, base_kind=None, tag=None):
     print()
 
 
-def per_page(kind, engines):
-    base = {k: per_render(v) for k, v in pages(load(f"liustack-quickjs-{kind}")).items()}
+def per_page(kind, engines, base_kind=None):
+    base = {k: per_render(v) for k, v in pages(load(f"liustack-quickjs-{base_kind or kind}")).items()}
     print("| Page | " + " | ".join(engines) + " |")
     print("|---|" + "---|" * len(engines))
-    rs = {e: pages(load_merged(f"{e}-{kind}")) for e in engines}
+    rs = {e: pages(load_merged(f"{e}-{kind(e) if callable(kind) else kind}")) for e in engines}
     for pg in sorted(base):
         cells = []
         for e in engines:
@@ -240,6 +275,47 @@ def per_page(kind, engines):
             x = per_render(v) if v else None
             cells.append("" if x is None else f"{f(x)} ({x / base[pg]:.2f})")
         print(f"| {pg} | " + " | ".join(cells) + " |")
+    print()
+
+
+def tifa_row_check():
+    print("### liustack-tifa against the same JavaScript on the polyfill\n")
+    print("| Bundle | Pages | Same HTML | Same but for U+202F | Other difference | Not compared |")
+    print("|---|---|---|---|---|---|")
+    ev = tifa_row_evidence()
+    for app, _, _ in TIFA_KINDS:
+        rows = {k: v for k, v in ev.items() if k.startswith(app + "/")}
+        same = sum(1 for v in rows.values() if v["same"] is True)
+        u202f = sum(1 for v in rows.values() if v["same"] is False and v["same_but_u202f"] is True)
+        other = sum(1 for v in rows.values() if v["same"] is False and not v["same_but_u202f"])
+        missing = sum(1 for v in rows.values() if v["same"] is None)
+        print(f"| {app} | {len(rows)} | {same} | {u202f} | {other} | {missing} |")
+    print()
+
+
+def vs_c():
+    """Per bundle, every row as a ratio to C QuickJS 2026-06-04 on the same pages."""
+    pf = {"bench": "bench", "mui": "mui-pf", "shop": "pf"}
+    own = {"bench": "bench", "mui": "mui-native", "shop": "native"}
+    rows = [
+        ("liustack-quickjs, same JavaScript (polyfill)", "liustack-quickjs", pf),
+        ("liustack-quickjs, own Intl only", "liustack-quickjs", own),
+        ("liustack-tifa, as tifa runs it", "liustack-tifa", own),
+        ("C QuickJS 2026-06-04", "quickjs-2026-06-04", pf),
+        ("Node v24.11.1", "node-jit", pf),
+        ("Node v24.11.1 --jitless", "node-jitless", pf),
+    ]
+    print("### Per bundle, against C QuickJS 2026-06-04\n")
+    print("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but liustack-tifa and the \"own Intl only\" row runs them on the polyfill.\n")
+    print("| Row | bench | MUI | shop |")
+    print("|---|---|---|---|")
+    for label, engine, kinds in rows:
+        cells = []
+        for app in ["bench", "mui", "shop"]:
+            base = {k: per_render(v) for k, v in pages(load_merged(f"quickjs-2026-06-04-{pf[app]}")).items()}
+            mine = {k: per_render(v) for k, v in pages(load_merged(f"{engine}-{kinds[app]}")).items() if per_render(v)}
+            cells.append(ratio_cell(mine, base) if base and mine else "")
+        print(f"| {label} | " + " | ".join(cells) + " |")
     print()
 
 
@@ -278,6 +354,13 @@ def markdown():
         table("pf", "Shop on the FormatJS polyfill, every engine", engines)
         per_page("pf", engines)
         table(lambda e: "native" if e in OWN_INTL else "pf", "Shop as deployed: own Intl where the engine has one", engines, base_kind="native")
+        per_page(lambda e: "native" if e in OWN_INTL else "pf", engines, base_kind="native")
+        table("mui-pf", "MUI pages on the FormatJS polyfill, every engine", engines)
+        per_page("mui-pf", engines)
+        table(lambda e: "mui-native" if e in OWN_INTL else "mui-pf", "MUI pages as deployed: own Intl where the engine has one", engines, base_kind="mui-native")
+        per_page(lambda e: "mui-native" if e in OWN_INTL else "mui-pf", engines, base_kind="mui-native")
+        tifa_row_check()
+        vs_c()
         polyfill_cost()
     return "\n".join(line.rstrip() for line in buf.getvalue().splitlines()).rstrip() + "\n"
 

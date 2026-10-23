@@ -21,11 +21,19 @@
 #   timer   the time liustack-quickjs spends inside Intl, on the polyfill
 #           and on its own Intl (prelude/intl-timer.js)
 #   mem     memory per VM with and without the polyfill, 20 VMs
+#   mui     the same two for the MUI pages (mui-pf, mui-native)
+#
+# liustack-tifa is slowjs set up as tifa sets it up (engine/eng_liustacktifa.go):
+# its own Intl and Temporal, tifa's Go functions, no polyfill. It runs bench,
+# native and mui-native, never pf.
+#
+# TIFA_ONLY=<engine>,<engine> runs only those engines (names as in the result
+# files). The check, timer and mem runs belong to liustack-quickjs.
 #
 # Results: <out dir>/<engine>-<kind>.json and .meta, HTML in <out dir>/html.
 set -e
 out=${1:-} bin=${2:-} nat=${3:-}
-[ -n "$out" ] && [ -n "$bin" ] || { sed -n '6,24p' "$0"; exit 2; }
+[ -n "$out" ] && [ -n "$bin" ] || { sed -n '6,32p' "$0"; exit 2; }
 # Resolve before changing directory, including output directories not yet made.
 absolute() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac; }
 out=$(absolute "$out")
@@ -34,17 +42,26 @@ bin=$(absolute "$bin")
 mkdir -p "$out/html" "$out/check"
 cd "$(dirname "$0")"
 list() { ls in/"$1"/*.json | tr '\n' , | sed 's/,$//'; }
-BENCH=$(list bench) SHOP=$(list shop)
+BENCH=$(list bench) SHOP=$(list shop) MUI=$(list mui)
 PF=prelude/nointl.js,polyfill/intl-polyfill.js
 run() { env TZ=UTC GOMAXPROCS=1 bash pagerun.sh "$@"; }
-go_runs() { # go_runs <bin> <engine name> <has own Intl>
+want() { [ -z "${TIFA_ONLY:-}" ] || case ",$TIFA_ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+go_runs() { # go_runs <bin> <engine name> <yes: has own Intl, no: has none, tifa: own Intl and no polyfill run>
+  want "$2" || return 0
   local b=("$bin/$1" tifa-ssr -html "$out/html")
   run "$out/$2-bench" "${b[@]}" -bundle bundles/bench.js -inputs $BENCH -warm 50 -n 200 -tag -bench
-  run "$out/$2-pf" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -prelude $PF -warm 20 -n 100 -tag -pf
-  [ "$3" = yes ] && run "$out/$2-native" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -warm 20 -n 100 -tag -native
+  if [ "$3" != tifa ]; then
+    run "$out/$2-pf" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -prelude $PF -warm 20 -n 100 -tag -pf
+    run "$out/$2-mui-pf" "${b[@]}" -bundle bundles/mui.js -inputs $MUI -prelude $PF -warm 20 -n 100 -tag -mui-pf
+  fi
+  if [ "$3" != no ]; then
+    run "$out/$2-native" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -warm 20 -n 100 -tag -native
+    run "$out/$2-mui-native" "${b[@]}" -bundle bundles/mui.js -inputs $MUI -warm 20 -n 100 -tag -mui-native
+  fi
   return 0
 }
 # Use the same capped entry for functional checks and timing.
+if want liustack-quickjs; then
 for app in bench mui shop; do
   in=$(list $app)
   run "$out/check/$app-normal" "$bin/liustack" tifa-ssr -bundle bundles/$app.js -inputs $in -warm 0 -n 1 -html "$out/check" -tag -$app-normal
@@ -53,13 +70,17 @@ for app in bench mui shop; do
     run "$out/check/$app-proxy-$(basename "$f" .json)" "$bin/liustack" tifa-ssr -bundle bundles/$app.js -inputs $f -prelude prelude/intl-proxy.js -probe '__intlHits()' -warm 0 -n 0
   done
 done
+fi
 go_runs liustack liustack-quickjs yes
+go_runs liustacktifa liustack-tifa tifa
+if want liustack-quickjs; then
 run "$out/liustack-quickjs-timer-pf" "$bin/liustack" tifa-ssr -bundle bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
 run "$out/liustack-quickjs-timer-native" "$bin/liustack" tifa-ssr -bundle bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
 for b in liustack:liustack-quickjs goquickjs:go-quickjs-interp; do
   run "$out/${b#*:}-mem-pf" "$bin/${b%%:*}" tifa-ssr -bundle bundles/shop.js -inputs in/shop/store-zh-CN-cart.json -prelude $PF -warm 0 -n 0 -mem 20
   run "$out/${b#*:}-mem-native" "$bin/${b%%:*}" tifa-ssr -bundle bundles/shop.js -inputs in/shop/store-zh-CN-cart.json -warm 0 -n 0 -mem 20
 done
+fi
 go_runs goquickjs go-quickjs-interp yes
 go_runs goquickjsjit go-quickjs-jit yes
 for b in modernc:modernc-quickjs goant:goant-interp goantjit:goant-jit moejs:moejs; do
@@ -67,15 +88,20 @@ for b in modernc:modernc-quickjs goant:goant-interp goantjit:goant-jit moejs:moe
 done
 [ -n "$nat" ] || exit 0
 for q in quickjs-2026-06-04 quickjs-master quickjs-ng; do
+  want $q || continue
   qjs=$nat/$q/qjs; [ -x "$qjs" ] || qjs=$nat/$q/build/qjs
   d=("$qjs" --std ../native/ssr-driver.js "engine=$q" "html=$out/html")
   run "$out/$q-bench" "${d[@]}" bundle=bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
   run "$out/$q-pf" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
+  run "$out/$q-mui-pf" "${d[@]}" bundle=bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
 done
 for m in jit jitless; do
+  want node-$m || continue
   f=(); [ "$m" = jitless ] && f=(--jitless)
   d=("$nat/node-v24.11.1-linux-x64/bin/node" "${f[@]}" ../native/node-ssr.cjs "engine=node-$m" "html=$out/html")
   run "$out/node-$m-bench" "${d[@]}" bundle=bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
   run "$out/node-$m-pf" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
   run "$out/node-$m-native" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP warm=20 n=100 tag=-native
+  run "$out/node-$m-mui-pf" "${d[@]}" bundle=bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
+  run "$out/node-$m-mui-native" "${d[@]}" bundle=bundles/mui.js inputs=$MUI warm=20 n=100 tag=-mui-native
 done
