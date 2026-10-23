@@ -107,7 +107,7 @@ Test: `builtin_test.go`.
 
 ## Strings of Builtins converted in Go
 
-Release: Unreleased.
+Release: v0.27.2.
 
 `Args.String`, `Args.WTF8` and `VM.NewString` convert in Go, with the same results. `Args.String` and `Args.WTF8` read a string the engine holds in one piece straight from its characters, where `JS_ToCStringLen2` scanned every string in engine code, made a UTF-8 copy in engine memory of any string that was not ASCII, and Go copied that again. `NewString` (and every Go string that becomes a JS string: arguments of `Call`, results of Go functions and the rest) writes the characters straight into the new string, where it copied the Go string to C memory for `JS_NewStringLen` to decode. A string the engine left in pieces by concatenation (a rope) is still joined by the engine, and a string longer than javascript allows still goes through `JS_NewStringLen`, which throws as before. `Value.Dup` adds its reference in Go, where `JS_DupValue` took a TLS frame to do it.
 
@@ -132,7 +132,7 @@ When upstream changes it: `lib/strchars.go` reads and writes a string with the o
 
 ## Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16
 
-Release: Unreleased.
+Release: v0.27.2.
 
 `Args.Latin1(i)` gives the characters of a string argument one byte each, and `Args.UTF16(i)` its 16-bit units, lone surrogates as they are, without a copy: the bytes and units are the engine's, valid until the Builtin returns, and must not be changed. The engine holds a string one way or the other, so for a string in one piece exactly one of the two answers. A rope gives neither, and so does any value that is not a string: read those with `Args.String`. `VM.NewStringLatin1(b)` makes a string of bytes that are characters U+0000 to U+00FF, and `VM.NewStringUTF16(u)` one of 16-bit units, each with one copy. `NewStringUTF16` of units all below U+0100 makes a string of 8-bit characters, as the engine makes it. A string longer than javascript allows is an error.
 

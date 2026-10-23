@@ -8,7 +8,7 @@ read_when:
 
 # Weak collections
 
-Release: Unreleased.
+Release: v0.27.2.
 
 A full collection releases a WeakMap entry when its key has no strong path from a root, even when its value points back to that key. Chains of entries are resolved in the same collection. Both the map and its key must be reachable to keep an entry's value. WeakSet uses the same key cleanup.
 

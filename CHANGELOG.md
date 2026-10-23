@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` that programs using it can see. Ea
 
 ## [Unreleased]
 
+## [v0.27.2] - 2026-10-23
+
 ### Added
 
 - `Args.Latin1` and `Args.UTF16`: the characters of a string argument of a Builtin as the engine holds them, one byte or one 16-bit unit each, without a copy. `VM.NewStringLatin1` and `VM.NewStringUTF16` make a string from such characters. A Builtin that looks at short strings and often returns its argument as it is (`a.Value(0).Dup()`) converts nothing: React's escape of HTML written this way takes 99 ns a call on a 16-character string, against 200 ns in React's javascript.
@@ -286,7 +288,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.1...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.2...main
+[v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
 [v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17

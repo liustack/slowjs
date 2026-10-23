@@ -104,7 +104,7 @@ Test: `interrupt_test.go`.
 
 ## Compiling a regexp counts toward the interrupt check
 
-Release: Unreleased.
+Release: v0.27.2.
 
 The eval timeout and `Interrupt` stop a loop that compiles regexps within a few milliseconds, and stop one long compile in the middle. The interpreter calls the interrupt handler once every 10000 polls (see [interpreter-loop.md](interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter)), and a compile was one poll however long the pattern, as it is upstream. A loop that built `new RegExp` from a new long pattern each time ran thousands of compiles between two checks: with a 10 ms timeout, `'(a|b|c)+d'.repeat(200)` stopped after 170 ms on a Mac, 225 ms on linux/amd64 (AMD EPYC) and over 2 s on a loaded machine, a pattern of 2000 alternatives after 3.6 s, and a class of 3000 CJK characters after 184 s. One compile of 100000 alternatives ran its full 8.5 s.
 
@@ -120,7 +120,7 @@ If it reports that the regexp parser, `lre_check_timeout` or `__js_poll_interrup
 
 ## Parsing and building strings count toward the interrupt check
 
-Release: Unreleased.
+Release: v0.27.2.
 
 A loop of built-in calls that parse source or build long strings stops within a few milliseconds of the eval timeout or `Interrupt`. Each such call was one poll of the interrupt check however much it did, so with a 10 ms timeout on linux/amd64 (AMD EPYC) a loop of `JSON.parse` of 60 KB stopped after 8.6 s, `JSON.stringify` after 11.7 s, `eval` of 500 functions after 10 s, `new Function` after 5.3 s, `'x'.repeat(1e6)` after 13 s, `padStart` after 18 s, `replaceAll` after 18.7 s and `join` of 100000 numbers after 37.5 s.
 
