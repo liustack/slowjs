@@ -23,6 +23,7 @@ func TestMemgrind2SharedBytecode(t *testing.T) {
 	t.Run("lifetime", TestSharedBytecodeLifetime)
 	t.Run("truncated", TestSharedBytecodeTruncated)
 	t.Run("concurrent", TestSharedBytecodeConcurrent)
+	t.Run("module", TestSharedBytecodeModule)
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
 	}
