@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.27.2] - 2026-10-23
+
 ### 新增
 
 - `Args.Latin1` 和 `Args.UTF16`：按引擎存放的样子拿到 Builtin 字符串参数的字符，每个字符一个字节或一个 16 位单元，不复制。`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 用这样的字符造字符串。只看短字符串、常常原样返回参数（`a.Value(0).Dup()`）的 Builtin 这样写就什么都不用转换：这样写的 React HTML 转义处理 16 个字符的字符串每次调用 99 ns，React 自己的 JavaScript 要 200 ns。
@@ -286,7 +288,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.1...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.27.2...main
+[v0.27.2]: https://github.com/liustack/quickjs/compare/v0.27.1...v0.27.2
 [v0.27.1]: https://github.com/liustack/quickjs/compare/v0.27.0...v0.27.1
 [v0.27.0]: https://github.com/liustack/quickjs/compare/v0.26.17...v0.27.0
 [v0.26.17]: https://github.com/liustack/quickjs/compare/v0.26.16...v0.26.17
