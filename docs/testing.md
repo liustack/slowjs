@@ -185,7 +185,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the main ones:
+It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`, and linux/amd64 with `-tags=slowjs_nogoasm` as well. It takes a long time. For a quick look, build the main ones:
 
 ```sh
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
@@ -222,7 +222,7 @@ for tags in "" slowjs_nogoasm; do
 done
 ```
 
-`-xtags` builds the test262 runner with the same tags. Both builds must give the same test262 errors. Then compare the HTML of tifa's pages between the two, and check a linked tifa binary with `python3 internal/goasm/verify_linked.py <work>/build/lowered.o <binary>` (pass `--work` to `regenerate.py` to keep `lowered.o`). Other targets build the Go interpreter with or without the tag, which [Every target](#every-target) covers when run with `-tags slowjs_nogoasm` as well.
+`-xtags` builds the test262 runner with the same tags. Both builds must give the same test262 errors. Then compare the HTML of tifa's pages between the two, and check a linked tifa binary with `python3 internal/goasm/verify_linked.py <work>/build/lowered.o <binary>` (pass `--work` to `regenerate.py` to keep `lowered.o`). Other targets build the Go interpreter with or without the tag, and [Every target](#every-target) builds linux/amd64 both ways.
 
 ## Same as upstream after fixlib
 
