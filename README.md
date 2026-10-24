@@ -82,6 +82,7 @@ The API is that of modernc.org/quickjs, documented at [pkg.go.dev](https://pkg.g
 - **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`**: why a call ended, which no script can fake. [More](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetClock(now)` and `VM.Now()`**: set and read the wall clock of a VM, which Date, Intl and Temporal all read. nil restores the live clock. [More](docs/fork-changes/time-and-intl.md#one-wall-clock-per-vm)
 - **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
+- **`GetAsyncContext` and `SetAsyncContext`**: two Builtins that read and set an object promise jobs carry: a `then` or an `await` runs with the one set when it was registered, so an `AsyncLocalStorage` written on them finds its store after `await` as in Node. A VM that never sets one runs promises as before. [More](docs/fork-changes/go-api.md#the-async-context-of-promise-jobs)
 
 The first five came in v0.26.17, the next two in v0.27.0. `VM.SetClock` and `VM.Now` are unreleased.
 

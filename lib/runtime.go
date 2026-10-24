@@ -23,6 +23,7 @@ type TforkRuntime struct {
 	// sharedDebug is set while JS_ReadObject reads with ReadObjSharedDebug,
 	// see shareddebug.go.
 	sharedDebug bool
+	async       TJSValue // the async context, see asynccontext.go
 }
 
 // forkRuntimeSize is the size of TforkRuntime, which JS_NewRuntime2

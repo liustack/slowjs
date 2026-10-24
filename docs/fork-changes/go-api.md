@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, and how a module frees its top level once it has run'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, and the async context that promise jobs keep for an AsyncLocalStorage'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -14,6 +14,7 @@ read_when:
   - Keeping something per VM outside it, to drop when the VM is closed (OnClose)
   - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
   - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
+  - Writing an AsyncLocalStorage, or a value that has to follow an async function across await (GetAsyncContext, SetAsyncContext)
 ---
 
 # The Go API
@@ -222,3 +223,25 @@ Release: Unreleased.
 
 Test: `sharedbytecode_test.go`.
 
+## The async context of promise jobs
+
+Release: Unreleased.
+
+`GetAsyncContext` and `SetAsyncContext` are two Builtins (see [Builtin](#builtin-a-go-function-called-as-a-built-in)) that read and set the async context of a VM: an object, or none. A promise reaction, what `then`, `catch`, `finally` and `await` register, keeps the context the VM has when it is registered, and runs with it: the VM has that context while the handler runs, and gets back the one it had when the handler returns or throws. That is what an `AsyncLocalStorage` needs to find its store after an `await`, and what V8 keeps for Node as the continuation preserved embedder data. `SetAsyncContext` of anything but an object sets none, and `GetAsyncContext` then returns undefined.
+
+The object is the whole context: an `AsyncLocalStorage` keeps its stores in it, as a `Map` from each instance to its store, and `run` makes a new object with its own store in it, sets it, calls the function and sets the old one back. Nothing changes an object once it is set, so a reaction holds its context by reference.
+
+A VM starts with no context, and while it has none, a reaction costs one more test, its handler as before. With a context, each reaction with a function handler, and each `then` of a thenable, gets a small function that holds the context and the function. `Close` frees the context the VM has, and the reactions still pending free theirs with them.
+
+What follows the context and what does not, checked against Node 24 with `AsyncLocalStorage`:
+
+- An async function has the context of its call after each `await`, also when several overlap.
+- A reaction runs with the context of the `then` that registered it, not of the code that resolved the promise.
+- A context set inside a reaction lasts until the reaction ends.
+- `Promise.all`, `finally`, async generators and `for await` keep it, as they register reactions.
+- The `then` of a thenable that is not a promise runs in a job with the context of the code that resolved a promise with it, as `await thenable` does.
+- Timers, I/O and events do not exist in the engine, so a host that adds them saves and sets the context itself.
+
+`lib/asynccontext.go` has the code, and `fixAsyncContext` (`internal/fixlib/asynccontext.go`) passes the handler of each reaction through `asyncContextWrap` in `perform_promise_then`, and the `then` of a thenable through it in `js_promise_resolve_function_call`, before it queues the job that calls it. It is the last final change. It fingerprints those two functions and the two jobs, `promise_reaction_job` and `js_promise_resolve_thenable_job`, in `asyncContextSites`, and stops when a release adds another store into the handler of a reaction or another place that queues the thenable job. The interpreter of the `goasm` tag compiles none of these functions in: it calls their Go copies, so it keeps the async context too, and `TestGoasmCoversHelperRules` asks for a row if one of them ever joins `lib/goasm_helpers.txt`.
+
+Test: `asynccontext_test.go`, also run under memgrind (`TestMemgrind2AsyncContext`) and with `-tags goasm` on linux/amd64, and `TestAsyncContextRewrite` in `internal/fixlib`.

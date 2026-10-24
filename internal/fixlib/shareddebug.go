@@ -110,7 +110,7 @@ func sharedDebugUsersOf(b []byte) []string {
 // lib/shareddebug.go before the lists are updated (go run ./internal/fixlib
 // -shareddebug prints the fingerprints).
 //
-// It is the last final change, and its exact inverse runs first.
+// Its exact inverse runs before those of the earlier final changes.
 func fixSharedDebug(b []byte, name string) ([]byte, error) {
 	bare, err := restoreSharedDebug(b, name)
 	if err != nil {
