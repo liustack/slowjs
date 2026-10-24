@@ -1,8 +1,8 @@
 # Offline LLVM interpreter generator
 
-This experiment ships an LLVM-generated `JS_CallInternal` as Go assembly on
-linux/amd64. Applications build with `CGO_ENABLED=0 go build -tags goasm`.
-Without the tag, the ccgo interpreter remains in use. The generator is a
+This generator ships an LLVM-generated `JS_CallInternal` as Go assembly on
+linux/amd64, where programs use it by default. `-tags slowjs_nogoasm` builds
+them with the ccgo interpreter instead, which other targets always use. The generator is a
 maintainer tool and does not run during application builds.
 
 The input is the pinned QuickJS source with `lib/internal/patch/quickjs.diff`
@@ -76,10 +76,10 @@ inspection of the final linked instructions, engine tests, test262, HTML
 comparison and page timing again. A successful offline build is not evidence
 that arbitrary C functions can use this path safely.
 
-The experimental implementation is not enabled by default. Darwin/arm64 has
-no implementation in this branch.
+The generated interpreter is the default on linux/amd64, and
+`-tags slowjs_nogoasm` builds without it. Darwin/arm64 has no implementation.
 
-After linking a tagged ELF binary, check that every local byte and jump table
+After linking a linux/amd64 binary built without `slowjs_nogoasm`, check that every local byte and jump table
 survived Go assembly and linking:
 
 ```sh

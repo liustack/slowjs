@@ -22,7 +22,7 @@ go get github.com/liustack/slowjs
 
 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。
 
-在 linux/amd64 上加 `goasm` 构建标签，引擎会换用一个从 C 源码编译、以 Go 汇编发布的解释器。它默认不开，渲染 tifa 的页面耗时是原来的 0.850 到 0.940。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+在 linux/amd64 上，引擎用一个从 C 源码编译、以 Go 汇编发布的解释器执行 JavaScript，渲染 tifa 的页面耗时是其他平台所用 Go 解释器的 0.850 到 0.940。加 `-tags slowjs_nogoasm` 构建，在这里也用 Go 解释器。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
 
 ## 第一个 VM
 
