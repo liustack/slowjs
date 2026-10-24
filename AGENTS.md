@@ -16,10 +16,11 @@
 
 ## Current state of the repository
 
-- `main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs and get no commits of their own. Releases v0.26.0 to v0.27.3 are lightweight tags on merge commits of `main`.
+- `main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs and get no commits of their own. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`.
 - Root: the Go API, package `slowjs` (`quickjs.go`, `quickjs64.go`, `promise.go`, `tlsstack_*.go`, whose file names come from upstream) and its tests.
 - `lib/`: the engine, merged from upstream libquickjs with `git subtree`, plus the fork's hand-written Go next to the generated files. `lib/README.md`, `lib/CLAUDE.md`, `lib/Makefile` and `lib/generator.go` are upstream's and kept as they are so that subtree merges stay clean: they describe libquickjs as a module of its own. Where they disagree with this file, this file wins. This fork does not regenerate `lib/` with `make generate`.
 - `internal/fixlib/`: the command that puts the fork's changes into the generated Go.
+- `internal/goasm/`: the maintainer tool that compiles the patched C interpreter into the Go assembly of `lib/goasm_*`, which linux/amd64 runs by default (`-tags slowjs_nogoasm` turns it off). Its output is committed and checked like the generated Go (see [docs/fork-changes/go-assembly.md](docs/fork-changes/go-assembly.md)).
 - `intl/`: `Intl` for a VM, in every locale Chromium has. `temporal/`: `Temporal` for a VM, computed by go-intl. `internal/gointl/`: a copy of go-intl, which `intl/` and `temporal/` use. `internal/intlhook/`: what `temporal/` takes from `intl/`. `fmt/`: Go's fmt for a VM. `compare/`: a module of its own, kept from upstream, with QuickJS's micro benchmarks. `compare/engines/`: another module, the comparison with the other pure Go engines that docs/benchmarks.md reports.
 - [docs/architecture.md](docs/architecture.md) has the full map, the core types and the rules of the Go API.
 
