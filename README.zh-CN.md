@@ -22,7 +22,7 @@ go get github.com/liustack/slowjs
 
 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。
 
-在 linux/amd64 上，引擎用一个从 C 源码编译、以 Go 汇编发布的解释器执行 JavaScript，渲染 tifa 的页面耗时是其他平台所用 Go 解释器的 0.850 到 0.940。加 `-tags slowjs_nogoasm` 构建，在这里也用 Go 解释器。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+在 linux/amd64 上，引擎用一个从 C 源码编译、以 Go 汇编发布的解释器执行 JavaScript，比其他平台所用的 Go 解释器，渲染 tifa 的商店页面快 6%，MUI 页面快 15%（单个 VM，不开 PGO）。加 `-tags slowjs_nogoasm` 构建，在这里也用 Go 解释器。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
 
 ## 第一个 VM
 
@@ -84,21 +84,21 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 - **`GetAsyncContext` 和 `SetAsyncContext`**：两个 Builtin，读写一个跟着 promise 任务走的对象：`then` 或 `await` 运行时拿到的是注册时设的那个，所以用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store，和 Node 一样。从不设置它的 VM 跑 promise 和以前一样。[详情](docs/fork-changes/go-api.md#the-async-context-of-promise-jobs)
 
-前五项是 v0.26.17 加的，接下来两项是 v0.27.0 加的。`VM.SetClock` 和 `VM.Now` 尚未发布。
+前五项是 v0.26.17 加的。其余的：`*Error` 的字段在 v0.26.7，shape 缓存在 v0.26.16，`VM.OnClose` 和 `temporal` 包在 v0.27.0，`VM.RunYoungGC` 在 v0.27.3，`SharedBytecode` 在 v0.28.1，`VM.SetClock` 和 `VM.Now` 在 v0.28.2，异步上下文在 v0.28.5。
 
 ## 用了以后有什么不同
 
 - **限额一到，调用就结束。** 脚本超过执行时限或内存上限就停在那里，不管它怎么 catch：页面里的 `catch`、`finally`、promise 回调和 Go 函数都不会再跑。`*Error` 会说明是超时还是内存。交给 VM 的 Go 函数 panic 了，panic 会回到你自己的 Go 代码，内存耗尽的 VM 也照样能关掉，不漏内存。
 - **每台机器上页面都一样。** 每个 VM 里脚本的本地时间都是 UTC，不用给整个进程设 `TZ`。`Intl` 支持 Chromium 有的所有语言，在约 75,000 个表达式上和 Chromium 156 对过结果。
 - **字符串完整到达。** 从 JavaScript 拿到的 Go 字符串一定是合法的 UTF-8，带非法字节的 Go 字符串到了 JavaScript 里，读法和 Go 自己解码时一样。
-- **页面渲染更快。** 在 [tifa](https://github.com/liustack/tifa)（一个在服务端渲染 React 的 Go 框架）示例商店的 React 页面上，引擎渲染速度是起点 modernc.org/quickjs 的 1.63 到 1.66 倍（v0.26.15 时测的），多个 VM 在多个核上也不再等同一把锁。
+- **页面渲染更快。** 在 [tifa](https://github.com/liustack/tifa)（一个在服务端渲染 React 的 Go 框架）示例商店的 React 页面上，按 tifa 的方式构建和运行时，一个页面的耗时是 C QuickJS 的 0.91 到 0.93，在 tifa 不用 `Intl` 的测试页面上是 1.14 到 1.15 倍（见[对比](docs/benchmarks.md#tifas-current-bundles)）。多个 VM 在多个核上也不再等同一把锁。
 
 ## 凭什么信它
 
 - **引擎就是上游 QuickJS。** `lib/` 是 ccgo 从 Bellard 的 C 代码生成的，连同历史从上游 libquickjs 合并过来。slowjs 只通过两种方式改它：`internal/fixlib` 对生成的 Go 做机械改写，以及供重新生成时使用的 C 补丁。提交的文件和 `fixlib` 从上游文件生成的结果逐字节一致（[怎么核对](docs/testing.md#same-as-upstream-after-fixlib)）。
 - **上游一动就停。** 每处改写都用指纹或计数核对它改的代码。上游新版本改了那段代码，`fixlib` 就停下并指出位置，不去改它没见过的代码。
 - **每处改动都有记录。** [docs/fork-changes](docs/fork-changes/README.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
-- **测试用上游的，还多加了一层。** test262 的 58 个已知失败和上游 libquickjs 逐行相同。另外还有 slowjs 自己的 300 多个测试，以及在 libc 跟踪每次分配的分配器下跑的泄漏检查。
+- **测试用上游的，还多加了一层。** test262 的 58 个已知失败和上游 libquickjs 逐行相同。另外还有 slowjs 自己的 600 多个测试，以及在 libc 跟踪每次分配的分配器下跑的泄漏检查。
 - **有人真在依赖它。** 它是为 [tifa](https://github.com/liustack/tifa) 维护的，tifa 是一个用它渲染 React 页面的 Go 框架，每个版本都先在 tifa 的页面上测过再让 tifa 升级。
 
 ## 来自哪里
@@ -125,6 +125,6 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
 
 ## 许可证
 
-slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。有 14 个文件照着引擎的部分代码写，SPDX 标识是 `MIT AND BSD-3-Clause`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 slowjs 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
+slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。有 23 个文件照着引擎的部分代码写，SPDX 标识是 `MIT AND BSD-3-Clause`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 slowjs 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
 
 用这个模块构建并分发二进制的程序，要附上这些许可证的声明。哪个路径用哪个许可证、要附哪些文本，见 [NOTICE.md](NOTICE.md)。

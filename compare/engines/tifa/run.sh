@@ -12,31 +12,31 @@
 # Linux only: checks and timing both run on CPU 1 under a 4 GiB cgroup cap,
 # with TZ=UTC and GOMAXPROCS=1. pagerun.sh retries disturbed processes.
 #
-#   check   the Intl-free check on liustack-quickjs: every page rendered
+#   check   the Intl-free check on slowjs: every page rendered
 #           normally and with prelude/nointl-stub.js, and the Intl members
 #           each page reaches (prelude/intl-proxy.js, a VM per page)
 #   bench   the bench pages (no Intl), 50 warm and 200 timed renders a page
 #   pf      the shop pages on the FormatJS polyfill, native Intl removed
 #   native  the shop pages on the engine's own Intl, where it has one
-#   timer   the time liustack-quickjs spends inside Intl, on the polyfill
+#   timer   the time slowjs spends inside Intl, on the polyfill
 #           and on its own Intl (prelude/intl-timer.js)
 #   mem     memory per VM with and without the polyfill, 20 VMs
 #   mui     the same two for the MUI pages (mui-pf, mui-native)
 #
-# liustack-tifa is slowjs set up as tifa sets it up (engine/eng_liustacktifa.go):
+# slowjs-tifa is slowjs set up as tifa sets it up (engine/eng_liustacktifa.go):
 # its own Intl and Temporal, tifa's Go functions, no polyfill. It runs bench,
 # native and mui-native, never pf.
 #
-# liustack-tifa-nogoasm is the same row built with slowjs_nogoasm, as tifa
+# slowjs-tifa-nogoasm is the same row built with slowjs_nogoasm, as tifa
 # builds an app with build.goasm off: the interpreter in Go on linux/amd64.
 #
 # TIFA_ONLY=<engine>,<engine> runs only those engines (names as in the result
-# files). The check, timer and mem runs belong to liustack-quickjs.
+# files). The check, timer and mem runs belong to slowjs.
 #
 # TIFA_BUNDLES=<dir> runs the bundles and inputs of <dir> (an absolute path,
 # laid out as this folder: bundles/<app>.js and in/<app>/*.json) in place of
 # the pinned ones. A bundle that tifa built as an ES module goes there twice:
-# as bundles/<app>.mjs, which the liustack-tifa rows compile as a module as
+# as bundles/<app>.mjs, which the slowjs-tifa rows compile as a module as
 # tifa does, and as bundles/<app>.js made by module-script.py, which every
 # other row runs as a script.
 #
@@ -75,7 +75,7 @@ go_runs() { # go_runs <bin> <engine name> <yes: has own Intl, no: has none, tifa
   return 0
 }
 # Use the same capped entry for functional checks and timing.
-if want liustack-quickjs; then
+if want slowjs; then
 for app in bench mui shop; do
   in=$(list $app)
   run "$out/check/$app-normal" "$bin/liustack" tifa-ssr -bundle $B/bundles/$app.js -inputs $in -warm 0 -n 1 -html "$out/check" -tag -$app-normal
@@ -85,13 +85,13 @@ for app in bench mui shop; do
   done
 done
 fi
-go_runs liustack liustack-quickjs yes
-go_runs liustacktifa liustack-tifa tifa
-go_runs liustacktifanogoasm liustack-tifa-nogoasm tifa
-if want liustack-quickjs; then
-run "$out/liustack-quickjs-timer-pf" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
-run "$out/liustack-quickjs-timer-native" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
-for b in liustack:liustack-quickjs goquickjs:go-quickjs-interp; do
+go_runs liustack slowjs yes
+go_runs liustacktifa slowjs-tifa tifa
+go_runs liustacktifanogoasm slowjs-tifa-nogoasm tifa
+if want slowjs; then
+run "$out/slowjs-timer-pf" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
+run "$out/slowjs-timer-native" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
+for b in liustack:slowjs goquickjs:go-quickjs-interp; do
   run "$out/${b#*:}-mem-pf" "$bin/${b%%:*}" tifa-ssr -bundle $B/bundles/shop.js -inputs $B/in/shop/store-zh-CN-cart.json -prelude $PF -warm 0 -n 0 -mem 20
   run "$out/${b#*:}-mem-native" "$bin/${b%%:*}" tifa-ssr -bundle $B/bundles/shop.js -inputs $B/in/shop/store-zh-CN-cart.json -warm 0 -n 0 -mem 20
 done

@@ -30,7 +30,7 @@ type Options struct {
 	// speed and is off unless asked. No engine of the comparison needs it now.
 	Interruptible bool
 	// Clock asks for globalThis.__jsbench_now(), milliseconds from a Go
-	// monotonic clock, where the adapter has it (liustack-quickjs), to time
+	// monotonic clock, where the adapter has it (slowjs), to time
 	// parts of a render from inside the script.
 	Clock bool
 }
@@ -176,7 +176,7 @@ func Str(v any) string {
 }
 
 // Host is a VM that runs a page the way the application's host does, with a
-// render and the housekeeping after it of its own (liustack-tifa). The tifa
+// render and the housekeeping after it of its own (slowjs-tifa). The tifa
 // page runs use it when a VM has it, and otherwise call startRender through
 // the glue.
 type Host interface {

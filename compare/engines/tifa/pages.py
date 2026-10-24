@@ -8,13 +8,13 @@ Pages are compared after the router's update times (`u:` and 13 digits, the
 Date.now() of the render) are masked: they differ between any two renders.
 Times are per render: the mean of the CPU time of the timed renders where
 the engine reports it, else the mean wall time (the C QuickJS rows, timed in
-the script on a CPU of their own). Ratios are against liustack-quickjs on the
+the script on a CPU of their own). Ratios are against slowjs on the
 same page, as a geometric mean over the pages with the range in brackets.
 
-liustack-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
+slowjs-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
 tifa's Go functions, no polyfill), so it has no pf runs, and so is
-liustack-tifa-nogoasm, built with slowjs_nogoasm. Its pages are
-compared with the pages of liustack-quickjs on the polyfill, where the Intl
+slowjs-tifa-nogoasm, built with slowjs_nogoasm. Its pages are
+compared with the pages of slowjs on the polyfill, where the Intl
 output of the two may differ in U+202F (see tifa_row_check).
 """
 import glob
@@ -29,9 +29,9 @@ import re
 import sys
 from pathlib import Path
 
-GO = ["liustack-quickjs", "liustack-tifa", "liustack-tifa-nogoasm", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
+GO = ["slowjs", "slowjs-tifa", "slowjs-tifa-nogoasm", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
 REF = ["quickjs-2026-06-04", "quickjs-master", "quickjs-ng", "node-jit", "node-jitless"]
-OWN_INTL = {"liustack-quickjs", "liustack-tifa", "liustack-tifa-nogoasm", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
+OWN_INTL = {"slowjs", "slowjs-tifa", "slowjs-tifa-nogoasm", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 LABEL = {
     "quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
     "quickjs-master": "C QuickJS master 7d1c13c5d8 (reference)",
@@ -41,7 +41,7 @@ LABEL = {
 }
 
 # Runs left out of run.sh, and why.
-NOT_RUN = {(e, k): "not run: this row has no polyfill" for e in ("liustack-tifa", "liustack-tifa-nogoasm") for k in ("pf", "mui-pf")}
+NOT_RUN = {(e, k): "not run: this row has no polyfill" for e in ("slowjs-tifa", "slowjs-tifa-nogoasm") for k in ("pf", "mui-pf")}
 
 out = None
 mask = lambda b: re.sub(rb"\bu:\d{13}\b", b"u:0", b)
@@ -99,10 +99,10 @@ def comparisons(kind, base_kind=None):
         k = kind(engine) if callable(kind) else kind
         base = base_kind or k
         ps = pages(load_merged(f"{engine}-{k}"))
-        refs = pages(load_merged(f"liustack-quickjs-{base}"))
+        refs = pages(load_merged(f"slowjs-{base}"))
         result[engine] = {
             pg: equality(html(engine, k, pg) if ps.get(pg, {}).get("ok") else None,
-                         html("liustack-quickjs", base, pg) if refs.get(pg, {}).get("ok") else None)
+                         html("slowjs", base, pg) if refs.get(pg, {}).get("ok") else None)
             for pg in sorted(ps.keys() | refs.keys())
         }
     return result
@@ -113,18 +113,18 @@ NARROW_SPACE = "\u202f".encode()
 
 
 def tifa_row_evidence():
-    """The pages of liustack-tifa against those of liustack-quickjs on the
+    """The pages of slowjs-tifa against those of slowjs on the
     polyfill (the same JavaScript on another Intl). `same` is byte for byte
     after masking. `same_but_u202f` says the pages are the same once the
     narrow no-break space U+202F, which the FormatJS polyfill writes before
     AM and PM where Go's Intl and Node write a plain space, is a plain space."""
     result = {}
     for app, tifa_kind, pf_kind in TIFA_KINDS:
-        ps = pages(load_merged(f"liustack-tifa-{tifa_kind}"))
-        refs = pages(load_merged(f"liustack-quickjs-{pf_kind}"))
+        ps = pages(load_merged(f"slowjs-tifa-{tifa_kind}"))
+        refs = pages(load_merged(f"slowjs-{pf_kind}"))
         for pg in sorted(ps.keys() | refs.keys()):
-            a = html("liustack-tifa", tifa_kind, pg) if ps.get(pg, {}).get("ok") else None
-            b = html("liustack-quickjs", pf_kind, pg) if refs.get(pg, {}).get("ok") else None
+            a = html("slowjs-tifa", tifa_kind, pg) if ps.get(pg, {}).get("ok") else None
+            b = html("slowjs", pf_kind, pg) if refs.get(pg, {}).get("ok") else None
             e = equality(a, b)
             same = e.pop("same_as_liustack")
             e["same"] = same
@@ -137,7 +137,7 @@ def tifa_row_evidence():
 
 def check_equality(app, page):
     def read(tag):
-        p = os.path.join(out, "check", f"liustack-quickjs-{app}-{tag}-{page}.html")
+        p = os.path.join(out, "check", f"slowjs-{app}-{tag}-{page}.html")
         return mask(Path(p).read_bytes()) if os.path.exists(p) else None
     return equality(read("stub"), read("normal"))
 
@@ -227,10 +227,10 @@ def check():
 
 def table(kind, title, engines, base_kind=None, tag=None):
     tag = tag or kind
-    base = {k: per_render(v) for k, v in pages(load_merged(f"liustack-quickjs-{base_kind or kind}")).items()}
+    base = {k: per_render(v) for k, v in pages(load_merged(f"slowjs-{base_kind or kind}")).items()}
     evidence = comparisons(kind, base_kind)
     print(f"### {title}\n")
-    print("| Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |")
+    print("| Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |")
     print("|---|---|---|---|---|")
     for e in engines:
         k = kind(e) if callable(kind) else kind
@@ -265,7 +265,7 @@ def table(kind, title, engines, base_kind=None, tag=None):
 
 
 def per_page(kind, engines, base_kind=None):
-    base = {k: per_render(v) for k, v in pages(load(f"liustack-quickjs-{base_kind or kind}")).items()}
+    base = {k: per_render(v) for k, v in pages(load(f"slowjs-{base_kind or kind}")).items()}
     print("| Page | " + " | ".join(engines) + " |")
     print("|---|" + "---|" * len(engines))
     rs = {e: pages(load_merged(f"{e}-{kind(e) if callable(kind) else kind}")) for e in engines}
@@ -280,7 +280,7 @@ def per_page(kind, engines, base_kind=None):
 
 
 def tifa_row_check():
-    print("### liustack-tifa against the same JavaScript on the polyfill\n")
+    print("### slowjs-tifa against the same JavaScript on the polyfill\n")
     print("| Bundle | Pages | Same HTML | Same but for U+202F | Other difference | Not compared |")
     print("|---|---|---|---|---|---|")
     ev = tifa_row_evidence()
@@ -299,16 +299,16 @@ def vs_c():
     pf = {"bench": "bench", "mui": "mui-pf", "shop": "pf"}
     own = {"bench": "bench", "mui": "mui-native", "shop": "native"}
     rows = [
-        ("liustack-quickjs, same JavaScript (polyfill)", "liustack-quickjs", pf),
-        ("liustack-quickjs, own Intl only", "liustack-quickjs", own),
-        ("liustack-tifa, as tifa runs it", "liustack-tifa", own),
-        ("liustack-tifa-nogoasm, as tifa runs it with build.goasm off", "liustack-tifa-nogoasm", own),
+        ("slowjs, same JavaScript (polyfill)", "slowjs", pf),
+        ("slowjs, own Intl only", "slowjs", own),
+        ("slowjs-tifa, as tifa runs it", "slowjs-tifa", own),
+        ("slowjs-tifa-nogoasm, as tifa runs it with build.goasm off", "slowjs-tifa-nogoasm", own),
         ("C QuickJS 2026-06-04", "quickjs-2026-06-04", pf),
         ("Node v24.11.1", "node-jit", pf),
         ("Node v24.11.1 --jitless", "node-jitless", pf),
     ]
     print("### Per bundle, against C QuickJS 2026-06-04\n")
-    print("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but liustack-tifa and the \"own Intl only\" row runs them on the polyfill.\n")
+    print("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but slowjs-tifa and the \"own Intl only\" row runs them on the polyfill.\n")
     print("| Row | bench | MUI | shop |")
     print("|---|---|---|---|")
     for label, engine, kinds in rows:
@@ -322,15 +322,15 @@ def vs_c():
 
 
 def polyfill_cost():
-    print("### What the polyfill costs liustack-quickjs\n")
-    pf, nat = load("liustack-quickjs-pf"), load("liustack-quickjs-native")
+    print("### What the polyfill costs slowjs\n")
+    pf, nat = load("slowjs-pf"), load("slowjs-native")
     print(f"- Loading it: {sum(pf['prelude_ms']):.0f} ms per VM, before the bundle ({pf['load_ms']:.0f} ms after it, {nat['load_ms']:.0f} ms without it).")
     for k in ["pf", "native"]:
-        m = (load(f"liustack-quickjs-mem-{k}") or {}).get("mem") or {}
+        m = (load(f"slowjs-mem-{k}") or {}).get("mem") or {}
         g = (load(f"go-quickjs-interp-mem-{k}") or {}).get("mem") or {}
-        print(f"- Memory per VM, {'polyfill' if k == 'pf' else 'own Intl'}: liustack-quickjs {m.get('rss_per_vm_bytes', 0) / 2**20:.1f} MiB RSS, go-quickjs-interp {g.get('rss_per_vm_bytes', 0) / 2**20:.1f} MiB RSS ({g.get('go_heap_per_vm_bytes', 0) / 2**20:.1f} MiB Go heap)")
+        print(f"- Memory per VM, {'polyfill' if k == 'pf' else 'own Intl'}: slowjs {m.get('rss_per_vm_bytes', 0) / 2**20:.1f} MiB RSS, go-quickjs-interp {g.get('rss_per_vm_bytes', 0) / 2**20:.1f} MiB RSS ({g.get('go_heap_per_vm_bytes', 0) / 2**20:.1f} MiB Go heap)")
     for k, what in [("timer-pf", "the polyfill"), ("timer-native", "its own Intl")]:
-        r = load(f"liustack-quickjs-{k}")
+        r = load(f"slowjs-{k}")
         if not r:
             continue
         tot, ren, calls = 0.0, 0.0, 0

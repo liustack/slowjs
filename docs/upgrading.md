@@ -147,7 +147,7 @@ This fork does not regenerate `lib/ccgo_*.go` itself. `lib/generator.go` still a
 git merge <upstream tag>
 ```
 
-Upstream commits import `modernc.org/libquickjs` and `modernc.org/quickjs`. After the merge, drop `modernc.org/libquickjs` from `go.mod`, run `grep -rn 'modernc.org/quickjs\|modernc.org/libquickjs' --include='*.go' .` and switch what it finds to `github.com/liustack/quickjs`. The only expected leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/stub.js`, which is a runtime marker, not an import path.
+Upstream commits import `modernc.org/libquickjs` and `modernc.org/quickjs`. After the merge, drop `modernc.org/libquickjs` from `go.mod`, run `grep -rn 'modernc.org/quickjs\|modernc.org/libquickjs' --include='*.go' .` and switch what it finds to `github.com/liustack/slowjs`. The only expected leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/stub.js`, which is a runtime marker, not an import path.
 
 `intl/` has been rewritten here, so an upstream change to it conflicts. Keep this fork's version and bring over only what the upstream change fixes, checked with the golden test below.
 

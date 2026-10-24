@@ -19,7 +19,7 @@ import (
 
 func init() {
 	register(&Engine{
-		Name:           "liustack-quickjs",
+		Name:           "slowjs",
 		Module:         "github.com/liustack/slowjs",
 		New:            newLiustack,
 		SharedPrograms: true,

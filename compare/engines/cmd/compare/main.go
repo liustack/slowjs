@@ -46,7 +46,7 @@ type variant struct {
 }
 
 var variants = []variant{
-	{"liustack-quickjs", "liustack", "eng_liustack", nil, true},
+	{"slowjs", "liustack", "eng_liustack", nil, true},
 	{"modernc-quickjs", "modernc", "eng_modernc", nil, true},
 	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, true},
 	{"go-quickjs-jit", "goquickjsjit", "eng_goquickjsjit quickjs_jit", nil, true},
@@ -60,8 +60,8 @@ var variants = []variant{
 // -engines names them: they are the same engine as one above, set up another
 // way.
 var pagesOnly = []variant{
-	{"liustack-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
-	{"liustack-tifa-nogoasm", "liustacktifanogoasm", "eng_liustacktifa slowjs_nogoasm", nil, false},
+	{"slowjs-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
+	{"slowjs-tifa-nogoasm", "liustacktifanogoasm", "eng_liustacktifa slowjs_nogoasm", nil, false},
 }
 
 var (
@@ -77,7 +77,7 @@ var (
 	flagJobs     = flag.Int("j", 1, "test262 processes per engine (each under -memcap-test262)")
 	flagReport   = flag.String("report", "", "write Markdown for an existing results JSON and exit")
 	flagMachine  = flag.String("machine", "", "machine description for the results (default: detected)")
-	flagRun      = flag.String("name", "", "run name (default <date>-<liustack version>-<host>)")
+	flagRun      = flag.String("name", "", "run name (default <date>-<slowjs version>-<host>)")
 	flagNoBuild  = flag.Bool("nobuild", false, "use the binaries in bin/")
 	flagReactN   = flag.Int("react-n", 200, "measured renders per round")
 	flagBuildOS  = flag.String("goos", "", "build the engine binaries for this GOOS (with -build-only, to run them on another machine)")

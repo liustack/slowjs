@@ -7,7 +7,7 @@
 
 package engine
 
-// liustack-tifa is slowjs set up the way tifa sets up a VM of its pool
+// slowjs-tifa is slowjs set up the way tifa sets up a VM of its pool
 // (internal/ssr/renderer.go and pool.go of github.com/liustack/tifa, MIT),
 // for the tifa page runs only. The small pieces of Go it needs are copied
 // here, not imported, and when tifa changes them they are copied again.

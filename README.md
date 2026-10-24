@@ -22,7 +22,7 @@ Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and c
 
 linux and darwin on amd64 and arm64, and windows on amd64. A build for any other target stops with an error that names these.
 
-On linux/amd64 the engine runs JavaScript in an interpreter compiled from the C source and shipped as Go assembly, which renders tifa's pages in 0.850 to 0.940 of the time of the Go interpreter that other targets use. `-tags slowjs_nogoasm` builds with the Go interpreter there too. See [The goasm interpreter](docs/fork-changes/go-assembly.md).
+On linux/amd64 the engine runs JavaScript in an interpreter compiled from the C source and shipped as Go assembly, which renders tifa's shop pages 6% faster and its MUI pages 15% faster than the Go interpreter that other targets use (one VM, no PGO). `-tags slowjs_nogoasm` builds with the Go interpreter there too. See [The goasm interpreter](docs/fork-changes/go-assembly.md).
 
 ## A first VM
 
@@ -84,21 +84,21 @@ The API is that of modernc.org/quickjs, documented at [pkg.go.dev](https://pkg.g
 - **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 - **`GetAsyncContext` and `SetAsyncContext`**: two Builtins that read and set an object promise jobs carry: a `then` or an `await` runs with the one set when it was registered, so an `AsyncLocalStorage` written on them finds its store after `await` as in Node. A VM that never sets one runs promises as before. [More](docs/fork-changes/go-api.md#the-async-context-of-promise-jobs)
 
-The first five came in v0.26.17, the next two in v0.27.0. `VM.SetClock` and `VM.Now` are unreleased.
+The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.7, the shape cache in v0.26.16, `VM.OnClose` and package `temporal` in v0.27.0, `VM.RunYoungGC` in v0.27.3, `SharedBytecode` in v0.28.1, `VM.SetClock` and `VM.Now` in v0.28.2, and the async context in v0.28.5.
 
 ## What changes for you
 
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 75,000 expressions.
 - **Strings arrive whole.** A Go string from javascript is always valid UTF-8, and a Go string with invalid bytes reads in javascript as Go itself decodes it.
-- **Faster pages.** On the React pages of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, the engine renders 1.63 to 1.66 times as fast as the original modernc.org/quickjs it started from (measured at v0.26.15), and several VMs on several cores no longer wait on one lock.
+- **Faster pages.** On the React pages of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, a page takes 0.91 to 0.93 of the time of C QuickJS as tifa builds and runs it, and 1.14 to 1.15 times on its test pages that need no `Intl` (see [the comparison](docs/benchmarks.md#tifas-current-bundles)). Several VMs on several cores no longer wait on one lock.
 
 ## Why you can trust it
 
 - **The engine is upstream QuickJS.** `lib/` is what ccgo makes from Bellard's C, merged from upstream libquickjs with its history. slowjs changes it only through `internal/fixlib`, which rewrites the generated Go mechanically, and through a C patch for a regeneration. The committed files are exactly what `fixlib` makes from the upstream files, byte for byte ([how to check](docs/testing.md#same-as-upstream-after-fixlib)).
 - **It stops when upstream moves.** Every rewrite checks the code it touches against fingerprints or counts. When an upstream release changes that code, `fixlib` stops and names it, rather than rewriting code it has not seen.
 - **Every change is written down.** [docs/fork-changes](docs/fork-changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
-- **The tests are upstream's and more.** test262 gives the same 58 known failures as upstream libquickjs, line for line. On top come over 300 tests of its own, and leak checks under libc's allocator that tracks every allocation.
+- **The tests are upstream's and more.** test262 gives the same 58 known failures as upstream libquickjs, line for line. On top come over 600 tests of its own, and leak checks under libc's allocator that tracks every allocation.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
 
 ## Where it comes from
@@ -123,6 +123,6 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slo
 
 ## License
 
-The files slowjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. 14 of them repeat parts of the engine, and their SPDX line says `MIT AND BSD-3-Clause`. Everything that came from upstream keeps its own license: the Go API and the engine as ccgo translated it, including the generated files in `lib/` and the fork's rewrites of them, are under BSD-3-Clause ([LICENSE](LICENSE), [lib/LICENSE](lib/LICENSE)) and QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)). slowjs's changes to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
+The files slowjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. 23 of them repeat parts of the engine, and their SPDX line says `MIT AND BSD-3-Clause`. Everything that came from upstream keeps its own license: the Go API and the engine as ccgo translated it, including the generated files in `lib/` and the fork's rewrites of them, are under BSD-3-Clause ([LICENSE](LICENSE), [lib/LICENSE](lib/LICENSE)) and QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)). slowjs's changes to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
 
 A program that ships a binary built with this module has to carry the notices of these licenses. [NOTICE.md](NOTICE.md) says which license covers which path, and which texts to include.

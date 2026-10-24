@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
-"""Items where liustack-quickjs needs at least 2x the time of the median of
+"""Items where slowjs needs at least 2x the time of the median of
 the other pure Go engines. python3 behind.py <results json>"""
 import json, statistics, sys
 r = json.load(open(sys.argv[1]))
 t = r["timed"]
-ME = "liustack-quickjs"
-others = [e["engine"] for e in r["engines"] if e["engine"] != ME]
+# Results files made before 2026-10-24 name the row liustack-quickjs, the
+# module's name until v0.28.0.
+names = [e["engine"] for e in r["engines"]]
+ME = "slowjs" if "slowjs" in names or "liustack-quickjs" not in names else "liustack-quickjs"
+others = [e for e in names if e != ME]
 med = statistics.median
 rows = []
 # QuickJS micro benchmarks: ns per iteration, median of the rounds
