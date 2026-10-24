@@ -16,10 +16,12 @@
 // package wraps, so a page or bundle reaching for Intl.DateTimeFormat gets a
 // ReferenceError, and the toLocale* methods it ships ignore both their locale
 // and their timeZone argument. Package [github.com/liustack/slowjs/intl] adds
-// Intl.DateTimeFormat, Intl.NumberFormat and Intl.PluralRules, with CLDR data
-// for every locale Chromium has, and replaces those toLocale* methods, for a VM
-// that opts in by calling its Register. With no locale argument the locale is
-// en-US, and with no timeZone option the zone is UTC.
+// every Intl constructor, with the data of every locale Chromium has, and
+// replaces those toLocale* methods and localeCompare, for a VM that opts in by
+// calling its Register. Package [github.com/liustack/slowjs/temporal] adds
+// Temporal the same way. With no locale argument the locale is en-US, and with
+// no timeZone option the zone is UTC. Both use the time zone data built into
+// the module and never read the host's zoneinfo.
 //
 // # Performance
 //
@@ -43,7 +45,7 @@
 // # Notes
 //
 // Parts of the documentation were copied from the quickjs documentation, see
-// LICENSE-QUICKJS for details.
+// LICENSE-LIBQUICKJS for details.
 //
 // # Supported platforms and architectures
 //
@@ -56,6 +58,10 @@
 //	linux   amd64
 //	linux   arm64
 //	windows amd64
+//
+// On linux/amd64 the bytecode interpreter is Go assembly compiled from the C.
+// Build with -tags slowjs_nogoasm to use the Go interpreter that the other
+// targets run.
 //
 // # Change Log
 //
