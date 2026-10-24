@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### 性能
+
+都是不开 PGO，和 v0.28.2 比。
+
+- 列普通对象的自有键（`for in`、`Object.keys`、`values` 和 `entries`、对象展开和剩余解构、`Object.assign`、`JSON.stringify`）改在 Go 里直接从它的 shape 读，展开、剩余解构、`values` 和 `entries` 直接从对象里取普通属性的值：tifa 示例商店的 bench 页面耗时为原来的 0.990，store 页面为 0.994，tifa 测试应用的 MUI 页面为 0.987，HTML 不变。六个键的 `Object.keys` 从 542 ns 降到 134 ns，展开六个键从 250 ns 降到 74 ns（Apple M4）。每个 VM 多占 8 KiB。
+
 ## [v0.28.4] - 2026-10-24
 
 ### 变更

@@ -11,10 +11,10 @@
 //	go run ./internal/fixlib         # apply, idempotent
 //	go run ./internal/fixlib -check  # only report what is missing
 //
-// -slots, -frames, -define, -backtrace, -regex, -repoll, -classescape, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -search, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells and -qjslibc print the lists that some
+// -slots, -frames, -define, -backtrace, -regex, -repoll, -classescape, -charge, -lazyaddr, -inline, -poll, -runtime, -front, -shape, -forin, -bitwise, -eq, -json, -search, -funcshape, -atomkey, -fieldchain, -recache, -clock, -oneframe, -up, -cells, -qjslibc and -ownkeys print the lists that some
 // changes are checked against, to update them after a review.
 //
-// It does thirty-eight things:
+// It does thirty-nine things:
 //
 //   - In every lib/ccgo_*.go file, release the string reference that
 //     XJS_ToCStringLen2 holds when allocating the UTF-8 copy fails. This is
@@ -143,11 +143,17 @@
 //     behind Date.now, new Date(), Math.random's seed and performance.now,
 //     read Go's clocks through lib/clock.go instead of libc's system calls
 //     (see fixClock).
-//     The first step undoes these nine, as the other changes match the
+//   - In every lib/ccgo_*.go file, let JS_GetOwnPropertyNamesInternal,
+//     JS_CopyDataProperties and JS_GetOwnPropertyNames2 list the own keys
+//     of an ordinary object from its shape through lib/ownkeys.go, which
+//     keeps the kinds of the keys of a shape in the key cache of that
+//     state, and let js_shape_hash_unlink drop a shape from that cache
+//     (see fixOwnKeys).
+//     The first step undoes these ten, as the other changes match the
 //     polls, JSRuntime, the allocator, the shape functions, the functions
 //     funcShape is called from, JS_ValueToAtom, the property reads of the
-//     interpreter, js_compile_regexp and the
-//     clock functions as ccgo writes them.
+//     interpreter, js_compile_regexp, the clock functions and the
+//     functions that list own keys as ccgo writes them.
 //   - In the lib/ccgo_linux_*.go files of 64-bit targets, make
 //     JS_CallInternal take its TLS frame with the room of a small alloca
 //     once at its entry, instead of taking it again before the stack check
@@ -217,6 +223,7 @@ var (
 	oneFrame   = flag.Bool("oneframe", false, "print the fingerprints of the text of JS_CallInternal between the entry and the block fixOneFrame drops, in the form of oneFrameSites, to update it after a review")
 	clock      = flag.Bool("clock", false, "print the fingerprints of the functions that read a clock, which lib/clock.go stands for, in the form of clockSites, to update it after a review")
 	fnShape    = flag.Bool("funcshape", false, "print the fingerprints of the functions and the struct lib/funcshape.go repeats or relies on, in the form of funcShapeSites, to update it after a review")
+	ownKeysF   = flag.Bool("ownkeys", false, "print the fingerprints of the functions and the struct lib/ownkeys.go repeats, relies on or is called from, in the form of ownKeysSites, to update it after a review")
 	qjsLibc    = flag.Bool("qjslibc", false, "print the fingerprints of the functions and variables of quickjs-libc.c and of those that stay, in the form of quickjsLibcSites, with what stays and what goes, from the files as taken from upstream, to update it after a review")
 
 	// The two allocation failure branches of XJS_ToCStringLen2, with or
@@ -245,7 +252,7 @@ func main() {
 		}
 		return
 	}
-	if *define || *backtrace || *regex || *repoll || *classEsc || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *search || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *up || *cells || *qjsLibc {
+	if *define || *backtrace || *regex || *repoll || *classEsc || *charge || *lazyAddr || *inline || *poll || *runtimeF || *front || *shape || *forIn || *bitwise || *eq || *jsonF || *search || *fnShape || *atomkey || *fieldchain || *recache || *clock || *oneFrame || *ownKeysF || *up || *cells || *qjsLibc {
 		files, err := filepath.Glob(filepath.Join("lib", "ccgo_*.go"))
 		var hw []*ast.File
 		if err == nil {
@@ -297,6 +304,8 @@ func main() {
 			err = fingerprintReport(files, hw, "clockSites", clockFingerprint)
 		} else if err == nil && *fnShape {
 			err = fingerprintReport(files, hw, "funcShapeSites", funcShapeFingerprint)
+		} else if err == nil && *ownKeysF {
+			err = fingerprintReport(files, hw, "ownKeysSites", ownKeysFingerprint)
 		} else if err == nil && *qjsLibc {
 			err = quickjsLibcReport(files, hw)
 		} else if err == nil && *cells {
@@ -530,7 +539,7 @@ func restoreBeforeOneFrame(b []byte) ([]byte, error) {
 // writes it, and restoreLast, which fixEngine calls first, undoes them.
 func fixLast(b []byte, name string) ([]byte, error) {
 	var err error
-	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixFieldChain, fixRegexCache, fixClock, fixVMClock} {
+	for _, fix := range []func([]byte, string) ([]byte, error){fixPoll, fixRuntimeField, fixFrontCache, fixShapeCache, fixFuncShape, fixAtomKey, fixFieldChain, fixRegexCache, fixClock, fixVMClock, fixOwnKeys} {
 		if b, err = fix(b, name); err != nil {
 			return nil, err
 		}
@@ -541,7 +550,7 @@ func fixLast(b []byte, name string) ([]byte, error) {
 // restoreLast undoes fixLast.
 func restoreLast(b []byte) ([]byte, error) {
 	var err error
-	for _, restore := range []func([]byte) ([]byte, error){restoreVMClock, restoreClock, restoreRegexCache, restoreFieldChain, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
+	for _, restore := range []func([]byte) ([]byte, error){restoreOwnKeys, restoreVMClock, restoreClock, restoreRegexCache, restoreFieldChain, restoreAtomKey, restoreFuncShape, restoreShapeCache, restoreFrontCache, restoreRuntimeField, restorePoll} {
 		if b, err = restore(b); err != nil {
 			return nil, err
 		}

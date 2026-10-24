@@ -4,6 +4,12 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Performance
+
+Without PGO, against v0.28.2.
+
+- Listing the own keys of an ordinary object, for `for in`, `Object.keys`, `values` and `entries`, object spread and rest, `Object.assign` and `JSON.stringify`, reads them from its shape in Go, and spread, rest, `values` and `entries` read plain values straight from the object: 0.990 of the time on the bench pages of tifa's example shop, 0.994 on its store pages and 0.987 on the MUI pages of tifa's test app, with the same HTML. `Object.keys` of six keys takes 134 ns rather than 542 and a spread of six keys 74 ns rather than 250 (Apple M4). A VM holds 8 KiB more.
+
 ## [v0.28.4] - 2026-10-24
 
 ### Changed

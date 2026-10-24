@@ -31,6 +31,12 @@ package main
 // (see fixDefine). objlitDefine writes only the value of the new slot
 // add_property returns, as JS_CreateProperty does, and reads no slot, so a
 // pending stack never passes through it.
+//
+// Nor does it see lib/ownkeys.go, which JS_GetOwnPropertyNamesInternal,
+// JS_CopyDataProperties and JS_GetOwnPropertyNames2 call first (see
+// fixOwnKeys). It reads the values of the slots of an object only when no
+// key it lists is the 'stack' key, so a pending stack never passes through
+// it: an object with such a key takes the engine's path.
 var slotSites = map[string]slotSite{
 	"XJS_ComputeMemoryUsage": {
 		"early slot compared=1 early slot read value=1 slot guard _js_backtrace_memory_usage=1",

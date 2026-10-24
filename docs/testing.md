@@ -83,6 +83,7 @@ go test -vet=off -run FieldChain . ./internal/fixlib     # o.x of strings, numbe
 go test -run JSON ./lib                                  # JSON strings give what Node gives, and runs stay in their buffer
 go test -run 'StringSearch|StringFind' ./lib ./internal/fixlib # includes, indexOf and the other searches find what a search with charCodeAt finds
 go test -run FuncShape ./lib                             # new functions get what Node gives, and the shapes held go with their context
+go test -vet=off -run OwnKeys . ./lib ./internal/fixlib # every listing of own keys gives what the engine gave, and the key cache drops shapes that change
 go test -run 'ShapeCache|FrontCache' ./lib               # the shape cache and the front cache
 go test -vet=off -run 'RegexCache|RegExpCache' ./lib .  # compiled regexps give what Node gives, and the cache keeps to its limits
 go test -vet=off -run 'RegExpCacheStops|BuiltinWorkStops' . # a timeout stops loops of regexp compiles, parsing and string building within 50ms

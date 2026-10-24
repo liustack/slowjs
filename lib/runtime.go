@@ -19,6 +19,7 @@ type TforkRuntime struct {
 	fn        TfuncShapes  // see funcshape.go
 	regexp    TregexpCache // see regexcache.go
 	young     Tyoung       // see younggc.go
+	keys      TownKeyCache // see ownkeys.go
 	// sharedDebug is set while JS_ReadObject reads with ReadObjSharedDebug,
 	// see shareddebug.go.
 	sharedDebug bool

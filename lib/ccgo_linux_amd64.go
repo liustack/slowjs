@@ -9728,6 +9728,8 @@ func _js_shape_hash_link(tls *libc.TLS, rt uintptr, sh uintptr) {
 }
 
 func _js_shape_hash_unlink(tls *libc.TLS, rt uintptr, sh uintptr) {
+	// Changed by internal/fixlib: the shape leaves the shape hash table, the key cache drops it (see fixOwnKeys).
+	ownKeyCacheDrop(rt, sh)
 	var h Tuint32_t
 	var psh uintptr
 	_, _ = h, psh
@@ -16199,6 +16201,10 @@ func XJS_FreePropertyEnum(tls *libc.TLS, ctx uintptr, tab uintptr, len1 Tuint32_
 //	/* return < 0 in case if exception, 0 if OK. ptab and its atoms must
 //	   be freed by the user. */
 func _JS_GetOwnPropertyNamesInternal(tls *libc.TLS, ctx uintptr, ptab uintptr, plen uintptr, p uintptr, flags int32) (r int32) {
+	// Changed by internal/fixlib: list the keys of an ordinary object in Go (see fixOwnKeys).
+	if r1, ok := ownKeys(tls, ctx, ptab, plen, p, flags); ok {
+		return r1
+	}
 	bp := tlsTake(tls, 80)
 	if bp == 0 {
 		bp = tls.Alloc(80)
@@ -36150,6 +36156,10 @@ exception:
 }
 
 func _JS_CopyDataProperties(tls *libc.TLS, ctx2 uintptr, target TJSValue, _source TJSValue, _excluded TJSValue, setprop TBOOL) (r int32) {
+	// Changed by internal/fixlib: copy the data properties of an ordinary object in Go (see fixOwnKeys).
+	if r1, ok := copyData(tls, ctx2, target, _source, _excluded, setprop); ok {
+		return r1
+	}
 	bp := tlsTake(tls, 112)
 	if bp == 0 {
 		bp = tls.Alloc(112)
@@ -82443,6 +82453,10 @@ exception:
 }
 
 func _JS_GetOwnPropertyNames2(tls *libc.TLS, ctx2 uintptr, obj1 TJSValue, flags int32, kind int32) (r1 TJSValue) {
+	// Changed by internal/fixlib: make the array of the keys, values or entries of an ordinary object in Go (see fixOwnKeys).
+	if r2, ok := ownKeysArray(tls, ctx2, obj1, flags, kind); ok {
+		return r2
+	}
 	bp := tlsTake(tls, 112)
 	if bp == 0 {
 		bp = tls.Alloc(112)
