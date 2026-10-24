@@ -27,8 +27,18 @@
 # its own Intl and Temporal, tifa's Go functions, no polyfill. It runs bench,
 # native and mui-native, never pf.
 #
+# liustack-tifa-nogoasm is the same row built with slowjs_nogoasm, as tifa
+# builds an app with build.goasm off: the interpreter in Go on linux/amd64.
+#
 # TIFA_ONLY=<engine>,<engine> runs only those engines (names as in the result
 # files). The check, timer and mem runs belong to liustack-quickjs.
+#
+# TIFA_BUNDLES=<dir> runs the bundles and inputs of <dir> (an absolute path,
+# laid out as this folder: bundles/<app>.js and in/<app>/*.json) in place of
+# the pinned ones. A bundle that tifa built as an ES module goes there twice:
+# as bundles/<app>.mjs, which the liustack-tifa rows compile as a module as
+# tifa does, and as bundles/<app>.js made by module-script.py, which every
+# other row runs as a script.
 #
 # Results: <out dir>/<engine>-<kind>.json and .meta, HTML in <out dir>/html.
 set -e
@@ -41,22 +51,26 @@ bin=$(absolute "$bin")
 [ -z "$nat" ] || nat=$(absolute "$nat")
 mkdir -p "$out/html" "$out/check"
 cd "$(dirname "$0")"
-list() { ls in/"$1"/*.json | tr '\n' , | sed 's/,$//'; }
+B=${TIFA_BUNDLES:-.}
+list() { ls "$B"/in/"$1"/*.json | tr '\n' , | sed 's/,$//'; }
+# tifa_bundle <app>: the module form for the tifa rows, when there is one.
+tifa_bundle() { if [ -f "$B/bundles/$1.mjs" ]; then echo "$B/bundles/$1.mjs"; else echo "$B/bundles/$1.js"; fi; }
 BENCH=$(list bench) SHOP=$(list shop) MUI=$(list mui)
 PF=prelude/nointl.js,polyfill/intl-polyfill.js
 run() { env TZ=UTC GOMAXPROCS=1 bash pagerun.sh "$@"; }
 want() { [ -z "${TIFA_ONLY:-}" ] || case ",$TIFA_ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 go_runs() { # go_runs <bin> <engine name> <yes: has own Intl, no: has none, tifa: own Intl and no polyfill run>
   want "$2" || return 0
-  local b=("$bin/$1" tifa-ssr -html "$out/html")
-  run "$out/$2-bench" "${b[@]}" -bundle bundles/bench.js -inputs $BENCH -warm 50 -n 200 -tag -bench
+  local b=("$bin/$1" tifa-ssr -html "$out/html") bench=$B/bundles/bench.js shop=$B/bundles/shop.js mui=$B/bundles/mui.js
+  if [ "$3" = tifa ]; then bench=$(tifa_bundle bench) shop=$(tifa_bundle shop) mui=$(tifa_bundle mui); fi
+  run "$out/$2-bench" "${b[@]}" -bundle $bench -inputs $BENCH -warm 50 -n 200 -tag -bench
   if [ "$3" != tifa ]; then
-    run "$out/$2-pf" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -prelude $PF -warm 20 -n 100 -tag -pf
-    run "$out/$2-mui-pf" "${b[@]}" -bundle bundles/mui.js -inputs $MUI -prelude $PF -warm 20 -n 100 -tag -mui-pf
+    run "$out/$2-pf" "${b[@]}" -bundle $shop -inputs $SHOP -prelude $PF -warm 20 -n 100 -tag -pf
+    run "$out/$2-mui-pf" "${b[@]}" -bundle $mui -inputs $MUI -prelude $PF -warm 20 -n 100 -tag -mui-pf
   fi
   if [ "$3" != no ]; then
-    run "$out/$2-native" "${b[@]}" -bundle bundles/shop.js -inputs $SHOP -warm 20 -n 100 -tag -native
-    run "$out/$2-mui-native" "${b[@]}" -bundle bundles/mui.js -inputs $MUI -warm 20 -n 100 -tag -mui-native
+    run "$out/$2-native" "${b[@]}" -bundle $shop -inputs $SHOP -warm 20 -n 100 -tag -native
+    run "$out/$2-mui-native" "${b[@]}" -bundle $mui -inputs $MUI -warm 20 -n 100 -tag -mui-native
   fi
   return 0
 }
@@ -64,21 +78,22 @@ go_runs() { # go_runs <bin> <engine name> <yes: has own Intl, no: has none, tifa
 if want liustack-quickjs; then
 for app in bench mui shop; do
   in=$(list $app)
-  run "$out/check/$app-normal" "$bin/liustack" tifa-ssr -bundle bundles/$app.js -inputs $in -warm 0 -n 1 -html "$out/check" -tag -$app-normal
-  run "$out/check/$app-stub" "$bin/liustack" tifa-ssr -bundle bundles/$app.js -inputs $in -prelude prelude/nointl-stub.js -warm 0 -n 1 -html "$out/check" -tag -$app-stub
-  for f in in/$app/*.json; do
-    run "$out/check/$app-proxy-$(basename "$f" .json)" "$bin/liustack" tifa-ssr -bundle bundles/$app.js -inputs $f -prelude prelude/intl-proxy.js -probe '__intlHits()' -warm 0 -n 0
+  run "$out/check/$app-normal" "$bin/liustack" tifa-ssr -bundle $B/bundles/$app.js -inputs $in -warm 0 -n 1 -html "$out/check" -tag -$app-normal
+  run "$out/check/$app-stub" "$bin/liustack" tifa-ssr -bundle $B/bundles/$app.js -inputs $in -prelude prelude/nointl-stub.js -warm 0 -n 1 -html "$out/check" -tag -$app-stub
+  for f in "$B"/in/$app/*.json; do
+    run "$out/check/$app-proxy-$(basename "$f" .json)" "$bin/liustack" tifa-ssr -bundle $B/bundles/$app.js -inputs $f -prelude prelude/intl-proxy.js -probe '__intlHits()' -warm 0 -n 0
   done
 done
 fi
 go_runs liustack liustack-quickjs yes
 go_runs liustacktifa liustack-tifa tifa
+go_runs liustacktifanogoasm liustack-tifa-nogoasm tifa
 if want liustack-quickjs; then
-run "$out/liustack-quickjs-timer-pf" "$bin/liustack" tifa-ssr -bundle bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
-run "$out/liustack-quickjs-timer-native" "$bin/liustack" tifa-ssr -bundle bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
+run "$out/liustack-quickjs-timer-pf" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
+run "$out/liustack-quickjs-timer-native" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
 for b in liustack:liustack-quickjs goquickjs:go-quickjs-interp; do
-  run "$out/${b#*:}-mem-pf" "$bin/${b%%:*}" tifa-ssr -bundle bundles/shop.js -inputs in/shop/store-zh-CN-cart.json -prelude $PF -warm 0 -n 0 -mem 20
-  run "$out/${b#*:}-mem-native" "$bin/${b%%:*}" tifa-ssr -bundle bundles/shop.js -inputs in/shop/store-zh-CN-cart.json -warm 0 -n 0 -mem 20
+  run "$out/${b#*:}-mem-pf" "$bin/${b%%:*}" tifa-ssr -bundle $B/bundles/shop.js -inputs $B/in/shop/store-zh-CN-cart.json -prelude $PF -warm 0 -n 0 -mem 20
+  run "$out/${b#*:}-mem-native" "$bin/${b%%:*}" tifa-ssr -bundle $B/bundles/shop.js -inputs $B/in/shop/store-zh-CN-cart.json -warm 0 -n 0 -mem 20
 done
 fi
 go_runs goquickjs go-quickjs-interp yes
@@ -91,17 +106,17 @@ for q in quickjs-2026-06-04 quickjs-master quickjs-ng; do
   want $q || continue
   qjs=$nat/$q/qjs; [ -x "$qjs" ] || qjs=$nat/$q/build/qjs
   d=("$qjs" --std ../native/ssr-driver.js "engine=$q" "html=$out/html")
-  run "$out/$q-bench" "${d[@]}" bundle=bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
-  run "$out/$q-pf" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
-  run "$out/$q-mui-pf" "${d[@]}" bundle=bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
+  run "$out/$q-bench" "${d[@]}" bundle=$B/bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
+  run "$out/$q-pf" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
+  run "$out/$q-mui-pf" "${d[@]}" bundle=$B/bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
 done
 for m in jit jitless; do
   want node-$m || continue
   f=(); [ "$m" = jitless ] && f=(--jitless)
   d=("$nat/node-v24.11.1-linux-x64/bin/node" "${f[@]}" ../native/node-ssr.cjs "engine=node-$m" "html=$out/html")
-  run "$out/node-$m-bench" "${d[@]}" bundle=bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
-  run "$out/node-$m-pf" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
-  run "$out/node-$m-native" "${d[@]}" bundle=bundles/shop.js inputs=$SHOP warm=20 n=100 tag=-native
-  run "$out/node-$m-mui-pf" "${d[@]}" bundle=bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
-  run "$out/node-$m-mui-native" "${d[@]}" bundle=bundles/mui.js inputs=$MUI warm=20 n=100 tag=-mui-native
+  run "$out/node-$m-bench" "${d[@]}" bundle=$B/bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
+  run "$out/node-$m-pf" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
+  run "$out/node-$m-native" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP warm=20 n=100 tag=-native
+  run "$out/node-$m-mui-pf" "${d[@]}" bundle=$B/bundles/mui.js inputs=$MUI prelude=$PF warm=20 n=100 tag=-mui-pf
+  run "$out/node-$m-mui-native" "${d[@]}" bundle=$B/bundles/mui.js inputs=$MUI warm=20 n=100 tag=-mui-native
 done
