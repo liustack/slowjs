@@ -91,14 +91,14 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 75,000 expressions.
 - **Strings arrive whole.** A Go string from javascript is always valid UTF-8, and a Go string with invalid bytes reads in javascript as Go itself decodes it.
-- **Faster pages.** On the React pages of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, the engine renders 1.63 to 1.66 times as fast as the original modernc.org/quickjs it started from (measured at v0.26.15), and several VMs on several cores no longer wait on one lock.
+- **Faster pages.** On the React pages of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, a page takes 0.91 to 0.93 of the time of C QuickJS as tifa builds and runs it, and 1.14 to 1.15 times on its test pages that need no `Intl` (see [the comparison](docs/benchmarks.md#tifas-current-bundles)). Several VMs on several cores no longer wait on one lock.
 
 ## Why you can trust it
 
 - **The engine is upstream QuickJS.** `lib/` is what ccgo makes from Bellard's C, merged from upstream libquickjs with its history. slowjs changes it only through `internal/fixlib`, which rewrites the generated Go mechanically, and through a C patch for a regeneration. The committed files are exactly what `fixlib` makes from the upstream files, byte for byte ([how to check](docs/testing.md#same-as-upstream-after-fixlib)).
 - **It stops when upstream moves.** Every rewrite checks the code it touches against fingerprints or counts. When an upstream release changes that code, `fixlib` stops and names it, rather than rewriting code it has not seen.
 - **Every change is written down.** [docs/fork-changes](docs/fork-changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
-- **The tests are upstream's and more.** test262 gives the same 58 known failures as upstream libquickjs, line for line. On top come over 300 tests of its own, and leak checks under libc's allocator that tracks every allocation.
+- **The tests are upstream's and more.** test262 gives the same 58 known failures as upstream libquickjs, line for line. On top come over 600 tests of its own, and leak checks under libc's allocator that tracks every allocation.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
 
 ## Where it comes from
