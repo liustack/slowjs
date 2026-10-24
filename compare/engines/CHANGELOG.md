@@ -110,3 +110,22 @@ version of the comparison made it (the commit of this repository).
   the other workloads unless `-engines` names it.
 - Runs of 2026-10-24 (`results/2026-10-24-main-tifa-row-gcp-pages`) cover the
   tifa pages for five rows only. The other engines were not run again.
+
+## 2026-10-24: today's tifa bundles, and slowjs without the Go assembly
+
+- `tifa/run.sh` takes `TIFA_BUNDLES=<dir>`, a folder laid out as `tifa/`
+  (`bundles/<app>.js`, `in/<app>/*.json`), to run bundles that tifa builds
+  now in place of the pinned ones. The pinned bundles and their runs stay
+  as they are.
+- tifa builds its SSR bundle as an ES module since tifa 6e062d6. The
+  `liustack-tifa` rows compile `bundles/<app>.mjs` as a module, as tifa
+  does, and give the VM `__tifa_async_context__` as tifa does. Every other
+  row runs `bundles/<app>.js`, which `tifa/module-script.py` makes from the
+  module: the final `export{};` dropped and the rest in a strict function.
+- New row `liustack-tifa-nogoasm`: the `liustack-tifa` row built with
+  `slowjs_nogoasm`, as tifa builds an app with `build.goasm: false`, so the
+  interpreter in Go on linux/amd64 rather than the one in Go assembly.
+- The Node rows make the getters Node has on `globalThis` (`crypto`,
+  `navigator`) plain values before the bundle runs, since the host patches
+  of the new bundles assign them, and add `Iterator.concat`, which
+  TanStack Router calls and Node v24.11.1 lacks.

@@ -12,7 +12,8 @@ the script on a CPU of their own). Ratios are against liustack-quickjs on the
 same page, as a geometric mean over the pages with the range in brackets.
 
 liustack-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
-tifa's Go functions, no polyfill), so it has no pf runs. Its pages are
+tifa's Go functions, no polyfill), so it has no pf runs, and so is
+liustack-tifa-nogoasm, built with slowjs_nogoasm. Its pages are
 compared with the pages of liustack-quickjs on the polyfill, where the Intl
 output of the two may differ in U+202F (see tifa_row_check).
 """
@@ -28,9 +29,9 @@ import re
 import sys
 from pathlib import Path
 
-GO = ["liustack-quickjs", "liustack-tifa", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
+GO = ["liustack-quickjs", "liustack-tifa", "liustack-tifa-nogoasm", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"]
 REF = ["quickjs-2026-06-04", "quickjs-master", "quickjs-ng", "node-jit", "node-jitless"]
-OWN_INTL = {"liustack-quickjs", "liustack-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
+OWN_INTL = {"liustack-quickjs", "liustack-tifa", "liustack-tifa-nogoasm", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 LABEL = {
     "quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
     "quickjs-master": "C QuickJS master 7d1c13c5d8 (reference)",
@@ -40,7 +41,7 @@ LABEL = {
 }
 
 # Runs left out of run.sh, and why.
-NOT_RUN = {("liustack-tifa", "pf"): "not run: this row has no polyfill", ("liustack-tifa", "mui-pf"): "not run: this row has no polyfill"}
+NOT_RUN = {(e, k): "not run: this row has no polyfill" for e in ("liustack-tifa", "liustack-tifa-nogoasm") for k in ("pf", "mui-pf")}
 
 out = None
 mask = lambda b: re.sub(rb"\bu:\d{13}\b", b"u:0", b)
@@ -301,6 +302,7 @@ def vs_c():
         ("liustack-quickjs, same JavaScript (polyfill)", "liustack-quickjs", pf),
         ("liustack-quickjs, own Intl only", "liustack-quickjs", own),
         ("liustack-tifa, as tifa runs it", "liustack-tifa", own),
+        ("liustack-tifa-nogoasm, as tifa runs it with build.goasm off", "liustack-tifa-nogoasm", own),
         ("C QuickJS 2026-06-04", "quickjs-2026-06-04", pf),
         ("Node v24.11.1", "node-jit", pf),
         ("Node v24.11.1 --jitless", "node-jitless", pf),

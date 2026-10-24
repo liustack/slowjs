@@ -101,3 +101,32 @@ func TestHashInGoFindsTheHashOfTheMUIBundle(t *testing.T) {
 		}
 	}
 }
+
+// A bundle named .mjs is an ES module: its top-level names stay out of the
+// global object, and the async context tifa gives a VM is there for it.
+func TestTifaCompilesModuleBundles(t *testing.T) {
+	const src = `const local = 1
+globalThis.startRender = () => { globalThis.renderResult = typeof __tifa_async_context__.get + ' ' + typeof local + ' ' + typeof globalThis.local }
+export {};`
+	vm, err := newTifa(Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vm.Close()
+	p, err := vm.Compile("app.mjs", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vm.Run(p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := vm.Call("startRender"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := vm.Eval("r.js", "globalThis.renderResult"); err != nil || got != "function number undefined" {
+		t.Errorf("render result %q, %v", got, err)
+	}
+	if _, err := vm.Compile("app.js", src); err == nil {
+		t.Error("a .js bundle with export compiled, want a syntax error as a script")
+	}
+}

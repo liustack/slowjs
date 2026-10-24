@@ -33,7 +33,7 @@ const (
 
 func init() {
 	register(&Engine{
-		Name:           "liustack-tifa",
+		Name:           tifaName,
 		Module:         "github.com/liustack/slowjs",
 		New:            newTifa,
 		SharedPrograms: true,
@@ -41,8 +41,8 @@ func init() {
 		Interrupt:      true,
 		MemoryLimit:    true,
 		Notes: []string{
-			"slowjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__ and __tifa_random_bytes__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
-			"The bundle is compiled once into a SharedBytecode that every VM loads.",
+			"slowjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__, __tifa_random_bytes__ and __tifa_async_context__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
+			"The bundle is compiled once into a SharedBytecode that every VM loads, as an ES module when its file name ends in .mjs, as tifa compiles the bundles it builds since they are ES modules.",
 			"A bundle with @emotion/hash gets the one-line change the tifa plugin makes to murmur2 (see hashInGo), so that it asks __tifa_murmur2__ first.",
 			"A render is startRender, the promise jobs and the read of the result, as ssr.RenderVM does them. After each render comes a young GC and, by the pool's rules, a full GC (Settle), counted in the CPU time per render but not in the wall time.",
 		},
@@ -76,9 +76,14 @@ var (
 )
 
 // compileTifa turns src into bytecode once in a throwaway VM, as ssr.Compile
-// does, and returns the same SharedBytecode for the same text.
+// does, and returns the same SharedBytecode for the same text compiled the
+// same way: as an ES module when name ends in .mjs, else as a script.
 func compileTifa(name, src string) (Program, error) {
-	if p, ok := tifaPrograms[src]; ok {
+	flags, key := slowjs.EvalGlobal, "script:"+src
+	if strings.HasSuffix(name, ".mjs") {
+		flags, key = slowjs.EvalModule, "module:"+src
+	}
+	if p, ok := tifaPrograms[key]; ok {
 		return p, nil
 	}
 	if tifaCompileVM == nil {
@@ -92,7 +97,7 @@ func compileTifa(name, src string) (Program, error) {
 	}
 	text, n := hashInGo(src)
 	bundleRewrites += n
-	code, err := tifaCompileVM.Compile(text, slowjs.EvalGlobal)
+	code, err := tifaCompileVM.Compile(text, flags)
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
@@ -100,7 +105,7 @@ func compileTifa(name, src string) (Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	tifaPrograms[src] = p
+	tifaPrograms[key] = p
 	return p, nil
 }
 
@@ -123,6 +128,9 @@ func newTifa(o Options) (VM, error) {
 	}
 	if err == nil {
 		err = registerHash(vm)
+	}
+	if err == nil {
+		err = registerAsyncContext(vm)
 	}
 	if err != nil {
 		return nil, errors.Join(err, vm.Close())

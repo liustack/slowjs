@@ -8,7 +8,7 @@
 package engine
 
 // The Go functions tifa gives each VM of its pool, copied from
-// internal/ssr/hash.go and internal/ssr/random.go of github.com/liustack/tifa
+// internal/ssr/hash.go, internal/ssr/random.go and internal/ssr/asynccontext.go of github.com/liustack/tifa
 // (MIT) so that this module does not import tifa. When tifa changes them,
 // copy the change.
 
@@ -173,4 +173,35 @@ func hashInGo(src string) (string, int) {
 		return "function " + sub[1] + "(" + sub[2] + "){var tifaHash=\"function\"===typeof __tifa_murmur2__?__tifa_murmur2__(" + sub[2] + "):void 0;if(void 0!==tifaHash)return tifaHash;" + sub[3]
 	})
 	return out, n
+}
+
+// asyncContextHook is __tifa_async_context__: the two functions of the
+// engine's async context, which tifa's AsyncLocalStorage keeps its stores in.
+// The bundle takes them and removes the name before any app code runs.
+const asyncContextHook = `(get, set) => {
+  Object.defineProperty(globalThis, '__tifa_async_context__', { value: { get, set }, configurable: true })
+}`
+
+func registerAsyncContext(vm *slowjs.VM) error {
+	define, err := vm.EvalValue(asyncContextHook, slowjs.EvalGlobal)
+	if err != nil {
+		return err
+	}
+	defer define.Free()
+	get, err := vm.NewBuiltinFunction(slowjs.GetAsyncContext)
+	if err != nil {
+		return err
+	}
+	defer get.Free()
+	set, err := vm.NewBuiltinFunction(slowjs.SetAsyncContext)
+	if err != nil {
+		return err
+	}
+	defer set.Free()
+	r, err := define.CallValue(slowjs.UndefinedValue, get, set)
+	if err != nil {
+		return err
+	}
+	r.Free()
+	return nil
 }
