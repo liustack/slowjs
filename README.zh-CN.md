@@ -22,7 +22,7 @@ go get github.com/liustack/slowjs
 
 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64。在其他平台上构建会马上报错，错误里写明这几个平台。
 
-在 linux/amd64 上，引擎用一个从 C 源码编译、以 Go 汇编发布的解释器执行 JavaScript，渲染 tifa 的页面耗时是其他平台所用 Go 解释器的 0.850 到 0.940。加 `-tags slowjs_nogoasm` 构建，在这里也用 Go 解释器。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+在 linux/amd64 上，引擎用一个从 C 源码编译、以 Go 汇编发布的解释器执行 JavaScript，比其他平台所用的 Go 解释器，渲染 tifa 的商店页面快 6%，MUI 页面快 15%（单个 VM，不开 PGO）。加 `-tags slowjs_nogoasm` 构建，在这里也用 Go 解释器。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
 
 ## 第一个 VM
 
@@ -84,7 +84,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
 - **`GetAsyncContext` 和 `SetAsyncContext`**：两个 Builtin，读写一个跟着 promise 任务走的对象：`then` 或 `await` 运行时拿到的是注册时设的那个，所以用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store，和 Node 一样。从不设置它的 VM 跑 promise 和以前一样。[详情](docs/fork-changes/go-api.md#the-async-context-of-promise-jobs)
 
-前五项是 v0.26.17 加的，接下来两项是 v0.27.0 加的。`VM.SetClock` 和 `VM.Now` 尚未发布。
+前五项是 v0.26.17 加的。其余的：`*Error` 的字段在 v0.26.7，shape 缓存在 v0.26.16，`VM.OnClose` 和 `temporal` 包在 v0.27.0，`VM.RunYoungGC` 在 v0.27.3，`SharedBytecode` 在 v0.28.1，`VM.SetClock` 和 `VM.Now` 在 v0.28.2，异步上下文在 v0.28.5。
 
 ## 用了以后有什么不同
 
@@ -125,6 +125,6 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
 
 ## 许可证
 
-slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。有 14 个文件照着引擎的部分代码写，SPDX 标识是 `MIT AND BSD-3-Clause`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 slowjs 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
+slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。有 23 个文件照着引擎的部分代码写，SPDX 标识是 `MIT AND BSD-3-Clause`。来自上游的部分保留各自的许可证：Go API 和 ccgo 转译的引擎（包括 `lib/` 里生成的文件，以及 slowjs 对它们的改写）用 BSD-3-Clause（[LICENSE](LICENSE)、[lib/LICENSE](lib/LICENSE)）和 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)）。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
 
 用这个模块构建并分发二进制的程序，要附上这些许可证的声明。哪个路径用哪个许可证、要附哪些文本，见 [NOTICE.md](NOTICE.md)。
