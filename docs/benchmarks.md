@@ -39,7 +39,10 @@ from the engine code of the v0.27.2 tag. The earlier runs are in
   is the only row with features the C QuickJS and Node rows cannot have.
   Against C QuickJS 2026-06-04 it takes 1.48 times the time on the bench
   pages, 0.52 on the MUI pages and 1.07 on the shop, where the same
-  JavaScript on the polyfill takes 1.49, 1.18 and 1.44.
+  JavaScript on the polyfill takes 1.49, 1.18 and 1.44. With v0.28.6, its
+  Go assembly interpreter and the bundles tifa builds today, the same row
+  takes 1.22, 0.45 and 0.97, and 1.46, 0.48 and 1.04 with the interpreter
+  in Go (see [tifa's current bundles](#tifas-current-bundles)).
 - **General speed.** slowjs is not the fastest pure Go engine.
   go-quickjs without its JIT (its default) scores 1.8 times as high on the
   V8 suite, parses and writes JSON in 56% to 62% of the time, runs regular
@@ -369,6 +372,90 @@ Node own-Intl rows have the same MUI pages as the tifa row, 3 of 3), so the
 polyfill is the one that differs. With U+202F
 changed to a space the pages are byte for byte the same.
 
+### tifa's current bundles
+
+The bundles in `tifa/bundles` are pinned, so the runs above stay comparable
+with each other, but tifa has changed them since: its SSR bundle is an ES
+module now, i18next and lucide-react are cached, and the MUI bundle hashes
+with `__tifa_murmur2__` itself. This run uses the bundles tifa builds today.
+
+Run of 2026-10-24 on the GCP machine, CPU 3 and its sibling CPU 7 idle,
+Go 1.27.2, `-pgo=off`, slowjs v0.28.6, whose default interpreter on
+linux/amd64 is the one in Go assembly
+([results](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md)).
+
+- **Bundles.** tifa c729ad2 built `examples/shop`, `test/apps/mui` and
+  `test/apps/bench` with `go tool tifa build`, and the inputs are the data
+  each built server sends for the same pages as before (20 shop pages, 3 MUI
+  pages, 2 bench pages). The `liustack-tifa` rows compile each `ssr.js` as a
+  module, as tifa does. The other rows run a strict script that
+  `tifa/module-script.py` made from it. SHA256:
+
+  | File | SHA256 |
+  |---|---|
+  | `shop.mjs` | `096fd9fb5ad90471d5dcdfa42f29ae6f8c95be25473227286210697a3e8d7dab` |
+  | `shop.js` | `a17eb95a1fee16e4970e7c4769597197f10b59b9676447df5931bc34600b4287` |
+  | `mui.mjs` | `da8756f5f2adb3f6ea650b3c02962d094905711e4da0aa1225338e3ea898f00a` |
+  | `mui.js` | `6af6699d1dc48c388c86612d31fd92ea399c5243b440f4702c7e94c573d218ce` |
+  | `bench.mjs` | `083647ec762ac9589db3b7e6e08b16131e7224d20aeeae84a02af02dcc65fe5e` |
+  | `bench.js` | `7d8199f45774d61857a51c90338c6e5c0cfb126141f904ed53c891a472feabb9` |
+
+- **Rows.** slowjs three times: the same JavaScript on the polyfill, as tifa
+  runs it, and as tifa runs it built with `slowjs_nogoasm`
+  (`liustack-tifa-nogoasm`, what an app built with tifa's `build.goasm: false`
+  gets). Then C QuickJS 2026-06-04 and master, QuickJS-NG v0.17.0 and Node
+  v24.11.1 with and without its JIT. The other pure Go engines were not run.
+- **Polyfill.** Built again from `tifa/polyfill/package-lock.json` with
+  esbuild 0.28.2 (SHA256 `e336e59d658a8196cebbc9c26361d54e7e96f1ad6748981d823b0d5ea288e21a`).
+
+Each cell: geometric mean over the pages of a bundle of the time per render as
+a ratio to C QuickJS 2026-06-04 (below 1 is faster than C), the range in
+brackets.
+
+| Row | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
+|---|---|---|---|
+| liustack-quickjs, same JavaScript (polyfill) | 1.25 (1.17–1.34) | 0.99 (0.90–1.10) | 1.29 (1.22–1.40) |
+| liustack-quickjs, own Intl only | 1.25 (1.17–1.34) | 0.60 (0.44–0.98) | 1.01 (0.83–1.44) |
+| **liustack-tifa, as tifa runs it** | **1.22 (1.14–1.31)** | **0.45 (0.33–0.74)** | **0.97 (0.83–1.23)** |
+| liustack-tifa-nogoasm, the interpreter in Go | 1.46 (1.39–1.53) | 0.48 (0.36–0.78) | 1.04 (0.87–1.37) |
+| C QuickJS 2026-06-04 | 1.00 | 1.00 | 1.00 |
+| C QuickJS master 7d1c13c5d8 | 1.01 (1.00–1.02) | 1.00 (0.99–1.00) | 1.00 (0.95–1.01) |
+| QuickJS-NG v0.17.0 | 1.33 (1.32–1.34) | 0.96 (0.93–0.99), 2 pages | 1.25 (1.20–1.31) |
+| Node v24.11.1 | 0.16 (0.12–0.21) | 0.16 (0.13–0.21) | 0.24 (0.19–0.31) |
+| Node v24.11.1 `--jitless` | 0.53 (0.50–0.56) | 0.48 (0.42–0.57) | 0.59 (0.55–0.62) |
+
+Reading it:
+
+- **The Go assembly interpreter.** As tifa runs it, the page takes 0.84 of
+  the time of the interpreter in Go on the bench pages (0.83 to 0.85), 0.93
+  on the shop (0.89 to 0.95) and 0.93 on MUI. The `liustack-tifa-nogoasm` row
+  lands about where slowjs was in the run on the pinned bundles (1.46 against
+  1.48 on bench).
+- **Against C.** As tifa runs it, slowjs is now faster than C QuickJS on the
+  polyfill on the shop (0.97) and on MUI (0.45), and takes 1.22 times the
+  time of C on the bench pages, which need no Intl. Running the same
+  JavaScript, it takes 1.25 to 1.29 times the time of C on bench and the shop,
+  and the same time as C on MUI.
+- **The tifa setup against plain slowjs with its own Intl.** 0.98 on bench,
+  0.96 on the shop (0.66 to 1.01: the English journal page takes 0.66) and
+  0.76 on MUI, where the hash in Go makes 279754 calls in the run.
+- **QuickJS-NG.** The MUI order page leaves no `renderResult`, so NG renders 2
+  of the 3 MUI pages. On the shop it renders all 20, and the two order pages
+  differ as before (one more `<!-- -->`).
+- GC as tifa runs it, in the three runs of the tifa row: 500 young and 2 full
+  GCs (bench), 2411 and 9 (shop), 362 and 1 (MUI). The engine collected
+  during a render once, on bench.
+
+The tifa row's HTML against the polyfill row's: bench and the shop the same
+on every page, MUI the same but for U+202F on all 3 pages, as above.
+
+The new bundles needed three changes to the harness, listed in
+[the comparison's CHANGELOG](../compare/engines/CHANGELOG.md): the module
+form for the tifa rows with tifa's `__tifa_async_context__`, the script form
+for the others, and two shims in the Node rows (plain values in place of the
+getters on `globalThis`, and `Iterator.concat`, which TanStack Router calls
+and Node v24.11.1 lacks).
+
 ### What the polyfill costs
 
 On liustack-quickjs, from the same runs:
@@ -654,6 +741,13 @@ pieces on a shared machine, and `TIFA_CPU` and `TIFA_SIBLING` pin the runs to
 another CPU and its hyperthread sibling than CPU 1 and 5. The check, timer and
 memory runs belong to `liustack-quickjs`.
 
+`TIFA_BUNDLES=<dir>` runs another set of bundles and inputs, laid out as
+`tifa/` (`bundles/<app>.js`, `in/<app>/*.json`), in place of the pinned ones.
+tifa builds its SSR bundle as an ES module: put it there as
+`bundles/<app>.mjs`, which the `liustack-tifa` rows compile as a module, and
+as `bundles/<app>.js` made by `tifa/module-script.py <app>.mjs <app>.js`,
+which every other row runs as a script.
+
 When a page leaves an engine unusable (go-quickjs closes its runtime after
 a page fails), run the shop again without the failing pages into
 `<engine>-<kind>-rest.json` in the same directory: `pages.py` takes the
@@ -719,6 +813,7 @@ At each release, follow "Engine comparison" in
 
 | Run | slowjs | Machine | Notes |
 |---|---|---|---|
+| [2026-10-24-v0.28.6-gcp-pages](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md) | v0.28.6 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 3 | tifa pages only, on the bundles tifa c729ad2 builds rather than the pinned ones: slowjs three times (same JavaScript, as tifa runs it, and as tifa runs it without the Go assembly interpreter), C QuickJS 2026-06-04 and master, QuickJS-NG and Node with and without its JIT. Core pair 3-7 under a lock. The other engines were not run again |
 | [2026-10-24-main-tifa-row-gcp-pages](../compare/engines/results/2026-10-24-main-tifa-row-gcp-pages.md) | main (c17092a) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | tifa pages only: slowjs twice (same JavaScript, and as tifa runs it), C QuickJS 2026-06-04 and Node with and without its JIT, with the MUI pages timed for the first time. Core pair 1-5 under a lock. The other engines were not run again |
 | [2026-10-23-v0.27.2-gcp](../compare/engines/results/2026-10-23-v0.27.2-gcp.md) | v0.27.2 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in, the same 80215 runs pass. React page 15.1 ms of CPU rather than 14.9, V8 score 835 rather than 854, JSON and regexps 1% to 3% faster. `string_to_int` and `array_read` cross the far-behind line, `string_to_float` drops under it |
 | [2026-10-22-v0.27.1-gcp](../compare/engines/results/2026-10-22-v0.27.1-gcp.md) | v0.27.1 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-22-v0.27.1-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in. React page 14.9 ms of CPU rather than 16.3, V8 score 854 rather than 800, `Date.now()` no longer far behind, all 13 Intl probes pass |
