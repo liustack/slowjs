@@ -1,47 +1,78 @@
 ---
-summary: 'The goasm build tag: how to turn on the interpreter generated from the C on linux/amd64, what it gains, its stack and ABI rules, how to regenerate and check it, and what must hold before it becomes the default'
+summary: 'The goasm interpreter, the default on linux/amd64: how to turn it off, what it gains with one VM and with several, its memory and GC stops, its stack and ABI rules, how to regenerate and check it, and the one check left'
 read_when:
-  - Turning on the goasm interpreter in a program, or deciding whether to
+  - Turning off the goasm interpreter in a program, or deciding whether to
   - Building or regenerating the goasm interpreter
   - Changing the C patch, the interpreter rules of fixlib, Go versions or LLVM versions
-  - fixGoasm, TestGoasmCoversInterpreterRules or TestGoasmCoversHelperRules stops
+  - fixGoasm, TestGoasmCoversInterpreterRules, TestGoasmCoversHelperRules or TestOneInterpreterPerBuild stops
 ---
 
 # The goasm interpreter
 
-With the `goasm` build tag, a program on linux/amd64 runs `JS_CallInternal`,
-the bytecode interpreter, as machine code that LLVM compiled from the
-patched QuickJS C, shipped in the module as Go assembly. Everything else of
-the engine stays the Go that ccgo makes. The tag is off by default.
+On linux/amd64 a program runs `JS_CallInternal`, the bytecode interpreter, as
+machine code that LLVM compiled from the patched QuickJS C, shipped in the
+module as Go assembly. Everything else of the engine stays the Go that ccgo
+makes. Other targets run the Go interpreter that ccgo makes from the same C.
 
-## Turning it on
+## Turning it off
 
-Pass the tag to the Go command that builds the program:
+Pass the `slowjs_nogoasm` tag to the Go command that builds the program:
 
 ```sh
-CGO_ENABLED=0 go build -tags goasm ./cmd/server
+CGO_ENABLED=0 go build -tags slowjs_nogoasm ./cmd/server
 ```
 
-- It takes effect on linux/amd64 only. On darwin, on linux/arm64 and on
-  windows the tag changes nothing: those builds keep the Go interpreter.
-- It needs nothing more than the default build: no cgo, no C compiler, no
-  LLVM and no shared library. The assembly is committed.
-- Scripts give the same results: the same test262 errors, the same HTML of
-  tifa's pages, the same limits (eval timeout, memory limit, stack depth,
-  uncatchable interrupts). A panic in a Go function and a nil dereference
-  in the engine still reach Go as before.
-- Profiles show the whole interpreter as one function, `goasmRun`, and
-  stack traces of a crash inside it end there.
+- It takes effect on linux/amd64 only. darwin, linux/arm64 and windows
+  always run the Go interpreter, with or without the tag.
+- The `goasm` tag, which turned the interpreter on up to v0.28.5, is still
+  accepted and changes nothing.
+- The default build needs nothing more than before: no cgo, no C compiler,
+  no LLVM and no shared library. The assembly is committed.
+- Scripts give the same results with either interpreter: the same test262
+  errors, the same HTML of tifa's pages, the same limits (eval timeout,
+  memory limit, stack depth, uncatchable interrupts). A panic in a Go
+  function and a nil dereference in the engine still reach Go as before.
+- Profiles show the whole goasm interpreter as one function, `goasmRun`, and
+  stack traces of a crash inside it end there. Turn it off to profile the
+  interpreter by Go function.
+- tifa builds with it unless the project file says `build.goasm: false`.
 
 What it gains, measured on 2026-10-24 on a GCP VM of an AMD EPYC 7B13
 (one core, GOMAXPROCS=1, no PGO, three code layouts, six alternating rounds
 each, sum of the median render times): the six shop workbench pages of
-tifa render 6.0% faster than with the default build (0.922 to 0.964 of
+tifa render 6.0% faster than with the Go interpreter (0.922 to 0.964 of
 its time), and the three pages of tifa's MUI test app 15.0% faster
 (0.834 to 0.875). The gain is largest on code that runs many bytecodes per
 call into Go. With PGO on both builds, each with its own profile, the gap
 stays the same or grows (6.1% and 14.2% for the previous generated code,
 in four rounds of one layout, against 4.0% and 12.9% without PGO).
+
+With several VMs it gains more. Pages rendered a second by tifa's pool, one
+goroutine per VM, the pages in turn, 60 seconds after a warmup, three
+rounds over three code layouts, no PGO, slowjs v0.28.5 with and without the
+tag of that release, on the same machine with nothing else running:
+
+| Pages | VMs and CPUs | Go interpreter | goasm | goasm over Go | P50, P99 (ms) Go | P50, P99 (ms) goasm |
+| --- | --- | --- | --- | --- | --- | --- |
+| shop | 4 VMs on 4 cores, GOMAXPROCS=4 | 252.6 | 264.2 | 1.046 (1.026 to 1.082) | 10.9, 30.3 | 10.3, 29.8 |
+| shop | 8 VMs on 8 hyperthreads, GOMAXPROCS=8 | 302.5 | 328.2 | 1.085 (1.060 to 1.118) | 18.2, 52.2 | 16.7, 48.0 |
+| MUI | 4 VMs on 4 cores | 41.3 | 48.4 | 1.171 (1.148 to 1.194) | 70.4, 158 | 60.6, 135 |
+| MUI | 8 VMs on 8 hyperthreads | 49.9 | 60.4 | 1.211 (1.205 to 1.219) | 117, 263 | 96.4, 219 |
+
+It also takes less memory. After ten minutes of 8 VMs rendering (about
+180,000 to 195,000 shop renders, or 30,000 to 36,000 MUI renders), the process held:
+
+| Pages | Build | RSS after warmup | RSS after 10 minutes | Go heap in use | Memory Go mapped |
+| --- | --- | --- | --- | --- | --- |
+| shop | Go interpreter | 123.4 MiB | 142.2 MiB | 4.4 MiB | 46.0 MiB |
+| shop | goasm | 117.7 MiB | 132.6 MiB | 4.5 MiB | 34.2 MiB |
+| MUI | Go interpreter | 93.6 MiB | 109.9 MiB | 2.6 MiB | 45.4 MiB |
+| MUI | goasm | 89.1 MiB | 97.2 MiB | 2.6 MiB | 30.0 MiB |
+
+The Go interpreter needs goroutine stacks that grow with the depth of the
+JavaScript calls, and the goasm interpreter keeps its frames in the TLS
+slots of the engine, so Go maps less. RSS grows over the ten minutes with
+both interpreters.
 
 ## How it is made
 
@@ -129,9 +160,9 @@ from `/sched/pauses/stopping/gc:seconds` (the histogram gives a range):
 
 | Pages | Build | P50 | P99 | Max |
 | --- | --- | --- | --- | --- |
-| shop | default | 25 to 29 µs | 164 to 197 µs | 197 to 229 µs |
+| shop | Go interpreter | 25 to 29 µs | 164 to 197 µs | 197 to 229 µs |
 | shop | goasm | 25 to 29 µs | 66 to 82 µs | 197 to 229 µs |
-| MUI | default | 21 to 25 µs | 131 to 164 µs | 164 to 197 µs |
+| MUI | Go interpreter | 21 to 25 µs | 131 to 164 µs | 164 to 197 µs |
 | MUI | goasm | 21 to 25 µs | 41 to 49 µs | 164 to 197 µs |
 
 On four CPUs (two cores) with GOMAXPROCS=4, P50 is 33 to 41 µs and P99 164
@@ -139,7 +170,14 @@ to 197 µs for both builds, and the largest stop is 197 to 229 µs, apart from
 one stop of 2.1 to 2.6 ms in one of eight MUI rounds of the goasm build.
 With GOMAXPROCS=8 on the same four CPUs, the operating system decides the
 largest stops: 2.6 to 3.1 ms on shop for both builds, about 1 ms for MUI on
-the default build and 0.7 ms on the goasm build.
+the Go interpreter and 0.7 ms on the goasm interpreter.
+
+With the VMs of the table above (2026-10-24, 4 VMs on 4 cores and 8 VMs on 8
+hyperthreads, 200 forced GCs in each of three rounds while every VM
+renders), P50 is 29 to 66 µs and P99 197 to 229 µs for both interpreters.
+The largest stop is 197 µs on 4 cores for both, and 1.05 ms on 8
+hyperthreads for both, apart from 1.31 ms once for the goasm interpreter on
+the shop.
 
 The interpreter calls Go often enough (more than 100 thousand bridge calls
 for one render of the six shop pages) that the assembly is no slower to stop
@@ -183,8 +221,8 @@ of unknown output.
 `internal/goasm/regenerate.py --check` regenerates the assembly from the
 committed sources and fails when it differs from the committed files. The
 commands of every check are in [testing.md](../testing.md#the-goasm-interpreter).
-Compare rendered HTML, then measure the default and tagged builds across
-three layouts and six alternating rounds. Check CPU profiles and GC
+Compare rendered HTML, then measure the goasm build against the Go one of
+`slowjs_nogoasm` across three layouts and six alternating rounds. Check CPU profiles and GC
 stopping latency in the final linked application.
 
 ### When upstream changes it
@@ -203,24 +241,30 @@ stopping latency in the final linked application.
   engine or the generator changed the output. Regenerate with
   `regenerate.py` and commit the files with the change that caused them.
 
-## Before it becomes the default
+## Before it became the default
 
-These must hold before the tag turns into the default on linux/amd64:
+These held before the interpreter became the default on linux/amd64:
 
 - The drift check (`regenerate.py --check`) runs on every release, and the
-  rule table checks above stay green. All three are in place.
-- Every release runs the full checks with and without the tag: short,
-  fixlib, memgrind, race, test262, HTML of tifa's pages, all five targets.
-- Throughput of several VMs at once (`BenchmarkShopParallel` in tifa) and
-  the memory of a VM are measured with the tag. So far only one VM was
-  timed.
-- It is measured on the target machine: a 1-core VPS, not only a core of
-  an 8-core EPYC.
-- A new Go release is checked against it before tifa moves to it. The
-  generated code relies on ABI0 leaving R14 and X15 free and on the
-  morestack prologue: `verify_linked.py` catches a changed prologue or
-  call target, not a changed meaning.
-- tifa has offered it as an option, and programs have run with it for a
-  while with no problem that only the tag shows.
-- darwin/arm64 is out of scope: it needs another ABI bridge and lowering,
-  which this generator does not make.
+  rule table checks and `TestOneInterpreterPerBuild` stay green.
+- Every release runs the full checks with both interpreters: short, fixlib,
+  memgrind, race, test262, HTML of tifa's pages, all five targets.
+- Throughput of several VMs, memory over a long run and GC stops under that
+  load were measured: see the tables above.
+- tifa's own tests pass with it: `go test ./...`, the SSR tests of the
+  example shop, the soak tests (running out of memory, VM reuse) and the
+  end-to-end tests.
+- It was checked with Go 1.27.2. After a Go upgrade, run the goasm checks
+  of [testing.md](../testing.md#the-goasm-interpreter) and `verify_linked.py`
+  on a linked program before tifa moves to that Go. The generated code
+  relies on ABI0 leaving R14 and X15 free and on the morestack prologue:
+  `verify_linked.py` catches a changed prologue or call target, not a
+  changed meaning.
+
+One check is left, to be done last, after the other work on the assembly:
+
+- Measure it on the target machine, a 1-core 1 GB VPS: latency, throughput
+  and RSS of tifa's shop with and without `slowjs_nogoasm`.
+
+darwin/arm64 is out of scope: it needs another ABI bridge and lowering,
+which this generator does not make.

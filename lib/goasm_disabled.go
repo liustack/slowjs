@@ -1,4 +1,4 @@
-//go:build !goasm || !linux || !amd64
+//go:build !linux || !amd64 || slowjs_nogoasm
 
 // Copyright (c) 2026 The slowjs Authors.
 // SPDX-License-Identifier: MIT

@@ -4,6 +4,12 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.28.6] - 2026-10-24
+
+### Changed
+
+- On linux/amd64 the engine runs JavaScript in the goasm interpreter by default, the interpreter in Go assembly that the `goasm` tag of v0.28.5 turned on. `-tags slowjs_nogoasm` builds a program with the Go interpreter, which every other target uses. The `goasm` tag is still accepted and changes nothing. Results, error stacks and HTML stay the same, and the build still needs no C toolchain. With one VM the pages of tifa's example shop render in 0.940 of the time and the MUI pages of tifa's test app in 0.850, without PGO. With 4 VMs on 4 cores tifa's pool renders 1.046 times as many shop pages a second and 1.171 times as many MUI pages, and with 8 VMs on 8 hyperthreads 1.085 and 1.211 times. After ten minutes of 8 VMs the process holds 0.93 of the RSS on the shop and 0.88 on the MUI pages. GC stops the world as fast as with the Go interpreter. See [The goasm interpreter](docs/fork-changes/go-assembly.md).
+
 ## [v0.28.5] - 2026-10-24
 
 ### Added

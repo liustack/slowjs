@@ -62,7 +62,7 @@ func restoreGoasm(b []byte, name string) ([]byte, error) {
 	return out, nil
 }
 
-// The generated interpreter of the goasm tag replaces the whole Go
+// The generated interpreter, the default on linux/amd64, replaces the whole Go
 // _JS_CallInternal, so the changes fixlib makes in that function do not reach
 // it. Each file of fixlib that changes the interpreter says here what the
 // generated one does instead, and TestGoasmCoversInterpreterRules fails when

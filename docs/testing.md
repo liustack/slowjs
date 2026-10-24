@@ -33,7 +33,7 @@ go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to `temporal/` also runs `go test ./temporal` without `-short` (the Chromium comparison and the link test are part of it), and the Temporal lines of the focused checks, the memgrind section and the race detector section.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
-- A change to the C patch, to `internal/goasm`, to a rule of `internal/fixlib` that changes `_JS_CallInternal`, or to the Go version also runs the [goasm checks](#the-goasm-interpreter).
+- On linux/amd64 these commands test the goasm interpreter, the default there. A change to the engine, to the C patch, to `internal/goasm`, to a rule of `internal/fixlib` that changes `_JS_CallInternal` or a helper it compiles in, or to the Go version also runs the [goasm checks](#the-goasm-interpreter), which test the Go interpreter of linux/amd64 too.
 
 New behavior and bugs with a known cause: write the test first, see it fail, then write the fix. Tests live next to the code: a change to the engine is tested in `lib/` (through the C API) or in the root package (through the Go API), and a change of `fixlib` in `internal/fixlib`, which checks both the rewrite and that it stops on code it does not expect.
 
@@ -185,7 +185,7 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`. It takes a long time. For a quick look, build the main ones:
+It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the 5 supported targets, with and without `-tags=libc.memgrind`, and linux/amd64 with `-tags=slowjs_nogoasm` as well. It takes a long time. For a quick look, build the main ones:
 
 ```sh
 for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
@@ -197,7 +197,7 @@ done
 
 ## The goasm interpreter
 
-The `goasm` build tag swaps in an interpreter generated from the patched C on linux/amd64 (see [go-assembly.md](fork-changes/go-assembly.md)). Its generated files must be exactly what the generator makes from the committed sources. Check it on linux/amd64 with LLVM 22.1.8 (`clang-22`, `clang++-22`, `opt-22`, `llc-22` and the LLVM development headers):
+On linux/amd64 the engine runs an interpreter generated from the patched C, unless the `slowjs_nogoasm` build tag is given (see [go-assembly.md](fork-changes/go-assembly.md)). Its generated files must be exactly what the generator makes from the committed sources. Check it on linux/amd64 with LLVM 22.1.8 (`clang-22`, `clang++-22`, `opt-22`, `llc-22` and the LLVM development headers):
 
 ```sh
 python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check
@@ -207,18 +207,22 @@ It downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--
 
 `TestGoasmCoversInterpreterRules` in `internal/fixlib` checks that every rule of `fixlib` that changes `_JS_CallInternal` has a row in `goasmInterpreterRules` (`internal/fixlib/goasm.go`): written in C by `internal/goasm/cpatch.py`, already in the patched C, or only for Go's compiler. It fails when a new rule has no row, so a fast path added to the Go interpreter cannot be lost in the generated one unnoticed. `TestGoasmCoversHelperRules` does the same, in `goasmHelperRules`, for the rules that change the Go function of a C helper the generated interpreter compiles in, listed in `lib/goasm_helpers.txt`. Both run with the other tests of `fixlib`.
 
-With the tag, run the generator tests and the engine checks:
+`TestOneInterpreterPerBuild` in `lib/` reads the build constraints of the goasm files for each of the five targets, with no tag, with `slowjs_nogoasm`, with the old `goasm` tag and with both: linux/amd64 without `slowjs_nogoasm` gets every goasm file and no `goasm_disabled.go`, every other build gets `goasm_disabled.go` alone. It runs with the other tests of `lib/`.
+
+Run the generator tests, then the engine checks of linux/amd64 twice: as they are, for the goasm interpreter, and with `slowjs_nogoasm`, for the Go one:
 
 ```sh
 python3 -m unittest discover -s internal/goasm
-go test -short -p 2 -tags goasm -timeout 30m . ./lib ./internal/fixlib
-go test -p 2 -tags goasm -timeout 90m ./internal/fixlib
-go test -p 2 -vet=off -tags goasm,libc.memgrind -run 'Memgrind|EnginePanic|EngineGoexit|CallDepth|TLS|Goasm|StackGrowth|GCStops' ./...
-go test -race -short -p 2 -vet=off -tags goasm -timeout 2h . ./lib
-cd lib && go test -vet=off -tags goasm -run Test262 -v . -args -xtags goasm
+for tags in "" slowjs_nogoasm; do
+  go test -short -p 2 -tags "$tags" -timeout 30m . ./lib ./internal/fixlib
+  go test -p 2 -tags "$tags" -timeout 90m ./internal/fixlib
+  go test -p 2 -vet=off -tags "$tags,libc.memgrind" -run 'Memgrind|EnginePanic|EngineGoexit|CallDepth|TLS|Goasm|StackGrowth|GCStops' ./...
+  go test -race -short -p 2 -vet=off -tags "$tags" -timeout 2h . ./lib
+  (cd lib && go test -vet=off -tags "$tags" -run Test262 -v . -args -xtags "$tags")
+done
 ```
 
-`-xtags goasm` builds the test262 runner with the tag too. Then compare the HTML of tifa's pages with and without the tag, and check a linked tifa binary with `python3 internal/goasm/verify_linked.py <work>/build/lowered.o <binary>` (pass `--work` to `regenerate.py` to keep `lowered.o`). Other targets build the Go interpreter with or without the tag, which [Every target](#every-target) covers when run with `-tags goasm` as well.
+`-xtags` builds the test262 runner with the same tags. Both builds must give the same test262 errors. Then compare the HTML of tifa's pages between the two, and check a linked tifa binary with `python3 internal/goasm/verify_linked.py <work>/build/lowered.o <binary>` (pass `--work` to `regenerate.py` to keep `lowered.o`). Other targets build the Go interpreter with or without the tag, and [Every target](#every-target) builds linux/amd64 both ways.
 
 ## Same as upstream after fixlib
 

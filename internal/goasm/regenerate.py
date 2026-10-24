@@ -64,7 +64,7 @@ def main():
   include=subprocess.check_output([str(llvm/'llvm-config'),'--includedir'],text=True).strip() if (llvm/'llvm-config').exists() else None
   run([llvm/'clang++-22','-std=c++17','-O2','-fPIC','-shared','-fno-rtti',*(['-I',include] if include else []),*shlex.split(os.environ.get('CXXFLAGS','')),here/'allocas.cpp','-o',work/'allocas.so'])
   env=dict(os.environ,GOOS='linux',GOARCH='amd64',CGO_ENABLED='0',GOFLAGS='-mod=mod')
-  listing=subprocess.run(['go','list','-tags','goasm','-json','./lib','modernc.org/libc'],cwd=root,env=env,check=True,capture_output=True).stdout
+  listing=subprocess.run(['go','list','-json','./lib','modernc.org/libc'],cwd=root,env=env,check=True,capture_output=True).stdout
   with open(work/'signatures.json','wb') as f:subprocess.run(['go','run','./internal/goasm/cmd/signatures'],cwd=root,input=listing,stdout=f,check=True)
   out=work/'out';out.mkdir()
   run([sys.executable,here/'build.py','--source',src,'--work',work/'build','--llvm',llvm,'--plugin',work/'allocas.so','--signatures',work/'signatures.json','--out',out])

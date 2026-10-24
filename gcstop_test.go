@@ -13,7 +13,7 @@ import (
 
 // TestGCStopsLoopWithoutCalls runs GC while a script loops without calling
 // anything. The Go interpreter is preempted by signal anywhere. The assembly
-// interpreter (-tags goasm) has no asynchronous safe points: GC can stop it
+// interpreter (the default on linux/amd64) has no asynchronous safe points: GC can stop it
 // only when it calls Go, and a loop like these calls Go only when the
 // interrupt countdown of its backward jump reaches zero.
 func TestGCStopsLoopWithoutCalls(t *testing.T) {

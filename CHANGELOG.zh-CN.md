@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [v0.28.6] - 2026-10-24
+
+### 变更
+
+- 在 linux/amd64 上，引擎默认用 goasm 解释器执行 JavaScript，也就是 v0.28.5 的 `goasm` 标签打开的那个 Go 汇编解释器。加 `-tags slowjs_nogoasm` 构建，程序就改用 Go 解释器，其他平台一直用的就是它。`goasm` 标签仍然可以写，但不再有任何作用。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO、一个 VM 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。tifa 的 VM 池在 4 个核上跑 4 个 VM 时，每秒渲染的商店页面是原来的 1.046 倍，MUI 页面是 1.171 倍，在 8 个超线程上跑 8 个 VM 时是 1.085 倍和 1.211 倍。8 个 VM 跑十分钟后，进程的 RSS 在商店页面上是原来的 0.93，在 MUI 页面上是 0.88。GC 让所有 goroutine 停下来的时间和用 Go 解释器时一样快。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+
 ## [v0.28.5] - 2026-10-24
 
 ### 新增

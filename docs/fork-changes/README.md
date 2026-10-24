@@ -14,9 +14,9 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | Unreleased | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
-| Classes of regexps with the v flag parsed as the specification does | Unreleased | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
-| An interpreter generated from the C, opt-in with the `goasm` tag on linux/amd64 | Unreleased | [go-assembly.md](go-assembly.md) |
+| One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
+| Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
+| An interpreter generated from the C, the default on linux/amd64 | v0.28.5 (opt-in), v0.28.6 (default) | [go-assembly.md](go-assembly.md) |
 | Native C keeps computed goto | v0.27.1 | [interpreter-loop.md](interpreter-loop.md#native-c-keeps-computed-goto) |
 | No leak when converting a string runs out of memory | v0.26.0 | [uncatchable.md](uncatchable.md#no-leak-when-converting-a-string-runs-out-of-memory) |
 | Call reports the exception of the function expression | v0.26.0 | [go-api.md](go-api.md#call-reports-the-exception-of-the-function-expression) |
@@ -92,10 +92,10 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | v0.27.2 | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 | Searches skip to where the string is | v0.27.3 | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
 | Young collection, VM.RunYoungGC | v0.27.3 | [young-collection.md](young-collection.md) |
-| One copy of source text and line tables for every VM, SharedBytecode | Unreleased | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
-| A module frees its top level once it has run | Unreleased | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
-| Own keys listed from the shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
-| The async context of promise jobs, for AsyncLocalStorage | Unreleased | [go-api.md](go-api.md#the-async-context-of-promise-jobs) |
+| One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
+| A module frees its top level once it has run | v0.28.4 | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
+| Own keys listed from the shape | v0.28.5 | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
+| The async context of promise jobs, for AsyncLocalStorage | v0.28.5 | [go-api.md](go-api.md#the-async-context-of-promise-jobs) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 

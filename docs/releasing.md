@@ -21,7 +21,7 @@ read_when:
 On the branch, before it is merged:
 
 1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`).
-   On linux/amd64, `python3 internal/goasm/regenerate.py --llvm <dir> --check` passes: the files of the `goasm` tag are what the generator makes from the release's sources (see [testing.md](testing.md#the-goasm-interpreter)). A branch that changes the C patch, `internal/goasm` or the interpreter rules of `fixlib` also passes the goasm checks there.
+   On linux/amd64, `python3 internal/goasm/regenerate.py --llvm <dir> --check` passes: the files of the goasm interpreter are what the generator makes from the release's sources. Every release also passes the goasm checks there, for both builds of linux/amd64: the goasm interpreter, which programs get by default, and the Go one of `slowjs_nogoasm` (see [testing.md](testing.md#the-goasm-interpreter)).
 2. Each change is in the doc of its area under [fork-changes](fork-changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release v0.26.17`), so that the merge commit you tag carries it.
 
