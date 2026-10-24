@@ -93,6 +93,7 @@ Changes to the generated Go are made by `internal/fixlib` (see [upgrading.md](..
 | Young collection, VM.RunYoungGC | v0.27.3 | [young-collection.md](young-collection.md) |
 | One copy of source text and line tables for every VM, SharedBytecode | Unreleased | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
 | A module frees its top level once it has run | Unreleased | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
+| Own keys listed from the shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
 
 v0.26.14 also made `fixlib` stop wherever an upstream change could make it fix the code wrong: most of the checks under "When upstream changes it" come from that release.
 
