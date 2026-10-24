@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 ### Added
 
 - The `goasm` build tag (`go build -tags goasm`): on linux/amd64 the engine runs JavaScript in an interpreter compiled by LLVM from QuickJS's C and shipped as Go assembly, in place of the Go interpreter that ccgo makes from the same C. It is off by default, and on every other platform the tag changes nothing. Results, error stacks and HTML stay the same, and the build still needs no C toolchain. The pages of tifa's example shop render in 0.940 of the time and the MUI pages of tifa's test app in 0.850, without PGO. [The goasm interpreter](docs/fork-changes/go-assembly.md) has how it is made and what must hold before it becomes the default.
+- `GetAsyncContext` and `SetAsyncContext`, two Builtins that read and set the async context of a VM: an object that promise reactions keep. A `then`, `catch`, `finally` or `await` runs with the context the VM had when it was registered, and the `then` of a thenable with the one of the code that resolved a promise with it, as in Node. An `AsyncLocalStorage` written on them finds its store after `await`. A VM that never sets a context runs promises as before.
 
 ### Performance
 

@@ -82,6 +82,7 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 - **`*Error` 的 `Uncatchable`、`OutOfMemory` 和 `Interrupted` 字段**：调用为什么结束，脚本伪造不了。[详情](docs/fork-changes/go-api.md#error-says-why-a-call-ended)
 - **`VM.SetClock(now)` 和 `VM.Now()`**：设置和读取一个 VM 的墙上时钟，Date、Intl 和 Temporal 都读它。传 nil 恢复实时时钟。[详情](docs/fork-changes/time-and-intl.md#one-wall-clock-per-vm)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/fork-changes/go-api.md#setshapecache-and-defaultshapecache)
+- **`GetAsyncContext` 和 `SetAsyncContext`**：两个 Builtin，读写一个跟着 promise 任务走的对象：`then` 或 `await` 运行时拿到的是注册时设的那个，所以用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store，和 Node 一样。从不设置它的 VM 跑 promise 和以前一样。[详情](docs/fork-changes/go-api.md#the-async-context-of-promise-jobs)
 
 前五项是 v0.26.17 加的，接下来两项是 v0.27.0 加的。`VM.SetClock` 和 `VM.Now` 尚未发布。
 

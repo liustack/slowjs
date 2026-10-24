@@ -7,6 +7,7 @@
 ### 新增
 
 - `goasm` 构建标签（`go build -tags goasm`）：在 linux/amd64 上，引擎改用一个解释器执行 JavaScript，它由 LLVM 从 QuickJS 的 C 源码编译而来，以 Go 汇编的形式随包发布，替换 ccgo 从同一份 C 生成的 Go 解释器。默认不开，在其他平台上加这个标签什么都不变。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。它怎么生成、默认打开前还要满足哪些条件，见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+- `GetAsyncContext` 和 `SetAsyncContext`，两个 Builtin，读写 VM 的异步上下文：一个 promise 反应会带着走的对象。`then`、`catch`、`finally` 或 `await` 运行时用的是注册那一刻 VM 的上下文，thenable 的 `then` 用的是拿它去 resolve 一个 promise 的那段代码的上下文，和 Node 一样。用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store。从不设置上下文的 VM 跑 promise 和以前一样。
 
 ### 性能
 
