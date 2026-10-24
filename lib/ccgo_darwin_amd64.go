@@ -131098,6 +131098,8 @@ done:
 	goto _17
 _16:
 	;
+	// Changed by internal/fixlib: the handler keeps the async context (lib/asynccontext.go).
+	then = asyncContextWrap(tls, ctx2, then)
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 32)))[0] = (*TJSPromiseFunctionData)(unsafe.Pointer(s)).Fpromise
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 32)))[int32(1)] = resolution
 	(*(*[3]TJSValue)(unsafe.Pointer(bp + 32)))[int32(2)] = then
@@ -133171,7 +133173,8 @@ func _perform_promise_then(tls *libc.TLS, ctx2 uintptr, promise TJSValue, resolv
 		v6 = v3
 		goto _12
 	_12:
-		(*TJSPromiseReactionData)(unsafe.Pointer(rd)).Fhandler = v6
+		// Changed by internal/fixlib: the handler keeps the async context (lib/asynccontext.go).
+		(*TJSPromiseReactionData)(unsafe.Pointer(rd)).Fhandler = asyncContextWrap(tls, ctx2, v6)
 		rd_array[i] = rd
 		goto _1
 	_1:

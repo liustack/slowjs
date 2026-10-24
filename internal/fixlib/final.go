@@ -34,6 +34,7 @@ var finalChanges = []finalChange{
 	{"fixYoungGC", fixYoungGC, restoreYoungGC, youngF, youngReport},
 	{"fixSharedDebug", fixSharedDebug, restoreSharedDebug, sharedDebugF, sharedDebugReport},
 	{"fixGoasm", fixGoasm, restoreGoasm, nil, nil},
+	{"fixAsyncContext", fixAsyncContext, restoreAsyncContext, asyncContextF, asyncContextReport},
 }
 
 // fixFinal makes the final changes in b, the generated file name.

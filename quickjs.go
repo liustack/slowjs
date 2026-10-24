@@ -830,8 +830,9 @@ func (m *VM) Close() error {
 	m.intr.mu.Unlock()
 	libc.Xfree(tls, m.interruptData)
 	libc.Xfree(tls, m.toStringArgv)
-	// The kept shapes hold the context.
+	// The kept shapes hold the context, and so may the async context.
 	lib.XJS_SetShapeCache(tls, ctx, 0)
+	lib.XJS_SetAsyncContext(tls, ctx, undefined)
 	lib.SetClock(m.runtime.cRuntime, nil)
 	lib.XJS_FreeContext(tls, ctx)
 	vms.remove(m.id)
