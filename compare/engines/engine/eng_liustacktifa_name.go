@@ -9,4 +9,4 @@ package engine
 
 // tifaName is the name of the row: slowjs as tifa runs it, with the default
 // interpreter of the platform (the Go assembly one on linux/amd64).
-const tifaName = "liustack-tifa"
+const tifaName = "slowjs-tifa"

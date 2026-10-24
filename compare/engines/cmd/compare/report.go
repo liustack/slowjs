@@ -437,9 +437,9 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 	}
 
 	if _, ok := res.Timed["upstream"]; ok {
-		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-quickjs, geometric mean over the tests both engines run (below 1 is faster than liustack-quickjs).\n\n")
-		p("| Engine | Tests run | Geomean time vs liustack-quickjs | Faster than liustack on |\n|---|---|---|---|\n")
-		base := upstreamMedians(res.Timed["upstream"]["liustack-quickjs"])
+		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against slowjs, geometric mean over the tests both engines run (below 1 is faster than slowjs).\n\n")
+		p("| Engine | Tests run | Geomean time vs slowjs | Faster than slowjs on |\n|---|---|---|---|\n")
+		base := upstreamMedians(res.Timed["upstream"][selfRow(res.Timed["upstream"])])
 		for _, e := range names {
 			mine := upstreamMedians(res.Timed["upstream"][e])
 			logSum, k, faster := 0.0, 0, 0
@@ -525,6 +525,17 @@ func v8Bench(name string) func(json.RawMessage) (float64, string) {
 		}
 		return f, ""
 	}
+}
+
+// selfRow is the name of slowjs's row in a results file. Files made before
+// 2026-10-24 name it liustack-quickjs, the module's name until v0.28.0.
+func selfRow(byEngine map[string][]json.RawMessage) string {
+	if _, ok := byEngine["slowjs"]; !ok {
+		if _, old := byEngine["liustack-quickjs"]; old {
+			return "liustack-quickjs"
+		}
+	}
+	return "slowjs"
 }
 
 func upstreamMedians(raws []json.RawMessage) map[string]float64 {

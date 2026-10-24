@@ -129,3 +129,13 @@ version of the comparison made it (the commit of this repository).
   `navigator`) plain values before the bundle runs, since the host patches
   of the new bundles assign them, and add `Iterator.concat`, which
   TanStack Router calls and Node v24.11.1 lacks.
+
+## 2026-10-24: rows named slowjs
+
+- The slowjs rows take the module's name: `liustack-quickjs` is now
+  `slowjs`, `liustack-tifa` is `slowjs-tifa` and `liustack-tifa-nogoasm` is
+  `slowjs-tifa-nogoasm`, in the results, the reports, `TIFA_ONLY`, `-engines`
+  and the file names `tifa/run.sh` writes. Nothing is measured differently.
+- Results files made before this keep the old names. `-report` and
+  `behind.py` read both. Adding to an old run with `-add` or `-merge` would
+  give slowjs two rows, so start a new run instead.

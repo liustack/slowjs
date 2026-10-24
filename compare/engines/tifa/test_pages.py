@@ -22,14 +22,14 @@ class PageArchiveTest(unittest.TestCase):
                 (root / (name + '.json')).write_text(json.dumps({'pages': [
                     {'input': 'one.json', 'ok': ok, 'cpu_ms_per_op': 1},
                     {'input': 'missing.json', 'ok': False}]}))
-            for name in ['liustack-quickjs-pf', 'liustack-quickjs-native', 'quickjs-ng-pf']:
+            for name in ['slowjs-pf', 'slowjs-native', 'quickjs-ng-pf']:
                 result(name)
             result('go-quickjs-interp-pf', False)
             result('go-quickjs-interp-pf-rest')
             result('probe-one')
             (root / 'probe-one.meta').write_text('{"try":0,"disturbed":1}\n{"try":1,"disturbed":0}\n')
-            for name, body in [('liustack-quickjs-pf', b'<p>u:1234567890123</p>'),
-                               ('liustack-quickjs-native', b'<p>u:1234567890124</p>'),
+            for name, body in [('slowjs-pf', b'<p>u:1234567890123</p>'),
+                               ('slowjs-native', b'<p>u:1234567890124</p>'),
                                ('go-quickjs-interp-pf', b'<p>u:1234567890125</p>'),
                                ('quickjs-ng-pf', b'<p><!-- -->u:1234567890126</p>')]:
                 (root / 'html' / (name + '-one.html')).write_bytes(body)
@@ -44,7 +44,7 @@ class PageArchiveTest(unittest.TestCase):
             self.assertEqual(same['normalized_sha256'], same['reference_sha256'])
             self.assertFalse(evidence['pf']['quickjs-ng']['one']['same_as_liustack'])
             self.assertIsNone(evidence['pf']['quickjs-ng']['missing']['same_as_liustack'])
-            self.assertTrue(evidence['deployed']['liustack-quickjs']['one']['same_as_liustack'])
+            self.assertTrue(evidence['deployed']['slowjs']['one']['same_as_liustack'])
 
     def test_tifa_row_is_compared_with_the_polyfill_row(self):
         spec = importlib.util.spec_from_file_location('pages', Path(__file__).with_name('pages.py'))
@@ -57,16 +57,16 @@ class PageArchiveTest(unittest.TestCase):
             def result(name, pages):
                 (root / (name + '.json')).write_text(json.dumps({'pages': [
                     {'input': p + '.json', 'ok': True, 'cpu_ms_per_op': 1} for p in pages]}))
-            result('liustack-tifa-native', ['a', 'b'])
-            result('liustack-quickjs-pf', ['a', 'b'])
-            result('liustack-tifa-mui-native', ['home', 'order'])
-            result('liustack-quickjs-mui-pf', ['home'])
-            for name, body in [('liustack-tifa-native-a', b'<p>8:00 AM u:1234567890123</p>'),
-                               ('liustack-quickjs-pf-a', b'<p>8:00 AM u:1234567890124</p>'),
-                               ('liustack-tifa-native-b', 'x 8:00 AM'.encode()),
-                               ('liustack-quickjs-pf-b', 'x 8:00\u202fAM'.encode()),
-                               ('liustack-tifa-mui-native-home', b'<p>one</p>'),
-                               ('liustack-quickjs-mui-pf-home', b'<p>two</p>')]:
+            result('slowjs-tifa-native', ['a', 'b'])
+            result('slowjs-pf', ['a', 'b'])
+            result('slowjs-tifa-mui-native', ['home', 'order'])
+            result('slowjs-mui-pf', ['home'])
+            for name, body in [('slowjs-tifa-native-a', b'<p>8:00 AM u:1234567890123</p>'),
+                               ('slowjs-pf-a', b'<p>8:00 AM u:1234567890124</p>'),
+                               ('slowjs-tifa-native-b', 'x 8:00 AM'.encode()),
+                               ('slowjs-pf-b', 'x 8:00\u202fAM'.encode()),
+                               ('slowjs-tifa-mui-native-home', b'<p>one</p>'),
+                               ('slowjs-mui-pf-home', b'<p>two</p>')]:
                 (root / 'html' / (name + '.html')).write_bytes(body)
             ev = module.tifa_row_evidence()
             self.assertTrue(ev['shop/a']['same'])

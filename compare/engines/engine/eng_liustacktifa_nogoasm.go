@@ -9,4 +9,4 @@ package engine
 
 // tifaName is the name of the row built with slowjs_nogoasm: slowjs as tifa
 // runs it with build.goasm off, so with the interpreter in Go on linux/amd64.
-const tifaName = "liustack-tifa-nogoasm"
+const tifaName = "slowjs-tifa-nogoasm"
