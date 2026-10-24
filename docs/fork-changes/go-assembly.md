@@ -1,16 +1,49 @@
 ---
-summary: 'Experimental LLVM interpreter on linux/amd64: build tag, stack and ABI boundaries, generator maintenance and verification'
+summary: 'The goasm build tag: how to turn on the interpreter generated from the C on linux/amd64, what it gains, its stack and ABI rules, how to regenerate and check it, and what must hold before it becomes the default'
 read_when:
-  - Building or regenerating the experimental goasm interpreter
-  - Changing Go versions, LLVM versions or interpreter call signatures
+  - Turning on the goasm interpreter in a program, or deciding whether to
+  - Building or regenerating the goasm interpreter
+  - Changing the C patch, the interpreter rules of fixlib, Go versions or LLVM versions
+  - fixGoasm or TestGoasmCoversInterpreterRules stops
 ---
 
-# Experimental LLVM interpreter
+# The goasm interpreter
 
-The `goasm` build tag replaces `JS_CallInternal` on linux/amd64 with assembly
-generated offline from the patched C. Applications use ordinary Go builds with
-`CGO_ENABLED=0`. They need no C compiler, LLVM installation or shared library.
-The default build and other targets retain the ccgo interpreter.
+With the `goasm` build tag, a program on linux/amd64 runs `JS_CallInternal`,
+the bytecode interpreter, as machine code that LLVM compiled from the
+patched QuickJS C, shipped in the module as Go assembly. Everything else of
+the engine stays the Go that ccgo makes. The tag is off by default.
+
+## Turning it on
+
+Pass the tag to the Go command that builds the program:
+
+```sh
+CGO_ENABLED=0 go build -tags goasm ./cmd/server
+```
+
+- It takes effect on linux/amd64 only. On darwin, on linux/arm64 and on
+  windows the tag changes nothing: those builds keep the Go interpreter.
+- It needs nothing more than the default build: no cgo, no C compiler, no
+  LLVM and no shared library. The assembly is committed.
+- Scripts give the same results: the same test262 errors, the same HTML of
+  tifa's pages, the same limits (eval timeout, memory limit, stack depth,
+  uncatchable interrupts). A panic in a Go function and a nil dereference
+  in the engine still reach Go as before.
+- Profiles show the whole interpreter as one function, `goasmRun`, and
+  stack traces of a crash inside it end there.
+
+What it gains, measured on 2026-10-24 on a GCP VM of an AMD EPYC 7B13
+(one core, GOMAXPROCS=1, no PGO, three code layouts, six alternating rounds
+each, sum of the median render times): the six shop workbench pages of
+tifa render 6.0% faster than with the default build (0.922 to 0.964 of
+its time), and the three pages of tifa's MUI test app 15.0% faster
+(0.834 to 0.875). The gain is largest on code that runs many bytecodes per
+call into Go. With PGO on both builds, each with its own profile, the gap
+stays the same or grows (6.1% and 14.2% for the previous generated code,
+in four rounds of one layout, against 4.0% and 12.9% without PGO).
+
+## How it is made
 
 The generator in `internal/goasm` requires LLVM 22.1.8, its development headers,
 a C++ compiler and Python 3. It is specific to this interpreter and compiler
@@ -43,8 +76,10 @@ contains no Go heap pointers or published Go stack pointers.
 
 The C interpreter carries the fast paths that `internal/fixlib` adds to the
 Go interpreter for property reads along the prototype chain, `===` and `==`,
-and bitwise operators on numbers. Fast paths that live in Go helpers, such as
-atom lookup, shape caches and object literals, apply to both interpreters.
+and bitwise operators on numbers (see [Keeping the two interpreters
+together](#keeping-the-two-interpreters-together)). Fast paths that live in
+Go helpers, such as atom lookup, shape caches and object literals, apply to
+both interpreters.
 
 Computed goto remains enabled. Relative jump tables stay inside the generated
 text. External calls are symbolic Go CALL instructions. Other ELF relocations
@@ -111,6 +146,19 @@ for one render of the six shop pages) that the assembly is no slower to stop
 than the Go interpreter, so it has no extra preemption point. Measure again when a change
 removes Go calls from hot paths.
 
+## Keeping the two interpreters together
+
+The generated interpreter replaces the whole Go `_JS_CallInternal`, so the
+changes `fixlib` makes inside that function do not reach it.
+`goasmInterpreterRules` in `internal/fixlib/goasm.go` gives each file of
+`fixlib` that changes the interpreter a row: written in C by
+`internal/goasm/cpatch.py` (fieldchain, eq, bitwise), already in the patched
+C (the uncatchable check, the guard against a pending stack, the interrupt
+countdown), or only for Go's compiler (cells, pin, inline, one frame,
+alloca, defers, fast frames). `TestGoasmCoversInterpreterRules` fails when a
+file of `fixlib` changes the interpreter and has no row, when a row is
+stale, or when a C row names a change `cpatch.py` does not.
+
 ## Verification and maintenance
 
 `fixGoasm` checks the complete original Go interpreter fingerprint and checks
@@ -119,22 +167,54 @@ updating the fingerprint. New C types, call signatures, compiler prologues,
 stack instructions or relocations require generator changes, not acceptance
 of unknown output.
 
-Run the generator tests, the short Go suite with `-tags goasm`, the full
-fixlib tests (about 35 minutes, so pass `-timeout 40m`), CallDepth, TLS,
-EnginePanic, EngineGoexit, StackGrowth and GCStops checks, memgrind, the
-race build of the root package and `lib`, and test262 with `-xtags goasm`.
-Build every supported target with and without the tag: targets other than
-linux/amd64 use the Go interpreter either way. Compare rendered HTML, then measure the
-default and tagged builds across three layouts and six alternating rounds.
-Check CPU profiles and GC stopping latency in the final linked application.
+`internal/goasm/regenerate.py --check` regenerates the assembly from the
+committed sources and fails when it differs from the committed files. The
+commands of every check are in [testing.md](../testing.md#the-goasm-interpreter).
+Compare rendered HTML, then measure the default and tagged builds across
+three layouts and six alternating rounds. Check CPU profiles and GC
+stopping latency in the final linked application.
 
-Measured on 2026-10-23 (no PGO, three layouts, six alternating rounds, sum
-of the P50 render times): the tagged build renders the six shop workbench
-pages 5.9% faster than the default build and the three MUI pages 14.3%
-faster. PGO does not close the gap: in four rounds of one layout, the
-previous generated code was 4.0% and 12.9% faster without PGO and 6.1% and
-14.2% faster with PGO on both sides, each build using its own profile.
+### When upstream changes it
 
-Darwin/arm64 uses the Go fallback. Native ARM assembly needs a separate ABI
-bridge and register and frame lowering implementation. It is not produced by
-this generator.
+- `fixGoasm` stops with "interpreter fingerprint changed": upstream or
+  another change of `fixlib` changed the Go `_JS_CallInternal`. Find what
+  changed, give the C the same behavior if it is not a Go compiler
+  workaround (in `lib/internal/patch/quickjs.diff` or `cpatch.py`), update
+  the fingerprint, then regenerate and run the goasm checks.
+- `cpatch.py` stops on a replacement count: the C it rewrites changed. Port
+  the fast path to the new C.
+- `TestGoasmCoversInterpreterRules` fails: add the row the message asks for,
+  and port the fast path to `cpatch.py` if it changes what the interpreter
+  does.
+- `regenerate.py --check` fails: a change to the C patch, a struct of the
+  engine or the generator changed the output. Regenerate with
+  `regenerate.py` and commit the files with the change that caused them.
+
+## Before it becomes the default
+
+These must hold before the tag turns into the default on linux/amd64:
+
+- The drift check (`regenerate.py --check`) runs on every release, and the
+  rule table check above stays green. Both are in place.
+- The rule table check also covers the inline helpers that the generated
+  interpreter compiles in from the C (such as `find_own_property`,
+  `get_shape_prop` and `set_value`, listed in `inline.json` of a
+  generator run). A change of `fixlib` to the Go copy of one of them does
+  not reach the assembly, and the check does not see it yet. No change does
+  so today: the ones that name them only fingerprint them or reshape Go
+  frames.
+- Every release runs the full checks with and without the tag: short,
+  fixlib, memgrind, race, test262, HTML of tifa's pages, all five targets.
+- Throughput of several VMs at once (`BenchmarkShopParallel` in tifa) and
+  the memory of a VM are measured with the tag. So far only one VM was
+  timed.
+- It is measured on the target machine: a 1-core VPS, not only a core of
+  an 8-core EPYC.
+- A new Go release is checked against it before tifa moves to it. The
+  generated code relies on ABI0 leaving R14 and X15 free and on the
+  morestack prologue: `verify_linked.py` catches a changed prologue or
+  call target, not a changed meaning.
+- tifa has offered it as an option, and programs have run with it for a
+  while with no problem that only the tag shows.
+- darwin/arm64 is out of scope: it needs another ABI bridge and lowering,
+  which this generator does not make.
