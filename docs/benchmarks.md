@@ -18,8 +18,9 @@ tables are in
 [`compare/engines/results/2026-10-23-v0.27.2-gcp.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp.md),
 the raw numbers in the `.json` next to it. The slowjs numbers are
 from the engine code of the v0.27.2 tag. Only the tifa pages were run
-again since, on v0.28.6 (see [tifa's current bundles](#tifas-current-bundles)):
-every other table here is from the v0.27.2 run. The earlier runs are in
+again since, on v0.28.6, with and without tifa's PGO profile (see
+[tifa's current bundles](#tifas-current-bundles)): every other table here is
+from the v0.27.2 run. The earlier runs are in
 [History](#history).
 
 The slowjs rows are named `slowjs`, `slowjs-tifa` and `slowjs-tifa-nogoasm`.
@@ -44,12 +45,12 @@ v0.28.0 (`github.com/liustack/quickjs`).
   functions and tifa's GC rules (see
   [slowjs as tifa runs it](#slowjs-as-tifa-runs-it)). On the Go side that
   is the only row with features the C QuickJS and Node rows cannot have.
-  Against C QuickJS 2026-06-04 it takes 1.48 times the time on the bench
-  pages, 0.52 on the MUI pages and 1.07 on the shop, where the same
-  JavaScript on the polyfill takes 1.49, 1.18 and 1.44. With v0.28.6, its
-  Go assembly interpreter and the bundles tifa builds today, the same row
-  takes 1.22, 0.45 and 0.97, and 1.46, 0.48 and 1.04 with the interpreter
-  in Go (see [tifa's current bundles](#tifas-current-bundles)).
+  With v0.28.6, its Go assembly interpreter, the bundles tifa builds today
+  and tifa's PGO profile, it takes 1.14 to 1.15 times the time of C QuickJS
+  2026-06-04 on the bench pages, which need no Intl, 0.91 to 0.93 on the
+  shop and 0.43 on the MUI pages. On the same JavaScript, polyfill included,
+  slowjs takes 1.17 to 1.26 times the time of C on bench and the shop (see
+  [tifa's current bundles](#tifas-current-bundles)).
 - **General speed.** slowjs is not the fastest pure Go engine.
   go-quickjs without its JIT (its default) scores 1.8 times as high on the
   V8 suite, parses and writes JSON in 56% to 62% of the time, runs regular
@@ -386,10 +387,18 @@ with each other, but tifa has changed them since: its SSR bundle is an ES
 module now, i18next and lucide-react are cached, and the MUI bundle hashes
 with `__tifa_murmur2__` itself. This run uses the bundles tifa builds today.
 
-Run of 2026-10-24 on the GCP machine, CPU 3 and its sibling CPU 7 idle,
-Go 1.27.2, `-pgo=off`, slowjs v0.28.6, whose default interpreter on
-linux/amd64 is the one in Go assembly
+Runs of 2026-10-24 on the GCP machine, CPU 3 and its sibling CPU 7 idle,
+Go 1.27.2, slowjs v0.28.6, whose default interpreter on linux/amd64 is the
+one in Go assembly. The first run builds every engine with `-pgo=off`
 ([results](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md)).
+Two more runs build the slowjs rows both ways, alternating, with
+`-pgo=off` and with `-pgo=` the profile tifa c729ad2 ships
+(`internal/codegen/engine.pgo`, SHA256
+`9754c5be7b019eb8236400a795f614e145329aa7b1c8f1a011155dcd8eb14a1f`), as
+`tifa build` builds an app
+([round 1](../compare/engines/results/2026-10-24-v0.28.6-pgo-gcp-pages-r1.md),
+[round 2](../compare/engines/results/2026-10-24-v0.28.6-pgo-gcp-pages-r2.md)).
+`go version -m` shows `-pgo=engine.pgo` on the binaries built with it.
 
 - **Bundles.** tifa c729ad2 built `examples/shop`, `test/apps/mui` and
   `test/apps/bench` with `go tool tifa build`, and the inputs are the data
@@ -417,13 +426,17 @@ linux/amd64 is the one in Go assembly
 
 Each cell: geometric mean over the pages of a bundle of the time per render as
 a ratio to C QuickJS 2026-06-04 (below 1 is faster than C), the range in
-brackets.
+brackets. The rows with PGO give the two rounds, the others the first run,
+without PGO, where the rows without PGO of the later rounds landed within
+0.02.
 
 | Row | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
 |---|---|---|---|
-| slowjs, same JavaScript (polyfill) | 1.25 (1.17–1.34) | 0.99 (0.90–1.10) | 1.29 (1.22–1.40) |
+| slowjs, same JavaScript (polyfill), with tifa's PGO profile | 1.17–1.18 (1.11–1.26) | 0.95–0.97 (0.88–1.08) | 1.25–1.26 (1.17–1.32) |
+| slowjs, same JavaScript (polyfill), without PGO | 1.25 (1.17–1.34) | 0.99 (0.90–1.10) | 1.29 (1.22–1.40) |
 | slowjs, own Intl only | 1.25 (1.17–1.34) | 0.60 (0.44–0.98) | 1.01 (0.83–1.44) |
-| **slowjs-tifa, as tifa runs it** | **1.22 (1.14–1.31)** | **0.45 (0.33–0.74)** | **0.97 (0.83–1.23)** |
+| **slowjs-tifa, as tifa runs it, with tifa's PGO profile** | **1.14–1.15 (1.07–1.22)** | **0.43 (0.32–0.71)** | **0.91–0.93 (0.78–1.16)** |
+| slowjs-tifa, as tifa runs it, without PGO | 1.22 (1.14–1.31) | 0.45 (0.33–0.74) | 0.97 (0.83–1.23) |
 | slowjs-tifa-nogoasm, the interpreter in Go | 1.46 (1.39–1.53) | 0.48 (0.36–0.78) | 1.04 (0.87–1.37) |
 | C QuickJS 2026-06-04 | 1.00 | 1.00 | 1.00 |
 | C QuickJS master 7d1c13c5d8 | 1.01 (1.00–1.02) | 1.00 (0.99–1.00) | 1.00 (0.95–1.01) |
@@ -438,11 +451,14 @@ Reading it:
   on the shop (0.89 to 0.95) and 0.93 on MUI. The `slowjs-tifa-nogoasm` row
   lands about where slowjs was in the run on the pinned bundles (1.46 against
   1.48 on bench).
-- **Against C.** As tifa runs it, slowjs is now faster than C QuickJS on the
-  polyfill on the shop (0.97) and on MUI (0.45), and takes 1.22 times the
-  time of C on the bench pages, which need no Intl. Running the same
-  JavaScript, it takes 1.25 to 1.29 times the time of C on bench and the shop,
-  and the same time as C on MUI.
+- **Against C.** As tifa builds and runs it, slowjs is faster than C QuickJS
+  on the polyfill on the shop (0.91 to 0.93) and on MUI (0.43), and takes
+  1.14 to 1.15 times the time of C on the bench pages, which need no Intl.
+  Running the same JavaScript, it takes 1.17 to 1.26 times the time of C on
+  bench and the shop, and about the same time as C on MUI.
+- **PGO.** tifa's profile takes 4% to 5% off the tifa row and 1% to 4% off
+  the row on the same JavaScript. The profile is collected from tifa's own
+  pages with its own Intl, so it covers the polyfill less.
 - **The tifa setup against plain slowjs with its own Intl.** 0.98 on bench,
   0.96 on the shop (0.66 to 1.01: the English journal page takes 0.66) and
   0.76 on MUI, where the hash in Go makes 279754 calls in the run.
