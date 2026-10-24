@@ -22,6 +22,8 @@ Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and c
 
 linux and darwin on amd64 and arm64, and windows on amd64. A build for any other target stops with an error that names these.
 
+On linux/amd64, the `goasm` build tag swaps in an interpreter compiled from the C source and shipped as Go assembly. It is off by default and renders tifa's pages in 0.850 to 0.940 of the time. See [The goasm interpreter](docs/fork-changes/go-assembly.md).
+
 ## A first VM
 
 ```go

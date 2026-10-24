@@ -65,8 +65,11 @@ run(8)`); got == "" {
 	count := func(rounds string) (objs, strs, atoms int64) {
 		eval1(t, tls, ctx, "run("+rounds+")")
 		XJS_RunGC(tls, rt)
-		var u TJSMemoryUsage
-		XJS_ComputeMemoryUsage(tls, rt, uintptr(unsafe.Pointer(&u)))
+		n := int(unsafe.Sizeof(TJSMemoryUsage{}))
+		p := tls.Alloc(n)
+		defer tls.Free(n)
+		XJS_ComputeMemoryUsage(tls, rt, p)
+		u := (*TJSMemoryUsage)(unsafe.Pointer(p))
 		return u.Fobj_count, u.Fstr_count, u.Fatom_count
 	}
 	o1, s1, a1 := count("8")

@@ -79,6 +79,7 @@ The final changes have separate printers. `-expect` reads either raw upstream or
 | `__ccgo_up`, `upSites` (`-up`), the cells of `_JS_CallInternal` (`-cells`), `pinVars` | [interpreter-loop.md](fork-changes/interpreter-loop.md#less-stack-work-in-the-interpreter-loop) |
 | `set_value`, `inlineCallees` (`-inline`) | [interpreter-loop.md](fork-changes/interpreter-loop.md#set_value-written-out-in-the-interpreter) |
 | `js_poll_interrupts` (`-poll`) | [interpreter-loop.md](fork-changes/interpreter-loop.md#the-interrupt-countdown-inside-the-interpreter) |
+| The fingerprint of `fixGoasm`, `goasmInterpreterRules`, `goasmHelperRules`, a replacement count of `internal/goasm/cpatch.py`, `internal/goasm/regenerate.py --check` | [go-assembly.md](fork-changes/go-assembly.md#when-upstream-changes-it) |
 | `JSRuntime`, `JS_NewRuntime2` (`-runtime`), `frontFuncs`, `JSMallocBlockHeader` (`-front`) | [memory-and-allocation.md](fork-changes/memory-and-allocation.md#a-front-cache-for-small-blocks) |
 | `JS_DefinePropertyValue` and the define path (`-define`), `JS_NewObjectFromShape`, `objectBits` | [objects-and-shapes.md](fork-changes/objects-and-shapes.md#new-properties-of-plain-objects-skip-the-generic-path) |
 | `shapeFuncs`, `JSShape` (`-shape`), `gc_phase` | [objects-and-shapes.md](fork-changes/objects-and-shapes.md#kept-shapes) |

@@ -33,6 +33,7 @@ go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to `temporal/` also runs `go test ./temporal` without `-short` (the Chromium comparison and the link test are part of it), and the Temporal lines of the focused checks, the memgrind section and the race detector section.
 - A change to the engine, to `internal/fixlib` or to the C patch also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
+- A change to the C patch, to `internal/goasm`, to a rule of `internal/fixlib` that changes `_JS_CallInternal`, or to the Go version also runs the [goasm checks](#the-goasm-interpreter).
 
 New behavior and bugs with a known cause: write the test first, see it fail, then write the fix. Tests live next to the code: a change to the engine is tested in `lib/` (through the C API) or in the root package (through the Go API), and a change of `fixlib` in `internal/fixlib`, which checks both the rewrite and that it stops on code it does not expect.
 
@@ -193,6 +194,31 @@ done
 ```
 
 `internal/fixlib/macros_test.go` checks that every macro constant the generated code and the Go files next to it use is declared in each generated file. v0.26.6 and v0.26.7 did not build on linux because of one that only the darwin and windows files declared.
+
+## The goasm interpreter
+
+The `goasm` build tag swaps in an interpreter generated from the patched C on linux/amd64 (see [go-assembly.md](fork-changes/go-assembly.md)). Its generated files must be exactly what the generator makes from the committed sources. Check it on linux/amd64 with LLVM 22.1.8 (`clang-22`, `clang++-22`, `opt-22`, `llc-22` and the LLVM development headers):
+
+```sh
+python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check
+```
+
+It downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--zip` names (`make download` in `lib/` puts one there), checks its SHA-256 against the one in the script, applies `lib/internal/patch/quickjs.diff`, runs the generator and compares the files it makes in `lib/` (the assembly, its Go bridges and `goasm_helpers.txt`) byte for byte. It exits with status 1 and names each file that differs. Without `--check` it writes the files. Set `CXXFLAGS` when the LLVM headers or the C++ library are outside the compiler's default paths. It takes a few minutes, under a minute once the Go build cache is warm.
+
+`TestGoasmCoversInterpreterRules` in `internal/fixlib` checks that every rule of `fixlib` that changes `_JS_CallInternal` has a row in `goasmInterpreterRules` (`internal/fixlib/goasm.go`): written in C by `internal/goasm/cpatch.py`, already in the patched C, or only for Go's compiler. It fails when a new rule has no row, so a fast path added to the Go interpreter cannot be lost in the generated one unnoticed. `TestGoasmCoversHelperRules` does the same, in `goasmHelperRules`, for the rules that change the Go function of a C helper the generated interpreter compiles in, listed in `lib/goasm_helpers.txt`. Both run with the other tests of `fixlib`.
+
+With the tag, run the generator tests and the engine checks:
+
+```sh
+python3 -m unittest discover -s internal/goasm
+go test -short -p 2 -tags goasm -timeout 30m . ./lib ./internal/fixlib
+go test -p 2 -tags goasm -timeout 90m ./internal/fixlib
+go test -p 2 -vet=off -tags goasm,libc.memgrind -run 'Memgrind|EnginePanic|EngineGoexit|CallDepth|TLS|Goasm|StackGrowth|GCStops' ./...
+go test -race -short -p 2 -vet=off -tags goasm -timeout 2h . ./lib
+cd lib && go test -vet=off -tags goasm -run Test262 -v . -args -xtags goasm
+```
+
+`-xtags goasm` builds the test262 runner with the tag too. Then compare the HTML of tifa's pages with and without the tag, and check a linked tifa binary with `python3 internal/goasm/verify_linked.py <work>/build/lowered.o <binary>` (pass `--work` to `regenerate.py` to keep `lowered.o`). Other targets build the Go interpreter with or without the tag, which [Every target](#every-target) covers when run with `-tags goasm` as well.
 
 ## Same as upstream after fixlib
 

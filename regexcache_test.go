@@ -128,7 +128,7 @@ func TestRegExpCacheStops(t *testing.T) {
 				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || e.Message != "interrupted" {
 					t.Fatalf("%s: got %v, want interrupted", js, err)
 				}
-				if took > 50*time.Millisecond {
+				if took > stopLimit {
 					t.Errorf("%s: stopped %v after the call started, want about 10ms", js, took)
 				}
 			})
