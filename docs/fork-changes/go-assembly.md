@@ -4,7 +4,7 @@ read_when:
   - Turning on the goasm interpreter in a program, or deciding whether to
   - Building or regenerating the goasm interpreter
   - Changing the C patch, the interpreter rules of fixlib, Go versions or LLVM versions
-  - fixGoasm or TestGoasmCoversInterpreterRules stops
+  - fixGoasm, TestGoasmCoversInterpreterRules or TestGoasmCoversHelperRules stops
 ---
 
 # The goasm interpreter
@@ -159,6 +159,19 @@ alloca, defers, fast frames). `TestGoasmCoversInterpreterRules` fails when a
 file of `fixlib` changes the interpreter and has no row, when a row is
 stale, or when a C row names a change `cpatch.py` does not.
 
+The generated interpreter also compiles in its own copy of the small C
+helpers it calls, such as `find_own_property`, `get_shape_prop` and
+`set_value`. The generator lists them in `lib/goasm_helpers.txt`. A change
+of `fixlib` to the Go function of one of them does not reach the assembly
+either, so `goasmHelperRules` gives a row, with the same three kinds, to
+each file of `fixlib` that changes one: names the function on its own (as
+a list of functions to rewrite, fingerprint or clone does), holds its first
+line (as a hook does), or left a "(see fixX)" mark in it. Today every such
+file only fingerprints a helper or reshapes its Go frame.
+`TestGoasmCoversHelperRules` fails on a missing or stale row in the same
+way. Helpers that ccgo writes into their callers have no Go function of
+their own and change with the interpreter.
+
 ## Verification and maintenance
 
 `fixGoasm` checks the complete original Go interpreter fingerprint and checks
@@ -183,9 +196,9 @@ stopping latency in the final linked application.
   the fingerprint, then regenerate and run the goasm checks.
 - `cpatch.py` stops on a replacement count: the C it rewrites changed. Port
   the fast path to the new C.
-- `TestGoasmCoversInterpreterRules` fails: add the row the message asks for,
-  and port the fast path to `cpatch.py` if it changes what the interpreter
-  does.
+- `TestGoasmCoversInterpreterRules` or `TestGoasmCoversHelperRules`
+  fails: add the row the message asks for, and port the fast path to
+  `cpatch.py` if it changes what the interpreter or the helper does.
 - `regenerate.py --check` fails: a change to the C patch, a struct of the
   engine or the generator changed the output. Regenerate with
   `regenerate.py` and commit the files with the change that caused them.
@@ -195,14 +208,7 @@ stopping latency in the final linked application.
 These must hold before the tag turns into the default on linux/amd64:
 
 - The drift check (`regenerate.py --check`) runs on every release, and the
-  rule table check above stays green. Both are in place.
-- The rule table check also covers the inline helpers that the generated
-  interpreter compiles in from the C (such as `find_own_property`,
-  `get_shape_prop` and `set_value`, listed in `inline.json` of a
-  generator run). A change of `fixlib` to the Go copy of one of them does
-  not reach the assembly, and the check does not see it yet. No change does
-  so today: the ones that name them only fingerprint them or reshape Go
-  frames.
+  rule table checks above stay green. All three are in place.
 - Every release runs the full checks with and without the tag: short,
   fixlib, memgrind, race, test262, HTML of tifa's pages, all five targets.
 - Throughput of several VMs at once (`BenchmarkShopParallel` in tifa) and

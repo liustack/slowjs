@@ -11,13 +11,13 @@ DIR holds clang-22, clang++-22, opt-22 and llc-22 of LLVM 22.1.8. The pinned
 QuickJS archive named in lib/Makefile is downloaded unless --zip gives a copy,
 and its SHA-256 must match. CXXFLAGS adds flags to the build of the LLVM pass
 plugin, for headers outside the compiler's default paths. With --check the
-committed lib/goasm_*_linux_amd64.* files are left alone, and the script
+committed lib/goasm_* files it makes are left alone, and the script
 exits with status 1 and names each file that differs.
 """
 import argparse,hashlib,os,pathlib,shlex,shutil,subprocess,sys,tempfile,urllib.request,zipfile
 
 # The files build.py writes, all committed under lib/.
-GENERATED=['goasm_bridges_linux_amd64.go','goasm_bridges_linux_amd64.s','goasm_run_linux_amd64.s']
+GENERATED=['goasm_bridges_linux_amd64.go','goasm_bridges_linux_amd64.s','goasm_helpers.txt','goasm_run_linux_amd64.s']
 # SHA-256 of each QuickJS archive lib/Makefile may pin.
 SOURCE_SHA256={'3d5e064e9dd67c70f7962836505a7fa067bf0a4e.zip':'dcc3a698209915262bf5c49b458d01e60ee0f3651591bfcc9d32c1c7cee5ac17'}
 

@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,7 @@ func TestGoasmCoversInterpreterRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bad := goasmRuleProblems(found, goasmInterpreterRules, string(cpatch)); len(bad) != 0 {
+	if bad := goasmRuleProblems(found, goasmInterpreterRules, string(cpatch), "goasmInterpreterRules", "_JS_CallInternal"); len(bad) != 0 {
 		t.Fatalf("fixlib and the generated interpreter disagree (see internal/fixlib/goasm.go):\n%s", strings.Join(bad, "\n"))
 	}
 }
@@ -78,7 +79,7 @@ func TestGoasmRuleProblems(t *testing.T) {
 		"c.go": {goasmGoOnly, "gone"},
 		"d.go": {goasmCPatch, "fixD"},
 	}
-	got := goasmRuleProblems(map[string]string{"a.go": "x", "b.go": "x", "d.go": "x", "e.go": "names _JS_CallInternal"}, rules, "fixA")
+	got := goasmRuleProblems(map[string]string{"a.go": "x", "b.go": "x", "d.go": "x", "e.go": "names _JS_CallInternal"}, rules, "fixA", "goasmInterpreterRules", "_JS_CallInternal")
 	want := []string{
 		"c.go: has a row in goasmInterpreterRules but no longer changes _JS_CallInternal",
 		"d.go: internal/goasm/cpatch.py does not name fixD",
@@ -86,5 +87,72 @@ func TestGoasmRuleProblems(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// TestGoasmCoversHelperRules checks the same for the helpers that the
+// generated interpreter compiles in from the C, listed by the generator in
+// lib/goasm_helpers.txt: a change of fixlib to the Go copy of one of them
+// does not reach the assembly, so each needs a row in goasmHelperRules.
+func TestGoasmCoversHelperRules(t *testing.T) {
+	helpers, err := goasmHelpers("../../lib/goasm_helpers.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(helpers) == 0 {
+		t.Fatal("lib/goasm_helpers.txt lists no helpers")
+	}
+	found, err := goasmHelperFiles(".", "../../lib/ccgo_linux_amd64.go", helpers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cpatch, err := os.ReadFile("../goasm/cpatch.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad := goasmRuleProblems(found, goasmHelperRules, string(cpatch), "goasmHelperRules", goasmHelperWhat); len(bad) != 0 {
+		t.Fatalf("fixlib and the generated interpreter disagree (see internal/fixlib/goasm.go):\n%s", strings.Join(bad, "\n"))
+	}
+}
+
+// A helper's Go copy is changed by a file whose code names the function on
+// its own, as a list of functions does, or holds its first line, as a hook
+// does, by one that uses a package variable with such a value, and by one
+// whose change left a mark in it. A call of the helper in another
+// function's text, a helper with no Go function of its own, which ccgo
+// wrote into its callers, and a test file are not.
+func TestGoasmHelperFiles(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, text string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("a.go", "package main\n\nvar fooFuncs = []string{\"_foo\", \"_other\"}\n")
+	write("a2.go", "package main\n\nvar s = \"\\tx := _foo(tls, p)\\n\"\n")
+	write("b.go", "package main\n\nfunc fixBar() {}\n")
+	write("c.go", "package main\n\nvar bazHook = \"func Xbaz(tls *libc.TLS) {\\n\"\n")
+	write("d.go", "package main\n\nfunc d() { _ = bazHook }\n")
+	write("e.go", "package main\n\nvar t = []string{\"_foo_lazy\", \"_nogo\"}\n")
+	write("a_test.go", "package main\n\nvar u = \"_foo\"\n")
+	engine := filepath.Join(dir, "engine.go")
+	write("engine.go", "package x\n\nfunc _foo(tls *libc.TLS, p uintptr) (r int32) {\n\t// Changed by internal/fixlib: x (see fixBar).\n\treturn 0\n}\n\nfunc Xbaz(tls *libc.TLS) {\n}\n")
+	got, err := goasmHelperFiles(dir, engine, []string{"foo", "baz", "nogo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"foo in a.go": "names _foo",
+		"foo in b.go": "left (see fixBar) in _foo",
+		"baz in c.go": "names Xbaz",
+		"baz in d.go": "uses bazHook",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("got %v, want %v", got, want)
+		}
 	}
 }

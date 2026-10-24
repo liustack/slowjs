@@ -46,6 +46,9 @@ compiler are required only to regenerate the assembly.
    environment. Other targets get a typed Go wrapper. Indirect calls use
    ccgo's function value representation. The external engine memory
    contains no movable Go stack addresses.
+7. `helpers.py` writes `lib/goasm_helpers.txt`, the C helpers `prepare.py`
+   compiled into the interpreter. `TestGoasmCoversHelperRules` of
+   `internal/fixlib` reads it.
 
 `checks.py` holds the stack rules Go's movable stack needs. Each step runs
 the checks for what it can break, and generation stops on a violation. See

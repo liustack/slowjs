@@ -28,6 +28,8 @@ that changes the Go interpreter and says what the generated one does instead:
 a fast path written here, behavior the patched C already has, or a change
 that only works around Go's compiler. TestGoasmCoversInterpreterRules fails
 when a file has no row, or when a row names a change this file does not.
+goasmHelperRules and TestGoasmCoversHelperRules do the same for the Go
+copies of the helpers the interpreter compiles in (lib/goasm_helpers.txt).
 Every replacement must match the number of times it gives.
 """
 import pathlib,sys

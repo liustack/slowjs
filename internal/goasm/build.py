@@ -39,6 +39,7 @@ run([llvm/'clang-22','-c',work/'lowered.s','-o',work/'lowered.o'])
 run(['python3',here/'bridges.py',work/'bridges.json',a.signatures,out])
 run(['python3',here/'elf2go.py',work/'lowered.o',work/'lowered.s.json',out/'goasm_run_linux_amd64.s'])
 run(['gofmt','-w',out/'goasm_bridges_linux_amd64.go'])
+run(['python3',here/'helpers.py',work/'inline.json',out/'goasm_helpers.txt'])
 
 manifest={str(f.relative_to(work)):hashlib.sha256(f.read_bytes()).hexdigest() for f in work.iterdir() if f.is_file() and f.suffix in ('.i','.ll','.s','.o','.json','.c')}
 manifest['compiler']=version.strip()
