@@ -23,8 +23,8 @@ func stackAddress() uintptr {
 // TestStackGrowthInDeepRecursion renders HTML through deep JS recursion on a
 // new goroutine, which starts with a small stack. Go must grow (and so move)
 // that stack while interpreter frames are live, in the middle of the
-// recursion. With -tags goasm the frames are those of the assembly
-// interpreter: a frame must hold no Go stack address for the copy to be
+// recursion. On linux/amd64, unless slowjs_nogoasm is given, the frames are
+// those of the assembly interpreter: a frame must hold no Go stack address for the copy to be
 // right. Both JS calling JS directly and JS called back from a native
 // function (Array.prototype.map) are covered.
 func TestStackGrowthInDeepRecursion(t *testing.T) {
