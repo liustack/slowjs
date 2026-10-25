@@ -62,6 +62,9 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       if (F.arg_size() == 0 || !F.getArg(0)->getType()->isPointerTy())
         report_fatal_error(Twine("function without a shadow-stack pointer: ") + F.getName());
       dropMemoryFacts(F);
+      // The Go frame cannot be realigned: LLVM must use the stack alignment
+      // the target is told (8 on amd64) and spill with unaligned moves.
+      F.addFnAttr("no-realign-stack");
       Argument *ss = F.getArg(0);
 
       SmallVector<AllocaInst *> fixed, dynamic;
