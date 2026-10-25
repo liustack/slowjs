@@ -1180,16 +1180,6 @@ static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
 static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
                              JSValueConst val, int flags, int scope_idx);
 JSValue __attribute__((format(printf, 2, 3))) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
-static __maybe_unused void JS_DumpAtoms(JSRuntime *rt);
-static __maybe_unused void JS_DumpString(JSRuntime *rt, const JSString *p);
-static __maybe_unused void JS_DumpObjectHeader(JSRuntime *rt);
-static __maybe_unused void JS_DumpObject(JSRuntime *rt, JSObject *p);
-static __maybe_unused void JS_DumpGCObject(JSRuntime *rt, JSGCObjectHeader *p);
-static __maybe_unused void JS_DumpAtom(JSContext *ctx, const char *str, JSAtom atom);
-static __maybe_unused void JS_DumpValueRT(JSRuntime *rt, const char *str, JSValueConst val);
-static __maybe_unused void JS_DumpValue(JSContext *ctx, const char *str, JSValueConst val);
-static __maybe_unused void JS_DumpShapes(JSRuntime *rt);
-static void js_dump_value_write(void *opaque, const char *buf, size_t len);
 static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int magic);
 static void js_array_finalizer(JSRuntime *rt, JSValue val);
@@ -1747,23 +1737,6 @@ static size_t __js_malloc_usable_size(JSMallocContext *s, const char *ptr)
     } else {
         size_t block_size = js_malloc_block_sizes[b->block_size_idx];
         return block_size - sizeof(*b);
-    }
-}
-
-static __maybe_unused void js_malloc_dump_arenas(JSMallocContext *s)
-{
-    struct list_head *el;
-    int block_size_idx;
-
-    printf("%20s %10s %10s\n", "PTR", "BLK_SIZE", "ALLOC");
-    for(block_size_idx = 0; block_size_idx < JS_MALLOC_BLOCK_SIZE_COUNT; block_size_idx++) {
-        int block_size = js_malloc_block_sizes[block_size_idx];
-        list_for_each(el, &s->arena_list[block_size_idx]) {
-            JSMallocArena *ar = list_entry(el, JSMallocArena, link);
-            printf("%20p %10u %9.1f%%\n",
-                   ar, block_size,
-                   (double)ar->n_used_blocks / ar->n_blocks * 100);
-        }
     }
 }
 
@@ -3019,73 +2992,6 @@ static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
         h = hash_string_rope(r->left, h);
         return hash_string_rope(r->right, h);
     }
-}
-
-static __maybe_unused void JS_DumpChar(FILE *fo, int c, int sep)
-{
-    if (c == sep || c == '\\') {
-        fputc('\\', fo);
-        fputc(c, fo);
-    } else if (c >= ' ' && c <= 126) {
-        fputc(c, fo);
-    } else if (c == '\n') {
-        fputc('\\', fo);
-        fputc('n', fo);
-    } else {
-        fprintf(fo, "\\u%04x", c);
-    }
-}
-
-static __maybe_unused void JS_DumpString(JSRuntime *rt, const JSString *p)
-{
-    int i, sep;
-
-    if (p == NULL) {
-        printf("<null>");
-        return;
-    }
-    printf("%d", js_rc((void *)p)->ref_count);
-    sep = (js_rc((void *)p)->ref_count == 1) ? '\"' : '\'';
-    putchar(sep);
-    for(i = 0; i < p->len; i++) {
-        JS_DumpChar(stdout, string_get(p, i), sep);
-    }
-    putchar(sep);
-}
-
-static __maybe_unused void JS_DumpAtoms(JSRuntime *rt)
-{
-    JSAtomStruct *p;
-    int h, i;
-    /* This only dumps hashed atoms, not JS_ATOM_TYPE_SYMBOL atoms */
-    printf("JSAtom count=%d size=%d hash_size=%d:\n",
-           rt->atom_count, rt->atom_size, rt->atom_hash_size);
-    printf("JSAtom hash table: {\n");
-    for(i = 0; i < rt->atom_hash_size; i++) {
-        h = rt->atom_hash[i];
-        if (h) {
-            printf("  %d:", i);
-            while (h) {
-                p = rt->atom_array[h];
-                printf(" ");
-                JS_DumpString(rt, p);
-                h = p->hash_next;
-            }
-            printf("\n");
-        }
-    }
-    printf("}\n");
-    printf("JSAtom table: {\n");
-    for(i = 0; i < rt->atom_size; i++) {
-        p = rt->atom_array[i];
-        if (!atom_is_free(p)) {
-            printf("  %d: { %d %08x ", i, p->atom_type, p->hash);
-            if (!(p->len == 0 && p->is_wide_char != 0))
-                JS_DumpString(rt, p);
-            printf(" %d }\n", p->hash_next);
-        }
-    }
-    printf("}\n");
 }
 
 static int JS_ResizeAtomHash(JSRuntime *rt, int new_hash_size)
@@ -5623,51 +5529,6 @@ static JSShape *find_hashed_shape_prop(JSRuntime *rt, JSShape *sh,
     next: ;
     }
     return NULL;
-}
-
-static __maybe_unused void JS_DumpShape(JSRuntime *rt, int i, JSShape *sh)
-{
-    char atom_buf[ATOM_GET_STR_BUF_SIZE];
-    int j;
-
-    /* XXX: should output readable class prototype */
-    printf("%5d %3d%c %14p %5d %5d", i,
-           js_rc(sh)->ref_count, " *"[sh->is_hashed],
-           (void *)sh->proto, sh->prop_size, sh->prop_count);
-    for(j = 0; j < sh->prop_count; j++) {
-        printf(" %s", JS_AtomGetStrRT(rt, atom_buf, sizeof(atom_buf),
-                                      get_shape_prop(sh)[j].atom));
-    }
-    printf("\n");
-}
-
-static __maybe_unused void JS_DumpShapes(JSRuntime *rt)
-{
-    int i;
-    JSShape *sh;
-    struct list_head *el;
-    JSObject *p;
-    JSGCObjectHeader *gp;
-
-    printf("JSShapes: {\n");
-    printf("%5s %4s %14s %5s %5s %s\n", "SLOT", "REFS", "PROTO", "SIZE", "COUNT", "PROPS");
-    for(i = 0; i < rt->shape_hash_size; i++) {
-        for(sh = rt->shape_hash[i]; sh != NULL; sh = sh->shape_hash_next) {
-            JS_DumpShape(rt, i, sh);
-            assert(sh->is_hashed);
-        }
-    }
-    /* dump non-hashed shapes */
-    list_for_each(el, &rt->gc_obj_list) {
-        gp = list_entry(el, JSGCObjectHeader, link);
-        if (js_rc(gp)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT) {
-            p = (JSObject *)gp;
-            if (!p->shape->is_hashed) {
-                JS_DumpShape(rt, -1, p->shape);
-            }
-        }
-    }
-    printf("}\n");
 }
 
 /* 'props[]' is used to initialized the object properties. The number
@@ -12565,27 +12426,6 @@ static JSBigInt *js_bigint_set_short(JSBigIntBuf *buf, JSValueConst val)
     return js_bigint_set_si(buf, JS_VALUE_GET_SHORT_BIG_INT(val));
 }
 
-static __maybe_unused void js_bigint_dump1(JSContext *ctx, const char *str,
-                                           const js_limb_t *tab, int len)
-{
-    int i;
-    printf("%s: ", str);
-    for(i = len - 1; i >= 0; i--) {
-#if JS_LIMB_BITS == 32
-        printf(" %08x", tab[i]);
-#else
-        printf(" %016" PRIx64, tab[i]);
-#endif
-    }
-    printf("\n");
-}
-
-static __maybe_unused void js_bigint_dump(JSContext *ctx, const char *str,
-                                          const JSBigInt *p)
-{
-    js_bigint_dump1(ctx, str, p->tab, p->len);
-}
-
 static JSBigInt *js_bigint_new_si(JSContext *ctx, js_slimb_t a)
 {
     JSBigInt *r;
@@ -15396,114 +15236,6 @@ void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_op
                    JSValueConst val, const JSPrintValueOptions *options)
 {
     JS_PrintValueInternal(ctx->rt, ctx, write_func, write_opaque, val, options);
-}
-
-static void js_dump_value_write(void *opaque, const char *buf, size_t len)
-{
-    FILE *fo = opaque;
-    fwrite(buf, 1, len, fo);
-}
-
-static __maybe_unused void print_atom(JSContext *ctx, JSAtom atom)
-{
-    JSPrintValueState ss, *s = &ss;
-    memset(s, 0, sizeof(*s));
-    s->rt = ctx->rt;
-    s->ctx = ctx;
-    s->write_func = js_dump_value_write;
-    s->write_opaque = stdout;
-    js_print_atom(s, atom);
-}
-
-static __maybe_unused void JS_DumpAtom(JSContext *ctx, const char *str, JSAtom atom)
-{
-    printf("%s=", str);
-    print_atom(ctx, atom);
-    printf("\n");
-}
-
-static __maybe_unused void JS_DumpValue(JSContext *ctx, const char *str, JSValueConst val)
-{
-    printf("%s=", str);
-    JS_PrintValue(ctx, js_dump_value_write, stdout, val, NULL);
-    printf("\n");
-}
-
-static __maybe_unused void JS_DumpValueRT(JSRuntime *rt, const char *str, JSValueConst val)
-{
-    printf("%s=", str);
-    JS_PrintValueRT(rt, js_dump_value_write, stdout, val, NULL);
-    printf("\n");
-}
-
-static __maybe_unused void JS_DumpObjectHeader(JSRuntime *rt)
-{
-    printf("%14s %4s %4s %14s %s\n",
-           "ADDRESS", "REFS", "SHRF", "PROTO", "CONTENT");
-}
-
-/* for debug only: dump an object without side effect */
-static __maybe_unused void JS_DumpObject(JSRuntime *rt, JSObject *p)
-{
-    JSShape *sh;
-    JSPrintValueOptions options;
-    
-    /* XXX: should encode atoms with special characters */
-    sh = p->shape; /* the shape can be NULL while freeing an object */
-    printf("%14p %4d ",
-           (void *)p,
-           js_rc(p)->ref_count);
-    if (sh) {
-        printf("%3d%c %14p ",
-               js_rc(sh)->ref_count,
-               " *"[sh->is_hashed],
-               (void *)sh->proto);
-    } else {
-        printf("%3s  %14s ", "-", "-");
-    }
-
-    JS_PrintValueSetDefaultOptions(&options);
-    options.max_depth = 1;
-    options.show_hidden = TRUE;
-    options.raw_dump = TRUE;
-    JS_PrintValueRT(rt, js_dump_value_write, stdout, JS_MKPTR(JS_TAG_OBJECT, p), &options);
-
-    printf("\n");
-}
-
-static __maybe_unused void JS_DumpGCObject(JSRuntime *rt, JSGCObjectHeader *p)
-{
-    if (js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT) {
-        JS_DumpObject(rt, (JSObject *)p);
-    } else {
-        printf("%14p %4d ",
-               (void *)p,
-               js_rc(p)->ref_count);
-        switch(js_rc(p)->gc_obj_type) {
-        case JS_GC_OBJ_TYPE_FUNCTION_BYTECODE:
-            printf("[function bytecode]");
-            break;
-        case JS_GC_OBJ_TYPE_SHAPE:
-            printf("[shape]");
-            break;
-        case JS_GC_OBJ_TYPE_VAR_REF:
-            printf("[var_ref]");
-            break;
-        case JS_GC_OBJ_TYPE_ASYNC_FUNCTION:
-            printf("[async_function]");
-            break;
-        case JS_GC_OBJ_TYPE_JS_CONTEXT:
-            printf("[js_context]");
-            break;
-        case JS_GC_OBJ_TYPE_MODULE:
-            printf("[module]");
-            break;
-        default:
-            printf("[unknown %d]", js_rc(p)->gc_obj_type);
-            break;
-        }
-        printf("\n");
-    }
 }
 
 /* return -1 if exception (proxy case) or TRUE/FALSE */
@@ -23226,67 +22958,6 @@ static void free_token(JSParseState *s, JSToken *token)
         if (token->val >= TOK_FIRST_KEYWORD &&
             token->val <= TOK_LAST_KEYWORD) {
             JS_FreeAtom(s->ctx, token->u.ident.atom);
-        }
-        break;
-    }
-}
-
-static void __attribute((unused)) dump_token(JSParseState *s,
-                                             const JSToken *token)
-{
-    switch(token->val) {
-    case TOK_NUMBER:
-        {
-            double d;
-            JS_ToFloat64(s->ctx, &d, token->u.num.val);  /* no exception possible */
-            printf("number: %.14g\n", d);
-        }
-        break;
-    case TOK_IDENT:
-    dump_atom:
-        {
-            char buf[ATOM_GET_STR_BUF_SIZE];
-            printf("ident: '%s'\n",
-                   JS_AtomGetStr(s->ctx, buf, sizeof(buf), token->u.ident.atom));
-        }
-        break;
-    case TOK_STRING:
-        {
-            const char *str;
-            /* XXX: quote the string */
-            str = JS_ToCString(s->ctx, token->u.str.str);
-            printf("string: '%s'\n", str);
-            JS_FreeCString(s->ctx, str);
-        }
-        break;
-    case TOK_TEMPLATE:
-        {
-            const char *str;
-            str = JS_ToCString(s->ctx, token->u.str.str);
-            printf("template: `%s`\n", str);
-            JS_FreeCString(s->ctx, str);
-        }
-        break;
-    case TOK_REGEXP:
-        {
-            const char *str, *str2;
-            str = JS_ToCString(s->ctx, token->u.regexp.body);
-            str2 = JS_ToCString(s->ctx, token->u.regexp.flags);
-            printf("regexp: '%s' '%s'\n", str, str2);
-            JS_FreeCString(s->ctx, str);
-            JS_FreeCString(s->ctx, str2);
-        }
-        break;
-    case TOK_EOF:
-        printf("eof\n");
-        break;
-    default:
-        if (s->token.val >= TOK_NULL && s->token.val <= TOK_LAST_KEYWORD) {
-            goto dump_atom;
-        } else if (s->token.val >= 256) {
-            printf("token: %d\n", token->val);
-        } else {
-            printf("token: '%c'\n", token->val);
         }
         break;
     }
