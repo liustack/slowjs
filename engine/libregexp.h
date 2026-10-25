@@ -60,6 +60,9 @@ int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 int lre_check_stack_overflow(void *opaque, size_t alloca_size);
 /* must be provided by the user, return non zero if time out */
 int lre_check_timeout(void *opaque);
+/* must be provided by the user: count 'cost' steps toward the interrupt
+   counter of the user, return non zero if time out */
+int lre_poll_interrupts(void *opaque, int cost);
 void *lre_realloc(void *opaque, void *ptr, size_t size);
 
 #endif /* LIBREGEXP_H */

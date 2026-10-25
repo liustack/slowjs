@@ -684,6 +684,16 @@ static int re_parse_out_of_memory(REParseState *s)
     return re_parse_error(s, "out of memory");
 }
 
+/* Count one step toward the interrupt counter, and one more for each 256
+   bytes the step moves, so that compiling a long pattern counts its work
+   as running code does. The caller throws the interrupt on the message. */
+static int re_poll_interrupts(REParseState *s, size_t moved)
+{
+    if (lre_poll_interrupts(s->opaque, 1 + (int)(moved >> 8)))
+        return re_parse_error(s, "interrupted");
+    return 0;
+}
+
 /* If allow_overflow is false, return -1 in case of
    overflow. Otherwise return INT32_MAX. */
 static int parse_digits(const uint8_t **pp, BOOL allow_overflow)
@@ -1008,7 +1018,7 @@ static int parse_class_string_disjunction(REParseState *s, REStringList *cr,
     for(;;) {
         str.size = 0;
         while (*p != '}' && *p != '|') {
-            c = get_class_atom(s, NULL, &p, FALSE);
+            c = get_class_atom(s, NULL, &p, TRUE);
             if (c < 0)
                 goto fail;
             if (dbuf_put_u32(&str, c)) {
@@ -1102,6 +1112,24 @@ static int get_class_atom(REParseState *s, REStringList *cr,
             if (!inclass && s->is_unicode)
                 goto invalid_escape;
             break;
+        case '&':
+        case '!':
+        case '#':
+        case '%':
+        case ',':
+        case ':':
+        case ';':
+        case '<':
+        case '=':
+        case '>':
+        case '@':
+        case '`':
+        case '~':
+            /* ClassSetReservedPunctuator: valid to escape only in a
+               class of a unicode sets regexp */
+            if (inclass && s->unicode_sets)
+                break;
+            goto default_escape;
         case '^':
         case '$':
         case '\\':
@@ -1183,7 +1211,7 @@ static int get_class_atom(REParseState *s, REStringList *cr,
     case '^':
     case '`':
     case '~':
-        if (s->unicode_sets && p[1] == c) {
+        if (inclass && s->unicode_sets && p[1] == c) {
             /* forbidden double characters */
             return re_parse_error(s, "invalid class set operation in regular expression");
         }
@@ -1198,7 +1226,7 @@ static int get_class_atom(REParseState *s, REStringList *cr,
     case '/':
     case '-':
     case '|':
-        if (s->unicode_sets) {
+        if (inclass && s->unicode_sets) {
             /* invalid characters in unicode sets */
             return re_parse_error(s, "invalid character in class in regular expression");
         }
@@ -1405,6 +1433,8 @@ static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_
     for(;;) {
         if (*p == ']')
             break;
+        if (re_poll_interrupts(s, cr->cr.len * sizeof(cr->cr.points[0])))
+            goto fail;
         if (*p == '[' && s->unicode_sets) {
             if (re_parse_nested_class(s, cr1, &p))
                 goto fail;
@@ -2383,6 +2413,8 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
         if (*p == '|' || *p == ')')
             break;
         term_start = s->byte_code.size;
+        if (re_poll_interrupts(s, 0))
+            return -1;
         ret = re_parse_term(s, is_backward_dir);
         if (ret)
             return ret;
@@ -2391,6 +2423,8 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
                speed is not really critical here) */
             end = s->byte_code.size;
             term_size = end - term_start;
+            if (re_poll_interrupts(s, end - start))
+                return -1;
             if (dbuf_claim(&s->byte_code, term_size))
                 return -1;
             memmove(s->byte_code.buf + start + term_size,
@@ -2417,6 +2451,8 @@ static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
         s->buf_ptr++;
 
         len = s->byte_code.size - start;
+        if (re_poll_interrupts(s, len))
+            return -1;
 
         /* insert a split before the first alternative */
         if (dbuf_insert(&s->byte_code, start, 5)) {
@@ -2564,6 +2600,11 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
 
     if (re_parse_disjunction(s, FALSE)) {
     error:
+        /* The parser leaves no message only when it runs out of memory,
+           and what it reads back of the code is wrong once writing the
+           code failed. */
+        if (s->u.error_msg[0] == '\0' || dbuf_error(&s->byte_code))
+            re_parse_out_of_memory(s);
         dbuf_free(&s->byte_code);
         dbuf_free(&s->group_names);
         pstrcpy(error_msg, error_msg_size, s->u.error_msg);
