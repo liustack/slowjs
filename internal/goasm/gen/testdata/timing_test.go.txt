@@ -26,6 +26,9 @@ func TestCallOverhead(t *testing.T) {
 	if b_reg_v(0, 1000) != b_uni_v(0, 1000) {
 		t.Fatal("jsvalue benchmark mismatch")
 	}
+	if b_reg_p(0, 1000) != b_uni_p(0, 1000) {
+		t.Fatal("phase benchmark mismatch")
+	}
 
 	bench := func(f func(uintptr, int64) int64) float64 {
 		best := time.Hour
@@ -53,8 +56,10 @@ func TestCallOverhead(t *testing.T) {
 	ri, ui := bench(b_reg_i), bench(b_uni_i)
 	rd, ud := benchF(b_reg_d), benchF(b_uni_d)
 	rv, uv := bench(b_reg_v), bench(b_uni_v)
+	rp, up := bench(b_reg_p), bench(b_uni_p)
 	fmt.Printf("CALL-OVERHEAD %s/%s ns/call (min of 5, n=%d)\n", genArch, genMode, n)
 	fmt.Printf("  int(i64,i64)->i64      register=%.3f unified=%.3f delta=%.3f\n", ri, ui, ui-ri)
 	fmt.Printf("  double(f64,f64)->f64   register=%.3f unified=%.3f delta=%.3f\n", rd, ud, ud-rd)
 	fmt.Printf("  JSValue(i64,i64)->jsv  register=%.3f unified=%.3f delta=%.3f\n", rv, uv, uv-rv)
+	fmt.Printf("  int, busy caller       register=%.3f unified=%.3f delta=%.3f\n", rp, up, up-rp)
 }
