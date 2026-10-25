@@ -28,18 +28,9 @@
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
-#include <sys/time.h>
-#include <time.h>
-#include <fenv.h>
 #include <math.h>
-#if defined(__APPLE__)
-#include <malloc/malloc.h>
-#elif defined(__linux__) || defined(__GLIBC__)
-#include <malloc.h>
-#elif defined(__FreeBSD__)
-#include <malloc_np.h>
-#endif
 
+#include "host.h"
 #include "cutils.h"
 #include "list.h"
 #include "quickjs.h"
@@ -48119,9 +48110,7 @@ static uint64_t xorshift64star(uint64_t *pstate)
 
 static void js_random_init(JSContext *ctx)
 {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    ctx->random_state = ((int64_t)tv.tv_sec * 1000000) + tv.tv_usec;
+    ctx->random_state = host_now(0, HOST_NOW_WALL) / 1000;
     /* the state must be non zero */
     if (ctx->random_state == 0)
         ctx->random_state = 1;
@@ -56115,11 +56104,9 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     return JS_NewStringLen(ctx, buf, pos);
 }
 
-/* OS dependent: return the UTC time in ms since 1970. */
+/* return the UTC time in ms since 1970. */
 static int64_t date_now(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000 + (tv.tv_usec / 1000);
+    return host_now(0, HOST_NOW_WALL) / 1000000;
 }
 
 static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
