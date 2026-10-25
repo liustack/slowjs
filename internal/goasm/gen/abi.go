@@ -84,9 +84,11 @@ type AMD64Arch struct{}
 
 func AMD64() AMD64Arch { return AMD64Arch{} }
 
-func (AMD64Arch) Name() string          { return "amd64" }
-func (AMD64Arch) IntArgRegs() []string  { return []string{"di", "si", "dx", "cx", "r8", "r9"} }
-func (AMD64Arch) SSEArgRegs() []string  { return []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"} }
+func (AMD64Arch) Name() string         { return "amd64" }
+func (AMD64Arch) IntArgRegs() []string { return []string{"di", "si", "dx", "cx", "r8", "r9"} }
+func (AMD64Arch) SSEArgRegs() []string {
+	return []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+}
 func (AMD64Arch) CalleeSaved() []string { return []string{"rbx", "r12", "r13", "r14", "r15"} }
 func (AMD64Arch) RetIntRegs() []string  { return []string{"rax", "rdx"} }
 func (AMD64Arch) RetSSEReg() string     { return "xmm0" }

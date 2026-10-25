@@ -25,7 +25,7 @@ type NameMap map[string]string
 type object struct {
 	code  []byte
 	funcs map[string][2]uint64 // name -> [value,size]
-	calls map[uint64]string     // E8 offset -> target name (direct calls)
+	calls map[uint64]string    // E8 offset -> target name (direct calls)
 }
 
 func readObject(path string) (*object, error) {
@@ -103,12 +103,33 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 			fmt.Fprintf(&b, "TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", m.GoName, m.Frame, m.ArgBytes)
 		}
 		fmt.Fprintf(&b, "\tPCALIGN $16\n")
-		if err := emitFunc(&b, o, lo, hi, names); err != nil {
+		// A function's constants sit after its code: only the code part is
+		// disassembled, the constants pass through as bytes.
+		code := hi
+		if cs, ok := o.funcs[m.Name+".const"]; ok {
+			code = int(cs[0])
+		}
+		if err := emitFunc(&b, o, lo, code, names); err != nil {
+			return "", fmt.Errorf("%s: %w", m.Name, err)
+		}
+		if err := emitBytes(&b, o.code[code:hi]); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&b, "\tRET\n\n")
 	}
 	return b.String(), nil
+}
+
+// emitBytes writes raw data bytes.
+func emitBytes(b *strings.Builder, data []byte) error {
+	for len(data) >= 8 {
+		fmt.Fprintf(b, "\tQUAD $0x%016x\n", le64(data))
+		data = data[8:]
+	}
+	for _, by := range data {
+		fmt.Fprintf(b, "\tBYTE $0x%02x\n", by)
+	}
+	return nil
 }
 
 // emitFunc disassembles [lo,hi) and writes bytes with CALLs made symbolic.

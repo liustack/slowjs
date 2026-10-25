@@ -94,7 +94,9 @@ var (
 	reSub       = regexp.MustCompile(`^subq\s+\$(\d+), %rsp$`)
 	reAdd       = regexp.MustCompile(`^addq\s+\$(\d+), %rsp$`)
 	rePopAny    = regexp.MustCompile(`^popq\s+%(\w+)$`)
-	reCall      = regexp.MustCompile(`^call(?:q)?\s+([.\w]+)$`)
+	// A direct call; @PLT is how clang spells a call to a symbol defined in
+	// another unit. Any other call form is rejected, never passed through.
+	reCall      = regexp.MustCompile(`^call(?:q)?\s+([.\w]+)(?:@PLT)?$`)
 	reIndirect  = regexp.MustCompile(`^callq?\s+\*%(\w+)$`)
 	reForbidden = regexp.MustCompile(`\b(syscall|sysenter|int\s+\$0x80|rdtsc|rdrand|rdseed|cpuid)\b`)
 )
@@ -349,7 +351,12 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 			if err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
-			l, n = rewritten, norm(rewritten)
+			fixed, err := unalignedStackAccess(norm(rewritten))
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+			}
+			out = append(out, fixed)
+			continue
 		}
 		if reSub.MatchString(n) || strings.HasPrefix(n, "pushq") || strings.HasPrefix(n, "popq") || strings.HasPrefix(n, "leave") {
 			return "", Meta{}, fmt.Errorf("%s: SP write in body: %q", fn.Name, l)
@@ -391,11 +398,44 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 			out = append(out, marshalCallTarget(a, m[1], cs, saved, saveBase)...)
 			continue
 		}
+		if strings.HasPrefix(n, "call") {
+			return "", Meta{}, fmt.Errorf("%s: unrecognized call form: %q", fn.Name, l)
+		}
+		if isTailJump(n) {
+			return "", Meta{}, fmt.Errorf("%s: tail call: %q", fn.Name, l)
+		}
+		if m := reSymRef.FindStringSubmatch(n); m != nil && !strings.HasPrefix(m[1], ".LCPI") {
+			return "", Meta{}, fmt.Errorf("%s: unsupported read-only reference %q: %q", fn.Name, m[1], l)
+		}
+		// LLVM addresses locals from SP too: shift them onto the Go frame's
+		// local region, and check the alignment each stack access assumes.
+		if strings.Contains(n, "%rsp") {
+			rewritten, err := rewriteRSPLocals(l, local, localBase)
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+			}
+			l, n = rewritten, norm(rewritten)
+		}
+		if strings.Contains(n, "(%rsp)") {
+			fixed, err := unalignedStackAccess(n)
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+			}
+			l = fixed
+		}
 		out = append(out, l)
 	}
 	// The result is stored at each return above; this label just falls into
-	// Go's RET (appended by emit).
+	// Go's RET (appended by emit). A function with constants keeps them in its
+	// own body after the code, where the assembler resolves every
+	// RIP-relative reference, and jumps over them to the RET.
 	out = append(out, retLabel+":")
+	if pool, err := constantPool(asm, inner); err != nil {
+		return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+	} else if pool != "" {
+		end := ".Lend_" + fn.Name
+		out = append(out, "jmp "+end, ".p2align 4", fn.Name+".const:", pool, end+":")
+	}
 
 	text := fn.Name + ":\n\t" + strings.Join(out, "\n\t") + "\n"
 	meta := Meta{Name: fn.Name, Kind: Unified, GoName: goIdent(fn.Name), Frame: frame, ArgBytes: argBytes, RetType: fn.Sig.Ret}
@@ -538,4 +578,113 @@ func rewriteRBPLocals(line string, savedBytes, local, localBase int) (string, er
 func AddCallee(name string, sig Sig, kind Kind) {
 	calleeSigs[name] = sig
 	calleeKinds[name] = kind
+}
+
+// isTailJump reports a jump to a symbol rather than to a local label: LLVM's
+// sibling-call form, a musttail or a wrapper jump. All are forbidden.
+func isTailJump(n string) bool {
+	m := regexp.MustCompile(`^j[a-z]+q?\s+([^*%\s]\S*)$`).FindStringSubmatch(n)
+	return m != nil && !strings.HasPrefix(m[1], ".L")
+}
+
+// reSymRef finds a memory operand addressed from a symbol (sym(%rip),
+// sym(,%reg,8)). Only constant-pool entries are supported so far.
+var reSymRef = regexp.MustCompile(`(?:^|[\s,*$])([._A-Za-z][\w.$]*)(?:[+-]\d+)?\(`)
+
+var reRSP = regexp.MustCompile(`(-?\d*)\(%rsp\)`)
+
+// rewriteRSPLocals shifts every N(%rsp) access of the LLVM body by localBase:
+// LLVM's SP sat at the bottom of its local reservation, which the Go frame
+// places at localBase. Only [0, local) is a local; anything else is rejected.
+func rewriteRSPLocals(line string, local, localBase int) (string, error) {
+	var rerr error
+	out := reRSP.ReplaceAllStringFunc(line, func(m string) string {
+		sub := reRSP.FindStringSubmatch(m)
+		n := 0
+		if sub[1] != "" {
+			n, _ = strconv.Atoi(sub[1])
+		}
+		if n < 0 || n >= local {
+			rerr = fmt.Errorf("stack access %q outside the local area", m)
+			return m
+		}
+		return fmt.Sprintf("%d(%%rsp)", localBase+n)
+	})
+	if rerr != nil {
+		return "", rerr
+	}
+	if strings.Count(out, "%rsp") != strings.Count(out, "(%rsp)") {
+		return "", fmt.Errorf("unhandled SP use: %q", line)
+	}
+	return out, nil
+}
+
+// The Go stack is only 8-byte aligned. Aligned 16-byte moves to the stack are
+// turned into their unaligned forms, which behave the same. Scalar and 8-byte
+// SSE accesses have no alignment need. Any other SSE instruction with a stack
+// operand (a folded packed load) would fault on a misaligned SP: rejected.
+var (
+	alignedMov = map[string]string{"movaps": "movups", "movapd": "movupd", "movdqa": "movdqu"}
+	noAlignSSE = regexp.MustCompile(`^(movups|movupd|movdqu|movsd|movss|movq|movd|movlps|movhps|movlpd|movhpd|cvt\w+|\w+s[sd]|ucomis[sd]|comis[sd])$`)
+)
+
+func unalignedStackAccess(n string) (string, error) {
+	if !strings.Contains(n, "%xmm") {
+		return n, nil
+	}
+	f := strings.Fields(n)
+	if u, ok := alignedMov[f[0]]; ok {
+		return u + n[len(f[0]):], nil
+	}
+	if !noAlignSSE.MatchString(f[0]) {
+		return "", fmt.Errorf("SSE stack access may need 16-byte alignment: %q", n)
+	}
+	return n, nil
+}
+
+var (
+	reCPIRef = regexp.MustCompile(`\.LCPI\d+_\d+`)
+	reCPIDef = regexp.MustCompile(`^(\.LCPI\d+_\d+):$`)
+	reData   = regexp.MustCompile(`^\.(quad|long|short|byte|zero)\s`)
+	reAlign  = regexp.MustCompile(`^\.p2align\s+(\d+)`)
+)
+
+// constantPool returns the definitions of the constant-pool entries the body
+// references (LLVM's floating-point and vector literals), each with its
+// alignment, as assembly to place inside the function. Any other read-only
+// reference is left for the assembler to reject.
+func constantPool(asm string, body []string) (string, error) {
+	want := map[string]bool{}
+	for _, l := range body {
+		for _, m := range reCPIRef.FindAllString(l, -1) {
+			want[m] = true
+		}
+	}
+	if len(want) == 0 {
+		return "", nil
+	}
+	var b strings.Builder
+	lines := strings.Split(asm, "\n")
+	align := "0"
+	for i := 0; i < len(lines); i++ {
+		l := clean(lines[i])
+		if m := reAlign.FindStringSubmatch(l); m != nil {
+			align = m[1]
+			continue
+		}
+		m := reCPIDef.FindStringSubmatch(l)
+		if m == nil || !want[m[1]] {
+			continue
+		}
+		delete(want, m[1])
+		fmt.Fprintf(&b, ".p2align %s\n%s:\n", align, m[1])
+		for i+1 < len(lines) && reData.MatchString(clean(lines[i+1])) {
+			i++
+			b.WriteString(clean(lines[i]) + "\n")
+		}
+	}
+	if len(want) != 0 {
+		return "", fmt.Errorf("constant pool entries not found: %v", want)
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
