@@ -4,6 +4,7 @@ package proto
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -14,6 +15,9 @@ import (
 // of the unified entry (stack arguments, callee-saved save/restore, the
 // split-check prologue). Run pinned and idle for stable numbers.
 func TestCallOverhead(t *testing.T) {
+	if os.Getenv("CALL_OVERHEAD") == "" {
+		t.Skip("set CALL_OVERHEAD=1 to time the calls")
+	}
 	const n = int64(300_000_000)
 	// Correctness alongside timing.
 	if b_reg_i(0, 1000) != 1000*1001/2 || b_uni_i(0, 1000) != 1000*1001/2 {
@@ -49,7 +53,7 @@ func TestCallOverhead(t *testing.T) {
 	ri, ui := bench(b_reg_i), bench(b_uni_i)
 	rd, ud := benchF(b_reg_d), benchF(b_uni_d)
 	rv, uv := bench(b_reg_v), bench(b_uni_v)
-	fmt.Printf("CALL-OVERHEAD ns/call (min of 5, n=%d)\n", n)
+	fmt.Printf("CALL-OVERHEAD %s/%s ns/call (min of 5, n=%d)\n", genArch, genMode, n)
 	fmt.Printf("  int(i64,i64)->i64      register=%.3f unified=%.3f delta=%.3f\n", ri, ui, ui-ri)
 	fmt.Printf("  double(f64,f64)->f64   register=%.3f unified=%.3f delta=%.3f\n", rd, ud, ud-rd)
 	fmt.Printf("  JSValue(i64,i64)->jsv  register=%.3f unified=%.3f delta=%.3f\n", rv, uv, uv-rv)

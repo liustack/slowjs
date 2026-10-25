@@ -76,7 +76,7 @@ const (
 	shadowLog2  = 20
 	shadowSize  = 1 << shadowLog2
 	shadowGuard = 16
-	headerBytes = 256
+	headerBytes = 8192
 )
 
 var (

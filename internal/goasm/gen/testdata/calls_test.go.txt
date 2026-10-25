@@ -1,0 +1,312 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"unsafe"
+)
+
+const (
+	cbSlots = 7
+	cbEcho  = 8
+)
+
+func getfp() uintptr
+
+// Go versions of the argument, live-value and frame checks in engine.c.
+func refMul(a, b int64) int64      { return a*b + 7 }
+func refS5(a, b, c, d int64) int64 { return a + 3*b + 5*c + 7*d }
+func refS6(a, b, c, d, e int64) int64 {
+	return a + 3*b + 5*c + 7*d + 11*e
+}
+func refCBSlots(a int64) int64 {
+	if a > 0 && a <= 3 {
+		return refSlots(a - 1)
+	}
+	return 2 * a
+}
+func refS7(a, b, c, d, e, f int64) int64 {
+	return a + 3*b + 5*c + 7*d + 11*e + 13*f + 17*refCBSlots(a)
+}
+func refS7v(vt, vv int64, x float64, a, wt, wv, b int64) int64 {
+	return vt + 3*vv + int64(float64(x*4)) + 5*a + 7*wt + 11*wv + 13*b + 17*b
+}
+func refSlots(k int64) int64 {
+	d5 := refS5(k, k+1, k+2, k+3)
+	d6 := refS6(k, k+1, k+2, k+3, k+4)
+	d7 := refS7(k, k+1, k+2, k+3, k+4, k+5)
+	d7v := refS7v(k, k+1, float64(float64(k)*0.5), k+2, k+3, k+4, k+5)
+	i5 := refS5(k+10, k+11, k+12, k+13)
+	i6 := refS6(k+10, k+11, k+12, k+13, k+14)
+	i7 := refS7(k+10, k+11, k+12, k+13, k+14, k+15)
+	i7v := refS7v(k+10, k+11, float64(float64(k)*0.25), k+12, k+13, k+14, k+15)
+	return d5 + 2*d6 + 4*d7 + 8*d7v + 16*i5 + 32*i6 + 64*i7 + 128*i7v
+}
+
+// 5, 6 and 7 argument slots, direct and indirect, with a reentry from inside
+// the 7-slot callee: the inner calls' blocks and frames must not disturb the
+// outer ones.
+func TestArgumentSlots(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	fns := vm.Slot(24)
+	for i, name := range []string{"s5", "s6", "s7", "s7v"} {
+		*(*uintptr)(unsafe.Pointer(fns + uintptr(8*i))) = unifiedTable[unifiedIndex[name]]
+	}
+	var bad string
+	reentries := 0
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		switch id {
+		case cbEcho:
+			return arg
+		case cbSlots:
+			if arg > 0 && arg <= 3 {
+				reentries++
+				r, err := vm.Eval(func(sp2 uintptr) int64 { return slots_ind(sp2, fns, arg-1) })
+				if err != nil {
+					bad = "inner eval: " + err.Error()
+				}
+				return r
+			}
+			return 2 * arg
+		}
+		bad = "unexpected callback"
+		return 0
+	}
+	for k := int64(0); k <= 3; k++ {
+		got, err := vm.Eval(func(sp uintptr) int64 { return slots_ind(sp, fns, k) })
+		if err != nil || bad != "" {
+			t.Fatalf("k=%d: %v %s", k, err, bad)
+		}
+		if want := refSlots(k); got != want {
+			t.Fatalf("slots_ind(%d) = %d, want %d", k, got, want)
+		}
+	}
+	if reentries != 6 {
+		t.Fatalf("%d reentries, want 6", reentries)
+	}
+}
+
+func refLiveMix(a int64, x float64) int64 {
+	i1, i2, i3, i4 := a*3, a^0x55, a+7, a*a
+	d1, d2, d3 := float64(x*1.5), x-2.0, float64(x*x)
+	v0, v1 := x, float64(a)
+	r1 := i1
+	m := refMul(i2, 3)
+	r2 := i3 + r1
+	r3 := d1 + d2
+	v0, v1 = float64(v0*d1), float64(v1*d3)
+	r4 := m + i4
+	r5 := v0 + v1
+	return i1 + i2 + i4 + r1 + m + r2 + r4 + int64(float64(r3*8)) + int64(float64(r5*16)) +
+		int64(float64(d1*2)) + int64(float64(d3*4)) + int64(float64(v0*32)) + int64(float64(v1*64))
+}
+
+// Integers, doubles and a vector live across unified calls and Go
+// callbacks that grow the stack and run GC.
+func TestLiveAcrossCalls(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		growGo(64)
+		runtime.GC()
+		return arg
+	}
+	for _, c := range []struct {
+		a int64
+		x float64
+	}{{3, 1.25}, {0, 0.5}, {-7, 2.75}, {100, -3.5}, {1 << 20, 0.125}} {
+		for d := 0; d < 8; d++ {
+			var got int64
+			var err error
+			runAtDepth(d*16, func() {
+				got, err = vm.Eval(func(sp uintptr) int64 { return live_mix(sp, c.a, c.x) })
+			})
+			if want := refLiveMix(c.a, c.x); err != nil || got != want {
+				t.Fatalf("live_mix(%d, %v) = %d, %v, want %d", c.a, c.x, got, err, want)
+			}
+		}
+	}
+}
+
+func refBig(src []int64, k, r int64) int64 {
+	acc := r
+	for _, s := range src {
+		acc = acc*3 + ((s ^ k) ^ r)
+	}
+	return acc
+}
+
+func refBigCaller(src []int64, k int64) int64 {
+	a, b := k*5, k^0x3c
+	x := refBig(src[:40], k, 2*k+1)
+	y := refBig(src[:560], k+1, 2*(k+1)+1)
+	return a + 3*b + 5*x + 7*y
+}
+
+// runAtDepth runs f in a new goroutine below depth Go frames of 64 bytes,
+// so the engine's prologues see different amounts of stack left.
+func runAtDepth(depth int, f func()) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		atDepth(depth, f)
+	}()
+	wg.Wait()
+}
+
+//go:noinline
+func atDepth(d int, f func()) int {
+	var pad [6]int64
+	pad[d%6] = int64(d)
+	if d == 0 {
+		f()
+		return 0
+	}
+	return atDepth(d-1, f) + int(pad[d%6])
+}
+
+var (
+	traceOK, fpWalkOK atomic.Int64
+	traceBad          atomic.Value // string
+)
+
+// checkFrames unwinds with the runtime (as GC, panics and profiles do) and
+// along the frame pointer chain (as the execution tracer does): both must
+// pass through the engine frames in order. A want entry "a|b" takes either.
+func checkFrames(want []string) {
+	inOrder := func(names []string) bool {
+		i := 0
+		for _, n := range names {
+			if i < len(want) {
+				for _, w := range strings.Split(want[i], "|") {
+					if strings.HasSuffix(n, w) {
+						i++
+						break
+					}
+				}
+			}
+		}
+		return i == len(want)
+	}
+	pcs := make([]uintptr, 128)
+	n := runtime.Callers(1, pcs)
+	var names []string
+	fr := runtime.CallersFrames(pcs[:n])
+	for {
+		f, more := fr.Next()
+		names = append(names, f.Function)
+		if !more {
+			break
+		}
+	}
+	if inOrder(names) {
+		traceOK.Add(1)
+	} else {
+		traceBad.Store("callers: " + strings.Join(names, " "))
+	}
+	// Collect the PCs first with no calls in the loop: a call could grow the
+	// stack and leave fp pointing into the old one.
+	var raw [200]uintptr
+	nraw := 0
+	fp := getfp()
+	for nraw < len(raw) && fp != 0 {
+		raw[nraw] = *(*uintptr)(unsafe.Pointer(fp + 8))
+		nraw++
+		fp = *(*uintptr)(unsafe.Pointer(fp))
+	}
+	var fpn []string
+	for _, pc := range raw[:nraw] {
+		if f := runtime.FuncForPC(pc - 1); f != nil {
+			fpn = append(fpn, f.Name())
+		}
+	}
+	if inOrder(fpn) {
+		fpWalkOK.Add(1)
+	} else {
+		traceBad.Store("fp walk: " + strings.Join(fpn, " "))
+	}
+}
+
+// Frames of 40 and 560 words entered from goroutines at many depths, first
+// with callbacks that leave the stack alone (a move then comes from a
+// prologue's morestack, most likely big_4k's), then with callbacks that grow
+// the stack, run GC and unwind it both ways.
+func TestBigFrames(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	src := unsafe.Slice((*int64)(unsafe.Pointer(vm.Slot(64))), 560)
+	for i := range src {
+		src[i] = int64(uint64(i)*0x9e3779b97f4a7c15) ^ int64(i<<7)
+	}
+	var grow bool
+	var want []string
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		if id != cbGrow {
+			t.Errorf("unexpected callback %d", id)
+		}
+		if grow {
+			checkFrames(want)
+			growGo(64)
+			runtime.GC()
+		}
+		return 2*arg + 1
+	}
+	moved, prologueMoves := 0, 0
+	for _, g := range []bool{false, true} {
+		grow = g
+		for d := 0; d < 80; d++ {
+			k := int64(d)
+			var got, got4k, gotf0 int64
+			var err error
+			runAtDepth(d, func() {
+				var x int
+				before := frameAddr(&x)
+				want = []string{"proto.big_f0|proto.big_4k", "proto.big_caller"}
+				got, err = vm.Eval(func(sp uintptr) int64 { return big_caller(sp, vm.Slot(64), k) })
+				if err == nil {
+					want = []string{"proto.big_4k"}
+					got4k, err = vm.Eval(func(sp uintptr) int64 { return big_4k(sp, vm.Slot(64), k) })
+				}
+				if err == nil {
+					want = []string{"proto.big_f0"}
+					gotf0, err = vm.Eval(func(sp uintptr) int64 { return big_f0(sp, vm.Slot(64), k) })
+				}
+				if frameAddr(&x) != before {
+					moved++
+				}
+			})
+			if err != nil {
+				t.Fatalf("depth %d: %v", d, err)
+			}
+			if w := refBigCaller(src, k); got != w {
+				t.Fatalf("grow=%v depth %d: big_caller = %d, want %d", g, d, got, w)
+			}
+			if w := refBig(src, k, 2*k+1); got4k != w {
+				t.Fatalf("grow=%v depth %d: big_4k = %d, want %d", g, d, got4k, w)
+			}
+			if w := refBig(src[:40], k, 2*k+1); gotf0 != w {
+				t.Fatalf("grow=%v depth %d: big_f0 = %d, want %d", g, d, gotf0, w)
+			}
+		}
+		if !g {
+			prologueMoves = moved
+			if moved == 0 {
+				t.Fatal("no prologue grew the stack: the depths do not reach the morestack path")
+			}
+		}
+	}
+	if bad, _ := traceBad.Load().(string); bad != "" {
+		t.Fatalf("unwind: %s", bad)
+	}
+	t.Logf("stack moved by a prologue in %d of 80 runs, %d tracebacks and %d frame pointer walks passed", prologueMoves, traceOK.Load(), fpWalkOK.Load())
+	if traceOK.Load() == 0 || fpWalkOK.Load() == 0 {
+		t.Fatal("no unwind checked")
+	}
+}
