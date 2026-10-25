@@ -17,7 +17,7 @@
 #
 # The errors found are compared, line by line, with the 58 known errors of the
 # engine in lib/ (lib/test262_errors.txt) and the script exits 0 only when they
-# are the same lines. Wrap the script in taskset, flock or systemd-run to keep
+# are the same lines and the runner exited with its own status, 0 or 1. Wrap the script in taskset, flock or systemd-run to keep
 # it to the CPUs and the memory you give it.
 set -eu
 LC_ALL=C
@@ -52,6 +52,7 @@ if command -v sha256sum >/dev/null 2>&1; then sum() { sha256sum "$1" | cut -d' '
 else sum() { shasum -a 256 "$1" | cut -d' ' -f1; }; fi
 
 mkdir -p "$work"
+work=$(cd "$work" && pwd)
 if [ -z "$archive" ]; then
 	archive=$here/out/$zipname
 	mkdir -p "$here/out"
@@ -77,11 +78,22 @@ cd "$run"
 # A few tests wait for the clock to move and never end on a fixed one.
 HOST_CLOCK=running
 export HOST_CLOCK
+# A sanitizer that stops the run exits 86, so that it cannot pass for the
+# runner's status 1. Options the caller sets come after and win.
+ASAN_OPTIONS=exitcode=86${ASAN_OPTIONS:+:$ASAN_OPTIONS}
+UBSAN_OPTIONS=exitcode=86${UBSAN_OPTIONS:+:$UBSAN_OPTIONS}
+export ASAN_OPTIONS UBSAN_OPTIONS
 status=0
 "$bin" -v -T "$threads" -c test262.conf -a -u > "$work/run.log" 2>&1 || status=$?
 cp "$run/test262_errors.txt" "$work/test262_errors.txt"
 
 grep '^Result: ' "$work/run.log" || { echo "test262.sh: no result line, see $work/run.log (exit status $status)" >&2; exit 1; }
+# The runner exits 0 with no error and 1 with errors. Anything else is a crash,
+# a signal or a sanitizer, and fails the run even when the errors match.
+case $status in
+0|1) ;;
+*) echo "test262.sh: the runner exited with status $status, see $work/run.log" >&2; exit 1 ;;
+esac
 sort "$root/lib/test262_errors.txt" > "$work/known.sorted"
 sort "$work/test262_errors.txt" > "$work/found.sorted"
 if diff "$work/known.sorted" "$work/found.sorted" > "$work/errors.diff"; then
