@@ -1,8 +1,46 @@
+/*
+** Two Level Segregated Fit memory allocator, version 3.1.
+** Written by Matthew Conte
+**	http://tlsf.baisoku.org
+**
+** This is tlsf.c of github.com/mattconte/tlsf at commit
+** deff9ab509341f264addbd3c8ada533678591905, converted to LF line ends, with
+** the changes of the slowjs fork. They make a request or a pool that TLSF
+** cannot hold fail (issues 9, 22 and 35 of the project), take out what needs
+** stdio, stdlib and the debug self test, and take out tlsf_memalign, which
+** the engine does not use. engine/test/tlsf-edges.sh shows what each change
+** fixes. The original file has no copyright notice (issue 12 of the project),
+** so the notice of tlsf.h is repeated here.
+**
+** Copyright (c) 2006-2016, Matthew Conte
+** All rights reserved.
+** 
+** Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are met:
+**     * Redistributions of source code must retain the above copyright
+**       notice, this list of conditions and the following disclaimer.
+**     * Redistributions in binary form must reproduce the above copyright
+**       notice, this list of conditions and the following disclaimer in the
+**       documentation and/or other materials provided with the distribution.
+**     * Neither the name of the copyright holder nor the
+**       names of its contributors may be used to endorse or promote products
+**       derived from this software without specific prior written permission.
+** 
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+** ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+** WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+** DISCLAIMED. IN NO EVENT SHALL MATTHEW CONTE BE LIABLE FOR ANY
+** DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+** (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+** LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+** ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+** SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #include <assert.h>
 #include <limits.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "tlsf.h"
@@ -489,10 +527,13 @@ static void* align_ptr(const void* ptr, size_t align)
 ** Adjust an allocation size to be aligned to word size, and no smaller
 ** than internal minimum.
 */
+/* The largest request: a bigger one fails before align_up can wrap it. */
+static const size_t request_size_max = (tlsf_cast(size_t, 1) << FL_INDEX_MAX) - ALIGN_SIZE;
+
 static size_t adjust_request_size(size_t size, size_t align)
 {
 	size_t adjust = 0;
-	if (size)
+	if (size && size <= request_size_max)
 	{
 		const size_t aligned = align_up(size, align);
 
@@ -734,22 +775,6 @@ static void block_trim_used(control_t* control, block_header_t* block, size_t si
 	}
 }
 
-static block_header_t* block_trim_free_leading(control_t* control, block_header_t* block, size_t size)
-{
-	block_header_t* remaining_block = block;
-	if (block_can_split(block, size))
-	{
-		/* We want the 2nd block. */
-		remaining_block = block_split(block, size - block_header_overhead);
-		block_set_prev_free(remaining_block);
-
-		block_link_next(block);
-		block_insert(control, block);
-	}
-
-	return remaining_block;
-}
-
 static block_header_t* block_locate_free(control_t* control, size_t size)
 {
 	int fl = 0, sl = 0;
@@ -895,15 +920,9 @@ int tlsf_check(tlsf_t tlsf)
 
 #undef tlsf_insist
 
-static void default_walker(void* ptr, size_t size, int used, void* user)
-{
-	(void)user;
-	printf("\t%p %s size: %x (%p)\n", ptr, used ? "used" : "free", (unsigned int)size, block_from_ptr(ptr));
-}
-
 void tlsf_walk_pool(pool_t pool, tlsf_walker walker, void* user)
 {
-	tlsf_walker pool_walker = walker ? walker : default_walker;
+	tlsf_walker pool_walker = walker;
 	block_header_t* block =
 		offset_to_block(pool, -(int)block_header_overhead);
 
@@ -983,26 +1002,16 @@ pool_t tlsf_add_pool(tlsf_t tlsf, void* mem, size_t bytes)
 	block_header_t* next;
 
 	const size_t pool_overhead = tlsf_pool_overhead();
-	const size_t pool_bytes = align_down(bytes - pool_overhead, ALIGN_SIZE);
+	size_t pool_bytes;
 
-	if (((ptrdiff_t)mem % ALIGN_SIZE) != 0)
+	if (((tlsfptr_t)mem % ALIGN_SIZE) != 0 || bytes < pool_overhead + block_size_min)
 	{
-		printf("tlsf_add_pool: Memory must be aligned by %u bytes.\n",
-			(unsigned int)ALIGN_SIZE);
 		return 0;
 	}
 
-	if (pool_bytes < block_size_min || pool_bytes > block_size_max)
+	pool_bytes = align_down(bytes - pool_overhead, ALIGN_SIZE);
+	if (pool_bytes < block_size_min || pool_bytes >= block_size_max)
 	{
-#if defined (TLSF_64BIT)
-		printf("tlsf_add_pool: Memory size must be between 0x%x and 0x%x00 bytes.\n", 
-			(unsigned int)(pool_overhead + block_size_min),
-			(unsigned int)((pool_overhead + block_size_max) / 256));
-#else
-		printf("tlsf_add_pool: Memory size must be between %u and %u bytes.\n", 
-			(unsigned int)(pool_overhead + block_size_min),
-			(unsigned int)(pool_overhead + block_size_max));
-#endif
 		return 0;
 	}
 
@@ -1045,47 +1054,11 @@ void tlsf_remove_pool(tlsf_t tlsf, pool_t pool)
 ** TLSF main interface.
 */
 
-#if _DEBUG
-int test_ffs_fls()
-{
-	/* Verify ffs/fls work properly. */
-	int rv = 0;
-	rv += (tlsf_ffs(0) == -1) ? 0 : 0x1;
-	rv += (tlsf_fls(0) == -1) ? 0 : 0x2;
-	rv += (tlsf_ffs(1) == 0) ? 0 : 0x4;
-	rv += (tlsf_fls(1) == 0) ? 0 : 0x8;
-	rv += (tlsf_ffs(0x80000000) == 31) ? 0 : 0x10;
-	rv += (tlsf_ffs(0x80008000) == 15) ? 0 : 0x20;
-	rv += (tlsf_fls(0x80000008) == 31) ? 0 : 0x40;
-	rv += (tlsf_fls(0x7FFFFFFF) == 30) ? 0 : 0x80;
-
-#if defined (TLSF_64BIT)
-	rv += (tlsf_fls_sizet(0x80000000) == 31) ? 0 : 0x100;
-	rv += (tlsf_fls_sizet(0x100000000) == 32) ? 0 : 0x200;
-	rv += (tlsf_fls_sizet(0xffffffffffffffff) == 63) ? 0 : 0x400;
-#endif
-
-	if (rv)
-	{
-		printf("test_ffs_fls: %x ffs/fls tests failed.\n", rv);
-	}
-	return rv;
-}
-#endif
 
 tlsf_t tlsf_create(void* mem)
 {
-#if _DEBUG
-	if (test_ffs_fls())
-	{
-		return 0;
-	}
-#endif
-
 	if (((tlsfptr_t)mem % ALIGN_SIZE) != 0)
 	{
-		printf("tlsf_create: Memory must be aligned to %u bytes.\n",
-			(unsigned int)ALIGN_SIZE);
 		return 0;
 	}
 
@@ -1096,8 +1069,16 @@ tlsf_t tlsf_create(void* mem)
 
 tlsf_t tlsf_create_with_pool(void* mem, size_t bytes)
 {
-	tlsf_t tlsf = tlsf_create(mem);
-	tlsf_add_pool(tlsf, (char*)mem + tlsf_size(), bytes - tlsf_size());
+	tlsf_t tlsf;
+	if (bytes < tlsf_size() + tlsf_pool_overhead() + block_size_min)
+	{
+		return 0;
+	}
+	tlsf = tlsf_create(mem);
+	if (!tlsf || !tlsf_add_pool(tlsf, (char*)mem + tlsf_size(), bytes - tlsf_size()))
+	{
+		return 0;
+	}
 	return tlsf;
 }
 
@@ -1117,63 +1098,6 @@ void* tlsf_malloc(tlsf_t tlsf, size_t size)
 	control_t* control = tlsf_cast(control_t*, tlsf);
 	const size_t adjust = adjust_request_size(size, ALIGN_SIZE);
 	block_header_t* block = block_locate_free(control, adjust);
-	return block_prepare_used(control, block, adjust);
-}
-
-void* tlsf_memalign(tlsf_t tlsf, size_t align, size_t size)
-{
-	control_t* control = tlsf_cast(control_t*, tlsf);
-	const size_t adjust = adjust_request_size(size, ALIGN_SIZE);
-
-	/*
-	** We must allocate an additional minimum block size bytes so that if
-	** our free block will leave an alignment gap which is smaller, we can
-	** trim a leading free block and release it back to the pool. We must
-	** do this because the previous physical block is in use, therefore
-	** the prev_phys_block field is not valid, and we can't simply adjust
-	** the size of that block.
-	*/
-	const size_t gap_minimum = sizeof(block_header_t);
-	const size_t size_with_gap = adjust_request_size(adjust + align + gap_minimum, align);
-
-	/*
-	** If alignment is less than or equals base alignment, we're done.
-	** If we requested 0 bytes, return null, as tlsf_malloc(0) does.
-	*/
-	const size_t aligned_size = (adjust && align > ALIGN_SIZE) ? size_with_gap : adjust;
-
-	block_header_t* block = block_locate_free(control, aligned_size);
-
-	/* This can't be a static assert. */
-	tlsf_assert(sizeof(block_header_t) == block_size_min + block_header_overhead);
-
-	if (block)
-	{
-		void* ptr = block_to_ptr(block);
-		void* aligned = align_ptr(ptr, align);
-		size_t gap = tlsf_cast(size_t,
-			tlsf_cast(tlsfptr_t, aligned) - tlsf_cast(tlsfptr_t, ptr));
-
-		/* If gap size is too small, offset to next aligned boundary. */
-		if (gap && gap < gap_minimum)
-		{
-			const size_t gap_remain = gap_minimum - gap;
-			const size_t offset = tlsf_max(gap_remain, align);
-			const void* next_aligned = tlsf_cast(void*,
-				tlsf_cast(tlsfptr_t, aligned) + offset);
-
-			aligned = align_ptr(next_aligned, align);
-			gap = tlsf_cast(size_t,
-				tlsf_cast(tlsfptr_t, aligned) - tlsf_cast(tlsfptr_t, ptr));
-		}
-
-		if (gap)
-		{
-			tlsf_assert(gap >= gap_minimum && "gap size too small");
-			block = block_trim_free_leading(control, block, gap);
-		}
-	}
-
 	return block_prepare_used(control, block, adjust);
 }
 
@@ -1209,6 +1133,12 @@ void* tlsf_realloc(tlsf_t tlsf, void* ptr, size_t size)
 {
 	control_t* control = tlsf_cast(control_t*, tlsf);
 	void* p = 0;
+
+	/* A size TLSF cannot serve fails and leaves the block as it was. */
+	if (size > request_size_max)
+	{
+		return 0;
+	}
 
 	/* Zero-size requests are treated as free. */
 	if (ptr && size == 0)
