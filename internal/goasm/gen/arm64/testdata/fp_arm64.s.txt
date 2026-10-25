@@ -1,0 +1,8 @@
+//go:build arm64
+
+#include "textflag.h"
+
+// getfp returns R29 of its caller (a NOFRAME leaf does not change R29).
+TEXT ·getfp(SB), NOSPLIT|NOFRAME, $0-8
+	MOVD R29, ret+0(FP)
+	RET

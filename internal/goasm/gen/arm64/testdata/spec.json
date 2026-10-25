@@ -1,0 +1,104 @@
+{
+  "functions": {
+    "leaf_mix": {
+      "args": [
+        "a:i",
+        "b:i"
+      ],
+      "ret": "i"
+    },
+    "leaf_f": {
+      "args": [
+        "a:d",
+        "b:i"
+      ],
+      "ret": "d"
+    },
+    "mid": {
+      "args": [
+        "ssp:i",
+        "v:v",
+        "d:d"
+      ],
+      "ret": "v"
+    },
+    "outer": {
+      "args": [
+        "ssp:i",
+        "v:v",
+        "d:d",
+        "depth:i"
+      ],
+      "ret": "v"
+    },
+    "bl_i": {
+      "args": [
+        "a:i",
+        "b:i"
+      ],
+      "ret": "i"
+    },
+    "un_i": {
+      "args": [
+        "ssp:i",
+        "a:i",
+        "b:i"
+      ],
+      "ret": "i"
+    },
+    "bl_d": {
+      "args": [
+        "a:d",
+        "b:d"
+      ],
+      "ret": "d"
+    },
+    "un_d": {
+      "args": [
+        "ssp:i",
+        "a:d",
+        "b:d"
+      ],
+      "ret": "d"
+    },
+    "bench_reg_i": {
+      "args": [
+        "ssp:i",
+        "n:i"
+      ],
+      "ret": "i"
+    },
+    "bench_uni_i": {
+      "args": [
+        "ssp:i",
+        "n:i"
+      ],
+      "ret": "i"
+    },
+    "bench_reg_d": {
+      "args": [
+        "ssp:i",
+        "n:i"
+      ],
+      "ret": "i"
+    },
+    "bench_uni_d": {
+      "args": [
+        "ssp:i",
+        "n:i"
+      ],
+      "ret": "i"
+    }
+  },
+  "callbacks": {
+    "host_cb": {
+      "go": "hostCB",
+      "args": [
+        "ssp:i",
+        "depth:i",
+        "x:d"
+      ],
+      "ret": "i"
+    }
+  }
+}

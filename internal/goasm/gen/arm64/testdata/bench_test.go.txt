@@ -1,0 +1,50 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package mini
+
+import (
+	"fmt"
+	"testing"
+)
+
+// Call overhead on arm64: a loop in a unified entry calling, each iteration,
+// either a register-entry leaf (direct BL, no stub) or a non-leaf unified
+// callee through the call_ stub that saves and restores R19-R25 and F8-F15.
+// The difference is the unified-call overhead: the stub plus the callee's
+// own split prologue. Built with CONV_NO_SAVES, the stub skips the saves, so
+// that run isolates the pure 15-register save/restore cost. nsPerCall reports
+// the minimum of several timed runs.
+func TestCallOverhead(t *testing.T) {
+	const n = 300_000_000
+	cases := []struct {
+		name          string
+		reg, uni      func(ssp, n uint64) uint64
+		wantReg, want uint64
+	}{
+		{"int", c_bench_reg_i, c_bench_uni_i, 0, 0},
+		{"double", c_bench_reg_d, c_bench_uni_d, 0, 0},
+	}
+	for i := range cases {
+		c := &cases[i]
+		c.wantReg = c.reg(0, 8)
+		c.want = c.uni(4096, 8)
+	}
+	nsPerCall := func(f func(ssp, n uint64) uint64, ssp uint64) (float64, uint64) {
+		best := 1e30
+		var r uint64
+		for round := 0; round < 7; round++ {
+			t0 := nowNanos()
+			r = f(ssp, n)
+			if d := float64(nowNanos()-t0) / float64(n); d < best {
+				best = d
+			}
+		}
+		return best, r
+	}
+	for _, c := range cases {
+		reg, rr := nsPerCall(c.reg, 0)
+		uni, ur := nsPerCall(c.uni, 4096)
+		fmt.Printf("%-7s register=%.3f ns  unified=%.3f ns  delta=%.3f ns  (reg sum %d uni sum %d)\n",
+			c.name, reg, uni, uni-reg, rr, ur)
+	}
+}
