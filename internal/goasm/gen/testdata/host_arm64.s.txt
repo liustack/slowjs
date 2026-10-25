@@ -1,0 +1,8 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+#include "textflag.h"
+
+// func getfp() uintptr: the caller's frame pointer (NOFRAME: R29 unchanged).
+TEXT ·getfp(SB), NOSPLIT|NOFRAME, $0-8
+	MOVD R29, ret+0(FP)
+	RET

@@ -1,0 +1,103 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"runtime"
+	"sync"
+	"testing"
+	"unsafe"
+)
+
+// Item 1: multiple direct calls (poly -> mul twice) and an indirect call
+// through a unified function pointer (apply).
+func TestDirectAndIndirect(t *testing.T) {
+	// poly(x) = mul(x,x) + mul(x,3) = (x*x+7) + (x*3+7). poly reaches the
+	// register-entry leaf mul through two direct calls. mul is internal-only
+	// (SysV register arguments), so Go never calls it directly.
+	if got := poly(0, 5); got != (25+7)+(15+7) {
+		t.Fatalf("poly(5)=%d", got)
+	}
+}
+
+// Item 1: the same signature behind a pointer, switched between a leaf's
+// unified entry and a non-leaf. recPtr and polyPtr are unified entries.
+func TestFunctionPointerSwitch(t *testing.T) {
+	for _, tc := range []struct {
+		f    uintptr
+		x    int64
+		want int64
+	}{
+		{recUnifiedPC(), 10, 55 + 1},  // apply adds 1
+		{polyUnifiedPC(), 5, 54 + 1},
+	} {
+		if got := apply(0, tc.f, tc.x); got != tc.want {
+			t.Fatalf("apply(%#x,%d)=%d want %d", tc.f, tc.x, got, tc.want)
+		}
+	}
+}
+
+// Item 2: 16-byte JSValue by value, modify a copy, return a new value; the
+// original is unchanged and the result is complete across a Go stack move.
+func TestJSValueByValue(t *testing.T) {
+	orig := JSValue{Tag: 1, Val: 10}
+	got := bump(0, orig, 5)
+	if orig.Tag != 1 || orig.Val != 10 {
+		t.Fatalf("original mutated: %+v", orig)
+	}
+	if got.Tag != 1 || got.Val != 15 {
+		t.Fatalf("bump result %+v", got)
+	}
+}
+
+// Item 2: integer and floating-point arguments mixed.
+func TestMixedIntFloat(t *testing.T) {
+	if got := mix(0, 3, 1.5, 4); got != 8.5 {
+		t.Fatalf("mix=%v", got)
+	}
+}
+
+// Item 3 and 4: deep recursion forces repeated morestack with live unified
+// frames; the correct sum proves the value held across each call (in the
+// saved frame slot) is relocated on every stack move.
+func TestRecursionMorestack(t *testing.T) {
+	if got := rec(0, 100); got != 5050 {
+		t.Fatalf("rec(100)=%d", got)
+	}
+	done := make(chan int64, 1)
+	go func() { done <- rec(0, 300000) }()
+	got := <-done
+	want := int64(300000) * int64(300001) / 2
+	if got != want {
+		t.Fatalf("deep rec=%d want %d", got, want)
+	}
+}
+
+// Item 3: GC runs while many goroutines execute unified frames.
+func TestConcurrentGC(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 300; j++ {
+				if rec(0, 4000) != 4000*4001/2 {
+					panic("wrong sum under GC")
+				}
+			}
+		}()
+	}
+	go func() {
+		for i := 0; i < 500; i++ {
+			runtime.GC()
+		}
+	}()
+	wg.Wait()
+}
+
+// recUnifiedPC and polyUnifiedPC return the ABI0 code address of the unified
+// entries, which the function table also holds (see table_amd64.s).
+func recUnifiedPC() uintptr  { return unifiedTable[0] }
+func polyUnifiedPC() uintptr { return unifiedTable[1] }
+
+var _ = unsafe.Pointer(nil)

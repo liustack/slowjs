@@ -1,0 +1,65 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"fmt"
+	"os"
+	"testing"
+	"time"
+)
+
+// TestCallOverhead times the register-entry and unified-entry call cost for
+// three signatures. Each b_* loops n times calling one callee; the loop
+// overhead is identical, so the unified-minus-register delta is the extra cost
+// of the unified entry (stack arguments, callee-saved save/restore, the
+// split-check prologue). Run pinned and idle for stable numbers.
+func TestCallOverhead(t *testing.T) {
+	if os.Getenv("CALL_OVERHEAD") == "" {
+		t.Skip("set CALL_OVERHEAD=1 to time the calls")
+	}
+	const n = int64(300_000_000)
+	// Correctness alongside timing.
+	if b_reg_i(0, 1000) != 1000*1001/2 || b_uni_i(0, 1000) != 1000*1001/2 {
+		t.Fatal("int benchmark wrong")
+	}
+	if b_reg_v(0, 1000) != b_uni_v(0, 1000) {
+		t.Fatal("jsvalue benchmark mismatch")
+	}
+	if b_reg_p(0, 1000) != b_uni_p(0, 1000) {
+		t.Fatal("phase benchmark mismatch")
+	}
+
+	bench := func(f func(uintptr, int64) int64) float64 {
+		best := time.Hour
+		for r := 0; r < 5; r++ {
+			start := time.Now()
+			f(0, n)
+			if d := time.Since(start); d < best {
+				best = d
+			}
+		}
+		return float64(best.Nanoseconds()) / float64(n)
+	}
+	benchF := func(f func(uintptr, int64) float64) float64 {
+		best := time.Hour
+		for r := 0; r < 5; r++ {
+			start := time.Now()
+			f(0, n)
+			if d := time.Since(start); d < best {
+				best = d
+			}
+		}
+		return float64(best.Nanoseconds()) / float64(n)
+	}
+
+	ri, ui := bench(b_reg_i), bench(b_uni_i)
+	rd, ud := benchF(b_reg_d), benchF(b_uni_d)
+	rv, uv := bench(b_reg_v), bench(b_uni_v)
+	rp, up := bench(b_reg_p), bench(b_uni_p)
+	fmt.Printf("CALL-OVERHEAD %s/%s ns/call (min of 5, n=%d)\n", genArch, genMode, n)
+	fmt.Printf("  int(i64,i64)->i64      register=%.3f unified=%.3f delta=%.3f\n", ri, ui, ui-ri)
+	fmt.Printf("  double(f64,f64)->f64   register=%.3f unified=%.3f delta=%.3f\n", rd, ud, ud-rd)
+	fmt.Printf("  JSValue(i64,i64)->jsv  register=%.3f unified=%.3f delta=%.3f\n", rv, uv, uv-rv)
+	fmt.Printf("  int, busy caller       register=%.3f unified=%.3f delta=%.3f\n", rp, up, up-rp)
+}

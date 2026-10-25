@@ -1,0 +1,15 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+#include "textflag.h"
+
+// func callerSP() uintptr: the caller's SP, as it is at the caller's next
+// CALL. An engine entry called from the same frame starts at callerSP()-8.
+TEXT ·callerSP(SB), NOSPLIT, $0-8
+	LEAQ 8(SP), AX
+	MOVQ AX, ret+0(FP)
+	RET
+
+// func getfp() uintptr: the caller's frame pointer (NOFRAME: BP unchanged).
+TEXT ·getfp(SB), NOSPLIT|NOFRAME, $0-8
+	MOVQ BP, ret+0(FP)
+	RET
