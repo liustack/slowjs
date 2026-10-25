@@ -45,7 +45,7 @@ func TestRejectSamples(t *testing.T) {
 }
 
 func pipeline(llvm, pass, cfile, work string) error {
-	u, err := CompileUnit(llvm, pass, cfile, work, nil)
+	u, err := CompileUnit(UnitConfig{LLVM: llvm, Pass: pass, Work: work, CFlags: EngineCFlags}, cfile)
 	if err != nil {
 		return err
 	}

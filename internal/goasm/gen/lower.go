@@ -27,6 +27,7 @@ package gen
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -96,9 +97,13 @@ var (
 	rePopAny    = regexp.MustCompile(`^popq\s+%(\w+)$`)
 	// A direct call; @PLT is how clang spells a call to a symbol defined in
 	// another unit. Any other call form is rejected, never passed through.
-	reCall      = regexp.MustCompile(`^call(?:q)?\s+([.\w]+)(?:@PLT)?$`)
-	reIndirect  = regexp.MustCompile(`^callq?\s+\*%(\w+)$`)
-	reForbidden = regexp.MustCompile(`\b(syscall|sysenter|int\s+\$0x80|rdtsc|rdrand|rdseed|cpuid)\b`)
+	reCall     = regexp.MustCompile(`^call(?:q)?\s+([.\w]+)(?:@PLT)?$`)
+	reIndirect = regexp.MustCompile(`^callq?\s+\*%(\w+)$`)
+	// A call through a pointer in memory: the lowering loads it into R11,
+	// which is neither a SysV argument register nor one of the first ten
+	// preserve_none ones, and calls through that.
+	reIndirectMem = regexp.MustCompile(`^callq?\s+\*(-?\w*\(%\w+(?:,\s*%\w+(?:,\s*\d)?)?\))$`)
+	reForbidden   = regexp.MustCompile(`\b(syscall|sysenter|int\s+\$0x80|rdtsc|rdrand|rdseed|cpuid)\b`)
 )
 
 func clean(line string) string {
@@ -113,6 +118,9 @@ func clean(line string) string {
 func (a AMD64Arch) sysvRegs(sig Sig) ([]string, error) {
 	var out []string
 	ints := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+	if a.PreserveNone {
+		ints = []string{"r12", "r13", "r14", "r15", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r11", "rax"}
+	}
 	sses := a.SSEArgRegs()
 	ni, nx := 0, 0
 	for _, p := range sig.Params {
@@ -224,15 +232,21 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		return "", Meta{}, fmt.Errorf("%s: prologue missing mov rsp,rbp: %q", fn.Name, body[i])
 	}
 	i++
-	var saved []string
+	var pushed []string
 	for i < len(body) {
 		if m := rePushCS.FindStringSubmatch(norm(body[i])); m != nil {
-			saved = append(saved, m[1])
+			pushed = append(pushed, m[1])
 			i++
 			continue
 		}
 		break
 	}
+	if a.PreserveNone && len(pushed) > 0 {
+		return "", Meta{}, fmt.Errorf("%s: preserve_none code saved callee-saved registers %v", fn.Name, pushed)
+	}
+	// The registers a unified call must keep: the ones the body uses, which
+	// are the ones LLVM's prologue pushed.
+	saved := pushed
 	local := 0
 	for i < len(body) {
 		n := norm(body[i])
@@ -288,6 +302,12 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 	}
 	for _, s := range fn.Indirect {
 		consider(s)
+	}
+	if a.SaveAll && hasCall {
+		saved = a.CalleeSaved()
+	}
+	if os.Getenv("GEN_NO_SAVES") != "" {
+		saved = nil // negative build: must fail the behavior tests
 	}
 	saveBase := align(outArea, 8)
 	saveArea := 8 * len(saved)
@@ -347,7 +367,7 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		// saved callee-saved area. Map each onto the local region of the Go
 		// frame, preserving contiguity, so no base-pointer access remains.
 		if strings.Contains(n, "%rbp") {
-			rewritten, err := rewriteRBPLocals(l, 8*len(saved), local, localBase)
+			rewritten, err := rewriteRBPLocals(l, 8*len(pushed), local, localBase)
 			if err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
@@ -372,6 +392,19 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		if n == "retq" || n == "ret" {
 			out = append(out, storeResult()...)
 			out = append(out, "jmp "+retLabel)
+			continue
+		}
+		if m := reIndirectMem.FindStringSubmatch(n); m != nil {
+			if strings.Contains(m[1], "%rsp") || strings.Contains(m[1], "%rbp") {
+				return "", Meta{}, fmt.Errorf("%s: call through a pointer in the frame: %q", fn.Name, l)
+			}
+			if indIdx >= len(fn.Indirect) {
+				return "", Meta{}, fmt.Errorf("%s: more indirect calls than declared", fn.Name)
+			}
+			sig := fn.Indirect[indIdx]
+			indIdx++
+			out = append(out, "movq "+m[1]+", %r11")
+			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
 			continue
 		}
 		if m := reIndirect.FindStringSubmatch(n); m != nil {

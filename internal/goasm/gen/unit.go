@@ -22,18 +22,34 @@ var EngineCFlags = []string{"-O2", "-fno-builtin", "-fno-omit-frame-pointer", "-
 // HostCallbacks is the closed list of Go callbacks engine code may call.
 var HostCallbacks = []string{"host_poll", "host_memory_grow", "host_now", "host_call", "host_release", "host_intl"}
 
+// ARM64CFlags are the clang flags of arm64 engine code: plain AAPCS with
+// x18 and x26 to x28 fixed, x29 reserved as the frame pointer, LR reserved
+// for return addresses, no outline atomics and no unwind tables.
+var ARM64CFlags = []string{"--target=aarch64-linux-gnu", "-O2", "-fno-builtin", "-fwrapv", "-ffp-contract=off",
+	"-ffreestanding", "-nostdinc", "-fno-stack-protector", "-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
+	"-mno-outline-atomics", "-fno-optimize-sibling-calls", "-ffixed-x18", "-ffixed-x26", "-ffixed-x27", "-ffixed-x28",
+	"-Xclang", "-mframe-pointer=reserved", "-Xclang", "-target-feature", "-Xclang", "+reserve-lr-for-ra"}
+
 // Unit is one C file compiled through the shadow-stack pass.
 type Unit struct {
 	IR, ShadowIR, Asm, Obj string // paths in the work dir
 	Shadow                 string // the pass's report: one line per function
 }
 
-// CompileUnit compiles cfile with LLVM in llvmBin, runs the IR checks and the
+// UnitConfig says how to compile a unit.
+type UnitConfig struct {
+	LLVM, Pass, Work string   // LLVM bin dir, built pass, work dir
+	CFlags           []string // clang flags (EngineCFlags or ARM64CFlags)
+	PassArgs         []string // extra shadow-stack pass options
+	Leaves           []string // register-entry leaves: no shadow pointer
+}
+
+// CompileUnit compiles cfile with clang, runs the IR checks and the
 // shadow-stack pass, and writes assembly and an object with llc.
-func CompileUnit(llvmBin, pass, cfile, work string, leaves []string) (*Unit, error) {
-	base := filepath.Join(work, strings.TrimSuffix(filepath.Base(cfile), ".c"))
+func CompileUnit(cfg UnitConfig, cfile string) (*Unit, error) {
+	base := filepath.Join(cfg.Work, strings.TrimSuffix(filepath.Base(cfile), ".c"))
 	u := &Unit{IR: base + ".ll", ShadowIR: base + ".shadow.ll", Asm: base + ".s", Obj: base + ".o"}
-	if _, err := runTool(filepath.Join(llvmBin, "clang"), append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", u.IR, cfile)...); err != nil {
+	if _, err := runTool(filepath.Join(cfg.LLVM, "clang"), append(append([]string{}, cfg.CFlags...), "-S", "-emit-llvm", "-o", u.IR, cfile)...); err != nil {
 		return nil, err
 	}
 	ll, err := os.ReadFile(u.IR)
@@ -43,12 +59,18 @@ func CompileUnit(llvmBin, pass, cfile, work string, leaves []string) (*Unit, err
 	if err := CheckIR(string(ll)); err != nil {
 		return nil, fmt.Errorf("IR check: %w", err)
 	}
-	u.Shadow, err = runTool(filepath.Join(llvmBin, "opt"), "-load-pass-plugin", pass, "-passes=goasm-shadow-stack",
-		"-shadow-leaf="+strings.Join(leaves, ","), "-S", "-o", u.ShadowIR, u.IR)
+	args := []string{"-load-pass-plugin", cfg.Pass, "-passes=goasm-shadow-stack",
+		"-shadow-leaf=" + strings.Join(cfg.Leaves, ",")}
+	args = append(append(args, cfg.PassArgs...), "-S", "-o", u.ShadowIR, u.IR)
+	u.Shadow, err = runTool(filepath.Join(cfg.LLVM, "opt"), args...)
 	if err != nil {
 		return nil, fmt.Errorf("shadow-stack pass: %w", err)
 	}
-	llc := filepath.Join(llvmBin, "llc")
+	// A failing llc can leave a partial file: nothing from an earlier run
+	// may stand in for its output.
+	os.Remove(u.Asm)
+	os.Remove(u.Obj)
+	llc := filepath.Join(cfg.LLVM, "llc")
 	if _, err := runTool(llc, "-O2", "-enable-shrink-wrap=false", "-o", u.Asm, u.ShadowIR); err != nil {
 		return nil, err
 	}
