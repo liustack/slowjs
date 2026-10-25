@@ -61,6 +61,8 @@ func main() {
 		{Name: "b_uni_d", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: f64}},
 		{Name: "b_reg_v", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 		{Name: "b_uni_v", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
+		{Name: "b_reg_p", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
+		{Name: "b_uni_p", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 		{Name: "spin", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 		// Shadow stack, reentry, interrupts.
 		{Name: "take_addr", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, jsv, f64, ptr}, Ret: i64}},
@@ -287,8 +289,9 @@ func reportSizes(obj string) {
 	for _, n := range sizes {
 		total += n
 	}
-	fmt.Fprintf(os.Stderr, "CODE-SIZE b_uni_i=%d b_uni_d=%d b_uni_v=%d b_reg_i=%d live_mix=%d slots_ind=%d big_caller=%d total=%d\n",
-		sizes["b_uni_i"], sizes["b_uni_d"], sizes["b_uni_v"], sizes["b_reg_i"], sizes["live_mix"], sizes["slots_ind"], sizes["big_caller"], total)
+	fmt.Fprintf(os.Stderr, "CODE-SIZE b_uni_i=%d b_uni_d=%d b_uni_v=%d b_uni_p=%d b_reg_i=%d b_reg_p=%d live_mix=%d slots_ind=%d big_caller=%d total=%d\n",
+		sizes["b_uni_i"], sizes["b_uni_d"], sizes["b_uni_v"], sizes["b_uni_p"], sizes["b_reg_i"], sizes["b_reg_p"],
+		sizes["live_mix"], sizes["slots_ind"], sizes["big_caller"], total)
 }
 
 func goDecls(specs []gen.FuncSpec, unified []string, arch, mode string) string {

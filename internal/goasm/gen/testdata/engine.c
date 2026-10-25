@@ -291,3 +291,26 @@ long big_caller(void *sp, long *src, long k) {
   long y = big_4k(sp, src, k + 1);
   return a + 3 * b + 5 * x + 7 * y;
 }
+
+// Call overhead from a function whose first phase keeps ten values live
+// across a call, so its body uses many callee-saved registers, while its
+// loop has only a few values live at each call: saving what the body uses
+// then costs more per call than keeping what is live.
+#define PHASE(f) \
+  long a0 = n * 3, a1 = n ^ 5, a2 = n + 11, a3 = n * 7, a4 = n ^ 0x77, a5 = n - 13, a6 = n * 17, \
+       a7 = n ^ 0x191, a8 = n + 23, a9 = n * 29; \
+  long r = f(a0, a1); \
+  long s = a0 + 2 * a1 + 3 * a2 + 4 * a3 + 5 * a4 + 6 * a5 + 7 * a6 + 8 * a7 + 9 * a8 + 10 * a9 + r; \
+  long acc = 0; \
+  for (long i = 0; i < n; i++) acc += f(i, s); \
+  return acc;
+long b_reg_p(void *sp, long n) {
+#define LF(a, b) lf_i(a, b)
+  PHASE(LF)
+#undef LF
+}
+long b_uni_p(void *sp, long n) {
+#define UF(a, b) uf_i(sp, a, b)
+  PHASE(UF)
+#undef UF
+}
