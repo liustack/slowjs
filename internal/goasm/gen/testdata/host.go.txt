@@ -1,0 +1,24 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import "sync/atomic"
+
+// interruptRequested is the Go-side interrupt flag (atomic, as in the engine's
+// current interruptHandler). host_poll latches it into interruptLatched and
+// reports it. It has a normal Go prologue, so GC can stop a loop here.
+var (
+	interruptRequested atomic.Int64
+	interruptLatched    atomic.Int64
+	pollCount           atomic.Int64
+)
+
+//go:noinline
+func host_poll(sp uintptr) int64 {
+	pollCount.Add(1)
+	if interruptRequested.Load() != 0 {
+		interruptLatched.Store(1)
+		return 1
+	}
+	return 0
+}
