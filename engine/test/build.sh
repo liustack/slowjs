@@ -14,7 +14,7 @@
 #
 # MODE is plain (default), asan (AddressSanitizer), ubsan (UndefinedBehavior
 # Sanitizer) or asan-ubsan (both). OUTDIR defaults to engine/test/out/MODE. It
-# gets run-test262 and api-test (see api-test.sh), and the object files: those of
+# gets run-test262, mathdump (see math.sh), api-test (see api-test.sh), and the object files: those of
 # the engine here, those of its libc in libc/. CC picks another compiler. A
 # sanitizer reports a finding and goes on, so that a run over test262 lists
 # them all: run with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer
@@ -79,7 +79,7 @@ done
 hostflags="$common -D_GNU_SOURCE -DCONFIG_VERSION=\"$version\" -I$engine -I$here"
 $cc $hostflags -c "$here/host.c" -o "$out/host.o"
 objs="$objs $out/host.o"
-for f in run-test262 api-test; do
+for f in run-test262 mathdump api-test; do
 	$cc $hostflags -c "$here/$f.c" -o "$out/$f.o"
 	$cc $san $objs "$out/$f.o" -o "$out/$f" -lpthread
 done
