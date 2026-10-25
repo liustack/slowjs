@@ -1,0 +1,77 @@
+package mini
+
+import (
+	"math"
+	"runtime"
+	"runtime/debug"
+	"sync"
+	"testing"
+)
+
+func TestLeaves(t *testing.T) {
+	for _, c := range [][2]int64{{0, 0}, {1, 2}, {-5, 1 << 40}, {math.MaxInt64, math.MinInt64}} {
+		if got, want := int64(c_leaf_mix(uint64(c[0]), uint64(c[1]))), refLeafMix(c[0], c[1]); got != want {
+			t.Fatalf("leaf_mix%v = %d, want %d", c, got, want)
+		}
+	}
+	for _, d := range []float64{0, 1.25, -3e10, 7.5e-300} {
+		if got, want := c_leaf_f(d, 9), refLeafF(d, 9); math.Float64bits(got) != math.Float64bits(want) {
+			t.Fatalf("leaf_f(%v) = %v, want %v", d, got, want)
+		}
+	}
+}
+
+func TestMid(t *testing.T) {
+	u, tag := c_mid(1000, 77, 5, 2.5)
+	wu, wtag := refMid(1000, 77, 5, 2.5)
+	if u != wu || int64(tag) != wtag {
+		t.Fatalf("mid = %d,%d want %d,%d", u, tag, wu, wtag)
+	}
+}
+
+func runOuter(t *testing.T, depth int64) {
+	u, tag := c_outer(4096, 12345, 678, 1.75, uint64(depth))
+	wu, wtag := refOuter(4096, 12345, 678, 1.75, depth)
+	if u != wu || int64(tag) != wtag {
+		t.Errorf("outer(depth %d) = %#x,%d want %#x,%d", depth, u, int64(tag), wu, wtag)
+	}
+}
+
+// TestOuterStackMoves runs C frames with Go callbacks that grow the stack,
+// shrink it with GC, and re-enter C (C -> Go -> C, two levels).
+func TestOuterStackMoves(t *testing.T) {
+	g0, s0, c0 := grew.Load(), shrank.Load(), cbCalls.Load()
+	done := make(chan struct{})
+	go func() { // fresh goroutine: small stack
+		defer close(done)
+		runOuter(t, 2)
+	}()
+	<-done
+	calls := cbCalls.Load() - c0
+	t.Logf("callbacks %d, stack grew in %d, shrank in %d, traceback ok %d, fp walk ok %d",
+		calls, grew.Load()-g0, shrank.Load()-s0, traceOK.Load(), fpWalkOK.Load())
+	if v := traceBad.Load(); v != nil {
+		t.Fatalf("bad unwind: %v", v)
+	}
+	if grew.Load()-g0 == 0 || shrank.Load()-s0 == 0 {
+		t.Fatalf("stack did not move both ways")
+	}
+}
+
+// TestManyGoroutines runs outer on many goroutines with frequent GC.
+func TestManyGoroutines(t *testing.T) {
+	old := debug.SetGCPercent(5)
+	defer debug.SetGCPercent(old)
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 5; j++ {
+				runOuter(t, int64((i+j)%3))
+			}
+		}(i)
+	}
+	wg.Wait()
+	runtime.GC()
+}
