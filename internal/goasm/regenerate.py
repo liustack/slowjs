@@ -44,9 +44,13 @@ def engine_names(engine):
  """The files of engine/ that come from QuickJS: its C, its headers and LICENSE."""
  return sorted(f.name for f in engine.iterdir() if f.is_file() and (f.suffix in ('.c','.h') or f.name=='LICENSE'))
 
+# The files engine/ takes from QuickJS. A file missing from engine/ is drift too.
+ENGINE_FILES=['LICENSE','cutils.c','cutils.h','dtoa.c','dtoa.h','libregexp-opcode.h','libregexp.c','libregexp.h','libunicode-table.h','libunicode.c','libunicode.h','list.h','quickjs-atom.h','quickjs-opcode.h','quickjs.c','quickjs.h']
+
 def engine_drift(engine,legacy):
- """The files of engine/ that differ from the text the old way makes, or that it lacks."""
- return [n for n in engine_names(engine) if not (legacy/n).is_file() or (engine/n).read_bytes()!=(legacy/n).read_bytes()]
+ """The files of engine/ that differ from the text the old way makes, that it lacks, or that QuickJS does not give."""
+ names=sorted(set(ENGINE_FILES)|set(engine_names(engine)))
+ return [n for n in names if n not in ENGINE_FILES or not (engine/n).is_file() or not (legacy/n).is_file() or (engine/n).read_bytes()!=(legacy/n).read_bytes()]
 
 def layout_problems(root,files):
  """Breaks of the layout rule: engine/ holds no Go file, and a folder with Go files holds no C file."""
