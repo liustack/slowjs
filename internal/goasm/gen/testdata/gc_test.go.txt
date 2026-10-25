@@ -1,0 +1,93 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"sync"
+	"testing"
+	"time"
+)
+
+// Item 3: GC stops a C loop that calls nothing but the back-edge poll. The
+// workers run spin, whose only Go call is host_poll every 10000 back edges.
+func TestGCStopsSpinLoop(t *testing.T) {
+	interruptRequested.Store(0)
+	gcStopRun("C spin loop (poll every 10000 back edges)", 150, func(n int, stop <-chan struct{}) func() {
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						spin(0, 20_000_000)
+					}
+				}
+			}()
+		}
+		return wg.Wait
+	})
+}
+
+// The same with a poll every 545000 back edges, about the 240 µs between
+// polls of the current engine's JS loop on the test machine.
+func TestGCStopsSpinLoopSlowPoll(t *testing.T) {
+	interruptRequested.Store(0)
+	gcStopRun("C spin loop (poll every 545000 back edges)", 150, func(n int, stop <-chan struct{}) func() {
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						spin_every(0, 50_000_000, 545_000)
+					}
+				}
+			}()
+		}
+		return wg.Wait
+	})
+}
+
+// Item 6: an interrupt requested during the loop is observed at the poll and
+// the loop ends early.
+func TestInterruptLatched(t *testing.T) {
+	interruptRequested.Store(0)
+	interruptLatched.Store(0)
+	done := make(chan int64, 1)
+	go func() { done <- spin(0, 5_000_000_000) }()
+	time.Sleep(10 * time.Millisecond)
+	interruptRequested.Store(1)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("spin did not end after the interrupt")
+	}
+	if interruptLatched.Load() != 1 {
+		t.Fatal("the interrupt was not latched at the poll")
+	}
+	interruptRequested.Store(0)
+}
+
+// TestSpinPeriod times one iteration of spin, so the time between two polls
+// (10000 back edges) can be read off.
+func TestSpinPeriod(t *testing.T) {
+	interruptRequested.Store(0)
+	const n = 20_000_000
+	best := time.Duration(1 << 62)
+	for r := 0; r < 5; r++ {
+		t0 := time.Now()
+		spin(0, n)
+		if d := time.Since(t0); d < best {
+			best = d
+		}
+	}
+	println("C spin:", float64(best)/n, "ns per iteration")
+}

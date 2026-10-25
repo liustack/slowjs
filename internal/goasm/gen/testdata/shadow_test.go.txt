@@ -1,0 +1,287 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"errors"
+	"runtime"
+	"sync"
+	"testing"
+	"unsafe"
+)
+
+// growGo uses about depth*256 bytes of Go stack, forcing it to grow.
+//
+//go:noinline
+func growGo(depth int) int {
+	var pad [256]byte
+	pad[depth%256] = byte(depth)
+	if depth == 0 {
+		return int(pad[0])
+	}
+	return growGo(depth-1) + int(pad[depth%256])
+}
+
+// frameAddr is the address of a local in the calling frame, as an integer:
+// it changes exactly when the stack was copied.
+//
+//go:noinline
+func frameAddr(x *int) uintptr { return uintptr(unsafe.Pointer(x)) }
+
+// Item 2: the callee takes its parameters' addresses, changes the copies and
+// writes the result, then Go moves its stack. The caller's object is
+// unchanged and the result is complete.
+func TestAddressTakenParams(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	moved := false
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		if id != cbGrow {
+			t.Fatalf("unexpected callback %d", id)
+		}
+		var x int
+		before := frameAddr(&x)
+		growGo(4096) // about 1 MiB
+		moved = frameAddr(&x) != before
+		return 0
+	}
+	r, err := vm.Eval(func(sp uintptr) int64 { return addr_param(sp, 7, 40, 1.5) })
+	if err != nil {
+		t.Fatalf("addr_param: %v (%d)", err, r)
+	}
+	if r != 1040+3 {
+		t.Fatalf("addr_param = %d, want 1043", r)
+	}
+	if !moved {
+		t.Fatal("the Go stack did not move during the callback")
+	}
+	if vm.top != vm.Empty() {
+		t.Fatal("shadow stack not empty after return")
+	}
+}
+
+// Item 3: the Go stack shrinks (and is copied) while a C frame with live
+// state is below the callback.
+func TestStackShrinkUnderCFrame(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	var grew, shrank bool
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		if id == cbObserve {
+			return 0
+		}
+		var x int
+		a0 := frameAddr(&x)
+		growGo(8192) // about 2 MiB
+		a1 := frameAddr(&x)
+		grew = a1 != a0
+		for i := 0; i < 4 && frameAddr(&x) == a1; i++ {
+			runtime.GC()
+		}
+		shrank = frameAddr(&x) != a1
+		return 5
+	}
+	done := make(chan struct{})
+	var r int64
+	var err error
+	go func() { // a fresh goroutine, so its stack starts small
+		defer close(done)
+		r, err = vm.Eval(func(sp uintptr) int64 { return shrink_frame(sp, 3, 4) })
+	}()
+	<-done
+	if err != nil || r != 3+4+7+12+5 {
+		t.Fatalf("shrink_frame = %d, %v", r, err)
+	}
+	if !grew || !shrank {
+		t.Fatalf("stack grew %v, shrank %v: both copies must happen", grew, shrank)
+	}
+}
+
+// Item 5: two levels of reentry into the same VM, with GC and a Go stack
+// move at the innermost callback, ended by a normal return, a panic or a
+// Goexit. Every level's fixed and dynamic locals keep their sentinels, the
+// live areas do not overlap, and each record of the shadow position comes
+// back when its callback ends.
+func TestReentryMatrix(t *testing.T) {
+	for _, mode := range []string{"return", "panic", "goexit"} {
+		t.Run(mode, func(t *testing.T) {
+			vm := NewVM()
+			defer vm.Close()
+			type level struct{ fixed, dynLo, dynHi, handoff uintptr }
+			var levels []level
+			var logs []uintptr
+			var fail string
+			vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+				switch id {
+				case cbObserve:
+					return 0
+				case cbLog:
+					logs = append(logs, uintptr(arg))
+					return 0
+				case cbReenter:
+					n := len(logs)
+					levels = append(levels, level{logs[n-3], logs[n-2], logs[n-1], sp})
+					if vm.top != sp {
+						fail = "the bridge did not record the handoff"
+					}
+					if arg < 3 {
+						r, err := vm.Eval(func(sp2 uintptr) int64 {
+							if sp2 != sp {
+								fail = "the reentry did not start at the handoff"
+							}
+							return reenter(sp2, arg+1, 16+arg)
+						})
+						if err != nil {
+							fail = "inner eval: " + err.Error()
+						}
+						if vm.top != sp {
+							fail = "the handoff record was not restored after the reentry"
+						}
+						return r
+					}
+					runtime.GC()
+					growGo(4096)
+					runtime.GC()
+					switch mode {
+					case "panic":
+						panic("boom")
+					case "goexit":
+						runtime.Goexit()
+					}
+					return 0
+				}
+				fail = "unexpected callback"
+				return 0
+			}
+			var r int64
+			var err error
+			var recovered any
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { recovered = recover() }()
+				r, err = vm.Eval(func(sp uintptr) int64 { return reenter(sp, 1, 16) })
+			}()
+			wg.Wait()
+			if fail != "" {
+				t.Fatal(fail)
+			}
+			if len(levels) != 3 {
+				t.Fatalf("reached %d levels, want 3", len(levels))
+			}
+			for i, l := range levels {
+				if !(l.fixed < l.dynLo && l.dynLo < l.dynHi && l.dynHi <= l.handoff) {
+					t.Fatalf("level %d: fixed %#x dyn [%#x,%#x) handoff %#x out of order", i+1, l.fixed, l.dynLo, l.dynHi, l.handoff)
+				}
+				if l.fixed < vm.Empty() || l.handoff >= vm.base+shadowSize-shadowGuard {
+					t.Fatalf("level %d outside the shadow region", i+1)
+				}
+				if i > 0 && l.fixed < levels[i-1].handoff {
+					t.Fatalf("level %d overlaps level %d", i+1, i)
+				}
+			}
+			if vm.top != vm.Empty() {
+				t.Fatal("outermost record not restored")
+			}
+			switch mode {
+			case "return":
+				if err != nil || r != 3+2+1 {
+					t.Fatalf("reenter = %d, %v", r, err)
+				}
+				if vm.broken {
+					t.Fatal("VM marked broken after a normal return")
+				}
+				if _, err := vm.Eval(func(sp uintptr) int64 { return deep(sp, 10) }); err != nil {
+					t.Fatalf("VM unusable after the matrix: %v", err)
+				}
+			case "panic":
+				if recovered != "boom" {
+					t.Fatalf("recovered %v", recovered)
+				}
+				fallthrough
+			case "goexit":
+				if !vm.broken {
+					t.Fatal("VM not marked broken")
+				}
+				if _, err := vm.Eval(func(sp uintptr) int64 { return deep(sp, 10) }); !errors.Is(err, ErrBroken) {
+					t.Fatalf("Eval on a broken VM: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// Item 6: an interrupt requested in the middle of a fragment that cannot
+// fail lets the fragment finish, then propagates. The callback ignores the
+// inner error and evaluates again: that must fail too, and so must the
+// outer loop.
+func TestInterruptPersists(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	const n = 50_000
+	var inner []error
+	var done []int64
+	rounds := 0
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 {
+		if id != cbInnerEval {
+			return 0
+		}
+		rounds++
+		first := vm.polls.Load()
+		vm.pollHook = func(k int64) {
+			if k == first+5 {
+				vm.Interrupt()
+			}
+		}
+		for i := 0; i < 2; i++ {
+			_, err := vm.Eval(func(sp uintptr) int64 { return fragment(sp, vm.Slot(0), n, vm.Slot(1+i)) })
+			inner = append(inner, err) // ignored on purpose
+			done = append(done, vm.Word(1+i))
+		}
+		return 0
+	}
+	_, err := vm.Eval(func(sp uintptr) int64 { return outer_loop(sp, vm.Slot(0), 1000) })
+	if !errors.Is(err, ErrInterrupted) {
+		t.Fatalf("outer loop: %v, want interrupted", err)
+	}
+	if rounds != 1 {
+		t.Fatalf("outer loop ran %d rounds after the interrupt, want 1", rounds)
+	}
+	for i := range inner {
+		if !errors.Is(inner[i], ErrInterrupted) {
+			t.Fatalf("inner eval %d: %v, want interrupted", i, inner[i])
+		}
+		if done[i] != n {
+			t.Fatalf("fragment %d stopped at %d of %d", i, done[i], n)
+		}
+	}
+	// The next outermost entry starts clean.
+	if r, err := vm.Eval(func(sp uintptr) int64 { return fragment(sp, vm.Slot(0), 10, vm.Slot(1)) }); err != nil || r != 45 {
+		t.Fatalf("fresh entry: %d, %v", r, err)
+	}
+}
+
+// Item 7: running out of shadow stack raises RangeError, through deep
+// recursion and through one large dynamic alloca, and the VM stays usable.
+func TestShadowOverflow(t *testing.T) {
+	vm := NewVM()
+	defer vm.Close()
+	vm.onCall = func(vm *VM, id, arg int64, sp uintptr) int64 { return 0 }
+	var re *RangeError
+	if _, err := vm.Eval(func(sp uintptr) int64 { return deep(sp, 1_000_000) }); !errors.As(err, &re) {
+		t.Fatalf("deep recursion: %v, want RangeError", err)
+	}
+	if vm.top != vm.Empty() {
+		t.Fatal("shadow stack not empty after the error")
+	}
+	if r, err := vm.Eval(func(sp uintptr) int64 { return deep(sp, 100) }); err != nil || r != 31 {
+		t.Fatalf("deep(100) after overflow = %d, %v", r, err)
+	}
+	if _, err := vm.Eval(func(sp uintptr) int64 { return dyn_alloc(sp, 2<<20) }); !errors.As(err, &re) {
+		t.Fatalf("dynamic alloca: %v, want RangeError", err)
+	}
+	if r, err := vm.Eval(func(sp uintptr) int64 { return dyn_alloc(sp, 512<<10) }); err != nil || r != 512<<10 {
+		t.Fatalf("dyn_alloc(512K) = %d, %v", r, err)
+	}
+}
