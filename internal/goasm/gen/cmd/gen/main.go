@@ -22,6 +22,8 @@ func main() {
 	data := flag.String("data", "testdata", "C sources")
 	out := flag.String("out", "proto", "output package dir")
 	bin := flag.String("bin", "", "linked binary to verify against (post-link check)")
+	pass := flag.String("pass", "", "shadow-stack pass plugin (pass/shadow.cpp built as a shared object)")
+	pkg := flag.String("pkg", "github.com/liustack/slowjs/internal/goasm/gen/internal/proto", "Go import path of the generated package")
 	flag.Parse()
 
 	clang := filepath.Join(*llvm, "clang")
@@ -53,19 +55,44 @@ func main() {
 		{Name: "b_reg_v", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 		{Name: "b_uni_v", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 		{Name: "spin", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
+		// Shadow stack, reentry, interrupts.
+		{Name: "take_addr", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, jsv, f64, ptr}, Ret: i64}},
+		{Name: "addr_param", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64, i64, f64}, Ret: i64}},
+		{Name: "nop_call", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
+		{Name: "vec_spill", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, f64, f64}, Ret: f64}},
+		{Name: "reenter", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}},
+		{Name: "shrink_frame", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}},
+		{Name: "fragment", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64, ptr}, Ret: i64}},
+		{Name: "outer_loop", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
+		{Name: "deep", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
+		{Name: "spin_every", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}},
+		{Name: "dyn_alloc", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 	}
 	_ = void
 	gen.SetCallees(specs)
 	// host_poll is a Go host callback, not generated; register its signature
 	// so the generator marshals calls to it as a unified call.
 	gen.AddCallee("host_poll", gen.Sig{Params: []gen.Type{ptr}, Ret: i64}, gen.Unified)
+	gen.AddCallee("host_call", gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}, gen.Unified)
+	var leaves []string
+	for _, s := range specs {
+		if s.Kind == gen.Register {
+			leaves = append(leaves, s.Name)
+		}
+	}
 
-	// Unified flags: frame pointer kept, red zone off, signed wrap, no tail
-	// calls, shrink-wrap off so every function has one canonical prologue.
-	uflags := []string{"-O2", "-fno-builtin", "-fno-omit-frame-pointer", "-mno-red-zone",
-		"-fwrapv", "-fno-optimize-sibling-calls", "-mllvm", "-enable-shrink-wrap=false",
-		"-fcf-protection=none", "-S", "-o", "-"}
-	engineAsm := must(capture(clang, append(append([]string{}, uflags...), filepath.Join(*data, "engine.c"))...))
+	work := filepath.Join(filepath.Dir(*out), "_"+filepath.Base(*out)+"_work") // ignored by go tooling
+	os.MkdirAll(work, 0o755)
+
+	// Unified functions: clang -O2 to IR, the IR checks, the shadow-stack
+	// pass, then llc.
+	unit, err := gen.CompileUnit(*llvm, *pass, filepath.Join(*data, "engine.c"), work, leaves)
+	if err != nil {
+		die(err)
+	}
+	writeFile(filepath.Join(work, "shadow.txt"), unit.Shadow)
+	engineObj := unit.Obj
+	engineAsm := readFile(unit.Asm)
 
 	// Leaf flags: frame pointer omitted so the leaf is frameless.
 	lflags := []string{"-O2", "-fno-builtin", "-fomit-frame-pointer", "-mno-red-zone",
@@ -88,14 +115,14 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		lowered.WriteString(".globl " + s.Name + "\n.type " + s.Name + ",@function\n" + text +
+		// Each function starts 16-aligned, as PCALIGN puts it in Go, so the
+		// alignment of in-body constants carries over.
+		lowered.WriteString(".p2align 4\n.globl " + s.Name + "\n.type " + s.Name + ",@function\n" + text +
 			".size " + s.Name + ", .-" + s.Name + "\n")
 		metas = append(metas, meta)
 	}
 
 	os.MkdirAll(*out, 0o755)
-	work := *out + "_work"
-	os.MkdirAll(work, 0o755)
 	loweredPath := filepath.Join(work, "lowered.s")
 	writeFile(loweredPath, lowered.String())
 	objPath := filepath.Join(work, "lowered.o")
@@ -134,26 +161,23 @@ func main() {
 	writeFile(filepath.Join(*out, "engine.go"), decls)
 	fmt.Fprintln(os.Stderr, "generated", *out)
 
-	// Static check on the engine IR: no variadics, byval, sret or long double.
-	engineLL := must(capture(clang, "-O2", "-fno-builtin", "-fno-omit-frame-pointer",
-		"-mno-red-zone", "-fwrapv", "-S", "-emit-llvm", "-o", "-", filepath.Join(*data, "engine.c")))
-	if err := gen.CheckIR(engineLL); err != nil {
-		die(fmt.Errorf("engine IR check: %w", err))
-	}
-
 	// The closed allow list: the engine's own functions and the host callbacks.
 	allow := map[string]bool{"host_poll": true, "host_memory_grow": true, "host_now": true,
 		"host_call": true, "host_release": true, "host_intl": true}
 	for _, s := range specs {
 		allow[s.Name] = true
 	}
-	if err := gen.CheckObject(objPath, allow); err != nil {
-		die(fmt.Errorf("object check: %w", err))
+	// Both the engine object as LLVM wrote it (its data sections and every
+	// symbol it references) and the lowered object.
+	for _, o := range []string{engineObj, objPath} {
+		if err := gen.CheckObject(o, allow); err != nil {
+			die(fmt.Errorf("object check %s: %w", filepath.Base(o), err))
+		}
 	}
 	fmt.Fprintln(os.Stderr, "static checks passed")
 
 	if *bin != "" {
-		reports, err := gen.VerifyLinked(objPath, *bin, "slowjsgen/proto", metas)
+		reports, err := gen.VerifyLinked(objPath, *bin, *pkg, metas)
 		if err != nil {
 			die(fmt.Errorf("post-link verify: %w", err))
 		}
@@ -209,6 +233,14 @@ func capture(name string, args ...string) (string, error) {
 		return "", fmt.Errorf("%s %s: %v\n%s", name, strings.Join(args, " "), err, errb.String())
 	}
 	return out.String(), nil
+}
+
+func readFile(p string) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		die(err)
+	}
+	return string(b)
 }
 func run(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
