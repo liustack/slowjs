@@ -2,23 +2,190 @@
 // SPDX-License-Identifier: MIT
 package proto
 
-import "sync/atomic"
-
-// interruptRequested is the Go-side interrupt flag (atomic, as in the engine's
-// current interruptHandler). host_poll latches it into interruptLatched and
-// reports it. It has a normal Go prologue, so GC can stop a loop here.
-var (
-	interruptRequested atomic.Int64
-	interruptLatched    atomic.Int64
-	pollCount           atomic.Int64
+import (
+	"errors"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+	"unsafe"
 )
 
-//go:noinline
+// The Go side of the interrupt protocol for code run without a VM (sp == 0):
+// interruptRequested is the atomic Interrupt flag and deadline a monotonic
+// deadline in ns since start (0 means none), as in the engine's current
+// interruptHandler.
+var (
+	interruptRequested atomic.Int64
+	interruptLatched   atomic.Int64
+	pollCount          atomic.Int64
+	deadline           atomic.Int64
+	start              = time.Now()
+)
+
+// host_poll is the preemption point of every C loop. It must keep its
+// split-check prologue: GC stops a goroutine running assembly only there.
+// It calls pollCheck, so it is never a leaf and the compiler never marks it
+// NOSPLIT. The post-link verify fails if the prologue is missing.
 func host_poll(sp uintptr) int64 {
 	pollCount.Add(1)
+	if vm := vmOf(sp); vm != nil {
+		n := vm.polls.Add(1)
+		if vm.pollHook != nil {
+			vm.pollHook(n)
+		}
+		return vm.interrupt.Load()
+	}
+	return pollCheck()
+}
+
+//go:noinline
+func pollCheck() int64 {
 	if interruptRequested.Load() != 0 {
 		interruptLatched.Store(1)
 		return 1
 	}
+	if d := deadline.Load(); d != 0 && int64(time.Since(start)) > d {
+		interruptLatched.Store(1)
+		return 1
+	}
 	return 0
+}
+
+// Engine result codes (engine.c).
+const (
+	codeInterrupted = -2
+	codeRangeError  = -3
+	codeCorrupt     = -4
+)
+
+const (
+	cbGrow      = 1
+	cbReenter   = 2
+	cbShrink    = 3
+	cbInnerEval = 4
+	cbLog       = 5
+	cbObserve   = 6
+)
+
+// The shadow stack: 2^shadowLog2 bytes outside the Go heap, aligned to its
+// size so the VM and the space left follow from the pointer alone. The first
+// headerBytes hold VM state the C code reads and writes (the interrupt latch
+// and test slots). shadowLog2 and shadowGuard match the pass options.
+const (
+	shadowLog2  = 20
+	shadowSize  = 1 << shadowLog2
+	shadowGuard = 16
+	headerBytes = 256
+)
+
+var (
+	ErrInterrupted = errors.New("interrupted")
+	ErrBroken      = errors.New("VM unusable after a panic or Goexit crossed engine frames")
+	ErrCorrupt     = errors.New("engine state corrupted")
+)
+
+// RangeError is the shadow stack running out.
+type RangeError struct{}
+
+func (*RangeError) Error() string { return "RangeError: shadow stack exhausted" }
+
+type VM struct {
+	mem   []byte
+	base  uintptr
+	top   uintptr // where the next entry starts: empty, or the handoff of the active callback
+	depth int
+	// broken is set when a panic or Goexit crossed engine frames.
+	broken    bool
+	interrupt atomic.Int64
+	polls     atomic.Int64
+	pollHook  func(n int64)
+	onCall    func(vm *VM, id, arg int64, sp uintptr) int64
+}
+
+var vms sync.Map // region base -> *VM
+
+func NewVM() *VM {
+	mem, err := syscall.Mmap(-1, 0, 2*shadowSize, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	if err != nil {
+		panic(err)
+	}
+	p := uintptr(unsafe.Pointer(&mem[0]))
+	base := (p + shadowSize - 1) &^ (shadowSize - 1)
+	vm := &VM{mem: mem, base: base, top: base + headerBytes}
+	vms.Store(base, vm)
+	return vm
+}
+
+func (vm *VM) Close() {
+	vms.Delete(vm.base)
+	syscall.Munmap(vm.mem)
+}
+
+// Slot returns the address of header word i (word 0 is the interrupt latch).
+func (vm *VM) Slot(i int) uintptr { return vm.base + uintptr(8*i) }
+func (vm *VM) Word(i int) int64    { return *(*int64)(unsafe.Pointer(vm.Slot(i))) }
+func (vm *VM) Empty() uintptr      { return vm.base + headerBytes }
+func (vm *VM) Interrupt()          { vm.interrupt.Store(1) }
+
+func vmOf(sp uintptr) *VM {
+	if sp == 0 {
+		return nil
+	}
+	v, ok := vms.Load(sp &^ (shadowSize - 1))
+	if !ok {
+		panic("shadow pointer outside every VM")
+	}
+	return v.(*VM)
+}
+
+// Eval enters the engine at the current shadow position. The outermost entry
+// asserts the shadow stack is empty and resets the interrupt; a reentry from
+// a callback starts at that callback's handoff and keeps the interrupt.
+func (vm *VM) Eval(f func(sp uintptr) int64) (int64, error) {
+	if vm.broken {
+		return 0, ErrBroken
+	}
+	if vm.depth == 0 {
+		if vm.top != vm.Empty() {
+			panic("shadow stack not empty at the outermost entry")
+		}
+		vm.interrupt.Store(0)
+		*(*int64)(unsafe.Pointer(vm.Slot(0))) = 0
+	}
+	vm.depth++
+	r := f(vm.top)
+	vm.depth--
+	switch {
+	case r == codeInterrupted:
+		return r, ErrInterrupted
+	case r == codeRangeError:
+		return r, &RangeError{}
+	case r <= codeCorrupt && r > codeCorrupt-16:
+		return r, ErrCorrupt
+	}
+	return r, nil
+}
+
+// host_call is the callback bridge. sp is the shadow position above all the
+// caller's live data: Go records it for the callback, a reentry starts there,
+// and the previous record comes back when the callback ends. A panic or
+// Goexit that leaves through here marks the VM broken.
+func host_call(sp uintptr, id, arg int64) int64 {
+	if id == cbObserve {
+		return arg & 1
+	}
+	vm := vmOf(sp)
+	old := vm.top
+	vm.top = sp
+	normal := false
+	defer func() {
+		vm.top = old
+		if !normal {
+			vm.broken = true
+		}
+	}()
+	r := vm.onCall(vm, id, arg, sp)
+	normal = true
+	return r
 }
