@@ -201,9 +201,12 @@ On linux/amd64 the engine runs an interpreter generated from the patched C, unle
 
 ```sh
 python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check
+python3 internal/goasm/regenerate.py --check-engine
 ```
 
-It downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--zip` names (`make download` in `lib/` puts one there), checks its SHA-256 against the one in the script, applies `lib/internal/patch/quickjs.diff`, runs the generator and compares the files it makes in `lib/` (the assembly, its Go bridges and `goasm_helpers.txt`) byte for byte. It exits with status 1 and names each file that differs. Without `--check` it writes the files. Set `CXXFLAGS` when the LLVM headers or the C++ library are outside the compiler's default paths. It takes a few minutes, under a minute once the Go build cache is warm.
+The first reads the C tree in `engine/`, runs the generator and compares the files it makes in `lib/` (the assembly, its Go bridges and `goasm_helpers.txt`) byte for byte. It exits with status 1 and names each file that differs. Without `--check` it writes the files. Set `CXXFLAGS` when the LLVM headers or the C++ library are outside the compiler's default paths. It takes a few minutes, under a minute once the Go build cache is warm. `--llvm` names the folder with `clang-22`, `clang++-22`, `opt-22` and `llc-22` (`/usr/bin` on Ubuntu, where `/usr/lib/llvm-22/bin` has them without the suffix).
+
+Until the switch to the new engine, `engine/` and the old way must give the same C. The second command downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--zip` names (`make download` in `lib/` puts one there), checks its SHA-256 against the one in the script, applies `lib/internal/patch/quickjs.diff` and `internal/goasm/cpatch.py`, and fails when a file of `engine/` differs. It needs no LLVM. A change to `quickjs.diff` or `cpatch.py` is made in `engine/` too, and `--from-upstream` on the first command still generates from the old way.
 
 `TestGoasmCoversInterpreterRules` in `internal/fixlib` checks that every rule of `fixlib` that changes `_JS_CallInternal` has a row in `goasmInterpreterRules` (`internal/fixlib/goasm.go`): written in C by `internal/goasm/cpatch.py`, already in the patched C, or only for Go's compiler. It fails when a new rule has no row, so a fast path added to the Go interpreter cannot be lost in the generated one unnoticed. `TestGoasmCoversHelperRules` does the same, in `goasmHelperRules`, for the rules that change the Go function of a C helper the generated interpreter compiles in, listed in `lib/goasm_helpers.txt`. Both run with the other tests of `fixlib`.
 
