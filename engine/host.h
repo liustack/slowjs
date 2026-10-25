@@ -1,0 +1,26 @@
+/*
+ * Copyright (c) 2026 The slowjs Authors.
+ * SPDX-License-Identifier: MIT
+ * Use of this source code is governed by the MIT license in LICENSE-MIT at the
+ * root of this repository.
+ */
+#ifndef SLOWJS_HOST_H
+#define SLOWJS_HOST_H
+
+#include <stdint.h>
+
+/* What the engine asks of its host. The engine has no other way out: no system
+   calls, no libc beyond engine/libc. The native test host in engine/test
+   implements these, and the Go host implements them for the generated
+   assembly. */
+
+/* The kinds of time host_now gives. */
+enum {
+    HOST_NOW_WALL = 0,      /* nanoseconds since 1970-01-01T00:00:00Z, on the clock set for the VM */
+    HOST_NOW_MONOTONIC = 1, /* nanoseconds from any fixed start, never going back */
+};
+
+/* vm names the VM whose clock is read. It is 0 until JS_NewRuntime takes a VM. */
+int64_t host_now(uint32_t vm, int kind);
+
+#endif
