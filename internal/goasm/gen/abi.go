@@ -80,7 +80,15 @@ type Arch interface {
 }
 
 // amd64 implements Arch for linux/darwin/windows amd64 (GOAMD64=v1).
-type AMD64Arch struct{}
+//
+// PreserveNone lowers code compiled with preserve_none on every unified
+// entry: arguments arrive in R12, R13, R14, R15, RDI, RSI, RDX, RCX, R8, R9,
+// R11, RAX and nothing survives a call but RSP and RBP, so call sites save
+// nothing. The entry still loads the arguments only after Go's prologue,
+// which uses R12 and R14. SaveAll saves all five SysV callee-saved
+// registers around every unified call instead of the ones the body uses
+// (for the cost comparison only).
+type AMD64Arch struct{ PreserveNone, SaveAll bool }
 
 func AMD64() AMD64Arch { return AMD64Arch{} }
 

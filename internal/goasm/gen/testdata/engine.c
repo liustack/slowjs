@@ -198,3 +198,96 @@ long spin_every(void *sp, long n, long every) {
   }
   return acc;
 }
+
+// ---- Argument registers, live values and frame sizes (option B checks) ----
+enum { CB_SLOTS = 7, CB_ECHO = 8 };
+
+// 5, 6 and 7 integer argument slots counting the shadow pointer, called
+// directly and through pointers, plain and mixed with JSValue and double.
+// Over a mode's register limit the pass moves the arguments into a block on
+// the caller's shadow frame.
+typedef long (*fn5)(void *, long, long, long, long);
+typedef long (*fn6)(void *, long, long, long, long, long);
+typedef long (*fn7)(void *, long, long, long, long, long, long);
+typedef long (*fn7v)(void *, JSValue, double, long, JSValue, long);
+__attribute__((noinline)) long s5(void *sp, long a, long b, long c, long d) {
+  (void)sp;
+  return a + 3 * b + 5 * c + 7 * d;
+}
+__attribute__((noinline)) long s6(void *sp, long a, long b, long c, long d, long e) {
+  (void)sp;
+  return a + 3 * b + 5 * c + 7 * d + 11 * e;
+}
+// s7 calls back into Go, which may run slots_ind again on the same VM above
+// this call's block.
+__attribute__((noinline)) long s7(void *sp, long a, long b, long c, long d, long e, long f) {
+  long r = host_call(sp, CB_SLOTS, a);
+  return a + 3 * b + 5 * c + 7 * d + 11 * e + 13 * f + 17 * r;
+}
+__attribute__((noinline)) long s7v(void *sp, JSValue v, double x, long a, JSValue w, long b) {
+  long r = host_call(sp, CB_ECHO, b);
+  return v.tag + 3 * v.val + (long)(x * 4) + 5 * a + 7 * w.tag + 11 * w.val + 13 * b + 17 * r;
+}
+long slots_ind(void *sp, void **fns, long k) {
+  long d5 = s5(sp, k, k + 1, k + 2, k + 3);
+  long d6 = s6(sp, k, k + 1, k + 2, k + 3, k + 4);
+  long d7 = s7(sp, k, k + 1, k + 2, k + 3, k + 4, k + 5);
+  long d7v = s7v(sp, (JSValue){k, k + 1}, (double)k * 0.5, k + 2, (JSValue){k + 3, k + 4}, k + 5);
+  long i5 = ((fn5)fns[0])(sp, k + 10, k + 11, k + 12, k + 13);
+  long i6 = ((fn6)fns[1])(sp, k + 10, k + 11, k + 12, k + 13, k + 14);
+  long i7 = ((fn7)fns[2])(sp, k + 10, k + 11, k + 12, k + 13, k + 14, k + 15);
+  long i7v = ((fn7v)fns[3])(sp, (JSValue){k + 10, k + 11}, (double)k * 0.25, k + 12, (JSValue){k + 13, k + 14}, k + 15);
+  return d5 + 2 * d6 + 4 * d7 + 8 * d7v + 16 * i5 + 32 * i6 + 64 * i7 + 128 * i7v;
+}
+
+// Integers, doubles and a vector live across unified calls, with a leaf
+// call between them. i3 and d2 have their last use as a call argument.
+long live_mix(void *sp, long a, double x) {
+  long i1 = a * 3, i2 = a ^ 0x55, i3 = a + 7, i4 = a * a;
+  double d1 = x * 1.5, d2 = x - 2.0, d3 = x * x;
+  v2d v = {x, (double)a};
+  long r1 = host_call(sp, CB_ECHO, i1);
+  long m = mul(i2, 3);
+  long r2 = uf_i(sp, i3, r1);
+  double r3 = uf_d(sp, d1, d2);
+  v = v * (v2d){d1, d3};
+  long r4 = host_call(sp, CB_ECHO, m + i4);
+  double r5 = uf_d(sp, v[0], v[1]);
+  return i1 + i2 + i4 + r1 + m + r2 + r4 + (long)(r3 * 8) + (long)(r5 * 16) + (long)(d1 * 2) +
+         (long)(d3 * 4) + (long)(v[0] * 32) + (long)(v[1] * 64);
+}
+
+// Frames of 40 and 560 words: every value is loaded before a callback that
+// may change memory and used after it, so each one is spilled. The Go
+// prologue checks these frames with R20 (over 0xf0 bytes) and R27 (4096 bytes
+// and more) on arm64, and with R12 (over 128 and over 4096) on amd64.
+#define D10(f, p) f(p##0) f(p##1) f(p##2) f(p##3) f(p##4) f(p##5) f(p##6) f(p##7) f(p##8) f(p##9)
+#define D100(f, p) D10(f, p##0) D10(f, p##1) D10(f, p##2) D10(f, p##3) D10(f, p##4) \
+  D10(f, p##5) D10(f, p##6) D10(f, p##7) D10(f, p##8) D10(f, p##9)
+#define BIG_DECL(n) long v##n = *p++ ^ k;
+#define BIG_SUM(n) acc = acc * 3 + (v##n ^ r);
+__attribute__((noinline)) long big_f0(void *sp, long *src, long k) {
+  long *p = src;
+  D10(BIG_DECL, ) D10(BIG_DECL, 1) D10(BIG_DECL, 2) D10(BIG_DECL, 3)
+  long r = host_call(sp, CB_GROW, k);
+  long acc = r;
+  D10(BIG_SUM, ) D10(BIG_SUM, 1) D10(BIG_SUM, 2) D10(BIG_SUM, 3)
+  return acc;
+}
+__attribute__((noinline)) long big_4k(void *sp, long *src, long k) {
+  long *p = src;
+  D100(BIG_DECL, ) D100(BIG_DECL, 1) D100(BIG_DECL, 2) D100(BIG_DECL, 3) D100(BIG_DECL, 4)
+  D10(BIG_DECL, 50) D10(BIG_DECL, 51) D10(BIG_DECL, 52) D10(BIG_DECL, 53) D10(BIG_DECL, 54) D10(BIG_DECL, 55)
+  long r = host_call(sp, CB_GROW, k);
+  long acc = r;
+  D100(BIG_SUM, ) D100(BIG_SUM, 1) D100(BIG_SUM, 2) D100(BIG_SUM, 3) D100(BIG_SUM, 4)
+  D10(BIG_SUM, 50) D10(BIG_SUM, 51) D10(BIG_SUM, 52) D10(BIG_SUM, 53) D10(BIG_SUM, 54) D10(BIG_SUM, 55)
+  return acc;
+}
+// C to C calls into both frames, with the caller's own values live across.
+long big_caller(void *sp, long *src, long k) {
+  long a = k * 5, b = k ^ 0x3c;
+  long x = big_f0(sp, src, k);
+  long y = big_4k(sp, src, k + 1);
+  return a + 3 * b + 5 * x + 7 * y;
+}

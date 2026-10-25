@@ -1,5 +1,5 @@
 // Register-entry leaves: compiled frameless (-fomit-frame-pointer).
-long mul(long a, long b) { return a * b + 7; }
+__attribute__((noinline)) long mul(long a, long b) { return a * b + 7; }
 
 // Register-entry leaves used by the call-overhead benchmark.
 __attribute__((noinline)) long lf_i(long a, long b) { return a + b; }
