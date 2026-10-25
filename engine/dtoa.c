@@ -198,19 +198,6 @@ static no_inline limb_t mp_div1norm(limb_t *tabr, const limb_t *taba, limb_t n,
     return r;
 }
 
-static __maybe_unused void mpb_dump(const char *str, const mpb_t *a)
-{
-    int i;
-    
-    printf("%s= 0x", str);
-    for(i = a->len - 1; i >= 0; i--) {
-        printf("%08x", a->tab[i]);
-        if (i != 0)
-            printf("_");
-    }
-    printf("\n");
-}
-
 static void mpb_renorm(mpb_t *r)
 {
     while (r->len > 1 && r->tab[r->len - 1] == 0)

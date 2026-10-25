@@ -378,13 +378,6 @@ BOOL lre_is_case_ignorable(uint32_t c)
 
 /* character range */
 
-static __maybe_unused void cr_dump(CharRange *cr)
-{
-    int i;
-    for(i = 0; i < cr->len; i++)
-        printf("%d: 0x%04x\n", i, cr->points[i]);
-}
-
 static void *cr_default_realloc(void *opaque, void *ptr, size_t size)
 {
     return realloc(ptr, size);
