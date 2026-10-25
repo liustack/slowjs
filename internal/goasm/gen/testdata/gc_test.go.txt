@@ -3,86 +3,61 @@
 package proto
 
 import (
-	"fmt"
-	"runtime"
-	"runtime/metrics"
 	"sync"
 	"testing"
 	"time"
 )
 
-func readPauseHist() *metrics.Float64Histogram {
-	s := []metrics.Sample{{Name: "/sched/pauses/stopping/gc:seconds"}}
-	metrics.Read(s)
-	return s[0].Value.Float64Histogram()
-}
-
-// percentiles from a histogram delta (buckets are upper bounds in seconds).
-func pct(before, after *metrics.Float64Histogram, ps ...float64) []float64 {
-	var total uint64
-	counts := make([]uint64, len(after.Counts))
-	for i := range after.Counts {
-		d := after.Counts[i]
-		if i < len(before.Counts) {
-			d -= before.Counts[i]
-		}
-		counts[i] = d
-		total += d
-	}
-	out := make([]float64, len(ps))
-	for k, p := range ps {
-		target := uint64(float64(total) * p)
-		var cum uint64
-		for i, c := range counts {
-			cum += c
-			if cum >= target {
-				out[k] = after.Buckets[i+1]
-				break
-			}
-		}
-	}
-	return out
-}
-
-// Item 3: GC stops a loop that calls nothing but the back-edge poll.
+// Item 3: GC stops a C loop that calls nothing but the back-edge poll. The
+// workers run spin, whose only Go call is host_poll every 10000 back edges.
 func TestGCStopsSpinLoop(t *testing.T) {
 	interruptRequested.Store(0)
-	before := readPauseHist()
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	n := runtime.GOMAXPROCS(0) - 1; if n < 1 { n = 1 }; for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-					spin(0, 20_000_000)
+	gcStopRun("C spin loop (poll every 10000 back edges)", 150, func(n int, stop <-chan struct{}) func() {
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						spin(0, 20_000_000)
+					}
 				}
-			}
-		}()
-	}
-	gcDone := make(chan struct{})
-	go func() {
-		for i := 0; i < 200; i++ {
-			runtime.GC()
+			}()
 		}
-		close(gcDone)
-	}()
-	<-gcDone // if GC could not stop the spinning goroutines, this blocks forever
-	close(stop)
-	wg.Wait()
-	after := readPauseHist()
-	p := pct(before, after, 0.50, 0.99, 1.0)
-	fmt.Printf("GC-STOP pauses over 200 forced GCs, GOMAXPROCS-1 spinners: P50=%.1fµs P99=%.1fµs max=%.1fµs\n",
-	fmt.Printf("  host_poll calls during run: %d\n", pollCount.Load())
-		p[0]*1e6, p[1]*1e6, p[2]*1e6)
+		return wg.Wait
+	})
+}
+
+// The same with a poll every 545000 back edges, about the 240 µs between
+// polls of the current engine's JS loop on the test machine.
+func TestGCStopsSpinLoopSlowPoll(t *testing.T) {
+	interruptRequested.Store(0)
+	gcStopRun("C spin loop (poll every 545000 back edges)", 150, func(n int, stop <-chan struct{}) func() {
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						spin_every(0, 50_000_000, 545_000)
+					}
+				}
+			}()
+		}
+		return wg.Wait
+	})
 }
 
 // Item 6: an interrupt requested during the loop is observed at the poll and
-// the loop terminates early.
+// the loop ends early.
 func TestInterruptLatched(t *testing.T) {
 	interruptRequested.Store(0)
 	interruptLatched.Store(0)
@@ -93,10 +68,26 @@ func TestInterruptLatched(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("spin did not terminate after interrupt")
+		t.Fatal("spin did not end after the interrupt")
 	}
 	if interruptLatched.Load() != 1 {
-		t.Fatal("interrupt was not latched at the poll")
+		t.Fatal("the interrupt was not latched at the poll")
 	}
 	interruptRequested.Store(0)
+}
+
+// TestSpinPeriod times one iteration of spin, so the time between two polls
+// (10000 back edges) can be read off.
+func TestSpinPeriod(t *testing.T) {
+	interruptRequested.Store(0)
+	const n = 20_000_000
+	best := time.Duration(1 << 62)
+	for r := 0; r < 5; r++ {
+		t0 := time.Now()
+		spin(0, n)
+		if d := time.Since(t0); d < best {
+			best = d
+		}
+	}
+	println("C spin:", float64(best)/n, "ns per iteration")
 }
