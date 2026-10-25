@@ -1,10 +1,11 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, and the local go.work'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, and the local go.work'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
   - Changing the engine, internal/fixlib or lib/internal/patch, and checking nothing else moved
   - Running test262, or test262 reports new errors
+  - Changing the C tree in engine/, or running it natively under the sanitizers
   - Looking for a leak, or changing how values are duplicated and freed
   - Changing code that several goroutines or VMs share
   - Checking that the committed lib/ccgo_*.go files are exactly what fixlib makes from upstream
@@ -151,6 +152,22 @@ go test -vet=off -run Test262 -v .     # unpacks test262/, builds the runner, ru
 - `lib/test262_errors.txt` lists the 58 tests known to fail, one line each (the file, the line and the error). The runner compares its results with that list: the test fails when the result line counts any `new` error. A change to the engine must leave the same 58 errors, line for line. Pass `-keep` to keep `test262/` and its report, and `-f <file>` to run one test.
 - `lib/testdata/test262*.conf` holds the runner's settings per target, and `lib/testdata/test262_exclude_<goos>_<goarch>` the tests that fail only in the Go build on that target.
 
+## The C tree and its native test host
+
+`engine/` is the C tree of the engine to come. `engine/test/` is its native test host: the C tree built by plain clang with the system libc and libm, and test262 run on it. It tests the C itself, with no ccgo and no Go in the way. It is a tool for testing, never part of a Go build or of the product, and `engine/` holds no Go file (`python3 -m unittest discover -s internal/goasm` fails if it does, or if a folder with Go files holds a C file). Until the switch, a change to the C of `lib/internal/patch/quickjs.diff` or `internal/goasm/cpatch.py` is made in `engine/` too (see [the goasm interpreter](#the-goasm-interpreter)).
+
+```sh
+engine/test/build.sh asan              # plain (default), asan, ubsan or asan-ubsan: engine/test/out/MODE/run-test262
+engine/test/test262.sh -m asan -T 2    # test262 on that build, with 2 runner threads
+```
+
+- `run-test262.c` is upstream's runner with two changes (see its header): it includes `host.h` and makes its runtimes with `host_new_runtime()`. `host.c` copies the three functions the runner takes from `quickjs-libc.c`, sets a 1 MiB stack limit (the C tree starts runtimes with none, since the Go port counts its own stack slots) and interrupts a test that runs over 120 seconds, which the runner cannot do.
+- Time is fixed. `build.sh` compiles the engine files with `gettimeofday` renamed to `host_gettimeofday`, which always answers 2026-01-01T00:00:00Z. That fixes `Date` and the seed of `Math.random`, since the engine reads no other clock but `Atomics.wait`'s. A few tests wait for the clock to move, such as `language/expressions/dynamic-import/await-import-evaluation.js`, and never end on a fixed one, so `test262.sh` sets `HOST_CLOCK=running`: the time starts at the same instant and passes.
+- `test262.sh` downloads the test262 archive `lib/Makefile` pins (or takes the copy `-z` names, checked against its SHA-256), applies `lib/internal/patch/test262.diff`, uses `lib/testdata/test262.conf` and runs `-a` as the test of `lib/` does. It writes the errors it found and compares them line by line with `lib/test262_errors.txt`. It exits 0 only when they are the same lines. The results are in `engine/test/out/test262-MODE/`: `run.log`, `test262_errors.txt` and `errors.diff`.
+- A full run (83558 tests) takes about 1.5 minutes in plain mode, 2.5 minutes under UndefinedBehaviorSanitizer and 11 minutes under AddressSanitizer, on 2 hyperthreads of one EPYC core. All three give the 58 known errors with 2 threads, and plain gives them with 1 thread too. Sanitizer reports go to `run.log`. The AddressSanitizer build goes on after a report: run it with `ASAN_OPTIONS=halt_on_error=0:detect_leaks=1`. The UndefinedBehaviorSanitizer build always goes on: give it `UBSAN_OPTIONS=print_stacktrace=1`, and it reports each place once.
+- AddressSanitizer reports nothing over test262, leaks included. UndefinedBehaviorSanitizer reports four places, all in QuickJS's own code: `dbuf_claim` and `dbuf_free` call `js_realloc_rt` through the type `DynBufReallocFunc` (`cutils.c`), and `js_typed_array_slice` passes a null source with length 0 to `memcpy` and adds an offset to a null pointer (`quickjs.c`, `slice_memcpy`). Anything else in a report is new.
+- The host links the system libm, so the last digit of `Math.*` is the one the machine's libm gives.
+
 ## Leaks: memgrind
 
 `memgrind_test.go` and the other files with `//go:build libc.memgrind` run only with that tag, which swaps in libc's allocator that tracks every allocation. JS values are reference-counted C objects, so the leak tests are how `Dup` and `Free` pairing is checked (see the doc of `TestMemgrind`):
@@ -201,9 +218,12 @@ On linux/amd64 the engine runs an interpreter generated from the patched C, unle
 
 ```sh
 python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check
+python3 internal/goasm/regenerate.py --check-engine
 ```
 
-It downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--zip` names (`make download` in `lib/` puts one there), checks its SHA-256 against the one in the script, applies `lib/internal/patch/quickjs.diff`, runs the generator and compares the files it makes in `lib/` (the assembly, its Go bridges and `goasm_helpers.txt`) byte for byte. It exits with status 1 and names each file that differs. Without `--check` it writes the files. Set `CXXFLAGS` when the LLVM headers or the C++ library are outside the compiler's default paths. It takes a few minutes, under a minute once the Go build cache is warm.
+The first reads the C tree in `engine/`, runs the generator and compares the files it makes in `lib/` (the assembly, its Go bridges and `goasm_helpers.txt`) byte for byte. It exits with status 1 and names each file that differs. Without `--check` it writes the files. Set `CXXFLAGS` when the LLVM headers or the C++ library are outside the compiler's default paths. It takes a few minutes, under a minute once the Go build cache is warm. `--llvm` names the folder with `clang-22`, `clang++-22`, `opt-22` and `llc-22`. On Ubuntu that is `/usr/bin` (`/usr/lib/llvm-22/bin` has them without the suffix), with `CXXFLAGS=-I/usr/lib/llvm-22/include` for the headers.
+
+Until the switch to the new engine, `engine/` and the old way must give the same C. The second command downloads the QuickJS archive `lib/Makefile` pins, or takes the copy that `--zip` names (`make download` in `lib/` puts one there), checks its SHA-256 against the one in the script, applies `lib/internal/patch/quickjs.diff` and `internal/goasm/cpatch.py`, and fails when a file of `engine/` differs. It needs no LLVM. A change to `quickjs.diff` or `cpatch.py` is made in `engine/` too, and `--from-upstream` on the first command still generates from the old way.
 
 `TestGoasmCoversInterpreterRules` in `internal/fixlib` checks that every rule of `fixlib` that changes `_JS_CallInternal` has a row in `goasmInterpreterRules` (`internal/fixlib/goasm.go`): written in C by `internal/goasm/cpatch.py`, already in the patched C, or only for Go's compiler. It fails when a new rule has no row, so a fast path added to the Go interpreter cannot be lost in the generated one unnoticed. `TestGoasmCoversHelperRules` does the same, in `goasmHelperRules`, for the rules that change the Go function of a C helper the generated interpreter compiles in, listed in `lib/goasm_helpers.txt`. Both run with the other tests of `fixlib`.
 

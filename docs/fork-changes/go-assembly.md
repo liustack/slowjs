@@ -219,7 +219,10 @@ stack instructions or relocations require generator changes, not acceptance
 of unknown output.
 
 `internal/goasm/regenerate.py --check` regenerates the assembly from the
-committed sources and fails when it differs from the committed files. The
+C tree in `engine/` and fails when it differs from the committed files.
+`regenerate.py --check-engine` fails when `engine/` differs from the pinned
+archive with `quickjs.diff` and `cpatch.py` applied, so the two C sources
+stay one until the switch. The
 commands of every check are in [testing.md](../testing.md#the-goasm-interpreter).
 Compare rendered HTML, then measure the goasm build against the Go one of
 `slowjs_nogoasm` across three layouts and six alternating rounds. Check CPU profiles and GC
@@ -230,8 +233,9 @@ stopping latency in the final linked application.
 - `fixGoasm` stops with "interpreter fingerprint changed": upstream or
   another change of `fixlib` changed the Go `_JS_CallInternal`. Find what
   changed, give the C the same behavior if it is not a Go compiler
-  workaround (in `lib/internal/patch/quickjs.diff` or `cpatch.py`), update
-  the fingerprint, then regenerate and run the goasm checks.
+  workaround (in `lib/internal/patch/quickjs.diff` or `cpatch.py`, and the
+  same in `engine/`), update the fingerprint, then regenerate and run the
+  goasm checks.
 - `cpatch.py` stops on a replacement count: the C it rewrites changed. Port
   the fast path to the new C.
 - `TestGoasmCoversInterpreterRules` or `TestGoasmCoversHelperRules`

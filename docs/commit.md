@@ -39,7 +39,7 @@ build!: rename the module to github.com/liustack/quickjs
 - A behavior change and its tests go in the same commit.
 - Mechanical changes such as pure refactors, formatting and renames are committed separately, not mixed with behavior changes.
 - A change to `internal/fixlib` goes in the same commit as the `lib/ccgo_*.go` and `lib/internal/run-test262/ccgo_*.go` files it rewrites, so that `go run ./internal/fixlib -check` passes at every commit. Never edit the generated files by hand.
-- A change to the engine that has a C form also updates `lib/internal/patch/quickjs.diff` (see [upgrading.md](upgrading.md#the-c-patch)).
+- A change to the engine that has a C form also updates `lib/internal/patch/quickjs.diff` (see [upgrading.md](upgrading.md#the-c-patch)) and the same lines of `engine/`, which `python3 internal/goasm/regenerate.py --check-engine` compares.
 - Do not commit build or test output: `*.test`, `mem.out`, the test262 and QuickJS archives and the `test262/` folder `lib/` unpacks, `go.work`. They are in `.gitignore`.
 - Do not use summaries like "WIP" or "fix stuff" that do not say what changed.
 
