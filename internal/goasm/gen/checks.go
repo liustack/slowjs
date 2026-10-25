@@ -16,10 +16,13 @@ import (
 )
 
 var (
-	reVararg  = regexp.MustCompile(`\bva_(start|arg|copy|end)\b|\bllvm\.va`)
-	reByval   = regexp.MustCompile(`\bbyval\(`)
-	reSret    = regexp.MustCompile(`\bsret\(`)
-	reDefine  = regexp.MustCompile(`^define[^@]*@[^(]+\([^)]*\.\.\.`)
+	reVararg = regexp.MustCompile(`\bva_(start|arg|copy|end)\b|\bllvm\.va`)
+	reByval  = regexp.MustCompile(`\bbyval\(`)
+	reSret   = regexp.MustCompile(`\bsret\(`)
+	// Parameter attributes such as captures(none) hold parentheses, so the
+	// variadic marker is matched as the last parameter, not inside the first
+	// pair of parentheses.
+	reDefine  = regexp.MustCompile(`^(define|declare)\b.*[(,]\s*\.\.\.\)`)
 	reLongDbl = regexp.MustCompile(`\bx86_fp80\b|\bfp128\b`)
 )
 
@@ -77,7 +80,16 @@ func CheckObject(objPath string, allow map[string]bool) error {
 			if sidx == 0 || int(sidx) > len(syms) {
 				continue
 			}
-			name := syms[sidx-1].Name
+			sym := syms[sidx-1]
+			name := sym.Name
+			// A reference into the unit's own read-only data (constant
+			// pools) is allowed; everything else must be on the list.
+			if int(sym.Section) > 0 && int(sym.Section) < len(f.Sections) {
+				sec := f.Sections[sym.Section]
+				if sec.Flags&elf.SHF_ALLOC != 0 && sec.Flags&(elf.SHF_WRITE|elf.SHF_EXECINSTR) == 0 {
+					continue
+				}
+			}
 			if name != "" && !allow[name] {
 				return fmt.Errorf("external reference to %q outside the allow list", name)
 			}

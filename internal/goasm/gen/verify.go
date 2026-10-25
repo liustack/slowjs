@@ -19,9 +19,9 @@ import (
 )
 
 type VerifyReport struct {
-	Func        string
-	BodyBytes   int
-	Calls       int
+	Func         string
+	BodyBytes    int
+	Calls        int
 	HasMorestack bool
 }
 
@@ -46,11 +46,11 @@ func VerifyLinked(objPath, binPath, pkg string, metas []Meta) ([]VerifyReport, e
 		return nil, err
 	}
 	addr := map[string][2]uint64{}
-	var morestack uint64
+	morestack := map[uint64]bool{}
 	for _, s := range syms {
 		addr[s.Name] = [2]uint64{s.Value, s.Size}
-		if strings.Contains(s.Name, "morestack_noctxt") {
-			morestack = s.Value
+		if strings.Contains(s.Name, "morestack") {
+			morestack[s.Value] = true
 		}
 	}
 	symName := func(m Meta) string {
@@ -96,7 +96,11 @@ func VerifyLinked(objPath, binPath, pkg string, metas []Meta) ([]VerifyReport, e
 		}
 		// No hidden calls or cross-function tail jumps: every CALL in the
 		// linked body is one of our known sites, and no JMP leaves the body.
-		nCalls, err := scanCalls(linked[start:start+len(orig)], callOffs, len(orig))
+		codeLen := len(orig)
+		if cs, ok := obj.funcs[m.Name+".const"]; ok {
+			codeLen = int(cs[0] - ovs[0])
+		}
+		nCalls, err := scanCalls(linked[start:start+codeLen], callOffs, len(orig))
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
@@ -112,6 +116,17 @@ func VerifyLinked(objPath, binPath, pkg string, metas []Meta) ([]VerifyReport, e
 			unifiedAddrs[vs[0]] = true
 		}
 		reports = append(reports, VerifyReport{m.Name, len(orig), nCalls, hasMore})
+	}
+
+	// The interrupt poll is the only place GC can stop a C loop, so its Go
+	// body must keep the split-check prologue (a leaf would be NOSPLIT).
+	if pv, ok := addr[pkg+".host_poll"]; ok {
+		lo := pv[0] - text.Addr
+		if !callsTarget(code[lo:lo+pv[1]], pv[0], morestack) {
+			return nil, fmt.Errorf("host_poll has no stack-check prologue: GC cannot stop C loops")
+		}
+	} else {
+		return nil, fmt.Errorf("host_poll absent from binary")
 	}
 
 	// Function table: every entry points at a unified entry.
@@ -165,11 +180,11 @@ func scanCalls(body []byte, known []int, n int) (int, error) {
 	return count, nil
 }
 
-func callsTarget(body []byte, base, target uint64) bool {
+func callsTarget(body []byte, base uint64, targets map[uint64]bool) bool {
 	for i := 0; i+5 <= len(body); i++ {
 		if body[i] == 0xe8 {
 			rel := int32(uint32(body[i+1]) | uint32(body[i+2])<<8 | uint32(body[i+3])<<16 | uint32(body[i+4])<<24)
-			if base+uint64(i)+5+uint64(int64(rel)) == target {
+			if targets[base+uint64(i)+5+uint64(int64(rel))] {
 				return true
 			}
 		}

@@ -58,7 +58,7 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 			reSub.MatchString(n) || reAdd.MatchString(n) || strings.Contains(n, "%rbp") {
 			return "", Meta{}, fmt.Errorf("%s: leaf is not frameless: %q", fn.Name, l)
 		}
-		if reCall.MatchString(n) {
+		if strings.HasPrefix(n, "call") || isTailJump(n) || strings.Contains(n, "%rsp") {
 			return "", Meta{}, fmt.Errorf("%s: register-entry leaf must not call: %q", fn.Name, l)
 		}
 		if n == "retq" || n == "ret" {
