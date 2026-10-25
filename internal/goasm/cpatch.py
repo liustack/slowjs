@@ -35,7 +35,7 @@ Every replacement must match the number of times it gives.
 import pathlib,sys
 
 HELPERS = r'''
-/* goasm: see internal/goasm/cpatch.py */
+/* Fast paths of the interpreter loop: get_field, ==, bitwise operators, atoms. */
 static inline JSObject *goasm_field_proto(JSContext *ctx, JSValueConst v, JSAtom atom)
 {
     int class_id;

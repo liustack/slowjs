@@ -119,6 +119,9 @@ int dbuf_claim(DynBuf *s, size_t len)
         new_buf = s->realloc_func(s->opaque, s->buf, new_size);
         if (!new_buf) {
             s->error = TRUE;
+            /* take no more bytes, not even those that fit: what the
+               buffer holds stays a run of whole writes */
+            s->allocated_size = s->size;
             return -1;
         }
         s->buf = new_buf;
