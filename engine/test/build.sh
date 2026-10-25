@@ -15,7 +15,7 @@
 # MODE is plain (default), asan (AddressSanitizer), ubsan (UndefinedBehavior
 # Sanitizer) or asan-ubsan (both). OUTDIR defaults to engine/test/out/MODE. It
 # gets run-test262, jsrun (see compare.sh), unit, mathdump and libmath (see
-# math.sh), api-test (see api-test.sh), and the object files: those of the
+# math.sh), api-test (see api-test.sh), heap-test (see heap.sh), and the object files: those of the
 # engine here, and those of its libc in libc/. CC picks another compiler. A
 # sanitizer reports a finding and goes on, so that a run over test262 lists them
 # all: run with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too.
@@ -82,3 +82,15 @@ done
 $cc $hostflags -fno-builtin -c "$here/libmath.c" -o "$out/libmath.o"
 $cc $san "$out/libmath.o" "$out"/libc/math_*.o "$out/libc/math.o" -o "$out/libmath"
 echo "$out/run-test262"
+
+# heap-test tests the allocator alone, with a fake host of its own and the
+# checks of the heap on (JS_HEAP_CHECK). The heap and TLSF are built as the
+# engine's are, with the engine's libc under them.
+mkdir -p "$out/check"
+checkobjs=
+for f in heap tlsf; do
+	$cc $common $free -I"$libc" -I"$engine" -DJS_HEAP_CHECK -c "$engine/$f.c" -o "$out/check/$f.o"
+	checkobjs="$checkobjs $out/check/$f.o"
+done
+$cc $hostflags -DJS_HEAP_CHECK -c "$here/heap-test.c" -o "$out/check/heap-test.o"
+$cc $san $checkobjs "$out"/libc/string_*.o "$out/libc/abort.o" "$out/check/heap-test.o" -o "$out/heap-test" -lpthread

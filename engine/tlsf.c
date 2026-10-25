@@ -1129,9 +1129,49 @@ void tlsf_free(tlsf_t tlsf, void* ptr)
 ** - an extended buffer size will leave the newly-allocated area with
 **   contents undefined
 */
-void* tlsf_realloc(tlsf_t tlsf, void* ptr, size_t size)
+void* tlsf_realloc_inplace(tlsf_t tlsf, void* ptr, size_t size)
 {
 	control_t* control = tlsf_cast(control_t*, tlsf);
+	block_header_t* block;
+	block_header_t* next;
+	size_t cursize, combined, adjust;
+
+	if (!ptr || size == 0 || size > request_size_max)
+	{
+		return 0;
+	}
+
+	block = block_from_ptr(ptr);
+	next = block_next(block);
+	cursize = block_size(block);
+	combined = cursize + block_size(next) + block_header_overhead;
+	adjust = adjust_request_size(size, ALIGN_SIZE);
+
+	tlsf_assert(!block_is_free(block) && "block already marked as free");
+
+	/*
+	** If the next block is used, or when combined with the current
+	** block, does not offer enough space, the block must move.
+	*/
+	if (adjust > cursize && (!block_is_free(next) || adjust > combined))
+	{
+		return 0;
+	}
+
+	/* Do we need to expand to the next block? */
+	if (adjust > cursize)
+	{
+		block_merge_next(control, block);
+		block_mark_as_used(block);
+	}
+
+	/* Trim the resulting block and return the original pointer. */
+	block_trim_used(control, block, adjust);
+	return ptr;
+}
+
+void* tlsf_realloc(tlsf_t tlsf, void* ptr, size_t size)
+{
 	void* p = 0;
 
 	/* A size TLSF cannot serve fails and leaves the block as it was. */
@@ -1152,43 +1192,91 @@ void* tlsf_realloc(tlsf_t tlsf, void* ptr, size_t size)
 	}
 	else
 	{
-		block_header_t* block = block_from_ptr(ptr);
-		block_header_t* next = block_next(block);
-
-		const size_t cursize = block_size(block);
-		const size_t combined = cursize + block_size(next) + block_header_overhead;
-		const size_t adjust = adjust_request_size(size, ALIGN_SIZE);
-
-		tlsf_assert(!block_is_free(block) && "block already marked as free");
-
-		/*
-		** If the next block is used, or when combined with the current
-		** block, does not offer enough space, we must reallocate and copy.
-		*/
-		if (adjust > cursize && (!block_is_free(next) || adjust > combined))
+		/* Resize the block where it is, or reallocate and copy. */
+		p = tlsf_realloc_inplace(tlsf, ptr, size);
+		if (!p)
 		{
 			p = tlsf_malloc(tlsf, size);
 			if (p)
 			{
-				const size_t minsize = tlsf_min(cursize, size);
+				const size_t minsize = tlsf_min(block_size(block_from_ptr(ptr)), size);
 				memcpy(p, ptr, minsize);
 				tlsf_free(tlsf, ptr);
 			}
 		}
-		else
-		{
-			/* Do we need to expand to the next block? */
-			if (adjust > cursize)
-			{
-				block_merge_next(control, block);
-				block_mark_as_used(block);
-			}
-
-			/* Trim the resulting block and return the original pointer. */
-			block_trim_used(control, block, adjust);
-			p = ptr;
-		}
 	}
 
 	return p;
+}
+
+void* tlsf_next_free(tlsf_t tlsf, void* prev, size_t* size)
+{
+	control_t* control = tlsf_cast(control_t*, tlsf);
+	block_header_t* block;
+	unsigned int sl_map, fl_map;
+	int fl, sl;
+
+	if (prev)
+	{
+		/* The rest of the list the block is in, then the lists below it. */
+		block_header_t* last = block_from_ptr(prev);
+		block = last->next_free;
+		if (block != &control->block_null)
+		{
+			*size = block_size(block);
+			return block_to_ptr(block);
+		}
+		mapping_insert(block_size(last), &fl, &sl);
+		sl_map = control->sl_bitmap[fl] & ((1U << sl) - 1);
+		if (sl_map)
+		{
+			sl = tlsf_fls(sl_map);
+		}
+		else
+		{
+			fl_map = control->fl_bitmap & ((1U << fl) - 1);
+			if (!fl_map)
+			{
+				return 0;
+			}
+			fl = tlsf_fls(fl_map);
+			sl = tlsf_fls(control->sl_bitmap[fl]);
+		}
+	}
+	else
+	{
+		fl_map = control->fl_bitmap;
+		if (!fl_map)
+		{
+			return 0;
+		}
+		fl = tlsf_fls(fl_map);
+		sl = tlsf_fls(control->sl_bitmap[fl]);
+	}
+
+	block = control->blocks[fl][sl];
+	*size = block_size(block);
+	return block_to_ptr(block);
+}
+
+void* tlsf_free_inside(void* ptr, size_t size, size_t* len)
+{
+	/* TLSF writes the links of the free lists at the start of a free block
+	** and the prev_phys_block of the next block at its end. */
+	const size_t head = offsetof(block_header_t, prev_free) + sizeof(block_header_t*) - block_start_offset;
+	const size_t tail = block_header_overhead;
+
+	if (size < head + tail)
+	{
+		*len = 0;
+		return ptr;
+	}
+	*len = size - head - tail;
+	return tlsf_cast(char*, ptr) + head;
+}
+
+int tlsf_pool_is_free(pool_t pool)
+{
+	block_header_t* block = offset_to_block(pool, -(int)block_header_overhead);
+	return block_is_free(block) && block_is_last(block_next(block));
 }

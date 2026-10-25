@@ -64,6 +64,25 @@ void* tlsf_malloc(tlsf_t tlsf, size_t bytes);
 void* tlsf_realloc(tlsf_t tlsf, void* ptr, size_t size);
 void tlsf_free(tlsf_t tlsf, void* ptr);
 
+/* Added by the slowjs fork. tlsf_realloc_inplace shrinks a block or grows it
+** into a free neighbor and returns ptr. When the block would have to move,
+** or the size is 0 or too large, it returns 0 and leaves the block as it was. */
+void* tlsf_realloc_inplace(tlsf_t tlsf, void* ptr, size_t size);
+
+/* Added by the slowjs fork. tlsf_next_free walks the free blocks, the largest
+** size class first: the first block with prev 0, then the block after prev,
+** and 0 at the end. *size is the size of the block as tlsf_block_size gives
+** it. The free blocks must not change between two calls. */
+void* tlsf_next_free(tlsf_t tlsf, void* prev, size_t* size);
+
+/* Added by the slowjs fork. The part of a free block that TLSF neither reads
+** nor needs to keep: *len bytes from the returned address. TLSF writes
+** there when it splits or merges the block, and never reads it. */
+void* tlsf_free_inside(void* ptr, size_t size, size_t* len);
+
+/* Added by the slowjs fork. Nonzero if the pool is one free block. */
+int tlsf_pool_is_free(pool_t pool);
+
 /* Returns internal block size, not original request size */
 size_t tlsf_block_size(void* ptr);
 
