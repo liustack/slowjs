@@ -336,7 +336,14 @@ static FunctionType *fixedPartType(FunctionType *T) {
 }
 
 static void lowerVarargs(Module &M) {
-  bool arm = Triple(M.getTargetTriple()).isAArch64();
+  // The va_list layout and what va_start writes into it are those of these
+  // two targets only.
+  Triple T(M.getTargetTriple());
+  if (!(T.getArch() == Triple::x86_64 || T.getArch() == Triple::aarch64) || T.getVendor() != Triple::UnknownVendor ||
+      T.getOS() != Triple::Linux || T.getEnvironment() != Triple::GNU)
+    report_fatal_error(Twine("target ") + T.str() +
+                       ": variable arguments are lowered only for x86_64-linux-gnu and aarch64-linux-gnu");
+  bool arm = T.isAArch64();
   const DataLayout &DL = M.getDataLayout();
   LLVMContext &C = M.getContext();
   Type *I8 = Type::getInt8Ty(C), *I32 = Type::getInt32Ty(C);
