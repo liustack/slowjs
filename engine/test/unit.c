@@ -1133,6 +1133,29 @@ static int test_internal_depth(void *unused)
     return 0;
 }
 
+/* Functions nested as deep as the parser goes are made, each with the
+   variables it takes from the functions around it, and direct eval in the
+   innermost one sees the variables of the outermost: making them counts a
+   level per function, and the parser ends with a RangeError first. */
+static int test_function_nesting(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const nests = n => { try { return eval('let v = 7; ' + '(() => '.repeat(n) + 'eval(\"v\")' + ')()'.repeat(n)) } catch (e) { return e.name } };\n"
+        "  let n = 1; while (nests(n + 1) === 7) n++;\n"
+        "  return n >= %d ? 'deep ' + nests(n + 1) : 'only ' + n })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[512];
+
+    snprintf(buf, sizeof(buf), src, JS_MAX_INTERNAL_DEPTH / 20);
+    CHECK(eval_is(ctx, buf, "deep RangeError"), "nested functions");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* Ropes are read, hashed and freed by loops: a character at any place, a
    Map key that is the same string as a rope of another shape (the hash goes
    over the strings in order, whatever the tree), ropes that share their
@@ -1351,6 +1374,7 @@ int main(void)
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
+    host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_json_records, NULL);
     test_ropes();
     test_free_nesting();
