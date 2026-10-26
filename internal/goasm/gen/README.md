@@ -16,8 +16,12 @@ runs its own checks and lowering in Go (`debug/elf`,
    the target feature slow-two-mem-ops keeps llc from folding the load of a
    call target into the call, so every indirect call is through a register. On
    arm64 the target is aarch64-linux-gnu with x18 and x26 to x28 fixed, x29
-   reserved and LR kept for return addresses. CheckIR rejects variadics,
-   byval, sret and long double.
+   reserved and LR kept for return addresses. The portable flags (freestanding,
+   no system headers, wrapping signed overflow, unsigned char and the others)
+   are not written here: init runs `engine/test/flags.sh`, which the scripts of
+   the C tree read too, and appends what it gives (`TestFlagsComeFromFlagsSh`
+   keeps the Go lists and `cycles.sh` from repeating them). CheckIR rejects
+   variadics, byval, sret and long double.
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees

@@ -35,7 +35,7 @@ musl's `log`, `log2` and `pow` have a second path for a hardware fma, and the tw
 
 ## Flags
 
-The engine files and these are built with the flags of `engine/test/flags.sh`, which `engine/test/build.sh` and `engine/test/check-symbols.sh` both read:
+The engine files and these are built with the flags of `engine/test/flags.sh`, which `engine/test/build.sh`, `engine/test/check-symbols.sh` and the generator (`internal/goasm/gen`) read:
 
 ```
 -ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF
