@@ -78,6 +78,55 @@ func optIn(t *testing.T, env, why string) {
 	}
 }
 
+// retryTaken runs try until it returns true, 4 times at most, and skips the
+// test when it never does. try returns false only when another mapping of the
+// process took a place the test needs to see free, and fails the test through
+// t for anything else.
+func retryTaken(t *testing.T, what string, try func() bool) {
+	t.Helper()
+	for range 4 {
+		if try() {
+			return
+		}
+	}
+	t.Skipf("another mapping took %s 4 times", what)
+}
+
+// unmapped checks that the size bytes at addr, which held fill's pattern with
+// seed, are no longer mapped. Another mapping of the process may be there
+// already, with other bytes: then unmapped returns false, for retryTaken. A
+// page that still holds the pattern fails the test.
+func unmapped(t *testing.T, addr, size uintptr, seed byte) bool {
+	t.Helper()
+	if !anyMapped(t, addr, size) {
+		return true
+	}
+	for off := uintptr(0); off < size; off += pageSize {
+		if holds(addr, off, pageSize, seed) {
+			t.Fatalf("the page at %#x is still mapped with what it held", addr+off)
+		}
+	}
+	return false
+}
+
+// holds reports whether the n bytes at addr+off can be read and hold fill's
+// pattern of a fill at addr.
+func holds(addr, off, n uintptr, seed byte) (ok bool) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	for i, c := range bytesAt(addr+off, n) {
+		o := off + uintptr(i)
+		if c != byte(o)^byte(o>>9)^seed {
+			return false
+		}
+	}
+	return true
+}
+
 type call struct {
 	name       string
 	addr, size uintptr
@@ -146,26 +195,26 @@ func grow(t testing.TB, m *Memory, size uintptr) uintptr {
 
 func TestMapWriteUnmap(t *testing.T) {
 	const size = 4 * Unit
-	p, err := osMap(size)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p%pageSize != 0 {
-		t.Fatalf("osMap gave %#x, not aligned to the page size %d", p, pageSize)
-	}
-	if !zero(p, size) {
-		t.Fatal("new memory is not zero")
-	}
-	fill(p, size, 1)
-	if i := same(p, size, 1); i >= 0 {
-		t.Fatalf("byte %d does not read back", i)
-	}
-	if err := osUnmap(p, size); err != nil {
-		t.Fatal(err)
-	}
-	if anyMapped(t, p, size) {
-		t.Fatal("memory still mapped after Unmap")
-	}
+	retryTaken(t, "the place of the memory unmapped", func() bool {
+		p, err := osMap(size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p%pageSize != 0 {
+			t.Fatalf("osMap gave %#x, not aligned to the page size %d", p, pageSize)
+		}
+		if !zero(p, size) {
+			t.Fatal("new memory is not zero")
+		}
+		fill(p, size, 1)
+		if i := same(p, size, 1); i >= 0 {
+			t.Fatalf("byte %d does not read back", i)
+		}
+		if err := osUnmap(p, size); err != nil {
+			t.Fatal(err)
+		}
+		return unmapped(t, p, size, 1)
+	})
 }
 
 func TestMapRefusesAbsurdSizes(t *testing.T) {
@@ -349,10 +398,10 @@ func TestRemapPrimitive(t *testing.T) {
 	const size = 16 * Unit
 
 	t.Run("in place", func(t *testing.T) {
-		// Map twice the size and unmap the top half, so that the room
-		// behind the chunk is free. Another thread may map there first:
-		// try a few times.
-		for try := 0; ; try++ {
+		// Map twice the size and unmap the top half, so that the room behind
+		// the chunk is free. Another mapping of the process may take it
+		// first, and then the chunk has to move.
+		retryTaken(t, "the room behind the chunk", func() bool {
 			p, err := osMap(2 * size)
 			if err != nil {
 				t.Fatal(err)
@@ -363,51 +412,54 @@ func TestRemapPrimitive(t *testing.T) {
 			fill(p, size, 3)
 			q, err := osRemap(p, size, 2*size)
 			if err != nil {
+				osUnmap(p, size)
 				t.Fatal(err)
 			}
+			defer osUnmap(q, 2*size)
 			if i := same(q, size, 3); i >= 0 {
 				t.Fatalf("byte %d changed", i)
 			}
 			if !zero(q+size, size) {
 				t.Fatal("the new part is not zero")
 			}
-			osUnmap(q, 2*size)
 			if q == p {
-				return
+				return true
 			}
-			if try == 5 {
-				t.Fatalf("never grew in place: %#x moved to %#x", p, q)
+			behind := p + size
+			if q < behind+size && behind < q+2*size || anyMapped(t, behind, size) {
+				return false
 			}
-		}
+			t.Fatalf("moved from %#x to %#x though the room behind was free", p, q)
+			return false
+		})
 	})
 
 	t.Run("moving", func(t *testing.T) {
-		// The second half stays mapped and blocks growth in place.
-		p, err := osMap(2 * size)
-		if err != nil {
-			t.Fatal(err)
-		}
-		fill(p, 2*size, 5)
-		q, err := osRemap(p, size, 3*size)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if q == p {
-			t.Fatal("grew in place over a mapping")
-		}
-		if i := same(q, size, 5); i >= 0 {
-			t.Fatalf("byte %d changed in the move", i)
-		}
-		for o := uintptr(size); o < 2*size; o++ {
-			if got, want := bytesAt(p+o, 1)[0], byte(o)^byte(o>>9)^5; got != want {
-				t.Fatalf("the mapping behind was changed at %d", o)
+		retryTaken(t, "the place the chunk moved from", func() bool {
+			// The second half stays mapped and blocks growth in place.
+			p, err := osMap(2 * size)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		if anyMapped(t, p, size) {
-			t.Fatal("the old place is still mapped")
-		}
-		osUnmap(q, 3*size)
-		osUnmap(p+size, size)
+			defer osUnmap(p+size, size)
+			fill(p, 2*size, 5)
+			q, err := osRemap(p, size, 3*size)
+			if err != nil {
+				osUnmap(p, size)
+				t.Fatal(err)
+			}
+			defer osUnmap(q, 3*size)
+			if q == p {
+				t.Fatal("grew in place over a mapping")
+			}
+			if i := same(q, size, 5); i >= 0 {
+				t.Fatalf("byte %d changed in the move", i)
+			}
+			if !holds(p, size, size, 5) {
+				t.Fatal("the mapping behind was changed")
+			}
+			return unmapped(t, p, size, 5)
+		})
 	})
 }
 
@@ -669,31 +721,40 @@ func TestSmallStacks(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	m, err := New(DefaultStackSize)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := grow(t, m, Unit)
-	b := grow(t, m, 64*Unit)
-	fill(b, 64*Unit, 1)
-	base, size := m.Stack()
-	bytesAt(base, 1)[0] = 1
-	if err := m.Close(); err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range [][2]uintptr{{a, Unit}, {b, 64 * Unit}, {base, size + pageSize}} {
-		if anyMapped(t, r[0], r[1]) {
-			t.Fatalf("%d bytes at %#x still mapped after Close", r[1], r[0])
+	retryTaken(t, "a place Close unmapped", func() bool {
+		const stackSize = 1 << 20
+		m, err := New(stackSize)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if u := m.Usage(); u != (Usage{}) {
-		t.Fatalf("Usage after Close: %+v", u)
-	}
-	if err := m.Close(); err != nil {
-		t.Fatalf("second Close: %v", err)
-	}
-	mustPanic(t, "Grow after Close", func() { m.Grow(Unit) })
-	mustPanic(t, "Release after Close", func() { m.Release(nil, nil, 0) })
+		a := grow(t, m, Unit)
+		b := grow(t, m, 64*Unit)
+		fill(a, Unit, 1)
+		fill(b, 64*Unit, 2)
+		base, size := m.Stack()
+		fill(base, size, 3)
+		calls := failing(t, func(c call, before []call) error { return nil })
+		if err := m.Close(); err != nil {
+			t.Fatal(err)
+		}
+		fault = nil
+		for _, c := range *calls {
+			// The guard page goes with the stack. windows frees the whole
+			// reservation, which takes no size.
+			if c.addr == base && runtime.GOOS != "windows" && c.size != size+pageSize {
+				t.Fatalf("Close unmapped %d bytes of the stack, want %d with the guard page", c.size, size+pageSize)
+			}
+		}
+		if u := m.Usage(); u != (Usage{}) {
+			t.Fatalf("Usage after Close: %+v", u)
+		}
+		if err := m.Close(); err != nil {
+			t.Fatalf("second Close: %v", err)
+		}
+		mustPanic(t, "Grow after Close", func() { m.Grow(Unit) })
+		mustPanic(t, "Release after Close", func() { m.Release(nil, nil, 0) })
+		return unmapped(t, a, Unit, 1) && unmapped(t, b, 64*Unit, 2) && unmapped(t, base, size, 3)
+	})
 }
 
 // TestConcurrentVMs runs VMs on many goroutines at once, and hands one VM
