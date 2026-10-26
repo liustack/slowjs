@@ -217,3 +217,32 @@ func TestReleasePartly(t *testing.T) {
 		t.Fatalf("totals %+v after two Releases, want %+v", u, want)
 	}
 }
+
+// TestReleasePanics: when a callback of the engine panics, the chunks
+// unmapped before it stay counted as handed back, and only Close may follow.
+func TestReleasePanics(t *testing.T) {
+	m, err := New(Unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := grow(t, m, Unit)
+	b := grow(t, m, 2*Unit)
+	r := panicked(func() {
+		m.Release(each([2]uintptr{a, Unit}), func() (uintptr, uintptr) { panic("engine") }, 0)
+	})
+	if r != "engine" {
+		t.Fatalf("Release panicked with %v, want the panic of the callback", r)
+	}
+	if u := m.Usage(); u.Chunks != 1 || u.Footprint != 2*Unit || u.Released.Chunks != Unit {
+		t.Fatalf("after a Release that panicked: %+v, want b left and a counted as handed back", u)
+	}
+	mustPanic(t, "Grow after a Release that panicked", func() { m.Grow(Unit) })
+	mustPanic(t, "Free after a Release that panicked", func() { m.Free(b, 2*Unit) })
+	mustPanic(t, "Release after a Release that panicked", func() { m.Release(nil, nil, 0) })
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if u := m.Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
+		t.Fatalf("after Close: %+v", u)
+	}
+}
