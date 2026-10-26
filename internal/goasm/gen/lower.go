@@ -388,8 +388,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	var flow map[string]string
 	if env != nil {
 		var err error
-		targets, haveTargets := env.jumpTargets(fn.Name)
-		if flow, err = markerFlow(inner, targets, haveTargets); err != nil {
+		if flow, err = markerFlow(inner, env.jumpTables(fn.Name)); err != nil {
 			return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 		}
 	}
@@ -748,29 +747,22 @@ func AddCallee(name string, sig Sig, kind Kind) {
 // marker, so a marker is followed along jumps and fall-throughs to its call.
 // Every edge into a block must carry the same marker, or none.
 // markerFlow returns the indirect-call marker pending at the start of each
-// local label. jumpTargets is the set of labels the function's indirect jumps
-// (switch tables, computed gotos) land on, and haveTargets whether that set
-// is known: when an indirect jump has no table markerFlow can read, its
-// landing blocks are unknown and any marker crossing a block edge is unsafe.
-func markerFlow(lines []string, jumpTargets map[string]bool, haveTargets bool) (map[string]string, error) {
+// local label. tables maps each in-body jump-table label to the blocks it
+// lands on; indirectJumpTargets uses it to decide, per indirect jump, which
+// blocks that jump may reach, and whether any jump's targets are unknown.
+func markerFlow(lines []string, tables map[string]map[string]bool) (map[string]string, error) {
 	in := map[string]string{} // present: some edge reaches the label
 	// A label no direct jump names is entered by falling through or from a
 	// jump table. No marker may be pending at an indirect jump (checked
 	// below), so a table entry carries none.
 	targets := map[string]bool{}
-	hasIndirectJump := false
 	for _, l := range lines {
 		f := strings.Fields(norm(l))
 		if len(f) == 2 && f[0][0] == 'j' && strings.HasPrefix(f[1], ".L") {
 			targets[f[1]] = true
 		}
-		// jmpq *%rax, jmp *tab(,%rax,8): a block the table targets gets an
-		// unmarked in-edge the body does not name. Which labels those are is
-		// in the jump table, which jumpTargets carries from the data.
-		if len(f) >= 1 && (f[0] == "jmp" || f[0] == "jmpq") && strings.Contains(l, "*") {
-			hasIndirectJump = true
-		}
 	}
+	reachable, unknown := indirectJumpTargets(lines, tables)
 	for iter := 0; ; iter++ {
 		if iter > len(lines)+1 {
 			return nil, fmt.Errorf("indirect-call markers do not settle")
@@ -829,16 +821,14 @@ func markerFlow(lines []string, jumpTargets map[string]bool, haveTargets bool) (
 		}
 		if !changed {
 			// A marker pending at the start of a block reaches its call
-			// across a block edge. If the function also has an indirect
-			// jump that could land on that block, the block is reached
-			// along an edge that carries no marker, so the marker cannot be
-			// trusted. Reject when the block is a known jump target, or when
-			// the jump's targets are unknown (no table to read them from).
-			if hasIndirectJump {
-				for _, lab := range SortedKeys(in) {
-					if in[lab] != "" && (!haveTargets || jumpTargets[lab]) {
-						return nil, fmt.Errorf("indirect-call marker %q reaches %s across a block edge while an indirect jump may reach %s unmarked", in[lab], lab, lab)
-					}
+			// across a block edge. If an indirect jump could land on that
+			// block, the block is reached along an edge that carries no
+			// marker, so the marker cannot be trusted. Reject when the block
+			// is a target of some resolved jump, or when any jump's targets
+			// are unknown (so it could reach any block).
+			for _, lab := range SortedKeys(in) {
+				if in[lab] != "" && (unknown || reachable[lab]) {
+					return nil, fmt.Errorf("indirect-call marker %q reaches %s across a block edge while an indirect jump may reach %s unmarked", in[lab], lab, lab)
 				}
 			}
 			return in, nil
@@ -975,26 +965,69 @@ func constantPool(asm string, body []string) (string, error) {
 // table.
 var reBlockLabel = regexp.MustCompile(`\.L(?:BB|tmp)[\w.$]*`)
 
-// jumpTargets returns the block labels the function's switch and computed-goto
-// tables land on, and whether such a table was found. markerFlow uses it to
-// tell a block an indirect jump may reach from one it cannot. The targets are
-// in the function's own in-body data objects (llc keeps jump tables private),
-// so a function with an indirect jump but no such object has unknown targets.
-func (env *LowerEnv) jumpTargets(fn string) (map[string]bool, bool) {
+// jumpTables maps each in-body jump-table label of fn to the block labels it
+// lands on. llc keeps a switch or computed-goto table inside the function that
+// reads it, so a table is one of fn's own in-body data objects that holds
+// block labels. An object with no block labels (a constant pool) is not a
+// table.
+func (env *LowerEnv) jumpTables(fn string) map[string]map[string]bool {
 	if env.Plan == nil {
-		return nil, false
+		return nil
 	}
-	t := map[string]bool{}
-	found := false
+	m := map[string]map[string]bool{}
 	for _, o := range env.Plan.InBody[fn] {
+		targets := map[string]bool{}
 		for _, l := range o.Lines {
-			for _, m := range reBlockLabel.FindAllString(l, -1) {
-				t[m] = true
-				found = true
+			for _, b := range reBlockLabel.FindAllString(l, -1) {
+				targets[b] = true
+			}
+		}
+		if len(targets) == 0 {
+			continue
+		}
+		for _, lab := range append([]string{o.Label}, o.Aliases...) {
+			m[lab] = targets
+		}
+	}
+	return m
+}
+
+// indirectJumpTargets decides, per indirect jump (jmp/jmpq through a register
+// or memory), which blocks it may land on. A switch or computed-goto dispatch
+// loads its target from a jump table llc kept inside the function, so the
+// table referenced in the jump's own block gives the jump's complete target
+// set. A jump whose block references no known table has an unknown target set:
+// it could reach any block, so unknown is set and every cross-block marker
+// must then be rejected. tables maps each in-body jump-table label to its
+// target blocks.
+func indirectJumpTargets(lines []string, tables map[string]map[string]bool) (reachable map[string]bool, unknown bool) {
+	reachable = map[string]bool{}
+	var refs []string // in-body table labels referenced since the last label
+	for _, l := range lines {
+		n := norm(l)
+		if reLabel.MatchString(n) {
+			refs = refs[:0]
+			continue
+		}
+		for _, tok := range reSymTok.FindAllString(l, -1) {
+			if tables[tok] != nil {
+				refs = append(refs, tok)
+			}
+		}
+		f := strings.Fields(n)
+		if len(f) >= 1 && (f[0] == "jmp" || f[0] == "jmpq") && strings.Contains(n, "*") {
+			if len(refs) == 0 {
+				unknown = true
+				continue
+			}
+			for _, t := range refs {
+				for b := range tables[t] {
+					reachable[b] = true
+				}
 			}
 		}
 	}
-	return t, found
+	return reachable, unknown
 }
 
 func (env *LowerEnv) dataRefs(fn, l string) (string, error) {
