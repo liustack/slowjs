@@ -19,7 +19,6 @@
 
 #include "host.h"
 
-#define HOST_STACK_SIZE (1024 * 1024) /* JS_DEFAULT_STACK_SIZE of QuickJS */
 #define HOST_NOW_SEC 1767225600       /* 2026-01-01T00:00:00Z */
 #define HOST_TIMEOUT_SEC 120          /* the longest a test may run, unless HOST_TIMEOUT_SEC says otherwise */
 
@@ -63,6 +62,76 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #else
 #define host_unpoison(p, n) ((void)0)
 #endif
+
+/* The engine counts its recursion (JS_SetMaxCallDepth) and asks how many bytes
+   of stack are left only to bound an alloca and to keep a margin at each
+   level. In the generated assembly that is the room on the VM's shadow stack.
+   Here it is the room on the stack of the thread, past HOST_STACK_RESERVE
+   bytes kept for the host and the system, so that a recursion within the
+   limits never runs off the stack. The bottom of the stack is found once per
+   thread. */
+#define HOST_STACK_RESERVE (64 * 1024)
+static _Thread_local uintptr_t host_stack_low;
+
+static uintptr_t host_find_stack_low(void)
+{
+#ifdef __APPLE__
+    pthread_t self = pthread_self();
+    return (uintptr_t)pthread_get_stackaddr_np(self) - pthread_get_stacksize_np(self);
+#else
+    pthread_attr_t attr;
+    void *addr;
+    size_t size;
+
+    if (pthread_getattr_np(pthread_self(), &attr) != 0 ||
+        pthread_attr_getstack(&attr, &addr, &size) != 0) {
+        fprintf(stderr, "host: cannot find the stack of this thread\n");
+        abort();
+    }
+    pthread_attr_destroy(&attr);
+    return (uintptr_t)addr;
+#endif
+}
+
+long __shadow_remaining(void)
+{
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+
+    if (!host_stack_low)
+        host_stack_low = host_find_stack_low() + HOST_STACK_RESERVE;
+    return sp > host_stack_low ? (long)(sp - host_stack_low) : 0;
+}
+
+typedef struct {
+    int (*fn)(void *);
+    void *arg;
+    int ret;
+} HostThread;
+
+static void *host_thread_start(void *p)
+{
+    HostThread *t = p;
+
+    t->ret = t->fn(t->arg);
+    return NULL;
+}
+
+int host_run_thread(int (*fn)(void *), void *arg)
+{
+    HostThread t = { fn, arg, 0 };
+    pthread_attr_t attr;
+    pthread_t tid;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, HOST_THREAD_STACK);
+    if (pthread_create(&tid, &attr, host_thread_start, &t) != 0) {
+        fprintf(stderr, "host: cannot start a thread\n");
+        exit(2);
+    }
+    pthread_attr_destroy(&attr);
+    pthread_join(tid, NULL);
+    return t.ret;
+}
 
 static HostVM *host_vm_find(uint32_t id)
 {
@@ -234,7 +303,6 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
         host_vm_free(vm);
         return NULL;
     }
-    JS_SetMaxStackSize(rt, HOST_STACK_SIZE);
 #ifdef __linux__
     JS_SetHostRemap(rt, !host_no_remap);
 #endif
