@@ -21,8 +21,9 @@ const stackFlags = unix.MAP_NORESERVE | unix.MAP_STACK
 
 // noHugePages keeps transparent huge pages off the shadow stack, which would
 // make 2 MiB resident at its first touch. Many kernels in use are older than
-// 6.8, and some set huge pages to always. EINVAL is a kernel built without
-// them, and then there is nothing to keep off.
+// 6.8, and some set huge pages to always. It accepts EINVAL: on an anonymous
+// mapping of our own, aligned to pages, the one reason left for it is a kernel
+// built without huge pages, and then there is nothing to keep off.
 func noHugePages(addr, size uintptr) error {
 	err := sysMadvise("nohugepage", addr, size, unix.MADV_NOHUGEPAGE)
 	if errors.Is(err, unix.EINVAL) {
