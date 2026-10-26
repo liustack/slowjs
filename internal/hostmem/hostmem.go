@@ -72,7 +72,7 @@ type Memory struct {
 	stack     uintptr             // the base of the shadow stack
 	stackSize uintptr             // 0 once Close unmapped it
 	released  Released            // totals of Release
-	closed    bool                // Close ran: only Close may run again
+	onlyClose bool                // Close ran, or a Release has not returned
 }
 
 // Usage is what a VM holds from the OS.
@@ -152,6 +152,10 @@ func (m *Memory) Grow(size uintptr) (uintptr, error) {
 // block. When the OS refuses, the chunk stays mapped and counted until Close.
 func (m *Memory) Free(base, size uintptr) error {
 	m.mustBeOpen()
+	return m.free(base, size)
+}
+
+func (m *Memory) free(base, size uintptr) error {
 	m.mustHold(base, size)
 	if err := osUnmap(base, size); err != nil {
 		return fmt.Errorf("hostmem: unmap a chunk of %d bytes at %#x: %w", size, base, err)
@@ -198,11 +202,17 @@ func (m *Memory) Remap(base, size, newSize uintptr) (uintptr, error) {
 //
 // An error of the OS on one chunk or range does not stop the others. Release
 // returns them all, and a chunk the OS did not unmap stays mapped and counted.
+//
+// chunks and ranges do not call the Memory. When one of them panics, or
+// Release does on a range outside every chunk, the walk of the engine stops
+// halfway, and the Memory takes only Close from then on. What was handed back
+// until then is in the totals.
 func (m *Memory) Release(chunks, ranges func() (addr, size uintptr), stackUsed uintptr) (Released, error) {
 	m.mustBeOpen()
 	if stackUsed > m.stackSize {
 		panic(fmt.Sprintf("hostmem: %d bytes of a shadow stack of %d in use", stackUsed, m.stackSize))
 	}
+	m.onlyClose = true
 	var r Released
 	var errs []error
 	for chunks != nil {
@@ -210,11 +220,12 @@ func (m *Memory) Release(chunks, ranges func() (addr, size uintptr), stackUsed u
 		if size == 0 {
 			break
 		}
-		if err := m.Free(base, size); err != nil {
+		if err := m.free(base, size); err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		r.Chunks += size
+		m.released.Chunks += size
 	}
 	for ranges != nil {
 		addr, size := ranges()
@@ -233,17 +244,17 @@ func (m *Memory) Release(chunks, ranges func() (addr, size uintptr), stackUsed u
 			continue
 		}
 		r.Pages += end - start
+		m.released.Pages += end - start
 	}
 	if from := alignUp(max(stackUsed, StackKeep), pageSize); from < m.stackSize {
 		if err := osRelease(m.stack+from, m.stackSize-from); err != nil {
 			errs = append(errs, fmt.Errorf("hostmem: hand back %d bytes of the shadow stack: %w", m.stackSize-from, err))
 		} else {
 			r.Stack = m.stackSize - from
+			m.released.Stack += r.Stack
 		}
 	}
-	m.released.Chunks += r.Chunks
-	m.released.Pages += r.Pages
-	m.released.Stack += r.Stack
+	m.onlyClose = false
 	return r, errors.Join(errs...)
 }
 
@@ -253,7 +264,7 @@ func (m *Memory) Release(chunks, ranges func() (addr, size uintptr), stackUsed u
 // tells what is left, and Close again tries them again. Once all is unmapped,
 // Close again does nothing.
 func (m *Memory) Close() error {
-	m.closed = true
+	m.onlyClose = true
 	var errs []error
 	for base, size := range m.chunks {
 		if err := osUnmap(base, size); err != nil {
@@ -307,8 +318,8 @@ func (m *Memory) inChunk(addr, size uintptr) bool {
 }
 
 func (m *Memory) mustBeOpen() {
-	if m.closed {
-		panic("hostmem: Memory used after Close")
+	if m.onlyClose {
+		panic("hostmem: Memory used after Close, or inside or after a Release that did not return")
 	}
 }
 
