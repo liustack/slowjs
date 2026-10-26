@@ -233,3 +233,51 @@ func TestGoNames(t *testing.T) {
 		t.Fatal("collision accepted")
 	}
 }
+
+func TestEvalExprRejectsUnknownOperators(t *testing.T) {
+	p := &DataPlan{BlobOff: map[string]int{"table": 16, "base": 4}}
+	// table+8 is a pointer into engine_rodata at offset 16+8.
+	if _, r, err := p.evalExpr("table+8", 0, nil); err != nil || r == nil || r.Sym != "" || r.Add != 24 {
+		t.Fatalf("table+8: %+v %v", r, err)
+	}
+	// table-base is a resolved constant difference.
+	if k, r, err := p.evalExpr("table-base", 0, nil); err != nil || r != nil || k != 12 {
+		t.Fatalf("table-base: %d %+v %v", k, r, err)
+	}
+	// An operator the evaluator does not implement must be rejected, not
+	// silently dropped (table+8*2 is table+16, not table+10).
+	for _, bad := range []string{"table+8*2", "table*2", "table<<3", "(table+8)", "table+8/2"} {
+		if _, _, err := p.evalExpr(bad, 0, nil); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestEncodeAlign(t *testing.T) {
+	// A non-zero fill byte pads with that byte, not zero.
+	b, _, err := encodeDirective(".p2align 3, 0x7f", 1)
+	if err != nil || len(b) != 7 {
+		t.Fatalf("fill length: % x %v", b, err)
+	}
+	for _, by := range b {
+		if by != 0x7f {
+			t.Fatalf("fill byte: % x", b)
+		}
+	}
+	// A max-skip smaller than the padding drops the alignment.
+	if b, _, err := encodeDirective(".p2align 4, 0, 3", 1); err != nil || len(b) != 0 {
+		t.Fatalf("max-skip: % x %v", b, err)
+	}
+	// A max-skip larger than the padding keeps it.
+	if b, _, err := encodeDirective(".p2align 4, 0, 99", 1); err != nil || len(b) != 15 {
+		t.Fatalf("max-skip kept: %d %v", len(b), err)
+	}
+	// Plain power-of-two alignment to zero padding at an aligned offset.
+	if b, _, err := encodeDirective(".p2align 3, 0x0", 8); err != nil || len(b) != 0 {
+		t.Fatalf("aligned: % x %v", b, err)
+	}
+	// A fourth field is not a form we understand.
+	if _, _, err := encodeDirective(".p2align 4, 0, 3, 9", 0); err == nil {
+		t.Fatal("extra alignment field accepted")
+	}
+}
