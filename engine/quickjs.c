@@ -621,6 +621,9 @@ struct JSContext {
     /* the modules the resolution under way marked resolved, the latest
        first, linked by JSModuleDef.resolve_prev (see js_resolve_module_top) */
     JSModuleDef *resolve_marked;
+    /* the same for the making of module functions, linked by
+       JSModuleDef.func_prev (see js_create_module_function_top) */
+    JSModuleDef *func_marked;
 
     /* if NULL, RegExp compilation is not supported */
     JSValue (*compile_regexp)(JSContext *ctx, JSValueConst pattern,
@@ -992,6 +995,8 @@ struct JSModuleDef {
     JSModuleStatus status : 8;
     /* the module marked resolved before it, while a resolution is under way */
     JSModuleDef *resolve_prev;
+    /* the module marked func_created before it, the same way */
+    JSModuleDef *func_prev;
     /* temp use during js_module_link() & js_module_evaluate() */
     int dfs_index, dfs_ancestor_index;
     JSModuleDef *stack_prev;
@@ -32851,22 +32856,26 @@ static int js_create_module_function1(JSContext *ctx, JSModuleDef *m)
 
     is_c_module = (m->init_func != NULL);
 
+    /* what an earlier try made, before it failed, is kept */
     if (is_c_module) {
         /* initialize the exported variables */
         for(i = 0; i < m->export_entries_count; i++) {
             JSExportEntry *me = &m->export_entries[i];
-            if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
+            if (me->export_type == JS_EXPORT_TYPE_LOCAL &&
+                !me->u.local.var_ref) {
                 var_ref = js_create_var_ref(ctx, FALSE);
                 if (!var_ref)
                     return -1;
                 me->u.local.var_ref = var_ref;
             }
         }
-    } else {
+    } else if (JS_VALUE_GET_TAG(m->func_obj) == JS_TAG_FUNCTION_BYTECODE) {
         if (js_create_module_bytecode_function(ctx, m))
             return -1;
     }
     m->func_created = TRUE;
+    m->func_prev = ctx->func_marked;
+    ctx->func_marked = m;
 
     /* do it on the dependencies */
 
@@ -32889,6 +32898,30 @@ static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
     ret = js_create_module_function1(ctx, m);
     js_internal_leave(ctx->rt);
     return ret;
+}
+
+/* Make the functions of m and of the modules it imports. A module is marked
+   func_created once its own function is made, before those of its imports,
+   so that a cycle of imports ends. When the making fails, every module it
+   marked is unmarked, as in js_resolve_module_top, so that the functions of
+   its imports are made before it is linked: linking reads the function of
+   each module as an object. A module keeps the function it made, which is
+   not made again. */
+static int js_create_module_function_top(JSContext *ctx, JSModuleDef *m)
+{
+    JSModuleDef *outer = ctx->func_marked, *m1;
+
+    if (js_create_module_function(ctx, m) == 0) {
+        if (!outer)
+            ctx->func_marked = NULL;
+        return 0;
+    }
+    while (ctx->func_marked != outer) {
+        m1 = ctx->func_marked;
+        ctx->func_marked = m1->func_prev;
+        m1->func_created = FALSE;
+    }
+    return -1;
 }
 
 
@@ -39603,7 +39636,7 @@ static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
         m = JS_VALUE_GET_PTR(fun_obj);
         /* the module refcount should be >= 2 */
         JS_FreeValue(ctx, fun_obj);
-        if (js_create_module_function(ctx, m) < 0)
+        if (js_create_module_function_top(ctx, m) < 0)
             goto fail;
         if (js_link_module(ctx, m) < 0)
             goto fail;
