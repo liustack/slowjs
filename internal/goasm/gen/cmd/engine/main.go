@@ -43,8 +43,10 @@ var (
 	jobs      = flag.Int("j", 2, "parallel clang jobs")
 	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
 	varBlock  = flag.Bool("varargs-block", false, "experimental: the pass passes variable arguments in a shadow-stack block")
-	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: check every function's bytes survived linking")
+	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: match every generated function and engine_rodata against llc's object")
 	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
+	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
+	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
 )
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
@@ -87,6 +89,12 @@ func main() {
 		}
 	}
 	srcs = append(srcs, src{filepath.Join(*engineDir, "libc/math.c"), "libc"}, src{filepath.Join(*engineDir, "libc/stdio.c"), "libc"})
+	if *srcList != "" {
+		srcs = nil
+		for _, f := range strings.Split(*srcList, ",") {
+			srcs = append(srcs, src{f, strings.TrimSuffix(filepath.Base(f), ".c")})
+		}
+	}
 	cflags := append(append([]string{"--target=x86_64-linux-gnu"}, gen.EngineCFlags...), freeFlags...)
 	if *arch == "arm64" {
 		cflags = append(append([]string{}, gen.ARM64CFlags...), freeFlags...)
@@ -184,6 +192,8 @@ func main() {
 	}
 
 	// 4. llc, position independent: every data reference is RIP-relative.
+	// The object keeps llc's temporary labels (.LCPI, .LJTI, .L.str), so the
+	// post-link check can resolve every reference of the text in it.
 	asmPath := filepath.Join(*work, "engine.s")
 	objPath := filepath.Join(*work, "engine.o")
 	os.Remove(asmPath)
@@ -191,7 +201,7 @@ func main() {
 	llc := filepath.Join(*llvm, "llc")
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false"}
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
-	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "-o", objPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels", "-o", objPath, shadowLL)...))
 	tLLVM := time.Since(t0)
 
 	allow := map[string]bool{}
@@ -237,14 +247,6 @@ func main() {
 		for _, e := range errs {
 			reject(fn, "data", e.Error())
 		}
-	}
-	// Structural net: re-run the data parser over every blob object and check
-	// it byte for byte against llc's own assembled object, so a parser mistake
-	// is a build failure, not a silent miscompile.
-	if n, err := gen.VerifyEngineData(objPath, unit, plan); err != nil {
-		die(fmt.Errorf("engine_rodata does not match llc's object: %w", err))
-	} else {
-		fmt.Fprintf(os.Stderr, "data check: %d blob objects match llc's object\n", n)
 	}
 	leafSet := map[string]bool{}
 	for _, l := range strings.Split(*leaves, ",") {
@@ -323,6 +325,14 @@ func main() {
 		metas = append(metas, meta)
 	}
 	tLower := time.Since(t0)
+	// Every rewrite the lowering made, for inspection and for the check's
+	// own tests.
+	var recs []*gen.FuncRecord
+	for _, m := range metas {
+		recs = append(recs, m.Rec)
+	}
+	b, _ := json.MarshalIndent(recs, "", " ")
+	writeFile(filepath.Join(*work, "records.json"), string(b))
 	summary(rep, plan, pre, metas, stubs, len(unit.FuncOrder))
 	if *reportOut != "" {
 		b, _ := json.MarshalIndent(rejections, "", " ")
@@ -332,35 +342,51 @@ func main() {
 		die(fmt.Errorf("%d rejections (run with -keep-going to list them all)", len(rejections)))
 	}
 
-	// 6. Re-assemble and emit.
+	// 6. Re-assemble (keeping the temporary labels the check looks up) and
+	// emit.
+	text := lowered.String()
+	if e := os.Getenv("GEN_EDIT_LOWERED"); e != "" {
+		text = editLowered(text, e) // negative tests: the check must fail
+	}
 	loweredPath := filepath.Join(*work, "lowered.s")
-	writeFile(loweredPath, lowered.String())
+	writeFile(loweredPath, text)
 	loweredObj := filepath.Join(*work, "lowered.o")
 	os.Remove(loweredObj)
-	must1(capture(clang, "-c", loweredPath, "-o", loweredObj))
-	// Function half of the post-link check: confirm the linker left every
-	// generated function's bytes unchanged in a built binary of the package.
-	if *verifyBin != "" {
-		vpkg := *verifyPkg
-		if vpkg == "" {
-			vpkg = *pkg
-		}
-		n, err := gen.VerifyEngineFuncs(loweredObj, *verifyBin, vpkg, metas)
-		if err != nil {
-			die(fmt.Errorf("post-link function check: %w", err))
-		}
-		fmt.Fprintf(os.Stderr, "function check: %d functions match in %s\n", n, *verifyBin)
-	}
-	if *out == "" {
-		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
-		return
-	}
+	must1(capture(filepath.Join(*llvm, "llvm-mc"), "-filetype=obj", "-triple=x86_64-linux-gnu", "--save-temp-labels",
+		"-o", loweredObj, loweredPath))
 	for name := range rep.Sigs {
 		names = append(names, name)
 	}
 	gonames, err := gen.GoNames(dedupe(names))
 	if err != nil {
 		die(err)
+	}
+	// The post-link check: every generated function, instruction by
+	// instruction, and engine_rodata, byte by byte, against llc's object.
+	if *verifyBin != "" {
+		vpkg := *verifyPkg
+		if vpkg == "" {
+			vpkg = *pkg
+		}
+		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
+			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: leafSet, All: *verifyAll})
+		if cr != nil {
+			for _, k := range gen.SortedKeys(cr.Checked) {
+				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
+			}
+			for _, why := range gen.SortedKeys(cr.Skipped) {
+				fns := cr.Skipped[why]
+				fmt.Fprintf(os.Stderr, "not checked: %d functions, %s: %s\n", len(fns), why, strings.Join(fns[:min(len(fns), 8)], " "))
+			}
+		}
+		if err != nil {
+			die(fmt.Errorf("post-link check: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "post-link check passed for %s\n", *verifyBin)
+	}
+	if *out == "" {
+		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
+		return
 	}
 	// llvm-link renames a static whose name another file also uses
 	// (cr_add_interval.156). It goes with the function of the plain name:
@@ -389,8 +415,55 @@ func main() {
 		total += len(text)
 	}
 	writeFile(filepath.Join(*out, "engine_decl.go"), goDecls(metas, stubs, sigs, gonames, rep))
+	writeFile(filepath.Join(*out, "engine_keep.go"), keepAll(metas, stubs, gonames))
 	fmt.Fprintf(os.Stderr, "wrote %d .s files, %d bytes, to %s\n", len(files), total, *out)
 	fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
+}
+
+// editLowered applies GEN_EDIT_LOWERED to the lowered text: entries
+// separated by "\x1e", each "N" (delete line N, counted from 1) or
+// "N\x1fnew text" (replace it). A negative test of the post-link check
+// builds the package from the edited text, which the check must reject.
+func editLowered(text, edits string) string {
+	lines := strings.Split(text, "\n")
+	drop := map[int]bool{}
+	for _, e := range strings.Split(edits, "\x1e") {
+		num, repl, isRepl := strings.Cut(e, "\x1f")
+		var n int
+		if _, err := fmt.Sscan(num, &n); err != nil || n < 1 || n > len(lines) {
+			die(fmt.Errorf("GEN_EDIT_LOWERED: bad line %q", num))
+		}
+		if isRepl {
+			lines[n-1] = repl
+		} else {
+			drop[n-1] = true
+		}
+	}
+	var out []string
+	for i, l := range lines {
+		if !drop[i] {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// keepAll writes engine_keep.go: under the goasmkeep tag it holds every
+// generated Go-visible function, so a binary built with -tags goasmkeep
+// links them all and -verify-all can check each.
+func keepAll(metas, stubs []gen.Meta, names gen.NameMap) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "// Code generated by internal/goasm/gen. DO NOT EDIT.\n\n//go:build goasmkeep\n\npackage %s\n\n", *pkg)
+	b.WriteString("// goasmKeep holds every generated function for the post-link check.\nvar goasmKeep = []any{\n")
+	all := append(append([]gen.Meta{}, metas...), stubs...)
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	for _, m := range all {
+		if m.Kind != gen.Register {
+			fmt.Fprintf(&b, "\t%s,\n", names[m.Name])
+		}
+	}
+	b.WriteString("}\n\nfunc init() {\n\tfor _, f := range goasmKeep {\n\t\tif f == nil {\n\t\t\tpanic(\"goasmKeep: a nil function\")\n\t\t}\n\t}\n}\n")
+	return b.String()
 }
 
 var reDefine = regexp.MustCompile(`(?m)^define\b[^@\n]*@("?[^"(\s]+"?)\(`)
