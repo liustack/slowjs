@@ -59,7 +59,16 @@ struct ICallSymbols : MachineFunctionPass {
 
 char ICallSymbols::ID = 0;
 
-// After the last pass that may move, merge or duplicate a call.
+// Inserted after MachineSanitizerBinaryMetadata. That is the last machine pass
+// that moves, merges or duplicates a call in the llc run the generator makes
+// (llc -O2, -enable-shrink-wrap=false, x86-64 with the engine's C flags), which
+// the tests cover. It is not the last machine pass LLVM 22.1.8 has: the
+// optional MachineOutliner, function splitting and the pre-emit passes run
+// after it, and none of them is on in that run. Check this insertion point
+// again when an llc option, the LLVM version or the target (arm64 lowering)
+// changes. A symbol that ends up missing, in the wrong function or on
+// something that is not an indirect call still fails the generator and the
+// post-link check, so a wrong place cannot go unseen.
 RegisterTargetPassConfigCallback Register([](TargetMachine &, PassManagerBase &, TargetPassConfig *PC) {
   PC->insertPass(&MachineSanitizerBinaryMetadataID, new ICallSymbols());
 });
