@@ -260,7 +260,8 @@ func TestNow(t *testing.T) {
 	if Now(w.ID(), NowWall) != fixed.Add(time.Hour).UnixNano() || Now(v.ID(), NowWall) < fixed.UnixNano() {
 		t.Fatal("the clocks of two VMs are not their own")
 	}
-	// The monotonic clock needs no VM and never goes back.
+	// The monotonic clock needs no VM, never goes back, and moves on with
+	// time, in nanoseconds.
 	m := Now(0, NowMonotonic)
 	for range 1000 {
 		n := Now(v.ID(), NowMonotonic)
@@ -268,6 +269,10 @@ func TestNow(t *testing.T) {
 			t.Fatalf("the monotonic clock went back from %d to %d", m, n)
 		}
 		m = n
+	}
+	time.Sleep(5 * time.Millisecond)
+	if n := Now(v.ID(), NowMonotonic); n-m < int64(5*time.Millisecond) || n-m > int64(time.Minute) {
+		t.Fatalf("the monotonic clock read %d then %d after a sleep of 5 ms", m, n)
 	}
 	mustPanic(t, "the wall clock of no VM", func() { Now(0, NowWall) })
 	mustPanic(t, "an unknown kind", func() { Now(v.ID(), 2) })
