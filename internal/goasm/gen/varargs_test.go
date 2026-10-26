@@ -123,3 +123,49 @@ func TestVarargsOverAlignedHelperRejected(t *testing.T) {
 		t.Fatalf("the helper read_s was not rejected: %q\n%s", why, out)
 	}
 }
+
+// TestVarargsEscapesRejected: a va_list, or a pointer read from one, that
+// goes where the pass cannot follow it (a va_copy into a helper, an indirect
+// or external call, a store to memory, a va_copy into a global) must reject
+// the function that sends it, since the pass cannot prove the reads there
+// keep to the block's slots. A va_copy read by a scalar helper stays. Needs
+// LLVM 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+func TestVarargsEscapesRejected(t *testing.T) {
+	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+	}
+	work := t.TempDir()
+	ir := filepath.Join(work, "e.ll")
+	run := func(name string, args ...string) string {
+		t.Helper()
+		out, err := exec.Command(filepath.Join(llvm, name), args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, out)
+		}
+		return string(out)
+	}
+	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "escapes.c"))...)
+	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-shadow-report", "-S", "-o", os.DevNull, ir)
+	rep := ParseReport(out)
+	for fn, want := range map[string]string{
+		"read_over":       "over-aligned",
+		"through_pointer": "cannot follow",
+		"external":        "cannot follow",
+		"stores_list":     "stores a va_list",
+		"stores_block":    "stores a pointer into the variadic block",
+		"copies_out":      "not a local",
+	} {
+		if why := rep.Rejected[fn]; !strings.Contains(why, want) {
+			t.Errorf("%s: rejection %q, want one saying %q", fn, why, want)
+		}
+	}
+	for _, fn := range []string{"plain", "read_long", "copied"} {
+		if why, ok := rep.Rejected[fn]; ok {
+			t.Errorf("%s rejected: %s", fn, why)
+		}
+	}
+	if t.Failed() {
+		t.Logf("pass output:\n%s", out)
+	}
+}

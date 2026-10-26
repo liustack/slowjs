@@ -43,6 +43,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include <map>
 #include <set>
 #include <string>
 using namespace llvm;
@@ -365,55 +366,247 @@ static void lowerVarargs(Module &M) {
   };
   // The block holds each variable argument in a contiguous 8-byte slot, which
   // matches the SysV/AAPCS overflow area only for the scalars slots() accepts.
-  // An over-aligned aggregate read through va_arg rounds the overflow pointer
-  // up past 8 (an llvm.ptrmask that clears more than the low three bits), and
-  // the contiguous block cannot reproduce that. The call site already split
-  // the aggregate into plain 8-aligned scalars, so it cannot tell them apart;
-  // the only trace is in whatever function reads the va_list, which is the
-  // variadic function or any helper it hands the va_list to. Follow each
-  // va_list into every function it reaches and reject any that rounds the
-  // block pointer, so a read moved into a plain helper is caught too.
-  SmallPtrSet<Value *, 16> vaObj;      // storage a started va_list lives in
-  SmallPtrSet<Function *, 16> vaReach; // functions a va_list reaches
+  // Whether the reads keep to those slots shows only in the code that reads
+  // the va_list: clang expands va_arg into loads and stores of the va_list's
+  // fields and reads through its overflow pointer, which va_start points at
+  // the block. So every use of a va_list, and of a pointer read from it, must
+  // be one the pass can account for, and any other rejects the function that
+  // makes it: a store of either pointer to memory, a va_copy into anything but
+  // a local, a call the pass cannot follow (indirect, external, or in the
+  // variadic part), pointer arithmetic it does not know, or an alignment of
+  // the block pointer above 8 (an over-aligned aggregate, whose slot the
+  // contiguous block cannot reproduce). A va_list handed to a function
+  // defined in the module is followed into it.
+  //
+  // Kinds: a va_list (its storage, with the byte offset into it), the block
+  // pointer (loaded from the overflow field) and a read-only pointer (the
+  // register save area, which va_start leaves exhausted, or a merge of it
+  // with the block pointer). Block and read pointers may be read through;
+  // only a block pointer may be stored, and only back into the overflow field.
+  const int64_t blockField = arm ? 0 : 8;
+  auto readField = [&](int64_t off) { return arm ? (off == 8 || off == 16) : off == 16; };
+  auto intField = [&](int64_t off) { return arm ? (off == 24 || off == 28) : (off == 0 || off == 4); };
+  DenseMap<Value *, int64_t> vaList; // va_list pointer -> byte offset into it
+  DenseMap<Value *, bool> ptrs;      // block or read pointer -> is a block pointer
+  std::map<Function *, std::string> bad;
+  auto fail = [&](Instruction *I, const Twine &why) {
+    Function *F = I->getFunction();
+    if (!bad.count(F))
+      bad[F] = why.str();
+  };
+  SmallVector<Value *> work;
+  auto addList = [&](Instruction *at, Value *V, int64_t off) {
+    auto it = vaList.find(V);
+    if (it == vaList.end()) {
+      vaList[V] = off;
+      work.push_back(V);
+    } else if (it->second != off && at) {
+      fail(at, "reaches a va_list at two offsets");
+    }
+  };
+  auto addPtr = [&](Value *V) {
+    if (!ptrs.count(V)) {
+      ptrs[V] = true; // optimistic: a block pointer until shown otherwise
+      work.push_back(V);
+    }
+  };
+  auto constOff = [&](GEPOperator *G, int64_t &off) {
+    APInt o(DL.getIndexTypeSizeInBits(G->getType()), 0);
+    if (!G->accumulateConstantOffset(DL, o))
+      return false;
+    off = o.getSExtValue();
+    return true;
+  };
   for (Function &F : M)
     for (BasicBlock &B : F)
       for (Instruction &I : B)
         if (auto *II = dyn_cast<IntrinsicInst>(&I))
-          if (II->getIntrinsicID() == Intrinsic::vastart) {
-            vaObj.insert(getUnderlyingObject(II->getArgOperand(0)));
-            vaReach.insert(&F);
+          if (II->getIntrinsicID() == Intrinsic::vastart || II->getIntrinsicID() == Intrinsic::vacopy) {
+            Value *O = getUnderlyingObject(II->getArgOperand(0));
+            if (!isa<AllocaInst>(O))
+              fail(II, "starts or copies into a va_list that is not a local");
+            else
+              addList(nullptr, O, 0);
           }
-  for (bool grew = true; grew;) {
-    grew = false;
-    for (Function &F : M)
-      for (BasicBlock &B : F)
-        for (Instruction &I : B)
-          if (auto *CB = dyn_cast<CallBase>(&I)) {
-            auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
-            if (!callee || callee->isDeclaration() || callee->isIntrinsic())
-              continue;
-            for (unsigned i = 0; i < CB->arg_size() && i < callee->arg_size(); i++)
-              if (CB->getArgOperand(i)->getType()->isPointerTy() &&
-                  vaObj.count(getUnderlyingObject(CB->getArgOperand(i)))) {
-                grew |= vaObj.insert(callee->getArg(i)).second;
-                grew |= vaReach.insert(callee).second;
-              }
-          }
+  // Follow every derivation (the uses are checked once all kinds settle).
+  while (!work.empty()) {
+    Value *V = work.pop_back_val();
+    bool list = vaList.count(V);
+    int64_t off = list ? vaList[V] : 0;
+    for (User *U : V->users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I)
+        continue;
+      if (auto *G = dyn_cast<GEPOperator>(I)) {
+        if (G->getPointerOperand() != V)
+          continue;
+        int64_t c;
+        if (list) {
+          if (constOff(G, c))
+            addList(I, I, off + c);
+        } else {
+          addPtr(I); // a variable step is a read pointer (settled below)
+        }
+      } else if (auto *L = dyn_cast<LoadInst>(I)) {
+        if (list && L->getType()->isPointerTy() && (off == blockField || readField(off)))
+          addPtr(L);
+      } else if (isa<PHINode>(I) || isa<SelectInst>(I)) {
+        if (!list)
+          addPtr(I);
+      } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+        if (!list && II->getIntrinsicID() == Intrinsic::ptrmask && II->getArgOperand(0) == V)
+          addPtr(II);
+      } else if (auto *CB = dyn_cast<CallBase>(I)) {
+        auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+        if (!list || off != 0 || !callee || callee->isDeclaration() || CB->getCalledOperand() == V)
+          continue;
+        for (unsigned i = 0; i < CB->arg_size() && i < CB->getFunctionType()->getNumParams() && i < callee->arg_size(); i++)
+          if (CB->getArgOperand(i) == V)
+            addList(I, callee->getArg(i), 0);
+      }
+    }
   }
-  SmallPtrSet<Function *, 8> bad;
-  for (Function *F : vaReach) {
-    if (F->isDeclaration())
-      continue;
-    for (BasicBlock &B : *F)
-      for (Instruction &I : B)
-        if (auto *II = dyn_cast<IntrinsicInst>(&I))
-          if (II->getIntrinsicID() == Intrinsic::ptrmask)
-            if (auto *m = dyn_cast<ConstantInt>(II->getArgOperand(1)))
-              if ((~m->getValue()).ugt(7))
-                bad.insert(F);
+  // Settle the kinds: a phi, select, step or mask is a block pointer only if
+  // everything it is made of is one; anything else it merges makes it read-only.
+  auto isBlock = [&](Value *V) {
+    auto it = ptrs.find(V);
+    return it != ptrs.end() && it->second;
+  };
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (auto &[V, blk] : ptrs) {
+      if (!blk)
+        continue;
+      bool now = true;
+      if (auto *L = dyn_cast<LoadInst>(V)) {
+        now = vaList.count(L->getPointerOperand()) && vaList[L->getPointerOperand()] == blockField;
+      } else if (auto *P = dyn_cast<PHINode>(V)) {
+        for (Value *in : P->incoming_values())
+          now = now && isBlock(in);
+      } else if (auto *S = dyn_cast<SelectInst>(V)) {
+        now = isBlock(S->getTrueValue()) && isBlock(S->getFalseValue());
+      } else if (auto *G = dyn_cast<GEPOperator>(V)) {
+        int64_t c;
+        now = isBlock(G->getPointerOperand()) && constOff(G, c);
+      } else if (auto *II = dyn_cast<IntrinsicInst>(V)) {
+        now = isBlock(II->getArgOperand(0));
+      }
+      if (!now) {
+        blk = false;
+        changed = true;
+      }
+    }
   }
-  for (Function *F : bad)
-    reject(*F, "reads an over-aligned variadic argument (above 8 bytes), which the 8-byte-slot block cannot hold");
+  // Check every use.
+  auto checkList = [&](Value *V, int64_t off, Use &U) {
+    auto *I = cast<Instruction>(U.getUser());
+    if (auto *G = dyn_cast<GEPOperator>(I)) {
+      int64_t c;
+      if (G->getPointerOperand() != V || !constOff(G, c))
+        fail(I, "computes a variable address inside a va_list");
+      return;
+    }
+    if (auto *L = dyn_cast<LoadInst>(I)) {
+      bool ok = (intField(off) && L->getType()->isIntegerTy(32)) ||
+                (L->getType()->isPointerTy() && (off == blockField || readField(off)));
+      if (!ok)
+        fail(I, "reads a va_list at an offset or type the pass does not know");
+      return;
+    }
+    if (auto *S = dyn_cast<StoreInst>(I)) {
+      if (S->getValueOperand() == V) {
+        fail(I, "stores a va_list's address to memory, where the pass cannot follow it");
+        return;
+      }
+      Value *v = S->getValueOperand();
+      bool ok = (intField(off) && v->getType()->isIntegerTy(32)) || (off == blockField && isBlock(v));
+      if (!ok)
+        fail(I, "writes a va_list field with a value the pass cannot account for");
+      return;
+    }
+    if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+      switch (II->getIntrinsicID()) {
+      case Intrinsic::vastart:
+      case Intrinsic::vaend:
+      case Intrinsic::lifetime_start:
+      case Intrinsic::lifetime_end:
+        if (off != 0)
+          fail(I, "passes an address inside a va_list to an intrinsic");
+        return;
+      case Intrinsic::vacopy: {
+        // Both operands must be va_lists the pass tracks: the destination
+        // was seeded from a local, the source must be a tracked list.
+        Value *src = II->getArgOperand(1);
+        if (off != 0 || !vaList.count(src) || vaList[src] != 0)
+          fail(I, "copies a va_list the pass cannot account for");
+        return;
+      }
+      default:
+        fail(I, "hands a va_list to an intrinsic the pass cannot follow");
+        return;
+      }
+    }
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+      unsigned i = U.getOperandNo();
+      if (off != 0 || !callee || callee->isDeclaration() || CB->isCallee(&U) ||
+          i >= CB->getFunctionType()->getNumParams() || i >= callee->arg_size())
+        fail(I, "hands a va_list to a function the pass cannot follow (indirect, external or variadic)");
+      return;
+    }
+    fail(I, "uses a va_list in a way the pass cannot follow");
+  };
+  auto checkPtr = [&](Value *V, bool blk, Use &U) {
+    auto *I = cast<Instruction>(U.getUser());
+    if (auto *G = dyn_cast<GEPOperator>(I)) {
+      int64_t c;
+      if (G->getPointerOperand() != V || (blk && !constOff(G, c)))
+        fail(I, "computes a variable address from the variadic block pointer");
+      return;
+    }
+    if (isa<LoadInst>(I) || isa<PHINode>(I) || isa<SelectInst>(I))
+      return;
+    if (auto *S = dyn_cast<StoreInst>(I)) {
+      if (S->getPointerOperand() == V) {
+        fail(I, "writes through a pointer read from a va_list");
+        return;
+      }
+      Value *to = S->getPointerOperand();
+      if (!(blk && vaList.count(to) && vaList[to] == blockField))
+        fail(I, "stores a pointer into the variadic block to memory, where the pass cannot follow it");
+      return;
+    }
+    if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+      switch (II->getIntrinsicID()) {
+      case Intrinsic::ptrmask: {
+        auto *m = dyn_cast<ConstantInt>(II->getArgOperand(1));
+        if (II->getArgOperand(0) != V || !m || (~m->getValue()).ugt(7))
+          fail(I, "reads an over-aligned variadic argument (above 8 bytes), which the 8-byte-slot block cannot hold");
+        return;
+      }
+      case Intrinsic::memcpy:
+      case Intrinsic::memmove:
+        if (II->getArgOperand(1) == V && II->getArgOperand(0) != V)
+          return;
+        fail(I, "writes through a pointer read from a va_list");
+        return;
+      default:
+        fail(I, "hands a pointer read from a va_list to an intrinsic the pass cannot follow");
+        return;
+      }
+    }
+    fail(I, "uses a pointer read from a va_list in a way the pass cannot follow");
+  };
+  for (auto &[V, off] : vaList)
+    for (Use &U : V->uses())
+      if (isa<Instruction>(U.getUser()))
+        checkList(V, off, U);
+  for (auto &[V, blk] : ptrs)
+    for (Use &U : V->uses())
+      if (isa<Instruction>(U.getUser()))
+        checkPtr(V, blk, U);
+  for (auto &[F, why] : bad)
+    reject(*F, why);
   SmallVector<Function *> fns;
   for (Function &F : M)
     fns.push_back(&F);
