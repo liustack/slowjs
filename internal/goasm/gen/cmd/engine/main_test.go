@@ -5,6 +5,9 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -60,6 +63,30 @@ func TestReleaseError(t *testing.T) {
 		edit(&d)
 		if err := releaseError(d, "out"); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// TestSizeLog2BeforeLLVM: a -shadow-size-log2 out of range stops the driver
+// before it runs any tool or makes its work folder. The tools named here do
+// not exist, so a run that got as far as one would fail with another message.
+func TestSizeLog2BeforeLLVM(t *testing.T) {
+	dir := t.TempDir()
+	drv := filepath.Join(dir, "engine")
+	build := exec.Command("go", "build", "-o", drv, ".")
+	build.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	for _, v := range []string{"-1", "0", "15", "41", "64", "100"} {
+		work := filepath.Join(dir, "w"+v)
+		out, err := exec.Command(drv, "-shadow-size-log2="+v, "-llvm", filepath.Join(dir, "no-llvm"), "-pass", filepath.Join(dir, "no-pass.so"),
+			"-work", work).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "-shadow-size-log2="+v+" is out of range (16 to 40)") {
+			t.Errorf("%s: %v\n%s", v, err, out)
+		}
+		if _, err := os.Stat(work); err == nil {
+			t.Errorf("%s: the driver made its work folder", v)
 		}
 	}
 }

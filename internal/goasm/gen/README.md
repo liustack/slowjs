@@ -131,7 +131,8 @@ made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
 `-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
-the engine is made for (20 by default, 25 for the host's whole 32 MiB):
+the engine is made for (20 by default, 25 for the host's whole 32 MiB, and
+from 16 to 40: the driver and the pass refuse any other before they use it):
 `engine_decl.go` records it as `shadowSizeLog2`, and the host refuses a
 smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.

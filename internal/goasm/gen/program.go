@@ -91,6 +91,24 @@ func ParseReport(text string) *Report {
 	return r
 }
 
+// The shadow-stack region the engine is generated for is 2^n bytes, n from
+// MinShadowSizeLog2 (64 KiB: the margin the C keeps free, and the smallest
+// stack the host maps) to MaxShadowSizeLog2 (1 TiB, far inside the address
+// space). pass/shadow.cpp holds the same two numbers.
+const (
+	MinShadowSizeLog2 = 16
+	MaxShadowSizeLog2 = 40
+)
+
+// CheckShadowSizeLog2 refuses a -shadow-size-log2 outside that range, before
+// any tool is called with it.
+func CheckShadowSizeLog2(n int) error {
+	if n < MinShadowSizeLog2 || n > MaxShadowSizeLog2 {
+		return fmt.Errorf("-shadow-size-log2=%d is out of range (%d to %d)", n, MinShadowSizeLog2, MaxShadowSizeLog2)
+	}
+	return nil
+}
+
 // KeepNarrowSigs makes SigFromCode take a narrow integer for a word: the
 // driver sets it for the negative build of GEN_KEEP_NARROW (see
 // cmd/engine), and a test of that build sets it too. A normal run leaves it

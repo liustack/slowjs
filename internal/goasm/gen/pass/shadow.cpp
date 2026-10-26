@@ -94,6 +94,11 @@ static cl::opt<bool> Varargs("shadow-varargs", cl::init(false),
 // and exit status 1. report_fatal_error aborts instead, and opt prints its own
 // stack as if it had crashed.
 
+// The region is not smaller than the 64 KiB the C keeps free (the margin of
+// its RangeError checks and the smallest stack the host maps) and far inside
+// the address space. gen.CheckShadowSizeLog2 holds the same two numbers.
+static const unsigned MinSizeLog2 = 16, MaxSizeLog2 = 40;
+
 // reject stops on a rule the C breaks, or with -shadow-keep-going reports it
 // and empties the function so the rest of the unit still goes through.
 static bool reject(Function &F, const Twine &why) {
@@ -1471,6 +1476,9 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
     LLVMContext &C = M.getContext();
     Type *I64 = Type::getInt64Ty(C), *I8 = Type::getInt8Ty(C);
     PointerType *P = PointerType::getUnqual(C);
+    if (SizeLog2 < MinSizeLog2 || SizeLog2 > MaxSizeLog2)
+      reportFatalUsageError(Twine("-shadow-size-log2=") + Twine(SizeLog2) + " is out of range (" + Twine(MinSizeLog2) +
+                            " to " + Twine(MaxSizeLog2) + ")");
     const uint64_t S = 1ull << SizeLog2;
     relativeGotoTables(M);
     if (Varargs)
