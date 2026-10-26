@@ -47413,6 +47413,397 @@ static JSValue js_string_toWellFormed(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
+/* the longest string js_string_find widens or narrows into an array on the
+   stack when the two strings differ in width */
+#define JS_STRING_FIND_ROOM 64
+/* the longest needle js_string_find looks for by comparing it at each index
+   where its first character is, with at most this many units of work for
+   each index of hay and nothing to work out first, rather than with the
+   Two-Way search */
+#define JS_STRING_FIND_SHORT 8
+/* the most units of work a search does between two checks of the
+   interrupt counter: a unit is a character memchr or a loop looks at, a
+   character compared or a window of the Two-Way search */
+#define JS_STRING_FIND_STEP (1 << 16)
+
+typedef struct JSStringFind {
+    JSContext *ctx;
+    int work; /* the units of work not counted yet */
+} JSStringFind;
+
+/* Count the work of a search toward the interrupt counter, a step for each
+   8 units, as the string buffer counts the characters it makes room for,
+   and call the interrupt handler when the counter runs out, as the
+   interpreter does. Return -1, with the exception thrown, when it asks to
+   stop. */
+static no_inline int js_string_find_check(JSStringFind *f)
+{
+    JSContext *ctx = f->ctx;
+
+    js_charge_interrupts(ctx, f->work >> 3);
+    f->work &= 7;
+    if (ctx->interrupt_counter <= 0)
+        return __js_poll_interrupts(ctx);
+    return 0;
+}
+
+/* add n units of work, and return -2 from the search when the check says
+   to stop */
+#define JS_STRING_FIND_WORK(f, n)                                        \
+    do {                                                                \
+        (f)->work += (n);                                               \
+        if (unlikely((f)->work >= JS_STRING_FIND_STEP) &&               \
+            js_string_find_check(f))                                    \
+            return -2;                                                  \
+    } while (0)
+
+/* the character at index i of a string of 8-bit (wide 0) or 16-bit
+   characters */
+static force_inline int js_string_unit(const void *p, int wide, int i)
+{
+    return wide ? ((const uint16_t *)p)[i] : ((const uint8_t *)p)[i];
+}
+
+/* the first index from lo to hi (rev 0) or from hi to lo (rev 1), both
+   included, where the string hay of hw-wide characters has c, or -1, or
+   -2 when the interrupt handler asked to stop */
+static int js_string_find_char(JSStringFind *f, const void *hay, int hw,
+                               int lo, int hi, int c, int rev)
+{
+    int k, e, k0;
+
+    if (!rev) {
+        for(k = lo; k <= hi; k = e) {
+            e = hi - k >= JS_STRING_FIND_STEP ? k + JS_STRING_FIND_STEP : hi + 1;
+            k0 = k;
+            if (!hw) {
+                const uint8_t *s = hay, *q = memchr(s + k, c, e - k);
+                if (q) {
+                    f->work += q - (s + k);
+                    return q - s;
+                }
+            } else {
+                const uint16_t *s = hay;
+                for(; k < e; k++) {
+                    if (s[k] == c) {
+                        f->work += k - k0;
+                        return k;
+                    }
+                }
+            }
+            JS_STRING_FIND_WORK(f, e - k0);
+        }
+        return -1;
+    }
+    for(k = hi; k >= lo; k = e) {
+        e = k - lo >= JS_STRING_FIND_STEP ? k - JS_STRING_FIND_STEP : lo - 1;
+        for(k0 = k; k > e; k--) {
+            if (js_string_unit(hay, hw, k) == c) {
+                f->work += k0 - k;
+                return k;
+            }
+        }
+        JS_STRING_FIND_WORK(f, k0 - e);
+    }
+    return -1;
+}
+
+/* The search of js_string_find for a needle of 2 to JS_STRING_FIND_SHORT
+   characters of the width of hay: find the first character of the needle,
+   then compare the others there. It returns as js_string_two_way does. */
+static no_inline int js_string_find_short(JSStringFind *f, const void *hay,
+                                          int hw, int lo, int hi,
+                                          const void *needle, int l, int rev)
+{
+    int c = js_string_unit(needle, hw, 0), k, j;
+
+    for(;;) {
+        k = js_string_find_char(f, hay, hw, lo, hi, c, rev);
+        if (k < 0)
+            return k;
+        for(j = 1; j < l && js_string_unit(hay, hw, k + j) ==
+                js_string_unit(needle, hw, j); j++)
+            continue;
+        JS_STRING_FIND_WORK(f, j);
+        if (j == l)
+            return k;
+        if (rev)
+            hi = k - 1;
+        else
+            lo = k + 1;
+    }
+}
+
+/* The search of js_string_find for a longer needle: the Two-Way algorithm of
+   Crochemore and Perrin as twoway_memmem in musl (src/string/memmem.c at
+   7ada6dd, MIT, see engine/libc/COPYRIGHT) has it, with the shift of the last
+   character of the window. It returns the first start from lo to hi (rev 0)
+   or from hi to lo (rev 1), both included, where the string hay has the l
+   characters of needle, or -1, or -2 when the interrupt handler asked to
+   stop. hw and nw are the widths of hay and needle (1 for 16-bit characters).
+   The search from hi down is the same search on both strings read from their
+   ends. Its work is linear in the length of the two whatever they hold: it
+   looks at each character of the needle a few times to find its critical
+   factorization, and compares at most two characters for each index of hay.
+   It checks the interrupt counter after at most 2 JS_STRING_FIND_STEP units
+   of work. The table of shifts has an entry for each low byte: 16-bit
+   characters with the same low byte share one, which holds the shift of the
+   one nearest the end of the needle, and a shorter shift is still safe. */
+static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
+                                          int hw, int lo, int hi,
+                                          const void *needle, int nw, int l,
+                                          int rev)
+{
+#define JS_TW_HAY(v) js_string_unit(hay, hw, rev ? hi + l - 1 - (v) : lo + (v))
+#define JS_TW_NEEDLE(j) js_string_unit(needle, nw, rev ? l - 1 - (j) : (j))
+    uint32_t shift[256], set[256 / 32] = { 0 };
+    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e;
+
+    for(i = 0; i < l; i++) {
+        a = JS_TW_NEEDLE(i);
+        /* a string of 8-bit characters cannot have it */
+        if (!hw && a > 0xff)
+            return -1;
+        a &= 0xff;
+        set[a >> 5] |= 1u << (a & 31);
+        shift[a] = i + 1;
+        JS_STRING_FIND_WORK(f, 1);
+    }
+
+    /* the maximal suffix for one order of the characters, and its period */
+    ip = -1;
+    jp = 0;
+    k = p = 1;
+    while (jp + k < l) {
+        JS_STRING_FIND_WORK(f, 1);
+        a = JS_TW_NEEDLE(ip + k);
+        b = JS_TW_NEEDLE(jp + k);
+        if (a == b) {
+            if (k == p) {
+                jp += p;
+                k = 1;
+            } else {
+                k++;
+            }
+        } else if (a > b) {
+            jp += k;
+            k = 1;
+            p = jp - ip;
+        } else {
+            ip = jp++;
+            k = p = 1;
+        }
+    }
+    ms = ip;
+    p0 = p;
+
+    /* and for the other order */
+    ip = -1;
+    jp = 0;
+    k = p = 1;
+    while (jp + k < l) {
+        JS_STRING_FIND_WORK(f, 1);
+        a = JS_TW_NEEDLE(ip + k);
+        b = JS_TW_NEEDLE(jp + k);
+        if (a == b) {
+            if (k == p) {
+                jp += p;
+                k = 1;
+            } else {
+                k++;
+            }
+        } else if (a < b) {
+            jp += k;
+            k = 1;
+            p = jp - ip;
+        } else {
+            ip = jp++;
+            k = p = 1;
+        }
+    }
+    if (ip > ms)
+        ms = ip;
+    else
+        p = p0;
+
+    /* Is the needle periodic: are its first ms + 1 characters the same p
+       characters on? */
+    for(i = 0; i <= ms; i++) {
+        JS_STRING_FIND_WORK(f, 1);
+        if (JS_TW_NEEDLE(i) != JS_TW_NEEDLE(i + p))
+            break;
+    }
+    if (i <= ms) {
+        mem0 = 0;
+        p = max_int(ms, l - ms - 1) + 1;
+    } else {
+        mem0 = l - p;
+    }
+
+    mem = 0;
+    last = hi - lo;
+    for(s = 0;;) {
+        if (s > last)
+            return -1;
+        JS_STRING_FIND_WORK(f, 1);
+        /* the last character first: move on by its shift when it is not
+           the last of the needle */
+        a = JS_TW_HAY(s + l - 1) & 0xff;
+        if (set[a >> 5] >> (a & 31) & 1) {
+            k = l - shift[a];
+            if (k) {
+                if (k < mem)
+                    k = mem;
+                s += k;
+                mem = 0;
+                continue;
+            }
+        } else {
+            s += l;
+            mem = 0;
+            continue;
+        }
+        /* the right half */
+        k = max_int(ms + 1, mem);
+        for(;;) {
+            e = l - k > JS_STRING_FIND_STEP ? k + JS_STRING_FIND_STEP : l;
+            i = k;
+            while (k < e && JS_TW_NEEDLE(k) == JS_TW_HAY(s + k))
+                k++;
+            JS_STRING_FIND_WORK(f, k - i);
+            if (k < e || e == l)
+                break;
+        }
+        if (k < l) {
+            s += k - ms;
+            mem = 0;
+            continue;
+        }
+        /* the left half */
+        k = ms + 1;
+        for(;;) {
+            e = k - mem > JS_STRING_FIND_STEP ? k - JS_STRING_FIND_STEP : mem;
+            i = k;
+            while (k > e && JS_TW_NEEDLE(k - 1) == JS_TW_HAY(s + k - 1))
+                k--;
+            JS_STRING_FIND_WORK(f, i - k);
+            if (k > e || e == mem)
+                break;
+        }
+        if (k <= mem)
+            return rev ? hi - s : lo + s;
+        s += p;
+        mem = mem0;
+    }
+#undef JS_TW_HAY
+#undef JS_TW_NEEDLE
+}
+
+/* js_string_two_way for two strings of 8-bit characters */
+static no_inline int js_string_find8(JSStringFind *f, const uint8_t *hay,
+                                     int lo, int hi, const uint8_t *needle,
+                                     int l, int rev)
+{
+    if (rev)
+        return js_string_two_way(f, hay, 0, lo, hi, needle, 0, l, 1);
+    return js_string_two_way(f, hay, 0, lo, hi, needle, 0, l, 0);
+}
+
+/* js_string_two_way for two strings of 16-bit characters */
+static no_inline int js_string_find16(JSStringFind *f, const uint16_t *hay,
+                                      int lo, int hi, const uint16_t *needle,
+                                      int l, int rev)
+{
+    if (rev)
+        return js_string_two_way(f, hay, 1, lo, hi, needle, 1, l, 1);
+    return js_string_two_way(f, hay, 1, lo, hi, needle, 1, l, 0);
+}
+
+/* js_string_two_way for a needle longer than JS_STRING_FIND_ROOM whose
+   width is not that of hay */
+static no_inline int js_string_find_mixed(JSStringFind *f, JSString *p1,
+                                          int lo, int hi, JSString *p2,
+                                          int rev)
+{
+    return js_string_two_way(f, p1->u.str8, p1->is_wide_char, lo, hi,
+                             p2->u.str8, p2->is_wide_char, p2->len, rev);
+}
+
+/* js_string_find from i to a stop other than i */
+static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
+                                int i, int stop, int inc)
+{
+    int lo = i, hi = stop, n2 = p2->len, rev = inc < 0, wide = p1->is_wide_char, k;
+    const void *needle = p2->u.str8;
+    uint8_t room8[JS_STRING_FIND_ROOM];
+    uint16_t room16[JS_STRING_FIND_ROOM];
+    JSStringFind f;
+
+    if (rev) {
+        lo = stop;
+        hi = i;
+    }
+    if (lo > hi)
+        return -1;
+    assert(lo >= 0 && hi + n2 <= p1->len);
+    if (n2 == 0)
+        return i;
+    f.ctx = ctx;
+    f.work = 0;
+    if (p2->is_wide_char != wide) {
+        if (n2 > JS_STRING_FIND_ROOM) {
+            k = js_string_find_mixed(&f, p1, lo, hi, p2, rev);
+            goto done;
+        }
+        if (!wide) {
+            for(k = 0; k < n2; k++) {
+                if (p2->u.str16[k] > 0xff)
+                    return -1;
+                room8[k] = p2->u.str16[k];
+            }
+            needle = room8;
+        } else {
+            for(k = 0; k < n2; k++)
+                room16[k] = p2->u.str8[k];
+            needle = room16;
+        }
+    }
+    if (n2 == 1)
+        k = js_string_find_char(&f, p1->u.str8, wide, lo, hi,
+                                js_string_unit(needle, wide, 0), rev);
+    else if (n2 <= JS_STRING_FIND_SHORT)
+        k = js_string_find_short(&f, p1->u.str8, wide, lo, hi, needle, n2,
+                                 rev);
+    else if (!wide)
+        k = js_string_find8(&f, p1->u.str8, lo, hi, needle, n2, rev);
+    else
+        k = js_string_find16(&f, p1->u.str16, lo, hi, needle, n2, rev);
+ done:
+    js_charge_interrupts(ctx, f.work >> 3);
+    return k;
+}
+
+/* The loops of String.prototype.includes, startsWith, endsWith, indexOf and
+   lastIndexOf look for the string p2 in the string p1 by comparing all of
+   p2 with string_cmp at one index after the other. js_string_find is the
+   start of each turn: from the index i toward stop, both included, by step
+   inc (1 or -1), it returns the first index where p1 has the characters of
+   p2, and the loop compares there, finds them and ends. It returns -1 when
+   there is none, and the loop ends without a match, or -2 when the
+   interrupt handler asked to stop, with the exception thrown. When i is
+   stop, it returns i and leaves the one comparison to the loop. The
+   characters of p1 from the lower of i and stop to the higher plus the
+   length of p2 must be in p1, as the loops make sure. A string of 16-bit
+   characters may hold only characters below 0x100, so p2 may be found in
+   p1 whatever their widths. */
+static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
+                                 int i, int stop, int inc)
+{
+    if (i == stop)
+        return i;
+    return js_string_find_range(ctx, p1, p2, i, stop, inc);
+}
+
 static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int lastIndexOf)
 {
@@ -47460,6 +47851,11 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
     ret = -1;
     if (len >= v_len && inc * (stop - start) >= 0) {
         for (i = start;; i += inc) {
+            if ((i = js_string_find(ctx, p, p1, i, stop, inc)) < 0) {
+                if (i == -2)
+                    goto fail;
+                break;
+            }
             if (!string_cmp(p, p1, i, 0, v_len)) {
                 ret = i;
                 break;
@@ -47526,6 +47922,11 @@ static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
     }
     if (start >= 0 && start <= stop) {
         for (i = start;; i++) {
+            if ((i = js_string_find(ctx, p, p1, i, stop, 1)) < 0) {
+                if (i == -2)
+                    goto fail;
+                break;
+            }
             if (!string_cmp(p, p1, i, 0, v_len)) {
                 ret = 1;
                 break;
