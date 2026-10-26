@@ -101,8 +101,9 @@ as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
 declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
 `malloc_usable_size` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. `-keep-going` lists every function the C must change, by
-class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+in `missingNames`. A rejection stops the run and nothing is written, and the
+default has no stubs. `-keep-going` is for surveys: it lists every function the
+C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.

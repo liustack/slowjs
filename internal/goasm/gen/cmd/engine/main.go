@@ -39,7 +39,7 @@ var (
 	maxFile   = flag.Int("max-file", 512<<10, "most bytes in one .s file")
 	leaves    = flag.String("leaves", "memcpy,memmove,memset", "register-entry leaves (llc calls them by itself)")
 	extra     = flag.String("allow", "malloc,realloc,free,malloc_usable_size", "external symbols allowed besides the host callbacks")
-	keepGoing = flag.Bool("keep-going", false, "list every rejection and emit stubs instead of stopping")
+	keepGoing = flag.Bool("keep-going", false, "survey only: list every rejection and write a package with a stub for each function rejected, instead of stopping at once with nothing written")
 	jobs      = flag.Int("j", 2, "parallel clang jobs")
 	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
 	varBlock  = flag.Bool("varargs-block", false, "experimental: the pass passes variable arguments in a shadow-stack block")
