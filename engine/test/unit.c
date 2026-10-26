@@ -1147,6 +1147,38 @@ static void test_ropes(void)
     host_free_runtime(rt);
 }
 
+/* Freeing runs free_zero_refcount one level deep, whatever is freed: a chain
+   of a million objects, and objects of every kind whose finalizers free more,
+   dropped at once and by a collection of their cycles. A second level would
+   abort. */
+static void test_free_nesting(void)
+{
+    static const char src[] =
+        "let o = {}; for (let i = 0; i < 1000000; i++) o = { o };\n"
+        "let keep = [];\n"
+        "for (let i = 0; i < 1000; i++) {\n"
+        "  const t = {}; const g = (function* () { yield t })(); g.next();\n"
+        "  const a = (async () => { await null; return t })();\n"
+        "  const f = function () { return t }.bind(t);\n"
+        "  const m = new Map([[t, f]]); const w = new WeakMap([[t, g]]);\n"
+        "  const r = new FinalizationRegistry(() => {}); r.register(t, i);\n"
+        "  const p = new Proxy(t, {}); const ta = new Uint8Array(8);\n"
+        "  t.self = [t, g, a, f, m, w, r, p, ta, new WeakRef(t), Promise.resolve(t)];\n"
+        "  keep.push(t.self);\n"
+        "}\n"
+        "o = null; keep = null; 'ok'";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "free");
+    CHECK(run_jobs(rt), "jobs");
+    JS_RunGC(rt);
+    CHECK(run_jobs(rt), "jobs after the collection");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -1155,6 +1187,7 @@ int main(void)
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     test_ropes();
+    test_free_nesting();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();
