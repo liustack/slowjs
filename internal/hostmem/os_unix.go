@@ -9,16 +9,48 @@ package hostmem
 
 import "golang.org/x/sys/unix"
 
-// The *Ptr forms of x/sys keep no table of mappings, so VMs on other
-// goroutines share no lock.
+// The calls to the OS, each of which asks fault first. The *Ptr forms of x/sys
+// keep no table of mappings, so VMs on other goroutines share no lock.
 
-func osMap(size uintptr) (uintptr, error) {
-	p, err := unix.MmapPtr(-1, 0, nil, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_PRIVATE|unix.MAP_ANON)
+func sysMmap(call string, size uintptr, prot, flags int) (uintptr, error) {
+	if err := faulted(call, 0, size); err != nil {
+		return 0, err
+	}
+	p, err := unix.MmapPtr(-1, 0, nil, size, prot, unix.MAP_PRIVATE|unix.MAP_ANON|flags)
 	return uintptr(p), err
 }
 
-func osUnmap(addr, size uintptr) error {
+func sysMunmap(addr, size uintptr) error {
+	if err := faulted("unmap", addr, size); err != nil {
+		return err
+	}
 	return unix.MunmapPtr(pointer(addr), size)
+}
+
+func sysMprotect(addr, size uintptr, prot int) error {
+	if err := faulted("protect", addr, size); err != nil {
+		return err
+	}
+	return unix.Mprotect(bytesAt(addr, size), prot)
+}
+
+func sysMadvise(call string, addr, size uintptr, advice int) error {
+	if err := faulted(call, addr, size); err != nil {
+		return err
+	}
+	return unix.Madvise(bytesAt(addr, size), advice)
+}
+
+func osMap(size uintptr) (uintptr, error) {
+	return sysMmap("map", size, unix.PROT_READ|unix.PROT_WRITE, 0)
+}
+
+func osUnmap(addr, size uintptr) error {
+	return sysMunmap(addr, size)
+}
+
+func osRelease(addr, size uintptr) error {
+	return sysMadvise("release", addr, size, releaseAdvice)
 }
 
 // osReserveStack maps twice the size without access, which holds a region
@@ -27,11 +59,10 @@ func osUnmap(addr, size uintptr) error {
 // access.
 func osReserveStack(size uintptr) (uintptr, error) {
 	n := 2*size + pageSize
-	p, err := unix.MmapPtr(-1, 0, nil, n, unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANON|stackFlags)
+	start, err := sysMmap("reserve", n, unix.PROT_NONE, stackFlags)
 	if err != nil {
 		return 0, err
 	}
-	start := uintptr(p)
 	base := alignUp(start, size)
 	end := base + size + pageSize
 	if base > start {
@@ -41,7 +72,7 @@ func osReserveStack(size uintptr) (uintptr, error) {
 		err = osUnmap(end, start+n-end)
 	}
 	if err == nil {
-		err = unix.Mprotect(bytesAt(base, size), unix.PROT_READ|unix.PROT_WRITE)
+		err = sysMprotect(base, size, unix.PROT_READ|unix.PROT_WRITE)
 	}
 	if err != nil {
 		// Unmapping what is no longer mapped does nothing.

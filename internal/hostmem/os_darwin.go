@@ -16,15 +16,13 @@ const CanRemap = false
 
 const stackFlags = 0
 
-func osRemap(addr, size, newSize uintptr) (uintptr, error) {
-	return 0, errors.ErrUnsupported
-}
-
-// osRelease lets the system take the pages when it needs memory, with
+// releaseAdvice lets the system take the pages when it needs memory, with
 // nothing to do before they are used again. Until then they stay counted in
 // the memory of the process. MADV_FREE_REUSABLE would stop counting them at
 // once, but needs MADV_FREE_REUSE before the engine touches them again, which
 // the engine cannot tell the host.
-func osRelease(addr, size uintptr) error {
-	return unix.Madvise(bytesAt(addr, size), unix.MADV_FREE)
+const releaseAdvice = unix.MADV_FREE
+
+func osRemap(addr, size, newSize uintptr) (uintptr, error) {
+	return 0, errors.ErrUnsupported
 }

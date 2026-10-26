@@ -52,25 +52,16 @@ const (
 // and the size of the guard page.
 var pageSize = uintptr(os.Getpagesize())
 
-// Map maps size bytes of zeroed memory to read and write, outside the Go
-// heap, aligned to the OS page. It stays mapped until Unmap.
-func Map(size uintptr) (uintptr, error) {
-	if size == 0 {
-		panic("hostmem: Map of 0 bytes")
-	}
-	p, err := osMap(size)
-	if err != nil {
-		return 0, fmt.Errorf("hostmem: map %d bytes: %w", size, err)
-	}
-	return p, nil
-}
+// fault lets a test make a call to the OS fail. When it is set, each call
+// asks it first, with the name of what it does and its range, and an error it
+// returns stands for the error of the call. Only tests set it.
+var fault func(call string, addr, size uintptr) error
 
-// Unmap unmaps what Map mapped, all of it.
-func Unmap(addr, size uintptr) error {
-	if err := osUnmap(addr, size); err != nil {
-		return fmt.Errorf("hostmem: unmap %d bytes at %#x: %w", size, addr, err)
+func faulted(call string, addr, size uintptr) error {
+	if fault == nil {
+		return nil
 	}
-	return nil
+	return fault(call, addr, size)
 }
 
 // Memory is the memory of one VM: the chunks of its heap and its shadow

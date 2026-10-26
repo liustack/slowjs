@@ -15,12 +15,13 @@ const CanRemap = true
 // 2 MiB resident at the first touch.
 const stackFlags = unix.MAP_NORESERVE | unix.MAP_STACK
 
+// releaseAdvice drops the pages at once. They read as zero when next touched.
+const releaseAdvice = unix.MADV_DONTNEED
+
 func osRemap(addr, size, newSize uintptr) (uintptr, error) {
+	if err := faulted("remap", addr, size); err != nil {
+		return 0, err
+	}
 	p, err := unix.MremapPtr(pointer(addr), size, nil, newSize, unix.MREMAP_MAYMOVE)
 	return uintptr(p), err
-}
-
-// osRelease drops the pages at once. They read as zero when next touched.
-func osRelease(addr, size uintptr) error {
-	return unix.Madvise(bytesAt(addr, size), unix.MADV_DONTNEED)
 }
