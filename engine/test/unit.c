@@ -10,6 +10,7 @@
 
      unit */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -1261,6 +1262,195 @@ static void sequence_hash(void *opaque, const uint32_t *buf, int len)
         *h = fnv_word(*h, buf[i]);
 }
 
+/* The modules of the chains of test_module_chains: module n of a chain
+   imports module n + 1 or exports from it, up to module chain_length - 1.
+   The letter of the name tells what: m imports, s exports all of the next
+   (export * from), e exports one name of the next (export { x } from). */
+static int chain_length;
+
+static void chain_source(const char *name, char *buf, size_t size)
+{
+    int n = atoi(name + 1);
+
+    if (n == chain_length - 1)
+        snprintf(buf, size, "export const x = 1;");
+    else if (name[0] == 'm')
+        snprintf(buf, size, "import \"m%d\";", n + 1);
+    else if (name[0] == 's')
+        snprintf(buf, size, "export * from \"s%d\";", n + 1);
+    else
+        snprintf(buf, size, "export { x } from \"e%d\";", n + 1);
+}
+
+static JSModuleDef *chain_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    chain_source(name, src, sizeof(src));
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    /* the module is referenced by the context */
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* exception_name puts the name of the exception of ctx in buf. */
+static const char *exception_name(JSContext *ctx, char *buf, size_t size)
+{
+    JSValue e = JS_GetException(ctx);
+    JSValue n = JS_GetPropertyStr(ctx, e, "name");
+    const char *s = JS_ToCString(ctx, n);
+
+    snprintf(buf, size, "%s", s ? s : "?");
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, n);
+    JS_FreeValue(ctx, e);
+    return buf;
+}
+
+/* module_eval runs src as the module name, or only compiles it, and puts
+   "ok" or the name of the exception in buf. */
+static const char *module_eval(JSContext *ctx, const char *name, const char *src,
+                               int flags, char *buf, size_t size)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | flags);
+
+    if (!JS_IsException(v)) {
+        JS_FreeValue(ctx, v);
+        snprintf(buf, size, "ok");
+        return buf;
+    }
+    return exception_name(ctx, buf, size);
+}
+
+/* compile_back compiles the modules of a chain from the last to the first,
+   or runs them, so that each finds the next one made: none of the
+   recursions over the chain goes more than a module down. It returns the
+   number of modules made before the first that failed, with its exception
+   in buf. */
+static int compile_back(JSContext *ctx, char letter, int flags, char *buf, size_t size)
+{
+    char name[16], src[64];
+    int n;
+
+    for (n = chain_length - 1; n >= 0; n--) {
+        snprintf(name, sizeof(name), "%c%d", letter, n);
+        chain_source(name, src, sizeof(src));
+        if (strcmp(module_eval(ctx, name, src, flags, buf, size), "ok") != 0)
+            break;
+    }
+    return chain_length - 1 - n;
+}
+
+/* resolve_read reads the modules of the m chain from their bytecode, from
+   the last to the first, which leaves them all to resolve, and resolves the
+   first: JS_ResolveModule goes down the chain with no loader between the
+   modules. It puts "ok" or the name of the exception in buf. */
+static const char *resolve_read(JSRuntime *rt, char *buf, size_t size)
+{
+    JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    uint8_t **bufs = calloc(chain_length, sizeof(bufs[0]));
+    size_t *sizes = calloc(chain_length, sizeof(sizes[0]));
+    char name[16], src[64];
+    JSValue v, first = JS_UNDEFINED;
+    int n;
+
+    for (n = chain_length - 1; n >= 0; n--) {
+        snprintf(name, sizeof(name), "m%d", n);
+        chain_source(name, src, sizeof(src));
+        v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        bufs[n] = JS_WriteObject(ctx, &sizes[n], v, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(ctx, v);
+    }
+    for (n = chain_length - 1; n >= 0; n--) {
+        v = JS_ReadObject(ctx2, bufs[n], sizes[n], JS_READ_OBJ_BYTECODE);
+        js_free(ctx, bufs[n]);
+        if (n == 0)
+            first = v;
+        else
+            JS_FreeValue(ctx2, v);
+    }
+    if (JS_ResolveModule(ctx2, first) < 0)
+        exception_name(ctx2, buf, size);
+    else
+        snprintf(buf, size, "ok");
+    JS_FreeValue(ctx2, first);
+    free(bufs);
+    free(sizes);
+    JS_FreeContext(ctx2);
+    JS_FreeContext(ctx);
+    return buf;
+}
+
+/* The recursions over a chain of modules count the internal depth, a
+   module a level, and end with a RangeError past JS_MAX_INTERNAL_DEPTH:
+   resolving the imports of a module, read from bytecode or through the
+   host's loader, making their functions, listing the names a namespace
+   exports through a chain of export * from, and finding a name exported
+   from module to module. The runtime still runs code and frees with no
+   block left. */
+static int test_module_chains(void *unused)
+{
+    static const struct { char letter; int flags; const char *top; } cases[] = {
+        /* the loader loads each module from the import of the one before */
+        { 0, 0, "import \"m0\";" },
+        /* made from the end, only the functions go down the chain */
+        { 'm', JS_EVAL_FLAG_COMPILE_ONLY, "import \"m0\";" },
+        /* run from the end, only the names of the namespace go down */
+        { 's', 0, "import * as ns from \"s0\"; if (Object.keys(ns).join() !== \"x\") throw 1;" },
+    };
+    char buf[64];
+    size_t i;
+    int made;
+
+    chain_length = JS_MAX_INTERNAL_DEPTH + 1000;
+    {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx;
+
+        CHECK(strcmp(resolve_read(rt, buf, sizeof(buf)), "RangeError") == 0, "read: %s", buf);
+        ctx = JS_NewContext(rt);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "read: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        if (cases[i].letter) {
+            made = compile_back(ctx, cases[i].letter, cases[i].flags, buf, sizeof(buf));
+            CHECK(made == chain_length, "case %zu: %d modules made, then %s", i, made, buf);
+        }
+        module_eval(ctx, "top", cases[i].top, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "RangeError") == 0, "case %zu: %s", i, buf);
+        CHECK(run_jobs(rt), "case %zu: jobs", i);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "case %zu: the runtime runs", i);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    {
+        /* module n, run, finds x in the last module, chain_length - 1 - n
+           modules down */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        made = compile_back(ctx, 'e', 0, buf, sizeof(buf));
+        CHECK(made == JS_MAX_INTERNAL_DEPTH, "export from: %d modules made, then %s", made, buf);
+        CHECK(strcmp(buf, "RangeError") == 0, "export from: %s", buf);
+        CHECK(run_jobs(rt), "export from: jobs");
+        CHECK(eval_is(ctx, "1 + 1", "2"), "export from: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
 /* JSON.parse with a reviver keeps a record of each value it parsed, for the
    source text of the primitives, and frees the records with no recursion:
    nested as deep as it parses, as wide as it likes, objects with a hash of
@@ -1376,6 +1566,7 @@ int main(void)
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_json_records, NULL);
+    host_run_thread(test_module_chains, NULL);
     test_ropes();
     test_free_nesting();
     test_unicode_tables();
