@@ -712,46 +712,97 @@ static int stop_interrupts(JSRuntime *rt, void *opaque)
 
 /* A long search checks the interrupt counter while it runs and calls the
    interrupt handler when the counter runs out, as the interpreter does: one
-   search calls it many times, and a handler that asks to stop ends the
-   search with the uncatchable error "interrupted". */
+   search calls it many times, with a match or none, in strings of each
+   width and in one of each, and a handler that asks to stop ends the search
+   with the error "interrupted", which try and catch do not catch. Once the
+   handler is gone and the error taken, the context runs scripts and
+   searches again. Comparing the needle at the one index a search has, as
+   startsWith does, is linear in its length and does not call the handler,
+   as === does not. */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
         "var a = 'a'.repeat(1 << 23), m = 'a'.repeat(1000) + 'b'\n"
         "var w = '\\u4e00'.repeat(1 << 22), wm = '\\u4e00'.repeat(1000) + 'b'\n"
-        "var aw = a + '\\u4e00'\n";
-    static const char *const searches[] = {
-        "a.indexOf('b')", "a.lastIndexOf('b')", "a.indexOf(m)",
-        "a.lastIndexOf('b' + m)", "w.indexOf(wm)", "w.lastIndexOf('b')",
-        "aw.indexOf(m)", "a.indexOf('aaab')", "w.lastIndexOf('\\u4e00\\u4e00b')",
+        "var aw = a + '\\u4e00', ab = a + 'b', ba = 'b' + a\n"
+        "var awm = aw + m, wwm = w + wm, a2 = a.slice(1) + 'a'\n";
+    static const struct {
+        const char *src, *want;
+        int stops;
+    } cases[] = {
+        { "a.indexOf('b')", "-1", 1 },
+        { "a.lastIndexOf('b')", "-1", 1 },
+        { "a.indexOf(m)", "-1", 1 },
+        { "a.lastIndexOf('b' + m)", "-1", 1 },
+        { "w.indexOf(wm)", "-1", 1 },
+        { "w.lastIndexOf('b')", "-1", 1 },
+        { "aw.indexOf(m)", "-1", 1 },
+        { "a.indexOf('aaab')", "-1", 1 },
+        { "w.lastIndexOf('\\u4e00\\u4e00b')", "-1", 1 },
+        { "ab.indexOf('b')", "8388608", 1 },
+        { "ab.indexOf(m)", "8387608", 1 },
+        { "ba.lastIndexOf('b')", "0", 1 },
+        { "ba.lastIndexOf('baaa')", "0", 1 },
+        { "wwm.indexOf(wm)", "4194304", 1 },
+        { "awm.indexOf(m)", "8388609", 1 },
+        { "awm.indexOf('aab')", "8389607", 1 },
+        { "ab.indexOf(a)", "0", 1 },
+        { "aw.includes(a)", "true", 1 },
+        { "a.startsWith(a2)", "true", 0 },
+        { "aw.endsWith(a.slice(1) + '\\u4e00')", "true", 0 },
+        { "a.indexOf(a2)", "0", 0 },
+        { "a.startsWith(a.slice(1) + 'b')", "false", 0 },
     };
     size_t i;
 
-    for(i = 0; i < sizeof(searches) / sizeof(searches[0]); i++) {
-        const char *src = searches[i];
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *src = cases[i].src, *want = cases[i].want;
         JSRuntime *rt = host_new_runtime();
         JSContext *ctx = JS_NewContext(rt);
+        char caught[256];
+        const char *runs[2];
         JSValue v, e;
         const char *s;
+        int j;
 
         CHECK(eval(ctx, setup), "the script threw");
         JS_SetInterruptHandler(rt, stop_interrupts, NULL);
         polls = 0;
         stop_at = -1;
-        CHECK(eval_is(ctx, src, "-1"), "%s", src);
+        CHECK(eval_is(ctx, src, want), "%s", src);
+        if (!cases[i].stops) {
+            CHECK(polls <= 1, "%s called the interrupt handler %d times", src,
+                  polls);
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+            continue;
+        }
         CHECK(polls >= 20, "%s called the interrupt handler %d times", src,
               polls);
-        polls = 0;
-        stop_at = 3;
-        v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
-        CHECK(JS_IsException(v), "%s ran to its end", src);
-        e = JS_GetException(ctx);
-        s = JS_ToCString(ctx, e);
-        CHECK(s && strstr(s, "interrupted"), "%s threw %s", src, s ? s : "?");
-        CHECK(polls == 3, "%s called the handler %d times", src, polls);
-        JS_FreeCString(ctx, s);
-        JS_FreeValue(ctx, e);
-        JS_FreeValue(ctx, v);
+        snprintf(caught, sizeof(caught), "try { %s } catch (e) { 'caught' }",
+                 src);
+        runs[0] = src;
+        runs[1] = caught;
+        for(j = 0; j < 2; j++) {
+            polls = 0;
+            stop_at = 3;
+            v = JS_Eval(ctx, runs[j], strlen(runs[j]), "<unit>",
+                        JS_EVAL_TYPE_GLOBAL);
+            CHECK(JS_IsException(v), "%s ran to its end", runs[j]);
+            e = JS_GetException(ctx);
+            s = JS_ToCString(ctx, e);
+            CHECK(s && strstr(s, "interrupted"), "%s threw %s", runs[j],
+                  s ? s : "?");
+            CHECK(polls == 3, "%s called the handler %d times", runs[j],
+                  polls);
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, e);
+            JS_FreeValue(ctx, v);
+        }
+        JS_SetInterruptHandler(rt, NULL, NULL);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"),
+              "the context after %s was stopped", src);
+        CHECK(eval_is(ctx, src, want), "%s after it was stopped", src);
         JS_FreeContext(ctx);
         JS_FreeRuntime(rt);
     }
