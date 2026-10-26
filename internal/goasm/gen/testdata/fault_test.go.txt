@@ -93,6 +93,26 @@ func TestFaultWildPointer(t *testing.T) {
 	}
 }
 
+// TestFaultDivide: x86 raises a divide error for a division by zero, and the
+// Go runtime turns that signal into a panic whatever the setting. arm64 has no
+// such fault: the division gives 0.
+func TestFaultDivide(t *testing.T) {
+	if runtime.GOARCH != "amd64" {
+		vm := NewVM()
+		defer vm.Close()
+		if r, err := vm.Eval(func(sp uintptr) int64 { return quot(sp, 7, 0) }); err != nil || r != 0 {
+			t.Fatalf("7 / 0 gave %d, %v on %s, want 0", r, err, runtime.GOARCH)
+		}
+		return
+	}
+	vm := NewVM()
+	got := fails(vm, func(sp uintptr) int64 { return quot(sp, 7, 0) })
+	if err, ok := got.(runtime.Error); !ok || err.Error() != "runtime error: integer divide by zero" {
+		t.Fatalf("a division by zero panicked with %T %v, want the runtime's integer divide by zero", got, got)
+	}
+	afterFailure(t, vm, "a division by zero")
+}
+
 // TestFaultGuardPage: the stack has all but 8 bytes in use, and the stores of
 // a frame go into the page above it, which is mapped to nothing.
 func TestFaultGuardPage(t *testing.T) {

@@ -90,6 +90,7 @@ func main() {
 		// Faults on purpose.
 		{Name: "peek", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr}, Ret: i64}},
 		{Name: "poke", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
+		{Name: "quot", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}},
 		{Name: "hit_end", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr}, Ret: i64}},
 		{Name: "trap_now", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 	}
