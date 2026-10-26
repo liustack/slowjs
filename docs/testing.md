@@ -202,6 +202,19 @@ engine/test/build.sh fuzz && engine/test/heap.sh -f 300   # the same sequences a
 engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.json,C.json soak=3000
 ```
 
+### The Go host of the generated engine
+
+`internal/gohost` answers the engine's callbacks (memory, clocks, poll, `host_call`), and its tests run on any machine without the engine. `internal/cengine` is where the generator writes the engine as Go assembly, next to the checked-in host files, which build only with `-tags cengine`. Generate it on the build machine, as in [internal/goasm/gen/README.md](../internal/goasm/gen/README.md), with `-out internal/cengine`, then:
+
+```sh
+go test -race ./internal/gohost                  # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort
+go test -tags cengine ./internal/cengine         # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap
+go run -tags cengine ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one script, timed, on the C engine
+go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
+```
+
+`TestDeepRecursion` runs only with `CENGINE_DEEP=1`, for an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the pass).
+
 [allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap` and `ubsan`. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
 
 ## Leaks: memgrind
