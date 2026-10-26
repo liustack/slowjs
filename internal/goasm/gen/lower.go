@@ -106,7 +106,6 @@ var (
 	// +slow-two-mem-ops, so llc loads every call target into a register
 	// first and never emits one: the lowering rejects it.
 	reIndirectMem = regexp.MustCompile(`^callq?\s+\*[^%]`)
-	reForbidden   = regexp.MustCompile(`\b(syscall|sysenter|int\s+\$0x80|rdtsc|rdrand|rdseed|cpuid)\b`)
 )
 
 func clean(line string) string {
