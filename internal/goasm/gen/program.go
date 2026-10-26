@@ -10,6 +10,7 @@ package gen
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 )
@@ -93,10 +94,19 @@ func ParseReport(text string) *Report {
 
 // SigFromCode turns a pass signature code into a Sig. Every integer or
 // pointer argument is one word, moved as the whole register, so whatever
-// extension the C convention relies on survives the Go argument area. A
-// float is moved as the low half of a double word. 'j' is a pair of 64-bit
-// integers (a JSValue). Variadic, byval ('B') and unknown ('?') types are
-// errors: the IR check names the C that has them.
+// extension the C convention relies on survives the Go argument area. 'j' is
+// a pair of 64-bit integers (a JSValue). A narrow integer ('n') is an error:
+// the pass passes every one at the unified boundary as an i32, since
+// preserve_none would put it in another register than the one the
+// generator moves it in, and a C callee may rely on an extension Go does
+// not make. A float ('f') is an error too: Go writes and reads each word as
+// a whole float64, and no unified function of the engine takes or returns
+// one. Variadic, byval ('B') and unknown ('?') types are errors: the IR
+// check names the C that has them.
+//
+// GEN_KEEP_NARROW=1 is a negative build (the pass leaves narrow integers
+// with -shadow-keep-narrow): 'n' is then a word like 'i', as the generator
+// once took it, and the post-link check must reject what comes of it.
 func SigFromCode(code string) (Sig, error) {
 	ps, ret, ok := strings.Cut(code, ">")
 	if !ok {
@@ -105,30 +115,39 @@ func SigFromCode(code string) (Sig, error) {
 	if strings.HasSuffix(ps, "...") {
 		return Sig{}, fmt.Errorf("variadic signature %q", code)
 	}
+	narrowAsWord := os.Getenv("GEN_KEEP_NARROW") != ""
 	var s Sig
 	for _, c := range ps {
-		switch c {
-		case 'i':
+		switch {
+		case c == 'i' || c == 'n' && narrowAsWord:
 			s.Params = append(s.Params, I64)
-		case 'd', 'f':
+		case c == 'd':
 			s.Params = append(s.Params, F64)
-		case 'j':
+		case c == 'j':
 			s.Params = append(s.Params, JSV)
-		case 'B':
+		case c == 'n':
+			return Sig{}, fmt.Errorf("narrow integer argument in signature %q (the pass widens every one of a unified function)", code)
+		case c == 'f':
+			return Sig{}, fmt.Errorf("float argument in signature %q (Go moves whole float64 words)", code)
+		case c == 'B':
 			return Sig{}, fmt.Errorf("byval aggregate in signature %q", code)
 		default:
 			return Sig{}, fmt.Errorf("unsupported argument type in signature %q", code)
 		}
 	}
-	switch ret {
-	case "v":
+	switch {
+	case ret == "v":
 		s.Ret = Void
-	case "i":
+	case ret == "i" || ret == "n" && narrowAsWord:
 		s.Ret = I64
-	case "d", "f":
+	case ret == "d":
 		s.Ret = F64
-	case "j":
+	case ret == "j":
 		s.Ret = JSV
+	case ret == "n":
+		return Sig{}, fmt.Errorf("narrow integer result in signature %q (the pass widens every one of a unified function)", code)
+	case ret == "f":
+		return Sig{}, fmt.Errorf("float result in signature %q (Go moves whole float64 words)", code)
 	default:
 		return Sig{}, fmt.Errorf("unsupported result type in signature %q", code)
 	}
