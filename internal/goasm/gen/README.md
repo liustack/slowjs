@@ -12,7 +12,9 @@ runs its own checks and lowering in Go (`debug/elf`,
 ## Pipeline
 
 1. clang -O2 to IR with a kept frame pointer, no red zone, signed wrap and no
-   tail calls. On amd64 the stack is declared 8-byte aligned, as Go's is. On
+   tail calls. On amd64 the stack is declared 8-byte aligned, as Go's is, and
+   the target feature slow-two-mem-ops keeps llc from folding the load of a
+   call target into the call, so every indirect call is through a register. On
    arm64 the target is aarch64-linux-gnu with x18 and x26 to x28 fixed, x29
    reserved and LR kept for return addresses. CheckIR rejects variadics,
    byval, sret and long double.
@@ -24,7 +26,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    that needs more integer argument registers than the target allows becomes
    `f(sp, blk)`: every call site stores the arguments in a block on its
    shadow frame. With `-shadow-cc=preserve_none` every unified entry, host
-   callback and call to them uses preserve_none. Register-entry leaves stay C.
+   callback and call to them uses preserve_none. Register-entry leaves stay C
+   and get a reserved frame pointer: no frame, and llc never allocates RBP,
+   which Go owns.
 3. llc -O2 with shrink-wrapping off writes assembly and an object. CheckObject
    rejects writable or thread-local data and any external symbol outside the
    engine and the host callbacks.
@@ -33,12 +37,13 @@ runs its own checks and lowering in Go (`debug/elf`,
    the native argument registers after Go's prologue, marshal each call inline
    (keep the registers the mode asks for, move the arguments to the outgoing
    area, call, read the result, restore),
-   move LLVM's locals onto the Go frame, turn aligned stack moves into
-   unaligned ones (the Go stack is only 8-byte aligned), keep constant pools
-   inside the function, and turn every return into a jump to one Go RET. Any
-   shape it does not know fails: unknown call forms, tail jumps, SP writes,
-   escaping stack addresses, folded packed stack operands, read-only symbols
-   other than constant pools, forbidden instructions.
+   move LLVM's locals onto the Go frame, keep constant pools inside the
+   function, and turn every return into a jump to one Go RET. Any shape it
+   does not know fails: unknown call forms, calls through memory, tail jumps,
+   SP writes, escaping stack addresses, aligned or folded packed stack
+   operands (the Go stack is only 8-byte aligned), read-only symbols other
+   than constant pools, forbidden instructions. A leaf that uses RBP fails
+   too.
 5. clang -c (llvm-mc on arm64) re-assembles the lowered text so every branch
    offset is fixed.
 6. Emit writes Go assembly: one TEXT per function, the body as bytes, every
@@ -110,7 +115,9 @@ rewrites the lowering wrote down for that function, and it works out what
 each must be from llc's object: the prologue and epilogue it replaced (llc's
 pushes and reserved locals), where each frame offset moves and that the
 access stays inside the Go frame, each call's saves, argument moves, target
-and result, and where each data reference points. Each function's record
+and result, and where each data reference points. llc's own code must keep
+to what the build rules out: a call through memory fails, and so does a frame
+access wider than 8 bytes that is not an unaligned move. Each function's record
 must agree with the pass's signature for it, its list of leaves and its
 calling convention. It compares engine_rodata and the data each function
 carries byte by byte, pointers by what they point to. `-verify-all` also

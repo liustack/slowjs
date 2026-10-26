@@ -668,10 +668,8 @@ func semPrefixes(in x86asm.Inst) []x86asm.Prefix {
 // sameMeaning compares two instructions with the memory operand of the
 // first replaced by want (when want is set) and with any relative branch
 // argument left out (branches are compared through the instruction map).
-// remapped is set for an aligned move turned unaligned, whose encodings
-// differ in the operand size attribute (MOVDQA has 66, MOVDQU F3).
-func sameMeaning(a, b x86asm.Inst, want *x86asm.Mem, remapped bool) bool {
-	if a.Op != b.Op || (!remapped && a.DataSize != b.DataSize) || a.AddrSize != b.AddrSize || a.MemBytes != b.MemBytes {
+func sameMeaning(a, b x86asm.Inst, want *x86asm.Mem) bool {
+	if a.Op != b.Op || a.DataSize != b.DataSize || a.AddrSize != b.AddrSize || a.MemBytes != b.MemBytes {
 		return false
 	}
 	pa, pb := semPrefixes(a), semPrefixes(b)
@@ -1232,10 +1230,6 @@ var forbiddenOps = map[x86asm.Op]string{
 // only 8-byte aligned, so any other access wider than 8 bytes may fault.
 var unalignedOK = map[x86asm.Op]bool{x86asm.MOVUPS: true, x86asm.MOVUPD: true, x86asm.MOVDQU: true, x86asm.LDDQU: true}
 
-// alignedToUnaligned is the rewrite the lowering makes of an aligned 16-byte
-// move to the frame.
-var alignedToUnaligned = map[x86asm.Op]x86asm.Op{x86asm.MOVAPS: x86asm.MOVUPS, x86asm.MOVAPD: x86asm.MOVUPD, x86asm.MOVDQA: x86asm.MOVDQU}
-
 // one matches a single llc instruction of the body.
 func (m *matcher) one(x insn) error {
 	in := x.in
@@ -1276,7 +1270,7 @@ func (m *matcher) one(x insn) error {
 			return err
 		}
 		brel, ok := b.in.Args[0].(x86asm.Rel)
-		if !ok || !sameMeaning(in, b.in, nil, false) {
+		if !ok || !sameMeaning(in, b.in, nil) {
 			return fmt.Errorf("generated %v at %#x instead", b.in, b.at)
 		}
 		m.branches = append(m.branches, branch{uint64(int64(x.at) + int64(in.Len) + int64(rel)),
@@ -1292,7 +1286,6 @@ func (m *matcher) one(x insn) error {
 	}
 	var want *x86asm.Mem
 	var target uint64
-	remapped := false
 	switch {
 	case hasMem && mem.Base == x86asm.RIP:
 		t, err := m.dataRef(x, r, mem)
@@ -1316,9 +1309,6 @@ func (m *matcher) one(x insn) error {
 		mm := mem
 		mm.Base, mm.Disp = x86asm.RSP, d
 		want = &mm
-		if u, ok := alignedToUnaligned[in.Op]; ok {
-			in.Op, remapped = u, true
-		}
 		if in.MemBytes > 8 && !unalignedOK[in.Op] {
 			return fmt.Errorf("a %d-byte frame access that may need alignment the Go frame lacks", in.MemBytes)
 		}
@@ -1341,7 +1331,7 @@ func (m *matcher) one(x insn) error {
 		w.Disp = bm.Disp
 		want = &w
 	}
-	if !sameMeaning(in, b.in, want, remapped) {
+	if !sameMeaning(in, b.in, want) {
 		return fmt.Errorf("generated %v at %#x instead", b.in, b.at)
 	}
 	return nil
@@ -1593,45 +1583,9 @@ func (m *matcher) call(x insn, r *relAt) error {
 			return nil
 		})
 	case x86asm.Mem:
-		if c.Kind != CallMem {
-			return fmt.Errorf("llc calls through memory, the lowering declared %+v", c)
-		}
-		regs, _, err := argWords(c.Sig, m.r.PreserveNone)
-		if err != nil {
-			return err
-		}
-		for _, rg := range regs {
-			if rg == x86asm.R11 {
-				return fmt.Errorf("R11 carries an argument of this call, so it cannot hold the target")
-			}
-		}
-		want := a
-		if frameRegs[a.Index] || a.Base == x86asm.RIP || a.Base == 0 || r != nil {
-			return fmt.Errorf("a call through memory the lowering cannot take")
-		}
-		if a.Base == x86asm.RBP || a.Base == x86asm.RSP {
-			d, err := m.frameDisp(a, 8)
-			if err != nil {
-				return err
-			}
-			want.Base, want.Disp = x86asm.RSP, d
-		} else if frameRegs[a.Base] {
-			return fmt.Errorf("a call through memory addressed by a narrow frame register")
-		}
-		b, err := m.next("the load of the call target")
-		if err != nil {
-			return err
-		}
-		bm, ok := b.in.Args[1].(x86asm.Mem)
-		if b.in.Op != x86asm.MOV || !isReg(b.in.Args[0], x86asm.R11) || !ok || normMem(bm) != normMem(want) || b.in.DataSize != 64 || !plain(b.in) {
-			return fmt.Errorf("generated %v at %#x is not the load of the target into R11", b.in, b.at)
-		}
-		return m.marshal(c.Sig, func(b insn) error {
-			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], x86asm.R11) || !plain(b.in) {
-				return fmt.Errorf("generated %v at %#x is not a call through R11", b.in, b.at)
-			}
-			return nil
-		})
+		// EngineCFlags set +slow-two-mem-ops, so llc loads every call
+		// target into a register first.
+		return fmt.Errorf("llc calls through memory, which the build rules out")
 	}
 	return fmt.Errorf("a call form the check does not know")
 }

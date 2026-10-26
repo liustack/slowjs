@@ -15,9 +15,13 @@ import (
 // red zone off, signed wrap, no tail calls, and the stack only 8-byte aligned,
 // as Go's amd64 stack is: with the pass's no-realign-stack, LLVM then spills
 // vectors with unaligned moves and folds no packed operand from the stack.
-// They travel in the IR as attributes, so llc applies them after the pass.
+// +slow-two-mem-ops keeps llc from folding a call target's load into the
+// call, so every indirect call goes through a register and the lowering
+// can marshal it. They travel in the IR as attributes, so llc applies them
+// after the pass.
 var EngineCFlags = []string{"-O2", "-fno-builtin", "-fno-omit-frame-pointer", "-mno-red-zone",
-	"-fwrapv", "-fno-optimize-sibling-calls", "-fcf-protection=none", "-mstack-alignment=8"}
+	"-fwrapv", "-fno-optimize-sibling-calls", "-fcf-protection=none", "-mstack-alignment=8",
+	"-Xclang", "-target-feature", "-Xclang", "+slow-two-mem-ops"}
 
 // HostCallbacks is the closed list of Go callbacks engine code may call.
 var HostCallbacks = []string{"host_poll", "host_memory_grow", "host_now", "host_call", "host_release", "host_intl"}

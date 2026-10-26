@@ -54,10 +54,10 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 	retLabel := ".Lret_" + fn.Name
 	// A leaf may save the callee-saved registers it uses (musl's memcpy uses
 	// RBX): the pushes at its start become stores into a NOSPLIT Go frame and
-	// each pop before a return a load from it. RBP is not among them: with
-	// frame-pointer=none llc could otherwise use it as a plain value
-	// register, but Go keeps RBP as the frame pointer, so a leaf must leave
-	// it alone (checked in the body below).
+	// each pop before a return a load from it. RBP is not among them: the
+	// pass gives leaves frame-pointer=reserved, so llc never allocates it,
+	// and Go keeps RBP as the frame pointer. The body below still rejects
+	// any use of it.
 	var pushed []string
 	for len(pushed) < len(inner) {
 		m := reLeafPush.FindStringSubmatch(norm(inner[len(pushed)]))
