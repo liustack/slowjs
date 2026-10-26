@@ -54,6 +54,8 @@ type VM struct {
 	ctx  uintptr
 	base uintptr // the scratch
 	sp   uintptr // where each entry starts
+
+	teardowns int // times Close called into the engine to free it, for tests
 }
 
 // Options are the settings of a new VM.
@@ -308,6 +310,7 @@ func (v *VM) Interrupt() { v.h.Interrupt() }
 // is halfway: its memory is unmapped all the same.
 func (v *VM) Close() (leaked uintptr, err error) {
 	if !v.h.Broken() {
+		v.teardowns++
 		v.enter(func() {
 			JS_FreeContext(v.sp, v.ctx)
 			leaked = JS_FreeRuntime(v.sp, v.rt)

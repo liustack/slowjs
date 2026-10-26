@@ -21,19 +21,34 @@ import (
 // C type here. engine_decl.go lists the signatures the engine was generated
 // with at its end.
 
+// callbackHook, when a test sets it, runs first in each callback with its
+// name and VM id. It runs inside the engine, so a panic or a Goexit there
+// leaves through engine frames as one from a real callback would. Only tests
+// set it.
+var callbackHook func(name string, vm uintptr)
+
 // host_memory_grow is uintptr_t host_memory_grow(uint32_t vm, uintptr_t size).
 func host_memory_grow(sp, vm, size uintptr) uintptr {
+	if callbackHook != nil {
+		callbackHook("host_memory_grow", vm)
+	}
 	return gohost.MemoryGrow(uint32(vm), size)
 }
 
 // host_now is int64_t host_now(uint32_t vm, int kind).
 func host_now(sp, vm, kind uintptr) int64 {
+	if callbackHook != nil {
+		callbackHook("host_now", vm)
+	}
 	return gohost.Now(uint32(vm), int32(kind))
 }
 
 // host_call is JSValue host_call(uint32_t vm, JSValueConst this_val, int
 // argc, JSValueConst *argv, int magic).
 func host_call(sp, vm, this0, this1, argc, argv, magic uintptr) (r0, r1 uintptr) {
+	if callbackHook != nil {
+		callbackHook("host_call", vm)
+	}
 	r := gohost.Call(sp, uint32(vm), gohost.Value{U: this0, Tag: this1}, int32(argc), argv, int32(magic))
 	return r.U, r.Tag
 }
