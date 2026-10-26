@@ -22,6 +22,8 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against 4a4103b (v0.26.16 
 
 Tests: `lib/jsonstr_test.go`, whose `testdata/jsonstr.txt` is what Node 24 prints for `testdata/jsonstr.js` (strings of every kind of character at the lengths around the runs, as ropes, substrings and keys, through `stringify`, `parse`, reviver, replacer and `toJSON`), the errors and their positions and the invalid UTF-8 cases against the engine before the change, both runs called directly on buffers of every room, 8-bit and 16-bit (the characters, where the run stops, and a buffer never filled past its room), each way a run grows or widens a buffer failing for lack of memory, and a run past the longest string, `lib/jsonstr_memgrind_test.go` (no C memory left behind) and `internal/fixlib/jsonstr_test.go`.
 
+The C tree (`engine/quickjs.c`) has the same change in C: `JS_ToQuotedString` calls `json_quote_run` and `json_parse_string` calls `json_string_run` at the start of each turn of their loops. They write with `string_buffer_write8` and `string_buffer_write16`, and `json_string_run` decodes with `unicode_from_utf8`, as the loop does. `engine/test/compare.sh` runs `testdata/jsonstr.js` and `testdata/jsonstr_errors.js` on it and on the Go engine.
+
 ### When upstream changes it
 
 What to do when `go run ./internal/fixlib` stops on this change after an upstream release. [upgrading.md](../upgrading.md) has the whole procedure and the order in which to update the lists `fixlib` checks against.

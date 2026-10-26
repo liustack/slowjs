@@ -24912,6 +24912,70 @@ static JSAtom json_parse_ident(JSParseState *s, const uint8_t **pp, int c)
     return atom;
 }
 
+/* Put the run of characters from p, up to end, that json_parse_string takes
+   as they are into b, and return where the run ends: at sep, '\\', a byte
+   below 0x20, end, or a byte that does not start a character of 2, 3 or 4
+   bytes of at most U+10FFFF. json_parse_string then does what it does for
+   that byte: end the string, read an escape, or throw the same error at the
+   same place. Return NULL when b could not grow. */
+static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
+                                      const uint8_t *end, int sep)
+{
+    const uint8_t *q, *lim, *p_next;
+    uint16_t units[64];
+    uint32_t c;
+    int n;
+
+    for(;;) {
+        /* ASCII. The run stops after JS_STRING_LEN_MAX + 1 bytes, so that
+           its length fits an int and string_buffer_write8 throws for a
+           string too long, as string_buffer_putc does: the text of
+           JSON.parse can be longer than any string. */
+        lim = end - p > JS_STRING_LEN_MAX + 1 ? p + JS_STRING_LEN_MAX + 1 : end;
+        for(q = p; q < lim; q++) {
+            c = *q;
+            if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
+                break;
+        }
+        if (q > p) {
+            if (string_buffer_write8(b, p, q - p))
+                return NULL;
+            p = q;
+        }
+        if (p == end || *p < 0x80)
+            return p;
+        /* characters of 2, 3 or 4 bytes and the ASCII between them, as the
+           loop decodes them, 64 code units at a time */
+        n = 0;
+        q = p;
+        while (q < end && n <= countof(units) - 2) {
+            c = *q;
+            if (c < 0x80) {
+                if (c < 0x20 || c == sep || c == '\\')
+                    break;
+                units[n++] = c;
+                q++;
+                continue;
+            }
+            c = unicode_from_utf8(q, UTF8_CHAR_LEN_MAX, &p_next);
+            if (c > 0x10FFFF)
+                break;
+            if (c >= 0x10000) {
+                units[n++] = 0xD800 + ((c - 0x10000) >> 10);
+                units[n++] = 0xDC00 + (c & 0x3FF);
+            } else {
+                units[n++] = c;
+            }
+            q = p_next;
+        }
+        if (n > 0 && string_buffer_write16(b, units, n))
+            return NULL;
+        if (q == p)
+            return p;
+        p = q;
+    }
+}
+
 static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
 {
     const uint8_t *p, *p_next;
@@ -24924,6 +24988,10 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
 
     p = *pp;
     for(;;) {
+        /* the characters taken as they are, in one run */
+        p = json_string_run(b, p, s->buf_end, sep);
+        if (!p)
+            goto fail;
         if (p >= s->buf_end) {
             goto end_of_input;
         }
@@ -51857,6 +51925,40 @@ typedef struct JSONStringifyContext {
     StringBuffer *b;
 } JSONStringifyContext;
 
+/* Put the run of characters of p from *pi that JSON.stringify keeps as
+   they are into b at once, and move *pi past them. A kept character is not
+   '"', '\\' or below 0x20, which JS_ToQuotedString escapes, and, in a
+   string of 16-bit units, no surrogate: a surrogate pair goes as it is and a
+   lone surrogate as \uXXXX, which JS_ToQuotedString decides. Return -1 when
+   b could not grow. */
+static int json_quote_run(StringBuffer *b, const JSString *p, int *pi)
+{
+    int i = *pi, j = i, n = p->len;
+    uint32_t c;
+
+    if (!p->is_wide_char) {
+        const uint8_t *str = p->u.str8;
+        for(; j < n; j++) {
+            c = str[j];
+            if (c < 0x20 || c == '\"' || c == '\\')
+                break;
+        }
+        if (j > i && string_buffer_write8(b, str + i, j - i))
+            return -1;
+    } else {
+        const uint16_t *str = p->u.str16;
+        for(; j < n; j++) {
+            c = str[j];
+            if (c < 0x20 || c == '\"' || c == '\\' || is_surrogate(c))
+                break;
+        }
+        if (j > i && string_buffer_write16(b, str + i, j - i))
+            return -1;
+    }
+    *pi = j;
+    return 0;
+}
+
 static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
 {
     JSValue val;
@@ -51872,7 +51974,13 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
 
     if (string_buffer_putc8(b, '\"'))
         goto fail;
-    for(i = 0; i < p->len; ) {
+    i = 0;
+    for(;;) {
+        /* the characters kept as they are, in one run */
+        if (json_quote_run(b, p, &i))
+            goto fail;
+        if (i >= p->len)
+            break;
         c = string_getc(p, &i);
         switch(c) {
         case '\t':
