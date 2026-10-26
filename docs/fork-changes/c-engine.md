@@ -1,11 +1,12 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
   - Asking why Atomics.wait throws in the C tree, or why test262.conf in engine/test excludes tests
   - Calling JS_NewClassID, JS_DumpMemoryUsage or abort in the C tree, or writing the Go side of them
   - Looking for what changes for users when the new engine replaces the one of lib/
+  - Asking what a wild pointer, a trap or an abort in the C does to the process and the VM, or changing how the host enters the engine
 ---
 
 # The C tree of the new engine
@@ -80,6 +81,24 @@ A few recursions must not fail, so a count that throws does not fit them, and ea
 What the counts do not cover yet: the property layer, one cycle of 169 functions (properties, atoms, conversions, errors, string buffers, big integers and the collector), which exists only in the static call graph. It is bounded without a count, and the generator's proof that no cycle is left uncounted needs it rewritten first. `engine/test/cycles.sh` lists the cycles that no count cuts, and they must be those of `engine/test/cycles.txt`: that one is all it lists now.
 
 The checks: `unit.c` (see [testing.md](../testing.md#the-c-tree-and-its-native-test-host)) and test262, whose 58 known errors stay the same.
+
+## When the engine fails
+
+C can fail where Go code cannot, and a Go process ends for most of it: a read or a write at an address mapped to nothing prints "unexpected fault address" and exits, since only an address below 0x1000 is a panic by default, and a trap instruction (`ud2` on amd64, `brk` on arm64) is SIGILL or SIGTRAP, which the runtime never lets a program recover. The generated engine is held to this: every way it can fail is a panic that the host recovers, or cannot happen. A VM that failed is broken, as after any panic that leaves through engine frames: it refuses every call but `Close`, and the process and the other VMs go on.
+
+| The C does | What the host sees |
+| --- | --- |
+| Reads or writes an address mapped to nothing: a wild pointer, or the guard page above the shadow stack | A `runtime.Error` panic that names the address. `Enter` of `internal/gohost` turns on `debug.SetPanicOnFault` for the goroutine, and the `Leave` that matches it puts back what the goroutine had. A pointer that is not canonical on amd64 faults with no address and is a panic too |
+| Divides by zero (undefined in C) | amd64 raises a divide error, which Go always turns into a panic. arm64 has no such fault and gives 0 |
+| Calls `abort` | `host_call` with `HOST_CALL_ABORT` panics with `gohost.ErrAbort` |
+| Reaches a trap | None is left in the output. The shadow-stack pass puts a call of `host_trap(sp)` where the C has `__builtin_trap` (the one after the `host_call` in `abort`) and where its own check on a dynamic `alloca` would cross the end of the shadow stack. It panics with `gohost.ErrTrap` |
+| Runs out of the shadow stack | The counts throw `RangeError` first. The guard page is the net behind them |
+
+The generator holds this: its checks refuse `ud0`, `ud1`, `ud2`, `hlt` and `int3` in the text and in the decoded code, in llc's object and in the linked binary of amd64, and `brk`, `udf`, `hlt` and `dcps` on arm64, in the text and as words of the assembled object. arm64 has no check of the linked binary yet. `debugtrap` and `ubsantrap` stop the pass, and so does a trap in a register-entry leaf, which has no shadow pointer to call `host_trap` with.
+
+Not covered, as in a program written in C: a write through a bad pointer to memory that is mapped changes that memory and nothing tells; a loop that never ends runs until the host interrupts it (`host_poll` is not inserted yet); the runtime ends the process when a goroutine stack passes 1 GB, which the counted depths keep the engine from; and the system may kill the process for memory.
+
+Turning on `SetPanicOnFault` takes two calls of the runtime, 3.5 ns at each entry from Go into the engine (an entry and its `Leave` go from 2.5 to 6.0 ns, and a script that does next to nothing, 1.5 µs, takes 10 ns more), and an entry from a callback inside the engine takes nothing. The scripts of the speed set take 0.3 to 0.8 s and enter the engine a few times, so it cannot be seen there. It sits in `Enter` and not where a pool lends a VM because the setting belongs to the goroutine, and a VM may be lent to a different goroutine each time. `TestFault*` in [testing.md](../testing.md#the-go-host-of-the-generated-engine) run each failure on the real engine.
 
 ## Atomics without threads
 
