@@ -87,6 +87,11 @@ func main() {
 		{Name: "big_f0", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
 		{Name: "big_4k", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
 		{Name: "big_caller", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
+		// Faults on purpose.
+		{Name: "peek", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr}, Ret: i64}},
+		{Name: "poke", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, ptr, i64}, Ret: i64}},
+		{Name: "hit_end", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr}, Ret: i64}},
+		{Name: "trap_now", Kind: gen.Unified, Sig: gen.Sig{Params: []gen.Type{ptr, i64}, Ret: i64}},
 	}
 	_ = void
 	// The integer argument registers a unified entry may use: SysV has six,

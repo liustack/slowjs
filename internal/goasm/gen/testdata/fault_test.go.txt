@@ -1,0 +1,120 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+package proto
+
+import (
+	"runtime"
+	"runtime/debug"
+	"syscall"
+	"testing"
+	"unsafe"
+)
+
+// These tests make the generated code fail on purpose: a read and a write
+// through an address that is mapped to nothing, a store into the guard page
+// above the shadow stack, and a trap. The Go runtime ends the process for
+// each of them unless the host turned on SetPanicOnFault (the first three) or
+// the generated code calls host_trap in place of a trap instruction (the
+// last). Each must be a panic that recovers, with the process, the other VMs
+// and a new VM as they were. They run on linux/amd64 and darwin/arm64.
+
+// fails runs f as an entry into the code with SetPanicOnFault on, as the host
+// of the engine does (gohost.Enter), and returns what it panicked with. A
+// panic that leaves through the code breaks the VM.
+func fails(vm *VM, f func(sp uintptr) int64) (got any) {
+	defer func() {
+		if got = recover(); got != nil {
+			vm.broken = true
+		}
+	}()
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	vm.Eval(f)
+	return nil
+}
+
+func wantFault(t *testing.T, got any, what string, lo, hi uintptr) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("%s: the code did not fail", what)
+	}
+	if _, ok := got.(runtime.Error); !ok {
+		t.Fatalf("%s: panicked with %T %v, want a runtime.Error", what, got, got)
+	}
+	a, ok := got.(interface{ Addr() uintptr })
+	if !ok {
+		t.Fatalf("%s: the panic %v names no address", what, got)
+	}
+	if hi != 0 && (a.Addr() < lo || a.Addr() >= hi) {
+		t.Fatalf("%s: the fault is at %#x, want %#x to %#x", what, a.Addr(), lo, hi)
+	}
+}
+
+// afterFailure checks that a VM that failed refuses to run, that closing it
+// is fine, that the goroutine has its setting of SetPanicOnFault back, and
+// that a new VM runs the generated code.
+func afterFailure(t *testing.T, vm *VM, what string) {
+	t.Helper()
+	if _, err := vm.Eval(func(sp uintptr) int64 { return rec(sp, 3) }); err != ErrBroken {
+		t.Errorf("%s: Eval after the failure gave %v, want ErrBroken", what, err)
+	}
+	vm.Close()
+	if debug.SetPanicOnFault(false) {
+		t.Errorf("%s: the goroutine still has SetPanicOnFault on", what)
+	}
+	w := NewVM()
+	defer w.Close()
+	if r, err := w.Eval(func(sp uintptr) int64 { return rec(sp, 100) }); err != nil || r != 5050 {
+		t.Errorf("%s: a new VM gave %d, %v", what, r, err)
+	}
+}
+
+func TestFaultWildPointer(t *testing.T) {
+	wilds := []uintptr{0xdead0000, 0x10000, 1 << 46, 0xdeadbeefdeadbeef}
+	for _, wild := range wilds {
+		for _, c := range []struct {
+			name string
+			do   func(sp uintptr) int64
+		}{
+			{"read", func(sp uintptr) int64 { return peek(sp, wild) }},
+			{"write", func(sp uintptr) int64 { return poke(sp, wild, 7) }},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				vm := NewVM()
+				got := fails(vm, c.do)
+				// A non-canonical address has no address to report on amd64.
+				lo, hi := wild, wild+1<<20
+				if wild == 0xdeadbeefdeadbeef && runtime.GOARCH == "amd64" {
+					lo, hi = 0, 0
+				}
+				wantFault(t, got, c.name, lo, hi)
+				afterFailure(t, vm, c.name)
+			})
+		}
+	}
+}
+
+// TestFaultGuardPage: the stack has all but 8 bytes in use, and the stores of
+// a frame go into the page above it, which is mapped to nothing.
+func TestFaultGuardPage(t *testing.T) {
+	vm := NewVM()
+	end := vm.base + shadowSize
+	pg := uintptr(syscall.Getpagesize())
+	off := end - uintptr(unsafe.Pointer(&vm.mem[0]))
+	if err := syscall.Mprotect(vm.mem[off:off+pg], syscall.PROT_NONE); err != nil {
+		t.Fatal(err)
+	}
+	got := fails(vm, func(sp uintptr) int64 { return hit_end(end - 8) })
+	wantFault(t, got, "an entry with no stack left", end, end+pg)
+	afterFailure(t, vm, "the guard page")
+}
+
+// TestFaultTrap: the C traps. In Go a ud2 or a brk is SIGILL or SIGTRAP, which
+// end the process; the pass calls host_trap instead, and it panics.
+func TestFaultTrap(t *testing.T) {
+	vm := NewVM()
+	got := fails(vm, func(sp uintptr) int64 { return trap_now(sp, 1) })
+	if got != "host_trap" {
+		t.Fatalf("the trap panicked with %T %v, want host_trap", got, got)
+	}
+	afterFailure(t, vm, "a trap")
+}
