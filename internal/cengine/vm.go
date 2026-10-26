@@ -67,7 +67,7 @@ type Options struct {
 	Seed uint64
 	// StackSize is the size of the shadow stack, 0 for the default of 32
 	// MiB. It must be no smaller than the region the engine was generated
-	// for (-shadow-size-log2 of the pass).
+	// for (-shadow-size-log2 of the generator), or New fails.
 	StackSize uintptr
 }
 
@@ -108,7 +108,13 @@ func New(o Options) (_ *VM, err error) {
 			}
 		}
 	}()
-	base, _ := h.Stack()
+	base, size := h.Stack()
+	if size < 1<<shadowSizeLog2 {
+		// The engine takes the space left from its stack pointer and the
+		// size it was generated for (engine_decl.go).
+		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, smaller than the %d the engine was generated for",
+			size, uintptr(1)<<shadowSizeLog2)
+	}
 	v := &VM{h: h, base: base, sp: base + scratchSize}
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {
