@@ -45,13 +45,17 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 #define PTRDIFF_MAX __PTRDIFF_MAX__
 #define SIZE_MAX __SIZE_MAX__
 
+/* The suffix of a 64-bit constant is whatever the compiler's own int64_t is
+   (L on Linux, LL on macOS). */
+#define SLOWJS_CAT_(a, b) a##b
+#define SLOWJS_CAT(a, b) SLOWJS_CAT_(a, b)
 #define INT8_C(c) c
 #define INT16_C(c) c
 #define INT32_C(c) c
-#define INT64_C(c) __INT64_C(c)
+#define INT64_C(c) SLOWJS_CAT(c, __INT64_C_SUFFIX__)
 #define UINT8_C(c) c
 #define UINT16_C(c) c
 #define UINT32_C(c) c##U
-#define UINT64_C(c) __UINT64_C(c)
+#define UINT64_C(c) SLOWJS_CAT(c, __UINT64_C_SUFFIX__)
 
 #endif
