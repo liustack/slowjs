@@ -80,7 +80,7 @@ func main() {
 	// 1. Compile every C file to IR.
 	type src struct{ path, group string }
 	var srcs []src
-	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa"} {
+	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa", "heap", "tlsf"} {
 		srcs = append(srcs, src{filepath.Join(*engineDir, f+".c"), f})
 	}
 	for _, dir := range []string{"libc/string", "libc/math"} {
@@ -89,7 +89,9 @@ func main() {
 			srcs = append(srcs, src{m, "libc"})
 		}
 	}
-	srcs = append(srcs, src{filepath.Join(*engineDir, "libc/math.c"), "libc"}, src{filepath.Join(*engineDir, "libc/stdio.c"), "libc"})
+	for _, f := range []string{"math.c", "stdio.c", "abort.c"} {
+		srcs = append(srcs, src{filepath.Join(*engineDir, "libc", f), "libc"})
+	}
 	if *srcList != "" {
 		srcs = nil
 		for _, f := range strings.Split(*srcList, ",") {
@@ -113,7 +115,9 @@ func main() {
 		lls = append(lls, ll)
 		args := append([]string{}, cflags...)
 		if s.group == "libc" {
-			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-include", filepath.Join(libc, "internal/features.h"))
+			// abort.c asks the host (engine/host.h).
+			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-I"+*engineDir, "-include",
+				filepath.Join(libc, "internal/features.h"))
 		} else {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
 		}
