@@ -10,7 +10,7 @@ read_when:
 
 # Objects and shapes
 
-A shape is the list of an object's keys in order, shared by objects with the same keys. All the changes here change only the generated Go, through `internal/fixlib`, with no C form.
+A shape is the list of an object's keys in order, shared by objects with the same keys. In `lib/` all the changes here change only the generated Go, through `internal/fixlib`, with no C form in `quickjs.diff`. The C tree in `engine/` has them in C: the methods found in the interpreter as the `goasm_` helpers of `internal/goasm/cpatch.py`, the others as each section says.
 
 ## New properties of plain objects skip the generic path
 
@@ -19,6 +19,8 @@ Release: v0.26.13.
 Defining a new property on a plain object costs less. Object literals, spread, class fields, `JSON.parse` and every new function go through `JS_DefinePropertyValue`, which handed each property on to `JS_DefineProperty` and `JS_CreateProperty` before `add_property` did the work, with a TLS frame and a deferred free at each step. Now `JS_DefinePropertyValue` first calls `objlitDefine` (`lib/objlit.go`), which calls `add_property` itself when the object is extensible and not exotic, not a fast array and not the global object, the property has no getter or setter, and the object does not have it yet. Every other case takes the old path, and so does assignment (`o.x = v`, `Object.assign`). Nothing is cached, so memory use is the same. A property of an object literal takes about 55 ns rather than 95 on linux/amd64 (AMD EPYC), and a server render of a page of tifa's example shop about 6% less, with the same HTML. `fixlib` puts the call into all 5 files and takes the object bit fields `objlitDefine` checks from each file's `JS_NewObjectFromShape`, checked against the checks of the same bits in the old path. This changes only the generated Go, with no C hunk (`internal/fixlib/define.go`).
 
 Tests: `lib/objlit_test.go`, `lib/objlit_memgrind_test.go`, `internal/fixlib/define_test.go`.
+
+The C tree (`engine/quickjs.c`) has the same fast path in C, at the start of `JS_DefinePropertyValue`. `engine/test/compare.sh` runs `testdata/objlit.js` on it and on the Go engine.
 
 ### When upstream changes it
 
@@ -36,6 +38,8 @@ Memory: one VM of the shop holds 647 KiB more after a GC, and with the front cac
 
 Tests: `lib/shapecache_test.go` (reuse, which shapes are kept, symbol keys, the ring, the credit for copies, the cycle collector, `JS_FreeRuntime` with the cache on, out of memory, a ring too large for a `size_t`, 8 runtimes on 8 goroutines), `shapecache_test.go` (the memory limit, and objects built in many ways that read the same with the cache on and off) and `internal/fixlib/shapecache_test.go`.
 
+The C tree (`engine/quickjs.c`) has the same cache in C: the field `shape_cache` of `JSRuntime`, `js_shape_keep` in `js_free_shape0`, `js_shape_keepable` and `js_shape_found` in `add_property`, `JS_SetShapeCache(ctx, n)` in `quickjs.h`, and `JS_FreeRuntime` lets every kept shape go. It is off until `JS_SetShapeCache` turns it on. `js_shape_keep` returns the shape it lets go of when the ring is full, which `js_free_shape0` then frees, rather than freeing it itself. The native runners (`jsrun` and `run-test262`) keep 2048 shapes, as a new VM does. `engine/test/compare/shapecache.js` runs the scripts of `TestShapeCacheSameResults` on the C tree and on the Go engine (`engine/test/compare.sh`), and `engine/test/unit.c` checks which shapes are kept: the shapes in between, the ring, up to 32 keys, symbols that are not registered, objects without a prototype, the credit for copies, and the cache turned off. It also checks that a full and a young collection leave the kept shapes, that the cycle collector frees the shapes of the cycles it frees, that a full ring lets its oldest shapes go, that a runtime freed with kept shapes frees them and its context, and that an allocation that fails leaves the ring whole.
+
 ### When upstream changes it
 
 If it reports that the functions of `shapeFuncs` or `JSShape` changed (`internal/fixlib/shapesites.go`), read them against `lib/shapecache.go`: `add_property` must still copy a shape whose count is not one, link the copy into the hash table, and take a shape it finds there on the line `shapeFound` is put before. A shape whose count is not one must still never change in place: `js_shape_prepare_update` copies it, and `resize_properties` and `compact_properties` change only a shape of count one that an object has. Outside the cycle collector a shape must still be freed only through `js_free_shape0` (`free_object` frees the shape of an object that way, and `JS_NewObjectFromShape` takes the count it is given), `js_new_shape2` must still grow the hash table when it is half full, `__JS_NewAtom` must still put the index of a symbol that is not registered in its `hash_next`, where `js_get_atom_index` and `JS_FreeAtomStruct` read it and which `JS_ResizeAtomHash` leaves alone, and the cycle collector must still free the shapes of a cycle itself while `gc_phase` is `JS_GC_PHASE_REMOVE_CYCLES`. Then run `-shape`. If it reports that `gc_phase` is not the byte right after `tmp_obj_list`, change `gcPhaseOffset` in `lib/shapecache.go` to where it is.
@@ -52,6 +56,8 @@ On linux/amd64 without PGO, against v0.26.16 over 10 rounds, the spiral page of 
 
 Tests: `lib/forin_test.go`, whose `testdata/forin.txt` is what the engine gave before the change, and `internal/fixlib/forin_test.go`.
 
+The C tree (`engine/quickjs.c`) has the same change in C: `js_for_in_prepare_prototype_chain_enum` calls `js_for_in_no_enum` first. `engine/test/compare.sh` runs `testdata/forin.js` on it and on the Go engine.
+
 ### When upstream changes it
 
 If it reports that `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or `JS_FreePropertyEnum` changed (a fingerprint other than the one in `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for an object that is not exotic, the names listed with `JS_GPN_STRING_MASK` and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name and the enumerable flag, the loop must still go on to the next prototype when the list is empty, and freeing an empty list must still do nothing. If it reports that the reads of the enumerable flag or the test of `is_exotic` changed shape, find where the bits are now and update the patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in (`go run ./internal/fixlib -forin` prints them) and run `go test -run ForIn ./lib`.
@@ -67,6 +73,8 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against v0.26.16, a micro 
 `fixlib` puts the call into all 5 files and takes the atom type and the length of a `JSString` from each file's `__JS_NewAtom` and `is_num_string`. Generated Go only, no C hunk (`internal/fixlib/atomkey.go`).
 
 Tests: `lib/atomkey_test.go` (the atom and the reference counts against the generic path, the keys it leaves to that path, an atom freed and made again, the description of a symbol and the key of a registered symbol, strings that share the symbol's atom), `lib/atomkey_memgrind_test.go` (the same tests leave no C memory behind), `atomkey_test.go` (keys that look like numbers, index strings, symbols, the text of symbols and constant atoms through every way a key goes, against Node, and the atom count after keys are dropped) and `internal/fixlib/atomkey_test.go`.
+
+The C tree (`engine/quickjs.c`) has the same change in C, at the start of `JS_ValueToAtom`: such a string returns `JS_DupAtom` of its own index. `engine/test/compare.sh` runs `testdata/atom_keys.js` on it and on the Go engine, and `engine/test/unit.c` checks that an atom made from a string at run time and used as a key many times is freed with the last value that holds it.
 
 ### When upstream changes it
 
@@ -85,6 +93,8 @@ The shapes held add one or two shapes to a VM (88 to 176 bytes in one VM of the 
 `fixlib` puts the three calls into all 5 files, and checks the text of `js_function_set_properties`, `add_property`, `find_hashed_shape_prop`, `add_shape_property`, `js_shape_prepare_update`, `js_clone_shape`, `JS_NewObjectFromShape`, `JS_AtomToString`, `JS_MarkContext`, `JS_FreeContext` and `JSShape` against fingerprints. This changes only the generated Go, with no C hunk (`internal/fixlib/funcshape.go`).
 
 Tests: `lib/funcshape_test.go`, whose `testdata/funcshape.txt` holds what Node gives for the own properties of 36 kinds of new functions, made many times and changed after they were made (the engine before the change gives the same), the shapes it holds and lets go, and a context that only they hold alive, `lib/funcshape_memgrind_test.go` and `internal/fixlib/funcshape_test.go`.
+
+The C tree (`engine/quickjs.c`) has the same change in C: `js_function_set_properties` calls `js_function_shape` first. There the shapes are held per context, in the field `func_shapes` of `JSContext`, rather than per runtime for the context that made the last function, so two contexts of a runtime do not take the slots from each other. `JS_MarkContext` marks them and `JS_FreeContext` lets them go. `engine/test/compare.sh` runs `testdata/funcshape.js` on it and on the Go engine, and `engine/test/unit.c` checks that each of the four prototypes keeps its two shapes and new functions reuse them, that two contexts keep their own, that the cycle collector frees a context that only they hold alive, and leaves them in a live one.
 
 ### When upstream changes it
 
@@ -123,6 +133,8 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against v0.28.2 with the s
 `fixlib` puts the four calls into all 5 files and pins the text of `JS_GetOwnPropertyNamesInternal`, `JS_CopyDataProperties`, `JS_GetOwnPropertyNames2`, `JS_AtomGetKind`, `JS_AtomIsArrayIndex`, `is_num_string`, `get_shape_prop`, the functions that link, unlink, grow, change, copy and free shapes, `add_property`, `expand_fast_array`, `add_fast_array_element` and `JSShape` by fingerprints (`ownKeysSites`). The bit fields it reads are the constants of [for in](#for-in-skips-prototypes-with-no-enumerable-property), [string keys](#string-keys-that-are-already-atoms) and [new properties](#new-properties-of-plain-objects-skip-the-generic-path). Generated Go only, no C hunk (`internal/fixlib/ownkeys.go`).
 
 Tests: `own_keys_test.go`, whose `testdata/own_keys.js` lists objects of every kind every way (integer keys, symbols, private names, hidden keys, accessors, deleted keys, changed flags, frozen, sealed and null prototype objects, prototype chains, exotic objects, getters that change the object while it is spread, `for in` while the object changes, objects that share or leave a shape, 120 random objects) and whose `testdata/own_keys.golden` is what the engine gave before the change, and a module namespace before and after its bindings are set. `lib/ownkeys_test.go` checks every combination of the `JS_GPN_` flags against a listing made with the engine's `JS_AtomGetKind` and `JS_AtomIsArrayIndex`, the key cache dropping a shape that gets a key, loses one, changes one or is freed, and which spreads take the shape of their source. `lib/ownkeys_memgrind_test.go` and the root `TestMemgrind2` check that they leave no C memory behind, and `internal/fixlib/ownkeys_test.go` checks the rule.
+
+The C tree (`engine/quickjs.c`) has the same change in C: `JS_GetOwnPropertyNamesInternal`, `JS_CopyDataProperties` and `JS_GetOwnPropertyNames2` call `js_own_keys`, `js_copy_data` and `js_own_keys_array` first, the key cache is the field `own_key_cache` of `JSRuntime`, and `js_shape_hash_unlink` drops a shape from it. The keys of a listing are walked with `js_own_keys_next` rather than a callback. A key that is left out of a rest is looked up with `js_get_own_property_flags`, as the engine does. `engine/test/compare.sh` runs `testdata/own_keys.js` on it and on the Go engine, and `engine/test/compare/ownkeys.js`, which lists objects of many shapes, made and dropped so that new shapes take the memory of freed ones, through every path, and checks each listing against the order it works out from the keys it added. It also lists one object after the key cache has its shape, as keys are added, deleted and made not enumerable, a key becomes a getter and the prototype changes. `engine/test/unit.c` checks listings of new objects whose shapes take the memory of shapes the cycle collector freed.
 
 ### When upstream changes it
 

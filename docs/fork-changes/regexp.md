@@ -12,7 +12,7 @@ read_when:
 
 # Regular expressions
 
-The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. These three change only the generated Go, through `internal/fixlib`, with no C form. The change to the classes of regexps with the v flag is a fix of the parser, with a C form in `lib/internal/patch/quickjs.diff`.
+The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. In `lib/` these three change only the generated Go, through `internal/fixlib`, with no C form in `quickjs.diff`. The C tree in `engine/` has them in C, as each section says. The change to the classes of regexps with the v flag is a fix of the parser, with a C form in `lib/internal/patch/quickjs.diff`.
 
 ## Skip to where a regexp can match
 
@@ -21,6 +21,8 @@ Release: v0.26.15.
 A regexp that is not sticky no longer tries every position of the string in the backtracking machine. Its bytecode starts with a loop that tries the match at one position, steps over one character and tries again. `lre_exec` now first calls `lreSkip` (`lib/regexskip.go`): when the regexp starts with one character or one class of characters, such as `/["&<>]/` or `/\d+/`, it finds the first position that holds one in a plain Go loop and starts there, and when there is none it answers no match without running the bytecode. A regexp that starts with `^` outside multiline mode is run at position 0 only. Unicode regexps (`u`, `v`), regexps that ignore case or are multiline (`i`, `m`), and every other first op took the old path, until the change for [alternatives](#alternatives-that-cannot-match-are-not-pushed). `lreSkip` checks for an interrupt after every 65,536 characters it looks at, as the backtracking machine does every 10,000 steps, so the eval timeout and `Interrupt` stop a regexp that runs again and again on a long string as before. A server render of a page of tifa's example shop takes about 3% less time on linux/amd64 (AMD EPYC), with the same HTML. `fixlib` puts the call into all 5 files, and checks the text of `lre_compile`, `lre_exec` and `lre_exec_backtrack`, whose bytecode and ops `lreSkip` reads, against fingerprints. This changes only the generated Go, with no C hunk (`internal/fixlib/regexskip.go`).
 
 Tests: `lib/regexskip_test.go`, whose `testdata/regex.txt` holds what 61 regexps give on 47 strings through every API that runs one, from the engine before the change, `internal/fixlib/regexskip_test.go`, and `TestRegexScanStops` in `timeout_test.go`.
+
+The C tree (`engine/libregexp.c`) has the same change in C: `lre_skip`, `lre_first_set`, `lre_find` and `lre_run`, called by `lre_exec`. A char at the start of a regexp is found in an 8-bit string with `memchr`. `lre_first_set` walks the ways of the splits with a list of its own instead of recursion, which gives the same set and the same budget. `engine/test/compare.sh` runs `testdata/regex.js`, `regexsplit.js`, `regexpv.js`, `shikire.js` and `engine/test/compare/regexskip.js` (strings longer than a chunk, 8-bit and 16-bit, alternations past both budgets) on it and on the Go engine.
 
 ### When upstream changes it
 
@@ -45,6 +47,8 @@ Why this is safe: a state that is not pushed is one that would have been popped 
 
 Tests: `lib/regexskip_test.go`, whose `testdata/regexsplit.txt` holds what Node gives for 84 regexps on 73 strings through every API that runs one (the engine before the change gives the same), with `testdata/regex.txt` as before, `lib/regexskip_memgrind_test.go`, `internal/fixlib/regexskip_test.go`, and `TestRegexScanStops` and `TestRegexMatchStops` in `timeout_test.go`, which stop regexps that try every position, and single long matches.
 
+The C tree (`engine/libregexp.c`) has the same change in C: the split ops of `lre_exec_backtrack` call `lre_split`, with the same ops, budget and interrupt step.
+
 ### When upstream changes it
 
 The checks under [Skip to where a regexp can match](#when-upstream-changes-it) cover this change too: both read the same functions, and `fixlib` pins them in one table (`regexSites`).
@@ -66,6 +70,8 @@ Without PGO, on linux/amd64 (AMD EPYC 7B13, one core), against `ff35232` (the en
 `fixlib` puts the lookup and the store into `js_compile_regexp` and the release into `JS_FreeRuntime` in all 5 files, and pins the text of `js_compile_regexp` and of the functions the cache hashes, compares, counts and frees strings with. This changes only the generated Go, with no C hunk (`internal/fixlib/regexcache.go`).
 
 Tests: `lib/regexcache_test.go`, whose `testdata/regexcache.txt` is what Node 24 prints for `testdata/regexcache.js` (patterns and flags of every kind, `v`, named groups, `d`, errors, made again through every way that compiles a regexp and used on their own, with the cache at its defaults, at four entries and off), the sharing of bytecode, a pattern that is an object whose `toString` is called every time, the LRU by count and by bytes, the size of the table for limits up to `math.MaxInt32` entries, a regexp that outlives its entry and a GC, the memory the cache counts, out of memory at every limit, and 8 runtimes on 8 goroutines. Also `lib/regexcache_memgrind_test.go` (no C memory left behind), `regexcache_test.go` (the memory limit, `SetRegExpCache`, and the timeout and `Interrupt` in loops that make regexps) and `internal/fixlib/regexcache_test.go`.
+
+The C tree (`engine/quickjs.c`) has the same cache in C: the field `regexp_cache` of `JSRuntime`, `js_regexp_cache_get` and `js_regexp_cache_put` in `js_compile_regexp`, `JS_SetRegExpCache(rt, n, bytes)` and the defaults `JS_REGEXP_CACHE_ENTRIES` and `JS_REGEXP_CACHE_BYTES` in `quickjs.h`, and `JS_FreeRuntime` lets every entry go. `engine/test/compare.sh` runs `testdata/regexcache.js` on it and on the Go engine, and `engine/test/unit.c` checks that regexps of the same pattern share their bytecode only with the cache on. It also checks the limits of entries and of bytes, that setting them lets every entry go, that a regexp works once the cache let its bytecode go, that the cache keeps its entries and works after allocations that fail in turn, and that it outlives the context that filled it.
 
 ### When upstream changes it
 
