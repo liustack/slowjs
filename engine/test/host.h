@@ -17,10 +17,9 @@ uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename);
 int js_module_test_json(JSContext *ctx, JSValueConst attributes);
 void js_std_dump_error(JSContext *ctx);
 
-/* A runtime with the stack limit the host sets, and an interrupt that ends a
-   test running over two minutes. The C tree starts runtimes with no stack
-   limit, since the Go port counts its own stack slots. The host maps the
-   memory of the heap (host_memory_grow of heap.h) for it. */
+/* A runtime with an interrupt that ends a test running over two minutes, and
+   the call depth the engine starts with (JS_SetMaxCallDepth). The host maps
+   the memory of the heap (host_memory_grow of heap.h) for it. */
 JSRuntime *host_new_runtime(void);
 
 /* host_new_runtime with the seed of Math.random of your choice. The one above

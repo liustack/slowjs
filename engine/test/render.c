@@ -31,8 +31,8 @@
 #include "host.h"
 
 #ifdef RENDER_OLD_API
-/* the C tree before the allocator, for the comparison of timings: the same
-   stack limit as host_new_runtime gives, and no time limit */
+/* the C tree before the allocator, for the comparison of timings: the stack
+   limit of QuickJS, and no time limit */
 static JSRuntime *old_runtime(void)
 {
     JSRuntime *rt = JS_NewRuntime();
