@@ -26,9 +26,6 @@ func ckFn(name string, n int, body string) string {
 		name, name, name, body, n, name, n, name)
 }
 
-// ckMarker is the indirect-call marker the pass leaves in llc's text.
-func ckMarker(code string) string { return "\t#APP\n\t# goasm.icall " + code + "\n\t#NO_APP\n" }
-
 // ckLabel is the symbol llc writes at an indirect call: the n-th of fn,
 // with the type id of the signature code LLVM bound to it.
 func ckLabel(fn string, n int, code string) string {
@@ -43,8 +40,8 @@ func ckLabel(fn string, n int, code string) string {
 // callee-saved registers, a frameless function, one that keeps values
 // across calls in a register and a local, one with constants and 16-byte
 // frame and heap accesses, two register calls of different signatures in a
-// row, a call reached by markers from both sides of a branch, and a call
-// through a pointer loaded from memory.
+// row, a call after a join of two branches, and a call through a pointer
+// loaded from memory.
 var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	ckFn("lf", 0, "\tpushq\t%rbx\n\tmovq\t%rdi, %rbx\n\tleaq\t(%rbx,%rsi), %rax\n\tpopq\t%rbx\n\tretq\n") +
 	ckFn("lf2", 1, "\tpushq\t%r12\n\tpushq\t%rbx\n\tmovq\t%rdi, %rbx\n\tmovq\t%rsi, %r12\n\tleaq\t(%rbx,%r12), %rax\n\tpopq\t%rbx\n\tpopq\t%r12\n\tretq\n") +
@@ -85,13 +82,13 @@ var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	retq
 `) +
 	ckFn("ic", 5, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tpushq\t%r14\n\tpushq\t%rbx\n\tmovq\t%rsi, %rbx\n\tmovq\t%rdx, %r14\n"+
-		"\tmovq\t%rdi, %rax\n\tmovq\t%rdx, %rdi\n\tmovq\t%rdx, %rsi\n"+ckMarker("ii>i")+ckLabel("ic", 0, "ii>i")+"\tcallq\t*%rax\n"+
-		"\tmovq\t%rax, %rdi\n"+ckMarker("i>i")+ckLabel("ic", 1, "i>i")+"\tcallq\t*%rbx\n\taddq\t%r14, %rax\n\tpopq\t%rbx\n\tpopq\t%r14\n\tpopq\t%rbp\n\tretq\n") +
+		"\tmovq\t%rdi, %rax\n\tmovq\t%rdx, %rdi\n\tmovq\t%rdx, %rsi\n"+ckLabel("ic", 0, "ii>i")+"\tcallq\t*%rax\n"+
+		"\tmovq\t%rax, %rdi\n"+ckLabel("ic", 1, "i>i")+"\tcallq\t*%rbx\n\taddq\t%r14, %rax\n\tpopq\t%rbx\n\tpopq\t%r14\n\tpopq\t%rbp\n\tretq\n") +
 	ckFn("jn", 6, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tmovq\t%rdi, %rax\n\ttestq\t%rsi, %rsi\n\tje\t.LBB6_2\n"+
-		"\tmovq\t%rdx, %rdi\n"+ckMarker("i>i")+"\tjmp\t.LBB6_3\n.LBB6_2:\n\tleaq\t1(%rdx), %rdi\n"+ckMarker("i>i")+
+		"\tmovq\t%rdx, %rdi\n\tjmp\t.LBB6_3\n.LBB6_2:\n\tleaq\t1(%rdx), %rdi\n"+
 		".LBB6_3:\n"+ckLabel("jn", 0, "i>i")+"\tcallq\t*%rax\n\tpopq\t%rbp\n\tretq\n") +
 	ckFn("mc", 7, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tmovq\t%rdi, %rax\n\tmovq\t%rsi, %rdi\n\tmovq\t8(%rax), %rax\n"+
-		ckMarker("i>i")+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax\n\tpopq\t%rbp\n\tretq\n")
+		ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax\n\tpopq\t%rbp\n\tretq\n")
 
 var ckBodySigs = map[string]string{"lf": "ii>i", "lf2": "ii>i", "h": "ii>i", "g": "ii>i", "fp": "id>d",
 	"ic": "iii>i", "jn": "iii>i", "mc": "ii>i"}
@@ -304,14 +301,13 @@ func TestCheckCases(t *testing.T) {
 		}, want: "LLVM bound the signature"},
 		{name: "a call marshalled with its neighbour's signature", lower: sub("ic", `\n\tmovq\s+%rsi, 8\(%rsp\)`, ""),
 			want: "argument word 1"},
-		{name: "markers as read", calls: wantCalls("ic", "ii>i", "i>i")},
-		{name: "neighbouring markers swapped", calls: wantCalls("ic", "i>i", "ii>i"),
+		{name: "labels as read", calls: wantCalls("ic", "ii>i", "i>i")},
+		{name: "neighbouring labels swapped as the lowering read them", calls: wantCalls("ic", "i>i", "ii>i"),
 			input: func(s string) string {
-				s = llcSub("ic", "icall ii>i", "icall @", 1)(s)
-				s = llcSub("ic", "icall i>i", "icall ii>i", 1)(s)
-				return llcSub("ic", "icall @", "icall i>i", 1)(s)
+				s = llcSub("ic", ckLabel("ic", 0, "ii>i"), ckLabel("ic", 0, "i>i"), 1)(s)
+				return llcSub("ic", ckLabel("ic", 1, "i>i"), ckLabel("ic", 1, "ii>i"), 1)(s)
 			}, want: "LLVM bound the signature"},
-		{name: "markers at a join changed together", input: llcSub("jn", "icall i>i", "icall ii>i", 2),
+		{name: "a label at a join changed as the lowering read it", input: llcSub("jn", ckLabel("jn", 0, "i>i"), ckLabel("jn", 0, "ii>i"), 1),
 			calls: wantCalls("jn", "ii>i"), want: "LLVM bound the signature"},
 		{name: "an indirect call with no signature symbol", llc: llcSub("ic", ckLabel("ic", 1, "i>i"), "", 1),
 			want: "no signature symbol from LLVM"},
@@ -321,8 +317,8 @@ func TestCheckCases(t *testing.T) {
 			want: "to a direct call"},
 		{name: "a signature symbol off any call", llc: llcSub("ic", "\taddq\t%r14, %rax\n", ckLabel("ic", 2, "i>i")+"\taddq\t%r14, %rax\n", 1),
 			want: "signature symbols in the function"},
-		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n\t#APP\n\t# goasm.icall i>i\n\t#NO_APP\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
-			"\t#APP\n\t# goasm.icall i>i\n\t#NO_APP\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
+		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
+			ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ms, err := ckBuild(t, llvm, c)
@@ -340,14 +336,6 @@ func TestCheckCases(t *testing.T) {
 				t.Logf("rejected: %v", err)
 			}
 		})
-	}
-	// A join whose sides bring different markers is the lowering's to
-	// refuse: the call has no one signature.
-	_, err := ckBuild(t, llvm, ckCase{input: func(s string) string {
-		return strings.Replace(s, "icall i>i\n\t#NO_APP\n.LBB6_3", "icall ii>i\n\t#NO_APP\n.LBB6_3", 1)
-	}})
-	if err == nil || !strings.Contains(err.Error(), "disagree") {
-		t.Fatalf("a join with two markers: %v", err)
 	}
 }
 

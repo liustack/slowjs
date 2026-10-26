@@ -25,18 +25,16 @@
 // C passes in memory because the argument registers ran out (byval) goes in
 // the argument block like any other argument. A computed goto table becomes
 // offsets from itself, so it needs no relocation and can live inside its
-// function. -shadow-icall-markers puts a comment naming the signature before
-// every indirect call, which the lowering reads to move the arguments into
-// the Go argument area. -shadow-icall-sigs gives every indirect call a
-// "kcfi" operand bundle whose type id encodes its signature, which llc keeps
-// on the machine call and the plugin in icall.cpp writes out as a symbol at
-// it. -shadow-report prints the signature of every function, the
+// function. -shadow-icall-sigs gives every indirect call a "kcfi" operand
+// bundle whose type id encodes its signature, which llc keeps on the machine
+// call and the plugin in icall.cpp writes out as a symbol at it: the
+// lowering reads it to move the arguments into the Go argument area, and
+// the post-link check reads it again from llc's object. -shadow-report prints the signature of every function, the
 // address-taken ones and the call graph for the generator.
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PassManager.h"
@@ -60,8 +58,6 @@ static cl::opt<unsigned> MaxIntArgs("shadow-max-int-args", cl::init(0),
 static cl::list<std::string> Leaves("shadow-leaf", cl::CommaSeparated, cl::desc("register-entry leaves: no shadow pointer"));
 static cl::opt<bool> AddSP("shadow-add-sp", cl::init(false),
                            cl::desc("add the shadow-stack pointer as argument 0 of every engine function and call"));
-static cl::opt<bool> Markers("shadow-icall-markers", cl::init(false),
-                             cl::desc("put a comment with the signature before every indirect call"));
 static cl::opt<bool> ICallSigs("shadow-icall-sigs", cl::init(false),
                                cl::desc("bind the signature of every indirect call to it as a kcfi type id"));
 static cl::opt<bool> Report("shadow-report", cl::init(false),
@@ -938,23 +934,6 @@ static std::string sigCode(FunctionType *T, function_ref<bool(unsigned)> byval) 
   return s + ">" + sigLetter(T->getReturnType());
 }
 
-static void insertMarkers(Module &M) {
-  LLVMContext &C = M.getContext();
-  FunctionType *VT = FunctionType::get(Type::getVoidTy(C), false);
-  for (Function &F : M) {
-    SmallVector<CallBase *> ind;
-    for (BasicBlock &B : F)
-      for (Instruction &I : B)
-        if (auto *CB = dyn_cast<CallBase>(&I))
-          if (!CB->isInlineAsm() && !isa<Function>(CB->getCalledOperand()->stripPointerCasts()))
-            ind.push_back(CB);
-    for (CallBase *CB : ind) {
-      std::string code = sigCode(CB->getFunctionType(), [&](unsigned i) { return CB->isByValArgument(i); });
-      CallInst::Create(InlineAsm::get(VT, "# goasm.icall " + code, "", true), {}, "", CB->getIterator());
-    }
-  }
-}
-
 // icallID encodes a signature code as the 32-bit type id of a "kcfi"
 // bundle: bit 31 set, the parameter count in bits 27 to 30, the result in
 // bits 24 to 26 (v i d f j) and two bits per parameter from bit 0 (i d f j).
@@ -1243,8 +1222,6 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         R->eraseFromParent();
     if (Report)
       report(M, leaves);
-    if (Markers)
-      insertMarkers(M);
     if (ICallSigs)
       bindSignatures(M);
     return PreservedAnalyses::none();

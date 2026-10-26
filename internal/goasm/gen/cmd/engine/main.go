@@ -163,7 +163,7 @@ func main() {
 	shadowLL := filepath.Join(*work, "shadow.ll")
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
-		"-shadow-icall-markers", "-shadow-icall-sigs"}
+		"-shadow-icall-sigs"}
 	if *keepGoing {
 		passArgs = append(passArgs, "-shadow-keep-going")
 	}
@@ -692,8 +692,8 @@ func surveyARM64(asm string, rep *gen.Report) {
 	}
 	for _, name := range unit.FuncOrder {
 		for _, raw := range unit.Funcs[name].Lines {
-			if strings.Contains(raw, "goasm.icall") {
-				add("indirect-call markers", name, "")
+			if strings.HasPrefix(strings.TrimSpace(raw), gen.ICallPrefix) {
+				add("indirect-call labels", name, "")
 				continue
 			}
 			l := strings.TrimSpace(raw)
