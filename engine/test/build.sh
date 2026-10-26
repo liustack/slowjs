@@ -14,11 +14,11 @@
 #
 # MODE is plain (default), asan (AddressSanitizer), ubsan (UndefinedBehavior
 # Sanitizer) or asan-ubsan (both). OUTDIR defaults to engine/test/out/MODE. It
-# gets run-test262, mathdump (see math.sh), api-test (see api-test.sh), and the
-# object files: those of the engine here, and those of its libc in libc/. CC
-# picks another compiler. A sanitizer reports a finding and goes on, so that a
-# run over test262 lists them all: run with ASAN_OPTIONS=halt_on_error=0 to keep
-# AddressSanitizer going too.
+# gets run-test262, mathdump and libmath (see math.sh), api-test (see
+# api-test.sh), and the object files: those of the engine here, and those of its
+# libc in libc/. CC picks another compiler. A sanitizer reports a finding and
+# goes on, so that a run over test262 lists them all: run with
+# ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -76,4 +76,9 @@ for f in run-test262 mathdump api-test; do
 	$cc $hostflags -c "$here/$f.c" -o "$out/$f.o"
 	$cc $san $objs "$out/$f.o" -o "$out/$f" -lpthread
 done
+# libmath calls the math functions of engine/libc, and nothing else of it. It is
+# not given -ffreestanding and the system's libm, but -fno-builtin, so that
+# every call it makes is a call of engine/libc.
+$cc $hostflags -fno-builtin -c "$here/libmath.c" -o "$out/libmath.o"
+$cc $san "$out/libmath.o" "$out"/libc/math_*.o "$out/libc/math.o" -o "$out/libmath"
 echo "$out/run-test262"

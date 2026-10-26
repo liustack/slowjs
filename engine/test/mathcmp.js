@@ -3,14 +3,21 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 //
-// Inputs and outputs of the math functions the engine uses, for comparing two
-// engines. It only uses integer arithmetic, the exact operations of IEEE 754
-// and the functions under test, so every engine runs it the same way.
+// Inputs and outputs of the Math functions, for comparing two engines on what
+// JavaScript sees. It only uses integer arithmetic, the exact operations of
+// IEEE 754 and the functions under test, so every engine runs it the same way.
 // runFn(name) calls Math[name] (or the operator or conversion the name stands
-// for) on 100000 inputs and returns two lines: "in NAME" with the bits of the
-// arguments, and "out NAME" with the bits of the results, 16 hex digits each.
-// A NaN result is written as the one NaN of JavaScript, as a payload and a sign
-// are not something a program can rely on.
+// for) on 100000 inputs and returns two lines: "in NAME 100000 DATA" with the
+// bits of the arguments and "out NAME 100000 DATA" with the bits of the
+// results, 16 hex digits each. A NaN result is written as the one NaN of
+// JavaScript, so its sign and payload are not compared (a typed array can show
+// them, but they are not something the specification fixes).
+//
+// This tests the 33 operations below as the engine reaches them. Math.round
+// is the engine's own code and not libc's round, and clamp and pause test
+// lrint and modf only for the conversions and the whole number test they are
+// used for. The functions of libc are compared directly by libmath and
+// libmdump (see math.sh).
 "use strict";
 
 const N = 100000;
@@ -106,20 +113,29 @@ function runFn(name) {
   const f1 = unary[name], f2 = binary[name];
   if (!f1 && !f2) throw new Error("no function " + name);
   const rx = makeRng(name, 1), ry = makeRng(name, 2);
+  const E = EDGE.length;
   const ins = [], outs = [];
   for (let i = 0; i < N; i++) {
-    const x = i < EDGE.length ? EDGE[i] : sample(i, rx);
-    let r;
+    let x, y, r;
     if (f1) {
+      // the edge values first, then the generator
+      x = i < E ? EDGE[i] : sample(i, rx);
       ins.push(hex(x));
       r = f1(x);
     } else {
-      const y = i < EDGE.length * EDGE.length ? EDGE[(i * 7 + (i / EDGE.length | 0)) % EDGE.length] : sample(i + 3, ry);
+      // every pair of edge values, then the generator
+      if (i < E * E) {
+        x = EDGE[(i / E) | 0];
+        y = EDGE[i % E];
+      } else {
+        x = sample(i, rx);
+        y = sample(i + 3, ry);
+      }
       ins.push(hex(x) + hex(y));
       r = f2(x, y);
     }
     if (r !== r) r = NaN;
     outs.push(hex(r));
   }
-  return "in " + name + " " + ins.join("") + "\nout " + name + " " + outs.join("");
+  return "in " + name + " " + N + " " + ins.join("") + "\nout " + name + " " + N + " " + outs.join("");
 }
