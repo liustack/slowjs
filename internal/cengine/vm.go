@@ -73,7 +73,9 @@ type Options struct {
 // engine frames.
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
 
-// ErrClosed is what a VM returns after Close.
+// ErrClosed is what a VM returns, or panics with where it has no error to
+// return, once Close began: also when Close failed to give all the memory
+// back, since the engine is freed by then.
 var ErrClosed = errors.New("cengine: VM closed")
 
 // usable is nil when the engine can be entered.
@@ -164,7 +166,8 @@ func (e *JSError) Error() string {
 }
 
 // Eval runs src as a global script, then the jobs it queued, and returns
-// String() of its completion value.
+// String() of its completion value. It returns ErrClosed after Close began
+// and ErrBroken after a panic in the engine.
 func (v *VM) Eval(src, file string) (string, error) {
 	if err := v.usable(); err != nil {
 		return "", err
@@ -289,7 +292,9 @@ func (v *VM) cstring(s string) uintptr {
 	return v.base + scratchStr
 }
 
-// RunGC runs the engine's full garbage collection.
+// RunGC runs the engine's full garbage collection. It has no error to
+// return: after Close began it panics with ErrClosed, and after a panic in the
+// engine with ErrBroken.
 func (v *VM) RunGC() {
 	if err := v.usable(); err != nil {
 		panic(err)
@@ -299,7 +304,9 @@ func (v *VM) RunGC() {
 
 // ReleaseMemory gives the free memory of the VM back to the OS, keeping keep
 // bytes of it for the next allocations: whole free chunks are unmapped, the
-// pages of free blocks dropped, and the shadow stack above its first part.
+// pages of free blocks dropped, and the shadow stack above its first part. It
+// returns ErrClosed after Close began and ErrBroken after a panic in the
+// engine.
 func (v *VM) ReleaseMemory(keep uintptr) (hostmem.Released, error) {
 	if err := v.usable(); err != nil {
 		return hostmem.Released{}, err
@@ -339,7 +346,9 @@ type memoryUsage struct {
 	Footprint, FootprintLimit, ChunkCount, ReleaseCandidate   int64
 }
 
-// Usage returns what the VM holds now.
+// Usage returns what the VM holds now. Like RunGC it panics with ErrClosed
+// after Close began and with ErrBroken after a panic in the engine. The host
+// side of a closed VM is still there to read: Host().Memory().Usage().
 func (v *VM) Usage() Usage {
 	if err := v.usable(); err != nil {
 		panic(err)

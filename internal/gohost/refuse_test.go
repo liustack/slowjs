@@ -10,6 +10,7 @@ package gohost
 import (
 	"errors"
 	"testing"
+	"unsafe"
 
 	"github.com/liustack/slowjs/internal/hostmem"
 )
@@ -73,5 +74,59 @@ func TestLeftovers(t *testing.T) {
 	}
 	if u := kept.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
 		t.Fatalf("the VM closed again still holds %+v", u)
+	}
+}
+
+// TestCallReleaseRefused: when the OS refuses to unmap a chunk the engine
+// gives back, the request answers as if it went well, the chunk stays mapped
+// and counted with its contents, the failure is counted and its error kept,
+// and the engine's next request for the same chunk unmaps it.
+func TestCallReleaseRefused(t *testing.T) {
+	v := newVM(t, small)
+	sp, _ := v.Stack()
+	const size = 8 * hostmem.Unit
+	p := MemoryGrow(v.ID(), size)
+	b := unsafe.Slice((*byte)(addr(p)), size)
+	b[0], b[size-1] = 7, 9
+	args := argv(t, v, p, size)
+	usage, counts := v.Memory().Usage(), v.Counts()
+
+	t.Cleanup(func() { hostmem.SetFault(nil) })
+	hostmem.SetFault(func(call string, addr, n uintptr) error {
+		if call == "unmap" && addr == p {
+			return errRefused
+		}
+		return nil
+	})
+	r := Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease)
+	hostmem.SetFault(nil)
+
+	if r != Undefined {
+		t.Fatalf("a refused release returned %+v", r)
+	}
+	if u := v.Memory().Usage(); u != usage {
+		t.Fatalf("after the refusal the VM holds %+v, want %+v as before", u, usage)
+	}
+	if b[0] != 7 || b[size-1] != 9 {
+		t.Fatal("the chunk lost its contents")
+	}
+	c := v.Counts()
+	if c.FreeFailures != 1 || c.Frees != counts.Frees || c.FreeBytes != counts.FreeBytes {
+		t.Fatalf("counts %+v after a refused release, from %+v: want one failure and no free", c, counts)
+	}
+	if !errors.Is(v.LastError(), errRefused) {
+		t.Fatalf("the error kept is %v, want the refusal", v.LastError())
+	}
+
+	// The OS takes it now.
+	if r := Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease); r != Undefined {
+		t.Fatalf("the release again returned %+v", r)
+	}
+	u := v.Memory().Usage()
+	if u.Chunks != usage.Chunks-1 || u.Footprint != usage.Footprint-size {
+		t.Fatalf("after the release again the VM holds %+v, want the chunk gone from %+v", u, usage)
+	}
+	if c := v.Counts(); c.Frees != counts.Frees+1 || c.FreeBytes != counts.FreeBytes+size || c.FreeFailures != 1 {
+		t.Fatalf("counts %+v after the release again", c)
 	}
 }
