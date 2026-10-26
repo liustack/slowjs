@@ -251,7 +251,10 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 
 	// Parse the canonical prologue.
 	i := 0
-	if i >= len(body) || body[i] != "pushq\t%rbp" && body[i] != "pushq %rbp" {
+	if len(body) < 2 {
+		return "", Meta{}, fmt.Errorf("%s: body too short for the canonical prologue", fn.Name)
+	}
+	if norm(body[i]) != "pushq %rbp" {
 		return "", Meta{}, fmt.Errorf("%s: prologue does not start with push rbp: %q", fn.Name, body[i])
 	}
 	i++

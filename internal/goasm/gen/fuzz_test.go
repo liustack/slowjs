@@ -36,3 +36,38 @@ func FuzzEvalExpr(f *testing.F) {
 		_, _, _ = p.evalExpr(e, 0, map[string]bool{})
 	})
 }
+
+// FuzzParse feeds arbitrary text to the whole text pipeline the generator
+// runs on llc's output: SplitAsm, PlanData and both lowerings of every
+// function it finds. Each stage may reject the input, but none may panic.
+func FuzzParse(f *testing.F) {
+	for _, s := range []string{
+		".section .rodata\n.p2align 64\na:\n.byte 1\n",
+		".section .rodata\n.p2align -1\na:\n.byte 1\n",
+		".text\n.globl f\nf:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tleaq\ta(%rip), %rax\n\tpopq\t%rbp\n\tretq\n.Lfunc_end0:\n.section .rodata\na:\n.byte 1\n.p2align 3, 0, 1\nb:\n.quad a+8\n",
+		".text\nf:\n.Lfunc_end0:\n",
+		".text\nf:\n\tpushq\t%rbp\n.Lfunc_end0:\n",
+		".text\nf:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tsubq\t$8, %rsp\n\tmovq\t-8(%rbp), %rax\n\tjmpq\t*%rax\n.Lfunc_end0:\n",
+		".section .rodata\na:\n.ascii \"\\x\"\n",
+		".set0", ":", ".globl", ".section", ".p2alignx 3",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, asm string) {
+		u, err := SplitAsm(asm, "#")
+		if err != nil {
+			return
+		}
+		funcs := map[string]bool{}
+		for _, n := range u.FuncOrder {
+			funcs[n] = true
+		}
+		p := PlanData(u, funcs)
+		env := &LowerEnv{Plan: p, Funcs: funcs}
+		SetCallees(nil)
+		for _, n := range u.FuncOrder {
+			_, _, _ = LowerUnifiedFunc(AMD64(), u.Funcs[n].Lines, FuncSpec{Name: n, Sig: Sig{Params: []Type{Ptr}, Ret: I64}}, env, "")
+			_, _, _ = LowerRegister(asm, FuncSpec{Name: n, Sig: Sig{Params: []Type{Ptr, I64}, Ret: Ptr}, Kind: Register})
+		}
+	})
+}
