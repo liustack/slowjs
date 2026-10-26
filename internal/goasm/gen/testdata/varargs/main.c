@@ -4,10 +4,13 @@
 #include <stdlib.h>
 
 long use(void *sp, int one);
+long run_aggr(void *sp);
+long run_wrap(void *sp);
 
 int main(void)
 {
     char *region = aligned_alloc(1 << 20, 1 << 20);
-    printf("%ld\n", use(region + 8192, 1));
+    void *sp = region + 8192;
+    printf("%ld %ld %ld\n", use(sp, 1), run_aggr(sp), run_wrap(sp));
     return 0;
 }
