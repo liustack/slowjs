@@ -166,6 +166,25 @@ func TestFaultAbort(t *testing.T) {
 	brokenAfter(t, v, "abort")
 }
 
+// TestFaultTrap: the engine reaches a trap. abort ends in __builtin_trap, for
+// a host whose abort returns, and the pass puts a call to host_trap in its
+// place. A ud2 or a brk would be SIGILL or SIGTRAP, which the runtime cannot
+// recover and ends the process with. The host's own abort never returns, so
+// the test answers the host_call of the abort itself.
+func TestFaultTrap(t *testing.T) {
+	callOverrideHook = func(magic int32) (gohost.Value, bool) {
+		return gohost.Undefined, magic == gohost.CallAbort
+	}
+	defer func() { callOverrideHook = nil }()
+	v := newVM(t, Options{Seed: 1})
+	got := fails(v, func() { abort(v.sp) })
+	if !errors.Is(asError(got), gohost.ErrTrap) {
+		t.Fatalf("a trap in the engine panicked with %T %v, want gohost.ErrTrap", got, got)
+	}
+	callOverrideHook = nil
+	brokenAfter(t, v, "a trap")
+}
+
 // TestFaultsAmongVMs: a VM that fails does not touch the VMs that run beside
 // it on other goroutines, nor the ones made after it.
 func TestFaultsAmongVMs(t *testing.T) {

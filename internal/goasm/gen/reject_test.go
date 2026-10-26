@@ -52,7 +52,7 @@ func pipeline(llvm, pass, cfile, work string) error {
 		return err
 	}
 	allow := map[string]bool{}
-	for _, h := range HostCallbacks {
+	for _, h := range append(append([]string{}, HostCallbacks...), GeneratorCallbacks...) {
 		allow[h] = true
 	}
 	asm, err := os.ReadFile(u.Asm)

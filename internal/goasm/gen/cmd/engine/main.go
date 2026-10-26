@@ -281,7 +281,7 @@ func main() {
 	tLLVM := time.Since(t0)
 
 	allow := map[string]bool{}
-	for _, h := range gen.HostCallbacks {
+	for _, h := range append(append([]string{}, gen.HostCallbacks...), gen.GeneratorCallbacks...) {
 		allow[h] = true
 	}
 	for _, e := range strings.Split(*extra, ",") {

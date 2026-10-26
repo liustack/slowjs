@@ -164,12 +164,16 @@ func TestCFlagsTargets(t *testing.T) {
 	}
 }
 
-// The closed list of host callbacks is the plan's five.
+// The closed list of host callbacks is the plan's five. The one more that the
+// generator puts in by itself is on a list of its own, so that C cannot name it.
 func TestHostCallbacksList(t *testing.T) {
 	want := "host_call host_memory_grow host_now host_poll host_release"
 	got := append([]string{}, HostCallbacks...)
 	sort.Strings(got)
 	if strings.Join(got, " ") != want {
 		t.Fatalf("HostCallbacks = %v, the plan's five are %s", got, want)
+	}
+	if g := strings.Join(GeneratorCallbacks, " "); g != "host_trap" {
+		t.Fatalf("GeneratorCallbacks = %v, want host_trap", GeneratorCallbacks)
 	}
 }

@@ -7,6 +7,8 @@
 
 package cengine
 
+import "github.com/liustack/slowjs/internal/gohost"
+
 // The normal build has no hooks for tests: these do nothing, and the calls to
 // them compile away. The tag testhooks swaps in hooks_testhooks.go.
 
@@ -16,3 +18,6 @@ func hook(name string, vm uintptr) {}
 
 // engineFreed is where a test counts the times Close frees the engine.
 func engineFreed(v *VM) {}
+
+// callOverride is where a test can answer a host_call itself.
+func callOverride(magic int32) (gohost.Value, bool) { return gohost.Value{}, false }

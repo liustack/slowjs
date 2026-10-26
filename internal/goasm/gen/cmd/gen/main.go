@@ -126,6 +126,7 @@ func main() {
 	// so the generator marshals calls to it as a unified call.
 	gen.AddCallee("host_poll", gen.Sig{Params: []gen.Type{ptr}, Ret: i64}, gen.Unified)
 	gen.AddCallee("host_call", gen.Sig{Params: []gen.Type{ptr, i64, i64}, Ret: i64}, gen.Unified)
+	gen.AddCallee("host_trap", gen.Sig{Params: []gen.Type{ptr}}, gen.Unified)
 	var leaves []string
 	for _, s := range specs {
 		if s.Kind == gen.Register {
@@ -155,7 +156,7 @@ func main() {
 	engineObj := unit.Obj
 	engineAsm := readFile(unit.Asm)
 	allow := map[string]bool{"host_poll": true, "host_memory_grow": true, "host_now": true,
-		"host_call": true, "host_release": true}
+		"host_call": true, "host_release": true, "host_trap": true}
 	for _, s := range specs {
 		allow[s.Name] = true
 	}
