@@ -107,7 +107,10 @@ in `missingNames`. A rejection stops the run and nothing is written, and the
 default has no stubs. `-keep-going` is for surveys: it lists every function the
 C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
-rejecting them. `-arch arm64` stops after llc and counts what the arm64
+rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
+the engine is made for (20 by default, 25 for the host's whole 32 MiB):
+`engine_decl.go` records it as `shadowSizeLog2`, and the host refuses a
+smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
 
 ```sh
