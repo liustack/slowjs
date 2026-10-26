@@ -311,6 +311,177 @@ static void test_aborts(void)
     }
 }
 
+/* ---- the formats the generator accepts ----
+
+   internal/goasm/gen/formats.go refuses, when the engine is built, a format
+   that vsnprintf would abort on at run time. Its table is
+   internal/goasm/gen/testdata/formats/cases.txt: "ok" or "bad", a tab and a
+   format on each line, and a test of the generator holds the table to its
+   checker. This holds it to vsnprintf: an "ok" format is done with no abort,
+   after taking exactly the arguments it names, and a "bad" one ends in SIGABRT
+   (and not in a trap). A change of stdio.c that the table does not follow, or
+   the other way round, fails one of them. */
+
+/* The arguments a format takes, one letter for each: i an int (also what a *
+   takes, and %c), l a long, q a long long, z a size_t, j an intmax_t, t a
+   ptrdiff_t, s a string and p a pointer. Gives the number of arguments, or -1
+   when the format is not one that the table can say "ok" about. */
+static int plan_args(const char *f, char *kinds, size_t cap)
+{
+    size_t n = 0;
+
+    for (; *f; f++) {
+        char k = 'i', c;
+
+        if (*f != '%')
+            continue;
+        f++;
+        while (*f && strchr("-+ 0#", *f))
+            f++;
+        if (*f == '*') {
+            if (n + 1 >= cap) return -1;
+            kinds[n++] = 'i';
+            f++;
+        } else {
+            while (*f >= '0' && *f <= '9')
+                f++;
+        }
+        if (*f == '.') {
+            f++;
+            if (*f == '*') {
+                if (n + 1 >= cap) return -1;
+                kinds[n++] = 'i';
+                f++;
+            } else {
+                while (*f >= '0' && *f <= '9')
+                    f++;
+            }
+        }
+        switch (*f) {
+        case 'h': f++; if (*f == 'h') f++; break;
+        case 'l': f++; if (*f == 'l') { f++; k = 'q'; } else k = 'l'; break;
+        case 'z': f++; k = 'z'; break;
+        case 'j': f++; k = 'j'; break;
+        case 't': f++; k = 't'; break;
+        }
+        switch (c = *f) {
+        case 'd': case 'i': case 'u': case 'x': case 'X': case 'o': break;
+        case 'c': k = 'i'; break;
+        case 's': k = 's'; break;
+        case 'p': k = 'p'; break;
+        case '%': k = 0; break;
+        default: return -1;
+        }
+        if (k) {
+            if (n + 1 >= cap) return -1;
+            kinds[n++] = k;
+        }
+    }
+    kinds[n] = 0;
+    return (int)n;
+}
+
+/* vsnprintf of the format, given the arguments its kinds name. -2 when there
+   is no call for these kinds: a new table entry may need one. */
+static int call_kinds(const char *kinds, const char *fmt, char *buf, size_t size)
+{
+    static const char str[] = "abcdef";
+    static int marker;
+
+    if (!strcmp(kinds, "")) return vwrap(buf, size, fmt);
+    if (!strcmp(kinds, "i")) return vwrap(buf, size, fmt, 3);
+    if (!strcmp(kinds, "l")) return vwrap(buf, size, fmt, 3L);
+    if (!strcmp(kinds, "q")) return vwrap(buf, size, fmt, 3LL);
+    if (!strcmp(kinds, "z")) return vwrap(buf, size, fmt, (size_t)3);
+    if (!strcmp(kinds, "j")) return vwrap(buf, size, fmt, (intmax_t)3);
+    if (!strcmp(kinds, "t")) return vwrap(buf, size, fmt, (ptrdiff_t)3);
+    if (!strcmp(kinds, "s")) return vwrap(buf, size, fmt, str);
+    if (!strcmp(kinds, "p")) return vwrap(buf, size, fmt, (void *)&marker);
+    if (!strcmp(kinds, "ii")) return vwrap(buf, size, fmt, 3, 3);
+    if (!strcmp(kinds, "is")) return vwrap(buf, size, fmt, 3, str);
+    if (!strcmp(kinds, "si")) return vwrap(buf, size, fmt, str, 3);
+    if (!strcmp(kinds, "ss")) return vwrap(buf, size, fmt, str, str);
+    if (!strcmp(kinds, "iis")) return vwrap(buf, size, fmt, 3, 3, str);
+    if (!strcmp(kinds, "iii")) return vwrap(buf, size, fmt, 3, 3, 3);
+    return -2;
+}
+
+/* Runs the format in a child process. Gives the number of arguments the
+   formatter took, and sets *how to 0 when it returned, 1 when it died of
+   SIGABRT, 2 for any other end (a trap, a signal), and 3 when there is no call
+   for the kinds. */
+static int table_run(const char *fmt, const char *kinds, int *how)
+{
+    pid_t pid = fork();
+    int status, code;
+
+    if (pid == 0) {
+        char buf[64];
+
+        signal(SIGABRT, on_abort);
+        fclose(stderr);
+        sl_va_count = 0;
+        if (call_kinds(kinds, fmt, buf, sizeof buf) == -2)
+            _exit(99);
+        _exit((int)sl_va_count);
+    }
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status)) {
+        *how = 2;
+        return -1;
+    }
+    code = WEXITSTATUS(status);
+    *how = code >= 100 ? 1 : code == 99 ? 3 : 0;
+    return code >= 100 ? code - 100 : code;
+}
+
+static void test_format_table(const char *path)
+{
+    char line[256];
+    FILE *f = path ? fopen(path, "r") : NULL;
+    int ok_n = 0, bad_n = 0;
+
+    CHECK(f != NULL, "the table of formats %s cannot be read", path ? path : "(none given)");
+    if (!f)
+        return;
+    while (fgets(line, sizeof line, f)) {
+        char *tab = strchr(line, '\t'), kinds[8];
+        size_t len = strlen(line);
+        int ok, how, took;
+
+        if (len && line[len - 1] == '\n')
+            line[--len] = 0;
+        if (!len || line[0] == '#')
+            continue;
+        CHECK(tab != NULL, "line without a tab: %s", line);
+        if (!tab)
+            continue;
+        *tab++ = 0;
+        ok = !strcmp(line, "ok");
+        CHECK(ok || !strcmp(line, "bad"), "verdict %s is not ok or bad", line);
+        if (ok) {
+            int want = plan_args(tab, kinds, sizeof kinds);
+
+            ok_n++;
+            CHECK(want >= 0, "ok format %s: cannot tell its arguments", tab);
+            if (want < 0)
+                continue;
+            took = table_run(tab, kinds, &how);
+            CHECK(how != 3, "ok format %s: no call for arguments \"%s\"", tab, kinds);
+            CHECK(how != 1, "format %s is ok in the table, and vsnprintf aborts", tab);
+            CHECK(how != 2, "format %s: the process died of something but an abort", tab);
+            CHECK(how != 0 || took == want, "ok format %s: took %d arguments, want %d", tab, took, want);
+        } else {
+            bad_n++;
+            took = table_run(tab, "iii", &how);
+            CHECK(how != 3, "bad format %s: no call for arguments \"iii\"", tab);
+            CHECK(how == 1 || how == 3, "format %s is bad in the table, and vsnprintf %s", tab, how == 0 ? "takes it" : "dies, but not of an abort");
+        }
+    }
+    fclose(f);
+    CHECK(ok_n >= 40 && bad_n >= 40, "only %d ok and %d bad formats read", ok_n, bad_n);
+}
+
 /* A huge width costs nothing when the buffer is small, and the result is its length. */
 static void test_long_fill(void)
 {
@@ -400,12 +571,13 @@ static void test_snprintf(void)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     test_mem();
     test_str();
     test_snprintf();
     test_aborts();
+    test_format_table(argc > 1 ? argv[1] : NULL);
     test_long_fill();
     printf("libc-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;

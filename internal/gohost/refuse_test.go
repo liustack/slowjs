@@ -98,7 +98,7 @@ func TestCallReleaseRefused(t *testing.T) {
 		}
 		return nil
 	})
-	r := Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease)
+	r := Call(sp, v.ID(), 0, 2, args, CallMemoryRelease)
 	hostmem.SetFault(nil)
 
 	if r != Undefined {
@@ -119,7 +119,7 @@ func TestCallReleaseRefused(t *testing.T) {
 	}
 
 	// The OS takes it now.
-	if r := Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease); r != Undefined {
+	if r := Call(sp, v.ID(), 0, 2, args, CallMemoryRelease); r != Undefined {
 		t.Fatalf("the release again returned %+v", r)
 	}
 	u := v.Memory().Usage()

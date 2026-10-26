@@ -231,7 +231,7 @@ static void heap_give_back(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link)
     h->chunk_count--;
     argv[0] = HOST_WORD(addr);
     argv[1] = HOST_WORD(size);
-    host_call(h->vm, JS_UNDEFINED, 2, argv, HOST_CALL_MEMORY_RELEASE);
+    host_call(h->vm, NULL, 2, argv, HOST_CALL_MEMORY_RELEASE);
 }
 
 /* ---- shared chunks ---- */
@@ -361,7 +361,7 @@ static void *heap_remap_dedicated(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link,
     argv[0] = HOST_WORD((uintptr_t)c);
     argv[1] = HOST_WORD(old_chunk);
     argv[2] = HOST_WORD(chunk);
-    ret = host_call(h->vm, JS_UNDEFINED, 3, argv, HOST_CALL_MEMORY_REMAP);
+    ret = host_call(h->vm, NULL, 3, argv, HOST_CALL_MEMORY_REMAP);
     addr = HOST_WORD_VALUE(ret);
     if (!addr)
         return NULL;
@@ -543,6 +543,16 @@ static void heap_walker(void *ptr, size_t size, int used, void *user)
         w->used_bytes += size + tlsf_alloc_overhead();
         w->used_blocks++;
     }
+}
+
+size_t heap_dedicated_size(const JSHeap *h, const void *ptr)
+{
+    const JSHeapChunk *c;
+
+    for (c = h->dedicated; c; c = c->next)
+        if ((const uint8_t *)ptr == heap_dedicated_block(c))
+            return c->size;
+    return 0;
 }
 
 const char *heap_check(const JSHeap *h)

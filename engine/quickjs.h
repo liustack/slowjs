@@ -398,11 +398,33 @@ int JS_GetMaxCallDepth(JSRuntime *rt);
 /* The recursions of C that make no call (the parsers, JSON, modules, proxies
    without a trap and the like) have a depth of their own, separate from the
    call depth: at most this many levels at once. Past it a script gets a
-   RangeError (a SyntaxError from a regexp). It is fixed, so that the stack
-   the engine may use has a bound for any call depth. The parser counts about
-   14 levels for each nested parenthesis and 30 for each nested function
-   expression: tifa's example shop needs 484, test262 at most 960. */
+   RangeError (a SyntaxError from a regexp). Unlike the call depth it is a
+   constant of the build, not a setting: the proof of the bound on the stack the
+   engine may use (docs/fork-changes/c-engine.md) multiplies it by the stack
+   of the deepest recursion, so it needs one fixed biggest value. The parser
+   counts 3 levels for each nested parenthesis, call or array. Of 79525 files
+   of real code (npm packages, compiled JSX, the output of code generators)
+   the deepest parse reaches 632, in an asm.js build of sql.js, no other goes
+   past 282, and one in a thousand reaches 100: 2000 is more than three times
+   the deepest. */
 #define JS_MAX_INTERNAL_DEPTH 2000
+/* The depths now: how many calls run (the call depth), and how many levels the
+   recursions of C that make no call are in (the internal depth). They are for
+   a host whose code in one runtime calls into another, which counts its own
+   depths: to hold the runtimes together to one limit, the host reads the
+   depths of the runtime that calls, sets those of the other to them, makes the
+   call, and sets the old depths back. The Get functions return a depth. The Set
+   functions return 0, or -1 and change nothing when depth is below 0 or above
+   JS_MAX_CALL_DEPTH_LIMIT (JS_MAX_INTERNAL_DEPTH for the internal depth). A
+   depth above the limit of the runtime is accepted: nothing more runs in it
+   until the host sets the depth back, and the next call is a RangeError. They
+   work while the runtime runs code, which is when they are needed, and then
+   every depth set must be set back before the code that was running goes on:
+   a call that ends counts one level off whatever the depth is by then. */
+int JS_GetCallDepth(JSRuntime *rt);
+int JS_SetCallDepth(JSRuntime *rt, int depth);
+int JS_GetInternalDepth(JSRuntime *rt);
+int JS_SetInternalDepth(JSRuntime *rt, int depth);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. */
 size_t JS_FreeRuntime(JSRuntime *rt);

@@ -33,11 +33,13 @@ func host_now(sp, vm, kind uintptr) int64 {
 	return gohost.Now(uint32(vm), int32(kind))
 }
 
-// host_call is JSValue host_call(uint32_t vm, JSValueConst this_val, int
-// argc, JSValueConst *argv, int magic).
-func host_call(sp, vm, this0, this1, argc, argv, magic uintptr) (r0, r1 uintptr) {
+// host_call is JSValue host_call(uint32_t vm, const JSValue *this_val, int
+// argc, JSValueConst *argv, int magic). The this value is passed by address,
+// so that the call has 6 words with the shadow pointer, as many as the body
+// calling mode has registers for.
+func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
 	hook("host_call", vm)
-	r := gohost.Call(sp, uint32(vm), gohost.Value{U: this0, Tag: this1}, int32(argc), argv, int32(magic))
+	r := gohost.Call(sp, uint32(vm), this, int32(argc), argv, int32(magic))
 	return r.U, r.Tag
 }
 

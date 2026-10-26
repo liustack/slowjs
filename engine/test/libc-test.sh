@@ -4,7 +4,8 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# Test the string functions and snprintf of engine/libc against the system's.
+# Test the string functions and snprintf of engine/libc against the system's,
+# and vsnprintf against the table of formats the generator accepts.
 #
 #   engine/test/libc-test.sh [MODE]
 #
@@ -53,4 +54,4 @@ for f in "$libc"/string/*.c "$libc"/stdio.c; do
 done
 $cc -O2 -g -Wall -Wno-format -Wno-format-security $san -c "$here/libc-test.c" -o "$out/libc-test.o"
 $cc $san $objs "$out/libc-test.o" -o "$out/libc-test"
-"$out/libc-test"
+"$out/libc-test" "$(dirname "$engine")/internal/goasm/gen/testdata/formats/cases.txt"

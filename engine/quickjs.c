@@ -3216,6 +3216,32 @@ int JS_GetMaxCallDepth(JSRuntime *rt)
     return rt->max_call_depth;
 }
 
+int JS_GetCallDepth(JSRuntime *rt)
+{
+    return rt->call_depth;
+}
+
+int JS_SetCallDepth(JSRuntime *rt, int depth)
+{
+    if (depth < 0 || depth > JS_MAX_CALL_DEPTH_LIMIT)
+        return -1;
+    rt->call_depth = depth;
+    return 0;
+}
+
+int JS_GetInternalDepth(JSRuntime *rt)
+{
+    return rt->internal_depth;
+}
+
+int JS_SetInternalDepth(JSRuntime *rt, int depth)
+{
+    if (depth < 0 || depth > JS_MAX_INTERNAL_DEPTH)
+        return -1;
+    rt->internal_depth = depth;
+    return 0;
+}
+
 static inline BOOL is_strict_mode(JSContext *ctx)
 {
     JSStackFrame *sf = ctx->rt->current_stack_frame;
@@ -9170,8 +9196,9 @@ JSValue JS_NewError(JSContext *ctx)
     return JS_NewObjectClass(ctx, JS_CLASS_ERROR);
 }
 
-static JSValue JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
-                              const char *fmt, va_list ap, BOOL add_backtrace)
+static JSValue __attribute__((format(printf, 3, 0)))
+JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
+               const char *fmt, va_list ap, BOOL add_backtrace)
 {
     char buf[256];
     JSValue msg, obj, ret;
@@ -9205,8 +9232,9 @@ static JSValue JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
     return JS_EXCEPTION;
 }
 
-static JSValue JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
-                             const char *fmt, va_list ap)
+static JSValue __attribute__((format(printf, 3, 0)))
+JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
+              const char *fmt, va_list ap)
 {
     JSRuntime *rt = ctx->rt;
     JSStackFrame *sf;
@@ -9256,6 +9284,14 @@ static int __attribute__((format(printf, 3, 4))) JS_ThrowTypeErrorOrFalse(JSCont
     }
 }
 
+/* The two functions below pass their format on with one argument of their own,
+   the name of the atom, in place of the arguments they were given (the macros
+   below give them only "" to be checked against the format). Clang cannot see
+   that the format is a constant at every call, so the check of a format that
+   is not a constant is off for them. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+
 /* never use it directly */
 static JSValue __attribute__((format(printf, 3, 4))) __JS_ThrowTypeErrorAtom(JSContext *ctx, JSAtom atom, const char *fmt, ...)
 {
@@ -9271,6 +9307,8 @@ static JSValue __attribute__((format(printf, 3, 4))) __JS_ThrowSyntaxErrorAtom(J
     return JS_ThrowSyntaxError(ctx, fmt,
                              JS_AtomGetStr(ctx, buf, sizeof(buf), atom));
 }
+
+#pragma clang diagnostic pop
 
 /* %s is replaced by 'atom'. The macro is used so that gcc can check
     the format string. */
@@ -24341,7 +24379,8 @@ static int get_line_col_cached(GetLineColCache *s, int *pcol_num, const uint8_t 
 }
 
 /* 'ptr' is the position of the error in the source */
-static int js_parse_error_v(JSParseState *s, const uint8_t *ptr, const char *fmt, va_list ap)
+static int __attribute__((format(printf, 3, 0)))
+js_parse_error_v(JSParseState *s, const uint8_t *ptr, const char *fmt, va_list ap)
 {
     JSContext *ctx = s->ctx;
     int line_num, col_num;
@@ -64306,31 +64345,13 @@ static JSValue js_atomics_isLockFree(JSContext *ctx,
     return JS_NewBool(ctx, ret);
 }
 
-#ifdef __CCGO__
-static inline void cpu_pause(void)
-{
-}
-#else
-#if defined(__aarch64__)
-static inline void cpu_pause(void)
-{
-    asm volatile("yield" ::: "memory");
-}
-#elif defined(__x86_64) || defined(__i386__)
-static inline void cpu_pause(void)
-{
-    asm volatile("pause" ::: "memory");
-}
-#else
-static inline void cpu_pause(void)
-{
-}
-#endif
-#endif
-
-// no-op: Atomics.pause() is not allowed to block or yield to another
-// thread, only to hint the CPU that it should back off for a bit;
-// the amount of work we do here is a good enough substitute
+/* Atomics.pause hints to the CPU that the code is spinning. ecma262 has an
+   engine send the hint only "if the execution environment supports signaling"
+   it, so doing nothing conforms. The engine sends none: the generated code
+   holds no inline assembly, and nothing here waits for another thread. The
+   argument is still checked as the proposal had it (undefined or an integral
+   Number, else a TypeError), since the test262 this tree runs still tests
+   that. The current draft of ecma262 has no argument. */
 static JSValue js_atomics_pause(JSContext *ctx, JSValueConst this_obj,
                                 int argc, JSValueConst *argv)
 {
@@ -64351,7 +64372,6 @@ static JSValue js_atomics_pause(JSContext *ctx, JSValueConst this_obj,
             break;
         }
     }
-    cpu_pause();
     return JS_UNDEFINED;
 }
 
