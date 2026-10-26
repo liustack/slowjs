@@ -63,6 +63,19 @@ func CompileUnit(cfg UnitConfig, cfile string) (*Unit, error) {
 	if err := CheckIR(string(ll)); err != nil {
 		return nil, fmt.Errorf("IR check: %w", err)
 	}
+	// The formats are read in the IR as written, before the optimizer
+	// changes the calls that carry them.
+	plain := base + ".plain.ll"
+	if _, err := runTool(filepath.Join(cfg.LLVM, "clang"), append(append([]string{}, cfg.CFlags...), "-O0", "-S", "-emit-llvm", "-o", plain, cfile)...); err != nil {
+		return nil, err
+	}
+	pll, err := os.ReadFile(plain)
+	if err != nil {
+		return nil, err
+	}
+	if vs := CheckFormats(string(pll), EngineNonFormatVariadic); len(vs) > 0 {
+		return nil, fmt.Errorf("IR check: %s: %s: %s", vs[0].Func, vs[0].Rule, vs[0].Line)
+	}
 	args := []string{"-load-pass-plugin", cfg.Pass, "-passes=goasm-shadow-stack",
 		"-shadow-leaf=" + strings.Join(cfg.Leaves, ",")}
 	args = append(append(args, cfg.PassArgs...), "-S", "-o", u.ShadowIR, u.IR)
