@@ -29,6 +29,11 @@ import (
 //     the calls the optimizer folds into direct ones.
 //   - alias_weak.c: a call of a weak alias, which the optimizer cannot fold,
 //     is refused.
+//   - narrow_va.c (with -varargs-block): narrow fixed parameters and results
+//     of variadic functions, called directly, through a pointer and from a
+//     function that forwards its va_list. The pass moves the variable
+//     arguments into a block first and widens the narrow ones after, and the
+//     two meet in these calls.
 //
 // It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld
 // (SLOWJS_LLD), on linux/amd64.
@@ -67,6 +72,7 @@ func TestSampleRuns(t *testing.T) {
 		pairs bool     // the results come in pairs that must be equal
 	}{
 		{"alias.c", nil, 24, false},
+		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {
 		name := strings.TrimSuffix(s.file, ".c")
 		t.Run(name, func(t *testing.T) {
