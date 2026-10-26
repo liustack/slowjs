@@ -28,7 +28,13 @@ int64_t host_now(uint32_t vm, int kind);
 /* Calls a function of the host: one it registered, a Builtin, or Intl and
    Temporal. magic says which, and is 0 or more for those. The result is the
    value of the call or JS_EXCEPTION. A magic below 0 is a request of the
-   engine itself, and the host decides what to do with it. */
+   engine itself, and the host decides what to do with it.
+
+   this_val points at the this value, in the memory of the engine. A request of
+   the engine has none and passes NULL. It is a pointer because the generated
+   code passes a callback its arguments in registers, and a JSValue takes two:
+   with the shadow pointer, vm, argc, argv and magic that would be 7, past the
+   6 that the body calling mode has (see internal/goasm/gen/README.md). */
 enum {
     HOST_CALL_ABORT = -1, /* the engine met a state it cannot go on from. It does not return */
     /* This one gives the memory of the heap back (engine/heap.h): a chunk that
@@ -44,7 +50,7 @@ enum {
        MREMAP_MAYMOVE. */
     HOST_CALL_MEMORY_REMAP = -3,   /* (address, old size, new size): make the dedicated chunk new size bytes (a multiple of 64 KiB, bigger), where it is or elsewhere, with its content. The result is the address of the chunk as a word, or 0 when the system has no memory, and then the chunk is as it was: the engine takes that as out of memory and does not try to copy */
 };
-JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
+JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int magic);
 
 /* A pointer-sized integer as an argument or a result of the kinds above. The
    tag is JS_TAG_INT and means nothing: the host reads the word. */

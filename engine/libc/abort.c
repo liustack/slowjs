@@ -13,6 +13,6 @@
 
 void abort(void)
 {
-	host_call(0, JS_UNDEFINED, 0, NULL, HOST_CALL_ABORT);
+	host_call(0, NULL, 0, NULL, HOST_CALL_ABORT);
 	__builtin_trap();
 }

@@ -231,7 +231,7 @@ static void heap_give_back(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link)
     h->chunk_count--;
     argv[0] = HOST_WORD(addr);
     argv[1] = HOST_WORD(size);
-    host_call(h->vm, JS_UNDEFINED, 2, argv, HOST_CALL_MEMORY_RELEASE);
+    host_call(h->vm, NULL, 2, argv, HOST_CALL_MEMORY_RELEASE);
 }
 
 /* ---- shared chunks ---- */
@@ -361,7 +361,7 @@ static void *heap_remap_dedicated(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link,
     argv[0] = HOST_WORD((uintptr_t)c);
     argv[1] = HOST_WORD(old_chunk);
     argv[2] = HOST_WORD(chunk);
-    ret = host_call(h->vm, JS_UNDEFINED, 3, argv, HOST_CALL_MEMORY_REMAP);
+    ret = host_call(h->vm, NULL, 3, argv, HOST_CALL_MEMORY_REMAP);
     addr = HOST_WORD_VALUE(ret);
     if (!addr)
         return NULL;
