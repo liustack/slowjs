@@ -9,7 +9,6 @@ package cengine
 
 import (
 	"errors"
-	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -315,19 +314,46 @@ func TestGoHeap(t *testing.T) {
 	}
 }
 
-// TestDeepRecursion needs the engine generated for the whole 32 MiB shadow
-// stack (-shadow-size-log2=25): with a smaller region, and the stack checks
-// of the C still off, a deep recursion runs past the region and traps.
+// TestDeepRecursion: a recursion within the call depth limit of the engine
+// (5000 levels, of which the entry of Eval and the global code take two, so
+// f(4997) is the deepest) runs to its end, a recursion past the limit ends in
+// a RangeError that the script can catch and Eval returns, not in a fault of
+// the process, and the VM recurses as deep as before. The levels need room on
+// the shadow stack, so it runs only for an engine generated for the whole
+// 32 MiB stack of the host (-shadow-size-log2=25 of the generator, which
+// engine_decl.go records).
 func TestDeepRecursion(t *testing.T) {
-	if os.Getenv("CENGINE_DEEP") != "1" {
-		t.Skip("CENGINE_DEEP=1 when the engine was generated with -shadow-size-log2=25")
+	if shadowSizeLog2 < 25 {
+		t.Skipf("the engine was generated for a shadow stack of 2^%d bytes, and a deep recursion needs 2^25", shadowSizeLog2)
 	}
 	v := newVM(t, Options{})
 	defer closeVM(t, v)
-	got, err := v.Eval(`function f(n) { return n ? 1 + f(n - 1) : 0 } f(5000)`, "deep.js")
-	if err != nil || got != "5000" {
-		t.Fatalf("%q, %v", got, err)
+	within := func(n, label string) {
+		t.Helper()
+		got, err := v.Eval("f("+n+")", "deep.js")
+		if err != nil || got != n {
+			t.Fatalf("%s: f(%s) gave %q, %v", label, n, got, err)
+		}
 	}
+	if _, err := v.Eval(`function f(n) { return n ? 1 + f(n - 1) : 0 }`, "deep.js"); err != nil {
+		t.Fatal(err)
+	}
+	within("4000", "before")
+	within("4997", "the deepest")
+
+	for _, n := range []string{"4998", "5000", "1e6"} {
+		_, err := v.Eval("f("+n+")", "deeper.js")
+		var e *JSError
+		if !errors.As(err, &e) || e.Message != "RangeError: Maximum call stack size exceeded" {
+			t.Fatalf("f(%s) gave %v, want the RangeError of the call depth", n, err)
+		}
+	}
+	got, err := v.Eval(`try { f(1e6) } catch (e) { e instanceof RangeError }`, "caught.js")
+	if err != nil || got != "true" {
+		t.Fatalf("a script catching the overflow: %q, %v", got, err)
+	}
+	within("4000", "after")
+	within("4997", "the deepest again")
 }
 
 // TestStackSmallerThanGenerated: New refuses a shadow stack smaller than the
