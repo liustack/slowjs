@@ -137,7 +137,8 @@ static FunctionCallee hostTrap(Module &M) {
   return F;
 }
 
-// callHostTrap ends the block at B's insertion point with a call to host_trap.
+// callHostTrap puts a call to host_trap, with the shadow pointer sp, at B's
+// insertion point. What follows it is unreachable.
 static CallInst *callHostTrap(IRBuilder<> &B, Module &M, Value *sp) {
   CallInst *CI = B.CreateCall(hostTrap(M), {sp});
   CI->setDoesNotReturn();
