@@ -3216,6 +3216,32 @@ int JS_GetMaxCallDepth(JSRuntime *rt)
     return rt->max_call_depth;
 }
 
+int JS_GetCallDepth(JSRuntime *rt)
+{
+    return rt->call_depth;
+}
+
+int JS_SetCallDepth(JSRuntime *rt, int depth)
+{
+    if (depth < 0 || depth > JS_MAX_CALL_DEPTH_LIMIT)
+        return -1;
+    rt->call_depth = depth;
+    return 0;
+}
+
+int JS_GetInternalDepth(JSRuntime *rt)
+{
+    return rt->internal_depth;
+}
+
+int JS_SetInternalDepth(JSRuntime *rt, int depth)
+{
+    if (depth < 0 || depth > JS_MAX_INTERNAL_DEPTH)
+        return -1;
+    rt->internal_depth = depth;
+    return 0;
+}
+
 static inline BOOL is_strict_mode(JSContext *ctx)
 {
     JSStackFrame *sf = ctx->rt->current_stack_frame;
