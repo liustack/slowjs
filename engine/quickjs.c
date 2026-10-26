@@ -5017,8 +5017,10 @@ static int string_rope_get(JSValueConst val, uint32_t idx)
     return string_get(JS_VALUE_GET_STRING(val), idx);
 }
 
+/* One more level than a rope may keep: js_rebalancee_string_rope walks the
+   rope that went one level past the limit. */
 typedef struct {
-    JSValueConst stack[JS_STRING_ROPE_MAX_DEPTH];
+    JSValueConst stack[JS_STRING_ROPE_MAX_DEPTH + 1];
     int stack_len;
 } JSStringRopeIter;
 
@@ -5041,7 +5043,7 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
         if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING)
             return JS_VALUE_GET_STRING(val);
         r = JS_VALUE_GET_STRING_ROPE(val);
-        assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH);
+        assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH + 1);
         s->stack[s->stack_len++] = r->right;
         val = r->left;
     }
@@ -5155,13 +5157,14 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
 
 static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope);
 
-/* op1 and op2 must be strings or string ropes */
-static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
+/* op1 and op2 must be strings or string ropes. The rope is as deep as the
+   deeper of them plus one: js_new_string_rope rebalances it when that is
+   past JS_STRING_ROPE_MAX_DEPTH. */
+static JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
 {
     uint32_t len;
     int is_wide_char, depth;
     JSStringRope *r;
-    JSValue res;
     
     if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
         JSString *p1 = JS_VALUE_GET_STRING(op1);
@@ -5198,122 +5201,81 @@ static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
     r->depth = depth + 1;
     r->left = op1;
     r->right = op2;
-    res = JS_MKPTR(JS_TAG_STRING_ROPE, r);
-    if (r->depth > JS_STRING_ROPE_MAX_DEPTH) {
-        JSValue res2;
-#ifdef DUMP_ROPE_REBALANCE
-        printf("rebalance: initial depth=%d\n", r->depth);
-#endif
-        res2 = js_rebalancee_string_rope(ctx, res);
-#ifdef DUMP_ROPE_REBALANCE
-        if (JS_VALUE_GET_TAG(res2) == JS_TAG_STRING_ROPE) 
-            printf("rebalance: final depth=%d\n", JS_VALUE_GET_STRING_ROPE(res2)->depth);
-#endif
-        JS_FreeValue(ctx, res);
-        return res2;
-    } else {
-        return res;
-    }
+    return JS_MKPTR(JS_TAG_STRING_ROPE, r);
  fail:
     JS_FreeValue(ctx, op1);
     JS_FreeValue(ctx, op2);
     return JS_EXCEPTION;
 }
 
-#define ROPE_N_BUCKETS 44
-
-/* Fibonacii numbers starting from F_2 */
-static const uint32_t rope_bucket_len[ROPE_N_BUCKETS] = {
-          1,          2,          3,          5,
-          8,         13,         21,         34,
-         55,         89,        144,        233,
-        377,        610,        987,       1597,
-       2584,       4181,       6765,      10946,
-      17711,      28657,      46368,      75025,
-     121393,     196418,     317811,     514229,
-     832040,    1346269,    2178309,    3524578,
-    5702887,    9227465,   14930352,   24157817,
-   39088169,   63245986,  102334155,  165580141,
-  267914296,  433494437,  701408733, 1134903170, /* > JS_STRING_LEN_MAX */
-};
-
-static int js_rebalancee_string_rope_rec(JSContext *ctx, JSValue *buckets,
-                                          JSValueConst val)
+/* op1 and op2 must be strings or string ropes */
+static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
 {
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        JSString *p = JS_VALUE_GET_STRING(val);
-        uint32_t len, i;
-        JSValue a, b;
-        
-        len = p->len;
-        if (len == 0)
-            return 0; /* nothing to do */
-        /* find the bucket i so that rope_bucket_len[i] <= len <
-           rope_bucket_len[i + 1] and concatenate the ropes in the
-           buckets before */
-        a = JS_NULL;
-        i = 0;
-        while (len >= rope_bucket_len[i + 1]) {
-            b = buckets[i];
-            if (!JS_IsNull(b)) {
-                buckets[i] = JS_NULL;
-                if (JS_IsNull(a)) {
-                    a = b;
-                } else {
-                    a = js_new_string_rope(ctx, b, a);
-                    if (JS_IsException(a))
-                        return -1;
-                }
-            }
-            i++;
-        }
-        if (!JS_IsNull(a)) {
-            a = js_new_string_rope(ctx, a, JS_DupValue(ctx, val));
-            if (JS_IsException(a))
-                return -1;
-        } else {
-            a = JS_DupValue(ctx, val);
-        }
-        while (!JS_IsNull(buckets[i])) {
-            a = js_new_string_rope(ctx, buckets[i], a);
-            buckets[i] = JS_NULL;
-            if (JS_IsException(a))
-                return -1;
-            i++;
-        }
-        buckets[i] = a;
-    } else {
-        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->left);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->right);
-    }
-    return 0;
+    JSValue res, res2;
+
+    res = js_new_string_rope1(ctx, op1, op2);
+    if (JS_IsException(res) ||
+        JS_VALUE_GET_STRING_ROPE(res)->depth <= JS_STRING_ROPE_MAX_DEPTH)
+        return res;
+#ifdef DUMP_ROPE_REBALANCE
+    printf("rebalance: initial depth=%d\n", JS_VALUE_GET_STRING_ROPE(res)->depth);
+#endif
+    res2 = js_rebalancee_string_rope(ctx, res);
+#ifdef DUMP_ROPE_REBALANCE
+    if (JS_VALUE_GET_TAG(res2) == JS_TAG_STRING_ROPE)
+        printf("rebalance: final depth=%d\n", JS_VALUE_GET_STRING_ROPE(res2)->depth);
+#endif
+    JS_FreeValue(ctx, res);
+    return res2;
 }
 
-/* Return a new rope which is balanced. Algorithm from "Ropes: an
-   Alternative to Strings", Hans-J. Boehm, Russ Atkinson and Michael
-   Plass. */
+/* Enough buckets for every string of a rope: it holds fewer than 2^30, one
+   character at least each (JS_STRING_LEN_MAX). */
+#define ROPE_N_BUCKETS 30
+
+/* Return a new rope which is balanced, with the strings of rope in order.
+   It counts them in binary: buckets[i] holds a rope of 2^i strings, as deep
+   as i, and a new string carries up through the full buckets below the first
+   empty one. A rope holds fewer than 2^30 strings, so the result is at most
+   30 deep, under JS_STRING_ROPE_MAX_DEPTH, and needs no rebalancing of its
+   own: nothing here recurses. (Upstream places the strings by their length,
+   after Boehm, Atkinson and Plass, "Ropes: an Alternative to Strings", and
+   the rope it builds can get deep enough to rebalance again.) */
 static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
 {
-    JSValue buckets[ROPE_N_BUCKETS], a, b;
+    JSValue buckets[ROPE_N_BUCKETS], a;
+    JSStringRopeIter it;
+    JSString *p;
     int i;
-    
+
     for(i = 0; i < ROPE_N_BUCKETS; i++)
         buckets[i] = JS_NULL;
-    if (js_rebalancee_string_rope_rec(ctx, buckets, rope))
-        goto fail;
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        if (p->len == 0)
+            continue;
+        a = JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
+        for(i = 0; !JS_IsNull(buckets[i]); i++) {
+            a = js_new_string_rope1(ctx, buckets[i], a);
+            buckets[i] = JS_NULL;
+            if (JS_IsException(a))
+                goto fail;
+        }
+        buckets[i] = a;
+    }
     a = JS_NULL;
     for(i = 0; i < ROPE_N_BUCKETS; i++) {
-        b = buckets[i];
-        if (!JS_IsNull(b)) {
-            buckets[i] = JS_NULL;
+        if (!JS_IsNull(buckets[i])) {
             if (JS_IsNull(a)) {
-                a = b;
+                a = buckets[i];
             } else {
-                a = js_new_string_rope(ctx, b, a);
-                if (JS_IsException(a))
+                a = js_new_string_rope1(ctx, buckets[i], a);
+                if (JS_IsException(a)) {
+                    buckets[i] = JS_NULL;
                     goto fail;
+                }
             }
+            buckets[i] = JS_NULL;
         }
     }
     /* fail safe */
