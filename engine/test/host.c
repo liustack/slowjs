@@ -21,7 +21,7 @@
 
 #define HOST_STACK_SIZE (1024 * 1024) /* JS_DEFAULT_STACK_SIZE of QuickJS */
 #define HOST_NOW_SEC 1767225600       /* 2026-01-01T00:00:00Z */
-#define HOST_TIMEOUT_SEC 120          /* the longest a test may run */
+#define HOST_TIMEOUT_SEC 120          /* the longest a test may run, unless HOST_TIMEOUT_SEC says otherwise */
 
 /* When the runtime of this thread was made. A thread has one runtime at a
    time: the runner makes one per test, and one per agent in its own thread. */
@@ -50,6 +50,7 @@ static HostVM *host_vms;
 static uint32_t host_next_vm = 1;
 static pthread_mutex_t host_lock = PTHREAD_MUTEX_INITIALIZER;
 static int host_leaks;
+static long host_timeout = HOST_TIMEOUT_SEC; /* seconds, 0 for none */
 /* HOST_MAX_MEMORY=bytes: the most a VM may map, past which the host answers
    as a system that has no more memory would */
 static size_t host_max_memory;
@@ -148,7 +149,7 @@ static int host_interrupt(JSRuntime *rt, void *opaque)
     (void)rt;
     (void)opaque;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    return now.tv_sec - host_started.tv_sec > HOST_TIMEOUT_SEC;
+    return now.tv_sec - host_started.tv_sec > host_timeout;
 }
 
 static void host_atexit(void)
@@ -163,11 +164,14 @@ static void host_register_exit(void)
 {
     const char *max = getenv("HOST_MAX_MEMORY");
     const char *over = getenv("HOST_RELEASE_OVER");
+    const char *timeout = getenv("HOST_TIMEOUT_SEC");
 
     if (max)
         host_max_memory = (size_t)strtoull(max, NULL, 10);
     if (over)
         host_release_over = (size_t)strtoull(over, NULL, 10);
+    if (timeout)
+        host_timeout = strtol(timeout, NULL, 10);
     atexit(host_atexit);
 }
 
@@ -229,7 +233,8 @@ JSRuntime *host_new_runtime(void)
     }
     JS_SetMaxStackSize(rt, HOST_STACK_SIZE);
     clock_gettime(CLOCK_MONOTONIC, &host_started);
-    JS_SetInterruptHandler(rt, host_interrupt, NULL);
+    if (host_timeout)
+        JS_SetInterruptHandler(rt, host_interrupt, NULL);
     return rt;
 }
 
