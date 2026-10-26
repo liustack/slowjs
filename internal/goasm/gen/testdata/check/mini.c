@@ -3,8 +3,9 @@
 // JSValue), values kept across calls in the frame and in callee-saved
 // registers, floating-point constants, a jump table, engine_rodata holding
 // pointers to strings and to functions and tables of relative offsets, an
-// indirect call, the address of a function, a call to a register-entry leaf
-// and a function the generator cannot lower (a stub).
+// indirect call, the address of a function, a call to a register-entry leaf,
+// a cold function (which llc would put in .text.unlikely.) and a function the
+// generator cannot lower (a stub).
 
 typedef struct {
 	long tag, val;
@@ -104,6 +105,10 @@ long apply(long i, long a, long b) { return ops[i & 1](a, b, i); }
 op3 getop(long i) { return i ? add3 : mul3; }
 
 long fib(long n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }
+
+__attribute__((cold, noinline)) long rare(long x) { return x * 5 - 3; }
+
+long seldom(long x) { return x > 1000 ? rare(x) : x + 1; }
 
 __attribute__((noinline)) long rejected(long x) {
 	__asm__ volatile("" : "+r"(x));

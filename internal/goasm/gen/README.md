@@ -32,7 +32,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    `"kcfi"` operand bundle whose type id encodes its signature (`icall.go`).
    Without the `"kcfi"` module flag llc emits no check code for it, but it
    keeps the id on the machine call.
-3. llc -O2 with shrink-wrapping off writes assembly and an object. The whole
+3. llc -O2 with shrink-wrapping off writes assembly and an object, every
+   function in `.text` (`-profile-guided-section-prefix=false`: otherwise
+   a cold function such as `abort` goes in `.text.unlikely.`). The whole
    engine loads `pass/icall.cpp` (built into the same shared object as the
    pass) with `-load`: after the machine passes this run has (the outliner
    and function splitting are off, and the insertion point has to be checked

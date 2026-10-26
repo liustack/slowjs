@@ -227,8 +227,11 @@ func main() {
 	os.Remove(objPath)
 	llc := filepath.Join(*llvm, "llc")
 	// The pass's shared object also holds the llc plugin that writes a
-	// symbol with its signature at every indirect call.
-	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-load", *pass}
+	// symbol with its signature at every indirect call. Every function stays
+	// in .text: llc would put a cold one (abort) in .text.unlikely., which
+	// the lowering and the check take for one text.
+	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
+		"-load", *pass}
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels", "-o", objPath, shadowLL)...))
 	tLLVM := time.Since(t0)
