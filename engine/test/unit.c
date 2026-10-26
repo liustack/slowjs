@@ -63,6 +63,56 @@ static int eval_is(JSContext *ctx, const char *src, const char *want)
     return ok;
 }
 
+/* interrupt() sets the interrupt flag of the runtime of the script that
+   calls it, as a host does to stop a script. */
+static JSValue js_interrupt(JSContext *ctx, JSValueConst this_val, int argc,
+                            JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    *JS_GetInterruptFlag(JS_GetRuntime(ctx)) = 1;
+    return JS_UNDEFINED;
+}
+
+/* add_interrupt gives the global object of ctx interrupt(), and T(x), an
+   object whose conversion to a string or a number calls interrupt() and
+   gives x. A built-in that converts an argument first and then does its
+   work sees the flag set only in that work. */
+static void add_interrupt(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+
+    JS_SetPropertyStr(ctx, g, "interrupt",
+                      JS_NewCFunction(ctx, js_interrupt, "interrupt", 0));
+    JS_FreeValue(ctx, g);
+    CHECK(eval(ctx, "var T = x => ({ toString() { interrupt(); return x }, "
+                    "valueOf() { interrupt(); return x } })"),
+          "the script threw");
+}
+
+/* interrupted runs src in ctx, reports whether it threw "interrupted", and
+   clears the flag again. */
+static int interrupted(JSContext *ctx, const char *src)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int r = 0;
+
+    /* clear first: the conversion of the error to a string runs code */
+    *JS_GetInterruptFlag(JS_GetRuntime(ctx)) = 0;
+    if (JS_IsException(v)) {
+        JSValue e = JS_GetException(ctx);
+        const char *m = JS_ToCString(ctx, e);
+        r = m && strstr(m, "interrupted") != NULL;
+        if (!r)
+            printf("%s threw %s\n", src, m ? m : "?");
+        JS_FreeCString(ctx, m);
+        JS_FreeValue(ctx, e);
+    }
+    JS_FreeValue(ctx, v);
+    return r;
+}
+
 /* run_jobs runs the jobs of rt until none is left and reports whether none
    threw. */
 static int run_jobs(JSRuntime *rt)
@@ -119,27 +169,22 @@ static void test_regexp_cache(void)
           (long long)on, (long long)off);
 }
 
-static int regexp_polls;
-
-static int count_regexp_polls(JSRuntime *rt, void *opaque)
-{
-    regexp_polls++;
-    return 0;
-}
-
 /* compile reports whether ctx compiled the regexp of pats[i] rather than
-   took its bytecode from the cache: the compiler counts its steps toward
-   the interrupt counter, and a pattern of 60 KB calls the interrupt handler
-   many times, where the cache counts a step for each 32 bytes and calls it
-   at most once. */
+   took its bytecode from the cache. A first try has the pattern set the
+   interrupt flag as it becomes a string: the compiler reads the flag at its
+   first step and stops, where the cache never reads it. When it stopped,
+   the regexp is compiled again, so that the cache keeps it as after any
+   miss. */
 static int compile(JSContext *ctx, int i)
 {
     char src[64];
 
+    snprintf(src, sizeof(src), "new RegExp(T(pats[%d])), 0", i);
+    if (!interrupted(ctx, src))
+        return 0;
     snprintf(src, sizeof(src), "new RegExp(pats[%d]), 0", i);
-    regexp_polls = 0;
     CHECK(eval(ctx, src), "the script threw");
-    return regexp_polls > 1;
+    return 1;
 }
 
 /* hits compiles pats[from] down to pats[to] and returns how many came from
@@ -176,7 +221,7 @@ static JSContext *new_regexp_context(int n, size_t bytes)
 
     CHECK(eval(ctx, pats_src), "the script threw");
     JS_SetRegExpCache(rt, n, bytes);
-    JS_SetInterruptHandler(rt, count_regexp_polls, NULL);
+    add_interrupt(ctx);
     return ctx;
 }
 
@@ -278,6 +323,7 @@ static void test_regexp_cache_limits(void)
 
     ctx2 = JS_NewContext(rt);
     CHECK(eval(ctx2, pats_src), "the script threw");
+    add_interrupt(ctx2);
     CHECK(compile(ctx2, 2), "pats[2] was not compiled");
     JS_FreeContext(ctx2);
     JS_RunGC(rt);
@@ -621,29 +667,64 @@ static void test_own_keys_collected(void)
     JS_FreeRuntime(rt);
 }
 
-static int interrupts;
-
-static int count_interrupts(JSRuntime *rt, void *opaque)
+/* The interrupt flag stops a script where the engine reads it: at calls
+   and backward jumps of the interpreter, and inside the long work of a
+   built-in, which T(x) reaches with the flag set after its arguments were
+   converted. Each one throws "interrupted", which try does not catch, and
+   the context runs scripts again once the flag is clear. A short call that
+   reads no flag returns, and the flag stays for the next read. */
+static void test_interrupt_points(void)
 {
-    interrupts++;
-    return 0;
-}
-
-/* A search through a long string counts a step for each 8 indexes toward
-   the interrupt counter, so that the interrupt handler runs after each of
-   these searches, where each would count as one call without that. */
-static void test_search_steps(void)
-{
-    static const char src[] =
-        "var s = 'a'.repeat(1 << 20);\n"
-        "for (var i = 0; i < 25; i++) { s.indexOf('b'); s.lastIndexOf('b'); s.includes('b') }\n";
+    static const char setup[] =
+        "var big = 'x'.repeat(1 << 22), ta = new Int32Array(1 << 22), u8 = new Uint8Array(1 << 23)\n"
+        "var f64 = new Float64Array(1 << 21), json = '[' + Array(1 << 18).fill(1).join() + ']'\n"
+        "var arr = Array(1 << 18).fill(1)\n";
+    static const char *const stops[] = {
+        "for (var i = 0;; i++) if (i == 1000) interrupt()",
+        "interrupt(); for (;;) {}",
+        "function f() { return 1 } interrupt(); f()",
+        "try { for (var i = 0;; i++) if (i == 10) interrupt() } catch (e) { 'caught' } finally { 'finally' }",
+        "/(a+)+b/.test(T('a'.repeat(40)))",
+        "new RegExp(T('(?:a|b)+c'.repeat(100)))",
+        "big.indexOf(T('y'))",
+        "big.lastIndexOf(T('yx'))",
+        "'ab'.repeat(T(1 << 22))",
+        "'a'.repeat(T(1 << 23))",
+        "ta.indexOf(1, T(0))",
+        "ta.lastIndexOf(1, T(ta.length - 1))",
+        "ta.includes(1, T(0))",
+        "f64.indexOf(0.5, T(0))",
+        "u8.indexOf(1, T(0))",
+        "u8.lastIndexOf(1, T(u8.length - 1))",
+        "u8.fill(T(7))",
+        "ta.fill(T(7))",
+        "u8.copyWithin(T(1), 0)",
+        "u8.copyWithin(T(0), 1)",
+        "JSON.parse(T(json))",
+        "JSON.stringify({ toJSON() { interrupt(); return arr } })",
+    };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
+    char caught[256];
+    size_t i;
 
-    interrupts = 0;
-    JS_SetInterruptHandler(rt, count_interrupts, NULL);
-    CHECK(eval(ctx, src), "the script threw");
-    CHECK(interrupts >= 75, "the interrupt handler ran %d times", interrupts);
+    add_interrupt(ctx);
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(stops) / sizeof(stops[0]); i++) {
+        CHECK(interrupted(ctx, stops[i]), "%s was not interrupted", stops[i]);
+        snprintf(caught, sizeof(caught), "try { %s } catch (e) { 'caught' }",
+                 stops[i]);
+        CHECK(interrupted(ctx, caught), "%s was not interrupted", caught);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"),
+              "the context after %s", stops[i]);
+    }
+    /* short work reads no flag: the result comes back, and the next call
+       stops */
+    CHECK(eval_is(ctx, "'ab'.indexOf(T('b'))", "1"), "a short search");
+    CHECK(interrupted(ctx, "Math.abs(1)"), "the call after a short search");
+    CHECK(eval_is(ctx, "new Int32Array(8).indexOf(1, T(0))", "-1"),
+          "a short indexOf");
+    *JS_GetInterruptFlag(rt) = 0;
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
 }
@@ -707,22 +788,13 @@ static void test_search_linear(void)
     JS_FreeRuntime(rt);
 }
 
-static int polls, stop_at;
-
-static int stop_interrupts(JSRuntime *rt, void *opaque)
-{
-    return ++polls == stop_at;
-}
-
-/* A long search checks the interrupt counter while it runs and calls the
-   interrupt handler when the counter runs out, as the interpreter does: one
-   search calls it many times, with a match or none, in strings of each
-   width and in one of each, and a handler that asks to stop ends the search
-   with the error "interrupted", which try and catch do not catch. Once the
-   handler is gone and the error taken, the context runs scripts and
-   searches again. Comparing the needle at the one index a search has, as
-   startsWith does, is linear in its length and does not call the handler,
-   as === does not. */
+/* A long search reads the interrupt flag while it runs, at least every
+   JS_STRING_FIND_STEP units of work, with a match or none, in strings of
+   each width and in one of each: with the flag set as the needle becomes a
+   string, it ends with the error "interrupted", which try and catch do not
+   catch, and the context then runs scripts and searches again. Comparing
+   the needle at the one index a search has, as startsWith does, is linear
+   in its length and reads no flag, as === does not. */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
@@ -731,85 +803,61 @@ static void test_search_interrupt(void)
         "var aw = a + '\\u4e00', ab = a + 'b', ba = 'b' + a\n"
         "var awm = aw + m, wwm = w + wm, a2 = a.slice(1) + 'a'\n";
     static const struct {
-        const char *src, *want;
+        const char *hay, *call, *needle, *want;
         int stops;
     } cases[] = {
-        { "a.indexOf('b')", "-1", 1 },
-        { "a.lastIndexOf('b')", "-1", 1 },
-        { "a.indexOf(m)", "-1", 1 },
-        { "a.lastIndexOf('b' + m)", "-1", 1 },
-        { "w.indexOf(wm)", "-1", 1 },
-        { "w.lastIndexOf('b')", "-1", 1 },
-        { "aw.indexOf(m)", "-1", 1 },
-        { "a.indexOf('aaab')", "-1", 1 },
-        { "w.lastIndexOf('\\u4e00\\u4e00b')", "-1", 1 },
-        { "ab.indexOf('b')", "8388608", 1 },
-        { "ab.indexOf(m)", "8387608", 1 },
-        { "ba.lastIndexOf('b')", "0", 1 },
-        { "ba.lastIndexOf('baaa')", "0", 1 },
-        { "wwm.indexOf(wm)", "4194304", 1 },
-        { "awm.indexOf(m)", "8388609", 1 },
-        { "awm.indexOf('aab')", "8389607", 1 },
-        { "ab.indexOf(a)", "0", 1 },
-        { "aw.includes(a)", "true", 1 },
-        { "a.startsWith(a2)", "true", 0 },
-        { "aw.endsWith(a.slice(1) + '\\u4e00')", "true", 0 },
-        { "a.indexOf(a2)", "0", 0 },
-        { "a.startsWith(a.slice(1) + 'b')", "false", 0 },
+        { "a", "indexOf", "'b'", "-1", 1 },
+        { "a", "lastIndexOf", "'b'", "-1", 1 },
+        { "a", "indexOf", "m", "-1", 1 },
+        { "a", "lastIndexOf", "'b' + m", "-1", 1 },
+        { "w", "indexOf", "wm", "-1", 1 },
+        { "w", "lastIndexOf", "'b'", "-1", 1 },
+        { "aw", "indexOf", "m", "-1", 1 },
+        { "a", "indexOf", "'aaab'", "-1", 1 },
+        { "w", "lastIndexOf", "'\\u4e00\\u4e00b'", "-1", 1 },
+        { "ab", "indexOf", "'b'", "8388608", 1 },
+        { "ab", "indexOf", "m", "8387608", 1 },
+        { "ba", "lastIndexOf", "'b'", "0", 1 },
+        { "ba", "lastIndexOf", "'baaa'", "0", 1 },
+        { "wwm", "indexOf", "wm", "4194304", 1 },
+        { "awm", "indexOf", "m", "8388609", 1 },
+        { "awm", "indexOf", "'aab'", "8389607", 1 },
+        { "ab", "indexOf", "a", "0", 1 },
+        { "aw", "includes", "a", "true", 1 },
+        { "a", "startsWith", "a2", "true", 0 },
+        { "aw", "endsWith", "a.slice(1) + '\\u4e00'", "true", 0 },
+        { "a", "indexOf", "a2", "0", 0 },
+        { "a", "startsWith", "a.slice(1) + 'b'", "false", 0 },
     };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char src[256], trap[256], caught[300];
     size_t i;
 
+    add_interrupt(ctx);
+    CHECK(eval(ctx, setup), "the script threw");
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        const char *src = cases[i].src, *want = cases[i].want;
-        JSRuntime *rt = host_new_runtime();
-        JSContext *ctx = JS_NewContext(rt);
-        char caught[256];
-        const char *runs[2];
-        JSValue v, e;
-        const char *s;
-        int j;
-
-        CHECK(eval(ctx, setup), "the script threw");
-        JS_SetInterruptHandler(rt, stop_interrupts, NULL);
-        polls = 0;
-        stop_at = -1;
-        CHECK(eval_is(ctx, src, want), "%s", src);
+        snprintf(src, sizeof(src), "%s.%s(%s)", cases[i].hay, cases[i].call,
+                 cases[i].needle);
+        snprintf(trap, sizeof(trap), "%s.%s(T(%s))", cases[i].hay,
+                 cases[i].call, cases[i].needle);
+        snprintf(caught, sizeof(caught), "try { %s } catch (e) { 'caught' }",
+                 trap);
+        CHECK(eval_is(ctx, src, cases[i].want), "%s", src);
         if (!cases[i].stops) {
-            CHECK(polls <= 1, "%s called the interrupt handler %d times", src,
-                  polls);
-            JS_FreeContext(ctx);
-            JS_FreeRuntime(rt);
+            CHECK(eval_is(ctx, trap, cases[i].want), "%s", trap);
+            *JS_GetInterruptFlag(rt) = 0;
             continue;
         }
-        CHECK(polls >= 20, "%s called the interrupt handler %d times", src,
-              polls);
-        snprintf(caught, sizeof(caught), "try { %s } catch (e) { 'caught' }",
-                 src);
-        runs[0] = src;
-        runs[1] = caught;
-        for(j = 0; j < 2; j++) {
-            polls = 0;
-            stop_at = 3;
-            v = JS_Eval(ctx, runs[j], strlen(runs[j]), "<unit>",
-                        JS_EVAL_TYPE_GLOBAL);
-            CHECK(JS_IsException(v), "%s ran to its end", runs[j]);
-            e = JS_GetException(ctx);
-            s = JS_ToCString(ctx, e);
-            CHECK(s && strstr(s, "interrupted"), "%s threw %s", runs[j],
-                  s ? s : "?");
-            CHECK(polls == 3, "%s called the handler %d times", runs[j],
-                  polls);
-            JS_FreeCString(ctx, s);
-            JS_FreeValue(ctx, e);
-            JS_FreeValue(ctx, v);
-        }
-        JS_SetInterruptHandler(rt, NULL, NULL);
+        CHECK(interrupted(ctx, trap), "%s ran to its end", trap);
+        CHECK(interrupted(ctx, caught), "%s ran to its end", caught);
         CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"),
-              "the context after %s was stopped", src);
-        CHECK(eval_is(ctx, src, want), "%s after it was stopped", src);
-        JS_FreeContext(ctx);
-        JS_FreeRuntime(rt);
+              "the context after %s was stopped", trap);
+        CHECK(eval_is(ctx, src, cases[i].want), "%s after it was stopped",
+              src);
     }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
 }
 
 /* n_of returns the field n of the async context of ctx, or -1 when it has
@@ -2124,7 +2172,7 @@ int main(void)
     test_func_shapes_kept();
     test_atom_keys();
     test_own_keys_collected();
-    test_search_steps();
+    test_interrupt_points();
     test_search_linear();
     test_search_interrupt();
     test_async_context_job();

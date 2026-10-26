@@ -55,9 +55,6 @@ typedef enum {
 
 #define CAPTURE_COUNT_MAX 255
 #define REGISTER_COUNT_MAX 255
-/* must be large enough to have a negligible runtime cost and small
-   enough to call the interrupt callback often. */
-#define INTERRUPT_COUNTER_INIT 10000
 
 /* unicode code points */
 #define CP_LS   0x2028
@@ -638,12 +635,11 @@ static int re_parse_out_of_memory(REParseState *s)
     return re_parse_error(s, "out of memory");
 }
 
-/* Count one step toward the interrupt counter, and one more for each 256
-   bytes the step moves, so that compiling a long pattern counts its work
-   as running code does. The caller throws the interrupt on the message. */
-static int re_poll_interrupts(REParseState *s, size_t moved)
+/* Read the interrupt flag of the user at a step of the compile. The caller
+   throws the interrupt on the message. */
+static int re_poll_interrupts(REParseState *s)
 {
-    if (lre_poll_interrupts(s->opaque, 1 + (int)(moved >> 8)))
+    if (lre_check_timeout(s->opaque))
         return re_parse_error(s, "interrupted");
     return 0;
 }
@@ -1394,7 +1390,7 @@ static int re_parse_nested_class1(REParseState *s, REStringList *cr, const uint8
     for(;;) {
         if (*p == ']')
             break;
-        if (re_poll_interrupts(s, cr->cr.len * sizeof(cr->cr.points[0])))
+        if (re_poll_interrupts(s))
             goto fail;
         if (*p == '[' && s->unicode_sets) {
             if (re_parse_nested_class(s, cr1, &p))
@@ -2386,7 +2382,7 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
         if (*p == '|' || *p == ')')
             break;
         term_start = s->byte_code.size;
-        if (re_poll_interrupts(s, 0))
+        if (re_poll_interrupts(s))
             return -1;
         ret = re_parse_term(s, is_backward_dir);
         if (ret)
@@ -2396,7 +2392,7 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
                speed is not really critical here) */
             end = s->byte_code.size;
             term_size = end - term_start;
-            if (re_poll_interrupts(s, end - start))
+            if (re_poll_interrupts(s))
                 return -1;
             if (dbuf_claim(&s->byte_code, term_size))
                 return -1;
@@ -2421,7 +2417,7 @@ static int re_parse_disjunction1(REParseState *s, BOOL is_backward_dir)
         s->buf_ptr++;
 
         len = s->byte_code.size - start;
-        if (re_poll_interrupts(s, len))
+        if (re_poll_interrupts(s))
             return -1;
 
         /* insert a split before the first alternative */
@@ -2752,7 +2748,7 @@ typedef struct {
     int cbuf_type;
     int capture_count;
     BOOL is_unicode;
-    int interrupt_counter;
+    const volatile int *interrupt_flag; /* lre_interrupt_flag */
     void *opaque; /* used for stack overflow check */
 
     StackElem *stack_buf;
@@ -2762,11 +2758,8 @@ typedef struct {
 
 static int lre_poll_timeout(REExecContext *s)
 {
-    if (unlikely(--s->interrupt_counter <= 0)) {
-        s->interrupt_counter = INTERRUPT_COUNTER_INIT;
-        if (lre_check_timeout(s->opaque))
-            return LRE_RET_TIMEOUT;
-    }
+    if (unlikely(*s->interrupt_flag))
+        return LRE_RET_TIMEOUT;
     return 0;
 }
 
@@ -3967,7 +3960,7 @@ int lre_exec(uint8_t **capture,
     s->cbuf_type = cbuf_type;
     if (s->cbuf_type == 1 && s->is_unicode)
         s->cbuf_type = 2;
-    s->interrupt_counter = INTERRUPT_COUNTER_INIT;
+    s->interrupt_flag = lre_interrupt_flag(opaque);
     s->opaque = opaque;
 
     s->stack_buf = s->static_stack_buf;
