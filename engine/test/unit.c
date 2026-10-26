@@ -861,21 +861,22 @@ static void test_search_interrupt(void)
     JS_FreeRuntime(rt);
 }
 
-/* set_flag_later sets the interrupt flag of the runtime arg after 20 ms,
-   from a thread of its own, as a host stops a script from outside. */
-static void *set_flag_later(void *arg)
+/* stop_later asks the runtime arg to stop after 20 ms, from a thread of its
+   own, as a host stops a script from outside: the engine's thread sets the
+   flag at its next poll (host_interrupt). */
+static void *stop_later(void *arg)
 {
     struct timespec d = { 0, 20 * 1000 * 1000 };
 
     nanosleep(&d, NULL);
-    __atomic_store_n(JS_GetInterruptFlag((JSRuntime *)arg), 1, __ATOMIC_RELAXED);
+    host_interrupt(arg);
     return NULL;
 }
 
 /* A sort reads the interrupt flag after each comparison and stops when it
    is set. The sort of a typed array without a comparator runs no
-   JavaScript: it stops soon after a thread of the host sets the flag, with
-   its elements in some order. Array.prototype.sort without a comparator
+   JavaScript: it stops soon after a thread of the host asks it to, with its
+   elements in some order. Array.prototype.sort without a comparator
    runs none after an element became a string: it stops at the comparison
    after the conversion that set the flag and writes nothing back. */
 static void test_sort_interrupt(void)
@@ -894,7 +895,7 @@ static void test_sort_interrupt(void)
     CHECK(eval(ctx, "var f = new Float64Array(1 << 22), sum = 0\n"
                     "for (var i = 0; i < f.length; i++) sum += f[i] = (i * 7919) % 1000003"),
           "the script threw");
-    CHECK(pthread_create(&th, NULL, set_flag_later, rt) == 0, "pthread_create");
+    CHECK(pthread_create(&th, NULL, stop_later, rt) == 0, "pthread_create");
     t = now();
     CHECK(interrupted(ctx, "f.sort()"), "the sort of a typed array was not interrupted");
     t = now() - t;

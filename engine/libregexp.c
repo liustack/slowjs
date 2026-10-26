@@ -2758,7 +2758,7 @@ typedef struct {
 
 static int lre_poll_timeout(REExecContext *s)
 {
-    if (unlikely(*s->interrupt_flag))
+    if (unlikely(poll_flag(s->interrupt_flag)))
         return LRE_RET_TIMEOUT;
     return 0;
 }

@@ -382,6 +382,20 @@ void rqsort_stop(void *base, size_t nmemb, size_t size,
                  int (*cmp)(const void *, const void *, void *),
                  void *arg, const volatile int *stop);
 
+/* poll_flag(p) reads *p, a flag that stops a long run of the engine: the
+   interrupt flag (JS_GetInterruptFlag) or the stop of rqsort_stop. Only the
+   thread that runs the script writes the interrupt flag. In the generated
+   code the host does it inside the polls the generator adds. The native test
+   host gets no polls, so the engine is built for it with JS_HOST_POLL and
+   calls host_poll at each read, where that host writes the flag when another
+   thread asked (engine/test/host.h). */
+#ifdef JS_HOST_POLL
+int host_poll(const volatile int *flag);
+#define poll_flag(p) host_poll(p)
+#else
+#define poll_flag(p) (*(p))
+#endif
+
 static inline uint64_t float64_as_uint64(double d)
 {
     union {

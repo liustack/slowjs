@@ -9435,7 +9435,7 @@ static no_inline __exception int __js_poll_interrupts(JSContext *ctx)
    (JS_GetInterruptFlag). */
 static inline __exception int js_poll_interrupts(JSContext *ctx)
 {
-    if (unlikely(ctx->rt->interrupt_flag))
+    if (unlikely(poll_flag(&ctx->rt->interrupt_flag)))
         return __js_poll_interrupts(ctx);
     return 0;
 }
@@ -51184,7 +51184,7 @@ void lre_depth_leave(void *opaque)
 int lre_check_timeout(void *opaque)
 {
     JSContext *ctx = opaque;
-    return ctx->rt->interrupt_flag != 0;
+    return poll_flag(&ctx->rt->interrupt_flag) != 0;
 }
 
 const volatile int *lre_interrupt_flag(void *opaque)

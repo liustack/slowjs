@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,12 +40,16 @@ typedef struct HostVM {
     HostChunk *chunks;
     size_t mapped;   /* bytes in the chunks */
     struct timespec started; /* when the runtime was made */
+    int asked;       /* a stop was asked that host_poll has not passed on yet */
 } HostVM;
 
 static HostVM *host_vms;
 static uint32_t host_next_vm = 1;
 static pthread_mutex_t host_lock = PTHREAD_MUTEX_INITIALIZER;
 static int host_leaks;
+/* The VMs whose asked is set. host_poll reads it without the lock, and takes
+   the lock only when it is not 0. */
+static atomic_int host_asked;
 static long host_timeout = HOST_TIMEOUT_SEC; /* seconds, 0 for none */
 /* HOST_MAX_MEMORY=bytes: the most a VM may map, past which the host answers
    as a system that has no more memory would */
@@ -214,11 +219,61 @@ static JSValue host_memory_release(uint32_t id, uintptr_t addr, uintptr_t size)
     _exit(87);
 }
 
+/* Asks the thread that runs vm to stop the script: its next host_poll sets
+   the interrupt flag. The caller holds host_lock. */
+static void host_ask(HostVM *vm)
+{
+    if (vm->rt && !vm->asked) {
+        vm->asked = 1;
+        host_asked++;
+    }
+}
+
+void host_interrupt(JSRuntime *rt)
+{
+    HostVM *vm;
+
+    pthread_mutex_lock(&host_lock);
+    for (vm = host_vms; vm && vm->rt != rt; vm = vm->next)
+        ;
+    if (vm)
+        host_ask(vm);
+    pthread_mutex_unlock(&host_lock);
+    if (!vm) {
+        fprintf(stderr, "host: an interrupt for a runtime the host did not make\n");
+        _exit(87);
+    }
+}
+
+/* The engine built with JS_HOST_POLL calls it each time it reads a flag that
+   stops it, on the thread that runs the script: it stands for the polls the
+   generator adds for the Go host. When a stop of the runtime whose interrupt
+   flag that is was asked, the flag is set here, so that no other thread ever
+   writes it. */
+int host_poll(const volatile int *flag)
+{
+    HostVM *vm;
+
+    if (atomic_load_explicit(&host_asked, memory_order_relaxed)) {
+        pthread_mutex_lock(&host_lock);
+        for (vm = host_vms; vm; vm = vm->next) {
+            if (vm->asked && vm->rt && JS_GetInterruptFlag(vm->rt) == flag) {
+                *JS_GetInterruptFlag(vm->rt) = 1;
+                vm->asked = 0;
+                host_asked--;
+                break;
+            }
+        }
+        pthread_mutex_unlock(&host_lock);
+    }
+    return *flag;
+}
+
 /* A thread that ends a test that runs over two minutes: once a second it
-   sets the interrupt flag of each runtime made longer ago than that, and
-   the engine throws "interrupted" at its next check. It reads the list
-   under the lock, and host_free_runtime takes a runtime out of its sight
-   under the same lock before freeing it. */
+   asks each runtime made longer ago than that to stop, and the engine throws
+   "interrupted" after its next host_poll. It reads the list under the lock,
+   and host_free_runtime takes a runtime out of its sight under the same lock
+   before freeing it. */
 static void *host_watchdog(void *arg)
 {
     struct timespec now;
@@ -231,7 +286,7 @@ static void *host_watchdog(void *arg)
         pthread_mutex_lock(&host_lock);
         for (vm = host_vms; vm; vm = vm->next) {
             if (vm->rt && now.tv_sec - vm->started.tv_sec > host_timeout)
-                __atomic_store_n(JS_GetInterruptFlag(vm->rt), 1, __ATOMIC_RELAXED);
+                host_ask(vm);
         }
         pthread_mutex_unlock(&host_lock);
     }
@@ -347,8 +402,13 @@ void host_free_runtime(JSRuntime *rt)
     pthread_mutex_lock(&host_lock);
     for (vm = host_vms; vm && vm->rt != rt; vm = vm->next)
         ;
-    if (vm)
+    if (vm) {
         vm->rt = NULL;
+        if (vm->asked) {
+            vm->asked = 0;
+            host_asked--;
+        }
+    }
     pthread_mutex_unlock(&host_lock);
     if (!vm) {
         fprintf(stderr, "host: a runtime the host did not make\n");
