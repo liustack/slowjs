@@ -15,7 +15,8 @@
    then what the script gave: the string of its completion value, or of what
    that value returns when it is a function (called after the jobs), or the
    exception. A lone surrogate is printed as \u{...}, as Go would turn it into
-   U+FFFD. */
+   U+FFFD. The scripts find getAsyncContext and setAsyncContext, the
+   Builtins GetAsyncContext and SetAsyncContext of the Go API, as globals. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,6 +80,35 @@ static void print_exception(JSContext *ctx, const char *what)
     JS_FreeValue(ctx, e);
 }
 
+static JSValue get_async_context(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    return JS_GetAsyncContext(ctx);
+}
+
+static JSValue set_async_context(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    JS_SetAsyncContext(ctx, argc > 0 ? argv[0] : JS_UNDEFINED);
+    return JS_UNDEFINED;
+}
+
+/* define_globals gives the global object of ctx what the Go runner gives
+   it. */
+static int define_globals(JSContext *ctx)
+{
+    JSValue global = JS_GetGlobalObject(ctx);
+    int ret = 0;
+
+    if (JS_SetPropertyStr(ctx, global, "getAsyncContext",
+                          JS_NewCFunction(ctx, get_async_context, "getAsyncContext", 0)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "setAsyncContext",
+                          JS_NewCFunction(ctx, set_async_context, "setAsyncContext", 1)) < 0)
+        ret = -1;
+    JS_FreeValue(ctx, global);
+    return ret;
+}
+
 static int run(const char *path)
 {
     JSRuntime *rt;
@@ -95,7 +125,7 @@ static int run(const char *path)
     }
     rt = host_new_runtime();
     ctx = rt ? JS_NewContext(rt) : NULL;
-    if (!ctx) {
+    if (!ctx || define_globals(ctx) < 0) {
         fprintf(stderr, "jsrun: no runtime\n");
         return -1;
     }
