@@ -148,24 +148,16 @@ func TestFrameHoldsMarkedCall(t *testing.T) {
 	}
 }
 
-// A pointer llc spilled to the frame is loaded into R11 and called through
-// it with the arguments marshalled, not left as a call through the frame.
-func TestCallThroughFrameSlot(t *testing.T) {
-	body := "\tsubq\t$16, %rsp\n\tmovq\t%rsi, -8(%rbp)\n" + mark("ii>v") + "\tcallq\t*-8(%rbp)\n\taddq\t$16, %rsp\n"
-	out, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The pointer is loaded into R11 and called through it, and both
-	// arguments are marshalled into the Go outgoing area (rdi->0, rsi->8):
-	// a fix that loads R11 but forgets the arguments must not pass.
-	for _, want := range []string{"%r11", "call *%r11", "movq %rdi, 0(%rsp)", "movq %rsi, 8(%rsp)"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("missing %q in:\n%s", want, out)
+// llc built with +slow-two-mem-ops never calls through memory, so the
+// lowering rejects any such call: one through a frame slot must not be taken
+// for a plain frame access and left unmarshalled.
+func TestCallThroughMemory(t *testing.T) {
+	for _, call := range []string{"callq\t*-8(%rbp)", "callq\t*8(%rax)", "callq\t*(%r9,%rax,8)", "callq\t*fp(%rip)"} {
+		body := "\tsubq\t$16, %rsp\n\tmovq\t%rsi, -8(%rbp)\n" + mark("ii>v") + "\t" + call + "\n\taddq\t$16, %rsp\n"
+		_, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil)
+		if err == nil || !strings.Contains(err.Error(), "call through memory") {
+			t.Fatalf("%s: %v", call, err)
 		}
-	}
-	if strings.Contains(out, "(%rbp)") {
-		t.Fatalf("base-pointer reference left:\n%s", out)
 	}
 }
 
