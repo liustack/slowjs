@@ -67,7 +67,7 @@ if [ ! -d "$run/test262" ]; then
 	mv "$run/test262-${zipname%.zip}" "$run/test262"
 	patch -s -p1 -d "$run/test262" < "$root/lib/internal/patch/test262.diff"
 fi
-cp "$root/lib/testdata/test262.conf" "$run/test262.conf"
+cp "$here/test262.conf" "$run/test262.conf"
 : > "$run/test262_errors.txt"
 
 # -u writes the errors found to the error file of the configuration (which

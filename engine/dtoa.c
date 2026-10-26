@@ -27,10 +27,7 @@
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
-#include <ctype.h>
-#include <sys/time.h>
 #include <math.h>
-#include <setjmp.h>
 
 #include "cutils.h"
 #include "dtoa.h"
@@ -196,19 +193,6 @@ static no_inline limb_t mp_div1norm(limb_t *tabr, const limb_t *taba, limb_t n,
     }
     r >>= shift;
     return r;
-}
-
-static __maybe_unused void mpb_dump(const char *str, const mpb_t *a)
-{
-    int i;
-    
-    printf("%s= 0x", str);
-    for(i = a->len - 1; i >= 0; i--) {
-        printf("%08x", a->tab[i]);
-        if (i != 0)
-            printf("_");
-    }
-    printf("\n");
 }
 
 static void mpb_renorm(mpb_t *r)
