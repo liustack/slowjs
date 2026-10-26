@@ -337,9 +337,43 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 	size := map[string]int{".byte": 1, ".short": 2, ".value": 2, ".word": 2, ".long": 4, ".int": 4, ".quad": 8}
 	switch dir {
 	case ".p2align":
-		a := 0
-		fmt.Sscan(strings.Split(arg, ",")[0], &a)
-		return make([]byte, alignUp(at, 1<<a)-at), nil, nil
+		// GNU: .p2align power, fill, max-skip. All three fields must be
+		// honoured: a non-zero fill is the padding byte, and a max-skip
+		// limit drops the alignment when the padding would exceed it.
+		// Guessing any of them wrong moves every later byte, so parse all of
+		// them or reject.
+		parts := strings.Split(arg, ",")
+		a, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		if err != nil {
+			return nil, nil, fmt.Errorf("bad alignment %q", l)
+		}
+		step := 1 << a
+		fill := byte(0)
+		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+			v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 0, 64)
+			if err != nil {
+				return nil, nil, fmt.Errorf("bad alignment fill %q", l)
+			}
+			fill = byte(v)
+		}
+		pad := alignUp(at, step) - at
+		if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
+			skip, err := strconv.Atoi(strings.TrimSpace(parts[2]))
+			if err != nil {
+				return nil, nil, fmt.Errorf("bad alignment max-skip %q", l)
+			}
+			if pad > skip {
+				pad = 0
+			}
+		}
+		if len(parts) > 3 {
+			return nil, nil, fmt.Errorf("unsupported alignment form %q", l)
+		}
+		b := make([]byte, pad)
+		for i := range b {
+			b[i] = fill
+		}
+		return b, nil, nil
 	case ".zero":
 		parts := strings.Split(arg, ",")
 		n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
@@ -398,8 +432,22 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 func (p *DataPlan) evalExpr(e string, at int, funcs map[string]bool) (int64, *BlobReloc, error) {
 	var pos, neg []string
 	var k int64
+	// Only a sum and difference of symbols and integer literals is
+	// understood. The tokens must cover the whole expression: a gap means an
+	// operator (*, /, <<, parentheses) the evaluator would silently drop,
+	// giving a wrong offset, so reject it instead.
 	tok := regexp.MustCompile(`[+-]?\s*(?:0x[0-9a-fA-F]+|\d+|[._A-Za-z$][\w.$]*)`)
 	rest := strings.ReplaceAll(e, " ", "")
+	at0 := 0
+	for _, loc := range tok.FindAllStringIndex(rest, -1) {
+		if loc[0] != at0 {
+			return 0, nil, fmt.Errorf("unsupported expression %q", e)
+		}
+		at0 = loc[1]
+	}
+	if at0 != len(rest) {
+		return 0, nil, fmt.Errorf("unsupported expression %q", e)
+	}
 	for _, t := range tok.FindAllString(rest, -1) {
 		sign := int64(1)
 		if t[0] == '-' {
