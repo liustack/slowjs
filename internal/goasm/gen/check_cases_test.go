@@ -178,6 +178,16 @@ func TestCheckCases(t *testing.T) {
 		{name: "body mode"},
 		{name: "preserve_none", pn: true},
 
+		// Code that would not run as decoded, and the templates.
+		{name: "a LOCK NOP inserted", lower: sub("lf", `\nlf:\n`, "\nlf:\n\t.byte 0xf0, 0x90\n"), want: "invalid prefix"},
+		{name: "a LOCK on an argument move", lower: sub("g", `movq\s+%rdi, 0\(%rsp\)`, ".byte 0xf0, 0x48, 0x89, 0x3c, 0x24"),
+			want: "invalid prefix"},
+		{name: "a REP prefix on a register save", lower: sub("g", `movq\s+%rbx, (\d+)\(%rsp\)`, ".byte 0xf3\n\tmovq %rbx, ${1}(%rsp)"),
+			want: "is not the save of rbx"},
+		{name: "a no-op that is no padding encoding", lower: sub("g", `\n\ttestq`, "\n\t.byte 0x48, 0x90\n\ttestq"),
+			want: "none of the padding encodings"},
+		{name: "an ignored segment prefix", lower: sub("g", `\n\ttestq`, "\n\t.byte 0x2e\n\ttestq"), want: "ignored prefix"},
+
 		// A record and its output wrong together.
 		{name: "a kept register no call saves",
 			lower: func(s string, ms []Meta) string {

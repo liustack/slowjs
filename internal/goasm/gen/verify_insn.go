@@ -366,17 +366,66 @@ type stream struct {
 	at  map[uint64]int
 }
 
-// isPad reports alignment padding. Only NOP is: XCHG of a 32-bit register
-// with itself clears the upper half, so it is a real instruction.
+// isPad reports alignment padding: decode returns NOP only for the padding
+// encodings below. XCHG of a 32-bit register with itself clears the upper
+// half, so it is a real instruction.
 func isPad(in x86asm.Inst) bool { return in.Op == x86asm.NOP }
+
+// padNops are the no-ops the assemblers pad with, and the only ones the
+// check skips: the Go assembler's table (1 to 9 bytes), and LLVM's (the
+// same, then a 10-byte NOPW with a CS override and up to five more 0x66 in
+// front of it for 11 to 15 bytes).
+var padNops = func() map[string]bool {
+	m := map[string]bool{}
+	for _, s := range []string{
+		"\x90",
+		"\x66\x90",
+		"\x0f\x1f\x00",
+		"\x0f\x1f\x40\x00",
+		"\x0f\x1f\x44\x00\x00",
+		"\x66\x0f\x1f\x44\x00\x00",
+		"\x0f\x1f\x80\x00\x00\x00\x00",
+		"\x0f\x1f\x84\x00\x00\x00\x00\x00",
+		"\x66\x0f\x1f\x84\x00\x00\x00\x00\x00",
+	} {
+		m[s] = true
+	}
+	for k := 0; k <= 5; k++ {
+		m[strings.Repeat("\x66", k+1)+"\x2e\x0f\x1f\x84\x00\x00\x00\x00\x00"] = true
+	}
+	return m
+}()
 
 // decode decodes one instruction and puts its operands in the form the
 // check compares: x86asm returns a 32-bit displacement zero-extended, while
-// the processor sign-extends it in 64-bit mode.
+// the processor sign-extends it in 64-bit mode. It refuses what would not
+// run as decoded, so neither side can hold it: an opcode x86asm does not
+// know or an instruction cut short (for both it may return a lone prefix
+// and no error), a prefix it marks invalid (LOCK on an instruction that
+// takes none faults) or ignored (a repeated prefix, a segment override other
+// than FS and GS, REP on an instruction that does not repeat: reserved or
+// without effect, so not what llc or the Go assembler write), and a no-op
+// other than the padding encodings.
 func decode(b []byte) (x86asm.Inst, error) {
 	in, err := x86asm.Decode(b, 64)
-	if err != nil {
-		return in, err
+	if err != nil || in.Op == 0 || in.Len <= 0 || in.Len > len(b) {
+		return in, fmt.Errorf("unknown or incomplete instruction % x", b[:min(len(b), 15)])
+	}
+	for _, p := range in.Prefix {
+		if p != 0 && p&x86asm.PrefixInvalid != 0 {
+			return in, fmt.Errorf("invalid prefix %#02x in % x", byte(p), b[:in.Len])
+		}
+	}
+	if in.Op == x86asm.NOP {
+		if !padNops[string(b[:in.Len])] {
+			return in, fmt.Errorf("no-op % x is none of the padding encodings", b[:in.Len])
+		}
+		return in, nil
+	}
+	for _, p := range in.Prefix {
+		if p != 0 && p&x86asm.PrefixIgnored != 0 && p&x86asm.PrefixImplicit == 0 {
+			return in, fmt.Errorf("ignored prefix %#02x in % x", byte(p), b[:in.Len])
+		}
 	}
 	for i, a := range in.Args {
 		if m, ok := a.(x86asm.Mem); ok {
@@ -517,6 +566,19 @@ func normMem(m x86asm.Mem) x86asm.Mem {
 	return m
 }
 
+// plain reports an instruction without a lock, repeat or branch-hint
+// prefix: the form of every instruction the check expects in a rewrite (the
+// moves, calls and jumps it adds, and Go's prologue and epilogue). A segment
+// override shows in the memory operand, which the templates compare.
+func plain(in x86asm.Inst) bool {
+	for _, p := range semPrefixes(in) {
+		if p != x86asm.PrefixFS && p != x86asm.PrefixGS {
+			return false
+		}
+	}
+	return true
+}
+
 // isStackMove reports a 64-bit (or SSE scalar) move between reg and
 // disp(RSP), a store when store is set.
 func isStackMove(in x86asm.Inst, store bool, reg x86asm.Reg, disp int64, sse bool) bool {
@@ -530,7 +592,7 @@ func isStackMove(in x86asm.Inst, store bool, reg x86asm.Reg, disp int64, sse boo
 	}
 	m, ok1 := in.Args[mi].(x86asm.Mem)
 	r, ok2 := in.Args[ri].(x86asm.Reg)
-	if in.Op != op || !ok1 || !ok2 || in.Args[2] != nil || in.MemBytes != 8 || (!sse && in.DataSize != 64) {
+	if in.Op != op || !plain(in) || !ok1 || !ok2 || in.Args[2] != nil || in.MemBytes != 8 || (!sse && in.DataSize != 64) {
 		return false
 	}
 	m = normMem(m)
@@ -623,6 +685,9 @@ func (k *checker) dec(addr uint64) (x86asm.Inst, error) {
 	in, err := decode(b)
 	if err != nil {
 		return in, fmt.Errorf("cannot decode the binary at %#x: %v", addr, err)
+	}
+	if !plain(in) {
+		return in, fmt.Errorf("a prefixed instruction in Go's code at %#x: %v", addr, in)
 	}
 	return in, nil
 }
@@ -906,7 +971,7 @@ func (k *checker) checkUnified(meta Meta) error {
 	retAt := map[uint64]bool{e: true}
 	if m.j == len(B.ins)-1 {
 		last := B.ins[m.j].in
-		if rel, ok := last.Args[0].(x86asm.Rel); last.Op == x86asm.JMP && ok &&
+		if rel, ok := last.Args[0].(x86asm.Rel); last.Op == x86asm.JMP && ok && plain(last) &&
 			uint64(int64(B.ins[m.j].at)+int64(last.Len)+int64(rel)) == e {
 			retAt[B.ins[m.j].at] = true
 			m.j++
@@ -1402,7 +1467,7 @@ func (m *matcher) ret() error {
 		return err
 	}
 	rel, ok := b.in.Args[0].(x86asm.Rel)
-	if b.in.Op != x86asm.JMP || !ok {
+	if b.in.Op != x86asm.JMP || !ok || !plain(b.in) {
 		return fmt.Errorf("return: %v at %#x is not a jump to the epilogue", b.in, b.at)
 	}
 	m.rets = append(m.rets, uint64(int64(b.at)+int64(b.in.Len)+int64(rel)))
@@ -1450,7 +1515,7 @@ func (m *matcher) call(x insn, r *relAt) error {
 		}
 		direct := func(b insn) error {
 			rel, ok := b.in.Args[0].(x86asm.Rel)
-			if b.in.Op != x86asm.CALL || !ok || uint64(int64(b.at)+int64(b.in.Len)+int64(rel)) != addr {
+			if b.in.Op != x86asm.CALL || !ok || !plain(b.in) || uint64(int64(b.at)+int64(b.in.Len)+int64(rel)) != addr {
 				return fmt.Errorf("generated %v at %#x is not a call to %s", b.in, b.at, name)
 			}
 			return nil
@@ -1478,7 +1543,7 @@ func (m *matcher) call(x insn, r *relAt) error {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
 		}
 		return m.marshal(c.Sig, func(b insn) error {
-			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) {
+			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
 			}
 			return nil
@@ -1514,11 +1579,11 @@ func (m *matcher) call(x insn, r *relAt) error {
 			return err
 		}
 		bm, ok := b.in.Args[1].(x86asm.Mem)
-		if b.in.Op != x86asm.MOV || !isReg(b.in.Args[0], x86asm.R11) || !ok || normMem(bm) != normMem(want) || b.in.DataSize != 64 {
+		if b.in.Op != x86asm.MOV || !isReg(b.in.Args[0], x86asm.R11) || !ok || normMem(bm) != normMem(want) || b.in.DataSize != 64 || !plain(b.in) {
 			return fmt.Errorf("generated %v at %#x is not the load of the target into R11", b.in, b.at)
 		}
 		return m.marshal(c.Sig, func(b insn) error {
-			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], x86asm.R11) {
+			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], x86asm.R11) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through R11", b.in, b.at)
 			}
 			return nil
@@ -1773,7 +1838,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 				return err
 			}
 			rel, ok := b.in.Args[0].(x86asm.Rel)
-			if b.in.Op != x86asm.JMP || !ok {
+			if b.in.Op != x86asm.JMP || !ok || !plain(b.in) {
 				return fmt.Errorf("leaf return: %v at %#x is not a jump to the epilogue", b.in, b.at)
 			}
 			m.rets = append(m.rets, uint64(int64(b.at)+int64(b.in.Len)+int64(rel)))
