@@ -16,6 +16,9 @@ import (
 
 const engineName = "slowjs (package slowjs)"
 
+// timedWhat is what govm.eval does.
+const timedWhat = "Eval, which copies the source into the VM and runs the script, then ExecutePendingJobs for its jobs and the result as a string"
+
 type govm struct{ m *slowjs.VM }
 
 // newVM ignores the seed and the stack size, which package slowjs does not

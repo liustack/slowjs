@@ -15,6 +15,9 @@ import (
 
 const engineName = "C engine as Go assembly (internal/cengine)"
 
+// timedWhat is what cengine.VM.Eval does.
+const timedWhat = "Eval, which copies the source into the VM, runs the script and its jobs and turns the result into a Go string"
+
 type cvm struct{ v *cengine.VM }
 
 func newVM(o options) (vm, error) {
