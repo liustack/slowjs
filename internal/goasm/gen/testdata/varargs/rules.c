@@ -41,7 +41,9 @@ __attribute__((noinline)) long resets(int n, ...)
     return v;
 }
 
-// Kept: a helper takes the va_list by reference, and a va_copy.
+// Kept: a helper takes the va_list by value (aarch64 copies it with
+// memcpy) and one by reference, and a va_copy.
+__attribute__((noinline)) long by_value(va_list ap) { return __builtin_va_arg(ap, long); }
 __attribute__((noinline)) long by_ref(va_list *ap) { return __builtin_va_arg(*ap, int); }
 
 __attribute__((noinline)) long kept(int n, ...)
@@ -49,7 +51,7 @@ __attribute__((noinline)) long kept(int n, ...)
     va_list ap, aq;
     __builtin_va_start(ap, n);
     __builtin_va_copy(aq, ap);
-    long s = by_ref(&ap) + __builtin_va_arg(aq, long) + (long)__builtin_va_arg(aq, double);
+    long s = by_value(ap) + by_ref(&ap) + __builtin_va_arg(aq, long) + (long)__builtin_va_arg(aq, double);
     __builtin_va_end(aq);
     __builtin_va_end(ap);
     return s;

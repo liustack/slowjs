@@ -383,8 +383,11 @@ static void lowerVarargs(Module &M) {
   // one promoted scalar at a time; only a block pointer may be stored, and
   // only back into the overflow field, 8 bytes on. The offset fields may
   // only grow from what va_start set (x86-64 gp_offset 48 and fp_offset 176,
-  // AArch64 both 0), so every va_arg takes the overflow path.
+  // AArch64 both 0), so every va_arg takes the overflow path. A va_list is
+  // copied by va_copy, or whole by memcpy into a local (how AArch64 passes
+  // one by value).
   const int64_t blockField = arm ? 0 : 8;
+  const uint64_t listSize = arm ? 32 : 24;
   auto readField = [&](int64_t off) { return arm ? (off == 8 || off == 16) : off == 16; };
   auto intField = [&](int64_t off) { return arm ? (off == 24 || off == 28) : (off == 0 || off == 4); };
   DenseMap<Value *, int64_t> vaList; // va_list pointer -> byte offset into it
@@ -457,6 +460,9 @@ static void lowerVarargs(Module &M) {
       } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
         if (!list && II->getIntrinsicID() == Intrinsic::ptrmask && II->getArgOperand(0) == V)
           addPtr(II);
+        if (list && off == 0 && II->getIntrinsicID() == Intrinsic::memcpy && II->getArgOperand(1) == V &&
+            isa<AllocaInst>(II->getArgOperand(0)))
+          addList(I, II->getArgOperand(0), 0);
       } else if (auto *CB = dyn_cast<CallBase>(I)) {
         auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
         if (!list || off != 0 || !callee || callee->isDeclaration() || CB->getCalledOperand() == V)
@@ -569,6 +575,15 @@ static void lowerVarargs(Module &M) {
         if (off != 0)
           fail(I, "passes an address inside a va_list to an intrinsic");
         return;
+      case Intrinsic::memcpy: {
+        // A whole va_list copied into a local one, as va_copy does.
+        Value *dst = II->getArgOperand(0), *src = II->getArgOperand(1);
+        auto *n = dyn_cast<ConstantInt>(II->getArgOperand(2));
+        if (off != 0 || !n || n->getZExtValue() != listSize || !isa<AllocaInst>(dst) || !vaList.count(dst) ||
+            vaList[dst] != 0 || !vaList.count(src) || vaList[src] != 0)
+          fail(I, "copies a va_list the pass cannot account for");
+        return;
+      }
       case Intrinsic::vacopy: {
         // Both operands must be va_lists the pass tracks: the destination
         // was seeded from a local, the source must be a tracked list.
