@@ -211,3 +211,24 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// diffBody checks a linked function body equals the generator's re-assembled
+// body, except in the four displacement bytes of each direct call (at the
+// given body offsets), which the linker fills in.
+func diffBody(orig, actual []byte, callOffs []int) error {
+	if len(orig) != len(actual) {
+		return fmt.Errorf("body length %d generated, %d linked", len(orig), len(actual))
+	}
+	o := append([]byte(nil), orig...)
+	a := append([]byte(nil), actual...)
+	for _, c := range callOffs {
+		for k := 0; k < 4 && c+1+k < len(o); k++ {
+			o[c+1+k] = 0
+			a[c+1+k] = 0
+		}
+	}
+	if string(o) != string(a) {
+		return fmt.Errorf("linked body differs from generated")
+	}
+	return nil
+}
