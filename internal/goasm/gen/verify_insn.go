@@ -1985,7 +1985,9 @@ func (k *checker) checkLeaf(meta Meta) error {
 	if err != nil {
 		return err
 	}
-	if g.split || g.frame != int64(r.Frame) || g.bp != (r.Frame > 0) {
+	// Go's assembler saves BP in every function with a frame or a call, so
+	// also in a leaf that saves nothing but calls another leaf.
+	if g.split || g.frame != int64(r.Frame) || g.bp != (r.Frame > 0 || len(r.Calls) > 0) {
 		return fmt.Errorf("Go prologue of a leaf: split %v, BP %v, frame %d (declared %d)", g.split, g.bp, g.frame, r.Frame)
 	}
 	body := alignUp64(g.afterLead, 16)

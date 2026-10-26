@@ -3,15 +3,17 @@
 // JSValue), values kept across calls in the frame and in callee-saved
 // registers, floating-point constants, a jump table, engine_rodata holding
 // pointers to strings and to functions and tables of relative offsets, an
-// indirect call, the address of a function, a call to a register-entry leaf,
-// a cold function (which llc would put in .text.unlikely.) and a function the
-// generator cannot lower (a stub).
+// indirect call, the address of a function, a call to a register-entry leaf
+// and a leaf that calls another, a cold function (which llc would put in
+// .text.unlikely.) and a function the generator cannot lower (a stub).
 
 typedef struct {
 	long tag, val;
 } JSValue;
 
 __attribute__((noinline)) long leafmix(long a, long b) { return a * 3 + b; }
+
+__attribute__((noinline)) long leafwrap(long a, long b) { return leafmix(b, a) ^ 7; }
 
 __attribute__((noinline)) long add3(long a, long b, long c) { return a + b + c + 1234567; }
 
@@ -26,7 +28,7 @@ __attribute__((noinline)) JSValue pair(long a, long b) {
 
 long usepair(long a) {
 	JSValue v = pair(a, a + 1);
-	return v.tag * 10 + v.val + leafmix(v.tag, a);
+	return v.tag * 10 + v.val + leafmix(v.tag, a) + leafwrap(a, v.val);
 }
 
 long spill(long a, long b, long c, long d, long e, long f) {

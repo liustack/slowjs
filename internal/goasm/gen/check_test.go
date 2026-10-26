@@ -191,7 +191,7 @@ func TestPostLinkCheck(t *testing.T) {
 	bin := filepath.Join(work, "bin")
 	gen := func(mode string, env []string, extra ...string) (string, error) {
 		args := []string{"-src", src, "-llvm", llvm, "-pass", pass, "-mode", mode, "-keep-going",
-			"-leaves", "leafmix", "-work", filepath.Join(work, "w-"+mode), "-pkg", "mini"}
+			"-leaves", "leafmix,leafwrap", "-work", filepath.Join(work, "w-"+mode), "-pkg", "mini"}
 		cmd := exec.Command(drv, append(args, extra...)...)
 		cmd.Env = append(os.Environ(), env...)
 		out, err := cmd.CombinedOutput()
@@ -214,7 +214,7 @@ func TestPostLinkCheck(t *testing.T) {
 		if err != nil || !strings.Contains(out, "post-link check passed") {
 			t.Fatalf("%s: the check rejects correct code: %v\n%s", mode, err, out)
 		}
-		for _, want := range []string{"checked: 1 stubs", "checked: 1 register-entry leaves", "body data objects", "engine_rodata objects"} {
+		for _, want := range []string{"checked: 1 stubs", "checked: 2 register-entry leaves", "body data objects", "engine_rodata objects"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("%s: %q missing from the report:\n%s", mode, want, out)
 			}
