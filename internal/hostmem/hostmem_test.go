@@ -96,12 +96,12 @@ func grow(t testing.TB, m *Memory, size uintptr) uintptr {
 
 func TestMapWriteUnmap(t *testing.T) {
 	const size = 4 * Unit
-	p, err := Map(size)
+	p, err := osMap(size)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p%pageSize != 0 {
-		t.Fatalf("Map gave %#x, not aligned to the page size %d", p, pageSize)
+		t.Fatalf("osMap gave %#x, not aligned to the page size %d", p, pageSize)
 	}
 	if !zero(p, size) {
 		t.Fatal("new memory is not zero")
@@ -110,7 +110,7 @@ func TestMapWriteUnmap(t *testing.T) {
 	if i := same(p, size, 1); i >= 0 {
 		t.Fatalf("byte %d does not read back", i)
 	}
-	if err := Unmap(p, size); err != nil {
+	if err := osUnmap(p, size); err != nil {
 		t.Fatal(err)
 	}
 	if anyMapped(t, p, size) {
@@ -120,12 +120,12 @@ func TestMapWriteUnmap(t *testing.T) {
 
 func TestMapRefusesAbsurdSizes(t *testing.T) {
 	for _, size := range []uintptr{1 << 50, ^uintptr(0) &^ (Unit - 1)} {
-		p, err := Map(size)
+		p, err := osMap(size)
 		if err == nil {
-			Unmap(p, size)
-			t.Fatalf("Map(%#x) = %#x, want an error", size, p)
+			osUnmap(p, size)
+			t.Fatalf("osMap(%#x) = %#x, want an error", size, p)
 		}
-		t.Logf("Map(%#x): %v", size, err)
+		t.Logf("osMap(%#x): %v", size, err)
 	}
 
 	m := newMemory(t, Unit)
@@ -303,11 +303,11 @@ func TestRemapPrimitive(t *testing.T) {
 		// behind the chunk is free. Another thread may map there first:
 		// try a few times.
 		for try := 0; ; try++ {
-			p, err := Map(2 * size)
+			p, err := osMap(2 * size)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := Unmap(p+size, size); err != nil {
+			if err := osUnmap(p+size, size); err != nil {
 				t.Fatal(err)
 			}
 			fill(p, size, 3)
@@ -321,7 +321,7 @@ func TestRemapPrimitive(t *testing.T) {
 			if !zero(q+size, size) {
 				t.Fatal("the new part is not zero")
 			}
-			Unmap(q, 2*size)
+			osUnmap(q, 2*size)
 			if q == p {
 				return
 			}
@@ -333,7 +333,7 @@ func TestRemapPrimitive(t *testing.T) {
 
 	t.Run("moving", func(t *testing.T) {
 		// The second half stays mapped and blocks growth in place.
-		p, err := Map(2 * size)
+		p, err := osMap(2 * size)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -356,8 +356,8 @@ func TestRemapPrimitive(t *testing.T) {
 		if anyMapped(t, p, size) {
 			t.Fatal("the old place is still mapped")
 		}
-		Unmap(q, 3*size)
-		Unmap(p+size, size)
+		osUnmap(q, 3*size)
+		osUnmap(p+size, size)
 	})
 }
 
