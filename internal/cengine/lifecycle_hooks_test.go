@@ -124,13 +124,13 @@ func TestCloseLeavesNothing(t *testing.T) {
 			t.Errorf("%s: Close ended with %v", how, r)
 		}
 		gone(t, h, "after a "+how+" in Close")
-		if v.teardowns != 1 {
-			t.Errorf("%s: the engine was freed %d times", how, v.teardowns)
+		if teardowns(v) != 1 {
+			t.Errorf("%s: the engine was freed %d times", how, teardowns(v))
 		}
 		if _, err := v.Close(); err != nil {
 			t.Errorf("%s: Close again: %v", how, err)
 		}
-		if v.teardowns != 1 {
+		if teardowns(v) != 1 {
 			t.Errorf("%s: Close again entered the engine", how)
 		}
 		if _, err := v.Eval(`1`, "after.js"); err == nil {
@@ -169,8 +169,8 @@ func TestCloseRetry(t *testing.T) {
 		if err != nil || leaked != 0 {
 			t.Fatalf("Close again: %d blocks, %v", leaked, err)
 		}
-		if v.teardowns != 1 {
-			t.Errorf("the engine was freed %d times", v.teardowns)
+		if teardowns(v) != 1 {
+			t.Errorf("the engine was freed %d times", teardowns(v))
 		}
 		gone(t, h, "after Close again")
 	})
@@ -186,8 +186,8 @@ func TestCloseTwice(t *testing.T) {
 		if leaked, err := v.Close(); err != nil || leaked != 0 {
 			t.Fatalf("Close again: %d blocks, %v", leaked, err)
 		}
-		if v.teardowns != 1 {
-			t.Errorf("the engine was freed %d times", v.teardowns)
+		if teardowns(v) != 1 {
+			t.Errorf("the engine was freed %d times", teardowns(v))
 		}
 		gone(t, h, "after two Closes")
 		if _, err := v.Eval(`1`, "after.js"); !errors.Is(err, ErrClosed) {
@@ -296,8 +296,8 @@ func TestCloseCleanupRefused(t *testing.T) {
 			t.Errorf("%s: leftovers %+v after Close again", how, l)
 		}
 		gone(t, h, "after Close again")
-		if v.teardowns != 1 {
-			t.Errorf("%s: the engine was freed %d times", how, v.teardowns)
+		if teardowns(v) != 1 {
+			t.Errorf("%s: the engine was freed %d times", how, teardowns(v))
 		}
 	}
 }

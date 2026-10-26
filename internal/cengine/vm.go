@@ -57,8 +57,6 @@ type VM struct {
 
 	freed  bool    // Close freed the engine, or tried to
 	leaked uintptr // what JS_FreeRuntime returned
-
-	teardowns int // times Close called into the engine to free it, for tests
 }
 
 // Options are the settings of a new VM.
@@ -386,7 +384,7 @@ func (v *VM) Close() (leaked uintptr, err error) {
 					v.h.Close()
 				}
 			}()
-			v.teardowns++
+			engineFreed(v)
 			v.enter(func() {
 				JS_FreeContext(v.sp, v.ctx)
 				v.leaked = JS_FreeRuntime(v.sp, v.rt)
