@@ -76,6 +76,9 @@ func reject(fn, stage, msg string) {
 func main() {
 	flag.Parse()
 	t0 := time.Now()
+	if err := gen.CheckShadowSizeLog2(*sizeLog2); err != nil {
+		die(err)
+	}
 	keepNarrow, err := keepNarrowFromEnv(os.Getenv("GEN_KEEP_NARROW"))
 	if err != nil {
 		die(err)

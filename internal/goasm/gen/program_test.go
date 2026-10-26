@@ -351,3 +351,16 @@ func TestSplitAsmRejectsBadStartAlignment(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckShadowSizeLog2(t *testing.T) {
+	for _, n := range []int{MinShadowSizeLog2, 20, 25, MaxShadowSizeLog2} {
+		if err := CheckShadowSizeLog2(n); err != nil {
+			t.Errorf("%d: %v", n, err)
+		}
+	}
+	for _, n := range []int{-1, 0, 1, MinShadowSizeLog2 - 1, MaxShadowSizeLog2 + 1, 63, 64, 1 << 20} {
+		if err := CheckShadowSizeLog2(n); err == nil || !strings.Contains(err.Error(), "-shadow-size-log2") {
+			t.Errorf("%d: %v", n, err)
+		}
+	}
+}
