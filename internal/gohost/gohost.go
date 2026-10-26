@@ -32,6 +32,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -99,6 +100,7 @@ type VM struct {
 	counts    Counts
 	lastErr   error
 	depth     int
+	faultWas  bool // SetPanicOnFault of the goroutine before the outermost Enter
 	broken    bool
 	remap     bool
 	closed    bool
@@ -292,13 +294,26 @@ func (v *VM) MarkBroken() { v.broken = true }
 
 // Enter is called before each call into the engine and Leave after it. The
 // outermost entry clears the interrupt: a request holds until the engine has
-// left completely, whatever inner entries saw. Enter panics on a broken VM.
+// left completely, whatever inner entries saw. It also turns on
+// debug.SetPanicOnFault for the goroutine until the matching Leave, which puts
+// back what the goroutine had: a C access to an address that is mapped to
+// nothing (a wild pointer, the guard page of the shadow stack) is then a
+// panic that recovers, where the runtime would print "unexpected fault
+// address" and end the process. Only an address below 0x1000 is a panic
+// without it. Enter panics on a broken VM.
+//
+// The setting belongs to the goroutine, so Enter and Leave must run on the
+// goroutine that calls the engine, which a call into the engine does by
+// being synchronous. A fault that does not come as SIGSEGV or SIGBUS (an
+// illegal instruction, a breakpoint) is not helped by it: the generator
+// leaves no such instruction in the engine (see internal/goasm/gen).
 func (v *VM) Enter() {
 	if v.broken {
 		panic("gohost: a VM broken by a panic in the engine takes only Close")
 	}
 	if v.depth == 0 {
 		v.interrupt.Store(0)
+		v.faultWas = debug.SetPanicOnFault(true)
 	}
 	v.depth++
 }
@@ -309,6 +324,9 @@ func (v *VM) Leave() {
 		panic("gohost: Leave without Enter")
 	}
 	v.depth--
+	if v.depth == 0 {
+		debug.SetPanicOnFault(v.faultWas)
+	}
 }
 
 // Interrupt asks the engine to stop at its next poll. Any goroutine may call
