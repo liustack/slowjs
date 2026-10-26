@@ -32,7 +32,8 @@
  * runs with the shape cache on: run_test_buf() keeps 2048 shapes, as a VM of
  * the Go API does (DefaultShapeCache). The engine has no threads that block,
  * so JS_SetCanBlock() is gone: a test of Atomics.wait needs its excludes in
- * test262.conf.
+ * test262.conf. Its threads have stacks of HOST_THREAD_STACK bytes, not 2 MB:
+ * the engine counts its recursion and does not stop at the end of a stack.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -691,7 +692,7 @@ static JSValue js_agent_start(JSContext *ctx, JSValue this_val,
     pthread_attr_init(&attr);
     // musl libc gives threads 80 kb stacks, much smaller than
     // JS_DEFAULT_STACK_SIZE (256 kb)
-    pthread_attr_setstacksize(&attr, 2 << 20); // 2 MB, glibc default
+    pthread_attr_setstacksize(&attr, HOST_THREAD_STACK); // the counted recursion of the engine, see host.h
     pthread_create(&agent->tid, &attr, agent_start, agent);
     pthread_attr_destroy(&attr);
     return JS_UNDEFINED;
@@ -2441,7 +2442,7 @@ int main(int argc, char **argv)
             th->thread_index = i;
             
             pthread_attr_init(&attr);
-            pthread_attr_setstacksize(&attr, 2 << 20); // 2 MB, glibc default
+            pthread_attr_setstacksize(&attr, HOST_THREAD_STACK); // the counted recursion of the engine, see host.h
             pthread_create(&th->tid, &attr, run_test_dir_list, th);
             pthread_attr_destroy(&attr);
         }

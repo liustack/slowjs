@@ -6,6 +6,9 @@
 #       bzero is there for macOS, where the compiler turns a memset of 0 into a
 #       call of it.
 # host: the callbacks of engine/host.h, and host_memory_grow of engine/heap.h.
+# shadow: __shadow_remaining, the bytes of stack left. It is no call in the
+#       generated assembly: the generator puts the room left on the shadow
+#       stack in its place. The native test host defines it.
 
 libc memcpy
 libc memmove
@@ -60,3 +63,5 @@ host host_now
 host host_poll
 host host_call
 host host_release
+
+shadow __shadow_remaining
