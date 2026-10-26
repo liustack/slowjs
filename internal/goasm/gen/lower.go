@@ -179,6 +179,20 @@ func goReg(reg string) string {
 	}
 }
 
+// LowerEnv is what lowering a function of the whole engine needs beyond its
+// own text: where its data goes, which symbols are functions, and the
+// signatures of indirect calls, which the shadow-stack pass writes before
+// each one as a "# goasm.icall <code>" comment.
+type LowerEnv struct {
+	Plan  *DataPlan
+	Funcs map[string]bool
+	// Variadic names the variadic functions. A call to one is rejected
+	// unless LooseVarargs, which lowers it with its fixed arguments only
+	// (wrong code, for measuring the output while the C still has them).
+	Variadic     map[string]bool
+	LooseVarargs bool
+}
+
 // LowerUnified transforms one function's GNU assembly. It returns the rewritten
 // GNU text (one label, a trailing return label, calls left symbolic) and the
 // Meta for emit.
@@ -204,10 +218,23 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 	if end < 0 {
 		return "", Meta{}, fmt.Errorf("%s: no .Lfunc_end", fn.Name)
 	}
+	return LowerUnifiedFunc(a, lines[start+1:end], fn, nil, asm)
+}
 
+// reMarker is the comment the shadow-stack pass puts before an indirect call.
+var reMarker = regexp.MustCompile(`#\s*goasm\.icall\s+(\S+)`)
+
+// LowerUnifiedFunc lowers the body lines of one function (after its label,
+// up to .Lfunc_end). With env nil it is the prototype's unit: constant pools
+// are found in asm and indirect calls take fn.Indirect in order.
+func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, asm string) (string, Meta, error) {
 	// Gather the instruction/label lines of the body.
 	var body []string
-	for _, raw := range lines[start+1 : end] {
+	for _, raw := range lines {
+		if m := reMarker.FindStringSubmatch(raw); m != nil {
+			body = append(body, "@icall "+m[1])
+			continue
+		}
 		l := clean(raw)
 		if l == "" {
 			continue
@@ -296,8 +323,14 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 			if cs, ok := callSig(m[1], fn, calleeSigs); ok && calleeKinds[m[1]] != Register {
 				consider(cs)
 			}
-		} else if reIndirect.MatchString(n) {
+		} else if reIndirect.MatchString(n) || reIndirectMem.MatchString(n) {
 			hasCall = true
+		} else if env != nil && strings.HasPrefix(n, "@icall ") {
+			// The outgoing area must hold the arguments of every
+			// indirect call too; a bad code fails at the call below.
+			if s, err := SigFromCode(strings.TrimPrefix(n, "@icall ")); err == nil {
+				consider(s)
+			}
 		}
 	}
 	for _, s := range fn.Indirect {
@@ -351,8 +384,50 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		return nil
 	}
 	indIdx := 0
-	for _, l := range inner {
+	pending := "" // signature code of the next indirect call
+	var flow map[string]string
+	if env != nil {
+		var err error
+		if flow, err = markerFlow(inner); err != nil {
+			return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+		}
+	}
+	for li, l := range inner {
 		n := norm(l)
+		if strings.HasPrefix(n, "@icall ") {
+			if pending != "" {
+				return "", Meta{}, fmt.Errorf("%s: two indirect-call markers without a call between", fn.Name)
+			}
+			pending = strings.TrimPrefix(n, "@icall ")
+			continue
+		}
+		if m := reLabel.FindStringSubmatch(n); m != nil {
+			if env == nil && pending != "" {
+				return "", Meta{}, fmt.Errorf("%s: indirect-call marker and its call in different blocks", fn.Name)
+			}
+			// The marker reaching this block along every edge into it.
+			pending = flow[m[1]]
+		}
+		// indirectSig is the signature of an indirect call: from the
+		// marker in the whole engine, in declared order in the prototype.
+		indirectSig := func() (Sig, error) {
+			if env != nil {
+				if pending == "" {
+					return Sig{}, fmt.Errorf("%s: indirect call without a marker: %q", fn.Name, l)
+				}
+				s, err := SigFromCode(pending)
+				pending = ""
+				if err != nil {
+					return Sig{}, fmt.Errorf("%s: indirect call: %w", fn.Name, err)
+				}
+				return s, nil
+			}
+			if indIdx >= len(fn.Indirect) {
+				return Sig{}, fmt.Errorf("%s: more indirect calls than declared", fn.Name)
+			}
+			indIdx++
+			return fn.Indirect[indIdx-1], nil
+		}
 		// Drop epilogue frame restores (one per return block).
 		if reAdd.MatchString(n) {
 			continue
@@ -362,6 +437,32 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		}
 		if reForbidden.MatchString(n) {
 			return "", Meta{}, fmt.Errorf("%s: forbidden instruction: %q", fn.Name, l)
+		}
+		// A call through a pointer LLVM spilled to the frame: load it into
+		// R11 from its moved slot, then call through R11 like any other
+		// pointer. Left to the frame rewrite below, the call would keep its
+		// operand but lose its marshalling.
+		if m := reIndirectMem.FindStringSubmatch(n); m != nil && (strings.Contains(m[1], "%rbp") || strings.Contains(m[1], "%rsp")) {
+			load := "movq " + m[1] + ", %r11"
+			var err error
+			if strings.Contains(m[1], "%rbp") {
+				load, err = rewriteRBPLocals(load, 8*len(pushed), local, localBase)
+			} else {
+				load, err = rewriteRSPLocals(load, local, localBase)
+			}
+			if err == nil {
+				load, err = unalignedStackAccess(norm(load))
+			}
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: call through a pointer in the frame: %w", fn.Name, err)
+			}
+			sig, err := indirectSig()
+			if err != nil {
+				return "", Meta{}, err
+			}
+			out = append(out, load)
+			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
+			continue
 		}
 		// Rewrite frame spills: LLVM addresses locals at -N(%rbp), below the
 		// saved callee-saved area. Map each onto the local region of the Go
@@ -379,6 +480,14 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 			continue
 		}
 		if reSub.MatchString(n) || strings.HasPrefix(n, "pushq") || strings.HasPrefix(n, "popq") || strings.HasPrefix(n, "leave") {
+			// SysV passes the arguments past the sixth on the stack. The
+			// pass gives every other signature an argument block, so a push
+			// left in the body feeds a variadic call.
+			if strings.HasPrefix(n, "pushq") && env != nil {
+				if c := nextCall(inner[li:]); env.Variadic[c] {
+					return "", Meta{}, fmt.Errorf("%s: stack arguments of the variadic call to %s: %q", fn.Name, c, l)
+				}
+			}
 			return "", Meta{}, fmt.Errorf("%s: SP write in body: %q", fn.Name, l)
 		}
 		if strings.HasPrefix(n, "lea") && strings.Contains(n, "%rsp") {
@@ -395,26 +504,30 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 			continue
 		}
 		if m := reIndirectMem.FindStringSubmatch(n); m != nil {
-			if strings.Contains(m[1], "%rsp") || strings.Contains(m[1], "%rbp") {
-				return "", Meta{}, fmt.Errorf("%s: call through a pointer in the frame: %q", fn.Name, l)
+			if strings.Contains(m[1], "%rip") {
+				return "", Meta{}, fmt.Errorf("%s: call through a pointer in read-only data: %q", fn.Name, l)
 			}
-			if indIdx >= len(fn.Indirect) {
-				return "", Meta{}, fmt.Errorf("%s: more indirect calls than declared", fn.Name)
+			sig, err := indirectSig()
+			if err != nil {
+				return "", Meta{}, err
 			}
-			sig := fn.Indirect[indIdx]
-			indIdx++
 			out = append(out, "movq "+m[1]+", %r11")
 			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
 			continue
 		}
 		if m := reIndirect.FindStringSubmatch(n); m != nil {
-			if indIdx >= len(fn.Indirect) {
-				return "", Meta{}, fmt.Errorf("%s: more indirect calls than declared", fn.Name)
+			sig, err := indirectSig()
+			if err != nil {
+				return "", Meta{}, err
 			}
-			sig := fn.Indirect[indIdx]
-			indIdx++
 			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase)...)
 			continue
+		}
+		if m := reCall.FindStringSubmatch(n); m != nil && pending != "" {
+			return "", Meta{}, fmt.Errorf("%s: indirect-call marker before a direct call: %q", fn.Name, l)
+		}
+		if m := reCall.FindStringSubmatch(n); m != nil && env != nil && env.Variadic[m[1]] && !env.LooseVarargs {
+			return "", Meta{}, fmt.Errorf("%s: variadic call to %s", fn.Name, m[1])
 		}
 		if m := reCall.FindStringSubmatch(n); m != nil {
 			cs, ok := callSig(m[1], fn, calleeSigs)
@@ -437,7 +550,13 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 		if isTailJump(n) {
 			return "", Meta{}, fmt.Errorf("%s: tail call: %q", fn.Name, l)
 		}
-		if m := reSymRef.FindStringSubmatch(n); m != nil && !strings.HasPrefix(m[1], ".LCPI") {
+		if env != nil {
+			rewritten, err := env.dataRefs(fn.Name, l)
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
+			}
+			l, n = rewritten, norm(rewritten)
+		} else if m := reSymRef.FindStringSubmatch(n); m != nil && !strings.HasPrefix(m[1], ".LCPI") {
 			return "", Meta{}, fmt.Errorf("%s: unsupported read-only reference %q: %q", fn.Name, m[1], l)
 		}
 		// LLVM addresses locals from SP too: shift them onto the Go frame's
@@ -462,10 +581,19 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 	// Go's RET (appended by emit). A function with constants keeps them in its
 	// own body after the code, where the assembler resolves every
 	// RIP-relative reference, and jumps over them to the RET.
+	if pending != "" {
+		return "", Meta{}, fmt.Errorf("%s: indirect-call marker without a call", fn.Name)
+	}
 	out = append(out, retLabel+":")
-	if pool, err := constantPool(asm, inner); err != nil {
+	var pool string
+	if env != nil {
+		pool = env.Plan.BodyData(fn.Name)
+	} else if p, err := constantPool(asm, inner); err != nil {
 		return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
-	} else if pool != "" {
+	} else {
+		pool = p
+	}
+	if pool != "" {
 		end := ".Lend_" + fn.Name
 		out = append(out, "jmp "+end, ".p2align 4", fn.Name+".const:", pool, end+":")
 	}
@@ -613,6 +741,94 @@ func AddCallee(name string, sig Sig, kind Kind) {
 	calleeKinds[name] = kind
 }
 
+// markerFlow gives the indirect-call marker pending at the start of each
+// local label. llc may move the call of a marked site into a block shared by
+// several predecessors (tail merging), each keeping its own copy of the
+// marker, so a marker is followed along jumps and fall-throughs to its call.
+// Every edge into a block must carry the same marker, or none.
+func markerFlow(lines []string) (map[string]string, error) {
+	in := map[string]string{} // present: some edge reaches the label
+	// A label no direct jump names is entered by falling through or from a
+	// jump table. No marker may be pending at an indirect jump (checked
+	// below), so a table entry carries none.
+	targets := map[string]bool{}
+	for _, l := range lines {
+		if f := strings.Fields(norm(l)); len(f) == 2 && f[0][0] == 'j' && strings.HasPrefix(f[1], ".L") {
+			targets[f[1]] = true
+		}
+	}
+	for iter := 0; ; iter++ {
+		if iter > len(lines)+1 {
+			return nil, fmt.Errorf("indirect-call markers do not settle")
+		}
+		changed := false
+		var conflict error
+		join := func(lab, st string) {
+			prev, ok := in[lab]
+			if !ok {
+				in[lab], changed = st, true
+			} else if prev != st && conflict == nil {
+				conflict = fmt.Errorf("blocks reaching %s disagree on the indirect-call marker (%q, %q)", lab, prev, st)
+			}
+		}
+		st, live := "", true
+		for _, l := range lines {
+			n := norm(l)
+			if strings.HasPrefix(n, "@icall ") {
+				st = strings.TrimPrefix(n, "@icall ")
+				continue
+			}
+			if m := reLabel.FindStringSubmatch(n); m != nil {
+				if live {
+					join(m[1], st)
+				}
+				if v, ok := in[m[1]]; ok {
+					st, live = v, true
+				} else if !targets[m[1]] {
+					st, live = "", true
+				} else {
+					live = false
+				}
+				continue
+			}
+			if !live {
+				continue
+			}
+			f := strings.Fields(n)
+			switch {
+			case strings.HasPrefix(n, "call"):
+				st = ""
+			case len(f) == 2 && (f[0] == "jmp" || f[0] == "jmpq") && strings.HasPrefix(f[1], ".L"):
+				join(f[1], st)
+				live = false
+			case len(f) == 2 && n[0] == 'j' && strings.HasPrefix(f[1], ".L"):
+				join(f[1], st)
+			case n == "retq" || n == "ret" || f[0] == "jmp" || f[0] == "jmpq" || f[0] == "ud2":
+				if st != "" {
+					return nil, fmt.Errorf("indirect-call marker without a call")
+				}
+				live = false
+			}
+		}
+		if conflict != nil {
+			return nil, conflict
+		}
+		if !changed {
+			return in, nil
+		}
+	}
+}
+
+// nextCall returns the target of the first direct call in lines.
+func nextCall(lines []string) string {
+	for _, l := range lines {
+		if m := reCall.FindStringSubmatch(norm(l)); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
 // isTailJump reports a jump to a symbol rather than to a local label: LLVM's
 // sibling-call form, a musttail or a wrapper jump. All are forbidden.
 func isTailJump(n string) bool {
@@ -721,3 +937,51 @@ func constantPool(asm string, body []string) (string, error) {
 	}
 	return strings.TrimSuffix(b.String(), "\n"), nil
 }
+
+// dataRefs rewrites the RIP-relative data references of one body line of fn:
+// a LEA of an object of engine_rodata becomes a LEA of
+// __goasm_rodata+offset, any other read of data goes to the function's own
+// copy, a constant pool or jump table keeps its label, and a LEA of a
+// function stays symbolic for emit.
+func (env *LowerEnv) dataRefs(fn, l string) (string, error) {
+	n := norm(l)
+	lea := strings.HasPrefix(n, "lea")
+	var rerr error
+	out := reRIP.ReplaceAllStringFunc(l, func(m string) string {
+		sub := reRIP.FindStringSubmatch(m)
+		sym, add := sub[1], sub[2]
+		if env.Funcs[sym] {
+			if !lea {
+				rerr = fmt.Errorf("non-LEA reference to the function %s: %q", sym, l)
+			}
+			return m
+		}
+		if r, ok := env.Plan.Rename[fn][sym]; ok && !(lea && hasBlob(env.Plan, sym)) {
+			return r + add + "(%rip)"
+		}
+		if off, ok := env.Plan.BlobOff[sym]; ok {
+			if !lea {
+				rerr = fmt.Errorf("non-LEA reference to %s in engine_rodata: %q", sym, l)
+				return m
+			}
+			k := 0
+			if add != "" {
+				k, _ = strconv.Atoi(add)
+			}
+			return fmt.Sprintf("__goasm_rodata+%d(%%rip)", off+k)
+		}
+		rerr = fmt.Errorf("unplaced data %s: %q", sym, l)
+		return m
+	})
+	if rerr != nil {
+		return "", rerr
+	}
+	// Absolute references (sym(,%reg,8), $sym) are errors of PlanData.
+	return out, nil
+}
+
+func hasBlob(p *DataPlan, sym string) bool { _, ok := p.BlobOff[sym]; return ok }
+
+// Layout gives the Go argument area of a signature: the offset of each
+// parameter, of the result, and the total size.
+func Layout(sig Sig) ([]int, int, int) { return layout(sig) }

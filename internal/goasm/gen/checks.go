@@ -59,6 +59,12 @@ func CheckObject(objPath string, allow map[string]bool) error {
 	}
 	defer f.Close()
 	for _, s := range f.Sections {
+		// C const tables that hold pointers: PIC code puts them in
+		// .data.rel.ro, writable only while relocations are applied. They
+		// become read-only Go data.
+		if strings.HasPrefix(s.Name, ".data.rel.ro") {
+			continue
+		}
 		if s.Flags&elf.SHF_WRITE != 0 && s.Flags&elf.SHF_ALLOC != 0 && s.Size > 0 {
 			if s.Type == elf.SHT_NOBITS || s.Type == elf.SHT_PROGBITS {
 				return fmt.Errorf("writable data section %q of %d bytes (engine must have no mutable globals)", s.Name, s.Size)
@@ -97,3 +103,51 @@ func CheckObject(objPath string, allow map[string]bool) error {
 	}
 	return nil
 }
+
+// IRViolation is one rule a function of the C breaks, as the IR shows it.
+type IRViolation struct {
+	Func, Rule, Line string
+}
+
+var reDefName = regexp.MustCompile(`^define\b[^@]*@("?[^"(]+"?)\(`)
+
+// CheckIRFuncs is CheckIR over a whole module that names the function of
+// each violation instead of stopping at the first. A call of a variadic
+// function counts as a violation of the caller too ("variadic call").
+func CheckIRFuncs(ll string) []IRViolation {
+	var out []IRViolation
+	fn := ""
+	for _, line := range strings.Split(ll, "\n") {
+		if m := reDefName.FindStringSubmatch(line); m != nil {
+			fn = strings.Trim(m[1], `"`)
+		}
+		if strings.HasPrefix(line, "}") {
+			fn = ""
+		}
+		add := func(rule string) { out = append(out, IRViolation{fn, rule, strings.TrimSpace(line)}) }
+		switch {
+		case reDefine.MatchString(line) && strings.HasPrefix(line, "define"):
+			add("variadic definition")
+		case fn != "" && strings.Contains(line, "llvm.va_start"):
+			add("va_start")
+		case fn != "" && reVarCall.MatchString(line):
+			add("variadic call")
+		}
+		if reByval.MatchString(line) {
+			add("byval aggregate")
+		}
+		if reSret.MatchString(line) {
+			add("sret aggregate")
+		}
+		if reLongDbl.MatchString(line) {
+			add("long double")
+		}
+		if strings.Contains(line, "thread_local") {
+			add("thread-local storage")
+		}
+	}
+	return out
+}
+
+// A call of a variadic function: its type in the call reads (..., ...).
+var reVarCall = regexp.MustCompile(`\bcall\b[^(]*\([^()]*\.\.\.\)\s*@`)
