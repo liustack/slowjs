@@ -1538,6 +1538,75 @@ static int test_module_retry(void *unused)
     return 0;
 }
 
+/* stack_fail_sweep runs src with the stack short at the first count of the
+   engine, then at the second, and so on until it runs whole. Each time it
+   fails with a RangeError, or runs to want with no exception left behind. */
+static void stack_fail_sweep(const char *what, const char *src, const char *want)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[64];
+    long n;
+    int fired;
+
+    for (n = 1;; n++) {
+        JSValue v;
+
+        host_stack_fail_at = n;
+        v = JS_Eval(ctx, src, strlen(src), "<sweep>", JS_EVAL_TYPE_GLOBAL);
+        fired = host_stack_fail_at == 0;
+        host_stack_fail_at = 0;
+        if (JS_IsException(v)) {
+            exception_name(ctx, buf, sizeof(buf));
+            CHECK(fired && strcmp(buf, "RangeError") == 0, "%s, short at %ld: %s", what, n, buf);
+        } else {
+            const char *s;
+
+            if (JS_HasException(ctx)) {
+                CHECK(0, "%s, short at %ld: ran, and left %s", what, n,
+                      exception_name(ctx, buf, sizeof(buf)));
+            }
+            s = JS_ToCString(ctx, v);
+            CHECK(s && strcmp(s, want) == 0, "%s, short at %ld: got %s", what, n, s ? s : "?");
+            JS_FreeCString(ctx, s);
+        }
+        JS_FreeValue(ctx, v);
+        if (!fired)
+            break;
+    }
+    CHECK(n > 1, "%s: no count", what);
+    CHECK(eval_is(ctx, "1 + 1", "2"), "%s: the runtime runs", what);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A function that uses a variable of a function around it gets a closure
+   variable in each function between, a level of the internal depth each,
+   and the lookup fails past it or with too little stack. Code does not get
+   there first, as the parser counts more levels for a function than the
+   lookups do, so each lookup of the compiler is made to fail in turn: the
+   compile throws the RangeError and frees what it made. */
+static void test_closure_lookup_fail(void)
+{
+    static const struct { const char *what, *src, *want; } cases[] = {
+        { "argument and local",
+          "(function (a) { var b = 2; return function () { return a + b; }; })(1)()", "3" },
+        { "with around",
+          "(function (o) { with (o) { return function () { return x; }; } })({ x: 4 })()", "4" },
+        { "eval in the body",
+          "(function () { eval('var x = 5'); return function () { return x; }; })()()", "5" },
+        { "eval in the parameters",
+          "(function (a = eval('var y = 6')) { return function () { return y; }; })()()", "6" },
+        { "function in direct eval",
+          "(function () { var y = 7; return eval('(function () { return y + typeof z; })')(); })()",
+          "7undefined" },
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        stack_fail_sweep(cases[i].what, cases[i].src, cases[i].want);
+}
+
 /* JSON.parse with a reviver keeps a record of each value it parsed, for the
    source text of the primitives, and frees the records with no recursion:
    nested as deep as it parses, as wide as it likes, objects with a hash of
@@ -1660,6 +1729,7 @@ int main(void)
     test_free_nesting();
     test_unicode_tables();
     test_class_strings();
+    test_closure_lookup_fail();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();
