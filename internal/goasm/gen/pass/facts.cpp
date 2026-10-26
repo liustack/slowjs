@@ -57,7 +57,7 @@ raw_fd_ostream &facts() {
     std::error_code EC;
     out = std::make_unique<raw_fd_ostream>(FactsOut, EC, sys::fs::OF_Text);
     if (EC)
-      report_fatal_error(Twine("cannot write ") + FactsOut + ": " + EC.message());
+      reportFatalUsageError(Twine("cannot write ") + FactsOut + ": " + EC.message());
   }
   return *out;
 }

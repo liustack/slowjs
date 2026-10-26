@@ -68,6 +68,15 @@ func TestNarrowArgs(t *testing.T) {
 	if len(native) != 20 {
 		t.Fatalf("the native run printed %d results:\n%s", len(native), strings.Join(native, "\n"))
 	}
+	// The sample has no undefined behavior: the same run under UBSan, which
+	// traps in place of a runtime library, gives the same lines and does not
+	// trap (the signed sums it once had overflowed on the third case).
+	ubsan := []string{"-fsanitize=undefined", "-fsanitize-trap=undefined"}
+	tool(t, "", clang, append(append(append([]string{}, plain...), ubsan...), "-c", "-o", at("narrow-ub.o"), filepath.Join(src, "narrow.c"))...)
+	tool(t, "", lld, "-static", "-e", "_start", "-o", at("native-ub"), at("main.o"), at("narrow-ub.o"))
+	if ub := strings.Split(strings.TrimSpace(tool(t, "", at("native-ub"))), "\n"); strings.Join(ub, "\n") != strings.Join(native, "\n") {
+		t.Fatalf("the run under UBSan printed\n%s\nthe plain native run\n%s", strings.Join(ub, "\n"), strings.Join(native, "\n"))
+	}
 	// Go calls g6 with each case too, as run does.
 	want := strings.Join(append(append([]string{}, native...), native[2], native[5], native[8], native[11]), "\n") + "\n"
 
@@ -118,14 +127,18 @@ func TestNarrowArgs(t *testing.T) {
 			if b.reject != "" {
 				// The probe shows the fault the check rejects: put16 reads
 				// its value from DI, which holds it only until morestack
-				// writes the goroutine there.
-				tool(t, mod, "go", "build", "-o", "run", ".")
+				// writes the goroutine there. The package of a negative build
+				// does not compile without the tag goasmnegative.
+				if out, err := try(mod, nil, "go", "build", "-o", "run", "."); err == nil || !strings.Contains(out, "negative_build_of_the_generator") {
+					t.Fatalf("the negative build compiled without its tag: %v\n%s", err, out)
+				}
+				tool(t, mod, "go", "build", "-tags", "goasmnegative", "-o", "run", ".")
 				probe := strings.Fields(tool(t, mod, filepath.Join(mod, "run"), "probe"))
 				if len(probe) != 3 || probe[0] != "plain:3412" || probe[1] == "preempted:3412" && probe[2] == "moved:3412" {
 					t.Fatalf("put16(0x1234) of the negative build wrote %v, want 3412 only when not preempted or moved", probe)
 				}
 				t.Logf("probe of the negative build: %v", probe)
-				tool(t, mod, "go", "build", "-tags", "goasmkeep", "-o", "keep", ".")
+				tool(t, mod, "go", "build", "-tags", "goasmkeep,goasmnegative", "-o", "keep", ".")
 				out, err := gen(t, append(args, "-verify-bin", filepath.Join(mod, "keep"), "-verify-pkg", "narrow/nw", "-verify-all")...)
 				if err == nil || !strings.Contains(out, b.reject) {
 					t.Fatalf("the post-link check did not reject it with %q: %v\n%s", b.reject, err, out)

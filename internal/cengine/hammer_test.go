@@ -23,9 +23,11 @@ func hammerG() uintptr
 const stackPreempt = ^uintptr(1313)
 
 // TestPreemptionHammer runs scripts in new VMs while another goroutine keeps
-// setting the stack guard of the goroutine in the engine to stackPreempt,
-// so the next generated function's stack check goes through morestack into
-// the scheduler, which may move the goroutine to another thread. The results
+// asking for a preemption: it sets the stack guard of the goroutine in the
+// engine to stackPreempt, so the next generated function's stack check goes
+// through morestack into the scheduler, which may move the goroutine to
+// another thread. It counts the requests it makes, which is more than the
+// preemptions that happen. The results
 // must not change and no block may be left. It writes into the runtime's g
 // (its stack guard is the third word), which the runtime does not promise,
 // hence the tag of its own:
@@ -47,7 +49,7 @@ func TestPreemptionHammer(t *testing.T) {
 		{`/(\d+)-(\d+)/.exec("x10-20y").slice(1).join("|") + String(10n**20n)`, `10|20100000000000000000000`},
 	}
 	var in atomic.Bool
-	var hits atomic.Int64
+	var requests atomic.Int64 // writes of stackPreempt, not preemptions that were made
 	guard := (*uintptr)(unsafe.Pointer(hammerG() + 16))
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -61,7 +63,7 @@ func TestPreemptionHammer(t *testing.T) {
 			}
 			if in.Load() {
 				atomic.StoreUintptr(guard, stackPreempt)
-				hits.Add(1)
+				requests.Add(1)
 			}
 			for i := 0; i < 1000; i++ {
 			}
@@ -77,12 +79,16 @@ func TestPreemptionHammer(t *testing.T) {
 		if err != nil || got != s.want {
 			v.Host().MarkBroken()
 			v.Close()
-			t.Fatalf("run %d with forced preemptions: %q, %v (want %q)", i, got, err, s.want)
+			t.Fatalf("run %d with preemption requests: %q, %v (want %q)", i, got, err, s.want)
 		}
 		closeVM(t, v)
 	}
-	t.Logf("%d runs, %d forced preemptions", n, hits.Load())
-	if hits.Load() == 0 {
-		t.Fatal("no preemption was forced")
+	// A request is a write of stackPreempt to the stack guard. The scheduler
+	// answers it at the next stack check, and requests that arrive before it
+	// has answered one merge, so this counts what was asked, not the
+	// preemptions that happened.
+	t.Logf("%d runs, %d preemption requests", n, requests.Load())
+	if requests.Load() == 0 {
+		t.Fatal("no preemption was requested")
 	}
 }

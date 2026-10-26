@@ -19,26 +19,29 @@ typedef short int16_t;
 long host_cb(long x);
 long host_narrow(uint8_t c, int16_t d, _Bool e, long tag);
 
+// The sums are unsigned, so that they wrap by C's rules and the sample has
+// no undefined behavior on any input (TestNarrowArgs also runs it under
+// UBSan).
 // Two pointers, then each narrow kind, then a 32 and a 64-bit integer.
 __attribute__((noinline)) long f(void *a, void *b, uint8_t c, uint16_t d, _Bool e, int g, long h)
 {
-    long s = (long)a * 3 + (long)b * 5;
+    unsigned long s = (unsigned long)a * 3 + (unsigned long)b * 5;
     s = s * 7 + c;
     s = s * 11 + d;
     s = s * 13 + e;
-    s = s * 17 + g;
-    return s * 19 + h;
+    s = s * 17 + (unsigned long)(long)g;
+    return (long)(s * 19 + (unsigned long)h);
 }
 
 // Each narrow kind after one pointer: six words with the shadow pointer, so
 // body mode passes them in registers too and Go can call it.
 __attribute__((noinline)) long g6(void *a, uint8_t c, uint16_t d, _Bool e, int g)
 {
-    long s = (long)a * 3;
+    unsigned long s = (unsigned long)a * 3;
     s = s * 7 + c;
     s = s * 11 + d;
     s = s * 13 + e;
-    return s * 17 + g;
+    return (long)(s * 17 + (unsigned long)(long)g);
 }
 
 // The shape of QuickJS's DynBuf writers (emit_op, __dbuf_put_u16): a
@@ -128,10 +131,10 @@ long run(long *r, int one)
     long ok = put8(&b, (uint8_t)(0x1ff * one)) | put16(&b, (uint16_t)(0x1234 * one)) | putb(&b, one == 1) |
               putb(&b, one == 2) | puts8(&b, (int8_t)(-0x7f * one)) | put16(&b, (uint16_t)(0xfffe + one)) |
               put8(&b, (uint8_t)(0x80 * one)) | put16(&b, (uint16_t)(0x8001 * one));
-    long w = 0;
+    unsigned long w = 0;
     for (int i = 0; i < 8; i++)
         w = w << 8 | bytes[i];
-    r[n++] = w;
+    r[n++] = (long)w;
     r[n++] = (long)bytes[8] << 24 | (long)bytes[9] << 16 | (long)bytes[10] << 8 | b.n;
     r[n++] = ok;
     r[n++] = host_narrow((uint8_t)(0x1fe * one), (int16_t)(-2 * one), one == 1, 7);

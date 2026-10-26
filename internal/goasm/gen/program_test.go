@@ -29,9 +29,10 @@ func TestSigFromCode(t *testing.T) {
 		}
 	}
 	// The negative build takes a narrow integer for a word.
-	t.Setenv("GEN_KEEP_NARROW", "1")
+	KeepNarrowSigs = true
+	defer func() { KeepNarrowSigs = false }()
 	if s, err := SigFromCode("in>n"); err != nil || !reflect.DeepEqual(s, Sig{Params: []Type{I64, I64}, Ret: I64}) {
-		t.Fatalf("GEN_KEEP_NARROW: %+v %v", s, err)
+		t.Fatalf("KeepNarrowSigs: %+v %v", s, err)
 	}
 }
 
@@ -347,6 +348,19 @@ func TestSplitAsmRejectsBadStartAlignment(t *testing.T) {
 		asm := ".section\t.rodata,\"a\",@progbits\n\t.p2align\t" + al + "\na:\n\t.byte\t1\n"
 		if _, err := SplitAsm(asm, "#"); err == nil {
 			t.Errorf(".p2align %s before a label accepted", al)
+		}
+	}
+}
+
+func TestCheckShadowSizeLog2(t *testing.T) {
+	for _, n := range []int{MinShadowSizeLog2, 20, 25, MaxShadowSizeLog2} {
+		if err := CheckShadowSizeLog2(n); err != nil {
+			t.Errorf("%d: %v", n, err)
+		}
+	}
+	for _, n := range []int{-1, 0, 1, MinShadowSizeLog2 - 1, MaxShadowSizeLog2 + 1, 63, 64, 1 << 20} {
+		if err := CheckShadowSizeLog2(n); err == nil || !strings.Contains(err.Error(), "-shadow-size-log2") {
+			t.Errorf("%d: %v", n, err)
 		}
 	}
 }
