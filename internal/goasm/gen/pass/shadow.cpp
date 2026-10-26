@@ -179,6 +179,13 @@ static unsigned intArgRegs(FunctionType *T) {
 
 static bool unifiedFn(Function *F, const std::set<std::string> &leaves);
 
+// Polls on every cycle (poll.cpp).
+void checkPollOptions(unsigned sizeLog2);
+void chunkLeafCalls(Module &M);
+void prepareDispatchPolls(Module &M);
+void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2);
+void checkPolls(Module &M, const std::set<std::string> &leaves);
+
 // Option B: every unified entry and every host callback uses preserve_none,
 // whose only callee-saved registers are FP and LR (amd64: RSP and RBP). The
 // register allocator then keeps across a call only what is live, in the
@@ -1515,6 +1522,9 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       reportFatalUsageError(Twine("-shadow-size-log2=") + Twine(SizeLog2) + " is out of range (" + Twine(MinSizeLog2) +
                             " to " + Twine(MaxSizeLog2) + ")");
     const uint64_t S = 1ull << SizeLog2;
+    checkPollOptions(SizeLog2);
+    chunkLeafCalls(M);
+    prepareDispatchPolls(M);
     relativeGotoTables(M);
     if (Varargs)
       lowerVarargs(M);
@@ -1717,6 +1727,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         for (Instruction &I : B)
           if (isa<AllocaInst>(&I))
             reportFatalUsageError(Twine("alloca left on the Go stack in ") + F.getName());
+    insertPolls(M, leaves, SizeLog2);
+    checkPolls(M, leaves);
     if (CallConv == "preserve_none")
       usePreserveNone(M, leaves);
     else if (!CallConv.empty())
