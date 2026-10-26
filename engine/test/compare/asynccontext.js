@@ -81,6 +81,13 @@ test('an object or none', function (log) {
 test('handler keeps this and arguments', function (log) {
   run({ n: 'args' }, () => Promise.resolve(7).then(function (v) { log.push(typeof this + ' ' + v + ' ' + arguments.length + ' ' + get().n); }));
 });
+test('a handler registered with no context', function (log) {
+  // Its handler is called as it is, so a context it sets stays after it,
+  // and the next one sees it.
+  var p = Promise.resolve();
+  p.then(() => { set({ n: 'set by a job' }); log.push('first ' + String(get()?.n)); });
+  p.then(() => { log.push('second ' + String(get()?.n)); set(undefined); });
+});
 // Left for the end of the run: a reaction that holds a context and never
 // runs, and a context still set. Freeing the runtime frees both.
 globalThis.pending = new Promise(() => {});

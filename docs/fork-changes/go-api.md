@@ -238,6 +238,7 @@ What follows the context and what does not, checked against Node 24 with `AsyncL
 - An async function has the context of its call after each `await`, also when several overlap.
 - A reaction runs with the context of the `then` that registered it, not of the code that resolved the promise.
 - A context set inside a reaction lasts until the reaction ends.
+- The context covers the handler, not the whole job. What the job does after the handler, settling the promise that `then` returned and telling the host of a rejection nothing handles, sees the context the VM has when the job runs. A reaction registered with no context is not wrapped: its handler runs with the context the VM has then, and a context it sets stays after it.
 - `Promise.all`, `finally`, async generators and `for await` keep it, as they register reactions.
 - The `then` of a thenable that is not a promise runs in a job with the context of the code that resolved a promise with it, as `await thenable` does.
 - Timers, I/O and events do not exist in the engine, so a host that adds them saves and sets the context itself.
@@ -246,4 +247,4 @@ What follows the context and what does not, checked against Node 24 with `AsyncL
 
 The C tree (`engine/quickjs.c`) has the same change in C: `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
 
-Test: `asynccontext_test.go`, also run under memgrind (`TestMemgrind2AsyncContext`) and with `-tags slowjs_nogoasm` on linux/amd64, and `TestAsyncContextRewrite` in `internal/fixlib`. `engine/test/compare/asynccontext.js` runs the same cases on the C tree and on the Go engine (`engine/test/compare.sh`).
+Test: `asynccontext_test.go`, also run under memgrind (`TestMemgrind2AsyncContext`) and with `-tags slowjs_nogoasm` on linux/amd64, and `TestAsyncContextRewrite` in `internal/fixlib`. `engine/test/compare/asynccontext.js` runs the same cases on the C tree and on the Go engine (`engine/test/compare.sh`), and `engine/test/unit.c` checks the context the handler of a reaction, the rejection tracker of the host and a reaction registered with no context see.

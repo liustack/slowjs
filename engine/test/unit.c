@@ -59,6 +59,22 @@ static int eval_is(JSContext *ctx, const char *src, const char *want)
     return ok;
 }
 
+/* run_jobs runs the jobs of rt until none is left and reports whether none
+   threw. */
+static int run_jobs(JSRuntime *rt)
+{
+    JSContext *ctx;
+    int r, ok = 1;
+
+    while ((r = JS_ExecutePendingJob(rt, &ctx)) != 0) {
+        if (r < 0) {
+            JS_FreeValue(ctx, JS_GetException(ctx));
+            ok = 0;
+        }
+    }
+    return ok;
+}
+
 /* strings returns the number of strings rt holds. */
 static int64_t strings(JSRuntime *rt)
 {
@@ -737,6 +753,92 @@ static void test_search_interrupt(void)
     }
 }
 
+/* n_of returns the field n of the async context of ctx, or -1 when it has
+   none. */
+static int n_of(JSContext *ctx)
+{
+    JSValue c = JS_GetAsyncContext(ctx), v;
+    int32_t n = -1;
+
+    if (JS_IsObject(c)) {
+        v = JS_GetPropertyStr(ctx, c, "n");
+        if (JS_ToInt32(ctx, &n, v))
+            n = -1;
+        JS_FreeValue(ctx, v);
+    }
+    JS_FreeValue(ctx, c);
+    return n;
+}
+
+/* set_n sets the async context of ctx to an object whose n is n, or to none
+   for -1. */
+static void set_n(JSContext *ctx, int n)
+{
+    JSValue c = JS_UNDEFINED;
+
+    if (n >= 0) {
+        c = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, c, "n", JS_NewInt32(ctx, n));
+    }
+    JS_SetAsyncContext(ctx, c);
+    JS_FreeValue(ctx, c);
+}
+
+static JSValue js_context_n(JSContext *ctx, JSValueConst this_val, int argc,
+                            JSValueConst *argv)
+{
+    return JS_NewInt32(ctx, n_of(ctx));
+}
+
+static int rejected_n;
+
+static void track_rejection(JSContext *ctx, JSValueConst promise,
+                            JSValueConst reason, JS_BOOL is_handled,
+                            void *opaque)
+{
+    if (!is_handled)
+        rejected_n = n_of(ctx);
+}
+
+/* The async context covers the handler of a reaction, not the whole job, as
+   in the Go engine: the handler runs with the context of its then, and the
+   rest of the job, the rejection of the promise then returned and the
+   tracker of the host that hears of it, sees the context the runtime has
+   when the job runs. A handler registered with no context runs with the
+   context of that time too. */
+static void test_async_context_job(void)
+{
+    static const char thrown[] =
+        "var inside = -2; Promise.resolve().then(() => { inside = contextN(); throw 7 })\n";
+    static const char bare[] =
+        "var later = -2; Promise.resolve().then(() => { later = contextN() })\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g = JS_GetGlobalObject(ctx);
+
+    JS_SetPropertyStr(ctx, g, "contextN",
+                      JS_NewCFunction(ctx, js_context_n, "contextN", 0));
+    JS_FreeValue(ctx, g);
+    JS_SetHostPromiseRejectionTracker(rt, track_rejection, NULL);
+    rejected_n = -2;
+    set_n(ctx, 1);
+    CHECK(eval(ctx, thrown), "the script threw");
+    set_n(ctx, 2);
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval_is(ctx, "String(inside)", "1"), "the context of the handler");
+    CHECK(rejected_n == 2, "the tracker heard of the rejection in context %d",
+          rejected_n);
+    set_n(ctx, -1);
+    CHECK(eval(ctx, bare), "the script threw");
+    set_n(ctx, 3);
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval_is(ctx, "String(later)", "3"),
+          "the context of a handler registered with none");
+    set_n(ctx, -1);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 int main(void)
 {
     test_regexp_cache();
@@ -750,6 +852,7 @@ int main(void)
     test_search_steps();
     test_search_linear();
     test_search_interrupt();
+    test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
