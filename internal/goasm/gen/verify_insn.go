@@ -1243,21 +1243,21 @@ func (m *matcher) epilogue(i int, freed int64) (int, error) {
 	return k - i, nil
 }
 
-// forbiddenOps are instructions the engine's code may not hold: the ones that
-// reach the system or read machine state, and the ones that move SP or BP
-// implicitly outside the prologue and epilogue the check accounts for.
-var forbiddenOps = map[x86asm.Op]string{
-	x86asm.SYSCALL: "a system call", x86asm.SYSENTER: "a system call", x86asm.SYSEXIT: "a system call",
-	x86asm.SYSRET: "a system call", x86asm.INT: "a software interrupt",
-	x86asm.RDTSC: "reads the time stamp counter", x86asm.RDTSCP: "reads the time stamp counter",
-	x86asm.RDRAND: "reads the hardware random source", x86asm.RDPMC: "reads a performance counter",
-	x86asm.RDMSR: "reads a machine register", x86asm.RDFSBASE: "reads a segment base", x86asm.RDGSBASE: "reads a segment base",
-	x86asm.CPUID: "reads the processor's identity",
-	x86asm.PUSH:  "pushes in the body", x86asm.PUSHF: "pushes in the body", x86asm.PUSHFD: "pushes in the body",
-	x86asm.PUSHFQ: "pushes in the body", x86asm.POPF: "pops in the body", x86asm.POPFD: "pops in the body",
-	x86asm.POPFQ: "pops in the body",
-	x86asm.ENTER: "builds a frame in the body", x86asm.LEAVE: "leaves a frame in the body",
-}
+// forbiddenOps are instructions the llc side of the body may not hold: the
+// system ones (forbidden.go) and the ones that move SP or BP implicitly
+// outside the prologue and epilogue the check accounts for.
+var forbiddenOps = func() map[x86asm.Op]string {
+	m := map[x86asm.Op]string{
+		x86asm.PUSH: "pushes in the body", x86asm.PUSHF: "pushes in the body", x86asm.PUSHFD: "pushes in the body",
+		x86asm.PUSHFQ: "pushes in the body", x86asm.POPF: "pops in the body", x86asm.POPFD: "pops in the body",
+		x86asm.POPFQ: "pops in the body",
+		x86asm.ENTER: "builds a frame in the body", x86asm.LEAVE: "leaves a frame in the body",
+	}
+	for op, why := range systemOps {
+		m[op] = why
+	}
+	return m
+}()
 
 // unalignedOK are the 16-byte moves that need no alignment: the Go frame is
 // only 8-byte aligned, so any other access wider than 8 bytes may fault.

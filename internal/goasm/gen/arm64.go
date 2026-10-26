@@ -540,7 +540,10 @@ func lowerA64Func(asm string, fn FuncSpec, mode ARM64Mode, noSaves bool, u *ARM6
 		}
 		op := strings.Fields(l)[0]
 		switch op {
-		case "svc", "hvc", "smc", "mrs", "msr", "br", "ret", "adr", "adrp", "eret":
+		case "br", "ret", "adr", "adrp", "eret":
+			return fail("forbidden instruction %q", l)
+		}
+		if forbiddenA64[op] {
 			return fail("forbidden instruction %q", l)
 		}
 		if reA64Reserved.MatchString(l) {
