@@ -425,3 +425,45 @@ var forbiddenEncodings = map[string]string{
 	"0f 33":       "performance counter",
 	"0f 32":       "machine register",
 }
+
+// TestStubsNeedKeepGoing: without -keep-going a rejection stops the run and
+// nothing is written, so no package with a stub in it comes from a normal
+// build. With it the same input gives a package. It needs LLVM 22.1.8
+// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+func TestStubsNeedKeepGoing(t *testing.T) {
+	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+	}
+	work := t.TempDir()
+	drv := filepath.Join(work, "engine")
+	cmd := exec.Command("go", "build", "-o", drv, "./cmd/engine")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	// A variadic function, which the driver does not take without -varargs-block.
+	src, err := filepath.Abs(filepath.Join("testdata", "reject", "variadic.c"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(name string, extra ...string) (string, error) {
+		out, err := exec.Command(drv, append([]string{"-src", src, "-llvm", llvm, "-pass", pass, "-leaves", "",
+			"-work", filepath.Join(work, "w-"+name), "-out", filepath.Join(work, "out-"+name), "-pkg", "mini"}, extra...)...).CombinedOutput()
+		return string(out), err
+	}
+	out, err := run("strict")
+	if err == nil || !strings.Contains(out, "-keep-going") {
+		t.Fatalf("a run with rejections and no -keep-going: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(work, "out-strict")); err == nil {
+		t.Fatal("a rejected run wrote a package")
+	}
+	if out, err := run("survey", "-keep-going"); err != nil {
+		t.Fatalf("-keep-going: %v\n%s", err, out)
+	}
+	stubs, err := os.ReadFile(filepath.Join(work, "out-survey", "engine_stubs_amd64.s"))
+	if err != nil || !strings.Contains(string(stubs), "goasmMissing") {
+		t.Fatalf("the survey package has no stub: %v", err)
+	}
+}
