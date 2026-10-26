@@ -68,6 +68,15 @@ func TestNarrowArgs(t *testing.T) {
 	if len(native) != 20 {
 		t.Fatalf("the native run printed %d results:\n%s", len(native), strings.Join(native, "\n"))
 	}
+	// The sample has no undefined behavior: the same run under UBSan, which
+	// traps in place of a runtime library, gives the same lines and does not
+	// trap (the signed sums it once had overflowed on the third case).
+	ubsan := []string{"-fsanitize=undefined", "-fsanitize-trap=undefined"}
+	tool(t, "", clang, append(append(append([]string{}, plain...), ubsan...), "-c", "-o", at("narrow-ub.o"), filepath.Join(src, "narrow.c"))...)
+	tool(t, "", lld, "-static", "-e", "_start", "-o", at("native-ub"), at("main.o"), at("narrow-ub.o"))
+	if ub := strings.Split(strings.TrimSpace(tool(t, "", at("native-ub"))), "\n"); strings.Join(ub, "\n") != strings.Join(native, "\n") {
+		t.Fatalf("the run under UBSan printed\n%s\nthe plain native run\n%s", strings.Join(ub, "\n"), strings.Join(native, "\n"))
+	}
 	// Go calls g6 with each case too, as run does.
 	want := strings.Join(append(append([]string{}, native...), native[2], native[5], native[8], native[11]), "\n") + "\n"
 
