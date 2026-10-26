@@ -342,18 +342,35 @@ static void host_clock_init(void)
 }
 
 _Thread_local long host_wall_reads;
+_Thread_local uint32_t host_wall_vm;
+
+uint32_t host_vm_id(JSRuntime *rt)
+{
+    HostVM *vm;
+    uint32_t id = 0;
+
+    pthread_mutex_lock(&host_lock);
+    for (vm = host_vms; vm; vm = vm->next) {
+        if (vm->rt == rt) {
+            id = vm->id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&host_lock);
+    return id;
+}
 
 int64_t host_now(uint32_t vm, int kind)
 {
     struct timespec now;
     int64_t ns;
 
-    (void)vm;
     if (kind == HOST_NOW_MONOTONIC) {
         clock_gettime(CLOCK_MONOTONIC, &now);
         return (int64_t)now.tv_sec * 1000000000 + now.tv_nsec;
     }
     host_wall_reads++;
+    host_wall_vm = vm;
     ns = (int64_t)HOST_NOW_SEC * 1000000000;
     if (host_clock_running) {
         clock_gettime(CLOCK_MONOTONIC, &now);

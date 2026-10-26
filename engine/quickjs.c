@@ -58089,9 +58089,9 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     return JS_NewStringLen(ctx, buf, pos);
 }
 
-/* return the UTC time in ms since 1970. */
-static int64_t date_now(void) {
-    return host_now(0, HOST_NOW_WALL) / 1000000;
+/* return the UTC time in ms since 1970, on the clock of the VM of ctx */
+static int64_t date_now(JSContext *ctx) {
+    return host_now(ctx->rt->malloc_ctx.heap.vm, HOST_NOW_WALL) / 1000000;
 }
 
 static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
@@ -58108,7 +58108,7 @@ static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
     }
     n = argc;
     if (n == 0) {
-        val = date_now();
+        val = date_now(ctx);
     } else if (n == 1) {
         JSValue v, dv;
         if (JS_VALUE_GET_TAG(argv[0]) == JS_TAG_OBJECT) {
@@ -58652,7 +58652,7 @@ static JSValue js_Date_now(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
     // now()
-    return JS_NewInt64(ctx, date_now());
+    return JS_NewInt64(ctx, date_now(ctx));
 }
 
 static JSValue js_date_Symbol_toPrimitive(JSContext *ctx, JSValueConst this_val,
