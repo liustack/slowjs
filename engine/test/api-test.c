@@ -120,8 +120,8 @@ static void test_dump(void)
 /* The one decimal of the averages is what printf's %.1f gives for the same
    double. The report is made from numbers set here, with no runtime, and its
    text is compared with the C library's, for the values that round the wrong
-   way when a number is rounded twice (1.05 is a little over 1.05 as a double,
-   0.15 and 0.05 a little under, and 1.25 is halfway). */
+   way when a number is rounded twice (1.05 and 0.05 are a little over as doubles,
+   0.15 a little under, and 1.25 is halfway). */
 static void test_tenths(void)
 {
     /* sprintf, and not snprintf: the snprintf of the program is the engine's,
@@ -226,8 +226,8 @@ static void test_atomics(JSContext *ctx)
         "    log = [];\n"
         "  };\n"
         "  const noBlock = 'TypeError: cannot block in this thread';\n"
-        "  const notNoBlock = (what, got, wantLog = '') => {\n"
-        "    if (got === noBlock || !/^(TypeError|RangeError)/.test(got)) failures.push(what + ': got [' + got + ']');\n"
+        "  const notNoBlock = (what, got, type, wantLog = '') => {\n"
+        "    if (got === noBlock || !got.startsWith(type + ': ')) failures.push(what + ': got [' + got + '], want a ' + type);\n"
         "    if (log.join() !== wantLog) failures.push(what + ': converted [' + log + '], want [' + wantLog + ']');\n"
         "    log = [];\n"
         "  };\n"
@@ -238,12 +238,12 @@ static void test_atomics(JSContext *ctx)
         "  expect('wait, no timeout', run(() => Atomics.wait(i32, 0, 0)), noBlock);\n"
         "  expect('wait, order', run(() => Atomics.wait(i32, mark('index', 0), mark('value', 0), mark('timeout', 0))), noBlock, 'index,value,timeout');\n"
         /* a buffer that is not shared, and an index out of range, come before any conversion of value and timeout */
-        "  notNoBlock('wait, not shared', run(() => Atomics.wait(plain, 0, mark('value', 0), poison('timeout'))));\n"
-        "  notNoBlock('wait, index out of range', run(() => Atomics.wait(i32, 4, mark('value', 0), poison('timeout'))));\n"
+        "  notNoBlock('wait, not shared', run(() => Atomics.wait(plain, 0, mark('value', 0), poison('timeout'))), 'TypeError');\n"
+        "  notNoBlock('wait, index out of range', run(() => Atomics.wait(i32, 4, mark('value', 0), poison('timeout'))), 'RangeError');\n"
         /* a Symbol, and an object whose valueOf throws, in each place */
-        "  notNoBlock('wait, Symbol index', run(() => Atomics.wait(i32, Symbol('i'), 0, 0)));\n"
-        "  notNoBlock('wait, Symbol value', run(() => Atomics.wait(i32, 0, Symbol('v'), 0)));\n"
-        "  notNoBlock('wait, Symbol timeout', run(() => Atomics.wait(i32, 0, 0, Symbol('t'))));\n"
+        "  notNoBlock('wait, Symbol index', run(() => Atomics.wait(i32, Symbol('i'), 0, 0)), 'TypeError');\n"
+        "  notNoBlock('wait, Symbol value', run(() => Atomics.wait(i32, 0, Symbol('v'), 0)), 'TypeError');\n"
+        "  notNoBlock('wait, Symbol timeout', run(() => Atomics.wait(i32, 0, 0, Symbol('t'))), 'TypeError');\n"
         "  expect('wait, poisoned timeout', run(() => Atomics.wait(i32, 0, 0, poison('timeout'))), 'RangeError: poison timeout', 'timeout');\n"
         "  expect('wait, poisoned value', run(() => Atomics.wait(i32, 0, poison('value'), mark('timeout', 0))), 'RangeError: poison value', 'value');\n"
         "  expect('wait, poisoned index', run(() => Atomics.wait(i32, poison('index'), mark('value', 0), mark('timeout', 0))), 'RangeError: poison index', 'index');\n"
@@ -257,8 +257,8 @@ static void test_atomics(JSContext *ctx)
         "  expect('notify, order', run(() => Atomics.notify(i32, mark('index', 0), mark('count', 1))), 'returned 0', 'index,count');\n"
         "  expect('notify, poisoned count', run(() => Atomics.notify(i32, 0, poison('count'))), 'RangeError: poison count', 'count');\n"
         "  expect('notify, poisoned count, not shared', run(() => Atomics.notify(plain, 0, poison('count'))), 'RangeError: poison count', 'count');\n"
-        "  notNoBlock('notify, Symbol index', run(() => Atomics.notify(i32, Symbol('i'), 1)));\n"
-        "  notNoBlock('notify, index out of range', run(() => Atomics.notify(i32, 4, 1)));\n"
+        "  notNoBlock('notify, Symbol index', run(() => Atomics.notify(i32, Symbol('i'), 1)), 'TypeError');\n"
+        "  notNoBlock('notify, index out of range', run(() => Atomics.notify(i32, 4, 1)), 'RangeError');\n"
         "  return failures.join('\\n');\n"
         "})()";
     JSValue v = JS_Eval(ctx, code, sizeof code - 1, "<atomics>", JS_EVAL_TYPE_GLOBAL);
