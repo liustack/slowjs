@@ -25,6 +25,22 @@ __attribute__((noinline)) long narrow(int n, ...)
     return c;
 }
 
+// Writes the register-area offset back to a value that sends the next
+// va_arg to the register save area, which va_start left empty.
+__attribute__((noinline)) long resets(int n, ...)
+{
+    va_list ap;
+    __builtin_va_start(ap, n);
+#ifdef __aarch64__
+    ((int *)&ap)[6] = -64; // __gr_offs
+#else
+    ((unsigned *)ap)[0] = 0; // gp_offset
+#endif
+    long v = __builtin_va_arg(ap, long);
+    __builtin_va_end(ap);
+    return v;
+}
+
 // Kept: a helper takes the va_list by reference, and a va_copy.
 __attribute__((noinline)) long by_ref(va_list *ap) { return __builtin_va_arg(*ap, int); }
 
@@ -39,4 +55,4 @@ __attribute__((noinline)) long kept(int n, ...)
     return s;
 }
 
-long use(void) { return kept(0, 1L, 2, 3.5) + narrow(0, 1); }
+long use(void) { return kept(0, 1L, 2, 3.5) + narrow(0, 1) + resets(0, 1L); }

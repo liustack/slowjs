@@ -219,6 +219,7 @@ func TestVarargsRules(t *testing.T) {
 		for fn, want := range map[string]string{
 			"aggr":   "more than one 8-byte slot",
 			"narrow": "not a promoted int, i64, pointer or double",
+			"resets": "does not only grow",
 		} {
 			if why := rep.Rejected[fn]; !strings.Contains(why, want) {
 				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, want)
