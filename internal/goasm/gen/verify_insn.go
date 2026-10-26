@@ -17,7 +17,9 @@
 // other llc instruction must appear in order with the same meaning. The read-
 // only data is checked the same way: every byte and every relocated pointer
 // of engine_rodata in the binary, and every constant pool and jump table a
-// function carries, against llc's object.
+// function carries, against llc's object. The signatures are the pass's,
+// taken on trust: EngineCheck.Sigs for each function and direct call, and
+// for an indirect call the marker the lowering read before it.
 package gen
 
 import (
