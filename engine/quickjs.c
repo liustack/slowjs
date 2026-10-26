@@ -32327,6 +32327,13 @@ static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
                                               JSExportEntry **pme,
                                               JSModuleDef *m,
                                               JSAtom export_name,
+                                              JSResolveState *s);
+
+static JSResolveResultEnum js_resolve_export2(JSContext *ctx,
+                                              JSModuleDef **pmodule,
+                                              JSExportEntry **pme,
+                                              JSModuleDef *m,
+                                              JSAtom export_name,
                                               JSResolveState *s)
 {
     JSExportEntry *me;
@@ -32394,6 +32401,26 @@ static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
         }
         return JS_RESOLVE_RES_NOT_FOUND;
     }
+}
+
+/* one level per module on the way to the export */
+static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
+                                              JSModuleDef **pmodule,
+                                              JSExportEntry **pme,
+                                              JSModuleDef *m,
+                                              JSAtom export_name,
+                                              JSResolveState *s)
+{
+    JSResolveResultEnum ret;
+
+    if (js_internal_enter(ctx)) {
+        *pmodule = NULL;
+        *pme = NULL;
+        return JS_RESOLVE_RES_EXCEPTION;
+    }
+    ret = js_resolve_export2(ctx, pmodule, pme, m, export_name, s);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 /* If the return value is JS_RESOLVE_RES_FOUND, return the module
@@ -32488,7 +32515,11 @@ static int find_exported_name(GetExportNamesState *s, JSAtom name)
 
 static __exception int get_exported_names(JSContext *ctx,
                                           GetExportNamesState *s,
-                                          JSModuleDef *m, BOOL from_star)
+                                          JSModuleDef *m, BOOL from_star);
+
+static __exception int get_exported_names1(JSContext *ctx,
+                                           GetExportNamesState *s,
+                                           JSModuleDef *m, BOOL from_star)
 {
     ExportedNameEntry *en;
     int i, j;
@@ -32533,6 +32564,20 @@ static __exception int get_exported_names(JSContext *ctx,
             return -1;
     }
     return 0;
+}
+
+/* one level per module of a chain of 'export * from' */
+static __exception int get_exported_names(JSContext *ctx,
+                                          GetExportNamesState *s,
+                                          JSModuleDef *m, BOOL from_star)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = get_exported_names1(ctx, s, m, from_star);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 /* Unfortunately, the spec gives a different behavior from GetOwnProperty ! */
@@ -32714,8 +32759,10 @@ JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m)
     return JS_DupValue(ctx, m->module_ns);
 }
 
+static int js_resolve_module(JSContext *ctx, JSModuleDef *m);
+
 /* Load all the required modules for module 'm' */
-static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
+static int js_resolve_module1(JSContext *ctx, JSModuleDef *m)
 {
     int i;
     JSModuleDef *m1;
@@ -32746,6 +32793,19 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
     return 0;
 }
 
+/* one level per module of a chain of imports, the host's loader between
+   them or not */
+static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = js_resolve_module1(ctx, m);
+    js_internal_leave(ctx->rt);
+    return ret;
+}
+
 /* Create the <eval> function associated with the module */
 static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
 {
@@ -32769,8 +32829,10 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
     return 0;
 }
 
+static int js_create_module_function(JSContext *ctx, JSModuleDef *m);
+
 /* must be done before js_link_module() because of cyclic references */
-static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
+static int js_create_module_function1(JSContext *ctx, JSModuleDef *m)
 {
     BOOL is_c_module;
     int i;
@@ -32807,6 +32869,18 @@ static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
     }
 
     return 0;
+}
+
+/* one level per module of a chain of imports */
+static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = js_create_module_function1(ctx, m);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 
