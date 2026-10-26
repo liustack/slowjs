@@ -67,11 +67,12 @@ func faulted(call string, addr, size uintptr) error {
 // Memory is the memory of one VM: the chunks of its heap and its shadow
 // stack.
 type Memory struct {
-	chunks    map[uintptr]uintptr // the base of each chunk to its size. nil once closed
+	chunks    map[uintptr]uintptr // the base of each chunk to its size
 	footprint uintptr             // the sum of the sizes
 	stack     uintptr             // the base of the shadow stack
-	stackSize uintptr
-	released  Released // totals of Release
+	stackSize uintptr             // 0 once Close unmapped it
+	released  Released            // totals of Release
+	closed    bool                // Close ran: only Close may run again
 }
 
 // Usage is what a VM holds from the OS.
@@ -119,13 +120,14 @@ func New(stackSize uintptr) (*Memory, error) {
 	return &Memory{chunks: map[uintptr]uintptr{}, stack: base, stackSize: stackSize}, nil
 }
 
-// Stack returns the base and the size of the shadow stack.
+// Stack returns the base and the size of the shadow stack, 0 and 0 once Close
+// unmapped it.
 func (m *Memory) Stack() (base, size uintptr) {
 	return m.stack, m.stackSize
 }
 
-// Usage returns what the VM holds now. It is zero but for the totals of
-// Release after Close.
+// Usage returns what the VM holds now. After a Close that unmapped all, it is
+// zero but for the totals of Release.
 func (m *Memory) Usage() Usage {
 	return Usage{Chunks: len(m.chunks), Footprint: m.footprint, Stack: m.stackSize, Released: m.released}
 }
@@ -246,21 +248,28 @@ func (m *Memory) Release(chunks, ranges func() (addr, size uintptr), stackUsed u
 }
 
 // Close unmaps every chunk and the shadow stack, after the engine freed its
-// runtime. The Memory is not used after it, but Close again does nothing.
+// runtime. From then on only Usage, Stack and Close may be called. When the OS
+// refuses some, Close returns the errors and keeps those counted, so Usage
+// tells what is left, and Close again tries them again. Once all is unmapped,
+// Close again does nothing.
 func (m *Memory) Close() error {
-	if m.chunks == nil {
-		return nil
-	}
+	m.closed = true
 	var errs []error
 	for base, size := range m.chunks {
 		if err := osUnmap(base, size); err != nil {
 			errs = append(errs, fmt.Errorf("hostmem: unmap a chunk of %d bytes at %#x: %w", size, base, err))
+			continue
+		}
+		delete(m.chunks, base)
+		m.footprint -= size
+	}
+	if m.stackSize != 0 {
+		if err := osFreeStack(m.stack, m.stackSize); err != nil {
+			errs = append(errs, fmt.Errorf("hostmem: unmap the shadow stack at %#x: %w", m.stack, err))
+		} else {
+			m.stack, m.stackSize = 0, 0
 		}
 	}
-	if err := osFreeStack(m.stack, m.stackSize); err != nil {
-		errs = append(errs, fmt.Errorf("hostmem: unmap the shadow stack at %#x: %w", m.stack, err))
-	}
-	m.chunks, m.footprint, m.stack, m.stackSize = nil, 0, 0, 0
 	return errors.Join(errs...)
 }
 
@@ -298,7 +307,7 @@ func (m *Memory) inChunk(addr, size uintptr) bool {
 }
 
 func (m *Memory) mustBeOpen() {
-	if m.chunks == nil {
+	if m.closed {
 		panic("hostmem: Memory used after Close")
 	}
 }
