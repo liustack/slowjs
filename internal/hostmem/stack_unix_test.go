@@ -9,14 +9,16 @@ package hostmem
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 
 	"golang.org/x/sys/unix"
 )
 
 // The setup of a shadow stack maps twice its size, unmaps what lies below
-// and above the aligned stack and its guard page, and opens the stack. These
-// tests make each step fail and check what the setup gives back.
+// and above the aligned stack and its guard page, opens the stack, and on
+// linux keeps huge pages off it. These tests make each step fail and check
+// what the setup gives back.
 
 const setupSize = 16 << 20
 
@@ -49,14 +51,18 @@ func withPartBelow(t *testing.T, try func() bool) {
 
 func TestStackSetupRollback(t *testing.T) {
 	n := 2*setupSize + pageSize
-	for _, step := range []string{"unmap below", "unmap above", "protect"} {
+	steps := []string{"unmap below", "unmap above", "protect"}
+	if runtime.GOOS == "linux" {
+		steps = append(steps, "nohugepage")
+	}
+	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {
 			withPartBelow(t, func() bool {
 				var below, above call // the two unmaps of the setup, as they came
 				calls := failing(t, func(c call, before []call) error {
 					switch {
-					case c.name == "protect":
-						if step == "protect" {
+					case c.name == "protect" || c.name == "nohugepage":
+						if step == c.name {
 							return errInjected
 						}
 					case c.name != "unmap", count(before, "protect") > 0:
@@ -91,7 +97,7 @@ func TestStackSetupRollback(t *testing.T) {
 				switch step {
 				case "unmap below":
 					lo = start
-				case "protect":
+				case "protect", "nohugepage":
 					hi = base + setupSize + pageSize
 				}
 				last := (*calls)[len(*calls)-1]
@@ -191,4 +197,29 @@ func TestStackSetupCannotGiveBack(t *testing.T) {
 		t.Fatalf("New panicked with %v, want an error with both the step's and the cleanup's", r)
 	}
 	t.Log(err)
+}
+
+// TestStackWithoutHugePages: a kernel built without transparent huge pages
+// refuses MADV_NOHUGEPAGE with EINVAL, and the stack is fine without it.
+func TestStackWithoutHugePages(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("no transparent huge pages on %s", runtime.GOOS)
+	}
+	calls := failing(t, func(c call, before []call) error {
+		if c.name == "nohugepage" {
+			return unix.EINVAL
+		}
+		return nil
+	})
+	m, err := New(setupSize)
+	if err != nil {
+		t.Fatalf("New with EINVAL from MADV_NOHUGEPAGE: %v", err)
+	}
+	if count(*calls, "nohugepage") != 1 {
+		t.Fatalf("the setup made %+v, want one MADV_NOHUGEPAGE", *calls)
+	}
+	fault = nil
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -55,8 +55,8 @@ func osRelease(addr, size uintptr) error {
 
 // osReserveStack maps twice the size without access, which holds a region
 // aligned to the size and the guard page above it, unmaps what lies around
-// them, and opens the region to reading and writing. The guard page keeps no
-// access.
+// them, opens the region to reading and writing, and keeps huge pages off it.
+// The guard page keeps no access.
 func osReserveStack(size uintptr) (uintptr, error) {
 	n := 2*size + pageSize
 	start, err := sysMmap("reserve", n, unix.PROT_NONE, stackFlags)
@@ -87,6 +87,9 @@ func osReserveStack(size uintptr) (uintptr, error) {
 		hi = end
 	}
 	if err := sysMprotect(base, size, unix.PROT_READ|unix.PROT_WRITE); err != nil {
+		return undo(err)
+	}
+	if err := noHugePages(base, size); err != nil {
 		return undo(err)
 	}
 	return base, nil
