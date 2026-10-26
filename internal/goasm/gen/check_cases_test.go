@@ -188,6 +188,14 @@ func TestCheckCases(t *testing.T) {
 			want: "none of the padding encodings"},
 		{name: "an ignored segment prefix", lower: sub("g", `\n\ttestq`, "\n\t.byte 0x2e\n\ttestq"), want: "ignored prefix"},
 
+		// A leaf's saves must fit its Go frame.
+		{name: "a leaf with no Go frame for its save",
+			metas: func(ms []Meta) { m := meta(ms, "lf"); m.Frame, m.Rec.Frame = 0, 0 },
+			want:  "cannot hold its 1 saved registers"},
+		{name: "a leaf frame one slot short",
+			metas: func(ms []Meta) { m := meta(ms, "lf2"); m.Frame, m.Rec.Frame = 8, 8 },
+			want:  "cannot hold its 2 saved registers"},
+
 		// A record and its output wrong together.
 		{name: "a kept register no call saves",
 			lower: func(s string, ms []Meta) string {
