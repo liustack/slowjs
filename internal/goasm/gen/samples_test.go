@@ -34,6 +34,11 @@ import (
 //     function that forwards its va_list. The pass moves the variable
 //     arguments into a block first and widens the narrow ones after, and the
 //     two meet in these calls.
+//   - icalls.c: for each shape of signature, a function called directly and
+//     through a table gives the same result, and each result is what native C
+//     gives. TestICallSymbols holds each call's id to the type in its source
+//     line, but only the run shows that the arguments moved the way that id
+//     says: a call that carries another call's signature moves them wrongly.
 //
 // It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld
 // (SLOWJS_LLD), on linux/amd64.
@@ -72,6 +77,7 @@ func TestSampleRuns(t *testing.T) {
 		pairs bool     // the results come in pairs that must be equal
 	}{
 		{"alias.c", nil, 24, false},
+		{"icalls.c", nil, 56, true},
 		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {
 		name := strings.TrimSuffix(s.file, ".c")
