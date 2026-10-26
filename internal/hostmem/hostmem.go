@@ -99,6 +99,11 @@ type Released struct {
 // Only the pages of the stack the engine touches take memory. On windows the
 // whole stack is committed at once, so it counts against the commit limit
 // from the start.
+//
+// When a step of the setup fails, New gives back what it still holds and
+// returns the error. When the OS refuses that too, for a range New mapped
+// itself, the address space is not what the package can account for, and New
+// panics with both errors.
 func New(stackSize uintptr) (*Memory, error) {
 	if stackSize < Unit || stackSize&(stackSize-1) != 0 {
 		panic(fmt.Sprintf("hostmem: a shadow stack of %d bytes, not a power of two of at least %d", stackSize, Unit))
@@ -257,6 +262,12 @@ func (m *Memory) Close() error {
 	}
 	m.chunks, m.footprint, m.stack, m.stackSize = nil, 0, 0, 0
 	return errors.Join(errs...)
+}
+
+// lost panics: the setup of a shadow stack failed with err and the OS refused,
+// with cerr, to give back the range of size bytes at addr it still held.
+func lost(addr, size uintptr, err, cerr error) {
+	panic(fmt.Errorf("hostmem: the setup of a shadow stack cannot give back the %d bytes at %#x it holds: %w", size, addr, errors.Join(err, cerr)))
 }
 
 func (m *Memory) add(base, size uintptr) {

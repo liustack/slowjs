@@ -68,6 +68,47 @@ func each(rs ...[2]uintptr) func() (uintptr, uintptr) {
 	}
 }
 
+// call is a call to the OS that fault saw.
+type call struct {
+	name       string
+	addr, size uintptr
+}
+
+var errInjected = errors.New("injected")
+
+// failing sets fault for the rest of the test. f sees each call and the ones
+// before it, and returns the error the call gives, or nil to let it run.
+func failing(t testing.TB, f func(c call, before []call) error) *[]call {
+	t.Helper()
+	var calls []call
+	fault = func(name string, addr, size uintptr) error {
+		c := call{name, addr, size}
+		before := calls
+		calls = append(calls, c)
+		return f(c, before)
+	}
+	t.Cleanup(func() { fault = nil })
+	return &calls
+}
+
+// count is how many calls of the name there are.
+func count(calls []call, name string) int {
+	n := 0
+	for _, c := range calls {
+		if c.name == name {
+			n++
+		}
+	}
+	return n
+}
+
+// panicked runs f and returns what it panicked with, or nil.
+func panicked(f func()) (r any) {
+	defer func() { r = recover() }()
+	f()
+	return nil
+}
+
 func newMemory(t testing.TB, stackSize uintptr) *Memory {
 	t.Helper()
 	m, err := New(stackSize)
@@ -485,6 +526,24 @@ func faultAt(addr uintptr) (at uintptr, other any) {
 	bytesAt(addr, 1)[0] = 1
 	return 0, nil
 }
+
+// readable reports whether every page of [addr, addr+size) can be read.
+func readable(addr, size uintptr) (ok bool) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	b := bytesAt(addr, size)
+	for i := uintptr(0); i < size; i += pageSize {
+		sink += b[i]
+	}
+	return true
+}
+
+// sink keeps the reads of readable from being optimized away.
+var sink byte
 
 func TestGuardPage(t *testing.T) {
 	m := newMemory(t, 1<<20)

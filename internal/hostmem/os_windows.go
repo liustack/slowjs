@@ -7,6 +7,7 @@ package hostmem
 
 import (
 	"errors"
+	"fmt"
 
 	"golang.org/x/sys/windows"
 )
@@ -58,31 +59,35 @@ func osRelease(addr, size uintptr) error {
 // committed, so touching it faults. VirtualFree gives back only a whole
 // reservation, so an aligned address is found by reserving twice the size,
 // giving it back and reserving again at the aligned address. Another thread
-// may take the address in between, and then it tries again.
+// may take the address in between, and then it tries again, 16 times at most.
 func osReserveStack(size uintptr) (uintptr, error) {
+	n := 2*size + pageSize
+	var err error // why the last try failed
 	for range 16 {
-		p, err := sysAlloc("reserve", 0, 2*size+pageSize, windows.MEM_RESERVE, windows.PAGE_NOACCESS)
-		if err != nil {
+		var p uintptr
+		if p, err = sysAlloc("reserve", 0, n, windows.MEM_RESERVE, windows.PAGE_NOACCESS); err != nil {
 			return 0, err
 		}
-		if err := sysFree(p); err != nil {
-			return 0, err
+		if cerr := sysFree(p); cerr != nil {
+			lost(p, n, nil, cerr)
 		}
 		base := alignUp(p, size)
 		_, err = sysAlloc("reserve", base, size+pageSize, windows.MEM_RESERVE, windows.PAGE_NOACCESS)
-		if err == windows.ERROR_INVALID_ADDRESS {
+		if errors.Is(err, windows.ERROR_INVALID_ADDRESS) {
 			continue
 		}
 		if err != nil {
 			return 0, err
 		}
 		if _, err := sysAlloc("commit", base, size, windows.MEM_COMMIT, windows.PAGE_READWRITE); err != nil {
-			sysFree(base)
+			if cerr := sysFree(base); cerr != nil {
+				lost(base, size+pageSize, err, cerr)
+			}
 			return 0, err
 		}
 		return base, nil
 	}
-	return 0, errors.New("other threads took the address of the stack 16 times")
+	return 0, fmt.Errorf("other threads took the aligned address 16 times: %w", err)
 }
 
 func osFreeStack(base, size uintptr) error {
