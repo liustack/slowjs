@@ -359,8 +359,8 @@ typedef JSValue JSCFunctionData(JSContext *ctx, JSValueConst this_val, int argc,
 typedef struct JSGCObjectHeader JSGCObjectHeader;
 
 /* The runtime lives in the memory the host gives the VM vm
-   (host_memory_grow in heap.h). The runtime keeps seed, the seed of
-   Math.random: js_random_init still reads the clock and does not use it. */
+   (host_memory_grow in heap.h). seed is where Math.random starts, in every
+   context of the runtime: the engine reads no clock for it. 0 is allowed. */
 JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed);
 /* info lifetime must exceed that of rt */
 void JS_SetRuntimeInfo(JSRuntime *rt, const char *info);

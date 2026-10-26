@@ -422,7 +422,7 @@ struct JSRuntime {
     JSSharedArrayBufferFunctions sab_funcs;
     /* see JS_SetStripInfo() */
     uint8_t strip_flags;
-    uint64_t random_seed; /* the seed JS_NewRuntime was given */
+    uint64_t random_seed; /* the seed JS_NewRuntime was given: where Math.random starts */
     
     /* Shape hash table */
     int shape_hash_bits;
@@ -49688,9 +49688,12 @@ static uint64_t xorshift64star(uint64_t *pstate)
     return x * 0x2545F4914F6CDD1D;
 }
 
+/* Math.random starts from the seed JS_NewRuntime was given, not from a clock,
+   so that a host decides what it draws. All the contexts of a runtime start
+   from the same seed. */
 static void js_random_init(JSContext *ctx)
 {
-    ctx->random_state = host_now(0, HOST_NOW_WALL) / 1000;
+    ctx->random_state = ctx->rt->random_seed;
     /* the state must be non zero */
     if (ctx->random_state == 0)
         ctx->random_state = 1;

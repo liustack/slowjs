@@ -6,7 +6,7 @@
  */
 /*
  * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
- * JS_NewClassID, Atomics, abort, and snprintf given a format it does not do.
+ * JS_NewClassID, the seed of Math.random, Atomics, abort, and snprintf given a format it does not do.
  * api-test.sh builds and runs it.
  */
 #include <stdio.h>
@@ -482,11 +482,71 @@ static void test_abort(void)
     }
 }
 
+/* Math.random starts from the seed of the runtime: the same seed gives the same
+   numbers, another seed other numbers, 0 works, and making a context and
+   drawing numbers never reads the clock. */
+static const char draw3[] = "Math.random() + ' ' + Math.random() + ' ' + Math.random()";
+
+static char *draws(uint64_t seed, int contexts, long *reads)
+{
+    JSRuntime *rt = host_new_runtime_seed(seed);
+    JSContext *ctx, *ctx2 = NULL;
+    JSValue v;
+    const char *text;
+    char *copy;
+    long before = host_wall_reads;
+
+    ctx = new_context(rt);
+    if (contexts > 1)
+        ctx2 = new_context(rt);
+    v = JS_Eval(ctx, draw3, strlen(draw3), "<seed>", JS_EVAL_TYPE_GLOBAL);
+    text = JS_ToCString(ctx, v);
+    copy = strdup(text ? text : "");
+    JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, v);
+    if (ctx2) {
+        /* a second context of the same runtime starts from the same seed */
+        v = JS_Eval(ctx2, "Math.random()", strlen("Math.random()"), "<seed>", JS_EVAL_TYPE_GLOBAL);
+        text = JS_ToCString(ctx2, v);
+        CHECK(text && !strncmp(copy, text, strlen(text)), "a second context starts elsewhere: %s against %s", text, copy);
+        JS_FreeCString(ctx2, text);
+        JS_FreeValue(ctx2, v);
+        JS_FreeContext(ctx2);
+    }
+    *reads = host_wall_reads - before;
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return copy;
+}
+
+static void test_seed(void)
+{
+    long reads;
+    char *a = draws(7, 2, &reads), *b, *c, *z, *z2;
+
+    CHECK(reads == 0, "making contexts and drawing numbers read the clock %ld times", reads);
+    CHECK(strlen(a) > 10, "no numbers: %s", a);
+    b = draws(7, 1, &reads);
+    CHECK(!strcmp(a, b), "the same seed gave other numbers: %s against %s", a, b);
+    c = draws(8, 1, &reads);
+    CHECK(strcmp(a, c) != 0, "another seed gave the same numbers: %s", a);
+    z = draws(0, 1, &reads);
+    z2 = draws(0, 1, &reads);
+    CHECK(!strcmp(z, z2) && strcmp(z, a) != 0, "seed 0: %s and %s", z, z2);
+    CHECK(strstr(z, "NaN") == NULL && strstr(z, "0 0 0") == NULL, "seed 0 gave %s", z);
+    free(a);
+    free(b);
+    free(c);
+    free(z);
+    free(z2);
+}
+
 int main(void)
 {
     JSRuntime *rt;
     JSContext *ctx;
 
+    test_seed();
     test_dump();
     test_tenths();
     test_class_ids();

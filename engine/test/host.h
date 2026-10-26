@@ -23,6 +23,14 @@ void js_std_dump_error(JSContext *ctx);
    memory of the heap (host_memory_grow of heap.h) for it. */
 JSRuntime *host_new_runtime(void);
 
+/* host_new_runtime with the seed of Math.random of your choice. The one above
+   gives the seed that matches the fixed time, 1767225600000000. */
+JSRuntime *host_new_runtime_seed(uint64_t seed);
+
+/* How many times the engine asked for the wall clock in this thread. A test
+   uses it to see that the engine asks for it only when a script does. */
+extern _Thread_local long host_wall_reads;
+
 /* JS_FreeRuntime, then the memory of the runtime goes back to the system. A
    runtime that still has blocks in use after it freed everything is a leak:
    the host says so, and the process exits with status 87. */
