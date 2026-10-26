@@ -35,6 +35,10 @@
 // Every unified function and every call to one takes and returns an i1, i8
 // or i16 as an i32: preserve_none puts only 32 and 64-bit integers in its
 // own registers, and Go writes whole words (see widenNarrowInts).
+// -shadow-probes writes a module with one probe per unified definition, of
+// the same type, convention and attributes, whose body reads every
+// argument: llc reports the registers it assigns them (facts.cpp), which
+// the post-link check holds the lowering's entries to.
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -50,6 +54,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -78,6 +83,9 @@ static cl::opt<bool> KeepGoing("shadow-keep-going", cl::init(false),
 static cl::opt<bool> KeepNarrow("shadow-keep-narrow", cl::init(false),
                                 cl::desc("negative build: leave i1, i8 and i16 arguments and results narrow (the "
                                          "post-link check must reject what the generator makes of them)"));
+static cl::opt<std::string> Probes("shadow-probes", cl::init(""),
+                                   cl::desc("write a probe module here: per unified definition, a function of its "
+                                            "type, convention and attributes that reads every argument"));
 static cl::opt<bool> Varargs("shadow-varargs", cl::init(false),
                              cl::desc("pass the variable arguments of every call in a block of 8-byte slots (experimental)"));
 
@@ -1408,6 +1416,49 @@ static void report(Module &M, const std::set<std::string> &leaves) {
   }
 }
 
+// writeProbes writes the probe module (-shadow-probes): for every unified
+// definition, goasm.probe.<name>, a function of its type, calling
+// convention and attributes whose body stores every argument to memory and
+// returns a value it loads. llc assigns the arguments of the probe the
+// registers it assigns the function's own, but none is left unused, so
+// llc's list of live-in registers (facts.cpp) names every one, in order,
+// and its returns name every result register. The function's own list
+// leaves out the arguments it does not read.
+static void writeProbes(Module &M, const std::set<std::string> &leaves) {
+  LLVMContext &C = M.getContext();
+  Module P("goasm.probes", C);
+  P.setTargetTriple(M.getTargetTriple());
+  P.setDataLayout(M.getDataLayout());
+  Type *I8 = Type::getInt8Ty(C);
+  auto *sink = new GlobalVariable(P, ArrayType::get(I8, 4096), false, GlobalValue::ExternalLinkage, nullptr,
+                                  "goasm.probe.sink");
+  for (Function &F : M) {
+    if (F.isDeclaration() || !unifiedFn(&F, leaves))
+      continue;
+    Function *G = Function::Create(F.getFunctionType(), GlobalValue::ExternalLinkage, "goasm.probe." + F.getName(), P);
+    G->setCallingConv(F.getCallingConv());
+    G->setAttributes(F.getAttributes());
+    G->removeFnAttr(Attribute::Memory);
+    for (unsigned i = 0; i < G->arg_size(); i++)
+      G->removeParamAttr(i, Attribute::Returned);
+    IRBuilder<> B(BasicBlock::Create(C, "", G));
+    uint64_t off = 0;
+    for (Argument &A : G->args()) {
+      B.CreateStore(&A, B.CreateConstGEP1_64(I8, sink, off), /*isVolatile=*/true);
+      off += 16;
+    }
+    if (G->getReturnType()->isVoidTy())
+      B.CreateRetVoid();
+    else
+      B.CreateRet(B.CreateLoad(G->getReturnType(), B.CreateConstGEP1_64(I8, sink, 2048), /*isVolatile=*/true));
+  }
+  std::error_code EC;
+  raw_fd_ostream OS(Probes, EC, sys::fs::OF_Text);
+  if (EC)
+    report_fatal_error(Twine("cannot write the probe module ") + Probes + ": " + EC.message());
+  P.print(OS, nullptr);
+}
+
 struct ShadowStack : PassInfoMixin<ShadowStack> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     std::set<std::string> leaves(Leaves.begin(), Leaves.end());
@@ -1616,6 +1667,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       report(M, leaves);
     if (ICallSigs)
       bindSignatures(M);
+    if (!Probes.empty())
+      writeProbes(M, leaves);
     return PreservedAnalyses::none();
   }
 };

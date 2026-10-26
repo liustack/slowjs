@@ -5,6 +5,7 @@
 package gen
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,8 +26,12 @@ import (
 // it grows (and moves) the stack. All three must write the same bytes:
 // morestack loads the goroutine into DI, which preserve_none would read a
 // narrow argument from. The post-link check must pass on each build but the
-// poison ones. It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass
-// (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD), on linux/amd64.
+// poison ones, and reject the negative build that leaves narrow integers as
+// the generator once took them (GEN_KEEP_NARROW): preserve_none passes them
+// in other registers than the lowering moves. That build's probe must show
+// the fault: right when called plainly, wrong once morestack ran. It needs LLVM 22.1.8
+// (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD), on
+// linux/amd64.
 func TestNarrowArgs(t *testing.T) {
 	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
@@ -73,22 +78,28 @@ func TestNarrowArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, b := range []struct {
-		mode  string
-		extra []string
+		mode   string
+		extra  []string
+		env    []string
+		reject string // the post-link check must reject the build with this; only its probe runs
 	}{
-		{"body", nil},
-		{"pn", nil},
-		{"body", []string{"-poison"}},
-		{"pn", []string{"-poison"}},
+		{"body", nil, nil, ""},
+		{"pn", nil, nil, ""},
+		{"body", []string{"-poison"}, nil, ""},
+		{"pn", []string{"-poison"}, nil, ""},
+		{"pn", nil, []string{"GEN_KEEP_NARROW=1"}, "where llc reads it"},
 	} {
 		name := b.mode + strings.Join(b.extra, "")
+		if len(b.env) > 0 {
+			name += "-keep-narrow"
+		}
 		t.Run(name, func(t *testing.T) {
 			mod := at(name)
 			args := append([]string{"-src", c, "-llvm", llvm, "-pass", pass, "-mode", b.mode, "-allow", "host_cb,host_narrow",
 				"-leaves", "", "-work", at("w-" + name), "-pkg", "nw"}, b.extra...)
 			gen := func(t *testing.T, args ...string) (string, error) {
 				t.Helper()
-				return try("", nil, drv, args...)
+				return try("", b.env, drv, args...)
 			}
 			if out, err := gen(t, append(args, "-out", filepath.Join(mod, "nw"))...); err != nil {
 				t.Fatalf("generate: %v\n%s", err, out)
@@ -103,6 +114,24 @@ func TestNarrowArgs(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(mod, name), []byte(text), 0o644); err != nil {
 					t.Fatal(err)
 				}
+			}
+			if b.reject != "" {
+				// The probe shows the fault the check rejects: put16 reads
+				// its value from DI, which holds it only until morestack
+				// writes the goroutine there.
+				tool(t, mod, "go", "build", "-o", "run", ".")
+				probe := strings.Fields(tool(t, mod, filepath.Join(mod, "run"), "probe"))
+				if len(probe) != 3 || probe[0] != "plain:3412" || probe[1] == "preempted:3412" && probe[2] == "moved:3412" {
+					t.Fatalf("put16(0x1234) of the negative build wrote %v, want 3412 only when not preempted or moved", probe)
+				}
+				t.Logf("probe of the negative build: %v", probe)
+				tool(t, mod, "go", "build", "-tags", "goasmkeep", "-o", "keep", ".")
+				out, err := gen(t, append(args, "-verify-bin", filepath.Join(mod, "keep"), "-verify-pkg", "narrow/nw", "-verify-all")...)
+				if err == nil || !strings.Contains(out, b.reject) {
+					t.Fatalf("the post-link check did not reject it with %q: %v\n%s", b.reject, err, out)
+				}
+				t.Logf("rejected: %s", lastLine(out))
+				return
 			}
 			tool(t, mod, "go", "build", "-o", "run", ".")
 			if have := tool(t, mod, filepath.Join(mod, "run")); have != want {
@@ -121,6 +150,70 @@ func TestNarrowArgs(t *testing.T) {
 				t.Fatalf("the post-link check did not pass: %v\n%s", err, out)
 			}
 		})
+	}
+}
+
+// TestNarrowArgsARM64 compiles testdata/narrow/narrow.c for arm64 in pn
+// mode and reads the registers llc gives g6's probe (pass/facts.cpp): g6
+// takes a pointer and four narrow integers after the shadow pointer, and
+// with the pass's widening they arrive in X20 to X25 in order, the
+// registers the arm64 lowering moves argument words in. The negative build
+// (GEN_KEEP_NARROW) shows the mistake the widening removes: preserve_none
+// leaves the narrow ones to the C rules, which start at W0. It needs LLVM
+// 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+func TestNarrowArgsARM64(t *testing.T) {
+	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+	}
+	work := t.TempDir()
+	drv := filepath.Join(work, "engine")
+	if out, err := exec.Command("go", "build", "-o", drv, "./cmd/engine").CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	c, err := filepath.Abs(filepath.Join("testdata", "narrow", "narrow.c"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, keep := range []bool{false, true} {
+		w := filepath.Join(work, fmt.Sprint("w", keep))
+		cmd := exec.Command(drv, "-arch", "arm64", "-mode", "pn", "-src", c, "-llvm", llvm, "-pass", pass,
+			"-allow", "host_cb,host_narrow", "-leaves", "", "-work", w)
+		cmd.Env = os.Environ()
+		if keep {
+			cmd.Env = append(cmd.Env, "GEN_KEEP_NARROW=1")
+		}
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("generate (keep narrow %v): %v\n%s", keep, err, out)
+		}
+		b, err := os.ReadFile(filepath.Join(w, "probes.facts"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts, err := ParseRegFacts(string(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		g6, ok := facts[ProbePrefix+"g6"]
+		if !ok {
+			t.Fatalf("no probe of g6 in:\n%s", b)
+		}
+		var regs []string
+		for _, r := range g6.Args {
+			if strings.HasPrefix(r, "w") {
+				r = "x" + r[1:]
+			}
+			regs = append(regs, r)
+		}
+		got := strings.Join(regs, ",")
+		const want = "x20,x21,x22,x23,x24,x25"
+		switch {
+		case !keep && got != want:
+			t.Fatalf("llc passes g6's arguments in %s, want %s", got, want)
+		case keep && !strings.Contains(got, "x0"):
+			t.Fatalf("the negative build passes g6's arguments in %s, which shows no narrow one in W0", got)
+		}
+		t.Logf("keep narrow %v: g6's arguments in %s", keep, strings.Join(g6.Args, ","))
 	}
 }
 
