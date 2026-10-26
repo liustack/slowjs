@@ -5,8 +5,8 @@
  * root of this repository.
  */
 /*
- * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage.
- * api-test.sh builds and runs it.
+ * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage
+ * and JS_NewClassID. api-test.sh builds and runs it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -200,10 +200,91 @@ static void test_tenths(void)
     CHECK(strstr(text, "nan average slack)") != NULL, "0/0 is not written as nan");
 }
 
+/* A class ID of a runtime is the next one it has not given out. */
+static void test_class_ids(void)
+{
+    JSRuntime *rt1 = host_new_runtime(), *rt2 = host_new_runtime();
+    JSContext *c1 = new_context(rt1), *c2 = new_context(rt2);
+    JSClassID a1 = 0, a2 = 0, b1 = 0, b2 = 0, again, preset, after;
+    JSClassDef def = { "Thing" };
+    JSValue o;
+    JSValue builtin[8];
+    int i;
+
+    /* two runtimes taking IDs by turns count on their own */
+    JS_NewClassID(rt1, &a1);
+    JS_NewClassID(rt2, &b1);
+    JS_NewClassID(rt1, &a2);
+    JS_NewClassID(rt2, &b2);
+    CHECK(a1 != 0 && b1 != 0, "no ID given");
+    CHECK(a1 == b1, "the first IDs of two runtimes differ: %u %u", a1, b1);
+    CHECK(a2 == a1 + 1 && b2 == b1 + 1, "IDs do not count up by one: %u %u, %u %u", a1, a2, b1, b2);
+
+    /* asking again for the same variable gives the same ID and takes no new one */
+    again = JS_NewClassID(rt1, &a1);
+    CHECK(again == a1, "asking again gave %u, not %u", again, a1);
+    {
+        JSClassID next = 0;
+        JS_NewClassID(rt1, &next);
+        CHECK(next == a2 + 1, "the next ID is %u, want %u", next, a2 + 1);
+    }
+
+    /* an ID set by the caller is kept, and the runtime counts on from it */
+    preset = a2 + 40;
+    again = JS_NewClassID(rt2, &preset);
+    CHECK(again == a2 + 40 && preset == a2 + 40, "a preset ID changed");
+    after = 0;
+    JS_NewClassID(rt2, &after);
+    CHECK(after == a2 + 41, "after a preset ID the next is %u, want %u", after, a2 + 41);
+    /* a smaller preset ID does not move the count back */
+    preset = a1;
+    JS_NewClassID(rt2, &preset);
+    after = 0;
+    JS_NewClassID(rt2, &after);
+    CHECK(after == a2 + 42, "after a small preset ID the next is %u, want %u", after, a2 + 42);
+
+    /* the built-in classes keep their numbers, which are below every ID given */
+    builtin[0] = JS_NewObject(c1);
+    builtin[1] = JS_NewArray(c1);
+    builtin[2] = JS_Eval(c1, "(function(){})", 14, "<t>", 0);
+    builtin[3] = JS_Eval(c1, "new Error('e')", 14, "<t>", 0);
+    builtin[4] = JS_Eval(c1, "new Date(0)", 11, "<t>", 0);
+    builtin[5] = JS_Eval(c1, "new Map()", 9, "<t>", 0);
+    builtin[6] = JS_Eval(c1, "Promise.resolve(1)", 18, "<t>", 0);
+    builtin[7] = JS_Eval(c1, "/x/", 3, "<t>", 0);
+    for (i = 0; i < 8; i++) {
+        JSClassID id = JS_GetClassID(builtin[i]);
+        CHECK(id != 0 && id < a1, "built-in object %d has class ID %u, not below %u", i, id, a1);
+        JS_FreeValue(c1, builtin[i]);
+    }
+
+    /* a class made with the ID works in its runtime, and is not in the other */
+    CHECK(!JS_IsRegisteredClass(rt1, a1), "registered before JS_NewClass");
+    CHECK(JS_NewClass(rt1, a1, &def) == 0, "JS_NewClass failed");
+    CHECK(JS_IsRegisteredClass(rt1, a1) && !JS_IsRegisteredClass(rt2, a1), "class registered in the wrong runtime");
+    o = JS_NewObjectClass(c1, a1);
+    CHECK(!JS_IsException(o) && JS_GetClassID(o) == a1, "an object of the new class");
+    JS_FreeValue(c1, o);
+    /* the other runtime uses the same number for another class */
+    {
+        JSClassDef def2 = { "Other" };
+        CHECK(JS_NewClass(rt2, b1, &def2) == 0 && b1 == a1, "the same number in the other runtime");
+        o = JS_NewObjectClass(c2, b1);
+        CHECK(!JS_IsException(o) && JS_GetClassID(o) == a1, "an object of the other class");
+        JS_FreeValue(c2, o);
+    }
+
+    JS_FreeContext(c1);
+    JS_FreeContext(c2);
+    JS_FreeRuntime(rt1);
+    JS_FreeRuntime(rt2);
+}
+
 int main(void)
 {
     test_dump();
     test_tenths();
+    test_class_ids();
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
 }

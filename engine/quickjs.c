@@ -330,6 +330,7 @@ struct JSRuntime {
     int atom_free_index; /* 0 = none */
 
     int class_count;    /* size of class_array */
+    JSClassID class_id_alloc; /* the next ID JS_NewClassID gives */
     JSClass *class_array;
 
     struct list_head context_list; /* list of JSContext.link */
@@ -1427,7 +1428,6 @@ static const JSClassExoticMethods js_arguments_exotic_methods;
 static const JSClassExoticMethods js_string_exotic_methods;
 static const JSClassExoticMethods js_proxy_exotic_methods;
 static const JSClassExoticMethods js_module_ns_exotic_methods;
-static JSClassID js_class_id_alloc = JS_CLASS_INIT_COUNT;
 
 /* JS malloc */
 
@@ -2132,6 +2132,7 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
     JS_UpdateStackTop(rt);
 
     rt->current_exception = JS_UNINITIALIZED;
+    rt->class_id_alloc = JS_CLASS_INIT_COUNT;
 
     return rt;
  fail:
@@ -3764,25 +3765,20 @@ static inline BOOL JS_IsEmptyString(JSValueConst v)
 
 /* JSClass support */
 
-#ifdef CONFIG_ATOMICS
-static pthread_mutex_t js_class_id_mutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
-
-/* a new class ID is allocated if *pclass_id != 0 */
-JSClassID JS_NewClassID(JSClassID *pclass_id)
+/* a new class ID is allocated if *pclass_id == 0. The IDs are counted per
+   runtime: keep *pclass_id per runtime too, as the engine has no state outside
+   its runtimes. An ID that is already set is kept, and this runtime does not
+   give it out again. */
+JSClassID JS_NewClassID(JSRuntime *rt, JSClassID *pclass_id)
 {
-    JSClassID class_id;
-#ifdef CONFIG_ATOMICS
-    pthread_mutex_lock(&js_class_id_mutex);
-#endif
-    class_id = *pclass_id;
+    JSClassID class_id = *pclass_id;
+
     if (class_id == 0) {
-        class_id = js_class_id_alloc++;
+        class_id = rt->class_id_alloc++;
         *pclass_id = class_id;
+    } else if (class_id >= rt->class_id_alloc) {
+        rt->class_id_alloc = class_id + 1;
     }
-#ifdef CONFIG_ATOMICS
-    pthread_mutex_unlock(&js_class_id_mutex);
-#endif
     return class_id;
 }
 
