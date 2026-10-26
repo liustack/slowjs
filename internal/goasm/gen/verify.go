@@ -78,21 +78,16 @@ func VerifyLinked(objPath, binPath, pkg string, metas []Meta) ([]VerifyReport, e
 			return nil, fmt.Errorf("%s: generated body not found in linked symbol", m.Name)
 		}
 		actual := append([]byte(nil), linked[start:start+len(orig)]...)
-		// Zero the CALL displacements in both, then compare.
+		// Every direct call's four displacement bytes are filled by the
+		// linker, so diffBody skips them; every other byte must be unchanged.
 		var callOffs []int
 		for off := range obj.calls {
 			if int(off) >= int(ovs[0]) && int(off) < int(ovs[0]+ovs[1]) {
 				callOffs = append(callOffs, int(off-ovs[0]))
 			}
 		}
-		for _, c := range callOffs {
-			for k := 0; k < 4; k++ {
-				orig[c+1+k] = 0
-				actual[c+1+k] = 0
-			}
-		}
-		if string(orig) != string(actual) {
-			return nil, fmt.Errorf("%s: linked body differs from generated", m.Name)
+		if err := diffBody(orig, actual, callOffs); err != nil {
+			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
 		// No hidden calls or cross-function tail jumps: every CALL in the
 		// linked body is one of our known sites, and no JMP leaves the body.
