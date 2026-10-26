@@ -14,6 +14,8 @@
 #include <time.h>
 
 #include "host.h"
+#include "cutils.h"
+#include "libunicode.h"
 
 static int failures;
 
@@ -1190,6 +1192,82 @@ static void test_free_nesting(void)
     host_free_runtime(rt);
 }
 
+static uint64_t fnv_word(uint64_t h, uint32_t v)
+{
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        h ^= (v >> (8 * i)) & 0xff;
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+static void *unicode_realloc(void *opaque, void *ptr, size_t size)
+{
+    (void)opaque;
+    if (size == 0) {
+        free(ptr);
+        return NULL;
+    }
+    return realloc(ptr, size);
+}
+
+static void sequence_hash(void *opaque, const uint32_t *buf, int len)
+{
+    uint64_t *h = opaque;
+    int i;
+
+    *h = fnv_word(*h, len);
+    for (i = 0; i < len; i++)
+        *h = fnv_word(*h, buf[i]);
+}
+
+/* The case conversions, the case foldings of regexps, the four normal forms
+   of every code point and the emoji sequences of regexps are those of the
+   recursive code they replace: their hashes are the ones it gave. */
+static void test_unicode_tables(void)
+{
+    static const char *const seqs[] = {
+        "Basic_Emoji", "Emoji_Keycap_Sequence", "RGI_Emoji_Modifier_Sequence",
+        "RGI_Emoji_Flag_Sequence", "RGI_Emoji_Tag_Sequence",
+        "RGI_Emoji_ZWJ_Sequence", "RGI_Emoji",
+    };
+    uint64_t conv = 0xcbf29ce484222325ULL, norm = conv, seq = conv;
+    uint32_t c, res[LRE_CC_RES_LEN_MAX], *dst;
+    int t, i, len;
+    CharRange cr;
+
+    for (c = 0; c < 0x110000; c++) {
+        for (t = 0; t < 3; t++) {
+            len = lre_case_conv(res, c, t);
+            conv = fnv_word(conv, len);
+            for (i = 0; i < len; i++)
+                conv = fnv_word(conv, res[i]);
+        }
+        conv = fnv_word(conv, lre_canonicalize(c, 0));
+        conv = fnv_word(conv, lre_canonicalize(c, 1));
+        for (t = UNICODE_NFC; t <= UNICODE_NFKD; t++) {
+            len = unicode_normalize(&dst, &c, 1, t, NULL, unicode_realloc);
+            CHECK(len >= 0, "normalize U+%04X", c);
+            if (len < 0)
+                return;
+            norm = fnv_word(norm, len);
+            for (i = 0; i < len; i++)
+                norm = fnv_word(norm, dst[i]);
+            free(dst);
+        }
+    }
+    for (i = 0; i < countof(seqs); i++) {
+        cr_init(&cr, NULL, unicode_realloc);
+        CHECK(unicode_sequence_prop(seqs[i], sequence_hash, &seq, &cr) == 0, "%s", seqs[i]);
+        cr_free(&cr);
+    }
+    CHECK(conv == 0x62b5753977fb68f5ULL, "case conversions %016llx", (unsigned long long)conv);
+    CHECK(norm == 0x49b42101d280d714ULL, "normal forms %016llx", (unsigned long long)norm);
+    CHECK(seq == 0x365073493a2d88c5ULL, "emoji sequences %016llx", (unsigned long long)seq);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -1199,6 +1277,7 @@ int main(void)
     host_run_thread(test_internal_depth, NULL);
     test_ropes();
     test_free_nesting();
+    test_unicode_tables();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();
