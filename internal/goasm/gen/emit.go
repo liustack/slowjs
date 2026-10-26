@@ -26,6 +26,15 @@ type object struct {
 	code  []byte
 	funcs map[string][2]uint64 // name -> [value,size]
 	calls map[uint64]string    // E8 offset -> target name (direct calls)
+	// refs are the other PC-relative references: the offset of the 32-bit
+	// displacement -> target and addend. Emit turns each into a symbolic Go
+	// instruction or fails.
+	refs map[uint64]objRef
+}
+
+type objRef struct {
+	sym string
+	add int64
 }
 
 func readObject(path string) (*object, error) {
@@ -43,7 +52,7 @@ func readObject(path string) (*object, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := &object{code: code, funcs: map[string][2]uint64{}, calls: map[uint64]string{}}
+	o := &object{code: code, funcs: map[string][2]uint64{}, calls: map[uint64]string{}, refs: map[uint64]objRef{}}
 	for _, s := range syms {
 		if s.Name != "" {
 			o.funcs[s.Name] = [2]uint64{s.Value, s.Size}
@@ -69,16 +78,29 @@ func readObject(path string) (*object, error) {
 			if typ != elf.R_X86_64_PLT32 && typ != elf.R_X86_64_PC32 {
 				return nil, fmt.Errorf("unexpected relocation %v at %#x", typ, roff)
 			}
-			if radd != -4 {
-				return nil, fmt.Errorf("relocation addend %d, want -4", radd)
+			if roff >= 1 && o.code[roff-1] == 0xe8 && radd == -4 {
+				o.calls[roff-1] = syms[sidx-1].Name
+				continue
 			}
-			if o.code[roff-1] != 0xe8 {
-				return nil, fmt.Errorf("relocation at %#x is not a CALL rel32 (tail call or data?)", roff)
+			if typ != elf.R_X86_64_PC32 {
+				return nil, fmt.Errorf("relocation %v at %#x is not a CALL rel32 (tail call or data?)", typ, roff)
 			}
-			o.calls[roff-1] = syms[sidx-1].Name
+			o.refs[roff] = objRef{syms[sidx-1].Name, radd}
 		}
 	}
 	return o, nil
+}
+
+// funcHeader is the TEXT directive one lowered function starts with, shared
+// by both emit entries so a register-entry leaf's saved-register frame is
+// always declared. A leaf that saved registers (Meta.Frame > 0) must not be
+// written with a zero frame: Go would give it no stack space and its stores
+// would overwrite the return address.
+func funcHeader(goName string, m Meta) string {
+	if m.Kind == Register {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-0\n", goName, m.Frame)
+	}
+	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
 }
 
 // Emit writes the Go assembly for the functions described by metas.
@@ -97,11 +119,7 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 			return "", fmt.Errorf("symbol %s absent", m.Name)
 		}
 		lo, hi := int(vs[0]), int(vs[0]+vs[1])
-		if m.Kind == Register {
-			fmt.Fprintf(&b, "TEXT ·%s(SB), NOSPLIT, $0-0\n", m.GoName)
-		} else {
-			fmt.Fprintf(&b, "TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", m.GoName, m.Frame, m.ArgBytes)
-		}
+		b.WriteString(funcHeader(m.GoName, m))
 		fmt.Fprintf(&b, "\tPCALIGN $16\n")
 		// A function's constants sit after its code: only the code part is
 		// disassembled, the constants pass through as bytes.
@@ -155,6 +173,31 @@ func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap) error {
 		if err != nil {
 			return fmt.Errorf("decode at %#x: %w", i, err)
 		}
+		if r, at, ok := o.refIn(i, i+inst.Len); ok {
+			// A LEA of read-only data or of a function: the Go assembler
+			// writes the same 7-byte RIP-relative LEA with a relocation.
+			reg, isReg := inst.Args[0].(x86asm.Reg)
+			mem, isMem := inst.Args[1].(x86asm.Mem)
+			if inst.Op != x86asm.LEA || !isReg || !isMem || mem.Base != x86asm.RIP || inst.DataSize != 64 {
+				return fmt.Errorf("PC-relative reference to %s in an instruction emit cannot write: %v at %#x", r.sym, inst, i)
+			}
+			off := r.add + int64(i+inst.Len) - int64(at)
+			flush()
+			sym := names[r.sym]
+			if r.sym == RodataSym {
+				sym = RodataGo
+			}
+			if sym == "" {
+				return fmt.Errorf("LEA of unknown symbol %s at %#x", r.sym, i)
+			}
+			if off != 0 {
+				fmt.Fprintf(b, "\tLEAQ ·%s+%d(SB), %s\n", sym, off, goReg(strings.ToLower(reg.String())))
+			} else {
+				fmt.Fprintf(b, "\tLEAQ ·%s(SB), %s\n", sym, goReg(strings.ToLower(reg.String())))
+			}
+			i += inst.Len
+			continue
+		}
 		if inst.Op == x86asm.CALL {
 			flush()
 			if name, ok := o.calls[uint64(i)]; ok { // direct E8
@@ -184,6 +227,23 @@ func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap) error {
 	}
 	flush()
 	return nil
+}
+
+// RodataSym is the symbol the lowering gives engine_rodata in its text, and
+// RodataGo the Go symbol emit writes for it.
+const (
+	RodataSym = "__goasm_rodata"
+	RodataGo  = "engine_rodata"
+)
+
+// refIn finds a reference whose displacement lies in [lo, hi).
+func (o *object) refIn(lo, hi int) (objRef, int, bool) {
+	for k := lo; k < hi; k++ {
+		if r, ok := o.refs[uint64(k)]; ok {
+			return r, k, true
+		}
+	}
+	return objRef{}, 0, false
 }
 
 func le64(b []byte) uint64 {

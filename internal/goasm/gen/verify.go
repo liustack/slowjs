@@ -78,21 +78,16 @@ func VerifyLinked(objPath, binPath, pkg string, metas []Meta) ([]VerifyReport, e
 			return nil, fmt.Errorf("%s: generated body not found in linked symbol", m.Name)
 		}
 		actual := append([]byte(nil), linked[start:start+len(orig)]...)
-		// Zero the CALL displacements in both, then compare.
+		// Every direct call's four displacement bytes are filled by the
+		// linker, so diffBody skips them; every other byte must be unchanged.
 		var callOffs []int
 		for off := range obj.calls {
 			if int(off) >= int(ovs[0]) && int(off) < int(ovs[0]+ovs[1]) {
 				callOffs = append(callOffs, int(off-ovs[0]))
 			}
 		}
-		for _, c := range callOffs {
-			for k := 0; k < 4; k++ {
-				orig[c+1+k] = 0
-				actual[c+1+k] = 0
-			}
-		}
-		if string(orig) != string(actual) {
-			return nil, fmt.Errorf("%s: linked body differs from generated", m.Name)
+		if err := diffBody(orig, actual, callOffs); err != nil {
+			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
 		// No hidden calls or cross-function tail jumps: every CALL in the
 		// linked body is one of our known sites, and no JMP leaves the body.
@@ -215,4 +210,25 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// diffBody checks a linked function body equals the generator's re-assembled
+// body, except in the four displacement bytes of each direct call (at the
+// given body offsets), which the linker fills in.
+func diffBody(orig, actual []byte, callOffs []int) error {
+	if len(orig) != len(actual) {
+		return fmt.Errorf("body length %d generated, %d linked", len(orig), len(actual))
+	}
+	o := append([]byte(nil), orig...)
+	a := append([]byte(nil), actual...)
+	for _, c := range callOffs {
+		for k := 0; k < 4 && c+1+k < len(o); k++ {
+			o[c+1+k] = 0
+			a[c+1+k] = 0
+		}
+	}
+	if string(o) != string(a) {
+		return fmt.Errorf("linked body differs from generated")
+	}
+	return nil
 }

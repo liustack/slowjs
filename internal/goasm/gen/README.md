@@ -78,3 +78,56 @@ them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
 in `testdata/reject` through the real pipeline. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
+
+## The whole engine
+
+`cmd/engine` runs the same pipeline over all of `engine/` and `engine/libc`
+as one module and writes a Go package (`-out`): the functions in .s files
+bounded in size, the read-only data as `engine_rodata`, and the Go
+declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
+`malloc_usable_size` and `goasmMissing`, which each stub calls with its index
+in `missingNames`. `-keep-going` lists every function the C must change, by
+class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+`-varargs-block` passes variable arguments in a shadow-stack block instead of
+rejecting them. `-arch arm64` stops after llc and counts what the arm64
+lowering would have to handle.
+
+```sh
+go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
+/tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
+    -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
+```
+
+The post-link check is the gate for the output. Build a binary of the
+package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)
+and pass it as `-verify-bin`, with the package's import path as
+`-verify-pkg`. The check reads llc's own object file and the binary, decodes
+both with x/arch, and matches every generated function instruction by
+instruction. It refuses code that would not run as decoded: a prefix the
+processor rejects or ignores, an unknown or cut-short instruction, a no-op
+other than the assemblers' padding. The only differences it allows are the
+rewrites the lowering wrote down for that function, and it works out what
+each must be from llc's object: the prologue and epilogue it replaced (llc's
+pushes and reserved locals), where each frame offset moves and that the
+access stays inside the Go frame, each call's saves, argument moves, target
+and result, and where each data reference points. Each function's record
+must agree with the pass's signature for it, its list of leaves and its
+calling convention. It compares engine_rodata and the data each function
+carries byte by byte, pointers by what they point to. `-verify-all` also
+fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the
+lowered text before it is assembled, for the check's own tests
+(`TestPostLinkCheck`, from C through the driver, and `TestCheckCases`, from
+hand-written llc code).
+
+What the check takes on trust, and where it stops:
+
+- The pass's signatures. For an indirect call this is the marker the pass
+  writes before it in llc's text, and the lowering's reading of which marker
+  belongs to which call is not checked: a marker read for the wrong call
+  gives code the check passes.
+- preserve_none (`-mode pn`). The check derives each call's argument
+  registers from the convention, but does not work out which registers hold
+  live values across a call: it relies on LLVM having saved them.
+- A Go frame of 4096 bytes or more has a stack check the check does not
+  know, so such a function fails it.
+- Only a non-PIE linux/amd64 binary.
