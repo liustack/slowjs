@@ -40,6 +40,7 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 | `engine/libc/` | The small libc of the C tree: musl's memory, string and math functions, a `snprintf` and the headers, so that the engine builds with `-ffreestanding -nostdinc` (see its [README](../engine/libc/README.md)) |
 | `engine/host.h` | The callbacks the engine asks of its host. The native test host and, later, the Go host implement them |
 | `engine/test/` | The native test host: the C tree built by plain clang with its small libc, and test262 run on it, also under AddressSanitizer and UndefinedBehaviorSanitizer. Also the checks of the libc, of the symbols the engine uses and of `Math.*` against the Go engine (see [testing.md](testing.md#the-c-tree-and-its-native-test-host)). Never part of a Go build |
+| `internal/hostmem/` | The memory the Go host will give the new engine, mapped outside the Go heap: the chunks of a VM's heap and what they add up to, and its shadow stack with a guard page, on each of the 5 targets. Nothing uses it yet |
 | `internal/goasm/` | The maintainer tool that compiles the C interpreter of the old engine (the pinned archive with `quickjs.diff` and `cpatch.py`) to Go assembly (see its README) |
 | `lib/internal/patch/quickjs.diff` | The fork's changes in C, for a regeneration of `lib/` (see [upgrading.md](upgrading.md#the-c-patch)) |
 | `lib/internal/patch/test262.diff` | Upstream's patch to test262 |
