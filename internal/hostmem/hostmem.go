@@ -25,6 +25,21 @@
 // None of these runs javascript or calls into the engine. A Memory is used by
 // one goroutine at a time, as its VM is, and needs no lock. Nothing is shared
 // between Memories but the page size.
+//
+// The errors are what the OS refused, with what was asked, and three more:
+//
+//   - New refuses a shadow stack too large for the address space before it
+//     asks the OS.
+//   - Remap matches errors.ErrUnsupported where the OS cannot resize a
+//     mapping (CanRemap is false).
+//   - On windows, New fails when other threads took the aligned address of
+//     the stack 16 times in a row. The error wraps the last
+//     ERROR_INVALID_ADDRESS.
+//
+// What only a bug of the engine or the host does panics: a size the engine
+// does not ask for, a chunk or range the VM does not hold, a call after Close
+// or after a Release that did not return. New panics too when the OS refuses
+// to give back what the setup of a stack mapped itself.
 package hostmem // import "github.com/liustack/slowjs/internal/hostmem"
 
 import (
@@ -334,14 +349,20 @@ func alignUp(x, a uintptr) uintptr   { return (x + a - 1) &^ (a - 1) }
 func alignDown(x, a uintptr) uintptr { return x &^ (a - 1) }
 
 // pointer turns an address outside the Go heap into a pointer, for the
-// system calls of x/sys that take one. The garbage collector ignores such a
-// pointer. go vet cannot tell it from a Go pointer kept in a uintptr, which
-// would be wrong, so the conversion reads the address through memory.
+// system calls of x/sys that take one and for bytesAt. The rules of
+// unsafe.Pointer do not cover making a pointer from a uintptr like this: it
+// holds because the garbage collector ignores pointers outside the memory it
+// manages, as it does for memory from C, which is how Go works today and not
+// a promise. So pointer takes only addresses the package mapped and still
+// holds, and each caller checks that first: the range lies in a chunk on
+// record, in the shadow stack, or in what the same setup mapped. go vet cannot
+// tell such an address from a Go pointer kept in a uintptr, which would be
+// wrong, so the conversion reads the address through memory.
 func pointer(addr uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&addr))
 }
 
-// bytesAt is the memory of size bytes at addr, outside the Go heap.
+// bytesAt is the memory of size bytes at addr, an address as pointer takes.
 func bytesAt(addr, size uintptr) []byte {
 	return unsafe.Slice((*byte)(pointer(addr)), size)
 }
