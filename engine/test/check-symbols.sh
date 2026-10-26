@@ -36,8 +36,9 @@ nm=${NM:-nm}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-version=2026-06-04
-free="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char"
+. "$here/flags.sh"
+version=$engine_version
+free=$engine_flags
 
 allowed() { sed -n "s/^$1 \(.*\)/\1/p" "$libc/symbols.txt"; }
 allowed libc > "$work/libc.txt"
@@ -95,7 +96,7 @@ for target in $targets; do
 		tflags="--target=$target"
 		case $target in *apple*|*darwin*) strip=1 ;; esac
 	fi
-	case $target in aarch64*|arm64*) tflags="$tflags -mno-outline-atomics" ;; esac
+	tflags="$tflags $(engine_target_flags "$target")"
 	for variant in "-O0 ." "-O1 -DNDEBUG" "-O2 ." "-O2 -DNDEBUG"; do
 		opt=${variant% *}
 		ndebug=${variant#* }

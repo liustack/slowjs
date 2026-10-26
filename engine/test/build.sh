@@ -14,11 +14,11 @@
 #
 # MODE is plain (default), asan (AddressSanitizer), ubsan (UndefinedBehavior
 # Sanitizer) or asan-ubsan (both). OUTDIR defaults to engine/test/out/MODE. It
-# gets run-test262, mathdump (see math.sh), api-test (see api-test.sh), and the object files: those of
-# the engine here, those of its libc in libc/. CC picks another compiler. A
-# sanitizer reports a finding and goes on, so that a run over test262 lists
-# them all: run with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer
-# going too.
+# gets run-test262, mathdump (see math.sh), api-test (see api-test.sh), and the
+# object files: those of the engine here, and those of its libc in libc/. CC
+# picks another compiler. A sanitizer reports a finding and goes on, so that a
+# run over test262 lists them all: run with ASAN_OPTIONS=halt_on_error=0 to keep
+# AddressSanitizer going too.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -35,19 +35,12 @@ asan-ubsan) san='-fsanitize=address,undefined -fsanitize-recover=address -fno-om
 *) echo "build.sh: unknown mode $mode (plain, asan, ubsan or asan-ubsan)" >&2; exit 2 ;;
 esac
 
-# The flags of QuickJS's own Makefile: -fwrapv because the C relies on signed
-# overflow wrapping, -funsigned-char for clang. The version is the one in the
-# name of the pinned commit.
-version=2026-06-04
-common="-O2 -g -Wall -Wno-array-bounds -fwrapv -funsigned-char $san"
-# What the engine and its libc are built with (see engine/libc/README.md):
-# - no system headers or libc, so nothing outside engine/libc can creep in
-# - -fno-math-errno, so that sqrt is an instruction and Math functions never
-#   set errno
-# - no fused multiply-add and no hardware fma branch in musl's math, so that
-#   every target gives the same results
-# - 32-bit BigInt limbs, as the engine has them in Go
-free="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector"
+# The flags of the engine files and engine/libc are in flags.sh, which
+# check-symbols.sh reads too.
+. "$here/flags.sh"
+common="-O2 -g -Wall -Wno-array-bounds $san"
+free="$engine_flags $(engine_target_flags native)"
+version=$engine_version
 libc=$engine/libc
 
 mkdir -p "$out/libc"
@@ -76,7 +69,7 @@ for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c; do
 done
 
 # The host and the programs use the system's headers and libc.
-hostflags="$common -D_GNU_SOURCE -DCONFIG_VERSION=\"$version\" -I$engine -I$here"
+hostflags="$common -fwrapv -funsigned-char -D_GNU_SOURCE -DCONFIG_VERSION=\"$version\" -I$engine -I$here"
 $cc $hostflags -c "$here/host.c" -o "$out/host.o"
 objs="$objs $out/host.o"
 for f in run-test262 mathdump api-test; do

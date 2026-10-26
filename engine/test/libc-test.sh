@@ -20,6 +20,7 @@ libc=$engine/libc
 mode=${1:-plain}
 cc=${CC:-clang}
 out=$here/out/libc-test-$mode
+. "$here/flags.sh"
 
 case $mode in
 plain) san= ;;
@@ -39,11 +40,11 @@ mkdir -p "$out"
 objs=
 for f in "$libc"/string/*.c "$libc"/stdio.c; do
 	name=$(basename "$f" .c)
-	flags="-O2 -g -Wall -fwrapv -funsigned-char $san"
+	flags="-O2 -g -Wall $san"
 	case $name in
 	strlen|strchrnul|memchr) flags="$flags -fno-sanitize=address" ;;
 	esac
-	$cc $flags -ffreestanding -nostdinc -fno-stack-protector $rename \
+	$cc $flags $engine_flags $(engine_target_flags native) $rename \
 		-I"$libc" -I"$libc/internal" -include "$libc/internal/features.h" -c "$f" -o "$out/$name.o"
 	objs="$objs $out/$name.o"
 done
