@@ -4,6 +4,7 @@ package gen
 
 import (
 	"encoding/binary"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -311,5 +312,36 @@ func TestDataObjectInternalAlignment(t *testing.T) {
 	p := PlanData(u, map[string]bool{"f": true})
 	if len(p.Errors) == 0 {
 		t.Fatalf("an object with an unpreservable internal alignment was accepted; blob=% x", p.Blob)
+	}
+}
+
+// A start alignment with a max-skip below its step may be dropped where llc
+// placed the object, so the residue an alignment inside the object padded
+// from is unknown: b sits at 1 in llc's section (the 7-byte pad exceeds the
+// max-skip of 1), its inner .p2align pads to 8 and 03 lands at b+7, but the
+// blob would place b at 8 and put 03 at b+8. PlanData must reject b.
+func TestDataObjectConditionalStart(t *testing.T) {
+	asm := ".text\n.globl f\nf:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tleaq\ta(%rip), %rax\n" +
+		"\tleaq\tb(%rip), %rcx\n\tpopq\t%rbp\n\tretq\n.Lfunc_end0:\n" +
+		".section\t.rodata,\"a\",@progbits\na:\n\t.byte\t1\n\t.p2align\t3, 0, 1\nb:\n\t.byte\t2\n\t.p2align\t3, 0x7f\n\t.byte\t3\n"
+	u, err := SplitAsm(asm, "#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := PlanData(u, map[string]bool{"f": true})
+	if !strings.Contains(fmt.Sprint(p.Errors), "data b ") {
+		t.Fatalf("b with an inner alignment after a skippable start was accepted; blob=% x errors=%v", p.Blob, p.Errors)
+	}
+}
+
+// An alignment before a label goes through the same checked parse as one
+// inside an object: SplitAsm returns an error, never a power PlanData would
+// shift by and panic on.
+func TestSplitAsmRejectsBadStartAlignment(t *testing.T) {
+	for _, al := range []string{"64", "-1", "x", "3, 0, 0", "3,0,1,2"} {
+		asm := ".section\t.rodata,\"a\",@progbits\n\t.p2align\t" + al + "\na:\n\t.byte\t1\n"
+		if _, err := SplitAsm(asm, "#"); err == nil {
+			t.Errorf(".p2align %s before a label accepted", al)
+		}
 	}
 }

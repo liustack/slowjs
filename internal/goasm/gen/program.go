@@ -146,10 +146,13 @@ type DataObj struct {
 	Label   string
 	Aliases []string
 	Section string
-	Align   int      // log2 of the alignment
-	Lines   []string // data directives, cleaned
-	Global  bool
-	Order   int
+	Align   int // log2 of the alignment
+	// AlignCond: the start alignment had a max-skip below its step, so llc
+	// may have placed the object without it.
+	AlignCond bool
+	Lines     []string // data directives, cleaned
+	Global    bool
+	Order     int
 }
 
 // AsmUnit is llc's text split up.
@@ -184,6 +187,7 @@ func SplitAsm(asm, comment string) (*AsmUnit, error) {
 	u := &AsmUnit{Funcs: map[string]*AsmFunc{}, Data: map[string]*DataObj{}, LabelFunc: map[string]string{}, Sets: map[string]string{}}
 	section := ".text"
 	align := 0
+	alignCond := false
 	var cur *AsmFunc
 	var obj *DataObj
 	pendingLabels := []string{}
@@ -209,46 +213,70 @@ func SplitAsm(asm, comment string) (*AsmUnit, error) {
 			}
 			continue
 		}
-		switch {
-		case strings.HasPrefix(l, ".section"):
-			f := strings.FieldsFunc(strings.TrimPrefix(l, ".section"), func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
-			section = strings.Trim(f[0], "\"")
-			align, obj = 0, nil
+		// Directives match by their exact name, with their operands checked:
+		// a near miss (.set0, .p2alignx) or a missing operand is an error,
+		// never a guess or a panic.
+		dir, rest := l, ""
+		if i := strings.IndexAny(l, " \t"); i >= 0 {
+			dir, rest = l[:i], strings.TrimSpace(l[i+1:])
+		}
+		operands := strings.FieldsFunc(rest, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+		switch dir {
+		case ".section":
+			if len(operands) == 0 {
+				return nil, fmt.Errorf("section without a name: %q", l)
+			}
+			section = strings.Trim(operands[0], "\"")
+			align, alignCond, obj = 0, false, nil
 			continue
-		case l == ".text" || strings.HasPrefix(l, ".text\t") || strings.HasPrefix(l, ".text "):
+		case ".text":
 			section = ".text"
-			align, obj = 0, nil
+			align, alignCond, obj = 0, false, nil
 			continue
-		case l == ".data" || l == ".bss":
+		case ".data", ".bss":
+			if rest != "" {
+				return nil, fmt.Errorf("unsupported section form: %q", l)
+			}
 			section = l
-			align, obj = 0, nil
+			align, alignCond, obj = 0, false, nil
 			continue
-		case strings.HasPrefix(l, ".p2align"):
-			f := strings.FieldsFunc(strings.TrimPrefix(l, ".p2align"), func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
-			fmt.Sscan(f[0], &align)
+		case ".p2align":
+			// Parsed and range-checked as the encoder does, so a later shift
+			// by the power cannot panic. A max-skip below the step may drop
+			// the alignment in llc's placement: the next object's start
+			// alignment is then conditional.
+			pow, _, skip, err := parseP2align(rest)
+			if err != nil {
+				return nil, fmt.Errorf("%v: %q", err, l)
+			}
+			align, alignCond = pow, skip >= 0 && skip < 1<<pow-1
 			if obj != nil && len(obj.Lines) > 0 {
 				// alignment inside an object (padding before a later label)
 				obj.Lines = append(obj.Lines, l)
 			}
 			continue
-		case strings.HasPrefix(l, ".globl"):
-			f := strings.Fields(l)
-			globals[f[1]] = true
-			continue
-		case strings.HasPrefix(l, ".set") || !strings.HasPrefix(l, ".") && strings.Contains(l, " = "):
-			var name, target string
-			if strings.HasPrefix(l, ".set") {
-				f := strings.FieldsFunc(strings.TrimPrefix(l, ".set"), func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
-				name, target = f[0], f[1]
-			} else {
-				name, target, _ = strings.Cut(l, " = ")
+		case ".globl":
+			if len(operands) != 1 {
+				return nil, fmt.Errorf("bad .globl: %q", l)
 			}
-			u.Sets[strings.TrimSpace(name)] = strings.TrimSpace(target)
+			globals[operands[0]] = true
 			continue
-		case strings.HasPrefix(l, ".type") || strings.HasPrefix(l, ".size") || strings.HasPrefix(l, ".hidden") ||
-			strings.HasPrefix(l, ".weak") || strings.HasPrefix(l, ".local") || strings.HasPrefix(l, ".file") ||
-			strings.HasPrefix(l, ".ident") || strings.HasPrefix(l, ".addrsig") || strings.HasPrefix(l, ".cfi_") ||
-			strings.HasPrefix(l, ".intel_syntax") || strings.HasPrefix(l, ".att_syntax"):
+		case ".set":
+			if len(operands) != 2 {
+				return nil, fmt.Errorf("bad .set: %q", l)
+			}
+			u.Sets[operands[0]] = operands[1]
+			continue
+		case ".type", ".size", ".hidden", ".weak", ".local", ".file", ".ident", ".addrsig", ".addrsig_sym",
+			".intel_syntax", ".att_syntax":
+			continue
+		}
+		if strings.HasPrefix(dir, ".cfi_") {
+			continue
+		}
+		if !strings.HasPrefix(l, ".") && strings.Contains(l, " = ") {
+			name, target, _ := strings.Cut(l, " = ")
+			u.Sets[strings.TrimSpace(name)] = strings.TrimSpace(target)
 			continue
 		}
 		if strings.HasSuffix(l, ":") {
@@ -267,8 +295,8 @@ func SplitAsm(asm, comment string) (*AsmUnit, error) {
 				u.Data[name] = obj
 				continue
 			}
-			obj = &DataObj{Label: name, Section: section, Align: align, Order: len(u.DataOrder)}
-			align = 0
+			obj = &DataObj{Label: name, Section: section, Align: align, AlignCond: alignCond, Order: len(u.DataOrder)}
+			align, alignCond = 0, false
 			u.Data[name] = obj
 			u.DataOrder = append(u.DataOrder, obj)
 			_ = pendingLabels

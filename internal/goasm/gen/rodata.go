@@ -265,8 +265,8 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 		// different residue than llc did: the byte the code reads at a fixed
 		// offset from the object would move. The engine has no such object,
 		// so reject it rather than silently shift every later byte.
-		if internalOverAlign(o) {
-			fail("", "data %s aligns a byte inside itself beyond its %d-byte start, which the blob cannot preserve", o.Label, 1<<o.Align)
+		if why := untrustedLayout(o); why != "" {
+			fail("", "data %s %s", o.Label, why)
 		}
 		for _, l := range o.Lines {
 			// at is the object's absolute offset in the blob, so a .p2align
@@ -312,28 +312,83 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 
 func alignUp(x, a int) int { return (x + a - 1) / a * a }
 
-// internalOverAlign reports whether o aligns a later byte inside itself to
-// more than its own start alignment: a .p2align with a power above o.Align
-// that is followed by a data directive in the same object. A trailing
-// .p2align (the next object's leading alignment, which SplitAsm also keeps on
-// this object) does not count, since nothing inside the object follows it.
-func internalOverAlign(o *DataObj) bool {
+// parseP2align parses the operands of a GNU .p2align: power, fill and
+// max-skip. All three must be honoured: a non-zero fill is the padding byte,
+// and a max-skip limit drops the alignment when the padding would exceed it.
+// Guessing any of them wrong moves every later byte, so it parses all of them
+// or fails. skip is -1 when there is no max-skip. A negative power would shift
+// by a negative amount and a very large one would overflow to a zero step
+// (then alignUp divides by zero): the power is range-checked here, before any
+// caller shifts by it. 2^20 is far above any alignment the engine uses.
+func parseP2align(arg string) (pow int, fill byte, skip int, err error) {
+	parts := strings.Split(arg, ",")
+	if len(parts) > 3 {
+		return 0, 0, 0, fmt.Errorf("unsupported alignment form")
+	}
+	pow, err = strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("bad alignment")
+	}
+	if pow < 0 || pow > 20 {
+		return 0, 0, 0, fmt.Errorf("alignment power out of range")
+	}
+	if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+		v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 0, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("bad alignment fill")
+		}
+		fill = byte(v)
+	}
+	skip = -1
+	if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
+		skip, err = strconv.Atoi(strings.TrimSpace(parts[2]))
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("bad alignment max-skip")
+		}
+		// GNU and LLVM reject an explicit non-positive max-skip rather than
+		// treating it as "always pad": refuse it too.
+		if skip <= 0 {
+			return 0, 0, 0, fmt.Errorf("non-positive alignment max-skip")
+		}
+	}
+	return pow, fill, skip, nil
+}
+
+// untrustedLayout reports why o's inner layout may differ between llc's
+// placement and the blob's, or "". The bytes of an object move relative to
+// its start only at a .p2align inside it (one followed by a data directive in
+// the same object: a trailing .p2align is the next object's, which SplitAsm
+// also keeps here). Such an alignment pads the same in both places only when
+// both starts agree modulo its power, which holds when the start alignment
+// is at least that power and certain to have been applied. A start alignment
+// with a max-skip below its step may have been dropped in llc's placement, so
+// the residue llc used is unknown.
+func untrustedLayout(o *DataObj) string {
 	for i, l := range o.Lines {
 		m := reAlign.FindStringSubmatch(clean(l))
 		if m == nil {
 			continue
 		}
-		a, err := strconv.Atoi(m[1])
-		if err != nil || a <= o.Align {
-			continue
-		}
+		inner := false
 		for _, later := range o.Lines[i+1:] {
-			if isDataDirective(clean(later)) {
-				return true
+			if isDataDirective(clean(later)) && !reAlign.MatchString(clean(later)) {
+				inner = true
 			}
 		}
+		if !inner {
+			continue
+		}
+		a, err := strconv.Atoi(m[1])
+		switch {
+		case err != nil:
+			return "has an alignment it cannot read inside it"
+		case a > o.Align:
+			return fmt.Sprintf("aligns a byte inside itself beyond its %d-byte start, which the blob cannot preserve", 1<<o.Align)
+		case o.AlignCond:
+			return "aligns a byte inside itself after a start alignment llc may have skipped (max-skip), so its inner layout is not known"
+		}
 	}
-	return false
+	return ""
 }
 
 type exprFix struct {
@@ -373,49 +428,13 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 	size := map[string]int{".byte": 1, ".short": 2, ".value": 2, ".word": 2, ".long": 4, ".int": 4, ".quad": 8}
 	switch dir {
 	case ".p2align":
-		// GNU: .p2align power, fill, max-skip. All three fields must be
-		// honoured: a non-zero fill is the padding byte, and a max-skip
-		// limit drops the alignment when the padding would exceed it.
-		// Guessing any of them wrong moves every later byte, so parse all of
-		// them or reject.
-		parts := strings.Split(arg, ",")
-		a, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		a, fill, skip, err := parseP2align(arg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("bad alignment %q", l)
+			return nil, nil, fmt.Errorf("%v: %q", err, l)
 		}
-		// A negative power would shift by a negative amount and a very large
-		// one would overflow to a zero step (then alignUp divides by zero):
-		// range-check before shifting so no input panics. 2^20 is far above
-		// any alignment the engine uses.
-		if a < 0 || a > 20 {
-			return nil, nil, fmt.Errorf("alignment power out of range %q", l)
-		}
-		step := 1 << a
-		fill := byte(0)
-		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
-			v, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 0, 64)
-			if err != nil {
-				return nil, nil, fmt.Errorf("bad alignment fill %q", l)
-			}
-			fill = byte(v)
-		}
-		pad := alignUp(at, step) - at
-		if len(parts) > 2 && strings.TrimSpace(parts[2]) != "" {
-			skip, err := strconv.Atoi(strings.TrimSpace(parts[2]))
-			if err != nil {
-				return nil, nil, fmt.Errorf("bad alignment max-skip %q", l)
-			}
-			// GNU and LLVM reject an explicit non-positive max-skip rather
-			// than treating it as "always pad": refuse it too.
-			if skip <= 0 {
-				return nil, nil, fmt.Errorf("non-positive alignment max-skip %q", l)
-			}
-			if pad > skip {
-				pad = 0
-			}
-		}
-		if len(parts) > 3 {
-			return nil, nil, fmt.Errorf("unsupported alignment form %q", l)
+		pad := alignUp(at, 1<<a) - at
+		if skip >= 0 && pad > skip {
+			pad = 0
 		}
 		b := make([]byte, pad)
 		for i := range b {
