@@ -11,6 +11,7 @@
      unit */
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "host.h"
 
@@ -596,6 +597,146 @@ static void test_own_keys_collected(void)
     JS_FreeRuntime(rt);
 }
 
+static int interrupts;
+
+static int count_interrupts(JSRuntime *rt, void *opaque)
+{
+    interrupts++;
+    return 0;
+}
+
+/* A search through a long string counts a step for each 8 indexes toward
+   the interrupt counter, so that the interrupt handler runs after each of
+   these searches, where each would count as one call without that. */
+static void test_search_steps(void)
+{
+    static const char src[] =
+        "var s = 'a'.repeat(1 << 20);\n"
+        "for (var i = 0; i < 25; i++) { s.indexOf('b'); s.lastIndexOf('b'); s.includes('b') }\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    interrupts = 0;
+    JS_SetInterruptHandler(rt, count_interrupts, NULL);
+    CHECK(eval(ctx, src), "the script threw");
+    CHECK(interrupts >= 75, "the interrupt handler ran %d times", interrupts);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* now returns the time of the monotonic clock in seconds. */
+static double now(void)
+{
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec + t.tv_nsec * 1e-9;
+}
+
+/* A search for a needle that matches almost everywhere, a long run of one
+   character with another at its end or at its start, takes time linear in
+   the lengths, forward and back, in strings of 8-bit and 16-bit characters
+   and in one of each. Comparing the needle at each index where its first
+   character is takes about 2^34 steps for each of these, many seconds. A
+   needle of 8 characters, which is compared that way, takes 8 steps for
+   each index at most. */
+static void test_search_linear(void)
+{
+    static const char setup[] =
+        "var a = 'a'.repeat(1 << 18), m = 'a'.repeat(1 << 17)\n"
+        "var w = '\\u4e00'.repeat(1 << 18), wm = '\\u4e00'.repeat(1 << 17)\n"
+        "var aw = a + '\\u4e00'\n";
+    static const struct {
+        const char *src, *want;
+    } cases[] = {
+        { "a.indexOf(m + 'b')", "-1" },
+        { "(a + 'b').indexOf(m + 'b')", "131072" },
+        { "a.includes(m + 'b')", "false" },
+        { "a.lastIndexOf(m + 'b')", "-1" },
+        { "a.lastIndexOf('b' + m)", "-1" },
+        { "('b' + a).lastIndexOf('b' + m)", "0" },
+        { "w.indexOf(wm + '\\u6587')", "-1" },
+        { "(w + '\\u6587').indexOf(wm + '\\u6587')", "131072" },
+        { "w.lastIndexOf(wm + '\\u6587')", "-1" },
+        { "w.lastIndexOf('\\u6587' + wm)", "-1" },
+        { "aw.indexOf(m + 'b')", "-1" },
+        { "aw.lastIndexOf('b' + m)", "-1" },
+        { "(aw + m).lastIndexOf(m + '\\u4e00')", "131072" },
+        { "a.indexOf('aaaaaaab')", "-1" },
+        { "a.lastIndexOf('aaaaaaab')", "-1" },
+        { "w.indexOf('\\u4e00'.repeat(7) + '\\u6587')", "-1" },
+        { "aw.lastIndexOf('aaaaaaab')", "-1" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    double t;
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        t = now();
+        CHECK(eval_is(ctx, cases[i].src, cases[i].want), "%s", cases[i].src);
+        t = now() - t;
+        CHECK(t < 0.5, "%s took %.3f s", cases[i].src, t);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+static int polls, stop_at;
+
+static int stop_interrupts(JSRuntime *rt, void *opaque)
+{
+    return ++polls == stop_at;
+}
+
+/* A long search checks the interrupt counter while it runs and calls the
+   interrupt handler when the counter runs out, as the interpreter does: one
+   search calls it many times, and a handler that asks to stop ends the
+   search with the uncatchable error "interrupted". */
+static void test_search_interrupt(void)
+{
+    static const char setup[] =
+        "var a = 'a'.repeat(1 << 23), m = 'a'.repeat(1000) + 'b'\n"
+        "var w = '\\u4e00'.repeat(1 << 22), wm = '\\u4e00'.repeat(1000) + 'b'\n"
+        "var aw = a + '\\u4e00'\n";
+    static const char *const searches[] = {
+        "a.indexOf('b')", "a.lastIndexOf('b')", "a.indexOf(m)",
+        "a.lastIndexOf('b' + m)", "w.indexOf(wm)", "w.lastIndexOf('b')",
+        "aw.indexOf(m)", "a.indexOf('aaab')", "w.lastIndexOf('\\u4e00\\u4e00b')",
+    };
+    size_t i;
+
+    for(i = 0; i < sizeof(searches) / sizeof(searches[0]); i++) {
+        const char *src = searches[i];
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+        JSValue v, e;
+        const char *s;
+
+        CHECK(eval(ctx, setup), "the script threw");
+        JS_SetInterruptHandler(rt, stop_interrupts, NULL);
+        polls = 0;
+        stop_at = -1;
+        CHECK(eval_is(ctx, src, "-1"), "%s", src);
+        CHECK(polls >= 20, "%s called the interrupt handler %d times", src,
+              polls);
+        polls = 0;
+        stop_at = 3;
+        v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsException(v), "%s ran to its end", src);
+        e = JS_GetException(ctx);
+        s = JS_ToCString(ctx, e);
+        CHECK(s && strstr(s, "interrupted"), "%s threw %s", src, s ? s : "?");
+        CHECK(polls == 3, "%s called the handler %d times", src, polls);
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, e);
+        JS_FreeValue(ctx, v);
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+    }
+}
+
 int main(void)
 {
     test_regexp_cache();
@@ -606,6 +747,9 @@ int main(void)
     test_func_shapes_kept();
     test_atom_keys();
     test_own_keys_collected();
+    test_search_steps();
+    test_search_linear();
+    test_search_interrupt();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
