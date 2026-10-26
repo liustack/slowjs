@@ -162,7 +162,12 @@ func defineGlobals(vm *slowjs.VM) error {
 		"gc":         vm.RunGC,
 		"youngGC":    vm.RunYoungGC,
 		"memorySize": func() float64 { return float64(vm.MemorySize()) },
-		"setGCThreshold": func(n float64) {
+		"setGCThreshold": func(arg any) {
+			// A number from javascript is an int or a float64.
+			n, _ := arg.(float64)
+			if i, ok := arg.(int); ok {
+				n = float64(i)
+			}
 			if n < 0 || n >= math.MaxUint64 {
 				vm.SetGCThreshold(^uintptr(0))
 			} else {
