@@ -38,6 +38,20 @@ type BlobReloc struct {
 	Sym  string
 	Add  int64
 	Func bool
+	// Label and LabelAdd are the pointer as llc's text wrote it (label plus
+	// addend), for the post-link check to resolve in llc's object.
+	Label    string
+	LabelAdd int64
+}
+
+// BlobDiff is a value inside engine_rodata that PlanData resolved from a
+// difference of two labels (Pos - Neg + K, the relative tables LLVM builds),
+// declared so the post-link check can recompute it in llc's object and in
+// the linked blob.
+type BlobDiff struct {
+	Off, Size int
+	Pos, Neg  string
+	K         int64
 }
 
 // DataPlan says where every data object goes.
@@ -45,6 +59,7 @@ type DataPlan struct {
 	Blob    []byte
 	BlobOff map[string]int // label or alias -> offset in engine_rodata
 	Relocs  []BlobReloc
+	Diffs   []BlobDiff
 	// InBody lists, per function, the objects placed after its code: its
 	// own (constant pools, jump tables, tables of its labels) and the
 	// copies of objects it reads without LEA.
@@ -301,6 +316,9 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 		}
 		if f.size == 4 && (v < -1<<31 || v >= 1<<32) {
 			fail("", "data %s: value %d does not fit 32 bits", f.obj.Label, v)
+		}
+		if pos, neg, k, err := exprParts(f.expr); err == nil && neg != "" {
+			p.Diffs = append(p.Diffs, BlobDiff{Off: f.off, Size: f.size, Pos: pos, Neg: neg, K: k})
 		}
 		for k := 0; k < f.size; k++ {
 			p.Blob[f.off+k] = byte(v >> (8 * k))
@@ -567,33 +585,9 @@ func addTerms(e string) ([]addTerm, error) {
 // evalExpr evaluates sym, sym+N, sym-N, symA-symB(+N) at blob offset at. A
 // lone symbol (or with an addend) is a pointer: it comes back as a reloc.
 func (p *DataPlan) evalExpr(e string, at int, funcs map[string]bool) (int64, *BlobReloc, error) {
-	var pos, neg []string
-	var k int64
-	// Only a sum and difference of symbols and integer literals is
-	// understood. addTerms rejects anything else (a missing operator, a
-	// multiplication, a shift, a parenthesis) instead of letting the
-	// evaluator silently drop an operator and compute a wrong offset.
-	terms, err := addTerms(e)
+	pos, neg, k, err := exprParts(e)
 	if err != nil {
 		return 0, nil, err
-	}
-	for _, t := range terms {
-		if x, err := strconv.ParseInt(t.term, 0, 64); err == nil {
-			k += t.sign * x
-			continue
-		}
-		if x, err := strconv.ParseUint(t.term, 0, 64); err == nil {
-			k += t.sign * int64(x)
-			continue
-		}
-		if t.sign > 0 {
-			pos = append(pos, t.term)
-		} else {
-			neg = append(neg, t.term)
-		}
-	}
-	if len(pos) != 1 || len(neg) > 1 {
-		return 0, nil, fmt.Errorf("unsupported expression %q", e)
 	}
 	off := func(s string) (int, error) {
 		if s == "." {
@@ -605,25 +599,61 @@ func (p *DataPlan) evalExpr(e string, at int, funcs map[string]bool) (int64, *Bl
 		}
 		return o, nil
 	}
-	if len(neg) == 1 {
-		a, err := off(pos[0])
+	if neg != "" {
+		a, err := off(pos)
 		if err != nil {
 			return 0, nil, err
 		}
-		b, err := off(neg[0])
+		b, err := off(neg)
 		if err != nil {
 			return 0, nil, err
 		}
 		return int64(a-b) + k, nil, nil
 	}
-	if funcs[pos[0]] {
-		return 0, &BlobReloc{Sym: pos[0], Add: k, Func: true}, nil
+	if funcs[pos] {
+		return 0, &BlobReloc{Sym: pos, Add: k, Func: true, Label: pos, LabelAdd: k}, nil
 	}
-	a, err := off(pos[0])
+	a, err := off(pos)
 	if err != nil {
 		return 0, nil, err
 	}
-	return 0, &BlobReloc{Sym: "", Add: int64(a) + k}, nil
+	return 0, &BlobReloc{Sym: "", Add: int64(a) + k, Label: pos, LabelAdd: k}, nil
+}
+
+// exprParts splits a data expression into the one symbol it adds, the at
+// most one it subtracts and the sum of its literals. Only a sum and
+// difference of symbols and integer literals is understood: addTerms rejects
+// anything else (a missing operator, a multiplication, a shift, a
+// parenthesis) instead of letting the evaluator silently drop an operator
+// and compute a wrong offset.
+func exprParts(e string) (pos, neg string, k int64, err error) {
+	terms, err := addTerms(e)
+	if err != nil {
+		return "", "", 0, err
+	}
+	var ps, ns []string
+	for _, t := range terms {
+		if x, err := strconv.ParseInt(t.term, 0, 64); err == nil {
+			k += t.sign * x
+			continue
+		}
+		if x, err := strconv.ParseUint(t.term, 0, 64); err == nil {
+			k += t.sign * int64(x)
+			continue
+		}
+		if t.sign > 0 {
+			ps = append(ps, t.term)
+		} else {
+			ns = append(ns, t.term)
+		}
+	}
+	if len(ps) != 1 || len(ns) > 1 {
+		return "", "", 0, fmt.Errorf("unsupported expression %q", e)
+	}
+	if len(ns) == 1 {
+		neg = ns[0]
+	}
+	return ps[0], neg, k, nil
 }
 
 // unquoteGNU decodes a GNU assembler string literal.

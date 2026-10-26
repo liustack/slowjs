@@ -67,6 +67,7 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 		pushed = append(pushed, m[1])
 	}
 	slot := map[string]int{}
+	rec := &FuncRecord{Name: fn.Name, Kind: Register, Sig: fn.Sig, Pushed: pushed, Frame: 8 * len(pushed)}
 	var out []string
 	for k, r := range pushed {
 		slot[r] = 8 * (len(pushed) - 1 - k)
@@ -95,6 +96,7 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 		if m := reCall.FindStringSubmatch(n); m != nil && calleeKinds[m[1]] == Register {
 			// Another register-entry leaf: arguments stay in registers.
 			out = append(out, "call "+m[1])
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallLeaf, Target: m[1]})
 			continue
 		}
 		if strings.HasPrefix(n, "call") || isTailJump(n) {
@@ -108,7 +110,7 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 	}
 	out = append(out, retLabel+":")
 	text := fn.Name + ":\n\t" + strings.Join(out, "\n\t") + "\n"
-	return text, Meta{Name: fn.Name, Kind: Register, GoName: goIdent(fn.Name), RetType: fn.Sig.Ret, Frame: 8 * len(pushed)}, nil
+	return text, Meta{Name: fn.Name, Kind: Register, GoName: goIdent(fn.Name), RetType: fn.Sig.Ret, Frame: 8 * len(pushed), Rec: rec}, nil
 }
 
 var (

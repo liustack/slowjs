@@ -53,6 +53,9 @@ type Meta struct {
 	Frame    int    // Go TEXT frame size
 	ArgBytes int    // Go TEXT argument+result area size
 	RetType  Type
+	// Rec is every rewrite the lowering made, for the instruction-level
+	// post-link check (nil for the prototype's units).
+	Rec *FuncRecord
 }
 
 // layout places params then the result in the Go argument area, each at its
@@ -357,6 +360,8 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		bp = 8
 	}
 	argBase := frame + 8 + bp
+	rec := &FuncRecord{Name: fn.Name, Kind: Unified, Sig: fn.Sig, PreserveNone: a.PreserveNone, SaveAll: a.SaveAll,
+		Pushed: pushed, Local: local, LocalBase: localBase, SaveBase: saveBase, Saved: saved, Frame: frame}
 
 	// Build the rewritten body.
 	var out []string
@@ -465,6 +470,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			}
 			out = append(out, load)
 			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallMem, Sig: sig})
 			continue
 		}
 		// Rewrite frame spills: LLVM addresses locals at -N(%rbp), below the
@@ -516,6 +522,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			}
 			out = append(out, "movq "+m[1]+", %r11")
 			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallMem, Sig: sig})
 			continue
 		}
 		if m := reIndirect.FindStringSubmatch(n); m != nil {
@@ -524,6 +531,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 				return "", Meta{}, err
 			}
 			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
 			continue
 		}
 		if m := reCall.FindStringSubmatch(n); m != nil && pending != "" {
@@ -542,9 +550,11 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 				// native registers and the leaf preserves callee-saved, so no
 				// marshalling is needed.
 				out = append(out, "call "+m[1])
+				rec.Calls = append(rec.Calls, CallRecord{Kind: CallLeaf, Target: m[1]})
 				continue
 			}
 			out = append(out, marshalCallTarget(a, m[1], cs, saved, saveBase)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallUnified, Target: m[1], Sig: cs})
 			continue
 		}
 		if strings.HasPrefix(n, "call") {
@@ -554,7 +564,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			return "", Meta{}, fmt.Errorf("%s: tail call: %q", fn.Name, l)
 		}
 		if env != nil {
-			rewritten, err := env.dataRefs(fn.Name, l)
+			rewritten, err := env.dataRefs(fn.Name, l, &rec.Refs)
 			if err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
@@ -602,7 +612,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	}
 
 	text := fn.Name + ":\n\t" + strings.Join(out, "\n\t") + "\n"
-	meta := Meta{Name: fn.Name, Kind: Unified, GoName: goIdent(fn.Name), Frame: frame, ArgBytes: argBytes, RetType: fn.Sig.Ret}
+	meta := Meta{Name: fn.Name, Kind: Unified, GoName: goIdent(fn.Name), Frame: frame, ArgBytes: argBytes, RetType: fn.Sig.Ret, Rec: rec}
 	return text, meta, nil
 }
 
@@ -1151,20 +1161,37 @@ func namesReg(n, r string) bool {
 	return false
 }
 
-func (env *LowerEnv) dataRefs(fn, l string) (string, error) {
+// dataRefs also appends to rec (when not nil) what each reference now points
+// to, for the post-link check.
+func (env *LowerEnv) dataRefs(fn, l string, rec *[]RefRecord) (string, error) {
 	n := norm(l)
 	lea := strings.HasPrefix(n, "lea")
 	var rerr error
+	note := func(r RefRecord) {
+		if rec != nil {
+			*rec = append(*rec, r)
+		}
+	}
 	out := reRIP.ReplaceAllStringFunc(l, func(m string) string {
 		sub := reRIP.FindStringSubmatch(m)
 		sym, add := sub[1], sub[2]
+		k := 0
+		if add != "" {
+			var err error
+			if k, err = strconv.Atoi(add); err != nil {
+				rerr = fmt.Errorf("bad addend in %q", l)
+				return m
+			}
+		}
 		if env.Funcs[sym] {
 			if !lea {
 				rerr = fmt.Errorf("non-LEA reference to the function %s: %q", sym, l)
 			}
+			note(RefRecord{Label: sym, Add: int64(k), Func: true})
 			return m
 		}
 		if r, ok := env.Plan.Rename[fn][sym]; ok && !(lea && hasBlob(env.Plan, sym)) {
+			note(RefRecord{Label: sym, Add: int64(k)})
 			return r + add + "(%rip)"
 		}
 		if off, ok := env.Plan.BlobOff[sym]; ok {
@@ -1172,10 +1199,7 @@ func (env *LowerEnv) dataRefs(fn, l string) (string, error) {
 				rerr = fmt.Errorf("non-LEA reference to %s in engine_rodata: %q", sym, l)
 				return m
 			}
-			k := 0
-			if add != "" {
-				k, _ = strconv.Atoi(add)
-			}
+			note(RefRecord{Label: sym, Add: int64(k), Blob: true})
 			return fmt.Sprintf("__goasm_rodata+%d(%%rip)", off+k)
 		}
 		rerr = fmt.Errorf("unplaced data %s: %q", sym, l)

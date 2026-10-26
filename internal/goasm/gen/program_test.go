@@ -189,19 +189,19 @@ func TestPlanData(t *testing.T) {
 		t.Fatalf("difference: got %d, want %d", d, so-no)
 	}
 	want := []BlobReloc{
-		{Off: no, Add: int64(so)},
-		{Off: no + 8, Sym: "f", Func: true},
-		{Off: no + 16, Add: int64(so + 2)},
+		{Off: no, Add: int64(so), Label: ".L.str"},
+		{Off: no + 8, Sym: "f", Func: true, Label: "f"},
+		{Off: no + 16, Add: int64(so + 2), Label: ".L.str", LabelAdd: 2},
 	}
 	if !reflect.DeepEqual(p.Relocs, want) {
 		t.Fatalf("relocations: %+v, want %+v", p.Relocs, want)
 	}
 	env := &LowerEnv{Plan: p, Funcs: map[string]bool{"f": true}}
-	got, err := env.dataRefs("f", "leaq\tnames+8(%rip), %rax")
+	got, err := env.dataRefs("f", "leaq\tnames+8(%rip), %rax", nil)
 	if err != nil || got != "leaq\t__goasm_rodata+"+strconv.Itoa(no+8)+"(%rip), %rax" {
 		t.Fatalf("LEA of engine_rodata: %q %v", got, err)
 	}
-	if _, err := env.dataRefs("f", "movq\tnames(%rip), %rax"); err == nil {
+	if _, err := env.dataRefs("f", "movq\tnames(%rip), %rax", nil); err == nil {
 		t.Fatal("non-LEA read of data holding pointers accepted")
 	}
 }
