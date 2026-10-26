@@ -41,8 +41,13 @@ type EngineCheck struct {
 	Plan    *DataPlan
 	Metas   []Meta // lowered functions (unified and register-entry)
 	Stubs   []Meta // in missingNames order
-	Sigs    map[string]Sig
-	Leaves  map[string]bool
+	// Sigs and Leaves are the pass's signature of every function and the
+	// register-entry leaves it was given, and PreserveNone the convention it
+	// gave every unified entry: the check holds each function's record to
+	// them.
+	Sigs         map[string]Sig
+	Leaves       map[string]bool
+	PreserveNone bool
 	// All requires every function to be in the binary and checked.
 	All bool
 }
@@ -87,9 +92,16 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 			return k.rep, fmt.Errorf("llc's function %s was neither lowered nor stubbed", name)
 		}
 	}
+	seen := map[string]bool{}
+	for _, m := range append(append([]Meta{}, c.Metas...), c.Stubs...) {
+		if seen[m.Name] {
+			return k.rep, fmt.Errorf("%s is generated twice", m.Name)
+		}
+		seen[m.Name] = true
+	}
 	for _, m := range c.Metas {
-		if m.Rec == nil {
-			return k.rep, fmt.Errorf("%s: no rewrite record", m.Name)
+		if err := k.checkMeta(m); err != nil {
+			return k.rep, fmt.Errorf("%s: %w", m.Name, err)
 		}
 		if _, ok := k.bin.abi0(c.Pkg, c.Names[m.Name]); !ok {
 			k.skip("not in the binary (the linker left it out)", m.Name)
@@ -123,6 +135,36 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 		}
 	}
 	return k.rep, nil
+}
+
+// checkMeta holds a function's record to what the pass says of it: its
+// name and kind, its signature (the number and class of its parameters and
+// its result, from which the check derives the entry loads and result
+// stores) and its calling convention. The record's own frame is the one the
+// emitted function declares.
+func (k *checker) checkMeta(m Meta) error {
+	r := m.Rec
+	if r == nil {
+		return fmt.Errorf("no rewrite record")
+	}
+	if r.Name != m.Name || r.Kind != m.Kind || r.Frame != m.Frame {
+		return fmt.Errorf("the record is of %s (kind %v, frame %d), the function %s (kind %v, frame %d)",
+			r.Name, r.Kind, r.Frame, m.Name, m.Kind, m.Frame)
+	}
+	sig, ok := k.c.Sigs[m.Name]
+	if !ok {
+		return fmt.Errorf("the pass gave no signature")
+	}
+	if !sameSig(sig, r.Sig) || m.RetType != sig.Ret {
+		return fmt.Errorf("lowered with the signature %v, the pass's is %v", r.Sig, sig)
+	}
+	if leaf := k.c.Leaves[m.Name]; leaf != (m.Kind == Register) {
+		return fmt.Errorf("lowered as kind %v, but the pass took it for a leaf: %v", m.Kind, leaf)
+	}
+	if want := k.c.PreserveNone && m.Kind == Unified; r.PreserveNone != want {
+		return fmt.Errorf("lowered with preserve_none %v, the pass's convention for it is %v", r.PreserveNone, want)
+	}
+	return nil
 }
 
 type checker struct {

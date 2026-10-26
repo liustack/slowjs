@@ -369,7 +369,8 @@ func main() {
 			vpkg = *pkg
 		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
-			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: leafSet, All: *verifyAll})
+			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
+			PreserveNone: *mode == "pn", All: *verifyAll})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
