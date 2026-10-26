@@ -1370,13 +1370,11 @@ static int compile_back(JSContext *ctx, char letter, int flags, char *buf, size_
     return chain_length - 1 - n;
 }
 
-/* resolve_read reads the modules of the m chain from their bytecode, from
-   the last to the first, which leaves them all to resolve, and resolves the
-   first: JS_ResolveModule goes down the chain with no loader between the
-   modules. It puts "ok" or the name of the exception in buf. */
-static const char *resolve_read(JSRuntime *rt, char *buf, size_t size)
+/* read_chain compiles the modules of the m chain in ctx and reads them from
+   their bytecode in ctx2, from the last to the first, which leaves them all
+   to resolve. It returns the first, the one ctx2 does not hold alone. */
+static JSValue read_chain(JSContext *ctx, JSContext *ctx2)
 {
-    JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
     uint8_t **bufs = calloc(chain_length, sizeof(bufs[0]));
     size_t *sizes = calloc(chain_length, sizeof(sizes[0]));
     char name[16], src[64];
@@ -1398,13 +1396,24 @@ static const char *resolve_read(JSRuntime *rt, char *buf, size_t size)
         else
             JS_FreeValue(ctx2, v);
     }
+    free(bufs);
+    free(sizes);
+    return first;
+}
+
+/* resolve_read resolves the first module of the m chain read from bytecode:
+   JS_ResolveModule goes down the chain with no loader between the modules.
+   It puts "ok" or the name of the exception in buf. */
+static const char *resolve_read(JSRuntime *rt, char *buf, size_t size)
+{
+    JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    JSValue first = read_chain(ctx, ctx2);
+
     if (JS_ResolveModule(ctx2, first) < 0)
         exception_name(ctx2, buf, size);
     else
         snprintf(buf, size, "ok");
     JS_FreeValue(ctx2, first);
-    free(bufs);
-    free(sizes);
     JS_FreeContext(ctx2);
     JS_FreeContext(ctx);
     return buf;
@@ -1469,6 +1478,41 @@ static int test_module_chains(void *unused)
         CHECK(strcmp(buf, "RangeError") == 0, "export from: %s", buf);
         CHECK(run_jobs(rt), "export from: jobs");
         CHECK(eval_is(ctx, "1 + 1", "2"), "export from: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
+/* A chain of modules that failed past the internal depth leaves no module
+   that looks done when the modules it imports are not, or are freed: the
+   chain runs again from its middle in the same context. Module mid was
+   done, as far as it went, by the run that failed, and the chain from it is
+   short enough to run. */
+static int test_module_retry(void *unused)
+{
+    int mid = JS_MAX_INTERNAL_DEPTH * 3 / 4;
+    char buf[64], src[64];
+
+    chain_length = JS_MAX_INTERNAL_DEPTH + 1000;
+    snprintf(src, sizeof(src), "import \"m%d\";", mid);
+    {
+        /* resolving the imports of the modules read from bytecode fails
+           at module JS_MAX_INTERNAL_DEPTH of the chain, which
+           js_free_modules frees with the ones after it. The loader loads
+           module mid again */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+        JSValue first = read_chain(ctx, ctx2);
+
+        CHECK(JS_ResolveModule(ctx2, first) < 0, "resolve: no error");
+        CHECK(strcmp(exception_name(ctx2, buf, sizeof(buf)), "RangeError") == 0, "resolve: %s", buf);
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        module_eval(ctx2, "again", src, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "ok") == 0, "resolve again: %s", buf);
+        CHECK(run_jobs(rt), "resolve again: jobs");
+        JS_FreeValue(ctx2, first);
+        JS_FreeContext(ctx2);
         JS_FreeContext(ctx);
         host_free_runtime(rt);
     }
@@ -1592,6 +1636,7 @@ int main(void)
     host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);
     host_run_thread(test_module_chains, NULL);
+    host_run_thread(test_module_retry, NULL);
     test_ropes();
     test_free_nesting();
     test_unicode_tables();

@@ -618,6 +618,9 @@ struct JSContext {
     int interrupt_counter;
 
     struct list_head loaded_modules; /* list of JSModuleDef.link */
+    /* the modules the resolution under way marked resolved, the latest
+       first, linked by JSModuleDef.resolve_prev (see js_resolve_module_top) */
+    JSModuleDef *resolve_marked;
 
     /* if NULL, RegExp compilation is not supported */
     JSValue (*compile_regexp)(JSContext *ctx, JSValueConst pattern,
@@ -987,6 +990,8 @@ struct JSModuleDef {
     BOOL resolved : 8;
     BOOL func_created : 8;
     JSModuleStatus status : 8;
+    /* the module marked resolved before it, while a resolution is under way */
+    JSModuleDef *resolve_prev;
     /* temp use during js_module_link() & js_module_evaluate() */
     int dfs_index, dfs_ancestor_index;
     JSModuleDef *stack_prev;
@@ -32748,6 +32753,8 @@ static int js_resolve_module1(JSContext *ctx, JSModuleDef *m)
     }
 #endif
     m->resolved = TRUE;
+    m->resolve_prev = ctx->resolve_marked;
+    ctx->resolve_marked = m;
     /* resolve each requested module */
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
@@ -32776,6 +32783,35 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
     ret = js_resolve_module1(ctx, m);
     js_internal_leave(ctx->rt);
     return ret;
+}
+
+/* Resolve m and the modules it imports. A module is marked resolved before
+   its imports are, so that a cycle of imports ends. When the resolution
+   fails, every module it marked is unmarked, with its imports unset, so
+   that it is resolved again when imported again: it would keep an import
+   that is not resolved, or that js_free_modules frees. All of them are, not
+   only the ones under way, as a module done meanwhile may have taken one of
+   those, in a cycle with it, for done. The host's loader can start a
+   resolution within this one: what that one marks is left to the outer one
+   to keep or to undo. */
+static int js_resolve_module_top(JSContext *ctx, JSModuleDef *m)
+{
+    JSModuleDef *outer = ctx->resolve_marked, *m1;
+    int i;
+
+    if (js_resolve_module(ctx, m) == 0) {
+        if (!outer)
+            ctx->resolve_marked = NULL;
+        return 0;
+    }
+    while (ctx->resolve_marked != outer) {
+        m1 = ctx->resolve_marked;
+        ctx->resolve_marked = m1->resolve_prev;
+        m1->resolved = FALSE;
+        for(i = 0; i < m1->req_module_entries_count; i++)
+            m1->req_module_entries[i].module = NULL;
+    }
+    return -1;
 }
 
 /* Create the <eval> function associated with the module */
@@ -33232,7 +33268,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
     if (!m)
         goto fail;
 
-    if (js_resolve_module(ctx, m) < 0) {
+    if (js_resolve_module_top(ctx, m) < 0) {
         js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
         goto fail;
     }
@@ -39696,7 +39732,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     /* Could add a flag to avoid resolution if necessary */
     if (m) {
         m->func_obj = fun_obj;
-        if (js_resolve_module(ctx, m) < 0)
+        if (js_resolve_module_top(ctx, m) < 0)
             goto fail1;
         fun_obj = JS_NewModuleValue(ctx, m);
     }
@@ -39782,7 +39818,7 @@ int JS_ResolveModule(JSContext *ctx, JSValueConst obj)
 {
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
         JSModuleDef *m = JS_VALUE_GET_PTR(obj);
-        if (js_resolve_module(ctx, m) < 0) {
+        if (js_resolve_module_top(ctx, m) < 0) {
             js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
             return -1;
         }
