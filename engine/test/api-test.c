@@ -116,9 +116,94 @@ static void test_dump(void)
     JS_FreeRuntime(rt);
 }
 
+/* The one decimal of the averages is what printf's %.1f gives for the same
+   double. The report is made from numbers set here, with no runtime, and its
+   text is compared with the C library's, for the values that round the wrong
+   way when a number is rounded twice (1.05 is a little over 1.05 as a double,
+   0.15 and 0.05 a little under, and 1.25 is halfway). */
+static void test_tenths(void)
+{
+    /* sprintf, and not snprintf: the snprintf of the program is the engine's,
+       which does no floating point, and sprintf is the system's. */
+    static const struct {
+        int64_t num, den;
+        const char *want;
+    } known[] = {
+        { 21, 20, "1.1" }, { 3, 20, "0.1" }, { 1, 20, "0.1" }, { 49, 20, "2.5" }, { 5, 4, "1.2" },
+        { 1, 8, "0.1" }, { 3, 8, "0.4" }, { 5, 8, "0.6" }, { 7, 8, "0.9" }, { 0, 1, "0.0" },
+    };
+    char text[1024];
+    JSMemoryUsage s;
+    int64_t num, den;
+    size_t i;
+    long compared = 0;
+
+    for (i = 0; i < sizeof known / sizeof *known; i++) {
+        char want[32];
+        const char *p, *q;
+        size_t len;
+
+        memset(&s, 0, sizeof s);
+        s.atom_count = known[i].den;
+        s.atom_size = known[i].num;
+        JS_DumpMemoryUsage(text, sizeof text, &s, NULL);
+        p = strstr(text, "  (");
+        q = strstr(text, " per atom)");
+        len = p && q && q > p + 3 ? (size_t)(q - p - 3) : 0;
+        sprintf(want, "%.1f", (double)known[i].num / known[i].den);
+        CHECK(!strcmp(want, known[i].want), "the C library gives %s for %lld/%lld, not %s", want, (long long)known[i].num,
+              (long long)known[i].den, known[i].want);
+        CHECK(len == strlen(want) && !strncmp(p + 3, want, len), "%lld/%lld: the report has [%.*s], printf %s",
+              (long long)known[i].num, (long long)known[i].den, (int)len, p ? p + 3 : "", want);
+    }
+    /* many more, with the atoms line and with the line of memory slack, whose
+       numbers go below 0 */
+    for (den = 1; den <= 70; den++) {
+        for (num = -300; num <= 2500; num++) {
+            char want[32];
+            const char *p, *q;
+            size_t len;
+
+            memset(&s, 0, sizeof s);
+            s.malloc_count = 1;
+            s.malloc_size = num;
+            s.memory_used_count = den;
+            JS_DumpMemoryUsage(text, sizeof text, &s, NULL);
+            p = strstr(text, "overhead, ");
+            q = strstr(text, " average slack)");
+            len = p && q && q > p + 10 ? (size_t)(q - p - 10) : 0;
+            sprintf(want, "%.1f", (double)num / den);
+            compared++;
+            if (len != strlen(want) || strncmp(p + 10, want, len)) {
+                CHECK(0, "%lld/%lld: the report has [%.*s], printf %s", (long long)num, (long long)den, (int)len, p ? p + 10 : "", want);
+            }
+            if (num < 0)
+                continue;
+            memset(&s, 0, sizeof s);
+            s.atom_count = den;
+            s.atom_size = num;
+            JS_DumpMemoryUsage(text, sizeof text, &s, NULL);
+            p = strstr(text, "  (");
+            q = strstr(text, " per atom)");
+            len = p && q && q > p + 3 ? (size_t)(q - p - 3) : 0;
+            compared++;
+            if (len != strlen(want) || strncmp(p + 3, want, len)) {
+                CHECK(0, "%lld/%lld: the atoms line has [%.*s], printf %s", (long long)num, (long long)den, (int)len, p ? p + 3 : "", want);
+            }
+        }
+    }
+    CHECK(compared > 190000, "only %ld values were compared", compared);
+    /* a value printf would write with many digits, or that is not a number, has a word */
+    memset(&s, 0, sizeof s);
+    s.malloc_count = 1;
+    JS_DumpMemoryUsage(text, sizeof text, &s, NULL);
+    CHECK(strstr(text, "nan average slack)") != NULL, "0/0 is not written as nan");
+}
+
 int main(void)
 {
     test_dump();
+    test_tenths();
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
 }
