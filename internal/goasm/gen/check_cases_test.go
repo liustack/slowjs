@@ -231,6 +231,11 @@ func TestCheckCases(t *testing.T) {
 				r.Refs[0].Label, r.Refs[1].Label = r.Refs[1].Label, r.Refs[0].Label
 			},
 			want: "as declared"},
+		{name: "an entry lowered with the wrong signature", as: map[string]string{"h": "i>i"},
+			want: "lowered with the signature"},
+		{name: "a record of another function",
+			metas: func(ms []Meta) { meta(ms, "h").Rec.Name = "g" },
+			want:  "the record is of g"},
 
 		// Instructions inserted, swapped, repeated, branches redirected.
 		{name: "an instruction inserted", lower: sub("g", `\n\ttestq`, "\n\taddq $$1, %rax\n\ttestq"), want: "generated"},
@@ -250,6 +255,8 @@ func TestCheckCases(t *testing.T) {
 		// preserve_none.
 		{name: "preserve_none: an argument from the wrong register", pn: true,
 			lower: sub("pg", `movq\s+%r13, 8\(%rsp\)`, "movq %r12, 8(%rsp)"), want: "argument word 1"},
+		{name: "preserve_none: the check told the other convention", pn: true,
+			edit: func(c *EngineCheck) { c.PreserveNone = false }, want: "preserve_none"},
 
 		// What the check is told is generated.
 		{name: "a function left out", edit: func(c *EngineCheck) {
@@ -261,6 +268,8 @@ func TestCheckCases(t *testing.T) {
 			}
 			c.Metas = ms
 		}, want: "neither lowered nor stubbed"},
+		{name: "a leaf the pass did not take for one", edit: func(c *EngineCheck) { c.Leaves["lf"] = false },
+			want: "took it for a leaf"},
 		{name: "a constant pool left out of the plan", edit: func(c *EngineCheck) {
 			p := *c.Plan
 			p.InBody = map[string][]*DataObj{}
@@ -480,7 +489,7 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
 	ec := EngineCheck{LLC: llc, Lowered: low, Bin: bin, Pkg: "main", Names: names, Unit: unit, Plan: plan,
-		Metas: metas, Sigs: sigs, Leaves: leaves, All: true}
+		Metas: metas, Sigs: sigs, Leaves: leaves, PreserveNone: c.pn, All: true}
 	if c.edit != nil {
 		c.edit(&ec)
 	}
