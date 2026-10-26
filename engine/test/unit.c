@@ -544,6 +544,28 @@ static void test_func_shapes_kept(void)
     JS_FreeRuntime(rt);
 }
 
+/* A string key that is already an atom takes the reference JS_DupAtom
+   gives: an atom made from a string at run time and used as a key many
+   times is freed with the last string and object that hold it. */
+static void test_atom_keys(void)
+{
+    static const char src[] =
+        "{ let k = '#zzkey'.slice(1), o = {}; o[k] = 1;\n"
+        "  for (let i = 0; i < 100; i++) { o[k] += i; k in o; delete o[k]; o[k] = i }\n"
+        "  o = k = null }\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSMemoryUsage before, after;
+
+    JS_ComputeMemoryUsage(rt, &before);
+    CHECK(eval(ctx, src), "the script threw");
+    JS_ComputeMemoryUsage(rt, &after);
+    CHECK(after.atom_count == before.atom_count, "%lld atoms left",
+          (long long)(after.atom_count - before.atom_count));
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 int main(void)
 {
     test_regexp_cache();
@@ -552,6 +574,7 @@ int main(void)
     test_shape_cache_lifetime();
     test_func_shapes();
     test_func_shapes_kept();
+    test_atom_keys();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
