@@ -217,7 +217,7 @@ go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the sam
 
 The tag `testhooks` turns on the hooks of these tests, which the normal build does not have: `hostmem.SetFault` makes calls to the OS fail, and `callbackHook` of `internal/cengine` stops the engine in a callback (with a count of engine teardowns beside it). Without the tag nothing checks for them, in `hostmem` or in the callbacks. A run without the tag skips the tests that need them and says so (`TestFailingCalls`, `TestRefusedCalls`, `TestLifecycleHooks`), so use the tag for the whole suite.
 
-`TestDeepRecursion` runs only with `CENGINE_DEEP=1`, for an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator, which `engine_decl.go` records and `New` holds the stack size to).
+`TestDeepRecursion` recurses to the engine's call depth limit and past it (a `RangeError`, no fault of the process). It needs an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator) and skips itself for a smaller one, by the `shadowSizeLog2` that `engine_decl.go` records, which `New` also holds the stack size to.
 
 Two more runs of the same tests guard the calling convention between Go and the generated code. A poison build (`-poison` of the generator) writes garbage into the registers at each entry before the arguments are loaded, after each call before the result is read, and at each return: the tests must pass on it too. The preemption hammer keeps setting the stack guard of the goroutine in the engine so that each generated function's stack check goes through the scheduler. It writes into the runtime's `g`, hence a tag of its own:
 
