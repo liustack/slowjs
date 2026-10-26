@@ -55,6 +55,9 @@ type VM struct {
 	base uintptr // the scratch
 	sp   uintptr // where each entry starts
 
+	freed  bool    // Close freed the engine, or tried to
+	leaked uintptr // what JS_FreeRuntime returned
+
 	teardowns int // times Close called into the engine to free it, for tests
 }
 
@@ -71,6 +74,20 @@ type Options struct {
 // ErrBroken is what a VM returns after a panic or an abort left through
 // engine frames.
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
+
+// ErrClosed is what a VM returns after Close.
+var ErrClosed = errors.New("cengine: VM closed")
+
+// usable is nil when the engine can be entered.
+func (v *VM) usable() error {
+	if v.freed {
+		return ErrClosed
+	}
+	if v.h.Broken() {
+		return ErrBroken
+	}
+	return nil
+}
 
 // New makes a runtime and a context.
 func New(o Options) (_ *VM, err error) {
@@ -143,8 +160,8 @@ func (e *JSError) Error() string {
 // Eval runs src as a global script, then the jobs it queued, and returns
 // String() of its completion value.
 func (v *VM) Eval(src, file string) (string, error) {
-	if v.h.Broken() {
-		return "", ErrBroken
+	if err := v.usable(); err != nil {
+		return "", err
 	}
 	var out string
 	var err error
@@ -268,8 +285,8 @@ func (v *VM) cstring(s string) uintptr {
 
 // RunGC runs the engine's full garbage collection.
 func (v *VM) RunGC() {
-	if v.h.Broken() {
-		panic(ErrBroken)
+	if err := v.usable(); err != nil {
+		panic(err)
 	}
 	v.enter(func() { JS_RunGC(v.sp, v.rt) })
 }
@@ -278,8 +295,8 @@ func (v *VM) RunGC() {
 // bytes of it for the next allocations: whole free chunks are unmapped, the
 // pages of free blocks dropped, and the shadow stack above its first part.
 func (v *VM) ReleaseMemory(keep uintptr) (hostmem.Released, error) {
-	if v.h.Broken() {
-		return hostmem.Released{}, ErrBroken
+	if err := v.usable(); err != nil {
+		return hostmem.Released{}, err
 	}
 	var r hostmem.Released
 	var err error
@@ -318,8 +335,8 @@ type memoryUsage struct {
 
 // Usage returns what the VM holds now.
 func (v *VM) Usage() Usage {
-	if v.h.Broken() {
-		panic(ErrBroken)
+	if err := v.usable(); err != nil {
+		panic(err)
 	}
 	var u Usage
 	v.enter(func() {
@@ -343,26 +360,32 @@ func (v *VM) Interrupt() { v.h.Interrupt() }
 // Close frees the context and the runtime and gives all the memory of the VM
 // back to the OS. It returns the blocks the engine still had in use, which is
 // 0 when nothing leaked. A broken VM is not freed by the engine, whose state
-// is halfway: its memory is unmapped all the same.
+// is halfway: its memory is unmapped all the same. The engine is freed once:
+// when the OS refuses some memory, Close returns the error and Close again
+// only tries what is left.
 func (v *VM) Close() (leaked uintptr, err error) {
-	if !v.h.Broken() {
-		done := false
-		defer func() {
-			if !done {
-				// A panic or a Goexit left the engine halfway: it is not
-				// entered again, the host still gives the memory back,
-				// and the panic goes on.
-				v.h.Close()
-			}
-		}()
-		v.teardowns++
-		v.enter(func() {
-			JS_FreeContext(v.sp, v.ctx)
-			leaked = JS_FreeRuntime(v.sp, v.rt)
-		})
-		done = true
+	if !v.freed {
+		v.freed = true
+		if !v.h.Broken() {
+			done := false
+			defer func() {
+				if !done {
+					// A panic or a Goexit left the engine halfway: it is not
+					// entered again, the host still gives the memory back,
+					// and the panic goes on. Close again retries what the
+					// OS refused here.
+					v.h.Close()
+				}
+			}()
+			v.teardowns++
+			v.enter(func() {
+				JS_FreeContext(v.sp, v.ctx)
+				v.leaked = JS_FreeRuntime(v.sp, v.rt)
+			})
+			done = true
+		}
 	}
-	return leaked, v.h.Close()
+	return v.leaked, v.h.Close()
 }
 
 // addr and bytesAt reach the engine's memory, outside the Go heap (see
