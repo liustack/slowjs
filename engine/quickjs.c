@@ -47790,24 +47790,25 @@ static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
     return k;
 }
 
-/* The loops of String.prototype.includes, startsWith, endsWith, indexOf and
-   lastIndexOf look for the string p2 in the string p1 by comparing all of
-   p2 with string_cmp at one index after the other. js_string_find is the
-   start of each turn: from the index i toward stop, both included, by step
-   inc (1 or -1), it returns the first index where p1 has the characters of
-   p2, and the loop compares there, finds them and ends. It returns -1 when
-   there is none, and the loop ends without a match, or -2 when the
-   interrupt handler asked to stop, with the exception thrown. When i is
-   stop, it returns i and leaves the one comparison to the loop. The
-   characters of p1 from the lower of i and stop to the higher plus the
-   length of p2 must be in p1, as the loops make sure. A string of 16-bit
-   characters may hold only characters below 0x100, so p2 may be found in
-   p1 whatever their widths. */
+/* String.prototype.includes, startsWith, endsWith, indexOf and lastIndexOf
+   look for the string p2 in the string p1 with js_string_find: from the
+   index i toward stop, both included, by step inc (1 or -1), it returns the
+   first index where p1 has the characters of p2, -1 when there is none, or
+   -2 when the interrupt handler asked to stop, with the exception thrown.
+   The searches of js_string_find_range only return an index where they
+   compared all of p2, so the index is taken as it is. When i is stop, one
+   index is left and string_cmp compares p2 there: that is linear in the
+   length of p2 and does not check the interrupt counter, as === and the
+   other operations linear in the length of a string do not. The characters
+   of p1 from the lower of i and stop to the higher plus the length of p2
+   must be in p1, as the callers make sure. A string of 16-bit characters
+   may hold only characters below 0x100, so p2 may be found in p1 whatever
+   their widths. */
 static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
                                  int i, int stop, int inc)
 {
     if (i == stop)
-        return i;
+        return string_cmp(p1, p2, i, 0, p2->len) ? -1 : i;
     return js_string_find_range(ctx, p1, p2, i, stop, inc);
 }
 
@@ -47815,7 +47816,7 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int lastIndexOf)
 {
     JSValue str, v;
-    int i, len, v_len, pos, start, stop, ret, inc;
+    int len, v_len, pos, start, stop, ret, inc;
     JSString *p;
     JSString *p1;
 
@@ -47857,19 +47858,9 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
     }
     ret = -1;
     if (len >= v_len && inc * (stop - start) >= 0) {
-        for (i = start;; i += inc) {
-            if ((i = js_string_find(ctx, p, p1, i, stop, inc)) < 0) {
-                if (i == -2)
-                    goto fail;
-                break;
-            }
-            if (!string_cmp(p, p1, i, 0, v_len)) {
-                ret = i;
-                break;
-            }
-            if (i == stop)
-                break;
-        }
+        ret = js_string_find(ctx, p, p1, start, stop, inc);
+        if (ret == -2)
+            goto fail;
     }
     JS_FreeValue(ctx, str);
     JS_FreeValue(ctx, v);
@@ -47928,19 +47919,10 @@ static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
         start = stop = pos;
     }
     if (start >= 0 && start <= stop) {
-        for (i = start;; i++) {
-            if ((i = js_string_find(ctx, p, p1, i, stop, 1)) < 0) {
-                if (i == -2)
-                    goto fail;
-                break;
-            }
-            if (!string_cmp(p, p1, i, 0, v_len)) {
-                ret = 1;
-                break;
-            }
-            if (i == stop)
-                break;
-        }
+        i = js_string_find(ctx, p, p1, start, stop, 1);
+        if (i == -2)
+            goto fail;
+        ret = i >= 0;
     }
  done:
     JS_FreeValue(ctx, str);
