@@ -321,6 +321,11 @@ func TestCheckCases(t *testing.T) {
 			want:  "llc's facts list 0 calls and 2 returns"},
 		{name: "no probe of a function", facts: func(p, _ RegFacts) { delete(p, ProbePrefix+"h") },
 			want: "no registers"},
+		{name: "llc's facts of a leaf with a call it does not make",
+			facts: func(_, f RegFacts) { f["lf"].Calls = append(f["lf"].Calls, CallFacts{Target: "h"}) },
+			want:  "llc's facts list 1 calls and 1 returns, its object has 0 and 1"},
+		{name: "no facts of a leaf", facts: func(_, f RegFacts) { delete(f, "lf") },
+			want: "llc wrote no register facts of it"},
 
 		// The Go function the polls call must begin with a stack check.
 		{name: "host_poll with a stack check", poll: pollSplit, edit: needPoll},
@@ -648,11 +653,10 @@ func ckFacts(t *testing.T, text string, codes map[string]string, leaves map[stri
 	}
 	probes, facts = RegFacts{}, RegFacts{}
 	for _, name := range unit.FuncOrder {
-		if leaves[name] {
-			continue
-		}
 		args, res := regs(codes[name])
-		probes[ProbePrefix+name] = &FuncFacts{Args: args, Entry: args, Rets: [][]string{res}}
+		if !leaves[name] {
+			probes[ProbePrefix+name] = &FuncFacts{Args: args, Entry: args, Rets: [][]string{res}}
+		}
 		f := &FuncFacts{Entry: append([]string{}, args...)}
 		var pushed []string
 		label := ""
