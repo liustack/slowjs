@@ -50,17 +50,55 @@ func TestMarkerAcrossBlocks(t *testing.T) {
 }
 
 func TestMarkerFlow(t *testing.T) {
-	// .LBB0_4 is entered only from a jump table: it carries no marker.
-	lines := strings.Split("jmpq\t*%rax\n.LBB0_4:\n@icall i>v\njmp\t.LBB0_5\n.LBB0_6:\n@icall i>v\n.LBB0_5:\ncallq\t*%rcx\nretq", "\n")
-	in, err := markerFlow(lines)
+	// A marker flows across a direct jump into the call block, no indirect
+	// jump anywhere: accepted.
+	in, err := markerFlow(strings.Split("@icall i>v\njmp\t.LBB0_3\n.LBB0_5:\n@icall i>v\n.LBB0_3:\ncallq\t*%rcx\nretq", "\n"), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if in[".LBB0_5"] != "i>v" || in[".LBB0_4"] != "" {
+	if in[".LBB0_3"] != "i>v" {
 		t.Fatalf("flow: %q", in)
 	}
-	if _, err := markerFlow(strings.Split("@icall i>v\nretq", "\n")); err == nil {
+	if _, err := markerFlow(strings.Split("@icall i>v\nretq", "\n"), nil, false); err == nil {
 		t.Fatal("marker before a return accepted")
+	}
+}
+
+// A block the marker reaches across an edge may also be a jump-table target,
+// entered without a marker. The table is not in the function body, so the
+// marker cannot be trusted: reject.
+func TestMarkerFlowIndirectJumpEntry(t *testing.T) {
+	// .LBB0_3 has a direct marked in-edge (from .LBB0_2) and the function
+	// has an indirect jump that could also reach it unmarked.
+	body := "\ttestq\t%rsi, %rsi\n\tje\t.LBB0_2\n\tjmpq\t*%rdx\n.LBB0_2:\n" + mark("ii>v") +
+		"\tjmp\t.LBB0_3\n.LBB0_3:\n\tcallq\t*%rax\n"
+	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err == nil ||
+		!strings.Contains(err.Error(), "indirect jump") {
+		t.Fatalf("want rejection for the unmarked indirect-jump entry, got %v", err)
+	}
+	// A marker consumed in its own block, with an indirect jump elsewhere,
+	// is still fine: nothing crosses a block edge.
+	ok := "\tjmpq\t*%rdx\n.LBB0_2:\n" + mark("ii>v") + "\tcallq\t*%rax\n"
+	if _, _, err := lowerEngine(t, ok, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err != nil {
+		t.Fatalf("marker consumed in its own block rejected: %v", err)
+	}
+	// When the jump table is known and does not target the marked block, the
+	// marker is safe (this is the shape of __JS_FreeValueRT: its switch lands
+	// on other blocks). h is the name lowerEngine gives the function.
+	plan := func(targets ...string) *LowerEnv {
+		var lines []string
+		for _, tg := range targets {
+			lines = append(lines, ".long\t"+tg+"-.Ltab")
+		}
+		return &LowerEnv{Plan: &DataPlan{InBody: map[string][]*DataObj{"h": {{Lines: lines}}}}, Funcs: map[string]bool{}}
+	}
+	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, plan(".LBB0_8", ".LBB0_9")); err != nil {
+		t.Fatalf("marker to a block the table does not target rejected: %v", err)
+	}
+	// When the table does target the marked block, reject.
+	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, plan(".LBB0_3")); err == nil ||
+		!strings.Contains(err.Error(), "indirect jump") {
+		t.Fatalf("marker to a jump-table target accepted: %v", err)
 	}
 }
 
@@ -86,8 +124,16 @@ func TestCallThroughFrameSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, "(%rbp)") || !strings.Contains(out, "%r11") || !strings.Contains(out, "*%r11") {
-		t.Fatalf("body:\n%s", out)
+	// The pointer is loaded into R11 and called through it, and both
+	// arguments are marshalled into the Go outgoing area (rdi->0, rsi->8):
+	// a fix that loads R11 but forgets the arguments must not pass.
+	for _, want := range []string{"%r11", "call *%r11", "movq %rdi, 0(%rsp)", "movq %rsi, 8(%rsp)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "(%rbp)") {
+		t.Fatalf("base-pointer reference left:\n%s", out)
 	}
 }
 
