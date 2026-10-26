@@ -66,7 +66,7 @@ var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	subq	$32, %rsp
 	mulsd	.LCPI4_0(%rip), %xmm0
 	addsd	.LCPI4_1(%rip), %xmm0
-	movaps	%xmm0, -32(%rbp)
+	movups	%xmm0, -32(%rbp)
 	movaps	(%rdi), %xmm1
 	addsd	-32(%rbp), %xmm1
 	movapd	%xmm1, %xmm0
@@ -251,7 +251,9 @@ func TestCheckCases(t *testing.T) {
 			},
 			want: "goes to"},
 		{name: "an aligned heap load made unaligned", lower: sub("fp", `movaps\s+\(%rdi\)`, "movups (%rdi)"), want: "generated"},
-		{name: "a frame store left aligned", lower: sub("fp", `movups\s+%xmm0`, "movaps %xmm0"), want: "generated"},
+		{name: "a frame store made aligned", lower: sub("fp", `movups\s+%xmm0`, "movaps %xmm0"), want: "generated"},
+		{name: "an aligned frame store from llc", llc: llcSub("fp", "movups\t%xmm0", "movaps\t%xmm0", 1),
+			want: "may need alignment the Go frame lacks"},
 
 		// preserve_none.
 		{name: "preserve_none: an argument from the wrong register", pn: true,

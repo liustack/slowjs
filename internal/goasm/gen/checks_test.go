@@ -61,9 +61,9 @@ func TestLowerUnifiedRejects(t *testing.T) {
 	}
 }
 
-// With a 32-byte local area: a folded packed SSE operand on the stack needs
-// 16-byte alignment the Go stack does not give, so it is rejected, while an
-// aligned move is rewritten to its unaligned form.
+// With a 32-byte local area: an aligned move or a folded packed SSE operand
+// on the stack needs 16-byte alignment the Go stack does not give, so both
+// are rejected, while an unaligned move is kept.
 func TestStackAlignment(t *testing.T) {
 	SetCallees([]FuncSpec{{Name: "foo", Kind: Unified, Sig: Sig{Params: []Type{Ptr}, Ret: I64}}})
 	fn := FuncSpec{Name: "foo", Kind: Unified, Sig: Sig{Params: []Type{Ptr}, Ret: I64}}
@@ -71,14 +71,16 @@ func TestStackAlignment(t *testing.T) {
 		return "foo:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tsubq\t$32, %rsp\n\tmovq\t%rdi, %rax\n\t" + body +
 			"\n\taddq\t$32, %rsp\n\tpopq\t%rbp\n\tretq\n.Lfunc_end0:\n"
 	}
-	if _, _, err := LowerUnified(AMD64(), wrapLocal("addpd\t16(%rsp), %xmm0"), fn); err == nil {
-		t.Error("folded packed stack operand accepted")
+	for _, body := range []string{"addpd\t16(%rsp), %xmm0", "movaps\t%xmm0, 16(%rsp)", "movdqa\t-16(%rbp), %xmm1"} {
+		if _, _, err := LowerUnified(AMD64(), wrapLocal(body), fn); err == nil || !strings.Contains(err.Error(), "16-byte alignment") {
+			t.Errorf("%s: %v", body, err)
+		}
 	}
-	text, _, err := LowerUnified(AMD64(), wrapLocal("movaps\t%xmm0, 16(%rsp)"), fn)
+	text, _, err := LowerUnified(AMD64(), wrapLocal("movups\t%xmm0, 16(%rsp)"), fn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(text, "movups %xmm0") || strings.Contains(text, "movaps") {
-		t.Errorf("aligned spill not rewritten:\n%s", text)
+	if !strings.Contains(strings.Join(strings.Fields(text), " "), "movups %xmm0, 16(%rsp)") {
+		t.Errorf("unaligned spill not kept:\n%s", text)
 	}
 }
