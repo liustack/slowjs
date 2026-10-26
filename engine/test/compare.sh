@@ -46,6 +46,8 @@ files="$files $(ls "$here"/compare/*.js)"
 "$bin" $files > "$out/native.txt"
 # shellcheck disable=SC2086
 "$out/jsrun-go" $files > "$out/go.txt"
+# What the scripts cannot see, checked in C.
+"$here/out/$mode/unit"
 if cmp -s "$out/native.txt" "$out/go.txt"; then
 	echo "compare: the C tree and the Go engine print the same for $(grep -c '^== ' "$out/go.txt") scripts"
 else
