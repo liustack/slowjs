@@ -267,3 +267,80 @@ func TestVarargsRules(t *testing.T) {
 		}
 	}
 }
+
+// TestVarargsNative compiles testdata/varargs/diff.c twice for each
+// target, plainly with the target's own variable arguments and through the
+// pass's variadic block, links each with the freestanding driver
+// diff_main.c and requires the same output: interleaved types, more
+// arguments than registers, none and forty, va_copy, helpers that take the
+// va_list by reference and by value, reads after a host callback that
+// dirties the stack, a formatter, a variadic call from a variadic function
+// and a call through a pointer. It needs LLVM 22.1.8 (SLOWJS_LLVM), the
+// pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD). x86_64 runs on a
+// linux/amd64 host, aarch64 on a linux/arm64 host or under the user-mode
+// emulator SLOWJS_QEMU_AARCH64.
+func TestVarargsNative(t *testing.T) {
+	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
+	if llvm == "" || pass == "" || lld == "" {
+		t.Skip("set SLOWJS_LLVM, SLOWJS_SHADOW_PASS and SLOWJS_LLD")
+	}
+	src := filepath.Join("testdata", "varargs")
+	free := []string{"-ffreestanding", "-nostdinc", "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables"}
+	for _, tc := range []struct {
+		arch, goarch, qemu string
+		cflags             []string
+	}{
+		{"x86_64", "amd64", "", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), free...)},
+		{"aarch64", "arm64", os.Getenv("SLOWJS_QEMU_AARCH64"), ARM64CFlags},
+	} {
+		t.Run(tc.arch, func(t *testing.T) {
+			var runner []string
+			switch {
+			case runtime.GOOS == "linux" && runtime.GOARCH == tc.goarch:
+			case tc.qemu != "":
+				runner = []string{tc.qemu}
+			default:
+				t.Skip("no " + tc.arch + " linux host or emulator")
+			}
+			work := t.TempDir()
+			tool := func(name string, args ...string) string {
+				t.Helper()
+				out, err := exec.Command(name, args...).CombinedOutput()
+				if err != nil {
+					t.Fatalf("%s: %v\n%s", filepath.Base(name), err, out)
+				}
+				return string(out)
+			}
+			at := func(n string) string { return filepath.Join(work, n) }
+			clang := filepath.Join(llvm, "clang")
+			plain := append([]string{"--target=" + tc.arch + "-linux-gnu", "-O2"}, free...)
+			tool(clang, append(append([]string{}, plain...), "-c", "-o", at("native.o"), filepath.Join(src, "diff.c"))...)
+			tool(clang, append(append([]string{}, tc.cflags...), "-S", "-emit-llvm", "-o", at("diff.ll"), filepath.Join(src, "diff.c"))...)
+			rep := ParseReport(tool(filepath.Join(llvm, "opt"), "-load-pass-plugin", pass, "-passes=goasm-shadow-stack",
+				"-shadow-add-sp", "-shadow-varargs", "-shadow-report", "-S", "-o", at("diff.shadow.ll"), at("diff.ll")))
+			got := map[string]bool{}
+			for _, f := range rep.Varargs {
+				got[f] = true
+			}
+			for _, f := range []string{"mixed", "count", "twice", "helpers", "across", "fmt", "wrap"} {
+				if !got[f] {
+					t.Fatalf("%s not rewritten: %v", f, rep.Varargs)
+				}
+			}
+			tool(filepath.Join(llvm, "llc"), "-O2", "-filetype=obj", "-o", at("pass.o"), at("diff.shadow.ll"))
+			tool(clang, append(append([]string{}, plain...), "-c", "-o", at("main.o"), filepath.Join(src, "diff_main.c"))...)
+			tool(clang, append(append([]string{}, plain...), "-DPASS", "-c", "-o", at("main_pass.o"), filepath.Join(src, "diff_main.c"))...)
+			tool(lld, "-static", "-e", "_start", "-o", at("native"), at("main.o"), at("native.o"))
+			tool(lld, "-static", "-e", "_start", "-o", at("pass"), at("main_pass.o"), at("pass.o"))
+			exe := func(bin string) string { return tool(append(runner, bin)[0], append(runner, bin)[1:]...) }
+			want, have := exe(at("native")), exe(at("pass"))
+			if n := strings.Count(want, "\n"); n != 16 {
+				t.Fatalf("the native run printed %d results:\n%s", n, want)
+			}
+			if have != want {
+				t.Fatalf("the pass's block gives\n%s\nnative variable arguments give\n%s", have, want)
+			}
+			t.Logf("%s: %s", tc.arch, strings.ReplaceAll(strings.TrimSpace(want), "\n", " "))
+		})
+	}
+}
