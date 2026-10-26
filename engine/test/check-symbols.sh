@@ -45,6 +45,7 @@ allowed() { sed -n "s/^$1 \(.*\)/\1/p" "$libc/symbols.txt"; }
 allowed libc > "$work/libc.txt"
 allowed host > "$work/host.txt"
 cp "$work/host.txt" "$work/outside.txt"
+allowed shadow >> "$work/outside.txt"
 cat "$work/libc.txt" "$work/outside.txt" > "$work/all.txt"
 
 # The names the objects define (-g --defined-only) or use (-u), sorted, in the

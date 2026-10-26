@@ -894,8 +894,235 @@ static void test_async_context_job(void)
     JS_FreeRuntime(rt);
 }
 
+/* depth_reached runs a recursion until it throws and returns how many levels
+   it went down, or -1 when it did not end with a RangeError. The host's
+   JS_Eval counts one level and the global code one more, so a plain function
+   gets 2 short of the limit. */
+static int depth_reached(JSContext *ctx)
+{
+    static const char src[] =
+        "var depth = 0;\n"
+        "function down() { depth++; down() }\n"
+        "var got; try { down() } catch (e) { got = e instanceof RangeError ? depth : -1 }\n"
+        "got";
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<depth>", JS_EVAL_TYPE_GLOBAL);
+    int32_t d = -1;
+
+    if (JS_IsException(v))
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    else
+        JS_ToInt32(ctx, &d, v);
+    JS_FreeValue(ctx, v);
+    return d;
+}
+
+static JSValue js_set_depth(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv)
+{
+    int32_t n;
+
+    if (JS_ToInt32(ctx, &n, argv[0]))
+        return JS_EXCEPTION;
+    return JS_NewInt32(ctx, JS_SetMaxCallDepth(JS_GetRuntime(ctx), n));
+}
+
+/* The call depth bounds recursion: a plain function recurses to the limit
+   and gets a RangeError, as deep each time (every level that ends is
+   counted back), and the limit can be raised to JS_MAX_CALL_DEPTH_LIMIT and
+   no further, only while no code runs. */
+static int test_call_depth(void *unused)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx);
+    int d;
+
+    CHECK(JS_GetMaxCallDepth(rt) == JS_DEFAULT_MAX_CALL_DEPTH, "default %d", JS_GetMaxCallDepth(rt));
+    d = depth_reached(ctx);
+    CHECK(d == JS_DEFAULT_MAX_CALL_DEPTH - 2, "depth %d", d);
+    d = depth_reached(ctx);
+    CHECK(d == JS_DEFAULT_MAX_CALL_DEPTH - 2, "depth again %d", d);
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs after a RangeError");
+
+    CHECK(JS_SetMaxCallDepth(rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "raise to the limit");
+    d = depth_reached(ctx);
+    CHECK(d == JS_MAX_CALL_DEPTH_LIMIT - 2, "raised depth %d", d);
+    CHECK(JS_SetMaxCallDepth(rt, 0) < 0, "0 refused");
+    CHECK(JS_SetMaxCallDepth(rt, -1) < 0, "-1 refused");
+    CHECK(JS_SetMaxCallDepth(rt, JS_MAX_CALL_DEPTH_LIMIT + 1) < 0, "past the limit refused");
+    CHECK(JS_GetMaxCallDepth(rt) == JS_MAX_CALL_DEPTH_LIMIT, "unchanged %d", JS_GetMaxCallDepth(rt));
+    CHECK(JS_SetMaxCallDepth(rt, 100) == 0, "lower");
+    d = depth_reached(ctx);
+    CHECK(d == 98, "lowered depth %d", d);
+
+    JS_SetPropertyStr(ctx, global, "setDepth", JS_NewCFunction(ctx, js_set_depth, "setDepth", 1));
+    JS_FreeValue(ctx, global);
+    CHECK(eval_is(ctx, "String(setDepth(50))", "-1"), "refused while code runs");
+    CHECK(JS_GetMaxCallDepth(rt) == 100, "unchanged while running %d", JS_GetMaxCallDepth(rt));
+
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+static JSValue js_reenter(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    return JS_Call(ctx, argv[0], JS_UNDEFINED, 0, NULL);
+}
+
+static JSValue js_reeval(JSContext *ctx, JSValueConst this_val,
+                         int argc, JSValueConst *argv)
+{
+    size_t len;
+    const char *s = JS_ToCStringLen(ctx, &len, argv[0]);
+    JSValue v;
+
+    if (!s)
+        return JS_EXCEPTION;
+    v = JS_Eval(ctx, s, len, "<reeval>", JS_EVAL_TYPE_GLOBAL);
+    JS_FreeCString(ctx, s);
+    return v;
+}
+
+/* A host function that calls back into the engine adds a level for the
+   function and one for the entry: reenter(f) costs f, reenter and JS_Call,
+   and reeval("g()") costs g, reeval, JS_Eval and the global code of the
+   string. Both end with a RangeError and leave the count as it was. */
+static int test_call_depth_reentry(void *unused)
+{
+    static const char call_src[] =
+        "var n = 0; function f() { n++; return reenter(f) }\n"
+        "var got; try { f() } catch (e) { got = e instanceof RangeError ? n : -1 }\n"
+        "got";
+    static const char eval_src[] =
+        "var m = 0; function g() { m++; return reeval('g()') }\n"
+        "var got2; try { g() } catch (e) { got2 = e instanceof RangeError ? m : -1 }\n"
+        "got2";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx);
+    char want[32];
+
+    JS_SetPropertyStr(ctx, global, "reenter", JS_NewCFunction(ctx, js_reenter, "reenter", 1));
+    JS_SetPropertyStr(ctx, global, "reeval", JS_NewCFunction(ctx, js_reeval, "reeval", 1));
+    JS_FreeValue(ctx, global);
+    /* 2 levels for the entry and the global code, then 3 per f */
+    snprintf(want, sizeof(want), "%d", (JS_DEFAULT_MAX_CALL_DEPTH - 2 + 2) / 3);
+    CHECK(eval_is(ctx, call_src, want), "JS_Call from a host function");
+    /* 2, then 4 per g */
+    snprintf(want, sizeof(want), "%d", (JS_DEFAULT_MAX_CALL_DEPTH - 2 + 3) / 4);
+    CHECK(eval_is(ctx, eval_src, want), "JS_Eval from a host function");
+    CHECK(depth_reached(ctx) == JS_DEFAULT_MAX_CALL_DEPTH - 2, "the count is back");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* Recursions that go from C to C without JS_CallInternal crashed the native
+   host with a segfault: a chain of 300000 functions that Promise.prototype.finally
+   makes, and chains of iterator helpers, whose next calls the next of the
+   iterator below through the fast path of JS_IteratorNext2. Each now ends
+   with a RangeError, the runtime still runs code and recurses as deep as
+   before, and it frees with no block left. */
+static int test_call_depth_chains(void *unused)
+{
+    static const char *const srcs[] = {
+        "let f = () => 0;\n"
+        "for (let i = 0; i < 300000; i++) { let cap; Promise.prototype.finally.call({ then(a) { cap = a } }, f); f = cap }\n"
+        "let r; try { f(); r = 'no error' } catch (e) { r = e.name } r",
+#define ITER(n, step) \
+        "let it = [1, 2, 3].values();\n" \
+        "for (let i = 0; i < " #n "; i++) it = it." step ";\n" \
+        "let r; try { r = JSON.stringify(it.next()) } catch (e) { r = e.name } r"
+        ITER(30000, "take(5)"),
+        ITER(300000, "take(5)"),
+        ITER(30000, "map(x => x)"),
+        ITER(300000, "map(x => x)"),
+        ITER(30000, "filter(x => true)"),
+        ITER(300000, "filter(x => true)"),
+#undef ITER
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(srcs) / sizeof(srcs[0]); i++) {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        CHECK(eval_is(ctx, srcs[i], "RangeError"), "chain %zu", i);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "chain %zu: the runtime runs", i);
+        CHECK(depth_reached(ctx) == JS_DEFAULT_MAX_CALL_DEPTH - 2, "chain %zu: the count is back", i);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
+/* The recursions of C that make no call count the internal depth, at most
+   JS_MAX_INTERNAL_DEPTH levels. instanceof on a chain of 300000 bound
+   functions (with no Symbol.hasInstance on the way, nothing but C) and
+   Reflect.construct with one as the new target (its realm) recursed once per
+   function: clang makes loops of these tail calls, but the generated assembly
+   makes no tail call. Each function of a chain has its name deleted, or the
+   names, "bound bound ...", take memory by the square of the length. They
+   end with a RangeError now, as nesting past the limit does in JSON, the parser,
+   regexps, flat and a chain of proxies without traps, and the runtime still
+   runs code, nests as deep as before and frees with no block left. */
+static int test_internal_depth(void *unused)
+{
+    static const struct { const char *src, *want; } cases[] = {
+        { "const bind = Function.prototype.bind; let f = function () {};\n"
+          "for (let i = 0; i < 300000; i++) { f = bind.call(f); delete f.name; Object.setPrototypeOf(f, null) }\n"
+          "let r; try { r = String(({}) instanceof f) } catch (e) { r = e.name } r", "RangeError" },
+        { "let f = function () {};\n"
+          "for (let i = 0; i < 300000; i++) { f = f.bind(); delete f.name }\n"
+          "let r; try { r = String(Reflect.construct(Array, [], f).length) } catch (e) { r = e.name } r", "RangeError" },
+        { "let r; try { JSON.parse('['.repeat(100000) + ']'.repeat(100000)); r = 'parsed' } catch (e) { r = e.name } r", "RangeError" },
+        { "let a = []; for (let i = 0; i < 100000; i++) a = [a];\n"
+          "let r; try { r = JSON.stringify(a).length } catch (e) { r = e.name } r", "RangeError" },
+        { "let r; try { eval('('.repeat(100000) + '1' + ')'.repeat(100000)) } catch (e) { r = e.name } r", "RangeError" },
+        { "let r; try { eval('['.repeat(100000) + ']'.repeat(100000)) } catch (e) { r = e.name } r", "RangeError" },
+        { "let r; try { new RegExp('(?:'.repeat(100000) + ')'.repeat(100000)) } catch (e) { r = e.name + ': ' + e.message } r", "SyntaxError: stack overflow" },
+        { "let r; try { new RegExp('['.repeat(100000) + ']'.repeat(100000), 'v') } catch (e) { r = e.name + ': ' + e.message } r", "SyntaxError: stack overflow" },
+        { "let a = [1]; for (let i = 0; i < 100000; i++) a = [a];\n"
+          "let r; try { r = a.flat(Infinity).length } catch (e) { r = e.name } r", "RangeError" },
+        { "let p = {}; for (let i = 0; i < 300000; i++) p = new Proxy(p, {});\n"
+          "let r = []; for (const f of [() => p.x, () => 'x' in p, () => { p.x = 1 }, () => Object.getPrototypeOf(p),\n"
+          "  () => Object.keys(p), () => delete p.x, () => Object.isExtensible(p)])\n"
+          "  try { f(); r.push('ok') } catch (e) { r.push(e.name) }\n"
+          "r.join()", "RangeError,RangeError,RangeError,RangeError,RangeError,RangeError,RangeError" },
+    };
+    /* JSON.parse nests one level per array: JS_MAX_INTERNAL_DEPTH of them fit */
+    static const char nest_src[] =
+        "(() => {\n"
+        "  const nests = n => { try { JSON.parse('['.repeat(n) + ']'.repeat(n)); return true } catch (e) { return false } };\n"
+        "  let n = 1; while (nests(n + 1)) n++; return n })()";
+    char want[32];
+    size_t i;
+
+    snprintf(want, sizeof(want), "%d", JS_MAX_INTERNAL_DEPTH);
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        CHECK(eval_is(ctx, nest_src, want), "case %zu: JSON nests to the limit before", i);
+        CHECK(eval_is(ctx, cases[i].src, cases[i].want), "case %zu", i);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "case %zu: the runtime runs", i);
+        CHECK(eval_is(ctx, nest_src, want), "case %zu: JSON nests to the limit after", i);
+        CHECK(depth_reached(ctx) == JS_DEFAULT_MAX_CALL_DEPTH - 2, "case %zu: the call count is back", i);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
 int main(void)
 {
+    /* the deep recursions run on a thread with a stack large enough for them */
+    host_run_thread(test_call_depth, NULL);
+    host_run_thread(test_call_depth_reentry, NULL);
+    host_run_thread(test_call_depth_chains, NULL);
+    host_run_thread(test_internal_depth, NULL);
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();

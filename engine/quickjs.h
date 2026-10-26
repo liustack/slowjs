@@ -385,11 +385,24 @@ JSMemRange JS_ReleaseNextRange(JSRuntime *rt);
 /* the most freed small blocks of a size class the allocator keeps for the
    next allocation, 0 to 256. For tests and measuring */
 void JS_SetFrontCache(JSRuntime *rt, int max);
-/* use 0 to disable maximum stack size check */
-void JS_SetMaxStackSize(JSRuntime *rt, size_t stack_size);
-/* should be called when changing thread to update the stack top value
-   used to check stack overflow. */
-void JS_UpdateStackTop(JSRuntime *rt);
+/* The call depth: how many calls may run at once, each call of a function
+   (built-in functions included) and each entry of the host that runs code
+   (JS_Call, JS_Eval and the like) counting one. Past it a script gets a
+   RangeError. It starts at JS_DEFAULT_MAX_CALL_DEPTH. JS_SetMaxCallDepth
+   returns 0, or -1 and changes nothing when depth is not 1 to
+   JS_MAX_CALL_DEPTH_LIMIT or when the runtime is running code. */
+#define JS_DEFAULT_MAX_CALL_DEPTH 5000
+#define JS_MAX_CALL_DEPTH_LIMIT 10000
+int JS_SetMaxCallDepth(JSRuntime *rt, int depth);
+int JS_GetMaxCallDepth(JSRuntime *rt);
+/* The recursions of C that make no call (the parsers, JSON, modules, proxies
+   without a trap and the like) have a depth of their own, separate from the
+   call depth: at most this many levels at once. Past it a script gets a
+   RangeError (a SyntaxError from a regexp). It is fixed, so that the stack
+   the engine may use has a bound for any call depth. The parser counts about
+   14 levels for each nested parenthesis and 30 for each nested function
+   expression: tifa's example shop needs 484, test262 at most 960. */
+#define JS_MAX_INTERNAL_DEPTH 2000
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. */
 size_t JS_FreeRuntime(JSRuntime *rt);

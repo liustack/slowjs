@@ -56,8 +56,11 @@ int lre_exec(uint8_t **capture,
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 
-/* must be provided by the user, return non zero if overflow */
-int lre_check_stack_overflow(void *opaque, size_t alloca_size);
+/* must be provided by the user: count one level of the nesting of the
+   pattern, return non zero past the limit of the user, and then count
+   nothing. Every 0 it returns has its lre_depth_leave. */
+int lre_depth_enter(void *opaque);
+void lre_depth_leave(void *opaque);
 /* must be provided by the user, return non zero if time out */
 int lre_check_timeout(void *opaque);
 /* must be provided by the user: count 'cost' steps toward the interrupt

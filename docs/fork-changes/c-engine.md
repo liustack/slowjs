@@ -1,7 +1,8 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
+  - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
   - Asking why Atomics.wait throws in the C tree, or why test262.conf in engine/test excludes tests
   - Calling JS_NewClassID, JS_DumpMemoryUsage or abort in the C tree, or writing the Go side of them
   - Looking for what changes for users when the new engine replaces the one of lib/
@@ -20,6 +21,7 @@ read_when:
 | `JS_NewClassID(rt, &id)` counts per runtime | the Go side keeps its class IDs per VM | `api-test.c` |
 | `JS_DumpMemoryUsage(buf, size, ...)` writes to a buffer | no `FILE`. The Go side gets a string | `api-test.c` |
 | The tools that print are gone: `JS_Dump*`, `dump_token` and the like | the `DUMP_*` options of the C do not build | the build |
+| Recursion is bounded by counted depths, not by the stack: 5000 calls by default, at most 10000, and 2000 levels of C recursion | the Go engine counts 10000 TLS stack slots, so a script that recursed deeper than 5000 calls gets a `RangeError` sooner. `JS_SetMaxCallDepth` replaces `JS_SetMaxStackSize`. Chains of bound functions, `finally` and iterator helpers that crashed now throw | `unit.c`, test262 |
 
 ## The small libc
 
@@ -41,6 +43,21 @@ On the targets where the Go engine takes `Math` from Go's own `math` package tod
 ## Time, abort and the host
 
 `engine/host.h` declares what the engine asks of its host. `host_now(vm, kind)` gives the wall clock or a monotonic one in nanoseconds. `host_call(vm, this, argc, argv, magic)` calls a function of the host, and a magic below 0 is a request of the engine: `HOST_CALL_ABORT` for `abort()`. The `vm` is the one `JS_NewRuntime` was given, and `Date` asks the clock of the VM of its runtime. `Math.random` asks no clock: it starts from the seed `JS_NewRuntime` was given, the same in every context of the runtime. `abort` does not know its VM and passes 0. `host_memory_grow` is in `engine/heap.h` and comes with the allocator. Two kinds of `host_call` below 0 are the allocator's: `HOST_CALL_MEMORY_RELEASE` gives a dedicated chunk back and `HOST_CALL_MEMORY_REMAP` grows one (linux, when the host said so with `JS_SetHostRemap`). They run no user code and do not call back into the engine. The other callbacks (`host_poll`, `host_release`) come with the interrupt.
+
+## Depth of calls and of C recursion
+
+The engine never reads the stack pointer. The generated assembly runs on a Go stack, which moves and grows, and keeps the locals whose address is taken on a shadow stack of its own, so an address on the stack says nothing about how deep the engine is. It counts instead, with two counts in the runtime, and throws `RangeError: Maximum call stack size exceeded` past either. Neither is ever reset: each level that is entered is left on every path, and a level that cannot be entered counts nothing, so the error path recurses no further.
+
+- **The call depth** counts each call of a function while it runs. `JS_CallInternal` counts before it sends a call to a class, so a built-in function, a bound function and a proxy count a level as a JavaScript function does. A constructor that `JS_CallConstructorInternal` sends to a class counts there. The fast path of `JS_IteratorNext2`, which calls the C `next` of a built-in iterator directly, counts a level too: a chain of iterator helpers recursed through it with no other count. The exported functions that run code (`JS_Call`, `JS_CallConstructor`, `JS_CallConstructor2`, `JS_Invoke`, `JS_Eval`, `JS_EvalThis`, `JS_EvalFunction`, `JS_ExecutePendingJob`) count one level for the entry of the host, so that a host function that calls back into the engine adds a level even when the path to the next call is long, as in the parser of `JS_Eval`. The engine itself calls forms of them that do not count (`js_call` and the like). The limit is 5000 by default (`JS_DEFAULT_MAX_CALL_DEPTH`) and at most 10000 (`JS_MAX_CALL_DEPTH_LIMIT`). `JS_SetMaxCallDepth(rt, n)` sets it, and returns -1 and changes nothing when `n` is out of that range or the runtime is running code. A plain recursive function gets 2 levels short of the limit when the host started it with `JS_Eval`: one for the entry and one for the global code.
+- **The internal depth** counts the recursions of C that make no call: the parser (`js_parse_unary`, `js_parse_postfix_expr`, `js_parse_assign_expr2`, `js_parse_statement_or_decl`, `js_parse_destructuring_element`, `js_parse_function_decl2`, `js_parse_expr_binary`, `js_parse_logical_and_or`, which cut every cycle of it), `json_parse_value`, `internalize_json_property`, `js_json_to_str`, the parser of regexps (`re_parse_disjunction` and `re_parse_nested_class`, through `lre_depth_enter`), module linking and evaluation, `JS_ReadObjectRec` and `JS_WriteObjectRec`, `JS_FlattenIntoArray`, the methods of a proxy that go on to the target (all but call and construct, which count as calls), `JS_OrdinaryIsInstanceOf` on a bound function and `JS_GetFunctionRealm`. Each is a wrapper that counts around the original function, renamed with a `1` at the end. The limit is fixed, `JS_MAX_INTERNAL_DEPTH` (2000), so that the stack the engine can use has a bound for any call depth. A regexp too deep throws `SyntaxError: stack overflow`, as it did.
+
+How deep real code goes: the parser counts about 14 levels for each nested parenthesis, call or array and about 30 for each nested function expression. Rendering the pages of tifa's example shop takes the parser 484 levels deep, its MUI pages 440, the bench pages 238 (with the Intl polyfill), and all of test262 960. Everything else stays under 10 on those pages: JSON 6, regexps 189 counted on top of the parser that compiles them, `JS_GetFunctionRealm` 2. The call depth of those renders stays under 600.
+
+Each count also checks the stack left. `__shadow_remaining()` gives the bytes left: the generator turns it into the room left on the shadow stack, and the native test host gives the room left on its thread's stack. Entering either depth needs `JS_STACK_MARGIN` (64 KiB) left, and an `alloca` of a call (the locals of `JS_CallInternal`, the arguments of a bound function) needs its size on top, or it throws the same `RangeError`. So a dynamic alloca never crosses the end of the shadow stack, whatever the depths allow.
+
+What the counts do not cover yet: the recursions that end by the shape of the data (rope strings, Unicode tables, the printer) and the property layer, whose cycles exist only in the static call graph. They are bounded without a count, and the generator's proof that no cycle is left uncounted needs them rewritten first.
+
+The checks: `unit.c` (see [testing.md](../testing.md#the-c-tree-and-its-native-test-host)) and test262, whose 58 known errors stay the same.
 
 ## Atomics without threads
 

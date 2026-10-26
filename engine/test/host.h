@@ -17,10 +17,9 @@ uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename);
 int js_module_test_json(JSContext *ctx, JSValueConst attributes);
 void js_std_dump_error(JSContext *ctx);
 
-/* A runtime with the stack limit the host sets, and an interrupt that ends a
-   test running over two minutes. The C tree starts runtimes with no stack
-   limit, since the Go port counts its own stack slots. The host maps the
-   memory of the heap (host_memory_grow of heap.h) for it. */
+/* A runtime with an interrupt that ends a test running over two minutes, and
+   the call depth the engine starts with (JS_SetMaxCallDepth). The host maps
+   the memory of the heap (host_memory_grow of heap.h) for it. */
 JSRuntime *host_new_runtime(void);
 
 /* host_new_runtime with the seed of Math.random of your choice. The one above
@@ -35,6 +34,15 @@ extern _Thread_local long host_wall_reads;
    the VM of a runtime made by this host. */
 extern _Thread_local uint32_t host_wall_vm;
 uint32_t host_vm_id(JSRuntime *rt);
+
+/* The stack of a thread that runs the engine: enough for the deepest
+   recursion JS_SetMaxCallDepth allows, under the sanitizers too. The pages
+   are only reserved until a deep recursion touches them. */
+#define HOST_THREAD_STACK ((size_t)512 << 20)
+
+/* Runs fn(arg) in a thread with a stack of HOST_THREAD_STACK bytes and
+   returns what it returns. A main thread has 8 MiB. */
+int host_run_thread(int (*fn)(void *), void *arg);
 
 /* JS_FreeRuntime, then the memory of the runtime goes back to the system. A
    runtime that still has blocks in use after it freed everything is a leak:
