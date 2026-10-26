@@ -73,18 +73,28 @@ type Options struct {
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
 
 // New makes a runtime and a context.
-func New(o Options) (*VM, error) {
+func New(o Options) (_ *VM, err error) {
 	h, err := gohost.New(gohost.Options{StackSize: o.StackSize})
 	if err != nil {
 		return nil, err
 	}
+	// Unless New hands the VM back, the host forgets it and unmaps its
+	// memory, also when a panic or a Goexit leaves New: the caller has no VM
+	// to close. The engine is not freed then, since it stopped halfway.
+	handed := false
+	defer func() {
+		if !handed {
+			if cerr := h.Close(); err != nil {
+				err = errors.Join(err, cerr)
+			}
+		}
+	}()
 	base, _ := h.Stack()
 	v := &VM{h: h, base: base, sp: base + scratchSize}
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {
 		// The engine gave back what it had: the host unmaps the chunks.
-		err := fmt.Errorf("cengine: no runtime: %w", h.LastError())
-		return nil, errors.Join(err, h.Close())
+		return nil, fmt.Errorf("cengine: no runtime: %w", h.LastError())
 	}
 	if h.AllowRemap() {
 		v.enter(func() { JS_SetHostRemap(v.sp, v.rt, 1) })
@@ -93,8 +103,9 @@ func New(o Options) (*VM, error) {
 	if v.ctx == 0 {
 		var leaked uintptr
 		v.enter(func() { leaked = JS_FreeRuntime(v.sp, v.rt) })
-		return nil, errors.Join(fmt.Errorf("cengine: no context (%d blocks left)", leaked), h.Close())
+		return nil, fmt.Errorf("cengine: no context (%d blocks left)", leaked)
 	}
+	handed = true
 	return v, nil
 }
 
@@ -335,11 +346,21 @@ func (v *VM) Interrupt() { v.h.Interrupt() }
 // is halfway: its memory is unmapped all the same.
 func (v *VM) Close() (leaked uintptr, err error) {
 	if !v.h.Broken() {
+		done := false
+		defer func() {
+			if !done {
+				// A panic or a Goexit left the engine halfway: it is not
+				// entered again, the host still gives the memory back,
+				// and the panic goes on.
+				v.h.Close()
+			}
+		}()
 		v.teardowns++
 		v.enter(func() {
 			JS_FreeContext(v.sp, v.ctx)
 			leaked = JS_FreeRuntime(v.sp, v.rt)
 		})
+		done = true
 	}
 	return leaked, v.h.Close()
 }
