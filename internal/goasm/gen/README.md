@@ -108,7 +108,10 @@ them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
 in `testdata/reject` through the real pipeline, and with `SLOWJS_LLD`
 (ld.lld) as well, `TestNarrowArgs` runs `testdata/narrow` natively and
-generated. `internal/enginecmp` measures
+generated, and `TestSampleRuns` does the same for each sample of
+`testdata/run`: each defines `long run(long *r, int one)`, is run natively
+(also under UBSan) and from Go in body, pn and pn poison builds, and must print
+the same lines, and the post-link check must pass on it. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
 
 ## The whole engine
