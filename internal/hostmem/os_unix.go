@@ -9,8 +9,9 @@ package hostmem
 
 import "golang.org/x/sys/unix"
 
-// The calls to the OS, each of which checks fault first. The *Ptr forms of x/sys
-// keep no table of mappings, so VMs on other goroutines share no lock.
+// The calls to the OS, each of which asks faulted first: a test can fail them,
+// and in the normal build faulted does nothing. The *Ptr forms of x/sys keep
+// no table of mappings, so VMs on other goroutines share no lock.
 
 func sysMmap(call string, size uintptr, prot, flags int) (uintptr, error) {
 	if err := faulted(call, 0, size); err != nil {
