@@ -1027,8 +1027,10 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
                 report_fatal_error(Twine("register-entry leaf calls a unified function: ") + F.getName());
             }
           }
+        // "reserved": no frame is set up, and llc never allocates RBP,
+        // which Go keeps as its frame pointer.
         if (AddSP)
-          F.addFnAttr("frame-pointer", "none");
+          F.addFnAttr("frame-pointer", "reserved");
         continue;
       }
       if (F.arg_size() == 0 || !F.getArg(0)->getType()->isPointerTy())
