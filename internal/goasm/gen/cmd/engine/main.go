@@ -48,6 +48,8 @@ var (
 	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
 	nonFormat = flag.String("non-format-variadic", strings.Join(gen.EngineNonFormatVariadic, ","), "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
 	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
+	sizeLog2  = flag.Int("shadow-size-log2", 20, "log2 of the shadow-stack region the engine is generated for (the host's region must be at least as big); engine_decl.go records it")
+	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 )
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
@@ -80,7 +82,7 @@ func main() {
 	// 1. Compile every C file to IR.
 	type src struct{ path, group string }
 	var srcs []src
-	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa"} {
+	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa", "heap", "tlsf"} {
 		srcs = append(srcs, src{filepath.Join(*engineDir, f+".c"), f})
 	}
 	for _, dir := range []string{"libc/string", "libc/math"} {
@@ -89,7 +91,9 @@ func main() {
 			srcs = append(srcs, src{m, "libc"})
 		}
 	}
-	srcs = append(srcs, src{filepath.Join(*engineDir, "libc/math.c"), "libc"}, src{filepath.Join(*engineDir, "libc/stdio.c"), "libc"})
+	for _, f := range []string{"math.c", "stdio.c", "abort.c"} {
+		srcs = append(srcs, src{filepath.Join(*engineDir, "libc", f), "libc"})
+	}
 	if *srcList != "" {
 		srcs = nil
 		for _, f := range strings.Split(*srcList, ",") {
@@ -102,7 +106,7 @@ func main() {
 	}
 	libc := filepath.Join(*engineDir, "libc")
 	var lls []string
-	group := map[string]string{}
+	defined := make([][]string, len(srcs))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan bool, *jobs)
@@ -113,7 +117,9 @@ func main() {
 		lls = append(lls, ll)
 		args := append([]string{}, cflags...)
 		if s.group == "libc" {
-			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-include", filepath.Join(libc, "internal/features.h"))
+			// abort.c asks the host (engine/host.h).
+			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-I"+*engineDir, "-include",
+				filepath.Join(libc, "internal/features.h"))
 		} else {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
 		}
@@ -154,10 +160,12 @@ func main() {
 				mu.Unlock()
 			}
 			b, _ := os.ReadFile(ll)
-			mu.Lock()
+			var names []string
 			for _, m := range reDefine.FindAllStringSubmatch(string(b), -1) {
-				group[strings.Trim(m[1], `"`)] = s.group
+				names = append(names, strings.Trim(m[1], `"`))
 			}
+			mu.Lock()
+			defined[i] = names
 			mu.Unlock()
 		}(s, ll, args)
 	}
@@ -165,6 +173,11 @@ func main() {
 	if cerr != nil {
 		die(cerr)
 	}
+	groups := make([]string, len(srcs))
+	for i, s := range srcs {
+		groups[i] = s.group
+	}
+	group := firstGroups(defined, groups)
 	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
@@ -188,9 +201,18 @@ func main() {
 		maxInt = map[string]int{"amd64": 10, "arm64": 6}[*arch]
 	}
 	shadowLL := filepath.Join(*work, "shadow.ll")
+	// The probe module gives llc's registers of every unified entry's
+	// arguments and result to the post-link check.
+	probesLL := filepath.Join(*work, "probes.ll")
+	os.Remove(probesLL)
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
-		"-shadow-icall-sigs"}
+		"-shadow-icall-sigs", fmt.Sprintf("-shadow-size-log2=%d", *sizeLog2), "-shadow-probes=" + probesLL}
+	if os.Getenv("GEN_KEEP_NARROW") != "" {
+		// Negative build: narrow integers as the generator once took them
+		// (gen.SigFromCode reads the same switch).
+		passArgs = append(passArgs, "-shadow-keep-narrow")
+	}
 	if *keepGoing {
 		passArgs = append(passArgs, "-shadow-keep-going")
 	}
@@ -226,11 +248,21 @@ func main() {
 	os.Remove(asmPath)
 	os.Remove(objPath)
 	llc := filepath.Join(*llvm, "llc")
-	// The pass's shared object also holds the llc plugin that writes a
-	// symbol with its signature at every indirect call.
-	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-load", *pass}
+	// The pass's shared object also holds the llc plugins that write a
+	// symbol with its signature at every indirect call and the registers
+	// llc assigns (facts.cpp). Every function stays in .text: llc would put
+	// a cold one (abort) in .text.unlikely., which the lowering and the
+	// check take for one text.
+	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
+		"-load", *pass}
+	factsPath := filepath.Join(*work, "engine.facts")
+	probeFacts := filepath.Join(*work, "probes.facts")
+	os.Remove(factsPath)
+	os.Remove(probeFacts)
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
-	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels", "-o", objPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels",
+		"-goasm-facts="+factsPath, "-o", objPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-goasm-facts="+probeFacts, "-o", os.DevNull, probesLL)...))
 	tLLVM := time.Since(t0)
 
 	allow := map[string]bool{}
@@ -302,6 +334,10 @@ func main() {
 	if *mode == "pn" {
 		amd.PreserveNone = true
 	}
+	if *poisonF && *verifyBin != "" {
+		die(fmt.Errorf("-poison with -verify-bin: the post-link check takes no poison build"))
+	}
+	amd.Poison = *poisonF
 	variadic := map[string]bool{}
 	for name, code := range rep.Sigs {
 		if strings.Contains(code, "...") {
@@ -397,9 +433,17 @@ func main() {
 		if vpkg == "" {
 			vpkg = *pkg
 		}
+		probes, err := gen.ParseRegFacts(readFile(probeFacts))
+		if err != nil {
+			die(err)
+		}
+		facts, err := gen.ParseRegFacts(readFile(factsPath))
+		if err != nil {
+			die(err)
+		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", All: *verifyAll})
+			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
@@ -511,6 +555,22 @@ func allowAll(allow map[string]bool, rep *gen.Report) map[string]bool {
 	return m
 }
 
+// firstGroups gives each function the group of the first file that defines
+// it, in the order llvm-link takes the files (a static of the same name in a
+// later file gets a new name there), so the files come out the same each
+// run whatever order the compiles finish in.
+func firstGroups(defined [][]string, groups []string) map[string]string {
+	group := map[string]string{}
+	for i, names := range defined {
+		for _, n := range names {
+			if _, ok := group[n]; !ok {
+				group[n] = groups[i]
+			}
+		}
+	}
+	return group
+}
+
 func dedupe(s []string) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -531,6 +591,10 @@ func layoutOf(s gen.Sig) ([]int, int, int) { return gen.Layout(s) }
 func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap, rep *gen.Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "// Code generated by internal/goasm/gen. DO NOT EDIT.\n\npackage %s\n\n", *pkg)
+	fmt.Fprintf(&b, "// shadowSizeLog2 is log2 of the shadow-stack region the engine was generated\n"+
+		"// for (-shadow-size-log2): it takes the space left from the stack pointer\n"+
+		"// and this size, so the host's region must be aligned to it and no smaller.\n"+
+		"const shadowSizeLog2 = %d\n\n", *sizeLog2)
 	decl := func(name string) {
 		s := sigs[name]
 		var ps []string

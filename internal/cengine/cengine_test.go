@@ -307,6 +307,22 @@ func TestDeepRecursion(t *testing.T) {
 	}
 }
 
+// TestStackSmallerThanGenerated: New refuses a shadow stack smaller than the
+// region the engine was generated for.
+func TestStackSmallerThanGenerated(t *testing.T) {
+	if shadowSizeLog2 <= 16 {
+		t.Skip("the engine was generated for the smallest stack the host makes")
+	}
+	v, err := New(Options{StackSize: 1 << (shadowSizeLog2 - 1)})
+	if err == nil {
+		closeVM(t, v)
+		t.Fatal("New took a stack half the size the engine was generated for")
+	}
+	if !strings.Contains(err.Error(), "generated for") {
+		t.Fatalf("New fails for another reason: %v", err)
+	}
+}
+
 // TestGCWhileRunning runs scripts while another goroutine keeps starting
 // collections. Each stops the engine's goroutine at a function prologue, and
 // may shrink its stack with engine frames on it: the results must not

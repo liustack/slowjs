@@ -17,12 +17,15 @@
 // other llc instruction must appear in order with the same meaning. The read-
 // only data is checked the same way: every byte and every relocated pointer
 // of engine_rodata in the binary, and every constant pool and jump table a
-// function carries, against llc's object. The signatures are the pass's,
-// taken on trust: EngineCheck.Sigs for each function and direct call. For
-// an indirect call LLVM itself binds the signature to the call (a kcfi type
-// id the pass sets, which llc keeps on the machine call and the plugin in
-// pass/icall.cpp names in a symbol at it), and the check reads it from that
-// symbol in llc's object.
+// function carries, against llc's object. The signatures are the pass's:
+// EngineCheck.Sigs for each function and direct call. For an indirect call
+// LLVM itself binds the signature to the call (a kcfi type id the pass sets,
+// which llc keeps on the machine call and the plugin in pass/icall.cpp names
+// in a symbol at it), and the check reads it from that symbol in llc's
+// object. A signature gives only the number of argument and result words:
+// which register holds each word is what llc decided (EngineCheck.Probes and
+// Facts), and the check holds every entry load, argument move, result move
+// and the registers llc's code reads at an entry and after a call to it.
 package gen
 
 import (
@@ -53,6 +56,12 @@ type EngineCheck struct {
 	Sigs         map[string]Sig
 	Leaves       map[string]bool
 	PreserveNone bool
+	// Probes and Facts are what llc itself decided about registers
+	// (facts.go): Probes from llc's run over the probe module of
+	// -shadow-probes, which gives the argument and result registers of each
+	// unified definition, Facts from the run that wrote LLC, which gives
+	// each function's calls, returns and live registers.
+	Probes, Facts RegFacts
 	// All requires every function to be in the binary and checked.
 	All bool
 	// HostPoll says the engine calls host_poll even though llc's object does
@@ -156,8 +165,8 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 
 // checkMeta holds a function's record to what the pass says of it: its
 // name and kind, its signature (the number and class of its parameters and
-// its result, from which the check derives the entry loads and result
-// stores) and its calling convention. The record's own frame is the one the
+// its result, which give how many words the entry loads and the returns
+// store, in the registers llc chose) and its calling convention. The record's own frame is the one the
 // emitted function declares.
 func (k *checker) checkMeta(m Meta) error {
 	r := m.Rec
@@ -564,73 +573,13 @@ var calleeSavedRegs = map[x86asm.Reg]bool{x86asm.RBX: true, x86asm.R12: true, x8
 var frameRegs = map[x86asm.Reg]bool{x86asm.RSP: true, x86asm.ESP: true, x86asm.SP: true, x86asm.SPB: true,
 	x86asm.RBP: true, x86asm.EBP: true, x86asm.BP: true, x86asm.BPB: true}
 
-// argWords gives the native register of each argument word of sig, in order
-// (one per 8-byte slot of the Go argument area), and whether it is an SSE one.
-func argWords(sig Sig, pn bool) ([]x86asm.Reg, []bool, error) {
-	ints := []x86asm.Reg{x86asm.RDI, x86asm.RSI, x86asm.RDX, x86asm.RCX, x86asm.R8, x86asm.R9}
-	if pn {
-		ints = []x86asm.Reg{x86asm.R12, x86asm.R13, x86asm.R14, x86asm.R15, x86asm.RDI, x86asm.RSI, x86asm.RDX,
-			x86asm.RCX, x86asm.R8, x86asm.R9, x86asm.R11, x86asm.RAX}
-	}
-	sses := []x86asm.Reg{x86asm.X0, x86asm.X1, x86asm.X2, x86asm.X3, x86asm.X4, x86asm.X5, x86asm.X6, x86asm.X7}
-	var regs []x86asm.Reg
-	var sse []bool
-	ni, nx := 0, 0
+// sigWords is the number of argument words of a signature.
+func sigWords(sig Sig) int {
+	n := 0
 	for _, p := range sig.Params {
-		switch p {
-		case I64, Ptr, JSV:
-			n := 1
-			if p == JSV {
-				n = 2
-			}
-			for w := 0; w < n; w++ {
-				if ni >= len(ints) {
-					return nil, nil, fmt.Errorf("too many integer arguments")
-				}
-				regs, sse = append(regs, ints[ni]), append(sse, false)
-				ni++
-			}
-		case F64:
-			if nx >= len(sses) {
-				return nil, nil, fmt.Errorf("too many floating-point arguments")
-			}
-			regs, sse = append(regs, sses[nx]), append(sse, true)
-			nx++
-		default:
-			return nil, nil, fmt.Errorf("bad parameter type")
-		}
+		n += p.words()
 	}
-	return regs, sse, nil
-}
-
-// result is one register of a function's result.
-type result struct {
-	r   x86asm.Reg
-	sse bool
-}
-
-// results gives the registers a native body leaves its result in, in the
-// order of the result's words.
-func results(t Type) []result {
-	switch t {
-	case I64, Ptr:
-		return []result{{x86asm.RAX, false}}
-	case F64:
-		return []result{{x86asm.X0, true}}
-	case JSV:
-		return []result{{x86asm.RAX, false}, {x86asm.RDX, false}}
-	}
-	return nil
-}
-
-func retWords(t Type) int {
-	switch t {
-	case Void:
-		return 0
-	case JSV:
-		return 2
-	}
-	return 1
+	return n
 }
 
 func memOf(in x86asm.Inst) (x86asm.Mem, int, bool) {
@@ -1023,10 +972,15 @@ type matcher struct {
 	rets     []uint64 // binary targets of the jumps that replace returns
 	calls    int
 	icalls   int // indirect calls, each with LLVM's signature symbol
+	nrets    int
 	refs     int
-	argBase  int64
-	body     uint64 // address of the body in the binary
-	lowSym   elf.Symbol
+	// What llc decided for the function (its facts) and for its probe:
+	// the registers of its argument words and of its result.
+	facts     *FuncFacts
+	args, res []x86asm.Reg
+	argBase   int64
+	body      uint64 // address of the body in the binary
+	lowSym    elf.Symbol
 }
 
 func (m *matcher) next(what string) (insn, error) {
@@ -1109,6 +1063,9 @@ func (k *checker) checkUnified(meta Meta) error {
 		argBase += 8
 	}
 	m := &matcher{k: k, r: r, L: L, B: B, bStart: make([]int, len(L.ins)), argBase: argBase, body: body, lowSym: lowSym}
+	if err := m.llcRegs(); err != nil {
+		return err
+	}
 	for i := range m.bStart {
 		m.bStart[i] = -1
 	}
@@ -1154,6 +1111,10 @@ func (k *checker) checkUnified(meta Meta) error {
 		return fmt.Errorf("the lowering declared %d calls and %d references, llc's object has %d and %d",
 			len(r.Calls), len(r.Refs), m.calls, m.refs)
 	}
+	if m.calls != len(m.facts.Calls) || m.nrets != len(m.facts.Rets) {
+		return fmt.Errorf("llc's facts list %d calls and %d returns, its object has %d and %d",
+			len(m.facts.Calls), len(m.facts.Rets), m.calls, m.nrets)
+	}
 	// Every signature symbol in the function sits on one of its indirect
 	// calls.
 	lsym, _ := k.llc.label(r.Name)
@@ -1167,6 +1128,37 @@ func (k *checker) checkUnified(meta Meta) error {
 		return fmt.Errorf("llc's object has %d signature symbols in the function, on %d indirect calls", syms, m.icalls)
 	}
 	return m.bodyData()
+}
+
+// llcRegs reads what llc decided for the function: the registers of its
+// argument words and of its result from its probe, which reads every
+// argument (the function's own live-in list leaves out the ones it does not
+// read), and its calls, returns and live registers. The signature gives
+// only how many words there are.
+func (m *matcher) llcRegs() error {
+	name := m.r.Name
+	p, ok := m.k.c.Probes[ProbePrefix+name]
+	if !ok {
+		return fmt.Errorf("llc gave its probe (-shadow-probes) no registers")
+	}
+	if m.facts, ok = m.k.c.Facts[name]; !ok {
+		return fmt.Errorf("llc wrote no register facts of it")
+	}
+	if len(p.Rets) != 1 {
+		return fmt.Errorf("its probe has %d returns", len(p.Rets))
+	}
+	var err error
+	if m.args, err = x86Regs(p.Args); err != nil {
+		return err
+	}
+	if m.res, err = x86Regs(p.Rets[0]); err != nil {
+		return err
+	}
+	if len(m.args) != sigWords(m.r.Sig) || len(m.res) != m.r.Sig.Ret.words() {
+		return fmt.Errorf("llc passes its arguments in %v and returns its result in %v, its signature %v has %d and %d words",
+			m.args, m.res, m.r.Sig, sigWords(m.r.Sig), m.r.Sig.Ret.words())
+	}
+	return nil
 }
 
 func alignUp64(x, a uint64) uint64 { return (x + a - 1) / a * a }
@@ -1264,18 +1256,31 @@ func (m *matcher) run() error {
 	if strings.Join(pushed, ",") != strings.Join(m.r.Pushed, ",") || local != m.r.Local {
 		return fmt.Errorf("llc's prologue pushes %v and reserves %d, the lowering declared %v and %d", pushed, local, m.r.Pushed, m.r.Local)
 	}
-	// The entry loads each argument from the Go argument area.
-	regs, sse, err := argWords(m.r.Sig, m.r.PreserveNone)
-	if err != nil {
-		return err
-	}
-	for w := range regs {
+	// The entry loads each argument word from the Go argument area into
+	// the register llc reads it from, and llc's code reads no other
+	// register before writing it: its prologue's pushes, which the lowering
+	// drops, are the only other readers at the entry.
+	loaded := map[x86asm.Reg]bool{}
+	for w, reg := range m.args {
 		b, err := m.next("an argument load")
 		if err != nil {
 			return err
 		}
-		if !isStackMove(b.in, false, regs[w], m.argBase+int64(8*w), sse[w]) {
-			return fmt.Errorf("entry at %#x: %v is not the load of argument word %d into %v", b.at, b.in, w, regs[w])
+		if !isStackMove(b.in, false, reg, m.argBase+int64(8*w), isXMM(reg)) {
+			return fmt.Errorf("entry at %#x: %v is not the load of argument word %d into %v, where llc reads it", b.at, b.in, w, reg)
+		}
+		loaded[reg] = true
+	}
+	for _, p := range m.r.Pushed {
+		loaded[gpRegs[p]] = true
+	}
+	entry, err := x86Regs(m.facts.Entry)
+	if err != nil {
+		return err
+	}
+	for _, reg := range entry {
+		if !loaded[reg] {
+			return fmt.Errorf("llc's code reads %v at the entry before writing it, and no argument load sets it", reg)
 		}
 	}
 	for i < len(L) {
@@ -1604,18 +1609,29 @@ func (m *matcher) dataRef(x insn, r *relAt, mem x86asm.Mem) (uint64, error) {
 // ret matches a return: the result stored into the Go result slot, then a
 // jump to the Go epilogue (checked once the body is done).
 func (m *matcher) ret() error {
-	regs, _, err := argWords(m.r.Sig, m.r.PreserveNone)
+	if m.nrets >= len(m.facts.Rets) {
+		return fmt.Errorf("a return llc's facts do not list")
+	}
+	uses, err := x86Regs(m.facts.Rets[m.nrets])
 	if err != nil {
 		return err
 	}
-	off := m.argBase + int64(8*len(regs))
-	for w, s := range results(m.r.Sig.Ret) {
+	m.nrets++
+	stored := map[x86asm.Reg]bool{}
+	off := m.argBase + int64(8*len(m.args))
+	for w, reg := range m.res {
 		b, err := m.next("a result store")
 		if err != nil {
 			return err
 		}
-		if !isStackMove(b.in, true, s.r, off+int64(8*w), s.sse) {
-			return fmt.Errorf("return: %v at %#x is not the store of %v to the result slot", b.in, b.at, s.r)
+		if !isStackMove(b.in, true, reg, off+int64(8*w), isXMM(reg)) {
+			return fmt.Errorf("return: %v at %#x is not the store of %v to the result slot", b.in, b.at, reg)
+		}
+		stored[reg] = true
+	}
+	for _, reg := range uses {
+		if !stored[reg] {
+			return fmt.Errorf("llc's return gives %v, which the result stores do not take", reg)
 		}
 	}
 	b, err := m.next("the jump to the epilogue")
@@ -1637,6 +1653,10 @@ func (m *matcher) call(x insn, r *relAt) error {
 		return fmt.Errorf("a call the lowering did not declare")
 	}
 	c := m.r.Calls[m.calls]
+	if m.calls >= len(m.facts.Calls) {
+		return fmt.Errorf("a call llc's facts do not list")
+	}
+	cf := m.facts.Calls[m.calls]
 	m.calls++
 	switch a := x.in.Args[0].(type) {
 	case x86asm.Rel:
@@ -1668,6 +1688,9 @@ func (m *matcher) call(x insn, r *relAt) error {
 			}
 		}
 		name := c.Target
+		if cf.Target != name {
+			return fmt.Errorf("llc's facts give this call to %s, the lowering %s", cf.Target, name)
+		}
 		addr, err := k.funcAddr(name)
 		if err != nil {
 			return err
@@ -1696,7 +1719,23 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if !ok || !sameSig(sig, c.Sig) {
 			return fmt.Errorf("call to %s marshalled as %v, its signature is %v", name, c.Sig, sig)
 		}
-		return m.marshal(c.Sig, direct)
+		// A call of a unified definition passes its words in the registers
+		// the definition reads them from: llc assigns both from the type
+		// of each, and a call whose type is not the callee's would differ.
+		if p, ok := k.c.Probes[ProbePrefix+name]; ok {
+			pa, err := x86Regs(p.Args)
+			if err != nil {
+				return err
+			}
+			ca, err := x86Regs(cf.Args)
+			if err != nil {
+				return err
+			}
+			if fmt.Sprint(pa) != fmt.Sprint(ca) {
+				return fmt.Errorf("llc passes the call's arguments in %v, %s reads them from %v", ca, name, pa)
+			}
+		}
+		return m.marshal(c.Sig, cf, direct)
 	case x86asm.Reg:
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
@@ -1708,8 +1747,11 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if !sameSig(bound, c.Sig) {
 			return fmt.Errorf("LLVM bound the signature %v to llc's call through %v, the lowering marshalled it as %v", bound, a, c.Sig)
 		}
+		if want := fmt.Sprintf("*%d", k.llc.icall[x.at].id); cf.Target != want {
+			return fmt.Errorf("llc's facts give this call to %s, its signature symbol has type id %s", cf.Target, want)
+		}
 		m.icalls++
-		return m.marshal(c.Sig, func(b insn) error {
+		return m.marshal(c.Sig, cf, func(b insn) error {
 			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
 			}
@@ -1753,9 +1795,12 @@ func sameSig(a, b Sig) bool {
 }
 
 // marshal matches the glue around a unified call: the saves, a store of each
-// argument word into the outgoing area, the call, the result and the
-// restores.
-func (m *matcher) marshal(sig Sig, call func(insn) error) error {
+// argument word into the outgoing area from the register llc put it in, the
+// call, the load of each result word into the register llc takes it from,
+// and the restores. llc's code reads nothing after the call before writing
+// it but the result and the saved registers: the callee, Go code or a
+// unified function, keeps no register.
+func (m *matcher) marshal(sig Sig, cf CallFacts, call func(insn) error) error {
 	r := m.r
 	for k, s := range r.Saved {
 		b, err := m.next("a register save")
@@ -1766,20 +1811,32 @@ func (m *matcher) marshal(sig Sig, call func(insn) error) error {
 			return fmt.Errorf("call: %v at %#x is not the save of %s", b.in, b.at, s)
 		}
 	}
-	regs, sse, err := argWords(sig, r.PreserveNone)
+	args, err := x86Regs(cf.Args)
 	if err != nil {
 		return err
 	}
-	if 8*(len(regs)+retWords(sig.Ret)) > r.SaveBase {
-		return fmt.Errorf("call: the %d-word argument area reaches the saved registers at %d", len(regs)+retWords(sig.Ret), r.SaveBase)
+	defs, err := x86Regs(cf.Defs)
+	if err != nil {
+		return err
 	}
-	for w := range regs {
+	after, err := x86Regs(cf.After)
+	if err != nil {
+		return err
+	}
+	if len(args) != sigWords(sig) || len(defs) != sig.Ret.words() {
+		return fmt.Errorf("call: llc passes the arguments in %v and takes the result from %v, the signature %v has %d and %d words",
+			args, defs, sig, sigWords(sig), sig.Ret.words())
+	}
+	if 8*(len(args)+len(defs)) > r.SaveBase {
+		return fmt.Errorf("call: the %d-word argument area reaches the saved registers at %d", len(args)+len(defs), r.SaveBase)
+	}
+	for w, reg := range args {
 		b, err := m.next("an argument move")
 		if err != nil {
 			return err
 		}
-		if !isStackMove(b.in, true, regs[w], int64(8*w), sse[w]) {
-			return fmt.Errorf("call: %v at %#x is not the move of argument word %d from %v", b.in, b.at, w, regs[w])
+		if !isStackMove(b.in, true, reg, int64(8*w), isXMM(reg)) {
+			return fmt.Errorf("call: %v at %#x is not the move of argument word %d from %v", b.in, b.at, w, reg)
 		}
 	}
 	b, err := m.next("the call")
@@ -1789,14 +1846,24 @@ func (m *matcher) marshal(sig Sig, call func(insn) error) error {
 	if err := call(b); err != nil {
 		return err
 	}
-	off := int64(8 * len(regs))
-	for w, x := range results(sig.Ret) {
+	set := map[x86asm.Reg]bool{}
+	off := int64(8 * len(args))
+	for w, reg := range defs {
 		b, err := m.next("a result load")
 		if err != nil {
 			return err
 		}
-		if !isStackMove(b.in, false, x.r, off+int64(8*w), x.sse) {
-			return fmt.Errorf("call: %v at %#x is not the load of the result into %v", b.in, b.at, x.r)
+		if !isStackMove(b.in, false, reg, off+int64(8*w), isXMM(reg)) {
+			return fmt.Errorf("call: %v at %#x is not the load of the result into %v", b.in, b.at, reg)
+		}
+		set[reg] = true
+	}
+	for _, s := range r.Saved {
+		set[gpRegs[s]] = true
+	}
+	for _, reg := range after {
+		if !set[reg] {
+			return fmt.Errorf("call: llc's code reads %v after the call before writing it, which neither a result load nor a restore sets", reg)
 		}
 	}
 	for k, s := range r.Saved {
@@ -1918,7 +1985,9 @@ func (k *checker) checkLeaf(meta Meta) error {
 	if err != nil {
 		return err
 	}
-	if g.split || g.frame != int64(r.Frame) || g.bp != (r.Frame > 0) {
+	// Go's assembler saves BP in every function with a frame or a call, so
+	// also in a leaf that saves nothing but calls another leaf.
+	if g.split || g.frame != int64(r.Frame) || g.bp != (r.Frame > 0 || len(r.Calls) > 0) {
 		return fmt.Errorf("Go prologue of a leaf: split %v, BP %v, frame %d (declared %d)", g.split, g.bp, g.frame, r.Frame)
 	}
 	body := alignUp64(g.afterLead, 16)
@@ -1944,6 +2013,12 @@ func (k *checker) checkLeaf(meta Meta) error {
 	m := &matcher{k: k, r: r, L: L, B: B, bStart: make([]int, len(L.ins)), body: body, lowSym: lowSym}
 	for i := range m.bStart {
 		m.bStart[i] = -1
+	}
+	// A leaf keeps C's registers, so only the targets and the counts of
+	// its calls and returns are held to llc's facts.
+	var ok bool
+	if m.facts, ok = k.c.Facts[r.Name]; !ok {
+		return fmt.Errorf("llc wrote no register facts of it")
 	}
 	// The saves are llc's pushes at the start, each to its own 8-byte slot
 	// inside the Go frame, the first push highest as on the native stack.
@@ -2013,6 +2088,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 				return fmt.Errorf("leaf return: %v at %#x is not a jump to the epilogue", b.in, b.at)
 			}
 			m.rets = append(m.rets, uint64(int64(b.at)+int64(b.in.Len)+int64(rel)))
+			m.nrets++
 			continue
 		case x86asm.CALL:
 			if err := m.call(x, k.llc.relIn(k.llc.text, x)); err != nil {
@@ -2054,6 +2130,10 @@ func (k *checker) checkLeaf(meta Meta) error {
 	}
 	if m.calls != len(r.Calls) {
 		return fmt.Errorf("the lowering declared %d calls, llc's object has %d", len(r.Calls), m.calls)
+	}
+	if m.calls != len(m.facts.Calls) || m.nrets != len(m.facts.Rets) {
+		return fmt.Errorf("llc's facts list %d calls and %d returns, its object has %d and %d",
+			len(m.facts.Calls), len(m.facts.Rets), m.calls, m.nrets)
 	}
 	return nil
 }

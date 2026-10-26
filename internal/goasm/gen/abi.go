@@ -87,8 +87,10 @@ type Arch interface {
 // nothing. The entry still loads the arguments only after Go's prologue,
 // which uses R12 and R14. SaveAll saves all five SysV callee-saved
 // registers around every unified call instead of the ones the body uses
-// (for the cost comparison only).
-type AMD64Arch struct{ PreserveNone, SaveAll bool }
+// (for the cost comparison only). Poison is a negative build: it writes
+// garbage into the registers at each entry, after each unified call and at
+// each return (see poison in lower.go).
+type AMD64Arch struct{ PreserveNone, SaveAll, Poison bool }
 
 func AMD64() AMD64Arch { return AMD64Arch{} }
 
