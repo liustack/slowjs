@@ -5,8 +5,8 @@
  * root of this repository.
  */
 /*
- * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage
- * and JS_NewClassID. api-test.sh builds and runs it.
+ * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
+ * JS_NewClassID and Atomics. api-test.sh builds and runs it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -200,6 +200,79 @@ static void test_tenths(void)
     CHECK(strstr(text, "nan average slack)") != NULL, "0/0 is not written as nan");
 }
 
+/* The checks of Atomics: nothing waits, so wait throws and notify wakes nobody.
+   They are what the six test262 tests excluded for the probe of safeBroadcast
+   (Atomics.wait on a value that differs) say that still holds: notify with no
+   waiter gives 0, and wait converts its arguments, in the order of the
+   specification (the array and the shared buffer, the index, the value, the
+   timeout), and throws what a conversion throws before it throws that it cannot
+   block. */
+static void test_atomics(JSContext *ctx)
+{
+    static const char code[] =
+        "(function () {\n"
+        "  const failures = [];\n"
+        "  const sab = new SharedArrayBuffer(16);\n"
+        "  const i32 = new Int32Array(sab), b64 = new BigInt64Array(sab);\n"
+        "  const plain = new Int32Array(4);\n"
+        "  let log = [];\n"
+        "  const mark = (name, v) => ({ valueOf() { log.push(name); return v; } });\n"
+        "  const poison = (name) => ({ valueOf() { log.push(name); throw new RangeError('poison ' + name); } });\n"
+        "  const run = (f) => { try { return 'returned ' + String(f()); } catch (e) { return e.constructor.name + ': ' + e.message; } };\n"
+        "  const expect = (what, got, want, wantLog) => {\n"
+        "    if (got !== want) failures.push(what + ': got [' + got + '], want [' + want + ']');\n"
+        "    if (wantLog !== undefined && log.join() !== wantLog) failures.push(what + ': converted [' + log + '], want [' + wantLog + ']');\n"
+        "    log = [];\n"
+        "  };\n"
+        "  const noBlock = 'TypeError: cannot block in this thread';\n"
+        "  const notNoBlock = (what, got, wantLog = '') => {\n"
+        "    if (got === noBlock || !/^(TypeError|RangeError)/.test(got)) failures.push(what + ': got [' + got + ']');\n"
+        "    if (log.join() !== wantLog) failures.push(what + ': converted [' + log + '], want [' + wantLog + ']');\n"
+        "    log = [];\n"
+        "  };\n"
+        /* wait: the can-block error is the last, and only for arguments that are good */
+        "  expect('wait', run(() => Atomics.wait(i32, 0, 0, 0)), noBlock);\n"
+        "  expect('wait, a value that differs', run(() => Atomics.wait(i32, 0, 1, 0)), noBlock);\n"
+        "  expect('wait, BigInt64Array', run(() => Atomics.wait(b64, 0, 0n, 0)), noBlock);\n"
+        "  expect('wait, no timeout', run(() => Atomics.wait(i32, 0, 0)), noBlock);\n"
+        "  expect('wait, order', run(() => Atomics.wait(i32, mark('index', 0), mark('value', 0), mark('timeout', 0))), noBlock, 'index,value,timeout');\n"
+        /* a buffer that is not shared, and an index out of range, come before any conversion of value and timeout */
+        "  notNoBlock('wait, not shared', run(() => Atomics.wait(plain, 0, mark('value', 0), poison('timeout'))));\n"
+        "  notNoBlock('wait, index out of range', run(() => Atomics.wait(i32, 4, mark('value', 0), poison('timeout'))));\n"
+        /* a Symbol, and an object whose valueOf throws, in each place */
+        "  notNoBlock('wait, Symbol index', run(() => Atomics.wait(i32, Symbol('i'), 0, 0)));\n"
+        "  notNoBlock('wait, Symbol value', run(() => Atomics.wait(i32, 0, Symbol('v'), 0)));\n"
+        "  notNoBlock('wait, Symbol timeout', run(() => Atomics.wait(i32, 0, 0, Symbol('t'))));\n"
+        "  expect('wait, poisoned timeout', run(() => Atomics.wait(i32, 0, 0, poison('timeout'))), 'RangeError: poison timeout', 'timeout');\n"
+        "  expect('wait, poisoned value', run(() => Atomics.wait(i32, 0, poison('value'), mark('timeout', 0))), 'RangeError: poison value', 'value');\n"
+        "  expect('wait, poisoned index', run(() => Atomics.wait(i32, poison('index'), mark('value', 0), mark('timeout', 0))), 'RangeError: poison index', 'index');\n"
+        /* notify: nobody waits, so it is 0, after its own conversions */
+        "  expect('notify', run(() => Atomics.notify(i32, 0, 1)), 'returned 0');\n"
+        "  expect('notify, no count', run(() => Atomics.notify(i32, 0)), 'returned 0');\n"
+        "  expect('notify, infinity', run(() => Atomics.notify(i32, 0, Infinity)), 'returned 0');\n"
+        "  expect('notify, negative count', run(() => Atomics.notify(i32, 0, -3)), 'returned 0');\n"
+        "  expect('notify, BigInt64Array', run(() => Atomics.notify(b64, 1, 5)), 'returned 0');\n"
+        "  expect('notify, not shared', run(() => Atomics.notify(plain, 0, 1)), 'returned 0');\n"
+        "  expect('notify, order', run(() => Atomics.notify(i32, mark('index', 0), mark('count', 1))), 'returned 0', 'index,count');\n"
+        "  expect('notify, poisoned count', run(() => Atomics.notify(i32, 0, poison('count'))), 'RangeError: poison count', 'count');\n"
+        "  expect('notify, poisoned count, not shared', run(() => Atomics.notify(plain, 0, poison('count'))), 'RangeError: poison count', 'count');\n"
+        "  notNoBlock('notify, Symbol index', run(() => Atomics.notify(i32, Symbol('i'), 1)));\n"
+        "  notNoBlock('notify, index out of range', run(() => Atomics.notify(i32, 4, 1)));\n"
+        "  return failures.join('\\n');\n"
+        "})()";
+    JSValue v = JS_Eval(ctx, code, sizeof code - 1, "<atomics>", JS_EVAL_TYPE_GLOBAL);
+    const char *text;
+
+    if (JS_IsException(v)) {
+        js_std_dump_error(ctx);
+        exit(2);
+    }
+    text = JS_ToCString(ctx, v);
+    CHECK(text && !*text, "Atomics:\n%s", text ? text : "(no text)");
+    JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, v);
+}
+
 /* A class ID of a runtime is the next one it has not given out. */
 static void test_class_ids(void)
 {
@@ -282,9 +355,17 @@ static void test_class_ids(void)
 
 int main(void)
 {
+    JSRuntime *rt;
+    JSContext *ctx;
+
     test_dump();
     test_tenths();
     test_class_ids();
+    rt = host_new_runtime();
+    ctx = new_context(rt);
+    test_atomics(ctx);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
 }
