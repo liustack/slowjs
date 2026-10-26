@@ -78,3 +78,22 @@ them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
 in `testdata/reject` through the real pipeline. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
+
+## The whole engine
+
+`cmd/engine` runs the same pipeline over all of `engine/` and `engine/libc`
+as one module and writes a Go package (`-out`): the functions in .s files
+bounded in size, the read-only data as `engine_rodata`, and the Go
+declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
+`malloc_usable_size` and `goasmMissing`, which each stub calls with its index
+in `missingNames`. `-keep-going` lists every function the C must change, by
+class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+`-varargs-block` passes variable arguments in a shadow-stack block instead of
+rejecting them. `-arch arm64` stops after llc and counts what the arm64
+lowering would have to handle.
+
+```sh
+go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
+/tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
+    -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
+```
