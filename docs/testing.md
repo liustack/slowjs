@@ -223,7 +223,7 @@ The tag `testhooks` turns on the hooks of these tests, which the normal build do
 
 `TestDeepRecursion` recurses to the engine's call depth limit and past it (a `RangeError`, no fault of the process). It needs an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator) and skips itself for a smaller one, by the `shadowSizeLog2` that `engine_decl.go` records, which `New` also holds the stack size to.
 
-Two more runs of the same tests guard the calling convention between Go and the generated code. A poison build (`-poison` of the generator) writes garbage into the registers at each entry before the arguments are loaded, after each call before the result is read, and at each return: the tests must pass on it too. The preemption hammer keeps setting the stack guard of the goroutine in the engine so that each generated function's stack check goes through the scheduler. It writes into the runtime's `g`, hence a tag of its own:
+Two more runs of the same tests guard the calling convention between Go and the generated code. A poison build (`-poison` of the generator) writes garbage into the registers at each entry before the arguments are loaded, after each call before the result is read, and at each return: the tests must pass on it too. The preemption hammer keeps setting the stack guard of the goroutine in the engine so that the next generated function's stack check goes through the scheduler. It reports how many requests it made (writes of the guard), which is more than the preemptions that happened, as requests made before the scheduler answers merge. It writes into the runtime's `g`, hence a tag of its own:
 
 ```sh
 CENGINE_HAMMER_N=3000 go test -tags cengine,cenginehammer -run Hammer ./internal/cengine
