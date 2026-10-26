@@ -15,7 +15,7 @@ import (
 // CanRemap tells whether Remap can resize a chunk: windows cannot.
 const CanRemap = false
 
-// The calls to the OS, each of which asks fault first.
+// The calls to the OS, each of which checks fault first.
 
 func sysAlloc(call string, addr, size uintptr, kind, prot uint32) (uintptr, error) {
 	if err := faulted(call, addr, size); err != nil {

@@ -67,9 +67,10 @@ const (
 // and the size of the guard page.
 var pageSize = uintptr(os.Getpagesize())
 
-// fault lets a test make a call to the OS fail. When it is set, each call
-// asks it first, with the name of what it does and its range, and an error it
-// returns stands for the error of the call. Only tests set it.
+// fault lets a test make a call to the OS fail. Every call to the OS checks
+// it for nil first, in the built package too, and only tests set it. When it
+// is set, each call asks it, with the name of what it does and its range, and
+// an error it returns stands for the error of the call.
 var fault func(call string, addr, size uintptr) error
 
 func faulted(call string, addr, size uintptr) error {
@@ -118,8 +119,8 @@ type Released struct {
 //
 // When a step of the setup fails, New gives back what it still holds and
 // returns the error. When the OS refuses that too, for a range New mapped
-// itself, the address space is not what the package can account for, and New
-// panics with both errors.
+// itself, New panics with both errors: it offers no way to recover that
+// range, and a caller that recovered from the panic may leak the mapping.
 func New(stackSize uintptr) (*Memory, error) {
 	if stackSize < Unit || stackSize&(stackSize-1) != 0 {
 		panic(fmt.Sprintf("hostmem: a shadow stack of %d bytes, not a power of two of at least %d", stackSize, Unit))
