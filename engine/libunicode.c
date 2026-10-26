@@ -48,15 +48,11 @@ enum {
     RUN_TYPE_UF_EXT3,
 };
 
-static int lre_case_conv1(uint32_t c, int conv_type)
-{
-    uint32_t res[LRE_CC_RES_LEN_MAX];
-    lre_case_conv(res, c, conv_type);
-    return res[0];
-}
-
-/* case conversion using the table entry 'idx' with value 'v' */
-static int lre_case_conv_entry(uint32_t *res, uint32_t c, int conv_type, uint32_t idx, uint32_t v)
+/* case conversion using the table entry 'idx' with value 'v'. For case
+   folding (conv_type 2), the characters of a few entries must then be
+   converted to lower case: *plower is set to TRUE for those. */
+static int lre_case_conv_entry1(uint32_t *res, uint32_t c, int conv_type, uint32_t idx, uint32_t v,
+                                BOOL *plower)
 {
     uint32_t code, data, type, a, is_lower;
     is_lower = (conv_type != 0);
@@ -123,11 +119,8 @@ static int lre_case_conv_entry(uint32_t *res, uint32_t c, int conv_type, uint32_
             break;
         res[0] = c - code + case_conv_ext[data >> 6];
         res[1] = case_conv_ext[data & 0x3f];
-        if (conv_type == 2) {
-            /* convert to lower */
-            res[0] = lre_case_conv1(res[0], 1);
-            res[1] = lre_case_conv1(res[1], 1);
-        }
+        /* convert to lower */
+        *plower = (conv_type == 2);
         return 2;
     default:
     case RUN_TYPE_UF_EXT3:
@@ -136,16 +129,73 @@ static int lre_case_conv_entry(uint32_t *res, uint32_t c, int conv_type, uint32_
         res[0] = case_conv_ext[data >> 8];
         res[1] = case_conv_ext[(data >> 4) & 0xf];
         res[2] = case_conv_ext[data & 0xf];
-        if (conv_type == 2) {
-            /* convert to lower */
-            res[0] = lre_case_conv1(res[0], 1);
-            res[1] = lre_case_conv1(res[1], 1);
-            res[2] = lre_case_conv1(res[2], 1);
-        }
+        /* convert to lower */
+        *plower = (conv_type == 2);
         return 3;
     }
     res[0] = c;
     return 1;
+}
+
+/* the index of the entry of case_conv_table1 for c >= 128 and its value, or
+   -1 when c has none */
+static int lre_case_conv_find(uint32_t c, uint32_t *pv)
+{
+    uint32_t v, code, len;
+    int idx, idx_min, idx_max;
+
+    idx_min = 0;
+    idx_max = countof(case_conv_table1) - 1;
+    while (idx_min <= idx_max) {
+        idx = (unsigned)(idx_max + idx_min) / 2;
+        v = case_conv_table1[idx];
+        code = v >> (32 - 17);
+        len = (v >> (32 - 17 - 7)) & 0x7f;
+        if (c < code) {
+            idx_max = idx - 1;
+        } else if (c >= code + len) {
+            idx_min = idx + 1;
+        } else {
+            *pv = v;
+            return idx;
+        }
+    }
+    return -1;
+}
+
+/* the lower case of c, the first character of lre_case_conv(res, c, 1).
+   Converting to lower case never lowers again, so nothing here calls
+   lre_case_conv_entry, which calls this. */
+static uint32_t lre_case_conv_lower1(uint32_t c)
+{
+    uint32_t res[LRE_CC_RES_LEN_MAX], v;
+    BOOL lower = FALSE;
+    int idx;
+
+    if (c < 128) {
+        if (c >= 'A' && c <= 'Z')
+            c = c - 'A' + 'a';
+        return c;
+    }
+    idx = lre_case_conv_find(c, &v);
+    if (idx < 0)
+        return c;
+    lre_case_conv_entry1(res, c, 1, idx, v, &lower);
+    return res[0];
+}
+
+/* case conversion using the table entry 'idx' with value 'v' */
+static int lre_case_conv_entry(uint32_t *res, uint32_t c, int conv_type, uint32_t idx, uint32_t v)
+{
+    BOOL lower = FALSE;
+    int i, len;
+
+    len = lre_case_conv_entry1(res, c, conv_type, idx, v, &lower);
+    if (lower) {
+        for(i = 0; i < len; i++)
+            res[i] = lre_case_conv_lower1(res[i]);
+    }
+    return len;
 }
 
 /* conv_type:
@@ -166,24 +216,12 @@ int lre_case_conv(uint32_t *res, uint32_t c, int conv_type)
             }
         }
     } else {
-        uint32_t v, code, len;
-        int idx, idx_min, idx_max;
+        uint32_t v;
+        int idx;
 
-        idx_min = 0;
-        idx_max = countof(case_conv_table1) - 1;
-        while (idx_min <= idx_max) {
-            idx = (unsigned)(idx_max + idx_min) / 2;
-            v = case_conv_table1[idx];
-            code = v >> (32 - 17);
-            len = (v >> (32 - 17 - 7)) & 0x7f;
-            if (c < code) {
-                idx_max = idx - 1;
-            } else if (c >= code + len) {
-                idx_min = idx + 1;
-            } else {
-                return lre_case_conv_entry(res, c, conv_type, idx, v);
-            }
-        }
+        idx = lre_case_conv_find(c, &v);
+        if (idx >= 0)
+            return lre_case_conv_entry(res, c, conv_type, idx, v);
     }
     res[0] = c;
     return 1;
@@ -1113,29 +1151,43 @@ static void sort_cc(int *buf, int len)
     }
 }
 
-static void to_nfd_rec(DynBuf *dbuf,
-                       const int *src, int src_len, int is_compat)
+/* The decomposition of a character can hold characters that decompose in
+   turn (U+1F82 goes three levels down): the code points still to decompose
+   wait on a stack. Over every code point it holds at most
+   UNICODE_DECOMP_LEN_MAX of them (test/unit.c goes over them all). */
+#define NFD_STACK_LEN_MAX (4 * UNICODE_DECOMP_LEN_MAX)
+
+static void to_nfd(DynBuf *dbuf,
+                   const int *src, int src_len, int is_compat)
 {
     uint32_t c, v;
-    int i, l;
-    uint32_t res[UNICODE_DECOMP_LEN_MAX];
+    int i, l, sp;
+    uint32_t res[UNICODE_DECOMP_LEN_MAX], stack[NFD_STACK_LEN_MAX];
 
     for(i = 0; i < src_len; i++) {
-        c = src[i];
-        if (c >= 0xac00 && c < 0xd7a4) {
-            /* Hangul decomposition */
-            c -= 0xac00;
-            dbuf_put_u32(dbuf, 0x1100 + c / 588);
-            dbuf_put_u32(dbuf, 0x1161 + (c % 588) / 28);
-            v = c % 28;
-            if (v != 0)
-                dbuf_put_u32(dbuf, 0x11a7 + v);
-        } else {
-            l = unicode_decomp_char(res, c, is_compat);
-            if (l) {
-                to_nfd_rec(dbuf, (int *)res, l, is_compat);
+        stack[0] = src[i];
+        sp = 1;
+        while (sp > 0) {
+            c = stack[--sp];
+            if (c >= 0xac00 && c < 0xd7a4) {
+                /* Hangul decomposition */
+                c -= 0xac00;
+                dbuf_put_u32(dbuf, 0x1100 + c / 588);
+                dbuf_put_u32(dbuf, 0x1161 + (c % 588) / 28);
+                v = c % 28;
+                if (v != 0)
+                    dbuf_put_u32(dbuf, 0x11a7 + v);
             } else {
-                dbuf_put_u32(dbuf, c);
+                l = unicode_decomp_char(res, c, is_compat);
+                if (l) {
+                    /* the first character comes off the stack first */
+                    if (sp + l > NFD_STACK_LEN_MAX)
+                        abort();
+                    while (l > 0)
+                        stack[sp++] = res[--l];
+                } else {
+                    dbuf_put_u32(dbuf, c);
+                }
             }
         }
     }
@@ -1185,7 +1237,7 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     not_latin1: ;
     }
 
-    to_nfd_rec(dbuf, (const int *)src, src_len, is_compat);
+    to_nfd(dbuf, (const int *)src, src_len, is_compat);
     if (dbuf_error(dbuf)) {
     fail:
         *pdst = NULL;
@@ -2084,16 +2136,6 @@ static int unicode_sequence_prop1(int seq_prop_idx, UnicodeSequencePropCB *cb, v
             }
         }
         break;
-    case UNICODE_SEQUENCE_PROP_RGI_Emoji:
-        /* all prevous sequences */
-        for(i = UNICODE_SEQUENCE_PROP_Basic_Emoji; i <= UNICODE_SEQUENCE_PROP_RGI_Emoji_ZWJ_Sequence; i++) {
-            int ret;
-            ret = unicode_sequence_prop1(i, cb, opaque, cr);
-            if (ret < 0)
-                return ret;
-            cr->len = 0;
-        }
-        break;
     default:
         return -2;
     }
@@ -2105,9 +2147,19 @@ static int unicode_sequence_prop1(int seq_prop_idx, UnicodeSequencePropCB *cb, v
 int unicode_sequence_prop(const char *prop_name, UnicodeSequencePropCB *cb, void *opaque,
                           CharRange *cr)
 {
-    int seq_prop_idx;
+    int seq_prop_idx, i, ret;
     seq_prop_idx = unicode_find_name(unicode_sequence_prop_name_table, prop_name);
     if (seq_prop_idx < 0)
         return -2;
+    if (seq_prop_idx == UNICODE_SEQUENCE_PROP_RGI_Emoji) {
+        /* all prevous sequences */
+        for(i = UNICODE_SEQUENCE_PROP_Basic_Emoji; i <= UNICODE_SEQUENCE_PROP_RGI_Emoji_ZWJ_Sequence; i++) {
+            ret = unicode_sequence_prop1(i, cb, opaque, cr);
+            if (ret < 0)
+                return ret;
+            cr->len = 0;
+        }
+        return 0;
+    }
     return unicode_sequence_prop1(seq_prop_idx, cb, opaque, cr);
 }

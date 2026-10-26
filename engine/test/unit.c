@@ -10,10 +10,13 @@
 
      unit */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include "host.h"
+#include "cutils.h"
+#include "libunicode.h"
 
 static int failures;
 
@@ -1097,10 +1100,25 @@ static int test_internal_depth(void *unused)
         "(() => {\n"
         "  const nests = n => { try { JSON.parse('['.repeat(n) + ']'.repeat(n)); return true } catch (e) { return false } };\n"
         "  let n = 1; while (nests(n + 1)) n++; return n })()";
-    char want[32];
+    /* each proxy without a getPrototypeOf trap is a level: JS_MAX_INTERNAL_DEPTH of them fit */
+    static const char proto_src[] =
+        "(() => {\n"
+        "  const chain = n => { let p = {}; for (let i = 0; i < n; i++) p = new Proxy(p, {}); return p };\n"
+        "  const gets = n => { try { return Object.getPrototypeOf(chain(n)) === Object.prototype } catch (e) { return e.name } };\n"
+        "  return [gets(%d), gets(%d), gets(%d)].join() })()";
+    char want[32], src[512];
     size_t i;
 
     snprintf(want, sizeof(want), "%d", JS_MAX_INTERNAL_DEPTH);
+    {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        snprintf(src, sizeof(src), proto_src, JS_MAX_INTERNAL_DEPTH - 1, JS_MAX_INTERNAL_DEPTH, JS_MAX_INTERNAL_DEPTH + 1);
+        CHECK(eval_is(ctx, src, "true,true,RangeError"), "prototypes of proxies");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         JSRuntime *rt = host_new_runtime();
         JSContext *ctx = JS_NewContext(rt);
@@ -1116,6 +1134,585 @@ static int test_internal_depth(void *unused)
     return 0;
 }
 
+/* Functions nested as deep as the parser goes are made, each with the
+   variables it takes from the functions around it, and direct eval in the
+   innermost one sees the variables of the outermost: making them counts a
+   level per function, and the parser ends with a RangeError first. */
+static int test_function_nesting(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const nests = n => { try { return eval('let v = 7; ' + '(() => '.repeat(n) + 'eval(\"v\")' + ')()'.repeat(n)) } catch (e) { return e.name } };\n"
+        "  let n = 1; while (nests(n + 1) === 7) n++;\n"
+        "  return n >= %d ? 'deep ' + nests(n + 1) : 'only ' + n })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[512];
+
+    snprintf(buf, sizeof(buf), src, JS_MAX_INTERNAL_DEPTH / 20);
+    CHECK(eval_is(ctx, buf, "deep RangeError"), "nested functions");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* The parser counts 3 levels for a parenthesis (an assignment expression,
+   a unary one and a postfix one), whatever the operators between them: the
+   binary and logical operators are read in loops. The statement and the
+   expression around the first parenthesis count 4. */
+static int test_paren_depth(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const nests = (open, close) => { let n = 1;\n"
+        "    for (;;) { try { eval(open.repeat(n + 1) + '1' + close.repeat(n + 1)) } catch (e) { return n } n++ } };\n"
+        "  return [nests('(', ')'), nests('(1+', ')'), nests('(1*2|', ')'), nests('(1&&', ')'),\n"
+        "          nests('(1||1&&', ')'), nests('(1??', ')'), nests('(1==1<', ')')].join() })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char want[128];
+    int n = (JS_MAX_INTERNAL_DEPTH - 4) / 3;
+
+    snprintf(want, sizeof(want), "%d,%d,%d,%d,%d,%d,%d", n, n, n, n, n, n, n);
+    CHECK(eval_is(ctx, src, want), "parentheses");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* Ropes are read, hashed and freed by loops: a character at any place, a
+   Map key that is the same string as a rope of another shape (the hash goes
+   over the strings in order, whatever the tree), ropes that share their
+   parts, and long chains of concatenations, at either end and of strings of
+   many lengths, that the engine rebalances. Everything is freed with no
+   block left. */
+static void test_ropes(void)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const piece = n => String.fromCharCode(97 + n % 26).repeat(600) + n;\n"
+        "  let s = '', want = [];\n"
+        "  for (let i = 0; i < 20000; i++) { s = s + piece(i); want.push(piece(i)) }\n"
+        "  let t = '';\n"
+        "  for (let i = 19999; i >= 0; i--) t = piece(i) + t;\n"
+        "  const flat = want.join('');\n"
+        "  if (s.length !== flat.length || t.length !== flat.length) return 'length';\n"
+        "  for (let k = 0; k < flat.length; k += 4999) if (s[k] !== flat[k] || t[k] !== flat[k]) return 'char ' + k;\n"
+        "  const m = new Map([[s, 1]]);\n"
+        "  if (m.get(t) !== 1 || m.get(flat) !== 1) return 'hash';\n"
+        "  let u = '', ul = '', ur = '';\n"
+        "  for (let i = 0; i < 5000; i++) {\n"
+        "    const p = String.fromCharCode(65 + i % 26).repeat(513 + (i * 7919) % 20000);\n"
+        "    if (i % 3) { u = u + p; ur = ur + p } else { u = p + u; ul = p + ul }\n"
+        "  }\n"
+        "  const uflat = ul + ur;\n"
+        "  if (u.length !== uflat.length) return 'mixed length';\n"
+        "  for (let k = 0; k < uflat.length; k += 9973) if (u[k] !== uflat[k]) return 'mixed char ' + k;\n"
+        "  if (new Map([[u, 2]]).get(uflat) !== 2 || u !== uflat) return 'mixed';\n"
+        "  u = ul = ur = null;\n"
+        "  let a = piece(1) + piece(2), b = a + a, c = b + a + b;\n"
+        "  if (c !== a + a + a + a + a) return 'shared';\n"
+        "  a = b = c = s = t = null;\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "ropes");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Freeing runs free_zero_refcount one level deep, whatever is freed: a chain
+   of a million objects, and objects of every kind whose finalizers free more,
+   dropped at once and by a collection of their cycles. A second level would
+   abort. */
+static void test_free_nesting(void)
+{
+    static const char src[] =
+        "let o = {}; for (let i = 0; i < 1000000; i++) o = { o };\n"
+        "let keep = [];\n"
+        "for (let i = 0; i < 1000; i++) {\n"
+        "  const t = {}; const g = (function* () { yield t })(); g.next();\n"
+        "  const a = (async () => { await null; return t })();\n"
+        "  const f = function () { return t }.bind(t);\n"
+        "  const m = new Map([[t, f]]); const w = new WeakMap([[t, g]]);\n"
+        "  const r = new FinalizationRegistry(() => {}); r.register(t, i);\n"
+        "  const p = new Proxy(t, {}); const ta = new Uint8Array(8);\n"
+        "  t.self = [t, g, a, f, m, w, r, p, ta, new WeakRef(t), Promise.resolve(t)];\n"
+        "  keep.push(t.self);\n"
+        "}\n"
+        "o = null; keep = null; 'ok'";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "free");
+    CHECK(run_jobs(rt), "jobs");
+    JS_RunGC(rt);
+    CHECK(run_jobs(rt), "jobs after the collection");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+static uint64_t fnv_word(uint64_t h, uint32_t v)
+{
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        h ^= (v >> (8 * i)) & 0xff;
+        h *= 0x100000001b3ULL;
+    }
+    return h;
+}
+
+static void *unicode_realloc(void *opaque, void *ptr, size_t size)
+{
+    (void)opaque;
+    if (size == 0) {
+        free(ptr);
+        return NULL;
+    }
+    return realloc(ptr, size);
+}
+
+static void sequence_hash(void *opaque, const uint32_t *buf, int len)
+{
+    uint64_t *h = opaque;
+    int i;
+
+    *h = fnv_word(*h, len);
+    for (i = 0; i < len; i++)
+        *h = fnv_word(*h, buf[i]);
+}
+
+/* The modules of the chains of test_module_chains: module n of a chain
+   imports module n + 1 or exports from it, up to module chain_length - 1.
+   The letter of the name tells what: m imports, s exports all of the next
+   (export * from), e exports one name of the next (export { x } from). */
+static int chain_length;
+
+static void chain_source(const char *name, char *buf, size_t size)
+{
+    int n = atoi(name + 1);
+
+    if (n == chain_length - 1)
+        snprintf(buf, size, "export const x = 1;");
+    else if (name[0] == 'm')
+        snprintf(buf, size, "import \"m%d\";", n + 1);
+    else if (name[0] == 's')
+        snprintf(buf, size, "export * from \"s%d\";", n + 1);
+    else
+        snprintf(buf, size, "export { x } from \"e%d\";", n + 1);
+}
+
+static JSModuleDef *chain_loader(JSContext *ctx, const char *name, void *opaque)
+{
+    char src[64];
+    JSValue v;
+    JSModuleDef *m;
+
+    chain_source(name, src, sizeof(src));
+    v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return NULL;
+    /* the module is referenced by the context */
+    m = JS_VALUE_GET_PTR(v);
+    JS_FreeValue(ctx, v);
+    return m;
+}
+
+/* exception_name puts the name of the exception of ctx in buf. */
+static const char *exception_name(JSContext *ctx, char *buf, size_t size)
+{
+    JSValue e = JS_GetException(ctx);
+    JSValue n = JS_GetPropertyStr(ctx, e, "name");
+    const char *s = JS_ToCString(ctx, n);
+
+    snprintf(buf, size, "%s", s ? s : "?");
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, n);
+    JS_FreeValue(ctx, e);
+    return buf;
+}
+
+/* module_eval runs src as the module name, or only compiles it, and puts
+   "ok" or the name of the exception in buf. */
+static const char *module_eval(JSContext *ctx, const char *name, const char *src,
+                               int flags, char *buf, size_t size)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | flags);
+
+    if (!JS_IsException(v)) {
+        JS_FreeValue(ctx, v);
+        snprintf(buf, size, "ok");
+        return buf;
+    }
+    return exception_name(ctx, buf, size);
+}
+
+/* compile_back compiles the modules of a chain from the last to the first,
+   or runs them, so that each finds the next one made: none of the
+   recursions over the chain goes more than a module down. It returns the
+   number of modules made before the first that failed, with its exception
+   in buf. */
+static int compile_back(JSContext *ctx, char letter, int flags, char *buf, size_t size)
+{
+    char name[16], src[64];
+    int n;
+
+    for (n = chain_length - 1; n >= 0; n--) {
+        snprintf(name, sizeof(name), "%c%d", letter, n);
+        chain_source(name, src, sizeof(src));
+        if (strcmp(module_eval(ctx, name, src, flags, buf, size), "ok") != 0)
+            break;
+    }
+    return chain_length - 1 - n;
+}
+
+/* read_chain compiles the modules of the m chain in ctx and reads them from
+   their bytecode in ctx2, from the last to the first, which leaves them all
+   to resolve. It returns the first, the one ctx2 does not hold alone. */
+static JSValue read_chain(JSContext *ctx, JSContext *ctx2)
+{
+    uint8_t **bufs = calloc(chain_length, sizeof(bufs[0]));
+    size_t *sizes = calloc(chain_length, sizeof(sizes[0]));
+    char name[16], src[64];
+    JSValue v, first = JS_UNDEFINED;
+    int n;
+
+    for (n = chain_length - 1; n >= 0; n--) {
+        snprintf(name, sizeof(name), "m%d", n);
+        chain_source(name, src, sizeof(src));
+        v = JS_Eval(ctx, src, strlen(src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        bufs[n] = JS_WriteObject(ctx, &sizes[n], v, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(ctx, v);
+    }
+    for (n = chain_length - 1; n >= 0; n--) {
+        v = JS_ReadObject(ctx2, bufs[n], sizes[n], JS_READ_OBJ_BYTECODE);
+        js_free(ctx, bufs[n]);
+        if (n == 0)
+            first = v;
+        else
+            JS_FreeValue(ctx2, v);
+    }
+    free(bufs);
+    free(sizes);
+    return first;
+}
+
+/* resolve_read resolves the first module of the m chain read from bytecode:
+   JS_ResolveModule goes down the chain with no loader between the modules.
+   It puts "ok" or the name of the exception in buf. */
+static const char *resolve_read(JSRuntime *rt, char *buf, size_t size)
+{
+    JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    JSValue first = read_chain(ctx, ctx2);
+
+    if (JS_ResolveModule(ctx2, first) < 0)
+        exception_name(ctx2, buf, size);
+    else
+        snprintf(buf, size, "ok");
+    JS_FreeValue(ctx2, first);
+    JS_FreeContext(ctx2);
+    JS_FreeContext(ctx);
+    return buf;
+}
+
+/* The recursions over a chain of modules count the internal depth, a
+   module a level, and end with a RangeError past JS_MAX_INTERNAL_DEPTH:
+   resolving the imports of a module, read from bytecode or through the
+   host's loader, making their functions, listing the names a namespace
+   exports through a chain of export * from, and finding a name exported
+   from module to module. The runtime still runs code and frees with no
+   block left. */
+static int test_module_chains(void *unused)
+{
+    static const struct { char letter; int flags; const char *top; } cases[] = {
+        /* the loader loads each module from the import of the one before */
+        { 0, 0, "import \"m0\";" },
+        /* made from the end, only the functions go down the chain */
+        { 'm', JS_EVAL_FLAG_COMPILE_ONLY, "import \"m0\";" },
+        /* run from the end, only the names of the namespace go down */
+        { 's', 0, "import * as ns from \"s0\"; if (Object.keys(ns).join() !== \"x\") throw 1;" },
+    };
+    char buf[64];
+    size_t i;
+    int made;
+
+    chain_length = JS_MAX_INTERNAL_DEPTH + 1000;
+    {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx;
+
+        CHECK(strcmp(resolve_read(rt, buf, sizeof(buf)), "RangeError") == 0, "read: %s", buf);
+        ctx = JS_NewContext(rt);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "read: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        if (cases[i].letter) {
+            made = compile_back(ctx, cases[i].letter, cases[i].flags, buf, sizeof(buf));
+            CHECK(made == chain_length, "case %zu: %d modules made, then %s", i, made, buf);
+        }
+        module_eval(ctx, "top", cases[i].top, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "RangeError") == 0, "case %zu: %s", i, buf);
+        CHECK(run_jobs(rt), "case %zu: jobs", i);
+        CHECK(eval_is(ctx, "1 + 1", "2"), "case %zu: the runtime runs", i);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    {
+        /* module n, run, finds x in the last module, chain_length - 1 - n
+           modules down */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        made = compile_back(ctx, 'e', 0, buf, sizeof(buf));
+        CHECK(made == JS_MAX_INTERNAL_DEPTH, "export from: %d modules made, then %s", made, buf);
+        CHECK(strcmp(buf, "RangeError") == 0, "export from: %s", buf);
+        CHECK(run_jobs(rt), "export from: jobs");
+        CHECK(eval_is(ctx, "1 + 1", "2"), "export from: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
+/* A chain of modules that failed past the internal depth leaves no module
+   that looks done when the modules it imports are not, or are freed: the
+   chain runs again from its middle in the same context. Module mid was
+   done, as far as it went, by the run that failed, and the chain from it is
+   short enough to run. */
+static int test_module_retry(void *unused)
+{
+    int mid = JS_MAX_INTERNAL_DEPTH * 3 / 4, made;
+    char buf[64], src[64];
+
+    chain_length = JS_MAX_INTERNAL_DEPTH + 1000;
+    snprintf(src, sizeof(src), "import \"m%d\";", mid);
+    {
+        /* resolving the imports of the modules read from bytecode fails
+           at module JS_MAX_INTERNAL_DEPTH of the chain, which
+           js_free_modules frees with the ones after it. The loader loads
+           module mid again */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+        JSValue first = read_chain(ctx, ctx2);
+
+        CHECK(JS_ResolveModule(ctx2, first) < 0, "resolve: no error");
+        CHECK(strcmp(exception_name(ctx2, buf, sizeof(buf)), "RangeError") == 0, "resolve: %s", buf);
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        module_eval(ctx2, "again", src, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "ok") == 0, "resolve again: %s", buf);
+        CHECK(run_jobs(rt), "resolve again: jobs");
+        JS_FreeValue(ctx2, first);
+        JS_FreeContext(ctx2);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    {
+        /* making the functions of the modules compiled from the end, all
+           resolved, fails at module JS_MAX_INTERNAL_DEPTH - 1 of the chain,
+           below the module that imports the first */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        made = compile_back(ctx, 'm', JS_EVAL_FLAG_COMPILE_ONLY, buf, sizeof(buf));
+        CHECK(made == chain_length, "functions: %d modules made, then %s", made, buf);
+        module_eval(ctx, "top", "import \"m0\";", 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "RangeError") == 0, "functions: %s", buf);
+        module_eval(ctx, "again", src, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "ok") == 0, "functions again: %s", buf);
+        CHECK(run_jobs(rt), "functions again: jobs");
+        CHECK(eval_is(ctx, "1 + 1", "2"), "functions again: the runtime runs");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    return 0;
+}
+
+/* stack_fail_sweep runs src with the stack short at the first count of the
+   engine, then at the second, and so on until it runs whole. Each time it
+   fails with a RangeError, or runs to want with no exception left behind. */
+static void stack_fail_sweep(const char *what, const char *src, const char *want)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[64];
+    long n;
+    int fired;
+
+    for (n = 1;; n++) {
+        JSValue v;
+
+        host_stack_fail_at = n;
+        v = JS_Eval(ctx, src, strlen(src), "<sweep>", JS_EVAL_TYPE_GLOBAL);
+        fired = host_stack_fail_at == 0;
+        host_stack_fail_at = 0;
+        if (JS_IsException(v)) {
+            exception_name(ctx, buf, sizeof(buf));
+            CHECK(fired && strcmp(buf, "RangeError") == 0, "%s, short at %ld: %s", what, n, buf);
+        } else {
+            const char *s;
+
+            if (JS_HasException(ctx)) {
+                CHECK(0, "%s, short at %ld: ran, and left %s", what, n,
+                      exception_name(ctx, buf, sizeof(buf)));
+            }
+            s = JS_ToCString(ctx, v);
+            CHECK(s && strcmp(s, want) == 0, "%s, short at %ld: got %s", what, n, s ? s : "?");
+            JS_FreeCString(ctx, s);
+        }
+        JS_FreeValue(ctx, v);
+        if (!fired)
+            break;
+    }
+    CHECK(n > 1, "%s: no count", what);
+    CHECK(eval_is(ctx, "1 + 1", "2"), "%s: the runtime runs", what);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A function that uses a variable of a function around it gets a closure
+   variable in each function between, a level of the internal depth each,
+   and the lookup fails past it or with too little stack. Code does not get
+   there first, as the parser counts more levels for a function than the
+   lookups do, so each lookup of the compiler is made to fail in turn: the
+   compile throws the RangeError and frees what it made. */
+static void test_closure_lookup_fail(void)
+{
+    static const struct { const char *what, *src, *want; } cases[] = {
+        { "argument and local",
+          "(function (a) { var b = 2; return function () { return a + b; }; })(1)()", "3" },
+        { "with around",
+          "(function (o) { with (o) { return function () { return x; }; } })({ x: 4 })()", "4" },
+        { "eval in the body",
+          "(function () { eval('var x = 5'); return function () { return x; }; })()()", "5" },
+        { "eval in the parameters",
+          "(function (a = eval('var y = 6')) { return function () { return y; }; })()()", "6" },
+        { "function in direct eval",
+          "(function () { var y = 7; return eval('(function () { return y + typeof z; })')(); })()",
+          "7undefined" },
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        stack_fail_sweep(cases[i].what, cases[i].src, cases[i].want);
+}
+
+/* JSON.parse with a reviver keeps a record of each value it parsed, for the
+   source text of the primitives, and frees the records with no recursion:
+   nested as deep as it parses, as wide as it likes, objects with a hash of
+   their keys, and records left half made by a syntax error at any depth or
+   by data after the end. Everything is freed with no block left. */
+static int test_json_records(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const n = %d, src = [];\n"
+        "  const reviver = function (k, v, c) { if (c && 'source' in c) src.push(c.source); return v };\n"
+        "  const a = JSON.parse('['.repeat(n) + '12' + ']'.repeat(n), reviver);\n"
+        "  if (src.join() !== '12') return 'deep array ' + src.join();\n"
+        "  JSON.parse('{\"a\":'.repeat(n) + '3e1' + '}'.repeat(n), reviver);\n"
+        "  if (src.join() !== '12,3e1') return 'deep object';\n"
+        "  const keys = []; for (let i = 0; i < 100000; i++) keys.push('\"k' + i + '\":' + i);\n"
+        "  const o = JSON.parse('{' + keys.join() + ',\"x\":[' + keys.map((_, i) => i).join() + ']}', (k, v) => v);\n"
+        "  if (o.k99999 !== 99999 || o.x.length !== 100000) return 'wide';\n"
+        "  const nine = '{\"b\":1,\"c\":2,\"d\":3,\"e\":4,\"f\":5,\"g\":6,\"h\":7,\"i\":8,\"j\":';\n"
+        "  for (const bad of ['{\"a\":['.repeat((n >> 1) - 2) + '1,' + nine + '[1,2,x',\n"
+        "                    nine.repeat(n - 1) + '}', '[[1],{\"a\":[2]}] x', '[' + keys.join()])\n"
+        "    try { JSON.parse(bad, reviver); return 'parsed ' + bad.slice(0, 20) } catch (e) {\n"
+        "      if (!(e instanceof SyntaxError)) return e.name }\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[2048];
+
+    /* the reviver goes down one level more than the parser */
+    snprintf(buf, sizeof(buf), src, JS_MAX_INTERNAL_DEPTH - 2);
+    CHECK(eval_is(ctx, buf, "ok"), "records");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* The case conversions, the case foldings of regexps, the four normal forms
+   of every code point and the emoji sequences of regexps are those of the
+   recursive code they replace: their hashes are the ones it gave. */
+static void test_unicode_tables(void)
+{
+    static const char *const seqs[] = {
+        "Basic_Emoji", "Emoji_Keycap_Sequence", "RGI_Emoji_Modifier_Sequence",
+        "RGI_Emoji_Flag_Sequence", "RGI_Emoji_Tag_Sequence",
+        "RGI_Emoji_ZWJ_Sequence", "RGI_Emoji",
+    };
+    uint64_t conv = 0xcbf29ce484222325ULL, norm = conv, seq = conv;
+    uint32_t c, res[LRE_CC_RES_LEN_MAX], *dst;
+    int t, i, len;
+    CharRange cr;
+
+    for (c = 0; c < 0x110000; c++) {
+        for (t = 0; t < 3; t++) {
+            len = lre_case_conv(res, c, t);
+            conv = fnv_word(conv, len);
+            for (i = 0; i < len; i++)
+                conv = fnv_word(conv, res[i]);
+        }
+        conv = fnv_word(conv, lre_canonicalize(c, 0));
+        conv = fnv_word(conv, lre_canonicalize(c, 1));
+        for (t = UNICODE_NFC; t <= UNICODE_NFKD; t++) {
+            len = unicode_normalize(&dst, &c, 1, t, NULL, unicode_realloc);
+            CHECK(len >= 0, "normalize U+%04X", c);
+            if (len < 0)
+                return;
+            norm = fnv_word(norm, len);
+            for (i = 0; i < len; i++)
+                norm = fnv_word(norm, dst[i]);
+            free(dst);
+        }
+    }
+    for (i = 0; i < countof(seqs); i++) {
+        cr_init(&cr, NULL, unicode_realloc);
+        CHECK(unicode_sequence_prop(seqs[i], sequence_hash, &seq, &cr) == 0, "%s", seqs[i]);
+        cr_free(&cr);
+    }
+    CHECK(conv == 0x62b5753977fb68f5ULL, "case conversions %016llx", (unsigned long long)conv);
+    CHECK(norm == 0x49b42101d280d714ULL, "normal forms %016llx", (unsigned long long)norm);
+    CHECK(seq == 0x365073493a2d88c5ULL, "emoji sequences %016llx", (unsigned long long)seq);
+}
+
+/* A class of a v-flag regexp reads the strings of \q{...} as class atoms,
+   which cannot hold \q again. */
+static void test_class_strings(void)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const r = /^[\\q{abc|d\\x41|}x]+$/v;\n"
+        "  if (!r.test('abcdAx') || !r.test('x') || r.test('ab')) return 'match';\n"
+        "  if (!/^[\\q{\\u{1F600}b}--\\q{b}]$/v.test('\\u{1F600}b')) return 'subtract';\n"
+        "  if (!/^[[\\q{ab}c]&&\\q{ab}]$/v.test('ab')) return 'intersect';\n"
+        "  if (!/^[\\q{\\x41\\u0042}]$/v.test('AB')) return 'escape';\n"
+        "  for (const bad of ['[\\\\q{a\\\\q{b}}]', '[\\\\q{a]', '\\\\q{a}']) {\n"
+        "    try { new RegExp(bad, 'v'); return 'accepted ' + bad } catch (e) {\n"
+        "      if (!(e instanceof SyntaxError)) return 'error ' + bad }\n"
+        "  }\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "class strings");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -1123,6 +1720,16 @@ int main(void)
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
+    host_run_thread(test_function_nesting, NULL);
+    host_run_thread(test_paren_depth, NULL);
+    host_run_thread(test_json_records, NULL);
+    host_run_thread(test_module_chains, NULL);
+    host_run_thread(test_module_retry, NULL);
+    test_ropes();
+    test_free_nesting();
+    test_unicode_tables();
+    test_class_strings();
+    test_closure_lookup_fail();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();

@@ -547,10 +547,8 @@ typedef struct JSClassExoticMethods {
     int (*set_property)(JSContext *ctx, JSValueConst obj, JSAtom atom,
                         JSValueConst value, JSValueConst receiver, int flags);
 
-    /* To get a consistent object behavior when get_prototype != NULL,
-       get_property, set_property and set_prototype must be != NULL
-       and the object must be created with a JS_NULL prototype. */
-    JSValue (*get_prototype)(JSContext *ctx, JSValueConst obj);
+    /* There is no get_prototype: a proxy is the one object whose prototype
+       is not that of its shape, and JS_GetPrototype calls it by name. */
     /* return < 0 if exception or TRUE/FALSE */
     int (*set_prototype)(JSContext *ctx, JSValueConst obj, JSValueConst proto_val);
     /* return < 0 if exception or TRUE/FALSE */
@@ -1214,7 +1212,8 @@ int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
 int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val);
 JSValue JS_GetModulePrivateValue(JSContext *ctx, JSModuleDef *m);
                         
-/* debug value output */
+/* debug value output, for the hosts that define CONFIG_PRINT_VALUE */
+#ifdef CONFIG_PRINT_VALUE
 
 typedef struct {
     JS_BOOL show_hidden : 8; /* only show enumerable properties */
@@ -1233,6 +1232,7 @@ void JS_PrintValueRT(JSRuntime *rt, JSPrintValueWrite *write_func, void *write_o
                      JSValueConst val, const JSPrintValueOptions *options);
 void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_opaque,
                    JSValueConst val, const JSPrintValueOptions *options);
+#endif /* CONFIG_PRINT_VALUE */
 
 #ifdef __CCGO__
 void init();

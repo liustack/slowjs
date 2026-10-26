@@ -93,10 +93,14 @@ static uintptr_t host_find_stack_low(void)
 #endif
 }
 
+_Thread_local long host_stack_fail_at;
+
 long __shadow_remaining(void)
 {
     uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
 
+    if (host_stack_fail_at > 0 && --host_stack_fail_at == 0)
+        return 0;
     if (!host_stack_low)
         host_stack_low = host_find_stack_low() + HOST_STACK_RESERVE;
     return sp > host_stack_low ? (long)(sp - host_stack_low) : 0;
