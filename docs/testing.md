@@ -215,6 +215,8 @@ go run -tags cengine ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one scr
 go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
 ```
 
+A formal build of the engine passes `-release` to the generator: it stops on any stub, and refuses the switches made for surveys and tests (`-keep-going`, `-poison`, `GEN_KEEP_NARROW` and the others the README lists), so the package it writes has no `goasmMissing` stub. Until the last stub of the C is gone it stops on that one.
+
 `jsrun` times one call per run, the evaluation of the script with its jobs and the result as a string, and its `timed:` line says so. The source is already a string and the VM is made, collected, released and closed outside the time.
 
 The tag `testhooks` turns on the hooks of these tests, which the normal build does not have: `hostmem.SetFault` makes calls to the OS fail, and `callbackHook` of `internal/cengine` stops the engine in a callback (with a count of engine teardowns beside it). Without the tag the code holds no check for them, so a normal build pays nothing. A run without the tag skips the tests that need them and says so (`TestFailingCalls`, `TestRefusedCalls`, `TestLifecycleHooks`), so use the tag for the whole suite.

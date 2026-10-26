@@ -35,3 +35,31 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseError: a release build refuses each switch made for surveys,
+// tests and negative builds, one at a time, and a plain build with an output
+// folder goes on.
+func TestReleaseError(t *testing.T) {
+	plain := devSwitches{Arch: "amd64", NonFormat: defaultNonFormat}
+	if err := releaseError(plain, "out"); err != nil {
+		t.Fatalf("a plain release build: %v", err)
+	}
+	if err := releaseError(plain, ""); err == nil || !strings.Contains(err.Error(), "-out") {
+		t.Fatalf("a release build with no -out: %v", err)
+	}
+	for name, edit := range map[string]func(*devSwitches){
+		"-keep-going":          func(d *devSwitches) { d.KeepGoing = true },
+		"-loose-varargs":       func(d *devSwitches) { d.LooseVarargs = true },
+		"-poison":              func(d *devSwitches) { d.Poison = true },
+		"GEN_KEEP_NARROW":      func(d *devSwitches) { d.KeepNarrow = true },
+		"GEN_EDIT_LOWERED":     func(d *devSwitches) { d.EditLowered = "1" },
+		"-arch arm64":          func(d *devSwitches) { d.Arch = "arm64" },
+		"-non-format-variadic": func(d *devSwitches) { d.NonFormat = "" },
+	} {
+		d := plain
+		edit(&d)
+		if err := releaseError(d, "out"); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

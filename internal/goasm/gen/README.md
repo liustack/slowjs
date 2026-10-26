@@ -123,7 +123,11 @@ declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
 `malloc_usable_size` and `goasmMissing`, which each stub calls with its index
 in `missingNames`. A rejection stops the run and nothing is written, and the
 default has no stubs. `-keep-going` is for surveys: it lists every function the
-C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+C must change, by class, and stubs it instead of stopping. `-release` is the
+formal build: it fails on any stub, needs `-out`, and refuses every switch
+made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
+`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `-arch arm64`, a changed
+`-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
 the engine is made for (20 by default, 25 for the host's whole 32 MiB):
