@@ -56,6 +56,8 @@ On linux/amd64 without PGO, against v0.26.16 over 10 rounds, the spiral page of 
 
 Tests: `lib/forin_test.go`, whose `testdata/forin.txt` is what the engine gave before the change, and `internal/fixlib/forin_test.go`.
 
+The C tree (`engine/quickjs.c`) has the same change in C: `js_for_in_prepare_prototype_chain_enum` calls `js_for_in_no_enum` first. `engine/test/compare.sh` runs `testdata/forin.js` on it and on the Go engine.
+
 ### When upstream changes it
 
 If it reports that `js_for_in_prepare_prototype_chain_enum`, `JS_GetOwnPropertyNamesInternal`, `get_shape_prop` or `JS_FreePropertyEnum` changed (a fingerprint other than the one in `internal/fixlib/forinsites.go`), read them against `lib/forin.go`: for an object that is not exotic, the names listed with `JS_GPN_STRING_MASK` and `JS_GPN_ENUM_ONLY` must still be only shape properties with a name and the enumerable flag, the loop must still go on to the next prototype when the list is empty, and freeing an empty list must still do nothing. If it reports that the reads of the enumerable flag or the test of `is_exotic` changed shape, find where the bits are now and update the patterns in `internal/fixlib/forin.go`. Then put the new fingerprints in (`go run ./internal/fixlib -forin` prints them) and run `go test -run ForIn ./lib`.
