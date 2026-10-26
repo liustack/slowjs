@@ -22,4 +22,14 @@ func TestLeafRejectsBasePointer(t *testing.T) {
 	if _, _, err := LowerRegister(body, fn); err == nil || !strings.Contains(err.Error(), "base pointer") {
 		t.Fatalf("leaf using RBP as a value register accepted: %v", err)
 	}
+	// The 32-, 16- and 8-bit names are the same register: a leaf that clears
+	// or writes %ebp, %bp or %bpl still clobbers Go's base pointer.
+	for _, insn := range []string{"xorl\t%ebp, %ebp", "movw\t%di, %bp", "movb\t%dil, %bpl"} {
+		sub := "bpsub:\n\t" + insn + "\n\tmovq\t%rdi, %rax\n\tretq\n.Lfunc_end0:\n"
+		fn.Name = "bpsub"
+		SetCallees([]FuncSpec{fn})
+		if _, _, err := LowerRegister(sub, fn); err == nil || !strings.Contains(err.Error(), "base pointer") {
+			t.Fatalf("leaf writing %q accepted: %v", insn, err)
+		}
+	}
 }

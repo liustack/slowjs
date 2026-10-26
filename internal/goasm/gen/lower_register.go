@@ -86,7 +86,7 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 			reSub.MatchString(n) || reAdd.MatchString(n) || strings.Contains(n, "%rsp") {
 			return "", Meta{}, fmt.Errorf("%s: leaf is not frameless: %q", fn.Name, l)
 		}
-		if strings.Contains(n, "%rbp") {
+		if reBasePointer.MatchString(n) {
 			return "", Meta{}, fmt.Errorf("%s: leaf uses the base pointer, which Go owns: %q", fn.Name, l)
 		}
 		if m := reCall.FindStringSubmatch(n); m != nil && calleeKinds[m[1]] == Register {
@@ -111,4 +111,9 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 var (
 	reLeafPush = regexp.MustCompile(`^pushq\s+%(rbx|r12|r13|r14|r15)$`)
 	reLeafPop  = regexp.MustCompile(`^popq\s+%(rbx|r12|r13|r14|r15)$`)
+	// Go owns the base pointer. A leaf must touch none of its aliases: the
+	// 64-, 32-, 16- and 8-bit names all name the same register, and writing
+	// a narrow one (xor %ebp,%ebp) still clobbers BP, so matching the text
+	// "%rbp" alone misses them.
+	reBasePointer = regexp.MustCompile(`%(rbp|ebp|bp|bpl)\b`)
 )
