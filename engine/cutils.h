@@ -376,6 +376,11 @@ static inline int from_hex(int c)
 void rqsort(void *base, size_t nmemb, size_t size,
             int (*cmp)(const void *, const void *, void *),
             void *arg);
+/* rqsort that returns early, with the elements in some order, once *stop
+   is not 0: it reads it after each comparison and between two parts */
+void rqsort_stop(void *base, size_t nmemb, size_t size,
+                 int (*cmp)(const void *, const void *, void *),
+                 void *arg, const volatile int *stop);
 
 static inline uint64_t float64_as_uint64(double d)
 {

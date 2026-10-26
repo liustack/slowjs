@@ -10,6 +10,7 @@
 
      unit */
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -858,6 +859,57 @@ static void test_search_interrupt(void)
     }
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
+}
+
+/* set_flag_later sets the interrupt flag of the runtime arg after 20 ms,
+   from a thread of its own, as a host stops a script from outside. */
+static void *set_flag_later(void *arg)
+{
+    struct timespec d = { 0, 20 * 1000 * 1000 };
+
+    nanosleep(&d, NULL);
+    __atomic_store_n(JS_GetInterruptFlag((JSRuntime *)arg), 1, __ATOMIC_RELAXED);
+    return NULL;
+}
+
+/* A sort reads the interrupt flag after each comparison and stops when it
+   is set. The sort of a typed array without a comparator runs no
+   JavaScript: it stops soon after a thread of the host sets the flag, with
+   its elements in some order. Array.prototype.sort without a comparator
+   runs none after an element became a string: it stops at the comparison
+   after the conversion that set the flag and writes nothing back. */
+static void test_sort_interrupt(void)
+{
+    static const char *const sorts[] = {
+        "s.sort()",
+        "try { s.sort() } catch (e) { 'caught' }",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    pthread_t th;
+    double t;
+    size_t i;
+
+    add_interrupt(ctx);
+    CHECK(eval(ctx, "var f = new Float64Array(1 << 22), sum = 0\n"
+                    "for (var i = 0; i < f.length; i++) sum += f[i] = (i * 7919) % 1000003"),
+          "the script threw");
+    CHECK(pthread_create(&th, NULL, set_flag_later, rt) == 0, "pthread_create");
+    t = now();
+    CHECK(interrupted(ctx, "f.sort()"), "the sort of a typed array was not interrupted");
+    t = now() - t;
+    pthread_join(th, NULL);
+    CHECK(t < 0.2, "the sort of a typed array stopped after %.3f s", t);
+    CHECK(eval_is(ctx, "var t = 0; for (var i = 0; i < f.length; i++) t += f[i]; t === sum", "true"),
+          "the elements of the typed array after the interrupt");
+    for(i = 0; i < sizeof(sorts) / sizeof(sorts[0]); i++) {
+        CHECK(eval(ctx, "var s = Array.from({ length: 1000 }, (_, i) => 'k' + i); s[500] = T('m')"),
+              "the script threw");
+        CHECK(interrupted(ctx, sorts[i]), "%s was not interrupted", sorts[i]);
+        CHECK(eval_is(ctx, "s[0] + ' ' + s[999]", "k0 k999"), "%s wrote back", sorts[i]);
+    }
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
 }
 
 /* n_of returns the field n of the async context of ctx, or -1 when it has
@@ -2175,6 +2227,7 @@ int main(void)
     test_interrupt_points();
     test_search_linear();
     test_search_interrupt();
+    test_sort_interrupt();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

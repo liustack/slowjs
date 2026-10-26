@@ -45903,6 +45903,9 @@ static int js_array_cmp_generic(const void *a, const void *b, void *opaque) {
 
     if (psc->exception)
         return 0;
+    /* a sort without a comparator calls no function that would read it */
+    if (js_poll_interrupts(ctx))
+        goto exception;
 
     if (psc->has_method) {
         /* custom sort function is specified as returning 0 for identical
@@ -45998,7 +46001,8 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
         array[pos].pos = i;
         pos++;
     }
-    rqsort(array, pos, sizeof(*array), js_array_cmp_generic, &asc);
+    /* the sort stops at the first exception: nothing is written back then */
+    rqsort_stop(array, pos, sizeof(*array), js_array_cmp_generic, &asc, &asc.exception);
     if (asc.exception)
         goto exception;
 
@@ -62410,8 +62414,8 @@ static JSValue js_typed_array_sort(JSContext *ctx, JSValueConst this_val,
                 array_idx[i] = i;
             tsc.elt_size = elt_size;
             tsc.array = array;
-            rqsort(array_idx, len, sizeof(array_idx[0]),
-                   js_TA_cmp_generic, &tsc);
+            rqsort_stop(array_idx, len, sizeof(array_idx[0]),
+                        js_TA_cmp_generic, &tsc, &tsc.exception);
             if (tsc.exception) {
                 if (tsc.exception == 1) {
                     js_free(ctx, array_idx);
@@ -62454,8 +62458,10 @@ static JSValue js_typed_array_sort(JSContext *ctx, JSValueConst this_val,
             js_free(ctx, array_idx);
             js_free(ctx, array);
         } else {
-            rqsort(p->u.array.u.ptr, len, elt_size, cmpfun, &tsc);
-            if (tsc.exception)
+            /* in place: an interrupt leaves the elements in some order */
+            rqsort_stop(p->u.array.u.ptr, len, elt_size, cmpfun, &tsc,
+                        &ctx->rt->interrupt_flag);
+            if (tsc.exception || js_poll_interrupts(ctx))
                 return JS_EXCEPTION;
         }
     }
