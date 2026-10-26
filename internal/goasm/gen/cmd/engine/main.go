@@ -201,9 +201,13 @@ func main() {
 		maxInt = map[string]int{"amd64": 10, "arm64": 6}[*arch]
 	}
 	shadowLL := filepath.Join(*work, "shadow.ll")
+	// The probe module gives llc's registers of every unified entry's
+	// arguments and result to the post-link check.
+	probesLL := filepath.Join(*work, "probes.ll")
+	os.Remove(probesLL)
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
-		"-shadow-icall-sigs", fmt.Sprintf("-shadow-size-log2=%d", *sizeLog2)}
+		"-shadow-icall-sigs", fmt.Sprintf("-shadow-size-log2=%d", *sizeLog2), "-shadow-probes=" + probesLL}
 	if os.Getenv("GEN_KEEP_NARROW") != "" {
 		// Negative build: narrow integers as the generator once took them
 		// (gen.SigFromCode reads the same switch).
@@ -244,14 +248,21 @@ func main() {
 	os.Remove(asmPath)
 	os.Remove(objPath)
 	llc := filepath.Join(*llvm, "llc")
-	// The pass's shared object also holds the llc plugin that writes a
-	// symbol with its signature at every indirect call. Every function stays
-	// in .text: llc would put a cold one (abort) in .text.unlikely., which
-	// the lowering and the check take for one text.
+	// The pass's shared object also holds the llc plugins that write a
+	// symbol with its signature at every indirect call and the registers
+	// llc assigns (facts.cpp). Every function stays in .text: llc would put
+	// a cold one (abort) in .text.unlikely., which the lowering and the
+	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
+	factsPath := filepath.Join(*work, "engine.facts")
+	probeFacts := filepath.Join(*work, "probes.facts")
+	os.Remove(factsPath)
+	os.Remove(probeFacts)
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
-	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels", "-o", objPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels",
+		"-goasm-facts="+factsPath, "-o", objPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-goasm-facts="+probeFacts, "-o", os.DevNull, probesLL)...))
 	tLLVM := time.Since(t0)
 
 	allow := map[string]bool{}
@@ -422,9 +433,17 @@ func main() {
 		if vpkg == "" {
 			vpkg = *pkg
 		}
+		probes, err := gen.ParseRegFacts(readFile(probeFacts))
+		if err != nil {
+			die(err)
+		}
+		facts, err := gen.ParseRegFacts(readFile(factsPath))
+		if err != nil {
+			die(err)
+		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", All: *verifyAll})
+			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
