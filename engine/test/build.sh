@@ -26,7 +26,7 @@
 #   tsan        ThreadSanitizer, for host-test alone (the host with stubs in
 #               place of the engine): the engine itself runs in one thread
 # OUTDIR defaults to engine/test/out/MODE. It gets run-test262, jsrun (see
-# compare.sh), unit, unit-oom and unit-api (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
+# compare.sh), unit, unit-oom, unit-api and unit-white (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
 # host-test.sh), heap-test and, in asan-heap mode, poison-test (see heap.sh), and
 # the object files: those of the engine here, and those of its
 # libc in libc/ (heap-fuzz for fuzz). CC picks another compiler. A sanitizer
@@ -158,6 +158,20 @@ for f in run-test262 jsrun unit unit-oom unit-api mathdump api-test render $pois
 	$cc $hostflags -c "$here/$f.c" -o "$out/$f.o"
 	$cc $san $engineobjs $libcobjs "$out/host.o" "$out/$f.o" -o "$out/$f" -lpthread
 done
+# unit-white tests what the public API cannot reach. white.c is quickjs.c with
+# functions added at its end, built as the engine is, and linked in place of
+# quickjs.o.
+if [ -f "$here/white.c" ] && [ -f "$here/unit-white.c" ]; then
+	# shellcheck disable=SC2086
+	$cc $common $free $defs -DCONFIG_PRINT_VALUE -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$here/white.c" -o "$out/white.o"
+	$cc $hostflags -c "$here/unit-white.c" -o "$out/unit-white.o"
+	whiteobjs=
+	for o in $engineobjs; do
+		case $o in */quickjs.o) ;; *) whiteobjs="$whiteobjs $o" ;; esac
+	done
+	# shellcheck disable=SC2086
+	$cc $san $whiteobjs "$out/white.o" $libcobjs "$out/host.o" "$out/unit-white.o" -o "$out/unit-white" -lpthread
+fi
 # libmath calls the math functions of engine/libc, and nothing else of it. It is
 # not given -ffreestanding and the system's libm, but -fno-builtin, so that
 # every call it makes is a call of engine/libc.
