@@ -16,6 +16,9 @@ const CanRemap = false
 
 const stackFlags = 0
 
+// noHugePages does nothing: darwin maps huge pages only when asked for them.
+func noHugePages(addr, size uintptr) error { return nil }
+
 // releaseAdvice lets the system take the pages when it needs memory, with
 // nothing to do before they are used again. Until then they stay counted in
 // the memory of the process. MADV_FREE_REUSABLE would stop counting them at
