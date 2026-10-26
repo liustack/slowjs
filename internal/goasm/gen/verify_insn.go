@@ -18,8 +18,11 @@
 // only data is checked the same way: every byte and every relocated pointer
 // of engine_rodata in the binary, and every constant pool and jump table a
 // function carries, against llc's object. The signatures are the pass's,
-// taken on trust: EngineCheck.Sigs for each function and direct call, and
-// for an indirect call the marker the lowering read before it.
+// taken on trust: EngineCheck.Sigs for each function and direct call. For
+// an indirect call LLVM itself binds the signature to the call (a kcfi type
+// id the pass sets, which llc keeps on the machine call and the plugin in
+// pass/icall.cpp names in a symbol at it), and the check reads it from that
+// symbol in llc's object.
 package gen
 
 import (
@@ -193,6 +196,13 @@ type objFile struct {
 	rel    map[int]map[uint64]objReloc
 	text   int
 	starts map[int][]uint64 // section -> sorted values of its named symbols
+	icall  map[uint64]icallSym
+}
+
+// icallSym is the symbol the plugin names at an indirect call.
+type icallSym struct {
+	name, fn string
+	id       uint32
 }
 
 func openObj(path string) (*objFile, error) {
@@ -201,7 +211,7 @@ func openObj(path string) (*objFile, error) {
 		return nil, err
 	}
 	o := &objFile{f: f, byName: map[string]elf.Symbol{}, data: map[int][]byte{}, rel: map[int]map[uint64]objReloc{},
-		text: -1, starts: map[int][]uint64{}}
+		text: -1, starts: map[int][]uint64{}, icall: map[uint64]icallSym{}}
 	syms, err := f.Symbols()
 	if err != nil {
 		return nil, err
@@ -228,6 +238,16 @@ func openObj(path string) (*objFile, error) {
 			return nil, fmt.Errorf("%s: two symbols named %s", path, s.Name)
 		}
 		o.byName[s.Name] = s
+		if strings.HasPrefix(s.Name, ICallPrefix) {
+			fn, _, id, ok := ParseICallSymbol(s.Name)
+			if !ok || int(s.Section) != o.text {
+				return nil, fmt.Errorf("%s: %s is no indirect-call symbol of the text", path, s.Name)
+			}
+			if prev, dup := o.icall[s.Value]; dup {
+				return nil, fmt.Errorf("%s: %s and %s at one place", path, prev.name, s.Name)
+			}
+			o.icall[s.Value] = icallSym{s.Name, fn, id}
+		}
 		if s.Section != elf.SHN_UNDEF && int(s.Section) < len(f.Sections) {
 			o.starts[int(s.Section)] = append(o.starts[int(s.Section)], s.Value)
 		}
@@ -913,6 +933,7 @@ type matcher struct {
 	branches []branch
 	rets     []uint64 // binary targets of the jumps that replace returns
 	calls    int
+	icalls   int // indirect calls, each with LLVM's signature symbol
 	refs     int
 	argBase  int64
 	body     uint64 // address of the body in the binary
@@ -1043,6 +1064,18 @@ func (k *checker) checkUnified(meta Meta) error {
 	if m.calls != len(r.Calls) || m.refs != len(r.Refs) {
 		return fmt.Errorf("the lowering declared %d calls and %d references, llc's object has %d and %d",
 			len(r.Calls), len(r.Refs), m.calls, m.refs)
+	}
+	// Every signature symbol in the function sits on one of its indirect
+	// calls.
+	lsym, _ := k.llc.label(r.Name)
+	syms := 0
+	for at := range k.llc.icall {
+		if at >= lsym.Value && at < lsym.Value+lsym.Size {
+			syms++
+		}
+	}
+	if syms != m.icalls {
+		return fmt.Errorf("llc's object has %d signature symbols in the function, on %d indirect calls", syms, m.icalls)
 	}
 	return m.bodyData()
 }
@@ -1518,6 +1551,9 @@ func (m *matcher) call(x insn, r *relAt) error {
 	m.calls++
 	switch a := x.in.Args[0].(type) {
 	case x86asm.Rel:
+		if s, ok := k.llc.icall[x.at]; ok {
+			return fmt.Errorf("LLVM bound the signature symbol %s to a direct call", s.name)
+		}
 		if c.Kind != CallUnified && c.Kind != CallLeaf {
 			return fmt.Errorf("llc calls directly, the lowering declared %+v", c)
 		}
@@ -1576,6 +1612,14 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
 		}
+		bound, err := m.boundSig(x)
+		if err != nil {
+			return err
+		}
+		if !sameSig(bound, c.Sig) {
+			return fmt.Errorf("LLVM bound the signature %v to llc's call through %v, the lowering marshalled it as %v", bound, a, c.Sig)
+		}
+		m.icalls++
 		return m.marshal(c.Sig, func(b insn) error {
 			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
@@ -1588,6 +1632,23 @@ func (m *matcher) call(x insn, r *relAt) error {
 		return fmt.Errorf("llc calls through memory, which the build rules out")
 	}
 	return fmt.Errorf("a call form the check does not know")
+}
+
+// boundSig reads the signature LLVM bound to the indirect call x: the
+// symbol the plugin put at its address in llc's object.
+func (m *matcher) boundSig(x insn) (Sig, error) {
+	s, ok := m.k.llc.icall[x.at]
+	if !ok {
+		return Sig{}, fmt.Errorf("llc's indirect call has no signature symbol from LLVM")
+	}
+	if s.fn != m.r.Name {
+		return Sig{}, fmt.Errorf("the signature symbol %s at llc's call names another function", s.name)
+	}
+	code, err := ICallCode(s.id)
+	if err != nil {
+		return Sig{}, fmt.Errorf("%s: %w", s.name, err)
+	}
+	return SigFromCode(code)
 }
 
 func sameSig(a, b Sig) bool {
