@@ -165,6 +165,8 @@ func TestCloseRetry(t *testing.T) {
 		if u := h.Memory().Usage(); u.Chunks != 1 {
 			t.Fatalf("after the refused unmap the host holds %+v, want the one chunk", u)
 		}
+		// The engine is freed though the Close failed, so no entry may run.
+		refusesEntries(t, v, "after a Close that failed")
 		leaked, err = v.Close()
 		if err != nil || leaked != 0 {
 			t.Fatalf("Close again: %d blocks, %v", leaked, err)
@@ -174,6 +176,24 @@ func TestCloseRetry(t *testing.T) {
 		}
 		gone(t, h, "after Close again")
 	})
+}
+
+// refusesEntries checks that the four entries into the engine refuse a VM
+// whose Close began: Eval and ReleaseMemory return ErrClosed, RunGC and Usage
+// panic with it.
+func refusesEntries(t *testing.T, v *VM, when string) {
+	t.Helper()
+	if _, err := v.Eval(`1`, "after.js"); !errors.Is(err, ErrClosed) {
+		t.Errorf("%s: Eval: %v, want ErrClosed", when, err)
+	}
+	if _, err := v.ReleaseMemory(0); !errors.Is(err, ErrClosed) {
+		t.Errorf("%s: ReleaseMemory: %v, want ErrClosed", when, err)
+	}
+	for name, f := range map[string]func(){"RunGC": v.RunGC, "Usage": func() { v.Usage() }} {
+		if r := onOwnGoroutine(f); r != ErrClosed {
+			t.Errorf("%s: %s panicked with %v, want ErrClosed", when, name, r)
+		}
+	}
 }
 
 // TestCloseTwice: Close after a Close that went well does nothing, and the
@@ -190,17 +210,7 @@ func TestCloseTwice(t *testing.T) {
 			t.Errorf("the engine was freed %d times", teardowns(v))
 		}
 		gone(t, h, "after two Closes")
-		if _, err := v.Eval(`1`, "after.js"); !errors.Is(err, ErrClosed) {
-			t.Errorf("Eval after Close: %v", err)
-		}
-		if _, err := v.ReleaseMemory(0); !errors.Is(err, ErrClosed) {
-			t.Errorf("ReleaseMemory after Close: %v", err)
-		}
-		for name, f := range map[string]func(){"RunGC": v.RunGC, "Usage": func() { v.Usage() }} {
-			if r := onOwnGoroutine(f); r != ErrClosed {
-				t.Errorf("%s after Close: %v", name, r)
-			}
-		}
+		refusesEntries(t, v, "after two Closes")
 	})
 }
 
