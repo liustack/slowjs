@@ -202,8 +202,8 @@ static int kept_regexps(int n, size_t bytes)
 /* The limits of the regexp cache hold: at most n entries, and entries of at
    most bytes bytes in all. Setting the limits lets every entry go. A regexp
    keeps working once the cache let its bytecode go. When an allocation
-   fails while a regexp is compiled and kept, the cache stays whole and keeps
-   working. A runtime keeps its cache once the context that filled it is
+   fails while a regexp is compiled and kept, the cache keeps the entries it
+   had and keeps working. A runtime keeps its cache once the context that filled it is
    gone. */
 static void test_regexp_cache_limits(void)
 {
@@ -250,7 +250,9 @@ static void test_regexp_cache_limits(void)
     JS_SetRegExpCache(rt, 8, 64 << 20);
 
     /* Let each allocation fail in turn: the limit grows until the compile
-       runs. */
+       runs. After each failure the entry of pats[3] is still there. */
+    CHECK(compile(ctx, 3), "pats[3] was not compiled");
+    CHECK(!compile(ctx, 3), "no hit for pats[3]");
     CHECK(eval(ctx, "var k = 0"), "the script threw");
     for(slack = 0; slack < 1 << 16 && !ok; slack += 16) {
         JS_ComputeMemoryUsage(rt, &m);
@@ -263,6 +265,8 @@ static void test_regexp_cache_limits(void)
         JS_SetMemoryLimit(rt, (size_t)-1);
         CHECK(eval_is(ctx, "new RegExp('q(r+)s').exec('qrrs')[1]", "rr"),
               "a regexp after a failed allocation at %zu bytes", slack);
+        CHECK(!compile(ctx, 3),
+              "pats[3] lost after a failed allocation at %zu bytes", slack);
     }
     CHECK(ok, "the compile never ran");
     compile(ctx, 1);
