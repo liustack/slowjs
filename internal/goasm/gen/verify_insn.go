@@ -469,11 +469,19 @@ var padNops = func() map[string]bool {
 // takes none faults) or ignored (a repeated prefix, a segment override other
 // than FS and GS, REP on an instruction that does not repeat: reserved or
 // without effect, so not what llc or the Go assembler write), and a no-op
-// other than the padding encodings.
+// other than the padding encodings. It also refuses the instructions that
+// reach the system or read machine state (forbidden.go), so no code of either
+// side holds one.
 func decode(b []byte) (x86asm.Inst, error) {
 	in, err := x86asm.Decode(b, 64)
+	if isRDSEED(b) {
+		return in, fmt.Errorf("forbidden instruction % x: reads the hardware random source", b[:min(len(b), 15)])
+	}
 	if err != nil || in.Op == 0 || in.Len <= 0 || in.Len > len(b) {
 		return in, fmt.Errorf("unknown or incomplete instruction % x", b[:min(len(b), 15)])
+	}
+	if why, bad := systemOps[in.Op]; bad {
+		return in, fmt.Errorf("forbidden instruction % x: %s", b[:in.Len], why)
 	}
 	for _, p := range in.Prefix {
 		if p != 0 && p&x86asm.PrefixInvalid != 0 {

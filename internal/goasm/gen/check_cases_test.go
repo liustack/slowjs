@@ -111,6 +111,7 @@ type ckCase struct {
 	callee map[string]string           // the callee signatures the lowering sees
 	lower  func(string, []Meta) string // the lowered text
 	metas  func([]Meta)                // the records and metas, before emit
+	files  func(map[string]string)     // the emitted Go files, before they are built
 	edit   func(*EngineCheck)          // what the check is told
 	calls  func(*testing.T, []Meta)    // what the lowering recorded
 	want   string                      // the reason the check rejects it; "" passes
@@ -182,7 +183,7 @@ func TestCheckCases(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range []ckCase{
+	cases := []ckCase{
 		{name: "body mode"},
 		{name: "preserve_none", pn: true},
 
@@ -319,7 +320,9 @@ func TestCheckCases(t *testing.T) {
 			want: "signature symbols in the function"},
 		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
 			ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
-	} {
+	}
+	cases = append(cases, forbiddenCases(sub, llcSub)...)
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ms, err := ckBuild(t, llvm, c)
 			if c.calls != nil {
@@ -453,7 +456,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	}
 	files, err := EmitEngine(low, EngineEmit{Metas: metas, Names: names, MaxBytes: 1 << 20, Plan: plan, Arch: "amd64"})
 	if err != nil {
-		t.Fatal(err)
+		return metas, err
+	}
+	if c.files != nil {
+		c.files(files)
 	}
 	var decls, keep strings.Builder
 	goType := map[Type]string{I64: "uintptr", Ptr: "uintptr", F64: "float64"}
@@ -507,4 +513,53 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	}
 	_, err = CheckEngine(ec)
 	return metas, err
+}
+
+// forbiddenCases put each forbidden instruction into function g three ways,
+// and each is refused as the instruction it is, not only as a difference
+// from the other side: as bytes in the lowered text (emit refuses them), as
+// the first bytes of g's emitted body (the Go binary then holds them, and the
+// check refuses them where it decodes the binary), and as text in llc's code
+// (the check refuses them where it decodes llc's object).
+func forbiddenCases(sub func(fn, re, repl string) func(string, []Meta) string,
+	llcSub func(fn, old, new string, n int) func(string) string) []ckCase {
+	var out []ckCase
+	for _, f := range []struct{ name, bytes, text string }{
+		{"syscall", "0f 05", "syscall"},
+		{"sysenter", "0f 34", "sysenter"},
+		{"int 0x80", "cd 80", "int\t$128"},
+		{"rdtsc", "0f 31", "rdtsc"},
+		{"rdtscp", "0f 01 f9", "rdtscp"},
+		{"rdrand", "48 0f c7 f0", "rdrandq\t%rax"},
+		{"rdseed", "48 0f c7 f8", ".byte 0x48, 0x0f, 0xc7, 0xf8"},
+		{"cpuid", "0f a2", "cpuid"},
+	} {
+		var lit, quad []string
+		for _, h := range strings.Fields(f.bytes) {
+			lit = append(lit, "0x"+h)
+		}
+		for len(lit) < 8 {
+			lit = append(lit, "0x90")
+		}
+		for i := 7; i >= 0; i-- {
+			quad = append(quad, strings.TrimPrefix(lit[i], "0x"))
+		}
+		first := regexp.MustCompile(`(?s)(TEXT ·g\(SB\).*?QUAD \$0x)[0-9a-f]{16}`)
+		out = append(out,
+			ckCase{name: f.name + " in the lowered text", lower: sub("g", `\n\ttestq`, "\n\t.byte "+strings.Join(lit[:len(strings.Fields(f.bytes))], ", ")+"\n\ttestq"),
+				want: "forbidden instruction"},
+			ckCase{name: f.name + " in the linked code", want: "forbidden instruction",
+				files: func(files map[string]string) {
+					for name, text := range files {
+						if first.MatchString(text) {
+							files[name] = first.ReplaceAllString(text, "${1}"+strings.Join(quad, ""))
+							return
+						}
+					}
+					panic("no QUAD in g's emitted text")
+				}},
+			ckCase{name: f.name + " in llc's code", llc: llcSub("g", "\ttestq\t%rdi, %rdi\n", "\t"+f.text+"\n\ttestq\t%rdi, %rdi\n", 1),
+				want: "forbidden instruction"})
+	}
+	return out
 }

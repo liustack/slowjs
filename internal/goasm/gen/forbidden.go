@@ -38,3 +38,14 @@ var systemOps = map[x86asm.Op]string{
 	x86asm.RDMSR: "reads a machine register", x86asm.RDFSBASE: "reads a segment base", x86asm.RDGSBASE: "reads a segment base",
 	x86asm.CPUID: "reads the processor's identity",
 }
+
+// isRDSEED reports the bytes of RDSEED: 0F C7 /7 with a register operand
+// (mod 11), after the prefixes. x86asm has no RDSEED and cannot decode it, so
+// decode names it before it reports an unknown instruction.
+func isRDSEED(b []byte) bool {
+	i := 0
+	for i < len(b) && (b[i] == 0x66 || b[i] == 0xf2 || b[i] == 0xf3 || b[i]>>4 == 4) {
+		i++
+	}
+	return i+2 < len(b) && b[i] == 0x0f && b[i+1] == 0xc7 && b[i+2]>>6 == 3 && b[i+2]>>3&7 == 7
+}

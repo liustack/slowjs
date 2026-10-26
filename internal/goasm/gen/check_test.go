@@ -100,6 +100,21 @@ func TestDecodeFixtures(t *testing.T) {
 			t.Fatalf("% s: decoded as %v, %v (want an error with %q)", hex, in, err, why)
 		}
 	}
+	// The instructions that reach the system or read machine state are
+	// refused as decoded: the lowering reads text, this reads the bytes of
+	// llc's object and of the linked binary. x86asm cannot decode RDSEED,
+	// which decode names before it calls the bytes unknown.
+	for hex, op := range forbiddenEncodings {
+		_, err := dec(hex)
+		if err == nil || !strings.Contains(err.Error(), "forbidden instruction") || !strings.Contains(err.Error(), op) {
+			t.Fatalf("% s (%s): decoded without being refused as forbidden: %v", hex, op, err)
+		}
+	}
+	// The same opcodes with other operands stay what they are: CMPXCHG16B
+	// shares 0F C7 with RDRAND and RDSEED.
+	if in := ok("48 0f c7 0c 24"); in.Op != x86asm.CMPXCHG16B {
+		t.Fatalf("cmpxchg16b decoded as %v", in)
+	}
 	// The padding encodings are skipped, up to 15 bytes.
 	for p := range padNops {
 		var hex []string
@@ -387,4 +402,26 @@ func flip0(m string) string {
 func lastLine(s string) string {
 	ls := strings.Split(strings.TrimSpace(s), "\n")
 	return ls[len(ls)-1]
+}
+
+// forbiddenEncodings are the machine encodings of the instructions the plan
+// bans (and the ones beside them that read machine state), with what each
+// does.
+var forbiddenEncodings = map[string]string{
+	"0f 05":       "system call",
+	"0f 34":       "system call",
+	"0f 35":       "system call",
+	"48 0f 07":    "system call",
+	"cd 80":       "software interrupt",
+	"cc":          "software interrupt",
+	"0f 31":       "time stamp counter",
+	"0f 01 f9":    "time stamp counter",
+	"0f c7 f0":    "hardware random source",
+	"48 0f c7 f0": "hardware random source",
+	"0f c7 f8":    "hardware random source",
+	"48 0f c7 f8": "hardware random source",
+	"66 0f c7 f8": "hardware random source",
+	"0f a2":       "processor's identity",
+	"0f 33":       "performance counter",
+	"0f 32":       "machine register",
 }

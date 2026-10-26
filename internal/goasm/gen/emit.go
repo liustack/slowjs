@@ -170,8 +170,14 @@ func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap) error {
 	}
 	for i < hi {
 		inst, err := x86asm.Decode(o.code[i:hi], 64)
+		if isRDSEED(o.code[i:hi]) {
+			return fmt.Errorf("forbidden instruction at %#x: reads the hardware random source", i)
+		}
 		if err != nil {
 			return fmt.Errorf("decode at %#x: %w", i, err)
+		}
+		if why, bad := systemOps[inst.Op]; bad {
+			return fmt.Errorf("forbidden instruction at %#x: %v %s", i, inst, why)
 		}
 		if r, at, ok := o.refIn(i, i+inst.Len); ok {
 			// A LEA of read-only data or of a function: the Go assembler
