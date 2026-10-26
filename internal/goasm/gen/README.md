@@ -176,9 +176,11 @@ from the register llc passes it in (for a call of a unified definition,
 the one the definition reads it from) and loads each result word into the
 register llc takes it from, and llc's code may read no register after the
 call before writing it but those results and the saved registers. Each
-return stores the registers llc returns. llc's own code must keep
-to what the build rules out: a call through memory fails, and so does a frame
-access wider than 8 bytes that is not an unaligned move. Each function's record
+return stores the registers llc returns. A leaf keeps C's registers, so of
+its facts only its calls' targets and the number of its calls and returns
+are checked. llc's own code must keep to what the build rules out: a call
+through memory fails, and so does a frame access wider than 8 bytes that is
+not an unaligned move. Each function's record
 must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the

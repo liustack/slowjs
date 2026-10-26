@@ -2012,6 +2012,12 @@ func (k *checker) checkLeaf(meta Meta) error {
 	for i := range m.bStart {
 		m.bStart[i] = -1
 	}
+	// A leaf keeps C's registers, so only the targets and the counts of
+	// its calls and returns are held to llc's facts.
+	var ok bool
+	if m.facts, ok = k.c.Facts[r.Name]; !ok {
+		return fmt.Errorf("llc wrote no register facts of it")
+	}
 	// The saves are llc's pushes at the start, each to its own 8-byte slot
 	// inside the Go frame, the first push highest as on the native stack.
 	var pushed []string
@@ -2080,6 +2086,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 				return fmt.Errorf("leaf return: %v at %#x is not a jump to the epilogue", b.in, b.at)
 			}
 			m.rets = append(m.rets, uint64(int64(b.at)+int64(b.in.Len)+int64(rel)))
+			m.nrets++
 			continue
 		case x86asm.CALL:
 			if err := m.call(x, k.llc.relIn(k.llc.text, x)); err != nil {
@@ -2121,6 +2128,10 @@ func (k *checker) checkLeaf(meta Meta) error {
 	}
 	if m.calls != len(r.Calls) {
 		return fmt.Errorf("the lowering declared %d calls, llc's object has %d", len(r.Calls), m.calls)
+	}
+	if m.calls != len(m.facts.Calls) || m.nrets != len(m.facts.Rets) {
+		return fmt.Errorf("llc's facts list %d calls and %d returns, its object has %d and %d",
+			len(m.facts.Calls), len(m.facts.Rets), m.calls, m.nrets)
 	}
 	return nil
 }
