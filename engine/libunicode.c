@@ -378,17 +378,13 @@ BOOL lre_is_case_ignorable(uint32_t c)
 
 /* character range */
 
-static void *cr_default_realloc(void *opaque, void *ptr, size_t size)
-{
-    return realloc(ptr, size);
-}
-
+/* realloc_func is required: the engine has no malloc */
 void cr_init(CharRange *cr, void *mem_opaque, DynBufReallocFunc *realloc_func)
 {
     cr->len = cr->size = 0;
     cr->points = NULL;
     cr->mem_opaque = mem_opaque;
-    cr->realloc_func = realloc_func ? realloc_func : cr_default_realloc;
+    cr->realloc_func = realloc_func;
 }
 
 void cr_free(CharRange *cr)

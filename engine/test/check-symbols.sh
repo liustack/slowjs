@@ -9,11 +9,12 @@
 # no system headers), takes the symbols they use and do not define, and fails
 # for any that engine/libc/symbols.txt does not allow. Twice:
 #
-# - the engine files alone may leave libc names, host callbacks and the
-#   allocator undefined, and nothing else
-# - the engine files with engine/libc may leave host callbacks and the
-#   allocator undefined, and nothing else, so engine/libc defines every libc
-#   name the engine uses
+# - the engine files alone may leave libc names and host callbacks undefined,
+#   and nothing else
+# - the engine files with engine/libc may leave host callbacks undefined, and
+#   nothing else, so engine/libc defines every libc name the engine uses. The
+#   allocator is among the engine files (heap.c and tlsf.c): there is no malloc
+#   to leave undefined
 #
 # It does that for each optimization level (the compiler turns some loops and
 # struct copies into library calls, and folds others away) and with and without
@@ -43,8 +44,7 @@ free=$engine_flags
 allowed() { sed -n "s/^$1 \(.*\)/\1/p" "$libc/symbols.txt"; }
 allowed libc > "$work/libc.txt"
 allowed host > "$work/host.txt"
-allowed alloc > "$work/alloc.txt"
-cat "$work/host.txt" "$work/alloc.txt" > "$work/outside.txt"
+cp "$work/host.txt" "$work/outside.txt"
 cat "$work/libc.txt" "$work/outside.txt" > "$work/all.txt"
 
 # The names the objects define (-g --defined-only) or use (-u), sorted, in the
@@ -134,7 +134,7 @@ for target in $targets; do
 		[ "$ndebug" = . ] && ndebug=
 		d=$work/obj
 		rm -rf "$d"; mkdir -p "$d/libc"
-		for f in quickjs libregexp libunicode cutils dtoa; do
+		for f in quickjs libregexp libunicode cutils dtoa heap tlsf; do
 			$cc $tflags $opt $ndebug $free -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$engine/$f.c" -o "$d/$f.o"
 		done
 		for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c "$libc"/abort.c; do
