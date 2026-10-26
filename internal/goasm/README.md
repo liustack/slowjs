@@ -5,21 +5,19 @@ linux/amd64, where programs use it by default. `-tags slowjs_nogoasm` builds
 them with the ccgo interpreter instead, which other targets always use. The generator is a
 maintainer tool and does not run during application builds.
 
-The input is the C tree in `engine/`. Until the switch to the new engine, the
-same text can also be made the old way (`--from-upstream`): the pinned QuickJS
-archive with `lib/internal/patch/quickjs.diff` applied, then `cpatch.py`.
-LLVM 22.1.8 is required. Python 3, LLVM development headers and a C++
-compiler are required only to regenerate the assembly.
+The input is the pinned QuickJS archive with `lib/internal/patch/quickjs.diff`
+applied, then `cpatch.py`. The generator never reads `engine/`, the C tree of
+the engine to come. LLVM 22.1.8 is required. Python 3, LLVM development
+headers and a C++ compiler are required only to regenerate the assembly.
 
 ## Pipeline
 
 1. The C interpreter has the fast paths that `internal/fixlib` adds only to
-   the Go interpreter. They are written in `engine/quickjs.c`, and the old way
-   makes them with `cpatch.py`: property reads that walk the prototype
-   chain past exotic objects (fixFieldChain), the usual `===` and `==` pairs
-   (fixEq), and bitwise operators on two numbers (fixBitwise). It also takes
-   the string or symbol of an atom in C. Each replacement must match the
-   expected number of times.
+   the Go interpreter. `cpatch.py` writes them into the C: property reads
+   that walk the prototype chain past exotic objects (fixFieldChain), the
+   usual `===` and `==` pairs (fixEq), and bitwise operators on two numbers
+   (fixBitwise). It also takes the string or symbol of an atom in C. Each
+   replacement must match the expected number of times.
 2. Preprocess the patched C and ask Clang for its typed AST. `prepare.py`
    retains the interpreter and selected inline helpers. Every remaining
    call becomes an explicitly typed external function with the SysV ABI. A
@@ -59,13 +57,12 @@ the Stack rules section of `docs/fork-changes/go-assembly.md`.
 
 `regenerate.py` runs the whole pipeline from the repository: it builds
 `allocas.cpp` as an LLVM pass plugin, collects the Go signatures and runs
-`build.py` on `engine/`. With `--from-upstream` it first unpacks the pinned
-QuickJS archive and applies the patch, and `build.py` applies `cpatch.py`.
+`build.py`. It first unpacks the pinned QuickJS archive and applies the patch,
+and `build.py` applies `cpatch.py`.
 
 ```sh
 python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin           # write lib/goasm_*
 python3 internal/goasm/regenerate.py --llvm /usr/lib/llvm-22/bin --check   # fail on drift
-python3 internal/goasm/regenerate.py --check-engine                        # engine/ is what the old way makes (no LLVM)
 ```
 
 Run `python3 -m unittest discover -s internal/goasm` for generator checks.

@@ -25,7 +25,7 @@
 #ifndef QUICKJS_H
 #define QUICKJS_H
 
-#include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -446,7 +446,8 @@ typedef struct JSMemoryUsage {
 } JSMemoryUsage;
 
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s);
-void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt);
+/* write a report of s to buf, cut to size bytes, and return its whole length */
+size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRuntime *rt);
 
 /* atom support */
 #define JS_ATOM_NULL 0
@@ -545,7 +546,15 @@ typedef struct JSClassDef {
 } JSClassDef;
 
 #define JS_INVALID_CLASS_ID 0
-JSClassID JS_NewClassID(JSClassID *pclass_id);
+/* Gives a class ID of rt, the next one it has not given out, and keeps it in
+   *pclass_id when that is 0. The IDs are counted by each runtime on its own, so
+   two runtimes give the same numbers to different classes, and the engine
+   keeps no state outside its runtimes. Keep *pclass_id per runtime: one global
+   variable shared by two runtimes holds the ID of the first and is a different
+   class in the second. A nonzero *pclass_id is returned as it is, and rt does
+   not give that number out again. The numbers of the built-in classes are
+   never given out. */
+JSClassID JS_NewClassID(JSRuntime *rt, JSClassID *pclass_id);
 /* Returns the class ID if `v` is an object, otherwise returns JS_INVALID_CLASS_ID. */
 JSClassID JS_GetClassID(JSValue v);
 int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def);
@@ -926,8 +935,6 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTrac
 /* return != 0 if the JS code needs to be interrupted */
 typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);
 void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque);
-/* if can_block is TRUE, Atomics.wait() can be used */
-void JS_SetCanBlock(JSRuntime *rt, JS_BOOL can_block);
 /* select which debug info is stripped from the compiled code */
 #define JS_STRIP_SOURCE (1 << 0) /* strip source code */
 #define JS_STRIP_DEBUG  (1 << 1) /* strip all debug info including source code */

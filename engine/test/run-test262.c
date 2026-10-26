@@ -25,8 +25,11 @@
 
 /*
  * This is run-test262.c of QuickJS 3d5e064 (2026-06-04) for the native test
- * host in this folder. It includes host.h in place of quickjs-libc.h and makes
- * its runtimes with host_new_runtime(). Nothing else is changed.
+ * host in this folder. It includes host.h in place of quickjs-libc.h, makes
+ * its runtimes with host_new_runtime(), and prints a memory report through
+ * print_memory_usage(), as JS_DumpMemoryUsage() fills a buffer. The engine has
+ * no threads that block, so JS_SetCanBlock() is gone: a test of
+ * Atomics.wait needs its excludes in test262.conf.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -606,7 +609,6 @@ static void *agent_start(void *arg)
     }
     JS_SetContextOpaque(ctx, agent);
     JS_SetRuntimeInfo(rt, "agent");
-    JS_SetCanBlock(rt, TRUE);
 
     add_helpers(ctx);
     ret_val = JS_Eval(ctx, agent->script, strlen(agent->script),
@@ -1739,8 +1741,6 @@ int run_test_buf(ThreadLocalStorage *tls,
     }
     JS_SetRuntimeInfo(rt, filename);
 
-    JS_SetCanBlock(rt, can_block);
-
     /* loader for ES6 modules */
     JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader_test, NULL, (void *)filename);
 
@@ -2041,8 +2041,6 @@ int run_test262_harness_test(ThreadLocalStorage *tls,
     }
     JS_SetRuntimeInfo(rt, filename);
 
-    JS_SetCanBlock(rt, can_block);
-
     /* loader for ES6 modules */
     JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader_test, NULL, (void *)filename);
 
@@ -2197,6 +2195,14 @@ void *run_test_dir_list(void *opaque)
         }
     }
     return NULL;
+}
+
+static void print_memory_usage(const JSMemoryUsage *s)
+{
+    char buf[4096];
+
+    JS_DumpMemoryUsage(buf, sizeof(buf), s, NULL);
+    fputs(buf, stdout);
 }
 
 void help(void)
@@ -2462,12 +2468,12 @@ int main(int argc, char **argv)
     if (dump_memory) {
         if (dump_memory > 1 && stats_count > 1) {
             printf("\nMininum memory statistics for %s:\n\n", stats_min_filename);
-            JS_DumpMemoryUsage(stdout, &stats_min, NULL);
+            print_memory_usage(&stats_min);
             printf("\nMaximum memory statistics for %s:\n\n", stats_max_filename);
-            JS_DumpMemoryUsage(stdout, &stats_max, NULL);
+            print_memory_usage(&stats_max);
         }
         printf("\nAverage memory statistics for %d tests:\n\n", stats_count);
-        JS_DumpMemoryUsage(stdout, &stats_avg, NULL);
+        print_memory_usage(&stats_avg);
         printf("\n");
     }
 

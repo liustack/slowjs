@@ -1,0 +1,175 @@
+--- libm.h.orig
++++ libm.h
+@@ -5,58 +5,13 @@
+ #include <float.h>
+ #include <math.h>
+ #include <endian.h>
+-#include "fp_arch.h"
+ 
+-#if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
+-#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __LITTLE_ENDIAN
+-union ldshape {
+-	long double f;
+-	struct {
+-		uint64_t m;
+-		uint16_t se;
+-	} i;
+-};
+-#elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __BIG_ENDIAN
+-/* This is the m68k variant of 80-bit long double, and this definition only works
+- * on archs where the alignment requirement of uint64_t is <= 4. */
+-union ldshape {
+-	long double f;
+-	struct {
+-		uint16_t se;
+-		uint16_t pad;
+-		uint64_t m;
+-	} i;
+-};
+-#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __LITTLE_ENDIAN
+-union ldshape {
+-	long double f;
+-	struct {
+-		uint64_t lo;
+-		uint32_t mid;
+-		uint16_t top;
+-		uint16_t se;
+-	} i;
+-	struct {
+-		uint64_t lo;
+-		uint64_t hi;
+-	} i2;
+-};
+-#elif LDBL_MANT_DIG == 113 && LDBL_MAX_EXP == 16384 && __BYTE_ORDER == __BIG_ENDIAN
+-union ldshape {
+-	long double f;
+-	struct {
+-		uint16_t se;
+-		uint16_t top;
+-		uint32_t mid;
+-		uint64_t lo;
+-	} i;
+-	struct {
+-		uint64_t hi;
+-		uint64_t lo;
+-	} i2;
+-};
+-#else
+-#error Unsupported long double representation
++/* The C tree is built with -ffp-contract=off and without __FP_FAST_FMA. musl
++   has a second path for a hardware fma in log, log2 and pow, and the two
++   paths differ in the last bit. Taking only the path without fma gives the
++   same results on every target. */
++#if defined(__FP_FAST_FMA) || defined(__FP_FAST_FMAF)
++#error build with -U__FP_FAST_FMA -U__FP_FAST_FMAF and -ffp-contract=off
+ #endif
+ 
+ /* Support non-nearest rounding mode.  */
+@@ -117,76 +72,34 @@
+    as if it had a side-effect (e.g. observable io) and returned
+    an arbitrary value.  */
+ 
+-#ifndef fp_barrierf
++/* The C tree does not look at floating-point exception flags, so a barrier
++   returns its input and forcing a value does nothing. */
+ #define fp_barrierf fp_barrierf
+ static inline float fp_barrierf(float x)
+ {
+-	volatile float y = x;
+-	return y;
++	return x;
+ }
+-#endif
+ 
+-#ifndef fp_barrier
+ #define fp_barrier fp_barrier
+ static inline double fp_barrier(double x)
+ {
+-	volatile double y = x;
+-	return y;
++	return x;
+ }
+-#endif
+ 
+-#ifndef fp_barrierl
+-#define fp_barrierl fp_barrierl
+-static inline long double fp_barrierl(long double x)
+-{
+-	volatile long double y = x;
+-	return y;
+-}
+-#endif
+-
+-/* fp_force_eval ensures that the input value is computed when that's
+-   otherwise unused.  To prevent the constant folding of the input
+-   expression, an additional fp_barrier may be needed or a compilation
+-   mode that does so (e.g. -frounding-math in gcc). Then it can be
+-   used to evaluate an expression for its fenv side-effects only.   */
+-
+-#ifndef fp_force_evalf
+ #define fp_force_evalf fp_force_evalf
+ static inline void fp_force_evalf(float x)
+ {
+-	volatile float y;
+-	y = x;
++	(void)x;
+ }
+-#endif
+ 
+-#ifndef fp_force_eval
+ #define fp_force_eval fp_force_eval
+ static inline void fp_force_eval(double x)
+ {
+-	volatile double y;
+-	y = x;
++	(void)x;
+ }
+-#endif
+ 
+-#ifndef fp_force_evall
+-#define fp_force_evall fp_force_evall
+-static inline void fp_force_evall(long double x)
+-{
+-	volatile long double y;
+-	y = x;
+-}
+-#endif
++#define FORCE_EVAL(x) do { (void)(x); } while(0)
+ 
+-#define FORCE_EVAL(x) do {                        \
+-	if (sizeof(x) == sizeof(float)) {         \
+-		fp_force_evalf(x);                \
+-	} else if (sizeof(x) == sizeof(double)) { \
+-		fp_force_eval(x);                 \
+-	} else {                                  \
+-		fp_force_evall(x);                \
+-	}                                         \
+-} while(0)
+-
+ #define asuint(f) ((union{float _f; uint32_t _i;}){f})._i
+ #define asfloat(i) ((union{uint32_t _i; float _f;}){i})._f
+ #define asuint64(f) ((union{double _f; uint64_t _i;}){f})._i
+@@ -244,14 +157,6 @@
+ hidden float  __tandf(double,int);
+ hidden float  __expo2f(float,float);
+ 
+-hidden int __rem_pio2l(long double, long double *);
+-hidden long double __sinl(long double, long double, int);
+-hidden long double __cosl(long double, long double);
+-hidden long double __tanl(long double, long double, int);
+-
+-hidden long double __polevll(long double, const long double *, int);
+-hidden long double __p1evll(long double, const long double *, int);
+-
+ extern int __signgam;
+ hidden double __lgamma_r(double, int *);
+ hidden float __lgammaf_r(float, int *);
+@@ -267,8 +172,5 @@
+ hidden double __math_oflow(uint32_t);
+ hidden double __math_divzero(uint32_t);
+ hidden double __math_invalid(double);
+-#if LDBL_MANT_DIG != DBL_MANT_DIG
+-hidden long double __math_invalidl(long double);
+-#endif
+ 
+ #endif

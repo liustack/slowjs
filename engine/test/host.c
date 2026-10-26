@@ -8,10 +8,12 @@
  */
 #include <errno.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "host.h"
 
@@ -59,22 +61,43 @@ static void host_clock_init(void)
     clock_gettime(CLOCK_MONOTONIC, &host_clock_origin);
 }
 
-int host_gettimeofday(struct timeval *tv, void *tz)
+int64_t host_now(uint32_t vm, int kind)
 {
-    (void)tz;
-    tv->tv_sec = HOST_NOW_SEC;
-    tv->tv_usec = 0;
-    if (host_clock_running) {
-        struct timespec now;
-        long long us;
+    struct timespec now;
+    int64_t ns;
 
+    (void)vm;
+    if (kind == HOST_NOW_MONOTONIC) {
         clock_gettime(CLOCK_MONOTONIC, &now);
-        us = (long long)(now.tv_sec - host_clock_origin.tv_sec) * 1000000 +
-            (now.tv_nsec - host_clock_origin.tv_nsec) / 1000;
-        tv->tv_sec += us / 1000000;
-        tv->tv_usec = us % 1000000;
+        return (int64_t)now.tv_sec * 1000000000 + now.tv_nsec;
     }
-    return 0;
+    ns = (int64_t)HOST_NOW_SEC * 1000000000;
+    if (host_clock_running) {
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        ns += (int64_t)(now.tv_sec - host_clock_origin.tv_sec) * 1000000000 +
+            (now.tv_nsec - host_clock_origin.tv_nsec);
+    }
+    return ns;
+}
+
+/* The test host registers no function, so the only request it answers is the
+   engine's own abort. It ends the process with the signal abort() gives. The
+   system's abort is not called: the engine's libc defines abort, and it is
+   the one that calls this. */
+JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
+{
+    (void)vm;
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    if (magic == HOST_CALL_ABORT)
+        fputs("engine abort\n", stderr);
+    else
+        fprintf(stderr, "engine: host_call of %d, which the test host does not have\n", magic);
+    fflush(stderr);
+    signal(SIGABRT, SIG_DFL);
+    raise(SIGABRT);
+    _exit(134);
 }
 
 uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)

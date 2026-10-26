@@ -5,13 +5,14 @@
 """Offline generator. Consumers require only the generated Go and .s files.
 
 Run on linux/amd64 with LLVM 22.1.8, Python 3 and matching LLVM development
-headers. Input is the C tree of engine/, or with --cpatch the pinned QuickJS
-source after lib/internal/patch/quickjs.diff, which cpatch.py then changes.
+headers. Input is the pinned QuickJS source after
+lib/internal/patch/quickjs.diff. cpatch.py then changes its quickjs.c. The
+script never reads engine/.
 Every subprocess inherits CPU affinity and priority from the caller.
 """
-import argparse,pathlib,subprocess,os,shutil,json,re,hashlib
+import argparse,pathlib,subprocess,os,json,re,hashlib
 import checks
-p=argparse.ArgumentParser();p.add_argument('--source',required=True);p.add_argument('--work',required=True);p.add_argument('--llvm',required=True);p.add_argument('--plugin',required=True);p.add_argument('--signatures',required=True);p.add_argument('--out',required=True);p.add_argument('--cpatch',action='store_true',help='the source is the patched upstream archive: apply cpatch.py to its quickjs.c');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--source',required=True);p.add_argument('--work',required=True);p.add_argument('--llvm',required=True);p.add_argument('--plugin',required=True);p.add_argument('--signatures',required=True);p.add_argument('--out',required=True);a=p.parse_args()
 here=pathlib.Path(__file__).resolve().parent;work=pathlib.Path(a.work).resolve();work.mkdir(parents=True,exist_ok=True)
 llvm=pathlib.Path(a.llvm).resolve();source=pathlib.Path(a.source).resolve();out=pathlib.Path(a.out).resolve()
 # Where the C locals start in the TLS slot. prepare.py and the Go side must
@@ -21,8 +22,7 @@ if f'const goasmLocals = {LOCALS}\n' not in (here.parent.parent/'lib/goasm_linux
 def run(cmd,**kw):subprocess.run([str(x) for x in cmd],check=True,**kw)
 version=subprocess.check_output([str(llvm/'clang-22'),'--version'],text=True)
 if '22.1.8' not in version:raise RuntimeError('generator requires LLVM 22.1.8')
-if a.cpatch:run(['python3',here/'cpatch.py',source/'quickjs.c',work/'quickjs.c'])
-else:shutil.copyfile(source/'quickjs.c',work/'quickjs.c')
+run(['python3',here/'cpatch.py',source/'quickjs.c',work/'quickjs.c'])
 run([llvm/'clang-22','-E','-P','-D_GNU_SOURCE','-DCONFIG_VERSION="2026-06-04"','-I',source,work/'quickjs.c','-o',work/'quickjs.i'])
 with open(work/'ast.json','w') as f:run([llvm/'clang-22','-x','c','-Xclang','-ast-dump=json','-fsyntax-only',work/'quickjs.i'],stdout=f)
 run(['python3',here/'prepare.py',work/'quickjs.i',work/'ast.json',work])

@@ -1,0 +1,69 @@
+# The symbols the engine's objects may leave undefined. check-symbols.sh in
+# engine/test reads this file. One name per line after its group.
+#
+# libc: defined by engine/libc. The compiler may also call the first four of
+#       them by itself, for a struct copy or a compare, so they are always here.
+#       bzero is there for macOS, where the compiler turns a memset of 0 into a
+#       call of it.
+# host: the callbacks of engine/host.h.
+# alloc: the allocator, until the engine brings its own.
+
+libc memcpy
+libc memmove
+libc memset
+libc bcmp
+libc bzero
+libc memcmp
+libc memchr
+libc strlen
+libc strcmp
+libc strchr
+libc strrchr
+libc abort
+libc snprintf
+libc vsnprintf
+libc acos
+libc acosh
+libc asin
+libc asinh
+libc atan
+libc atan2
+libc atanh
+libc cbrt
+libc ceil
+libc cos
+libc cosh
+libc exp
+libc expm1
+libc fabs
+libc floor
+libc fmax
+libc fmin
+libc fmod
+libc hypot
+libc log
+libc log10
+libc log1p
+libc log2
+libc lrint
+libc modf
+libc pow
+libc round
+libc sin
+libc sinh
+libc sqrt
+libc tan
+libc tanh
+libc trunc
+
+host host_memory_grow
+host host_now
+host host_poll
+host host_call
+host host_release
+
+alloc malloc
+alloc realloc
+alloc free
+alloc malloc_usable_size
+alloc malloc_size

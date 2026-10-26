@@ -43,9 +43,6 @@
     model.
 */
 
-#if defined(TEST) 
-#define DUMP_REOP
-#endif
 //#define DUMP_REOP
 //#define DUMP_EXEC
 
@@ -179,49 +176,6 @@ static void re_string_list_free(REStringList *s)
     lre_realloc(s->cr.mem_opaque, s->hash_table, 0);
 
     cr_free(&s->cr);
-}
-
-static void lre_print_char(int c, BOOL is_range)
-{
-    if (c == '\'' || c == '\\' ||
-        (is_range && (c == '-' || c == ']'))) {
-        printf("\\%c", c);
-    } else if (c >= ' ' && c <= 126) {
-        printf("%c", c);
-    } else {
-        printf("\\u{%04x}", c);
-    }
-}
-
-static __maybe_unused void re_string_list_dump(const char *str, const REStringList *s)
-{
-    REString *p;
-    const CharRange *cr;
-    int i, j, k;
-
-    printf("%s:\n", str);
-    printf("  ranges: [");
-    cr = &s->cr;
-    for(i = 0; i < cr->len; i += 2) {
-        lre_print_char(cr->points[i], TRUE);
-        if (cr->points[i] != cr->points[i + 1] - 1) {
-            printf("-");
-            lre_print_char(cr->points[i + 1] - 1, TRUE);
-        }
-    }
-    printf("]\n");
-    
-    j = 0;
-    for(i = 0; i < s->hash_size; i++) {
-        for(p = s->hash_table[i]; p != NULL; p = p->next) {
-            printf("  %d/%d: '", j, s->n_strings);
-            for(k = 0; k < p->len; k++) {
-                lre_print_char(p->buf[k], FALSE);
-            }
-            printf("'\n");
-            j++;
-        }
-    }
 }
 
 static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
@@ -3430,60 +3384,3 @@ const char *lre_get_groupnames(const uint8_t *bc_buf)
     re_bytecode_len = get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
     return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len);
 }
-
-#ifdef TEST
-
-BOOL lre_check_stack_overflow(void *opaque, size_t alloca_size)
-{
-    return FALSE;
-}
-
-void *lre_realloc(void *opaque, void *ptr, size_t size)
-{
-    return realloc(ptr, size);
-}
-
-int main(int argc, char **argv)
-{
-    int len, flags, ret, i;
-    uint8_t *bc;
-    char error_msg[64];
-    uint8_t *capture;
-    const char *input;
-    int input_len, capture_count;
-
-    if (argc < 4) {
-        printf("usage: %s regexp flags input\n", argv[0]);
-        return 1;
-    }
-    flags = atoi(argv[2]);
-    bc = lre_compile(&len, error_msg, sizeof(error_msg), argv[1],
-                     strlen(argv[1]), flags, NULL);
-    if (!bc) {
-        fprintf(stderr, "error: %s\n", error_msg);
-        exit(1);
-    }
-
-    input = argv[3];
-    input_len = strlen(input);
-
-    capture = malloc(sizeof(capture[0]) * lre_get_alloc_count(bc));
-    ret = lre_exec(capture, bc, (uint8_t *)input, 0, input_len, 0, NULL);
-    printf("ret=%d\n", ret);
-    if (ret == 1) {
-        capture_count = lre_get_capture_count(bc);
-        for(i = 0; i < 2 * capture_count; i++) {
-            uint8_t *ptr;
-            ptr = capture[i];
-            printf("%d: ", i);
-            if (!ptr)
-                printf("<nil>");
-            else
-                printf("%u", (int)(ptr - (uint8_t *)input));
-            printf("\n");
-        }
-    }
-    free(capture);
-    return 0;
-}
-#endif
