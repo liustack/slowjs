@@ -30,7 +30,7 @@ var (
 	engineDir = flag.String("engine", "engine", "the C tree")
 	llvm      = flag.String("llvm", "/usr/lib/llvm-22/bin", "LLVM 22.1.8 bin dir")
 	pass      = flag.String("pass", "", "shadow-stack pass plugin")
-	arch      = flag.String("arch", "amd64", "amd64 (arm64: not yet)")
+	arch      = flag.String("arch", "amd64", "amd64, or arm64 (up to llc and a survey of its output: the arm64 lowering takes no whole-engine input yet)")
 	mode      = flag.String("mode", "body", "body or pn (preserve_none)")
 	work      = flag.String("work", "_engine_work", "work dir")
 	out       = flag.String("out", "", "Go package dir to write (empty: no output)")
@@ -66,8 +66,8 @@ func reject(fn, stage, msg string) {
 func main() {
 	flag.Parse()
 	t0 := time.Now()
-	if *arch != "amd64" {
-		die(fmt.Errorf("-arch %s: only amd64 so far", *arch))
+	if *arch != "amd64" && *arch != "arm64" {
+		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
 	}
 	must(os.MkdirAll(*work, 0o755))
 	clang := filepath.Join(*llvm, "clang")
@@ -86,6 +86,9 @@ func main() {
 	}
 	srcs = append(srcs, src{filepath.Join(*engineDir, "libc/math.c"), "libc"}, src{filepath.Join(*engineDir, "libc/stdio.c"), "libc"})
 	cflags := append(append([]string{"--target=x86_64-linux-gnu"}, gen.EngineCFlags...), freeFlags...)
+	if *arch == "arm64" {
+		cflags = append(append([]string{}, gen.ARM64CFlags...), freeFlags...)
+	}
 	libc := filepath.Join(*engineDir, "libc")
 	var lls []string
 	group := map[string]string{}
@@ -209,6 +212,16 @@ func main() {
 
 	// 5. Split the text, place the data, lower every function.
 	asm := readFile(asmPath)
+	if *arch == "arm64" {
+		surveyARM64(asm, rep)
+		summary(rep, &gen.DataPlan{}, pre, nil, nil, len(rep.Defined))
+		if *reportOut != "" {
+			b, _ := json.MarshalIndent(rejections, "", " ")
+			writeFile(*reportOut, string(b))
+		}
+		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v\n", tCompile, tLLVM)
+		return
+	}
 	unit, err := gen.SplitAsm(asm, "#")
 	if err != nil {
 		die(err)
@@ -549,3 +562,86 @@ func must1(s string, err error) string {
 	return s
 }
 func die(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }
+
+// surveyARM64 counts what the arm64 lowering would meet in llc's output of
+// the whole engine, beyond what it takes from the prototype units.
+func surveyARM64(asm string, rep *gen.Report) {
+	unit, err := gen.SplitAsm(asm, "//")
+	if err != nil {
+		reject("", "split", err.Error())
+		return
+	}
+	reAdrp := regexp.MustCompile(`^adrp\s+x\d+, (:got:)?([.\w$]+)`)
+	reX18 := regexp.MustCompile(`\b[wx]18\b`)
+	type count struct {
+		n   int
+		fns map[string]bool
+		ex  string
+	}
+	c := map[string]*count{}
+	add := func(k, fn, l string) {
+		x := c[k]
+		if x == nil {
+			x = &count{fns: map[string]bool{}}
+			c[k] = x
+		}
+		x.n++
+		x.fns[fn] = true
+		if x.ex == "" {
+			x.ex = fn + ": " + l
+		}
+	}
+	for _, name := range unit.FuncOrder {
+		for _, raw := range unit.Funcs[name].Lines {
+			if strings.Contains(raw, "goasm.icall") {
+				add("indirect-call markers", name, "")
+				continue
+			}
+			l := strings.TrimSpace(raw)
+			if i := strings.Index(l, "//"); i >= 0 {
+				l = strings.TrimSpace(l[:i])
+			}
+			l = strings.Join(strings.Fields(l), " ")
+			switch {
+			case l == "":
+			case strings.HasPrefix(l, "blr "):
+				add("blr (indirect call)", name, l)
+			case strings.HasPrefix(l, "br "):
+				add("br (jump table or computed goto)", name, l)
+			case strings.HasPrefix(l, "b ") && !strings.HasPrefix(l, "b .L"):
+				add("b to a symbol (tail call)", name, l)
+			case strings.HasPrefix(l, "adrp "):
+				m := reAdrp.FindStringSubmatch(l)
+				switch {
+				case m == nil:
+					add("adrp, other form", name, l)
+				case m[1] != "":
+					add("adrp through the GOT", name, l)
+				case strings.HasPrefix(m[2], ".LCPI"):
+					add("adrp of a constant pool", name, l)
+				case strings.HasPrefix(m[2], ".LJTI"):
+					add("adrp of a jump table", name, l)
+				case rep.Defined[m[2]] || rep.Sigs[m[2]] != "":
+					add("adrp of a function", name, l)
+				default:
+					add("adrp of other data", name, l)
+				}
+			case strings.HasPrefix(l, "adr "):
+				add("adr (label address)", name, l)
+			case reX18.MatchString(l):
+				add("x18 use", name, l)
+			case strings.HasPrefix(l, "mrs ") || strings.HasPrefix(l, "msr ") || strings.HasPrefix(l, "svc"):
+				add("system instruction", name, l)
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "arm64: %d functions in the text, %d data objects\n", len(unit.FuncOrder), len(unit.DataOrder))
+	for _, k := range gen.SortedKeys(c) {
+		x := c[k]
+		ex := x.ex
+		if len(ex) > 120 {
+			ex = ex[:120]
+		}
+		fmt.Fprintf(os.Stderr, "  %-34s %6d in %4d functions   e.g. %s\n", k, x.n, len(x.fns), ex)
+	}
+}
