@@ -55,12 +55,6 @@ var (
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
 
-// FreeFlags are the flags of the small libc branch: no system headers, no
-// errno from math, no fused multiply-add, 32-bit BigInt limbs.
-var freeFlags = []string{"-ffreestanding", "-nostdinc", "-fno-math-errno", "-ffp-contract=off", "-U__FP_FAST_FMA",
-	"-U__FP_FAST_FMAF", "-U__SIZEOF_INT128__", "-fno-stack-protector", "-funsigned-char",
-	"-fno-asynchronous-unwind-tables", "-fno-unwind-tables"}
-
 // Rejection is one function the generator could not take, or one rule the
 // C breaks.
 type Rejection struct {
@@ -118,9 +112,12 @@ func main() {
 			srcs = append(srcs, src{f, strings.TrimSuffix(filepath.Base(f), ".c")})
 		}
 	}
-	cflags := append(append([]string{}, gen.EngineCFlags...), freeFlags...)
+	if gen.FlagsErr != nil {
+		die(gen.FlagsErr)
+	}
+	cflags := append([]string{}, gen.EngineCFlags...)
 	if *arch == "arm64" {
-		cflags = append(append([]string{}, gen.ARM64CFlags...), freeFlags...)
+		cflags = append([]string{}, gen.ARM64CFlags...)
 	}
 	libc := filepath.Join(*engineDir, "libc")
 	var lls []string

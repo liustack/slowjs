@@ -3,9 +3,12 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# The compile flags of the engine files and engine/libc, in one place. build.sh
-# and check-symbols.sh read them, so that what is built and what is checked
-# cannot differ. Source this file.
+# The compile flags of the engine files and engine/libc, in one place. build.sh,
+# check-symbols.sh, cycles.sh and libc-test.sh read them, and so does the
+# generator (internal/goasm/gen, which runs this file in sh and adds only
+# flags of its own), so that what is built and what is checked cannot differ.
+# Source this file, and keep it to the two assignments and the function below:
+# internal/goasm/gen/flags_test.go reads engine_flags by its text.
 #
 # - no system headers or libc, so nothing outside engine/libc can creep in.
 #   -ffreestanding also means -fno-builtin: a call of pow stays a call
