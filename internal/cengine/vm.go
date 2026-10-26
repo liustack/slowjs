@@ -171,37 +171,62 @@ func (v *VM) eval(src, file string) (string, error) {
 
 // string is String(value), or the exception it threw as an error.
 func (v *VM) string(u, tag uintptr) (string, error) {
-	p := JS_ToCStringLen2(v.sp, v.ctx, v.base+scratchLen, u, tag, 0)
-	if p == 0 {
+	s, ok := v.text(u, tag)
+	if !ok {
 		return "", v.exception()
 	}
-	s := string(bytesAt(p, *(*uintptr)(addr(v.base + scratchLen))))
-	JS_FreeCString(v.sp, v.ctx, p)
 	return s, nil
 }
 
-// exception takes the pending exception of the context.
+// text is String(value). When that throws, text reports false and leaves
+// what it threw pending.
+func (v *VM) text(u, tag uintptr) (string, bool) {
+	p := JS_ToCStringLen2(v.sp, v.ctx, v.base+scratchLen, u, tag, 0)
+	if p == 0 {
+		return "", false
+	}
+	s := string(bytesAt(p, *(*uintptr)(addr(v.base + scratchLen))))
+	JS_FreeCString(v.sp, v.ctx, p)
+	return s, true
+}
+
+// unprintable is the message of an exception whose String() threw.
+const unprintable = "an exception whose String() threw"
+
+// exception takes the pending exception of the context. It converts the
+// exception and its stack once each, and leaves out what does not convert:
+// an exception may throw again on every conversion, so what a conversion
+// here throws is dropped, not converted in turn.
 func (v *VM) exception() error {
 	u, tag := JS_GetException(v.sp, v.ctx)
 	defer v.free(u, tag)
-	e := &JSError{}
-	msg, err := v.string(u, tag)
-	if err != nil {
-		msg = "an exception whose String() threw: " + err.Error()
+	e := &JSError{Message: unprintable}
+	if msg, ok := v.text(u, tag); ok {
+		e.Message = msg
+	} else {
+		v.dropException()
 	}
-	e.Message = msg
 	if int32(tag) == tagObject {
 		su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
 		if int32(stag) == tagException {
-			v.free(JS_GetException(v.sp, v.ctx))
+			v.dropException()
 		} else {
 			if int32(stag) != 3 { // undefined
-				e.Stack, _ = v.string(su, stag)
+				if s, ok := v.text(su, stag); ok {
+					e.Stack = s
+				} else {
+					v.dropException()
+				}
 			}
 			v.free(su, stag)
 		}
 	}
 	return e
+}
+
+// dropException frees the pending exception of the context.
+func (v *VM) dropException() {
+	v.free(JS_GetException(v.sp, v.ctx))
 }
 
 // free is JS_FreeValue, which is inline in quickjs.h: the reference count is
