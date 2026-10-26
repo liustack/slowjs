@@ -358,15 +358,44 @@ static void lowerVarargs(Module &M) {
     }
     return true;
   };
+  // The block holds each variable argument in an 8-byte slot, contiguous.
+  // That matches the SysV/AAPCS overflow area for scalars and for aggregates
+  // aligned to 8 or less. An over-aligned aggregate (a
+  // __attribute__((aligned(16))) struct, say) is read by rounding the
+  // overflow pointer up past 8, which clang lowers to an llvm.ptrmask whose
+  // mask clears more than the low three bits. A contiguous 8-byte-slot block
+  // cannot reproduce that, and at a SysV call site the aggregate is already
+  // split into plain 8-aligned scalar arguments, so the call site cannot
+  // tell them apart. Reject such a definition up front (empty it to a trap)
+  // rather than miscompile it, and do not rewrite calls to it: its stub
+  // names it, and any caller still holding a variadic call to it is rejected
+  // at lowering.
+  SmallPtrSet<Function *, 8> bad;
+  for (Function &F : M) {
+    if (!F.isVarArg() || F.isIntrinsic() || F.isDeclaration())
+      continue;
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        if (auto *II = dyn_cast<IntrinsicInst>(&I))
+          if (II->getIntrinsicID() == Intrinsic::ptrmask)
+            if (auto *m = dyn_cast<ConstantInt>(II->getArgOperand(1)))
+              if ((~m->getValue()).ugt(7))
+                bad.insert(&F);
+  }
+  for (Function *F : bad)
+    reject(*F, "variadic function reads an over-aligned argument through va_arg (no 8-byte-slot block can hold it)");
   SmallVector<Function *> fns;
   for (Function &F : M)
     fns.push_back(&F);
   for (Function *F : fns) {
+    if (bad.count(F))
+      continue;
     SmallVector<CallBase *> calls;
     for (BasicBlock &B : *F)
       for (Instruction &I : B)
         if (auto *CB = dyn_cast<CallBase>(&I))
-          if (!CB->isInlineAsm() && CB->getFunctionType()->isVarArg() && !isa<IntrinsicInst>(CB))
+          if (!CB->isInlineAsm() && CB->getFunctionType()->isVarArg() && !isa<IntrinsicInst>(CB) &&
+              !bad.count(dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts())))
             calls.push_back(CB);
     if (calls.empty())
       continue;
@@ -752,7 +781,17 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       if (leaves.count(F.getName().str())) {
         // A register-entry leaf takes no shadow pointer and may own no
         // memory: it must not have a local whose address is taken. It may
-        // call only other leaves, and it has no frame of its own.
+        // call only other leaves, and it has no frame of its own. Its
+        // address must not be taken: an indirect call reaching it would pass
+        // a shadow pointer the leaf does not expect (plan.md: every
+        // address-taken function goes through the unified entry, and a leaf
+        // has none). The backend's own libcalls to it are direct calls that
+        // llc adds after this pass, so they are not a use here.
+        for (const Use &U : F.uses()) {
+          auto *CB = dyn_cast<CallBase>(U.getUser());
+          if (!CB || !CB->isCallee(&U))
+            report_fatal_error(Twine("register-entry leaf whose address is taken (it has no unified entry for an indirect call): ") + F.getName());
+        }
         for (BasicBlock &B : F)
           for (Instruction &I : B) {
             if (isa<AllocaInst>(&I))
