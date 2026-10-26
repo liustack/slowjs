@@ -177,7 +177,7 @@ func TestVarargsEscapesRejected(t *testing.T) {
 // passed by value (AArch64 copies it with memcpy) and by reference, and a
 // va_copy. The kept function's va_start must set the offsets that make
 // every va_arg take the overflow path. callargs.ll passes arguments C would
-// have promoted. Needs LLVM
+// have promoted. A module of any other target is refused whole. Needs LLVM
 // 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
 func TestVarargsRules(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
@@ -256,5 +256,14 @@ func TestVarargsRules(t *testing.T) {
 	}
 	if why, ok := rep.Rejected["passes_promoted"]; ok {
 		t.Errorf("passes_promoted rejected: %s", why)
+	}
+	// Any other target: the va_list layout is not one the pass writes.
+	for _, target := range []string{"x86_64-pc-linux-gnu", "x86_64-linux-musl", "aarch64-apple-darwin", "i686-linux-gnu"} {
+		ir := filepath.Join(work, target+".ll")
+		must("clang", "--target="+target, "-O2", "-S", "-emit-llvm", "-o", ir, rules)
+		out, err := opt(ir, os.DevNull)
+		if err == nil || !strings.Contains(out, "only for x86_64-linux-gnu and aarch64-linux-gnu") {
+			t.Errorf("%s: %v\n%s", target, err, out)
+		}
 	}
 }
