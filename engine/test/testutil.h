@@ -17,6 +17,10 @@
 
 #include "host.h"
 
+#ifndef countof
+#define countof(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+
 static int failures;
 static long checks;
 
