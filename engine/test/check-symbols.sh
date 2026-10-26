@@ -47,16 +47,39 @@ allowed alloc > "$work/alloc.txt"
 cat "$work/host.txt" "$work/alloc.txt" > "$work/outside.txt"
 cat "$work/libc.txt" "$work/outside.txt" > "$work/all.txt"
 
-# The global symbols objects define, and those they use and do not define. A
-# Mach-O symbol has a leading underscore, which is removed.
-fix() { if [ "$strip" = 1 ]; then sed 's/^_//'; else cat; fi; }
-defined() { for o in "$@"; do "$nm" -g --defined-only "$o"; done | awk 'NF>=3 {print $3}' | fix; }
-undefined() { for o in "$@"; do "$nm" -u "$o"; done | awk 'NF>=1 {print $NF}' | fix; }
-# What the objects use and none of them defines.
-open() {
-	undefined "$@" | sort -u > "$work/u.txt"
-	defined "$@" | sort -u > "$work/d.txt"
-	comm -23 "$work/u.txt" "$work/d.txt"
+# The names the objects define (-g --defined-only) or use (-u), sorted, in the
+# file OUT. nm is run on each object on its own, and a failure of nm, or
+# anything it says on its error output, ends the script: a symbol table that
+# was not read must not look like an empty one. A Mach-O symbol has a leading
+# underscore, which is removed. Call it directly, not in a pipeline or a
+# command substitution, or the exit ends only that.
+list() { # MODE FILE OBJECT...
+	list_mode=$1
+	list_file=$2
+	shift 2
+	: > "$list_file.raw"
+	for o in "$@"; do
+		if ! "$nm" $list_mode "$o" > "$work/nm.out" 2> "$work/nm.err" || [ -s "$work/nm.err" ]; then
+			echo "check-symbols: $nm $list_mode $o failed: $(cat "$work/nm.err")" >&2
+			exit 1
+		fi
+		cat "$work/nm.out" >> "$list_file.raw"
+	done
+	if [ "$list_mode" = -u ]; then
+		awk 'NF >= 1 {print $NF}' "$list_file.raw" > "$list_file.names"
+	else
+		awk 'NF >= 3 {print $3}' "$list_file.raw" > "$list_file.names"
+	fi
+	if [ "$strip" = 1 ]; then sed 's/^_//' "$list_file.names" > "$list_file.fix"; else cp "$list_file.names" "$list_file.fix"; fi
+	sort -u "$list_file.fix" > "$list_file"
+}
+# What the objects use and none of them defines, in the file FILE.
+open() { # FILE OBJECT...
+	open_file=$1
+	shift
+	list -u "$work/u" "$@"
+	list "-g --defined-only" "$work/d" "$@"
+	comm -23 "$work/u" "$work/d" > "$open_file"
 }
 
 fail=0
@@ -70,7 +93,7 @@ check() { # description, symbols file of what is open, allowlist file
 }
 
 # The check has to reject what it is for: an object that calls a function
-# nobody allows.
+# nobody allows, and an object nm cannot read.
 cat > "$work/bad.c" <<'BAD'
 extern int rand(void);
 extern void *host_now_not_listed(void);
@@ -79,12 +102,18 @@ BAD
 $cc -c "$work/bad.c" -o "$work/bad.o"
 strip=0
 [ "$(uname -s)" = Darwin ] && strip=1
-open "$work/bad.o" > "$work/bad-open.txt"
-if check "self-test" "$work/bad-open.txt" "$work/all.txt" 2> /dev/null; [ $fail = 0 ]; then
+open "$work/bad-open.txt" "$work/bad.o"
+check "self-test" "$work/bad-open.txt" "$work/all.txt" 2> /dev/null
+if [ $fail = 0 ]; then
 	echo "check-symbols: the check let an unlisted symbol through" >&2
 	exit 1
 fi
 fail=0
+echo "this is not an object" > "$work/garbage.o"
+if (open "$work/garbage-open.txt" "$work/garbage.o") 2> /dev/null; then
+	echo "check-symbols: the check read an object that is not one" >&2
+	exit 1
+fi
 
 targets=${*:-native}
 for target in $targets; do
@@ -97,6 +126,8 @@ for target in $targets; do
 		case $target in *apple*|*darwin*) strip=1 ;; esac
 	fi
 	tflags="$tflags $(engine_target_flags "$target")"
+	$cc $tflags -c "$work/bad.c" -o "$work/bad-target.o"
+	open "$work/target-open.txt" "$work/bad-target.o"
 	for variant in "-O0 ." "-O1 -DNDEBUG" "-O2 ." "-O2 -DNDEBUG"; do
 		opt=${variant% *}
 		ndebug=${variant#* }
@@ -112,9 +143,9 @@ for target in $targets; do
 			$cc $tflags $opt $ndebug $free -I"$libc" -I"$libc/internal" -I"$engine" -include "$libc/internal/features.h" -c "$f" -o "$d/libc/$o.o"
 		done
 		label="$target $opt $ndebug"
-		open "$d"/*.o > "$work/engine-open.txt"
+		open "$work/engine-open.txt" "$d"/*.o
 		check "$label, engine files" "$work/engine-open.txt" "$work/all.txt"
-		open "$d"/*.o "$d"/libc/*.o > "$work/both-open.txt"
+		open "$work/both-open.txt" "$d"/*.o "$d"/libc/*.o
 		check "$label, engine files with libc" "$work/both-open.txt" "$work/outside.txt"
 		echo "check-symbols: $label: engine files use $(wc -l < "$work/engine-open.txt" | tr -d ' ') outside names, with libc $(wc -l < "$work/both-open.txt" | tr -d ' ')"
 	done
