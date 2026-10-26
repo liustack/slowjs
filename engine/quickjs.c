@@ -34980,13 +34980,19 @@ static int find_closure_var(JSContext *ctx, JSFunctionDef *s,
     return -1;
 }
 
-/* 'fd' must be a parent of 's'. Create in 's' a closure referencing
-   another one in 'fd' */
 static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
                            JSFunctionDef *fd, JSClosureTypeEnum closure_type,
                            int var_idx, JSAtom var_name,
                            BOOL is_const, BOOL is_lexical,
-                           JSVarKindEnum var_kind)
+                           JSVarKindEnum var_kind);
+
+/* 'fd' must be a parent of 's'. Create in 's' a closure referencing
+   another one in 'fd' */
+static int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
+                            JSFunctionDef *fd, JSClosureTypeEnum closure_type,
+                            int var_idx, JSAtom var_name,
+                            BOOL is_const, BOOL is_lexical,
+                            JSVarKindEnum var_kind)
 {
     int i;
 
@@ -35006,6 +35012,23 @@ static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
     }
     return add_closure_var(ctx, s, closure_type, var_idx, var_name,
                            is_const, is_lexical, var_kind);
+}
+
+/* one level per function between s and fd */
+static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
+                           JSFunctionDef *fd, JSClosureTypeEnum closure_type,
+                           int var_idx, JSAtom var_name,
+                           BOOL is_const, BOOL is_lexical,
+                           JSVarKindEnum var_kind)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = get_closure_var1(ctx, s, fd, closure_type, var_idx, var_name,
+                           is_const, is_lexical, var_kind);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 static int get_with_scope_opcode(int op)
@@ -35856,7 +35879,8 @@ static BOOL is_var_in_arg_scope(JSAtom var_name, JSVarKindEnum var_kind)
             var_kind == JS_VAR_FUNCTION_NAME);
 }
 
-static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
+/* return -1 if a closure variable could not be made */
+static int add_eval_variables(JSContext *ctx, JSFunctionDef *s)
 {
     JSFunctionDef *fd;
     JSVarDef *vd;
@@ -35951,8 +35975,9 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
         while (scope_idx >= 0) {
             vd = &fd->vars[scope_idx];
             capture_var(fd, vd);
-            get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, scope_idx,
-                            vd->var_name, vd->is_const, vd->is_lexical, vd->var_kind);
+            if (get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, scope_idx,
+                                vd->var_name, vd->is_const, vd->is_lexical, vd->var_kind) < 0)
+                return -1;
             scope_idx = vd->scope_next;
         }
         is_arg_scope = (scope_idx == ARG_SCOPE_END);
@@ -35963,9 +35988,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 vd = &fd->args[i];
                 if (vd->var_name != JS_ATOM_NULL) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_ARG, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_ARG, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
             for(i = 0; i < fd->var_count; i++) {
@@ -35975,9 +36001,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                     vd->var_name != JS_ATOM__ret_ &&
                     vd->var_name != JS_ATOM_NULL) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
         } else {
@@ -35986,9 +36013,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 /* do not close top level last result */
                 if (vd->scope_level == 0 && is_var_in_arg_scope(vd->var_name, vd->var_kind)) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
         }
@@ -36003,14 +36031,16 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 if (cv->closure_type != JS_CLOSURE_GLOBAL_REF &&
                     cv->closure_type != JS_CLOSURE_GLOBAL_DECL &&
                     cv->closure_type != JS_CLOSURE_GLOBAL) {
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_REF,
-                                    idx, cv->var_name, cv->is_const,
-                                    cv->is_lexical, cv->var_kind);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_REF,
+                                        idx, cv->var_name, cv->is_const,
+                                        cv->is_lexical, cv->var_kind) < 0)
+                        return -1;
                 }
             }
         }
     }
+    return 0;
 }
 
 static void set_closure_from_var(JSContext *ctx, JSClosureVar *cv,
@@ -38293,10 +38323,12 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
     return 0;
 }
 
+static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd);
+
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
-static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
+static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
     JSFunctionBytecode *b;
@@ -38342,8 +38374,10 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
        are used to compile the eval and they must be ordered by scope,
        so it is necessary to create the closure variables before any
        other variable lookup is done. */
-    if (fd->has_eval_call)
-        add_eval_variables(ctx, fd);
+    if (fd->has_eval_call) {
+        if (add_eval_variables(ctx, fd))
+            goto fail;
+    }
 
     /* add the module global variables in the closure */
     if (fd->is_eval) {
@@ -38561,6 +38595,20 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
  fail:
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
+}
+
+/* one level per function in which fd is defined */
+static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
+{
+    JSValue ret;
+
+    if (js_internal_enter(ctx)) {
+        js_free_function_def(ctx, fd);
+        return JS_EXCEPTION;
+    }
+    ret = js_create_function1(ctx, fd);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
