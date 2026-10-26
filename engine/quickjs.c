@@ -52317,6 +52317,8 @@ typedef struct {
     
 typedef struct JSONParseRecord {
     JSValue value;
+    /* the record this one is under, for json_free_parse_record alone */
+    struct JSONParseRecord *up;
     union {
         JSONParseRecordObject obj;
         struct {
@@ -52438,28 +52440,50 @@ static JSONParseRecord *json_parse_record_find(JSONParseRecord *pr, JSAtom key)
     return NULL;
 }
 
+/* Free pr and the records under it with no recursion: the children of a
+   record go from the last to the first, each down to the records with no
+   children left, which are freed on the way back up. */
 static void json_free_parse_record(JSContext *ctx, JSONParseRecord *pr)
 {
-    int i;
+    JSONParseRecord *child;
+    JSONParseRecordEntry *e;
+
     if (!pr)
         return;
-    if (JS_IsObject(pr->value)) {
-        if (JS_IsArray(ctx, pr->value)) {
-            for(i = 0; i < pr->u.array.count; i++) {
-                json_free_parse_record(ctx, &pr->u.array.elements[i]);
+    pr->up = NULL;
+    for(;;) {
+        child = NULL;
+        if (JS_IsObject(pr->value)) {
+            if (JS_IsArray(ctx, pr->value)) {
+                if (pr->u.array.count > 0)
+                    child = &pr->u.array.elements[--pr->u.array.count];
+            } else {
+                if (pr->u.obj.count > 0) {
+                    e = &pr->u.obj.entries[--pr->u.obj.count];
+                    JS_FreeAtom(ctx, e->atom);
+                    child = &e->parse_record;
+                }
             }
-            js_free(ctx, pr->u.array.elements);
-        } else {
-            for(i = 0; i < pr->u.obj.count; i++) {
-                JS_FreeAtom(ctx, pr->u.obj.entries[i].atom);
-                json_free_parse_record(ctx, &pr->u.obj.entries[i].parse_record);
-            }
-            js_free(ctx, pr->u.obj.entries);
-            js_free(ctx, pr->u.obj.hash_table);
         }
+        if (child) {
+            child->up = pr;
+            pr = child;
+            continue;
+        }
+        if (JS_IsObject(pr->value)) {
+            if (JS_IsArray(ctx, pr->value)) {
+                js_free(ctx, pr->u.array.elements);
+            } else {
+                js_free(ctx, pr->u.obj.entries);
+                js_free(ctx, pr->u.obj.hash_table);
+            }
+        }
+        JS_FreeValue(ctx, pr->value);
+        pr->value = JS_UNDEFINED; /* fail safe */
+        if (!pr->up)
+            break;
+        pr = pr->up;
     }
-    JS_FreeValue(ctx, pr->value);
-    pr->value = JS_UNDEFINED; /* fail safe */
 }
 
 /* 'pr' can be NULL */

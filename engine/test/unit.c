@@ -1238,6 +1238,43 @@ static void sequence_hash(void *opaque, const uint32_t *buf, int len)
         *h = fnv_word(*h, buf[i]);
 }
 
+/* JSON.parse with a reviver keeps a record of each value it parsed, for the
+   source text of the primitives, and frees the records with no recursion:
+   nested as deep as it parses, as wide as it likes, objects with a hash of
+   their keys, and records left half made by a syntax error at any depth or
+   by data after the end. Everything is freed with no block left. */
+static int test_json_records(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const n = %d, src = [];\n"
+        "  const reviver = function (k, v, c) { if (c && 'source' in c) src.push(c.source); return v };\n"
+        "  const a = JSON.parse('['.repeat(n) + '12' + ']'.repeat(n), reviver);\n"
+        "  if (src.join() !== '12') return 'deep array ' + src.join();\n"
+        "  JSON.parse('{\"a\":'.repeat(n) + '3e1' + '}'.repeat(n), reviver);\n"
+        "  if (src.join() !== '12,3e1') return 'deep object';\n"
+        "  const keys = []; for (let i = 0; i < 100000; i++) keys.push('\"k' + i + '\":' + i);\n"
+        "  const o = JSON.parse('{' + keys.join() + ',\"x\":[' + keys.map((_, i) => i).join() + ']}', (k, v) => v);\n"
+        "  if (o.k99999 !== 99999 || o.x.length !== 100000) return 'wide';\n"
+        "  const nine = '{\"b\":1,\"c\":2,\"d\":3,\"e\":4,\"f\":5,\"g\":6,\"h\":7,\"i\":8,\"j\":';\n"
+        "  for (const bad of ['{\"a\":['.repeat((n >> 1) - 2) + '1,' + nine + '[1,2,x',\n"
+        "                    nine.repeat(n - 1) + '}', '[[1],{\"a\":[2]}] x', '[' + keys.join()])\n"
+        "    try { JSON.parse(bad, reviver); return 'parsed ' + bad.slice(0, 20) } catch (e) {\n"
+        "      if (!(e instanceof SyntaxError)) return e.name }\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char buf[2048];
+
+    /* the reviver goes down one level more than the parser */
+    snprintf(buf, sizeof(buf), src, JS_MAX_INTERNAL_DEPTH - 2);
+    CHECK(eval_is(ctx, buf, "ok"), "records");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* The case conversions, the case foldings of regexps, the four normal forms
    of every code point and the emoji sequences of regexps are those of the
    recursive code they replace: their hashes are the ones it gave. */
@@ -1314,6 +1351,7 @@ int main(void)
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
+    host_run_thread(test_json_records, NULL);
     test_ropes();
     test_free_nesting();
     test_unicode_tables();
