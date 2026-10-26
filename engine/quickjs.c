@@ -64306,31 +64306,13 @@ static JSValue js_atomics_isLockFree(JSContext *ctx,
     return JS_NewBool(ctx, ret);
 }
 
-#ifdef __CCGO__
-static inline void cpu_pause(void)
-{
-}
-#else
-#if defined(__aarch64__)
-static inline void cpu_pause(void)
-{
-    asm volatile("yield" ::: "memory");
-}
-#elif defined(__x86_64) || defined(__i386__)
-static inline void cpu_pause(void)
-{
-    asm volatile("pause" ::: "memory");
-}
-#else
-static inline void cpu_pause(void)
-{
-}
-#endif
-#endif
-
-// no-op: Atomics.pause() is not allowed to block or yield to another
-// thread, only to hint the CPU that it should back off for a bit;
-// the amount of work we do here is a good enough substitute
+/* Atomics.pause hints to the CPU that the code is spinning. ecma262 has an
+   engine send the hint only "if the execution environment supports signaling"
+   it, so doing nothing conforms. The engine sends none: the generated code
+   holds no inline assembly, and nothing here waits for another thread. The
+   argument is still checked as the proposal had it (undefined or an integral
+   Number, else a TypeError), since the test262 this tree runs still tests
+   that. The current draft of ecma262 has no argument. */
 static JSValue js_atomics_pause(JSContext *ctx, JSValueConst this_obj,
                                 int argc, JSValueConst *argv)
 {
@@ -64351,7 +64333,6 @@ static JSValue js_atomics_pause(JSContext *ctx, JSValueConst this_obj,
             break;
         }
     }
-    cpu_pause();
     return JS_UNDEFINED;
 }
 

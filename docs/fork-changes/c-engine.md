@@ -18,6 +18,7 @@ read_when:
 | `Date` and the seed of `Math.random` come from `host_now` | the Go host answers with the clock of the VM | the native host, `HOST_CLOCK` |
 | `abort` is a request to the host: `host_call` with `HOST_CALL_ABORT` | the Go host panics and the VM can only be closed, as it is now. A trap would be a signal and would end the process | `api-test.c` |
 | `Atomics.wait` throws, `Atomics.notify` wakes nobody | `Atomics.wait` throws a `TypeError` as the main thread of a browser does. There are no threads in the engine | test262 with `engine/test/test262.conf` |
+| `Atomics.pause` sends no hint to the CPU | it checks its argument and returns `undefined`. The specification has an engine send the hint only if its platform can, and the engine holds no inline assembly | test262 `built-ins/Atomics/pause`, the generator (no stub) |
 | `JS_NewClassID(rt, &id)` counts per runtime | the Go side keeps its class IDs per VM | `api-test.c` |
 | `JS_DumpMemoryUsage(buf, size, ...)` writes to a buffer | no `FILE`. The Go side gets a string | `api-test.c` |
 | The tools that print are gone: `JS_Dump*`, `dump_token` and the like | the `DUMP_*` options of the C do not build | the build |
@@ -66,6 +67,8 @@ The checks: `unit.c` (see [testing.md](../testing.md#the-c-tree-and-its-native-t
 ## Atomics without threads
 
 `Atomics.wait` converts its arguments in the order the specification gives and then throws `TypeError: cannot block in this thread`. `Atomics.notify` converts its arguments and returns 0. test262 gives the same 58 known errors as before with 66 tests excluded in `engine/test/test262.conf`, all of `built-ins/Atomics/wait` and `notify`: 7 wait on the main thread for a time out, and 59 start agents with `$262.agent.safeBroadcast`. That function begins with an `Atomics.wait` on a value that differs, which must return at once and now throws. In 53 of the 59 an agent also waits for a wake up or a time out. In 6 nobody waits and only that probe keeps them out. `api-test.c` keeps what those 6 say that still holds: `Atomics.notify` gives 0 when nobody waits, and `Atomics.wait` converts its arguments in the order of the specification (the array and its shared buffer, the index, the value, the timeout) and throws what a conversion throws before it throws that it cannot block. It also checks that a wait with a value that differs, or with no timeout, throws the same.
+
+`Atomics.pause` is the one function of `Atomics` that is a hint and not an operation. It used to run `pause` (x86) or `yield` (arm64) as inline assembly, which the generator cannot take, so it was the last function the generator had to stub. ecma262 has an engine send the hint only if its platform supports signaling the CPU, so the function now does nothing. Its argument is still checked: undefined or an integral Number, else a `TypeError`. The test262 the tree is pinned to tests that (`non-integral-iterationnumber-throws.js`), but ecma262 dropped the argument in June 2026 (pull request 3847) and test262 stopped testing it a few weeks later (pull request 5075), so the check can go when the pin moves.
 
 ## When upstream changes it
 
