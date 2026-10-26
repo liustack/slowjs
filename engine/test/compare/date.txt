@@ -1,0 +1,16 @@
+12+34 = 46
+new Date(1899, 0).getYear() = -1
+new Date(1899, 11, 31, 23, 59, 59, 999).getYear() = -1
+new Date(1900, 0).getYear() = 0
+new Date(1900, 11, 31, 23, 59, 59, 999).getYear() = 0
+new Date(1970, 0).getYear() = 70
+new Date(1970, 11, 31, 23, 59, 59, 999).getYear() = 70
+new Date(2000, 0).getYear() = 100
+new Date(2000, 11, 31, 23, 59, 59, 999).getYear() = 100
+new Date(0).getHours() = 0
+new Date(0).getTimezoneOffset() = 0
+new Date(Date.UTC(2026, 6, 1)).getTimezoneOffset() = 0
+new Date(0).toString() = Thu Jan 01 1970 00:00:00 GMT+0000
+new Date(0).toTimeString() = 00:00:00 GMT+0000
+new Date(2026, 0, 1, 13, 5).getTime() === Date.UTC(2026, 0, 1, 13, 5) = true
+Date.parse('2026-01-01T13:05:00') === Date.UTC(2026, 0, 1, 13, 5) = true
