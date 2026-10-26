@@ -1797,21 +1797,35 @@ func (k *checker) checkLeaf(meta Meta) error {
 	for i := range m.bStart {
 		m.bStart[i] = -1
 	}
-	n := len(r.Pushed)
+	// The saves are llc's pushes at the start, each to its own 8-byte slot
+	// inside the Go frame, the first push highest as on the native stack.
+	var pushed []string
+	for len(pushed) < len(L.ins) && L.ins[len(pushed)].in.Op == x86asm.PUSH {
+		reg, ok := L.ins[len(pushed)].in.Args[0].(x86asm.Reg)
+		if !ok || !calleeSavedRegs[reg] {
+			return fmt.Errorf("llc's leaf pushes %v at its start", L.ins[len(pushed)].in.Args[0])
+		}
+		pushed = append(pushed, strings.ToLower(reg.String()))
+	}
+	if strings.Join(pushed, ",") != strings.Join(r.Pushed, ",") {
+		return fmt.Errorf("llc's leaf pushes %v, the lowering declared %v", pushed, r.Pushed)
+	}
+	// The slots are 0 to 8n-8 above SP: all inside a frame of 8n bytes.
+	n := len(pushed)
+	if g.frame < int64(8*n) {
+		return fmt.Errorf("the leaf's %d-byte Go frame cannot hold its %d saved registers", g.frame, n)
+	}
 	slot := map[x86asm.Reg]int64{}
 	i := 0
 	for ; i < n; i++ {
-		reg := gpRegs[r.Pushed[i]]
-		if i >= len(L.ins) || L.ins[i].in.Op != x86asm.PUSH || !isReg(L.ins[i].in.Args[0], reg) || !calleeSavedRegs[reg] {
-			return fmt.Errorf("llc's leaf does not push %s first", r.Pushed[i])
-		}
+		reg := gpRegs[pushed[i]]
 		slot[reg] = int64(8 * (n - 1 - i))
 		b, err := m.next("a register save")
 		if err != nil {
 			return err
 		}
 		if !isStackMove(b.in, true, reg, slot[reg], false) {
-			return fmt.Errorf("leaf: %v at %#x is not the save of %s", b.in, b.at, r.Pushed[i])
+			return fmt.Errorf("leaf: %v at %#x is not the save of %s", b.in, b.at, pushed[i])
 		}
 	}
 	for ; i < len(L.ins); i++ {
@@ -1819,18 +1833,27 @@ func (k *checker) checkLeaf(meta Meta) error {
 		x := L.ins[i]
 		switch x.in.Op {
 		case x86asm.POP:
-			reg, _ := x.in.Args[0].(x86asm.Reg)
-			off, ok := slot[reg]
-			if !ok {
-				return fmt.Errorf("llc's leaf pops %v, which it did not push", x.in.Args[0])
+			// The pops before a return, in reverse, each a load from its
+			// slot.
+			for p := n - 1; p >= 0; p-- {
+				reg := gpRegs[pushed[p]]
+				if i >= len(L.ins) || L.ins[i].in.Op != x86asm.POP || !isReg(L.ins[i].in.Args[0], reg) {
+					return fmt.Errorf("llc's leaf at %#x does not pop %v", x.at, reg)
+				}
+				m.bStart[i] = m.j
+				b, err := m.next("a register restore")
+				if err != nil {
+					return err
+				}
+				if !isStackMove(b.in, false, reg, slot[reg], false) {
+					return fmt.Errorf("leaf: %v at %#x is not the restore of %v", b.in, b.at, reg)
+				}
+				i++
 			}
-			b, err := m.next("a register restore")
-			if err != nil {
-				return err
+			if i >= len(L.ins) || L.ins[i].in.Op != x86asm.RET {
+				return fmt.Errorf("llc's leaf pops at %#x but does not return", x.at)
 			}
-			if !isStackMove(b.in, false, reg, off, false) {
-				return fmt.Errorf("leaf: %v at %#x is not the restore of %v", b.in, b.at, reg)
-			}
+			i--
 			continue
 		case x86asm.RET:
 			b, err := m.next("the jump to the epilogue")
