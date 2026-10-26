@@ -7,6 +7,7 @@ package gohost
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -142,7 +143,7 @@ func TestCallRelease(t *testing.T) {
 	p := MemoryGrow(v.ID(), 8*hostmem.Unit)
 	args := argv(t, v, p, 8*hostmem.Unit)
 	before := v.Memory().Usage()
-	r := Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease)
+	r := Call(sp, v.ID(), 0, 2, args, CallMemoryRelease)
 	if r != Undefined {
 		t.Fatalf("release returned %+v", r)
 	}
@@ -155,11 +156,11 @@ func TestCallRelease(t *testing.T) {
 	}
 	// A chunk the VM does not hold, or not whole, is a bug of the engine.
 	args = argv(t, v, p, 8*hostmem.Unit)
-	mustPanic(t, "releasing a chunk released before", func() { Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease) })
+	mustPanic(t, "releasing a chunk released before", func() { Call(sp, v.ID(), 0, 2, args, CallMemoryRelease) })
 	q := MemoryGrow(v.ID(), 2*hostmem.Unit)
 	args = argv(t, v, q, hostmem.Unit)
-	mustPanic(t, "releasing half a chunk", func() { Call(sp, v.ID(), Undefined, 2, args, CallMemoryRelease) })
-	mustPanic(t, "release with one argument", func() { Call(sp, v.ID(), Undefined, 1, args, CallMemoryRelease) })
+	mustPanic(t, "releasing half a chunk", func() { Call(sp, v.ID(), 0, 2, args, CallMemoryRelease) })
+	mustPanic(t, "release with one argument", func() { Call(sp, v.ID(), 0, 1, args, CallMemoryRelease) })
 }
 
 func TestCallRemap(t *testing.T) {
@@ -176,15 +177,15 @@ func TestCallRemap(t *testing.T) {
 			t.Fatal("AllowRemap says yes where the OS cannot remap")
 		}
 		mustPanic(t, "a remap the engine was never told it can ask for", func() {
-			Call(sp, v.ID(), Undefined, 3, args, CallMemoryRemap)
+			Call(sp, v.ID(), 0, 3, args, CallMemoryRemap)
 		})
 		return
 	}
-	mustPanic(t, "a remap before AllowRemap", func() { Call(sp, v.ID(), Undefined, 3, args, CallMemoryRemap) })
+	mustPanic(t, "a remap before AllowRemap", func() { Call(sp, v.ID(), 0, 3, args, CallMemoryRemap) })
 	if !v.AllowRemap() {
 		t.Fatal("AllowRemap says no on linux")
 	}
-	r := Call(sp, v.ID(), Undefined, 3, args, CallMemoryRemap)
+	r := Call(sp, v.ID(), 0, 3, args, CallMemoryRemap)
 	if r.Tag != 0 || r.U == 0 {
 		t.Fatalf("remap returned %+v", r)
 	}
@@ -200,7 +201,7 @@ func TestCallRemap(t *testing.T) {
 	}
 	// The OS refuses: the word 0, and the chunk as it was.
 	args = argv(t, v, r.U, 16*hostmem.Unit, 1<<50)
-	if r2 := Call(sp, v.ID(), Undefined, 3, args, CallMemoryRemap); r2 != Word(0) {
+	if r2 := Call(sp, v.ID(), 0, 3, args, CallMemoryRemap); r2 != Word(0) {
 		t.Fatalf("a remap to 1 PiB returned %+v", r2)
 	}
 	if c := v.Counts(); c.RemapFailures != 1 || v.LastError() == nil {
@@ -216,7 +217,7 @@ func TestCallAbort(t *testing.T) {
 	base, _ := v.Stack()
 	// abort does not know its VM and passes 0: the host finds it by the
 	// shadow pointer.
-	got := mustPanic(t, "abort", func() { Call(base+4096, 0, Undefined, 0, 0, CallAbort) })
+	got := mustPanic(t, "abort", func() { Call(base+4096, 0, 0, 0, 0, CallAbort) })
 	if err, ok := got.(error); !ok || !errors.Is(err, ErrAbort) {
 		t.Fatalf("abort panicked with %v, want ErrAbort", got)
 	}
@@ -228,9 +229,27 @@ func TestCallAbort(t *testing.T) {
 func TestCallUnknown(t *testing.T) {
 	v := newVM(t, small)
 	sp, _ := v.Stack()
-	mustPanic(t, "a registered function", func() { Call(sp, v.ID(), Undefined, 0, 0, 0) })
-	mustPanic(t, "an unknown request", func() { Call(sp, v.ID(), Undefined, 0, 0, -99) })
-	mustPanic(t, "a call for no VM", func() { Call(sp, 0, Undefined, 0, 0, CallMemoryRelease) })
+	mustPanic(t, "a registered function", func() { Call(sp, v.ID(), 0, 0, 0, 0) })
+	mustPanic(t, "an unknown request", func() { Call(sp, v.ID(), 0, 0, 0, -99) })
+	mustPanic(t, "a call for no VM", func() { Call(sp, 0, 0, 0, 0, CallMemoryRelease) })
+}
+
+// A request of the engine has no this value and the engine passes 0. Any other
+// word there is the arguments of the callback shifted: the host panics before
+// it reads any of them.
+func TestCallEngineRequestHasNoThis(t *testing.T) {
+	v := newVM(t, small)
+	sp, _ := v.Stack()
+	args := sp + 64
+	for _, magic := range []int32{CallAbort, CallMemoryRelease, CallMemoryRemap, -99} {
+		got := mustPanic(t, "a request with a this value", func() { Call(sp, v.ID(), args, 2, args, magic) })
+		if s, ok := got.(string); !ok || !strings.Contains(s, "this value") {
+			t.Errorf("request %d panicked with %v, want the this value named", magic, got)
+		}
+	}
+	if v.Broken() {
+		t.Fatal("a refused request marked the VM broken: only abort does that")
+	}
 }
 
 func TestNow(t *testing.T) {

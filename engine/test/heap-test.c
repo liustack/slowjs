@@ -155,9 +155,12 @@ static int host_inside(HostVM *h, uintptr_t addr, size_t len)
 
 /* host_call: the heap gives back a dedicated chunk (HOST_CALL_MEMORY_RELEASE),
    and abort, which a failed assert of the heap calls (the test ends there). */
-JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
+JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int magic)
 {
-    (void)this_val;
+    if (this_val) {
+        fprintf(stderr, "heap-test: the heap passed a this value to host_call\n");
+        abort();
+    }
     if (magic == HOST_CALL_MEMORY_RELEASE && argc == 2) {
         HostVM *h = &vms[vm];
         uintptr_t addr = HOST_WORD_VALUE(argv[0]);
