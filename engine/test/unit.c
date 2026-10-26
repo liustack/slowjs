@@ -1268,6 +1268,30 @@ static void test_unicode_tables(void)
     CHECK(seq == 0x365073493a2d88c5ULL, "emoji sequences %016llx", (unsigned long long)seq);
 }
 
+/* A class of a v-flag regexp reads the strings of \q{...} as class atoms,
+   which cannot hold \q again. */
+static void test_class_strings(void)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const r = /^[\\q{abc|d\\x41|}x]+$/v;\n"
+        "  if (!r.test('abcdAx') || !r.test('x') || r.test('ab')) return 'match';\n"
+        "  if (!/^[\\q{\\u{1F600}b}--\\q{b}]$/v.test('\\u{1F600}b')) return 'subtract';\n"
+        "  if (!/^[[\\q{ab}c]&&\\q{ab}]$/v.test('ab')) return 'intersect';\n"
+        "  if (!/^[\\q{\\x41\\u0042}]$/v.test('AB')) return 'escape';\n"
+        "  for (const bad of ['[\\\\q{a\\\\q{b}}]', '[\\\\q{a]', '\\\\q{a}']) {\n"
+        "    try { new RegExp(bad, 'v'); return 'accepted ' + bad } catch (e) {\n"
+        "      if (!(e instanceof SyntaxError)) return 'error ' + bad }\n"
+        "  }\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "class strings");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -1278,6 +1302,7 @@ int main(void)
     test_ropes();
     test_free_nesting();
     test_unicode_tables();
+    test_class_strings();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();

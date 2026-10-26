@@ -951,8 +951,8 @@ static int parse_unicode_property(REParseState *s, REStringList *cr,
 }
 #endif /* CONFIG_ALL_UNICODE */
 
-static int get_class_atom(REParseState *s, REStringList *cr,
-                          const uint8_t **pp, BOOL inclass);
+static int get_class_atom1(REParseState *s, REStringList *cr,
+                           const uint8_t **pp, BOOL inclass);
 
 static int parse_class_string_disjunction(REParseState *s, REStringList *cr,
                                           const uint8_t **pp)
@@ -972,7 +972,7 @@ static int parse_class_string_disjunction(REParseState *s, REStringList *cr,
     for(;;) {
         str.size = 0;
         while (*p != '}' && *p != '|') {
-            c = get_class_atom(s, NULL, &p, TRUE);
+            c = get_class_atom1(s, NULL, &p, TRUE);
             if (c < 0)
                 goto fail;
             if (dbuf_put_u32(&str, c)) {
@@ -1002,11 +1002,10 @@ static int parse_class_string_disjunction(REParseState *s, REStringList *cr,
     return -1;
 }
 
-/* return -1 if error otherwise the character or a class range
-   (CLASS_RANGE_BASE) if cr != NULL. In case of class range, 'cr' is
-   initialized. Otherwise, it is ignored. */
-static int get_class_atom(REParseState *s, REStringList *cr,
-                          const uint8_t **pp, BOOL inclass)
+/* get_class_atom without \q{...}, which get_class_atom reads before: its
+   strings are made of class atoms in turn, read here with no cr. */
+static int get_class_atom1(REParseState *s, REStringList *cr,
+                           const uint8_t **pp, BOOL inclass)
 {
     const uint8_t *p;
     uint32_t c;
@@ -1112,14 +1111,6 @@ static int get_class_atom(REParseState *s, REStringList *cr,
             }
             goto default_escape;
 #endif
-        case 'q':
-            if (s->unicode_sets && cr && inclass) {
-                if (parse_class_string_disjunction(s, cr, &p))
-                    return -1;
-                c = CLASS_RANGE_BASE;
-                break;
-            }
-            goto default_escape;
         default:
         default_escape:
             p--;
@@ -1202,6 +1193,25 @@ static int get_class_atom(REParseState *s, REStringList *cr,
     }
     *pp = p;
     return c;
+}
+
+/* return -1 if error otherwise the character or a class range
+   (CLASS_RANGE_BASE) if cr != NULL. In case of class range, 'cr' is
+   initialized. Otherwise, it is ignored. */
+static int get_class_atom(REParseState *s, REStringList *cr,
+                          const uint8_t **pp, BOOL inclass)
+{
+    const uint8_t *p = *pp;
+
+    if (s->unicode_sets && cr && inclass &&
+        p[0] == '\\' && p + 1 < s->buf_end && p[1] == 'q') {
+        p += 2;
+        if (parse_class_string_disjunction(s, cr, &p))
+            return -1;
+        *pp = p;
+        return CLASS_RANGE_BASE;
+    }
+    return get_class_atom1(s, cr, pp, inclass);
 }
 
 static int re_emit_range(REParseState *s, const CharRange *cr)
