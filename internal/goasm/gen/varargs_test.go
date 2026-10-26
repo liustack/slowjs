@@ -174,7 +174,8 @@ func TestVarargsEscapesRejected(t *testing.T) {
 // TestVarargsRules runs testdata/varargs/rules.c through the pass for both
 // targets. Each varargs rule has a function that breaks it, which the pass
 // must reject for that rule, and the uses it must keep stay: a va_list
-// passed by reference and a va_copy. The kept function's va_start must set the offsets that make
+// passed by value (AArch64 copies it with memcpy) and by reference, and a
+// va_copy. The kept function's va_start must set the offsets that make
 // every va_arg take the overflow path. callargs.ll passes arguments C would
 // have promoted. Needs LLVM
 // 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
@@ -225,7 +226,7 @@ func TestVarargsRules(t *testing.T) {
 				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, want)
 			}
 		}
-		for _, fn := range []string{"kept", "by_ref", "use"} {
+		for _, fn := range []string{"kept", "by_value", "by_ref", "use"} {
 			if why, ok := rep.Rejected[fn]; ok {
 				t.Errorf("%s: %s rejected: %s", tc.arch, fn, why)
 			}
