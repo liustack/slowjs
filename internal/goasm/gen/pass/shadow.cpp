@@ -25,15 +25,20 @@
 // C passes in memory because the argument registers ran out (byval) goes in
 // the argument block like any other argument. A computed goto table becomes
 // offsets from itself, so it needs no relocation and can live inside its
-// function. -shadow-icall-markers puts a comment naming the signature before
-// every indirect call, which the lowering reads to move the arguments into
-// the Go argument area. -shadow-report prints the signature of every
-// function, the address-taken ones and the call graph for the generator.
+// function. -shadow-icall-sigs gives every indirect call a "kcfi" operand
+// bundle whose type id encodes its signature, which llc keeps on the machine
+// call and the plugin in icall.cpp writes out as a symbol at it: the
+// lowering reads it to move the arguments into the Go argument area, and
+// the post-link check reads it again from llc's object. -shadow-report prints the signature of every function, the
+// address-taken ones and the call graph for the generator.
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/ConstantRange.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/PassManager.h"
@@ -43,7 +48,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 using namespace llvm;
@@ -57,8 +64,8 @@ static cl::opt<unsigned> MaxIntArgs("shadow-max-int-args", cl::init(0),
 static cl::list<std::string> Leaves("shadow-leaf", cl::CommaSeparated, cl::desc("register-entry leaves: no shadow pointer"));
 static cl::opt<bool> AddSP("shadow-add-sp", cl::init(false),
                            cl::desc("add the shadow-stack pointer as argument 0 of every engine function and call"));
-static cl::opt<bool> Markers("shadow-icall-markers", cl::init(false),
-                             cl::desc("put a comment with the signature before every indirect call"));
+static cl::opt<bool> ICallSigs("shadow-icall-sigs", cl::init(false),
+                               cl::desc("bind the signature of every indirect call to it as a kcfi type id"));
 static cl::opt<bool> Report("shadow-report", cl::init(false),
                             cl::desc("print signatures, address-taken functions and call edges"));
 static cl::opt<bool> KeepGoing("shadow-keep-going", cl::init(false),
@@ -334,18 +341,25 @@ static FunctionType *fixedPartType(FunctionType *T) {
 }
 
 static void lowerVarargs(Module &M) {
-  bool arm = Triple(M.getTargetTriple()).isAArch64();
+  // The va_list layout and what va_start writes into it are those of these
+  // two targets only.
+  Triple T(M.getTargetTriple());
+  if (!(T.getArch() == Triple::x86_64 || T.getArch() == Triple::aarch64) || T.getVendor() != Triple::UnknownVendor ||
+      T.getOS() != Triple::Linux || T.getEnvironment() != Triple::GNU)
+    report_fatal_error(Twine("target ") + T.str() +
+                       ": variable arguments are lowered only for x86_64-linux-gnu and aarch64-linux-gnu");
+  bool arm = T.isAArch64();
   const DataLayout &DL = M.getDataLayout();
   LLVMContext &C = M.getContext();
   Type *I8 = Type::getInt8Ty(C), *I32 = Type::getInt32Ty(C);
   PointerType *P = PointerType::getUnqual(C);
-  // The slot offsets of the variable arguments of CB, false if one has no
-  // 8-byte slot (byval, long double, vectors).
-  // A variable argument is accepted only if it is a scalar that fits one
-  // 8-byte, 8-aligned slot: an integer or pointer of at most 8 bytes, a float
-  // or a double. That is the whole set the SysV/AAPCS overflow area holds
-  // contiguously. Anything else (a byval aggregate, an i128, a vector, an
-  // over-aligned value) is rejected, so the caller is not rewritten.
+  auto promoted = [](Type *t) { return t->isIntegerTy(32) || t->isIntegerTy(64) || t->isPointerTy() || t->isDoubleTy(); };
+  // The slot offsets of the variable arguments of CB. A variable argument
+  // is accepted only if it is what C's default promotions leave of a
+  // scalar: an int, an i64, a pointer or a double, each in one 8-byte slot
+  // as the SysV and AAPCS overflow areas hold them. Anything else (a float
+  // or narrow integer C would have promoted, a byval or split aggregate, an
+  // i128, a vector) is rejected, so the caller is not rewritten.
   auto slots = [&](CallBase *CB, SmallVector<uint64_t> &offs, uint64_t &size) {
     unsigned nf = CB->getFunctionType()->getNumParams();
     size = 0;
@@ -353,11 +367,7 @@ static void lowerVarargs(Module &M) {
       return false;
     for (unsigned i = nf; i < CB->arg_size(); i++) {
       Type *t = CB->getArgOperand(i)->getType();
-      if (CB->isByValArgument(i) || !(t->isIntegerTy() || t->isPointerTy() || t->isDoubleTy() || t->isFloatTy()))
-        return false;
-      uint64_t sz = DL.getTypeStoreSize(t).getFixedValue();
-      uint64_t al = DL.getABITypeAlign(t).value();
-      if (sz > 8 || al > 8)
+      if (CB->isByValArgument(i) || !promoted(t))
         return false;
       offs.push_back(size);
       size += 8;
@@ -381,9 +391,17 @@ static void lowerVarargs(Module &M) {
   // Kinds: a va_list (its storage, with the byte offset into it), the block
   // pointer (loaded from the overflow field) and a read-only pointer (the
   // register save area, which va_start leaves exhausted, or a merge of it
-  // with the block pointer). Block and read pointers may be read through;
-  // only a block pointer may be stored, and only back into the overflow field.
+  // with the block pointer). Block and read pointers may be read through,
+  // one promoted scalar at a time; only a block pointer may be stored, and
+  // only back into the overflow field, 8 bytes on. va_start sets the
+  // offset fields so that va_arg stays off the register save area (x86-64
+  // gp_offset 48 and fp_offset 176, AArch64 both 0), and every write to
+  // them must be proven to keep it off, so every va_arg takes the overflow
+  // path. A va_list is
+  // copied by va_copy, or whole by memcpy into a local (how AArch64 passes
+  // one by value).
   const int64_t blockField = arm ? 0 : 8;
+  const uint64_t listSize = arm ? 32 : 24;
   auto readField = [&](int64_t off) { return arm ? (off == 8 || off == 16) : off == 16; };
   auto intField = [&](int64_t off) { return arm ? (off == 24 || off == 28) : (off == 0 || off == 4); };
   DenseMap<Value *, int64_t> vaList; // va_list pointer -> byte offset into it
@@ -456,6 +474,9 @@ static void lowerVarargs(Module &M) {
       } else if (auto *II = dyn_cast<IntrinsicInst>(I)) {
         if (!list && II->getIntrinsicID() == Intrinsic::ptrmask && II->getArgOperand(0) == V)
           addPtr(II);
+        if (list && off == 0 && II->getIntrinsicID() == Intrinsic::memcpy && II->getArgOperand(1) == V &&
+            isa<AllocaInst>(II->getArgOperand(0)))
+          addList(I, II->getArgOperand(0), 0);
       } else if (auto *CB = dyn_cast<CallBase>(I)) {
         auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
         if (!list || off != 0 || !callee || callee->isDeclaration() || CB->getCalledOperand() == V)
@@ -497,6 +518,163 @@ static void lowerVarargs(Module &M) {
       }
     }
   }
+  // The offset fields must keep va_arg off the register save area, which
+  // va_start leaves empty. x86-64 takes a register while gp_offset is at
+  // most 40 or fp_offset at most 160, compared unsigned, so the fields stay
+  // at or above 48 and 176 as unsigned values. AArch64 takes one while an
+  // offset is negative, so they stay at or above 0 as signed values.
+  // va_start sets values inside these ranges, and a write must provably
+  // keep them there. Ranges are i32 and wrap as the add does, so an add
+  // the pass cannot bound by a branch is refused.
+  auto exhausted = [&](int64_t off) {
+    if (arm)
+      return ConstantRange(APInt(32, 0), APInt::getSignedMinValue(32));
+    return ConstantRange(APInt(32, off == 0 ? 48 : 176), APInt(32, 0));
+  };
+  auto full = ConstantRange::getFull(32);
+  // edgeCond: the branch from D to S compares x with a constant, and
+  // control goes that way only while x is in region.
+  auto edgeCond = [&](BasicBlock *D, BasicBlock *S, Value *&x, ConstantRange &region) {
+    auto *Br = dyn_cast<BranchInst>(D->getTerminator());
+    if (!Br || !Br->isConditional() || Br->getSuccessor(0) == Br->getSuccessor(1))
+      return false;
+    auto *C = dyn_cast<ICmpInst>(Br->getCondition());
+    if (!C || (Br->getSuccessor(0) != S && Br->getSuccessor(1) != S))
+      return false;
+    CmpInst::Predicate pred = Br->getSuccessor(0) == S ? C->getPredicate() : C->getInversePredicate();
+    Value *a = C->getOperand(0);
+    auto *k = dyn_cast<ConstantInt>(C->getOperand(1));
+    if (!k) {
+      k = dyn_cast<ConstantInt>(a);
+      a = C->getOperand(1);
+      pred = CmpInst::getSwappedPredicate(pred);
+    }
+    if (!k || !a->getType()->isIntegerTy(32))
+      return false;
+    x = a;
+    region = ConstantRange::makeExactICmpRegion(pred, k->getValue());
+    return true;
+  };
+  // A range for each i32 phi, add and select of a function, which holds on
+  // every run given that every offset field holds an exhausted value: the
+  // ranges are solved together until a pass over the function changes none
+  // (a value that keeps changing is widened to anything), so each one
+  // contains what its instruction can compute from the others.
+  struct FnRanges {
+    std::unique_ptr<DominatorTree> DT;
+    std::map<Value *, ConstantRange> R;
+  };
+  std::map<Function *, FnRanges> fnRanges;
+  auto get = [&](FnRanges &st, Value *v) -> ConstantRange {
+    if (!v->getType()->isIntegerTy(32))
+      return full;
+    if (auto *c = dyn_cast<ConstantInt>(v))
+      return ConstantRange(c->getValue());
+    if (auto *L = dyn_cast<LoadInst>(v)) {
+      Value *p = L->getPointerOperand();
+      return vaList.count(p) && intField(vaList[p]) ? exhausted(vaList[p]) : full;
+    }
+    auto it = st.R.find(v);
+    return it == st.R.end() ? full : it->second;
+  };
+  // rangeAt: what v holds where B runs, cut by each branch on v that
+  // control took to reach B.
+  auto rangeAt = [&](FnRanges &st, Value *v, BasicBlock *B) {
+    ConstantRange r = get(st, v);
+    for (auto *N = st.DT->getNode(B); N && N->getIDom(); N = N->getIDom()) {
+      BasicBlock *D = N->getIDom()->getBlock();
+      for (BasicBlock *S : successors(D)) {
+        Value *x;
+        ConstantRange region = full;
+        if (edgeCond(D, S, x, region) && x == v && st.DT->dominates(BasicBlockEdge(D, S), B))
+          r = r.intersectWith(region);
+      }
+    }
+    return r;
+  };
+  // dead: no run reaches B: it is unreachable, or a branch control must take
+  // to get there tests a value that can never pass it.
+  auto dead = [&](FnRanges &st, BasicBlock *B) {
+    if (!st.DT->isReachableFromEntry(B))
+      return true;
+    for (auto *N = st.DT->getNode(B); N->getIDom(); N = N->getIDom()) {
+      BasicBlock *D = N->getIDom()->getBlock();
+      for (BasicBlock *S : successors(D)) {
+        Value *x;
+        ConstantRange region = full;
+        if (edgeCond(D, S, x, region) && st.DT->dominates(BasicBlockEdge(D, S), B) &&
+            rangeAt(st, x, D).intersectWith(region).isEmptySet())
+          return true;
+      }
+    }
+    return false;
+  };
+  auto deadEdge = [&](FnRanges &st, BasicBlock *from, BasicBlock *to) {
+    Value *x;
+    ConstantRange region = full;
+    if (edgeCond(from, to, x, region) && rangeAt(st, x, from).intersectWith(region).isEmptySet())
+      return true;
+    return dead(st, from);
+  };
+  auto rangesOf = [&](Function *F) -> FnRanges & {
+    auto [it, fresh] = fnRanges.try_emplace(F);
+    FnRanges &st = it->second;
+    if (!fresh)
+      return st;
+    st.DT = std::make_unique<DominatorTree>(*F);
+    SmallVector<Instruction *> vals;
+    ReversePostOrderTraversal<Function *> rpo(F);
+    for (BasicBlock *B : rpo)
+      for (Instruction &I : *B)
+        if (I.getType()->isIntegerTy(32) &&
+            (isa<PHINode>(I) || isa<SelectInst>(I) || I.getOpcode() == Instruction::Add)) {
+          vals.push_back(&I);
+          st.R.insert({&I, ConstantRange::getEmpty(32)});
+        }
+    DenseMap<Instruction *, unsigned> changes;
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Instruction *I : vals) {
+        BasicBlock *B = I->getParent();
+        ConstantRange r = full;
+        if (changes[I] > 4) {
+          // widened
+        } else if (auto *P = dyn_cast<PHINode>(I)) {
+          r = ConstantRange::getEmpty(32);
+          for (unsigned k = 0; k < P->getNumIncomingValues(); k++) {
+            BasicBlock *from = P->getIncomingBlock(k);
+            if (deadEdge(st, from, B))
+              continue;
+            Value *in = P->getIncomingValue(k), *x;
+            ConstantRange in_r = rangeAt(st, in, from), region = full;
+            if (edgeCond(from, B, x, region) && x == in)
+              in_r = in_r.intersectWith(region);
+            r = r.unionWith(in_r);
+          }
+        } else if (auto *S = dyn_cast<SelectInst>(I)) {
+          r = rangeAt(st, S->getTrueValue(), B).unionWith(rangeAt(st, S->getFalseValue(), B));
+        } else {
+          r = rangeAt(st, I->getOperand(0), B).add(rangeAt(st, I->getOperand(1), B));
+        }
+        ConstantRange &old = st.R.at(I);
+        if (r != old) {
+          old = r;
+          changes[I]++;
+          changed = true;
+        }
+      }
+    }
+    return st;
+  };
+  // keepsExhausted: storing S's value into the offset field at off leaves
+  // it exhausted, or S never runs.
+  auto keepsExhausted = [&](StoreInst *S, int64_t off) {
+    Value *v = S->getValueOperand();
+    if (!v->getType()->isIntegerTy(32))
+      return false;
+    FnRanges &st = rangesOf(S->getFunction());
+    return dead(st, S->getParent()) || exhausted(off).contains(rangeAt(st, v, S->getParent()));
+  };
   // Check every use.
   auto checkList = [&](Value *V, int64_t off, Use &U) {
     auto *I = cast<Instruction>(U.getUser());
@@ -519,8 +697,12 @@ static void lowerVarargs(Module &M) {
         return;
       }
       Value *v = S->getValueOperand();
-      bool ok = (intField(off) && v->getType()->isIntegerTy(32)) || (off == blockField && isBlock(v));
-      if (!ok)
+      if (intField(off)) {
+        if (!keepsExhausted(S, off))
+          fail(I, "writes a va_list offset the pass cannot prove keeps va_arg off the register save area");
+        return;
+      }
+      if (!(off == blockField && isBlock(v)))
         fail(I, "writes a va_list field with a value the pass cannot account for");
       return;
     }
@@ -533,6 +715,15 @@ static void lowerVarargs(Module &M) {
         if (off != 0)
           fail(I, "passes an address inside a va_list to an intrinsic");
         return;
+      case Intrinsic::memcpy: {
+        // A whole va_list copied into a local one, as va_copy does.
+        Value *dst = II->getArgOperand(0), *src = II->getArgOperand(1);
+        auto *n = dyn_cast<ConstantInt>(II->getArgOperand(2));
+        if (off != 0 || !n || n->getZExtValue() != listSize || !isa<AllocaInst>(dst) || !vaList.count(dst) ||
+            vaList[dst] != 0 || !vaList.count(src) || vaList[src] != 0)
+          fail(I, "copies a va_list the pass cannot account for");
+        return;
+      }
       case Intrinsic::vacopy: {
         // Both operands must be va_lists the pass tracks: the destination
         // was seeded from a local, the source must be a tracked list.
@@ -556,15 +747,50 @@ static void lowerVarargs(Module &M) {
     }
     fail(I, "uses a va_list in a way the pass cannot follow");
   };
+  // regPtr: V points into the register save area read from a va_list. Only
+  // the register path of va_arg reads there, and va_start leaves that path
+  // unreachable, so what it reads does not matter (it may still not write).
+  std::function<bool(Value *)> regPtr = [&](Value *V) {
+    if (auto *L = dyn_cast<LoadInst>(V))
+      return vaList.count(L->getPointerOperand()) && readField(vaList[L->getPointerOperand()]);
+    if (auto *G = dyn_cast<GEPOperator>(V))
+      return regPtr(G->getPointerOperand());
+    return false;
+  };
+  // advance: G is the block pointer one slot on.
+  auto advance = [&](GEPOperator *G) {
+    int64_t c;
+    return constOff(G, c) && c == 8;
+  };
+  // alignStep: G is the block pointer rounded up for an alignment, which
+  // the ptrmask using it decides on.
+  auto alignStep = [&](GEPOperator *G) {
+    int64_t c;
+    if (!constOff(G, c) || c < 1 || c > 15 || G->use_empty())
+      return false;
+    for (User *U : G->users()) {
+      auto *II = dyn_cast<IntrinsicInst>(U);
+      if (!II || II->getIntrinsicID() != Intrinsic::ptrmask || II->getArgOperand(0) != G)
+        return false;
+    }
+    return true;
+  };
   auto checkPtr = [&](Value *V, bool blk, Use &U) {
     auto *I = cast<Instruction>(U.getUser());
+    bool reg = regPtr(V);
     if (auto *G = dyn_cast<GEPOperator>(I)) {
-      int64_t c;
-      if (G->getPointerOperand() != V || (blk && !constOff(G, c)))
+      if (G->getPointerOperand() != V)
         fail(I, "computes a variable address from the variadic block pointer");
+      else if (!reg && !(blk && (advance(G) || alignStep(G))))
+        fail(I, "reads more than one 8-byte slot of the variadic block (an aggregate or a wide argument)");
       return;
     }
-    if (isa<LoadInst>(I) || isa<PHINode>(I) || isa<SelectInst>(I))
+    if (auto *L = dyn_cast<LoadInst>(I)) {
+      if (!reg && !promoted(L->getType()))
+        fail(I, "reads a variadic argument that is not a promoted int, i64, pointer or double");
+      return;
+    }
+    if (isa<PHINode>(I) || isa<SelectInst>(I))
       return;
     if (auto *S = dyn_cast<StoreInst>(I)) {
       if (S->getPointerOperand() == V) {
@@ -586,9 +812,11 @@ static void lowerVarargs(Module &M) {
       }
       case Intrinsic::memcpy:
       case Intrinsic::memmove:
-        if (II->getArgOperand(1) == V && II->getArgOperand(0) != V)
-          return;
-        fail(I, "writes through a pointer read from a va_list");
+        if (II->getArgOperand(1) == V && II->getArgOperand(0) != V) {
+          if (!reg)
+            fail(I, "reads more than one 8-byte slot of the variadic block (an aggregate or a wide argument)");
+        } else
+          fail(I, "writes through a pointer read from a va_list");
         return;
       default:
         fail(I, "hands a pointer read from a va_list to an intrinsic the pass cannot follow");
@@ -597,14 +825,25 @@ static void lowerVarargs(Module &M) {
     }
     fail(I, "uses a pointer read from a va_list in a way the pass cannot follow");
   };
-  for (auto &[V, off] : vaList)
-    for (Use &U : V->uses())
-      if (isa<Instruction>(U.getUser()))
-        checkList(V, off, U);
-  for (auto &[V, blk] : ptrs)
-    for (Use &U : V->uses())
-      if (isa<Instruction>(U.getUser()))
-        checkPtr(V, blk, U);
+  // In the module's order, so a function that breaks two rules is always
+  // rejected for the same one.
+  auto check = [&](Value *V) {
+    for (Use &U : V->uses()) {
+      if (!isa<Instruction>(U.getUser()))
+        continue;
+      if (auto it = vaList.find(V); it != vaList.end())
+        checkList(V, it->second, U);
+      else if (auto jt = ptrs.find(V); jt != ptrs.end())
+        checkPtr(V, jt->second, U);
+    }
+  };
+  for (Function &F : M) {
+    for (Argument &A : F.args())
+      check(&A);
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        check(&I);
+  }
   for (auto &[F, why] : bad)
     reject(*F, why);
   SmallVector<Function *> fns;
@@ -633,7 +872,7 @@ static void lowerVarargs(Module &M) {
       most = std::max(most, size);
     }
     if (!ok) {
-      reject(*F, "variadic call with an argument that has no 8-byte slot");
+      reject(*F, "variadic call with an argument that is not a promoted int, i64, pointer or double");
       continue;
     }
     IRBuilder<> E(&*F->getEntryBlock().getFirstInsertionPt());
@@ -933,9 +1172,37 @@ static std::string sigCode(FunctionType *T, function_ref<bool(unsigned)> byval) 
   return s + ">" + sigLetter(T->getReturnType());
 }
 
-static void insertMarkers(Module &M) {
-  LLVMContext &C = M.getContext();
-  FunctionType *VT = FunctionType::get(Type::getVoidTy(C), false);
+// icallID encodes a signature code as the 32-bit type id of a "kcfi"
+// bundle: bit 31 set, the parameter count in bits 27 to 30, the result in
+// bits 24 to 26 (v i d f j) and two bits per parameter from bit 0 (i d f j).
+// A code it cannot hold (more than 12 parameters, byval, variadic or an
+// unknown type) gets icallUnencodable, which the generator rejects. The Go
+// side is ICallID in icall.go.
+static const uint32_t icallUnencodable = 0xffffffffu;
+
+static uint32_t icallID(const std::string &code) {
+  size_t gt = code.find('>');
+  if (gt == std::string::npos || gt > 12)
+    return icallUnencodable;
+  const std::string params = "idfj", results = "vidfj";
+  size_t r = code.size() == gt + 2 ? results.find(code[gt + 1]) : std::string::npos;
+  if (r == std::string::npos)
+    return icallUnencodable;
+  uint32_t id = 1u << 31 | uint32_t(gt) << 27 | uint32_t(r) << 24;
+  for (size_t i = 0; i < gt; i++) {
+    size_t p = params.find(code[i]);
+    if (p == std::string::npos)
+      return icallUnencodable;
+    id |= uint32_t(p) << (2 * i);
+  }
+  return id;
+}
+
+// bindSignatures gives every indirect call a "kcfi" bundle with its
+// signature's id. A call through a pointer to a known function is a direct
+// call to llc and gets none.
+static void bindSignatures(Module &M) {
+  Type *I32 = Type::getInt32Ty(M.getContext());
   for (Function &F : M) {
     SmallVector<CallBase *> ind;
     for (BasicBlock &B : F)
@@ -944,8 +1211,14 @@ static void insertMarkers(Module &M) {
           if (!CB->isInlineAsm() && !isa<Function>(CB->getCalledOperand()->stripPointerCasts()))
             ind.push_back(CB);
     for (CallBase *CB : ind) {
+      if (CB->getOperandBundle(LLVMContext::OB_kcfi))
+        report_fatal_error(Twine("indirect call with a kcfi bundle already in ") + F.getName());
       std::string code = sigCode(CB->getFunctionType(), [&](unsigned i) { return CB->isByValArgument(i); });
-      CallInst::Create(InlineAsm::get(VT, "# goasm.icall " + code, "", true), {}, "", CB->getIterator());
+      OperandBundleDef kcfi("kcfi", ConstantInt::get(I32, icallID(code)));
+      CallBase *N = CallBase::addOperandBundle(CB, LLVMContext::OB_kcfi, kcfi, CB->getIterator());
+      N->takeName(CB);
+      CB->replaceAllUsesWith(N);
+      CB->eraseFromParent();
     }
   }
 }
@@ -1187,8 +1460,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         R->eraseFromParent();
     if (Report)
       report(M, leaves);
-    if (Markers)
-      insertMarkers(M);
+    if (ICallSigs)
+      bindSignatures(M);
     return PreservedAnalyses::none();
   }
 };

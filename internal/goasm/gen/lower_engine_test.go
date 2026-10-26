@@ -3,11 +3,12 @@
 package gen
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// Bodies as llc prints them for the whole engine, with the pass's markers.
+// Bodies as llc prints them for the whole engine, with the plugin's labels.
 
 func lowerEngine(t *testing.T, body string, sig Sig, env *LowerEnv) (string, Meta, error) {
 	t.Helper()
@@ -20,117 +21,49 @@ func lowerEngine(t *testing.T, body string, sig Sig, env *LowerEnv) (string, Met
 	return LowerUnifiedFunc(AMD64(), lines, fn, env, "")
 }
 
-const marker = "\t#APP\n\t# goasm.icall %s\n\t#NO_APP\n"
+// label is the symbol llc writes at the n-th indirect call of h, with the
+// type id of the signature LLVM bound to it.
+func label(n int, code string) string {
+	id, ok := ICallID(code)
+	if !ok {
+		id = ICallUnencodable
+	}
+	return ICallPrefix + "h." + strconv.Itoa(n) + "." + strconv.FormatUint(uint64(id), 10) + ":\n"
+}
 
-func mark(code string) string { return strings.Replace(marker, "%s", code, 1) }
-
-// llc's tail merging moves the call of two marked sites into one block that
-// both reach, each keeping its own marker.
-func TestMarkerAcrossBlocks(t *testing.T) {
-	body := "\ttestq\t%rsi, %rsi\n\tje\t.LBB1_2\n\tmovq\t8(%rsi), %rcx\n" + mark("ii>v") +
-		"\tjmp\t.LBB1_3\n.LBB1_2:\n\tmovq\t16(%rsi), %rcx\n" + mark("ii>v") +
-		".LBB1_3:\n\tcallq\t*%rcx\n"
-	out, m, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil)
+// Each indirect call is lowered with the signature of the label right
+// before it, whatever block it sits in (llc's tail merging gives the merged
+// call one label, since it merges only calls of one signature).
+func TestICallLabel(t *testing.T) {
+	sig := Sig{Params: []Type{I64, I64}, Ret: Void}
+	body := "	testq\t%rsi, %rsi\n\tje\t.LBB1_2\n\tmovq\t8(%rsi), %rcx\n\tjmp\t.LBB1_3\n.LBB1_2:\n\tmovq\t16(%rsi), %rcx\n" +
+		".LBB1_3:\n" + label(0, "ii>v") + "\tcallq\t*%rcx\n\tmovq\t%rsi, %rdi\n" + label(1, "i>j") + "\tcallq\t*%rcx\n"
+	_, m, err := lowerEngine(t, body, sig, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Frame < 16 || !strings.Contains(out, "*%rcx") {
-		t.Fatalf("frame %d, body:\n%s", m.Frame, out)
-	}
-	conflict := strings.Replace(body, "\tjmp\t.LBB1_3\n.LBB1_2:\n\tmovq\t16(%rsi), %rcx\n"+mark("ii>v"),
-		"\tjmp\t.LBB1_3\n.LBB1_2:\n\tmovq\t16(%rsi), %rcx\n"+mark("i>v"), 1)
-	if _, _, err := lowerEngine(t, conflict, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err == nil ||
-		!strings.Contains(err.Error(), "disagree") {
-		t.Fatalf("disagreeing markers: %v", err)
-	}
-	unmarked := "\ttestq\t%rsi, %rsi\n\tje\t.LBB1_3\n\tmovq\t8(%rsi), %rcx\n" + mark("ii>v") + ".LBB1_3:\n\tcallq\t*%rcx\n"
-	if _, _, err := lowerEngine(t, unmarked, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err == nil {
-		t.Fatal("a path without a marker accepted")
-	}
-}
-
-func TestMarkerFlow(t *testing.T) {
-	// A marker flows across a direct jump into the call block, no indirect
-	// jump anywhere: accepted.
-	in, err := markerFlow(strings.Split("@icall i>v\njmp\t.LBB0_3\n.LBB0_5:\n@icall i>v\n.LBB0_3:\ncallq\t*%rcx\nretq", "\n"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if in[".LBB0_3"] != "i>v" {
-		t.Fatalf("flow: %q", in)
-	}
-	if _, err := markerFlow(strings.Split("@icall i>v\nretq", "\n"), nil); err == nil {
-		t.Fatal("marker before a return accepted")
-	}
-}
-
-// The indirect-jump guard is decided per jump. A jump whose block reads no
-// known table could reach any block, so a marker crossing a block edge is
-// rejected. A switch dispatch that reads a known table reaches only that
-// table's blocks, so a marker into a block the table does not name is safe.
-func TestMarkerFlowIndirectJumpEntry(t *testing.T) {
-	// A jmpq through a register with no table reference: targets unknown, so
-	// the marker that crosses into .LBB0_3 is rejected.
-	unknown := strings.Split("testq %rsi, %rsi\nje .LBB0_2\njmpq *%rdx\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
-	if _, err := markerFlow(unknown, nil); err == nil || !strings.Contains(err.Error(), "indirect jump") {
-		t.Fatalf("want rejection for the unknown indirect jump, got %v", err)
-	}
-	// The same unknown jump, but the marker is consumed in its own block:
-	// nothing crosses a block edge, so it is accepted.
-	consumed := strings.Split("jmpq *%rdx\n.LBB0_2:\n@icall ii>v\ncallq *%rax\nretq", "\n")
-	if _, err := markerFlow(consumed, nil); err != nil {
-		t.Fatalf("marker consumed in its own block rejected: %v", err)
-	}
-	// A switch dispatch that reads a known table .LJTI0_0, with a marker that
-	// crosses into .LBB0_3. When the table does not target .LBB0_3 the marker
-	// is safe (the shape of __JS_FreeValueRT: its switch lands on other
-	// blocks); when it does, the block is reached unmarked, so reject.
-	dispatch := strings.Split("testq %rsi, %rsi\nje .LBB0_2\nleaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
-	tables := func(targets ...string) map[string]map[string]bool {
-		s := map[string]bool{}
-		for _, tg := range targets {
-			s[tg] = true
+	var got []string
+	for _, c := range m.Rec.Calls {
+		if c.Kind != CallReg || c.Target != "rcx" {
+			t.Fatalf("call %+v", c)
 		}
-		return map[string]map[string]bool{".LJTI0_0": s}
+		got = append(got, sigCodeOf(c.Sig))
 	}
-	if _, err := markerFlow(dispatch, tables(".LBB0_8", ".LBB0_9")); err != nil {
-		t.Fatalf("marker to a block the table does not target rejected: %v", err)
+	if strings.Join(got, " ") != "ii>v i>j" {
+		t.Fatalf("calls lowered as %v", got)
 	}
-	if _, err := markerFlow(dispatch, tables(".LBB0_3")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
-		t.Fatalf("marker to a jump-table target accepted: %v", err)
-	}
-	// The hole the old per-function guard left: a known table (.LJTI0_0,
-	// landing on .LBB0_8) and a separate unknown jump (jmpq *%r8). The old
-	// code trusted the union of known tables and, seeing .LBB0_3 absent from
-	// it, accepted the crossing marker, though the unknown jump could reach
-	// .LBB0_3 unmarked. Per jump, the unknown jump makes the targets unknown,
-	// so the marker is rejected.
-	mixed := strings.Split("testq %rsi, %rsi\nje .LBB0_2\nleaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx\n.LBB0_4:\njmpq *%r8\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
-	if _, err := markerFlow(mixed, tables(".LBB0_8")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
-		t.Fatalf("a known table alongside an unknown jump accepted the crossing marker: %v", err)
-	}
-	// A table vouches only for the jump that loads its target from it. Here
-	// the block loads the table's address into %r9 but jumps through %rdx, a
-	// register the table never reaches; or it overwrites the table address
-	// before the load; or a call clobbers registers in between. Each jump's
-	// targets are unknown, so the crossing marker is rejected. Only the full
-	// dispatch, with an unrelated line inside it, vouches.
-	shape := func(dispatch string) []string {
-		return strings.Split("testq %rsi, %rsi\nje .LBB0_2\n"+dispatch+"\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
-	}
-	for name, d := range map[string]string{
-		"other register":   "leaq .LJTI0_0(%rip), %r9\njmpq *%rdx",
-		"base clobbered":   "leaq .LJTI0_0(%rip), %rdx\nmovq %rsi, %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx",
-		"target clobbered": "leaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\nmovl %esi, %ecx\njmpq *%rcx",
-		"call between":     "leaq .LJTI0_0(%rip), %rdx\ncallq *%r8\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx",
+	for name, c := range map[string]struct{ body, want string }{
+		"no label":           {"\tcallq\t*%rcx\n", "without LLVM's signature label"},
+		"label off the call": {label(0, "ii>v") + "\tmovq\t%rsi, %rdi\n\tcallq\t*%rcx\n", "not on an indirect call"},
+		"label on a direct":  {label(0, "ii>v") + "\tcallq\th\n", "not on an indirect call"},
+		"label at the end":   {"\tcallq\th\n" + label(0, "ii>v"), "not on an indirect call"},
+		"another function":   {strings.Replace(label(0, "ii>v"), ".h.", ".g.", 1) + "\tcallq\t*%rcx\n", "not one of this function"},
+		"unencodable":        {label(0, "iB>v") + "\tcallq\t*%rcx\n", "encodes no signature"},
+		"malformed":          {ICallPrefix + "h.x:\n\tcallq\t*%rcx\n", "not one of this function"},
 	} {
-		if _, err := markerFlow(shape(d), tables(".LBB0_8")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
-			t.Errorf("%s: a jump the table does not feed accepted the crossing marker: %v", name, err)
+		if _, _, err := lowerEngine(t, c.body, sig, nil); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error with %q", name, err, c.want)
 		}
-	}
-	full := shape("leaq .LJTI0_0(%rip), %rdx\nmovl %ecx, %ecx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx")
-	if _, err := markerFlow(full, tables(".LBB0_8")); err != nil {
-		t.Errorf("the full dispatch from a table that does not target .LBB0_3 rejected: %v", err)
 	}
 }
 
@@ -138,7 +71,7 @@ func TestMarkerFlowIndirectJumpEntry(t *testing.T) {
 // when the function makes no direct call (js_malloc_large wrote its
 // callee's arguments over its own return address).
 func TestFrameHoldsMarkedCall(t *testing.T) {
-	body := "\tmovq\t1000(%rsi), %rax\n" + mark("iii>i") + "\tcallq\t*%rax\n"
+	body := "\tmovq\t1000(%rsi), %rax\n" + label(0, "iii>i") + "\tcallq\t*%rax\n"
 	_, m, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64, I64}, Ret: I64}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +86,7 @@ func TestFrameHoldsMarkedCall(t *testing.T) {
 // for a plain frame access and left unmarshalled.
 func TestCallThroughMemory(t *testing.T) {
 	for _, call := range []string{"callq\t*-8(%rbp)", "callq\t*8(%rax)", "callq\t*(%r9,%rax,8)", "callq\t*fp(%rip)"} {
-		body := "\tsubq\t$16, %rsp\n\tmovq\t%rsi, -8(%rbp)\n" + mark("ii>v") + "\t" + call + "\n\taddq\t$16, %rsp\n"
+		body := "\tsubq\t$16, %rsp\n\tmovq\t%rsi, -8(%rbp)\n" + label(0, "ii>v") + "\t" + call + "\n\taddq\t$16, %rsp\n"
 		_, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil)
 		if err == nil || !strings.Contains(err.Error(), "call through memory") {
 			t.Fatalf("%s: %v", call, err)

@@ -1,0 +1,152 @@
+; Writes to the general-register offset field of a va_list through phis,
+; selects and a loop. The wrap_* functions have a path on which the i32
+; add can wrap back into the register save area, the others keep the field
+; where va_start left it. The test fills in the target: @GP@ is the field's
+; byte offset, "icmp @REG@ i32 %o, @REGK@" holds only when va_arg would read
+; a register.
+target triple = "@TRIPLE@"
+
+declare void @llvm.va_start.p0(ptr)
+declare void @llvm.va_end.p0(ptr)
+
+define i32 @v(i32 %n, ...) {
+  %ap = alloca [32 x i8], align 16
+  call void @llvm.va_start.p0(ptr %ap)
+  call void @wrap_phi(ptr %ap, i1 true)
+  call void @wrap_select(ptr %ap, i1 true)
+  call void @wrap_loop(ptr %ap, i32 %n)
+  call void @wrap_guard(ptr %ap)
+  call void @dead_store(ptr %ap)
+  call void @dead_phi(ptr %ap)
+  call void @guarded(ptr %ap)
+  call void @dead_loop(ptr %ap, i32 %n)
+  call void @llvm.va_end.p0(ptr %ap)
+  ret i32 0
+}
+
+define void @wrap_phi(ptr %ap, i1 %c) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  br i1 %c, label %bump, label %join
+bump:
+  %n = add i32 %o, 8
+  br label %join
+join:
+  %w = phi i32 [ %o, %entry ], [ %n, %bump ]
+  store i32 %w, ptr %f, align 4
+  ret void
+}
+
+define void @wrap_select(ptr %ap, i1 %c) {
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %n = add i32 %o, 2147483640
+  %w = select i1 %c, i32 %o, i32 %n
+  store i32 %w, ptr %f, align 4
+  ret void
+}
+
+define void @wrap_loop(ptr %ap, i32 %k) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  br label %loop
+loop:
+  %p = phi i32 [ %o, %entry ], [ %n, %loop ]
+  %i = phi i32 [ 0, %entry ], [ %j, %loop ]
+  %n = add i32 %p, 8
+  %j = add i32 %i, 1
+  %more = icmp ult i32 %j, %k
+  br i1 %more, label %loop, label %out
+out:
+  store i32 %n, ptr %f, align 4
+  ret void
+}
+
+; Guarded on the wrong side: above 100 the add can still wrap.
+define void @wrap_guard(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %big = icmp ugt i32 %o, 100
+  br i1 %big, label %bump, label %done
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+; What clang's va_arg does: the add is stored only on the register path.
+define void @dead_store(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %reg = icmp @REG@ i32 %o, @REGK@
+  br i1 %reg, label %inreg, label %done
+inreg:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+; The same with the store sunk below a phi.
+define void @dead_phi(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %reg = icmp @REG@ i32 %o, @REGK@
+  br i1 %reg, label %inreg, label %mem
+inreg:
+  %n = add i32 %o, 8
+  br label %join
+mem:
+  br label %join
+join:
+  %w = phi i32 [ %n, %inreg ], [ %o, %mem ]
+  store i32 %w, ptr %f, align 4
+  ret void
+}
+
+; A bounded add cannot wrap.
+define void @guarded(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %small = icmp ult i32 %o, 1000
+  br i1 %small, label %bump, label %done
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+; va_arg in a loop with the offset carried in a phi, as clang -O2 leaves it.
+define void @dead_loop(ptr %ap, i32 %k) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o0 = load i32, ptr %f, align 4
+  br label %loop
+loop:
+  %o = phi i32 [ %o0, %entry ], [ %w, %next ]
+  %i = phi i32 [ 0, %entry ], [ %j, %next ]
+  %reg = icmp @REG@ i32 %o, @REGK@
+  br i1 %reg, label %inreg, label %next
+inreg:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %next
+next:
+  %w = phi i32 [ %n, %inreg ], [ %o, %loop ]
+  %j = add i32 %i, 1
+  %more = icmp ult i32 %j, %k
+  br i1 %more, label %loop, label %out
+out:
+  ret void
+}
