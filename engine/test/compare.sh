@@ -26,10 +26,14 @@
 # surrogate as \u{...}. It is for as long as the Go engine is in the
 # repository, and has no other use.
 #
-# COMPARE_UPDATE=native|go writes the file of each script of
-# engine/test/compare that has none yet, from the output of the C tree or of
-# the Go engine. Read what it wrote before it goes into a commit: a file
-# kept is a claim about what the engine must print.
+# COMPARE_UPDATE=native|go writes the file of each script that has none yet
+# (those of engine/test/compare), from the output of the C tree or of the Go
+# engine. Read what it wrote before it goes into a commit: a file kept is a
+# claim about what the engine must print.
+#
+# A file named FILE#go is the part of FILE before its line "== go: eval": the
+# goldens of testdata/error_stack.js hold the stacks the script collects and,
+# after them, the stacks the Go API reads, which only a Go host can make.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -56,6 +60,16 @@ src = open(d + '/shikire.js', encoding='utf-8').read()
 open(dst, 'w', encoding='utf-8').write('var shikiRegexps = ' + regexps + ';\nvar shikiInput = ' + json.dumps(text) + ';\n' + src)
 PY
 
+# test_builtin.js calls std.gc and os.setTimeout of qjs, which the C tree has
+# no module for: gc() is the global of jsrun, and a timer is a callback that
+# runs once the jobs queued so far have. The first line keeps the "use strict"
+# of the file a directive.
+{
+	printf '"use strict"; var std = { gc: gc };\n'
+	printf 'var os = { setTimeout(f) { Promise.resolve().then(() => {}).then(() => {}).then(f); } };\n'
+	cat "$root/lib/testdata/tests/test_builtin.js"
+} > "$out/test_builtin.js"
+
 t=$root/lib/testdata
 # The scripts that have a file in the repository: SCRIPT FILE [OPTIONS of jsrun]
 # regexcache.js runs with the cache at its default, at a few entries and off,
@@ -79,6 +93,13 @@ $out/shikire.js $t/shikire.txt -raw
 $root/testdata/atom_keys.js $root/testdata/atom_keys.golden -raw
 $root/testdata/field_chain.js $root/testdata/field_chain.golden -raw
 $root/testdata/own_keys.js $root/testdata/own_keys.golden -raw
+$root/testdata/error_stack.js $root/testdata/error_stack.golden#go -raw -result
+$root/testdata/error_stack.js $root/testdata/error_stack_call.golden#go -raw -call
+$t/tests/test_bigint.js $here/compare/upstream/test_bigint.txt -raw
+$t/tests/test_closure.js $here/compare/upstream/test_closure.txt -raw
+$t/tests/test_language.js $here/compare/upstream/test_language.txt -raw
+$t/tests/test_loop.js $here/compare/upstream/test_loop.txt -raw
+$out/test_builtin.js $here/compare/upstream/test_builtin.txt -raw
 "
 for f in "$here"/compare/*.js "$here"/compare/*.mjs; do
 	[ -f "$f" ] || continue
@@ -91,19 +112,28 @@ failed=0
 printf '%s\n' "$cases" | grep -v '^$' > "$out/cases.list"
 
 while read -r script want opts; do
-	name=$(basename "${script%.*}")
-	tag=$name
-	case $opts in *regexp-cache=4*) tag=$name-few ;; *regexp-cache=0*) tag=$name-off ;; esac
+	# A name for the outputs: the file it must equal, and the cache setting.
+	name=$(basename "${want%%#*}")
+	tag=${name%.*}
+	case $opts in *regexp-cache=4*) tag=$tag-few ;; *regexp-cache=0*) tag=$tag-off ;; esac
 	total=$((total + 1))
 	# "== NAME" is the line jsrun puts before each script.
 	# shellcheck disable=SC2086
 	"$bin" $opts "$script" | tail -n +2 > "$out/$tag.out"
+	file=${want%%#*}
+	if [ "$file" != "$want" ]; then
+		# FILE#go: the part before the stacks of the Go API
+		sed '/^== go: eval$/,$d' "$file" > "$out/$tag.want"
+		want=$out/$tag.want
+	fi
 	if [ ! -f "$want" ]; then
 		if [ "$update" = native ]; then
 			cp "$out/$tag.out" "$want"
 			echo "compare: wrote $want from the C tree"
 		elif [ "$update" = go ]; then
-			"$out/jsrun-go" $opts "$script" | tail -n +2 > "$want"
+			# The Go engine cannot write a lone surrogate raw.
+			# shellcheck disable=SC2086
+			"$out/jsrun-go" $(echo "$opts" | sed 's/-raw//') "$script" | tail -n +2 > "$want"
 			echo "compare: wrote $want from the Go engine"
 		else
 			echo "compare: $want is missing (COMPARE_UPDATE=native or go writes it)" >&2
