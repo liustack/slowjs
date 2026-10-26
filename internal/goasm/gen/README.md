@@ -28,8 +28,16 @@ runs its own checks and lowering in Go (`debug/elf`,
    shadow frame. With `-shadow-cc=preserve_none` every unified entry, host
    callback and call to them uses preserve_none. Register-entry leaves stay C
    and get a reserved frame pointer: no frame, and llc never allocates RBP,
-   which Go owns.
-3. llc -O2 with shrink-wrapping off writes assembly and an object. CheckObject
+   which Go owns. With `-shadow-icall-sigs` every indirect call gets a
+   `"kcfi"` operand bundle whose type id encodes its signature (`icall.go`).
+   Without the `"kcfi"` module flag llc emits no check code for it, but it
+   keeps the id on the machine call.
+3. llc -O2 with shrink-wrapping off writes assembly and an object. The whole
+   engine loads `pass/icall.cpp` (built into the same shared object as the
+   pass) with `-load`: after the machine passes it names a symbol at every
+   indirect call, `goasm.icall.<function>.<n>.<id>`, a label right before
+   the call in the text and a local symbol at its address in the object. An
+   indirect call without an id stops llc. CheckObject
    rejects writable or thread-local data and any external symbol outside the
    engine and the host callbacks.
 4. LowerUnified / LowerRegister (amd64) and LowerARM64 rewrite each function
@@ -99,6 +107,9 @@ lowering would have to handle.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
+L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass
+$L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall.cpp \
+    -o internal/goasm/gen/internal/_shadow.so
 /tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
@@ -119,7 +130,9 @@ and result, and where each data reference points. llc's own code must keep
 to what the build rules out: a call through memory fails, and so does a frame
 access wider than 8 bytes that is not an unaligned move. Each function's record
 must agree with the pass's signature for it, its list of leaves and its
-calling convention. It compares engine_rodata and the data each function
+calling convention. Each indirect call must carry the symbol LLVM put at it
+in llc's object, of that function, and the signature it names must be the
+one the lowering marshalled; a symbol anywhere else fails. It compares engine_rodata and the data each function
 carries byte by byte, pointers by what they point to. `-verify-all` also
 fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the
 lowered text before it is assembled, for the check's own tests
@@ -128,10 +141,12 @@ hand-written llc code).
 
 What the check takes on trust, and where it stops:
 
-- The pass's signatures. For an indirect call this is the marker the pass
-  writes before it in llc's text, and the lowering's reading of which marker
-  belongs to which call is not checked: a marker read for the wrong call
-  gives code the check passes.
+- The pass's signatures: the one it reports for each function, and the
+  type id it gives each indirect call from the call's own IR type. That LLVM
+  keeps the id on the right call is LLVM's (instruction selection copies it
+  to the machine call and tail merging keeps calls of different ids apart),
+  and the check reads it from llc's object, not from the text the lowering
+  read.
 - preserve_none (`-mode pn`). The check derives each call's argument
   registers from the convention, but does not work out which registers hold
   live values across a call: it relies on LLVM having saved them.
