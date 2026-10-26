@@ -228,6 +228,17 @@ typedef struct {
     int max_count; /* the number of entries kept at most, 0 when the cache is off */
     size_t max_bytes; /* the bytes kept at most */
 } JSRegExpCache;
+
+/* The shape cache of a runtime (see js_shape_keep). Its zero value is a
+   cache that is off. */
+typedef struct {
+    JSShape **ring; /* n kept shapes or NULL, NULL while the cache is off */
+    int n; /* the length of ring */
+    int next; /* the slot of ring for the next kept shape */
+    int count; /* the number of shapes in ring */
+    int credit; /* the copies add_property may make to keep shapes */
+    struct JSObject *proto; /* the Object.prototype whose shapes are kept */
+} JSShapeCache;
 typedef struct JSString JSAtomStruct;
 typedef struct JSObject JSObject;
 
@@ -396,6 +407,7 @@ struct JSRuntime {
        none (see JS_SetAsyncContext) */
     JSValue async_context;
     JSRegExpCache regexp_cache;
+    JSShapeCache shape_cache;
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
@@ -1263,6 +1275,7 @@ static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len);
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
 static void js_regexp_cache_off(JSRuntime *rt);
+static void js_shape_cache_off(JSRuntime *rt);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -2431,6 +2444,7 @@ void JS_FreeRuntime(JSRuntime *rt)
         JS_FreeValueRT(rt, rt->async_context);
     rt->async_context = JS_UNDEFINED;
     js_regexp_cache_off(rt);
+    js_shape_cache_off(rt);
     JS_FreeValueRT(rt, rt->current_exception);
 
     list_for_each_safe(el, el1, &rt->job_list) {
@@ -5268,12 +5282,190 @@ static JSShape *js_dup_shape(JSShape *sh)
     return sh;
 }
 
+/* The shape cache of a runtime keeps the shapes of plain objects alive after
+   their last object is gone, so that the next object that gets the same keys
+   in the same order finds each of its shapes in the shape hash table, instead
+   of copying a shape and growing the copy one key at a time. It is off until
+   JS_SetShapeCache turns it on.
+
+   - add_property, about to add a key to a shape that only its object uses,
+     asks js_shape_keepable, and when it says yes copies the shape as it does
+     a shared one. So the shape without the key stays as it is, in the shape
+     hash table, and its count drops to zero when the object moves on to the
+     copy.
+   - add_property calls js_shape_found when it finds the shape with the new
+     key in the shape hash table.
+   - js_free_shape0 calls js_shape_keep first, which keeps such a shape in the
+     cache, with a count of one, instead of freeing it.
+   - JS_FreeRuntime calls js_shape_cache_off first, which lets every kept
+     shape go.
+
+   A copy costs an allocation and the copying of every key so far: an object
+   that gets keys no other object has, one at a time, pays it for each key and
+   finds no shape again. So the copies are paid for by shapes found: each
+   shape found earns one copy, up to JS_SHAPE_CREDIT_MAX, and
+   js_shape_keepable says no while there is none. Without copies the shapes in
+   between are still kept, only later: an object grows its shape in place
+   until it finds the next one kept, and the shape it leaves then is kept.
+
+   Only shapes whose prototype is the Object.prototype of the context given to
+   JS_SetShapeCache, with at most JS_SHAPE_MAX_PROPS keys, none of them a
+   symbol that is not registered, are kept. So a kept shape holds alive
+   nothing but that prototype, which its context holds anyway, and the atoms
+   of its keys. The cache keeps the last n shapes in a ring: when the ring is
+   full, the oldest shape is let go. Kept shapes count against the memory
+   limit, and the cache does not let them go when an allocation fails:
+   add_property reallocates the properties of an object before it takes the
+   shape it found, which may be one only the cache holds. */
+#define JS_SHAPE_MAX_PROPS 32
+#define JS_SHAPE_CREDIT_MAX 64
+
+/* let go of the shapes the shape cache keeps and turn it off */
+static void js_shape_cache_off(JSRuntime *rt)
+{
+    JSShapeCache off = rt->shape_cache;
+    int i;
+
+    if (!off.ring)
+        return;
+    /* with the cache off, js_free_shape0 frees the shapes let go here */
+    memset(&rt->shape_cache, 0, sizeof(rt->shape_cache));
+    for(i = 0; i < off.n; i++) {
+        if (off.ring[i])
+            js_free_shape(rt, off.ring[i]);
+    }
+    js_free_rt(rt, off.ring);
+}
+
+/* Set the shape cache of the runtime of ctx to keep the last n shapes of
+   plain objects of ctx, letting go of the shapes it kept before. 0 turns the
+   cache off. Return 0, or -1 when there is no memory for the ring, which
+   leaves the cache off. The kept shapes hold the Object.prototype of ctx, and
+   with it ctx: before ctx is freed while the runtime lives on, turn the cache
+   off or set it to another context. JS_FreeRuntime turns it off. */
+int JS_SetShapeCache(JSContext *ctx, int n)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape **ring;
+
+    js_shape_cache_off(rt);
+    if (n <= 0)
+        return 0;
+    /* on a 32-bit target, a ring of 2^30 shapes or more does not fit in a
+       size_t */
+    if ((uint64_t)n * sizeof(ring[0]) > SIZE_MAX / 2)
+        return -1;
+    ring = js_mallocz_rt(rt, (size_t)n * sizeof(ring[0]));
+    if (!ring)
+        return -1;
+    sc->ring = ring;
+    sc->n = n;
+    sc->credit = JS_SHAPE_CREDIT_MAX;
+    sc->proto = JS_VALUE_GET_PTR(ctx->class_proto[JS_CLASS_OBJECT]);
+    return 0;
+}
+
+/* Report whether add_property, adding a key to the shape sh of an object of
+   ctx that only the object uses, should copy sh rather than grow it, so that
+   the cache keeps sh once the object moved on to the copy. Each copy takes
+   one of the credit js_shape_found earns. */
+static BOOL js_shape_keepable(JSContext *ctx, JSShape *sh)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeCache *sc = &rt->shape_cache;
+
+    if (!sc->ring || sc->credit <= 0 || sh->proto != sc->proto ||
+        sh->prop_count >= JS_SHAPE_MAX_PROPS)
+        return FALSE;
+    sc->credit--;
+    /* add_property links the copy into the shape hash table, which only
+       js_new_shape2 grows: grow it as js_new_shape2 does, as sh stays in
+       it */
+    if (2 * (rt->shape_hash_count + 1) > rt->shape_hash_size)
+        resize_shape_hash(rt, rt->shape_hash_bits + 1);
+    return TRUE;
+}
+
+/* add_property found the next shape of an object of ctx in the shape hash
+   table: the shapes of its keys are found again, and the copies that keep
+   them pay. Earn one copy, up to JS_SHAPE_CREDIT_MAX. */
+static inline void js_shape_found(JSContext *ctx)
+{
+    JSShapeCache *sc = &ctx->rt->shape_cache;
+
+    if (sc->credit < JS_SHAPE_CREDIT_MAX)
+        sc->credit++;
+}
+
+/* Report whether a key of sh is a symbol that is not registered (or a
+   private name). Such a symbol can be the target of a WeakRef or a
+   FinalizationRegistry: a kept shape would hold it alive after the last
+   object with the key is gone. A symbol made by Symbol.for cannot be a
+   target, and the symbols of the engine are never freed: shapes with those
+   keys are kept. __JS_NewAtom links every atom but such a symbol into the
+   atom hash table through hash_next, and puts the symbol's own index there
+   instead, as js_get_atom_index and JS_FreeAtomStruct read it: so an atom is
+   such a symbol when its hash_next is its own index. */
+static BOOL js_shape_has_symbol(JSRuntime *rt, JSShape *sh)
+{
+    JSShapeProperty *pr = get_shape_prop(sh);
+    int i;
+
+    for(i = 0; i < sh->prop_count; i++, pr++) {
+        /* a deleted key, an integer key or an atom of the engine */
+        if (__JS_AtomIsConst(pr->atom))
+            continue;
+        if (rt->atom_array[pr->atom]->hash_next == pr->atom)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* Called by js_free_shape0 when the count of sh dropped to zero: keep sh in
+   the cache with a count of one, letting go of the oldest kept shape if the
+   ring is full. Return the shape js_free_shape0 must free now: sh when it is
+   not kept, the oldest kept shape when nothing else holds it, or NULL. The
+   ring is in order before that shape is freed, so a shape freed meanwhile
+   can be kept. */
+static JSShape *js_shape_keep(JSRuntime *rt, JSShape *sh)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape *old;
+
+    /* The cycle collector frees the memory of the shapes of a cycle itself,
+       once their objects are gone: a shape freed while it removes cycles
+       cannot be kept. Objects whose count dropped to zero are freed in the
+       phase DECREF, and their shapes can. */
+    if (!sc->ring || rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES)
+        return sh;
+    if (!sh->is_hashed || sh->proto != sc->proto ||
+        sh->prop_count > JS_SHAPE_MAX_PROPS || js_shape_has_symbol(rt, sh))
+        return sh;
+    js_rc(sh)->ref_count = 1;
+    old = sc->ring[sc->next];
+    sc->ring[sc->next] = sh;
+    if (++sc->next == sc->n)
+        sc->next = 0;
+    if (!old) {
+        sc->count++;
+        return NULL;
+    }
+    if (--js_rc(old)->ref_count > 0)
+        return NULL;
+    return old;
+}
+
 static void js_free_shape0(JSRuntime *rt, JSShape *sh)
 {
     uint32_t i;
     JSShapeProperty *pr;
 
     assert(js_rc(sh)->ref_count == 0);
+    /* keep sh in the shape cache, or free the shape the cache let go */
+    sh = js_shape_keep(rt, sh);
+    if (!sh)
+        return;
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -10083,11 +10275,13 @@ static JSProperty *add_property(JSContext *ctx,
                     return NULL;
                 p->prop = new_prop;
             }
+            js_shape_found(ctx);
             p->shape = js_dup_shape(new_sh);
             js_free_shape(ctx->rt, sh);
             return &p->prop[new_sh->prop_count - 1];
-        } else if (js_rc(sh)->ref_count != 1) {
-            /* if the shape is shared, clone it */
+        } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {
+            /* if the shape is shared, or the shape cache can keep it, clone
+               it */
             new_sh = js_clone_shape(ctx, sh);
             if (!new_sh)
                 return NULL;
