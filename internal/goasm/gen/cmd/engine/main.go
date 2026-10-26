@@ -1,0 +1,546 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+//
+// Whole-engine driver: compile every C file of engine/ and engine/libc
+// freestanding with LLVM 22.1.8, link them into one module, run the
+// shadow-stack pass, llc, the checks and the lowering over every function,
+// and emit Go assembly split by C source file, the read-only data and the Go
+// declarations. With -keep-going it does not stop at the first function it
+// cannot lower: it lists every rejection by class, emits a stub for each
+// such function and still writes a package that builds.
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	gen "github.com/liustack/slowjs/internal/goasm/gen"
+)
+
+var (
+	engineDir = flag.String("engine", "engine", "the C tree")
+	llvm      = flag.String("llvm", "/usr/lib/llvm-22/bin", "LLVM 22.1.8 bin dir")
+	pass      = flag.String("pass", "", "shadow-stack pass plugin")
+	arch      = flag.String("arch", "amd64", "amd64 (arm64: not yet)")
+	mode      = flag.String("mode", "body", "body or pn (preserve_none)")
+	work      = flag.String("work", "_engine_work", "work dir")
+	out       = flag.String("out", "", "Go package dir to write (empty: no output)")
+	pkg       = flag.String("pkg", "cengine", "Go package name")
+	reportOut = flag.String("report", "", "write the rejections as JSON here")
+	maxFile   = flag.Int("max-file", 512<<10, "most bytes in one .s file")
+	leaves    = flag.String("leaves", "memcpy,memmove,memset", "register-entry leaves (llc calls them by itself)")
+	extra     = flag.String("allow", "malloc,realloc,free,malloc_usable_size", "external symbols allowed besides the host callbacks")
+	keepGoing = flag.Bool("keep-going", false, "list every rejection and emit stubs instead of stopping")
+	jobs      = flag.Int("j", 2, "parallel clang jobs")
+	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
+)
+
+// FreeFlags are the flags of the small libc branch: no system headers, no
+// errno from math, no fused multiply-add, 32-bit BigInt limbs.
+var freeFlags = []string{"-ffreestanding", "-nostdinc", "-fno-math-errno", "-ffp-contract=off", "-U__FP_FAST_FMA",
+	"-U__FP_FAST_FMAF", "-U__SIZEOF_INT128__", "-fno-stack-protector", "-funsigned-char",
+	"-fno-asynchronous-unwind-tables", "-fno-unwind-tables"}
+
+// Rejection is one function the generator could not take, or one rule the
+// C breaks.
+type Rejection struct {
+	Func, Stage, Class, Msg string
+}
+
+var rejections []Rejection
+
+func reject(fn, stage, msg string) {
+	rejections = append(rejections, Rejection{fn, stage, classify(msg), msg})
+}
+
+func main() {
+	flag.Parse()
+	t0 := time.Now()
+	if *arch != "amd64" {
+		die(fmt.Errorf("-arch %s: only amd64 so far", *arch))
+	}
+	must(os.MkdirAll(*work, 0o755))
+	clang := filepath.Join(*llvm, "clang")
+
+	// 1. Compile every C file to IR.
+	type src struct{ path, group string }
+	var srcs []src
+	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa"} {
+		srcs = append(srcs, src{filepath.Join(*engineDir, f+".c"), f})
+	}
+	for _, dir := range []string{"libc/string", "libc/math"} {
+		ms, _ := filepath.Glob(filepath.Join(*engineDir, dir, "*.c"))
+		for _, m := range ms {
+			srcs = append(srcs, src{m, "libc"})
+		}
+	}
+	srcs = append(srcs, src{filepath.Join(*engineDir, "libc/math.c"), "libc"}, src{filepath.Join(*engineDir, "libc/stdio.c"), "libc"})
+	cflags := append(append([]string{"--target=x86_64-linux-gnu"}, gen.EngineCFlags...), freeFlags...)
+	libc := filepath.Join(*engineDir, "libc")
+	var lls []string
+	group := map[string]string{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan bool, *jobs)
+	var cerr error
+	for i, s := range srcs {
+		ll := filepath.Join(*work, fmt.Sprintf("%03d_%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c")))
+		lls = append(lls, ll)
+		args := append([]string{}, cflags...)
+		if s.group == "libc" {
+			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-include", filepath.Join(libc, "internal/features.h"))
+		} else {
+			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
+		}
+		args = append(args, "-S", "-emit-llvm", "-o", ll, s.path)
+		wg.Add(1)
+		go func(s src, ll string, args []string) {
+			defer wg.Done()
+			sem <- true
+			defer func() { <-sem }()
+			if _, err := capture(clang, args...); err != nil {
+				mu.Lock()
+				cerr = err
+				mu.Unlock()
+				return
+			}
+			b, _ := os.ReadFile(ll)
+			mu.Lock()
+			for _, m := range reDefine.FindAllStringSubmatch(string(b), -1) {
+				group[strings.Trim(m[1], `"`)] = s.group
+			}
+			mu.Unlock()
+		}(s, ll, args)
+	}
+	wg.Wait()
+	if cerr != nil {
+		die(cerr)
+	}
+	linked := filepath.Join(*work, "engine.ll")
+	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
+	tCompile := time.Since(t0)
+
+	// 2. Rules the C breaks, as the IR shows them.
+	ll := readFile(linked)
+	pre := gen.CheckIRFuncs(ll)
+	varDefs := map[string]bool{}
+	for _, v := range pre {
+		if v.Rule == "variadic definition" {
+			varDefs[v.Func] = true
+		}
+	}
+
+	// 3. The shadow-stack pass.
+	// Integer argument registers of a unified call (as in cmd/gen): on
+	// arm64 eight in C, six with preserve_none (x20 to x25).
+	maxInt := map[string]int{"amd64": 6, "arm64": 8}[*arch]
+	if *mode == "pn" {
+		maxInt = map[string]int{"amd64": 10, "arm64": 6}[*arch]
+	}
+	shadowLL := filepath.Join(*work, "shadow.ll")
+	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
+		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
+		"-shadow-icall-markers"}
+	if *keepGoing {
+		passArgs = append(passArgs, "-shadow-keep-going")
+	}
+	if *mode == "pn" {
+		passArgs = append(passArgs, "-shadow-cc=preserve_none")
+	}
+	passArgs = append(passArgs, "-S", "-o", shadowLL, linked)
+	passOut := must1(capture(filepath.Join(*llvm, "opt"), passArgs...))
+	writeFile(filepath.Join(*work, "pass.txt"), passOut)
+	rep := gen.ParseReport(passOut)
+	for fn, why := range rep.Rejected {
+		reject(fn, "pass", why)
+	}
+	post := gen.CheckIRFuncs(readFile(shadowLL))
+	for _, v := range post {
+		if v.Rule == "byval aggregate" || v.Rule == "sret aggregate" || v.Rule == "long double" || v.Rule == "thread-local storage" {
+			reject(v.Func, "ir", v.Rule+": "+v.Line)
+		}
+	}
+	for fn := range varDefs {
+		reject(fn, "ir", "variadic definition")
+	}
+
+	// 4. llc, position independent: every data reference is RIP-relative.
+	asmPath := filepath.Join(*work, "engine.s")
+	objPath := filepath.Join(*work, "engine.o")
+	os.Remove(asmPath)
+	os.Remove(objPath)
+	llc := filepath.Join(*llvm, "llc")
+	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false"}
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
+	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "-o", objPath, shadowLL)...))
+	tLLVM := time.Since(t0)
+
+	allow := map[string]bool{}
+	for _, h := range gen.HostCallbacks {
+		allow[h] = true
+	}
+	for _, e := range strings.Split(*extra, ",") {
+		allow[e] = true
+	}
+	funcs := map[string]bool{}
+	for name, def := range rep.Defined {
+		funcs[name] = true
+		if !def && !allow[name] {
+			reject(name, "object", "external reference to "+name+" outside the allow list")
+		}
+	}
+	if err := gen.CheckObject(objPath, allowAll(allow, rep)); err != nil {
+		reject("", "object", err.Error())
+	}
+
+	// 5. Split the text, place the data, lower every function.
+	asm := readFile(asmPath)
+	unit, err := gen.SplitAsm(asm, "#")
+	if err != nil {
+		die(err)
+	}
+	for name, target := range unit.Sets {
+		funcs[name] = true
+		_ = target
+	}
+	plan := gen.PlanData(unit, funcs)
+	for fn, errs := range plan.Errors {
+		for _, e := range errs {
+			reject(fn, "data", e.Error())
+		}
+	}
+	leafSet := map[string]bool{}
+	for _, l := range strings.Split(*leaves, ",") {
+		leafSet[l] = true
+	}
+	var specs []gen.FuncSpec
+	sigs := map[string]gen.Sig{}
+	for _, name := range gen.SortedKeys(rep.Sigs) {
+		code := rep.Sigs[name]
+		s, err := gen.SigFromCode(strings.Replace(code, "...", "", 1))
+		if err != nil {
+			reject(name, "signature", err.Error())
+			continue
+		}
+		sigs[name] = s
+		kind := gen.Unified
+		if leafSet[name] {
+			kind = gen.Register
+		}
+		specs = append(specs, gen.FuncSpec{Name: name, Sig: s, Kind: kind})
+	}
+	gen.SetCallees(specs)
+	amd := gen.AMD64()
+	if *mode == "pn" {
+		amd.PreserveNone = true
+	}
+	variadic := map[string]bool{}
+	for name, code := range rep.Sigs {
+		if strings.Contains(code, "...") {
+			variadic[name] = true
+		}
+	}
+	env := &gen.LowerEnv{Plan: plan, Funcs: funcs, Variadic: variadic, LooseVarargs: *looseVar}
+	failed := map[string]bool{}
+	for _, r := range rejections {
+		// A function the pass emptied is a trap: its stub names it instead.
+		if r.Func != "" && rep.Defined[r.Func] {
+			failed[r.Func] = true
+		}
+	}
+	var lowered strings.Builder
+	lowered.WriteString(".text\n")
+	var metas, stubs []gen.Meta
+	var names []string
+	for _, name := range unit.FuncOrder {
+		names = append(names, name)
+		s, ok := sigs[name]
+		if !ok {
+			failed[name] = true
+		}
+		if failed[name] {
+			_, _, ab := layoutOf(s)
+			stubs = append(stubs, gen.Meta{Name: name, Kind: gen.Unified, ArgBytes: ab, RetType: s.Ret})
+			continue
+		}
+		spec := gen.FuncSpec{Name: name, Sig: s, Kind: gen.Unified}
+		var text string
+		var meta gen.Meta
+		if leafSet[name] {
+			spec.Kind = gen.Register
+			text, meta, err = gen.LowerRegister(asm, spec)
+		} else {
+			text, meta, err = gen.LowerUnifiedFunc(amd, unit.Funcs[name].Lines, spec, env, "")
+		}
+		if err != nil {
+			reject(name, "lower", err.Error())
+			if leafSet[name] {
+				die(fmt.Errorf("register-entry leaf %s: %w", name, err))
+			}
+			_, _, ab := layoutOf(s)
+			stubs = append(stubs, gen.Meta{Name: name, Kind: gen.Unified, ArgBytes: ab, RetType: s.Ret})
+			continue
+		}
+		lowered.WriteString(".p2align 4\n.globl " + name + "\n.type " + name + ",@function\n" + text +
+			".size " + name + ", .-" + name + "\n")
+		metas = append(metas, meta)
+	}
+	tLower := time.Since(t0)
+	summary(rep, plan, pre, metas, stubs, len(unit.FuncOrder))
+	if *reportOut != "" {
+		b, _ := json.MarshalIndent(rejections, "", " ")
+		writeFile(*reportOut, string(b))
+	}
+	if len(rejections) > 0 && !*keepGoing {
+		die(fmt.Errorf("%d rejections (run with -keep-going to list them all)", len(rejections)))
+	}
+
+	// 6. Re-assemble and emit.
+	loweredPath := filepath.Join(*work, "lowered.s")
+	writeFile(loweredPath, lowered.String())
+	loweredObj := filepath.Join(*work, "lowered.o")
+	os.Remove(loweredObj)
+	must1(capture(clang, "-c", loweredPath, "-o", loweredObj))
+	if *out == "" {
+		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
+		return
+	}
+	for name := range rep.Sigs {
+		names = append(names, name)
+	}
+	gonames, err := gen.GoNames(dedupe(names))
+	if err != nil {
+		die(err)
+	}
+	// llvm-link renames a static whose name another file also uses
+	// (cr_add_interval.156). It goes with the function of the plain name:
+	// the groups only bound the file sizes, so the file need not be its own.
+	reRenamed := regexp.MustCompile(`^(.+)\.\d+$`)
+	for _, m := range metas {
+		if _, ok := group[m.Name]; !ok {
+			if r := reRenamed.FindStringSubmatch(m.Name); r != nil {
+				group[m.Name] = group[r[1]]
+			}
+		}
+	}
+	files, err := gen.EmitEngine(loweredObj, gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
+		MaxBytes: *maxFile, Stubs: stubs, Plan: plan, Arch: *arch})
+	if err != nil {
+		die(err)
+	}
+	must(os.MkdirAll(*out, 0o755))
+	old, _ := filepath.Glob(filepath.Join(*out, "*_"+*arch+".s"))
+	for _, f := range old {
+		os.Remove(f)
+	}
+	total := 0
+	for name, text := range files {
+		writeFile(filepath.Join(*out, name), text)
+		total += len(text)
+	}
+	writeFile(filepath.Join(*out, "engine_decl.go"), goDecls(metas, stubs, sigs, gonames, rep))
+	fmt.Fprintf(os.Stderr, "wrote %d .s files, %d bytes, to %s\n", len(files), total, *out)
+	fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
+}
+
+var reDefine = regexp.MustCompile(`(?m)^define\b[^@\n]*@("?[^"(\s]+"?)\(`)
+
+func allowAll(allow map[string]bool, rep *gen.Report) map[string]bool {
+	m := map[string]bool{}
+	for k := range allow {
+		m[k] = true
+	}
+	for k, def := range rep.Defined {
+		if def {
+			m[k] = true
+		}
+	}
+	return m
+}
+
+func dedupe(s []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range s {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func layoutOf(s gen.Sig) ([]int, int, int) { return gen.Layout(s) }
+
+// goDecls writes the Go declaration of every unified entry (lowered or
+// stub) and the signature each host callback must have.
+func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap, rep *gen.Report) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "// Code generated by internal/goasm/gen. DO NOT EDIT.\n\npackage %s\n\n", *pkg)
+	decl := func(name string) {
+		s := sigs[name]
+		var ps []string
+		w := 0
+		for _, p := range s.Params {
+			switch p {
+			case gen.F64:
+				ps = append(ps, fmt.Sprintf("a%d float64", w))
+				w++
+			case gen.JSV:
+				ps = append(ps, fmt.Sprintf("a%d, a%d uintptr", w, w+1))
+				w += 2
+			default:
+				ps = append(ps, fmt.Sprintf("a%d uintptr", w))
+				w++
+			}
+		}
+		ret := ""
+		switch s.Ret {
+		case gen.I64, gen.Ptr:
+			ret = " uintptr"
+		case gen.F64:
+			ret = " float64"
+		case gen.JSV:
+			ret = " (r0, r1 uintptr)"
+		}
+		fmt.Fprintf(&b, "func %s(%s)%s\n", names[name], strings.Join(ps, ", "), ret)
+	}
+	all := append(append([]gen.Meta{}, metas...), stubs...)
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	for _, m := range all {
+		if m.Kind == gen.Register {
+			continue
+		}
+		decl(m.Name)
+	}
+	b.WriteString("\n// missingNames lists the stubs in index order.\nvar missingNames = []string{\n")
+	for _, m := range stubs {
+		fmt.Fprintf(&b, "\t%q,\n", m.Name)
+	}
+	b.WriteString("}\n\n// Host callbacks the engine calls (implemented in Go):\n")
+	for _, name := range gen.SortedKeys(rep.Defined) {
+		if !rep.Defined[name] {
+			fmt.Fprintf(&b, "//   %s %s\n", name, rep.Sigs[name])
+		}
+	}
+	return b.String()
+}
+
+// classify names the class of a rejection message.
+func classify(msg string) string {
+	m := strings.ToLower(msg)
+	switch {
+	case strings.Contains(m, "variadic") || strings.Contains(m, "va_start"):
+		return "varargs"
+	case strings.Contains(m, "byval") || strings.Contains(m, "sret"):
+		return "byval/sret"
+	case strings.Contains(m, "tail"):
+		return "tail call"
+	case strings.Contains(m, "inline assembly"):
+		return "inline asm"
+	case strings.Contains(m, "thread-local"):
+		return "TLS"
+	case strings.Contains(m, "base-pointer") || strings.Contains(m, "%rbp"):
+		return "machine stack read"
+	case strings.Contains(m, "relocation"):
+		return "relocation"
+	case strings.Contains(m, "data") || strings.Contains(m, "absolute") || strings.Contains(m, "read-only"):
+		return "read-only data"
+	case strings.Contains(m, "indirect"):
+		return "function pointer"
+	case strings.Contains(m, "too many"):
+		return "argument slots"
+	case strings.Contains(m, "sp write") || strings.Contains(m, "stack access") || strings.Contains(m, "escaping stack"):
+		return "stack shape"
+	case strings.Contains(m, "allow list"):
+		return "external symbol"
+	}
+	return "other"
+}
+
+func summary(rep *gen.Report, plan *gen.DataPlan, pre []gen.IRViolation, metas, stubs []gen.Meta, total int) {
+	byClass := map[string][]Rejection{}
+	for _, r := range rejections {
+		byClass[r.Class] = append(byClass[r.Class], r)
+	}
+	fmt.Fprintf(os.Stderr, "functions: %d in the text, %d lowered, %d stubs\n", total, len(metas), len(stubs))
+	for _, c := range gen.SortedKeys(byClass) {
+		rs := byClass[c]
+		fns := map[string]bool{}
+		for _, r := range rs {
+			fns[r.Func] = true
+		}
+		fmt.Fprintf(os.Stderr, "class %-20s %4d rejections in %4d functions\n", c, len(rs), len(fns))
+		for i, r := range rs {
+			if i >= 6 {
+				break
+			}
+			msg := r.Msg
+			if len(msg) > 160 {
+				msg = msg[:160]
+			}
+			fmt.Fprintf(os.Stderr, "    %s [%s] %s\n", r.Func, r.Stage, msg)
+		}
+	}
+	calls := map[string]int{}
+	for _, v := range pre {
+		if v.Rule == "variadic call" {
+			calls[v.Func]++
+		}
+	}
+	n := 0
+	for _, c := range calls {
+		n += c
+	}
+	fmt.Fprintf(os.Stderr, "variadic call sites: %d in %d functions\n", n, len(calls))
+	pi := 0
+	for _, c := range rep.PackedICalls {
+		pi += c
+	}
+	fmt.Fprintf(os.Stderr, "argument blocks: %d functions, %d indirect call sites; goto tables %v; frame-address readers %d\n",
+		len(rep.Packed), pi, rep.GotoTable, len(rep.FrameAddr))
+	fmt.Fprintf(os.Stderr, "data: %d objects, %d in engine_rodata (%d bytes, %d pointers), %d in bodies, %d copies, %d dropped\n",
+		plan.Objects, plan.BlobObjects, len(plan.Blob), len(plan.Relocs), plan.InBodyObjects, plan.DupObjects, plan.Dropped)
+}
+
+func capture(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	var o, e strings.Builder
+	cmd.Stdout, cmd.Stderr = &o, &e
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s %s: %v\n%s", filepath.Base(name), strings.Join(args[max(0, len(args)-3):], " "), err, e.String())
+	}
+	return e.String() + o.String(), nil
+}
+
+func readFile(p string) string {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		die(err)
+	}
+	return string(b)
+}
+
+func writeFile(p, s string) { must(os.WriteFile(p, []byte(s), 0o644)) }
+func must(err error) {
+	if err != nil {
+		die(err)
+	}
+}
+func must1(s string, err error) string {
+	if err != nil {
+		die(err)
+	}
+	return s
+}
+func die(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }
