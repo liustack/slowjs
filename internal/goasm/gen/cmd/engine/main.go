@@ -43,6 +43,8 @@ var (
 	jobs      = flag.Int("j", 2, "parallel clang jobs")
 	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
 	varBlock  = flag.Bool("varargs-block", false, "experimental: the pass passes variable arguments in a shadow-stack block")
+	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: check every function's bytes survived linking")
+	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
 )
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
@@ -236,6 +238,14 @@ func main() {
 			reject(fn, "data", e.Error())
 		}
 	}
+	// Structural net: re-run the data parser over every blob object and check
+	// it byte for byte against llc's own assembled object, so a parser mistake
+	// is a build failure, not a silent miscompile.
+	if n, err := gen.VerifyEngineData(objPath, unit, plan); err != nil {
+		die(fmt.Errorf("engine_rodata does not match llc's object: %w", err))
+	} else {
+		fmt.Fprintf(os.Stderr, "data check: %d blob objects match llc's object\n", n)
+	}
 	leafSet := map[string]bool{}
 	for _, l := range strings.Split(*leaves, ",") {
 		leafSet[l] = true
@@ -328,6 +338,19 @@ func main() {
 	loweredObj := filepath.Join(*work, "lowered.o")
 	os.Remove(loweredObj)
 	must1(capture(clang, "-c", loweredPath, "-o", loweredObj))
+	// Function half of the post-link check: confirm the linker left every
+	// generated function's bytes unchanged in a built binary of the package.
+	if *verifyBin != "" {
+		vpkg := *verifyPkg
+		if vpkg == "" {
+			vpkg = *pkg
+		}
+		n, err := gen.VerifyEngineFuncs(loweredObj, *verifyBin, vpkg, metas)
+		if err != nil {
+			die(fmt.Errorf("post-link function check: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "function check: %d functions match in %s\n", n, *verifyBin)
+	}
 	if *out == "" {
 		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
 		return
