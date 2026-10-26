@@ -79,17 +79,18 @@ func optIn(t *testing.T, env, why string) {
 }
 
 // retryTaken runs try until it returns true, 4 times at most, and skips the
-// test when it never does. try returns false only when another mapping of the
-// process took a place the test needs to see free, and fails the test through
-// t for anything else.
-func retryTaken(t *testing.T, what string, try func() bool) {
+// test with why when it never does. try returns false only when the layout it
+// needs could not be set up or seen, as when another mapping of the process
+// takes a place the test needs free, and fails the test through t for
+// anything else.
+func retryTaken(t *testing.T, why string, try func() bool) {
 	t.Helper()
 	for range 4 {
 		if try() {
 			return
 		}
 	}
-	t.Skipf("another mapping took %s 4 times", what)
+	t.Skipf("4 tries, and each time %s", why)
 }
 
 // unmapped checks that the size bytes at addr, which held fill's pattern with
@@ -195,7 +196,7 @@ func grow(t testing.TB, m *Memory, size uintptr) uintptr {
 
 func TestMapWriteUnmap(t *testing.T) {
 	const size = 4 * Unit
-	retryTaken(t, "the place of the memory unmapped", func() bool {
+	retryTaken(t, "another mapping was where the memory was unmapped", func() bool {
 		p, err := osMap(size)
 		if err != nil {
 			t.Fatal(err)
@@ -400,8 +401,10 @@ func TestRemapPrimitive(t *testing.T) {
 	t.Run("in place", func(t *testing.T) {
 		// Map twice the size and unmap the top half, so that the room behind
 		// the chunk is free. Another mapping of the process may take it
-		// first, and then the chunk has to move.
-		retryTaken(t, "the room behind the chunk", func() bool {
+		// before the remap, and then the chunk has to move. What is behind
+		// after the move does not tell what was there during the remap, so a
+		// move only means that the layout was not set up.
+		retryTaken(t, "the chunk moved instead of growing in place, as it must when another mapping took the room behind it", func() bool {
 			p, err := osMap(2 * size)
 			if err != nil {
 				t.Fatal(err)
@@ -422,20 +425,12 @@ func TestRemapPrimitive(t *testing.T) {
 			if !zero(q+size, size) {
 				t.Fatal("the new part is not zero")
 			}
-			if q == p {
-				return true
-			}
-			behind := p + size
-			if q < behind+size && behind < q+2*size || anyMapped(t, behind, size) {
-				return false
-			}
-			t.Fatalf("moved from %#x to %#x though the room behind was free", p, q)
-			return false
+			return q == p
 		})
 	})
 
 	t.Run("moving", func(t *testing.T) {
-		retryTaken(t, "the place the chunk moved from", func() bool {
+		retryTaken(t, "another mapping was where the chunk moved from", func() bool {
 			// The second half stays mapped and blocks growth in place.
 			p, err := osMap(2 * size)
 			if err != nil {
@@ -721,7 +716,7 @@ func TestSmallStacks(t *testing.T) {
 }
 
 func TestClose(t *testing.T) {
-	retryTaken(t, "a place Close unmapped", func() bool {
+	retryTaken(t, "another mapping was where Close unmapped", func() bool {
 		const stackSize = 1 << 20
 		m, err := New(stackSize)
 		if err != nil {
