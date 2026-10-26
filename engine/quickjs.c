@@ -7510,11 +7510,47 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size;
 }
 
-void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt)
+/* v with one decimal, as printf's %.1f gives for the positive values here */
+static char *dump_tenths(char out[24], double v)
 {
+    int64_t t = (int64_t)(v * 10 + 0.5);
+
+    snprintf(out, 24, "%" PRId64 ".%d", t / 10, (int)(t % 10));
+    return out;
+}
+
+/* Where the report goes: buf holds size bytes, and len counts the whole report,
+   written or not. */
+typedef struct JSDumpOut {
+    char *buf;
+    size_t size;
+    size_t len;
+} JSDumpOut;
+
+static void __attribute__((format(printf, 2, 3)))
+dump_printf(JSDumpOut *out, const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+
+    va_start(ap, fmt);
+    if (out->len < out->size)
+        n = vsnprintf(out->buf + out->len, out->size - out->len, fmt, ap);
+    else
+        n = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    out->len += n;
+}
+
+/* Write the report to buf, cut to size bytes with a final 0 when size is not
+   0, and return its whole length. */
+size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRuntime *rt)
+{
+    JSDumpOut out = { buf, size, 0 };
+    char t[24];
     if (rt)
         young_splice(rt);
-    fprintf(fp, "QuickJS memory usage -- " CONFIG_VERSION " version, %d-bit, malloc limit: %"PRId64"\n\n",
+    dump_printf(&out, "QuickJS memory usage -- " CONFIG_VERSION " version, %d-bit, malloc limit: %"PRId64"\n\n",
             (int)sizeof(void *) * 8, s->malloc_limit);
 #if 1
     if (rt) {
@@ -7536,14 +7572,14 @@ void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt)
                 unsigned int size1 = js_malloc_usable_size_rt(rt, p);
                 if (size1 >= size) {
                     usage_size_ok = 1;
-                    fprintf(fp, "  %3u + %-2u  %s\n",
+                    dump_printf(&out, "  %3u + %-2u  %s\n",
                             size, size1 - size, object_types[i].name);
                 }
                 js_free_rt(rt, p);
             }
         }
         if (!usage_size_ok) {
-            fprintf(fp, "  malloc_usable_size unavailable\n");
+            dump_printf(&out, "  malloc_usable_size unavailable\n");
         }
         {
             int obj_classes[JS_CLASS_INIT_COUNT + 1] = { 0 };
@@ -7557,84 +7593,85 @@ void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt)
                     obj_classes[min_uint32(p->class_id, JS_CLASS_INIT_COUNT)]++;
                 }
             }
-            fprintf(fp, "\n" "JSObject classes\n");
+            dump_printf(&out, "\n" "JSObject classes\n");
             if (obj_classes[0])
-                fprintf(fp, "  %5d  %2.0d %s\n", obj_classes[0], 0, "none");
+                dump_printf(&out, "  %5d  %2.0d %s\n", obj_classes[0], 0, "none");
             for (class_id = 1; class_id < JS_CLASS_INIT_COUNT; class_id++) {
                 if (obj_classes[class_id] && class_id < rt->class_count) {
-                    char buf[ATOM_GET_STR_BUF_SIZE];
-                    fprintf(fp, "  %5d  %2.0d %s\n", obj_classes[class_id], class_id,
-                            JS_AtomGetStrRT(rt, buf, sizeof(buf), rt->class_array[class_id].class_name));
+                    char atom_buf[ATOM_GET_STR_BUF_SIZE];
+                    dump_printf(&out, "  %5d  %2.0d %s\n", obj_classes[class_id], class_id,
+                            JS_AtomGetStrRT(rt, atom_buf, sizeof(atom_buf), rt->class_array[class_id].class_name));
                 }
             }
             if (obj_classes[JS_CLASS_INIT_COUNT])
-                fprintf(fp, "  %5d  %2.0d %s\n", obj_classes[JS_CLASS_INIT_COUNT], 0, "other");
+                dump_printf(&out, "  %5d  %2.0d %s\n", obj_classes[JS_CLASS_INIT_COUNT], 0, "other");
         }
-        fprintf(fp, "\n");
+        dump_printf(&out, "\n");
     }
 #endif
-    fprintf(fp, "%-20s %8s %8s\n", "NAME", "COUNT", "SIZE");
+    dump_printf(&out, "%-20s %8s %8s\n", "NAME", "COUNT", "SIZE");
 
     if (s->malloc_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per block)\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per block)\n",
                 "memory allocated", s->malloc_count, s->malloc_size,
-                (double)s->malloc_size / s->malloc_count);
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%d overhead, %0.1f average slack)\n",
+                dump_tenths(t, (double)s->malloc_size / s->malloc_count));
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%d overhead, %s average slack)\n",
                 "memory used", s->memory_used_count, s->memory_used_size,
-                MALLOC_OVERHEAD, ((double)(s->malloc_size - s->memory_used_size) /
-                                  s->memory_used_count));
+                MALLOC_OVERHEAD, dump_tenths(t, ((double)(s->malloc_size - s->memory_used_size) /
+                                  s->memory_used_count)));
     }
     if (s->atom_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per atom)\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per atom)\n",
                 "atoms", s->atom_count, s->atom_size,
-                (double)s->atom_size / s->atom_count);
+                dump_tenths(t, (double)s->atom_size / s->atom_count));
     }
     if (s->str_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per string)\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per string)\n",
                 "strings", s->str_count, s->str_size,
-                (double)s->str_size / s->str_count);
+                dump_tenths(t, (double)s->str_size / s->str_count));
     }
     if (s->obj_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per object)\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per object)\n",
                 "objects", s->obj_count, s->obj_size,
-                (double)s->obj_size / s->obj_count);
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per object)\n",
+                dump_tenths(t, (double)s->obj_size / s->obj_count));
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per object)\n",
                 "  properties", s->prop_count, s->prop_size,
-                (double)s->prop_count / s->obj_count);
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per shape)\n",
+                dump_tenths(t, (double)s->prop_count / s->obj_count));
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per shape)\n",
                 "  shapes", s->shape_count, s->shape_size,
-                (double)s->shape_size / s->shape_count);
+                dump_tenths(t, (double)s->shape_size / s->shape_count));
     }
     if (s->js_func_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"\n",
                 "bytecode functions", s->js_func_count, s->js_func_size);
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per function)\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per function)\n",
                 "  bytecode", s->js_func_count, s->js_func_code_size,
-                (double)s->js_func_code_size / s->js_func_count);
+                dump_tenths(t, (double)s->js_func_code_size / s->js_func_count));
         if (s->js_func_pc2line_count) {
-            fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per function)\n",
+            dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per function)\n",
                     "  pc2line", s->js_func_pc2line_count,
                     s->js_func_pc2line_size,
-                    (double)s->js_func_pc2line_size / s->js_func_pc2line_count);
+                    dump_tenths(t, (double)s->js_func_pc2line_size / s->js_func_pc2line_count));
         }
     }
     if (s->c_func_count) {
-        fprintf(fp, "%-20s %8"PRId64"\n", "C functions", s->c_func_count);
+        dump_printf(&out, "%-20s %8"PRId64"\n", "C functions", s->c_func_count);
     }
     if (s->array_count) {
-        fprintf(fp, "%-20s %8"PRId64"\n", "arrays", s->array_count);
+        dump_printf(&out, "%-20s %8"PRId64"\n", "arrays", s->array_count);
         if (s->fast_array_count) {
-            fprintf(fp, "%-20s %8"PRId64"\n", "  fast arrays", s->fast_array_count);
-            fprintf(fp, "%-20s %8"PRId64" %8"PRId64"  (%0.1f per fast array)\n",
+            dump_printf(&out, "%-20s %8"PRId64"\n", "  fast arrays", s->fast_array_count);
+            dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"  (%s per fast array)\n",
                     "  elements", s->fast_array_elements,
                     s->fast_array_elements * (int)sizeof(JSValue),
-                    (double)s->fast_array_elements / s->fast_array_count);
+                    dump_tenths(t, (double)s->fast_array_elements / s->fast_array_count));
         }
     }
     if (s->binary_object_count) {
-        fprintf(fp, "%-20s %8"PRId64" %8"PRId64"\n",
+        dump_printf(&out, "%-20s %8"PRId64" %8"PRId64"\n",
                 "binary objects", s->binary_object_count, s->binary_object_size);
     }
+    return out.len;
 }
 
 JSValue JS_GetGlobalObject(JSContext *ctx)

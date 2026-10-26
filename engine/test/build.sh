@@ -12,7 +12,8 @@
 #
 # MODE is plain (default), asan (AddressSanitizer), ubsan (UndefinedBehavior
 # Sanitizer) or asan-ubsan (both). OUTDIR defaults to engine/test/out/MODE, and
-# gets run-test262 and the object files. CC picks another compiler. A
+# gets run-test262 and api-test (see api-test.sh), and the object files. CC
+# picks another compiler. A
 # sanitizer reports a finding and goes on, so that a run over test262 lists
 # them all: run with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer
 # going too.
@@ -46,9 +47,9 @@ for f in quickjs libregexp libunicode cutils dtoa; do
 	$cc $cflags -Dgettimeofday=host_gettimeofday -c "$engine/$f.c" -o "$out/$f.o"
 	objs="$objs $out/$f.o"
 done
-for f in host run-test262; do
+for f in host run-test262 api-test; do
 	$cc $cflags -I"$here" -c "$here/$f.c" -o "$out/$f.o"
-	objs="$objs $out/$f.o"
 done
-$cc $san $objs -o "$out/run-test262" -lm -lpthread
+$cc $san $objs "$out/host.o" "$out/run-test262.o" -o "$out/run-test262" -lm -lpthread
+$cc $san $objs "$out/host.o" "$out/api-test.o" -o "$out/api-test" -lm -lpthread
 echo "$out/run-test262"
