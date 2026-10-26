@@ -39,6 +39,13 @@
 
 /* ---- the fake host ---- */
 
+/* The engine reads its stop flags through this (poll_flag in cutils.h).
+   Nothing here asks a runtime to stop. */
+int host_poll(const volatile int *flag)
+{
+    return *flag;
+}
+
 /* The runtime asks the wall clock for Date. Any time will do here. */
 int64_t host_now(uint32_t vm, int kind)
 {

@@ -1005,7 +1005,8 @@ void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
 int JS_SetShapeCache(JSContext *ctx, int n);
 
 /* The interrupt flag of rt. The host sets it to a value other than 0 to
-   stop the script: the engine reads it where it can throw, in the
+   stop the script, from the thread that runs it (in a poll or a callback):
+   the engine reads it with plain loads. It reads it where it can throw, in the
    interpreter (at calls and backward jumps), in regexps, in long string
    searches, in the long loops of typed arrays, repeat and JSON, and throws
    the error "interrupted", which no try catches. The engine never clears

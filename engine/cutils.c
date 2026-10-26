@@ -482,7 +482,7 @@ static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *op
         n = nmemb * size;
 
         while (i > 0) {
-            if (*stop)
+            if (poll_flag(stop))
                 return;
             i -= size;
             for (r = i; (c = r * 2 + size) < n; r = c) {
@@ -494,7 +494,7 @@ static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *op
             }
         }
         for (i = n - size; i > 0; i -= size) {
-            if (*stop)
+            if (poll_flag(stop))
                 return;
             swap(basep, basep + i, size);
 
@@ -536,7 +536,7 @@ void rqsort_stop(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
     sp++;
 
     while (sp > stack) {
-        if (*stop)
+        if (poll_flag(stop))
             return;
         sp--;
         ptr = sp->base;
@@ -561,7 +561,7 @@ void rqsort_stop(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
             pj = pgt = top = ptr + nmemb * size;
             for (;;) {
                 while (pi < pj && (c = cmp(ptr, pi, opaque)) >= 0) {
-                    if (*stop)
+                    if (poll_flag(stop))
                         return;
                     if (c == 0) {
                         swap(plt, pi, size);
@@ -572,7 +572,7 @@ void rqsort_stop(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
                     pi += size;
                 }
                 while (pi < (pj -= size) && (c = cmp(ptr, pj, opaque)) <= 0) {
-                    if (*stop)
+                    if (poll_flag(stop))
                         return;
                     if (c == 0) {
                         gt--;
@@ -580,7 +580,7 @@ void rqsort_stop(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
                         swap(pgt, pj, size);
                     }
                 }
-                if (*stop)
+                if (poll_flag(stop))
                     return;
                 if (pi >= pj)
                     break;
