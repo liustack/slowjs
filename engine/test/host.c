@@ -502,9 +502,12 @@ static JSValue host_memory_remap(uint32_t id, uintptr_t addr, uintptr_t old, uin
    host.h), and abort. Abort ends the process with the signal abort() gives.
    The system's abort is not called: the engine's libc defines abort, and it is
    the one that calls this. */
-JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
+JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int magic)
 {
-    (void)this_val;
+    if (this_val) {
+        fprintf(stderr, "engine: host_call of %d with a this value, which the test host does not have\n", magic);
+        _exit(87);
+    }
     if (magic == HOST_CALL_MEMORY_RELEASE && argc == 2)
         return host_memory_release(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]));
     if (magic == HOST_CALL_MEMORY_REMAP && argc == 3)

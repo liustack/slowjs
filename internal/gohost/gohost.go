@@ -13,7 +13,7 @@
 //	host_memory_grow(vm, size)                    MemoryGrow
 //	host_now(vm, kind)                            Now
 //	host_poll(sp)                                 Poll
-//	host_call(vm, this, argc, argv, magic)        Call
+//	host_call(vm, &this, argc, argv, magic)       Call
 //	host_release(vm, handle)                      Release
 //
 // The memory of a VM is a hostmem.Memory: its chunks and its shadow stack,
@@ -383,8 +383,14 @@ func Poll(sp uintptr) int64 {
 
 // Call is host_call. A magic of 0 or more names a function of the host:
 // none is registered yet. Below 0 are the requests of the engine itself.
-// argv points at argc values in the engine's memory.
-func Call(sp uintptr, vm uint32, this Value, argc int32, argv uintptr, magic int32) Value {
+// this is the address of the this value and argv points at argc values, both
+// in the engine's memory. A request of the engine has no this value and the
+// engine passes 0: another word there means that the host and the generated
+// code do not agree on the arguments, so it panics.
+func Call(sp uintptr, vm uint32, this uintptr, argc int32, argv uintptr, magic int32) Value {
+	if magic < 0 && this != 0 {
+		panic(fmt.Sprintf("gohost: host_call request %d with a this value at %#x: the arguments of the callback do not match the engine", magic, this))
+	}
 	switch magic {
 	case CallAbort:
 		// abort does not know its VM and passes 0: the shadow pointer tells.
