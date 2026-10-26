@@ -215,6 +215,8 @@ go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the sam
 
 `TestDeepRecursion` runs only with `CENGINE_DEEP=1`, for an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator, which `engine_decl.go` records and `New` holds the stack size to).
 
+A poison build (`-poison` of the generator) writes garbage into the registers at each entry before the arguments are loaded, after each call before the result is read, and at each return: the tests must pass on it too.
+
 [allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap` and `ubsan`. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
 
 ## Leaks: memgrind
