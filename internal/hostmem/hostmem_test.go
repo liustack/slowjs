@@ -1,0 +1,660 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
+
+package hostmem
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"runtime"
+	"runtime/debug"
+	"slices"
+	"sync"
+	"testing"
+)
+
+// fill writes a pattern that depends on the offset, so that memory that
+// moved or was cut short does not read back right.
+func fill(addr, size uintptr, seed byte) {
+	b := bytesAt(addr, size)
+	for i := range b {
+		b[i] = byte(i) ^ byte(i>>9) ^ seed
+	}
+}
+
+// same reports the first offset where the memory differs from fill's
+// pattern, or -1.
+func same(addr, size uintptr, seed byte) int {
+	for i, c := range bytesAt(addr, size) {
+		if c != byte(i)^byte(i>>9)^seed {
+			return i
+		}
+	}
+	return -1
+}
+
+func zero(addr, size uintptr) bool {
+	for _, c := range bytesAt(addr, size) {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func mustPanic(t *testing.T, what string, f func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatalf("%s did not panic", what)
+		}
+	}()
+	f()
+}
+
+// each returns the ranges one by one, then a size of 0, as the engine's
+// JS_ReleaseNextChunk and JS_ReleaseNextRange do.
+func each(rs ...[2]uintptr) func() (uintptr, uintptr) {
+	return func() (uintptr, uintptr) {
+		if len(rs) == 0 {
+			return 0, 0
+		}
+		r := rs[0]
+		rs = rs[1:]
+		return r[0], r[1]
+	}
+}
+
+func newMemory(t testing.TB, stackSize uintptr) *Memory {
+	t.Helper()
+	m, err := New(stackSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := m.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return m
+}
+
+func grow(t testing.TB, m *Memory, size uintptr) uintptr {
+	t.Helper()
+	p, err := m.Grow(size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p == 0 || p%pageSize != 0 {
+		t.Fatalf("Grow(%d) = %#x, want a page aligned address", size, p)
+	}
+	return p
+}
+
+func TestMapWriteUnmap(t *testing.T) {
+	const size = 4 * Unit
+	p, err := Map(size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p%pageSize != 0 {
+		t.Fatalf("Map gave %#x, not aligned to the page size %d", p, pageSize)
+	}
+	if !zero(p, size) {
+		t.Fatal("new memory is not zero")
+	}
+	fill(p, size, 1)
+	if i := same(p, size, 1); i >= 0 {
+		t.Fatalf("byte %d does not read back", i)
+	}
+	if err := Unmap(p, size); err != nil {
+		t.Fatal(err)
+	}
+	if anyMapped(t, p, size) {
+		t.Fatal("memory still mapped after Unmap")
+	}
+}
+
+func TestMapRefusesAbsurdSizes(t *testing.T) {
+	for _, size := range []uintptr{1 << 50, ^uintptr(0) &^ (Unit - 1)} {
+		p, err := Map(size)
+		if err == nil {
+			Unmap(p, size)
+			t.Fatalf("Map(%#x) = %#x, want an error", size, p)
+		}
+		t.Logf("Map(%#x): %v", size, err)
+	}
+
+	m := newMemory(t, Unit)
+	grow(t, m, Unit)
+	p, err := m.Grow(1 << 50)
+	if err == nil || p != 0 {
+		t.Fatalf("Grow(1<<50) = %#x, %v, want 0 and an error", p, err)
+	}
+	if u := m.Usage(); u.Chunks != 1 || u.Footprint != Unit {
+		t.Fatalf("after a refused Grow: %+v, want the one chunk of before", u)
+	}
+
+	for _, size := range []uintptr{1 << 62, 1 << 63} {
+		m, err := New(size)
+		if err == nil {
+			m.Close()
+			t.Fatalf("New(%#x) succeeded, want an error", size)
+		}
+		t.Logf("New(%#x): %v", size, err)
+	}
+}
+
+func TestBadSizesPanic(t *testing.T) {
+	mustPanic(t, "New(3 * Unit)", func() { New(3 * Unit) })
+	mustPanic(t, "New(Unit / 2)", func() { New(Unit / 2) })
+	m := newMemory(t, Unit)
+	mustPanic(t, "Grow(0)", func() { m.Grow(0) })
+	mustPanic(t, "Grow(Unit + 1)", func() { m.Grow(Unit + 1) })
+}
+
+// TestFootprint follows a model of the chunks through every way they come
+// and go.
+func TestFootprint(t *testing.T) {
+	m := newMemory(t, DefaultStackSize)
+	model := map[uintptr]uintptr{}
+	check := func(when string) {
+		t.Helper()
+		var sum uintptr
+		for _, n := range model {
+			sum += n
+		}
+		u := m.Usage()
+		if u.Chunks != len(model) || u.Footprint != sum || u.Stack != DefaultStackSize {
+			t.Fatalf("%s: %+v, want %d chunks, footprint %d, stack %d", when, u, len(model), sum, DefaultStackSize)
+		}
+	}
+	check("new")
+
+	var ps []uintptr
+	for _, n := range []uintptr{Unit, 3 * Unit, 16 * Unit, 2 * Unit, 128 * Unit} {
+		p := grow(t, m, n)
+		model[p] = n
+		ps = append(ps, p)
+		check(fmt.Sprintf("Grow(%d)", n))
+	}
+
+	if err := m.Free(ps[1], 3*Unit); err != nil {
+		t.Fatal(err)
+	}
+	delete(model, ps[1])
+	check("Free")
+	mustPanic(t, "Free of a chunk already freed", func() { m.Free(ps[1], 3*Unit) })
+	mustPanic(t, "Free with the wrong size", func() { m.Free(ps[2], 8*Unit) })
+	mustPanic(t, "Free inside a chunk", func() { m.Free(ps[2]+Unit, Unit) })
+	check("refused Frees")
+
+	if CanRemap {
+		p, err := m.Remap(ps[2], 16*Unit, 40*Unit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(model, ps[2])
+		model[p] = 40 * Unit
+		ps[2] = p
+		check("Remap up")
+		p, err = m.Remap(ps[2], 40*Unit, 8*Unit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		delete(model, ps[2])
+		model[p] = 8 * Unit
+		ps[2] = p
+		check("Remap down")
+	} else {
+		_, err := m.Remap(ps[2], 16*Unit, 40*Unit)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			t.Fatalf("Remap on %s: %v, want errors.ErrUnsupported", runtime.GOOS, err)
+		}
+		check("refused Remap")
+	}
+
+	// Release: two whole chunks, and the free pages inside a third.
+	r, err := m.Release(each([2]uintptr{ps[0], Unit}, [2]uintptr{ps[3], 2 * Unit}),
+		each([2]uintptr{ps[4] + 100, 64 * Unit}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(model, ps[0])
+	delete(model, ps[3])
+	check("Release")
+	if r.Chunks != 3*Unit {
+		t.Fatalf("Release handed back %d bytes of chunks, want %d", r.Chunks, 3*Unit)
+	}
+	if want := 64*Unit - pageSize; r.Pages != want {
+		t.Fatalf("Release handed back %d bytes of pages, want %d", r.Pages, want)
+	}
+	if want := uintptr(DefaultStackSize - StackKeep); r.Stack != want {
+		t.Fatalf("Release handed back %d bytes of stack, want %d", r.Stack, want)
+	}
+	if u := m.Usage(); u.Released != r {
+		t.Fatalf("totals %+v after one Release of %+v", u.Released, r)
+	}
+
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if u := m.Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
+		t.Fatalf("after Close: %+v", u)
+	}
+}
+
+// TestReleasePages hands back the pages inside a range, rounded inward, and
+// leaves the bytes around them alone.
+func TestReleasePages(t *testing.T) {
+	m := newMemory(t, Unit)
+	const size = 8 * Unit
+	p := grow(t, m, size)
+	fill(p, size, 7)
+	lo, hi := p+100, p+6*Unit+5 // rounded inward: p+page to p+6*Unit
+	r, err := m.Release(nil, each([2]uintptr{lo, hi - lo}, [2]uintptr{p + 7*Unit + 1, pageSize}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The second range holds no whole page.
+	if want := 6*Unit - pageSize; r.Pages != want {
+		t.Fatalf("handed back %d bytes, want %d", r.Pages, want)
+	}
+	if i := same(p, pageSize, 7); i >= 0 {
+		t.Fatalf("byte %d before the range changed", i)
+	}
+	// fill's pattern depends on the offset in the whole chunk.
+	for o := uintptr(6 * Unit); o < size; o++ {
+		if got, want := bytesAt(p+o, 1)[0], byte(o)^byte(o>>9)^7; got != want {
+			t.Fatalf("byte %d after the range is %d, want %d", o, got, want)
+		}
+	}
+	if runtime.GOOS == "linux" {
+		if !zero(p+pageSize, 6*Unit-pageSize) {
+			t.Fatal("pages handed back do not read as zero")
+		}
+	}
+	if u := m.Usage(); u.Chunks != 1 || u.Footprint != size {
+		t.Fatalf("pages handed back changed the chunks: %+v", u)
+	}
+
+	mustPanic(t, "a range outside every chunk", func() { m.Release(nil, each([2]uintptr{p + size, pageSize}), 0) })
+	mustPanic(t, "a range past the end of its chunk", func() { m.Release(nil, each([2]uintptr{p + Unit, size}), 0) })
+	mustPanic(t, "a chunk that is not one", func() { m.Release(each([2]uintptr{p + Unit, Unit}), nil, 0) })
+}
+
+// TestRemapPrimitive grows a mapping in place and by moving, at the level
+// of the system call, where the test controls what lies behind it.
+func TestRemapPrimitive(t *testing.T) {
+	if !CanRemap {
+		_, err := osRemap(0, Unit, 2*Unit)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			t.Fatalf("osRemap on %s: %v, want errors.ErrUnsupported", runtime.GOOS, err)
+		}
+		t.Skipf("no remap on %s", runtime.GOOS)
+	}
+	const size = 16 * Unit
+
+	t.Run("in place", func(t *testing.T) {
+		// Map twice the size and unmap the top half, so that the room
+		// behind the chunk is free. Another thread may map there first:
+		// try a few times.
+		for try := 0; ; try++ {
+			p, err := Map(2 * size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Unmap(p+size, size); err != nil {
+				t.Fatal(err)
+			}
+			fill(p, size, 3)
+			q, err := osRemap(p, size, 2*size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if i := same(q, size, 3); i >= 0 {
+				t.Fatalf("byte %d changed", i)
+			}
+			if !zero(q+size, size) {
+				t.Fatal("the new part is not zero")
+			}
+			Unmap(q, 2*size)
+			if q == p {
+				return
+			}
+			if try == 5 {
+				t.Fatalf("never grew in place: %#x moved to %#x", p, q)
+			}
+		}
+	})
+
+	t.Run("moving", func(t *testing.T) {
+		// The second half stays mapped and blocks growth in place.
+		p, err := Map(2 * size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fill(p, 2*size, 5)
+		q, err := osRemap(p, size, 3*size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if q == p {
+			t.Fatal("grew in place over a mapping")
+		}
+		if i := same(q, size, 5); i >= 0 {
+			t.Fatalf("byte %d changed in the move", i)
+		}
+		for o := uintptr(size); o < 2*size; o++ {
+			if got, want := bytesAt(p+o, 1)[0], byte(o)^byte(o>>9)^5; got != want {
+				t.Fatalf("the mapping behind was changed at %d", o)
+			}
+		}
+		if anyMapped(t, p, size) {
+			t.Fatal("the old place is still mapped")
+		}
+		Unmap(q, 3*size)
+		Unmap(p+size, size)
+	})
+}
+
+func TestRemap(t *testing.T) {
+	m := newMemory(t, Unit)
+	const size = 32 * Unit
+	p := grow(t, m, size)
+	fill(p, size, 9)
+	if !CanRemap {
+		_, err := m.Remap(p, size, 2*size)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			t.Fatalf("Remap on %s: %v, want errors.ErrUnsupported", runtime.GOOS, err)
+		}
+		if i := same(p, size, 9); i >= 0 {
+			t.Fatalf("a refused Remap changed byte %d", i)
+		}
+		return
+	}
+	mustPanic(t, "Remap of a chunk with the wrong size", func() { m.Remap(p, 2*size, 4*size) })
+	q, err := m.Remap(p, size, 4*size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := same(q, size, 9); i >= 0 {
+		t.Fatalf("byte %d changed", i)
+	}
+	if q != p {
+		mustPanic(t, "Free of the old place", func() { m.Free(p, size) })
+	}
+	if u := m.Usage(); u.Chunks != 1 || u.Footprint != 4*size {
+		t.Fatalf("after Remap: %+v", u)
+	}
+	if err := m.Free(q, 4*size); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStackResidency(t *testing.T) {
+	m := newMemory(t, DefaultStackSize)
+	base, size := m.Stack()
+	if size != DefaultStackSize || base%size != 0 {
+		t.Fatalf("Stack() = %#x, %d: want %d bytes aligned to their size", base, size, DefaultStackSize)
+	}
+	pages := size / pageSize
+	if n := resident(t, base, size); n != 0 {
+		t.Fatalf("%d of %d pages resident before any touch", n, pages)
+	}
+
+	// Touch the first MiB, one page in the middle and the last page.
+	touch := func(off, n uintptr) {
+		b := bytesAt(base+off, n)
+		for i := uintptr(0); i < n; i += pageSize {
+			b[i] = byte(i>>12) | 1
+		}
+	}
+	touch(0, 1<<20)
+	touch(size/2, pageSize)
+	touch(size-pageSize, pageSize)
+	touched := int((1<<20)/pageSize + 2)
+	if n := resident(t, base, size); n != touched {
+		t.Fatalf("%d pages resident, want the %d touched", n, touched)
+	}
+	t.Logf("%s: page %d bytes, %d of %d pages resident after the touch", runtime.GOOS, pageSize, touched, pages)
+
+	r, err := m.Release(nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Stack != size-StackKeep {
+		t.Fatalf("an idle trim handed back %d bytes, want %d", r.Stack, size-StackKeep)
+	}
+	keep := int(StackKeep / pageSize)
+	for i := uintptr(0); i < StackKeep; i += pageSize {
+		if got := bytesAt(base+i, 1)[0]; got != byte(i>>12)|1 {
+			t.Fatalf("the trim changed byte %d of the kept part", i)
+		}
+	}
+	n := resident(t, base, size)
+	t.Logf("%s: %d pages resident after an idle trim that keeps %d", runtime.GOOS, n, keep)
+	if runtime.GOOS == "linux" {
+		if n != keep {
+			t.Fatalf("%d pages resident after an idle trim, want the %d kept", n, keep)
+		}
+		if !zero(base+StackKeep, size-StackKeep) {
+			t.Fatal("trimmed pages do not read as zero")
+		}
+	}
+
+	// A trim inside a callback keeps what the engine still uses.
+	touch(0, 1<<20)
+	used := uintptr(600 << 10)
+	r, err = m.Release(nil, nil, used)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := alignUp(used, pageSize)
+	if r.Stack != size-from {
+		t.Fatalf("a trim at %d handed back %d bytes, want %d", used, r.Stack, size-from)
+	}
+	for i := uintptr(0); i < from; i += pageSize {
+		if got := bytesAt(base+i, 1)[0]; got != byte(i>>12)|1 {
+			t.Fatalf("the trim changed byte %d, below the %d in use", i, used)
+		}
+	}
+	if runtime.GOOS == "linux" {
+		if n, want := resident(t, base, size), int(from/pageSize); n != want {
+			t.Fatalf("%d pages resident after a trim at %d, want %d", n, used, want)
+		}
+	}
+	mustPanic(t, "a trim above the stack", func() { m.Release(nil, nil, size+1) })
+}
+
+// faultAt writes a byte at addr and returns the address of the fault it
+// makes, or 0 when there is none.
+func faultAt(addr uintptr) (at uintptr, other any) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() {
+		r := recover()
+		if e, ok := r.(interface{ Addr() uintptr }); ok {
+			at = e.Addr()
+		} else {
+			other = r
+		}
+	}()
+	bytesAt(addr, 1)[0] = 1
+	return 0, nil
+}
+
+func TestGuardPage(t *testing.T) {
+	m := newMemory(t, 1<<20)
+	base, size := m.Stack()
+	if at, other := faultAt(base + size - 1); at != 0 || other != nil {
+		t.Fatalf("the last byte of the stack faults: %#x %v", at, other)
+	}
+	for _, off := range []uintptr{0, pageSize - 1} {
+		at, other := faultAt(base + size + off)
+		if at != base+size+off {
+			t.Fatalf("writing the guard page at %#x: fault at %#x, %v", base+size+off, at, other)
+		}
+	}
+}
+
+// TestManyStacks has 300 VMs with a stack of 32 MiB each.
+func TestManyStacks(t *testing.T) {
+	const n = 300
+	type region struct{ base, size uintptr }
+	var rs []region
+	for i := 0; i < n; i++ {
+		m := newMemory(t, DefaultStackSize)
+		base, size := m.Stack()
+		bytesAt(base, 1)[0] = 1
+		rs = append(rs, region{base, size})
+	}
+	slices.SortFunc(rs, func(a, b region) int { return cmp.Compare(a.base, b.base) })
+	total := 0
+	for i, r := range rs {
+		if i > 0 && rs[i-1].base+rs[i-1].size+pageSize > r.base {
+			t.Fatalf("stacks at %#x and %#x overlap", rs[i-1].base, r.base)
+		}
+		total += resident(t, r.base, r.size)
+	}
+	t.Logf("%d stacks of %d MiB: %d pages of %d bytes resident", n, DefaultStackSize>>20, total, pageSize)
+	if total > n {
+		t.Fatalf("%d pages resident, want at most the %d touched", total, n)
+	}
+}
+
+func TestClose(t *testing.T) {
+	m, err := New(DefaultStackSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := grow(t, m, Unit)
+	b := grow(t, m, 64*Unit)
+	fill(b, 64*Unit, 1)
+	base, size := m.Stack()
+	bytesAt(base, 1)[0] = 1
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range [][2]uintptr{{a, Unit}, {b, 64 * Unit}, {base, size + pageSize}} {
+		if anyMapped(t, r[0], r[1]) {
+			t.Fatalf("%d bytes at %#x still mapped after Close", r[1], r[0])
+		}
+	}
+	if u := m.Usage(); u != (Usage{}) {
+		t.Fatalf("Usage after Close: %+v", u)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	mustPanic(t, "Grow after Close", func() { m.Grow(Unit) })
+	mustPanic(t, "Release after Close", func() { m.Release(nil, nil, 0) })
+}
+
+// TestConcurrentVMs runs VMs on many goroutines at once, and hands one VM
+// from goroutine to goroutine, for the race detector: nothing is shared
+// between Memories, and one needs no lock when goroutines take turns.
+func TestConcurrentVMs(t *testing.T) {
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Go(func() {
+			for i := 0; i < 20; i++ {
+				m, err := New(1 << 20)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				a, err1 := m.Grow(Unit)
+				b, err2 := m.Grow(8 * Unit)
+				if err := errors.Join(err1, err2); err != nil {
+					t.Error(err)
+					return
+				}
+				fill(b, 8*Unit, byte(g))
+				if CanRemap {
+					if b, err = m.Remap(b, 8*Unit, 16*Unit); err != nil {
+						t.Error(err)
+						return
+					}
+				}
+				bytesAt(m.Stack())[0] = 1
+				if _, err := m.Release(nil, each([2]uintptr{b, 4 * Unit}), 0); err != nil {
+					t.Error(err)
+				}
+				if err := m.Free(a, Unit); err != nil {
+					t.Error(err)
+				}
+				if err := m.Close(); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+
+	// The channel holds the VM's last chunk, and whoever takes it has the VM.
+	m := newMemory(t, 1<<20)
+	turn := make(chan uintptr, 1)
+	turn <- grow(t, m, Unit)
+	for g := 0; g < 4; g++ {
+		wg.Go(func() {
+			for i := 0; i < 10; i++ {
+				p := <-turn
+				if _, err := m.Release(each([2]uintptr{p, Unit}), nil, 0); err != nil {
+					t.Error(err)
+				}
+				p, err := m.Grow(Unit)
+				if err != nil {
+					t.Error(err)
+				}
+				turn <- p
+			}
+		})
+	}
+	wg.Wait()
+	if u := m.Usage(); u.Chunks != 1 || u.Footprint != Unit {
+		t.Fatalf("after 40 turns: %+v, want the last chunk", u)
+	}
+}
+
+func BenchmarkGrowFree(b *testing.B) {
+	m := newMemory(b, Unit)
+	for b.Loop() {
+		p := grow(b, m, 4<<20)
+		bytesAt(p, 1)[0] = 1
+		if err := m.Free(p, 4<<20); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkIdleTrim is an idle trim of a 32 MiB stack after a render that
+// touched its first n bytes, the touching included.
+func BenchmarkIdleTrim(b *testing.B) {
+	for _, n := range []uintptr{0, StackKeep, 1 << 20} {
+		b.Run(fmt.Sprintf("touched=%dKiB", n>>10), func(b *testing.B) {
+			m := newMemory(b, DefaultStackSize)
+			base, _ := m.Stack()
+			for b.Loop() {
+				s := bytesAt(base, n)
+				for i := uintptr(0); i < n; i += pageSize {
+					s[i] = 1
+				}
+				if _, err := m.Release(nil, nil, 0); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkNewClose(b *testing.B) {
+	for b.Loop() {
+		m, err := New(DefaultStackSize)
+		if err != nil {
+			b.Fatal(err)
+		}
+		m.Close()
+	}
+}
