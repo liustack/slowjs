@@ -460,11 +460,10 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			if err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
-			fixed, err := unalignedStackAccess(norm(rewritten))
-			if err != nil {
+			if err := checkStackSSE(norm(rewritten)); err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
-			out = append(out, fixed)
+			out = append(out, norm(rewritten))
 			continue
 		}
 		if reSub.MatchString(n) || strings.HasPrefix(n, "pushq") || strings.HasPrefix(n, "popq") || strings.HasPrefix(n, "leave") {
@@ -548,11 +547,9 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			l, n = rewritten, norm(rewritten)
 		}
 		if strings.Contains(n, "(%rsp)") {
-			fixed, err := unalignedStackAccess(n)
-			if err != nil {
+			if err := checkStackSSE(n); err != nil {
 				return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 			}
-			l = fixed
 		}
 		out = append(out, l)
 	}
@@ -864,27 +861,21 @@ func rewriteRSPLocals(line string, local, localBase int) (string, error) {
 	return out, nil
 }
 
-// The Go stack is only 8-byte aligned. Aligned 16-byte moves to the stack are
-// turned into their unaligned forms, which behave the same. Scalar and 8-byte
-// SSE accesses have no alignment need. Any other SSE instruction with a stack
-// operand (a folded packed load) would fault on a misaligned SP: rejected.
-var (
-	alignedMov = map[string]string{"movaps": "movups", "movapd": "movupd", "movdqa": "movdqu"}
-	noAlignSSE = regexp.MustCompile(`^(movups|movupd|movdqu|movsd|movss|movq|movd|movlps|movhps|movlpd|movhpd|cvt\w+|\w+s[sd]|ucomis[sd]|comis[sd])$`)
-)
+// The Go stack is only 8-byte aligned. Unaligned 16-byte moves and scalar
+// or 8-byte SSE accesses have no alignment need. Any other SSE instruction
+// with a stack operand (an aligned move, a folded packed load) would fault
+// on a misaligned SP: rejected. The pass's no-realign-stack with
+// -mstack-alignment=8 keeps llc from emitting one.
+var noAlignSSE = regexp.MustCompile(`^(movups|movupd|movdqu|movsd|movss|movq|movd|movlps|movhps|movlpd|movhpd|cvt\w+|\w+s[sd]|ucomis[sd]|comis[sd])$`)
 
-func unalignedStackAccess(n string) (string, error) {
+func checkStackSSE(n string) error {
 	if !strings.Contains(n, "%xmm") {
-		return n, nil
+		return nil
 	}
-	f := strings.Fields(n)
-	if u, ok := alignedMov[f[0]]; ok {
-		return u + n[len(f[0]):], nil
+	if f := strings.Fields(n); !noAlignSSE.MatchString(f[0]) {
+		return fmt.Errorf("SSE stack access may need 16-byte alignment: %q", n)
 	}
-	if !noAlignSSE.MatchString(f[0]) {
-		return "", fmt.Errorf("SSE stack access may need 16-byte alignment: %q", n)
-	}
-	return n, nil
+	return nil
 }
 
 var (
