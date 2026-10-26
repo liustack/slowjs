@@ -152,8 +152,8 @@ string constant `FormatError` accepts, or a parameter that a wrapper forwards
 (a variadic function's last fixed parameter, or `JS_ThrowError2`). Anything
 else stops the build, so a `%f` cannot reach `abort()` at run time. The accept
 table mirrors `stdio.c` and `testdata/formats/cases.txt` lists the formats both
-must agree on. Keeping `stdio.c` and the table in step needs a libc test in
-`engine/test` that feeds that list to `vsnprintf`, which is the C's to add.
+must agree on. `engine/test/libc-test.c` feeds that list to `vsnprintf`, so that `stdio.c` and
+the table cannot drift apart.
 
 The post-link check is the gate for the output. Build a binary of the
 package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)

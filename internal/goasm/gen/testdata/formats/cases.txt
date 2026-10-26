@@ -1,8 +1,9 @@
 # Formats engine/libc/stdio.c takes (ok) and the ones it calls abort() on (bad),
 # one per line after the word and a tab. formats_test.go holds FormatError to
-# this file. A libc test in engine/test should run each through vsnprintf with
-# arguments of the right types and see whether it aborts, so that a change of
-# stdio.c cannot leave the check behind.
+# this file, and engine/test/libc-test.c runs each through vsnprintf with
+# arguments of the right types and sees whether it aborts, so that a change of
+# stdio.c cannot leave the check behind. A format with arguments of a new kind
+# needs a call for them in call_kinds of libc-test.c.
 ok	plain text
 ok	%d
 ok	%i
