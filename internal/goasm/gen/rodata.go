@@ -260,14 +260,26 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 		for _, a := range o.Aliases {
 			p.BlobOff[a] = start
 		}
+		// An object that aligns a later byte inside itself past its own start
+		// alignment cannot keep its layout once the blob places it at a
+		// different residue than llc did: the byte the code reads at a fixed
+		// offset from the object would move. The engine has no such object,
+		// so reject it rather than silently shift every later byte.
+		if internalOverAlign(o) {
+			fail("", "data %s aligns a byte inside itself beyond its %d-byte start, which the blob cannot preserve", o.Label, 1<<o.Align)
+		}
 		for _, l := range o.Lines {
-			b, fx, err := encodeDirective(l, len(p.Blob)-start)
+			// at is the object's absolute offset in the blob, so a .p2align
+			// aligns the object's real position (its start is aligned to at
+			// least its own alignment), not a position measured from its
+			// start.
+			b, fx, err := encodeDirective(l, len(p.Blob))
 			if err != nil {
 				fail("", "data %s: %v", o.Label, err)
 				continue
 			}
 			for _, f := range fx {
-				fixes = append(fixes, fix{start + f.off, f.size, f.expr, o})
+				fixes = append(fixes, fix{f.off, f.size, f.expr, o})
 			}
 			p.Blob = append(p.Blob, b...)
 		}
@@ -299,6 +311,30 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 }
 
 func alignUp(x, a int) int { return (x + a - 1) / a * a }
+
+// internalOverAlign reports whether o aligns a later byte inside itself to
+// more than its own start alignment: a .p2align with a power above o.Align
+// that is followed by a data directive in the same object. A trailing
+// .p2align (the next object's leading alignment, which SplitAsm also keeps on
+// this object) does not count, since nothing inside the object follows it.
+func internalOverAlign(o *DataObj) bool {
+	for i, l := range o.Lines {
+		m := reAlign.FindStringSubmatch(clean(l))
+		if m == nil {
+			continue
+		}
+		a, err := strconv.Atoi(m[1])
+		if err != nil || a <= o.Align {
+			continue
+		}
+		for _, later := range o.Lines[i+1:] {
+			if isDataDirective(clean(later)) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 type exprFix struct {
 	off, size int
@@ -347,6 +383,13 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("bad alignment %q", l)
 		}
+		// A negative power would shift by a negative amount and a very large
+		// one would overflow to a zero step (then alignUp divides by zero):
+		// range-check before shifting so no input panics. 2^20 is far above
+		// any alignment the engine uses.
+		if a < 0 || a > 20 {
+			return nil, nil, fmt.Errorf("alignment power out of range %q", l)
+		}
 		step := 1 << a
 		fill := byte(0)
 		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
@@ -361,6 +404,11 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 			skip, err := strconv.Atoi(strings.TrimSpace(parts[2]))
 			if err != nil {
 				return nil, nil, fmt.Errorf("bad alignment max-skip %q", l)
+			}
+			// GNU and LLVM reject an explicit non-positive max-skip rather
+			// than treating it as "always pad": refuse it too.
+			if skip <= 0 {
+				return nil, nil, fmt.Errorf("non-positive alignment max-skip %q", l)
 			}
 			if pad > skip {
 				pad = 0
@@ -379,6 +427,9 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 		n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 		if err != nil {
 			return nil, nil, fmt.Errorf("bad .zero %q", arg)
+		}
+		if n < 0 {
+			return nil, nil, fmt.Errorf("negative .zero count %q", arg)
 		}
 		b := make([]byte, n)
 		if len(parts) > 1 {
@@ -427,46 +478,99 @@ func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
 	return out, fixes, nil
 }
 
+type addTerm struct {
+	sign int64
+	term string
+}
+
+// addTerms parses an additive expression TERM (('+'|'-') TERM)*, where TERM
+// is an integer literal or a symbol, with optional whitespace around the
+// operators and an optional leading sign. Every token after the first must be
+// joined by an explicit operator: "1table" and "table+1 2" are malformed and
+// rejected, not reinterpreted. Any other operator (*, /, <<, parentheses)
+// ends a term and, not being + or -, is rejected. It never panics.
+func addTerms(e string) ([]addTerm, error) {
+	bad := func() ([]addTerm, error) { return nil, fmt.Errorf("unsupported expression %q", e) }
+	var out []addTerm
+	i, n := 0, len(e)
+	skip := func() {
+		for i < n && (e[i] == ' ' || e[i] == '\t') {
+			i++
+		}
+	}
+	isTermByte := func(c byte) bool {
+		return c == '.' || c == '$' || c == '_' || (c >= '0' && c <= '9') ||
+			(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	}
+	term := func() (string, bool) {
+		start := i
+		for i < n && isTermByte(e[i]) {
+			i++
+		}
+		return e[start:i], i > start
+	}
+	skip()
+	sign := int64(1)
+	if i < n && (e[i] == '+' || e[i] == '-') {
+		if e[i] == '-' {
+			sign = -1
+		}
+		i++
+		skip()
+	}
+	t, ok := term()
+	if !ok {
+		return bad()
+	}
+	out = append(out, addTerm{sign, t})
+	for {
+		skip()
+		if i >= n {
+			return out, nil
+		}
+		if e[i] != '+' && e[i] != '-' {
+			return bad()
+		}
+		s := int64(1)
+		if e[i] == '-' {
+			s = -1
+		}
+		i++
+		skip()
+		t, ok := term()
+		if !ok {
+			return bad()
+		}
+		out = append(out, addTerm{s, t})
+	}
+}
+
 // evalExpr evaluates sym, sym+N, sym-N, symA-symB(+N) at blob offset at. A
 // lone symbol (or with an addend) is a pointer: it comes back as a reloc.
 func (p *DataPlan) evalExpr(e string, at int, funcs map[string]bool) (int64, *BlobReloc, error) {
 	var pos, neg []string
 	var k int64
 	// Only a sum and difference of symbols and integer literals is
-	// understood. The tokens must cover the whole expression: a gap means an
-	// operator (*, /, <<, parentheses) the evaluator would silently drop,
-	// giving a wrong offset, so reject it instead.
-	tok := regexp.MustCompile(`[+-]?\s*(?:0x[0-9a-fA-F]+|\d+|[._A-Za-z$][\w.$]*)`)
-	rest := strings.ReplaceAll(e, " ", "")
-	at0 := 0
-	for _, loc := range tok.FindAllStringIndex(rest, -1) {
-		if loc[0] != at0 {
-			return 0, nil, fmt.Errorf("unsupported expression %q", e)
-		}
-		at0 = loc[1]
+	// understood. addTerms rejects anything else (a missing operator, a
+	// multiplication, a shift, a parenthesis) instead of letting the
+	// evaluator silently drop an operator and compute a wrong offset.
+	terms, err := addTerms(e)
+	if err != nil {
+		return 0, nil, err
 	}
-	if at0 != len(rest) {
-		return 0, nil, fmt.Errorf("unsupported expression %q", e)
-	}
-	for _, t := range tok.FindAllString(rest, -1) {
-		sign := int64(1)
-		if t[0] == '-' {
-			sign, t = -1, t[1:]
-		} else if t[0] == '+' {
-			t = t[1:]
-		}
-		if x, err := strconv.ParseInt(t, 0, 64); err == nil {
-			k += sign * x
+	for _, t := range terms {
+		if x, err := strconv.ParseInt(t.term, 0, 64); err == nil {
+			k += t.sign * x
 			continue
 		}
-		if x, err := strconv.ParseUint(t, 0, 64); err == nil {
-			k += sign * int64(x)
+		if x, err := strconv.ParseUint(t.term, 0, 64); err == nil {
+			k += t.sign * int64(x)
 			continue
 		}
-		if sign > 0 {
-			pos = append(pos, t)
+		if t.sign > 0 {
+			pos = append(pos, t.term)
 		} else {
-			neg = append(neg, t)
+			neg = append(neg, t.term)
 		}
 	}
 	if len(pos) != 1 || len(neg) > 1 {
