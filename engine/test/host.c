@@ -53,6 +53,10 @@ static long host_timeout = HOST_TIMEOUT_SEC; /* seconds, 0 for none */
 /* HOST_MAX_MEMORY=bytes: the most a VM may map, past which the host answers
    as a system that has no more memory would */
 static size_t host_max_memory;
+/* HOST_NO_REMAP=1: do not tell the engine it can remap, so that it allocates,
+   copies and releases when a dedicated block outgrows its chunk (linux has
+   mremap and tells it by default) */
+static int host_no_remap;
 #ifdef JS_HEAP_POISON
 void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #define host_unpoison(p, n) __asan_unpoison_memory_region((p), (n))
@@ -163,12 +167,14 @@ static void host_atexit(void)
 static void host_register_exit(void)
 {
     const char *max = getenv("HOST_MAX_MEMORY");
+    const char *no_remap = getenv("HOST_NO_REMAP");
     const char *timeout = getenv("HOST_TIMEOUT_SEC");
 
     if (max)
         host_max_memory = (size_t)strtoull(max, NULL, 10);
     if (timeout)
         host_timeout = strtol(timeout, NULL, 10);
+    host_no_remap = no_remap && *no_remap && strcmp(no_remap, "0");
     atexit(host_atexit);
 }
 
@@ -229,6 +235,9 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
         return NULL;
     }
     JS_SetMaxStackSize(rt, HOST_STACK_SIZE);
+#ifdef __linux__
+    JS_SetHostRemap(rt, !host_no_remap);
+#endif
     clock_gettime(CLOCK_MONOTONIC, &host_started);
     if (host_timeout)
         JS_SetInterruptHandler(rt, host_interrupt, NULL);
@@ -377,6 +386,45 @@ int64_t host_now(uint32_t vm, int kind)
     return ns;
 }
 
+/* HOST_CALL_MEMORY_REMAP: make the chunk of size old bytes at addr new bytes,
+   keeping its content (linux only, and the host told the engine so). Returns
+   the address as a word, or 0 when the system has no memory, and then the
+   chunk is as it was. */
+static JSValue host_memory_remap(uint32_t id, uintptr_t addr, uintptr_t old, uintptr_t new_size)
+{
+#ifdef __linux__
+    HostVM *vm = host_vm_find(id);
+    HostChunk *c;
+    void *p;
+
+    if (vm) {
+        for (c = vm->chunks; c && c->addr != addr; c = c->next)
+            ;
+        if (c && c->size == old && new_size > old) {
+            if (host_max_memory && new_size - old > host_max_memory - vm->mapped)
+                return HOST_WORD(0);
+            p = mremap((void *)addr, old, new_size, MREMAP_MAYMOVE);
+            if (p == MAP_FAILED)
+                return HOST_WORD(0);
+            host_unpoison(p, new_size);
+            /* the new part is not zeroed as far as the engine may know */
+            memset((char *)p + old, 0xcd, new_size - old < 262144 ? new_size - old : 262144);
+            c->addr = (uintptr_t)p;
+            c->size = new_size;
+            vm->mapped += new_size - old;
+            return HOST_WORD(p);
+        }
+    }
+#else
+    (void)id;
+    (void)addr;
+    (void)old;
+    (void)new_size;
+#endif
+    fprintf(stderr, "host: the engine remapped a chunk it was not given, or not whole, or asked for a smaller one\n");
+    _exit(87);
+}
+
 /* The test host registers no function, so the requests it answers are the
    engine's own: the memory of the heap (a dedicated chunk goes back, see
    host.h), and abort. Abort ends the process with the signal abort() gives.
@@ -387,6 +435,8 @@ JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *ar
     (void)this_val;
     if (magic == HOST_CALL_MEMORY_RELEASE && argc == 2)
         return host_memory_release(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]));
+    if (magic == HOST_CALL_MEMORY_REMAP && argc == 3)
+        return host_memory_remap(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]), HOST_WORD_VALUE(argv[2]));
     if (magic == HOST_CALL_ABORT)
         fputs("engine abort\n", stderr);
     else

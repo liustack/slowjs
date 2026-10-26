@@ -38,6 +38,7 @@ typedef struct JSHeap {
     void *tlsf;                /* the TLSF control, behind the runtime in the first chunk */
     JSHeapChunk *chunks;       /* the shared chunks, the first one first. It holds the runtime and cannot be released */
     JSHeapChunk *dedicated;    /* the dedicated chunks: one block each, outside TLSF */
+    int remap;                 /* the host remaps a dedicated chunk (heap_set_remap) */
     size_t rt_size;            /* the runtime, which is part of count and not a block */
     size_t count;              /* the runtime and the blocks in use, and for each block its size and the 8 byte size word before it: MemorySize, what the limit and the GC count */
     size_t limit;              /* (size_t)-1 for none */
@@ -61,6 +62,13 @@ JSHeap *heap_create(uint32_t vm, size_t rt_size);
 
 /* The end of the heap. The host takes the chunks back after this. */
 void heap_destroy(JSHeap *h);
+
+/* The host says, right after heap_create, that it can remap a dedicated chunk
+   (host_call HOST_CALL_MEMORY_REMAP, see host.h). Then a dedicated block that
+   outgrows its chunk gets a bigger chunk from the host in place of a new
+   block and a copy, and the host refusing it is out of memory: the resize
+   fails and nothing changes. Off by default, and then the engine never asks. */
+void heap_set_remap(JSHeap *h, int on);
 
 /* Like malloc, free and realloc, for a size of at least 1 and at most
    JS_HEAP_MAX_REQUEST. They fail (NULL) when count plus the size would pass

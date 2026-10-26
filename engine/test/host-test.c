@@ -53,6 +53,7 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
 }
 
 size_t JS_FreeRuntime(JSRuntime *rt) { (void)rt; return 0; }
+void JS_SetHostRemap(JSRuntime *rt, int on) { (void)rt; (void)on; }
 void JS_SetMaxStackSize(JSRuntime *rt, size_t n) { (void)rt; (void)n; }
 void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque) { (void)rt; (void)cb; (void)opaque; }
 void JS_ReleaseStart(JSRuntime *rt, size_t keep) { (void)rt; (void)keep; }

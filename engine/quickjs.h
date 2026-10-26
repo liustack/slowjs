@@ -371,6 +371,9 @@ void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold);
 void JS_SetFootprintLimit(JSRuntime *rt, size_t limit);
 /* what the memory limit and the GC threshold count, and the threshold */
 size_t JS_GetMemorySize(JSRuntime *rt);
+/* The host calls this right after JS_NewRuntime when it can remap a chunk (see
+   HOST_CALL_MEMORY_REMAP in host.h). Off by default. */
+void JS_SetHostRemap(JSRuntime *rt, int on);
 size_t JS_GetGCThreshold(JSRuntime *rt);
 /* give the free memory back to the host except keep bytes: JS_ReleaseStart,
    then JS_ReleaseNextChunk until its length is 0 and JS_ReleaseNextRange

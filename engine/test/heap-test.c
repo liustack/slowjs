@@ -63,6 +63,8 @@ typedef struct HostVM {
     long grows;       /* requests so far */
     long refused;     /* requests it refused */
     long releases;    /* dedicated chunks the heap gave back */
+    long remaps;      /* requests to remap a chunk */
+    long refuse_remap_at; /* the remap with this number is refused (1 is the first), 0 for none */
     long refuse_at;   /* the request with this number is refused (1 is the first), 0 for none */
     int refuse_all;   /* every request is refused */
     size_t most;      /* the most bytes it ever held */
@@ -70,7 +72,7 @@ typedef struct HostVM {
 
 static HostVM vms[MAX_VM];
 /* dedicated chunks the heaps of this run gave back: a run that makes none tested nothing of them */
-static long total_releases;
+static long total_releases, total_remaps;
 
 static uint32_t host_open(void)
 {
@@ -94,6 +96,7 @@ static void host_close(uint32_t vm)
         munmap((void *)h->chunk[i].addr, h->chunk[i].size);
     }
     total_releases += h->releases;
+    total_remaps += h->remaps;
     memset(h, 0, sizeof *h);
 }
 
@@ -166,6 +169,38 @@ JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *ar
         h->releases++;
         return JS_UNDEFINED;
     }
+#ifdef __linux__
+    if (magic == HOST_CALL_MEMORY_REMAP && argc == 3) {
+        HostVM *h = &vms[vm];
+        uintptr_t addr = HOST_WORD_VALUE(argv[0]);
+        size_t old = HOST_WORD_VALUE(argv[1]), size = HOST_WORD_VALUE(argv[2]);
+        int i = host_find(h, addr);
+        void *p;
+
+        if (i < 0 || h->chunk[i].size != old || size <= old || size % 65536) {
+            fprintf(stderr, "heap-test: the heap remapped a chunk the host did not give, or not whole, or to a size that is not bigger\n");
+            abort();
+        }
+        h->remaps++;
+        if (h->refuse_remap_at == h->remaps) {
+            h->refused++;
+            return HOST_WORD(0);
+        }
+        p = mremap((void *)addr, old, size, MREMAP_MAYMOVE);
+        if (p == MAP_FAILED) {
+            h->refused++;
+            return HOST_WORD(0);
+        }
+        heap_unpoison(p, size);
+        memset((char *)p + old, 0xcd, size - old < ((size_t)1 << 20) ? size - old : ((size_t)1 << 20));
+        h->chunk[i].addr = (uintptr_t)p;
+        h->chunk[i].size = size;
+        h->live += size - old;
+        if (h->live > h->most)
+            h->most = h->live;
+        return HOST_WORD(p);
+    }
+#endif
     fprintf(stderr, "heap-test: the heap called abort (host_call %d)\n", magic);
     fflush(stderr);
     _exit(134);
@@ -367,6 +402,19 @@ static void span_remove(Span *sp, int *n, uintptr_t lo)
 #define FAIL(...) do { fprintf(stderr, "heap-test: " __VA_ARGS__); fprintf(stderr, "\n"); abort(); } while (0)
 #define CHECK(c, ...) do { if (!(c)) FAIL(__VA_ARGS__); } while (0)
 
+/* The block the test holds that is the biggest, or -1 when none has 1 MiB. A
+   resize of it to a bigger size is how a run grows a dedicated block, which the
+   mix of sizes does by chance only now and then. */
+static int biggest_block(const Block *live, int n)
+{
+    int best = -1;
+
+    for (int i = 0; i < n; i++)
+        if (live[i].usable >= ((size_t)1 << 20) && (best < 0 || live[i].usable > live[best].usable))
+            best = i;
+    return best;
+}
+
 static const size_t edge_sizes[] = {
     1, 2, 7, 8, 9, 15, 16, 17, 504, 505, 511, 512, 513, 1000, 4088, 4096, 4104, 32760, 32768, 65520, 65536, 65537,
     (size_t)1 << 20, (size_t)3 << 20, (size_t)8 << 20,
@@ -446,12 +494,27 @@ static void heap_model_check(HeapModel *m)
         CHECK(m->budget_top <= m->budget || h->footprint <= m->budget_top, "the footprint passed the budget");
 }
 
+/* The heaps of one run tell their host they can remap by turns (on linux, where
+   the fake host has mremap), so that a run goes both ways. A random run sets the
+   turn from its seed, or from its input. */
+static int remap_turn;
+
+static int next_remap(void)
+{
+#ifdef __linux__
+    return remap_turn++ & 1;
+#else
+    return 0;
+#endif
+}
+
 static void heap_model_start(HeapModel *m)
 {
     memset(m, 0, sizeof *m);
     m->vm = host_open();
     m->h = heap_create(m->vm, HEAP_RT_SIZE);
     CHECK(m->h, "heap_create failed");
+    heap_set_remap(m->h, next_remap());
     m->rt_size = (HEAP_RT_SIZE + 7) & ~7u;
     CHECK(m->h->count == m->rt_size && m->h->blocks == 0 && m->h->footprint == 65536 && m->h->chunk_count == 1,
           "a new heap is not what it should be");
@@ -582,7 +645,13 @@ static void heap_model_step(HeapModel *m, Src *r)
         model_free(m, (int)src_below(r, m->n));
     } else if (op < 92) {
         size_t sz = pick_size(r, 0);
-        int i = (int)src_below(r, m->n);
+        int i = (int)src_below(r, m->n), big = src_below(r, 6) == 0 ? biggest_block(m->live, m->n) : -1;
+        if (big >= 0) { /* grow the biggest block, up to 64 MiB */
+            i = big;
+            sz = m->live[big].usable + 1 + src_below(r, m->live[big].usable);
+            if (sz > ((size_t)64 << 20))
+                sz = (size_t)64 << 20;
+        }
         if (m->bytes < ((size_t)192 << 20) || sz > JS_HEAP_MAX_REQUEST)
             model_realloc(m, i, sz);
     } else if (op < 94) {
@@ -600,6 +669,9 @@ static void heap_model_step(HeapModel *m, Src *r)
             m->budget = h->footprint_limit;
             m->budget_top = h->footprint;
         }
+    } else if (src_below(r, 3) == 0) {
+        /* the host refuses the next remap, or the one after */
+        vms[m->vm].refuse_remap_at = vms[m->vm].remaps + 1 + (long)src_below(r, 2);
     } else {
         /* the host refuses the next request, or the one after */
         vms[m->vm].refuse_at = vms[m->vm].grows + 1 + (long)src_below(r, 2);
@@ -716,11 +788,12 @@ static int rt_reaches_heap(const RtModel *m, size_t sz)
 
 /* Whether the memory limit alone decides a request for a large block: the
    front cache is empty (nothing is given back and tried again), no budget,
-   no refusal of the host is waiting. Then the rule of upstream gives the
+   no refusal of the host (of a chunk or of a remap) is waiting. Then the rule of upstream gives the
    verdict to the byte. */
 static int rt_limit_alone(RtModel *m)
 {
-    return JS_FrontCacheBlocks(m->rt) == 0 && !m->fp_limit && vms[m->vm].refuse_at <= vms[m->vm].grows;
+    return JS_FrontCacheBlocks(m->rt) == 0 && !m->fp_limit && vms[m->vm].refuse_at <= vms[m->vm].grows &&
+        vms[m->vm].refuse_remap_at <= vms[m->vm].remaps;
 }
 
 static int rt_alloc(RtModel *m, size_t sz)
@@ -890,8 +963,14 @@ static void rt_step(RtModel *m, Src *r)
         rt_free(m, (int)src_below(r, m->n));
     } else if (op < 92) {
         size_t sz = pick_size(r, 1);
-        int i = (int)src_below(r, m->n);
+        int i = (int)src_below(r, m->n), big = src_below(r, 6) == 0 ? biggest_block(m->live, m->n) : -1;
         if (src_below(r, 2)) sz = 1 + src_below(r, 600);
+        if (big >= 0) {
+            i = big;
+            sz = m->live[big].usable + 1 + src_below(r, m->live[big].usable);
+            if (sz > ((size_t)48 << 20))
+                sz = (size_t)48 << 20;
+        }
         if (m->bytes < ((size_t)96 << 20) || sz > JS_HEAP_MAX_REQUEST)
             rt_realloc(m, i, sz);
     } else if (op < 93) {
@@ -916,6 +995,8 @@ static void rt_step(RtModel *m, Src *r)
         size_t footprint = rt_footprint(m->rt);
         m->fp_limit = src_below(r, 3) == 0 ? 0 : footprint + src_below(r, 3) * 65536;
         JS_SetFootprintLimit(m->rt, m->fp_limit);
+    } else if (src_below(r, 3) == 0) {
+        vms[m->vm].refuse_remap_at = vms[m->vm].remaps + 1 + (long)src_below(r, 2);
     } else {
         vms[m->vm].refuse_at = vms[m->vm].grows + 1 + (long)src_below(r, 2);
     }
@@ -930,6 +1011,7 @@ static void run_runtime(Src *r, long steps)
     m->vm = host_open();
     m->rt = JS_NewRuntime(m->vm, 1);
     CHECK(m->rt, "JS_NewRuntime failed");
+    JS_SetHostRemap(m->rt, next_remap());
     m->limit = (size_t)-1;
     /* the header of a large block, from what one block costs: the count goes
        up by its usable size, its header and the 8 byte word of the heap */
@@ -1289,6 +1371,14 @@ static void scenario_resize(void)
     ok("resize: in place, moved in the chunks, moved to a new chunk, refused with the old block intact");
 }
 
+/* The chunk of a block that grew: an eighth of room more (the budget permitting) */
+static size_t grown_chunk(size_t n)
+{
+    size_t s = (n + 7) & ~(size_t)7;
+
+    return (s + s / 8 + 48 + 65535) / 65536 * 65536;
+}
+
 /* Use up the free space of the chunks, so that the next block of more than 30000
    bytes needs a new chunk: with no room to grow (a budget at the footprint),
    take blocks from big to small until none fits. */
@@ -1392,8 +1482,8 @@ static void scenario_dedicated(void)
     fp = h->footprint;
     releases = host->releases;
     model_realloc(&m, 0, (size_t)6 << 20);
-    CHECK(h->footprint == fp + (((size_t)6 << 20) + 48 + 65535) / 65536 * 65536 && host->releases == releases,
-          "a block of the shared chunks that grows to 6 MiB should get a chunk of its own");
+    CHECK(h->footprint == fp + grown_chunk((size_t)6 << 20) && host->releases == releases,
+          "a block of the shared chunks that grows to 6 MiB should get a chunk of its own, with room to grow");
     model_free(&m, 0);
     CHECK(h->footprint == fp && host->releases == releases + 1, "the chunk of its own should go back with the block");
 
@@ -1446,6 +1536,132 @@ static void scenario_dedicated(void)
     heap_model_check(&m);
     heap_model_finish(&m);
     ok("dedicated chunks: made for one block, given back at once, resized, refused");
+}
+
+/* The size of the dedicated chunk a block of n bytes gets */
+static size_t dedicated_chunk(size_t n)
+{
+    return (((n + 7) & ~(size_t)7) + 48 + 65535) / 65536 * 65536;
+}
+
+/* A dedicated block that outgrows its chunk, with a host that remaps (linux, where
+   the fake host has mremap): the chunk gets bigger where it is or elsewhere, with
+   no new chunk, no copy by the heap and no release. The host refusing is out of
+   memory: the resize fails and nothing changes, and the heap does not try to
+   copy, which takes more. The budget and the limit refuse before the host is
+   asked. */
+static void scenario_remap(void)
+{
+#ifdef __linux__
+    HeapModel m;
+    JSHeap *h;
+    HostVM *host;
+    size_t fp, count, grow;
+    long releases, grows, remaps, refused;
+    uint8_t *p;
+
+    heap_model_start(&m);
+    h = m.h;
+    host = &vms[m.vm];
+    heap_set_remap(h, 1);
+
+    /* three dedicated chunks, and the middle of the list grows */
+    CHECK(model_alloc(&m, (size_t)5 << 20), "alloc 5 MiB");
+    CHECK(model_alloc(&m, (size_t)6 << 20), "alloc 6 MiB");
+    CHECK(model_alloc(&m, (size_t)7 << 20), "alloc 7 MiB");
+    CHECK(host->n == 4, "three chunks of their own");
+    fp = h->footprint;
+    count = h->count;
+    releases = host->releases;
+    grows = host->grows;
+    remaps = host->remaps;
+    model_realloc(&m, 1, (size_t)20 << 20);
+    CHECK(host->remaps == remaps + 1 && host->releases == releases && host->grows == grows && host->n == 4,
+          "a dedicated block that outgrows its chunk should remap it: %ld remaps, %ld releases, %ld grows", host->remaps - remaps,
+          host->releases - releases, host->grows - grows);
+    CHECK(h->footprint == fp - dedicated_chunk((size_t)6 << 20) + grown_chunk((size_t)20 << 20) && host->live == h->footprint,
+          "the footprint after a remap is %zu", h->footprint);
+    CHECK(heap_usable_size(m.live[1].p) == (size_t)20 << 20 && h->count == count - ((size_t)6 << 20) + ((size_t)20 << 20) &&
+          h->blocks == 3, "the count after a remap");
+    heap_model_check(&m);
+    /* the content is checked by model_realloc, and the other two chunks are still where the heap thinks */
+    model_free(&m, 0);
+    model_free(&m, 1);
+    model_free(&m, 0);
+    CHECK(host->n == 1 && host->releases == releases + 3, "the three chunks should be given back");
+    heap_model_check(&m);
+
+    /* the host refuses the remap: out of memory, the old chunk as it was, and no copy */
+    CHECK(model_alloc(&m, (size_t)5 << 20), "alloc 5 MiB");
+    p = m.live[0].p;
+    fp = h->footprint;
+    count = h->count;
+    releases = host->releases;
+    grows = host->grows;
+    remaps = host->remaps;
+    refused = host->refused;
+    host->refuse_remap_at = remaps + 1;
+    model_realloc(&m, 0, (size_t)30 << 20);
+    CHECK(m.live[0].p == p && h->footprint == fp && h->count == count && heap_usable_size(p) == (size_t)5 << 20,
+          "a refused remap changed the block or the heap");
+    CHECK(host->remaps == remaps + 1 && host->refused == refused + 1 && host->grows == grows && host->releases == releases,
+          "a refused remap should end the resize: no new chunk, no copy, no release");
+    heap_model_check(&m);
+    model_realloc(&m, 0, (size_t)30 << 20);
+    CHECK(host->remaps == remaps + 2 && heap_usable_size(m.live[0].p) == (size_t)30 << 20, "the same resize should pass when the host does not refuse");
+
+    /* the budget refuses, to the byte, for the growth alone, before the host is asked */
+    fp = h->footprint;
+    /* the budget leaves no room for the eighth of room, so the chunk is the block's alone */
+    grow = dedicated_chunk((size_t)40 << 20) - grown_chunk((size_t)30 << 20);
+    remaps = host->remaps;
+    h->footprint_limit = fp + grow - 1;
+    model_realloc(&m, 0, (size_t)40 << 20);
+    CHECK(host->remaps == remaps && h->footprint == fp, "the budget one byte short should refuse before the host is asked");
+    h->footprint_limit = fp + grow;
+    model_realloc(&m, 0, (size_t)40 << 20);
+    CHECK(host->remaps == remaps + 1 && h->footprint == fp + grow, "the budget at the growth should pass");
+    h->footprint_limit = 0;
+
+    /* the limit refuses before the host is asked */
+    count = h->count;
+    remaps = host->remaps;
+    h->limit = count + ((size_t)50 << 20) - heap_usable_size(m.live[0].p) - 1;
+    model_realloc(&m, 0, (size_t)50 << 20);
+    CHECK(host->remaps == remaps && h->count == count, "the limit one byte short should refuse before the host is asked");
+    h->limit = (size_t)-1;
+
+    /* a host that does not remap: a new chunk, a copy, and the old chunk back at once */
+    heap_set_remap(h, 0);
+    releases = host->releases;
+    grows = host->grows;
+    remaps = host->remaps;
+    model_realloc(&m, 0, (size_t)50 << 20);
+    CHECK(host->remaps == remaps && host->grows == grows + 1 && host->releases == releases + 1 && host->n == 2,
+          "without remap a dedicated block that outgrows its chunk should get a new chunk and give the old one back");
+    heap_model_check(&m);
+    /* a buffer that grows by 64 KiB at a time gets a new chunk (or a remap) once in a
+       while, not at each step: the chunk has an eighth of room for the block */
+    while (m.n)
+        model_free(&m, m.n - 1);
+    for (int mode = 0; mode < 2; mode++) {
+        size_t n;
+
+        heap_set_remap(h, mode);
+        CHECK(model_alloc(&m, (size_t)5 << 20), "alloc 5 MiB");
+        grows = host->grows;
+        remaps = host->remaps;
+        for (n = (size_t)5 << 20; n < ((size_t)20 << 20); n += 65536)
+            model_realloc(&m, 0, n);
+        CHECK(host->grows - grows + host->remaps - remaps < 30, "%s: %ld new chunks and %ld remaps for a block that grew from 5 to 20 MiB by 64 KiB",
+              mode ? "remap" : "copy", host->grows - grows, host->remaps - remaps);
+        model_free(&m, 0);
+    }
+    heap_model_finish(&m);
+    ok("remap: a dedicated chunk grows in place or moves, the host refusing is out of memory, the budget and the limit ask first");
+#else
+    printf("SKIP  remap: the fake host has mremap on linux only\n");
+#endif
 }
 
 static void scenario_release(void)
@@ -2125,6 +2341,7 @@ static void scenarios(void)
     scenario_resize();
     scenario_resize_at_the_byte();
     scenario_dedicated();
+    scenario_remap();
     scenario_release();
     scenario_release_exact();
 #ifdef HEAP_TEST_RUNTIME
@@ -2145,6 +2362,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     r.fuzz = 1;
     r.data = data + 1;
     r.len = size - 1;
+    remap_turn = data[0] >> 1; /* the second bit: the host remaps or not */
 #ifdef HEAP_TEST_RUNTIME
     if (data[0] & 1)
         run_runtime(&r, 4000);
@@ -2167,6 +2385,7 @@ int main(int argc, char **argv)
 
         memset(&r, 0, sizeof r);
         r.s = seed * 0x9E3779B97F4A7C15ull + 88172645463325252ull;
+        remap_turn = (int)seed; /* odd seeds: the host remaps. Even seeds: it does not */
         if (!strcmp(argv[1], "stress")) {
             run_heap(&r, steps);
         } else {
@@ -2177,9 +2396,16 @@ int main(int argc, char **argv)
             return 2;
 #endif
         }
-        if (steps >= 100000)
+        if (steps >= 100000) {
             CHECK(total_releases > 0, "no dedicated chunk was given back in %ld steps", steps);
-        printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld)\n", argv[1], seed, steps, total_releases);
+#ifdef __linux__
+            if (seed & 1)
+                CHECK(total_remaps > 0, "no dedicated chunk was remapped in %ld steps", steps);
+            else
+                CHECK(total_remaps == 0, "a host that does not remap was asked to");
+#endif
+        }
+        printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld, remapped: %ld)\n", argv[1], seed, steps, total_releases, total_remaps);
         return 0;
     }
     if (argc >= 3 && !strcmp(argv[1], "fuzz")) {
@@ -2203,6 +2429,7 @@ int main(int argc, char **argv)
             r.fuzz = 1;
             r.data = buf + 1;
             r.len = n > 0 ? n - 1 : 0;
+            remap_turn = n > 0 ? buf[0] >> 1 : 0;
 #ifdef HEAP_TEST_RUNTIME
             if (n > 0 && (buf[0] & 1))
                 run_runtime(&r, 4000);
