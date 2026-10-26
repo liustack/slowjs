@@ -442,16 +442,79 @@ static void span_remove(Span *sp, int *n, uintptr_t lo)
     abort();
 }
 
-/* a request the heap may refuse for its size alone: past the maximum, or so
-   close to it that the chunk of its own would be a pool bigger than TLSF takes */
-#define TOO_BIG(sz) ((sz) > ((size_t)1 << 32) - ((size_t)1 << 27))
+/* A request the heap refuses for its size alone: past the maximum. A dedicated
+   chunk is not a pool of TLSF, so nothing else limits it. */
+#define TOO_BIG(sz) ((sz) > JS_HEAP_MAX_REQUEST)
 
-/* The least the heap maps for a request of n bytes when a footprint budget
-   leaves little room: a chunk of its own, with the 1/32 TLSF may round the
-   request up by, 64 bytes, the 32 bytes of the chunk header and the overhead of
-   a pool, to a multiple of 64 KiB (what the host maps). A request that needs
-   more than the budget leaves is refused. */
-#define MIN_GROWTH(n) ((((size_t)(n) + (size_t)(n) / 32 + 64 + 32 + tlsf_pool_overhead() + 65535) / 65536) * 65536)
+/* ---- what a growth costs, from docs/allocator.md and not from heap.c ----
+
+   The rules the model holds the heap to when a footprint budget leaves little
+   room. A chunk is a multiple of 64 KiB. The next chunk the policy takes is a
+   quarter of the footprint, 64 KiB to 8 MiB. A request of more than half of it
+   (less the header of 32 bytes and what a pool of TLSF needs) gets a chunk of its
+   own, the dedicated chunk: the header, the size word of the block, the block
+   to 8 bytes and an end marker (48 bytes in all). Otherwise the chunk is
+   shared, and near the budget it shrinks to the request, with the 1/32 TLSF may
+   round it up by, 64 bytes, the header and the overhead of a pool. */
+#define T_UNIT ((size_t)65536)
+#define T_CHUNK_HEADER ((size_t)32)
+#define T_DEDICATED_OVERHEAD ((size_t)48)
+
+static size_t round_unit(size_t n)
+{
+    return (n + T_UNIT - 1) / T_UNIT * T_UNIT;
+}
+
+/* the chunk the policy takes for a footprint */
+static size_t policy_chunk(size_t footprint)
+{
+    size_t chunk = round_unit(footprint / 4);
+
+    if (chunk < T_UNIT)
+        chunk = T_UNIT;
+    return chunk > ((size_t)8 << 20) ? ((size_t)8 << 20) : chunk;
+}
+
+/* does a request of need bytes get a chunk of its own when the footprint is fp */
+static int gets_own_chunk(size_t fp, size_t need)
+{
+    return need + need / 32 + 64 > (policy_chunk(fp) - (T_CHUNK_HEADER + tlsf_pool_overhead())) / 2;
+}
+
+/* the dedicated chunk of a block of need bytes with no room to grow */
+static size_t own_chunk(size_t need)
+{
+    return round_unit(((need + 7) & ~(size_t)7) + T_DEDICATED_OVERHEAD);
+}
+
+/* The least a request that finds no room in the chunks adds to the footprint. A
+   request the budget does not leave this much for is refused, to the byte. */
+static size_t min_growth(size_t fp, size_t need)
+{
+    if (gets_own_chunk(fp, need))
+        return own_chunk(need);
+    return round_unit(need + need / 32 + 64 + T_CHUNK_HEADER + tlsf_pool_overhead());
+}
+
+/* Whether the budget alone refuses a resize to sz of a block that lives in a
+   dedicated chunk of the size chunk (0 for a block of the shared chunks), when
+   the footprint is fp and the host can remap or not. A block that stays in its
+   chunk needs nothing, one that outgrows it and can be remapped needs the
+   growth of the chunk alone, and any other needs a new block. */
+static int budget_refuses_resize(size_t budget, size_t fp, size_t chunk, size_t sz, int remap)
+{
+    if (!budget)
+        return 0;
+    if (chunk) {
+        size_t room = chunk - T_DEDICATED_OVERHEAD;
+
+        if (sz <= room && sz >= room / 2)
+            return 0;
+        if (sz > room && remap)
+            return fp + own_chunk(sz) - chunk > budget;
+    }
+    return fp + min_growth(fp, sz) > budget;
+}
 
 #define FAIL(...) do { fprintf(stderr, "heap-test: " __VA_ARGS__); fprintf(stderr, "\n"); abort(); } while (0)
 #define CHECK(c, ...) do { if (!(c)) FAIL(__VA_ARGS__); } while (0)
@@ -591,7 +654,7 @@ static int model_alloc(HeapModel *m, size_t sz)
     if (!p) {
         /* the limit fails a request when count + request > limit, in numbers that do not wrap */
         int over = h->limit != (size_t)-1 && (unsigned __int128)count + sz > h->limit;
-        int stopped = h->footprint_limit != 0 && fp + MIN_GROWTH(sz) > h->footprint_limit;
+        int stopped = h->footprint_limit != 0 && fp + min_growth(fp, sz) > h->footprint_limit;
         int explained = sz == 0 || TOO_BIG(sz) || over || host->refused != refused || stopped;
         CHECK(explained, "heap_alloc(%zu) failed for no reason (count %zu, footprint %zu)", sz, count, fp);
         CHECK(h->count == count && h->footprint == fp && h->blocks == blocks, "a failed heap_alloc changed the heap");
@@ -628,6 +691,8 @@ static void model_realloc(HeapModel *m, int i, size_t sz)
     HostVM *host = &vms[m->vm];
     Block *b = &m->live[i];
     size_t count = h->count, fp = h->footprint, blocks = h->blocks, old = b->usable;
+    size_t chunk = heap_dedicated_size(h, b->p), budget = h->footprint_limit;
+    int remap = h->remap;
     uint32_t old_seed = b->seed;
     long refused = host->refused;
     uint8_t *p;
@@ -637,9 +702,9 @@ static void model_realloc(HeapModel *m, int i, size_t sz)
     if (!p) {
         /* the rule of upstream: count + request - the usable size of the old block > limit */
         int over = h->limit != (size_t)-1 && (unsigned __int128)count + sz - old > h->limit;
-        int stopped = h->footprint_limit != 0 && fp + MIN_GROWTH(sz) > h->footprint_limit;
+        int stopped = budget_refuses_resize(budget, fp, chunk, sz, remap);
         int explained = sz == 0 || TOO_BIG(sz) || over || host->refused != refused || stopped;
-        CHECK(explained, "heap_realloc(%zu) failed for no reason", sz);
+        CHECK(explained, "heap_realloc(%zu) of a block of %zu in a chunk of %zu failed for no reason (footprint %zu, budget %zu)", sz, old, chunk, fp, budget);
         CHECK(h->count == count && h->footprint == fp && h->blocks == blocks, "a failed heap_realloc changed the heap");
         CHECK(heap_usable_size(b->p) == old, "a failed heap_realloc changed the block");
         check_content(b, old, "failed realloc");
@@ -813,16 +878,18 @@ static void rt_check(RtModel *m)
 /* Why a request the runtime refused may be refused, from the state after the
    call and not from what happened before: a size past the maximum, the host
    refusing a request during the call, the footprint budget set now (the least
-   a growth takes is MIN_GROWTH), or the memory limit set now, which the request
-   (an arena, or the block and its header) would pass. The front cache is
-   given back when a request fails, so count is the one after the call. */
-static int rt_refusal_explained(RtModel *m, size_t sz, size_t count, long refused)
+   a growth takes is min_growth, or for a large block that is resized and
+   remapped, anything: its chunk grows by the difference and the model does not
+   know the chunk), or the memory limit set now, which the request (an arena, or
+   the block and its header) would pass. The front cache is given back when a
+   request fails, so count is the one after the call. */
+static int rt_refusal_explained(RtModel *m, size_t sz, size_t count, long refused, int remapped)
 {
     size_t request = sz < LARGE_FROM ? ARENA_SIZE : sz + m->large_hdr;
 
-    if (TOO_BIG(sz) || vms[m->vm].refused != refused)
+    if (sz > JS_HEAP_MAX_REQUEST - m->large_hdr || vms[m->vm].refused != refused)
         return 1;
-    if (m->fp_limit && rt_footprint(m->rt) + MIN_GROWTH(request) > m->fp_limit)
+    if (m->fp_limit && (remapped || rt_footprint(m->rt) + min_growth(rt_footprint(m->rt), request) > m->fp_limit))
         return 1;
     return m->limit != (size_t)-1 && (unsigned __int128)count + request > m->limit;
 }
@@ -848,7 +915,7 @@ static int rt_limit_alone(RtModel *m)
 static int rt_alloc(RtModel *m, size_t sz)
 {
     size_t count = JS_GetMemorySize(m->rt), cached = JS_FrontCacheBlocks(m->rt);
-    int alone = rt_limit_alone(m) && sz >= LARGE_FROM && !TOO_BIG(sz);
+    int alone = rt_limit_alone(m) && sz >= LARGE_FROM && sz <= JS_HEAP_MAX_REQUEST - m->large_hdr;
     long refused = vms[m->vm].refused;
     uint8_t *p = js_malloc_rt(m->rt, sz);
     Block *b;
@@ -859,7 +926,7 @@ static int rt_alloc(RtModel *m, size_t sz)
         CHECK((p == NULL) == (over != 0), "js_malloc_rt(%zu) %s with count %zu and limit %zu", sz, p ? "passed" : "failed", count, m->limit);
     }
     if (!p) {
-        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused),
+        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, 0),
               "js_malloc_rt(%zu) failed for no reason (count %zu, limit %zu, footprint %zu, budget %zu, refused %ld)", sz,
               JS_GetMemorySize(m->rt), m->limit, rt_footprint(m->rt), m->fp_limit, vms[m->vm].refused - refused);
         if (alone)
@@ -908,7 +975,9 @@ static void rt_realloc(RtModel *m, int i, size_t sz)
     long refused = vms[m->vm].refused;
     /* a large block resized to a large size or a small one stays one block of
        the heap: its rule is count + the new request - its usable size */
-    int alone = rt_limit_alone(m) && b->large && old != 0 && sz != 0 && !TOO_BIG(sz);
+    int alone = rt_limit_alone(m) && b->large && old != 0 && sz != 0 && sz <= JS_HEAP_MAX_REQUEST - m->large_hdr;
+    /* a large block that grows and a host that remaps: the budget is asked for the growth of its chunk alone */
+    int remapped = b->large && sz > old && ((const JSHeap *)m->rt)->remap;
     uint8_t *p;
 
     p = js_realloc_rt(m->rt, b->p, sz);
@@ -925,7 +994,7 @@ static void rt_realloc(RtModel *m, int i, size_t sz)
             m->live[i] = m->live[--m->n];
             return;
         }
-        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused),
+        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, remapped),
               "js_realloc_rt(%zu) of a block of %zu failed for no reason (count %zu, limit %zu, footprint %zu, budget %zu, refused %ld)", sz, old,
               JS_GetMemorySize(m->rt), m->limit, rt_footprint(m->rt), m->fp_limit, vms[m->vm].refused - refused);
         CHECK(js_malloc_usable_size_rt(m->rt, b->p) == old, "a failed js_realloc_rt changed the block");
@@ -1752,7 +1821,7 @@ static void positions_run(int way, int pos, int refuse, int order)
         CHECK(model_alloc(&m, size[i]), "alloc %zu", size[i]);
         ptr[i] = m.live[i].p;
     }
-    CHECK(host->n == 4 && heap_dedicated_size(h, ptr[0]) == dedicated_chunk(size[0]), "three chunks of their own");
+    CHECK(host->n == 4 && heap_dedicated_size(h, ptr[0]) == own_chunk(size[0]), "three chunks of their own");
     heap_model_check(&m);
     fp = h->footprint;
     count = h->count;
@@ -1812,6 +1881,206 @@ static void scenario_remap_positions(void)
                     positions_run(way, pos, refuse, order);
     }
     ok("remap: the list of dedicated chunks follows a chunk that grows at its head, middle or tail, moved or copied, and after a refusal");
+}
+
+/* A request under a budget for the footprint: with the budget one unit short of
+   the least growth it is refused, to the byte, with the host not asked and
+   nothing changed, and with the growth it passes and the footprint gains it. */
+static void budget_exact_alloc(HeapModel *m, size_t sz, const char *what)
+{
+    JSHeap *h = m->h;
+    HostVM *host = &vms[m->vm];
+    size_t fp = h->footprint, count = h->count, growth = min_growth(fp, sz);
+    long grows = host->grows, refused = host->refused;
+
+    h->footprint_limit = fp + growth - T_UNIT;
+    CHECK(!model_alloc(m, sz), "%s: %zu passed with the budget one unit short", what, sz);
+    CHECK(host->grows == grows && host->refused == refused && h->footprint == fp && h->count == count,
+          "%s: %zu was refused by the budget, and the host was asked or the heap changed", what, sz);
+    h->footprint_limit = fp + growth;
+    CHECK(model_alloc(m, sz), "%s: %zu was refused with the budget at the growth, and the host refused nothing", what, sz);
+    CHECK(host->grows == grows + 1 && host->refused == refused && h->footprint == fp + growth,
+          "%s: %zu with the budget at the growth took %zu of footprint, not %zu", what, sz, h->footprint - fp, growth);
+    h->footprint_limit = 0;
+}
+
+/* The same for the resize to sz of the block i. growth is what the heap needs
+   room for while it resizes, fp_after the footprint when it is done (the old
+   chunk of a block that moved is given back by then), and which the count of the
+   host that goes up by one: 0 the grows, 1 the remaps. */
+static void budget_exact_resize(HeapModel *m, int i, size_t sz, size_t growth, size_t fp_after, int which, const char *what)
+{
+    JSHeap *h = m->h;
+    HostVM *host = &vms[m->vm];
+    size_t fp = h->footprint, count = h->count, usable = m->live[i].usable;
+    uint8_t *p = m->live[i].p;
+    long *counter = which ? &host->remaps : &host->grows, before = *counter, refused = host->refused;
+
+    h->footprint_limit = fp + growth - T_UNIT;
+    model_realloc(m, i, sz);
+    CHECK(m->live[i].p == p && m->live[i].usable == usable && *counter == before && host->refused == refused && h->footprint == fp && h->count == count,
+          "%s: the resize to %zu passed or was tried with the budget one unit short", what, sz);
+    h->footprint_limit = fp + growth;
+    model_realloc(m, i, sz);
+    CHECK(m->live[i].usable >= sz && *counter == before + 1 && host->refused == refused && h->footprint == fp_after,
+          "%s: the resize to %zu with the budget at the growth gave %zu usable, footprint %+ld, and the host was asked %ld times", what, sz, m->live[i].usable,
+          (long)h->footprint - (long)fp, *counter - before);
+    h->footprint_limit = 0;
+}
+
+/* The budget refuses a growth to the byte and passes it to the byte, for every
+   way a block gets memory: a block of its own chunk, a chunk that is remapped
+   (the growth of the chunk alone), a block that moves to a chunk of its own
+   while the old one is still held, and a block of the shared chunks that
+   outgrows them. A resize that needs nothing (inside the room of the chunk, or
+   to a smaller block) passes with no budget left at all. */
+static void scenario_budget_exact(void)
+{
+    static const size_t allocs[] = { (size_t)1 << 20, (size_t)5 << 20, ((size_t)5 << 20) + 1, (size_t)17 << 20 };
+    HeapModel m;
+    JSHeap *h;
+    HostVM *host;
+    size_t chunk, fp;
+
+    for (size_t k = 0; k < sizeof allocs / sizeof *allocs; k++) {
+        heap_model_start(&m);
+        budget_exact_alloc(&m, allocs[k], "alloc");
+        heap_model_check(&m);
+        heap_model_finish(&m);
+    }
+
+    /* a remapped chunk grows by the difference of the chunks */
+    for (int move = 0; move < 2; move++) {
+        heap_model_start(&m);
+        h = m.h;
+        host = &vms[m.vm];
+        host->move_remap = move;
+        heap_set_remap(h, 1);
+        CHECK(model_alloc(&m, (size_t)5 << 20), "alloc");
+        chunk = own_chunk((size_t)5 << 20);
+        fp = h->footprint;
+        budget_exact_resize(&m, 0, (size_t)12 << 20, own_chunk((size_t)12 << 20) - chunk, fp + own_chunk((size_t)12 << 20) - chunk, 1, "remap");
+        heap_model_check(&m);
+        heap_model_finish(&m);
+    }
+
+    /* no remap: the new chunk is held with the old one while the data moves */
+    heap_model_start(&m);
+    h = m.h;
+    heap_set_remap(h, 0);
+    CHECK(model_alloc(&m, (size_t)5 << 20), "alloc");
+    fp = h->footprint;
+    chunk = heap_dedicated_size(h, m.live[0].p);
+    budget_exact_resize(&m, 0, (size_t)12 << 20, min_growth(fp, (size_t)12 << 20), fp + min_growth(fp, (size_t)12 << 20) - chunk, 0, "copy");
+    heap_model_check(&m);
+    heap_model_finish(&m);
+
+    /* a block of the shared chunks that outgrows them */
+    heap_model_start(&m);
+    h = m.h;
+    CHECK(model_alloc(&m, 1000), "alloc");
+    fp = h->footprint;
+    budget_exact_resize(&m, 0, (size_t)5 << 20, min_growth(fp, (size_t)5 << 20), fp + min_growth(fp, (size_t)5 << 20), 0, "shared to own");
+    heap_model_check(&m);
+    heap_model_finish(&m);
+
+    /* nothing is needed: a smaller block, and the room of the chunk, with no budget left at all */
+    for (int remap = 0; remap < 2; remap++) {
+        size_t room;
+        uint8_t *p;
+
+        heap_model_start(&m);
+        h = m.h;
+        host = &vms[m.vm];
+        heap_set_remap(h, remap);
+        CHECK(model_alloc(&m, (size_t)5 << 20), "alloc");
+        p = m.live[0].p;
+        room = heap_dedicated_size(h, p) - 48;
+        h->footprint_limit = h->footprint;
+        model_realloc(&m, 0, room);
+        CHECK(m.live[0].p == p && m.live[0].usable == room, "a resize to the room of the chunk needs no budget");
+        model_realloc(&m, 0, room / 2);
+        CHECK(m.live[0].p == p && m.live[0].usable == room / 2, "a resize to half the room needs no budget");
+        model_realloc(&m, 0, 100);
+        CHECK(m.live[0].usable >= 100 && m.live[0].usable < 200 && h->footprint == 65536,
+              "a shrink to 100 bytes needs no budget and gives the chunk back (footprint %zu)", h->footprint);
+        h->footprint_limit = 0;
+        heap_model_check(&m);
+        heap_model_finish(&m);
+    }
+    ok("budget: a growth is refused one unit short and passes at its growth, for a new chunk, a remap, a copy and a move from the shared chunks");
+}
+
+/* The biggest request the heap serves is JS_HEAP_MAX_REQUEST, nearly 4 GiB, and a
+   dedicated chunk takes it: a host that is not asked to refuse must give it,
+   whole or not at all (a system with no room for the mapping is a skip). The
+   mapping is sparse: the test writes the first and the last 64 bytes of the
+   block and no more. One byte over is refused by the heap with the host not asked. */
+static void check_edges(const uint8_t *p, size_t n, uint8_t first, uint8_t last, const char *what)
+{
+    for (size_t i = 0; i < 64; i++)
+        CHECK(p[i] == first && p[n - 64 + i] == last, "%s: the edges of the block changed", what);
+}
+
+static void scenario_max_request(void)
+{
+    HeapModel m;
+    JSHeap *h;
+    HostVM *host;
+    size_t fp, count, chunk, max = JS_HEAP_MAX_REQUEST;
+    long grows, refused;
+    uint8_t *p, *q;
+
+    heap_model_start(&m);
+    h = m.h;
+    host = &vms[m.vm];
+    fp = h->footprint;
+    count = h->count;
+    p = heap_alloc(h, max);
+    if (!p) {
+        CHECK(host->refused > 0 && h->footprint == fp && h->count == count, "the biggest request failed, and the host did not refuse it");
+        heap_model_finish(&m);
+        printf("SKIP  the biggest request: the system gave no mapping of 4 GiB\n");
+        return;
+    }
+    chunk = own_chunk(max);
+    CHECK(heap_usable_size(p) == max && h->footprint == fp + chunk && host->live == h->footprint && h->count == count + max + 8 && h->blocks == 1,
+          "the biggest block: usable %zu, footprint %zu", heap_usable_size(p), h->footprint);
+    CHECK(!heap_check(h), "heap_check of the biggest block");
+    memset(p, 0xa5, 64);
+    memset(p + max - 64, 0x5a, 64);
+    check_edges(p, max, 0xa5, 0x5a, "biggest block");
+    grows = host->grows;
+    refused = host->refused;
+    CHECK(!heap_alloc(h, max + 1) && !heap_realloc(h, p, max + 1), "one byte over the biggest request passed");
+    CHECK(host->grows == grows && host->refused == refused && h->footprint == fp + chunk && heap_usable_size(p) == max, "one byte over changed the heap or asked the host");
+    check_edges(p, max, 0xa5, 0x5a, "after the refused ones");
+    heap_free(h, p);
+    CHECK(host->n == 1 && h->footprint == fp && h->count == count && h->blocks == 0, "the chunk of the biggest block did not go back");
+    CHECK(!heap_check(h), "heap_check after the biggest block");
+
+    /* a dedicated block of 5 MiB that grows to the biggest, remapped and copied */
+    for (int mode = 0; mode < 3; mode++) {
+        heap_set_remap(h, mode != 2);
+        host->move_remap = mode == 0;
+        q = heap_alloc(h, (size_t)5 << 20);
+        CHECK(q != NULL, "alloc 5 MiB");
+        memset(q, 0x11, 64);
+        memset(q + ((size_t)5 << 20) - 64, 0x22, 64);
+        p = heap_realloc(h, q, max);
+        CHECK(p != NULL || host->refused > 0, "the biggest resize failed, and the host did not refuse it");
+        if (!p) {
+            heap_free(h, q);
+            continue;
+        }
+        CHECK(heap_usable_size(p) == max && h->footprint == fp + grown_chunk(max) && h->count == count + max + 8,
+              "mode %d: the block grown to the biggest has usable %zu, footprint %zu", mode, heap_usable_size(p), h->footprint);
+        CHECK(p[0] == 0x11 && p[63] == 0x11 && p[((size_t)5 << 20) - 64] == 0x22 && p[((size_t)5 << 20) - 1] == 0x22, "mode %d: the content of the block was lost", mode);
+        heap_free(h, p);
+        CHECK(host->n == 1 && h->footprint == fp && h->count == count, "mode %d: the chunk did not go back", mode);
+    }
+    heap_model_finish(&m);
+    ok("the biggest request: a dedicated chunk takes it whole, one byte over is refused, a 5 MiB block grows to it");
 }
 
 static void scenario_release(void)
@@ -2493,6 +2762,8 @@ static void scenarios(void)
     scenario_dedicated();
     scenario_remap();
     scenario_remap_positions();
+    scenario_budget_exact();
+    scenario_max_request();
     scenario_release();
     scenario_release_exact();
 #ifdef HEAP_TEST_RUNTIME
