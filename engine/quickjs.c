@@ -34395,17 +34395,10 @@ static void free_bytecode_atoms(JSRuntime *rt,
     }
 }
 
-static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
+/* free fd alone: its child functions are freed */
+static void js_free_function_def1(JSContext *ctx, JSFunctionDef *fd)
 {
     int i;
-    struct list_head *el, *el1;
-
-    /* free the child functions */
-    list_for_each_safe(el, el1, &fd->child_list) {
-        JSFunctionDef *fd1;
-        fd1 = list_entry(el, JSFunctionDef, link);
-        js_free_function_def(ctx, fd1);
-    }
 
     free_bytecode_atoms(ctx->rt, fd->byte_code.buf, fd->byte_code.size,
                         fd->use_short_opcodes);
@@ -34454,6 +34447,26 @@ static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
         list_del(&fd->link);
     }
     js_free(ctx, fd);
+}
+
+/* free fd and the functions defined in it, each after its child functions,
+   with no recursion: down the first child function to one with none, which
+   leaves the list of its parent when it is freed, and back up. */
+static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
+{
+    JSFunctionDef *root = fd, *parent;
+    BOOL last;
+
+    for(;;) {
+        while (!list_empty(&fd->child_list))
+            fd = list_entry(fd->child_list.next, JSFunctionDef, link);
+        last = (fd == root);
+        parent = fd->parent;
+        js_free_function_def1(ctx, fd);
+        if (last)
+            break;
+        fd = parent;
+    }
 }
 
 #ifdef DUMP_BYTECODE
