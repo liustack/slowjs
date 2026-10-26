@@ -6,13 +6,20 @@
 #
 # Copy the files this library takes from musl, or check the copies.
 #
-#   engine/libc/vendor.sh MUSL_DIR   copy the files out of a musl checkout at the
-#                                    pinned commit, apply patches/, and write MUSL.sha256
-#   engine/libc/vendor.sh --verify   check the files here against MUSL.sha256
+#   engine/libc/vendor.sh MUSL_DIR            copy the files out of a musl checkout at the
+#                                             pinned commit, apply patches/, and write MUSL.sha256
+#   engine/libc/vendor.sh --verify            check the files here against MUSL.sha256
+#   engine/libc/vendor.sh --verify MUSL_DIR   the same, and replay the copy from the musl checkout
 #
-# MUSL.sha256 has one line per file: the SHA-256 of the file in musl, the
-# SHA-256 of the file here, the path in musl and the path here. They differ only
-# for a file that patches/ changes. The commit is on the first line.
+# MUSL.sha256 has the commit on its first line, the SHA-256 of the patches on
+# the next, and then one line per file: the SHA-256 of the file in musl, the
+# SHA-256 of the file here, the path in musl and the path here. The two differ
+# only for a file that patches/ changes.
+#
+# --verify alone proves that the files here are the ones the list names, that
+# no file is missing or added, and that the patch is the recorded one. With a
+# musl checkout it proves more: that each file in musl has the recorded hash,
+# and that the patch applied to the original gives the file here.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -22,12 +29,13 @@ manifest=$here/MUSL.sha256
 if command -v sha256sum >/dev/null 2>&1; then sum() { sha256sum "$1" | cut -d' ' -f1; }
 else sum() { shasum -a 256 "$1" | cut -d' ' -f1; }; fi
 
-# musl path -> path here, then the patch for the file when there is one.
+# musl path, path here, and the patch for the file when there is one.
 files() {
 	cat <<LIST
 COPYRIGHT COPYRIGHT
 src/internal/libm.h internal/libm.h libm.h.patch
 src/string/bcmp.c string/bcmp.c
+src/string/bzero.c string/bzero.c
 src/string/memchr.c string/memchr.c
 src/string/memcmp.c string/memcmp.c
 src/string/memcpy.c string/memcpy.c
@@ -52,25 +60,58 @@ LIST
 	done
 }
 
+status=0
+bad() { echo "vendor.sh: $*" >&2; status=1; }
+
+patch_hash() { # the hashes of the patches, one line each
+	for f in "$here"/patches/*; do
+		echo "$(sum "$f") patches/$(basename "$f")"
+	done
+}
+
 if [ "${1:-}" = --verify ]; then
-	[ "$(sed -n 1p "$manifest")" = "# musl $commit" ] || { echo "vendor.sh: $manifest names another commit" >&2; exit 1; }
-	status=0
-	while read -r orig result mpath path; do
-		case $orig in '#'*) continue ;; esac
-		[ "$(sum "$here/$path" 2>/dev/null)" = "$result" ] || { echo "vendor.sh: $path differs from MUSL.sha256" >&2; status=1; }
-	done < "$manifest"
-	n=$(files | wc -l | tr -d ' ')
-	[ "$(grep -vc '^#' "$manifest")" = "$n" ] || { echo "vendor.sh: MUSL.sha256 does not list the files this script copies" >&2; status=1; }
-	[ $status = 0 ] && echo "vendor.sh: the $n files are the ones in MUSL.sha256"
+	musl=${2:-}
+	tmp=$(mktemp -d)
+	trap 'rm -rf "$tmp"' EXIT
+	[ "$(sed -n 1p "$manifest")" = "# musl $commit" ] || bad "$manifest names another commit"
+
+	# the patches are the recorded ones
+	sed -n 's/^# patch //p' "$manifest" | sort > "$tmp/recorded"
+	patch_hash | sort > "$tmp/found"
+	cmp -s "$tmp/recorded" "$tmp/found" || bad "patches/ is not what MUSL.sha256 records"
+
+	# the files are the ones the script copies, those the list names, and those here
+	files | awk '{print $2}' | sort > "$tmp/script"
+	grep -v '^#' "$manifest" | awk '{print $4}' | sort > "$tmp/listed"
+	(cd "$here" && find string math -type f; echo internal/libm.h; echo COPYRIGHT) | sort > "$tmp/present"
+	cmp -s "$tmp/script" "$tmp/listed" || bad "MUSL.sha256 does not list the files this script copies"
+	cmp -s "$tmp/listed" "$tmp/present" || bad "the files here are not the ones MUSL.sha256 lists: $(diff "$tmp/listed" "$tmp/present" | tr '\n' ' ')"
+
+	if [ -n "$musl" ]; then
+		[ "$(git -C "$musl" rev-parse HEAD)" = "$commit" ] || bad "$musl is not at $commit"
+	fi
+	grep -v '^#' "$manifest" | while read -r orig result mpath path; do
+		[ "$(sum "$here/$path" 2>/dev/null)" = "$result" ] || bad "$path differs from MUSL.sha256"
+		if [ -n "$musl" ]; then
+			[ "$(sum "$musl/$mpath")" = "$orig" ] || bad "$mpath in musl is not the recorded file"
+			patch=$(files | awk -v p="$path" '$2 == p {print $3}')
+			cp "$musl/$mpath" "$tmp/replay"
+			[ -z "$patch" ] || patch -s "$tmp/replay" < "$here/patches/$patch"
+			[ "$(sum "$tmp/replay")" = "$result" ] || bad "$path is not $mpath with its patch applied"
+		fi
+		[ $status = 0 ] || exit 1
+	done || status=1
+	[ $status = 0 ] && echo "vendor.sh: $(grep -vc '^#' "$manifest") files are the ones in MUSL.sha256${musl:+, replayed from $musl}"
 	exit $status
 fi
 
-musl=${1:?usage: vendor.sh MUSL_DIR | --verify}
+musl=${1:?usage: vendor.sh MUSL_DIR | --verify [MUSL_DIR]}
 [ "$(git -C "$musl" rev-parse HEAD)" = "$commit" ] || { echo "vendor.sh: $musl is not at $commit" >&2; exit 1; }
 git -C "$musl" diff --quiet HEAD || { echo "vendor.sh: $musl has changes" >&2; exit 1; }
 
 {
 	echo "# musl $commit"
+	patch_hash | sed 's/^/# patch /'
 	files | while read -r mpath path patch; do
 		mkdir -p "$(dirname "$here/$path")"
 		cp "$musl/$mpath" "$here/$path"
