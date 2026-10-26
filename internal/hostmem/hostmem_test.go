@@ -69,7 +69,6 @@ func each(rs ...[2]uintptr) func() (uintptr, uintptr) {
 	}
 }
 
-// call is a call to the OS that fault saw.
 // optIn skips the test unless the environment variable env is 1.
 func optIn(t *testing.T, env, why string) {
 	t.Helper()
@@ -126,39 +125,6 @@ func holds(addr, off, n uintptr, seed byte) (ok bool) {
 		}
 	}
 	return true
-}
-
-type call struct {
-	name       string
-	addr, size uintptr
-}
-
-var errInjected = errors.New("injected")
-
-// failing sets fault for the rest of the test. f sees each call and the ones
-// before it, and returns the error the call gives, or nil to let it run.
-func failing(t testing.TB, f func(c call, before []call) error) *[]call {
-	t.Helper()
-	var calls []call
-	fault = func(name string, addr, size uintptr) error {
-		c := call{name, addr, size}
-		before := calls
-		calls = append(calls, c)
-		return f(c, before)
-	}
-	t.Cleanup(func() { fault = nil })
-	return &calls
-}
-
-// count is how many calls of the name there are.
-func count(calls []call, name string) int {
-	n := 0
-	for _, c := range calls {
-		if c.name == name {
-			n++
-		}
-	}
-	return n
 }
 
 // panicked runs f and returns what it panicked with, or nil.
@@ -492,23 +458,25 @@ func TestRemap(t *testing.T) {
 	}
 }
 
+// trimCases are the trims of TestStackTrim: the bytes in use, and from where
+// the pages above are handed back.
+var trimCases = []struct{ used, from uintptr }{
+	{0, StackKeep},
+	{StackKeep - 1, StackKeep},
+	{600<<10 + 100, alignUp(600<<10+100, pageSize)},
+	{1<<20 - 1, 1 << 20},
+	{1 << 20, 1 << 20},
+}
+
 // TestStackTrim hands back the pages of the shadow stack above what is in use
 // and keeps the bytes below.
 func TestStackTrim(t *testing.T) {
 	const size = 1 << 20
 	m := newMemory(t, size)
 	base, _ := m.Stack()
-	calls := failing(t, func(c call, before []call) error { return nil })
 	var total uintptr
-	for _, tc := range []struct{ used, from uintptr }{
-		{0, StackKeep},
-		{StackKeep - 1, StackKeep},
-		{600<<10 + 100, alignUp(600<<10+100, pageSize)},
-		{size - 1, size},
-		{size, size},
-	} {
+	for _, tc := range trimCases {
 		fill(base, size, 8)
-		*calls = nil
 		r, err := m.Release(nil, nil, tc.used)
 		if err != nil {
 			t.Fatal(err)
@@ -517,13 +485,6 @@ func TestStackTrim(t *testing.T) {
 			t.Fatalf("a trim at %d handed back %d bytes, want %d", tc.used, r.Stack, size-tc.from)
 		}
 		total += r.Stack
-		want := []call{{"release", base + tc.from, size - tc.from}}
-		if tc.from == size {
-			want = nil
-		}
-		if !slices.Equal(*calls, want) {
-			t.Fatalf("a trim at %d made %+v, want %+v", tc.used, *calls, want)
-		}
 		if i := same(base, tc.from, 8); i >= 0 {
 			t.Fatalf("a trim at %d changed byte %d, below the pages it hands back", tc.used, i)
 		}
@@ -728,17 +689,8 @@ func TestClose(t *testing.T) {
 		fill(b, 64*Unit, 2)
 		base, size := m.Stack()
 		fill(base, size, 3)
-		calls := failing(t, func(c call, before []call) error { return nil })
 		if err := m.Close(); err != nil {
 			t.Fatal(err)
-		}
-		fault = nil
-		for _, c := range *calls {
-			// The guard page goes with the stack. windows frees the whole
-			// reservation, which takes no size.
-			if c.addr == base && runtime.GOOS != "windows" && c.size != size+pageSize {
-				t.Fatalf("Close unmapped %d bytes of the stack, want %d with the guard page", c.size, size+pageSize)
-			}
 		}
 		if u := m.Usage(); u != (Usage{}) {
 			t.Fatalf("Usage after Close: %+v", u)

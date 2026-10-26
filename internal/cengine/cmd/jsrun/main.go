@@ -13,7 +13,12 @@
 //	go run ./internal/cengine/cmd/jsrun -n 20 fib.js
 //
 // Each run makes a new VM, evaluates the file in it (the global script and
-// the jobs it queued) and closes the VM. Only the evaluation is timed. The
+// the jobs it queued) and closes the VM. Only the evaluation is timed: the
+// call that copies the source into the VM, runs the script and its jobs and
+// turns the result into a string, which is all one call of an engine here.
+// The source is a string before the first run, so reading the file and
+// converting its bytes are outside the time, as are making, collecting,
+// releasing and closing the VM. The output says so in its "timed:" line. The
 // result is String() of the script's completion value, and every run must
 // give the same one.
 package main
@@ -66,10 +71,12 @@ func main() {
 		os.Exit(2)
 	}
 	file := flag.Arg(0)
-	src, err := os.ReadFile(file)
+	bytes, err := os.ReadFile(file)
 	if err != nil {
 		fatal(err)
 	}
+	// The conversion is not part of any run.
+	src := string(bytes)
 	o := options{seed: *seed, stack: uintptr(*stack)}
 	if *clock != "" {
 		if o.clock, err = time.Parse(time.RFC3339, *clock); err != nil {
@@ -77,6 +84,7 @@ func main() {
 		}
 	}
 	fmt.Printf("engine: %s\n", engineName)
+	fmt.Printf("timed: %s, not timed: reading the file, making, collecting, releasing and closing the VM\n", timedWhat)
 	var times []time.Duration
 	var result string
 	for i := range *warm + *n {
@@ -86,7 +94,7 @@ func main() {
 			fatal(err)
 		}
 		t0 := time.Now()
-		r, err := v.eval(string(src), file)
+		r, err := v.eval(src, file)
 		d := time.Since(t0)
 		if err != nil {
 			fatal(fmt.Errorf("run %d: %w", i+1, err))

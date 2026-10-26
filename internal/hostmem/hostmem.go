@@ -67,27 +67,6 @@ const (
 // and the size of the guard page.
 var pageSize = uintptr(os.Getpagesize())
 
-// fault lets a test make a call to the OS fail. Every call to the OS checks
-// it for nil first, in the built package too, and only tests set it. When it
-// is set, each call asks it, with the name of what it does and its range, and
-// an error it returns stands for the error of the call.
-var fault func(call string, addr, size uintptr) error
-
-// SetFault sets the hook that makes calls to the OS fail, for the tests of a
-// host built on Memory, which cannot reach fault. f gets the name of each
-// call, such as "map", "unmap", "release" or "remap", and its range. nil
-// takes it away. It is not for use while VMs run on other goroutines.
-func SetFault(f func(call string, addr, size uintptr) error) {
-	fault = f
-}
-
-func faulted(call string, addr, size uintptr) error {
-	if fault == nil {
-		return nil
-	}
-	return fault(call, addr, size)
-}
-
 // Memory is the memory of one VM: the chunks of its heap and its shadow
 // stack.
 type Memory struct {

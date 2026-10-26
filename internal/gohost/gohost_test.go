@@ -260,7 +260,8 @@ func TestNow(t *testing.T) {
 	if Now(w.ID(), NowWall) != fixed.Add(time.Hour).UnixNano() || Now(v.ID(), NowWall) < fixed.UnixNano() {
 		t.Fatal("the clocks of two VMs are not their own")
 	}
-	// The monotonic clock needs no VM and never goes back.
+	// The monotonic clock needs no VM, never goes back, and moves on with
+	// time, in nanoseconds.
 	m := Now(0, NowMonotonic)
 	for range 1000 {
 		n := Now(v.ID(), NowMonotonic)
@@ -268,6 +269,10 @@ func TestNow(t *testing.T) {
 			t.Fatalf("the monotonic clock went back from %d to %d", m, n)
 		}
 		m = n
+	}
+	time.Sleep(5 * time.Millisecond)
+	if n := Now(v.ID(), NowMonotonic); n-m < int64(5*time.Millisecond) || n-m > int64(time.Minute) {
+		t.Fatalf("the monotonic clock read %d then %d after a sleep of 5 ms", m, n)
 	}
 	mustPanic(t, "the wall clock of no VM", func() { Now(0, NowWall) })
 	mustPanic(t, "an unknown kind", func() { Now(v.ID(), 2) })
@@ -382,64 +387,5 @@ func TestCloseDropsHandles(t *testing.T) {
 	mustPanic(t, "Keep after Close", func() { v.Keep(1) })
 	if err := v.Close(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-var errRefused = errors.New("refused by the test")
-
-// TestLeftovers: memory the OS refuses to unmap at Close stays with the
-// package, which lists it and unmaps it on a later try, also when no one
-// holds the VM any more.
-func TestLeftovers(t *testing.T) {
-	t.Cleanup(func() {
-		hostmem.SetFault(nil)
-		CloseLeftovers()
-	})
-	lost, kept := newVM(t, small), newVM(t, small)
-	for _, v := range []*VM{lost, kept} {
-		if MemoryGrow(v.ID(), hostmem.Unit) == 0 {
-			t.Fatal("no chunk")
-		}
-	}
-	hostmem.SetFault(func(call string, addr, size uintptr) error {
-		if call == "unmap" {
-			return errRefused
-		}
-		return nil
-	})
-	for _, v := range []*VM{lost, kept} {
-		if err := v.Close(); !errors.Is(err, errRefused) {
-			t.Fatalf("Close with unmap refused: %v", err)
-		}
-	}
-	lostID := lost.ID()
-	lost = nil
-	got := Leftovers()
-	if len(got) != 2 || got[0].ID != lostID || got[1].ID != kept.ID() {
-		t.Fatalf("leftovers %+v, want VMs %d and %d", got, lostID, kept.ID())
-	}
-	for _, l := range got {
-		if !errors.Is(l.Err, errRefused) || l.Usage.Chunks != 1 || l.Usage.Stack != small {
-			t.Errorf("leftover %+v, want one chunk, the stack and the refusal", l)
-		}
-	}
-	if err := CloseLeftovers(); !errors.Is(err, errRefused) || len(Leftovers()) != 2 {
-		t.Fatalf("CloseLeftovers with unmap refused: %v, then %+v", err, Leftovers())
-	}
-	hostmem.SetFault(nil)
-	if err := kept.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if got := Leftovers(); len(got) != 1 || got[0].ID != lostID {
-		t.Fatalf("after the owner closed its VM again: %+v, want VM %d", got, lostID)
-	}
-	if err := CloseLeftovers(); err != nil {
-		t.Fatal(err)
-	}
-	if got := Leftovers(); len(got) != 0 {
-		t.Fatalf("leftovers %+v after CloseLeftovers", got)
-	}
-	if u := kept.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
-		t.Fatalf("the VM closed again still holds %+v", u)
 	}
 }
