@@ -34,7 +34,7 @@ func ckMarker(code string) string { return "\t#APP\n\t# goasm.icall " + code + "
 // across calls in a register and a local, one with constants and 16-byte
 // frame and heap accesses, two register calls of different signatures in a
 // row, a call reached by markers from both sides of a branch, and a call
-// through memory.
+// through a pointer loaded from memory.
 var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	ckFn("lf", 0, "\tpushq\t%rbx\n\tmovq\t%rdi, %rbx\n\tleaq\t(%rbx,%rsi), %rax\n\tpopq\t%rbx\n\tretq\n") +
 	ckFn("lf2", 1, "\tpushq\t%r12\n\tpushq\t%rbx\n\tmovq\t%rdi, %rbx\n\tmovq\t%rsi, %r12\n\tleaq\t(%rbx,%r12), %rax\n\tpopq\t%rbx\n\tpopq\t%r12\n\tretq\n") +
@@ -66,7 +66,7 @@ var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	subq	$32, %rsp
 	mulsd	.LCPI4_0(%rip), %xmm0
 	addsd	.LCPI4_1(%rip), %xmm0
-	movaps	%xmm0, -32(%rbp)
+	movups	%xmm0, -32(%rbp)
 	movaps	(%rdi), %xmm1
 	addsd	-32(%rbp), %xmm1
 	movapd	%xmm1, %xmm0
@@ -80,8 +80,8 @@ var ckBody = "\t.text\n\t.file\t\"ck.c\"\n" +
 	ckFn("jn", 6, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tmovq\t%rdi, %rax\n\ttestq\t%rsi, %rsi\n\tje\t.LBB6_2\n"+
 		"\tmovq\t%rdx, %rdi\n"+ckMarker("i>i")+"\tjmp\t.LBB6_3\n.LBB6_2:\n\tleaq\t1(%rdx), %rdi\n"+ckMarker("i>i")+
 		".LBB6_3:\n\tcallq\t*%rax\n\tpopq\t%rbp\n\tretq\n") +
-	ckFn("mc", 7, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tmovq\t%rdi, %rax\n\tmovq\t%rsi, %rdi\n"+ckMarker("i>i")+
-		"\tcallq\t*8(%rax)\n\tpopq\t%rbp\n\tretq\n")
+	ckFn("mc", 7, "\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tmovq\t%rdi, %rax\n\tmovq\t%rsi, %rdi\n\tmovq\t8(%rax), %rax\n"+
+		ckMarker("i>i")+"\tcallq\t*%rax\n\tpopq\t%rbp\n\tretq\n")
 
 var ckBodySigs = map[string]string{"lf": "ii>i", "lf2": "ii>i", "h": "ii>i", "g": "ii>i", "fp": "id>d",
 	"ic": "iii>i", "jn": "iii>i", "mc": "ii>i"}
@@ -99,6 +99,7 @@ type ckCase struct {
 	name   string
 	pn     bool
 	input  func(string) string         // the text the lowering reads
+	llc    func(string) string         // the text llc's object is assembled from
 	as     map[string]string           // lower a function with this signature code
 	callee map[string]string           // the callee signatures the lowering sees
 	lower  func(string, []Meta) string // the lowered text
@@ -250,7 +251,9 @@ func TestCheckCases(t *testing.T) {
 			},
 			want: "goes to"},
 		{name: "an aligned heap load made unaligned", lower: sub("fp", `movaps\s+\(%rdi\)`, "movups (%rdi)"), want: "generated"},
-		{name: "a frame store left aligned", lower: sub("fp", `movups\s+%xmm0`, "movaps %xmm0"), want: "generated"},
+		{name: "a frame store made aligned", lower: sub("fp", `movups\s+%xmm0`, "movaps %xmm0"), want: "generated"},
+		{name: "an aligned frame store from llc", llc: llcSub("fp", "movups\t%xmm0", "movaps\t%xmm0", 1),
+			want: "may need alignment the Go frame lacks"},
 
 		// preserve_none.
 		{name: "preserve_none: an argument from the wrong register", pn: true,
@@ -301,8 +304,8 @@ func TestCheckCases(t *testing.T) {
 			}},
 		{name: "markers at a join changed together (trusted)", input: llcSub("jn", "icall i>i", "icall ii>i", 2),
 			calls: wantCalls("jn", "ii>i")},
-		{name: "a call through memory with another marker (trusted)", input: llcSub("mc", "icall i>i", "icall ii>i", 1),
-			calls: wantCalls("mc", "ii>i")},
+		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n\t#APP\n\t# goasm.icall i>i\n\t#NO_APP\n\tcallq\t*%rax",
+			"\t#APP\n\t# goasm.icall i>i\n\t#NO_APP\n\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ms, err := ckBuild(t, llvm, c)
@@ -362,7 +365,11 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		}
 	}
 	llc := filepath.Join(dir, "llc.o")
-	mc(filepath.Join(dir, "llc.s"), llc, text)
+	if c.llc != nil {
+		mc(filepath.Join(dir, "llc.s"), llc, c.llc(text))
+	} else {
+		mc(filepath.Join(dir, "llc.s"), llc, text)
+	}
 	in := text
 	if c.input != nil {
 		in = c.input(text)

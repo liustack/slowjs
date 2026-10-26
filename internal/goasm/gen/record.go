@@ -35,7 +35,6 @@ const (
 	CallUnified CallKind = iota // a direct call to a unified entry, marshalled
 	CallLeaf                    // a direct call to a register-entry leaf, kept
 	CallReg                     // a call through a register, marshalled
-	CallMem                     // a call through memory: loaded into R11, marshalled
 )
 
 // CallRecord is one call: its target (a C symbol, or the register of CallReg)
