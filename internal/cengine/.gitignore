@@ -1,0 +1,6 @@
+# What internal/goasm/gen/cmd/engine writes here. It is made on the build
+# machine and never checked in.
+*_amd64.s
+*_arm64.s
+engine_decl.go
+engine_keep.go
