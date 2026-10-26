@@ -545,6 +545,16 @@ static void heap_walker(void *ptr, size_t size, int used, void *user)
     }
 }
 
+size_t heap_dedicated_size(const JSHeap *h, const void *ptr)
+{
+    const JSHeapChunk *c;
+
+    for (c = h->dedicated; c; c = c->next)
+        if ((const uint8_t *)ptr == heap_dedicated_block(c))
+            return c->size;
+    return 0;
+}
+
 const char *heap_check(const JSHeap *h)
 {
     const JSHeapChunk *c;

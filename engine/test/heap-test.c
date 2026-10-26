@@ -72,6 +72,7 @@ typedef struct HostVM {
     long releases;    /* dedicated chunks the heap gave back */
     long remaps;      /* requests to remap a chunk */
     long refuse_remap_at; /* the remap with this number is refused (1 is the first), 0 for none */
+    int move_remap;   /* a remap maps a new chunk, copies and unmaps the old one: the chunk always moves (see next_move) */
     long refuse_at;   /* the request with this number is refused (1 is the first), 0 for none */
     int refuse_all;   /* every request is refused */
     size_t most;      /* the most bytes it ever held */
@@ -81,12 +82,28 @@ static HostVM vms[MAX_VM];
 /* dedicated chunks the heaps of this run gave back: a run that makes none tested nothing of them */
 static long total_releases, total_remaps;
 
+/* How the fake host remaps: with mremap, which moves a chunk only when it must
+   (linux), or by mapping a new chunk, copying and unmapping the old one, which
+   always moves it and is the only way where there is no mremap. The heaps of
+   one run take turns on linux, so that a run goes both ways. */
+static int move_turn;
+
+static int next_move(void)
+{
+#ifdef __linux__
+    return move_turn++ & 1;
+#else
+    return 1;
+#endif
+}
+
 static uint32_t host_open(void)
 {
     for (uint32_t i = 0; i < MAX_VM; i++) {
         if (!vms[i].open) {
             memset(&vms[i], 0, sizeof vms[i]);
             vms[i].open = 1;
+            vms[i].move_remap = next_move();
             return i;
         }
     }
@@ -153,6 +170,35 @@ static int host_inside(HostVM *h, uintptr_t addr, size_t len)
     return 0;
 }
 
+/* The remap that always moves: a new mapping while the old one is still there,
+   so at another address, the content copied, and the old one unmapped, so that
+   a heap that goes on with the old address finds nothing there. */
+static void *host_remap_by_moving(uintptr_t addr, size_t old, size_t size)
+{
+    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+
+    if (p == MAP_FAILED)
+        return p;
+    heap_unpoison(p, size);
+    /* the heap poisoned the room after its block: the host reads it all */
+    heap_unpoison((void *)addr, old);
+    memcpy(p, (void *)addr, old);
+    munmap((void *)addr, old);
+    return p;
+}
+
+static void *host_remap_by_system(uintptr_t addr, size_t old, size_t size)
+{
+#ifdef __linux__
+    return mremap((void *)addr, old, size, MREMAP_MAYMOVE);
+#else
+    (void)addr;
+    (void)old;
+    (void)size;
+    return MAP_FAILED;
+#endif
+}
+
 /* host_call: the heap gives back a dedicated chunk (HOST_CALL_MEMORY_RELEASE),
    and abort, which a failed assert of the heap calls (the test ends there). */
 JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int magic)
@@ -179,7 +225,6 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
         h->releases++;
         return JS_UNDEFINED;
     }
-#ifdef __linux__
     if (magic == HOST_CALL_MEMORY_REMAP && argc == 3) {
         HostVM *h = &vms[vm];
         uintptr_t addr = HOST_WORD_VALUE(argv[0]);
@@ -196,7 +241,7 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
             h->refused++;
             return HOST_WORD(0);
         }
-        p = mremap((void *)addr, old, size, MREMAP_MAYMOVE);
+        p = h->move_remap ? host_remap_by_moving(addr, old, size) : host_remap_by_system(addr, old, size);
         if (p == MAP_FAILED) {
             h->refused++;
             return HOST_WORD(0);
@@ -210,7 +255,6 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
             h->most = h->live;
         return HOST_WORD(p);
     }
-#endif
     fprintf(stderr, "heap-test: the heap called abort (host_call %d)\n", magic);
     fflush(stderr);
     _exit(134);
@@ -504,18 +548,13 @@ static void heap_model_check(HeapModel *m)
         CHECK(m->budget_top <= m->budget || h->footprint <= m->budget_top, "the footprint passed the budget");
 }
 
-/* The heaps of one run tell their host they can remap by turns (on linux, where
-   the fake host has mremap), so that a run goes both ways. A random run sets the
-   turn from its seed, or from its input. */
+/* The heaps of one run tell their host they can remap by turns, so that a run
+   goes both ways. A random run sets the turn from its seed, or from its input. */
 static int remap_turn;
 
 static int next_remap(void)
 {
-#ifdef __linux__
     return remap_turn++ & 1;
-#else
-    return 0;
-#endif
 }
 
 static void heap_model_start(HeapModel *m)
@@ -1554,15 +1593,15 @@ static size_t dedicated_chunk(size_t n)
     return (((n + 7) & ~(size_t)7) + 48 + 65535) / 65536 * 65536;
 }
 
-/* A dedicated block that outgrows its chunk, with a host that remaps (linux, where
-   the fake host has mremap): the chunk gets bigger where it is or elsewhere, with
-   no new chunk, no copy by the heap and no release. The host refusing is out of
-   memory: the resize fails and nothing changes, and the heap does not try to
-   copy, which takes more. The budget and the limit refuse before the host is
-   asked. */
-static void scenario_remap(void)
+/* A dedicated block that outgrows its chunk, with a host that remaps: the chunk
+   gets bigger where it is or elsewhere, with no new chunk, no copy by the heap
+   and no release. The host refusing is out of memory: the resize fails and
+   nothing changes, and the heap does not try to copy, which takes more. The
+   budget and the limit refuse before the host is asked. The host remaps with
+   mremap (linux) or by mapping a new chunk, copying and unmapping the old one
+   (move: the chunk is then at another address each time, on every system). */
+static void remap_by(int move)
 {
-#ifdef __linux__
     HeapModel m;
     JSHeap *h;
     HostVM *host;
@@ -1573,6 +1612,7 @@ static void scenario_remap(void)
     heap_model_start(&m);
     h = m.h;
     host = &vms[m.vm];
+    host->move_remap = move;
     heap_set_remap(h, 1);
 
     /* three dedicated chunks, and the middle of the list grows */
@@ -1585,7 +1625,9 @@ static void scenario_remap(void)
     releases = host->releases;
     grows = host->grows;
     remaps = host->remaps;
+    p = m.live[1].p;
     model_realloc(&m, 1, (size_t)20 << 20);
+    CHECK(!move || m.live[1].p != p, "a host that moves the chunk gave the block its old address");
     CHECK(host->remaps == remaps + 1 && host->releases == releases && host->grows == grows && host->n == 4,
           "a dedicated block that outgrows its chunk should remap it: %ld remaps, %ld releases, %ld grows", host->remaps - remaps,
           host->releases - releases, host->grows - grows);
@@ -1668,10 +1710,108 @@ static void scenario_remap(void)
         model_free(&m, 0);
     }
     heap_model_finish(&m);
-    ok("remap: a dedicated chunk grows in place or moves, the host refusing is out of memory, the budget and the limit ask first");
-#else
-    printf("SKIP  remap: the fake host has mremap on linux only\n");
+}
+
+static void scenario_remap(void)
+{
+    remap_by(1);
+#ifdef __linux__
+    remap_by(0);
 #endif
+    ok("remap: a dedicated chunk grows in place or moves, the host refusing is out of memory, the budget and the limit ask first");
+}
+
+/* The chunk of a dedicated block that grows is at the head, in the middle or at
+   the tail of the list of dedicated chunks, and the list must follow it to its
+   new address. Three blocks of 3, 4 and 5 MiB (the last is the head of the
+   list) and each in turn grows to three times its size, in each way the heap
+   has: remapped by a host that moves the chunk, by mremap (linux), and copied to
+   a chunk of its own when the host does not remap. Each also meets a refusal
+   of the host first, which must leave all three as they were. Then the three
+   are freed in each of the six orders: the heap walks its list at each step
+   (heap_check) and the host holds exactly the chunks that are left. A list
+   that kept the old address would walk into an unmapped chunk. */
+static void positions_run(int way, int pos, int refuse, int order)
+{
+    static const int orders[6][3] = { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 1, 0 } };
+    HeapModel m;
+    JSHeap *h;
+    HostVM *host;
+    uint8_t *ptr[3], *old;
+    size_t size[3] = { (size_t)3 << 20, (size_t)4 << 20, (size_t)5 << 20 };
+    size_t fp, count;
+    long releases, remaps, grows;
+
+    heap_model_start(&m);
+    h = m.h;
+    host = &vms[m.vm];
+    /* way 0: the host moves the chunk, 1: mremap, 2: no remap */
+    host->move_remap = way == 0;
+    heap_set_remap(h, way != 2);
+    for (int i = 0; i < 3; i++) {
+        CHECK(model_alloc(&m, size[i]), "alloc %zu", size[i]);
+        ptr[i] = m.live[i].p;
+    }
+    CHECK(host->n == 4 && heap_dedicated_size(h, ptr[0]) == dedicated_chunk(size[0]), "three chunks of their own");
+    heap_model_check(&m);
+    fp = h->footprint;
+    count = h->count;
+    old = m.live[pos].p;
+    if (refuse) {
+        if (way == 2)
+            host->refuse_at = host->grows + 1;
+        else
+            host->refuse_remap_at = host->remaps + 1;
+        model_realloc(&m, pos, size[pos] * 3);
+        CHECK(m.live[pos].p == old && h->footprint == fp && h->count == count && m.live[pos].usable == size[pos],
+              "a refusal of the host changed the block (way %d, position %d)", way, pos);
+        heap_model_check(&m);
+    }
+    releases = host->releases;
+    remaps = host->remaps;
+    grows = host->grows;
+    model_realloc(&m, pos, size[pos] * 3);
+    CHECK(m.live[pos].usable == size[pos] * 3, "the block did not grow (way %d, position %d)", way, pos);
+    if (way == 2)
+        CHECK(m.live[pos].p != old && host->releases == releases + 1 && host->grows == grows + 1 && host->remaps == remaps,
+              "a block that cannot be remapped gets a chunk of its own and gives the old one back");
+    else
+        CHECK(host->releases == releases && host->grows == grows && host->remaps == remaps + 1 && (way != 0 || m.live[pos].p != old),
+              "a block that is remapped keeps its chunk (moved by the host: %d)", way == 0);
+    ptr[pos] = m.live[pos].p;
+    heap_model_check(&m);
+    for (int k = 0; k < 3; k++) {
+        int i, left = host->n;
+
+        for (i = 0; i < m.n && m.live[i].p != ptr[orders[order][k]]; i++)
+            ;
+        CHECK(i < m.n, "block %d is not held", orders[order][k]);
+        if (i == m.n)
+            break;
+        model_free(&m, i);
+        CHECK(host->n == left - 1, "the chunk of the block did not go back to the host");
+        heap_model_check(&m);
+    }
+    CHECK(host->n == 1 && h->footprint == 65536, "chunks are left");
+    heap_model_finish(&m);
+}
+
+static void scenario_remap_positions(void)
+{
+    int ways = 3;
+
+#ifndef __linux__
+    ways = 1;  /* no mremap, and the heap's own copy is a way of its own */
+#endif
+    for (int way = 0; way < 3; way++) {
+        if (way == 1 && ways == 1)
+            continue;
+        for (int pos = 0; pos < 3; pos++)
+            for (int refuse = 0; refuse < 2; refuse++)
+                for (int order = 0; order < 6; order++)
+                    positions_run(way, pos, refuse, order);
+    }
+    ok("remap: the list of dedicated chunks follows a chunk that grows at its head, middle or tail, moved or copied, and after a refusal");
 }
 
 static void scenario_release(void)
@@ -2352,6 +2492,7 @@ static void scenarios(void)
     scenario_resize_at_the_byte();
     scenario_dedicated();
     scenario_remap();
+    scenario_remap_positions();
     scenario_release();
     scenario_release_exact();
 #ifdef HEAP_TEST_RUNTIME
@@ -2373,6 +2514,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     r.data = data + 1;
     r.len = size - 1;
     remap_turn = data[0] >> 1; /* the second bit: the host remaps or not */
+    move_turn = data[0] >> 2;
 #ifdef HEAP_TEST_RUNTIME
     if (data[0] & 1)
         run_runtime(&r, 4000);
@@ -2396,6 +2538,7 @@ int main(int argc, char **argv)
         memset(&r, 0, sizeof r);
         r.s = seed * 0x9E3779B97F4A7C15ull + 88172645463325252ull;
         remap_turn = (int)seed; /* odd seeds: the host remaps. Even seeds: it does not */
+        move_turn = (int)(seed >> 1); /* of the odd ones, a host that moves the chunk and one that does not (linux) */
         if (!strcmp(argv[1], "stress")) {
             run_heap(&r, steps);
         } else {
@@ -2408,12 +2551,10 @@ int main(int argc, char **argv)
         }
         if (steps >= 100000) {
             CHECK(total_releases > 0, "no dedicated chunk was given back in %ld steps", steps);
-#ifdef __linux__
             if (seed & 1)
                 CHECK(total_remaps > 0, "no dedicated chunk was remapped in %ld steps", steps);
             else
                 CHECK(total_remaps == 0, "a host that does not remap was asked to");
-#endif
         }
         printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld, remapped: %ld)\n", argv[1], seed, steps, total_releases, total_remaps);
         return 0;
@@ -2440,6 +2581,7 @@ int main(int argc, char **argv)
             r.data = buf + 1;
             r.len = n > 0 ? n - 1 : 0;
             remap_turn = n > 0 ? buf[0] >> 1 : 0;
+            move_turn = n > 0 ? buf[0] >> 2 : 0;
 #ifdef HEAP_TEST_RUNTIME
             if (n > 0 && (buf[0] & 1))
                 run_runtime(&r, 4000);
