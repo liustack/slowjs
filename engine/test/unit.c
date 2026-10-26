@@ -1157,6 +1157,30 @@ static int test_function_nesting(void *unused)
     return 0;
 }
 
+/* The parser counts 3 levels for a parenthesis (an assignment expression,
+   a unary one and a postfix one), whatever the operators between them: the
+   binary and logical operators are read in loops. The statement and the
+   expression around the first parenthesis count 4. */
+static int test_paren_depth(void *unused)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const nests = (open, close) => { let n = 1;\n"
+        "    for (;;) { try { eval(open.repeat(n + 1) + '1' + close.repeat(n + 1)) } catch (e) { return n } n++ } };\n"
+        "  return [nests('(', ')'), nests('(1+', ')'), nests('(1*2|', ')'), nests('(1&&', ')'),\n"
+        "          nests('(1||1&&', ')'), nests('(1??', ')'), nests('(1==1<', ')')].join() })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char want[128];
+    int n = (JS_MAX_INTERNAL_DEPTH - 4) / 3;
+
+    snprintf(want, sizeof(want), "%d,%d,%d,%d,%d,%d,%d", n, n, n, n, n, n, n);
+    CHECK(eval_is(ctx, src, want), "parentheses");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* Ropes are read, hashed and freed by loops: a character at any place, a
    Map key that is the same string as a rope of another shape (the hash goes
    over the strings in order, whatever the tree), ropes that share their
@@ -1565,6 +1589,7 @@ int main(void)
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_function_nesting, NULL);
+    host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);
     host_run_thread(test_module_chains, NULL);
     test_ropes();

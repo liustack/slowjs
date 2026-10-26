@@ -29864,249 +29864,221 @@ static __exception int js_parse_unary(JSParseState *s, int parse_flags)
     return ret;
 }
 
-/* allowed parse_flags: PF_IN_ACCEPTED */
-static __exception int js_parse_expr_binary(JSParseState *s, int level,
-                                            int parse_flags);
-static __exception int js_parse_expr_binary1(JSParseState *s, int level,
-                                            int parse_flags)
+/* the level of the binary operator of the token, 1 (*, / and %) to 8 (|),
+   with its opcode in *popcode, or 0 if it is none. allowed parse_flags:
+   PF_IN_ACCEPTED */
+static int js_binary_op_level(JSParseState *s, int parse_flags, int *popcode)
 {
-    int op, opcode;
-    const uint8_t *op_token_ptr;
-    
-    if (level == 0) {
-        return js_parse_unary(s, PF_POW_ALLOWED);
-    } else if (s->token.val == TOK_PRIVATE_NAME &&
-               (parse_flags & PF_IN_ACCEPTED) && level == 4 &&
-               peek_token(s, FALSE) == TOK_IN) {
-        JSAtom atom;
-
-        atom = JS_DupAtom(s->ctx, s->token.u.ident.atom);
-        if (next_token(s))
-            goto fail_private_in;
-        if (s->token.val != TOK_IN)
-            goto fail_private_in;
-        if (next_token(s))
-            goto fail_private_in;
-        if (js_parse_expr_binary(s, level - 1, parse_flags)) {
-        fail_private_in:
-            JS_FreeAtom(s->ctx, atom);
-            return -1;
-        }
-        emit_op(s, OP_scope_in_private_field);
-        emit_atom(s, atom);
-        emit_u16(s, s->cur_func->scope_level);
-        JS_FreeAtom(s->ctx, atom);
+    switch(s->token.val) {
+    case '*':
+        *popcode = OP_mul;
+        return 1;
+    case '/':
+        *popcode = OP_div;
+        return 1;
+    case '%':
+        *popcode = OP_mod;
+        return 1;
+    case '+':
+        *popcode = OP_add;
+        return 2;
+    case '-':
+        *popcode = OP_sub;
+        return 2;
+    case TOK_SHL:
+        *popcode = OP_shl;
+        return 3;
+    case TOK_SAR:
+        *popcode = OP_sar;
+        return 3;
+    case TOK_SHR:
+        *popcode = OP_shr;
+        return 3;
+    case '<':
+        *popcode = OP_lt;
+        return 4;
+    case '>':
+        *popcode = OP_gt;
+        return 4;
+    case TOK_LTE:
+        *popcode = OP_lte;
+        return 4;
+    case TOK_GTE:
+        *popcode = OP_gte;
+        return 4;
+    case TOK_INSTANCEOF:
+        *popcode = OP_instanceof;
+        return 4;
+    case TOK_IN:
+        if (!(parse_flags & PF_IN_ACCEPTED))
+            return 0;
+        *popcode = OP_in;
+        return 4;
+    case TOK_EQ:
+        *popcode = OP_eq;
+        return 5;
+    case TOK_NEQ:
+        *popcode = OP_neq;
+        return 5;
+    case TOK_STRICT_EQ:
+        *popcode = OP_strict_eq;
+        return 5;
+    case TOK_STRICT_NEQ:
+        *popcode = OP_strict_neq;
+        return 5;
+    case '&':
+        *popcode = OP_and;
+        return 6;
+    case '^':
+        *popcode = OP_xor;
+        return 7;
+    case '|':
+        *popcode = OP_or;
+        return 8;
+    default:
         return 0;
-    } else {
-        if (js_parse_expr_binary(s, level - 1, parse_flags))
-            return -1;
     }
-    for(;;) {
-        op = s->token.val;
-        op_token_ptr = s->token.ptr;
-        switch(level) {
-        case 1:
-            switch(op) {
-            case '*':
-                opcode = OP_mul;
-                break;
-            case '/':
-                opcode = OP_div;
-                break;
-            case '%':
-                opcode = OP_mod;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 2:
-            switch(op) {
-            case '+':
-                opcode = OP_add;
-                break;
-            case '-':
-                opcode = OP_sub;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 3:
-            switch(op) {
-            case TOK_SHL:
-                opcode = OP_shl;
-                break;
-            case TOK_SAR:
-                opcode = OP_sar;
-                break;
-            case TOK_SHR:
-                opcode = OP_shr;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 4:
-            switch(op) {
-            case '<':
-                opcode = OP_lt;
-                break;
-            case '>':
-                opcode = OP_gt;
-                break;
-            case TOK_LTE:
-                opcode = OP_lte;
-                break;
-            case TOK_GTE:
-                opcode = OP_gte;
-                break;
-            case TOK_INSTANCEOF:
-                opcode = OP_instanceof;
-                break;
-            case TOK_IN:
-                if (parse_flags & PF_IN_ACCEPTED) {
-                    opcode = OP_in;
-                } else {
-                    return 0;
-                }
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 5:
-            switch(op) {
-            case TOK_EQ:
-                opcode = OP_eq;
-                break;
-            case TOK_NEQ:
-                opcode = OP_neq;
-                break;
-            case TOK_STRICT_EQ:
-                opcode = OP_strict_eq;
-                break;
-            case TOK_STRICT_NEQ:
-                opcode = OP_strict_neq;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 6:
-            switch(op) {
-            case '&':
-                opcode = OP_and;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 7:
-            switch(op) {
-            case '^':
-                opcode = OP_xor;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 8:
-            switch(op) {
-            case '|':
-                opcode = OP_or;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        default:
-            abort();
-        }
-        if (next_token(s))
-            return -1;
-        if (js_parse_expr_binary(s, level - 1, parse_flags))
-            return -1;
-        emit_source_pos(s, op_token_ptr);
-        emit_op(s, opcode);
-    }
-    return 0;
 }
 
+/* An operator of the binary expression waiting for its right operand: its
+   level, opcode and token, or, for '#x in y' (level 4, opcode
+   OP_scope_in_private_field), the private name x. */
+typedef struct JSBinaryOp {
+    int level;
+    int opcode;
+    const uint8_t *op_token_ptr;
+    JSAtom atom;
+} JSBinaryOp;
+
+static void js_emit_binary_op(JSParseState *s, JSBinaryOp *op)
+{
+    if (op->opcode == OP_scope_in_private_field) {
+        emit_op(s, OP_scope_in_private_field);
+        emit_atom(s, op->atom);
+        emit_u16(s, s->cur_func->scope_level);
+        JS_FreeAtom(s->ctx, op->atom);
+    } else {
+        emit_source_pos(s, op->op_token_ptr);
+        emit_op(s, op->opcode);
+    }
+}
+
+/* The operators of 'level' and below, left to right, with no recursion: an
+   operator waits on a stack until an operator of its level or above, or
+   the end of the expression, and is emitted then. The levels on the stack
+   go down from the bottom, so it holds 8 operators at most. An operand can
+   be '#x in y' when no operator below level 5 waits on its left, and an
+   operator of level 4 right after it ends the expression, as the recursive
+   parser of upstream did. allowed parse_flags: PF_IN_ACCEPTED */
 static __exception int js_parse_expr_binary(JSParseState *s, int level,
                                             int parse_flags)
 {
-    int ret;
+    JSBinaryOp stack[8], *op;
+    int sp = 0, operand_level = level, op_level, opcode;
 
-    if (js_internal_enter(s->ctx))
-        return -1;
-    ret = js_parse_expr_binary1(s, level, parse_flags);
-    js_internal_leave(s->ctx->rt);
-    return ret;
+    for(;;) {
+        if (s->token.val == TOK_PRIVATE_NAME &&
+            (parse_flags & PF_IN_ACCEPTED) && operand_level >= 4 &&
+            peek_token(s, FALSE) == TOK_IN) {
+            op = &stack[sp++];
+            op->level = 4;
+            op->opcode = OP_scope_in_private_field;
+            op->op_token_ptr = s->token.ptr;
+            op->atom = JS_DupAtom(s->ctx, s->token.u.ident.atom);
+            if (next_token(s))
+                goto fail;
+            if (s->token.val != TOK_IN)
+                goto fail;
+            if (next_token(s))
+                goto fail;
+            operand_level = 3;
+            continue;
+        }
+        if (js_parse_unary(s, PF_POW_ALLOWED))
+            goto fail;
+        op_level = js_binary_op_level(s, parse_flags, &opcode);
+        if (op_level == 0 || op_level > level)
+            break;
+        while (sp > 0 && stack[sp - 1].level <= op_level) {
+            op = &stack[--sp];
+            js_emit_binary_op(s, op);
+            if (op->opcode == OP_scope_in_private_field && op_level == 4)
+                goto done;
+        }
+        op = &stack[sp++];
+        op->level = op_level;
+        op->opcode = opcode;
+        op->op_token_ptr = s->token.ptr;
+        op->atom = JS_ATOM_NULL;
+        if (next_token(s))
+            goto fail;
+        operand_level = op_level - 1;
+    }
+ done:
+    while (sp > 0)
+        js_emit_binary_op(s, &stack[--sp]);
+    return 0;
+ fail:
+    while (sp > 0) {
+        op = &stack[--sp];
+        if (op->opcode == OP_scope_in_private_field)
+            JS_FreeAtom(s->ctx, op->atom);
+    }
+    return -1;
 }
 
-/* allowed parse_flags: PF_IN_ACCEPTED */
-static __exception int js_parse_logical_and_or(JSParseState *s, int op,
-                                               int parse_flags);
-static __exception int js_parse_logical_and_or1(JSParseState *s, int op,
+/* a || b || ..., where each of a, b... is c && d && ..., with no
+   recursion. allowed parse_flags: PF_IN_ACCEPTED */
+static __exception int js_parse_logical_and_or(JSParseState *s,
                                                int parse_flags)
 {
-    int label1;
+    int label_or = -1, label_and;
 
-    if (op == TOK_LAND) {
+    for(;;) {
         if (js_parse_expr_binary(s, 8, parse_flags))
             return -1;
-    } else {
-        if (js_parse_logical_and_or(s, TOK_LAND, parse_flags))
-            return -1;
-    }
-    if (s->token.val == op) {
-        label1 = new_label(s);
-
-        for(;;) {
-            if (next_token(s))
-                return -1;
-            emit_op(s, OP_dup);
-            emit_goto(s, op == TOK_LAND ? OP_if_false : OP_if_true, label1);
-            emit_op(s, OP_drop);
-
-            if (op == TOK_LAND) {
+        if (s->token.val == TOK_LAND) {
+            label_and = new_label(s);
+            for(;;) {
+                if (next_token(s))
+                    return -1;
+                emit_op(s, OP_dup);
+                emit_goto(s, OP_if_false, label_and);
+                emit_op(s, OP_drop);
                 if (js_parse_expr_binary(s, 8, parse_flags))
                     return -1;
-            } else {
-                if (js_parse_logical_and_or(s, TOK_LAND,
-                                            parse_flags))
-                    return -1;
+                if (s->token.val != TOK_LAND) {
+                    if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
+                        return js_parse_error(s, "cannot mix ?? with && or ||");
+                    break;
+                }
             }
-            if (s->token.val != op) {
-                if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
-                    return js_parse_error(s, "cannot mix ?? with && or ||");
-                break;
-            }
+            emit_label(s, label_and);
         }
-
-        emit_label(s, label1);
+        if (label_or < 0) {
+            if (s->token.val != TOK_LOR)
+                return 0;
+            label_or = new_label(s);
+        } else if (s->token.val != TOK_LOR) {
+            if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
+                return js_parse_error(s, "cannot mix ?? with && or ||");
+            break;
+        }
+        if (next_token(s))
+            return -1;
+        emit_op(s, OP_dup);
+        emit_goto(s, OP_if_true, label_or);
+        emit_op(s, OP_drop);
     }
+    emit_label(s, label_or);
     return 0;
-}
-
-static __exception int js_parse_logical_and_or(JSParseState *s, int op,
-                                               int parse_flags)
-{
-    int ret;
-
-    if (js_internal_enter(s->ctx))
-        return -1;
-    ret = js_parse_logical_and_or1(s, op, parse_flags);
-    js_internal_leave(s->ctx->rt);
-    return ret;
 }
 
 static __exception int js_parse_coalesce_expr(JSParseState *s, int parse_flags)
 {
     int label1;
 
-    if (js_parse_logical_and_or(s, TOK_LOR, parse_flags))
+    if (js_parse_logical_and_or(s, parse_flags))
         return -1;
     if (s->token.val == TOK_DOUBLE_QUESTION_MARK) {
         label1 = new_label(s);
