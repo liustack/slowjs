@@ -5,9 +5,11 @@
 
 // Command jsrun runs scripts on the Go engine as engine/test/jsrun.c runs
 // them on the C tree, and prints what they give in the same form. Its output
-// is the reference that engine/test/compare.sh compares the C tree with.
+// is what engine/test/compare.sh compares the C tree with when COMPARE_GO=1
+// asks for it. The repository holds files for the C tree to be compared with
+// when the Go engine is gone.
 //
-//	go run ./internal/jsrun FILE...
+//	go run ./internal/jsrun [-regexp-cache=N,BYTES] FILE...
 //
 // Each file runs as a global script in a VM of its own, then the jobs it
 // queued run. jsrun prints "== " and the name of the file, then what the
@@ -21,9 +23,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/liustack/slowjs"
 )
+
+// regexpCache is the setting of -regexp-cache: the entries and the bytes, or
+// nil for the default of the VM.
+var regexpCache []int
 
 // formatSrc is what both runners call with the completion value. A lone
 // surrogate is printed as \u{...}: Go would turn it into U+FFFD.
@@ -39,7 +47,24 @@ const formatSrc = `(v) => {
 }`
 
 func main() {
-	for _, path := range os.Args[1:] {
+	args := os.Args[1:]
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") && len(args[0]) > 1 {
+		v, ok := strings.CutPrefix(args[0], "-regexp-cache=")
+		n, bytes, ok2 := strings.Cut(v, ",")
+		if !ok || !ok2 {
+			fmt.Fprintf(os.Stderr, "jsrun: unknown option %s\n", args[0])
+			os.Exit(2)
+		}
+		a, err1 := strconv.Atoi(n)
+		b, err2 := strconv.Atoi(bytes)
+		if err1 != nil || err2 != nil {
+			fmt.Fprintf(os.Stderr, "jsrun: %s: want N,BYTES\n", args[0])
+			os.Exit(2)
+		}
+		regexpCache = []int{a, b}
+		args = args[1:]
+	}
+	for _, path := range args {
 		fmt.Printf("== %s\n", filepath.Base(path))
 		out, err := run(path)
 		if err != nil {
@@ -62,6 +87,11 @@ func run(path string) (string, error) {
 	defer vm.Close()
 	if err := defineGlobals(vm); err != nil {
 		return "", err
+	}
+	if regexpCache != nil {
+		if err := vm.SetRegExpCache(regexpCache[0], regexpCache[1]); err != nil {
+			return "", err
+		}
 	}
 	v, err := vm.EvalValue(string(src), slowjs.EvalGlobal)
 	if err != nil {

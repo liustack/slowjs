@@ -6,18 +6,26 @@
  */
 
 /* jsrun runs scripts on the C tree as internal/jsrun runs them on the Go
-   engine, so that compare.sh can compare what the two print.
+   engine, so that compare.sh can compare what they print with the files kept
+   in the repository (and with the Go engine, while it is there).
 
-     jsrun FILE...
+     jsrun [-raw] [-regexp-cache=N,BYTES] FILE...
 
    Each file runs as a global script in a runtime and a context of its own,
    then the jobs it queued run. jsrun prints "== " and the name of the file,
    then what the script gave: the string of its completion value, or of what
    that value returns when it is a function (called after the jobs), or the
    exception. A lone surrogate is printed as \u{...}, as Go would turn it into
-   U+FFFD. The scripts find getAsyncContext and setAsyncContext, the
-   Builtins GetAsyncContext and SetAsyncContext of the Go API, as globals.
-   Like a VM of the Go API, the context keeps SHAPE_CACHE shapes (see
+   U+FFFD, unless -raw is given: then the string is written as the engine
+   converts it (three bytes for a lone surrogate), which is how the files in
+   lib/testdata hold it.
+
+   -regexp-cache=N,BYTES sets the cache of compiled regexps (JS_SetRegExpCache)
+   before the file runs, N entries and BYTES bytes, 0,0 for none.
+
+   The scripts find getAsyncContext and setAsyncContext, the Builtins
+   GetAsyncContext and SetAsyncContext of the Go API, as globals. Like a VM
+   of the Go API, the context keeps SHAPE_CACHE shapes (see
    JS_SetShapeCache). */
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +37,9 @@
 #define SHAPE_CACHE 2048
 
 /* What both runners call with the completion value. */
+static const char format_src_raw[] =
+    "(v) => typeof v === 'function' ? String(v()) : String(v)";
+
 static const char format_src[] =
     "(v) => {\n"
     "  const s = typeof v === 'function' ? String(v()) : String(v)\n"
@@ -114,6 +125,11 @@ static int define_globals(JSContext *ctx)
     return ret;
 }
 
+/* Options of the command line, for every file. */
+static int opt_raw;
+static int opt_regexp_cache = -1;   /* -1 keeps the default of the runtime */
+static size_t opt_regexp_cache_bytes;
+
 static int run(const char *path)
 {
     JSRuntime *rt;
@@ -134,6 +150,8 @@ static int run(const char *path)
         fprintf(stderr, "jsrun: no runtime\n");
         return -1;
     }
+    if (opt_regexp_cache >= 0)
+        JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
     v = JS_Eval(ctx, src, len, "<eval>", JS_EVAL_TYPE_GLOBAL);
     free(src);
     if (JS_IsException(v)) {
@@ -154,7 +172,10 @@ static int run(const char *path)
             failed_job = 1;
         }
     }
-    format = JS_Eval(ctx, format_src, sizeof(format_src) - 1, "<eval>", JS_EVAL_TYPE_GLOBAL);
+    if (opt_raw)
+        format = JS_Eval(ctx, format_src_raw, sizeof(format_src_raw) - 1, "<eval>", JS_EVAL_TYPE_GLOBAL);
+    else
+        format = JS_Eval(ctx, format_src, sizeof(format_src) - 1, "<eval>", JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(format)) {
         print_exception(ctx, "format");
         JS_FreeValue(ctx, v);
@@ -198,6 +219,8 @@ static int run_all(void *p)
     const char *name;
 
     for (i = 1; i < a->argc; i++) {
+        if (a->argv[i][0] == '-' && a->argv[i][1])
+            continue;
         name = strrchr(a->argv[i], '/');
         printf("== %s\n", name ? name + 1 : a->argv[i]);
         if (run(a->argv[i]) < 0)
@@ -210,7 +233,32 @@ static int run_all(void *p)
 int main(int argc, char **argv)
 {
     Args a = { argc, argv };
+    int i;
 
+    for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1]; i++) {
+        if (strcmp(argv[i], "-raw") == 0) {
+            opt_raw = 1;
+        } else if (strncmp(argv[i], "-regexp-cache=", 14) == 0) {
+            char *end;
+            long n = strtol(argv[i] + 14, &end, 10);
+            long long bytes;
+
+            if (*end != ',' || n < 0) {
+                fprintf(stderr, "jsrun: %s: want N,BYTES\n", argv[i]);
+                return 2;
+            }
+            bytes = strtoll(end + 1, &end, 10);
+            if (*end || bytes < 0) {
+                fprintf(stderr, "jsrun: %s: want N,BYTES\n", argv[i]);
+                return 2;
+            }
+            opt_regexp_cache = (int)n;
+            opt_regexp_cache_bytes = (size_t)bytes;
+        } else {
+            fprintf(stderr, "jsrun: unknown option %s\n", argv[i]);
+            return 2;
+        }
+    }
     /* a script may recurse as deep as the engine allows */
     return host_run_thread(run_all, &a);
 }

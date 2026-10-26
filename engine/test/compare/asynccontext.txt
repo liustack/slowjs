@@ -1,0 +1,11 @@
+two async functions: topundefined a1 b2 a1 b2
+then not resolve: then later
+outside any context: undefined set after then
+throwing handler: run undefined undefined
+set inside a job: inside undefined
+thenable: topundefined thenresolve thenawait afterresolve awaitawait
+all, finally, generators: finally all 1 gen
+an object or none: undefined object undefined
+handler keeps this and arguments: object 7 1 args
+a handler registered with no context: first set by a job second set by a job
+at the end: left
