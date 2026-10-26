@@ -44,6 +44,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -340,13 +341,13 @@ static void lowerVarargs(Module &M) {
   LLVMContext &C = M.getContext();
   Type *I8 = Type::getInt8Ty(C), *I32 = Type::getInt32Ty(C);
   PointerType *P = PointerType::getUnqual(C);
-  // The slot offsets of the variable arguments of CB, false if one has no
-  // 8-byte slot (byval, long double, vectors).
-  // A variable argument is accepted only if it is a scalar that fits one
-  // 8-byte, 8-aligned slot: an integer or pointer of at most 8 bytes, a float
-  // or a double. That is the whole set the SysV/AAPCS overflow area holds
-  // contiguously. Anything else (a byval aggregate, an i128, a vector, an
-  // over-aligned value) is rejected, so the caller is not rewritten.
+  auto promoted = [](Type *t) { return t->isIntegerTy(32) || t->isIntegerTy(64) || t->isPointerTy() || t->isDoubleTy(); };
+  // The slot offsets of the variable arguments of CB. A variable argument
+  // is accepted only if it is what C's default promotions leave of a
+  // scalar: an int, an i64, a pointer or a double, each in one 8-byte slot
+  // as the SysV and AAPCS overflow areas hold them. Anything else (a float
+  // or narrow integer C would have promoted, a byval or split aggregate, an
+  // i128, a vector) is rejected, so the caller is not rewritten.
   auto slots = [&](CallBase *CB, SmallVector<uint64_t> &offs, uint64_t &size) {
     unsigned nf = CB->getFunctionType()->getNumParams();
     size = 0;
@@ -354,11 +355,7 @@ static void lowerVarargs(Module &M) {
       return false;
     for (unsigned i = nf; i < CB->arg_size(); i++) {
       Type *t = CB->getArgOperand(i)->getType();
-      if (CB->isByValArgument(i) || !(t->isIntegerTy() || t->isPointerTy() || t->isDoubleTy() || t->isFloatTy()))
-        return false;
-      uint64_t sz = DL.getTypeStoreSize(t).getFixedValue();
-      uint64_t al = DL.getABITypeAlign(t).value();
-      if (sz > 8 || al > 8)
+      if (CB->isByValArgument(i) || !promoted(t))
         return false;
       offs.push_back(size);
       size += 8;
@@ -382,8 +379,9 @@ static void lowerVarargs(Module &M) {
   // Kinds: a va_list (its storage, with the byte offset into it), the block
   // pointer (loaded from the overflow field) and a read-only pointer (the
   // register save area, which va_start leaves exhausted, or a merge of it
-  // with the block pointer). Block and read pointers may be read through;
-  // only a block pointer may be stored, and only back into the overflow field.
+  // with the block pointer). Block and read pointers may be read through,
+  // one promoted scalar at a time; only a block pointer may be stored, and
+  // only back into the overflow field, 8 bytes on.
   const int64_t blockField = arm ? 0 : 8;
   auto readField = [&](int64_t off) { return arm ? (off == 8 || off == 16) : off == 16; };
   auto intField = [&](int64_t off) { return arm ? (off == 24 || off == 28) : (off == 0 || off == 4); };
@@ -557,15 +555,50 @@ static void lowerVarargs(Module &M) {
     }
     fail(I, "uses a va_list in a way the pass cannot follow");
   };
+  // regPtr: V points into the register save area read from a va_list. Only
+  // the register path of va_arg reads there, and va_start leaves that path
+  // unreachable, so what it reads does not matter (it may still not write).
+  std::function<bool(Value *)> regPtr = [&](Value *V) {
+    if (auto *L = dyn_cast<LoadInst>(V))
+      return vaList.count(L->getPointerOperand()) && readField(vaList[L->getPointerOperand()]);
+    if (auto *G = dyn_cast<GEPOperator>(V))
+      return regPtr(G->getPointerOperand());
+    return false;
+  };
+  // advance: G is the block pointer one slot on.
+  auto advance = [&](GEPOperator *G) {
+    int64_t c;
+    return constOff(G, c) && c == 8;
+  };
+  // alignStep: G is the block pointer rounded up for an alignment, which
+  // the ptrmask using it decides on.
+  auto alignStep = [&](GEPOperator *G) {
+    int64_t c;
+    if (!constOff(G, c) || c < 1 || c > 15 || G->use_empty())
+      return false;
+    for (User *U : G->users()) {
+      auto *II = dyn_cast<IntrinsicInst>(U);
+      if (!II || II->getIntrinsicID() != Intrinsic::ptrmask || II->getArgOperand(0) != G)
+        return false;
+    }
+    return true;
+  };
   auto checkPtr = [&](Value *V, bool blk, Use &U) {
     auto *I = cast<Instruction>(U.getUser());
+    bool reg = regPtr(V);
     if (auto *G = dyn_cast<GEPOperator>(I)) {
-      int64_t c;
-      if (G->getPointerOperand() != V || (blk && !constOff(G, c)))
+      if (G->getPointerOperand() != V)
         fail(I, "computes a variable address from the variadic block pointer");
+      else if (!reg && !(blk && (advance(G) || alignStep(G))))
+        fail(I, "reads more than one 8-byte slot of the variadic block (an aggregate or a wide argument)");
       return;
     }
-    if (isa<LoadInst>(I) || isa<PHINode>(I) || isa<SelectInst>(I))
+    if (auto *L = dyn_cast<LoadInst>(I)) {
+      if (!reg && !promoted(L->getType()))
+        fail(I, "reads a variadic argument that is not a promoted int, i64, pointer or double");
+      return;
+    }
+    if (isa<PHINode>(I) || isa<SelectInst>(I))
       return;
     if (auto *S = dyn_cast<StoreInst>(I)) {
       if (S->getPointerOperand() == V) {
@@ -587,9 +620,11 @@ static void lowerVarargs(Module &M) {
       }
       case Intrinsic::memcpy:
       case Intrinsic::memmove:
-        if (II->getArgOperand(1) == V && II->getArgOperand(0) != V)
-          return;
-        fail(I, "writes through a pointer read from a va_list");
+        if (II->getArgOperand(1) == V && II->getArgOperand(0) != V) {
+          if (!reg)
+            fail(I, "reads more than one 8-byte slot of the variadic block (an aggregate or a wide argument)");
+        } else
+          fail(I, "writes through a pointer read from a va_list");
         return;
       default:
         fail(I, "hands a pointer read from a va_list to an intrinsic the pass cannot follow");
@@ -598,14 +633,25 @@ static void lowerVarargs(Module &M) {
     }
     fail(I, "uses a pointer read from a va_list in a way the pass cannot follow");
   };
-  for (auto &[V, off] : vaList)
-    for (Use &U : V->uses())
-      if (isa<Instruction>(U.getUser()))
-        checkList(V, off, U);
-  for (auto &[V, blk] : ptrs)
-    for (Use &U : V->uses())
-      if (isa<Instruction>(U.getUser()))
-        checkPtr(V, blk, U);
+  // In the module's order, so a function that breaks two rules is always
+  // rejected for the same one.
+  auto check = [&](Value *V) {
+    for (Use &U : V->uses()) {
+      if (!isa<Instruction>(U.getUser()))
+        continue;
+      if (auto it = vaList.find(V); it != vaList.end())
+        checkList(V, it->second, U);
+      else if (auto jt = ptrs.find(V); jt != ptrs.end())
+        checkPtr(V, jt->second, U);
+    }
+  };
+  for (Function &F : M) {
+    for (Argument &A : F.args())
+      check(&A);
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        check(&I);
+  }
   for (auto &[F, why] : bad)
     reject(*F, why);
   SmallVector<Function *> fns;
@@ -634,7 +680,7 @@ static void lowerVarargs(Module &M) {
       most = std::max(most, size);
     }
     if (!ok) {
-      reject(*F, "variadic call with an argument that has no 8-byte slot");
+      reject(*F, "variadic call with an argument that is not a promoted int, i64, pointer or double");
       continue;
     }
     IRBuilder<> E(&*F->getEntryBlock().getFirstInsertionPt());

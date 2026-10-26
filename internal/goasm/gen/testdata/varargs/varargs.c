@@ -51,23 +51,6 @@ long use(int one)
            pick(one)(8, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L) * 1000000;
 }
 
-// An 8-aligned 16-byte struct read through va_arg. SysV splits it into two
-// i64 arguments at the call, which the 8-byte-slot block holds contiguously.
-typedef struct { long a, b; } P8;
-
-__attribute__((noinline)) long aggr(int n, ...)
-{
-    va_list ap;
-    __builtin_va_start(ap, n);
-    long t = 0;
-    for (int i = 0; i < n; i++) {
-        P8 p = __builtin_va_arg(ap, P8);
-        t += 100 * p.a + p.b;
-    }
-    __builtin_va_end(ap);
-    return t;
-}
-
 // A variadic function that itself makes a variadic call.
 __attribute__((noinline)) long wrap(long k, ...)
 {
@@ -78,6 +61,5 @@ __attribute__((noinline)) long wrap(long k, ...)
     return first + sum(2, 100L, 200L);
 }
 
-// Non-variadic entry points main can call: aggr = 102 + 304, wrap = 7 + 300.
-long run_aggr(void) { return aggr(2, (P8){1, 2}, (P8){3, 4}); }
+// Non-variadic entry point main can call: wrap = 7 + 300.
 long run_wrap(void) { return wrap(0, 7L); }
