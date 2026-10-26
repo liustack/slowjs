@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -69,6 +70,14 @@ func each(rs ...[2]uintptr) func() (uintptr, uintptr) {
 }
 
 // call is a call to the OS that fault saw.
+// optIn skips the test unless the environment variable env is 1.
+func optIn(t *testing.T, env, why string) {
+	t.Helper()
+	if os.Getenv(env) != "1" {
+		t.Skipf("%s: set %s=1 to run it", why, env)
+	}
+}
+
 type call struct {
 	name       string
 	addr, size uintptr
@@ -436,12 +445,58 @@ func TestRemap(t *testing.T) {
 	}
 }
 
+// TestStackTrim hands back the pages of the shadow stack above what is in use
+// and keeps the bytes below.
+func TestStackTrim(t *testing.T) {
+	const size = 1 << 20
+	m := newMemory(t, size)
+	base, _ := m.Stack()
+	calls := failing(t, func(c call, before []call) error { return nil })
+	var total uintptr
+	for _, tc := range []struct{ used, from uintptr }{
+		{0, StackKeep},
+		{StackKeep - 1, StackKeep},
+		{600<<10 + 100, alignUp(600<<10+100, pageSize)},
+		{size - 1, size},
+		{size, size},
+	} {
+		fill(base, size, 8)
+		*calls = nil
+		r, err := m.Release(nil, nil, tc.used)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Stack != size-tc.from {
+			t.Fatalf("a trim at %d handed back %d bytes, want %d", tc.used, r.Stack, size-tc.from)
+		}
+		total += r.Stack
+		want := []call{{"release", base + tc.from, size - tc.from}}
+		if tc.from == size {
+			want = nil
+		}
+		if !slices.Equal(*calls, want) {
+			t.Fatalf("a trim at %d made %+v, want %+v", tc.used, *calls, want)
+		}
+		if i := same(base, tc.from, 8); i >= 0 {
+			t.Fatalf("a trim at %d changed byte %d, below the pages it hands back", tc.used, i)
+		}
+		if runtime.GOOS == "linux" && !zero(base+tc.from, size-tc.from) {
+			t.Fatalf("pages trimmed at %d do not read as zero", tc.used)
+		}
+	}
+	if u := m.Usage(); u.Released.Stack != total {
+		t.Fatalf("the totals count %d bytes of stack, want %d", u.Released.Stack, total)
+	}
+	mustPanic(t, "a trim above the stack", func() { m.Release(nil, nil, size+1) })
+}
+
+// TestStackResidency counts the pages of the shadow stack in memory, which
+// the other tests do not: a count is a snapshot of the system, which may page
+// out or, with huge pages, in.
 func TestStackResidency(t *testing.T) {
+	optIn(t, "HOSTMEM_RESIDENCY", "exact counts of pages in memory")
 	m := newMemory(t, DefaultStackSize)
 	base, size := m.Stack()
-	if size != DefaultStackSize || base%size != 0 {
-		t.Fatalf("Stack() = %#x, %d: want %d bytes aligned to their size", base, size, DefaultStackSize)
-	}
 	pages := size / pageSize
 	if n := resident(t, base, size); n != 0 {
 		t.Fatalf("%d of %d pages resident before any touch", n, pages)
@@ -463,52 +518,27 @@ func TestStackResidency(t *testing.T) {
 	}
 	t.Logf("%s: page %d bytes, %d of %d pages resident after the touch", runtime.GOOS, pageSize, touched, pages)
 
-	r, err := m.Release(nil, nil, 0)
-	if err != nil {
+	if _, err := m.Release(nil, nil, 0); err != nil {
 		t.Fatal(err)
 	}
-	if r.Stack != size-StackKeep {
-		t.Fatalf("an idle trim handed back %d bytes, want %d", r.Stack, size-StackKeep)
-	}
 	keep := int(StackKeep / pageSize)
-	for i := uintptr(0); i < StackKeep; i += pageSize {
-		if got := bytesAt(base+i, 1)[0]; got != byte(i>>12)|1 {
-			t.Fatalf("the trim changed byte %d of the kept part", i)
-		}
-	}
 	n := resident(t, base, size)
 	t.Logf("%s: %d pages resident after an idle trim that keeps %d", runtime.GOOS, n, keep)
-	if runtime.GOOS == "linux" {
-		if n != keep {
-			t.Fatalf("%d pages resident after an idle trim, want the %d kept", n, keep)
-		}
-		if !zero(base+StackKeep, size-StackKeep) {
-			t.Fatal("trimmed pages do not read as zero")
-		}
+	if runtime.GOOS == "linux" && n != keep {
+		t.Fatalf("%d pages resident after an idle trim, want the %d kept", n, keep)
 	}
 
 	// A trim inside a callback keeps what the engine still uses.
 	touch(0, 1<<20)
 	used := uintptr(600 << 10)
-	r, err = m.Release(nil, nil, used)
-	if err != nil {
+	if _, err := m.Release(nil, nil, used); err != nil {
 		t.Fatal(err)
 	}
-	from := alignUp(used, pageSize)
-	if r.Stack != size-from {
-		t.Fatalf("a trim at %d handed back %d bytes, want %d", used, r.Stack, size-from)
-	}
-	for i := uintptr(0); i < from; i += pageSize {
-		if got := bytesAt(base+i, 1)[0]; got != byte(i>>12)|1 {
-			t.Fatalf("the trim changed byte %d, below the %d in use", i, used)
-		}
-	}
 	if runtime.GOOS == "linux" {
-		if n, want := resident(t, base, size), int(from/pageSize); n != want {
+		if n, want := resident(t, base, size), int(alignUp(used, pageSize)/pageSize); n != want {
 			t.Fatalf("%d pages resident after a trim at %d, want %d", n, used, want)
 		}
 	}
-	mustPanic(t, "a trim above the stack", func() { m.Release(nil, nil, size+1) })
 }
 
 // faultAt writes a byte at addr and returns the address of the fault it
@@ -545,22 +575,35 @@ func readable(addr, size uintptr) (ok bool) {
 // sink keeps the reads of readable from being optimized away.
 var sink byte
 
-func TestGuardPage(t *testing.T) {
-	m := newMemory(t, 1<<20)
-	base, size := m.Stack()
-	if at, other := faultAt(base + size - 1); at != 0 || other != nil {
-		t.Fatalf("the last byte of the stack faults: %#x %v", at, other)
-	}
-	for _, off := range []uintptr{0, pageSize - 1} {
-		at, other := faultAt(base + size + off)
-		if at != base+size+off {
-			t.Fatalf("writing the guard page at %#x: fault at %#x, %v", base+size+off, at, other)
+// TestStackLayout: a shadow stack of each size is aligned to it, can be
+// written from its base to its last byte, and faults on the guard page above.
+func TestStackLayout(t *testing.T) {
+	for _, size := range []uintptr{Unit, 1 << 20, DefaultStackSize} {
+		m := newMemory(t, size)
+		base, got := m.Stack()
+		if got != size || base%size != 0 {
+			t.Fatalf("New(%d).Stack() = %#x, %d: want %d bytes aligned to their size", size, base, got, size)
+		}
+		for _, addr := range []uintptr{base, base + size - 1} {
+			if at, other := faultAt(addr); at != 0 || other != nil {
+				t.Fatalf("writing the stack of %d bytes at %#x: fault at %#x, %v", size, addr, at, other)
+			}
+		}
+		for _, off := range []uintptr{0, pageSize - 1} {
+			at, other := faultAt(base + size + off)
+			if at != base+size+off {
+				t.Fatalf("writing the guard page at %#x: fault at %#x, %v", base+size+off, at, other)
+			}
 		}
 	}
 }
 
-// TestManyStacks has 300 VMs with a stack of 32 MiB each.
+// TestManyStacks reserves 300 stacks of the default size: only the pages
+// touched take memory, and none overlaps another.
 func TestManyStacks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		optIn(t, "HOSTMEM_BIGCOMMIT", "300 stacks of 32 MiB commit 9.4 GiB on windows")
+	}
 	const n = 300
 	type region struct{ base, size uintptr }
 	var rs []region
@@ -581,6 +624,47 @@ func TestManyStacks(t *testing.T) {
 	t.Logf("%d stacks of %d MiB: %d pages of %d bytes resident", n, DefaultStackSize>>20, total, pageSize)
 	if total > n {
 		t.Fatalf("%d pages resident, want at most the %d touched", total, n)
+	}
+}
+
+// TestSmallStacks reserves 64 stacks of 1 MiB, which every system can commit:
+// each is aligned to its size, none overlaps another or its guard page, and
+// each is trimmed and closed.
+func TestSmallStacks(t *testing.T) {
+	const n, size = 64, 1 << 20
+	type region struct {
+		m    *Memory
+		base uintptr
+		seed byte
+	}
+	var rs []region
+	for i := range n {
+		m := newMemory(t, size)
+		base, got := m.Stack()
+		if got != size || base%size != 0 {
+			t.Fatalf("Stack() = %#x, %d: want %d bytes aligned to their size", base, got, size)
+		}
+		fill(base, size, byte(i))
+		rs = append(rs, region{m, base, byte(i)})
+	}
+	slices.SortFunc(rs, func(a, b region) int { return cmp.Compare(a.base, b.base) })
+	for i, r := range rs {
+		if i > 0 && rs[i-1].base+size+pageSize > r.base {
+			t.Fatalf("stacks at %#x and %#x overlap", rs[i-1].base, r.base)
+		}
+		rel, err := r.m.Release(nil, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rel.Stack != size-StackKeep {
+			t.Fatalf("the trim of the stack at %#x handed back %d bytes, want %d", r.base, rel.Stack, size-StackKeep)
+		}
+		if j := same(r.base, StackKeep, r.seed); j >= 0 {
+			t.Fatalf("the trim of the stack at %#x changed byte %d of the part kept", r.base, j)
+		}
+		if err := r.m.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
