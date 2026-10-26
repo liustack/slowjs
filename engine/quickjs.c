@@ -9170,8 +9170,9 @@ JSValue JS_NewError(JSContext *ctx)
     return JS_NewObjectClass(ctx, JS_CLASS_ERROR);
 }
 
-static JSValue JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
-                              const char *fmt, va_list ap, BOOL add_backtrace)
+static JSValue __attribute__((format(printf, 3, 0)))
+JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
+               const char *fmt, va_list ap, BOOL add_backtrace)
 {
     char buf[256];
     JSValue msg, obj, ret;
@@ -9205,8 +9206,9 @@ static JSValue JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
     return JS_EXCEPTION;
 }
 
-static JSValue JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
-                             const char *fmt, va_list ap)
+static JSValue __attribute__((format(printf, 3, 0)))
+JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
+              const char *fmt, va_list ap)
 {
     JSRuntime *rt = ctx->rt;
     JSStackFrame *sf;
@@ -9256,6 +9258,14 @@ static int __attribute__((format(printf, 3, 4))) JS_ThrowTypeErrorOrFalse(JSCont
     }
 }
 
+/* The two functions below pass their format on with one argument of their own,
+   the name of the atom, in place of the arguments they were given (the macros
+   below give them only "" to be checked against the format). Clang cannot see
+   that the format is a constant at every call, so the check of a format that
+   is not a constant is off for them. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wformat-nonliteral"
+
 /* never use it directly */
 static JSValue __attribute__((format(printf, 3, 4))) __JS_ThrowTypeErrorAtom(JSContext *ctx, JSAtom atom, const char *fmt, ...)
 {
@@ -9271,6 +9281,8 @@ static JSValue __attribute__((format(printf, 3, 4))) __JS_ThrowSyntaxErrorAtom(J
     return JS_ThrowSyntaxError(ctx, fmt,
                              JS_AtomGetStr(ctx, buf, sizeof(buf), atom));
 }
+
+#pragma clang diagnostic pop
 
 /* %s is replaced by 'atom'. The macro is used so that gcc can check
     the format string. */
@@ -24341,7 +24353,8 @@ static int get_line_col_cached(GetLineColCache *s, int *pcol_num, const uint8_t 
 }
 
 /* 'ptr' is the position of the error in the source */
-static int js_parse_error_v(JSParseState *s, const uint8_t *ptr, const char *fmt, va_list ap)
+static int __attribute__((format(printf, 3, 0)))
+js_parse_error_v(JSParseState *s, const uint8_t *ptr, const char *fmt, va_list ap)
 {
     JSContext *ctx = s->ctx;
     int line_num, col_num;

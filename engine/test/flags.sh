@@ -16,8 +16,14 @@
 # - 32-bit BigInt limbs, as the engine has them in Go
 # - -fwrapv and -funsigned-char, the flags of QuickJS's own Makefile for clang:
 #   the C relies on signed overflow wrapping
+# - -Werror=format, so that a format and its arguments agree, and
+#   -Werror=format-nonliteral, so that every format is a string constant, or the
+#   format of a function that has the printf attribute and passes it on. The
+#   small libc does only the formats the engine uses and aborts on the rest at
+#   run time, and the generator checks the constants (internal/goasm/gen/formats.go)
+#   but cannot see a format that is not one
 engine_version=2026-06-04
-engine_flags="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char"
+engine_flags="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char -Werror=format -Werror=format-nonliteral"
 
 # The flags a target needs on top of those: engine_target_flags native, or a
 # clang target triple. On arm64 the compiler must not turn an atomic into a
