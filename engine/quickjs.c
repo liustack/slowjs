@@ -96,6 +96,12 @@
 /* test the GC by forcing it before each object allocation */
 //#define FORCE_GC_AT_MALLOC
 
+/* The value printer (JS_PrintValue) is for the hosts that debug and test the
+   engine, which define CONFIG_PRINT_VALUE: the engine has none otherwise. */
+#if defined(DUMP_BYTECODE) && !defined(CONFIG_PRINT_VALUE)
+#error "DUMP_BYTECODE prints the constants with JS_PrintValue: define CONFIG_PRINT_VALUE"
+#endif
+
 #ifdef CONFIG_ATOMICS
 #include <stdatomic.h>
 #endif
@@ -15515,6 +15521,7 @@ static JSValue JS_ToStringCheckObject(JSContext *ctx, JSValueConst val)
     return JS_ToString(ctx, val);
 }
 
+#ifdef CONFIG_PRINT_VALUE
 #define JS_PRINT_MAX_DEPTH 8
 
 typedef struct {
@@ -16307,6 +16314,7 @@ void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_op
 {
     JS_PrintValueInternal(ctx->rt, ctx, write_func, write_opaque, val, options);
 }
+#endif /* CONFIG_PRINT_VALUE */
 
 /* return -1 if exception (proxy case) or TRUE/FALSE */
 // TODO: should take flags to make proxy resolution and exceptions optional

@@ -1214,7 +1214,8 @@ int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
 int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val);
 JSValue JS_GetModulePrivateValue(JSContext *ctx, JSModuleDef *m);
                         
-/* debug value output */
+/* debug value output, for the hosts that define CONFIG_PRINT_VALUE */
+#ifdef CONFIG_PRINT_VALUE
 
 typedef struct {
     JS_BOOL show_hidden : 8; /* only show enumerable properties */
@@ -1233,6 +1234,7 @@ void JS_PrintValueRT(JSRuntime *rt, JSPrintValueWrite *write_func, void *write_o
                      JSValueConst val, const JSPrintValueOptions *options);
 void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_opaque,
                    JSValueConst val, const JSPrintValueOptions *options);
+#endif /* CONFIG_PRINT_VALUE */
 
 #ifdef __CCGO__
 void init();
