@@ -69,7 +69,7 @@ version=$engine_version
 libc=$engine/libc
 
 # The host and the programs use the system's headers and libc.
-hostflags="$common -fwrapv -funsigned-char -D_GNU_SOURCE -DCONFIG_VERSION=\"$version\" -I$engine -I$here $defs"
+hostflags="$common -fwrapv -funsigned-char -D_GNU_SOURCE -DCONFIG_VERSION=\"$version\" -DCONFIG_PRINT_VALUE -I$engine -I$here $defs"
 
 engine_files="quickjs libregexp libunicode cutils dtoa"
 [ $system = 1 ] || engine_files="$engine_files heap tlsf"
@@ -82,8 +82,10 @@ build_engine() {
 	for f in $engine_files; do
 		s=$common
 		case $f in heap|tlsf) s="-O2 -g -Wall -Wno-array-bounds $heapsan" ;; esac
+		# The hosts here print values (JS_PrintValue), which the engine has
+		# only with CONFIG_PRINT_VALUE.
 		# shellcheck disable=SC2086
-		$cc $s $free $defs $2 -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$engine/$f.c" -o "$1/$f.o"
+		$cc $s $free $defs $2 -DCONFIG_PRINT_VALUE -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$engine/$f.c" -o "$1/$f.o"
 		objs="$objs $1/$f.o"
 	done
 	if [ $system = 1 ]; then
