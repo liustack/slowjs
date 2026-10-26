@@ -177,9 +177,13 @@ func TestVarargsEscapesRejected(t *testing.T) {
 // passed by value (AArch64 copies it with memcpy) and by reference, and a
 // va_copy. The kept function's va_start must set the offsets that make
 // every va_arg take the overflow path. callargs.ll passes arguments C would
-// have promoted. A module of any other target is refused whole. Needs LLVM
+// have promoted. offsets.ll.in writes the offset fields through phis,
+// selects and a loop: every write that may wrap back into the register save
+// area is refused, the ones va_arg makes are kept. A module of any other
+// target is refused whole. Needs LLVM
 // 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
 func TestVarargsRules(t *testing.T) {
+	const offsetWrite = "cannot prove keeps va_arg off the register save area"
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
 		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
@@ -206,9 +210,15 @@ func TestVarargsRules(t *testing.T) {
 		arch   string
 		cflags []string
 		start  []string // what va_start writes into the offset fields
+		triple string   // for offsets.ll.in
+		gp     string   // byte offset of the general-register offset field
+		reg    string   // with regk, a compare on it that holds only on va_arg's register path
+		regk   string
 	}{
-		{"x86_64", append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), []string{"store i32 48", "store i32 176"}},
-		{"aarch64", ARM64CFlags, []string{"store i32 0", "store i32 0"}},
+		{"x86_64", append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
+			"x86_64-unknown-linux-gnu", "0", "ult", "41"},
+		{"aarch64", ARM64CFlags, []string{"store i32 0", "store i32 0"},
+			"aarch64-unknown-linux-gnu", "24", "slt", "0"},
 	} {
 		ir, shadow := filepath.Join(work, tc.arch+".ll"), filepath.Join(work, tc.arch+".shadow.ll")
 		must("clang", append(append([]string{}, tc.cflags...), "-S", "-emit-llvm", "-o", ir, rules)...)
@@ -218,15 +228,17 @@ func TestVarargsRules(t *testing.T) {
 		}
 		rep := ParseReport(out)
 		for fn, want := range map[string]string{
-			"aggr":   "more than one 8-byte slot",
-			"narrow": "not a promoted int, i64, pointer or double",
-			"resets": "does not only grow",
+			"aggr":       "more than one 8-byte slot",
+			"narrow":     "not a promoted int, i64, pointer or double",
+			"resets":     offsetWrite,
+			"bump_big":   offsetWrite,
+			"bump_small": offsetWrite,
 		} {
 			if why := rep.Rejected[fn]; !strings.Contains(why, want) {
 				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, want)
 			}
 		}
-		for _, fn := range []string{"kept", "by_value", "by_ref", "use"} {
+		for _, fn := range []string{"kept", "by_value", "by_ref", "wraps", "use"} {
 			if why, ok := rep.Rejected[fn]; ok {
 				t.Errorf("%s: %s rejected: %s", tc.arch, fn, why)
 			}
@@ -241,8 +253,33 @@ func TestVarargsRules(t *testing.T) {
 				t.Errorf("%s: kept's va_start does not %s:\n%s", tc.arch, w, kept)
 			}
 		}
+		// Offset writes through phis, selects and a loop, with and without
+		// a path on which the add wraps.
+		tmpl, err := os.ReadFile(filepath.Join("testdata", "varargs", "offsets.ll.in"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		offsets := filepath.Join(work, tc.arch+".offsets.ll")
+		if err := os.WriteFile(offsets, []byte(strings.NewReplacer("@TRIPLE@", tc.triple, "@GP@", tc.gp, "@REG@", tc.reg, "@REGK@", tc.regk).Replace(string(tmpl))), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		oout, err := opt(offsets, os.DevNull)
+		if err != nil {
+			t.Fatalf("%s: offsets: %v\n%s", tc.arch, err, oout)
+		}
+		orep := ParseReport(oout)
+		for _, fn := range []string{"wrap_phi", "wrap_select", "wrap_loop", "wrap_guard"} {
+			if why := orep.Rejected[fn]; !strings.Contains(why, offsetWrite) {
+				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, offsetWrite)
+			}
+		}
+		for _, fn := range []string{"dead_store", "dead_phi", "dead_loop", "guarded"} {
+			if why, ok := orep.Rejected[fn]; ok {
+				t.Errorf("%s: %s rejected: %s", tc.arch, fn, why)
+			}
+		}
 		if t.Failed() {
-			t.Logf("%s: pass output:\n%s", tc.arch, out)
+			t.Logf("%s: pass output:\n%s\n%s", tc.arch, out, oout)
 		}
 	}
 	callargs := filepath.Join("testdata", "varargs", "callargs.ll")

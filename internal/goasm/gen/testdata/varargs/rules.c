@@ -41,6 +41,39 @@ __attribute__((noinline)) long resets(int n, ...)
     return v;
 }
 
+// Each helper adds a constant below 2^31 to the register-area offset.
+// Twice in a row the i32 add wraps and sends the next va_arg to the
+// register save area: on x86_64 48 + 2 * 2147483640 is 32, on aarch64
+// 0 + 2147483647 + 1 is negative.
+__attribute__((noinline)) void bump_big(va_list *ap)
+{
+#ifdef __aarch64__
+    ((int *)ap)[6] += 2147483647; // __gr_offs
+#else
+    ((unsigned *)*ap)[0] += 2147483640u; // gp_offset
+#endif
+}
+
+__attribute__((noinline)) void bump_small(va_list *ap)
+{
+#ifdef __aarch64__
+    ((int *)ap)[6] += 1;
+#else
+    ((unsigned *)*ap)[0] += 2147483640u;
+#endif
+}
+
+__attribute__((noinline)) long wraps(int n, ...)
+{
+    va_list ap;
+    __builtin_va_start(ap, n);
+    bump_big(&ap);
+    bump_small(&ap);
+    long v = __builtin_va_arg(ap, long);
+    __builtin_va_end(ap);
+    return v;
+}
+
 // Kept: a helper takes the va_list by value (aarch64 copies it with
 // memcpy) and one by reference, and a va_copy.
 __attribute__((noinline)) long by_value(va_list ap) { return __builtin_va_arg(ap, long); }
@@ -57,4 +90,4 @@ __attribute__((noinline)) long kept(int n, ...)
     return s;
 }
 
-long use(void) { return kept(0, 1L, 2, 3.5) + narrow(0, 1) + resets(0, 1L); }
+long use(void) { return kept(0, 1L, 2, 3.5) + narrow(0, 1) + resets(0, 1L) + wraps(0, 11L, 22L, 33L, 44L, 55L, 66L); }

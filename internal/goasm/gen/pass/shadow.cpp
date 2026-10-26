@@ -32,8 +32,12 @@
 // the post-link check reads it again from llc's object. -shadow-report prints the signature of every function, the
 // address-taken ones and the call graph for the generator.
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/ConstantRange.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
@@ -46,6 +50,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 using namespace llvm;
@@ -388,9 +393,11 @@ static void lowerVarargs(Module &M) {
   // register save area, which va_start leaves exhausted, or a merge of it
   // with the block pointer). Block and read pointers may be read through,
   // one promoted scalar at a time; only a block pointer may be stored, and
-  // only back into the overflow field, 8 bytes on. The offset fields may
-  // only grow from what va_start set (x86-64 gp_offset 48 and fp_offset 176,
-  // AArch64 both 0), so every va_arg takes the overflow path. A va_list is
+  // only back into the overflow field, 8 bytes on. va_start sets the
+  // offset fields so that va_arg stays off the register save area (x86-64
+  // gp_offset 48 and fp_offset 176, AArch64 both 0), and every write to
+  // them must be proven to keep it off, so every va_arg takes the overflow
+  // path. A va_list is
   // copied by va_copy, or whole by memcpy into a local (how AArch64 passes
   // one by value).
   const int64_t blockField = arm ? 0 : 8;
@@ -511,35 +518,162 @@ static void lowerVarargs(Module &M) {
       }
     }
   }
-  // grows: v is the offset field at off of the va_list under obj, as loaded,
-  // plus positive constants, through phis and selects. Storing it keeps the
-  // field at or above what va_start set.
-  std::function<bool(Value *, Value *, int64_t, SmallPtrSetImpl<Value *> &)> grows =
-      [&](Value *v, Value *obj, int64_t off, SmallPtrSetImpl<Value *> &seen) -> bool {
-    if (!seen.insert(v).second)
-      return true; // a cycle through a phi: no other value enters on it
+  // The offset fields must keep va_arg off the register save area, which
+  // va_start leaves empty. x86-64 takes a register while gp_offset is at
+  // most 40 or fp_offset at most 160, compared unsigned, so the fields stay
+  // at or above 48 and 176 as unsigned values. AArch64 takes one while an
+  // offset is negative, so they stay at or above 0 as signed values.
+  // va_start sets values inside these ranges, and a write must provably
+  // keep them there. Ranges are i32 and wrap as the add does, so an add
+  // the pass cannot bound by a branch is refused.
+  auto exhausted = [&](int64_t off) {
+    if (arm)
+      return ConstantRange(APInt(32, 0), APInt::getSignedMinValue(32));
+    return ConstantRange(APInt(32, off == 0 ? 48 : 176), APInt(32, 0));
+  };
+  auto full = ConstantRange::getFull(32);
+  // edgeCond: the branch from D to S compares x with a constant, and
+  // control goes that way only while x is in region.
+  auto edgeCond = [&](BasicBlock *D, BasicBlock *S, Value *&x, ConstantRange &region) {
+    auto *Br = dyn_cast<BranchInst>(D->getTerminator());
+    if (!Br || !Br->isConditional() || Br->getSuccessor(0) == Br->getSuccessor(1))
+      return false;
+    auto *C = dyn_cast<ICmpInst>(Br->getCondition());
+    if (!C || (Br->getSuccessor(0) != S && Br->getSuccessor(1) != S))
+      return false;
+    CmpInst::Predicate pred = Br->getSuccessor(0) == S ? C->getPredicate() : C->getInversePredicate();
+    Value *a = C->getOperand(0);
+    auto *k = dyn_cast<ConstantInt>(C->getOperand(1));
+    if (!k) {
+      k = dyn_cast<ConstantInt>(a);
+      a = C->getOperand(1);
+      pred = CmpInst::getSwappedPredicate(pred);
+    }
+    if (!k || !a->getType()->isIntegerTy(32))
+      return false;
+    x = a;
+    region = ConstantRange::makeExactICmpRegion(pred, k->getValue());
+    return true;
+  };
+  // A range for each i32 phi, add and select of a function, which holds on
+  // every run given that every offset field holds an exhausted value: the
+  // ranges are solved together until a pass over the function changes none
+  // (a value that keeps changing is widened to anything), so each one
+  // contains what its instruction can compute from the others.
+  struct FnRanges {
+    std::unique_ptr<DominatorTree> DT;
+    std::map<Value *, ConstantRange> R;
+  };
+  std::map<Function *, FnRanges> fnRanges;
+  auto get = [&](FnRanges &st, Value *v) -> ConstantRange {
+    if (!v->getType()->isIntegerTy(32))
+      return full;
+    if (auto *c = dyn_cast<ConstantInt>(v))
+      return ConstantRange(c->getValue());
     if (auto *L = dyn_cast<LoadInst>(v)) {
       Value *p = L->getPointerOperand();
-      return L->getType()->isIntegerTy(32) && vaList.count(p) && vaList[p] == off && getUnderlyingObject(p) == obj;
+      return vaList.count(p) && intField(vaList[p]) ? exhausted(vaList[p]) : full;
     }
-    if (auto *B = dyn_cast<BinaryOperator>(v)) {
-      if (B->getOpcode() != Instruction::Add)
-        return false;
-      for (unsigned k = 0; k < 2; k++)
-        if (auto *c = dyn_cast<ConstantInt>(B->getOperand(k)))
-          if (c->getValue().isStrictlyPositive() && grows(B->getOperand(1 - k), obj, off, seen))
-            return true;
-      return false;
+    auto it = st.R.find(v);
+    return it == st.R.end() ? full : it->second;
+  };
+  // rangeAt: what v holds where B runs, cut by each branch on v that
+  // control took to reach B.
+  auto rangeAt = [&](FnRanges &st, Value *v, BasicBlock *B) {
+    ConstantRange r = get(st, v);
+    for (auto *N = st.DT->getNode(B); N && N->getIDom(); N = N->getIDom()) {
+      BasicBlock *D = N->getIDom()->getBlock();
+      for (BasicBlock *S : successors(D)) {
+        Value *x;
+        ConstantRange region = full;
+        if (edgeCond(D, S, x, region) && x == v && st.DT->dominates(BasicBlockEdge(D, S), B))
+          r = r.intersectWith(region);
+      }
     }
-    if (auto *Phi = dyn_cast<PHINode>(v)) {
-      for (Value *in : Phi->incoming_values())
-        if (!grows(in, obj, off, seen))
-          return false;
+    return r;
+  };
+  // dead: no run reaches B: it is unreachable, or a branch control must take
+  // to get there tests a value that can never pass it.
+  auto dead = [&](FnRanges &st, BasicBlock *B) {
+    if (!st.DT->isReachableFromEntry(B))
       return true;
+    for (auto *N = st.DT->getNode(B); N->getIDom(); N = N->getIDom()) {
+      BasicBlock *D = N->getIDom()->getBlock();
+      for (BasicBlock *S : successors(D)) {
+        Value *x;
+        ConstantRange region = full;
+        if (edgeCond(D, S, x, region) && st.DT->dominates(BasicBlockEdge(D, S), B) &&
+            rangeAt(st, x, D).intersectWith(region).isEmptySet())
+          return true;
+      }
     }
-    if (auto *S = dyn_cast<SelectInst>(v))
-      return grows(S->getTrueValue(), obj, off, seen) && grows(S->getFalseValue(), obj, off, seen);
     return false;
+  };
+  auto deadEdge = [&](FnRanges &st, BasicBlock *from, BasicBlock *to) {
+    Value *x;
+    ConstantRange region = full;
+    if (edgeCond(from, to, x, region) && rangeAt(st, x, from).intersectWith(region).isEmptySet())
+      return true;
+    return dead(st, from);
+  };
+  auto rangesOf = [&](Function *F) -> FnRanges & {
+    auto [it, fresh] = fnRanges.try_emplace(F);
+    FnRanges &st = it->second;
+    if (!fresh)
+      return st;
+    st.DT = std::make_unique<DominatorTree>(*F);
+    SmallVector<Instruction *> vals;
+    ReversePostOrderTraversal<Function *> rpo(F);
+    for (BasicBlock *B : rpo)
+      for (Instruction &I : *B)
+        if (I.getType()->isIntegerTy(32) &&
+            (isa<PHINode>(I) || isa<SelectInst>(I) || I.getOpcode() == Instruction::Add)) {
+          vals.push_back(&I);
+          st.R.insert({&I, ConstantRange::getEmpty(32)});
+        }
+    DenseMap<Instruction *, unsigned> changes;
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (Instruction *I : vals) {
+        BasicBlock *B = I->getParent();
+        ConstantRange r = full;
+        if (changes[I] > 4) {
+          // widened
+        } else if (auto *P = dyn_cast<PHINode>(I)) {
+          r = ConstantRange::getEmpty(32);
+          for (unsigned k = 0; k < P->getNumIncomingValues(); k++) {
+            BasicBlock *from = P->getIncomingBlock(k);
+            if (deadEdge(st, from, B))
+              continue;
+            Value *in = P->getIncomingValue(k), *x;
+            ConstantRange in_r = rangeAt(st, in, from), region = full;
+            if (edgeCond(from, B, x, region) && x == in)
+              in_r = in_r.intersectWith(region);
+            r = r.unionWith(in_r);
+          }
+        } else if (auto *S = dyn_cast<SelectInst>(I)) {
+          r = rangeAt(st, S->getTrueValue(), B).unionWith(rangeAt(st, S->getFalseValue(), B));
+        } else {
+          r = rangeAt(st, I->getOperand(0), B).add(rangeAt(st, I->getOperand(1), B));
+        }
+        ConstantRange &old = st.R.at(I);
+        if (r != old) {
+          old = r;
+          changes[I]++;
+          changed = true;
+        }
+      }
+    }
+    return st;
+  };
+  // keepsExhausted: storing S's value into the offset field at off leaves
+  // it exhausted, or S never runs.
+  auto keepsExhausted = [&](StoreInst *S, int64_t off) {
+    Value *v = S->getValueOperand();
+    if (!v->getType()->isIntegerTy(32))
+      return false;
+    FnRanges &st = rangesOf(S->getFunction());
+    return dead(st, S->getParent()) || exhausted(off).contains(rangeAt(st, v, S->getParent()));
   };
   // Check every use.
   auto checkList = [&](Value *V, int64_t off, Use &U) {
@@ -564,9 +698,8 @@ static void lowerVarargs(Module &M) {
       }
       Value *v = S->getValueOperand();
       if (intField(off)) {
-        SmallPtrSet<Value *, 8> seen;
-        if (!grows(v, getUnderlyingObject(V), off, seen))
-          fail(I, "writes a va_list offset that does not only grow from what va_start set");
+        if (!keepsExhausted(S, off))
+          fail(I, "writes a va_list offset the pass cannot prove keeps va_arg off the register save area");
         return;
       }
       if (!(off == blockField && isBlock(v)))
