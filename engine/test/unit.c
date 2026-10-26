@@ -1119,8 +1119,9 @@ static int test_internal_depth(void *unused)
 /* Ropes are read, hashed and freed by loops: a character at any place, a
    Map key that is the same string as a rope of another shape (the hash goes
    over the strings in order, whatever the tree), ropes that share their
-   parts, and a long chain of concatenations that the engine rebalances.
-   Everything is freed with no block left. */
+   parts, and long chains of concatenations, at either end and of strings of
+   many lengths, that the engine rebalances. Everything is freed with no
+   block left. */
 static void test_ropes(void)
 {
     static const char src[] =
@@ -1135,6 +1136,16 @@ static void test_ropes(void)
         "  for (let k = 0; k < flat.length; k += 4999) if (s[k] !== flat[k] || t[k] !== flat[k]) return 'char ' + k;\n"
         "  const m = new Map([[s, 1]]);\n"
         "  if (m.get(t) !== 1 || m.get(flat) !== 1) return 'hash';\n"
+        "  let u = '', ul = '', ur = '';\n"
+        "  for (let i = 0; i < 5000; i++) {\n"
+        "    const p = String.fromCharCode(65 + i % 26).repeat(513 + (i * 7919) % 20000);\n"
+        "    if (i % 3) { u = u + p; ur = ur + p } else { u = p + u; ul = p + ul }\n"
+        "  }\n"
+        "  const uflat = ul + ur;\n"
+        "  if (u.length !== uflat.length) return 'mixed length';\n"
+        "  for (let k = 0; k < uflat.length; k += 9973) if (u[k] !== uflat[k]) return 'mixed char ' + k;\n"
+        "  if (new Map([[u, 2]]).get(uflat) !== 2 || u !== uflat) return 'mixed';\n"
+        "  u = ul = ur = null;\n"
         "  let a = piece(1) + piece(2), b = a + a, c = b + a + b;\n"
         "  if (c !== a + a + a + a + a) return 'shared';\n"
         "  a = b = c = s = t = null;\n"
