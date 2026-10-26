@@ -44,7 +44,10 @@ for f in "$libc"/string/*.c "$libc"/stdio.c; do
 	case $name in
 	strlen|strchrnul|memchr) flags="$flags -fno-sanitize=address" ;;
 	esac
-	$cc $flags $engine_flags $(engine_target_flags native) $rename \
+	# stdio.c is built with a stdarg.h that counts the arguments it takes
+	count=
+	[ "$name" = stdio ] && count="-I$here/counting"
+	$cc $flags $engine_flags $(engine_target_flags native) $rename $count \
 		-I"$libc" -I"$libc/internal" -include "$libc/internal/features.h" -c "$f" -o "$out/$name.o"
 	objs="$objs $out/$name.o"
 done

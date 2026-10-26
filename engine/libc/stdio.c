@@ -7,16 +7,26 @@
 /* snprintf and vsnprintf for the formats the engine uses.
  *
  * Flags: - + space 0 #. Width and precision, a number or *. Length: hh h l ll
- * z j t. Conversions: d i u x X o c s p and %%. Output goes to a buffer and
- * is cut to fit, and the result is the length the whole output has, as in C.
- * There are no floating-point conversions, and any conversion not listed is
- * a trap, so a format the engine starts to use cannot print the wrong thing
- * without notice.
+ * z j t, on d i u x X o only. Conversions: d i u x X o c s p and %%. Output
+ * goes to a buffer and is cut to fit, and the result is the length the whole
+ * output has, as in C.
+ *
+ * Whatever else calls abort: floating-point conversions, %n, positional
+ * arguments, a length on c s p or %%, a flag, width or precision on %%
+ * (written there, whatever a * would be given), a format that ends inside a
+ * conversion, a width or precision that does not fit an int, and an output
+ * longer than INT_MAX. A conversion is read and checked as a whole, and none of
+ * its arguments, the * included, is taken before it is found good. So a format
+ * the engine starts to use cannot print the wrong thing without notice. This is
+ * the abort of engine/libc, which asks the host, and not a trap: a trap is a
+ * signal, and in Go a signal ends the process.
  */
 #include <stdarg.h>
 #include <stddef.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 typedef struct {
 	char *buf;
@@ -32,17 +42,45 @@ typedef struct {
 
 enum { LEN_NONE, LEN_HH, LEN_H, LEN_L, LEN_LL, LEN_Z, LEN_J, LEN_T };
 
+/* n more characters are produced, written or not. */
+static void out_count(Out *o, size_t n)
+{
+	if (n > (size_t)INT_MAX - o->len)
+		abort();
+	o->len += n;
+}
+
 static void out_char(Out *o, char c)
 {
 	if (o->len + 1 < o->size)
 		o->buf[o->len] = c;
-	o->len++;
+	out_count(o, 1);
 }
 
+/* Only what fits is written, however long the fill. */
 static void out_fill(Out *o, char c, size_t n)
 {
-	for (; n; n--)
-		out_char(o, c);
+	size_t room = o->len + 1 < o->size ? o->size - 1 - o->len : 0;
+	size_t i;
+
+	for (i = 0; i < n && i < room; i++)
+		o->buf[o->len + i] = c;
+	out_count(o, n);
+}
+
+/* A width or a precision: digits, and an abort when they do not fit an int. */
+static int parse_number(const char *restrict *pp)
+{
+	const char *p = *pp;
+	int n = 0;
+
+	for (; *p >= '0' && *p <= '9'; p++) {
+		if (n > (INT_MAX - (*p - '0')) / 10)
+			abort();
+		n = n * 10 + (*p - '0');
+	}
+	*pp = p;
+	return n;
 }
 
 /* One integer. prefix is "" or what goes in front: a sign or 0x. */
@@ -88,6 +126,7 @@ int vsnprintf(char *restrict buf, size_t size, const char *restrict fmt, va_list
 	for (; *fmt; fmt++) {
 		Spec sp = { 0, 0, 0, 0, 0, 0, -1 };
 		int len = LEN_NONE;
+		int width_star = 0, prec_star = 0, has_width = 0, has_prec = 0;
 		char conv;
 
 		if (*fmt != '%') {
@@ -102,26 +141,22 @@ int vsnprintf(char *restrict buf, size_t size, const char *restrict fmt, va_list
 			else if (*fmt == '#') sp.alt = 1;
 			else break;
 		}
+		/* The whole conversion is read first, and no argument with it. */
 		if (*fmt == '*') {
-			sp.width = va_arg(ap, int);
-			if (sp.width < 0) {
-				sp.left = 1;
-				sp.width = -sp.width;
-			}
+			width_star = has_width = 1;
 			fmt++;
-		} else {
-			for (; *fmt >= '0' && *fmt <= '9'; fmt++)
-				sp.width = sp.width * 10 + (*fmt - '0');
+		} else if (*fmt >= '0' && *fmt <= '9') {
+			has_width = 1;
+			sp.width = parse_number(&fmt);
 		}
 		if (*fmt == '.') {
+			has_prec = 1;
 			fmt++;
-			sp.prec = 0;
 			if (*fmt == '*') {
-				sp.prec = va_arg(ap, int);	/* negative: none */
+				prec_star = 1;
 				fmt++;
 			} else {
-				for (; *fmt >= '0' && *fmt <= '9'; fmt++)
-					sp.prec = sp.prec * 10 + (*fmt - '0');
+				sp.prec = parse_number(&fmt);
 			}
 		}
 		switch (*fmt) {
@@ -138,6 +173,40 @@ int vsnprintf(char *restrict buf, size_t size, const char *restrict fmt, va_list
 		case 't': len = LEN_T; fmt++; break;
 		}
 		conv = *fmt;
+		/* What the conversion is, checked by what is written in the format and
+		   not by the values of its arguments: a length means something for the
+		   integers only, and %% takes no flag, width or precision, not even
+		   a * that happens to be 0. */
+		switch (conv) {
+		case 'd': case 'i': case 'u': case 'x': case 'X': case 'o':
+			break;
+		case 'c': case 's': case 'p':
+			if (len != LEN_NONE)
+				abort();
+			break;
+		case '%':
+			if (len != LEN_NONE || sp.left || sp.plus || sp.space || sp.zero ||
+			    sp.alt || has_width || has_prec)
+				abort();
+			break;
+		default:
+			abort();
+		}
+		/* Now the arguments: the width, the precision, and the value. */
+		if (width_star) {
+			sp.width = va_arg(ap, int);
+			if (sp.width == INT_MIN)
+				abort();
+			if (sp.width < 0) {
+				sp.left = 1;
+				sp.width = -sp.width;
+			}
+		}
+		if (prec_star) {
+			sp.prec = va_arg(ap, int);	/* negative: none */
+			if (sp.prec < 0)
+				sp.prec = -1;
+		}
 		switch (conv) {
 		case 'd':
 		case 'i': {
@@ -221,7 +290,7 @@ int vsnprintf(char *restrict buf, size_t size, const char *restrict fmt, va_list
 			out_char(&o, '%');
 			break;
 		default:
-			__builtin_trap();
+			abort();
 		}
 	}
 	if (size)
