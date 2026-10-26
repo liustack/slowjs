@@ -245,8 +245,11 @@ func TestEvalExprRejectsUnknownOperators(t *testing.T) {
 		t.Fatalf("table-base: %d %+v %v", k, r, err)
 	}
 	// An operator the evaluator does not implement must be rejected, not
-	// silently dropped (table+8*2 is table+16, not table+10).
-	for _, bad := range []string{"table+8*2", "table*2", "table<<3", "(table+8)", "table+8/2"} {
+	// silently dropped (table+8*2 is table+16, not table+10). Malformed
+	// syntax with no operator between terms (1table, table+1 2) must be
+	// rejected too, not reinterpreted as table+1 or table+12.
+	for _, bad := range []string{"table+8*2", "table*2", "table<<3", "(table+8)", "table+8/2",
+		"1table", "table 2", "table+1 2", "table+", "", "+"} {
 		if _, _, err := p.evalExpr(bad, 0, nil); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
@@ -279,5 +282,34 @@ func TestEncodeAlign(t *testing.T) {
 	// A fourth field is not a form we understand.
 	if _, _, err := encodeDirective(".p2align 4, 0, 3, 9", 0); err == nil {
 		t.Fatal("extra alignment field accepted")
+	}
+}
+
+// Malformed alignment and count directives are errors, not panics: a negative
+// or oversized power would shift or allocate wildly, and a non-positive
+// max-skip is not a form the assembler accepts.
+func TestEncodeDirectiveRejects(t *testing.T) {
+	for _, bad := range []string{".p2align -1", ".p2align 64", ".p2align 3, 0, 0", ".p2align 3, 0, -4", ".zero -3"} {
+		if _, _, err := encodeDirective(bad, 1); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+// A data object whose internal alignment exceeds its own start alignment
+// cannot keep its layout once the blob places it at a different residue than
+// llc did, so PlanData rejects it instead of shifting a byte the code reads
+// at a fixed offset.
+func TestDataObjectInternalAlignment(t *testing.T) {
+	asm := ".text\n.globl f\nf:\n\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n\tleaq\ta(%rip), %rax\n" +
+		"\tleaq\tb(%rip), %rcx\n\tpopq\t%rbp\n\tretq\n.Lfunc_end0:\n" +
+		".section\t.rodata,\"a\",@progbits\na:\n\t.byte\t1\nb:\n\t.byte\t2\n\t.p2align\t3, 0x7f\n\t.byte\t3\n"
+	u, err := SplitAsm(asm, "#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := PlanData(u, map[string]bool{"f": true})
+	if len(p.Errors) == 0 {
+		t.Fatalf("an object with an unpreservable internal alignment was accepted; blob=% x", p.Blob)
 	}
 }
