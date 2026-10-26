@@ -55,6 +55,12 @@ type EngineCheck struct {
 	PreserveNone bool
 	// All requires every function to be in the binary and checked.
 	All bool
+	// HostPoll says the engine calls host_poll even though llc's object does
+	// not name it (it is always required when the object does). The poll is
+	// the only place the Go runtime can stop C code to collect garbage, so the
+	// Go function must begin with a stack check: a function without one would
+	// let a loop of C run on without a safe point.
+	HostPoll bool
 }
 
 // CheckReport counts what was checked and lists what was not, by reason.
@@ -78,6 +84,12 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 	}
 	if err := k.checkRodata(); err != nil {
 		return k.rep, err
+	}
+	if hp, ok := k.llc.byName["host_poll"]; c.HostPoll || (ok && hp.Section == elf.SHN_UNDEF) {
+		if err := k.checkHostPoll(); err != nil {
+			return k.rep, err
+		}
+		k.rep.Checked["host_poll"]++
 	}
 	// Every function of llc's object is generated: lowered or a stub.
 	generated := map[string]bool{}
@@ -469,11 +481,19 @@ var padNops = func() map[string]bool {
 // takes none faults) or ignored (a repeated prefix, a segment override other
 // than FS and GS, REP on an instruction that does not repeat: reserved or
 // without effect, so not what llc or the Go assembler write), and a no-op
-// other than the padding encodings.
+// other than the padding encodings. It also refuses the instructions that
+// reach the system or read machine state (forbidden.go), so no code of either
+// side holds one.
 func decode(b []byte) (x86asm.Inst, error) {
 	in, err := x86asm.Decode(b, 64)
+	if isRDSEED(b) {
+		return in, fmt.Errorf("forbidden instruction % x: reads the hardware random source", b[:min(len(b), 15)])
+	}
 	if err != nil || in.Op == 0 || in.Len <= 0 || in.Len > len(b) {
 		return in, fmt.Errorf("unknown or incomplete instruction % x", b[:min(len(b), 15)])
+	}
+	if why, bad := systemOps[in.Op]; bad {
+		return in, fmt.Errorf("forbidden instruction % x: %s", b[:in.Len], why)
 	}
 	for _, p := range in.Prefix {
 		if p != 0 && p&x86asm.PrefixInvalid != 0 {
@@ -917,6 +937,75 @@ func (k *checker) goEpilogue(g goFrame, e uint64, sym elf.Symbol) error {
 	return nil
 }
 
+// checkHostPoll holds the Go function host_poll to the one thing the poll
+// is for: a safe point. It must begin with Go's stack check, a compare of the
+// stack (or the stack less the frame) with the guard in g, a branch on below
+// or equal to a call of runtime.morestack_noctxt, and a jump back to its start.
+// A small function that calls nothing is marked NOSPLIT by the compiler and
+// has none of this.
+func (k *checker) checkHostPoll() error {
+	sym, ok := k.bin.syms[k.c.Pkg+".host_poll"]
+	if !ok {
+		return fmt.Errorf("host_poll is called but is not in the binary")
+	}
+	fail := func(f string, a ...any) error {
+		return fmt.Errorf("host_poll has no stack check, so the Go runtime cannot stop C code at it: "+f, a...)
+	}
+	a := sym.Value
+	in, err := k.dec(a)
+	if err != nil {
+		return err
+	}
+	check := x86asm.RSP
+	if m, ok := in.Args[1].(x86asm.Mem); in.Op == x86asm.LEA && isReg(in.Args[0], x86asm.R12) && ok && m.Base == x86asm.RSP && m.Index == 0 {
+		check = x86asm.R12
+		a += uint64(in.Len)
+		if in, err = k.dec(a); err != nil {
+			return err
+		}
+	}
+	guard, ok := in.Args[1].(x86asm.Mem)
+	if in.Op != x86asm.CMP || !isReg(in.Args[0], check) || !ok || guard.Base != x86asm.R14 || guard.Index != 0 || guard.Disp != 16 {
+		return fail("it starts with %v", in)
+	}
+	a += uint64(in.Len)
+	if in, err = k.dec(a); err != nil {
+		return err
+	}
+	rel, ok := in.Args[0].(x86asm.Rel)
+	if in.Op != x86asm.JBE || !ok {
+		return fail("the compare is followed by %v, not a branch to morestack", in)
+	}
+	t := uint64(int64(a) + int64(in.Len) + int64(rel))
+	if t < sym.Value || t >= sym.Value+sym.Size {
+		return fail("its stack check branches to %#x, outside the function", t)
+	}
+	ms, ok := k.bin.syms["runtime.morestack_noctxt.abi0"]
+	if !ok {
+		return fmt.Errorf("no runtime.morestack_noctxt.abi0 in the binary")
+	}
+	called := false
+	for n := 0; n < 24; n++ {
+		if in, err = k.dec(t); err != nil {
+			return err
+		}
+		rel, isRel := in.Args[0].(x86asm.Rel)
+		switch {
+		case in.Op == x86asm.CALL && isRel && uint64(int64(t)+int64(in.Len)+int64(rel)) == ms.Value:
+			called = true
+		case in.Op == x86asm.JMP && isRel:
+			if !called || uint64(int64(t)+int64(in.Len)+int64(rel)) != sym.Value {
+				return fail("its stack check does not call morestack and jump back to the start")
+			}
+			return nil
+		case in.Op == x86asm.RET || in.Op == x86asm.CALL:
+			return fail("its stack check does not call morestack and jump back to the start")
+		}
+		t += uint64(in.Len)
+	}
+	return fail("its stack check does not call morestack and jump back to the start")
+}
+
 // ---- one unified function ----
 
 type branch struct {
@@ -1243,21 +1332,21 @@ func (m *matcher) epilogue(i int, freed int64) (int, error) {
 	return k - i, nil
 }
 
-// forbiddenOps are instructions the engine's code may not hold: the ones that
-// reach the system or read machine state, and the ones that move SP or BP
-// implicitly outside the prologue and epilogue the check accounts for.
-var forbiddenOps = map[x86asm.Op]string{
-	x86asm.SYSCALL: "a system call", x86asm.SYSENTER: "a system call", x86asm.SYSEXIT: "a system call",
-	x86asm.SYSRET: "a system call", x86asm.INT: "a software interrupt",
-	x86asm.RDTSC: "reads the time stamp counter", x86asm.RDTSCP: "reads the time stamp counter",
-	x86asm.RDRAND: "reads the hardware random source", x86asm.RDPMC: "reads a performance counter",
-	x86asm.RDMSR: "reads a machine register", x86asm.RDFSBASE: "reads a segment base", x86asm.RDGSBASE: "reads a segment base",
-	x86asm.CPUID: "reads the processor's identity",
-	x86asm.PUSH:  "pushes in the body", x86asm.PUSHF: "pushes in the body", x86asm.PUSHFD: "pushes in the body",
-	x86asm.PUSHFQ: "pushes in the body", x86asm.POPF: "pops in the body", x86asm.POPFD: "pops in the body",
-	x86asm.POPFQ: "pops in the body",
-	x86asm.ENTER: "builds a frame in the body", x86asm.LEAVE: "leaves a frame in the body",
-}
+// forbiddenOps are instructions the llc side of the body may not hold: the
+// system ones (forbidden.go) and the ones that move SP or BP implicitly
+// outside the prologue and epilogue the check accounts for.
+var forbiddenOps = func() map[x86asm.Op]string {
+	m := map[x86asm.Op]string{
+		x86asm.PUSH: "pushes in the body", x86asm.PUSHF: "pushes in the body", x86asm.PUSHFD: "pushes in the body",
+		x86asm.PUSHFQ: "pushes in the body", x86asm.POPF: "pops in the body", x86asm.POPFD: "pops in the body",
+		x86asm.POPFQ: "pops in the body",
+		x86asm.ENTER: "builds a frame in the body", x86asm.LEAVE: "leaves a frame in the body",
+	}
+	for op, why := range systemOps {
+		m[op] = why
+	}
+	return m
+}()
 
 // unalignedOK are the 16-byte moves that need no alignment: the Go frame is
 // only 8-byte aligned, so any other access wider than 8 bytes may fault.

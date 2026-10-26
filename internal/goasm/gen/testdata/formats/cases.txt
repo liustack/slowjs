@@ -1,0 +1,101 @@
+# Formats engine/libc/stdio.c takes (ok) and the ones it calls abort() on (bad),
+# one per line after the word and a tab. formats_test.go holds FormatError to
+# this file. A libc test in engine/test should run each through vsnprintf with
+# arguments of the right types and see whether it aborts, so that a change of
+# stdio.c cannot leave the check behind.
+ok	plain text
+ok	%d
+ok	%i
+ok	%u
+ok	%x
+ok	%X
+ok	%o
+ok	%c
+ok	%s
+ok	%p
+ok	%%
+ok	%-d
+ok	%+d
+ok	% d
+ok	%0d
+ok	%#x
+ok	%-+ 0#d
+ok	%5d
+ok	%-20s
+ok	%*d
+ok	%0*d
+ok	%+07d
+ok	%.3s
+ok	%.s
+ok	%.0d
+ok	%2.0d
+ok	%.*s
+ok	%*.*s
+ok	%hd
+ok	%hhd
+ok	%ld
+ok	%lld
+ok	%lu
+ok	%llu
+ok	%zu
+ok	%zd
+ok	%jd
+ok	%td
+ok	%lx
+ok	%hhx
+ok	%lo
+ok	%08x
+ok	%8ld
+ok	%2147483647d
+ok	%.2147483647d
+ok	a %s b %d c %%
+ok	%s: %s
+bad	%f
+bad	%F
+bad	%e
+bad	%E
+bad	%g
+bad	%G
+bad	%a
+bad	%A
+bad	%lf
+bad	%.2f
+bad	%Lf
+bad	%n
+bad	%m
+bad	%ls
+bad	%lc
+bad	%1$d
+bad	%'d
+bad	%q
+bad	%ld%
+bad	%
+bad	abc%
+bad	%5
+bad	%-
+bad	%.
+bad	%l
+bad	%hh
+bad	%hs
+bad	%lc
+bad	%lp
+bad	%zs
+bad	%jc
+bad	%ll%
+bad	%5%
+bad	%-%
+bad	%.0%
+bad	%*%
+bad	%0%
+bad	%+%
+bad	%l%
+bad	%2147483648d
+bad	%.2147483648d
+bad	%99999999999d
+bad	%*5d
+bad	%.-1d
+bad	%hhhd
+bad	%lllld
+bad	%Ld
+bad	%I64d
+bad	%w

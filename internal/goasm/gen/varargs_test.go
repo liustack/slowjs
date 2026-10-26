@@ -12,64 +12,6 @@ import (
 	"testing"
 )
 
-// TestVarargsBlock runs testdata/varargs through the pass with
-// -shadow-varargs, checks no variadic function or call is left, and runs it
-// natively. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
-// (SLOWJS_SHADOW_PASS) on linux/amd64.
-func TestVarargsBlock(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
-	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
-	}
-	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		t.Skip("runs the result natively on linux/amd64")
-	}
-	work := t.TempDir()
-	ir, shadow, obj := filepath.Join(work, "v.ll"), filepath.Join(work, "v.shadow.ll"), filepath.Join(work, "v.o")
-	src := filepath.Join("testdata", "varargs")
-	run := func(name string, args ...string) string {
-		t.Helper()
-		out, err := exec.Command(filepath.Join(llvm, name), args...).CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s: %v\n%s", name, err, out)
-		}
-		return string(out)
-	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join(src, "varargs.c"))...)
-	rep := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-report", "-S", "-o", shadow, ir)
-	r := ParseReport(rep)
-	rewritten := map[string]bool{}
-	for _, f := range r.Varargs {
-		rewritten[f] = true
-	}
-	// sum and mixed read scalars, wrap is a variadic function that itself
-	// makes a variadic call: all three rewritten.
-	for _, f := range []string{"sum", "mixed", "wrap"} {
-		if !rewritten[f] {
-			t.Fatalf("%s not rewritten: %v", f, r.Varargs)
-		}
-	}
-	ll, err := os.ReadFile(shadow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(ll), "...") || strings.Contains(string(ll), "llvm.va_start") {
-		t.Fatalf("variadic code left:\n%s", ll)
-	}
-	run("llc", "-O2", "-relocation-model=pic", "-filetype=obj", "-o", obj, shadow)
-	bin := filepath.Join(work, "v")
-	run("clang", "-O1", "-o", bin, filepath.Join(src, "main.c"), obj)
-	out, err := exec.Command(bin).CombinedOutput()
-	if err != nil {
-		t.Fatalf("run: %v\n%s", err, out)
-	}
-	// use: sum(1,2,3)=6, mixed=1+2.5+3+4.25+1+3=14.75->147, sum(1..8)=36.
-	// wrap: 7 + sum(2,100,200)=307.
-	if got := strings.TrimSpace(string(out)); got != "36006147 307" {
-		t.Fatalf("got %q, want %q", got, "36006147 307")
-	}
-}
-
 // TestVarargsOverAlignedRejected: a variadic function reading a 16-aligned
 // aggregate cannot be held in the 8-byte-slot block and must be rejected,
 // not miscompiled. Needs LLVM 22.1.8 (SLOWJS_LLVM) and the pass
@@ -89,7 +31,7 @@ func TestVarargsOverAlignedRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	if why := rep.Rejected["take"]; !strings.Contains(why, "over-aligned") {
@@ -117,7 +59,7 @@ func TestVarargsOverAlignedHelperRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned_helper.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned_helper.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	if why := rep.Rejected["read_s"]; !strings.Contains(why, "over-aligned") {
@@ -146,7 +88,7 @@ func TestVarargsEscapesRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "escapes.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "escapes.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-shadow-report", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	for fn, want := range map[string]string{
@@ -214,11 +156,14 @@ func TestVarargsRules(t *testing.T) {
 		gp     string   // byte offset of the general-register offset field
 		reg    string   // with regk, a compare on it that holds only on va_arg's register path
 		regk   string
+		fp     string // the same for the floating-point offset field
+		fpreg  string
+		fpregk string
 	}{
-		{"x86_64", append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
-			"x86_64-unknown-linux-gnu", "0", "ult", "41"},
+		{"x86_64", append([]string{}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
+			"x86_64-unknown-linux-gnu", "0", "ult", "41", "4", "ult", "161"},
 		{"aarch64", ARM64CFlags, []string{"store i32 0", "store i32 0"},
-			"aarch64-unknown-linux-gnu", "24", "slt", "0"},
+			"aarch64-unknown-linux-gnu", "24", "slt", "0", "28", "slt", "0"},
 	} {
 		ir, shadow := filepath.Join(work, tc.arch+".ll"), filepath.Join(work, tc.arch+".shadow.ll")
 		must("clang", append(append([]string{}, tc.cflags...), "-S", "-emit-llvm", "-o", ir, rules)...)
@@ -260,7 +205,8 @@ func TestVarargsRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		offsets := filepath.Join(work, tc.arch+".offsets.ll")
-		if err := os.WriteFile(offsets, []byte(strings.NewReplacer("@TRIPLE@", tc.triple, "@GP@", tc.gp, "@REG@", tc.reg, "@REGK@", tc.regk).Replace(string(tmpl))), 0o644); err != nil {
+		if err := os.WriteFile(offsets, []byte(strings.NewReplacer("@TRIPLE@", tc.triple, "@GP@", tc.gp, "@REG@", tc.reg, "@REGK@", tc.regk,
+			"@FP@", tc.fp, "@FPREG@", tc.fpreg, "@FPREGK@", tc.fpregk).Replace(string(tmpl))), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		oout, err := opt(offsets, os.DevNull)
@@ -268,12 +214,12 @@ func TestVarargsRules(t *testing.T) {
 			t.Fatalf("%s: offsets: %v\n%s", tc.arch, err, oout)
 		}
 		orep := ParseReport(oout)
-		for _, fn := range []string{"wrap_phi", "wrap_select", "wrap_loop", "wrap_guard"} {
+		for _, fn := range []string{"wrap_phi", "wrap_select", "wrap_loop", "wrap_guard", "wrap_fp", "wrap_nondom", "wrap_left", "wrap_false"} {
 			if why := orep.Rejected[fn]; !strings.Contains(why, offsetWrite) {
 				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, offsetWrite)
 			}
 		}
-		for _, fn := range []string{"dead_store", "dead_phi", "dead_loop", "guarded"} {
+		for _, fn := range []string{"dead_store", "dead_phi", "dead_loop", "guarded", "dead_fp", "guarded_left", "guarded_false"} {
 			if why, ok := orep.Rejected[fn]; ok {
 				t.Errorf("%s: %s rejected: %s", tc.arch, fn, why)
 			}
@@ -294,6 +240,28 @@ func TestVarargsRules(t *testing.T) {
 	if why, ok := rep.Rejected["passes_promoted"]; ok {
 		t.Errorf("passes_promoted rejected: %s", why)
 	}
+	// A va_list that goes through a select, a phi or memory is refused: the
+	// pass follows it only straight into the functions that read it.
+	flows := must("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs",
+		"-shadow-keep-going", "-shadow-report", "-S", "-o", os.DevNull, filepath.Join("testdata", "varargs", "flows.ll"))
+	frep := ParseReport(flows)
+	for fn, want := range map[string]string{
+		"via_select": "uses a va_list in a way the pass cannot follow",
+		"via_phi":    "uses a va_list in a way the pass cannot follow",
+		"via_memory": "stores a va_list's address to memory",
+	} {
+		if why := frep.Rejected[fn]; !strings.Contains(why, want) {
+			t.Errorf("%s: rejection %q, want one saying %q", fn, why, want)
+		}
+	}
+	for _, fn := range []string{"direct", "take"} {
+		if why, ok := frep.Rejected[fn]; ok {
+			t.Errorf("%s rejected: %s", fn, why)
+		}
+	}
+	if t.Failed() {
+		t.Logf("pass output:\n%s", flows)
+	}
 	// Any other target: the va_list layout is not one the pass writes.
 	for _, target := range []string{"x86_64-pc-linux-gnu", "x86_64-linux-musl", "aarch64-apple-darwin", "i686-linux-gnu"} {
 		ir := filepath.Join(work, target+".ll")
@@ -308,7 +276,8 @@ func TestVarargsRules(t *testing.T) {
 // TestVarargsNative compiles testdata/varargs/diff.c twice for each
 // target, plainly with the target's own variable arguments and through the
 // pass's variadic block, links each with the freestanding driver
-// diff_main.c and requires the same output: interleaved types, more
+// diff_main.c and requires the same output (no variadic code may be left
+// in the IR llc gets): interleaved types, more
 // arguments than registers, none and forty, va_copy, helpers that take the
 // va_list by reference and by value, reads after a host callback that
 // dirties the stack, a formatter, a variadic call from a variadic function
@@ -331,7 +300,7 @@ func TestVarargsNative(t *testing.T) {
 		arch, goarch, qemu string
 		cflags             []string
 	}{
-		{"x86_64", "amd64", "", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), free...)},
+		{"x86_64", "amd64", "", append(append([]string{}, EngineCFlags...), free...)},
 		{"aarch64", "arm64", os.Getenv("SLOWJS_QEMU_AARCH64"), ARM64CFlags},
 	} {
 		t.Run(tc.arch, func(t *testing.T) {
@@ -366,6 +335,16 @@ func TestVarargsNative(t *testing.T) {
 			for _, f := range []string{"mixed", "count", "twice", "helpers", "across", "fmt", "wrap"} {
 				if !got[f] {
 					t.Fatalf("%s not rewritten: %v", f, rep.Varargs)
+				}
+			}
+			// No variadic function, call or intrinsic is left in what llc gets.
+			shadow, err := os.ReadFile(at("diff.shadow.ll"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, l := range strings.Split(string(shadow), "\n") {
+				if reDefine.MatchString(l) || reVarCall.MatchString(l) || strings.Contains(l, "llvm.va_start") {
+					t.Fatalf("variadic code left after the pass: %s", strings.TrimSpace(l))
 				}
 			}
 			tool(filepath.Join(llvm, "llc"), "-O2", "-filetype=obj", "-o", at("pass.o"), at("diff.shadow.ll"))
@@ -410,7 +389,7 @@ func TestVarargsNative(t *testing.T) {
 		}
 		for _, mode := range []string{"body", "pn"} {
 			mod := filepath.Join(work, mode)
-			tool("", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-varargs-block", "-allow", "host_cb",
+			tool("", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-varargs-block", "-allow", "host_cb", "-non-format-variadic", "mixed,count,twice,helpers,across,wrap,fmt",
 				"-leaves", "", "-work", filepath.Join(work, "w-"+mode), "-out", filepath.Join(mod, "vd"), "-pkg", "vd")
 			for name, text := range map[string]string{
 				"go.mod":     "module vdiff\n\ngo 1.22\n",

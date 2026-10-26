@@ -4,11 +4,13 @@ package gen
 
 import (
 	"debug/elf"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -94,8 +96,12 @@ func TestICallSymbols(t *testing.T) {
 		}
 		return out
 	}
+	markers, err := sigMarkers(filepath.Join("testdata", "icall", "icall.c"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ir, shadow := filepath.Join(work, "c.ll"), filepath.Join(work, "c.shadow.ll")
-	must("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir,
+	must("clang", append(append([]string{"-gline-tables-only"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir,
 		filepath.Join("testdata", "icall", "icall.c"))...)
 	for _, mode := range []string{"body", "pn"} {
 		args := []string{"-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-report", "-shadow-icall-sigs"}
@@ -110,16 +116,17 @@ func TestICallSymbols(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The label is the line right before its call.
-		labels := regexp.MustCompile(`(?m)^(goasm\.icall\.[\w.]+):\n\s*(\S+)\s+(\S+)`).FindAllStringSubmatch(string(text), -1)
-		if len(labels) == 0 {
-			t.Fatalf("%s: no indirect-call label in llc's text:\n%s", mode, text)
+		// The label is the line right before its call (debug line tables put
+		// .loc lines between them). Each call, in the order of the text, is
+		// held to the signature C gives its source line.
+		calls, err := icallsInText(string(text))
+		if err != nil || len(calls) == 0 {
+			t.Fatalf("%s: %v\n%s", mode, err, text)
 		}
-		for _, m := range labels {
-			if m[2] != "callq" || !strings.HasPrefix(m[3], "*%") {
-				t.Fatalf("%s: %s labels %s %s, not an indirect call", mode, m[1], m[2], m[3])
-			}
+		if err := checkICallsBySource(calls, markers); err != nil {
+			t.Fatalf("%s: %v", mode, err)
 		}
+		labels := calls
 		f, err := elf.Open(obj)
 		if err != nil {
 			t.Fatal(err)
@@ -133,6 +140,7 @@ func TestICallSymbols(t *testing.T) {
 			t.Fatal(err)
 		}
 		at := map[uint64]string{}
+		var inObj []string
 		got := map[string]map[string]bool{}
 		for _, s := range syms {
 			if !strings.HasPrefix(s.Name, ICallPrefix) {
@@ -149,7 +157,7 @@ func TestICallSymbols(t *testing.T) {
 			}
 			got[fn][c] = true
 		}
-		calls := 0
+		n := 0
 		for pc := 0; pc < len(code); {
 			in, err := x86asm.Decode(code[pc:], 64)
 			if err != nil {
@@ -158,7 +166,7 @@ func TestICallSymbols(t *testing.T) {
 			_, reg := in.Args[0].(x86asm.Reg)
 			name, sym := at[uint64(pc)]
 			if in.Op == x86asm.CALL && reg {
-				calls++
+				n++
 				if !sym {
 					t.Fatalf("%s: the indirect call at %#x has no symbol", mode, pc)
 				}
@@ -167,8 +175,22 @@ func TestICallSymbols(t *testing.T) {
 			}
 			pc += in.Len
 		}
-		if calls != len(at) || calls != len(labels) {
-			t.Fatalf("%s: %d indirect calls, %d symbols, %d labels", mode, calls, len(at), len(labels))
+		if n != len(at) || n != len(labels) {
+			t.Fatalf("%s: %d indirect calls, %d symbols, %d labels", mode, n, len(at), len(labels))
+		}
+		// The object's symbols, by address, are the text's labels, in
+		// order: each call in the object has the id of the call at that
+		// place in the text, which the source lines above vouch for.
+		var addrs []uint64
+		for a := range at {
+			addrs = append(addrs, a)
+		}
+		sort.Slice(addrs, func(i, j int) bool { return addrs[i] < addrs[j] })
+		for i, a := range addrs {
+			inObj = append(inObj, at[a])
+			if at[a] != labels[i].name {
+				t.Fatalf("%s: the call at %#x has %s, the text has %s at that place in the order", mode, a, at[a], labels[i].name)
+			}
 		}
 		for _, fn := range []string{"branches", "mixed", "pair", "loop"} {
 			want := map[string]bool{}
@@ -188,5 +210,129 @@ func TestICallSymbols(t *testing.T) {
 	out, err := run("llc", "-O2", "-load", pass, "-filetype=obj", "-o", filepath.Join(work, "bare.o"), shadow)
 	if err == nil || !strings.Contains(out, "indirect call without a signature id") {
 		t.Fatalf("llc with the plugin took indirect calls without ids: %v\n%s", err, out)
+	}
+}
+
+// icallAt is one indirect call in llc's text: the label before it and the
+// source line of the call, from the last .loc at or before the call itself.
+type icallAt struct {
+	name string
+	line int
+}
+
+var reLoc = regexp.MustCompile(`^\s*\.loc\s+\d+\s+(\d+)\b`)
+
+// icallsInText lists the indirect calls of llc's text in order. A label must
+// be followed, past .loc lines and comments, by an indirect call, and
+// every indirect call must have a label.
+func icallsInText(asm string) ([]icallAt, error) {
+	var out []icallAt
+	line, pending := 0, ""
+	for _, l := range strings.Split(asm, "\n") {
+		t := strings.TrimSpace(l)
+		switch {
+		case reLoc.MatchString(l):
+			line, _ = strconv.Atoi(reLoc.FindStringSubmatch(l)[1])
+		case strings.HasPrefix(t, ICallPrefix) && strings.HasSuffix(t, ":"):
+			if pending != "" {
+				return nil, fmt.Errorf("label %s is followed by label %s, not a call", pending, t)
+			}
+			pending = strings.TrimSuffix(t, ":")
+		case t == "" || t[0] == '.' || t[0] == '#' || strings.HasSuffix(t, ":"):
+		default:
+			ind := strings.HasPrefix(t, "callq") && strings.Contains(t, "*%")
+			switch {
+			case pending != "" && ind:
+				out = append(out, icallAt{pending, line})
+				pending = ""
+			case pending != "":
+				return nil, fmt.Errorf("label %s is followed by %q, not an indirect call", pending, t)
+			case ind:
+				return nil, fmt.Errorf("the indirect call %q has no label", t)
+			}
+		}
+	}
+	if pending != "" {
+		return nil, fmt.Errorf("label %s is followed by no call", pending)
+	}
+	return out, nil
+}
+
+var reSigMarker = regexp.MustCompile(`/\* sig: (\S+) \*/`)
+
+// sigMarkers reads the signature comments of a C file by line. The pass
+// counts the shadow-stack pointer as a first integer parameter of every
+// call, which C does not write.
+func sigMarkers(path string) (map[int]string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	m := map[int]string{}
+	for i, l := range strings.Split(string(b), "\n") {
+		if g := reSigMarker.FindStringSubmatch(l); g != nil {
+			m[i+1] = g[1]
+		}
+	}
+	return m, nil
+}
+
+// checkICallsBySource holds each call's id to the signature C gives the
+// call's source line, one call at a time: the pass's id, which is a number
+// the check cannot recompute from anywhere else, against the types in the
+// source.
+func checkICallsBySource(calls []icallAt, markers map[int]string) error {
+	for _, c := range calls {
+		_, _, id, ok := ParseICallSymbol(c.name)
+		got, err := ICallCode(id)
+		if !ok || err != nil {
+			return fmt.Errorf("%s: %v", c.name, err)
+		}
+		want, ok := markers[c.line]
+		if !ok {
+			return fmt.Errorf("%s is on line %d, which has no sig: comment", c.name, c.line)
+		}
+		if want = "i" + want; got != want {
+			return fmt.Errorf("%s on line %d carries %s, C gives the call %s", c.name, c.line, got, want)
+		}
+	}
+	return nil
+}
+
+// The per-call check refuses ids that were swapped or put on the wrong call,
+// which a comparison of the set of ids per function cannot see.
+func TestICallBySource(t *testing.T) {
+	id := func(code string) uint32 { v, _ := ICallID(code); return v }
+	text := func(a, b string) string {
+		return fmt.Sprintf("f:\n\t.loc 0 10 3\n%s%d:\n\t.loc 0 10 8\n\tcallq *%%rax\n\t.loc 0 11 3\n%s%d:\n\tcallq *%%rbx\n",
+			ICallPrefix+"f.0.", id(a), ICallPrefix+"f.1.", id(b))
+	}
+	markers := map[int]string{10: "i>i", 11: "ii>i"}
+	calls, err := icallsInText(text("ii>i", "iii>i"))
+	if err != nil || len(calls) != 2 || calls[0].line != 10 || calls[1].line != 11 {
+		t.Fatalf("%+v, %v", calls, err)
+	}
+	if err := checkICallsBySource(calls, markers); err != nil {
+		t.Fatal(err)
+	}
+	// The same two ids on the other two calls: each function keeps its set of
+	// signatures, and each call is wrong.
+	calls, _ = icallsInText(text("iii>i", "ii>i"))
+	if err := checkICallsBySource(calls, markers); err == nil || !strings.Contains(err.Error(), "C gives the call") {
+		t.Fatalf("swapped ids accepted: %v", err)
+	}
+	for name, asm := range map[string]string{
+		"a label on a direct call": "f:\n" + ICallPrefix + "f.0.1:\n\tcallq g\n",
+		"a call with no label":     "f:\n\tcallq *%rax\n",
+		"a label on no call":       "f:\n" + ICallPrefix + "f.0.1:\n\tmovq %rax, %rbx\n",
+		"a label at the end":       "f:\n" + ICallPrefix + "f.0.1:\n",
+		"two labels in a row":      "f:\n" + ICallPrefix + "f.0.1:\n" + ICallPrefix + "f.1.1:\n\tcallq *%rax\n",
+	} {
+		if _, err := icallsInText(asm); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	if err := checkICallsBySource([]icallAt{{ICallPrefix + "f.0." + strconv.Itoa(int(id("i>i"))), 99}}, markers); err == nil {
+		t.Error("a call on a line with no sig: comment accepted")
 	}
 }
