@@ -163,7 +163,12 @@ The driver counts the indirect jumps of each function with a computed goto
 table in llc's text and stops below `gen.DispatchCopies` (220 for
 `JS_CallInternal`, which has 245). The pass checks its own output: with the
 blocks that count or poll taken out, and the back edges of the loops it
-proves short, no function has a cycle left.
+proves short, no function has a cycle left. Each count takes at least 1, and
+polls whenever it runs out: its branch tests that it is 0 or less and calls
+`host_poll` on the side taken, or, in the dispatch, a select on that test
+gives the index of the table entry of the poll label. The hidden option
+`-shadow-poll-fault` breaks one of these on purpose, so that a test can see
+the check stop the pass.
 
 Two negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified

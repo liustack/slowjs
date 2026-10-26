@@ -109,7 +109,7 @@ The Go runtime stops a goroutine, for a collection or to run another one, only w
 - Each edge that goes back in a loop counts one. The dispatch of the interpreter counts each bytecode, and an expired count sends it to an extra entry of its table, which polls and dispatches again.
 - A loop needs no count of its own when LLVM's scalar evolution proves it short: innermost, calling nothing, and at most 256 instructions for each entry. Whatever enters it again counts. Any other innermost loop that calls nothing runs in chunks of that size, and the end of each chunk counts the whole chunk. So a count stands for at most a few hundred instructions, and the interval bounds the time between two polls.
 - `memcpy`, `memmove` and `memset` of a length that may be over 256 KiB go through helpers that do 256 KiB at a time and count each piece. These functions have no shadow pointer and no count.
-- The pass checks its output on its own: in each function, with the blocks that count or poll taken out and the back edges of the loops it proves short, no cycle is left.
+- The pass checks its output on its own: in each function, with the blocks that count or poll taken out and the back edges of the loops it proves short, no cycle is left. And each count takes at least 1 and polls whenever it is 0 or less: its branch tests that and calls `host_poll` on the side taken, or, in the dispatch, a select on that test picks the table entry of the poll label.
 
 `host_poll` sets the counter back to the interval of the VM (`SetPollInterval`, 10000 by default). The interval does not change the speed, only how often a poll comes.
 

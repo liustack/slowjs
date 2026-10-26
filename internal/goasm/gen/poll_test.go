@@ -60,7 +60,10 @@ func TestCheckDispatchCopies(t *testing.T) {
 }
 
 // pollIR has one function for each kind of cycle the pass treats apart.
+// interp is an interpreter: its dispatch is a computed goto through ops.
 const pollIR = `declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+
+@ops = internal constant [2 x ptr] [ptr blockaddress(@interp, %inc), ptr blockaddress(@interp, %done)]
 
 define void @ext(i64 %x) {
   ret void
@@ -129,16 +132,38 @@ define void @copysmall(ptr %d, ptr %s) {
   call void @llvm.memcpy.p0.p0.i64(ptr %d, ptr %s, i64 4096, i1 false)
   ret void
 }
+
+define i64 @interp(ptr %pc) {
+entry:
+  br label %dispatch
+dispatch:
+  %p = phi ptr [ %pc, %entry ], [ %p1, %inc ]
+  %n = phi i64 [ 0, %entry ], [ %n1, %inc ]
+  %op = load i8, ptr %p
+  %p1 = getelementptr i8, ptr %p, i64 1
+  %i = zext i8 %op to i64
+  %slot = getelementptr inbounds ptr, ptr @ops, i64 %i
+  %to = load ptr, ptr %slot
+  indirectbr ptr %to, [label %inc, label %done]
+inc:
+  %n1 = add i64 %n, 1
+  br label %dispatch
+done:
+  ret i64 %n
+}
 `
 
 // TestPassPolls runs the pass with -shadow-poll on pollIR. A loop scalar
 // evolution cannot bound runs in chunks and ticks at the end of each, a loop
 // of 8 runs has no tick, a loop that calls a function and one that never
 // ends tick, a memcpy of a length that may be long goes through the chunked
-// helper, whose tick counts a whole chunk, and one of 4 KiB stays. The pass
-// checks its own output, so it must also succeed. An offset that is not a
-// word inside the region stops it. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the
-// built pass (SLOWJS_SHADOW_PASS).
+// helper, whose tick counts a whole chunk, one of 4 KiB stays, and the
+// dispatch of the interpreter turns to its poll label when the count runs
+// out. The pass checks its own output, so it must also succeed, and it must
+// stop on the faults -shadow-poll-fault puts in: ticks whose test never
+// holds, and a dispatch whose index the count does not change. An offset
+// that is not a word inside the region stops it too. It needs LLVM 22.1.8
+// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
 func TestPassPolls(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
@@ -149,9 +174,10 @@ func TestPassPolls(t *testing.T) {
 	if err := os.WriteFile(ir, []byte(pollIR), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	opt := func(offset int) (string, error) {
-		out, err := exec.Command(filepath.Join(llvm, "opt"), "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
-			"-shadow-size-log2=25", "-shadow-poll", fmt.Sprintf("-shadow-poll-offset=%d", offset), "-S", "-o", outIR, ir).CombinedOutput()
+	opt := func(offset int, more ...string) (string, error) {
+		args := append([]string{"-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
+			"-shadow-size-log2=25", "-shadow-poll", fmt.Sprintf("-shadow-poll-offset=%d", offset), "-S", "-o", outIR, ir}, more...)
+		out, err := exec.Command(filepath.Join(llvm, "opt"), args...).CombinedOutput()
 		return string(out), err
 	}
 	if out, err := opt(PollCounterOffset); err != nil {
@@ -174,7 +200,7 @@ func TestPassPolls(t *testing.T) {
 		return strings.Contains(f, "call void @host_poll(")
 	}
 	for name, want := range map[string]bool{"ext": false, "sum": true, "short": false, "calls": true, "forever": true,
-		"copy": false, "copysmall": false, "goasm_chunked_memcpy": true} {
+		"copy": false, "copysmall": false, "goasm_chunked_memcpy": true, "interp": true} {
 		if got := polls(name); got != want {
 			t.Errorf("%s calls host_poll: %v, want %v", name, got, want)
 		}
@@ -188,7 +214,18 @@ func TestPassPolls(t *testing.T) {
 	if !strings.Contains(funcs["goasm_chunked_memcpy"], fmt.Sprintf(", %d", 65536)) {
 		t.Errorf("the tick of the chunked helper does not count a whole chunk:\n%s", funcs["goasm_chunked_memcpy"])
 	}
+	if !strings.Contains(funcs["interp"], "select i1") {
+		t.Errorf("the dispatch does not pick its table entry by the count:\n%s", funcs["interp"])
+	}
 	if out, err := opt(PollCounterOffset + 4); err == nil || !strings.Contains(out, "is not a word inside the region") {
 		t.Errorf("an offset that is not a word: %v\n%s", err, out)
+	}
+	for fault, want := range map[string]string{
+		"cond":     "poll check: a tick whose branch does not poll when the count runs out",
+		"dispatch": "poll check: a dispatch whose index does not turn to the poll label when the count runs out",
+	} {
+		if out, err := opt(PollCounterOffset, "-shadow-poll-fault="+fault); err == nil || !strings.Contains(out, want) {
+			t.Errorf("-shadow-poll-fault=%s: %v\n%s", fault, err, out)
+		}
 	}
 }
