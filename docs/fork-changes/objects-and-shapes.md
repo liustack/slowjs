@@ -10,7 +10,7 @@ read_when:
 
 # Objects and shapes
 
-A shape is the list of an object's keys in order, shared by objects with the same keys. All the changes here change only the generated Go, through `internal/fixlib`, with no C form.
+A shape is the list of an object's keys in order, shared by objects with the same keys. In `lib/` all the changes here change only the generated Go, through `internal/fixlib`, with no C form in `quickjs.diff`. The C tree in `engine/` has them in C: the methods found in the interpreter as the `goasm_` helpers of `internal/goasm/cpatch.py`, the others as each section says.
 
 ## New properties of plain objects skip the generic path
 
