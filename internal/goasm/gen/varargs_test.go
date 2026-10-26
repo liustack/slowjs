@@ -214,11 +214,14 @@ func TestVarargsRules(t *testing.T) {
 		gp     string   // byte offset of the general-register offset field
 		reg    string   // with regk, a compare on it that holds only on va_arg's register path
 		regk   string
+		fp     string // the same for the floating-point offset field
+		fpreg  string
+		fpregk string
 	}{
 		{"x86_64", append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
-			"x86_64-unknown-linux-gnu", "0", "ult", "41"},
+			"x86_64-unknown-linux-gnu", "0", "ult", "41", "4", "ult", "161"},
 		{"aarch64", ARM64CFlags, []string{"store i32 0", "store i32 0"},
-			"aarch64-unknown-linux-gnu", "24", "slt", "0"},
+			"aarch64-unknown-linux-gnu", "24", "slt", "0", "28", "slt", "0"},
 	} {
 		ir, shadow := filepath.Join(work, tc.arch+".ll"), filepath.Join(work, tc.arch+".shadow.ll")
 		must("clang", append(append([]string{}, tc.cflags...), "-S", "-emit-llvm", "-o", ir, rules)...)
@@ -260,7 +263,8 @@ func TestVarargsRules(t *testing.T) {
 			t.Fatal(err)
 		}
 		offsets := filepath.Join(work, tc.arch+".offsets.ll")
-		if err := os.WriteFile(offsets, []byte(strings.NewReplacer("@TRIPLE@", tc.triple, "@GP@", tc.gp, "@REG@", tc.reg, "@REGK@", tc.regk).Replace(string(tmpl))), 0o644); err != nil {
+		if err := os.WriteFile(offsets, []byte(strings.NewReplacer("@TRIPLE@", tc.triple, "@GP@", tc.gp, "@REG@", tc.reg, "@REGK@", tc.regk,
+			"@FP@", tc.fp, "@FPREG@", tc.fpreg, "@FPREGK@", tc.fpregk).Replace(string(tmpl))), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		oout, err := opt(offsets, os.DevNull)
@@ -268,12 +272,12 @@ func TestVarargsRules(t *testing.T) {
 			t.Fatalf("%s: offsets: %v\n%s", tc.arch, err, oout)
 		}
 		orep := ParseReport(oout)
-		for _, fn := range []string{"wrap_phi", "wrap_select", "wrap_loop", "wrap_guard"} {
+		for _, fn := range []string{"wrap_phi", "wrap_select", "wrap_loop", "wrap_guard", "wrap_fp", "wrap_nondom", "wrap_left", "wrap_false"} {
 			if why := orep.Rejected[fn]; !strings.Contains(why, offsetWrite) {
 				t.Errorf("%s: %s: rejection %q, want one saying %q", tc.arch, fn, why, offsetWrite)
 			}
 		}
-		for _, fn := range []string{"dead_store", "dead_phi", "dead_loop", "guarded"} {
+		for _, fn := range []string{"dead_store", "dead_phi", "dead_loop", "guarded", "dead_fp", "guarded_left", "guarded_false"} {
 			if why, ok := orep.Rejected[fn]; ok {
 				t.Errorf("%s: %s rejected: %s", tc.arch, fn, why)
 			}
