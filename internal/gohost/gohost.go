@@ -97,6 +97,7 @@ type VM struct {
 	depth     int
 	broken    bool
 	remap     bool
+	closed    bool
 	handles   map[uint32]any
 	handle    uint32
 }
@@ -140,11 +141,14 @@ func New(o Options) (*VM, error) {
 	return v, nil
 }
 
-// Close forgets the VM and unmaps its chunks and its shadow stack. The
-// engine has freed its runtime by then, or never made one. When the OS
-// refuses some memory, Close returns the error, and Close again tries what is
-// left.
+// Close forgets the VM, drops what Keep holds and unmaps its chunks and its
+// shadow stack. The engine has freed its runtime by then, never made one, or
+// was left halfway by a panic and will not run again: either way it releases
+// no more handles. When the OS refuses some memory, Close returns the error,
+// and Close again tries what is left.
 func (v *VM) Close() error {
+	v.closed = true
+	v.handles = nil
 	mu.Lock()
 	if byID[v.id] == v {
 		delete(byID, v.id)
@@ -248,8 +252,11 @@ func (v *VM) AllowRemap() bool {
 }
 
 // Keep stores x for the engine, which knows it by the handle returned until
-// host_release.
+// host_release or Close.
 func (v *VM) Keep(x any) uint32 {
+	if v.closed {
+		panic("gohost: Keep on a closed VM")
+	}
 	if v.handles == nil {
 		v.handles = map[uint32]any{}
 	}

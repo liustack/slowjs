@@ -366,3 +366,21 @@ func TestConcurrentVMs(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestCloseDropsHandles: Close lets go of what Keep holds, whether the
+// engine released it or not, and a VM kept after Close holds nothing.
+func TestCloseDropsHandles(t *testing.T) {
+	v := newVM(t, small)
+	big := v.Keep(make([]byte, 64<<20))
+	small := v.Keep("small")
+	if err := v.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if v.Handle(big) != nil || v.Handle(small) != nil {
+		t.Fatal("handles still held after Close")
+	}
+	mustPanic(t, "Keep after Close", func() { v.Keep(1) })
+	if err := v.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
