@@ -73,6 +73,10 @@ static cl::opt<bool> PollOn("shadow-poll", cl::init(false),
                             cl::desc("tick on every cycle and call host_poll when the count runs out"));
 static cl::opt<unsigned> PollOffset("shadow-poll-offset", cl::init(0),
                                     cl::desc("offset of the poll counter from the base of the shadow-stack region"));
+static cl::opt<std::string> PollFault("shadow-poll-fault", cl::init(""), cl::Hidden,
+                                      cl::desc("for the tests of checkPolls only: 'cond' gives every tick outside "
+                                               "the dispatch a test that never holds, 'dispatch' leaves the index of "
+                                               "the dispatch as it is"));
 
 static const char *TickMD = "goasm.tick";
 static const char *PollLabelMD = "goasm.poll.dispatch";
@@ -83,6 +87,8 @@ void checkPollOptions(unsigned sizeLog2) {
     return;
   if (PollOffset % 8 != 0 || PollOffset + 8 > (1ull << sizeLog2))
     reportFatalUsageError(Twine("-shadow-poll-offset=") + Twine(PollOffset) + " is not a word inside the region");
+  if (PollFault != "" && PollFault != "cond" && PollFault != "dispatch")
+    reportFatalUsageError(Twine("-shadow-poll-fault=") + PollFault.getValue() + " is not cond or dispatch");
 }
 
 // The one indirect branch of F, when F has exactly one: the dispatch of its
@@ -708,7 +714,8 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       Value *c1 = tick(B, A, 1);
       Value *idx = idxGEP->getOperand(1);
       Value *expired = B.CreateICmpSLT(c1, B.getInt64(1));
-      idxGEP->setOperand(1, B.CreateSelect(expired, ConstantInt::get(idx->getType(), last), idx));
+      if (PollFault != "dispatch")
+        idxGEP->setOperand(1, B.CreateSelect(expired, ConstantInt::get(idx->getType(), last), idx));
       for (Instruction &I : *label)
         if (I.getMetadata(PollLabelMD)) {
           IRBuilder<> AB(I.getNextNode());
@@ -746,8 +753,9 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
     for (auto [t, A, weight] : at) {
       IRBuilder<> B(t);
       Value *c1 = tick(B, A, weight);
-      Instruction *T = SplitBlockAndInsertIfThen(B.CreateICmpSLT(c1, B.getInt64(1)), t, false,
-                                                 MDB.createUnlikelyBranchWeights());
+      // -shadow-poll-fault=cond: c1 < INT64_MIN, which never holds.
+      Value *expired = B.CreateICmpSLT(c1, B.getInt64(PollFault == "cond" ? 1ull << 63 : 1));
+      Instruction *T = SplitBlockAndInsertIfThen(expired, t, false, MDB.createUnlikelyBranchWeights());
       IRBuilder<> TB(T);
       TB.CreateCall(poll, {sp});
       reload(TB, A);
@@ -766,14 +774,70 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
          << " bounded edges " << nbounded << "\n";
 }
 
+// expiredTest tells whether Cond holds whenever the count Tick leaves has run
+// out (is 0 or less): Tick < K with K at least 1, or Tick <= K with K at least
+// 0.
+static bool expiredTest(Value *Cond, Instruction *Tick) {
+  auto *Cmp = dyn_cast<ICmpInst>(Cond);
+  auto *K = Cmp ? dyn_cast<ConstantInt>(Cmp->getOperand(1)) : nullptr;
+  if (!K || Cmp->getOperand(0) != Tick || K->getBitWidth() > 64)
+    return false;
+  if (Cmp->getPredicate() == ICmpInst::ICMP_SLT)
+    return K->getSExtValue() >= 1;
+  if (Cmp->getPredicate() == ICmpInst::ICMP_SLE)
+    return K->getSExtValue() >= 0;
+  return false;
+}
+
+// dispatchPolls tells whether the indirect branch IB goes to a poll label
+// whenever the count Tick leaves has run out. Its address must be the table
+// of offsets (relativeGotoTables) plus the entry it reads at an index that a
+// select on an expired test turns into an entry naming a poll label of IB:
+//
+//   R + sext(load(R + 4 * select(expired, K, index)))
+//   R[K] = trunc(ptrtoint(blockaddress(label)) - ptrtoint(R))
+static bool dispatchPolls(IndirectBrInst *IB, Instruction *Tick) {
+  auto *A = dyn_cast<GetElementPtrInst>(IB->getAddress());
+  auto *R = A ? dyn_cast<GlobalVariable>(A->getPointerOperand()) : nullptr;
+  if (!R || !R->isConstant() || !R->hasInitializer() || A->getNumIndices() != 1 ||
+      !A->getSourceElementType()->isIntegerTy(8))
+    return false;
+  auto *X = dyn_cast<SExtInst>(A->getOperand(1));
+  auto *L = X ? dyn_cast<LoadInst>(X->getOperand(0)) : nullptr;
+  auto *G = L ? dyn_cast<GetElementPtrInst>(L->getPointerOperand()) : nullptr;
+  if (!G || G->getPointerOperand() != R || G->getNumIndices() != 1 || !G->getSourceElementType()->isIntegerTy(32))
+    return false;
+  auto *S = dyn_cast<SelectInst>(G->getOperand(1));
+  auto *K = S ? dyn_cast<ConstantInt>(S->getTrueValue()) : nullptr;
+  auto *T = dyn_cast<ConstantArray>(R->getInitializer());
+  if (!K || !T || !expiredTest(S->getCondition(), Tick) || K->getZExtValue() >= T->getNumOperands())
+    return false;
+  auto *Tr = dyn_cast<ConstantExpr>(T->getOperand(K->getZExtValue()));
+  auto *Sub = Tr && Tr->getOpcode() == Instruction::Trunc ? dyn_cast<ConstantExpr>(Tr->getOperand(0)) : nullptr;
+  if (!Sub || Sub->getOpcode() != Instruction::Sub)
+    return false;
+  auto *To = dyn_cast<ConstantExpr>(Sub->getOperand(0)), *From = dyn_cast<ConstantExpr>(Sub->getOperand(1));
+  if (!To || !From || To->getOpcode() != Instruction::PtrToInt || From->getOpcode() != Instruction::PtrToInt ||
+      From->getOperand(0) != R)
+    return false;
+  auto *BA = dyn_cast<BlockAddress>(To->getOperand(0));
+  if (!BA || !is_contained(successors(IB->getParent()), BA->getBasicBlock()))
+    return false;
+  for (Instruction &J : *BA->getBasicBlock())
+    if (isPollCall(J) && J.getMetadata(PollLabelMD))
+      return true;
+  return false;
+}
+
 // checkPolls holds every function to the rule, apart from how the ticks were
 // placed: with the blocks that tick (a decrement tagged goasm.tick) or call
 // host_poll taken out, and the back edges of the loops scalar evolution
 // bounds (boundedEdges, worked out again here), the control flow graph has
-// no cycle left. Each tick
-// must decide whether its block's way out polls: a conditional branch on it
-// whose taken side calls host_poll, or, in a dispatch, an indirect branch to
-// the poll label.
+// no cycle left. A tick must take at least 1 from the count, and its block's
+// way out must poll whenever the count it leaves has run out: a conditional
+// branch on a test of the tick that holds then (expiredTest), whose taken
+// side calls host_poll, or, in a dispatch, an indirect branch whose index
+// turns to the entry of the poll label then (dispatchPolls).
 void checkPolls(Module &M, const std::set<std::string> &leaves) {
   if (!PollOn)
     return;
@@ -789,23 +853,27 @@ void checkPolls(Module &M, const std::set<std::string> &leaves) {
         if (!I.getMetadata(TickMD))
           continue;
         cut.insert(&B);
+        auto *Sub = dyn_cast<BinaryOperator>(&I);
+        auto *W = Sub && Sub->getOpcode() == Instruction::Sub ? dyn_cast<ConstantInt>(Sub->getOperand(1)) : nullptr;
+        if (!W || W->getBitWidth() > 64 || W->getSExtValue() < 1)
+          reportFatalUsageError(Twine("poll check: a tick that does not take at least 1 from the count in ") +
+                                F.getName());
         Instruction *T = B.getTerminator();
-        bool ok = false;
-        if (auto *Br = dyn_cast<BranchInst>(T)) {
-          if (Br->isConditional())
-            if (auto *Cmp = dyn_cast<ICmpInst>(Br->getCondition()))
-              if (Cmp->getOperand(0) == &I) {
-                BasicBlock *Y = Br->getSuccessor(0);
-                for (Instruction &J : *Y)
-                  ok |= isPollCall(J);
-              }
-        } else if (isa<IndirectBrInst>(T)) {
-          for (BasicBlock *Y : successors(&B))
-            for (Instruction &J : *Y)
-              ok |= isPollCall(J) && J.getMetadata(PollLabelMD);
+        if (auto *IB = dyn_cast<IndirectBrInst>(T)) {
+          if (!dispatchPolls(IB, &I))
+            reportFatalUsageError(
+                Twine("poll check: a dispatch whose index does not turn to the poll label when the count runs out in ") +
+                F.getName());
+          continue;
         }
+        bool ok = false;
+        if (auto *Br = dyn_cast<BranchInst>(T))
+          if (Br->isConditional() && expiredTest(Br->getCondition(), &I))
+            for (Instruction &J : *Br->getSuccessor(0))
+              ok |= isPollCall(J);
         if (!ok)
-          reportFatalUsageError(Twine("poll check: a tick whose block does not branch to host_poll in ") + F.getName());
+          reportFatalUsageError(Twine("poll check: a tick whose branch does not poll when the count runs out in ") +
+                                F.getName());
       }
     for (scc_iterator<Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
       if (!I.hasCycle())
