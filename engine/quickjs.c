@@ -7510,12 +7510,50 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         s->js_func_size + s->js_func_code_size + s->js_func_pc2line_size;
 }
 
-/* v with one decimal, as printf's %.1f gives for the positive values here */
+/* v with one decimal, as printf's %.1f prints it. The double is rounded once,
+   from its exact value, to the nearest tenth and to the even one when it is
+   halfway, as the C library does. (So 1.05, which is a little over 1.05 as a
+   double, is 1.1, and 0.15, a little under, is 0.1.) A value that is NaN, or
+   over 1e15, has a word. */
 static char *dump_tenths(char out[24], double v)
 {
-    int64_t t = (int64_t)(v * 10 + 0.5);
+    const char *sign = "";
+    JSFloat64Union u;
+    uint64_t m, t, rest, half;
+    int e, k;
 
-    snprintf(out, 24, "%" PRId64 ".%d", t / 10, (int)(t % 10));
+    if (v != v)
+        return "nan";
+    if (v < 0) {
+        sign = "-";
+        v = -v;
+    }
+    if (v > 1e15)
+        return v > 1e300 ? "inf" : ">1e15";
+    /* v is m * 2^e, and ten times it is m * 10 * 2^e, with m * 10 under 2^57 */
+    u.d = v;
+    e = (int)(u.u64 >> 52) & 0x7ff;
+    m = u.u64 & (((uint64_t)1 << 52) - 1);
+    if (e) {
+        m |= (uint64_t)1 << 52;
+        e -= 1075;
+    } else {
+        e = -1074;
+    }
+    m *= 10;
+    if (e >= 0) {
+        t = m << e;     /* v is under 1e15, so this is under 1e16 */
+    } else if (e < -63) {
+        t = 0;          /* under 2^-6 of a tenth */
+    } else {
+        k = -e;
+        t = m >> k;
+        rest = m & (((uint64_t)1 << k) - 1);
+        half = (uint64_t)1 << (k - 1);
+        if (rest > half || (rest == half && (t & 1)))
+            t++;
+    }
+    snprintf(out, 24, "%s%" PRId64 ".%d", sign, (int64_t)(t / 10), (int)(t % 10));
     return out;
 }
 
