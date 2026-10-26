@@ -78,7 +78,25 @@ type Options struct {
 	// 64 KiB, and no smaller than the region the engine was generated for.
 	// 0 is hostmem.DefaultStackSize.
 	StackSize uintptr
+	// PollCounter is where the counter of the engine's polls is, from the
+	// base of the shadow stack: a word the host keeps for it, which host_poll
+	// sets to the interval of the VM. 0 when the engine counts nothing (the
+	// start of the stack holds other things).
+	PollCounter uintptr
 }
+
+// DefaultPollInterval is the number of ticks between two polls of a new VM:
+// the engine ticks on every cycle it runs, and polls when the count runs out.
+const DefaultPollInterval = 10000
+
+// DefaultKillGrace is how long a new VM gives a script to stop after
+// Interrupt before a poll kills it.
+const DefaultKillGrace = 50 * time.Millisecond
+
+// ErrKilled is what Poll panics with when a script has not stopped by the
+// grace after Interrupt: the panic leaves through the engine's frames, and
+// the VM is broken.
+var ErrKilled = errors.New("gohost: the script did not stop after Interrupt and was killed")
 
 // Counts are what the callbacks of a VM did, for tests and measuring.
 type Counts struct {
@@ -98,8 +116,15 @@ type VM struct {
 	stack     uintptr
 	stackSize uintptr
 	wall      clock
-	interrupt atomic.Int32
+	// interrupt is 0, or the time of the first Interrupt since the
+	// outermost entry began, on the monotonic clock of Now, plus 1.
+	interrupt atomic.Int64
 	polls     atomic.Int64
+	counter   uintptr // the poll counter, or 0
+	flag      uintptr // the engine's interrupt flag (SetInterruptFlag), or 0
+	interval  int64
+	grace     time.Duration
+	killed    bool
 	counts    Counts
 	lastErr   error
 	depth     int
@@ -138,7 +163,15 @@ func New(o Options) (*VM, error) {
 		return nil, err
 	}
 	base, _ := mem.Stack()
-	v := &VM{mem: mem, stack: base, stackSize: size, wall: realClock()}
+	v := &VM{mem: mem, stack: base, stackSize: size, wall: realClock(), interval: DefaultPollInterval, grace: DefaultKillGrace}
+	if o.PollCounter != 0 {
+		if o.PollCounter%8 != 0 || o.PollCounter > size-8 {
+			mem.Close()
+			panic(fmt.Sprintf("gohost: a poll counter at %d is not a word of the %d-byte stack", o.PollCounter, size))
+		}
+		v.counter = base + o.PollCounter
+		*(*int64)(addr(v.counter)) = v.interval
+	}
 	mu.Lock()
 	for {
 		nextID++
@@ -316,6 +349,9 @@ func (v *VM) Enter() {
 	}
 	if v.depth == 0 {
 		v.interrupt.Store(0)
+		if v.flag != 0 {
+			*(*int32)(addr(v.flag)) = 0
+		}
 		v.faultWas = debug.SetPanicOnFault(true)
 	}
 	v.depth++
@@ -332,9 +368,53 @@ func (v *VM) Leave() {
 	}
 }
 
+// SetInterruptFlag gives the address of the engine's interrupt flag, an
+// int32 in its memory that the engine reads where it can throw (see
+// JS_GetInterruptFlag in engine/quickjs.h): Poll sets it to 1 once Interrupt
+// asked to stop, and the outermost Enter clears it. The engine keeps the
+// flag where it is for as long as it lives.
+func (v *VM) SetInterruptFlag(a uintptr) {
+	if a == 0 || a%4 != 0 {
+		panic(fmt.Sprintf("gohost: an interrupt flag at %#x", a))
+	}
+	v.flag = a
+}
+
 // Interrupt asks the engine to stop at its next poll. Any goroutine may call
 // it.
-func (v *VM) Interrupt() { v.interrupt.Store(1) }
+func (v *VM) Interrupt() {
+	v.interrupt.CompareAndSwap(0, int64(time.Since(start))+1)
+}
+
+// Interrupted reports whether Interrupt asked the engine to stop since the
+// outermost entry began.
+func (v *VM) Interrupted() bool { return v.interrupt.Load() != 0 }
+
+// SetPollInterval sets the number of ticks between two polls, at least 1:
+// 1 makes every cycle poll, which the tests use to show that a poll keeps
+// what the generated code holds. It takes effect at once. Like the engine,
+// call it from the goroutine that uses the VM.
+func (v *VM) SetPollInterval(n int64) {
+	if n < 1 {
+		panic(fmt.Sprintf("gohost: a poll interval of %d", n))
+	}
+	v.interval = n
+	if v.counter != 0 {
+		*(*int64)(addr(v.counter)) = n
+	}
+}
+
+// SetKillGrace sets how long a script may run on after Interrupt before the
+// next poll kills it: the poll panics with ErrKilled through the engine's
+// frames, and the VM takes only Close from then on. A negative grace never
+// kills.
+func (v *VM) SetKillGrace(d time.Duration) { v.grace = d }
+
+// KillGrace is the grace SetKillGrace set.
+func (v *VM) KillGrace() time.Duration { return v.grace }
+
+// Killed reports whether a poll killed the script.
+func (v *VM) Killed() bool { return v.killed }
 
 // AllowRemap tells whether the engine may ask to remap a dedicated chunk,
 // which only linux can. When it says yes, the host must tell the engine with
@@ -393,13 +473,31 @@ func Now(vm uint32, kind int32) int64 {
 	panic(fmt.Sprintf("gohost: host_now of kind %d", kind))
 }
 
-// Poll is host_poll: the engine lets the Go scheduler and garbage collector
-// stop it here, and learns whether the VM is asked to stop. It does not call
-// into the engine.
-func Poll(sp uintptr) int64 {
+// Poll is host_poll, which the engine calls when its count of cycles runs
+// out. Its stack check is where the Go scheduler and garbage collector stop
+// the goroutine in the engine: nothing in the generated code is stopped
+// otherwise. It sets the counter again. Once Interrupt asked to stop, it sets
+// the engine's interrupt flag, which the engine throws "interrupted" on where
+// it can, and kills a script still running longer than the grace after the
+// Interrupt. It does not call into the engine.
+func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
-	return int64(v.interrupt.Load())
+	if v.counter != 0 {
+		*(*int64)(addr(v.counter)) = v.interval
+	}
+	t := v.interrupt.Load()
+	if t == 0 {
+		return
+	}
+	if v.flag != 0 {
+		*(*int32)(addr(v.flag)) = 1
+	}
+	if v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
+		v.killed = true
+		v.MarkBroken()
+		panic(ErrKilled)
+	}
 }
 
 // Call is host_call. A magic of 0 or more names a function of the host:
