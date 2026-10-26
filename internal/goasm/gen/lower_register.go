@@ -36,6 +36,9 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 			break
 		}
 	}
+	if end < 0 {
+		return "", Meta{}, fmt.Errorf("%s: no .Lfunc_end", fn.Name)
+	}
 	var inner []string
 	for _, raw := range lines[start+1 : end] {
 		l := clean(raw)
