@@ -22,10 +22,6 @@
 #define HOST_NOW_SEC 1767225600       /* 2026-01-01T00:00:00Z */
 #define HOST_TIMEOUT_SEC 120          /* the longest a test may run, unless HOST_TIMEOUT_SEC says otherwise */
 
-/* When the runtime of this thread was made. A thread has one runtime at a
-   time: the runner makes one per test, and one per agent in its own thread. */
-static _Thread_local struct timespec host_started;
-
 /* The memory of the VMs. The heap asks for chunks through host_memory_grow,
    which maps them and keeps a list for each VM, so that they can be unmapped
    when the runtime is freed. The mutex guards the list of VMs only: a VM is
@@ -39,9 +35,10 @@ typedef struct HostChunk {
 typedef struct HostVM {
     struct HostVM *next;
     uint32_t id;
-    JSRuntime *rt;
+    JSRuntime *rt;   /* NULL once host_free_runtime starts freeing it */
     HostChunk *chunks;
     size_t mapped;   /* bytes in the chunks */
+    struct timespec started; /* when the runtime was made */
 } HostVM;
 
 static HostVM *host_vms;
@@ -217,16 +214,28 @@ static JSValue host_memory_release(uint32_t id, uintptr_t addr, uintptr_t size)
     _exit(87);
 }
 
-/* The engine calls this from time to time, between two steps of the script.
-   It ends a test that runs over two minutes. */
-static int host_interrupt(JSRuntime *rt, void *opaque)
+/* A thread that ends a test that runs over two minutes: once a second it
+   sets the interrupt flag of each runtime made longer ago than that, and
+   the engine throws "interrupted" at its next check. It reads the list
+   under the lock, and host_free_runtime takes a runtime out of its sight
+   under the same lock before freeing it. */
+static void *host_watchdog(void *arg)
 {
     struct timespec now;
+    HostVM *vm;
 
-    (void)rt;
-    (void)opaque;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    return now.tv_sec - host_started.tv_sec > host_timeout;
+    (void)arg;
+    for (;;) {
+        sleep(1);
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        pthread_mutex_lock(&host_lock);
+        for (vm = host_vms; vm; vm = vm->next) {
+            if (vm->rt && now.tv_sec - vm->started.tv_sec > host_timeout)
+                __atomic_store_n(JS_GetInterruptFlag(vm->rt), 1, __ATOMIC_RELAXED);
+        }
+        pthread_mutex_unlock(&host_lock);
+    }
+    return NULL;
 }
 
 static void host_atexit(void)
@@ -249,6 +258,15 @@ static void host_register_exit(void)
         host_timeout = strtol(timeout, NULL, 10);
     host_no_remap = no_remap && *no_remap && strcmp(no_remap, "0");
     atexit(host_atexit);
+    if (host_timeout) {
+        pthread_t t;
+
+        if (pthread_create(&t, NULL, host_watchdog, NULL) != 0) {
+            fprintf(stderr, "host: cannot start the thread of the timeout\n");
+            _exit(87);
+        }
+        pthread_detach(t);
+    }
 }
 
 /* Takes vm out of the list of VMs. The caller holds host_lock. */
@@ -298,10 +316,12 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
     pthread_mutex_unlock(&host_lock);
     rt = JS_NewRuntime(vm->id, seed);
     pthread_mutex_lock(&host_lock);
-    if (rt)
+    if (rt) {
         vm->rt = rt;
-    else
+        clock_gettime(CLOCK_MONOTONIC, &vm->started);
+    } else {
         host_vm_unlink(vm);
+    }
     pthread_mutex_unlock(&host_lock);
     if (!rt) {
         host_vm_free(vm);
@@ -310,9 +330,6 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
 #ifdef __linux__
     JS_SetHostRemap(rt, !host_no_remap);
 #endif
-    clock_gettime(CLOCK_MONOTONIC, &host_started);
-    if (host_timeout)
-        JS_SetInterruptHandler(rt, host_interrupt, NULL);
     return rt;
 }
 
@@ -324,20 +341,25 @@ JSRuntime *host_new_runtime(void)
 void host_free_runtime(JSRuntime *rt)
 {
     HostVM *vm;
-    size_t leaked = JS_FreeRuntime(rt);
+    size_t leaked;
 
+    /* out of the watchdog's sight before the runtime is freed */
     pthread_mutex_lock(&host_lock);
     for (vm = host_vms; vm && vm->rt != rt; vm = vm->next)
         ;
     if (vm)
-        host_vm_unlink(vm);
-    if (leaked)
-        host_leaks++;
+        vm->rt = NULL;
     pthread_mutex_unlock(&host_lock);
     if (!vm) {
         fprintf(stderr, "host: a runtime the host did not make\n");
         _exit(87);
     }
+    leaked = JS_FreeRuntime(rt);
+    pthread_mutex_lock(&host_lock);
+    host_vm_unlink(vm);
+    if (leaked)
+        host_leaks++;
+    pthread_mutex_unlock(&host_lock);
     host_vm_free(vm);
 }
 

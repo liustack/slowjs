@@ -413,8 +413,8 @@ struct JSRuntime {
 
     struct JSStackFrame *current_stack_frame;
 
-    JSInterruptHandler *interrupt_handler;
-    void *interrupt_opaque;
+    /* see JS_GetInterruptFlag */
+    volatile int interrupt_flag;
 
     JSHostPromiseRejectionTracker *host_promise_rejection_tracker;
     void *host_promise_rejection_tracker_opaque;
@@ -575,10 +575,6 @@ typedef enum {
     JS_AUTOINIT_ID_PROP,
 } JSAutoInitIDEnum;
 
-/* must be large enough to have a negligible runtime cost and small
-   enough to call the interrupt callback often. */
-#define JS_INTERRUPT_COUNTER_INIT 10000
-
 struct JSContext {
     JSGCObjectHeader header; /* must come first */
     JSRuntime *rt;
@@ -614,8 +610,6 @@ struct JSContext {
 
     uint64_t random_state;
 
-    /* when the counter reaches zero, JSRutime.interrupt_handler is called */
-    int interrupt_counter;
 
     struct list_head loaded_modules; /* list of JSModuleDef.link */
     /* the modules the resolution under way marked resolved, the latest
@@ -2568,10 +2562,9 @@ void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold)
 #define free(p) free_is_forbidden(p)
 #define realloc(p,s) realloc_is_forbidden(p,s)
 
-void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque)
+volatile int *JS_GetInterruptFlag(JSRuntime *rt)
 {
-    rt->interrupt_handler = cb;
-    rt->interrupt_opaque = opaque;
+    return &rt->interrupt_flag;
 }
 
 void JS_SetSharedArrayBufferFunctions(JSRuntime *rt,
@@ -4303,19 +4296,6 @@ typedef struct StringBuffer {
    if string_buffer_init() or another string_buffer function returns an error.
    If the error_status is set, string_buffer_end() returns JS_EXCEPTION.
  */
-/* Count cost steps of work a built-in does in one instruction toward the
-   interrupt counter, and leave the call of the interrupt handler to the
-   next poll of the interpreter. The counter stops at 0, so that it cannot
-   wrap. Parsing counts a step for each byte of source, and a string buffer
-   one for each 8 characters of room. */
-static inline void js_charge_interrupts(JSContext *ctx, size_t cost)
-{
-    if (ctx->interrupt_counter > 0 && cost < (size_t)ctx->interrupt_counter)
-        ctx->interrupt_counter -= cost;
-    else
-        ctx->interrupt_counter = 0;
-}
-
 static int string_buffer_init2(JSContext *ctx, StringBuffer *s, int size,
                                int is_wide)
 {
@@ -4324,7 +4304,6 @@ static int string_buffer_init2(JSContext *ctx, StringBuffer *s, int size,
     s->len = 0;
     s->is_wide_char = is_wide;
     s->error_status = 0;
-    js_charge_interrupts(ctx, size >> 3);
     s->str = js_alloc_string(ctx, size, is_wide);
     if (unlikely(!s->str)) {
         s->size = 0;
@@ -4401,7 +4380,6 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
     if (!new_str)
         return string_buffer_set_error(s);
     new_size = min_int(new_size + (slack >> s->is_wide_char), JS_STRING_LEN_MAX);
-    js_charge_interrupts(s->ctx, (new_size - s->size) >> 3);
     s->size = new_size;
     s->str = new_str;
     return 0;
@@ -9449,24 +9427,17 @@ static void JS_ThrowInterrupted(JSContext *ctx)
 
 static no_inline __exception int __js_poll_interrupts(JSContext *ctx)
 {
-    JSRuntime *rt = ctx->rt;
-    ctx->interrupt_counter = JS_INTERRUPT_COUNTER_INIT;
-    if (rt->interrupt_handler) {
-        if (rt->interrupt_handler(rt, rt->interrupt_opaque)) {
-            JS_ThrowInterrupted(ctx);
-            return -1;
-        }
-    }
-    return 0;
+    JS_ThrowInterrupted(ctx);
+    return -1;
 }
 
+/* Throw "interrupted" and return -1 when the host set the interrupt flag
+   (JS_GetInterruptFlag). */
 static inline __exception int js_poll_interrupts(JSContext *ctx)
 {
-    if (unlikely(--ctx->interrupt_counter <= 0)) {
+    if (unlikely(ctx->rt->interrupt_flag))
         return __js_poll_interrupts(ctx);
-    } else {
-        return 0;
-    }
+    return 0;
 }
 
 static void JS_SetImmutablePrototype(JSContext *ctx, JSValueConst obj)
@@ -39666,7 +39637,6 @@ static void js_parse_init(JSContext *ctx, JSParseState *s,
     s->get_line_col_cache.buf_start = s->buf_start;
     s->get_line_col_cache.line_num = 0;
     s->get_line_col_cache.col_num = 0;
-    js_charge_interrupts(ctx, input_len);
 }
 
 static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
@@ -48243,8 +48213,8 @@ static JSValue js_string_toWellFormed(JSContext *ctx, JSValueConst this_val,
    each index of hay and nothing to work out first, rather than with the
    Two-Way search */
 #define JS_STRING_FIND_SHORT 8
-/* the most units of work a search does between two checks of the
-   interrupt counter: a unit is a character memchr or a loop looks at, a
+/* the most units of work a search does between two reads of the
+   interrupt flag: a unit is a character memchr or a loop looks at, a
    character compared or a window of the Two-Way search */
 #define JS_STRING_FIND_STEP (1 << 16)
 
@@ -48253,20 +48223,13 @@ typedef struct JSStringFind {
     int work; /* the units of work not counted yet */
 } JSStringFind;
 
-/* Count the work of a search toward the interrupt counter, a step for each
-   8 units, as the string buffer counts the characters it makes room for,
-   and call the interrupt handler when the counter runs out, as the
-   interpreter does. Return -1, with the exception thrown, when it asks to
-   stop. */
+/* Start the count of the work of a search again, and read the interrupt
+   flag, as the interpreter does. Return -1, with the exception thrown,
+   when the host asks to stop. */
 static no_inline int js_string_find_check(JSStringFind *f)
 {
-    JSContext *ctx = f->ctx;
-
-    js_charge_interrupts(ctx, f->work >> 3);
-    f->work &= 7;
-    if (ctx->interrupt_counter <= 0)
-        return __js_poll_interrupts(ctx);
-    return 0;
+    f->work = 0;
+    return js_poll_interrupts(f->ctx);
 }
 
 /* add n units of work, and return -2 from the search when the check says
@@ -48601,7 +48564,6 @@ static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
     else
         k = js_string_find16(&f, p1->u.str16, lo, hi, needle, n2, rev);
  done:
-    js_charge_interrupts(ctx, f.work >> 3);
     return k;
 }
 
@@ -49314,6 +49276,10 @@ fail1:
     return JS_EXCEPTION;
 }
 
+/* the most characters repeat writes between two reads of the interrupt
+   flag */
+#define JS_REPEAT_CHUNK (1 << 20)
+
 static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
@@ -49321,7 +49287,7 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     StringBuffer b_s, *b = &b_s;
     JSString *p;
     int64_t val;
-    int n, len;
+    int n, len, m, run;
 
     str = JS_ToStringCheckObject(ctx, this_val);
     if (JS_IsException(str))
@@ -49345,15 +49311,30 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     if (string_buffer_init2(ctx, b, n * len, p->is_wide_char))
         goto fail;
     if (len == 1) {
-        string_buffer_fill(b, string_get(p, 0), n);
+        while (n > 0) {
+            m = min_int(n, JS_REPEAT_CHUNK);
+            string_buffer_fill(b, string_get(p, 0), m);
+            n -= m;
+            if (n > 0 && js_poll_interrupts(ctx))
+                goto fail_buffer;
+        }
     } else {
+        run = 0;
         while (n-- > 0) {
             string_buffer_concat(b, p, 0, len);
+            run += len;
+            if (run >= JS_REPEAT_CHUNK && n > 0) {
+                run = 0;
+                if (js_poll_interrupts(ctx))
+                    goto fail_buffer;
+            }
         }
     }
     JS_FreeValue(ctx, str);
     return string_buffer_end(b);
 
+fail_buffer:
+    string_buffer_free(b);
 fail:
     JS_FreeValue(ctx, str);
     return JS_EXCEPTION;
@@ -50668,10 +50649,6 @@ static JSValue js_regexp_cache_get(JSContext *ctx, JSValueConst pattern,
     if (rc->count == 0 || !js_regexp_cache_key(pattern, flags, &p, &f))
         return JS_UNDEFINED;
     h = js_regexp_cache_hash(p, f);
-    /* The hash and the compare read the whole pattern, which the
-       interpreter counts as one instruction: count a step for each 32
-       bytes too. */
-    js_charge_interrupts(ctx, (p->len << p->is_wide_char) >> 5);
     for (e = *js_regexp_cache_chain(rc, h); e; e = e->chain) {
         if (e->hash != h || !js_regexp_cache_same(ctx, e->pattern, p) ||
             !js_regexp_cache_same(ctx, e->flags, f))
@@ -51203,21 +51180,13 @@ void lre_depth_leave(void *opaque)
 int lre_check_timeout(void *opaque)
 {
     JSContext *ctx = opaque;
-    JSRuntime *rt = ctx->rt;
-    return (rt->interrupt_handler && 
-            rt->interrupt_handler(rt, rt->interrupt_opaque));
+    return ctx->rt->interrupt_flag != 0;
 }
 
-/* The regexp compiler counts its steps on the interrupt counter of the
-   interpreter: a compile is one instruction, however long it takes. */
-int lre_poll_interrupts(void *opaque, int cost)
+const volatile int *lre_interrupt_flag(void *opaque)
 {
     JSContext *ctx = opaque;
-    ctx->interrupt_counter -= cost;
-    if (likely(ctx->interrupt_counter > 0))
-        return 0;
-    ctx->interrupt_counter = JS_INTERRUPT_COUNTER_INIT;
-    return lre_check_timeout(opaque);
+    return &ctx->rt->interrupt_flag;
 }
 
 void *lre_realloc(void *opaque, void *ptr, size_t size)
@@ -52901,10 +52870,13 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
     return JS_EXCEPTION;
 }
 
+/* Each value reads the interrupt flag, so that a long parse stops. */
 static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
 {
     JSValue ret;
 
+    if (js_poll_interrupts(s->ctx))
+        return JS_EXCEPTION;
     if (js_internal_enter(s->ctx))
         return JS_EXCEPTION;
     ret = json_parse_value1(s, pr);
@@ -53549,7 +53521,8 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
 {
     int ret;
 
-    if (js_internal_enter(ctx)) {
+    /* each value reads the interrupt flag, so that a long stringify stops */
+    if (js_poll_interrupts(ctx) || js_internal_enter(ctx)) {
         JS_FreeValue(ctx, val); /* js_json_to_str1 takes it */
         return -1;
     }
@@ -61410,11 +61383,40 @@ static JSValue js_typed_array_of(JSContext *ctx, JSValueConst this_val,
     return obj;
 }
 
+/* the most elements a long loop of a typed array goes through, and the
+   most bytes it copies or sets, between two reads of the interrupt flag */
+#define JS_TA_CHUNK (1 << 16)
+#define JS_TA_BYTES_CHUNK (1 << 20)
+/* the elements an inner loop of JS_TA_FIND counts at most: few enough that
+   the generator proves the loop short (a few hundred instructions) and adds
+   no count of its own to it */
+#define JS_TA_STEP 16
+
+/* Look from k toward stop (excluded) by inc for the first index where cond
+   holds, and leave it in res. The inner loop runs a counted stretch of at
+   most JS_TA_STEP elements, and the interrupt flag is read between two. */
+#define JS_TA_FIND(cond)                                                \
+    for (;;) {                                                          \
+        n = min_int(inc > 0 ? stop - k : k - stop, JS_TA_STEP);         \
+        for (; n > 0; n--, k += inc) {                                  \
+            if (cond) {                                                 \
+                res = k;                                                \
+                break;                                                  \
+            }                                                           \
+        }                                                               \
+        if (res >= 0 || k == stop)                                      \
+            break;                                                      \
+        if (js_poll_interrupts(ctx))                                    \
+            goto exception;                                             \
+    }
+
 static JSValue js_typed_array_copyWithin(JSContext *ctx, JSValueConst this_val,
                                          int argc, JSValueConst *argv)
 {
     JSObject *p;
     int len, to, from, final, count, shift, space;
+    uint8_t *base;
+    size_t n, done, c, off;
 
     p = get_typed_array(ctx, this_val);
     if (!p)
@@ -61443,10 +61445,19 @@ static JSValue js_typed_array_copyWithin(JSContext *ctx, JSValueConst this_val,
     count = min_int(final - from, len - to);
     count = min_int(count, space);
     if (count > 0) {
+        /* in chunks, from the end when the elements move up, so that
+           each chunk reads what no chunk wrote yet */
         shift = typed_array_size_log2(p->class_id);
-        memmove(p->u.array.u.uint8_ptr + (to << shift),
-                p->u.array.u.uint8_ptr + (from << shift),
-                count << shift);
+        base = p->u.array.u.uint8_ptr;
+        n = (size_t)count << shift;
+        for (done = 0; done < n; done += c) {
+            if (done > 0 && js_poll_interrupts(ctx))
+                return JS_EXCEPTION;
+            c = n - done < JS_TA_BYTES_CHUNK ? n - done : JS_TA_BYTES_CHUNK;
+            off = to > from ? n - done - c : done;
+            memmove(base + ((size_t)to << shift) + off,
+                    base + ((size_t)from << shift) + off, c);
+        }
     }
     return JS_DupValue(ctx, this_val);
 }
@@ -61455,7 +61466,7 @@ static JSValue js_typed_array_fill(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
     JSObject *p;
-    int len, k, final, shift;
+    int len, k, final, end, shift;
     uint64_t v64;
 
     p = get_typed_array(ctx, this_val);
@@ -61516,10 +61527,17 @@ static JSValue js_typed_array_fill(JSContext *ctx, JSValueConst this_val,
     // RAB may have been resized by evil .valueOf method
     final = min_int(final, p->u.array.count);
     shift = typed_array_size_log2(p->class_id);
+    /* in chunks of JS_TA_BYTES_CHUNK bytes, which leave k at final */
+    end = final;
+ next_chunk:
+    final = end;
+    if (end - k > (JS_TA_BYTES_CHUNK >> shift))
+        final = k + (JS_TA_BYTES_CHUNK >> shift);
     switch(shift) {
     case 0:
         if (k < final) {
             memset(p->u.array.u.uint8_ptr + k, v64, final - k);
+            k = final;
         }
         break;
     case 1:
@@ -61539,6 +61557,11 @@ static JSValue js_typed_array_fill(JSContext *ctx, JSValueConst this_val,
         break;
     default:
         abort();
+    }
+    if (final != end) {
+        if (js_poll_interrupts(ctx))
+            return JS_EXCEPTION;
+        goto next_chunk;
     }
     return JS_DupValue(ctx, this_val);
 }
@@ -61609,11 +61632,12 @@ exception:
 #define special_lastIndexOf 1
 #define special_includes -1
 
+
 static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv, int special)
 {
     JSObject *p;
-    int len, tag, is_int, is_bigint, k, stop, inc, res = -1;
+    int len, tag, is_int, is_bigint, k, stop, inc, n, res = -1;
     int64_t v64;
     double d;
     float f;
@@ -61730,18 +61754,20 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
             pv = p->u.array.u.uint8_ptr;
             v = v64;
             if (inc > 0) {
-                pp = NULL;
-                if (pv)
-                    pp = memchr(pv + k, v, len - k);
-                if (pp)
-                    res = pp - pv;
-            } else {
-                for (; k != stop; k += inc) {
-                    if (pv[k] == v) {
-                        res = k;
+                /* memchr on JS_TA_CHUNK bytes at a time */
+                while (pv && k != stop) {
+                    n = min_int(stop - k, JS_TA_CHUNK);
+                    pp = memchr(pv + k, v, n);
+                    if (pp) {
+                        res = pp - pv;
                         break;
                     }
+                    k += n;
+                    if (k != stop && js_poll_interrupts(ctx))
+                        goto exception;
                 }
+            } else {
+                JS_TA_FIND(pv[k] == v);
             }
         }
         break;
@@ -61756,12 +61782,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
         scan16:
             pv = p->u.array.u.uint16_ptr;
             v = v64;
-            for (; k != stop; k += inc) {
-                if (pv[k] == v) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == v);
         }
         break;
     case JS_CLASS_INT32_ARRAY:
@@ -61775,12 +61796,7 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
         scan32:
             pv = p->u.array.u.uint32_ptr;
             v = v64;
-            for (; k != stop; k += inc) {
-                if (pv[k] == v) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == v);
         }
         break;
     case JS_CLASS_FLOAT16_ARRAY:
@@ -61791,29 +61807,14 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
             /* special case: indexOf returns -1, includes finds NaN */
             if (special != special_includes)
                 goto done;
-            for (; k != stop; k += inc) {
-                if (isfp16nan(pv[k])) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(isfp16nan(pv[k]));
         } else if (d == 0) {
             // special case: includes also finds negative zero
             const uint16_t *pv = p->u.array.u.fp16_ptr;
-            for (; k != stop; k += inc) {
-                if (isfp16zero(pv[k])) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(isfp16zero(pv[k]));
         } else if (hf = tofp16(d), d == fromfp16(hf)) {
             const uint16_t *pv = p->u.array.u.fp16_ptr;
-            for (; k != stop; k += inc) {
-                if (pv[k] == hf) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == hf);
         }
         break;
     case JS_CLASS_FLOAT32_ARRAY:
@@ -61824,20 +61825,10 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
             /* special case: indexOf returns -1, includes finds NaN */
             if (special != special_includes)
                 goto done;
-            for (; k != stop; k += inc) {
-                if (isnan(pv[k])) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(isnan(pv[k]));
         } else if ((f = (float)d) == d) {
             const float *pv = p->u.array.u.float_ptr;
-            for (; k != stop; k += inc) {
-                if (pv[k] == f) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == f);
         }
         break;
     case JS_CLASS_FLOAT64_ARRAY:
@@ -61848,20 +61839,10 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
             /* special case: indexOf returns -1, includes finds NaN */
             if (special != special_includes)
                 goto done;
-            for (; k != stop; k += inc) {
-                if (isnan(pv[k])) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(isnan(pv[k]));
         } else {
             const double *pv = p->u.array.u.double_ptr;
-            for (; k != stop; k += inc) {
-                if (pv[k] == d) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == d);
         }
         break;
     case JS_CLASS_BIG_INT64_ARRAY:
@@ -61876,16 +61857,10 @@ static JSValue js_typed_array_indexOf(JSContext *ctx, JSValueConst this_val,
         scan64:
             pv = p->u.array.u.uint64_ptr;
             v = v64;
-            for (; k != stop; k += inc) {
-                if (pv[k] == v) {
-                    res = k;
-                    break;
-                }
-            }
+            JS_TA_FIND(pv[k] == v);
         }
         break;
     }
-
 done:
     if (special == special_includes)
         return JS_NewBool(ctx, res >= 0);
