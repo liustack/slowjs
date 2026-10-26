@@ -31,6 +31,11 @@ JSRuntime *host_new_runtime_seed(uint64_t seed);
    uses it to see that the engine asks for it only when a script does. */
 extern _Thread_local long host_wall_reads;
 
+/* The VM host_now was last asked about for the wall clock in this thread, and
+   the VM of a runtime made by this host. */
+extern _Thread_local uint32_t host_wall_vm;
+uint32_t host_vm_id(JSRuntime *rt);
+
 /* JS_FreeRuntime, then the memory of the runtime goes back to the system. A
    runtime that still has blocks in use after it freed everything is a leak:
    the host says so, and the process exits with status 87. */

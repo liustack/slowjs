@@ -541,11 +541,32 @@ static void test_seed(void)
     free(z2);
 }
 
+/* Date.now asks the clock of the VM the runtime was made for. */
+static void test_clock_vm(void)
+{
+    JSRuntime *rt1 = host_new_runtime(), *rt2 = host_new_runtime();
+    JSContext *c1 = new_context(rt1), *c2 = new_context(rt2);
+    uint32_t id1 = host_vm_id(rt1), id2 = host_vm_id(rt2);
+
+    CHECK(id1 != 0 && id2 != 0 && id1 != id2, "VM ids %u and %u", id1, id2);
+    eval_ok(c2, "Date.now()");
+    CHECK(host_wall_vm == id2, "Date.now in the second runtime asked VM %u, not %u", host_wall_vm, id2);
+    eval_ok(c1, "new Date()");
+    CHECK(host_wall_vm == id1, "new Date() in the first runtime asked VM %u, not %u", host_wall_vm, id1);
+    eval_ok(c2, "Date()");
+    CHECK(host_wall_vm == id2, "Date() in the second runtime asked VM %u, not %u", host_wall_vm, id2);
+    JS_FreeContext(c1);
+    JS_FreeContext(c2);
+    host_free_runtime(rt1);
+    host_free_runtime(rt2);
+}
+
 int main(void)
 {
     JSRuntime *rt;
     JSContext *ctx;
 
+    test_clock_vm();
     test_seed();
     test_dump();
     test_tenths();
