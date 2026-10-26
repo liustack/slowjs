@@ -460,3 +460,17 @@ func TestCloseDropsHandles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// BenchmarkEnterLeave is the cost of an outermost entry and its Leave,
+// SetPanicOnFault included.
+func BenchmarkEnterLeave(b *testing.B) {
+	v, err := New(Options{StackSize: small})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { v.Close() })
+	for b.Loop() {
+		v.Enter()
+		v.Leave()
+	}
+}
