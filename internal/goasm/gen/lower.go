@@ -993,41 +993,159 @@ func (env *LowerEnv) jumpTables(fn string) map[string]map[string]bool {
 }
 
 // indirectJumpTargets decides, per indirect jump (jmp/jmpq through a register
-// or memory), which blocks it may land on. A switch or computed-goto dispatch
-// loads its target from a jump table llc kept inside the function, so the
-// table referenced in the jump's own block gives the jump's complete target
-// set. A jump whose block references no known table has an unknown target set:
-// it could reach any block, so unknown is set and every cross-block marker
-// must then be rejected. tables maps each in-body jump-table label to its
-// target blocks.
+// or memory), which blocks it may land on. A table vouches only for the jump
+// that provably loads its target from it: tableDispatch follows the jump's
+// register back through llc's PIC dispatch sequence to the LEA of the table.
+// Any other jump has an unknown target set: it could reach any block, so
+// unknown is set and every cross-block marker must then be rejected. tables
+// maps each in-body jump-table label to its target blocks.
 func indirectJumpTargets(lines []string, tables map[string]map[string]bool) (reachable map[string]bool, unknown bool) {
 	reachable = map[string]bool{}
-	var refs []string // in-body table labels referenced since the last label
-	for _, l := range lines {
+	blockStart := 0
+	for i, l := range lines {
 		n := norm(l)
 		if reLabel.MatchString(n) {
-			refs = refs[:0]
+			blockStart = i + 1
 			continue
 		}
-		for _, tok := range reSymTok.FindAllString(l, -1) {
-			if tables[tok] != nil {
-				refs = append(refs, tok)
-			}
-		}
 		f := strings.Fields(n)
-		if len(f) >= 1 && (f[0] == "jmp" || f[0] == "jmpq") && strings.Contains(n, "*") {
-			if len(refs) == 0 {
-				unknown = true
-				continue
-			}
-			for _, t := range refs {
-				for b := range tables[t] {
-					reachable[b] = true
-				}
-			}
+		if len(f) == 0 || (f[0] != "jmp" && f[0] != "jmpq") || !strings.Contains(n, "*") {
+			continue
+		}
+		t, ok := tableDispatch(lines[blockStart:i+1], tables)
+		if !ok {
+			unknown = true
+			continue
+		}
+		for b := range tables[t] {
+			reachable[b] = true
 		}
 	}
 	return reachable, unknown
+}
+
+var (
+	reJmpReg    = regexp.MustCompile(`^jmpq?\s+\*%(r\w+)$`)
+	reTableAdd  = regexp.MustCompile(`^addq\s+%(r\w+), %(r\w+)$`)
+	reTableLoad = regexp.MustCompile(`^movslq\s+\(%(r\w+),%(r\w+),4\), %(r\w+)$`)
+	reTableLEA  = regexp.MustCompile(`^leaq\s+([.\w$]+)\(%rip\), %(r\w+)$`)
+)
+
+// tableDispatch matches the end of block (its last line is the indirect jump)
+// against llc's PIC dispatch, following the jump's register:
+//
+//	leaq  T(%rip), %rB
+//	movslq (%rB,%rI,4), %rX
+//	addq  %rB, %rX
+//	jmpq  *%rX
+//
+// Lines between them may be anything that names neither %rB nor %rX (in any
+// width) and writes no register implicitly. It returns T when T is a known
+// table.
+func tableDispatch(block []string, tables map[string]map[string]bool) (string, bool) {
+	k := len(block) - 1
+	m := reJmpReg.FindStringSubmatch(norm(block[k]))
+	if m == nil {
+		return "", false
+	}
+	rx := m[1]
+	// prev finds the nearest earlier line that names any of regs; every line
+	// skipped over must not write a register implicitly.
+	prev := func(from int, regs ...string) int {
+		for j := from - 1; j >= 0; j-- {
+			n := norm(block[j])
+			if strings.HasPrefix(n, "@icall ") {
+				continue
+			}
+			for _, r := range regs {
+				if namesReg(n, r) {
+					return j
+				}
+			}
+			if implicitWrite(n) {
+				return -1
+			}
+		}
+		return -1
+	}
+	a := prev(k, rx)
+	if a < 0 {
+		return "", false
+	}
+	am := reTableAdd.FindStringSubmatch(norm(block[a]))
+	if am == nil || am[2] != rx || am[1] == rx {
+		return "", false
+	}
+	rb := am[1]
+	ld := prev(a, rx, rb)
+	if ld < 0 {
+		return "", false
+	}
+	lm := reTableLoad.FindStringSubmatch(norm(block[ld]))
+	if lm == nil || lm[1] != rb || lm[3] != rx || lm[2] == rb {
+		return "", false
+	}
+	le := prev(ld, rb)
+	if le < 0 {
+		return "", false
+	}
+	em := reTableLEA.FindStringSubmatch(norm(block[le]))
+	if em == nil || em[2] != rb || tables[em[1]] == nil {
+		return "", false
+	}
+	return em[1], true
+}
+
+// implicitWrite reports an instruction that may write a register it does not
+// name: one with no operands (cltq, cqto, a string operation), a call, a rep
+// or loop form, cmpxchg (the accumulator), or a one-operand multiply or
+// divide (the accumulator and RDX).
+func implicitWrite(n string) bool {
+	f := strings.Fields(n)
+	if len(f) == 0 {
+		return false
+	}
+	mn := f[0]
+	if len(f) == 1 {
+		return mn != "nop"
+	}
+	for _, p := range []string{"call", "rep", "loop", "cmpxchg"} {
+		if strings.HasPrefix(mn, p) {
+			return true
+		}
+	}
+	for _, p := range []string{"mul", "div", "idiv", "imul"} {
+		if strings.HasPrefix(mn, p) && !strings.Contains(n, ",") {
+			return true
+		}
+	}
+	return false
+}
+
+// regAliases gives every name of a 64-bit general register.
+func regAliases(r string) []string {
+	switch r {
+	case "rax", "rbx", "rcx", "rdx":
+		c := r[1:2]
+		return []string{r, "e" + c + "x", c + "x", c + "l", c + "h"}
+	case "rsi", "rdi":
+		c := r[1:2]
+		return []string{r, "e" + c + "i", c + "i", c + "il"}
+	case "rbp", "rsp":
+		c := r[1:2]
+		return []string{r, "e" + c + "p", c + "p", c + "pl"}
+	}
+	return []string{r, r + "d", r + "w", r + "b"}
+}
+
+// namesReg reports whether instruction n names register r in any width.
+func namesReg(n, r string) bool {
+	for _, a := range regAliases(r) {
+		if regexp.MustCompile(`%` + a + `\b`).MatchString(n) {
+			return true
+		}
+	}
+	return false
 }
 
 func (env *LowerEnv) dataRefs(fn, l string) (string, error) {

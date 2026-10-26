@@ -109,6 +109,29 @@ func TestMarkerFlowIndirectJumpEntry(t *testing.T) {
 	if _, err := markerFlow(mixed, tables(".LBB0_8")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
 		t.Fatalf("a known table alongside an unknown jump accepted the crossing marker: %v", err)
 	}
+	// A table vouches only for the jump that loads its target from it. Here
+	// the block loads the table's address into %r9 but jumps through %rdx, a
+	// register the table never reaches; or it overwrites the table address
+	// before the load; or a call clobbers registers in between. Each jump's
+	// targets are unknown, so the crossing marker is rejected. Only the full
+	// dispatch, with an unrelated line inside it, vouches.
+	shape := func(dispatch string) []string {
+		return strings.Split("testq %rsi, %rsi\nje .LBB0_2\n"+dispatch+"\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
+	}
+	for name, d := range map[string]string{
+		"other register":   "leaq .LJTI0_0(%rip), %r9\njmpq *%rdx",
+		"base clobbered":   "leaq .LJTI0_0(%rip), %rdx\nmovq %rsi, %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx",
+		"target clobbered": "leaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\nmovl %esi, %ecx\njmpq *%rcx",
+		"call between":     "leaq .LJTI0_0(%rip), %rdx\ncallq *%r8\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx",
+	} {
+		if _, err := markerFlow(shape(d), tables(".LBB0_8")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
+			t.Errorf("%s: a jump the table does not feed accepted the crossing marker: %v", name, err)
+		}
+	}
+	full := shape("leaq .LJTI0_0(%rip), %rdx\nmovl %ecx, %ecx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx")
+	if _, err := markerFlow(full, tables(".LBB0_8")); err != nil {
+		t.Errorf("the full dispatch from a table that does not target .LBB0_3 rejected: %v", err)
+	}
 }
 
 // The outgoing argument area must hold an indirect call's arguments even
