@@ -12,7 +12,7 @@ read_when:
 
 # Regular expressions
 
-The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. These three change only the generated Go, through `internal/fixlib`, with no C form. The change to the classes of regexps with the v flag is a fix of the parser, with a C form in `lib/internal/patch/quickjs.diff`.
+The engine compiles a regexp to bytecode and runs it in a backtracking machine. The first two changes here are in `lib/regexskip.go`, the cache of compiled regexps in `lib/regexcache.go`. In `lib/` these three change only the generated Go, through `internal/fixlib`, with no C form in `quickjs.diff`. The C tree in `engine/` has them in C, as each section says. The change to the classes of regexps with the v flag is a fix of the parser, with a C form in `lib/internal/patch/quickjs.diff`.
 
 ## Skip to where a regexp can match
 
