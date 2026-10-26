@@ -2428,6 +2428,11 @@ size_t JS_GetGCThreshold(JSRuntime *rt)
     return rt->malloc_gc_threshold;
 }
 
+void JS_SetHostRemap(JSRuntime *rt, int on)
+{
+    heap_set_remap(&rt->malloc_ctx.heap, on);
+}
+
 /* The largest number of blocks a size class keeps in the front cache, 0 for
    none: the blocks already there are given back. For tests and measuring. */
 void JS_SetFrontCache(JSRuntime *rt, int max)

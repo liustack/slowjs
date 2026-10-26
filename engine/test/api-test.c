@@ -422,6 +422,57 @@ static void test_realloc_limit(void)
     host_free_runtime(rt);
 }
 
+/* A block of its own, on the real host: its chunk is mapped when the block is
+   made, grows by mremap on linux (the host tells the engine so) and by a new
+   chunk, a copy and a release elsewhere, with the content and the count right
+   either way, and goes back to the system in the call that frees the block. */
+static void test_dedicated(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    size_t mapped0 = host_mapped_bytes(), count, u0, u1, i;
+    uint8_t *p, *q;
+    int ok = 1;
+
+    p = js_malloc_rt(rt, (size_t)6 << 20);
+    CHECK(p != NULL, "a block of 6 MiB");
+#ifndef JS_HEAP_SYSTEM_MALLOC /* the system malloc has no chunks */
+    CHECK(host_mapped_bytes() >= mapped0 + ((size_t)6 << 20) && host_mapped_bytes() < mapped0 + ((size_t)6 << 20) + 131072,
+          "the block of 6 MiB has a chunk of %zu bytes", host_mapped_bytes() - mapped0);
+#endif
+    memset(p, 0x5a, (size_t)6 << 20);
+    u0 = js_malloc_usable_size_rt(rt, p);
+    count = JS_GetMemorySize(rt);
+    q = js_realloc_rt(rt, p, (size_t)20 << 20);
+    CHECK(q != NULL, "a block of 6 MiB that grows to 20 MiB");
+    u1 = js_malloc_usable_size_rt(rt, q);
+    CHECK(u1 >= (size_t)20 << 20 && JS_GetMemorySize(rt) == count - u0 + u1, "count after a resize of a block of its own");
+#ifndef JS_HEAP_SYSTEM_MALLOC
+    /* a block that grew has an eighth of room in its chunk */
+    CHECK(host_mapped_bytes() >= mapped0 + ((size_t)20 << 20) && host_mapped_bytes() < mapped0 + ((size_t)20 << 20) + ((size_t)20 << 20) / 8 + 131072,
+          "the chunk of the block of 20 MiB is %zu bytes", host_mapped_bytes() - mapped0);
+#endif
+    for (i = 0; i < (size_t)6 << 20; i++)
+        ok &= q[i] == 0x5a;
+    CHECK(ok, "the content of a block of its own did not follow a resize");
+    memset(q, 0xa5, u1);
+    js_free_rt(rt, q);
+    CHECK(host_mapped_bytes() == mapped0, "the chunk of a block of its own should go back to the system with the block, %zu bytes are left",
+          host_mapped_bytes() - mapped0);
+    /* a block that is refused leaves the old one */
+    p = js_malloc_rt(rt, (size_t)5 << 20);
+    CHECK(p != NULL, "a block of 5 MiB");
+    memset(p, 0x3c, (size_t)5 << 20);
+    JS_SetMemoryLimit(rt, JS_GetMemorySize(rt) + 1000);
+    CHECK(js_realloc_rt(rt, p, (size_t)40 << 20) == NULL, "a resize past the limit passed");
+    JS_SetMemoryLimit(rt, (size_t)-1);
+    for (i = 0, ok = 1; i < (size_t)5 << 20; i++)
+        ok &= p[i] == 0x3c;
+    CHECK(ok, "a refused resize of a block of its own changed it");
+    js_free_rt(rt, p);
+    CHECK(host_mapped_bytes() == mapped0, "the chunk of the refused block did not go back");
+    host_free_runtime(rt);
+}
+
 /* Runs fn in a child process with its standard error in a pipe. The child must
    die of SIGABRT, which is how the host ends the process, after the host has
    said that it heard the abort. */
@@ -572,6 +623,7 @@ int main(void)
     test_tenths();
     test_class_ids();
     test_realloc_limit();
+    test_dedicated();
     rt = host_new_runtime();
     ctx = new_context(rt);
     test_atomics(ctx);

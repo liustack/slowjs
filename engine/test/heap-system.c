@@ -54,6 +54,13 @@ void heap_destroy(JSHeap *h)
     free(h);
 }
 
+/* the system malloc has no chunks to remap */
+void heap_set_remap(JSHeap *h, int on)
+{
+    (void)h;
+    (void)on;
+}
+
 void *heap_alloc(JSHeap *h, size_t size)
 {
     void *p;
