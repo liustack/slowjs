@@ -183,9 +183,9 @@ func goReg(reg string) string {
 }
 
 // LowerEnv is what lowering a function of the whole engine needs beyond its
-// own text: where its data goes, which symbols are functions, and the
-// signatures of indirect calls, which the shadow-stack pass writes before
-// each one as a "# goasm.icall <code>" comment.
+// own text: where its data goes and which symbols are functions. The
+// signature of each indirect call is the one LLVM bound to it, which llc
+// writes as a goasm.icall label right before the call (icall.go).
 type LowerEnv struct {
 	Plan  *DataPlan
 	Funcs map[string]bool
@@ -224,9 +224,6 @@ func LowerUnified(a AMD64Arch, asm string, fn FuncSpec) (string, Meta, error) {
 	return LowerUnifiedFunc(a, lines[start+1:end], fn, nil, asm)
 }
 
-// reMarker is the comment the shadow-stack pass puts before an indirect call.
-var reMarker = regexp.MustCompile(`#\s*goasm\.icall\s+(\S+)`)
-
 // LowerUnifiedFunc lowers the body lines of one function (after its label,
 // up to .Lfunc_end). With env nil it is the prototype's unit: constant pools
 // are found in asm and indirect calls take fn.Indirect in order.
@@ -234,12 +231,23 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	// Gather the instruction/label lines of the body.
 	var body []string
 	for _, raw := range lines {
-		if m := reMarker.FindStringSubmatch(raw); m != nil {
-			body = append(body, "@icall "+m[1])
-			continue
-		}
 		l := clean(raw)
 		if l == "" {
+			continue
+		}
+		// The label llc writes at an indirect call names the signature
+		// LLVM bound to it.
+		if strings.HasPrefix(l, ICallPrefix) && strings.HasSuffix(l, ":") {
+			name := strings.TrimSuffix(l, ":")
+			f, _, id, ok := ParseICallSymbol(name)
+			if !ok || f != fn.Name {
+				return "", Meta{}, fmt.Errorf("%s: indirect-call label %s is not one of this function", fn.Name, name)
+			}
+			code, err := ICallCode(id)
+			if err != nil {
+				return "", Meta{}, fmt.Errorf("%s: indirect call: %w", fn.Name, err)
+			}
+			body = append(body, "@icall "+code)
 			continue
 		}
 		if strings.HasPrefix(l, ".cfi_") || strings.HasPrefix(l, ".p2align") ||
@@ -392,36 +400,25 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		return nil
 	}
 	indIdx := 0
-	pending := "" // signature code of the next indirect call
-	var flow map[string]string
-	if env != nil {
-		var err error
-		if flow, err = markerFlow(inner, env.jumpTables(fn.Name)); err != nil {
-			return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
-		}
-	}
+	pending := "" // signature code of the indirect call on the next line
 	for li, l := range inner {
 		n := norm(l)
 		if strings.HasPrefix(n, "@icall ") {
-			if pending != "" {
-				return "", Meta{}, fmt.Errorf("%s: two indirect-call markers without a call between", fn.Name)
+			// The label is a symbol at its call's address: the next line
+			// must be that call.
+			if li+1 >= len(inner) || !(reIndirect.MatchString(norm(inner[li+1])) || reIndirectMem.MatchString(norm(inner[li+1]))) {
+				return "", Meta{}, fmt.Errorf("%s: an indirect-call label is not on an indirect call", fn.Name)
 			}
 			pending = strings.TrimPrefix(n, "@icall ")
 			continue
 		}
-		if m := reLabel.FindStringSubmatch(n); m != nil {
-			if env == nil && pending != "" {
-				return "", Meta{}, fmt.Errorf("%s: indirect-call marker and its call in different blocks", fn.Name)
-			}
-			// The marker reaching this block along every edge into it.
-			pending = flow[m[1]]
-		}
-		// indirectSig is the signature of an indirect call: from the
-		// marker in the whole engine, in declared order in the prototype.
+		// indirectSig is the signature of an indirect call: the one LLVM
+		// bound to it in the whole engine, in declared order in the
+		// prototype.
 		indirectSig := func() (Sig, error) {
 			if env != nil {
 				if pending == "" {
-					return Sig{}, fmt.Errorf("%s: indirect call without a marker: %q", fn.Name, l)
+					return Sig{}, fmt.Errorf("%s: indirect call without LLVM's signature label: %q", fn.Name, l)
 				}
 				s, err := SigFromCode(pending)
 				pending = ""
@@ -499,9 +496,6 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
 			continue
 		}
-		if m := reCall.FindStringSubmatch(n); m != nil && pending != "" {
-			return "", Meta{}, fmt.Errorf("%s: indirect-call marker before a direct call: %q", fn.Name, l)
-		}
 		if m := reCall.FindStringSubmatch(n); m != nil && env != nil && env.Variadic[m[1]] && !env.LooseVarargs {
 			return "", Meta{}, fmt.Errorf("%s: variadic call to %s", fn.Name, m[1])
 		}
@@ -557,9 +551,6 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	// Go's RET (appended by emit). A function with constants keeps them in its
 	// own body after the code, where the assembler resolves every
 	// RIP-relative reference, and jumps over them to the RET.
-	if pending != "" {
-		return "", Meta{}, fmt.Errorf("%s: indirect-call marker without a call", fn.Name)
-	}
 	out = append(out, retLabel+":")
 	var pool string
 	if env != nil {
@@ -717,101 +708,6 @@ func AddCallee(name string, sig Sig, kind Kind) {
 	calleeKinds[name] = kind
 }
 
-// markerFlow gives the indirect-call marker pending at the start of each
-// local label. llc may move the call of a marked site into a block shared by
-// several predecessors (tail merging), each keeping its own copy of the
-// marker, so a marker is followed along jumps and fall-throughs to its call.
-// Every edge into a block must carry the same marker, or none.
-// markerFlow returns the indirect-call marker pending at the start of each
-// local label. tables maps each in-body jump-table label to the blocks it
-// lands on; indirectJumpTargets uses it to decide, per indirect jump, which
-// blocks that jump may reach, and whether any jump's targets are unknown.
-func markerFlow(lines []string, tables map[string]map[string]bool) (map[string]string, error) {
-	in := map[string]string{} // present: some edge reaches the label
-	// A label no direct jump names is entered by falling through or from a
-	// jump table. No marker may be pending at an indirect jump (checked
-	// below), so a table entry carries none.
-	targets := map[string]bool{}
-	for _, l := range lines {
-		f := strings.Fields(norm(l))
-		if len(f) == 2 && f[0][0] == 'j' && strings.HasPrefix(f[1], ".L") {
-			targets[f[1]] = true
-		}
-	}
-	reachable, unknown := indirectJumpTargets(lines, tables)
-	for iter := 0; ; iter++ {
-		if iter > len(lines)+1 {
-			return nil, fmt.Errorf("indirect-call markers do not settle")
-		}
-		changed := false
-		var conflict error
-		join := func(lab, st string) {
-			prev, ok := in[lab]
-			if !ok {
-				in[lab], changed = st, true
-			} else if prev != st && conflict == nil {
-				conflict = fmt.Errorf("blocks reaching %s disagree on the indirect-call marker (%q, %q)", lab, prev, st)
-			}
-		}
-		st, live := "", true
-		for _, l := range lines {
-			n := norm(l)
-			if strings.HasPrefix(n, "@icall ") {
-				st = strings.TrimPrefix(n, "@icall ")
-				continue
-			}
-			if m := reLabel.FindStringSubmatch(n); m != nil {
-				if live {
-					join(m[1], st)
-				}
-				if v, ok := in[m[1]]; ok {
-					st, live = v, true
-				} else if !targets[m[1]] {
-					st, live = "", true
-				} else {
-					live = false
-				}
-				continue
-			}
-			if !live {
-				continue
-			}
-			f := strings.Fields(n)
-			switch {
-			case strings.HasPrefix(n, "call"):
-				st = ""
-			case len(f) == 2 && (f[0] == "jmp" || f[0] == "jmpq") && strings.HasPrefix(f[1], ".L"):
-				join(f[1], st)
-				live = false
-			case len(f) == 2 && n[0] == 'j' && strings.HasPrefix(f[1], ".L"):
-				join(f[1], st)
-			case n == "retq" || n == "ret" || f[0] == "jmp" || f[0] == "jmpq" || f[0] == "ud2":
-				if st != "" {
-					return nil, fmt.Errorf("indirect-call marker without a call")
-				}
-				live = false
-			}
-		}
-		if conflict != nil {
-			return nil, conflict
-		}
-		if !changed {
-			// A marker pending at the start of a block reaches its call
-			// across a block edge. If an indirect jump could land on that
-			// block, the block is reached along an edge that carries no
-			// marker, so the marker cannot be trusted. Reject when the block
-			// is a target of some resolved jump, or when any jump's targets
-			// are unknown (so it could reach any block).
-			for _, lab := range SortedKeys(in) {
-				if in[lab] != "" && (unknown || reachable[lab]) {
-					return nil, fmt.Errorf("indirect-call marker %q reaches %s across a block edge while an indirect jump may reach %s unmarked", in[lab], lab, lab)
-				}
-			}
-			return in, nil
-		}
-	}
-}
-
 // nextCall returns the target of the first direct call in lines.
 func nextCall(lines []string) string {
 	for _, l := range lines {
@@ -930,194 +826,6 @@ func constantPool(asm string, body []string) (string, error) {
 // __goasm_rodata+offset, any other read of data goes to the function's own
 // copy, a constant pool or jump table keeps its label, and a LEA of a
 // function stays symbolic for emit.
-// reBlockLabel matches a local block label (.LBB.., .Ltmp..) used as a jump
-// target inside a data object, such as a switch table or a computed-goto
-// table.
-var reBlockLabel = regexp.MustCompile(`\.L(?:BB|tmp)[\w.$]*`)
-
-// jumpTables maps each in-body jump-table label of fn to the block labels it
-// lands on. llc keeps a switch or computed-goto table inside the function that
-// reads it, so a table is one of fn's own in-body data objects that holds
-// block labels. An object with no block labels (a constant pool) is not a
-// table.
-func (env *LowerEnv) jumpTables(fn string) map[string]map[string]bool {
-	if env.Plan == nil {
-		return nil
-	}
-	m := map[string]map[string]bool{}
-	for _, o := range env.Plan.InBody[fn] {
-		targets := map[string]bool{}
-		for _, l := range o.Lines {
-			for _, b := range reBlockLabel.FindAllString(l, -1) {
-				targets[b] = true
-			}
-		}
-		if len(targets) == 0 {
-			continue
-		}
-		for _, lab := range append([]string{o.Label}, o.Aliases...) {
-			m[lab] = targets
-		}
-	}
-	return m
-}
-
-// indirectJumpTargets decides, per indirect jump (jmp/jmpq through a register
-// or memory), which blocks it may land on. A table vouches only for the jump
-// that provably loads its target from it: tableDispatch follows the jump's
-// register back through llc's PIC dispatch sequence to the LEA of the table.
-// Any other jump has an unknown target set: it could reach any block, so
-// unknown is set and every cross-block marker must then be rejected. tables
-// maps each in-body jump-table label to its target blocks.
-func indirectJumpTargets(lines []string, tables map[string]map[string]bool) (reachable map[string]bool, unknown bool) {
-	reachable = map[string]bool{}
-	blockStart := 0
-	for i, l := range lines {
-		n := norm(l)
-		if reLabel.MatchString(n) {
-			blockStart = i + 1
-			continue
-		}
-		f := strings.Fields(n)
-		if len(f) == 0 || (f[0] != "jmp" && f[0] != "jmpq") || !strings.Contains(n, "*") {
-			continue
-		}
-		t, ok := tableDispatch(lines[blockStart:i+1], tables)
-		if !ok {
-			unknown = true
-			continue
-		}
-		for b := range tables[t] {
-			reachable[b] = true
-		}
-	}
-	return reachable, unknown
-}
-
-var (
-	reJmpReg    = regexp.MustCompile(`^jmpq?\s+\*%(r\w+)$`)
-	reTableAdd  = regexp.MustCompile(`^addq\s+%(r\w+), %(r\w+)$`)
-	reTableLoad = regexp.MustCompile(`^movslq\s+\(%(r\w+),%(r\w+),4\), %(r\w+)$`)
-	reTableLEA  = regexp.MustCompile(`^leaq\s+([.\w$]+)\(%rip\), %(r\w+)$`)
-)
-
-// tableDispatch matches the end of block (its last line is the indirect jump)
-// against llc's PIC dispatch, following the jump's register:
-//
-//	leaq  T(%rip), %rB
-//	movslq (%rB,%rI,4), %rX
-//	addq  %rB, %rX
-//	jmpq  *%rX
-//
-// Lines between them may be anything that names neither %rB nor %rX (in any
-// width) and writes no register implicitly. It returns T when T is a known
-// table.
-func tableDispatch(block []string, tables map[string]map[string]bool) (string, bool) {
-	k := len(block) - 1
-	m := reJmpReg.FindStringSubmatch(norm(block[k]))
-	if m == nil {
-		return "", false
-	}
-	rx := m[1]
-	// prev finds the nearest earlier line that names any of regs; every line
-	// skipped over must not write a register implicitly.
-	prev := func(from int, regs ...string) int {
-		for j := from - 1; j >= 0; j-- {
-			n := norm(block[j])
-			if strings.HasPrefix(n, "@icall ") {
-				continue
-			}
-			for _, r := range regs {
-				if namesReg(n, r) {
-					return j
-				}
-			}
-			if implicitWrite(n) {
-				return -1
-			}
-		}
-		return -1
-	}
-	a := prev(k, rx)
-	if a < 0 {
-		return "", false
-	}
-	am := reTableAdd.FindStringSubmatch(norm(block[a]))
-	if am == nil || am[2] != rx || am[1] == rx {
-		return "", false
-	}
-	rb := am[1]
-	ld := prev(a, rx, rb)
-	if ld < 0 {
-		return "", false
-	}
-	lm := reTableLoad.FindStringSubmatch(norm(block[ld]))
-	if lm == nil || lm[1] != rb || lm[3] != rx || lm[2] == rb {
-		return "", false
-	}
-	le := prev(ld, rb)
-	if le < 0 {
-		return "", false
-	}
-	em := reTableLEA.FindStringSubmatch(norm(block[le]))
-	if em == nil || em[2] != rb || tables[em[1]] == nil {
-		return "", false
-	}
-	return em[1], true
-}
-
-// implicitWrite reports an instruction that may write a register it does not
-// name: one with no operands (cltq, cqto, a string operation), a call, a rep
-// or loop form, cmpxchg (the accumulator), or a one-operand multiply or
-// divide (the accumulator and RDX).
-func implicitWrite(n string) bool {
-	f := strings.Fields(n)
-	if len(f) == 0 {
-		return false
-	}
-	mn := f[0]
-	if len(f) == 1 {
-		return mn != "nop"
-	}
-	for _, p := range []string{"call", "rep", "loop", "cmpxchg"} {
-		if strings.HasPrefix(mn, p) {
-			return true
-		}
-	}
-	for _, p := range []string{"mul", "div", "idiv", "imul"} {
-		if strings.HasPrefix(mn, p) && !strings.Contains(n, ",") {
-			return true
-		}
-	}
-	return false
-}
-
-// regAliases gives every name of a 64-bit general register.
-func regAliases(r string) []string {
-	switch r {
-	case "rax", "rbx", "rcx", "rdx":
-		c := r[1:2]
-		return []string{r, "e" + c + "x", c + "x", c + "l", c + "h"}
-	case "rsi", "rdi":
-		c := r[1:2]
-		return []string{r, "e" + c + "i", c + "i", c + "il"}
-	case "rbp", "rsp":
-		c := r[1:2]
-		return []string{r, "e" + c + "p", c + "p", c + "pl"}
-	}
-	return []string{r, r + "d", r + "w", r + "b"}
-}
-
-// namesReg reports whether instruction n names register r in any width.
-func namesReg(n, r string) bool {
-	for _, a := range regAliases(r) {
-		if regexp.MustCompile(`%` + a + `\b`).MatchString(n) {
-			return true
-		}
-	}
-	return false
-}
-
 // dataRefs also appends to rec (when not nil) what each reference now points
 // to, for the post-link check.
 func (env *LowerEnv) dataRefs(fn, l string, rec *[]RefRecord) (string, error) {

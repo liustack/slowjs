@@ -194,11 +194,7 @@ func SplitAsm(asm, comment string) (*AsmUnit, error) {
 	globals := map[string]bool{}
 	lines := strings.Split(asm, "\n")
 	for _, raw := range lines {
-		l := raw
-		if !strings.Contains(l, "goasm.icall") {
-			l = stripComment(l, comment)
-		}
-		l = strings.TrimSpace(l)
+		l := strings.TrimSpace(stripComment(raw, comment))
 		if l == "" {
 			continue
 		}
