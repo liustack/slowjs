@@ -63,9 +63,9 @@ int lre_depth_enter(void *opaque);
 void lre_depth_leave(void *opaque);
 /* must be provided by the user, return non zero if time out */
 int lre_check_timeout(void *opaque);
-/* must be provided by the user: count 'cost' steps toward the interrupt
-   counter of the user, return non zero if time out */
-int lre_poll_interrupts(void *opaque, int cost);
+/* must be provided by the user: the word that is not 0 when the user asks
+   to stop, which an execution reads at each of its steps */
+const volatile int *lre_interrupt_flag(void *opaque);
 void *lre_realloc(void *opaque, void *ptr, size_t size);
 
 #endif /* LIBREGEXP_H */

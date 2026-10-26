@@ -148,6 +148,28 @@ from 16 to 40: the driver and the pass refuse any other before they use it):
 smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
 
+The engine polls (`pass/poll.cpp`, see
+[c-engine.md](../../../docs/fork-changes/c-engine.md#polls-and-interrupts)):
+every cycle of the code counts down a counter at `-poll-offset` bytes from
+the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
+`engine_decl.go` records as `pollCounterOffset`), and calls `host_poll`
+when it runs out. `-poll=false` builds an engine without polls, to measure
+what they cost, and `-release` refuses it. With polls, llc gets
+`-tail-dup-pred-size=1000 -tail-dup-succ-size=1000` (`gen.PollLLCFlags`):
+the count in the interpreter's dispatch gives the dispatch more
+predecessors and successors than llc copies by default, and without a copy
+of the dispatch at the end of each handler the interpreter is much slower.
+The driver counts the indirect jumps of each function with a computed goto
+table in llc's text and stops below `gen.DispatchCopies` (220 for
+`JS_CallInternal`, which has 245). The pass checks its own output: with the
+blocks that count or poll taken out, and the back edges of the loops it
+proves short, no function has a cycle left. Each count takes at least 1, and
+polls whenever it runs out: its branch tests that it is 0 or less and calls
+`host_poll` on the side taken, or, in the dispatch, a select on that test
+gives the index of the table entry of the poll label. The hidden option
+`-shadow-poll-fault` breaks one of these on purpose, so that a test can see
+the check stop the pass.
+
 Two negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
@@ -162,7 +184,7 @@ same folder removes the file.
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
 L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass
-$L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall.cpp $P/facts.cpp \
+$L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/poll.cpp $P/icall.cpp $P/facts.cpp \
     -o internal/goasm/gen/internal/_shadow.so
 /tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine

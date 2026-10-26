@@ -51,6 +51,8 @@ var (
 	sizeLog2  = flag.Int("shadow-size-log2", 20, "log2 of the shadow-stack region the engine is generated for (the host's region must be at least as big); engine_decl.go records it")
 	release   = flag.Bool("release", false, "formal build: refuse every switch made for surveys, tests and negative builds, and fail if any function would be a stub")
 	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
+	pollOn    = flag.Bool("poll", true, "count every cycle of the code and call host_poll when the count runs out, where Go can stop the goroutine; -poll=false, which -release refuses, builds an engine without polls for comparison")
+	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl.go records it)")
 )
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
@@ -81,12 +83,15 @@ func main() {
 	editLoweredEnv := os.Getenv("GEN_EDIT_LOWERED")
 	if *release {
 		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
-			EditLowered: editLoweredEnv, Arch: *arch, NonFormat: *nonFormat}, *out); err != nil {
+			EditLowered: editLoweredEnv, Arch: *arch, NonFormat: *nonFormat, NoPoll: !*pollOn}, *out); err != nil {
 			die(err)
 		}
 	}
 	if *arch != "amd64" && *arch != "arm64" {
 		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
+	}
+	if err := gen.CheckPollOffset(*pollOff, *sizeLog2); err != nil {
+		die(err)
 	}
 	must(os.MkdirAll(*work, 0o755))
 	clang := filepath.Join(*llvm, "clang")
@@ -238,6 +243,9 @@ func main() {
 		passArgs = append(passArgs, "-shadow-varargs")
 		varDefs = map[string]bool{}
 	}
+	if *pollOn {
+		passArgs = append(passArgs, "-shadow-poll", fmt.Sprintf("-shadow-poll-offset=%d", *pollOff))
+	}
 	passArgs = append(passArgs, "-S", "-o", shadowLL, linked)
 	passOut := must1(capture(filepath.Join(*llvm, "opt"), passArgs...))
 	writeFile(filepath.Join(*work, "pass.txt"), passOut)
@@ -270,6 +278,12 @@ func main() {
 	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
+	if *pollOn {
+		// The tick in the interpreter's dispatch makes it a block of many
+		// predecessors and successors, which llc no longer copies into the
+		// end of every handler by default (gen.DispatchCopies checks it).
+		llcArgs = append(llcArgs, gen.PollLLCFlags...)
+	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")
 	os.Remove(factsPath)
@@ -405,6 +419,17 @@ func main() {
 		metas = append(metas, meta)
 	}
 	tLower := time.Since(t0)
+	if *pollOn {
+		for _, name := range rep.GotoTable {
+			if f, ok := unit.Funcs[name]; ok {
+				n, err := gen.CheckDispatchCopies(name, f.Lines)
+				if err != nil {
+					reject(name, "lower", err.Error())
+				}
+				fmt.Fprintf(os.Stderr, "dispatch copies: %s %d\n", name, n)
+			}
+		}
+	}
 	// Every rewrite the lowering made, for inspection and for the check's
 	// own tests.
 	var recs []*gen.FuncRecord
@@ -465,7 +490,7 @@ func main() {
 		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll})
+			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
@@ -544,8 +569,8 @@ func keepNarrowFromEnv(v string) (bool, error) {
 // fixture goes through a release build like the engine does, which is how the
 // build is tested.
 type devSwitches struct {
-	KeepGoing, LooseVarargs, Poison, KeepNarrow bool
-	EditLowered, Arch, NonFormat                string
+	KeepGoing, LooseVarargs, Poison, KeepNarrow, NoPoll bool
+	EditLowered, Arch, NonFormat                        string
 }
 
 // releaseError says why -release cannot go on with these switches, or is nil.
@@ -564,6 +589,7 @@ func releaseError(d devSwitches, out string) error {
 	add(d.EditLowered != "", "GEN_EDIT_LOWERED")
 	add(d.Arch != "amd64", "-arch "+d.Arch)
 	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
+	add(d.NoPoll, "an engine without polls (-poll=false)")
 	if len(bad) > 0 {
 		return fmt.Errorf("-release refuses %s: they are for surveys and tests, not for the engine", strings.Join(bad, ", "))
 	}
@@ -696,6 +722,11 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		"// for (-shadow-size-log2): it takes the space left from the stack pointer\n"+
 		"// and this size, so the host's region must be aligned to it and no smaller.\n"+
 		"const shadowSizeLog2 = %d\n\n", *sizeLog2)
+	fmt.Fprintf(&b, "// polls says whether the engine counts its cycles and calls host_poll\n"+
+		"// (-poll). pollCounterOffset is where the counter is from the base of\n"+
+		"// the shadow-stack region (-poll-offset): host_poll sets it again, so the\n"+
+		"// host keeps that word for it.\n"+
+		"const (\n\tpolls             = %t\n\tpollCounterOffset = %d\n)\n\n", *pollOn, *pollOff)
 	decl := func(name string) {
 		s := sigs[name]
 		var ps []string

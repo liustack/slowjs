@@ -54,13 +54,16 @@ func host_trap(sp uintptr) {
 	gohost.Trap(sp)
 }
 
-// host_poll and host_release are not called yet: the generator inserts no
-// poll, and no Go function is registered. They take the form the plan gives
-// them: host_poll(sp) returns the interrupt, host_release(vm, handle).
-func host_poll(sp uintptr) int64 {
-	return gohost.Poll(sp)
+// host_poll is void host_poll(void), which the generator calls when the
+// count of cycles runs out (internal/goasm/gen/pass/poll.cpp): the C has no
+// call of it. Its stack check is where the Go runtime stops the goroutine in
+// the engine, which the post-link check holds it to.
+func host_poll(sp uintptr) {
+	gohost.Poll(sp)
 }
 
+// host_release is not called yet: no Go function is registered. It takes the
+// form the plan gives it: host_release(vm, handle).
 func host_release(sp, vm, handle uintptr) {
 	gohost.Release(uint32(vm), uint32(handle))
 }

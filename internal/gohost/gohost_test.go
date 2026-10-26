@@ -311,23 +311,29 @@ func TestNow(t *testing.T) {
 	mustPanic(t, "an unknown kind", func() { Now(v.ID(), 2) })
 }
 
+// TestPoll: a poll counts, and an interrupt holds for inner entries until the
+// outermost entry begins again.
 func TestPoll(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
 	v.Enter()
-	if r := Poll(base + 100); r != 0 {
-		t.Fatalf("poll returned %d without an interrupt", r)
+	v.SetKillGrace(-1)
+	Poll(base + 100)
+	if v.Interrupted() {
+		t.Fatal("interrupted without an Interrupt")
 	}
 	done := make(chan bool)
 	go func() { v.Interrupt(); close(done) }()
 	<-done
-	if r := Poll(base + 200); r != 1 {
-		t.Fatalf("poll returned %d after Interrupt", r)
+	Poll(base + 200)
+	if !v.Interrupted() {
+		t.Fatal("no interrupt after Interrupt")
 	}
 	// The request holds for inner entries, and only the outermost entry
 	// clears it.
 	v.Enter()
-	if Poll(base+300) != 1 {
+	Poll(base + 300)
+	if !v.Interrupted() {
 		t.Fatal("an inner entry cleared the interrupt")
 	}
 	v.Leave()
@@ -336,9 +342,10 @@ func TestPoll(t *testing.T) {
 		t.Fatalf("%d polls counted, want 3", v.Counts().Polls)
 	}
 	v.Enter()
-	if Poll(base) != 0 {
+	if v.Interrupted() {
 		t.Fatal("the outermost entry kept the interrupt")
 	}
+	Poll(base)
 	v.Leave()
 	mustPanic(t, "Leave without Enter", v.Leave)
 }
@@ -391,6 +398,140 @@ func TestFaultInEngineIsAPanic(t *testing.T) {
 	if a, ok := err.(interface{ Addr() uintptr }); !ok || a.Addr() != base+size {
 		t.Fatalf("the fault panic %v does not name the address %#x", err, base+size)
 	}
+}
+
+// TestPollCounter: host_poll sets the counter the generated code counts down
+// to the interval of the VM, at its offset from the base of the stack. New
+// sets it first, and so does a new interval. A VM made without a counter
+// writes nothing there.
+func TestPollCounter(t *testing.T) {
+	const off = 384
+	v, err := New(Options{StackSize: small, PollCounter: off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Close()
+	base, _ := v.Stack()
+	counter := (*int64)(addr(base + off))
+	if *counter != DefaultPollInterval {
+		t.Fatalf("a new VM's counter is %d, want %d", *counter, DefaultPollInterval)
+	}
+	*counter = -5
+	v.Enter()
+	Poll(base + 4096)
+	if *counter != DefaultPollInterval {
+		t.Fatalf("after a poll the counter is %d, want %d", *counter, DefaultPollInterval)
+	}
+	v.SetPollInterval(1)
+	if *counter != 1 {
+		t.Fatalf("after SetPollInterval(1) the counter is %d", *counter)
+	}
+	*counter = 0
+	Poll(base + 4096)
+	if *counter != 1 {
+		t.Fatalf("after a poll the counter is %d, want 1", *counter)
+	}
+	v.Leave()
+	mustPanic(t, "an interval of 0", func() { v.SetPollInterval(0) })
+	mustPanic(t, "a counter outside the stack", func() { New(Options{StackSize: small, PollCounter: small}) })
+	mustPanic(t, "a counter not on a word", func() { New(Options{StackSize: small, PollCounter: 4}) })
+
+	w := newVM(t, small)
+	wb, _ := w.Stack()
+	*(*int64)(addr(wb + off)) = 7
+	w.Enter()
+	Poll(wb + 4096)
+	w.SetPollInterval(3)
+	w.Leave()
+	if got := *(*int64)(addr(wb + off)); got != 7 {
+		t.Fatalf("a VM without a counter wrote %d at the offset", got)
+	}
+}
+
+// TestPollKill: when the script has not stopped by the grace after Interrupt,
+// the next poll panics with ErrKilled and the VM is broken. A negative grace
+// never kills, and a poll before the grace is over goes on.
+func TestPollKill(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	if v.KillGrace() != DefaultKillGrace {
+		t.Fatalf("the grace of a new VM is %v, want %v", v.KillGrace(), DefaultKillGrace)
+	}
+	v.SetKillGrace(30 * time.Millisecond)
+	v.Enter()
+	v.Interrupt()
+	Poll(base + 64)
+	if v.Broken() {
+		t.Fatal("killed before the grace was over")
+	}
+	time.Sleep(40 * time.Millisecond)
+	if got := mustPanic(t, "a poll after the grace", func() { Poll(base + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	if !v.Broken() || !v.Killed() {
+		t.Fatalf("after the kill: broken %v, killed %v", v.Broken(), v.Killed())
+	}
+	v.Leave()
+
+	w := newVM(t, small)
+	wb, _ := w.Stack()
+	w.SetKillGrace(-1)
+	w.Enter()
+	w.Interrupt()
+	time.Sleep(5 * time.Millisecond)
+	Poll(wb + 64)
+	if w.Broken() || w.Killed() {
+		t.Fatal("a negative grace killed")
+	}
+	w.Leave()
+
+	// A grace of 0 kills at the first poll after Interrupt, and only then.
+	x := newVM(t, small)
+	xb, _ := x.Stack()
+	x.SetKillGrace(0)
+	x.Enter()
+	Poll(xb + 64)
+	x.Interrupt()
+	mustPanic(t, "a poll with a grace of 0", func() { Poll(xb + 64) })
+	x.Leave()
+}
+
+// testFlag stands for the engine's interrupt flag: a global, which does not
+// move as a variable of a goroutine's stack could.
+var testFlag int32
+
+// TestInterruptFlag: a poll after Interrupt sets the engine's interrupt
+// flag, a poll before it does not, and the outermost Enter clears it. A flag
+// at 0 or off a word is refused.
+func TestInterruptFlag(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	testFlag = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	v.SetKillGrace(-1)
+	v.Enter()
+	Poll(base + 64)
+	if testFlag != 0 {
+		t.Fatalf("a poll with no Interrupt set the flag to %d", testFlag)
+	}
+	v.Interrupt()
+	Poll(base + 64)
+	if testFlag != 1 {
+		t.Fatalf("a poll after Interrupt left the flag at %d", testFlag)
+	}
+	v.Enter()
+	if testFlag != 1 {
+		t.Fatal("an inner Enter cleared the flag")
+	}
+	v.Leave()
+	v.Leave()
+	v.Enter()
+	if testFlag != 0 || v.Interrupted() {
+		t.Fatalf("the outermost Enter left the flag at %d, interrupted %v", testFlag, v.Interrupted())
+	}
+	v.Leave()
+	mustPanic(t, "a flag at 0", func() { v.SetInterruptFlag(0) })
+	mustPanic(t, "a flag off a word", func() { v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)) + 1) })
 }
 
 func TestRelease(t *testing.T) {
