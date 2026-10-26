@@ -1099,10 +1099,25 @@ static int test_internal_depth(void *unused)
         "(() => {\n"
         "  const nests = n => { try { JSON.parse('['.repeat(n) + ']'.repeat(n)); return true } catch (e) { return false } };\n"
         "  let n = 1; while (nests(n + 1)) n++; return n })()";
-    char want[32];
+    /* each proxy without a getPrototypeOf trap is a level: JS_MAX_INTERNAL_DEPTH of them fit */
+    static const char proto_src[] =
+        "(() => {\n"
+        "  const chain = n => { let p = {}; for (let i = 0; i < n; i++) p = new Proxy(p, {}); return p };\n"
+        "  const gets = n => { try { return Object.getPrototypeOf(chain(n)) === Object.prototype } catch (e) { return e.name } };\n"
+        "  return [gets(%d), gets(%d), gets(%d)].join() })()";
+    char want[32], src[512];
     size_t i;
 
     snprintf(want, sizeof(want), "%d", JS_MAX_INTERNAL_DEPTH);
+    {
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        snprintf(src, sizeof(src), proto_src, JS_MAX_INTERNAL_DEPTH - 1, JS_MAX_INTERNAL_DEPTH, JS_MAX_INTERNAL_DEPTH + 1);
+        CHECK(eval_is(ctx, src, "true,true,RangeError"), "prototypes of proxies");
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         JSRuntime *rt = host_new_runtime();
         JSContext *ctx = JS_NewContext(rt);
