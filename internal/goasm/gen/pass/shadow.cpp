@@ -31,6 +31,7 @@
 // function, the address-taken ones and the call graph for the generator.
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -339,6 +340,11 @@ static void lowerVarargs(Module &M) {
   PointerType *P = PointerType::getUnqual(C);
   // The slot offsets of the variable arguments of CB, false if one has no
   // 8-byte slot (byval, long double, vectors).
+  // A variable argument is accepted only if it is a scalar that fits one
+  // 8-byte, 8-aligned slot: an integer or pointer of at most 8 bytes, a float
+  // or a double. That is the whole set the SysV/AAPCS overflow area holds
+  // contiguously. Anything else (a byval aggregate, an i128, a vector, an
+  // over-aligned value) is rejected, so the caller is not rewritten.
   auto slots = [&](CallBase *CB, SmallVector<uint64_t> &offs, uint64_t &size) {
     unsigned nf = CB->getFunctionType()->getNumParams();
     size = 0;
@@ -349,41 +355,65 @@ static void lowerVarargs(Module &M) {
       if (CB->isByValArgument(i) || !(t->isIntegerTy() || t->isPointerTy() || t->isDoubleTy() || t->isFloatTy()))
         return false;
       uint64_t sz = DL.getTypeStoreSize(t).getFixedValue();
-      uint64_t al = std::max<uint64_t>(8, DL.getABITypeAlign(t).value());
-      if (sz > 16)
+      uint64_t al = DL.getABITypeAlign(t).value();
+      if (sz > 8 || al > 8)
         return false;
-      size = alignTo(size, al);
       offs.push_back(size);
-      size += alignTo(sz, 8);
+      size += 8;
     }
     return true;
   };
-  // The block holds each variable argument in an 8-byte slot, contiguous.
-  // That matches the SysV/AAPCS overflow area for scalars and for aggregates
-  // aligned to 8 or less. An over-aligned aggregate (a
-  // __attribute__((aligned(16))) struct, say) is read by rounding the
-  // overflow pointer up past 8, which clang lowers to an llvm.ptrmask whose
-  // mask clears more than the low three bits. A contiguous 8-byte-slot block
-  // cannot reproduce that, and at a SysV call site the aggregate is already
-  // split into plain 8-aligned scalar arguments, so the call site cannot
-  // tell them apart. Reject such a definition up front (empty it to a trap)
-  // rather than miscompile it, and do not rewrite calls to it: its stub
-  // names it, and any caller still holding a variadic call to it is rejected
-  // at lowering.
-  SmallPtrSet<Function *, 8> bad;
-  for (Function &F : M) {
-    if (!F.isVarArg() || F.isIntrinsic() || F.isDeclaration())
-      continue;
+  // The block holds each variable argument in a contiguous 8-byte slot, which
+  // matches the SysV/AAPCS overflow area only for the scalars slots() accepts.
+  // An over-aligned aggregate read through va_arg rounds the overflow pointer
+  // up past 8 (an llvm.ptrmask that clears more than the low three bits), and
+  // the contiguous block cannot reproduce that. The call site already split
+  // the aggregate into plain 8-aligned scalars, so it cannot tell them apart;
+  // the only trace is in whatever function reads the va_list, which is the
+  // variadic function or any helper it hands the va_list to. Follow each
+  // va_list into every function it reaches and reject any that rounds the
+  // block pointer, so a read moved into a plain helper is caught too.
+  SmallPtrSet<Value *, 16> vaObj;      // storage a started va_list lives in
+  SmallPtrSet<Function *, 16> vaReach; // functions a va_list reaches
+  for (Function &F : M)
     for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        if (auto *II = dyn_cast<IntrinsicInst>(&I))
+          if (II->getIntrinsicID() == Intrinsic::vastart) {
+            vaObj.insert(getUnderlyingObject(II->getArgOperand(0)));
+            vaReach.insert(&F);
+          }
+  for (bool grew = true; grew;) {
+    grew = false;
+    for (Function &F : M)
+      for (BasicBlock &B : F)
+        for (Instruction &I : B)
+          if (auto *CB = dyn_cast<CallBase>(&I)) {
+            auto *callee = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+            if (!callee || callee->isDeclaration() || callee->isIntrinsic())
+              continue;
+            for (unsigned i = 0; i < CB->arg_size() && i < callee->arg_size(); i++)
+              if (CB->getArgOperand(i)->getType()->isPointerTy() &&
+                  vaObj.count(getUnderlyingObject(CB->getArgOperand(i)))) {
+                grew |= vaObj.insert(callee->getArg(i)).second;
+                grew |= vaReach.insert(callee).second;
+              }
+          }
+  }
+  SmallPtrSet<Function *, 8> bad;
+  for (Function *F : vaReach) {
+    if (F->isDeclaration())
+      continue;
+    for (BasicBlock &B : *F)
       for (Instruction &I : B)
         if (auto *II = dyn_cast<IntrinsicInst>(&I))
           if (II->getIntrinsicID() == Intrinsic::ptrmask)
             if (auto *m = dyn_cast<ConstantInt>(II->getArgOperand(1)))
               if ((~m->getValue()).ugt(7))
-                bad.insert(&F);
+                bad.insert(F);
   }
   for (Function *F : bad)
-    reject(*F, "variadic function reads an over-aligned argument through va_arg (no 8-byte-slot block can hold it)");
+    reject(*F, "reads an over-aligned variadic argument (above 8 bytes), which the 8-byte-slot block cannot hold");
   SmallVector<Function *> fns;
   for (Function &F : M)
     fns.push_back(&F);
@@ -447,6 +477,8 @@ static void lowerVarargs(Module &M) {
     if (F.isVarArg() && !F.isIntrinsic())
       defs.push_back(&F);
   for (Function *F : defs) {
+    if (bad.count(F))
+      continue; // already emptied to a trap; leave its variadic signature
     FunctionType *T = F->getFunctionType();
     if (F->isDeclaration()) {
       if (!F->use_empty())
