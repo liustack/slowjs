@@ -385,6 +385,16 @@ JSMemRange JS_ReleaseNextRange(JSRuntime *rt);
 /* the most freed small blocks of a size class the allocator keeps for the
    next allocation, 0 to 256. For tests and measuring */
 void JS_SetFrontCache(JSRuntime *rt, int max);
+/* The call depth: how many calls may run at once, each call of a function
+   (built-in functions included) and each entry of the host that runs code
+   (JS_Call, JS_Eval and the like) counting one. Past it a script gets a
+   RangeError. It starts at JS_DEFAULT_MAX_CALL_DEPTH. JS_SetMaxCallDepth
+   returns 0, or -1 and changes nothing when depth is not 1 to
+   JS_MAX_CALL_DEPTH_LIMIT or when the runtime is running code. */
+#define JS_DEFAULT_MAX_CALL_DEPTH 5000
+#define JS_MAX_CALL_DEPTH_LIMIT 10000
+int JS_SetMaxCallDepth(JSRuntime *rt, int depth);
+int JS_GetMaxCallDepth(JSRuntime *rt);
 /* use 0 to disable maximum stack size check */
 void JS_SetMaxStackSize(JSRuntime *rt, size_t stack_size);
 /* should be called when changing thread to update the stack top value

@@ -186,17 +186,31 @@ static int run(const char *path)
     return 0;
 }
 
-int main(int argc, char **argv)
+typedef struct {
+    int argc;
+    char **argv;
+} Args;
+
+static int run_all(void *p)
 {
+    Args *a = p;
     int i;
     const char *name;
 
-    for (i = 1; i < argc; i++) {
-        name = strrchr(argv[i], '/');
-        printf("== %s\n", name ? name + 1 : argv[i]);
-        if (run(argv[i]) < 0)
+    for (i = 1; i < a->argc; i++) {
+        name = strrchr(a->argv[i], '/');
+        printf("== %s\n", name ? name + 1 : a->argv[i]);
+        if (run(a->argv[i]) < 0)
             return 1;
         fflush(stdout);
     }
     return 0;
+}
+
+int main(int argc, char **argv)
+{
+    Args a = { argc, argv };
+
+    /* a script may recurse as deep as the engine allows */
+    return host_run_thread(run_all, &a);
 }

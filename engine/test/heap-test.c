@@ -47,6 +47,13 @@ int64_t host_now(uint32_t vm, int kind)
     return (int64_t)1767225600 * 1000000000;
 }
 
+/* The bytes of stack left, which the runtime checks at each call. The scripts
+   here do not recurse: say there is plenty. */
+long __shadow_remaining(void)
+{
+    return 1L << 30;
+}
+
 #define MAX_VM 4
 #define MAX_CHUNK 8192
 

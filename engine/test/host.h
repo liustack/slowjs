@@ -36,6 +36,15 @@ extern _Thread_local long host_wall_reads;
 extern _Thread_local uint32_t host_wall_vm;
 uint32_t host_vm_id(JSRuntime *rt);
 
+/* The stack of a thread that runs the engine: enough for the deepest
+   recursion JS_SetMaxCallDepth allows, under the sanitizers too. The pages
+   are only reserved until a deep recursion touches them. */
+#define HOST_THREAD_STACK ((size_t)512 << 20)
+
+/* Runs fn(arg) in a thread with a stack of HOST_THREAD_STACK bytes and
+   returns what it returns. A main thread has 8 MiB. */
+int host_run_thread(int (*fn)(void *), void *arg);
+
 /* JS_FreeRuntime, then the memory of the runtime goes back to the system. A
    runtime that still has blocks in use after it freed everything is a leak:
    the host says so, and the process exits with status 87. */

@@ -390,6 +390,10 @@ struct JSRuntime {
     uintptr_t stack_size; /* in bytes, 0 if no limit */
     uintptr_t stack_top;
     uintptr_t stack_limit; /* lower stack limit */
+    /* the calls running now, and how many may run at once (see
+       js_call_enter and docs/fork-changes/c-engine.md) */
+    int call_depth;
+    int max_call_depth;
 
     JSValue current_exception;
     /* true if the current exception cannot be catched */
@@ -1223,6 +1227,21 @@ static JSValue JS_CallConstructorInternal(JSContext *ctx,
                                           int argc, JSValue *argv, int flags);
 static JSValue JS_CallFree(JSContext *ctx, JSValue func_obj, JSValueConst this_obj,
                            int argc, JSValueConst *argv);
+/* JS_Call, JS_CallConstructor, JS_CallConstructor2 and JS_Invoke as the
+   engine calls them: the exported ones are entries of the host and count a
+   level (see js_api_enter) */
+static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
+                       int argc, JSValueConst *argv);
+static JSValue js_call_constructor(JSContext *ctx, JSValueConst func_obj,
+                                   int argc, JSValueConst *argv);
+static JSValue js_call_constructor2(JSContext *ctx, JSValueConst func_obj,
+                                    JSValueConst new_target,
+                                    int argc, JSValueConst *argv);
+static JSValue js_invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
+                         int argc, JSValueConst *argv);
+static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
+                                       JSValueConst this_obj,
+                                       JSVarRef **var_refs, JSStackFrame *sf);
 static JSValue JS_InvokeFree(JSContext *ctx, JSValue this_val, JSAtom atom,
                              int argc, JSValueConst *argv);
 static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
@@ -2329,6 +2348,49 @@ BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
 }
 #endif
 
+/* The bytes of stack left. The generator turns this into the room left on the
+   VM's shadow stack, which holds the locals whose address is taken and every
+   alloca, and the native test host gives the room left on its thread's stack.
+   The engine never reads a stack address itself (docs/fork-changes/c-engine.md). */
+extern long __shadow_remaining(void);
+
+static JSValue JS_ThrowStackOverflow(JSContext *ctx);
+
+/* What a call may use of the stack before the next check, past the bytes it
+   asks for. */
+#define JS_STACK_MARGIN (64 * 1024)
+
+/* TRUE when fewer than bytes plus the margin are left. */
+static inline BOOL js_stack_short(size_t bytes)
+{
+    return unlikely(__shadow_remaining() < (long)(bytes + JS_STACK_MARGIN));
+}
+
+/* The depth of calls bounds the recursion of JavaScript and of the built-in
+   functions it calls. Each call of a function (JS_CallInternal, the call a
+   constructor sends to a class, the C next of an iterator helper) and each
+   entry of the host that runs code (JS_Call, JS_Eval and the like) counts one
+   level while it runs. Past rt->max_call_depth, or with less than the margin
+   of stack left, js_call_enter throws a RangeError and counts nothing. The
+   count is never reset: every js_call_enter that succeeds has its
+   js_call_leave. */
+static int js_call_enter(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+
+    if (unlikely(rt->call_depth >= rt->max_call_depth) || js_stack_short(0)) {
+        JS_ThrowStackOverflow(ctx);
+        return -1;
+    }
+    rt->call_depth++;
+    return 0;
+}
+
+static inline void js_call_leave(JSRuntime *rt)
+{
+    rt->call_depth--;
+}
+
 /* The runtime is the start of the first chunk of memory the host gives the
    VM vm (see heap_create). The host takes the chunks back after
    JS_FreeRuntime, or when this fails. */
@@ -2385,6 +2447,7 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
        bytes, and reads 0 as its own default. */
     rt->stack_size = 0;
     JS_UpdateStackTop(rt);
+    rt->max_call_depth = JS_DEFAULT_MAX_CALL_DEPTH;
 
     rt->current_exception = JS_UNINITIALIZED;
     rt->class_id_alloc = JS_CLASS_INIT_COUNT;
@@ -2550,9 +2613,17 @@ int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx)
 
     /* get the first pending job and execute it */
     e = list_entry(rt->job_list.next, JSJobEntry, link);
-    list_del(&e->link);
     ctx = e->realm;
+    /* an entry of the host: one level (see JS_Call). A job that cannot
+       start stays first in the list */
+    if (js_call_enter(ctx)) {
+        if (pctx)
+            *pctx = ctx;
+        return -1;
+    }
+    list_del(&e->link);
     res = e->job_func(ctx, e->argc, (JSValueConst *)e->argv);
+    js_call_leave(rt);
     for(i = 0; i < e->argc; i++)
         JS_FreeValue(ctx, e->argv[i]);
     if (JS_IsException(res))
@@ -3117,6 +3188,21 @@ void JS_UpdateStackTop(JSRuntime *rt)
 {
     rt->stack_top = js_get_stack_pointer();
     update_stack_limit(rt);
+}
+
+int JS_SetMaxCallDepth(JSRuntime *rt, int depth)
+{
+    if (depth < 1 || depth > JS_MAX_CALL_DEPTH_LIMIT)
+        return -1;
+    if (rt->call_depth != 0 || rt->current_stack_frame)
+        return -1;
+    rt->max_call_depth = depth;
+    return 0;
+}
+
+int JS_GetMaxCallDepth(JSRuntime *rt)
+{
+    return rt->max_call_depth;
 }
 
 static inline BOOL is_strict_mode(JSContext *ctx)
@@ -18197,7 +18283,7 @@ static JSValue JS_GetIterator2(JSContext *ctx, JSValueConst obj,
 {
     JSValue enum_obj;
 
-    enum_obj = JS_Call(ctx, method, obj, 0, NULL);
+    enum_obj = js_call(ctx, method, obj, 0, NULL);
     if (JS_IsException(enum_obj))
         return enum_obj;
     if (!JS_IsObject(enum_obj)) {
@@ -18262,12 +18348,19 @@ static JSValue JS_IteratorNext2(JSContext *ctx, JSValueConst enum_obj,
                 args[0] = JS_UNDEFINED;
                 argv = args;
             }
+            /* a call of the C function that skips JS_CallInternal: it
+               counts a level, or a chain of iterator helpers recurses
+               without bound */
+            if (js_call_enter(ctx))
+                goto fail;
             func = p->u.cfunc.c_function;
-            return func.iterator_next(ctx, enum_obj, argc, argv,
-                                      pdone, p->u.cfunc.magic);
+            obj = func.iterator_next(ctx, enum_obj, argc, argv,
+                                     pdone, p->u.cfunc.magic);
+            js_call_leave(ctx->rt);
+            return obj;
         }
     }
-    obj = JS_Call(ctx, method, enum_obj, argc, argv);
+    obj = js_call(ctx, method, enum_obj, argc, argv);
     if (JS_IsException(obj))
         goto fail;
     if (!JS_IsObject(obj)) {
@@ -18418,7 +18511,7 @@ static __exception int js_for_await_of_next(JSContext *ctx, JSValue *sp)
                               exceptions do not close the iterator */
     iter = sp[-3];
     next = sp[-2];
-    obj = JS_Call(ctx, next, iter, 0, NULL);
+    obj = js_call(ctx, next, iter, 0, NULL);
     if (JS_IsException(obj))
         return -1;
     sp[0] = obj;
@@ -19402,9 +19495,9 @@ static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
     cproto = p->u.cfunc.cproto;
     arg_count = p->u.cfunc.length;
 
-    /* better to always check stack overflow */
-    if (js_check_stack_overflow(rt, sizeof(arg_buf[0]) * arg_count))
-        return JS_ThrowStackOverflow(ctx);
+    /* JS_CallInternal or JS_CallConstructorInternal counted this call and
+       left JS_STACK_MARGIN bytes, more than the 255 arguments of the alloca
+       below take */
 
     prev_sf = rt->current_stack_frame;
     sf->prev_frame = prev_sf;
@@ -19526,7 +19619,7 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
     p = JS_VALUE_GET_OBJ(func_obj);
     bf = p->u.bound_function;
     arg_count = bf->argc + argc;
-    if (js_check_stack_overflow(ctx->rt, sizeof(JSValue) * arg_count))
+    if (js_stack_short(sizeof(JSValue) * arg_count))
         return JS_ThrowStackOverflow(ctx);
     arg_buf = alloca(sizeof(JSValue) * arg_count);
     for(i = 0; i < bf->argc; i++) {
@@ -19539,10 +19632,10 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
         new_target = this_obj;
         if (js_same_value(ctx, func_obj, new_target))
             new_target = bf->func_obj;
-        return JS_CallConstructor2(ctx, bf->func_obj, new_target,
+        return js_call_constructor2(ctx, bf->func_obj, new_target,
                                    arg_count, arg_buf);
     } else {
-        return JS_Call(ctx, bf->func_obj, bf->this_val,
+        return js_call(ctx, bf->func_obj, bf->this_val,
                        arg_count, arg_buf);
     }
 }
@@ -19756,6 +19849,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     /* nothing runs while an uncatchable exception is pending */
     if (unlikely(js_uncatchable_pending(rt)))
         return JS_EXCEPTION;
+    /* every call counts a level, C functions included: each return below
+       leaves it */
+    if (js_call_enter(caller_ctx))
+        return JS_EXCEPTION;
     if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
         if (flags & JS_CALL_FLAG_GENERATOR) {
             JSAsyncFunctionState *s = JS_VALUE_GET_PTR(func_obj);
@@ -19788,10 +19885,13 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         call_func = rt->class_array[p->class_id].call;
         if (!call_func) {
         not_a_function:
+            js_call_leave(rt);
             return JS_ThrowTypeError(caller_ctx, "not a function");
         }
-        return call_func(caller_ctx, func_obj, this_obj, argc,
-                         (JSValueConst *)argv, flags);
+        ret_val = call_func(caller_ctx, func_obj, this_obj, argc,
+                            (JSValueConst *)argv, flags);
+        js_call_leave(rt);
+        return ret_val;
     }
     b = p->u.func.function_bytecode;
 
@@ -19804,8 +19904,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     alloca_size = sizeof(JSValue) * (arg_allocated_size + b->var_count +
                                      b->stack_size) +
         sizeof(JSVarRef *) * b->var_ref_count;
-    if (js_check_stack_overflow(rt, alloca_size))
+    if (js_stack_short(alloca_size)) {
+        js_call_leave(rt);
         return JS_ThrowStackOverflow(caller_ctx);
+    }
 
     sf->js_mode = b->js_mode;
     arg_buf = argv;
@@ -20269,7 +20371,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 super = JS_GetPrototype(ctx, func_obj);
                 if (JS_IsException(super))
                     goto exception;
-                ret = JS_CallConstructor2(ctx, super, new_target, argc, (JSValueConst *)argv);
+                ret = js_call_constructor2(ctx, super, new_target, argc, (JSValueConst *)argv);
                 JS_FreeValue(ctx, super);
                 if (JS_IsException(ret))
                     goto exception;
@@ -20380,7 +20482,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     ret_val = JS_EvalObject(ctx, JS_UNDEFINED, obj,
                                             JS_EVAL_TYPE_DIRECT, scope_idx);
                 } else {
-                    ret_val = JS_Call(ctx, sp[-2], JS_UNDEFINED, len,
+                    ret_val = js_call(ctx, sp[-2], JS_UNDEFINED, len,
                                       (JSValueConst *)tab);
                 }
                 free_arg_list(ctx, tab, len);
@@ -21016,7 +21118,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             {
                 JSValue ret;
                 sf->cur_pc = pc;
-                ret = JS_Call(ctx, sp[-3], sp[-4],
+                ret = js_call(ctx, sp[-3], sp[-4],
                               1, (JSValueConst *)(sp - 1));
                 if (JS_IsException(ret))
                     goto exception;
@@ -22564,6 +22666,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
         }
     }
     rt->current_stack_frame = sf->prev_frame;
+    js_call_leave(rt);
     return ret_val;
 }
 
@@ -22571,11 +22674,27 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #pragma GCC diagnostic pop
 #endif
 
-JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
-                int argc, JSValueConst *argv)
+static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
+                       int argc, JSValueConst *argv)
 {
     return JS_CallInternal(ctx, func_obj, this_obj, JS_UNDEFINED,
                            argc, (JSValue *)argv, JS_CALL_FLAG_COPY_ARGV);
+}
+
+/* The exported functions that run code count one level for the entry of the
+   host, so that a host function that calls back into the engine adds a level
+   even when the path to the next call is long (the parser of JS_Eval). The
+   engine itself calls the forms that do not count. */
+JSValue JS_Call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
+                int argc, JSValueConst *argv)
+{
+    JSValue ret;
+
+    if (js_call_enter(ctx))
+        return JS_EXCEPTION;
+    ret = js_call(ctx, func_obj, this_obj, argc, argv);
+    js_call_leave(ctx->rt);
+    return ret;
 }
 
 static JSValue JS_CallFree(JSContext *ctx, JSValue func_obj, JSValueConst this_obj,
@@ -22681,13 +22800,19 @@ static JSValue JS_CallConstructorInternal(JSContext *ctx,
         return JS_ThrowTypeErrorNotAConstructor(ctx, func_obj);
     if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION)) {
         JSClassCall *call_func;
+        JSValue ret;
         call_func = ctx->rt->class_array[p->class_id].call;
         if (!call_func) {
         not_a_function:
             return JS_ThrowTypeError(ctx, "not a function");
         }
-        return call_func(ctx, func_obj, new_target, argc,
-                         (JSValueConst *)argv, flags);
+        /* this call does not go through JS_CallInternal: count it here */
+        if (js_call_enter(ctx))
+            return JS_EXCEPTION;
+        ret = call_func(ctx, func_obj, new_target, argc,
+                        (JSValueConst *)argv, flags);
+        js_call_leave(ctx->rt);
+        return ret;
     }
 
     b = p->u.func.function_bytecode;
@@ -22711,25 +22836,25 @@ static JSValue JS_CallConstructorInternal(JSContext *ctx,
     }
 }
 
-JSValue JS_CallConstructor2(JSContext *ctx, JSValueConst func_obj,
-                            JSValueConst new_target,
-                            int argc, JSValueConst *argv)
+static JSValue js_call_constructor2(JSContext *ctx, JSValueConst func_obj,
+                                    JSValueConst new_target,
+                                    int argc, JSValueConst *argv)
 {
     return JS_CallConstructorInternal(ctx, func_obj, new_target,
                                       argc, (JSValue *)argv,
                                       JS_CALL_FLAG_COPY_ARGV);
 }
 
-JSValue JS_CallConstructor(JSContext *ctx, JSValueConst func_obj,
-                           int argc, JSValueConst *argv)
+static JSValue js_call_constructor(JSContext *ctx, JSValueConst func_obj,
+                                   int argc, JSValueConst *argv)
 {
     return JS_CallConstructorInternal(ctx, func_obj, func_obj,
                                       argc, (JSValue *)argv,
                                       JS_CALL_FLAG_COPY_ARGV);
 }
 
-JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
-                  int argc, JSValueConst *argv)
+static JSValue js_invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
+                         int argc, JSValueConst *argv)
 {
     JSValue func_obj;
     func_obj = JS_GetProperty(ctx, this_val, atom);
@@ -22738,10 +22863,47 @@ JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
     return JS_CallFree(ctx, func_obj, this_val, argc, argv);
 }
 
+JSValue JS_CallConstructor2(JSContext *ctx, JSValueConst func_obj,
+                            JSValueConst new_target,
+                            int argc, JSValueConst *argv)
+{
+    JSValue ret;
+
+    if (js_call_enter(ctx))
+        return JS_EXCEPTION;
+    ret = js_call_constructor2(ctx, func_obj, new_target, argc, argv);
+    js_call_leave(ctx->rt);
+    return ret;
+}
+
+JSValue JS_CallConstructor(JSContext *ctx, JSValueConst func_obj,
+                           int argc, JSValueConst *argv)
+{
+    JSValue ret;
+
+    if (js_call_enter(ctx))
+        return JS_EXCEPTION;
+    ret = js_call_constructor(ctx, func_obj, argc, argv);
+    js_call_leave(ctx->rt);
+    return ret;
+}
+
+JSValue JS_Invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
+                  int argc, JSValueConst *argv)
+{
+    JSValue ret;
+
+    if (js_call_enter(ctx))
+        return JS_EXCEPTION;
+    ret = js_invoke(ctx, this_val, atom, argc, argv);
+    js_call_leave(ctx->rt);
+    return ret;
+}
+
 static JSValue JS_InvokeFree(JSContext *ctx, JSValue this_val, JSAtom atom,
                              int argc, JSValueConst *argv)
 {
-    JSValue res = JS_Invoke(ctx, this_val, atom, argc, argv);
+    JSValue res = js_invoke(ctx, this_val, atom, argc, argv);
     JS_FreeValue(ctx, this_val);
     return res;
 }
@@ -22812,14 +22974,11 @@ static JSValue async_func_resume(JSContext *ctx, JSAsyncFunctionState *s)
     JSValue func_obj, ret;
 
     assert(!s->is_completed);
-    if (js_check_stack_overflow(ctx->rt, 0)) {
-        ret = JS_ThrowStackOverflow(ctx);
-    } else {
-        /* the tag does not matter provided it is not an object */
-        func_obj = JS_MKPTR(JS_TAG_INT, s);
-        ret = JS_CallInternal(ctx, func_obj, s->this_val, JS_UNDEFINED,
-                              s->argc, sf->arg_buf, JS_CALL_FLAG_GENERATOR);
-    }
+    /* the tag does not matter provided it is not an object. JS_CallInternal
+       counts the level */
+    func_obj = JS_MKPTR(JS_TAG_INT, s);
+    ret = JS_CallInternal(ctx, func_obj, s->this_val, JS_UNDEFINED,
+                          s->argc, sf->arg_buf, JS_CALL_FLAG_GENERATOR);
     if (JS_IsException(ret) || JS_IsUndefined(ret)) {
         JSObject *p;
         JSFunctionBytecode *b;
@@ -23104,13 +23263,13 @@ static void js_async_function_resume(JSContext *ctx, JSAsyncFunctionState *s)
             JSValue error;
         fail:
             error = js_get_exception(ctx);
-            ret2 = JS_Call(ctx, s->resolving_funcs[1], JS_UNDEFINED,
+            ret2 = js_call(ctx, s->resolving_funcs[1], JS_UNDEFINED,
                            1, (JSValueConst *)&error);
             JS_FreeValue(ctx, error);
             JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
         } else {
             /* normal return */
-            ret2 = JS_Call(ctx, s->resolving_funcs[0], JS_UNDEFINED,
+            ret2 = js_call(ctx, s->resolving_funcs[0], JS_UNDEFINED,
                            1, (JSValueConst *)&func_ret);
             JS_FreeValue(ctx, func_ret);
             JS_FreeValue(ctx, ret2); /* XXX: what to do if exception ? */
@@ -23347,7 +23506,7 @@ static void js_async_generator_resolve_or_reject(JSContext *ctx,
 
     next = list_entry(s->queue.next, JSAsyncGeneratorRequest, link);
     list_del(&next->link);
-    ret = JS_Call(ctx, next->resolving_funcs[is_reject], JS_UNDEFINED, 1,
+    ret = js_call(ctx, next->resolving_funcs[is_reject], JS_UNDEFINED, 1,
                   &result);
     JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, next->result);
@@ -23577,7 +23736,7 @@ static JSValue js_async_generator_next(JSContext *ctx, JSValueConst this_val,
         JSValue err, res2;
         JS_ThrowTypeError(ctx, "not an AsyncGenerator object");
         err = js_get_exception(ctx);
-        res2 = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED,
+        res2 = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                        1, (JSValueConst *)&err);
         JS_FreeValue(ctx, err);
         JS_FreeValue(ctx, res2);
@@ -32698,7 +32857,7 @@ static int js_inner_module_linking(JSContext *ctx, JSModuleDef *m,
         }
 
         /* initialize the global variables */
-        ret_val = JS_Call(ctx, m->func_obj, JS_TRUE, 0, NULL);
+        ret_val = js_call(ctx, m->func_obj, JS_TRUE, 0, NULL);
         if (JS_IsException(ret_val))
             goto fail;
         JS_FreeValue(ctx, ret_val);
@@ -32851,7 +33010,7 @@ static JSValue js_load_module_rejected(JSContext *ctx, JSValueConst this_val,
         error = argv[0];
     else
         error = JS_UNDEFINED;
-    ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED,
+    ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                   1, &error);
     JS_FreeValue(ctx, ret);
     return JS_UNDEFINED;
@@ -32871,7 +33030,7 @@ static JSValue js_load_module_fulfilled(JSContext *ctx, JSValueConst this_val,
         js_load_module_rejected(ctx, JS_UNDEFINED, 1, (JSValueConst *)&err, 0, func_data);
         return JS_UNDEFINED;
     }
-    ret = JS_Call(ctx, resolving_funcs[0], JS_UNDEFINED,
+    ret = js_call(ctx, resolving_funcs[0], JS_UNDEFINED,
                    1, (JSValueConst *)&ns);
     JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, ns);
@@ -32899,11 +33058,11 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
 
     /* Evaluate the module code */
     func_obj = JS_NewModuleValue(ctx, m);
-    evaluate_promise = JS_EvalFunction(ctx, func_obj);
+    evaluate_promise = JS_EvalFunctionInternal(ctx, func_obj, ctx->global_obj, NULL, NULL);
     if (JS_IsException(evaluate_promise)) {
     fail:
         err = js_get_exception(ctx);
-        ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED,
+        ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                       1, (JSValueConst *)&err);
         JS_FreeValue(ctx, ret); /* XXX: what to do if exception ? */
         JS_FreeValue(ctx, err);
@@ -32970,7 +33129,7 @@ static JSValue js_dynamic_import_job(JSContext *ctx,
     return JS_UNDEFINED;
  exception:
     err = js_get_exception(ctx);
-    ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED,
+    ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                    1, (JSValueConst *)&err);
     JS_FreeValue(ctx, ret); /* XXX: what to do if exception ? */
     JS_FreeValue(ctx, err);
@@ -33071,7 +33230,7 @@ static JSValue js_dynamic_import(JSContext *ctx, JSValueConst specifier, JSValue
  exception:
     JS_FreeValue(ctx, attributes_obj);
     err = js_get_exception(ctx);
-    ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED,
+    ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED,
                    1, (JSValueConst *)&err);
     JS_FreeValue(ctx, ret);
     JS_FreeValue(ctx, err);
@@ -33085,7 +33244,7 @@ static void js_set_module_evaluated(JSContext *ctx, JSModuleDef *m)
         JSValue value, ret_val;
         assert(m->cycle_root == m);
         value = JS_UNDEFINED;
-        ret_val = JS_Call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
+        ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
                           1, (JSValueConst *)&value);
         JS_FreeValue(ctx, ret_val);
     }
@@ -33191,7 +33350,7 @@ static JSValue js_async_module_execution_rejected(JSContext *ctx, JSValueConst t
     if (!JS_IsUndefined(module->promise)) {
         JSValue ret_val;
         assert(module->cycle_root == module);
-        ret_val = JS_Call(ctx, module->resolving_funcs[1], JS_UNDEFINED,
+        ret_val = js_call(ctx, module->resolving_funcs[1], JS_UNDEFINED,
                           1, &error);
         JS_FreeValue(ctx, ret_val);
     }
@@ -33476,7 +33635,7 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
         JS_FreeValue(ctx, result);
         assert(m->status == JS_MODULE_STATUS_EVALUATED);
         assert(m->eval_has_exception);
-        ret_val = JS_Call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
+        ret_val = js_call(ctx, m->resolving_funcs[1], JS_UNDEFINED,
                           1, (JSValueConst *)&m->eval_exception);
         JS_FreeValue(ctx, ret_val);
     } else {
@@ -33490,7 +33649,7 @@ static JSValue js_evaluate_module(JSContext *ctx, JSModuleDef *m)
             JSValue value;
             assert(m->status == JS_MODULE_STATUS_EVALUATED);
             value = JS_UNDEFINED;
-            ret_val = JS_Call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
+            ret_val = js_call(ctx, m->resolving_funcs[0], JS_UNDEFINED,
                               1, (JSValueConst *)&value);
             JS_FreeValue(ctx, ret_val);
         }
@@ -39126,7 +39285,16 @@ static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
 
 JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 {
-    return JS_EvalFunctionInternal(ctx, fun_obj, ctx->global_obj, NULL, NULL);
+    JSValue ret;
+
+    /* an entry of the host: one level (see JS_Call) */
+    if (js_call_enter(ctx)) {
+        JS_FreeValue(ctx, fun_obj);
+        return JS_EXCEPTION;
+    }
+    ret = JS_EvalFunctionInternal(ctx, fun_obj, ctx->global_obj, NULL, NULL);
+    js_call_leave(ctx->rt);
+    return ret;
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
@@ -39294,8 +39462,12 @@ JSValue JS_EvalThis(JSContext *ctx, JSValueConst this_obj,
 
     assert(eval_type == JS_EVAL_TYPE_GLOBAL ||
            eval_type == JS_EVAL_TYPE_MODULE);
+    /* an entry of the host: one level (see JS_Call) */
+    if (js_call_enter(ctx))
+        return JS_EXCEPTION;
     ret = JS_EvalInternal(ctx, this_obj, input, input_len, filename,
                           eval_flags, -1);
+    js_call_leave(ctx->rt);
     return ret;
 }
 
@@ -42679,7 +42851,7 @@ static JSValue js_object_toString(JSContext *ctx, JSValueConst this_val,
 static JSValue js_object_toLocaleString(JSContext *ctx, JSValueConst this_val,
                                         int argc, JSValueConst *argv)
 {
-    return JS_Invoke(ctx, this_val, JS_ATOM_toString, 0, NULL);
+    return js_invoke(ctx, this_val, JS_ATOM_toString, 0, NULL);
 }
 
 static JSValue js_object_assign(JSContext *ctx, JSValueConst this_val,
@@ -43270,15 +43442,15 @@ static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
     array_arg = argv[1];
     if ((JS_VALUE_GET_TAG(array_arg) == JS_TAG_UNDEFINED ||
          JS_VALUE_GET_TAG(array_arg) == JS_TAG_NULL) && magic != 2) {
-        return JS_Call(ctx, this_val, this_arg, 0, NULL);
+        return js_call(ctx, this_val, this_arg, 0, NULL);
     }
     tab = build_arg_list(ctx, &len, array_arg);
     if (!tab)
         return JS_EXCEPTION;
     if (magic & 1) {
-        ret = JS_CallConstructor2(ctx, this_val, this_arg, len, (JSValueConst *)tab);
+        ret = js_call_constructor2(ctx, this_val, this_arg, len, (JSValueConst *)tab);
     } else {
-        ret = JS_Call(ctx, this_val, this_arg, len, (JSValueConst *)tab);
+        ret = js_call(ctx, this_val, this_arg, len, (JSValueConst *)tab);
     }
     free_arg_list(ctx, tab, len);
     return ret;
@@ -43288,9 +43460,9 @@ static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
     if (argc <= 0) {
-        return JS_Call(ctx, this_val, JS_UNDEFINED, 0, NULL);
+        return js_call(ctx, this_val, JS_UNDEFINED, 0, NULL);
     } else {
-        return JS_Call(ctx, this_val, argv[0], argc - 1, argv + 1);
+        return js_call(ctx, this_val, argv[0], argc - 1, argv + 1);
     }
 }
 
@@ -43778,7 +43950,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
             goto exception;
         }
         if (JS_IsConstructor(ctx, this_val))
-            r = JS_CallConstructor(ctx, this_val, 0, NULL);
+            r = js_call_constructor(ctx, this_val, 0, NULL);
         else
             r = JS_NewArray(ctx);
         if (JS_IsException(r))
@@ -43798,7 +43970,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
             if (mapping) {
                 args[0] = v;
                 args[1] = JS_NewInt32(ctx, k);
-                v2 = JS_Call(ctx, mapfn, this_arg, 2, args);
+                v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
                 if (JS_IsException(v))
@@ -43817,7 +43989,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         v = JS_NewInt64(ctx, len);
         args[0] = v;
         if (JS_IsConstructor(ctx, this_val)) {
-            r = JS_CallConstructor(ctx, this_val, 1, args);
+            r = js_call_constructor(ctx, this_val, 1, args);
         } else {
             r = js_array_constructor(ctx, JS_UNDEFINED, 1, args);
         }
@@ -43831,7 +44003,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
             if (mapping) {
                 args[0] = v;
                 args[1] = JS_NewInt32(ctx, k);
-                v2 = JS_Call(ctx, mapfn, this_arg, 2, args);
+                v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
                 if (JS_IsException(v))
@@ -43870,7 +44042,7 @@ JSValue js_array_of(JSContext *ctx, JSValueConst this_val,
 
     if (JS_IsConstructor(ctx, this_val)) {
         args[0] = JS_NewInt32(ctx, argc);
-        obj = JS_CallConstructor(ctx, this_val, 1, (JSValueConst *)args);
+        obj = js_call_constructor(ctx, this_val, 1, (JSValueConst *)args);
     } else {
         obj = JS_NewArray(ctx);
     }
@@ -43947,7 +44119,7 @@ static JSValue JS_ArraySpeciesCreate(JSContext *ctx, JSValueConst obj,
     if (JS_IsUndefined(ctor)) {
         return js_array_constructor(ctx, JS_UNDEFINED, 1, &len_val);
     } else {
-        ret = JS_CallConstructor(ctx, ctor, 1, &len_val);
+        ret = js_call_constructor(ctx, ctor, 1, &len_val);
         JS_FreeValue(ctx, ctor);
         return ret;
     }
@@ -44226,7 +44398,7 @@ static JSValue js_array_every(JSContext *ctx, JSValueConst this_val,
             args[0] = val;
             args[1] = index_val;
             args[2] = obj;
-            res = JS_Call(ctx, func, this_arg, 3, args);
+            res = js_call(ctx, func, this_arg, 3, args);
             JS_FreeValue(ctx, index_val);
             if (JS_IsException(res))
                 goto exception;
@@ -44279,7 +44451,7 @@ done:
         if (JS_IsException(arr))
             goto exception;
         args[0] = ret;
-        res = JS_Invoke(ctx, arr, JS_ATOM_set, 1, args);
+        res = js_invoke(ctx, arr, JS_ATOM_set, 1, args);
         if (check_exception_free(ctx, res)) {
             JS_FreeValue(ctx, arr);
             goto exception;
@@ -44372,7 +44544,7 @@ static JSValue js_array_reduce(JSContext *ctx, JSValueConst this_val,
             args[1] = val;
             args[2] = index_val;
             args[3] = obj;
-            acc1 = JS_Call(ctx, func, JS_UNDEFINED, 4, args);
+            acc1 = js_call(ctx, func, JS_UNDEFINED, 4, args);
             JS_FreeValue(ctx, index_val);
             JS_FreeValue(ctx, val);
             val = JS_UNDEFINED;
@@ -44616,7 +44788,7 @@ static JSValue js_array_find(JSContext *ctx, JSValueConst this_val,
         args[0] = val;
         args[1] = index_val;
         args[2] = this_val;
-        res = JS_Call(ctx, func, this_arg, 3, args);
+        res = js_call(ctx, func, this_arg, 3, args);
         if (JS_IsException(res))
             goto exception;
         if (JS_ToBoolFree(ctx, res)) {
@@ -45201,7 +45373,7 @@ static int64_t JS_FlattenIntoArray(JSContext *ctx, JSValueConst target,
             continue;
         if (!JS_IsUndefined(mapperFunction)) {
             JSValueConst args[3] = { element, JS_NewInt64(ctx, sourceIndex), source };
-            element = JS_Call(ctx, mapperFunction, thisArg, 3, args);
+            element = js_call(ctx, mapperFunction, thisArg, 3, args);
             JS_FreeValue(ctx, (JSValue)args[0]);
             JS_FreeValue(ctx, (JSValue)args[1]);
             if (JS_IsException(element))
@@ -45319,7 +45491,7 @@ static int js_array_cmp_generic(const void *a, const void *b, void *opaque) {
             goto cmp_same;
         argv[0] = ap->val;
         argv[1] = bp->val;
-        res = JS_Call(ctx, psc->method, JS_UNDEFINED, 2, argv);
+        res = js_call(ctx, psc->method, JS_UNDEFINED, 2, argv);
         if (JS_IsException(res))
             goto exception;
         if (JS_VALUE_GET_TAG(res) == JS_TAG_INT) {
@@ -46119,7 +46291,7 @@ static JSValue js_iterator_proto_func(JSContext *ctx, JSValueConst this_val,
                 index_val = JS_NewInt64(ctx, idx);
                 args[0] = item;
                 args[1] = index_val;
-                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                ret = js_call(ctx, func, JS_UNDEFINED, countof(args), args);
                 JS_FreeValue(ctx, item);
                 JS_FreeValue(ctx, index_val);
                 if (JS_IsException(ret))
@@ -46148,7 +46320,7 @@ static JSValue js_iterator_proto_func(JSContext *ctx, JSValueConst this_val,
                 index_val = JS_NewInt64(ctx, idx);
                 args[0] = item;
                 args[1] = index_val;
-                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                ret = js_call(ctx, func, JS_UNDEFINED, countof(args), args);
                 JS_FreeValue(ctx, index_val);
                 if (JS_IsException(ret)) {
                     JS_FreeValue(ctx, item);
@@ -46181,7 +46353,7 @@ static JSValue js_iterator_proto_func(JSContext *ctx, JSValueConst this_val,
                 index_val = JS_NewInt64(ctx, idx);
                 args[0] = item;
                 args[1] = index_val;
-                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                ret = js_call(ctx, func, JS_UNDEFINED, countof(args), args);
                 JS_FreeValue(ctx, item);
                 JS_FreeValue(ctx, index_val);
                 if (JS_IsException(ret))
@@ -46205,7 +46377,7 @@ static JSValue js_iterator_proto_func(JSContext *ctx, JSValueConst this_val,
                 index_val = JS_NewInt64(ctx, idx);
                 args[0] = item;
                 args[1] = index_val;
-                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                ret = js_call(ctx, func, JS_UNDEFINED, countof(args), args);
                 JS_FreeValue(ctx, item);
                 JS_FreeValue(ctx, index_val);
                 if (JS_IsException(ret))
@@ -46281,7 +46453,7 @@ static JSValue js_iterator_proto_reduce(JSContext *ctx, JSValueConst this_val,
         args[0] = acc;
         args[1] = item;
         args[2] = index_val;
-        ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+        ret = js_call(ctx, func, JS_UNDEFINED, countof(args), args);
         JS_FreeValue(ctx, item);
         JS_FreeValue(ctx, index_val);
         if (JS_IsException(ret))
@@ -46482,7 +46654,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
             index_val = JS_NewInt64(ctx, it->count++);
             args[0] = item;
             args[1] = index_val;
-            selected = JS_Call(ctx, it->func, JS_UNDEFINED, countof(args), args);
+            selected = js_call(ctx, it->func, JS_UNDEFINED, countof(args), args);
             JS_FreeValue(ctx, index_val);
             if (JS_IsException(selected)) {
                 JS_FreeValue(ctx, item);
@@ -46522,7 +46694,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
                 index_val = JS_NewInt64(ctx, it->count++);
                 args[0] = item;
                 args[1] = index_val;
-                ret = JS_Call(ctx, it->func, JS_UNDEFINED, countof(args), args);
+                ret = js_call(ctx, it->func, JS_UNDEFINED, countof(args), args);
                 JS_FreeValue(ctx, item);
                 JS_FreeValue(ctx, index_val);
                 if (JS_IsException(ret))
@@ -46604,7 +46776,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValueConst this_val,
             index_val = JS_NewInt64(ctx, it->count++);
             args[0] = item;
             args[1] = index_val;
-            ret = JS_Call(ctx, it->func, JS_UNDEFINED, countof(args), args);
+            ret = js_call(ctx, it->func, JS_UNDEFINED, countof(args), args);
             JS_FreeValue(ctx, index_val);
             JS_FreeValue(ctx, item);
             if (JS_IsException(ret))
@@ -48194,7 +48366,7 @@ static JSValue js_string_match(JSContext *ctx, JSValueConst this_val,
             goto fail;
         args[args_len++] = (JSValueConst)str;
     }
-    rx = JS_CallConstructor(ctx, ctx->regexp_ctor, args_len, args);
+    rx = js_call_constructor(ctx, ctx->regexp_ctor, args_len, args);
     JS_FreeValue(ctx, str);
     if (JS_IsException(rx)) {
     fail:
@@ -48410,7 +48582,7 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             args[0] = search_str;
             args[1] = JS_NewInt32(ctx, pos);
             args[2] = str;
-            repl_str = JS_ToStringFree(ctx, JS_Call(ctx, replaceValue, JS_UNDEFINED, 3, args));
+            repl_str = JS_ToStringFree(ctx, js_call(ctx, replaceValue, JS_UNDEFINED, 3, args));
             if (JS_IsException(repl_str))
                 goto exception;
             string_buffer_concat_value_free(b, repl_str);
@@ -51253,7 +51425,7 @@ static JSValue js_regexp_Symbol_matchAll(JSContext *ctx, JSValueConst this_val,
         goto exception;
     args[0] = R;
     args[1] = flags;
-    matcher = JS_CallConstructor(ctx, C, 2, args);
+    matcher = js_call_constructor(ctx, C, 2, args);
     if (JS_IsException(matcher))
         goto exception;
     if (JS_ToLengthFree(ctx, &lastIndex,
@@ -51718,7 +51890,7 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
     }
     args[0] = rx;
     args[1] = flags;
-    splitter = JS_CallConstructor(ctx, ctor, 2, args);
+    splitter = js_call_constructor(ctx, ctor, 2, args);
     if (JS_IsException(splitter))
         goto exception;
     A = JS_NewArray(ctx);
@@ -52379,7 +52551,7 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
     args[0] = name_val;
     args[1] = val;
     args[2] = context;
-    res = JS_Call(ctx, reviver, holder, 3, args);
+    res = js_call(ctx, reviver, holder, 3, args);
     JS_FreeValue(ctx, name_val);
     JS_FreeValue(ctx, val);
     JS_FreeValue(ctx, context);
@@ -52644,7 +52816,7 @@ static JSValue js_json_check(JSContext *ctx, JSONStringifyContext *jsc,
     if (!JS_IsUndefined(jsc->replacer_func)) {
         args[0] = key;
         args[1] = val;
-        v = JS_Call(ctx, jsc->replacer_func, holder, 2, args);
+        v = js_call(ctx, jsc->replacer_func, holder, 2, args);
         JS_FreeValue(ctx, val);
         val = v;
         if (JS_IsException(val))
@@ -53054,7 +53226,7 @@ static JSValue js_reflect_construct(JSContext *ctx, JSValueConst this_val,
     tab = build_arg_list(ctx, &len, array_arg);
     if (!tab)
         return JS_EXCEPTION;
-    ret = JS_CallConstructor2(ctx, func, new_target, len, (JSValueConst *)tab);
+    ret = js_call_constructor2(ctx, func, new_target, len, (JSValueConst *)tab);
     free_arg_list(ctx, tab, len);
     return ret;
 }
@@ -53968,7 +54140,7 @@ static JSValue js_proxy_call_constructor(JSContext *ctx, JSValueConst func_obj,
     if (!JS_IsConstructor(ctx, s->target))
         return JS_ThrowTypeErrorNotAConstructor(ctx, s->target);
     if (JS_IsUndefined(method))
-        return JS_CallConstructor2(ctx, s->target, new_target, argc, argv);
+        return js_call_constructor2(ctx, s->target, new_target, argc, argv);
     arg_array = js_create_array(ctx, argc, argv);
     if (JS_IsException(arg_array)) {
         ret = JS_EXCEPTION;
@@ -53977,7 +54149,7 @@ static JSValue js_proxy_call_constructor(JSContext *ctx, JSValueConst func_obj,
     args[0] = s->target;
     args[1] = arg_array;
     args[2] = new_target;
-    ret = JS_Call(ctx, method, s->handler, 3, args);
+    ret = js_call(ctx, method, s->handler, 3, args);
     if (!JS_IsException(ret) && JS_VALUE_GET_TAG(ret) != JS_TAG_OBJECT) {
         JS_FreeValue(ctx, ret);
         ret = JS_ThrowTypeErrorNotAnObject(ctx);
@@ -54007,7 +54179,7 @@ static JSValue js_proxy_call(JSContext *ctx, JSValueConst func_obj,
         return JS_ThrowTypeError(ctx, "not a function");
     }
     if (JS_IsUndefined(method))
-        return JS_Call(ctx, s->target, this_obj, argc, argv);
+        return js_call(ctx, s->target, this_obj, argc, argv);
     arg_array = js_create_array(ctx, argc, argv);
     if (JS_IsException(arg_array)) {
         ret = JS_EXCEPTION;
@@ -54016,7 +54188,7 @@ static JSValue js_proxy_call(JSContext *ctx, JSValueConst func_obj,
     args[0] = s->target;
     args[1] = this_obj;
     args[2] = arg_array;
-    ret = JS_Call(ctx, method, s->handler, 3, args);
+    ret = js_call(ctx, method, s->handler, 3, args);
  fail:
     JS_FreeValue(ctx, method);
     JS_FreeValue(ctx, arg_array);
@@ -54444,7 +54616,7 @@ static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
             if (done)
                 break;
             if (is_set) {
-                ret = JS_Call(ctx, adder, obj, 1, (JSValueConst *)&item);
+                ret = js_call(ctx, adder, obj, 1, (JSValueConst *)&item);
                 if (JS_IsException(ret)) {
                     JS_FreeValue(ctx, item);
                     goto fail_close;
@@ -54466,7 +54638,7 @@ static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
                     goto fail1;
                 args[0] = key;
                 args[1] = value;
-                ret = JS_Call(ctx, adder, obj, 2, args);
+                ret = js_call(ctx, adder, obj, 2, args);
                 if (JS_IsException(ret)) {
                 fail1:
                     JS_FreeValue(ctx, item);
@@ -54843,7 +55015,7 @@ static JSValue js_map_getOrInsert(JSContext *ctx, JSValueConst this_val,
     mr = map_find_record(ctx, s, key);
     if (!mr) {
         if (computed) {
-            value = JS_Call(ctx, argv[1], JS_UNDEFINED, 1, &key);
+            value = js_call(ctx, argv[1], JS_UNDEFINED, 1, &key);
             if (JS_IsException(value))
                 return JS_EXCEPTION;
             map_delete_record(ctx, s, key);
@@ -54943,7 +55115,7 @@ static JSValue js_map_forEach(JSContext *ctx, JSValueConst this_val,
             else
                 args[0] = JS_DupValue(ctx, mr->value);
             args[2] = (JSValue)this_val;
-            ret = JS_Call(ctx, func, this_arg, 3, (JSValueConst *)args);
+            ret = js_call(ctx, func, this_arg, 3, (JSValueConst *)args);
             JS_FreeValue(ctx, args[0]);
             if (!magic)
                 JS_FreeValue(ctx, args[1]);
@@ -55008,7 +55180,7 @@ static JSValue js_object_groupBy(JSContext *ctx, JSValueConst this_val,
 
         args[0] = v;
         args[1] = JS_NewInt64(ctx, idx);
-        key = JS_Call(ctx, cb, ctx->global_obj, 2, args);
+        key = js_call(ctx, cb, ctx->global_obj, 2, args);
         if (JS_IsException(key))
             goto iterator_close_exception;
 
@@ -55393,7 +55565,7 @@ static JSValue js_set_isDisjointFrom(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (done) // item is JS_UNDEFINED
                 break;
-            rv = JS_Call(ctx, has, argv[0], 1, (JSValueConst *)&item);
+            rv = js_call(ctx, has, argv[0], 1, (JSValueConst *)&item);
             JS_FreeValue(ctx, item);
             ok = JS_ToBoolFree(ctx, rv); // returns -1 if rv is JS_EXCEPTION
             if (ok < 0)
@@ -55401,7 +55573,7 @@ static JSValue js_set_isDisjointFrom(JSContext *ctx, JSValueConst this_val,
             found = (ok > 0);
         } while (!found);
     } else {
-        iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+        iter = js_call(ctx, keys, argv[0], 0, NULL);
         if (JS_IsException(iter))
             goto exception;
         next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -55462,7 +55634,7 @@ static JSValue js_set_isSubsetOf(JSContext *ctx, JSValueConst this_val,
             goto exception;
         if (done) // item is JS_UNDEFINED
             break;
-        rv = JS_Call(ctx, has, argv[0], 1, (JSValueConst *)&item);
+        rv = js_call(ctx, has, argv[0], 1, (JSValueConst *)&item);
         JS_FreeValue(ctx, item);
         ok = JS_ToBoolFree(ctx, rv); // returns -1 if rv is JS_EXCEPTION
         if (ok < 0)
@@ -55499,7 +55671,7 @@ static JSValue js_set_isSupersetOf(JSContext *ctx, JSValueConst this_val,
     found = FALSE;
     if (s->record_count < size)
         goto fini;
-    iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+    iter = js_call(ctx, keys, argv[0], 0, NULL);
     if (JS_IsException(iter))
         goto exception;
     next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -55548,7 +55720,7 @@ static JSValue js_set_intersection(JSContext *ctx, JSValueConst this_val,
     if (get_set_record(ctx, argv[0], &size, &has, &keys) < 0)
         goto exception;
     if (s->record_count > size) {
-        iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+        iter = js_call(ctx, keys, argv[0], 0, NULL);
         if (JS_IsException(iter))
             goto exception;
         next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -55590,7 +55762,7 @@ static JSValue js_set_intersection(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (done) // item is JS_UNDEFINED
                 break;
-            rv = JS_Call(ctx, has, argv[0], 1, (JSValueConst *)&item);
+            rv = js_call(ctx, has, argv[0], 1, (JSValueConst *)&item);
             ok = JS_ToBoolFree(ctx, rv); // returns -1 if rv is JS_EXCEPTION
             if (ok > 0) {
                 item = map_normalize_key(ctx, item);
@@ -55654,7 +55826,7 @@ static JSValue js_set_difference(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (done) // item is JS_UNDEFINED
                 break;
-            rv = JS_Call(ctx, has, argv[0], 1, (JSValueConst *)&item);
+            rv = js_call(ctx, has, argv[0], 1, (JSValueConst *)&item);
             ok = JS_ToBoolFree(ctx, rv); // returns -1 if rv is JS_EXCEPTION
             if (ok < 0) {
                 JS_FreeValue(ctx, item);
@@ -55666,7 +55838,7 @@ static JSValue js_set_difference(JSContext *ctx, JSValueConst this_val,
             JS_FreeValue(ctx, item);
         }
     } else {
-        iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+        iter = js_call(ctx, keys, argv[0], 0, NULL);
         if (JS_IsException(iter))
             goto exception;
         next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -55713,7 +55885,7 @@ static JSValue js_set_symmetricDifference(JSContext *ctx, JSValueConst this_val,
 
     next = JS_UNDEFINED;
     newset = JS_UNDEFINED;
-    iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+    iter = js_call(ctx, keys, argv[0], 0, NULL);
     if (JS_IsException(iter))
         goto exception;
     next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -55780,7 +55952,7 @@ static JSValue js_set_union(JSContext *ctx, JSValueConst this_val,
 
     next = JS_UNDEFINED;
     newset = JS_UNDEFINED;
-    iter = JS_Call(ctx, keys, argv[0], 0, NULL);
+    iter = js_call(ctx, keys, argv[0], 0, NULL);
     if (JS_IsException(iter))
         goto exception;
     next = JS_GetProperty(ctx, iter, JS_ATOM_next);
@@ -56027,7 +56199,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
             res = JS_DupValue(ctx, arg);
         }
     } else {
-        res = JS_Call(ctx, handler, JS_UNDEFINED, 1, &arg);
+        res = js_call(ctx, handler, JS_UNDEFINED, 1, &arg);
     }
     is_reject = JS_IsException(res);
     if (is_reject)
@@ -56037,7 +56209,7 @@ static JSValue promise_reaction_job(JSContext *ctx, int argc,
        creating a dummy promise in the 'await' implementation of async
        functions */
     if (!JS_IsUndefined(func)) {
-        res2 = JS_Call(ctx, func, JS_UNDEFINED,
+        res2 = js_call(ctx, func, JS_UNDEFINED,
                        1, (JSValueConst *)&res);
     } else {
         res2 = JS_UNDEFINED;
@@ -56118,10 +56290,10 @@ static JSValue js_promise_resolve_thenable_job(JSContext *ctx,
     then = argv[2];
     if (js_create_resolving_functions(ctx, args, promise) < 0)
         return JS_EXCEPTION;
-    res = JS_Call(ctx, then, thenable, 2, (JSValueConst *)args);
+    res = js_call(ctx, then, thenable, 2, (JSValueConst *)args);
     if (JS_IsException(res)) {
         JSValue error = js_get_exception(ctx);
-        res = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
+        res = js_call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
     }
     JS_FreeValue(ctx, args[0]);
@@ -56246,7 +56418,7 @@ static JSValue js_async_context_call(JSContext *ctx, JSValueConst this_val,
     JSValue outer = rt->async_context, ret;
 
     rt->async_context = JS_DupValue(ctx, func_data[0]);
-    ret = JS_Call(ctx, func_data[1], this_val, argc, argv);
+    ret = js_call(ctx, func_data[1], this_val, argc, argv);
     if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
         JS_FreeValue(ctx, rt->async_context);
     rt->async_context = outer;
@@ -56396,11 +56568,11 @@ static JSValue js_promise_constructor(JSContext *ctx, JSValueConst new_target,
     JS_SetOpaque(obj, s);
     if (js_create_resolving_functions(ctx, args, obj))
         goto fail;
-    ret = JS_Call(ctx, executor, JS_UNDEFINED, 2, (JSValueConst *)args);
+    ret = js_call(ctx, executor, JS_UNDEFINED, 2, (JSValueConst *)args);
     if (JS_IsException(ret)) {
         JSValue ret2, error;
         error = js_get_exception(ctx);
-        ret2 = JS_Call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
+        ret2 = js_call(ctx, args[1], JS_UNDEFINED, 1, (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
         if (JS_IsException(ret2))
             goto fail1;
@@ -56459,7 +56631,7 @@ static JSValue js_new_promise_capability(JSContext *ctx,
         result_promise = js_promise_constructor(ctx, ctor, 1,
                                                 (JSValueConst *)&executor);
     } else {
-        result_promise = JS_CallConstructor(ctx, ctor, 1,
+        result_promise = js_call_constructor(ctx, ctor, 1,
                                             (JSValueConst *)&executor);
     }
     if (JS_IsException(result_promise))
@@ -56506,7 +56678,7 @@ static JSValue js_promise_resolve(JSContext *ctx, JSValueConst this_val,
     result_promise = js_new_promise_capability(ctx, resolving_funcs, this_val);
     if (JS_IsException(result_promise))
         return result_promise;
-    ret = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, argv);
+    ret = js_call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, argv);
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
     if (JS_IsException(ret)) {
@@ -56564,12 +56736,12 @@ static JSValue js_promise_try(JSContext *ctx, JSValueConst this_val,
     result_promise = js_new_promise_capability(ctx, resolving_funcs, this_val);
     if (JS_IsException(result_promise))
         return result_promise;
-    ret = JS_Call(ctx, argv[0], JS_UNDEFINED, argc - 1, argv + 1);
+    ret = js_call(ctx, argv[0], JS_UNDEFINED, argc - 1, argv + 1);
     if (JS_IsException(ret)) {
         is_reject = 1;
         ret = js_get_exception(ctx);
     }
-    ret2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, (JSValueConst *)&ret);
+    ret2 = js_call(ctx, resolving_funcs[is_reject], JS_UNDEFINED, 1, (JSValueConst *)&ret);
     JS_FreeValue(ctx, resolving_funcs[0]);
     JS_FreeValue(ctx, resolving_funcs[1]);
     JS_FreeValue(ctx, ret);
@@ -56662,10 +56834,10 @@ static JSValue js_promise_all_resolve_element(JSContext *ctx,
             error = js_aggregate_error_constructor(ctx, values);
             if (JS_IsException(error))
                 return JS_EXCEPTION;
-            ret = JS_Call(ctx, resolve, JS_UNDEFINED, 1, (JSValueConst *)&error);
+            ret = js_call(ctx, resolve, JS_UNDEFINED, 1, (JSValueConst *)&error);
             JS_FreeValue(ctx, error);
         } else {
-            ret = JS_Call(ctx, resolve, JS_UNDEFINED, 1, (JSValueConst *)&values);
+            ret = js_call(ctx, resolve, JS_UNDEFINED, 1, (JSValueConst *)&values);
         }
         if (JS_IsException(ret))
             return ret;
@@ -56700,7 +56872,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
         JSValue error;
     fail_reject:
         error = js_get_exception(ctx);
-        ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
+        ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                        (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
         if (JS_IsException(ret))
@@ -56731,7 +56903,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
                 goto fail_reject;
             if (done)
                 break;
-            next_promise = JS_Call(ctx, promise_resolve,
+            next_promise = js_call(ctx, promise_resolve,
                                    this_val, 1, (JSValueConst *)&item);
             JS_FreeValue(ctx, item);
             if (JS_IsException(next_promise)) {
@@ -56799,7 +56971,7 @@ static JSValue js_promise_all(JSContext *ctx, JSValueConst this_val,
                 JS_FreeValue(ctx, values);
                 values = error;
             }
-            ret = JS_Call(ctx, resolving_funcs[is_promise_any], JS_UNDEFINED,
+            ret = js_call(ctx, resolving_funcs[is_promise_any], JS_UNDEFINED,
                           1, (JSValueConst *)&values);
             if (check_exception_free(ctx, ret))
                 goto fail_reject;
@@ -56842,7 +57014,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
         JSValue error;
     fail_reject:
         error = js_get_exception(ctx);
-        ret = JS_Call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
+        ret = js_call(ctx, resolving_funcs[1], JS_UNDEFINED, 1,
                        (JSValueConst *)&error);
         JS_FreeValue(ctx, error);
         if (JS_IsException(ret))
@@ -56861,7 +57033,7 @@ static JSValue js_promise_race(JSContext *ctx, JSValueConst this_val,
                 goto fail_reject;
             if (done)
                 break;
-            next_promise = JS_Call(ctx, promise_resolve,
+            next_promise = js_call(ctx, promise_resolve,
                                    this_val, 1, (JSValueConst *)&item);
             JS_FreeValue(ctx, item);
             if (JS_IsException(next_promise)) {
@@ -56979,7 +57151,7 @@ static JSValue js_promise_catch(JSContext *ctx, JSValueConst this_val,
     JSValueConst args[2];
     args[0] = JS_UNDEFINED;
     args[1] = argv[0];
-    return JS_Invoke(ctx, this_val, JS_ATOM_then, 2, args);
+    return js_invoke(ctx, this_val, JS_ATOM_then, 2, args);
 }
 
 static JSValue js_promise_finally_value_thunk(JSContext *ctx, JSValueConst this_val,
@@ -57004,7 +57176,7 @@ static JSValue js_promise_then_finally_func(JSContext *ctx, JSValueConst this_va
     JSValueConst onFinally = func_data[1];
     JSValue res, promise, ret, then_func;
 
-    res = JS_Call(ctx, onFinally, JS_UNDEFINED, 0, NULL);
+    res = js_call(ctx, onFinally, JS_UNDEFINED, 0, NULL);
     if (JS_IsException(res))
         return res;
     promise = js_promise_resolve(ctx, ctor, 1, (JSValueConst *)&res, 0);
@@ -57056,7 +57228,7 @@ static JSValue js_promise_finally(JSContext *ctx, JSValueConst this_val,
         }
     }
     JS_FreeValue(ctx, ctor);
-    ret = JS_Invoke(ctx, this_val, JS_ATOM_then, 2, (JSValueConst *)then_funcs);
+    ret = js_invoke(ctx, this_val, JS_ATOM_then, 2, (JSValueConst *)then_funcs);
     JS_FreeValue(ctx, then_funcs[0]);
     JS_FreeValue(ctx, then_funcs[1]);
     return ret;
@@ -57252,7 +57424,7 @@ static JSValue js_async_from_sync_iterator_next(JSContext *ctx, JSValueConst thi
             err = js_get_exception(ctx);
             is_reject = 1;
         done_resolve:
-            res2 = JS_Call(ctx, resolving_funcs[is_reject], JS_UNDEFINED,
+            res2 = js_call(ctx, resolving_funcs[is_reject], JS_UNDEFINED,
                            1, (JSValueConst *)&err);
             JS_FreeValue(ctx, err);
             JS_FreeValue(ctx, res2);
@@ -59995,7 +60167,7 @@ static JSValue js_array_buffer_slice(JSContext *ctx,
     } else {
         JSValue args[1];
         args[0] = JS_NewInt64(ctx, new_len);
-        new_obj = JS_CallConstructor(ctx, ctor, 1, (JSValueConst *)args);
+        new_obj = js_call_constructor(ctx, ctor, 1, (JSValueConst *)args);
         JS_FreeValue(ctx, ctor);
         JS_FreeValue(ctx, args[0]);
     }
@@ -60412,7 +60584,7 @@ static JSValue js_typed_array_create(JSContext *ctx, JSValueConst ctor,
     int new_len;
     int64_t len;
 
-    ret = JS_CallConstructor(ctx, ctor, argc, argv);
+    ret = js_call_constructor(ctx, ctor, argc, argv);
     if (JS_IsException(ret))
         return ret;
     /* validate the typed array */
@@ -60529,7 +60701,7 @@ static JSValue js_typed_array_from(JSContext *ctx, JSValueConst this_val,
         if (mapping) {
             args[0] = v;
             args[1] = JS_NewInt32(ctx, k);
-            v2 = JS_Call(ctx, mapfn, this_arg, 2, args);
+            v2 = js_call(ctx, mapfn, this_arg, 2, args);
             JS_FreeValue(ctx, v);
             v = v2;
             if (JS_IsException(v))
@@ -60741,7 +60913,7 @@ static JSValue js_typed_array_find(JSContext *ctx, JSValueConst this_val,
         args[0] = val;
         args[1] = index_val;
         args[2] = this_val;
-        res = JS_Call(ctx, func, this_arg, 3, args);
+        res = js_call(ctx, func, this_arg, 3, args);
         if (JS_IsException(res))
             goto exception;
         if (JS_ToBoolFree(ctx, res)) {
@@ -61473,7 +61645,7 @@ static int js_TA_cmp_generic(const void *a, const void *b, void *opaque) {
                               a_idx * (size_t)psc->elt_size);
         argv[1] = psc->getfun(ctx, psc->array +
                               b_idx * (size_t)(psc->elt_size));
-        res = JS_Call(ctx, psc->cmp, JS_UNDEFINED, 2, argv);
+        res = js_call(ctx, psc->cmp, JS_UNDEFINED, 2, argv);
         if (JS_IsException(res)) {
             psc->exception = 1;
             goto done;
@@ -63857,7 +64029,7 @@ static void js_finrec_mark(JSRuntime *rt, JSValueConst val,
 
 static JSValue js_finrec_job(JSContext *ctx, int argc, JSValueConst *argv)
 {
-    return JS_Call(ctx, argv[0], JS_UNDEFINED, 1, &argv[1]);
+    return js_call(ctx, argv[0], JS_UNDEFINED, 1, &argv[1]);
 }
 
 static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
