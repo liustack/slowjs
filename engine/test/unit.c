@@ -1491,7 +1491,7 @@ static int test_module_chains(void *unused)
    short enough to run. */
 static int test_module_retry(void *unused)
 {
-    int mid = JS_MAX_INTERNAL_DEPTH * 3 / 4;
+    int mid = JS_MAX_INTERNAL_DEPTH * 3 / 4, made;
     char buf[64], src[64];
 
     chain_length = JS_MAX_INTERNAL_DEPTH + 1000;
@@ -1513,6 +1513,25 @@ static int test_module_retry(void *unused)
         CHECK(run_jobs(rt), "resolve again: jobs");
         JS_FreeValue(ctx2, first);
         JS_FreeContext(ctx2);
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+    {
+        /* making the functions of the modules compiled from the end, all
+           resolved, fails at module JS_MAX_INTERNAL_DEPTH - 1 of the chain,
+           below the module that imports the first */
+        JSRuntime *rt = host_new_runtime();
+        JSContext *ctx = JS_NewContext(rt);
+
+        JS_SetModuleLoaderFunc(rt, NULL, chain_loader, NULL);
+        made = compile_back(ctx, 'm', JS_EVAL_FLAG_COMPILE_ONLY, buf, sizeof(buf));
+        CHECK(made == chain_length, "functions: %d modules made, then %s", made, buf);
+        module_eval(ctx, "top", "import \"m0\";", 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "RangeError") == 0, "functions: %s", buf);
+        module_eval(ctx, "again", src, 0, buf, sizeof(buf));
+        CHECK(strcmp(buf, "ok") == 0, "functions again: %s", buf);
+        CHECK(run_jobs(rt), "functions again: jobs");
+        CHECK(eval_is(ctx, "1 + 1", "2"), "functions again: the runtime runs");
         JS_FreeContext(ctx);
         host_free_runtime(rt);
     }
