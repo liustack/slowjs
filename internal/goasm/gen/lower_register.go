@@ -49,10 +49,12 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 		inner = append(inner, l)
 	}
 	retLabel := ".Lret_" + fn.Name
-	// A leaf may save callee-saved registers it uses (musl's memcpy uses
-	// RBX): the pushes at its start become stores into a NOSPLIT Go frame
-	// and each pop before a return a load from it. RBP counts as one of
-	// them: Go saves and restores the caller's BP around the frame.
+	// A leaf may save the callee-saved registers it uses (musl's memcpy uses
+	// RBX): the pushes at its start become stores into a NOSPLIT Go frame and
+	// each pop before a return a load from it. RBP is not among them: with
+	// frame-pointer=none llc could otherwise use it as a plain value
+	// register, but Go keeps RBP as the frame pointer, so a leaf must leave
+	// it alone (checked in the body below).
 	var pushed []string
 	for len(pushed) < len(inner) {
 		m := reLeafPush.FindStringSubmatch(norm(inner[len(pushed)]))
@@ -84,6 +86,9 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 			reSub.MatchString(n) || reAdd.MatchString(n) || strings.Contains(n, "%rsp") {
 			return "", Meta{}, fmt.Errorf("%s: leaf is not frameless: %q", fn.Name, l)
 		}
+		if strings.Contains(n, "%rbp") {
+			return "", Meta{}, fmt.Errorf("%s: leaf uses the base pointer, which Go owns: %q", fn.Name, l)
+		}
 		if m := reCall.FindStringSubmatch(n); m != nil && calleeKinds[m[1]] == Register {
 			// Another register-entry leaf: arguments stay in registers.
 			out = append(out, "call "+m[1])
@@ -104,6 +109,6 @@ func LowerRegister(asm string, fn FuncSpec) (string, Meta, error) {
 }
 
 var (
-	reLeafPush = regexp.MustCompile(`^pushq\s+%(rbx|rbp|r12|r13|r14|r15)$`)
-	reLeafPop  = regexp.MustCompile(`^popq\s+%(rbx|rbp|r12|r13|r14|r15)$`)
+	reLeafPush = regexp.MustCompile(`^pushq\s+%(rbx|r12|r13|r14|r15)$`)
+	reLeafPop  = regexp.MustCompile(`^popq\s+%(rbx|r12|r13|r14|r15)$`)
 )
