@@ -29,6 +29,7 @@
 // every indirect call, which the lowering reads to move the arguments into
 // the Go argument area. -shadow-report prints the signature of every
 // function, the address-taken ones and the call graph for the generator.
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
@@ -188,7 +189,29 @@ static FunctionType *packedType(FunctionType *T) {
   return FunctionType::get(T->getReturnType(), {P, P}, false);
 }
 
-static void packCall(CallBase *CB, Value *callee, const DataLayout &DL) {
+// Every packed call of a function uses one argument block, as large as the
+// largest call needs: the stores go right before each call, after its
+// arguments are computed, and the callee is done with them when it returns.
+// One block per call site made JS_CallInternal's frame several KB.
+using BlockMap = DenseMap<Function *, AllocaInst *>;
+
+static AllocaInst *argBlock(Function *F, uint64_t size, BlockMap &blocks) {
+  AllocaInst *&blk = blocks[F];
+  Type *I8 = Type::getInt8Ty(F->getContext());
+  if (blk && blk->getAllocationSize(F->getParent()->getDataLayout())->getFixedValue() >= size)
+    return blk;
+  IRBuilder<> E(&*F->getEntryBlock().getFirstInsertionPt());
+  AllocaInst *N = E.CreateAlloca(ArrayType::get(I8, size), nullptr, "argblock");
+  N->setAlignment(Align(16));
+  if (blk) {
+    blk->replaceAllUsesWith(N);
+    blk->eraseFromParent();
+  }
+  blk = N;
+  return N;
+}
+
+static void packCall(CallBase *CB, Value *callee, const DataLayout &DL, BlockMap &blocks) {
   auto *CI = dyn_cast<CallInst>(CB);
   if (!CI)
     report_fatal_error(Twine("argument block on a call that is not a plain call in ") + CB->getFunction()->getName());
@@ -199,9 +222,7 @@ static void packCall(CallBase *CB, Value *callee, const DataLayout &DL) {
   Function *F = CB->getFunction();
   LLVMContext &C = F->getContext();
   Type *I8 = Type::getInt8Ty(C);
-  IRBuilder<> E(&*F->getEntryBlock().getFirstInsertionPt());
-  AllocaInst *blk = E.CreateAlloca(ArrayType::get(I8, size), nullptr, "argblock");
-  blk->setAlignment(Align(16));
+  AllocaInst *blk = argBlock(F, size, blocks);
   IRBuilder<> B(CB);
   for (unsigned i = 1; i < CB->arg_size(); i++) {
     Value *dst = B.CreateConstGEP1_64(I8, blk, offs[i - 1]);
@@ -221,6 +242,7 @@ static void packCall(CallBase *CB, Value *callee, const DataLayout &DL) {
 
 static void packArgs(Module &M, const std::set<std::string> &leaves) {
   const DataLayout &DL = M.getDataLayout();
+  BlockMap blocks;
   LLVMContext &C = M.getContext();
   Type *I8 = Type::getInt8Ty(C);
   SmallVector<Function *> over;
@@ -244,6 +266,13 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
     NF->setAttributes(AttributeList::get(C, F->getAttributes().getFnAttrs(), F->getAttributes().getRetAttrs(), {}));
     NF->takeName(F);
     NF->splice(NF->begin(), F);
+    // F's own argument block, if its calls were packed already, moves with
+    // the body.
+    if (auto it = blocks.find(F); it != blocks.end()) {
+      AllocaInst *blk = it->second;
+      blocks.erase(it);
+      blocks[NF] = blk;
+    }
     IRBuilder<> B(&*NF->getEntryBlock().getFirstInsertionPt());
     F->getArg(0)->replaceAllUsesWith(NF->getArg(0));
     for (unsigned i = 1; i < T->getNumParams(); i++) {
@@ -256,7 +285,7 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
     for (Use &U : make_early_inc_range(F->uses())) {
       auto *CB = dyn_cast<CallBase>(U.getUser());
       if (CB && CB->isCallee(&U))
-        packCall(CB, NF, DL);
+        packCall(CB, NF, DL, blocks);
     }
     // The remaining uses are the address: in a function table, a compare or
     // an argument. Constants (tables) need the replacement through RAUW.
@@ -277,7 +306,7 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
             ind.push_back(CB);
     for (CallBase *CB : ind) {
       errs() << "PACKED-ICALL " << F.getName() << "\n";
-      packCall(CB, CB->getCalledOperand(), DL);
+      packCall(CB, CB->getCalledOperand(), DL, blocks);
     }
   }
 }
