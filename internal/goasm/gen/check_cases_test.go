@@ -719,6 +719,9 @@ func forbiddenCases(sub func(fn, re, repl string) func(string, []Meta) string,
 		{"rdrand", "48 0f c7 f0", "rdrandq\t%rax"},
 		{"rdseed", "48 0f c7 f8", ".byte 0x48, 0x0f, 0xc7, 0xf8"},
 		{"cpuid", "0f a2", "cpuid"},
+		{"ud2", "0f 0b", "ud2"},
+		{"int3", "cc", "int3"},
+		{"hlt", "f4", "hlt"},
 	} {
 		var lit, quad []string
 		for _, h := range strings.Fields(f.bytes) {

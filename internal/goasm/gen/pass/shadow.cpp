@@ -16,8 +16,17 @@
 // The region is 2^shadow-size-log2 bytes and aligned to its size, so the
 // space left is computed from the pointer alone. __shadow_remaining() gives it
 // to C, which checks it at the places that can raise RangeError. A dynamic
-// alloca that would cross the end traps: the C checks are meant to make that
-// unreachable.
+// alloca that would cross the end calls host_trap: the C checks are meant to
+// make that unreachable.
+//
+// No trap instruction is left in the output. In Go, SIGILL and SIGTRAP end the
+// process whatever the program does, so a ud2 (amd64) or brk (arm64) is a
+// crash nothing can recover. Every llvm.trap, the C's own __builtin_trap and
+// the pass's, becomes a call to host_trap(sp), a callback of the host that
+// panics, so the VM is lost and the process is not. LLVM 22.1.8 writes no
+// trap for an `unreachable` on x86_64-linux-gnu and aarch64-linux-gnu
+// (TrapUnreachable is off for both, and only the PlayStation, Mach-O and
+// Windows CFI targets turn it on), so llvm.trap is the only source.
 //
 // The engine's C has no shadow pointer of its own: with -shadow-add-sp the
 // pass gives every function but the register-entry leaves a new argument 0
@@ -112,6 +121,32 @@ static bool reject(Function &F, const Twine &why) {
   IB.CreateIntrinsic(Intrinsic::trap, {});
   IB.CreateUnreachable();
   return true;
+}
+
+// hostTrap is the callback that stands for a trap instruction: the Go host
+// panics in it and the VM can only be closed. It takes the shadow pointer like
+// every engine function and never returns.
+static FunctionCallee hostTrap(Module &M) {
+  LLVMContext &C = M.getContext();
+  auto *T = FunctionType::get(Type::getVoidTy(C), {PointerType::getUnqual(C)}, false);
+  FunctionCallee F = M.getOrInsertFunction("host_trap", T);
+  if (auto *Fn = dyn_cast<Function>(F.getCallee())) {
+    Fn->addFnAttr(Attribute::NoReturn);
+    Fn->addFnAttr(Attribute::NoUnwind);
+  }
+  return F;
+}
+
+// callHostTrap puts a call to host_trap, with the shadow pointer sp, at B's
+// insertion point. What follows it is unreachable.
+static CallInst *callHostTrap(IRBuilder<> &B, Module &M, Value *sp) {
+  CallInst *CI = B.CreateCall(hostTrap(M), {sp});
+  CI->setDoesNotReturn();
+  return CI;
+}
+
+static bool isTrapIntrinsic(Intrinsic::ID ID) {
+  return ID == Intrinsic::trap || ID == Intrinsic::debugtrap || ID == Intrinsic::ubsantrap;
 }
 
 static void dropMemoryFacts(Function &F) {
@@ -1516,6 +1551,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
               auto *Fn = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
               if (!Fn || !(Fn->isIntrinsic() || leaves.count(Fn->getName().str())))
                 reportFatalUsageError(Twine("register-entry leaf calls a unified function: ") + F.getName());
+              if (Fn->isIntrinsic() && isTrapIntrinsic(Fn->getIntrinsicID()))
+                reportFatalUsageError(Twine("register-entry leaf with a trap (it has no shadow pointer to call host_trap with): ") + F.getName());
             }
           }
         // "reserved": no frame is set up, and llc never allocates RBP,
@@ -1534,7 +1571,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
 
       bool rejected = false;
       SmallVector<AllocaInst *> fixed, dynamic;
-      SmallVector<IntrinsicInst *> lifetimes, saves, restores;
+      SmallVector<IntrinsicInst *> lifetimes, saves, restores, traps;
       SmallVector<CallBase *> calls;
       for (BasicBlock &B : F)
         for (Instruction &I : B) {
@@ -1555,6 +1592,12 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
             case Intrinsic::stackrestore:
               restores.push_back(II);
               break;
+            case Intrinsic::trap:
+              traps.push_back(II);
+              break;
+            case Intrinsic::debugtrap:
+            case Intrinsic::ubsantrap:
+              reportFatalUsageError(Twine("debugtrap or ubsantrap (a breakpoint, which ends the process in Go) in ") + F.getName());
             default:
               break;
             }
@@ -1623,7 +1666,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         Value *bad = B.CreateOr(B.CreateICmpUGT(end, limit), B.CreateICmpULT(end, start));
         Instruction *trap = SplitBlockAndInsertIfThen(bad, A, true);
         IRBuilder<> T(trap);
-        T.CreateIntrinsic(Intrinsic::trap, {});
+        callHostTrap(T, M, cur);
         B.SetInsertPoint(A);
         Value *p = B.CreateGEP(I8, cur, B.CreateSub(start, ci));
         B.CreateStore(B.CreateGEP(I8, cur, B.CreateSub(end, ci)), ss);
@@ -1633,6 +1676,11 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       for (auto *II : saves) {
         IRBuilder<> B(II);
         II->replaceAllUsesWith(top(B));
+        II->eraseFromParent();
+      }
+      for (auto *II : traps) {
+        IRBuilder<> B(II);
+        callHostTrap(B, M, top(B));
         II->eraseFromParent();
       }
       for (auto *II : restores) {

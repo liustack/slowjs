@@ -314,3 +314,29 @@ long b_uni_p(void *sp, long n) {
   PHASE(UF)
 #undef UF
 }
+
+// Faults on purpose (fault_test.go): what a bug in the C would do. The Go
+// runtime ends the process for an access to an address that is mapped to
+// nothing unless the host asked for a panic with SetPanicOnFault, and for a
+// trap instruction whatever the host does.
+long peek(void *sp, long *p) { return *p; }
+long poke(void *sp, long *p, long v) { *p = v; return v; }
+// Division by zero is undefined in C. x86 raises a divide error (SIGFPE, which
+// Go always turns into a panic) and arm64 gives 0.
+long quot(void *sp, long a, long b) { return a / b; }
+// A local the host sees lives on the shadow stack: with the stack all but
+// full, the stores go past its end.
+long hit_end(void *sp) {
+  long buf[16];
+  for (long i = 0; i < 16; i++) buf[i] = i;
+  observe(sp, buf);
+  return buf[15];
+}
+// The sums keep the trap behind more than a few bytes of code: the proto's
+// post-link check finds a body by its first 16 bytes, which a call in them
+// would change by relocation.
+long trap_now(void *sp, long n) {
+  long a = n * 3 + 1, b = n ^ 5, c = n + 11;
+  if (a + b + c != 0x7fffffff) __builtin_trap();
+  return a;
+}

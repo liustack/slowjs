@@ -44,7 +44,14 @@ runs its own checks and lowering in Go (`debug/elf`,
    Without the `"kcfi"` module flag llc emits no check code for it, but it
    keeps the id on the machine call. `-shadow-probes` writes a module with
    one probe per unified definition, of its type, convention and attributes,
-   that reads every argument and returns a loaded result.
+   that reads every argument and returns a loaded result. No trap instruction
+   is left: every `llvm.trap` (the `__builtin_trap` of `abort`, and the pass's
+   own check on a dynamic alloca that would cross the end of the shadow stack)
+   becomes a call to `host_trap(sp)`, a callback of the host that panics,
+   since SIGILL and SIGTRAP end a Go process whatever it does. LLVM 22.1.8
+   writes no trap for an `unreachable` on the two linux triples, so
+   `llvm.trap` is the only source. `debugtrap` and `ubsantrap` stop the pass,
+   and so does a trap in a leaf, which has no shadow pointer to pass.
 3. llc -O2 with shrink-wrapping off writes assembly and an object, every
    function in `.text` (`-profile-guided-section-prefix=false`: otherwise
    a cold function such as `abort` goes in `.text.unlikely.`). The whole

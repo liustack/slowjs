@@ -39,8 +39,19 @@ func host_now(sp, vm, kind uintptr) int64 {
 // calling mode has registers for.
 func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
 	hook("host_call", vm)
+	if r, ok := callOverride(int32(magic)); ok {
+		return r.U, r.Tag
+	}
 	r := gohost.Call(sp, uint32(vm), this, int32(argc), argv, int32(magic))
 	return r.U, r.Tag
+}
+
+// host_trap takes the shadow pointer and returns nothing. The C never calls
+// it: the shadow-stack pass puts a call to it where a trap instruction would
+// have been, which in Go would end the process. It panics and the VM is
+// broken (gohost.Trap).
+func host_trap(sp uintptr) {
+	gohost.Trap(sp)
 }
 
 // host_poll and host_release are not called yet: the generator inserts no

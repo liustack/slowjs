@@ -94,8 +94,15 @@ func SharedCFlags(flagsFile, triple string) ([]string, error) {
 	return strings.Fields(strings.Join(lines, " ")), nil
 }
 
-// HostCallbacks is the closed list of Go callbacks engine code may call.
+// HostCallbacks is the closed list of Go callbacks engine C may call (see
+// engine/host.h, and host_memory_grow of engine/heap.h).
 var HostCallbacks = []string{"host_poll", "host_memory_grow", "host_now", "host_call", "host_release"}
+
+// GeneratorCallbacks are the Go callbacks the generator itself puts into the
+// engine, which C never calls: host_trap stands for a trap instruction (see
+// pass/shadow.cpp). The C tree still may not name them, since
+// engine/libc/symbols.txt allows only HostCallbacks.
+var GeneratorCallbacks = []string{"host_trap"}
 
 // Unit is one C file compiled through the shadow-stack pass.
 type Unit struct {

@@ -167,6 +167,16 @@ func (vm *VM) Eval(f func(sp uintptr) int64) (int64, error) {
 	return r, nil
 }
 
+// host_trap stands for a trap instruction: the pass calls it where the C
+// traps or a dynamic alloca would cross the end of the shadow stack. It
+// panics, so the VM is lost and the process is not.
+func host_trap(sp uintptr) {
+	if vm := vmOf(sp); vm != nil {
+		vm.broken = true
+	}
+	panic("host_trap")
+}
+
 // host_call is the callback bridge. sp is the shadow position above all the
 // caller's live data: Go records it for the callback, a reentry starts there,
 // and the previous record comes back when the callback ends. A panic or
