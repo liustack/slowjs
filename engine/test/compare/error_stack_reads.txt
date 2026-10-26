@@ -1,0 +1,48 @@
+read get: true
+read index: true
+read typeof: true
+read length: true
+read optional: true
+read orAssign: true
+read nullishAssign: true
+read andAssign: true
+read orAssignInherited: true
+read orAssignIndex: true
+read plusAssign: true
+read minusAssign: true
+read orBitsAssign: true
+read postIncrement: true
+read preDecrement: true
+read subclass: true
+read destructure: true
+read with: true
+read super: true
+read reflect: true
+read template: true
+read stringCall: true
+read methodOnStack: true
+read descriptor: true
+read descriptors: true
+read proxy: true
+read proxyOrAssign: true
+compound assignment gives string
+never the marker, get: string
+never the marker, index: string
+never the marker, descriptorValue: string
+never the marker, descriptorsValue: string
+never the marker, reflectGet: string
+never the marker, reflectOwn: string
+never the marker, proxyGet: string
+never the marker, proxyOwn: string
+never the marker, values: string
+never the marker, entries: string
+never the marker, assign: string
+never the marker, spread: string
+never the marker, json: string
+redefine with the same text: true,true,false,true
+errors that cannot take a stack:
+freeze: message true true
+seal: message false true
+preventExtensions: message false false
+open: message,stack string
+proxy checks: true,true,true,true,true,true,true,true,0,{},false,string getOwnPropertyDescriptor,ownKeys,getOwnPropertyDescriptor,getOwnPropertyDescriptor message,stack,message,stack,stack,stack true

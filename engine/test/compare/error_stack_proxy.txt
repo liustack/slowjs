@@ -1,0 +1,2 @@
+operations: all 22 true
+stacks: 45 equal, 43 lines
