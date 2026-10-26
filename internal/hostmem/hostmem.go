@@ -164,7 +164,8 @@ func (m *Memory) Grow(size uintptr) (uintptr, error) {
 
 // Free unmaps the chunk of size bytes at base at once: the engine emptied it
 // and took it out of its heap, as it does with a chunk that held one large
-// block. When the OS refuses, the chunk stays mapped and counted until Close.
+// block. When the OS refuses, the chunk stays mapped and counted, for a later
+// Free or Close.
 func (m *Memory) Free(base, size uintptr) error {
 	m.mustBeOpen()
 	return m.free(base, size)
