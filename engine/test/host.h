@@ -35,6 +35,12 @@ extern _Thread_local long host_wall_reads;
 extern _Thread_local uint32_t host_wall_vm;
 uint32_t host_vm_id(JSRuntime *rt);
 
+/* When a test sets it to n, the nth time from then that the engine asks how
+   much stack is left in this thread (__shadow_remaining) it hears none, so
+   that the count asking fails there as on a stack too short. It is 0 once
+   that happened, and 0 asks nothing. */
+extern _Thread_local long host_stack_fail_at;
+
 /* The stack of a thread that runs the engine: enough for the deepest
    recursion JS_SetMaxCallDepth allows, under the sanitizers too. The pages
    are only reserved until a deep recursion touches them. */
