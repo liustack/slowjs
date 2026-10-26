@@ -426,12 +426,132 @@ static void test_shape_cache_lifetime(void)
     JS_FreeRuntime(rt);
 }
 
+/* The shapes of new functions a context holds hold its Function.prototype,
+   and with it the context: once the context is freed, the cycle collector
+   frees it with everything it made, which it can only when JS_MarkContext
+   marks the shapes. In a live context the cycle collector leaves them. */
+static void test_func_shapes(void)
+{
+    static const char kinds[] =
+        "var f = [function () {}, async function () {}, function* () {},\n"
+        "  async function* () {}, (a, b) => a, class {}, { m() {} }.m]\n";
+    static const char check[] =
+        "var h = function (a, b, c) {};\n"
+        "[h.length, h.name, Object.getOwnPropertyNames(h)].join()\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx1 = JS_NewContext(rt), *ctx2;
+    JSMemoryUsage before, after;
+
+    CHECK(eval(ctx1, kinds), "the script threw");
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &before);
+    ctx2 = JS_NewContext(rt);
+    CHECK(eval(ctx2, kinds), "the script threw");
+    JS_FreeContext(ctx2);
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &after);
+    CHECK(after.obj_count == before.obj_count &&
+          after.shape_count == before.shape_count,
+          "%lld objects and %lld shapes left of a freed context",
+          (long long)(after.obj_count - before.obj_count),
+          (long long)(after.shape_count - before.shape_count));
+    CHECK(eval_is(ctx1, check, "3,h,length,name,prototype"),
+          "a function after the cycle collector");
+    JS_FreeContext(ctx1);
+    JS_FreeRuntime(rt);
+}
+
+/* Each of the four prototypes of new functions keeps two shapes, the one a
+   new function starts with and the one with length and name, and new
+   functions reuse them: once the functions are gone, the context holds the
+   two, and a hundred more functions of the kind make no more. The built-in
+   functions a context starts with made those of Function.prototype already.
+   An object made with the prototype finds the empty shape the context
+   keeps. Two contexts used by turns keep their own, and freeing one frees
+   its shapes and leaves the other's, which new functions still use. */
+static void test_func_shapes_kept(void)
+{
+    static const char *const kinds[] = {
+        "function () {}", "async function () {}", "function* () {}",
+        "async function* () {}",
+    };
+    char src[128];
+    JSRuntime *rt;
+    JSContext *ctx, *ctx2;
+    int64_t base, one, many, both, two, n;
+    int i;
+
+    for(i = 0; i < 4; i++) {
+        rt = host_new_runtime();
+        ctx = JS_NewContext(rt);
+        JS_RunGC(rt);
+        base = shapes(rt);
+        snprintf(src, sizeof(src), "(%s)", kinds[i]);
+        CHECK(eval(ctx, src), "the script threw");
+        JS_RunGC(rt);
+        one = shapes(rt) - base;
+        snprintf(src, sizeof(src), "for (var i = 0; i < 100; i++) (%s)",
+                 kinds[i]);
+        CHECK(eval(ctx, src), "the script threw");
+        JS_RunGC(rt);
+        many = shapes(rt) - base;
+        CHECK(one == (i ? 2 : 0) && many == one, "%s: %lld shapes kept after "
+              "one, %lld after a hundred", kinds[i], (long long)one,
+              (long long)many);
+        /* an object of the prototype finds the empty shape the context
+           keeps */
+        CHECK(eval(ctx, "var keep"), "the script threw");
+        snprintf(src, sizeof(src),
+                 "keep = Object.create(Object.getPrototypeOf(%s))", kinds[i]);
+        n = shapes(rt);
+        CHECK(eval(ctx, src), "the script threw");
+        n = shapes(rt) - n;
+        CHECK(n == 0, "%s: an object of its prototype made %lld shapes",
+              kinds[i], (long long)n);
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+    }
+
+    rt = host_new_runtime();
+    ctx = JS_NewContext(rt);
+    JS_RunGC(rt);
+    base = shapes(rt);
+    ctx2 = JS_NewContext(rt);
+    JS_RunGC(rt);
+    both = shapes(rt);
+    for(i = 0; i < 4; i++) {
+        snprintf(src, sizeof(src), "var f%d = %s", i, kinds[i]);
+        CHECK(eval(ctx, src), "the script threw");
+        CHECK(eval(ctx2, src), "the script threw");
+    }
+    JS_RunGC(rt);
+    two = shapes(rt) - both;
+    JS_FreeContext(ctx2);
+    JS_RunGC(rt);
+    n = shapes(rt) - base;
+    CHECK(n > 0 && 2 * n == two, "%lld shapes for the functions of two "
+          "contexts, %lld left with one freed", (long long)two, (long long)n);
+    CHECK(eval_is(ctx, "[f0, f1, f2, f3].map((f) => f.length + f.name + "
+                  "Object.getOwnPropertyNames(f).length).join()",
+                  "0f03,0f12,0f23,0f33"), "the functions of the context");
+    CHECK(eval(ctx, "for (var i = 0; i < 10; i++) [function () {}, async "
+               "function () {}, function* () {}, async function* () {}]"),
+          "the script threw");
+    JS_RunGC(rt);
+    CHECK(shapes(rt) - base == n, "%lld shapes after more functions, want "
+          "%lld", (long long)(shapes(rt) - base), (long long)n);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 int main(void)
 {
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();
     test_shape_cache_lifetime();
+    test_func_shapes();
+    test_func_shapes_kept();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
