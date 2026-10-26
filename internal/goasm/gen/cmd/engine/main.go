@@ -46,11 +46,14 @@ var (
 	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: match every generated function and engine_rodata against llc's object")
 	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
 	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
-	nonFormat = flag.String("non-format-variadic", strings.Join(gen.EngineNonFormatVariadic, ","), "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
+	nonFormat = flag.String("non-format-variadic", defaultNonFormat, "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
 	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
 	sizeLog2  = flag.Int("shadow-size-log2", 20, "log2 of the shadow-stack region the engine is generated for (the host's region must be at least as big); engine_decl.go records it")
+	release   = flag.Bool("release", false, "formal build: refuse every switch made for surveys, tests and negative builds, and fail if any function would be a stub")
 	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 )
+
+var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
 // errno from math, no fused multiply-add, 32-bit BigInt limbs.
@@ -78,6 +81,13 @@ func main() {
 		die(err)
 	}
 	gen.KeepNarrowSigs = keepNarrow
+	editLoweredEnv := os.Getenv("GEN_EDIT_LOWERED")
+	if *release {
+		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
+			EditLowered: editLoweredEnv, Arch: *arch, NonFormat: *nonFormat}, *out); err != nil {
+			die(err)
+		}
+	}
 	if *arch != "amd64" && *arch != "arm64" {
 		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
 	}
@@ -409,13 +419,20 @@ func main() {
 		writeFile(*reportOut, string(b))
 	}
 	if len(rejections) > 0 && !*keepGoing {
-		die(fmt.Errorf("%d rejections (run with -keep-going to list them all)", len(rejections)))
+		hint := "run with -keep-going to list them all"
+		if *release {
+			hint = "a release build has no stub, so the C must change: -keep-going, without -release, lists them all"
+		}
+		die(fmt.Errorf("%d rejections (%s)", len(rejections), hint))
+	}
+	if *release && len(stubs) > 0 {
+		die(fmt.Errorf("-release: %d functions would be stubs without a rejection to say why", len(stubs)))
 	}
 
 	// 6. Re-assemble (keeping the temporary labels the check looks up) and
 	// emit.
 	text := lowered.String()
-	if e := os.Getenv("GEN_EDIT_LOWERED"); e != "" {
+	if e := editLoweredEnv; e != "" {
 		text = editLowered(text, e) // negative tests: the check must fail
 	}
 	loweredPath := filepath.Join(*work, "lowered.s")
@@ -479,7 +496,7 @@ func main() {
 		}
 	}
 	files, err := gen.EmitEngine(loweredObj, gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
-		MaxBytes: *maxFile, Stubs: stubs, Plan: plan, Arch: *arch})
+		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch})
 	if err != nil {
 		die(err)
 	}
@@ -518,6 +535,42 @@ func keepNarrowFromEnv(v string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("GEN_KEEP_NARROW=%q: only 1 turns the negative build on (unset it to build the engine)", v)
+}
+
+// devSwitches are the switches a release build refuses: the ones for
+// surveys (-keep-going, -arch arm64), wrong code on purpose (-loose-varargs),
+// tests of the tests (-poison, GEN_KEEP_NARROW, GEN_EDIT_LOWERED) and a
+// format check made narrower than the default. -src is not among them: a
+// fixture goes through a release build like the engine does, which is how the
+// build is tested.
+type devSwitches struct {
+	KeepGoing, LooseVarargs, Poison, KeepNarrow bool
+	EditLowered, Arch, NonFormat                string
+}
+
+// releaseError says why -release cannot go on with these switches, or is nil.
+// A release build also needs -out: it writes the package.
+func releaseError(d devSwitches, out string) error {
+	var bad []string
+	add := func(on bool, name string) {
+		if on {
+			bad = append(bad, name)
+		}
+	}
+	add(d.KeepGoing, "-keep-going")
+	add(d.LooseVarargs, "-loose-varargs")
+	add(d.Poison, "-poison")
+	add(d.KeepNarrow, "GEN_KEEP_NARROW")
+	add(d.EditLowered != "", "GEN_EDIT_LOWERED")
+	add(d.Arch != "amd64", "-arch "+d.Arch)
+	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
+	if len(bad) > 0 {
+		return fmt.Errorf("-release refuses %s: they are for surveys and tests, not for the engine", strings.Join(bad, ", "))
+	}
+	if out == "" {
+		return fmt.Errorf("-release needs -out: a release build writes the package")
+	}
+	return nil
 }
 
 // negativeBuildFile is engine_negative.go, which a negative build writes next
