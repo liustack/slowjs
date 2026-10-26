@@ -139,6 +139,29 @@ func TestException(t *testing.T) {
 	}
 }
 
+// TestFileName: a file name that fits the scratch shows whole in the stack of
+// an exception, and one that does not is refused with an error, not cut to
+// the same name as another that differs only at its end.
+func TestFileName(t *testing.T) {
+	v := newVM(t, Options{})
+	defer closeVM(t, v)
+	fits := strings.Repeat("a", maxFileName-len("/end.js")) + "/end.js"
+	_, err := v.Eval("throw new Error('x')", fits)
+	var e *JSError
+	if !errors.As(err, &e) || !strings.Contains(e.Stack, "("+fits+":1") {
+		t.Fatalf("a name of %d bytes: got %v, want its stack to hold the whole name", len(fits), err)
+	}
+	for _, name := range []string{fits + "1", fits + "2", strings.Repeat("b", 1<<20)} {
+		got, err := v.Eval("1", name)
+		if err == nil || !strings.Contains(err.Error(), "file name") {
+			t.Errorf("a name of %d bytes gave %q, %v, want an error about the file name", len(name), got, err)
+		}
+	}
+	if got, err := v.Eval("1+1", "after.js"); err != nil || got != "2" {
+		t.Fatalf("after the refused names: %q, %v", got, err)
+	}
+}
+
 func TestSeed(t *testing.T) {
 	draw := func(seed uint64) string {
 		v := newVM(t, Options{Seed: seed})
