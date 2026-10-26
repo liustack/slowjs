@@ -11,7 +11,9 @@
 #include <stdint.h>
 
 /* The memory of a VM: chunks the host maps for it, managed by TLSF (tlsf.c),
-   counted and limited here. quickjs.c sits on top (small blocks in arenas, the
+   counted and limited here. A block too big to share a chunk gets a chunk of
+   its own, a dedicated chunk, which is not under TLSF: it goes back to the host
+   as soon as its block is freed or moved (host_call, see host.h). quickjs.c sits on top (small blocks in arenas, the
    front cache). The state of a heap is the start of its JSRuntime, which lives
    in the first chunk, so there is no global. See docs/allocator.md. */
 
@@ -34,14 +36,15 @@ typedef struct JSHeapChunk JSHeapChunk;
 
 typedef struct JSHeap {
     void *tlsf;                /* the TLSF control, behind the runtime in the first chunk */
-    JSHeapChunk *chunks;       /* the first chunk first. It holds the runtime and cannot be released */
+    JSHeapChunk *chunks;       /* the shared chunks, the first one first. It holds the runtime and cannot be released */
+    JSHeapChunk *dedicated;    /* the dedicated chunks: one block each, outside TLSF */
     size_t rt_size;            /* the runtime, which is part of count and not a block */
     size_t count;              /* the runtime and the blocks in use, and for each block its size and the 8 byte size word before it: MemorySize, what the limit and the GC count */
     size_t limit;              /* (size_t)-1 for none */
     size_t blocks;             /* blocks in use, the runtime not counted */
-    size_t footprint;          /* the sum of the chunks */
+    size_t footprint;          /* the sum of the chunks, shared and dedicated */
     size_t footprint_limit;    /* 0 for none. Only stops growth, never takes memory back */
-    size_t chunk_count;
+    size_t chunk_count;        /* shared and dedicated */
     size_t release_candidate;  /* bytes offered to the host so far */
     size_t release_target;     /* the release in progress */
     size_t release_offered;
@@ -63,7 +66,9 @@ void heap_destroy(JSHeap *h);
    JS_HEAP_MAX_REQUEST. They fail (NULL) when count plus the size would pass
    the limit, when a new chunk is needed and the budget or the host refuses
    it, and for a size over the maximum. A failed heap_realloc leaves the block,
-   its content and the count as they were. A block is 8 byte aligned. */
+   its content and the count as they were. A block is 8 byte aligned. A block
+   too big to share a chunk gets a dedicated chunk, and the chunk goes back to the
+   host at once when the block is freed or moved by heap_realloc. */
 void *heap_alloc(JSHeap *h, size_t size);
 void heap_free(JSHeap *h, void *ptr);
 void *heap_realloc(JSHeap *h, void *ptr, size_t size);

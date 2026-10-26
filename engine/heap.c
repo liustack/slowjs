@@ -11,20 +11,25 @@
 
 #include "heap.h"
 
+#include "host.h"
 #include "tlsf.h"
 
 #define HEAP_UNIT 65536u                   /* every chunk is a multiple of it */
 #define HEAP_CHUNK_MAX ((size_t)8 << 20)   /* the biggest chunk the policy asks for */
 #define HEAP_CHUNK_HEADER 32u
-#define HEAP_CHUNK_MAGIC ((uintptr_t)0x68656170636b6e6bull)
+#define HEAP_CHUNK_MAGIC 0x68656170u
+#define HEAP_SHARED 0u                     /* a chunk under TLSF, with many blocks */
+#define HEAP_DEDICATED 1u                  /* a chunk of one block, outside TLSF */
 #define HEAP_MIN_RANGE 4096u               /* the smallest inside of a free block worth offering */
 
 struct JSHeapChunk {
     JSHeapChunk *next;
     size_t size;
-    uintptr_t magic;
+    uint32_t magic;
+    uint32_t kind;     /* HEAP_SHARED or HEAP_DEDICATED: who owns the chunk, set when it is made */
     /* TLSF keeps the prev_phys_block of the first block of the pool right
-       before the pool and never uses it, so the pool starts after this word. */
+       before the pool and never uses it, so the pool starts after this word.
+       A dedicated chunk has the same layout, see heap_dedicated_set. */
     uintptr_t reserved;
 };
 
@@ -73,6 +78,7 @@ JSHeap *heap_create(uint32_t vm, size_t rt_size)
     c->next = NULL;
     c->size = HEAP_UNIT;
     c->magic = HEAP_CHUNK_MAGIC;
+    c->kind = HEAP_SHARED;
     c->reserved = 0;
     h = (JSHeap *)(base + HEAP_CHUNK_HEADER);
     memset(h, 0, rt_size);
@@ -98,18 +104,120 @@ void heap_destroy(JSHeap *h)
     (void)h;
 }
 
-/* Ask the host for a chunk that serves a request of need bytes. The size
-   comes from the policy: a quarter of the footprint, 64 KiB to 8 MiB. A
-   request of more than half of that gets a chunk of its own, with the room
-   TLSF needs to find it (it rounds a request up by at most 1/32). Near the
-   footprint budget the chunk shrinks to what the request needs, and when
-   even that does not fit, nothing is asked. */
-static int heap_grow(JSHeap *h, size_t need)
+/* ---- dedicated chunks ----
+
+   A block too big to share a chunk gets a chunk of its own (see heap_grow_block
+   for the size). The chunk is not under TLSF: it is the header (32 bytes), the
+   size word of the block, the block, and an end marker word, which is how TLSF
+   lays out a pool with one block in use, so that tlsf_block_size reads the size
+   of the block as for any other. The block fits its request (to 8 bytes) and
+   the rest of the chunk is room it can grow into, never lent to other
+   blocks. When the block is freed, or moves to another chunk, the chunk goes
+   back to the host at once. */
+
+#define HEAP_DEDICATED_START (HEAP_CHUNK_HEADER + 8)   /* the block starts after the header and its size word */
+#define HEAP_DEDICATED_OVERHEAD (HEAP_CHUNK_HEADER + 16) /* header, size word, end marker */
+
+static uint8_t *heap_dedicated_block(const JSHeapChunk *c)
+{
+    return (uint8_t *)c + HEAP_DEDICATED_START;
+}
+
+/* the most a block can be in this chunk */
+static size_t heap_dedicated_room(const JSHeapChunk *c)
+{
+    return c->size - HEAP_DEDICATED_OVERHEAD;
+}
+
+/* Write the block of size bytes (a multiple of 8, at most the room): its size
+   word, the end marker after it, and let nobody touch the room after that. */
+static void heap_dedicated_set(JSHeapChunk *c, size_t size)
+{
+    uint8_t *p = heap_dedicated_block(c);
+
+    *(size_t *)(p - 8) = size;
+    heap_unpoison(p, size + 8);
+    *(size_t *)(p + size) = 0;
+    heap_poison(p + size + 8, heap_dedicated_room(c) - size);
+}
+
+/* The dedicated chunk whose block is ptr, or NULL. *link gets the pointer that
+   points at it, to take it out of the list. There are few dedicated chunks. */
+static JSHeapChunk *heap_dedicated_of(JSHeap *h, const void *ptr, JSHeapChunk ***link)
+{
+    JSHeapChunk **pp, *c;
+
+    for (pp = &h->dedicated; (c = *pp) != NULL; pp = &c->next) {
+        if ((const uint8_t *)ptr == heap_dedicated_block(c)) {
+            if (link)
+                *link = pp;
+            return c;
+        }
+    }
+    return NULL;
+}
+
+/* A new dedicated chunk for a block of need bytes. The budget applies to it as
+   to any chunk. Returns the block, or NULL. */
+static void *heap_new_dedicated(JSHeap *h, size_t need)
+{
+    size_t size = (need + 7) & ~(size_t)7;
+    size_t chunk = heap_round_unit(size + HEAP_DEDICATED_OVERHEAD);
+    uintptr_t base;
+    JSHeapChunk *c;
+
+    if (h->footprint_limit && (h->footprint > h->footprint_limit || chunk > h->footprint_limit - h->footprint))
+        return NULL;
+    base = host_memory_grow(h->vm, chunk);
+    if (!base)
+        return NULL;
+    assert((base & 7) == 0);
+    c = (JSHeapChunk *)base;
+    c->next = h->dedicated;
+    c->size = chunk;
+    c->magic = HEAP_CHUNK_MAGIC;
+    c->kind = HEAP_DEDICATED;
+    c->reserved = 0;
+    heap_dedicated_set(c, size);
+    h->dedicated = c;
+    h->footprint += chunk;
+    h->chunk_count++;
+    return heap_dedicated_block(c);
+}
+
+/* The chunk c is out of the heap: its block is freed or has moved. Take it out
+   of the lists and the counts, then give it to the host. Save what is needed
+   first: the chunk is gone when the call returns, and nothing here reads it
+   again. link is the pointer that points at c in the list. */
+static void heap_give_back(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link)
+{
+    JSValue argv[2];
+    uintptr_t addr = (uintptr_t)c;
+    size_t size = c->size;
+
+    *link = c->next;
+    h->footprint -= size;
+    h->chunk_count--;
+    argv[0] = HOST_WORD(addr);
+    argv[1] = HOST_WORD(size);
+    host_call(h->vm, JS_UNDEFINED, 2, argv, HOST_CALL_MEMORY_RELEASE);
+}
+
+/* ---- shared chunks ---- */
+
+/* A block of need bytes from a new chunk, or NULL. The size comes from the
+   policy: a quarter of the footprint, 64 KiB to 8 MiB. A request of more than
+   half of that gets a dedicated chunk. Otherwise the chunk is shared: near the
+   footprint budget it shrinks to what the request needs (it holds the
+   request, with the room TLSF needs to find it, it rounds a request up by at
+   most 1/32), and when even that does not fit, nothing is asked. */
+static void *heap_grow_block(JSHeap *h, size_t need)
 {
     size_t overhead = HEAP_CHUNK_HEADER + tlsf_pool_overhead();
     size_t own, chunk, avail;
     uintptr_t base;
     JSHeapChunk *c, **pp;
+    void *p;
 
     own = heap_round_unit(need + need / 32 + overhead + 64);
     chunk = heap_round_unit(h->footprint / 4);
@@ -118,30 +226,29 @@ static int heap_grow(JSHeap *h, size_t need)
     if (chunk > HEAP_CHUNK_MAX)
         chunk = HEAP_CHUNK_MAX;
     if (need + need / 32 + 64 > (chunk - overhead) / 2)
-        chunk = own;
+        return heap_new_dedicated(h, need);
     if (h->footprint_limit) {
         if (h->footprint > h->footprint_limit)
-            return 0;
+            return NULL;
         avail = h->footprint_limit - h->footprint;
         if (chunk > avail)
             chunk = own;
         if (chunk > avail)
-            return 0;
+            return NULL;
     }
-    if (chunk - overhead >= tlsf_block_size_max())
-        return 0;
     base = host_memory_grow(h->vm, chunk);
     if (!base)
-        return 0;
+        return NULL;
     assert((base & 7) == 0);
     c = (JSHeapChunk *)base;
     c->next = NULL;
     c->size = chunk;
     c->magic = HEAP_CHUNK_MAGIC;
+    c->kind = HEAP_SHARED;
     c->reserved = 0;
     if (!tlsf_add_pool(h->tlsf, (char *)base + HEAP_CHUNK_HEADER, chunk - HEAP_CHUNK_HEADER)) {
         /* cannot happen for the sizes above: the host drops the chunk when it closes the VM */
-        return 0;
+        return NULL;
     }
     heap_poison((char *)base + HEAP_CHUNK_HEADER, chunk - HEAP_CHUNK_HEADER);
     for (pp = &h->chunks; *pp; pp = &(*pp)->next)
@@ -149,7 +256,18 @@ static int heap_grow(JSHeap *h, size_t need)
     *pp = c;
     h->footprint += chunk;
     h->chunk_count++;
-    return 1;
+    p = tlsf_malloc(h->tlsf, need);
+    assert(p);
+    return p;
+}
+
+/* A block of at least size bytes, from the chunks the heap has or from a new
+   one. Nothing is counted: that is for the caller. */
+static void *heap_take(JSHeap *h, size_t size)
+{
+    void *p = tlsf_malloc(h->tlsf, size);
+
+    return p ? p : heap_grow_block(h, size);
 }
 
 void *heap_alloc(JSHeap *h, size_t size)
@@ -158,15 +276,9 @@ void *heap_alloc(JSHeap *h, size_t size)
 
     if (size == 0 || size > JS_HEAP_MAX_REQUEST || heap_over(h, h->count, size))
         return NULL;
-    p = tlsf_malloc(h->tlsf, size);
-    if (!p) {
-        if (!heap_grow(h, size))
-            return NULL;
-        p = tlsf_malloc(h->tlsf, size);
-        assert(p);
-        if (!p)
-            return NULL;
-    }
+    p = heap_take(h, size);
+    if (!p)
+        return NULL;
     heap_unpoison(p, tlsf_block_size(p));
     h->count += heap_block_cost(p);
     h->blocks++;
@@ -175,6 +287,7 @@ void *heap_alloc(JSHeap *h, size_t size)
 
 void heap_free(JSHeap *h, void *ptr)
 {
+    JSHeapChunk *c, **link;
     size_t cost;
 
     if (!ptr)
@@ -186,6 +299,11 @@ void heap_free(JSHeap *h, void *ptr)
     assert(h->blocks > 0 && h->count >= cost);
     h->count -= cost;
     h->blocks--;
+    c = heap_dedicated_of(h, ptr, &link);
+    if (c) {
+        heap_give_back(h, c, link);
+        return;
+    }
     heap_poison(ptr, tlsf_block_size(ptr));
     tlsf_free(h->tlsf, ptr);
 }
@@ -194,13 +312,15 @@ void heap_free(JSHeap *h, void *ptr)
    for the size after the resize, as upstream checks it: count + the request -
    the usable size of the old block, against the limit (the old block does not
    count twice), and it is committed by the difference once the resize is
-   done. A block that has to move needs room for both copies in the chunks
-   while the data moves: when the chunks have none, a new one is mapped, and
-   the budget applies to it. A failure leaves the old block, its content and
-   the count of the heap alone. */
+   done. A block that has to move needs room for both copies while the data
+   moves: when the chunks have none, a new one is mapped, and the budget
+   applies to it. A block that moves away from a dedicated chunk gives the
+   chunk to the host once the data is in the new block. A failure leaves the
+   old block, its content and the count of the heap alone. */
 void *heap_realloc(JSHeap *h, void *ptr, size_t size)
 {
     size_t old_size, new_size, base;
+    JSHeapChunk *c, **link;
     void *p;
 
     if (!ptr)
@@ -221,7 +341,15 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
     base = h->count - old_size;
     if (heap_over(h, base, size))
         return NULL;
-    p = tlsf_realloc_inplace(h->tlsf, ptr, size);
+    c = heap_dedicated_of(h, ptr, &link);
+    if (c && size <= heap_dedicated_room(c) && size >= heap_dedicated_room(c) / 2) {
+        /* the block stays where it is, as big as the request needs */
+        new_size = (size + 7) & ~(size_t)7;
+        heap_dedicated_set(c, new_size);
+        h->count = base + new_size;
+        return ptr;
+    }
+    p = c ? NULL : tlsf_realloc_inplace(h->tlsf, ptr, size);
     if (p) {
         new_size = tlsf_block_size(p);
         if (new_size > old_size)
@@ -229,25 +357,24 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
         else if (new_size < old_size)
             heap_poison((char *)p + new_size, old_size - new_size);
     } else {
-        p = tlsf_malloc(h->tlsf, size);
-        if (!p) {
-            if (!heap_grow(h, size))
-                return NULL;
-            p = tlsf_malloc(h->tlsf, size);
-            assert(p);
-            if (!p)
-                return NULL;
-        }
+        p = heap_take(h, size);
+        if (!p)
+            return NULL;
         new_size = tlsf_block_size(p);
         heap_unpoison(p, new_size);
         memcpy(p, ptr, old_size < size ? old_size : size);
-        heap_poison(ptr, old_size);
-        tlsf_free(h->tlsf, ptr);
+        h->count = base + new_size;
+        if (c) {
+            /* the chunk list may have a new head: find the link again */
+            c = heap_dedicated_of(h, ptr, &link);
+            heap_give_back(h, c, link);
+        } else {
+            heap_poison(ptr, old_size);
+            tlsf_free(h->tlsf, ptr);
+        }
+        return p;
     }
-    /* the count changes by the difference: a host that gives memory back
-       while it maps a chunk may have changed it since base was taken (the
-       front cache goes back to the arenas) */
-    h->count = h->count - old_size + new_size;
+    h->count = base + new_size;
     return p;
 }
 
@@ -326,6 +453,11 @@ int heap_contains(const JSHeap *h, const void *ptr)
             (uintptr_t)ptr < (uintptr_t)c + c->size)
             return 1;
     }
+    for (c = h->dedicated; c; c = c->next) {
+        if ((uintptr_t)ptr >= (uintptr_t)c + HEAP_CHUNK_HEADER &&
+            (uintptr_t)ptr < (uintptr_t)c + c->size)
+            return 1;
+    }
     return 0;
 }
 
@@ -354,7 +486,7 @@ const char *heap_check(const JSHeap *h)
     if (tlsf_check(h->tlsf))
         return "tlsf_check failed";
     for (c = h->chunks; c; c = c->next) {
-        if (c->magic != HEAP_CHUNK_MAGIC)
+        if (c->magic != HEAP_CHUNK_MAGIC || c->kind != HEAP_SHARED)
             return "chunk header overwritten";
         if (c->size < HEAP_UNIT || c->size % HEAP_UNIT)
             return "chunk size is not a multiple of 64 KiB";
@@ -364,6 +496,24 @@ const char *heap_check(const JSHeap *h)
         if (tlsf_check_pool(pool))
             return "tlsf_check_pool failed";
         tlsf_walk_pool(pool, heap_walker, &w);
+    }
+    for (c = h->dedicated; c; c = c->next) {
+        const uint8_t *p = heap_dedicated_block(c);
+        size_t size;
+
+        if (c->magic != HEAP_CHUNK_MAGIC || c->kind != HEAP_DEDICATED)
+            return "dedicated chunk header overwritten";
+        if (c->size < HEAP_UNIT || c->size % HEAP_UNIT)
+            return "dedicated chunk size is not a multiple of 64 KiB";
+        size = *(const size_t *)(p - 8);
+        if (size == 0 || size % 8 || size > heap_dedicated_room(c))
+            return "the block of a dedicated chunk has a wrong size";
+        if (*(const size_t *)(p + size) != 0)
+            return "the end marker of a dedicated chunk was overwritten";
+        footprint += c->size;
+        chunks++;
+        w.used_blocks++;
+        w.used_bytes += size + tlsf_alloc_overhead();
     }
     if (footprint != h->footprint)
         return "footprint is not the sum of the chunks";
