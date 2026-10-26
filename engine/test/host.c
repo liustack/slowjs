@@ -206,7 +206,7 @@ static void host_vm_free(HostVM *vm)
    under the lock the readers of the list take, once the engine has made it.
    When the engine cannot make one, the VM leaves the list and its chunks go
    back: the caller has no runtime to free. */
-JSRuntime *host_new_runtime(void)
+JSRuntime *host_new_runtime_seed(uint64_t seed)
 {
     static pthread_once_t once = PTHREAD_ONCE_INIT;
     HostVM *vm = calloc(1, sizeof(*vm));
@@ -220,7 +220,7 @@ JSRuntime *host_new_runtime(void)
     vm->next = host_vms;
     host_vms = vm;
     pthread_mutex_unlock(&host_lock);
-    rt = JS_NewRuntime(vm->id, (uint64_t)HOST_NOW_SEC * 1000000);
+    rt = JS_NewRuntime(vm->id, seed);
     pthread_mutex_lock(&host_lock);
     if (rt)
         vm->rt = rt;
@@ -236,6 +236,11 @@ JSRuntime *host_new_runtime(void)
     if (host_timeout)
         JS_SetInterruptHandler(rt, host_interrupt, NULL);
     return rt;
+}
+
+JSRuntime *host_new_runtime(void)
+{
+    return host_new_runtime_seed((uint64_t)HOST_NOW_SEC * 1000000);
 }
 
 void host_free_runtime(JSRuntime *rt)
@@ -336,6 +341,8 @@ static void host_clock_init(void)
     clock_gettime(CLOCK_MONOTONIC, &host_clock_origin);
 }
 
+_Thread_local long host_wall_reads;
+
 int64_t host_now(uint32_t vm, int kind)
 {
     struct timespec now;
@@ -346,6 +353,7 @@ int64_t host_now(uint32_t vm, int kind)
         clock_gettime(CLOCK_MONOTONIC, &now);
         return (int64_t)now.tv_sec * 1000000000 + now.tv_nsec;
     }
+    host_wall_reads++;
     ns = (int64_t)HOST_NOW_SEC * 1000000000;
     if (host_clock_running) {
         clock_gettime(CLOCK_MONOTONIC, &now);
