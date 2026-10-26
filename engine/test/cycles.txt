@@ -4,4 +4,3 @@
 1 js_create_module_function
 1 js_free_function_def
 1 js_resolve_module
-1 json_free_parse_record
