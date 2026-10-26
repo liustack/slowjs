@@ -38,6 +38,10 @@ const (
 	scratchUsage = 16   // JSMemoryUsage
 	scratchStr   = 512  // C strings: the file name, property names
 	scratchSize  = 4096 // where the engine's own use of the stack starts
+
+	// maxFileName is the longest file name the scratch holds, with its 0
+	// byte.
+	maxFileName = scratchSize - scratchStr - 1
 )
 
 // JS tags (engine/quickjs.h).
@@ -57,8 +61,6 @@ type VM struct {
 
 	freed  bool    // Close freed the engine, or tried to
 	leaked uintptr // what JS_FreeRuntime returned
-
-	teardowns int // times Close called into the engine to free it, for tests
 }
 
 // Options are the settings of a new VM.
@@ -75,7 +77,9 @@ type Options struct {
 // engine frames.
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
 
-// ErrClosed is what a VM returns after Close.
+// ErrClosed is what a VM returns, or panics with where it has no error to
+// return, once Close began: also when Close failed to give all the memory
+// back, since the engine is freed by then.
 var ErrClosed = errors.New("cengine: VM closed")
 
 // usable is nil when the engine can be entered.
@@ -166,10 +170,17 @@ func (e *JSError) Error() string {
 }
 
 // Eval runs src as a global script, then the jobs it queued, and returns
-// String() of its completion value.
+// String() of its completion value. It returns ErrClosed after Close began
+// and ErrBroken after a panic in the engine. file names the script in the
+// stack of an exception: it is at most maxFileName bytes, and a longer name is
+// an error, not cut, so that two long names that differ only at their end are
+// not taken for one.
 func (v *VM) Eval(src, file string) (string, error) {
 	if err := v.usable(); err != nil {
 		return "", err
+	}
+	if len(file) > maxFileName {
+		return "", fmt.Errorf("cengine: a file name of %d bytes, longer than the %d bytes the host holds", len(file), maxFileName)
 	}
 	var out string
 	var err error
@@ -280,10 +291,10 @@ func (v *VM) free(u, tag uintptr) {
 }
 
 // cstring writes s with a 0 byte into the scratch and returns its address.
-// The engine copies what it keeps of it.
+// The engine copies what it keeps of it. s is at most maxFileName bytes.
 func (v *VM) cstring(s string) uintptr {
-	if len(s) > scratchSize-scratchStr-1 {
-		s = s[:scratchSize-scratchStr-1]
+	if len(s) > maxFileName {
+		panic(fmt.Sprintf("cengine: a string of %d bytes does not fit the scratch of %d", len(s), maxFileName))
 	}
 	b := bytesAt(v.base+scratchStr, uintptr(len(s))+1)
 	copy(b, s)
@@ -291,7 +302,9 @@ func (v *VM) cstring(s string) uintptr {
 	return v.base + scratchStr
 }
 
-// RunGC runs the engine's full garbage collection.
+// RunGC runs the engine's full garbage collection. It has no error to
+// return: after Close began it panics with ErrClosed, and after a panic in the
+// engine with ErrBroken.
 func (v *VM) RunGC() {
 	if err := v.usable(); err != nil {
 		panic(err)
@@ -301,7 +314,9 @@ func (v *VM) RunGC() {
 
 // ReleaseMemory gives the free memory of the VM back to the OS, keeping keep
 // bytes of it for the next allocations: whole free chunks are unmapped, the
-// pages of free blocks dropped, and the shadow stack above its first part.
+// pages of free blocks dropped, and the shadow stack above its first part. It
+// returns ErrClosed after Close began and ErrBroken after a panic in the
+// engine.
 func (v *VM) ReleaseMemory(keep uintptr) (hostmem.Released, error) {
 	if err := v.usable(); err != nil {
 		return hostmem.Released{}, err
@@ -341,7 +356,9 @@ type memoryUsage struct {
 	Footprint, FootprintLimit, ChunkCount, ReleaseCandidate   int64
 }
 
-// Usage returns what the VM holds now.
+// Usage returns what the VM holds now. Like RunGC it panics with ErrClosed
+// after Close began and with ErrBroken after a panic in the engine. The host
+// side of a closed VM is still there to read: Host().Memory().Usage().
 func (v *VM) Usage() Usage {
 	if err := v.usable(); err != nil {
 		panic(err)
@@ -386,7 +403,7 @@ func (v *VM) Close() (leaked uintptr, err error) {
 					v.h.Close()
 				}
 			}()
-			v.teardowns++
+			engineFreed(v)
 			v.enter(func() {
 				JS_FreeContext(v.sp, v.ctx)
 				v.leaked = JS_FreeRuntime(v.sp, v.rt)

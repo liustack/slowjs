@@ -78,7 +78,7 @@ go test -run ClassEscapes ./internal/fixlib              # fixClassEscapes puts 
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
-go test ./internal/hostmem                               # the host memory of the new engine: chunks, footprint, remap, shadow stack pages and guard page, and what each keeps when the OS refuses
+go test -tags testhooks ./internal/hostmem               # the host memory of the new engine: chunks, footprint, remap, shadow stack pages and guard page, and what each keeps when the OS refuses
 HOSTMEM_RESIDENCY=1 go test -run StackResidency ./internal/hostmem # exact counts of shadow stack pages in memory, a snapshot the system can change
 HOSTMEM_BIGCOMMIT=1 go test -run ManyStacks ./internal/hostmem     # on windows: 300 stacks of 32 MiB, which commit 9.4 GiB
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
@@ -207,13 +207,17 @@ engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.
 `internal/gohost` answers the engine's callbacks (memory, clocks, poll, `host_call`), and its tests run on any machine without the engine. `internal/cengine` is where the generator writes the engine as Go assembly, next to the checked-in host files, which build only with `-tags cengine`. Generate it on the build machine, as in [internal/goasm/gen/README.md](../internal/goasm/gen/README.md), with `-out internal/cengine`, then:
 
 ```sh
-go test -race ./internal/gohost                  # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort
-go test -tags cengine ./internal/cengine         # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap
+go test -race -tags testhooks ./internal/gohost         # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort, what is left when the OS refuses
+go test -tags cengine,testhooks ./internal/cengine      # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap, Close and New under panics and refusals
 go run -tags cengine ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one script, timed, on the C engine
 go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
 ```
 
-`TestDeepRecursion` runs only with `CENGINE_DEEP=1`, for an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator, which `engine_decl.go` records and `New` holds the stack size to).
+`jsrun` times one call per run, the evaluation of the script with its jobs and the result as a string, and its `timed:` line says so. The source is already a string and the VM is made, collected, released and closed outside the time.
+
+The tag `testhooks` turns on the hooks of these tests, which the normal build does not have: `hostmem.SetFault` makes calls to the OS fail, and `callbackHook` of `internal/cengine` stops the engine in a callback (with a count of engine teardowns beside it). Without the tag the code holds no check for them, so a normal build pays nothing. A run without the tag skips the tests that need them and says so (`TestFailingCalls`, `TestRefusedCalls`, `TestLifecycleHooks`), so use the tag for the whole suite.
+
+`TestDeepRecursion` recurses to the engine's call depth limit and past it (a `RangeError`, no fault of the process). It needs an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator) and skips itself for a smaller one, by the `shadowSizeLog2` that `engine_decl.go` records, which `New` also holds the stack size to.
 
 Two more runs of the same tests guard the calling convention between Go and the generated code. A poison build (`-poison` of the generator) writes garbage into the registers at each entry before the arguments are loaded, after each call before the result is read, and at each return: the tests must pass on it too. The preemption hammer keeps setting the stack guard of the goroutine in the engine so that each generated function's stack check goes through the scheduler. It writes into the runtime's `g`, hence a tag of its own:
 
@@ -245,7 +249,7 @@ go test -race -run 'TestConcurrentVMs|TestRegistryConcurrent|TestRegistryGoIntlC
 go test -race -run QJS ./internal/gointl               # the packs go-intl's loaders add to Embedded
 go test -race -run 'Concurrent|Tamper|Clock' ./temporal  # Temporal on VMs at once, pages changing built-ins, clocks per VM
 go test -race -vet=off -run 'TestShapeCacheRuntimes|TestFrontCacheRuntimes|TestBacktraceThrowStacklessOOM' ./lib
-go test -race ./internal/hostmem                         # VMs mapping memory on many goroutines, and one VM handed between them
+go test -race -tags testhooks ./internal/hostmem         # VMs mapping memory on many goroutines, and one VM handed between them
 ```
 
 The whole of `./intl` under `-race` takes about 25 minutes on one core of an EPYC, most of it the golden test: give it `-timeout 60m`.
