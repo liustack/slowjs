@@ -39,19 +39,6 @@
 
 /* ---- the fake host ---- */
 
-/* The engine's abort, which a failed assert of the heap calls, asks the host
-   with host_call. The test ends there. */
-JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
-{
-    (void)vm;
-    (void)this_val;
-    (void)argc;
-    (void)argv;
-    fprintf(stderr, "heap-test: the heap called abort (host_call %d)\n", magic);
-    fflush(stderr);
-    _exit(134);
-}
-
 /* The runtime asks the wall clock for Date. Any time will do here. */
 int64_t host_now(uint32_t vm, int kind)
 {
@@ -75,14 +62,15 @@ typedef struct HostVM {
     size_t live;      /* bytes of the chunks it holds */
     long grows;       /* requests so far */
     long refused;     /* requests it refused */
+    long releases;    /* dedicated chunks the heap gave back */
     long refuse_at;   /* the request with this number is refused (1 is the first), 0 for none */
     int refuse_all;   /* every request is refused */
-    void (*on_grow)(void *); /* called once, at the start of the next request */
-    void *on_grow_arg;
     size_t most;      /* the most bytes it ever held */
 } HostVM;
 
 static HostVM vms[MAX_VM];
+/* dedicated chunks the heaps of this run gave back: a run that makes none tested nothing of them */
+static long total_releases;
 
 static uint32_t host_open(void)
 {
@@ -105,6 +93,7 @@ static void host_close(uint32_t vm)
         heap_unpoison((void *)h->chunk[i].addr, h->chunk[i].size);
         munmap((void *)h->chunk[i].addr, h->chunk[i].size);
     }
+    total_releases += h->releases;
     memset(h, 0, sizeof *h);
 }
 
@@ -116,12 +105,6 @@ uintptr_t host_memory_grow(uint32_t vm, uintptr_t size)
     assert(h->open);
     assert(size % 65536 == 0 && size > 0);
     h->grows++;
-    if (h->on_grow) {
-        void (*f)(void *) = h->on_grow;
-
-        h->on_grow = NULL;
-        f(h->on_grow_arg);
-    }
     if (h->refuse_all || h->refuse_at == h->grows) {
         h->refused++;
         return 0;
@@ -158,6 +141,34 @@ static int host_inside(HostVM *h, uintptr_t addr, size_t len)
         if (addr >= h->chunk[i].addr && addr + len <= h->chunk[i].addr + h->chunk[i].size)
             return 1;
     return 0;
+}
+
+/* host_call: the heap gives back a dedicated chunk (HOST_CALL_MEMORY_RELEASE),
+   and abort, which a failed assert of the heap calls (the test ends there). */
+JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
+{
+    (void)this_val;
+    if (magic == HOST_CALL_MEMORY_RELEASE && argc == 2) {
+        HostVM *h = &vms[vm];
+        uintptr_t addr = HOST_WORD_VALUE(argv[0]);
+        size_t size = HOST_WORD_VALUE(argv[1]);
+        int i = host_find(h, addr);
+
+        if (i < 0 || h->chunk[i].size != size) {
+            fprintf(stderr, "heap-test: the heap gave back a chunk the host did not give, or not whole\n");
+            abort();
+        }
+        /* the chunk is unmapped: a heap that reads it after this call is caught */
+        heap_unpoison((void *)addr, size);
+        munmap((void *)addr, size);
+        h->live -= size;
+        h->chunk[i] = h->chunk[--h->n];
+        h->releases++;
+        return JS_UNDEFINED;
+    }
+    fprintf(stderr, "heap-test: the heap called abort (host_call %d)\n", magic);
+    fflush(stderr);
+    _exit(134);
 }
 
 /* What Go does after a release: unmap the chunks, and take the pages of the
@@ -1099,16 +1110,19 @@ static void scenario_chunks(void)
         rounds++;
     }
     CHECK(h->chunk_count > 8, "too few chunks");
-    /* a block over half of the next chunk gets a chunk of its own, sized for it */
+    /* a block over half of the next chunk gets a chunk of its own, sized for it
+       (its 48 bytes of header, size word and end marker, rounded up to 64 KiB),
+       and the chunk goes back to the host when the block is freed */
     prev_fp = h->footprint;
     {
-        size_t need = (size_t)12 << 20;
+        size_t need = (size_t)12 << 20, n = vms[m.vm].n;
         void *p = heap_alloc(h, need);
         size_t got = h->footprint - prev_fp;
         CHECK(p, "a block of 12 MiB failed");
-        CHECK(got % 65536 == 0 && got >= need + need / 32 + 112 && got < need + need / 32 + 112 + 65536 + 64,
-              "the chunk of its own is %zu for a block of %zu", got, need);
+        CHECK(got == ((need + 48 + 65535) / 65536) * 65536, "the chunk of its own is %zu for a block of %zu", got, need);
+        CHECK(heap_usable_size(p) == need, "the block of its own has a usable size of %zu, not %zu", heap_usable_size(p), need);
         heap_free(h, p);
+        CHECK(h->footprint == prev_fp && vms[m.vm].n == n, "the chunk of its own did not go back with its block");
     }
     while (m.n)
         model_free(&m, m.n - 1);
@@ -1273,6 +1287,165 @@ static void scenario_resize(void)
     heap_free(h, b);
     heap_model_finish(&m);
     ok("resize: in place, moved in the chunks, moved to a new chunk, refused with the old block intact");
+}
+
+/* Use up the free space of the chunks, so that the next block of more than 30000
+   bytes needs a new chunk: with no room to grow (a budget at the footprint),
+   take blocks from big to small until none fits. */
+static void fill_up(HeapModel *m)
+{
+    static const size_t sizes[] = { (size_t)2 << 20, (size_t)1 << 20, 512 << 10, 256 << 10, 128 << 10, 64 << 10, 30000 };
+    JSHeap *h = m->h;
+
+    h->footprint_limit = h->footprint;
+    for (size_t i = 0; i < sizeof sizes / sizeof *sizes; i++)
+        while (model_alloc(m, sizes[i]))
+            ;
+    h->footprint_limit = 0;
+}
+
+/* A dedicated chunk holds one block that is too big to share (over half of the
+   next chunk, which is over 4 MiB for good). It is the chunk's own, flagged in
+   its header, and it goes back to the host in the call that frees the block or
+   moves it. Nothing keeps a freed one. A refused resize leaves the old chunk
+   as it was. */
+static void scenario_dedicated(void)
+{
+    HeapModel m;
+    JSHeap *h;
+    HostVM *host;
+    size_t fp, count, size = (size_t)5 << 20, chunk, room;
+    long releases;
+    uint8_t *p;
+
+    heap_model_start(&m);
+    h = m.h;
+    host = &vms[m.vm];
+    fp = h->footprint;
+    count = h->count;
+
+    /* made, then freed: the host loses the chunk in the same call */
+    CHECK(model_alloc(&m, size), "a block of 5 MiB failed");
+    p = m.live[0].p;
+    chunk = ((size + 48 + 65535) / 65536) * 65536;
+    room = chunk - 48;
+    CHECK(h->footprint == fp + chunk && host->n == 2 && host->live == fp + chunk && h->chunk_count == 2,
+          "a block of 5 MiB did not get a chunk of %zu: footprint %zu", chunk, h->footprint);
+    CHECK(heap_usable_size(p) == size && h->count == count + size + 8 && h->blocks == 1, "the block of a dedicated chunk is counted by its size");
+    heap_model_check(&m);
+    releases = host->releases;
+    model_free(&m, 0);
+    CHECK(host->n == 1 && host->live == fp && host->releases == releases + 1 && h->footprint == fp &&
+          h->chunk_count == 1 && h->count == count && h->blocks == 0,
+          "the chunk did not go back to the host with its block (host holds %zu chunks, %zu bytes)", (size_t)host->n, host->live);
+    heap_model_check(&m);
+
+    /* resize inside the chunk: the same chunk, the same pointer, the count by the size */
+    CHECK(model_alloc(&m, size), "alloc");
+    p = m.live[0].p;
+    fp = h->footprint;
+    releases = host->releases;
+    model_realloc(&m, 0, (size_t)4 << 20);
+    CHECK(m.live[0].p == p && heap_usable_size(p) == (size_t)4 << 20 && h->footprint == fp && host->releases == releases &&
+          h->count == count + ((size_t)4 << 20) + 8, "a shrink to 4 MiB should stay in the chunk");
+    model_realloc(&m, 0, room);
+    CHECK(m.live[0].p == p && heap_usable_size(p) == room && h->footprint == fp && host->releases == releases,
+          "a resize to the room of the chunk should stay in it");
+    /* past the room, or under half of it: a new block, copied, and the chunk is given back at once */
+    model_realloc(&m, 0, room + 1);
+    CHECK(h->footprint > fp && host->releases == releases + 1 && host->n == 2, "a resize past the room should move to a new chunk and give the old one back");
+    heap_model_check(&m);
+    fp = h->footprint;
+    releases = host->releases;
+    model_realloc(&m, 0, (size_t)100);
+    CHECK(host->releases == releases + 1 && host->n == 1 && h->footprint == 65536 && h->chunk_count == 1 &&
+          h->count == m.rt_size + heap_usable_size(m.live[0].p) + 8,
+          "a shrink to 100 bytes should move to the chunks and give the dedicated chunk back");
+    model_free(&m, 0);
+
+    /* a refused resize leaves the old chunk, block, content and count */
+    CHECK(model_alloc(&m, size), "alloc");
+    p = m.live[0].p;
+    fp = h->footprint;
+    count = h->count;
+    releases = host->releases;
+    vms[m.vm].refuse_at = host->grows + 1;
+    model_realloc(&m, 0, (size_t)12 << 20);
+    CHECK(m.live[0].p == p && h->footprint == fp && h->count == count && host->releases == releases && host->n == 2, "a refusal of the host changed the old chunk");
+    h->footprint_limit = fp + 65536;
+    model_realloc(&m, 0, (size_t)12 << 20);
+    CHECK(m.live[0].p == p && h->footprint == fp && h->count == count && host->releases == releases, "the budget refused, and the old chunk changed");
+    h->footprint_limit = 0;
+    h->limit = count + 1000;
+    model_realloc(&m, 0, (size_t)12 << 20);
+    CHECK(m.live[0].p == p && h->footprint == fp && h->count == count && host->releases == releases, "the limit refused, and the old chunk changed");
+    h->limit = (size_t)-1;
+    model_free(&m, 0);
+
+    /* a block of the shared chunks that grows past what they hold moves to a chunk of its own */
+    while (h->footprint < ((size_t)16 << 20))
+        CHECK(model_alloc(&m, 30000), "alloc 30000");
+    while (m.n > 1)
+        model_free(&m, m.n - 1);
+    model_free(&m, 0);
+    CHECK(model_alloc(&m, 100000), "alloc 100000");
+    fp = h->footprint;
+    releases = host->releases;
+    model_realloc(&m, 0, (size_t)6 << 20);
+    CHECK(h->footprint == fp + (((size_t)6 << 20) + 48 + 65535) / 65536 * 65536 && host->releases == releases,
+          "a block of the shared chunks that grows to 6 MiB should get a chunk of its own");
+    model_free(&m, 0);
+    CHECK(h->footprint == fp && host->releases == releases + 1, "the chunk of its own should go back with the block");
+
+    /* the footprint decides what is too big to share. With 4 MiB held the next
+       chunk would be 1 MiB, and a block of 1.2 MiB gets a chunk of its own */
+    while (m.n)
+        model_free(&m, m.n - 1);
+    heap_model_finish(&m);
+    heap_model_start(&m);
+    h = m.h;
+    host = &vms[m.vm];
+    while (h->footprint < ((size_t)4 << 20))
+        CHECK(model_alloc(&m, 30000), "alloc 30000");
+    fill_up(&m);
+    {
+        size_t need = 1258291, before = h->footprint;
+        long r0 = host->releases;
+
+        CHECK(model_alloc(&m, need), "alloc 1.2 MiB");
+        CHECK(h->footprint == before + (need + 48 + 65535) / 65536 * 65536 && heap_usable_size(m.live[m.n - 1].p) == ((need + 7) & ~(size_t)7),
+              "a block of 1.2 MiB with 4 MiB held should get a chunk of its own");
+        model_free(&m, m.n - 1);
+        CHECK(h->footprint == before && host->releases == r0 + 1, "the chunk of its own should go back with the block");
+    }
+    /* with 32 MiB held the chunks are 8 MiB, and a block of 3 MiB shares one: it stays when the block is freed,
+       until the host asks for it back with a release */
+    while (h->footprint < ((size_t)32 << 20))
+        CHECK(model_alloc(&m, 30000), "alloc 30000");
+    fill_up(&m);
+    {
+        size_t need = (size_t)3 << 20, before = h->footprint;
+        long r0 = host->releases;
+
+        CHECK(model_alloc(&m, need), "alloc 3 MiB");
+        CHECK(h->footprint == before + ((size_t)8 << 20), "a block of 3 MiB with 32 MiB held should share a chunk of 8 MiB");
+        model_free(&m, m.n - 1);
+        CHECK(h->footprint == before + ((size_t)8 << 20) && host->releases == r0, "a shared chunk should stay when its block is freed");
+        model_release(&m, 0);
+        CHECK(h->footprint == before && host->releases == r0, "a release should take the free shared chunk, and not as a dedicated one");
+        /* near the budget the shared chunk shrinks to the block, and is still shared */
+        h->footprint_limit = before + ((size_t)3 << 20) + 400000;
+        CHECK(model_alloc(&m, need), "alloc 3 MiB near the budget");
+        CHECK(h->footprint < before + ((size_t)4 << 20), "the chunk should have shrunk to the block");
+        model_free(&m, m.n - 1);
+        CHECK(host->releases == r0, "a chunk that the budget shrank is still a shared chunk");
+        h->footprint_limit = 0;
+    }
+    while (m.n)
+        model_free(&m, m.n - 1);
+    heap_model_check(&m);
+    heap_model_finish(&m);
+    ok("dedicated chunks: made for one block, given back at once, resized, refused");
 }
 
 static void scenario_release(void)
@@ -1563,15 +1736,16 @@ static void model_free_ptr(HeapModel *m, void *p)
 
 static const size_t frag_sizes[] = {
     24, 100, 4096, 4112, 4120, 5000, 8191, 8192, 8200, 9000, 16384, 20000, 24, 33000, 65000, 130000,
-    300000, 1000000, 3000000, 12000000,
+    300000, 1000000,
 };
 #define N_FRAG (sizeof frag_sizes / sizeof frag_sizes[0])
 
 /* free blocks of many sizes, each between two blocks in use so that they do not
    merge: the minimal block of 24 bytes (nothing inside it), the sizes around
    4096 + 24 (the smallest inside offered), sizes on both sides of the borders
-   of the size classes, and a big one in a chunk of its own, which is a whole
-   free pool once it is freed */
+   of the size classes, and a whole free chunk that is shared: with 36 MiB held in
+   dedicated chunks the next chunk is 8 MiB, and a block of 3 MiB takes a new
+   one that is a whole free pool once the block is freed */
 static void build_fragmented(HeapModel *m, int n_sizes)
 {
     void *p[N_FRAG];
@@ -1583,6 +1757,19 @@ static void build_fragmented(HeapModel *m, int n_sizes)
     }
     for (int i = 0; i < n_sizes; i++)
         model_free_ptr(m, p[i]);
+    {
+        void *big[3], *b;
+
+        for (int i = 0; i < 3; i++) {
+            CHECK(model_alloc(m, (size_t)12 << 20), "alloc 12 MiB");
+            big[i] = m->live[m->n - 1].p;
+        }
+        CHECK(model_alloc(m, (size_t)3 << 20), "alloc 3 MiB");
+        b = m->live[m->n - 1].p;
+        model_free_ptr(m, b);
+        for (int i = 0; i < 3; i++)
+            model_free_ptr(m, big[i]);
+    }
     heap_model_check(m);
 }
 
@@ -1718,18 +1905,6 @@ static void scenario_release_exact(void)
 }
 
 #ifdef HEAP_TEST_RUNTIME
-static JSRuntime *grow_rt;
-static size_t grow_count;
-static int grow_calls;
-
-/* what the host does when the heap asks for a chunk */
-static void give_cache_back_in_grow(void *arg)
-{
-    JS_SetFrontCache(arg, 256);
-    grow_count = JS_GetMemorySize(grow_rt);
-    grow_calls++;
-}
-
 static void scenario_runtime(void)
 {
     uint32_t vm = host_open();
@@ -1807,39 +1982,6 @@ static void scenario_runtime(void)
     for (int i = 0; i < 600; i++)
         js_free_rt(rt, small[i]);
     JS_SetFrontCache(rt, 256);
-
-    /* a host that gives memory back while it maps a chunk, as the native host
-       does (JS_ReleaseStart gives the front cache back): a resize that needs a
-       chunk ends with the count of that moment plus the change of the block,
-       and not with the count it started from */
-    JS_RunGC(rt);
-    big = js_malloc_rt(rt, 100000);
-    CHECK(big != NULL, "block to grow");
-    {
-        size_t old_usable = js_malloc_usable_size_rt(rt, big), before, new_usable;
-        uint8_t *q;
-
-        for (int i = 0; i < 600; i++)
-            small[i] = js_malloc_rt(rt, 100 + (size_t)i % 400);
-        for (int i = 0; i < 600; i++)
-            js_free_rt(rt, small[i]);
-        CHECK(JS_FrontCacheBlocks(rt) > 0, "no block in the front cache");
-        before = JS_GetMemorySize(rt);
-        grow_rt = rt;
-        grow_calls = 0;
-        vms[vm].on_grow = give_cache_back_in_grow;
-        vms[vm].on_grow_arg = rt;
-        q = js_realloc_rt(rt, big, (size_t)3 << 20);
-        CHECK(q != NULL, "a resize that needs a chunk failed");
-        CHECK(grow_calls == 1, "the host was asked %d times for memory, not once", grow_calls);
-        CHECK(grow_count < before, "the front cache did not change the count (%zu, was %zu): the test checks nothing", grow_count, before);
-        new_usable = js_malloc_usable_size_rt(rt, q);
-        CHECK(JS_GetMemorySize(rt) == grow_count - old_usable + new_usable,
-              "count %zu after a resize in a host that gave memory back: %zu at the chunk, usable size %zu to %zu",
-              JS_GetMemorySize(rt), grow_count, old_usable, new_usable);
-        js_free_rt(rt, q);
-        CHECK(!JS_CheckMemory(rt), "check after the resize");
-    }
 
     /* a resize that needs the cache given back */
     JS_RunGC(rt);
@@ -1982,6 +2124,7 @@ static void scenarios(void)
     scenario_chunks();
     scenario_resize();
     scenario_resize_at_the_byte();
+    scenario_dedicated();
     scenario_release();
     scenario_release_exact();
 #ifdef HEAP_TEST_RUNTIME
@@ -2034,7 +2177,9 @@ int main(int argc, char **argv)
             return 2;
 #endif
         }
-        printf("PASS  %s seed %" PRIu64 " steps %ld\n", argv[1], seed, steps);
+        if (steps >= 100000)
+            CHECK(total_releases > 0, "no dedicated chunk was given back in %ld steps", steps);
+        printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld)\n", argv[1], seed, steps, total_releases);
         return 0;
     }
     if (argc >= 3 && !strcmp(argv[1], "fuzz")) {

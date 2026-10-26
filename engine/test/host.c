@@ -43,7 +43,6 @@ typedef struct HostVM {
     JSRuntime *rt;
     HostChunk *chunks;
     size_t mapped;   /* bytes in the chunks */
-    size_t released; /* mapped after the last release */
 } HostVM;
 
 static HostVM *host_vms;
@@ -54,17 +53,6 @@ static long host_timeout = HOST_TIMEOUT_SEC; /* seconds, 0 for none */
 /* HOST_MAX_MEMORY=bytes: the most a VM may map, past which the host answers
    as a system that has no more memory would */
 static size_t host_max_memory;
-/* HOST_RELEASE_OVER=bytes (default 512 MiB, 0 for never): a VM that holds
-   more than that gives its free chunks back, 64 MiB of growth apart. A buffer
-   that grows by realloc, such as the 1 GiB string of test262's
-   staging/sm/String/replace-math.js, moves into a chunk of its own at each
-   step and leaves the smaller one behind, free but mapped: the test takes 6.7
-   GB, six times what it takes on the system malloc, and does not run in a
-   machine of 4 GB. The Go host will not release from inside
-   host_memory_grow (that would reenter the engine): the pool of tifa calls
-   ReleaseMemory between renders. This host does, to run that test. */
-static size_t host_release_over = (size_t)512 << 20;
-
 #ifdef JS_HEAP_POISON
 void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #define host_unpoison(p, n) __asan_unpoison_memory_region((p), (n))
@@ -91,13 +79,6 @@ uintptr_t host_memory_grow(uint32_t id, uintptr_t size)
 
     if (!vm)
         return 0;
-    if (host_release_over && vm->rt && vm->mapped > host_release_over &&
-        vm->mapped >= vm->released + ((size_t)64 << 20)) {
-        /* the heap is between two steps here: it asks for a chunk because
-           its search failed, and changes nothing before this returns */
-        host_release_memory(vm->rt, 0, NULL, NULL);
-        vm->released = vm->mapped;
-    }
     if (host_max_memory && size > host_max_memory - vm->mapped)
         return 0;
     p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -140,6 +121,25 @@ static void host_chunk_forget(HostVM *vm, uintptr_t addr)
     _exit(87);
 }
 
+/* HOST_CALL_MEMORY_RELEASE: the engine gives back a whole chunk, size bytes at
+   addr. */
+static JSValue host_memory_release(uint32_t id, uintptr_t addr, uintptr_t size)
+{
+    HostVM *vm = host_vm_find(id);
+    HostChunk *c;
+
+    if (vm) {
+        for (c = vm->chunks; c && c->addr != addr; c = c->next)
+            ;
+        if (c && c->size == size) {
+            host_chunk_forget(vm, addr);
+            return JS_UNDEFINED;
+        }
+    }
+    fprintf(stderr, "host: the engine gave back a chunk it was not given, or not whole\n");
+    _exit(87);
+}
+
 /* The engine calls this from time to time, between two steps of the script.
    It ends a test that runs over two minutes. */
 static int host_interrupt(JSRuntime *rt, void *opaque)
@@ -163,13 +163,10 @@ static void host_atexit(void)
 static void host_register_exit(void)
 {
     const char *max = getenv("HOST_MAX_MEMORY");
-    const char *over = getenv("HOST_RELEASE_OVER");
     const char *timeout = getenv("HOST_TIMEOUT_SEC");
 
     if (max)
         host_max_memory = (size_t)strtoull(max, NULL, 10);
-    if (over)
-        host_release_over = (size_t)strtoull(over, NULL, 10);
     if (timeout)
         host_timeout = strtol(timeout, NULL, 10);
     atexit(host_atexit);
@@ -380,16 +377,16 @@ int64_t host_now(uint32_t vm, int kind)
     return ns;
 }
 
-/* The test host registers no function, so the only request it answers is the
-   engine's own abort. It ends the process with the signal abort() gives. The
-   system's abort is not called: the engine's libc defines abort, and it is
+/* The test host registers no function, so the requests it answers are the
+   engine's own: the memory of the heap (a dedicated chunk goes back, see
+   host.h), and abort. Abort ends the process with the signal abort() gives.
+   The system's abort is not called: the engine's libc defines abort, and it is
    the one that calls this. */
 JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic)
 {
-    (void)vm;
     (void)this_val;
-    (void)argc;
-    (void)argv;
+    if (magic == HOST_CALL_MEMORY_RELEASE && argc == 2)
+        return host_memory_release(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]));
     if (magic == HOST_CALL_ABORT)
         fputs("engine abort\n", stderr);
     else

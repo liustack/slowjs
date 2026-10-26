@@ -31,7 +31,19 @@ int64_t host_now(uint32_t vm, int kind);
    engine itself, and the host decides what to do with it. */
 enum {
     HOST_CALL_ABORT = -1, /* the engine met a state it cannot go on from. It does not return */
+    /* This one gives the memory of the heap back (engine/heap.h): a chunk that
+       holds a single block (a dedicated chunk), as soon as its block is freed
+       or has moved. It runs no user code and does not call back into the engine.
+       Its arguments are words, a pointer or a size in the u.ptr of the value
+       (HOST_WORD). The address and the size are exactly those of the chunk
+       host_memory_grow gave. */
+    HOST_CALL_MEMORY_RELEASE = -2, /* (address, size): unmap the chunk. It is already out of the heap, and the result is not read */
 };
 JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
+
+/* A pointer-sized integer as an argument or a result of the kinds above. The
+   tag is JS_TAG_INT and means nothing: the host reads the word. */
+#define HOST_WORD(x) JS_MKPTR(JS_TAG_INT, (void *)(uintptr_t)(x))
+#define HOST_WORD_VALUE(v) ((uintptr_t)JS_VALUE_GET_PTR(v))
 
 #endif

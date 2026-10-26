@@ -215,6 +215,20 @@ static void test_large(JSRuntime *rt)
     }
     CHECK(inplace > 0, "no resize grew in place in 20 attempts, the test checked only the move");
 
+    /* a block of 5 MiB has a chunk of its own: readable to its usable size, and the
+       room the chunk has after it is poisoned, until the block grows into it */
+    p = js_malloc_rt(rt, ((size_t)5 << 20) + 1000);
+    u0 = js_malloc_usable_size_rt(rt, p);
+    NONE_POISONED(p, 4096, "the start of a block in a chunk of its own");
+    NONE_POISONED(p + u0 - 4096, 4096, "the end of a block in a chunk of its own");
+    CHECK(poisoned(p + u0 + 8) && poisoned(p + u0 + 108), "the room after a block of its own is not poisoned");
+    q = js_realloc_rt(rt, p, ((size_t)5 << 20) + 5000);
+    u1 = js_malloc_usable_size_rt(rt, q);
+    CHECK(q == p && u1 > u0, "a block of its own should grow into the room of its chunk");
+    NONE_POISONED(q + u0 - 8, 3000, "the tail a block of its own grew into");
+    CHECK(poisoned(q + u1 + 8), "the room after a block of its own that grew is not poisoned");
+    js_free_rt(rt, q);
+
     /* a resize past the room the chunks have moves the block into a chunk of
        its own, and the old block is free */
     p = js_malloc_rt(rt, 2000);
