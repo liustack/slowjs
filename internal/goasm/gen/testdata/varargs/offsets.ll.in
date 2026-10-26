@@ -1,9 +1,10 @@
 ; Writes to the general-register offset field of a va_list through phis,
 ; selects and a loop. The wrap_* functions have a path on which the i32
 ; add can wrap back into the register save area, the others keep the field
-; where va_start left it. The test fills in the target: @GP@ is the field's
-; byte offset, "icmp @REG@ i32 %o, @REGK@" holds only when va_arg would read
-; a register.
+; where va_start left it. The test fills in the target: @GP@ is the byte
+; offset of the general-register field and @FP@ of the floating-point one,
+; "icmp @REG@ i32 %o, @REGK@" holds only when va_arg would read a general
+; register and "icmp @FPREG@ i32 %o, @FPREGK@" a floating-point one.
 target triple = "@TRIPLE@"
 
 declare void @llvm.va_start.p0(ptr)
@@ -20,6 +21,13 @@ define i32 @v(i32 %n, ...) {
   call void @dead_phi(ptr %ap)
   call void @guarded(ptr %ap)
   call void @dead_loop(ptr %ap, i32 %n)
+  call void @wrap_fp(ptr %ap)
+  call void @dead_fp(ptr %ap)
+  call void @wrap_nondom(ptr %ap, i1 true)
+  call void @wrap_left(ptr %ap)
+  call void @guarded_left(ptr %ap)
+  call void @wrap_false(ptr %ap)
+  call void @guarded_false(ptr %ap)
   call void @llvm.va_end.p0(ptr %ap)
   ret i32 0
 }
@@ -148,5 +156,105 @@ next:
   %more = icmp ult i32 %j, %k
   br i1 %more, label %loop, label %out
 out:
+  ret void
+}
+
+; The floating-point field wraps the same way as the general one.
+define void @wrap_fp(ptr %ap) {
+  %f = getelementptr inbounds i8, ptr %ap, i64 @FP@
+  %o = load i32, ptr %f, align 4
+  %n = add i32 %o, 2147483640
+  store i32 %n, ptr %f, align 4
+  ret void
+}
+
+; And va_arg's own write to it, stored only on the register path, stays.
+define void @dead_fp(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @FP@
+  %o = load i32, ptr %f, align 4
+  %reg = icmp @FPREG@ i32 %o, @FPREGK@
+  br i1 %reg, label %inreg, label %done
+inreg:
+  %n = add i32 %o, 16
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+; The test is on one path only. The store is after the join, which a path
+; that did not take the test also reaches: the bound does not hold there.
+define void @wrap_nondom(ptr %ap, i1 %c) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %small = icmp ult i32 %o, 1000
+  br i1 %small, label %then, label %join
+then:
+  br label %join
+join:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  ret void
+}
+
+; The constant on the left: "1000 < o" bounds nothing from above, so the add
+; may wrap. "o < 1000" written as "1000 > o" is the bound, and stays.
+define void @wrap_left(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %big = icmp ult i32 1000, %o
+  br i1 %big, label %bump, label %done
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+define void @guarded_left(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %small = icmp ugt i32 1000, %o
+  br i1 %small, label %bump, label %done
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+; The add on the false edge: reached when "o < 1000" does not hold, which
+; bounds nothing, against reached when "o >= 1000" does not hold, which does.
+define void @wrap_false(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %small = icmp ult i32 %o, 1000
+  br i1 %small, label %done, label %bump
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
+  ret void
+}
+
+define void @guarded_false(ptr %ap) {
+entry:
+  %f = getelementptr inbounds i8, ptr %ap, i64 @GP@
+  %o = load i32, ptr %f, align 4
+  %big = icmp uge i32 %o, 1000
+  br i1 %big, label %done, label %bump
+bump:
+  %n = add i32 %o, 8
+  store i32 %n, ptr %f, align 4
+  br label %done
+done:
   ret void
 }
