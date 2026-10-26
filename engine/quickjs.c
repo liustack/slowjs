@@ -239,6 +239,18 @@ typedef struct {
     int credit; /* the copies add_property may make to keep shapes */
     struct JSObject *proto; /* the Object.prototype whose shapes are kept */
 } JSShapeCache;
+
+/* the most keys of a shape the key cache keeps the kinds of */
+#define JS_OWN_KEY_CACHE_PROPS 24
+/* the number of shapes the key cache keeps the kinds of */
+#define JS_OWN_KEY_CACHE_SIZE 256
+
+/* the kinds of the keys of the shape sh, in the key cache of a runtime (see
+   JS_GetOwnPropertyNamesInternal) */
+typedef struct {
+    JSShape *sh; /* NULL for none */
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+} JSOwnKeyEntry;
 typedef struct JSString JSAtomStruct;
 typedef struct JSObject JSObject;
 
@@ -408,6 +420,7 @@ struct JSRuntime {
     JSValue async_context;
     JSRegExpCache regexp_cache;
     JSShapeCache shape_cache;
+    JSOwnKeyEntry own_key_cache[JS_OWN_KEY_CACHE_SIZE];
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
@@ -5198,11 +5211,23 @@ static void js_shape_hash_link(JSRuntime *rt, JSShape *sh)
     rt->shape_hash_count++;
 }
 
+/* the entry of the key cache of rt for the shape sh */
+static inline JSOwnKeyEntry *js_own_key_slot(JSRuntime *rt, JSShape *sh)
+{
+    uintptr_t a = (uintptr_t)sh;
+    return &rt->own_key_cache[((a >> 4) ^ (a >> 12)) & (JS_OWN_KEY_CACHE_SIZE - 1)];
+}
+
 static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 {
     uint32_t h;
     JSShape **psh;
+    JSOwnKeyEntry *e;
 
+    /* the shape leaves the shape hash table: the key cache drops it */
+    e = js_own_key_slot(rt, sh);
+    if (e->sh == sh)
+        e->sh = NULL;
     h = get_shape_hash(sh->hash, rt->shape_hash_bits);
     psh = &rt->shape_hash[h];
     while (*psh != sh)
@@ -9803,6 +9828,283 @@ void JS_FreePropertyEnum(JSContext *ctx, JSPropertyEnum *tab, uint32_t len)
     }
 }
 
+/* The own keys of an object that is not exotic are the keys of its shape.
+   JS_GetOwnPropertyNamesInternal lists them for for in, Object.keys and its
+   kin, spread, Object.assign and JSON.stringify, in two passes that ask the
+   atom table of each key whether it is a string, a symbol or a private name,
+   and whether it is an array index. Then JS_CopyDataProperties, behind
+   object spread and the rest of a destructuring, and
+   JS_GetOwnPropertyNames2, behind Object.keys, values and entries, look each
+   key up again to read its value. The three call js_own_keys,
+   js_copy_data and js_own_keys_array first, which list the keys of such an
+   object from its shape in one pass, and read the values of plain data
+   properties straight from the object. Each does nothing and says so for
+   what it does not handle, and the engine goes on as before.
+
+   The kind of a key depends only on its atom, which stays the same while a
+   shape holds it. The key cache of a runtime keeps the kinds of the keys of
+   recently listed shapes, so that the next listing of an object of such a
+   shape asks the atom table nothing. It keeps them only for shapes in the
+   shape hash table, and drops them when the shape leaves the table:
+   js_shape_hash_unlink drops them. A shape in the table does not change in
+   place: before a key is added to it it leaves the table
+   (add_shape_property), before a key is deleted or the flags of a key change
+   it leaves the table for good or is copied (js_shape_prepare_update), and
+   it leaves the table before it is freed (js_free_shape0). So the kinds the
+   cache has for a shape are those of its keys, and the memory of the shape
+   has not gone to another shape. The cache holds no shape, atom or object,
+   so it keeps nothing alive and does not change when the cycle collector
+   runs: the flags of the keys are read from the shape at each listing. */
+
+/* the kinds of a key, as the key cache keeps them */
+#define JS_OWN_KIND_STRING JS_ATOM_KIND_STRING /* a string that is no array index */
+#define JS_OWN_KIND_SYMBOL JS_ATOM_KIND_SYMBOL
+#define JS_OWN_KIND_PRIVATE JS_ATOM_KIND_PRIVATE
+#define JS_OWN_KIND_INDEX 3 /* an array index */
+#define JS_OWN_KIND_NONE 4 /* a deleted key */
+
+/* the most array indexes a listing sorts: an object with more takes the
+   generic path */
+#define JS_OWN_KEY_NUM_MAX 16
+
+/* the kind of atom, as JS_AtomGetKind and JS_AtomIsArrayIndex tell it, with
+   the value of an array index in *pval */
+static int js_own_key_kind(JSRuntime *rt, JSAtom atom, uint32_t *pval)
+{
+    JSAtomStruct *p;
+    uint32_t v;
+
+    *pval = 0;
+    if (atom == JS_ATOM_NULL)
+        return JS_OWN_KIND_NONE;
+    if (__JS_AtomIsTaggedInt(atom)) {
+        *pval = __JS_AtomToUInt32(atom);
+        return JS_OWN_KIND_INDEX;
+    }
+    p = rt->atom_array[atom];
+    switch(p->atom_type) {
+    case JS_ATOM_TYPE_STRING:
+        /* what JS_AtomIsArrayIndex does for a string */
+        if (is_num_string(&v, p) && v != -1) {
+            *pval = v;
+            return JS_OWN_KIND_INDEX;
+        }
+        return JS_OWN_KIND_STRING;
+    case JS_ATOM_TYPE_GLOBAL_SYMBOL:
+        return JS_OWN_KIND_SYMBOL;
+    case JS_ATOM_TYPE_SYMBOL:
+        if (p->hash == JS_ATOM_HASH_PRIVATE)
+            return JS_OWN_KIND_PRIVATE;
+        return JS_OWN_KIND_SYMBOL;
+    default:
+        abort();
+    }
+}
+
+/* Put the kinds of the keys of the shape sh into kinds, from the key cache
+   or from the atoms, and report whether it did: it does not for a shape of
+   more than JS_OWN_KEY_CACHE_PROPS keys. */
+static BOOL js_own_key_kinds(JSRuntime *rt, JSShape *sh, uint8_t *kinds)
+{
+    JSOwnKeyEntry *e = NULL;
+    JSShapeProperty *prs;
+    uint32_t v;
+    int i;
+
+    if (sh->prop_count > JS_OWN_KEY_CACHE_PROPS)
+        return FALSE;
+    if (sh->is_hashed) {
+        e = js_own_key_slot(rt, sh);
+        if (e->sh == sh) {
+            memcpy(kinds, e->kinds, JS_OWN_KEY_CACHE_PROPS);
+            return TRUE;
+        }
+    }
+    prs = get_shape_prop(sh);
+    for(i = 0; i < sh->prop_count; i++)
+        kinds[i] = js_own_key_kind(rt, prs[i].atom, &v);
+    if (e) {
+        e->sh = sh;
+        memcpy(e->kinds, kinds, JS_OWN_KEY_CACHE_PROPS);
+    }
+    return TRUE;
+}
+
+/* the listing of the own keys of an object that is not exotic, in the order
+   JS_GetOwnPropertyNamesInternal gives them: array indexes by value, then
+   strings, then symbols and private names, each in the order of the shape */
+typedef struct {
+    JSShape *sh; /* the shape of the object */
+    int flags; /* the JS_GPN_ flags of the listing */
+    int nums; /* the count of array indexes */
+    int n; /* the count of keys listed */
+    BOOL plain; /* whether every key listed is a plain data property */
+    BOOL cached; /* whether kinds holds the kinds of the keys of sh */
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+    struct {
+        int i; /* its place in the shape */
+        uint32_t v; /* its value */
+    } num[JS_OWN_KEY_NUM_MAX];
+} JSOwnKeyList;
+
+/* where js_own_keys_next is in a listing */
+typedef struct {
+    int phase; /* 0 for the array indexes, 1 for the strings, 2 for the symbols */
+    int i; /* the next index or place in the shape */
+    BOOL syms; /* whether the shape has a symbol or a private name */
+} JSOwnKeyIter;
+
+/* the kind of the key i of the listing l, whose shape property is prs */
+static inline int js_own_keys_kind(JSRuntime *rt, const JSOwnKeyList *l, int i,
+                                   const JSShapeProperty *prs)
+{
+    uint32_t v;
+
+    if (l->cached)
+        return l->kinds[i];
+    return js_own_key_kind(rt, prs->atom, &v);
+}
+
+/* whether the key of kind k whose shape property is prs is listed with the
+   flags of l */
+static inline BOOL js_own_keys_listed(const JSOwnKeyList *l, int k,
+                                      const JSShapeProperty *prs)
+{
+    if (k == JS_OWN_KIND_NONE)
+        return FALSE;
+    if ((l->flags & JS_GPN_ENUM_ONLY) && !(prs->flags & JS_PROP_ENUMERABLE))
+        return FALSE;
+    if (k == JS_OWN_KIND_INDEX)
+        k = JS_OWN_KIND_STRING;
+    return (l->flags >> k) & 1;
+}
+
+/* List the own keys of p with flags into l, and report whether it could: p
+   is not exotic, has no binding of a module namespace among the keys listed
+   with JS_GPN_SET_ENUM or JS_GPN_ENUM_ONLY, where
+   JS_GetOwnPropertyNamesInternal may throw, and has at most
+   JS_OWN_KEY_NUM_MAX array indexes among them. */
+static BOOL js_own_keys_scan(JSContext *ctx, JSOwnKeyList *l, JSObject *p,
+                             int flags)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeProperty *prs;
+    uint32_t v;
+    int i, j, k, t;
+
+    if (p->is_exotic)
+        return FALSE;
+    l->sh = p->shape;
+    l->flags = flags;
+    l->nums = 0;
+    l->n = 0;
+    l->plain = TRUE;
+    l->cached = js_own_key_kinds(rt, l->sh, l->kinds);
+    prs = get_shape_prop(l->sh);
+    for(i = 0; i < l->sh->prop_count; i++, prs++) {
+        k = js_own_keys_kind(rt, l, i, prs);
+        if (!js_own_keys_listed(l, k, prs))
+            continue;
+        t = prs->flags & JS_PROP_TMASK;
+        if (t == JS_PROP_VARREF && (flags & (JS_GPN_SET_ENUM | JS_GPN_ENUM_ONLY)))
+            return FALSE;
+        /* a pending stack is a marker that must not be handed on: values of
+           'stack' are read through the engine */
+        if (t != 0 || prs->atom == JS_ATOM_stack)
+            l->plain = FALSE;
+        if (k == JS_OWN_KIND_INDEX) {
+            if (l->nums == JS_OWN_KEY_NUM_MAX)
+                return FALSE;
+            js_own_key_kind(rt, prs->atom, &v);
+            /* sorted as they come: indexes are few, and mostly in order */
+            for(j = l->nums; j > 0 && l->num[j - 1].v > v; j--)
+                l->num[j] = l->num[j - 1];
+            l->num[j].i = i;
+            l->num[j].v = v;
+            l->nums++;
+        }
+        l->n++;
+    }
+    return TRUE;
+}
+
+/* Return the place in the shape of the next key of the listing l, or -1
+   after the last. it starts zeroed. */
+static int js_own_keys_next(JSRuntime *rt, const JSOwnKeyList *l,
+                            JSOwnKeyIter *it)
+{
+    const JSShapeProperty *prs = get_shape_prop(l->sh);
+    int count = l->sh->prop_count, i, k;
+
+    if (it->phase == 0) {
+        if (it->i < l->nums)
+            return l->num[it->i++].i;
+        if (l->n == l->nums)
+            return -1;
+        it->phase = 1;
+        it->i = 0;
+    }
+    if (it->phase == 1) {
+        while (it->i < count) {
+            i = it->i++;
+            k = js_own_keys_kind(rt, l, i, &prs[i]);
+            if (k == JS_OWN_KIND_STRING) {
+                if (js_own_keys_listed(l, k, &prs[i]))
+                    return i;
+            } else if (k == JS_OWN_KIND_SYMBOL || k == JS_OWN_KIND_PRIVATE) {
+                it->syms = TRUE;
+            }
+        }
+        if (!it->syms)
+            return -1;
+        it->phase = 2;
+        it->i = 0;
+    }
+    while (it->i < count) {
+        i = it->i++;
+        k = js_own_keys_kind(rt, l, i, &prs[i]);
+        if ((k == JS_OWN_KIND_SYMBOL || k == JS_OWN_KIND_PRIVATE) &&
+            js_own_keys_listed(l, k, &prs[i]))
+            return i;
+    }
+    return -1;
+}
+
+/* List the own keys of p as JS_GetOwnPropertyNamesInternal does with flags,
+   into *ptab and *plen with the result in *pret, and report whether it did:
+   when it did not, nothing was done (see js_own_keys_scan). */
+static BOOL js_own_keys(JSContext *ctx, JSPropertyEnum **ptab, uint32_t *plen,
+                        JSObject *p, int flags, int *pret)
+{
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    JSPropertyEnum *tab;
+    JSShapeProperty *prs;
+    int i, k;
+
+    if (!js_own_keys_scan(ctx, &l, p, flags))
+        return FALSE;
+    *ptab = NULL;
+    *plen = 0;
+    tab = js_malloc(ctx, sizeof(tab[0]) * max_int(l.n, 1));
+    if (!tab) {
+        *pret = -1;
+        return TRUE;
+    }
+    prs = get_shape_prop(l.sh);
+    k = 0;
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        tab[k].atom = JS_DupAtom(ctx, prs[i].atom);
+        tab[k].is_enumerable = (prs[i].flags & JS_PROP_ENUMERABLE) != 0;
+        k++;
+    }
+    assert(k == l.n);
+    *ptab = tab;
+    *plen = l.n;
+    *pret = 0;
+    return TRUE;
+}
+
 /* return < 0 in case if exception, 0 if OK. ptab and its atoms must
    be freed by the user. */
 static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
@@ -9820,7 +10122,10 @@ static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
     BOOL is_enumerable, num_sorted;
     uint32_t num_key;
     JSAtomKindEnum kind;
+    int ret;
 
+    if (js_own_keys(ctx, ptab, plen, p, flags, &ret))
+        return ret;
     /* clear pointer for consistency in case of failure */
     *ptab = NULL;
     *plen = 0;
@@ -18046,6 +18351,118 @@ exception:
     return -1;
 }
 
+/* Give pt, an ordinary object with no property, the shape and the values of
+   ps, with the result in *pret, and report whether it did: when it did not,
+   nothing was done. It does it when ps is not exotic, has the prototype of
+   pt, and every property of ps is a plain data property, enumerable,
+   writable and configurable, with no array index, no private name and no
+   'stack' key among them and no string after a symbol, so that they are
+   listed in the order of the shape, and the shape of ps is in the shape hash
+   table, as a shape two objects share must be. */
+static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
+{
+    JSShape *ssh = ps->shape, *tsh = pt->shape;
+    JSShapeProperty *prs;
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+    BOOL sym = FALSE;
+    int i;
+
+    if (ps->is_exotic || !pt->extensible || pt->is_exotic || pt->fast_array ||
+        pt->class_id != JS_CLASS_OBJECT)
+        return FALSE;
+    if (tsh->prop_count != 0 || !tsh->is_hashed || !ssh->is_hashed ||
+        ssh->proto != tsh->proto || ssh->prop_count == 0)
+        return FALSE;
+    if (!js_own_key_kinds(ctx->rt, ssh, kinds))
+        return FALSE;
+    prs = get_shape_prop(ssh);
+    for(i = 0; i < ssh->prop_count; i++) {
+        if (prs[i].flags != JS_PROP_C_W_E || prs[i].atom == JS_ATOM_stack)
+            return FALSE;
+        switch(kinds[i]) {
+        case JS_OWN_KIND_STRING:
+            if (sym)
+                return FALSE;
+            break;
+        case JS_OWN_KIND_SYMBOL:
+            sym = TRUE;
+            break;
+        default:
+            return FALSE;
+        }
+    }
+    /* what add_property does when it finds the next shape */
+    if (ssh->prop_size != tsh->prop_size) {
+        JSProperty *new_prop;
+        new_prop = js_realloc(ctx, pt->prop, sizeof(pt->prop[0]) * ssh->prop_size);
+        if (!new_prop) {
+            *pret = -1;
+            return TRUE;
+        }
+        pt->prop = new_prop;
+    }
+    pt->shape = js_dup_shape(ssh);
+    js_free_shape(ctx->rt, tsh);
+    for(i = 0; i < ssh->prop_count; i++)
+        pt->prop[i].u.value = JS_DupValue(ctx, ps->prop[i].u.value);
+    *pret = 0;
+    return TRUE;
+}
+
+/* Copy the own properties of source into target as JS_CopyDataProperties
+   does for a spread in an object literal or the rest of a destructuring,
+   which define them on target, a new object, with the result in *pret, and
+   report whether it did: when it did not, nothing was done. It does it when
+   every key listed of source is a plain data property, so that no getter
+   runs during the copy, which could change source: its values are then read
+   from its properties. When target has no property yet, there is no key to
+   leave out, and every property of source is enumerable, writable and
+   configurable, listed in the order of its shape, target takes the shape of
+   source, which defining the keys one by one would have led it to. */
+static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
+                         JSValueConst source, JSValueConst excluded,
+                         BOOL setprop, int *pret)
+{
+    JSObject *ps, *pexcl = NULL;
+    JSShapeProperty *prs;
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    int i, ret;
+
+    if (setprop || JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT)
+        return FALSE;
+    ps = JS_VALUE_GET_OBJ(source);
+    if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
+        pexcl = JS_VALUE_GET_OBJ(excluded);
+    else if (js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
+        return TRUE;
+    if (!js_own_keys_scan(ctx, &l, ps,
+                          JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY) ||
+        !l.plain)
+        return FALSE;
+    prs = get_shape_prop(l.sh);
+    *pret = 0;
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        if (pexcl) {
+            ret = js_get_own_property_flags(ctx, NULL, pexcl, prs[i].atom);
+            if (ret < 0) {
+                *pret = -1;
+                break;
+            }
+            if (ret)
+                continue;
+        }
+        if (JS_DefinePropertyValue(ctx, target, prs[i].atom,
+                                   JS_DupValue(ctx, ps->prop[i].u.value),
+                                   JS_PROP_C_W_E) < 0) {
+            *pret = -1;
+            break;
+        }
+    }
+    return TRUE;
+}
+
 static __exception int JS_CopyDataProperties(JSContext *ctx,
                                              JSValueConst target,
                                              JSValueConst source,
@@ -18061,6 +18478,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     JSPropertyDescriptor desc;
     BOOL is_enumerable;
 
+    if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
+        return ret;
     if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
         return 0;
 
@@ -41598,6 +42017,81 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* the array [key, value] of Object.entries, taking value */
+static JSValue js_own_key_pair(JSContext *ctx, JSAtom atom, JSValue value)
+{
+    JSValue a, key;
+
+    a = JS_NewArray(ctx);
+    if (JS_IsException(a)) {
+        JS_FreeValue(ctx, value);
+        return a;
+    }
+    key = JS_AtomToValue(ctx, atom);
+    if (JS_IsException(key)) {
+        JS_FreeValue(ctx, value);
+        JS_FreeValue(ctx, a);
+        return key;
+    }
+    if (add_fast_array_element(ctx, JS_VALUE_GET_OBJ(a), key, 0) < 0) {
+        JS_FreeValue(ctx, value);
+        JS_FreeValue(ctx, a);
+        return JS_EXCEPTION;
+    }
+    if (add_fast_array_element(ctx, JS_VALUE_GET_OBJ(a), value, 0) < 0) {
+        JS_FreeValue(ctx, a);
+        return JS_EXCEPTION;
+    }
+    return a;
+}
+
+/* Make the array JS_GetOwnPropertyNames2 makes for obj with flags and kind,
+   of the own keys of obj, of their values, or of pairs of both, into *pr,
+   and report whether it did: when it did not, nothing was done. It does it
+   for an object js_own_keys_scan can list, and for values only when every
+   key listed is a plain data property: then no getter runs between the
+   listing and the reads, which could change the object. */
+static BOOL js_own_keys_array(JSContext *ctx, JSValueConst obj, int flags,
+                              int kind, JSValue *pr)
+{
+    JSObject *p;
+    JSShapeProperty *prs;
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    JSValue r, v;
+    int i;
+
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (!js_own_keys_scan(ctx, &l, p, flags) ||
+        (kind != JS_ITERATOR_KIND_KEY && !l.plain))
+        return FALSE;
+    r = JS_NewArray(ctx);
+    *pr = r;
+    if (JS_IsException(r))
+        return TRUE;
+    if (l.n > 0 && expand_fast_array(ctx, JS_VALUE_GET_OBJ(r), l.n) < 0)
+        goto fail;
+    prs = get_shape_prop(l.sh);
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        if (kind == JS_ITERATOR_KIND_KEY)
+            v = JS_AtomToValue(ctx, prs[i].atom);
+        else if (kind == JS_ITERATOR_KIND_VALUE)
+            v = JS_DupValue(ctx, p->prop[i].u.value);
+        else
+            v = js_own_key_pair(ctx, prs[i].atom, JS_DupValue(ctx, p->prop[i].u.value));
+        if (JS_IsException(v) ||
+            add_fast_array_element(ctx, JS_VALUE_GET_OBJ(r), v, 0) < 0)
+            goto fail;
+    }
+    return TRUE;
+ fail:
+    JS_FreeValue(ctx, r);
+    *pr = JS_EXCEPTION;
+    return TRUE;
+}
+
 static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
                                        int flags, int kind)
 {
@@ -41605,6 +42099,9 @@ static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
     JSObject *p;
     JSPropertyEnum *atoms;
     uint32_t len, i, j;
+
+    if (js_own_keys_array(ctx, obj1, flags, kind, &r))
+        return r;
 
     r = JS_UNDEFINED;
     val = JS_UNDEFINED;

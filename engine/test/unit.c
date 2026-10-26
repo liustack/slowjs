@@ -566,6 +566,36 @@ static void test_atom_keys(void)
     JS_FreeRuntime(rt);
 }
 
+/* The key cache across the cycle collector: an object in a cycle whose keys
+   were listed is freed by the collector with its shape, and the memory of
+   that shape goes to the shapes of new objects with other kinds of keys,
+   with the shape cache off. A listing must not take the kinds of keys of
+   the freed shape. */
+static void test_own_keys_collected(void)
+{
+    static const char setup[] =
+        "var bad = 0, r = 0\n"
+        "function make() { var c = {}; c.self = c; c['q' + r] = 1; c[r % 3] = 2;\n"
+        "  Object.keys(c); Reflect.ownKeys(c) }\n"
+        "function check() { var d = {}; d[Symbol()] = 1; d['w' + r] = 2; d.self = d;\n"
+        "  if (Object.keys(d).join() !== 'w' + r + ',self' ||\n"
+        "      Reflect.ownKeys(d).map(String).join() !== 'w' + r + ',self,Symbol()') bad++\n"
+        "  d.self = null; r++ }\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    int i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < 200; i++) {
+        CHECK(eval(ctx, "make()"), "the script threw");
+        JS_RunGC(rt);
+        CHECK(eval(ctx, "check()"), "the script threw");
+    }
+    CHECK(eval_is(ctx, "r + ' ' + bad", "200 0"), "listings after collections");
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 int main(void)
 {
     test_regexp_cache();
@@ -575,6 +605,7 @@ int main(void)
     test_func_shapes();
     test_func_shapes_kept();
     test_atom_keys();
+    test_own_keys_collected();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
