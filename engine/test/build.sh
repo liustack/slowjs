@@ -53,7 +53,7 @@ done
 # The functions that read a word at a time (strlen and the like) read past the
 # end of a string inside its last aligned word, which AddressSanitizer reports,
 # so they are built without it.
-for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c; do
+for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c "$libc"/abort.c; do
 	name=$(basename "$f" .c)
 	flags=$common
 	case $name in
@@ -64,7 +64,7 @@ for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c; do
 	*/math/*) o=math_$name ;;
 	*) o=$name ;;
 	esac
-	$cc $flags $free -I"$libc" -I"$libc/internal" -include "$libc/internal/features.h" -c "$f" -o "$out/libc/$o.o"
+	$cc $flags $free -I"$libc" -I"$libc/internal" -I"$engine" -include "$libc/internal/features.h" -c "$f" -o "$out/libc/$o.o"
 	objs="$objs $out/libc/$o.o"
 done
 

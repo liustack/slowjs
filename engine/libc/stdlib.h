@@ -20,8 +20,11 @@ size_t malloc_size(const void *ptr);
 size_t malloc_usable_size(void *ptr);
 #endif
 
-/* There is no process to end. */
-#define abort() __builtin_trap()
+/* There is no process to end. abort asks the host, with host_call and
+   HOST_CALL_ABORT in engine/host.h. A trap would be a signal, and in Go a
+   signal kills the whole process. The Go host makes a panic of it and the VM
+   can only be closed. */
+void abort(void) __attribute__((noreturn));
 #define abs(x) __builtin_abs(x)
 #define alloca(n) __builtin_alloca(n)
 
