@@ -155,7 +155,7 @@ func main() {
 	engineObj := unit.Obj
 	engineAsm := readFile(unit.Asm)
 	allow := map[string]bool{"host_poll": true, "host_memory_grow": true, "host_now": true,
-		"host_call": true, "host_release": true, "host_intl": true}
+		"host_call": true, "host_release": true}
 	for _, s := range specs {
 		allow[s.Name] = true
 	}
