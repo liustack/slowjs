@@ -242,6 +242,11 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		if l == "" {
 			continue
 		}
+		// The label llc writes at an indirect call for the post-link
+		// check: it reads the call's signature from llc's object.
+		if strings.HasPrefix(l, ICallPrefix) && strings.HasSuffix(l, ":") {
+			continue
+		}
 		if strings.HasPrefix(l, ".cfi_") || strings.HasPrefix(l, ".p2align") ||
 			strings.HasPrefix(l, ".size") || strings.HasPrefix(l, ".type") ||
 			strings.HasPrefix(l, ".globl") || strings.HasPrefix(l, ".section") ||

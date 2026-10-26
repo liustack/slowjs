@@ -163,7 +163,7 @@ func main() {
 	shadowLL := filepath.Join(*work, "shadow.ll")
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
-		"-shadow-icall-markers"}
+		"-shadow-icall-markers", "-shadow-icall-sigs"}
 	if *keepGoing {
 		passArgs = append(passArgs, "-shadow-keep-going")
 	}
@@ -199,7 +199,9 @@ func main() {
 	os.Remove(asmPath)
 	os.Remove(objPath)
 	llc := filepath.Join(*llvm, "llc")
-	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false"}
+	// The pass's shared object also holds the llc plugin that writes a
+	// symbol with its signature at every indirect call.
+	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-load", *pass}
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels", "-o", objPath, shadowLL)...))
 	tLLVM := time.Since(t0)

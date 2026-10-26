@@ -27,8 +27,11 @@
 // offsets from itself, so it needs no relocation and can live inside its
 // function. -shadow-icall-markers puts a comment naming the signature before
 // every indirect call, which the lowering reads to move the arguments into
-// the Go argument area. -shadow-report prints the signature of every
-// function, the address-taken ones and the call graph for the generator.
+// the Go argument area. -shadow-icall-sigs gives every indirect call a
+// "kcfi" operand bundle whose type id encodes its signature, which llc keeps
+// on the machine call and the plugin in icall.cpp writes out as a symbol at
+// it. -shadow-report prints the signature of every function, the
+// address-taken ones and the call graph for the generator.
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/ValueTracking.h"
@@ -59,6 +62,8 @@ static cl::opt<bool> AddSP("shadow-add-sp", cl::init(false),
                            cl::desc("add the shadow-stack pointer as argument 0 of every engine function and call"));
 static cl::opt<bool> Markers("shadow-icall-markers", cl::init(false),
                              cl::desc("put a comment with the signature before every indirect call"));
+static cl::opt<bool> ICallSigs("shadow-icall-sigs", cl::init(false),
+                               cl::desc("bind the signature of every indirect call to it as a kcfi type id"));
 static cl::opt<bool> Report("shadow-report", cl::init(false),
                             cl::desc("print signatures, address-taken functions and call edges"));
 static cl::opt<bool> KeepGoing("shadow-keep-going", cl::init(false),
@@ -950,6 +955,57 @@ static void insertMarkers(Module &M) {
   }
 }
 
+// icallID encodes a signature code as the 32-bit type id of a "kcfi"
+// bundle: bit 31 set, the parameter count in bits 27 to 30, the result in
+// bits 24 to 26 (v i d f j) and two bits per parameter from bit 0 (i d f j).
+// A code it cannot hold (more than 12 parameters, byval, variadic or an
+// unknown type) gets icallUnencodable, which the generator rejects. The Go
+// side is ICallID in icall.go.
+static const uint32_t icallUnencodable = 0xffffffffu;
+
+static uint32_t icallID(const std::string &code) {
+  size_t gt = code.find('>');
+  if (gt == std::string::npos || gt > 12)
+    return icallUnencodable;
+  const std::string params = "idfj", results = "vidfj";
+  size_t r = code.size() == gt + 2 ? results.find(code[gt + 1]) : std::string::npos;
+  if (r == std::string::npos)
+    return icallUnencodable;
+  uint32_t id = 1u << 31 | uint32_t(gt) << 27 | uint32_t(r) << 24;
+  for (size_t i = 0; i < gt; i++) {
+    size_t p = params.find(code[i]);
+    if (p == std::string::npos)
+      return icallUnencodable;
+    id |= uint32_t(p) << (2 * i);
+  }
+  return id;
+}
+
+// bindSignatures gives every indirect call a "kcfi" bundle with its
+// signature's id. A call through a pointer to a known function is a direct
+// call to llc and gets none.
+static void bindSignatures(Module &M) {
+  Type *I32 = Type::getInt32Ty(M.getContext());
+  for (Function &F : M) {
+    SmallVector<CallBase *> ind;
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (!CB->isInlineAsm() && !isa<Function>(CB->getCalledOperand()->stripPointerCasts()))
+            ind.push_back(CB);
+    for (CallBase *CB : ind) {
+      if (CB->getOperandBundle(LLVMContext::OB_kcfi))
+        report_fatal_error(Twine("indirect call with a kcfi bundle already in ") + F.getName());
+      std::string code = sigCode(CB->getFunctionType(), [&](unsigned i) { return CB->isByValArgument(i); });
+      OperandBundleDef kcfi("kcfi", ConstantInt::get(I32, icallID(code)));
+      CallBase *N = CallBase::addOperandBundle(CB, LLVMContext::OB_kcfi, kcfi, CB->getIterator());
+      N->takeName(CB);
+      CB->replaceAllUsesWith(N);
+      CB->eraseFromParent();
+    }
+  }
+}
+
 static void report(Module &M, const std::set<std::string> &leaves) {
   for (Function &F : M) {
     if (F.isIntrinsic() || (F.isDeclaration() && F.use_empty()))
@@ -1189,6 +1245,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       report(M, leaves);
     if (Markers)
       insertMarkers(M);
+    if (ICallSigs)
+      bindSignatures(M);
     return PreservedAnalyses::none();
   }
 };
