@@ -113,6 +113,7 @@ type ckCase struct {
 	lower  func(string, []Meta) string // the lowered text
 	metas  func([]Meta)                // the records and metas, before emit
 	files  func(map[string]string)     // the emitted Go files, before they are built
+	poll   string                      // Go source of host_poll in the built program; "" for none
 	edit   func(*EngineCheck)          // what the check is told
 	calls  func(*testing.T, []Meta)    // what the lowering recorded
 	want   string                      // the reason the check rejects it; "" passes
@@ -269,6 +270,12 @@ func TestCheckCases(t *testing.T) {
 			lower: sub("pg", `movq\s+%r13, 8\(%rsp\)`, "movq %r12, 8(%rsp)"), want: "argument word 1"},
 		{name: "preserve_none: the check told the other convention", pn: true,
 			edit: func(c *EngineCheck) { c.PreserveNone = false }, want: "preserve_none"},
+
+		// The Go function the polls call must begin with a stack check.
+		{name: "host_poll with a stack check", poll: pollSplit, edit: needPoll},
+		{name: "host_poll that is not in the binary", edit: needPoll, want: "is not in the binary"},
+		{name: "host_poll marked nosplit", poll: pollWork + "//go:nosplit\n" + pollCall, edit: needPoll, want: "host_poll has no stack check"},
+		{name: "host_poll a small leaf the compiler marks nosplit", poll: pollLeaf, edit: needPoll, want: "host_poll has no stack check"},
 
 		// Go's own frame and stack check around a body, and the return.
 		{name: "a Go frame bigger than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n + 16 }),
@@ -506,7 +513,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		fmt.Fprintf(&decls, "func %s(%s)%s\n", names[n], strings.Join(ps, ", "), ret)
 		fmt.Fprintf(&keep, "%s, ", names[n])
 	}
-	files["main.go"] = "package main\n\n" + decls.String() + "\nvar keep = []any{" + keep.String() +
+	if c.poll != "" {
+		keep.WriteString("host_poll, ")
+	}
+	files["main.go"] = "package main\n\n" + decls.String() + "\n" + c.poll + "\nvar keep = []any{" + keep.String() +
 		"}\n\nfunc main() {\n\tfor _, f := range keep {\n\t\tprintln(f != nil)\n\t}\n}\n"
 	files["go.mod"] = "module ck\n\ngo 1.22\n"
 	mod := filepath.Join(dir, "mod")
@@ -582,6 +592,19 @@ func forbiddenCases(sub func(fn, re, repl string) func(string, []Meta) string,
 	}
 	return out
 }
+
+// needPoll tells the check the engine calls host_poll.
+func needPoll(c *EngineCheck) { c.HostPoll = true }
+
+// host_poll for the built program: pollCall calls a function the compiler
+// does not inline, so it gets a stack check, and pollLeaf is the small leaf
+// the compiler marks NOSPLIT.
+const (
+	pollWork  = "//go:noinline\nfunc pollWork(x int64) int64 { return x*3 + 1 }\n\n"
+	pollCall  = "func host_poll(sp uintptr) int64 { return pollWork(int64(sp)) }\n"
+	pollSplit = pollWork + pollCall
+	pollLeaf  = "func host_poll(sp uintptr) int64 { return int64(sp) + 1 }\n"
+)
 
 // emitted finds the file of the emitted Go assembly that holds fn's TEXT.
 func emitted(files map[string]string, fn string) (name string, at int) {
