@@ -21,8 +21,11 @@ function all(re, s) {
   }
   return r.length + ' ' + r.slice(0, 8).join(' ') + ' last ' + r.slice(-2).join(' ');
 }
-var long8 = 'x'.repeat(70000) + 'needle' + 'y'.repeat(70000) + 'Needle';
-var long16 = '中'.repeat(70000) + 'needleé' + '文'.repeat(70000) + 'NEEDLE';
+// The second run of each long string is of a char no regexp below repeats,
+// so that no try backtracks through it: a greedy loop over a long run that
+// fails at its end costs time quadratic in the length of the run.
+var long8 = 'x'.repeat(70000) + 'needle' + 'w'.repeat(70000) + 'Needle';
+var long16 = '中'.repeat(70000) + 'needleé' + 'ア'.repeat(70000) + 'NEEDLE';
 var strs = [
   '', 'a', 'abc', 'xxabcxxABC', 'the cat sat on the mat', 'aaa\nbbb\nccc', long8, long16,
   'été café CAFÉ', '😀 \ud83d x \ude00', 'kK K',
