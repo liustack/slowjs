@@ -9561,19 +9561,21 @@ static JSValueConst JS_GetPrototypePrimitive(JSContext *ctx, JSValueConst val)
     return val;
 }
 
-/* Return an Object, JS_NULL or JS_EXCEPTION in case of exotic object. */
+static JSValue js_proxy_get_prototype(JSContext *ctx, JSValueConst obj);
+
+/* Return an Object, JS_NULL or JS_EXCEPTION in case of exotic object. A
+   proxy is the one object with a prototype of its own making: it is called
+   by name, not through its exotic methods, so that the call can only go
+   there (a call through a pointer could go to any function of its type, the
+   getters among them). */
 JSValue JS_GetPrototype(JSContext *ctx, JSValueConst obj)
 {
     JSValue val;
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) {
         JSObject *p;
         p = JS_VALUE_GET_OBJ(obj);
-        if (unlikely(p->is_exotic)) {
-            const JSClassExoticMethods *em = ctx->rt->class_array[p->class_id].exotic;
-            if (em && em->get_prototype) {
-                return em->get_prototype(ctx, obj);
-            }
-        }
+        if (unlikely(p->class_id == JS_CLASS_PROXY))
+            return js_proxy_get_prototype(ctx, obj);
         p = p->shape->proto;
         if (!p)
             val = JS_NULL;
@@ -54651,7 +54653,6 @@ static const JSClassExoticMethods js_proxy_exotic_methods = {
     .has_property = js_proxy_has,
     .get_property = js_proxy_get,
     .set_property = js_proxy_set,
-    .get_prototype = js_proxy_get_prototype,
     .set_prototype = js_proxy_set_prototype,
     .is_extensible = js_proxy_is_extensible,
     .prevent_extensions = js_proxy_prevent_extensions,
