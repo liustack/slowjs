@@ -139,3 +139,26 @@ func TestForbiddenInstructionsARM64(t *testing.T) {
 		t.Errorf("a plain function: %v", err)
 	}
 }
+
+// The C flags name their target, so a build does not follow the machine it
+// runs on: the variable-argument layout the pass writes is one of two.
+func TestCFlagsTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		flags  []string
+		target string
+	}{{"EngineCFlags", EngineCFlags, "--target=x86_64-linux-gnu"}, {"ARM64CFlags", ARM64CFlags, "--target=aarch64-linux-gnu"}} {
+		n := 0
+		for _, f := range tc.flags {
+			if strings.HasPrefix(f, "--target") {
+				n++
+				if f != tc.target {
+					t.Errorf("%s has %s, want %s", tc.name, f, tc.target)
+				}
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s has %d --target flags, want one", tc.name, n)
+		}
+	}
+}

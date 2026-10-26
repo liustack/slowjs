@@ -31,7 +31,7 @@ func TestVarargsOverAlignedRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	if why := rep.Rejected["take"]; !strings.Contains(why, "over-aligned") {
@@ -59,7 +59,7 @@ func TestVarargsOverAlignedHelperRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned_helper.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned_helper.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	if why := rep.Rejected["read_s"]; !strings.Contains(why, "over-aligned") {
@@ -88,7 +88,7 @@ func TestVarargsEscapesRejected(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "escapes.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "escapes.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-shadow-report", "-S", "-o", os.DevNull, ir)
 	rep := ParseReport(out)
 	for fn, want := range map[string]string{
@@ -160,7 +160,7 @@ func TestVarargsRules(t *testing.T) {
 		fpreg  string
 		fpregk string
 	}{
-		{"x86_64", append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
+		{"x86_64", append([]string{}, EngineCFlags...), []string{"store i32 48", "store i32 176"},
 			"x86_64-unknown-linux-gnu", "0", "ult", "41", "4", "ult", "161"},
 		{"aarch64", ARM64CFlags, []string{"store i32 0", "store i32 0"},
 			"aarch64-unknown-linux-gnu", "24", "slt", "0", "28", "slt", "0"},
@@ -300,7 +300,7 @@ func TestVarargsNative(t *testing.T) {
 		arch, goarch, qemu string
 		cflags             []string
 	}{
-		{"x86_64", "amd64", "", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), free...)},
+		{"x86_64", "amd64", "", append(append([]string{}, EngineCFlags...), free...)},
 		{"aarch64", "arm64", os.Getenv("SLOWJS_QEMU_AARCH64"), ARM64CFlags},
 	} {
 		t.Run(tc.arch, func(t *testing.T) {
