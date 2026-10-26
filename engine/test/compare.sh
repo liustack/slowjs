@@ -167,7 +167,9 @@ while read -r script want opts; do
 done < "$out/cases.list"
 
 # What the scripts cannot see, checked in C.
-"$here/out/$mode/unit"
+for u in unit unit-oom; do
+	"$here/out/$mode/$u"
+done
 if [ "$failed" -ne 0 ]; then
 	echo "compare: $failed of $total runs differ" >&2
 	exit 1
