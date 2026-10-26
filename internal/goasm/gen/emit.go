@@ -91,6 +91,18 @@ func readObject(path string) (*object, error) {
 	return o, nil
 }
 
+// funcHeader is the TEXT directive one lowered function starts with, shared
+// by both emit entries so a register-entry leaf's saved-register frame is
+// always declared. A leaf that saved registers (Meta.Frame > 0) must not be
+// written with a zero frame: Go would give it no stack space and its stores
+// would overwrite the return address.
+func funcHeader(goName string, m Meta) string {
+	if m.Kind == Register {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-0\n", goName, m.Frame)
+	}
+	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
+}
+
 // Emit writes the Go assembly for the functions described by metas.
 func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string, error) {
 	o, err := readObject(objPath)
@@ -107,11 +119,7 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 			return "", fmt.Errorf("symbol %s absent", m.Name)
 		}
 		lo, hi := int(vs[0]), int(vs[0]+vs[1])
-		if m.Kind == Register {
-			fmt.Fprintf(&b, "TEXT ·%s(SB), NOSPLIT, $0-0\n", m.GoName)
-		} else {
-			fmt.Fprintf(&b, "TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", m.GoName, m.Frame, m.ArgBytes)
-		}
+		b.WriteString(funcHeader(m.GoName, m))
 		fmt.Fprintf(&b, "\tPCALIGN $16\n")
 		// A function's constants sit after its code: only the code part is
 		// disassembled, the constants pass through as bytes.

@@ -59,11 +59,7 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		var fb strings.Builder
 		lo, hi := int(vs[0]), int(vs[0]+vs[1])
 		gn := e.Names[m.Name]
-		if m.Kind == Register {
-			fmt.Fprintf(&fb, "TEXT ·%s(SB), NOSPLIT, $%d-0\n", gn, m.Frame)
-		} else {
-			fmt.Fprintf(&fb, "TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", gn, m.Frame, m.ArgBytes)
-		}
+		fb.WriteString(funcHeader(gn, m))
 		fmt.Fprintf(&fb, "\tPCALIGN $16\n")
 		code := hi
 		if cs, ok := o.funcs[m.Name+".const"]; ok {
