@@ -294,6 +294,28 @@ func TestVarargsRules(t *testing.T) {
 	if why, ok := rep.Rejected["passes_promoted"]; ok {
 		t.Errorf("passes_promoted rejected: %s", why)
 	}
+	// A va_list that goes through a select, a phi or memory is refused: the
+	// pass follows it only straight into the functions that read it.
+	flows := must("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs",
+		"-shadow-keep-going", "-shadow-report", "-S", "-o", os.DevNull, filepath.Join("testdata", "varargs", "flows.ll"))
+	frep := ParseReport(flows)
+	for fn, want := range map[string]string{
+		"via_select": "uses a va_list in a way the pass cannot follow",
+		"via_phi":    "uses a va_list in a way the pass cannot follow",
+		"via_memory": "stores a va_list's address to memory",
+	} {
+		if why := frep.Rejected[fn]; !strings.Contains(why, want) {
+			t.Errorf("%s: rejection %q, want one saying %q", fn, why, want)
+		}
+	}
+	for _, fn := range []string{"direct", "take"} {
+		if why, ok := frep.Rejected[fn]; ok {
+			t.Errorf("%s rejected: %s", fn, why)
+		}
+	}
+	if t.Failed() {
+		t.Logf("pass output:\n%s", flows)
+	}
 	// Any other target: the va_list layout is not one the pass writes.
 	for _, target := range []string{"x86_64-pc-linux-gnu", "x86_64-linux-musl", "aarch64-apple-darwin", "i686-linux-gnu"} {
 		ir := filepath.Join(work, target+".ll")
