@@ -38,6 +38,8 @@ type Report struct {
 	Rejected     map[string]string
 	GotoTable    []string
 	Mismatch     [][2]string
+	// Varargs lists the variadic definitions -shadow-varargs rewrote.
+	Varargs []string
 }
 
 // ParseReport reads the pass's report lines; other lines are ignored.
@@ -76,6 +78,8 @@ func ParseReport(text string) *Report {
 			r.PackedICalls[f[1]]++
 		case "REJECT":
 			r.Rejected[f[1]] = strings.Join(f[2:], " ")
+		case "VARARGS":
+			r.Varargs = append(r.Varargs, f[1])
 		case "GOTO-TABLE":
 			r.GotoTable = append(r.GotoTable, f[1])
 		case "MISMATCH":

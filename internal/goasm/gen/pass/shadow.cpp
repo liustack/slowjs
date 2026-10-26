@@ -39,6 +39,7 @@
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <set>
 #include <string>
@@ -59,6 +60,8 @@ static cl::opt<bool> Report("shadow-report", cl::init(false),
                             cl::desc("print signatures, address-taken functions and call edges"));
 static cl::opt<bool> KeepGoing("shadow-keep-going", cl::init(false),
                                cl::desc("report a function the C must change (REJECT) and replace its body by a trap, instead of stopping"));
+static cl::opt<bool> Varargs("shadow-varargs", cl::init(false),
+                             cl::desc("pass the variable arguments of every call in a block of 8-byte slots (experimental)"));
 
 // reject stops on a rule the C breaks, or with -shadow-keep-going reports it
 // and empties the function so the rest of the unit still goes through.
@@ -277,6 +280,175 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
       packCall(CB, CB->getCalledOperand(), DL);
     }
   }
+}
+
+// ---- Variable arguments (-shadow-varargs) ----
+//
+// A variadic call becomes a call with the fixed arguments and one more: the
+// address of a block holding the variable ones, each in an 8-byte slot (or
+// aligned to 16 when its type asks), as the stack part of a SysV or AAPCS64
+// call would hold them. The block is a local whose address is taken, so it
+// moves to the shadow stack like any other; one per function serves all its
+// variadic calls. A variadic definition takes that
+// address as its last parameter, and va_start sets the va_list so every
+// va_arg reads from it: x86-64 marks the register areas used up (gp_offset
+// 48, fp_offset 176) and points overflow_arg_area at the block, AArch64 sets
+// gr_offs and vr_offs to 0 and points __stack at it. clang expands va_arg
+// itself, so no other code changes. va_copy keeps working, since the
+// va_list holds no address into the machine stack any more.
+static FunctionType *fixedPartType(FunctionType *T) {
+  SmallVector<Type *> ps(T->param_begin(), T->param_end());
+  ps.push_back(PointerType::getUnqual(T->getContext()));
+  return FunctionType::get(T->getReturnType(), ps, false);
+}
+
+static void lowerVarargs(Module &M) {
+  bool arm = Triple(M.getTargetTriple()).isAArch64();
+  const DataLayout &DL = M.getDataLayout();
+  LLVMContext &C = M.getContext();
+  Type *I8 = Type::getInt8Ty(C), *I32 = Type::getInt32Ty(C);
+  PointerType *P = PointerType::getUnqual(C);
+  // The slot offsets of the variable arguments of CB, false if one has no
+  // 8-byte slot (byval, long double, vectors).
+  auto slots = [&](CallBase *CB, SmallVector<uint64_t> &offs, uint64_t &size) {
+    unsigned nf = CB->getFunctionType()->getNumParams();
+    size = 0;
+    if (!isa<CallInst>(CB))
+      return false;
+    for (unsigned i = nf; i < CB->arg_size(); i++) {
+      Type *t = CB->getArgOperand(i)->getType();
+      if (CB->isByValArgument(i) || !(t->isIntegerTy() || t->isPointerTy() || t->isDoubleTy() || t->isFloatTy()))
+        return false;
+      uint64_t sz = DL.getTypeStoreSize(t).getFixedValue();
+      uint64_t al = std::max<uint64_t>(8, DL.getABITypeAlign(t).value());
+      if (sz > 16)
+        return false;
+      size = alignTo(size, al);
+      offs.push_back(size);
+      size += alignTo(sz, 8);
+    }
+    return true;
+  };
+  SmallVector<Function *> fns;
+  for (Function &F : M)
+    fns.push_back(&F);
+  for (Function *F : fns) {
+    SmallVector<CallBase *> calls;
+    for (BasicBlock &B : *F)
+      for (Instruction &I : B)
+        if (auto *CB = dyn_cast<CallBase>(&I))
+          if (!CB->isInlineAsm() && CB->getFunctionType()->isVarArg() && !isa<IntrinsicInst>(CB))
+            calls.push_back(CB);
+    if (calls.empty())
+      continue;
+    // One block serves every call of F: the stores go right before each
+    // call, after its arguments are computed.
+    bool ok = true;
+    uint64_t most = 8;
+    for (CallBase *CB : calls) {
+      SmallVector<uint64_t> offs;
+      uint64_t size;
+      ok = ok && slots(CB, offs, size);
+      most = std::max(most, size);
+    }
+    if (!ok) {
+      reject(*F, "variadic call with an argument that has no 8-byte slot");
+      continue;
+    }
+    IRBuilder<> E(&*F->getEntryBlock().getFirstInsertionPt());
+    AllocaInst *blk = E.CreateAlloca(ArrayType::get(I8, most), nullptr, "va_block");
+    blk->setAlignment(Align(16));
+    for (CallBase *CB : calls) {
+      FunctionType *T = CB->getFunctionType();
+      unsigned nf = T->getNumParams();
+      SmallVector<uint64_t> offs;
+      uint64_t size;
+      slots(CB, offs, size);
+      IRBuilder<> B(CB);
+      SmallVector<Value *> args(CB->arg_begin(), CB->arg_begin() + nf);
+      for (unsigned i = nf; i < CB->arg_size(); i++)
+        B.CreateAlignedStore(CB->getArgOperand(i), B.CreateConstGEP1_64(I8, blk, offs[i - nf]), Align(8));
+      args.push_back(blk);
+      CallInst *N = B.CreateCall(fixedPartType(T), CB->getCalledOperand(), args);
+      N->setCallingConv(CB->getCallingConv());
+      AttributeList A = CB->getAttributes();
+      SmallVector<AttributeSet> pa;
+      for (unsigned i = 0; i < nf; i++)
+        pa.push_back(A.getParamAttrs(i));
+      pa.push_back(AttributeSet());
+      N->setAttributes(AttributeList::get(C, A.getFnAttrs(), A.getRetAttrs(), pa));
+      N->setTailCallKind(CallInst::TCK_NoTail);
+      N->copyMetadata(*CB);
+      N->takeName(CB);
+      CB->replaceAllUsesWith(N);
+      CB->eraseFromParent();
+    }
+  }
+  SmallVector<Function *> defs;
+  for (Function &F : M)
+    if (F.isVarArg() && !F.isIntrinsic())
+      defs.push_back(&F);
+  for (Function *F : defs) {
+    FunctionType *T = F->getFunctionType();
+    if (F->isDeclaration()) {
+      if (!F->use_empty())
+        report_fatal_error(Twine("variadic function defined outside the module: ") + F->getName());
+      F->eraseFromParent();
+      continue;
+    }
+    Function *NF = Function::Create(fixedPartType(T), F->getLinkage(), F->getAddressSpace(), "", &M);
+    NF->copyAttributesFrom(F);
+    AttributeList A = F->getAttributes();
+    SmallVector<AttributeSet> pa;
+    for (unsigned i = 0; i < T->getNumParams(); i++)
+      pa.push_back(A.getParamAttrs(i));
+    pa.push_back(AttributeSet());
+    NF->setAttributes(AttributeList::get(C, A.getFnAttrs(), A.getRetAttrs(), pa));
+    NF->copyMetadata(F, 0);
+    NF->takeName(F);
+    NF->splice(NF->begin(), F);
+    for (unsigned i = 0; i < T->getNumParams(); i++) {
+      NF->getArg(i)->takeName(F->getArg(i));
+      F->getArg(i)->replaceAllUsesWith(NF->getArg(i));
+    }
+    Argument *va = NF->getArg(T->getNumParams());
+    va->setName("va");
+    SmallVector<IntrinsicInst *> starts, ends;
+    for (BasicBlock &B : *NF)
+      for (Instruction &I : B)
+        if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
+          if (II->getIntrinsicID() == Intrinsic::vastart)
+            starts.push_back(II);
+          else if (II->getIntrinsicID() == Intrinsic::vaend)
+            ends.push_back(II);
+        }
+    for (IntrinsicInst *II : starts) {
+      IRBuilder<> B(II);
+      Value *ap = II->getArgOperand(0);
+      auto at = [&](uint64_t off) { return B.CreateConstGEP1_64(I8, ap, off); };
+      if (arm) {
+        B.CreateAlignedStore(va, at(0), Align(8));
+        B.CreateAlignedStore(ConstantPointerNull::get(P), at(8), Align(8));
+        B.CreateAlignedStore(ConstantPointerNull::get(P), at(16), Align(8));
+        B.CreateAlignedStore(ConstantInt::get(I32, 0), at(24), Align(4));
+        B.CreateAlignedStore(ConstantInt::get(I32, 0), at(28), Align(4));
+      } else {
+        B.CreateAlignedStore(ConstantInt::get(I32, 48), at(0), Align(4));
+        B.CreateAlignedStore(ConstantInt::get(I32, 176), at(4), Align(4));
+        B.CreateAlignedStore(va, at(8), Align(8));
+        B.CreateAlignedStore(ConstantPointerNull::get(P), at(16), Align(8));
+      }
+      II->eraseFromParent();
+    }
+    for (IntrinsicInst *II : ends)
+      II->eraseFromParent();
+    F->replaceAllUsesWith(NF);
+    F->eraseFromParent();
+    errs() << "VARARGS " << NF->getName() << "\n";
+  }
+  for (Function &F : make_early_inc_range(M))
+    if ((F.getIntrinsicID() == Intrinsic::vastart || F.getIntrinsicID() == Intrinsic::vaend) && F.use_empty())
+      F.eraseFromParent();
 }
 
 // ---- Shadow pointer insertion (-shadow-add-sp) ----
@@ -537,6 +709,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
     PointerType *P = PointerType::getUnqual(C);
     const uint64_t S = 1ull << SizeLog2;
     relativeGotoTables(M);
+    if (Varargs)
+      lowerVarargs(M);
     if (AddSP) {
       addShadowPointer(M, leaves);
       plainC(M);
