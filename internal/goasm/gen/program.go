@@ -10,7 +10,6 @@ package gen
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 )
@@ -92,6 +91,12 @@ func ParseReport(text string) *Report {
 	return r
 }
 
+// KeepNarrowSigs makes SigFromCode take a narrow integer for a word: the
+// driver sets it for the negative build of GEN_KEEP_NARROW (see
+// cmd/engine), and a test of that build sets it too. A normal run leaves it
+// off.
+var KeepNarrowSigs bool
+
 // SigFromCode turns a pass signature code into a Sig. Every integer or
 // pointer argument is one word, moved as the whole register, so whatever
 // extension the C convention relies on survives the Go argument area. 'j' is
@@ -104,9 +109,9 @@ func ParseReport(text string) *Report {
 // one. Variadic, byval ('B') and unknown ('?') types are errors: the IR
 // check names the C that has them.
 //
-// GEN_KEEP_NARROW=1 is a negative build (the pass leaves narrow integers
-// with -shadow-keep-narrow): 'n' is then a word like 'i', as the generator
-// once took it, and the post-link check must reject what comes of it.
+// With KeepNarrowSigs, a negative build (the pass leaves narrow integers
+// with -shadow-keep-narrow), 'n' is a word like 'i', as the generator once
+// took it, and the post-link check must reject what comes of it.
 func SigFromCode(code string) (Sig, error) {
 	ps, ret, ok := strings.Cut(code, ">")
 	if !ok {
@@ -115,7 +120,7 @@ func SigFromCode(code string) (Sig, error) {
 	if strings.HasSuffix(ps, "...") {
 		return Sig{}, fmt.Errorf("variadic signature %q", code)
 	}
-	narrowAsWord := os.Getenv("GEN_KEEP_NARROW") != ""
+	narrowAsWord := KeepNarrowSigs
 	var s Sig
 	for _, c := range ps {
 		switch {

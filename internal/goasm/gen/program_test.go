@@ -29,9 +29,10 @@ func TestSigFromCode(t *testing.T) {
 		}
 	}
 	// The negative build takes a narrow integer for a word.
-	t.Setenv("GEN_KEEP_NARROW", "1")
+	KeepNarrowSigs = true
+	defer func() { KeepNarrowSigs = false }()
 	if s, err := SigFromCode("in>n"); err != nil || !reflect.DeepEqual(s, Sig{Params: []Type{I64, I64}, Ret: I64}) {
-		t.Fatalf("GEN_KEEP_NARROW: %+v %v", s, err)
+		t.Fatalf("KeepNarrowSigs: %+v %v", s, err)
 	}
 }
 
