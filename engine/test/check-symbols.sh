@@ -106,10 +106,10 @@ for target in $targets; do
 		for f in quickjs libregexp libunicode cutils dtoa; do
 			$cc $tflags $opt $ndebug $free -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$engine/$f.c" -o "$d/$f.o"
 		done
-		for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c; do
+		for f in "$libc"/string/*.c "$libc"/math/*.c "$libc"/math.c "$libc"/stdio.c "$libc"/abort.c; do
 			o=$(basename "$f" .c)
 			case $f in */string/*) o=string_$o ;; */math/*) o=math_$o ;; esac
-			$cc $tflags $opt $ndebug $free -I"$libc" -I"$libc/internal" -include "$libc/internal/features.h" -c "$f" -o "$d/libc/$o.o"
+			$cc $tflags $opt $ndebug $free -I"$libc" -I"$libc/internal" -I"$engine" -include "$libc/internal/features.h" -c "$f" -o "$d/libc/$o.o"
 		done
 		label="$target $opt $ndebug"
 		open "$d"/*.o > "$work/engine-open.txt"

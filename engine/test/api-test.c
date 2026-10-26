@@ -6,7 +6,7 @@
  */
 /*
  * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
- * JS_NewClassID and Atomics. api-test.sh builds and runs it.
+ * JS_NewClassID, Atomics and abort. api-test.sh builds and runs it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -353,6 +353,48 @@ static void test_class_ids(void)
     JS_FreeRuntime(rt2);
 }
 
+/* Runs fn in a child process with its standard error in a pipe. The child must
+   die of SIGABRT, which is how the host ends the process, after the host has
+   said that it heard the abort. */
+static void check_abort(const char *what, void (*fn)(void))
+{
+    int fds[2];
+    pid_t pid;
+    int status;
+    char text[64] = "";
+    ssize_t n;
+
+    if (pipe(fds)) {
+        perror("pipe");
+        exit(2);
+    }
+    fflush(stderr);
+    pid = fork();
+    if (pid == 0) {
+        dup2(fds[1], 2);
+        close(fds[0]);
+        close(fds[1]);
+        fn();
+        _exit(0);
+    }
+    close(fds[1]);
+    n = read(fds[0], text, sizeof text - 1);
+    close(fds[0]);
+    waitpid(pid, &status, 0);
+    CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, "%s ended the process with status %d", what, status);
+    CHECK(n > 0 && strstr(text, "engine abort"), "%s: the host did not hear the abort: [%s]", what, text);
+}
+
+static void call_abort(void)
+{
+    abort();
+}
+
+static void test_abort(void)
+{
+    check_abort("abort", call_abort);
+}
+
 int main(void)
 {
     JSRuntime *rt;
@@ -366,6 +408,7 @@ int main(void)
     test_atomics(ctx);
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
+    test_abort();
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
 }

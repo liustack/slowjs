@@ -19,6 +19,7 @@ libc strlen
 libc strcmp
 libc strchr
 libc strrchr
+libc abort
 libc snprintf
 libc vsnprintf
 libc acos

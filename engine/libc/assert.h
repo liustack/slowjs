@@ -7,11 +7,12 @@
 #ifndef SLOWJS_LIBC_ASSERT_H
 #define SLOWJS_LIBC_ASSERT_H
 
-/* A failed assertion is a trap: there is no stderr to write to. */
+/* A failed assertion is an abort: there is no stderr to write to. */
+#include <stdlib.h>
 #ifdef NDEBUG
 #define assert(x) ((void)0)
 #else
-#define assert(x) ((void)((x) || (__builtin_trap(), 0)))
+#define assert(x) ((void)((x) || (abort(), 0)))
 #endif
 
 #endif
