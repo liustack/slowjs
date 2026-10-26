@@ -255,3 +255,101 @@ func TestCloseTwice(t *testing.T) {
 		}
 	})
 }
+
+// refuseUnmaps makes the OS refuse every unmap until the test ends or
+// hostmem.SetFault(nil).
+func refuseUnmaps(t *testing.T) {
+	t.Cleanup(func() { hostmem.SetFault(nil) })
+	hostmem.SetFault(func(call string, addr, size uintptr) error {
+		if call == "unmap" {
+			return errStop
+		}
+		return nil
+	})
+}
+
+// leftover checks that the host lists the VM with id among its leftovers,
+// with the refusal, and nothing else.
+func leftover(t *testing.T, id uint32, when string) {
+	t.Helper()
+	l := gohost.Leftovers()
+	if len(l) != 1 || l[0].ID != id || !errors.Is(l[0].Err, errStop) || l[0].Usage.Stack == 0 {
+		t.Errorf("%s: leftovers %+v, want VM %d with its stack and the refusal", when, l, id)
+	}
+}
+
+// TestNewCleanupRefused: when the OS refuses to unmap the memory of a VM
+// that New gives up on after a panic or a Goexit, the panic goes on and the
+// memory stays among the host's leftovers, which give it back once the OS
+// takes it.
+func TestNewCleanupRefused(t *testing.T) {
+	for _, how := range []string{"panic", "goexit"} {
+		var h *gohost.VM
+		callbackHook = func(name string, vm uintptr) {
+			if name == "host_memory_grow" && h == nil {
+				h = gohost.Lookup(uint32(vm))
+				refuseUnmaps(t)
+				leave(how)
+			}
+		}
+		var v *VM
+		r := onOwnGoroutine(func() { v, _ = New(Options{}) })
+		callbackHook = nil
+		if h == nil {
+			t.Fatal("the callback did not run")
+		}
+		if v != nil || (how == "panic" && r != errStop) || (how == "goexit" && r != nil) {
+			t.Errorf("%s: New gave %v and %v", how, v, r)
+		}
+		leftover(t, h.ID(), "after a "+how+" in New")
+		hostmem.SetFault(nil)
+		if err := gohost.CloseLeftovers(); err != nil {
+			t.Fatalf("%s: CloseLeftovers: %v", how, err)
+		}
+		if l := gohost.Leftovers(); len(l) != 0 {
+			t.Errorf("%s: leftovers %+v after CloseLeftovers", how, l)
+		}
+		gone(t, h, "after CloseLeftovers")
+	}
+}
+
+// TestCloseCleanupRefused: when the OS refuses to unmap the memory of a VM
+// whose teardown a panic or a Goexit left, the panic goes on, the host lists
+// what is left with the refusal, and Close again gives it back.
+func TestCloseCleanupRefused(t *testing.T) {
+	for _, how := range []string{"panic", "goexit"} {
+		v := newVM(t, Options{})
+		if _, err := v.Eval(`globalThis.big = "x".repeat(1 << 24); 0`, "big.js"); err != nil {
+			t.Fatal(err)
+		}
+		h := v.Host()
+		fired := false
+		callbackHook = func(name string, vm uintptr) {
+			if name == "host_call" && !fired {
+				fired = true
+				refuseUnmaps(t)
+				leave(how)
+			}
+		}
+		r := onOwnGoroutine(func() { v.Close() })
+		callbackHook = nil
+		if !fired {
+			t.Fatal("no callback while Close freed the engine")
+		}
+		if (how == "panic" && r != errStop) || (how == "goexit" && r != nil) {
+			t.Errorf("%s: Close ended with %v", how, r)
+		}
+		leftover(t, h.ID(), "after a "+how+" in Close")
+		hostmem.SetFault(nil)
+		if _, err := v.Close(); err != nil {
+			t.Fatalf("%s: Close again: %v", how, err)
+		}
+		if l := gohost.Leftovers(); len(l) != 0 {
+			t.Errorf("%s: leftovers %+v after Close again", how, l)
+		}
+		gone(t, h, "after Close again")
+		if v.teardowns != 1 {
+			t.Errorf("%s: the engine was freed %d times", how, v.teardowns)
+		}
+	}
+}

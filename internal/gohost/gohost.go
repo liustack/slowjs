@@ -17,8 +17,10 @@
 //	host_release(vm, handle)                      Release
 //
 // The memory of a VM is a hostmem.Memory: its chunks and its shadow stack,
-// outside the Go heap. A VM is used by one goroutine at a time, as the
-// engine's VM is. Interrupt may be called from any goroutine.
+// outside the Go heap. What the OS refuses to unmap at Close stays with the
+// package (Leftovers) until a later try gives it back. A VM is used by one
+// goroutine at a time, as the engine's VM is. Interrupt, Leftovers and
+// CloseLeftovers may be called from any goroutine.
 //
 // What only a bug of the engine or the host does panics: a VM id or a shadow
 // pointer the host does not know, a request it does not have, a chunk the VM
@@ -27,8 +29,10 @@
 package gohost // import "github.com/liustack/slowjs/internal/gohost"
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -100,16 +104,20 @@ type VM struct {
 	closed    bool
 	handles   map[uint32]any
 	handle    uint32
+	unmapping sync.Mutex // held while Close or CloseLeftovers unmaps mem
 }
 
 // The VMs alive, by id and by the base of their shadow stack. sizes counts
 // the VMs of each stack size, so that a shadow pointer finds its base.
+// leftovers are the closed VMs that still hold memory the OS refused to
+// unmap, with what it said the last time.
 var (
-	mu     sync.RWMutex
-	byID   = map[uint32]*VM{}
-	byBase = map[uintptr]*VM{}
-	sizes  = map[uintptr]int{}
-	nextID uint32
+	mu        sync.RWMutex
+	byID      = map[uint32]*VM{}
+	byBase    = map[uintptr]*VM{}
+	sizes     = map[uintptr]int{}
+	nextID    uint32
+	leftovers = map[*VM]error{}
 )
 
 // New maps the shadow stack of a new VM and gives it an id, which is never 0
@@ -144,8 +152,10 @@ func New(o Options) (*VM, error) {
 // Close forgets the VM, drops what Keep holds and unmaps its chunks and its
 // shadow stack. The engine has freed its runtime by then, never made one, or
 // was left halfway by a panic and will not run again: either way it releases
-// no more handles. When the OS refuses some memory, Close returns the error,
-// and Close again tries what is left.
+// no more handles. When the OS refuses some memory, Close returns the error
+// and the VM stays among the Leftovers of the package until Close again or
+// CloseLeftovers unmaps the rest, so that the memory is not lost when the VM
+// itself is, as after a panic in the constructor of the engine's VM.
 func (v *VM) Close() error {
 	v.closed = true
 	v.handles = nil
@@ -158,7 +168,69 @@ func (v *VM) Close() error {
 		}
 	}
 	mu.Unlock()
-	return v.mem.Close()
+	return v.unmap()
+}
+
+// unmap unmaps what the closed VM holds, and keeps it among the leftovers
+// while the OS refuses some of it.
+func (v *VM) unmap() error {
+	v.unmapping.Lock()
+	defer v.unmapping.Unlock()
+	err := v.mem.Close()
+	mu.Lock()
+	if err != nil {
+		leftovers[v] = err
+	} else {
+		delete(leftovers, v)
+	}
+	mu.Unlock()
+	return err
+}
+
+// Leftover is a closed VM that still holds memory, because the OS refused to
+// unmap it.
+type Leftover struct {
+	ID    uint32        // the id the VM had
+	Usage hostmem.Usage // what it still holds
+	Err   error         // what the OS said the last time
+}
+
+// Leftovers lists the closed VMs that still hold memory, by id.
+func Leftovers() []Leftover {
+	var out []Leftover
+	for _, v := range leftoverVMs() {
+		v.unmapping.Lock()
+		u := v.mem.Usage()
+		mu.RLock()
+		err, ok := leftovers[v]
+		mu.RUnlock()
+		v.unmapping.Unlock()
+		if ok {
+			out = append(out, Leftover{ID: v.id, Usage: u, Err: err})
+		}
+	}
+	return out
+}
+
+// CloseLeftovers tries again to unmap what the Leftovers hold, and returns
+// what the OS refused this time.
+func CloseLeftovers() error {
+	var errs []error
+	for _, v := range leftoverVMs() {
+		errs = append(errs, v.unmap())
+	}
+	return errors.Join(errs...)
+}
+
+func leftoverVMs() []*VM {
+	mu.RLock()
+	vs := make([]*VM, 0, len(leftovers))
+	for v := range leftovers {
+		vs = append(vs, v)
+	}
+	mu.RUnlock()
+	slices.SortFunc(vs, func(a, b *VM) int { return cmp.Compare(a.id, b.id) })
+	return vs
 }
 
 // ID is the id the engine passes to the callbacks of this VM.
