@@ -98,6 +98,8 @@ func New(o Options) (_ *VM, err error) {
 	// Unless New hands the VM back, the host forgets it and unmaps its
 	// memory, also when a panic or a Goexit leaves New: the caller has no VM
 	// to close. The engine is not freed then, since it stopped halfway.
+	// What the OS refuses to unmap stays among gohost.Leftovers, with the
+	// error, for gohost.CloseLeftovers to try again.
 	handed := false
 	defer func() {
 		if !handed {
@@ -372,8 +374,9 @@ func (v *VM) Close() (leaked uintptr, err error) {
 				if !done {
 					// A panic or a Goexit left the engine halfway: it is not
 					// entered again, the host still gives the memory back,
-					// and the panic goes on. Close again retries what the
-					// OS refused here.
+					// and the panic goes on. What the OS refuses here is
+					// listed by gohost.Leftovers with the error, and Close
+					// again tries it.
 					v.h.Close()
 				}
 			}()
