@@ -96,6 +96,12 @@
 /* test the GC by forcing it before each object allocation */
 //#define FORCE_GC_AT_MALLOC
 
+/* The value printer (JS_PrintValue) is for the hosts that debug and test the
+   engine, which define CONFIG_PRINT_VALUE: the engine has none otherwise. */
+#if defined(DUMP_BYTECODE) && !defined(CONFIG_PRINT_VALUE)
+#error "DUMP_BYTECODE prints the constants with JS_PrintValue: define CONFIG_PRINT_VALUE"
+#endif
+
 #ifdef CONFIG_ATOMICS
 #include <stdatomic.h>
 #endif
@@ -256,6 +262,13 @@ typedef enum {
     JS_GC_PHASE_REMOVE_CYCLES,
 } JSGCPhaseEnum;
 
+/* The recursions that must not fail, each with a slot of JSRuntime.nest
+   (see js_nest_enter). */
+typedef enum {
+    JS_NEST_FREE, /* free_zero_refcount */
+    JS_NEST_COUNT,
+} JSNestEnum;
+
 typedef enum OPCodeEnum OPCodeEnum;
 
 /* JS malloc */
@@ -388,6 +401,9 @@ struct JSRuntime {
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
     int internal_depth;
+    /* the levels of each recursion that cannot fail running now (see
+       js_nest_enter) */
+    int nest[JS_NEST_COUNT];
 
     JSValue current_exception;
     /* true if the current exception cannot be catched */
@@ -602,6 +618,12 @@ struct JSContext {
     int interrupt_counter;
 
     struct list_head loaded_modules; /* list of JSModuleDef.link */
+    /* the modules the resolution under way marked resolved, the latest
+       first, linked by JSModuleDef.resolve_prev (see js_resolve_module_top) */
+    JSModuleDef *resolve_marked;
+    /* the same for the making of module functions, linked by
+       JSModuleDef.func_prev (see js_create_module_function_top) */
+    JSModuleDef *func_marked;
 
     /* if NULL, RegExp compilation is not supported */
     JSValue (*compile_regexp)(JSContext *ctx, JSValueConst pattern,
@@ -971,6 +993,10 @@ struct JSModuleDef {
     BOOL resolved : 8;
     BOOL func_created : 8;
     JSModuleStatus status : 8;
+    /* the module marked resolved before it, while a resolution is under way */
+    JSModuleDef *resolve_prev;
+    /* the module marked func_created before it, the same way */
+    JSModuleDef *func_prev;
     /* temp use during js_module_link() & js_module_evaluate() */
     int dfs_index, dfs_ancestor_index;
     JSModuleDef *stack_prev;
@@ -2384,6 +2410,23 @@ static inline void js_internal_leave(JSRuntime *rt)
     rt->internal_depth--;
 }
 
+/* A recursion that must not fail, such as freeing, is not counted in either
+   depth: it could not throw when the count runs out. Its data bounds how
+   deep it goes instead, to k levels, a constant, and it counts its levels in
+   its own slot of rt->nest, so that the generator can add k of its frames to
+   the stack the engine may use. Going past k is a bug of the engine and
+   aborts. */
+static inline void js_nest_enter(JSRuntime *rt, JSNestEnum slot, int k)
+{
+    if (unlikely(++rt->nest[slot] > k))
+        abort();
+}
+
+static inline void js_nest_leave(JSRuntime *rt, JSNestEnum slot)
+{
+    rt->nest[slot]--;
+}
+
 /* The runtime is the start of the first chunk of memory the host gives the
    VM vm (see heap_create). The host takes the chunks back after
    JS_FreeRuntime, or when this fails. */
@@ -3279,17 +3322,6 @@ static uint32_t hash_string(const JSString *str, uint32_t h)
     else
         h = hash_string8(str->u.str8, str->len, h);
     return h;
-}
-
-static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
-{
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        return hash_string(JS_VALUE_GET_STRING(val), h);
-    } else {
-        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        h = hash_string_rope(r->left, h);
-        return hash_string_rope(r->right, h);
-    }
 }
 
 static int JS_ResizeAtomHash(JSRuntime *rt, int new_hash_size)
@@ -4984,24 +5016,27 @@ static JSValue JS_ConcatString2(JSContext *ctx, JSValue op1, JSValue op2)
 /* Return the character at position 'idx'. 'val' must be a string or rope */
 static int string_rope_get(JSValueConst val, uint32_t idx)
 {
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        return string_get(JS_VALUE_GET_STRING(val), idx);
-    } else {
+    while (JS_VALUE_GET_TAG(val) != JS_TAG_STRING) {
         JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
         uint32_t len;
         if (JS_VALUE_GET_TAG(r->left) == JS_TAG_STRING)
             len = JS_VALUE_GET_STRING(r->left)->len;
         else
             len = JS_VALUE_GET_STRING_ROPE(r->left)->len;
-        if (idx < len)
-            return string_rope_get(r->left, idx);
-        else
-            return string_rope_get(r->right, idx - len);
+        if (idx < len) {
+            val = r->left;
+        } else {
+            val = r->right;
+            idx -= len;
+        }
     }
+    return string_get(JS_VALUE_GET_STRING(val), idx);
 }
 
+/* One more level than a rope may keep: js_rebalancee_string_rope walks the
+   rope that went one level past the limit. */
 typedef struct {
-    JSValueConst stack[JS_STRING_ROPE_MAX_DEPTH];
+    JSValueConst stack[JS_STRING_ROPE_MAX_DEPTH + 1];
     int stack_len;
 } JSStringRopeIter;
 
@@ -5024,10 +5059,23 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
         if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING)
             return JS_VALUE_GET_STRING(val);
         r = JS_VALUE_GET_STRING_ROPE(val);
-        assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH);
+        assert(s->stack_len < JS_STRING_ROPE_MAX_DEPTH + 1);
         s->stack[s->stack_len++] = r->right;
         val = r->left;
     }
+}
+
+/* The hash of the characters of a string or rope, from h: the strings of
+   the rope in order, as if it were one string. */
+static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
+{
+    JSStringRopeIter it;
+    JSString *p;
+
+    string_rope_iter_init(&it, val);
+    while ((p = string_rope_iter_next(&it)) != NULL)
+        h = hash_string(p, h);
+    return h;
 }
 
 static uint32_t string_rope_get_len(JSValueConst val)
@@ -5125,13 +5173,14 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
 
 static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope);
 
-/* op1 and op2 must be strings or string ropes */
-static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
+/* op1 and op2 must be strings or string ropes. The rope is as deep as the
+   deeper of them plus one: js_new_string_rope rebalances it when that is
+   past JS_STRING_ROPE_MAX_DEPTH. */
+static JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
 {
     uint32_t len;
     int is_wide_char, depth;
     JSStringRope *r;
-    JSValue res;
     
     if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
         JSString *p1 = JS_VALUE_GET_STRING(op1);
@@ -5168,122 +5217,81 @@ static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
     r->depth = depth + 1;
     r->left = op1;
     r->right = op2;
-    res = JS_MKPTR(JS_TAG_STRING_ROPE, r);
-    if (r->depth > JS_STRING_ROPE_MAX_DEPTH) {
-        JSValue res2;
-#ifdef DUMP_ROPE_REBALANCE
-        printf("rebalance: initial depth=%d\n", r->depth);
-#endif
-        res2 = js_rebalancee_string_rope(ctx, res);
-#ifdef DUMP_ROPE_REBALANCE
-        if (JS_VALUE_GET_TAG(res2) == JS_TAG_STRING_ROPE) 
-            printf("rebalance: final depth=%d\n", JS_VALUE_GET_STRING_ROPE(res2)->depth);
-#endif
-        JS_FreeValue(ctx, res);
-        return res2;
-    } else {
-        return res;
-    }
+    return JS_MKPTR(JS_TAG_STRING_ROPE, r);
  fail:
     JS_FreeValue(ctx, op1);
     JS_FreeValue(ctx, op2);
     return JS_EXCEPTION;
 }
 
-#define ROPE_N_BUCKETS 44
-
-/* Fibonacii numbers starting from F_2 */
-static const uint32_t rope_bucket_len[ROPE_N_BUCKETS] = {
-          1,          2,          3,          5,
-          8,         13,         21,         34,
-         55,         89,        144,        233,
-        377,        610,        987,       1597,
-       2584,       4181,       6765,      10946,
-      17711,      28657,      46368,      75025,
-     121393,     196418,     317811,     514229,
-     832040,    1346269,    2178309,    3524578,
-    5702887,    9227465,   14930352,   24157817,
-   39088169,   63245986,  102334155,  165580141,
-  267914296,  433494437,  701408733, 1134903170, /* > JS_STRING_LEN_MAX */
-};
-
-static int js_rebalancee_string_rope_rec(JSContext *ctx, JSValue *buckets,
-                                          JSValueConst val)
+/* op1 and op2 must be strings or string ropes */
+static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
 {
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        JSString *p = JS_VALUE_GET_STRING(val);
-        uint32_t len, i;
-        JSValue a, b;
-        
-        len = p->len;
-        if (len == 0)
-            return 0; /* nothing to do */
-        /* find the bucket i so that rope_bucket_len[i] <= len <
-           rope_bucket_len[i + 1] and concatenate the ropes in the
-           buckets before */
-        a = JS_NULL;
-        i = 0;
-        while (len >= rope_bucket_len[i + 1]) {
-            b = buckets[i];
-            if (!JS_IsNull(b)) {
-                buckets[i] = JS_NULL;
-                if (JS_IsNull(a)) {
-                    a = b;
-                } else {
-                    a = js_new_string_rope(ctx, b, a);
-                    if (JS_IsException(a))
-                        return -1;
-                }
-            }
-            i++;
-        }
-        if (!JS_IsNull(a)) {
-            a = js_new_string_rope(ctx, a, JS_DupValue(ctx, val));
-            if (JS_IsException(a))
-                return -1;
-        } else {
-            a = JS_DupValue(ctx, val);
-        }
-        while (!JS_IsNull(buckets[i])) {
-            a = js_new_string_rope(ctx, buckets[i], a);
-            buckets[i] = JS_NULL;
-            if (JS_IsException(a))
-                return -1;
-            i++;
-        }
-        buckets[i] = a;
-    } else {
-        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->left);
-        js_rebalancee_string_rope_rec(ctx, buckets, r->right);
-    }
-    return 0;
+    JSValue res, res2;
+
+    res = js_new_string_rope1(ctx, op1, op2);
+    if (JS_IsException(res) ||
+        JS_VALUE_GET_STRING_ROPE(res)->depth <= JS_STRING_ROPE_MAX_DEPTH)
+        return res;
+#ifdef DUMP_ROPE_REBALANCE
+    printf("rebalance: initial depth=%d\n", JS_VALUE_GET_STRING_ROPE(res)->depth);
+#endif
+    res2 = js_rebalancee_string_rope(ctx, res);
+#ifdef DUMP_ROPE_REBALANCE
+    if (JS_VALUE_GET_TAG(res2) == JS_TAG_STRING_ROPE)
+        printf("rebalance: final depth=%d\n", JS_VALUE_GET_STRING_ROPE(res2)->depth);
+#endif
+    JS_FreeValue(ctx, res);
+    return res2;
 }
 
-/* Return a new rope which is balanced. Algorithm from "Ropes: an
-   Alternative to Strings", Hans-J. Boehm, Russ Atkinson and Michael
-   Plass. */
+/* Enough buckets for every string of a rope: it holds fewer than 2^30, one
+   character at least each (JS_STRING_LEN_MAX). */
+#define ROPE_N_BUCKETS 30
+
+/* Return a new rope which is balanced, with the strings of rope in order.
+   It counts them in binary: buckets[i] holds a rope of 2^i strings, as deep
+   as i, and a new string carries up through the full buckets below the first
+   empty one. A rope holds fewer than 2^30 strings, so the result is at most
+   30 deep, under JS_STRING_ROPE_MAX_DEPTH, and needs no rebalancing of its
+   own: nothing here recurses. (Upstream places the strings by their length,
+   after Boehm, Atkinson and Plass, "Ropes: an Alternative to Strings", and
+   the rope it builds can get deep enough to rebalance again.) */
 static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
 {
-    JSValue buckets[ROPE_N_BUCKETS], a, b;
+    JSValue buckets[ROPE_N_BUCKETS], a;
+    JSStringRopeIter it;
+    JSString *p;
     int i;
-    
+
     for(i = 0; i < ROPE_N_BUCKETS; i++)
         buckets[i] = JS_NULL;
-    if (js_rebalancee_string_rope_rec(ctx, buckets, rope))
-        goto fail;
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        if (p->len == 0)
+            continue;
+        a = JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
+        for(i = 0; !JS_IsNull(buckets[i]); i++) {
+            a = js_new_string_rope1(ctx, buckets[i], a);
+            buckets[i] = JS_NULL;
+            if (JS_IsException(a))
+                goto fail;
+        }
+        buckets[i] = a;
+    }
     a = JS_NULL;
     for(i = 0; i < ROPE_N_BUCKETS; i++) {
-        b = buckets[i];
-        if (!JS_IsNull(b)) {
-            buckets[i] = JS_NULL;
+        if (!JS_IsNull(buckets[i])) {
             if (JS_IsNull(a)) {
-                a = b;
+                a = buckets[i];
             } else {
-                a = js_new_string_rope(ctx, b, a);
-                if (JS_IsException(a))
+                a = js_new_string_rope1(ctx, buckets[i], a);
+                if (JS_IsException(a)) {
+                    buckets[i] = JS_NULL;
                     goto fail;
+                }
             }
+            buckets[i] = JS_NULL;
         }
     }
     /* fail safe */
@@ -6955,11 +6963,16 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     }
 }
 
+/* Free the objects whose count reached zero. It runs one level deep: it is
+   only called in the phase JS_GC_PHASE_NONE, and while it runs the phase is
+   JS_GC_PHASE_DECREF, so an object that dies meanwhile only joins the list.
+   No finalizer or free it reaches starts a collection. */
 static void free_zero_refcount(JSRuntime *rt)
 {
     struct list_head *el;
     JSGCObjectHeader *p;
 
+    js_nest_enter(rt, JS_NEST_FREE, 1);
     rt->gc_phase = JS_GC_PHASE_DECREF;
     for(;;) {
         el = rt->gc_zero_ref_count_list.next;
@@ -6970,6 +6983,71 @@ static void free_zero_refcount(JSRuntime *rt)
         free_gc_object(rt, p);
     }
     rt->gc_phase = JS_GC_PHASE_NONE;
+    js_nest_leave(rt, JS_NEST_FREE);
+}
+
+/* Free a string whose ref_count reached zero. */
+static void js_free_string_rt(JSRuntime *rt, JSString *p)
+{
+    if (p->atom_type) {
+        JS_FreeAtomStruct(rt, p);
+    } else {
+#ifdef DUMP_LEAKS
+        list_del(&p->link);
+#endif
+        js_free_rt(rt, p);
+    }
+}
+
+/* Drop a reference to v, a child of a rope that is being freed. A string
+   whose count reaches zero is freed now. A rope whose count reaches zero is
+   returned, for its own children to be dropped first. */
+static JSStringRope *js_rope_child_free(JSRuntime *rt, JSValue v)
+{
+    if (--__js_rc(JS_VALUE_GET_PTR(v))->ref_count > 0)
+        return NULL;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING) {
+        js_free_string_rt(rt, JS_VALUE_GET_STRING(v));
+        return NULL;
+    }
+    return JS_VALUE_GET_STRING_ROPE(v);
+}
+
+/* Free the rope r, whose ref_count reached zero, and the strings and ropes
+   under it whose count reaches zero, in the order a recursion would: the
+   left child, then the right one, then the rope. There is no recursion, and
+   no memory is taken: a rope waiting for its right child to be done is kept
+   in a list linked through its left child, which it no longer holds, and
+   its right child becomes JS_UNDEFINED once it is taken. */
+static void js_free_rope(JSRuntime *rt, JSStringRope *r)
+{
+    JSStringRope *waiting = NULL, *child;
+    JSValue right;
+
+    for (;;) {
+        child = js_rope_child_free(rt, r->left);
+        r->left = JS_MKPTR(JS_TAG_STRING_ROPE, waiting);
+        waiting = r;
+        if (child) {
+            r = child;
+            continue;
+        }
+        for (;;) {
+            r = waiting;
+            if (!JS_IsUndefined(r->right)) {
+                right = r->right;
+                r->right = JS_UNDEFINED;
+                child = js_rope_child_free(rt, right);
+                if (child)
+                    break;
+            }
+            waiting = JS_VALUE_GET_PTR(r->left);
+            js_free_rt(rt, r);
+            if (!waiting)
+                return;
+        }
+        r = child;
+    }
 }
 
 /* called with the ref_count of 'v' reaches zero. */
@@ -6991,26 +7069,10 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
 
     switch(tag) {
     case JS_TAG_STRING:
-        {
-            JSString *p = JS_VALUE_GET_STRING(v);
-            if (p->atom_type) {
-                JS_FreeAtomStruct(rt, p);
-            } else {
-#ifdef DUMP_LEAKS
-                list_del(&p->link);
-#endif
-                js_free_rt(rt, p);
-            }
-        }
+        js_free_string_rt(rt, JS_VALUE_GET_STRING(v));
         break;
     case JS_TAG_STRING_ROPE:
-        /* Note: recursion is acceptable because the rope depth is bounded */
-        {
-            JSStringRope *p = JS_VALUE_GET_STRING_ROPE(v);
-            JS_FreeValueRT(rt, p->left);
-            JS_FreeValueRT(rt, p->right);
-            js_free_rt(rt, p);
-        }
+        js_free_rope(rt, JS_VALUE_GET_STRING_ROPE(v));
         break;
     case JS_TAG_OBJECT:
     case JS_TAG_FUNCTION_BYTECODE:
@@ -9509,19 +9571,21 @@ static JSValueConst JS_GetPrototypePrimitive(JSContext *ctx, JSValueConst val)
     return val;
 }
 
-/* Return an Object, JS_NULL or JS_EXCEPTION in case of exotic object. */
+static JSValue js_proxy_get_prototype(JSContext *ctx, JSValueConst obj);
+
+/* Return an Object, JS_NULL or JS_EXCEPTION in case of exotic object. A
+   proxy is the one object with a prototype of its own making: it is called
+   by name, not through its exotic methods, so that the call can only go
+   there (a call through a pointer could go to any function of its type, the
+   getters among them). */
 JSValue JS_GetPrototype(JSContext *ctx, JSValueConst obj)
 {
     JSValue val;
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) {
         JSObject *p;
         p = JS_VALUE_GET_OBJ(obj);
-        if (unlikely(p->is_exotic)) {
-            const JSClassExoticMethods *em = ctx->rt->class_array[p->class_id].exotic;
-            if (em && em->get_prototype) {
-                return em->get_prototype(ctx, obj);
-            }
-        }
+        if (unlikely(p->class_id == JS_CLASS_PROXY))
+            return js_proxy_get_prototype(ctx, obj);
         p = p->shape->proto;
         if (!p)
             val = JS_NULL;
@@ -15469,6 +15533,7 @@ static JSValue JS_ToStringCheckObject(JSContext *ctx, JSValueConst val)
     return JS_ToString(ctx, val);
 }
 
+#ifdef CONFIG_PRINT_VALUE
 #define JS_PRINT_MAX_DEPTH 8
 
 typedef struct {
@@ -16261,6 +16326,7 @@ void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_op
 {
     JS_PrintValueInternal(ctx->rt, ctx, write_func, write_opaque, val, options);
 }
+#endif /* CONFIG_PRINT_VALUE */
 
 /* return -1 if exception (proxy case) or TRUE/FALSE */
 // TODO: should take flags to make proxy resolution and exceptions optional
@@ -29808,249 +29874,221 @@ static __exception int js_parse_unary(JSParseState *s, int parse_flags)
     return ret;
 }
 
-/* allowed parse_flags: PF_IN_ACCEPTED */
-static __exception int js_parse_expr_binary(JSParseState *s, int level,
-                                            int parse_flags);
-static __exception int js_parse_expr_binary1(JSParseState *s, int level,
-                                            int parse_flags)
+/* the level of the binary operator of the token, 1 (*, / and %) to 8 (|),
+   with its opcode in *popcode, or 0 if it is none. allowed parse_flags:
+   PF_IN_ACCEPTED */
+static int js_binary_op_level(JSParseState *s, int parse_flags, int *popcode)
 {
-    int op, opcode;
-    const uint8_t *op_token_ptr;
-    
-    if (level == 0) {
-        return js_parse_unary(s, PF_POW_ALLOWED);
-    } else if (s->token.val == TOK_PRIVATE_NAME &&
-               (parse_flags & PF_IN_ACCEPTED) && level == 4 &&
-               peek_token(s, FALSE) == TOK_IN) {
-        JSAtom atom;
-
-        atom = JS_DupAtom(s->ctx, s->token.u.ident.atom);
-        if (next_token(s))
-            goto fail_private_in;
-        if (s->token.val != TOK_IN)
-            goto fail_private_in;
-        if (next_token(s))
-            goto fail_private_in;
-        if (js_parse_expr_binary(s, level - 1, parse_flags)) {
-        fail_private_in:
-            JS_FreeAtom(s->ctx, atom);
-            return -1;
-        }
-        emit_op(s, OP_scope_in_private_field);
-        emit_atom(s, atom);
-        emit_u16(s, s->cur_func->scope_level);
-        JS_FreeAtom(s->ctx, atom);
+    switch(s->token.val) {
+    case '*':
+        *popcode = OP_mul;
+        return 1;
+    case '/':
+        *popcode = OP_div;
+        return 1;
+    case '%':
+        *popcode = OP_mod;
+        return 1;
+    case '+':
+        *popcode = OP_add;
+        return 2;
+    case '-':
+        *popcode = OP_sub;
+        return 2;
+    case TOK_SHL:
+        *popcode = OP_shl;
+        return 3;
+    case TOK_SAR:
+        *popcode = OP_sar;
+        return 3;
+    case TOK_SHR:
+        *popcode = OP_shr;
+        return 3;
+    case '<':
+        *popcode = OP_lt;
+        return 4;
+    case '>':
+        *popcode = OP_gt;
+        return 4;
+    case TOK_LTE:
+        *popcode = OP_lte;
+        return 4;
+    case TOK_GTE:
+        *popcode = OP_gte;
+        return 4;
+    case TOK_INSTANCEOF:
+        *popcode = OP_instanceof;
+        return 4;
+    case TOK_IN:
+        if (!(parse_flags & PF_IN_ACCEPTED))
+            return 0;
+        *popcode = OP_in;
+        return 4;
+    case TOK_EQ:
+        *popcode = OP_eq;
+        return 5;
+    case TOK_NEQ:
+        *popcode = OP_neq;
+        return 5;
+    case TOK_STRICT_EQ:
+        *popcode = OP_strict_eq;
+        return 5;
+    case TOK_STRICT_NEQ:
+        *popcode = OP_strict_neq;
+        return 5;
+    case '&':
+        *popcode = OP_and;
+        return 6;
+    case '^':
+        *popcode = OP_xor;
+        return 7;
+    case '|':
+        *popcode = OP_or;
+        return 8;
+    default:
         return 0;
-    } else {
-        if (js_parse_expr_binary(s, level - 1, parse_flags))
-            return -1;
     }
-    for(;;) {
-        op = s->token.val;
-        op_token_ptr = s->token.ptr;
-        switch(level) {
-        case 1:
-            switch(op) {
-            case '*':
-                opcode = OP_mul;
-                break;
-            case '/':
-                opcode = OP_div;
-                break;
-            case '%':
-                opcode = OP_mod;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 2:
-            switch(op) {
-            case '+':
-                opcode = OP_add;
-                break;
-            case '-':
-                opcode = OP_sub;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 3:
-            switch(op) {
-            case TOK_SHL:
-                opcode = OP_shl;
-                break;
-            case TOK_SAR:
-                opcode = OP_sar;
-                break;
-            case TOK_SHR:
-                opcode = OP_shr;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 4:
-            switch(op) {
-            case '<':
-                opcode = OP_lt;
-                break;
-            case '>':
-                opcode = OP_gt;
-                break;
-            case TOK_LTE:
-                opcode = OP_lte;
-                break;
-            case TOK_GTE:
-                opcode = OP_gte;
-                break;
-            case TOK_INSTANCEOF:
-                opcode = OP_instanceof;
-                break;
-            case TOK_IN:
-                if (parse_flags & PF_IN_ACCEPTED) {
-                    opcode = OP_in;
-                } else {
-                    return 0;
-                }
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 5:
-            switch(op) {
-            case TOK_EQ:
-                opcode = OP_eq;
-                break;
-            case TOK_NEQ:
-                opcode = OP_neq;
-                break;
-            case TOK_STRICT_EQ:
-                opcode = OP_strict_eq;
-                break;
-            case TOK_STRICT_NEQ:
-                opcode = OP_strict_neq;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 6:
-            switch(op) {
-            case '&':
-                opcode = OP_and;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 7:
-            switch(op) {
-            case '^':
-                opcode = OP_xor;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        case 8:
-            switch(op) {
-            case '|':
-                opcode = OP_or;
-                break;
-            default:
-                return 0;
-            }
-            break;
-        default:
-            abort();
-        }
-        if (next_token(s))
-            return -1;
-        if (js_parse_expr_binary(s, level - 1, parse_flags))
-            return -1;
-        emit_source_pos(s, op_token_ptr);
-        emit_op(s, opcode);
-    }
-    return 0;
 }
 
+/* An operator of the binary expression waiting for its right operand: its
+   level, opcode and token, or, for '#x in y' (level 4, opcode
+   OP_scope_in_private_field), the private name x. */
+typedef struct JSBinaryOp {
+    int level;
+    int opcode;
+    const uint8_t *op_token_ptr;
+    JSAtom atom;
+} JSBinaryOp;
+
+static void js_emit_binary_op(JSParseState *s, JSBinaryOp *op)
+{
+    if (op->opcode == OP_scope_in_private_field) {
+        emit_op(s, OP_scope_in_private_field);
+        emit_atom(s, op->atom);
+        emit_u16(s, s->cur_func->scope_level);
+        JS_FreeAtom(s->ctx, op->atom);
+    } else {
+        emit_source_pos(s, op->op_token_ptr);
+        emit_op(s, op->opcode);
+    }
+}
+
+/* The operators of 'level' and below, left to right, with no recursion: an
+   operator waits on a stack until an operator of its level or above, or
+   the end of the expression, and is emitted then. The levels on the stack
+   go down from the bottom, so it holds 8 operators at most. An operand can
+   be '#x in y' when no operator below level 5 waits on its left, and an
+   operator of level 4 right after it ends the expression, as the recursive
+   parser of upstream did. allowed parse_flags: PF_IN_ACCEPTED */
 static __exception int js_parse_expr_binary(JSParseState *s, int level,
                                             int parse_flags)
 {
-    int ret;
+    JSBinaryOp stack[8], *op;
+    int sp = 0, operand_level = level, op_level, opcode;
 
-    if (js_internal_enter(s->ctx))
-        return -1;
-    ret = js_parse_expr_binary1(s, level, parse_flags);
-    js_internal_leave(s->ctx->rt);
-    return ret;
+    for(;;) {
+        if (s->token.val == TOK_PRIVATE_NAME &&
+            (parse_flags & PF_IN_ACCEPTED) && operand_level >= 4 &&
+            peek_token(s, FALSE) == TOK_IN) {
+            op = &stack[sp++];
+            op->level = 4;
+            op->opcode = OP_scope_in_private_field;
+            op->op_token_ptr = s->token.ptr;
+            op->atom = JS_DupAtom(s->ctx, s->token.u.ident.atom);
+            if (next_token(s))
+                goto fail;
+            if (s->token.val != TOK_IN)
+                goto fail;
+            if (next_token(s))
+                goto fail;
+            operand_level = 3;
+            continue;
+        }
+        if (js_parse_unary(s, PF_POW_ALLOWED))
+            goto fail;
+        op_level = js_binary_op_level(s, parse_flags, &opcode);
+        if (op_level == 0 || op_level > level)
+            break;
+        while (sp > 0 && stack[sp - 1].level <= op_level) {
+            op = &stack[--sp];
+            js_emit_binary_op(s, op);
+            if (op->opcode == OP_scope_in_private_field && op_level == 4)
+                goto done;
+        }
+        op = &stack[sp++];
+        op->level = op_level;
+        op->opcode = opcode;
+        op->op_token_ptr = s->token.ptr;
+        op->atom = JS_ATOM_NULL;
+        if (next_token(s))
+            goto fail;
+        operand_level = op_level - 1;
+    }
+ done:
+    while (sp > 0)
+        js_emit_binary_op(s, &stack[--sp]);
+    return 0;
+ fail:
+    while (sp > 0) {
+        op = &stack[--sp];
+        if (op->opcode == OP_scope_in_private_field)
+            JS_FreeAtom(s->ctx, op->atom);
+    }
+    return -1;
 }
 
-/* allowed parse_flags: PF_IN_ACCEPTED */
-static __exception int js_parse_logical_and_or(JSParseState *s, int op,
-                                               int parse_flags);
-static __exception int js_parse_logical_and_or1(JSParseState *s, int op,
+/* a || b || ..., where each of a, b... is c && d && ..., with no
+   recursion. allowed parse_flags: PF_IN_ACCEPTED */
+static __exception int js_parse_logical_and_or(JSParseState *s,
                                                int parse_flags)
 {
-    int label1;
+    int label_or = -1, label_and;
 
-    if (op == TOK_LAND) {
+    for(;;) {
         if (js_parse_expr_binary(s, 8, parse_flags))
             return -1;
-    } else {
-        if (js_parse_logical_and_or(s, TOK_LAND, parse_flags))
-            return -1;
-    }
-    if (s->token.val == op) {
-        label1 = new_label(s);
-
-        for(;;) {
-            if (next_token(s))
-                return -1;
-            emit_op(s, OP_dup);
-            emit_goto(s, op == TOK_LAND ? OP_if_false : OP_if_true, label1);
-            emit_op(s, OP_drop);
-
-            if (op == TOK_LAND) {
+        if (s->token.val == TOK_LAND) {
+            label_and = new_label(s);
+            for(;;) {
+                if (next_token(s))
+                    return -1;
+                emit_op(s, OP_dup);
+                emit_goto(s, OP_if_false, label_and);
+                emit_op(s, OP_drop);
                 if (js_parse_expr_binary(s, 8, parse_flags))
                     return -1;
-            } else {
-                if (js_parse_logical_and_or(s, TOK_LAND,
-                                            parse_flags))
-                    return -1;
+                if (s->token.val != TOK_LAND) {
+                    if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
+                        return js_parse_error(s, "cannot mix ?? with && or ||");
+                    break;
+                }
             }
-            if (s->token.val != op) {
-                if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
-                    return js_parse_error(s, "cannot mix ?? with && or ||");
-                break;
-            }
+            emit_label(s, label_and);
         }
-
-        emit_label(s, label1);
+        if (label_or < 0) {
+            if (s->token.val != TOK_LOR)
+                return 0;
+            label_or = new_label(s);
+        } else if (s->token.val != TOK_LOR) {
+            if (s->token.val == TOK_DOUBLE_QUESTION_MARK)
+                return js_parse_error(s, "cannot mix ?? with && or ||");
+            break;
+        }
+        if (next_token(s))
+            return -1;
+        emit_op(s, OP_dup);
+        emit_goto(s, OP_if_true, label_or);
+        emit_op(s, OP_drop);
     }
+    emit_label(s, label_or);
     return 0;
-}
-
-static __exception int js_parse_logical_and_or(JSParseState *s, int op,
-                                               int parse_flags)
-{
-    int ret;
-
-    if (js_internal_enter(s->ctx))
-        return -1;
-    ret = js_parse_logical_and_or1(s, op, parse_flags);
-    js_internal_leave(s->ctx->rt);
-    return ret;
 }
 
 static __exception int js_parse_coalesce_expr(JSParseState *s, int parse_flags)
 {
     int label1;
 
-    if (js_parse_logical_and_or(s, TOK_LOR, parse_flags))
+    if (js_parse_logical_and_or(s, parse_flags))
         return -1;
     if (s->token.val == TOK_DOUBLE_QUESTION_MARK) {
         label1 = new_label(s);
@@ -32271,6 +32309,13 @@ static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
                                               JSExportEntry **pme,
                                               JSModuleDef *m,
                                               JSAtom export_name,
+                                              JSResolveState *s);
+
+static JSResolveResultEnum js_resolve_export2(JSContext *ctx,
+                                              JSModuleDef **pmodule,
+                                              JSExportEntry **pme,
+                                              JSModuleDef *m,
+                                              JSAtom export_name,
                                               JSResolveState *s)
 {
     JSExportEntry *me;
@@ -32338,6 +32383,26 @@ static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
         }
         return JS_RESOLVE_RES_NOT_FOUND;
     }
+}
+
+/* one level per module on the way to the export */
+static JSResolveResultEnum js_resolve_export1(JSContext *ctx,
+                                              JSModuleDef **pmodule,
+                                              JSExportEntry **pme,
+                                              JSModuleDef *m,
+                                              JSAtom export_name,
+                                              JSResolveState *s)
+{
+    JSResolveResultEnum ret;
+
+    if (js_internal_enter(ctx)) {
+        *pmodule = NULL;
+        *pme = NULL;
+        return JS_RESOLVE_RES_EXCEPTION;
+    }
+    ret = js_resolve_export2(ctx, pmodule, pme, m, export_name, s);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 /* If the return value is JS_RESOLVE_RES_FOUND, return the module
@@ -32432,7 +32497,11 @@ static int find_exported_name(GetExportNamesState *s, JSAtom name)
 
 static __exception int get_exported_names(JSContext *ctx,
                                           GetExportNamesState *s,
-                                          JSModuleDef *m, BOOL from_star)
+                                          JSModuleDef *m, BOOL from_star);
+
+static __exception int get_exported_names1(JSContext *ctx,
+                                           GetExportNamesState *s,
+                                           JSModuleDef *m, BOOL from_star)
 {
     ExportedNameEntry *en;
     int i, j;
@@ -32477,6 +32546,20 @@ static __exception int get_exported_names(JSContext *ctx,
             return -1;
     }
     return 0;
+}
+
+/* one level per module of a chain of 'export * from' */
+static __exception int get_exported_names(JSContext *ctx,
+                                          GetExportNamesState *s,
+                                          JSModuleDef *m, BOOL from_star)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = get_exported_names1(ctx, s, m, from_star);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 /* Unfortunately, the spec gives a different behavior from GetOwnProperty ! */
@@ -32658,8 +32741,10 @@ JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m)
     return JS_DupValue(ctx, m->module_ns);
 }
 
+static int js_resolve_module(JSContext *ctx, JSModuleDef *m);
+
 /* Load all the required modules for module 'm' */
-static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
+static int js_resolve_module1(JSContext *ctx, JSModuleDef *m)
 {
     int i;
     JSModuleDef *m1;
@@ -32673,6 +32758,8 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
     }
 #endif
     m->resolved = TRUE;
+    m->resolve_prev = ctx->resolve_marked;
+    ctx->resolve_marked = m;
     /* resolve each requested module */
     for(i = 0; i < m->req_module_entries_count; i++) {
         JSReqModuleEntry *rme = &m->req_module_entries[i];
@@ -32688,6 +32775,48 @@ static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
             return -1;
     }
     return 0;
+}
+
+/* one level per module of a chain of imports, the host's loader between
+   them or not */
+static int js_resolve_module(JSContext *ctx, JSModuleDef *m)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = js_resolve_module1(ctx, m);
+    js_internal_leave(ctx->rt);
+    return ret;
+}
+
+/* Resolve m and the modules it imports. A module is marked resolved before
+   its imports are, so that a cycle of imports ends. When the resolution
+   fails, every module it marked is unmarked, with its imports unset, so
+   that it is resolved again when imported again: it would keep an import
+   that is not resolved, or that js_free_modules frees. All of them are, not
+   only the ones under way, as a module done meanwhile may have taken one of
+   those, in a cycle with it, for done. The host's loader can start a
+   resolution within this one: what that one marks is left to the outer one
+   to keep or to undo. */
+static int js_resolve_module_top(JSContext *ctx, JSModuleDef *m)
+{
+    JSModuleDef *outer = ctx->resolve_marked, *m1;
+    int i;
+
+    if (js_resolve_module(ctx, m) == 0) {
+        if (!outer)
+            ctx->resolve_marked = NULL;
+        return 0;
+    }
+    while (ctx->resolve_marked != outer) {
+        m1 = ctx->resolve_marked;
+        ctx->resolve_marked = m1->resolve_prev;
+        m1->resolved = FALSE;
+        for(i = 0; i < m1->req_module_entries_count; i++)
+            m1->req_module_entries[i].module = NULL;
+    }
+    return -1;
 }
 
 /* Create the <eval> function associated with the module */
@@ -32713,8 +32842,10 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
     return 0;
 }
 
+static int js_create_module_function(JSContext *ctx, JSModuleDef *m);
+
 /* must be done before js_link_module() because of cyclic references */
-static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
+static int js_create_module_function1(JSContext *ctx, JSModuleDef *m)
 {
     BOOL is_c_module;
     int i;
@@ -32725,22 +32856,26 @@ static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
 
     is_c_module = (m->init_func != NULL);
 
+    /* what an earlier try made, before it failed, is kept */
     if (is_c_module) {
         /* initialize the exported variables */
         for(i = 0; i < m->export_entries_count; i++) {
             JSExportEntry *me = &m->export_entries[i];
-            if (me->export_type == JS_EXPORT_TYPE_LOCAL) {
+            if (me->export_type == JS_EXPORT_TYPE_LOCAL &&
+                !me->u.local.var_ref) {
                 var_ref = js_create_var_ref(ctx, FALSE);
                 if (!var_ref)
                     return -1;
                 me->u.local.var_ref = var_ref;
             }
         }
-    } else {
+    } else if (JS_VALUE_GET_TAG(m->func_obj) == JS_TAG_FUNCTION_BYTECODE) {
         if (js_create_module_bytecode_function(ctx, m))
             return -1;
     }
     m->func_created = TRUE;
+    m->func_prev = ctx->func_marked;
+    ctx->func_marked = m;
 
     /* do it on the dependencies */
 
@@ -32751,6 +32886,42 @@ static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
     }
 
     return 0;
+}
+
+/* one level per module of a chain of imports */
+static int js_create_module_function(JSContext *ctx, JSModuleDef *m)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = js_create_module_function1(ctx, m);
+    js_internal_leave(ctx->rt);
+    return ret;
+}
+
+/* Make the functions of m and of the modules it imports. A module is marked
+   func_created once its own function is made, before those of its imports,
+   so that a cycle of imports ends. When the making fails, every module it
+   marked is unmarked, as in js_resolve_module_top, so that the functions of
+   its imports are made before it is linked: linking reads the function of
+   each module as an object. A module keeps the function it made, which is
+   not made again. */
+static int js_create_module_function_top(JSContext *ctx, JSModuleDef *m)
+{
+    JSModuleDef *outer = ctx->func_marked, *m1;
+
+    if (js_create_module_function(ctx, m) == 0) {
+        if (!outer)
+            ctx->func_marked = NULL;
+        return 0;
+    }
+    while (ctx->func_marked != outer) {
+        m1 = ctx->func_marked;
+        ctx->func_marked = m1->func_prev;
+        m1->func_created = FALSE;
+    }
+    return -1;
 }
 
 
@@ -33130,7 +33301,7 @@ static void JS_LoadModuleInternal(JSContext *ctx, const char *basename,
     if (!m)
         goto fail;
 
-    if (js_resolve_module(ctx, m) < 0) {
+    if (js_resolve_module_top(ctx, m) < 0) {
         js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
         goto fail;
     }
@@ -34339,17 +34510,10 @@ static void free_bytecode_atoms(JSRuntime *rt,
     }
 }
 
-static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
+/* free fd alone: its child functions are freed */
+static void js_free_function_def1(JSContext *ctx, JSFunctionDef *fd)
 {
     int i;
-    struct list_head *el, *el1;
-
-    /* free the child functions */
-    list_for_each_safe(el, el1, &fd->child_list) {
-        JSFunctionDef *fd1;
-        fd1 = list_entry(el, JSFunctionDef, link);
-        js_free_function_def(ctx, fd1);
-    }
 
     free_bytecode_atoms(ctx->rt, fd->byte_code.buf, fd->byte_code.size,
                         fd->use_short_opcodes);
@@ -34398,6 +34562,26 @@ static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
         list_del(&fd->link);
     }
     js_free(ctx, fd);
+}
+
+/* free fd and the functions defined in it, each after its child functions,
+   with no recursion: down the first child function to one with none, which
+   leaves the list of its parent when it is freed, and back up. */
+static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
+{
+    JSFunctionDef *root = fd, *parent;
+    BOOL last;
+
+    for(;;) {
+        while (!list_empty(&fd->child_list))
+            fd = list_entry(fd->child_list.next, JSFunctionDef, link);
+        last = (fd == root);
+        parent = fd->parent;
+        js_free_function_def1(ctx, fd);
+        if (last)
+            break;
+        fd = parent;
+    }
 }
 
 #ifdef DUMP_BYTECODE
@@ -34911,13 +35095,19 @@ static int find_closure_var(JSContext *ctx, JSFunctionDef *s,
     return -1;
 }
 
-/* 'fd' must be a parent of 's'. Create in 's' a closure referencing
-   another one in 'fd' */
 static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
                            JSFunctionDef *fd, JSClosureTypeEnum closure_type,
                            int var_idx, JSAtom var_name,
                            BOOL is_const, BOOL is_lexical,
-                           JSVarKindEnum var_kind)
+                           JSVarKindEnum var_kind);
+
+/* 'fd' must be a parent of 's'. Create in 's' a closure referencing
+   another one in 'fd' */
+static int get_closure_var1(JSContext *ctx, JSFunctionDef *s,
+                            JSFunctionDef *fd, JSClosureTypeEnum closure_type,
+                            int var_idx, JSAtom var_name,
+                            BOOL is_const, BOOL is_lexical,
+                            JSVarKindEnum var_kind)
 {
     int i;
 
@@ -34937,6 +35127,23 @@ static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
     }
     return add_closure_var(ctx, s, closure_type, var_idx, var_name,
                            is_const, is_lexical, var_kind);
+}
+
+/* one level per function between s and fd */
+static int get_closure_var(JSContext *ctx, JSFunctionDef *s,
+                           JSFunctionDef *fd, JSClosureTypeEnum closure_type,
+                           int var_idx, JSAtom var_name,
+                           BOOL is_const, BOOL is_lexical,
+                           JSVarKindEnum var_kind)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = get_closure_var1(ctx, s, fd, closure_type, var_idx, var_name,
+                           is_const, is_lexical, var_kind);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 static int get_with_scope_opcode(int op)
@@ -35302,11 +35509,11 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             } else if (vd->var_name == JS_ATOM__with_ && !is_pseudo_var) {
                 capture_var(fd, vd);
                 idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, idx, vd->var_name, FALSE, FALSE, JS_VAR_NORMAL);
-                if (idx >= 0) {
-                    dbuf_putc(bc, OP_get_var_ref);
-                    dbuf_put_u16(bc, idx);
-                    var_object_test(ctx, s, var_name, op, bc, &label_done, 1);
-                }
+                if (idx < 0)
+                    return -1;
+                dbuf_putc(bc, OP_get_var_ref);
+                dbuf_put_u16(bc, idx);
+                var_object_test(ctx, s, var_name, op, bc, &label_done, 1);
             }
             idx = vd->scope_next;
         }
@@ -35341,6 +35548,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL,
                                   fd->var_object_idx, vd->var_name,
                                   FALSE, FALSE, JS_VAR_NORMAL);
+            if (idx < 0)
+                return -1;
             dbuf_putc(bc, OP_get_var_ref);
             dbuf_put_u16(bc, idx);
             var_object_test(ctx, s, var_name, op, bc, &label_done, 0);
@@ -35353,6 +35562,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             idx = get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL,
                                   fd->arg_var_object_idx, vd->var_name,
                                   FALSE, FALSE, JS_VAR_NORMAL);
+            if (idx < 0)
+                return -1;
             dbuf_putc(bc, OP_get_var_ref);
             dbuf_put_u16(bc, idx);
             var_object_test(ctx, s, var_name, op, bc, &label_done, 0);
@@ -35384,6 +35595,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                                           idx1,
                                           cv->var_name, cv->is_const,
                                           cv->is_lexical, cv->var_kind);
+                    if (idx < 0)
+                        return -1;
                 } else {
                     idx = idx1;
                 }
@@ -35403,6 +35616,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                                           idx1,
                                           cv->var_name, FALSE, FALSE,
                                           JS_VAR_NORMAL);
+                    if (idx < 0)
+                        return -1;
                 } else {
                     idx = idx1;
                 }
@@ -35423,6 +35638,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
                                   idx1,
                                   var_name, FALSE, FALSE, 
                                   JS_VAR_NORMAL);
+            if (idx < 0)
+                return -1;
         } else {
             idx = idx1;
         }
@@ -35563,6 +35780,8 @@ static int resolve_scope_var(JSContext *ctx, JSFunctionDef *s,
             }
             goto done;
         }
+        /* get_closure_var failed */
+        return -1;
     }
 
 done:
@@ -35787,7 +36006,8 @@ static BOOL is_var_in_arg_scope(JSAtom var_name, JSVarKindEnum var_kind)
             var_kind == JS_VAR_FUNCTION_NAME);
 }
 
-static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
+/* return -1 if a closure variable could not be made */
+static int add_eval_variables(JSContext *ctx, JSFunctionDef *s)
 {
     JSFunctionDef *fd;
     JSVarDef *vd;
@@ -35882,8 +36102,9 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
         while (scope_idx >= 0) {
             vd = &fd->vars[scope_idx];
             capture_var(fd, vd);
-            get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, scope_idx,
-                            vd->var_name, vd->is_const, vd->is_lexical, vd->var_kind);
+            if (get_closure_var(ctx, s, fd, JS_CLOSURE_LOCAL, scope_idx,
+                                vd->var_name, vd->is_const, vd->is_lexical, vd->var_kind) < 0)
+                return -1;
             scope_idx = vd->scope_next;
         }
         is_arg_scope = (scope_idx == ARG_SCOPE_END);
@@ -35894,9 +36115,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 vd = &fd->args[i];
                 if (vd->var_name != JS_ATOM_NULL) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_ARG, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_ARG, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
             for(i = 0; i < fd->var_count; i++) {
@@ -35906,9 +36128,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                     vd->var_name != JS_ATOM__ret_ &&
                     vd->var_name != JS_ATOM_NULL) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
         } else {
@@ -35917,9 +36140,10 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 /* do not close top level last result */
                 if (vd->scope_level == 0 && is_var_in_arg_scope(vd->var_name, vd->var_kind)) {
                     capture_var(fd, vd);
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
-                                    vd->is_lexical, JS_VAR_NORMAL);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_LOCAL, i, vd->var_name, FALSE,
+                                        vd->is_lexical, JS_VAR_NORMAL) < 0)
+                        return -1;
                 }
             }
         }
@@ -35934,14 +36158,16 @@ static void add_eval_variables(JSContext *ctx, JSFunctionDef *s)
                 if (cv->closure_type != JS_CLOSURE_GLOBAL_REF &&
                     cv->closure_type != JS_CLOSURE_GLOBAL_DECL &&
                     cv->closure_type != JS_CLOSURE_GLOBAL) {
-                    get_closure_var(ctx, s, fd,
-                                    JS_CLOSURE_REF,
-                                    idx, cv->var_name, cv->is_const,
-                                    cv->is_lexical, cv->var_kind);
+                    if (get_closure_var(ctx, s, fd,
+                                        JS_CLOSURE_REF,
+                                        idx, cv->var_name, cv->is_const,
+                                        cv->is_lexical, cv->var_kind) < 0)
+                        return -1;
                 }
             }
         }
     }
+    return 0;
 }
 
 static void set_closure_from_var(JSContext *ctx, JSClosureVar *cv,
@@ -38224,10 +38450,12 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
     return 0;
 }
 
+static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd);
+
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
-static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
+static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
     JSFunctionBytecode *b;
@@ -38273,8 +38501,10 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
        are used to compile the eval and they must be ordered by scope,
        so it is necessary to create the closure variables before any
        other variable lookup is done. */
-    if (fd->has_eval_call)
-        add_eval_variables(ctx, fd);
+    if (fd->has_eval_call) {
+        if (add_eval_variables(ctx, fd))
+            goto fail;
+    }
 
     /* add the module global variables in the closure */
     if (fd->is_eval) {
@@ -38492,6 +38722,20 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
  fail:
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
+}
+
+/* one level per function in which fd is defined */
+static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
+{
+    JSValue ret;
+
+    if (js_internal_enter(ctx)) {
+        js_free_function_def(ctx, fd);
+        return JS_EXCEPTION;
+    }
+    ret = js_create_function1(ctx, fd);
+    js_internal_leave(ctx->rt);
+    return ret;
 }
 
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
@@ -39404,7 +39648,7 @@ static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
         m = JS_VALUE_GET_PTR(fun_obj);
         /* the module refcount should be >= 2 */
         JS_FreeValue(ctx, fun_obj);
-        if (js_create_module_function(ctx, m) < 0)
+        if (js_create_module_function_top(ctx, m) < 0)
             goto fail;
         if (js_link_module(ctx, m) < 0)
             goto fail;
@@ -39533,7 +39777,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     /* Could add a flag to avoid resolution if necessary */
     if (m) {
         m->func_obj = fun_obj;
-        if (js_resolve_module(ctx, m) < 0)
+        if (js_resolve_module_top(ctx, m) < 0)
             goto fail1;
         fun_obj = JS_NewModuleValue(ctx, m);
     }
@@ -39619,7 +39863,7 @@ int JS_ResolveModule(JSContext *ctx, JSValueConst obj)
 {
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_MODULE) {
         JSModuleDef *m = JS_VALUE_GET_PTR(obj);
-        if (js_resolve_module(ctx, m) < 0) {
+        if (js_resolve_module_top(ctx, m) < 0) {
             js_free_modules(ctx, JS_FREE_MODULE_NOT_RESOLVED);
             return -1;
         }
@@ -52261,6 +52505,8 @@ typedef struct {
     
 typedef struct JSONParseRecord {
     JSValue value;
+    /* the record this one is under, for json_free_parse_record alone */
+    struct JSONParseRecord *up;
     union {
         JSONParseRecordObject obj;
         struct {
@@ -52382,28 +52628,50 @@ static JSONParseRecord *json_parse_record_find(JSONParseRecord *pr, JSAtom key)
     return NULL;
 }
 
+/* Free pr and the records under it with no recursion: the children of a
+   record go from the last to the first, each down to the records with no
+   children left, which are freed on the way back up. */
 static void json_free_parse_record(JSContext *ctx, JSONParseRecord *pr)
 {
-    int i;
+    JSONParseRecord *child;
+    JSONParseRecordEntry *e;
+
     if (!pr)
         return;
-    if (JS_IsObject(pr->value)) {
-        if (JS_IsArray(ctx, pr->value)) {
-            for(i = 0; i < pr->u.array.count; i++) {
-                json_free_parse_record(ctx, &pr->u.array.elements[i]);
+    pr->up = NULL;
+    for(;;) {
+        child = NULL;
+        if (JS_IsObject(pr->value)) {
+            if (JS_IsArray(ctx, pr->value)) {
+                if (pr->u.array.count > 0)
+                    child = &pr->u.array.elements[--pr->u.array.count];
+            } else {
+                if (pr->u.obj.count > 0) {
+                    e = &pr->u.obj.entries[--pr->u.obj.count];
+                    JS_FreeAtom(ctx, e->atom);
+                    child = &e->parse_record;
+                }
             }
-            js_free(ctx, pr->u.array.elements);
-        } else {
-            for(i = 0; i < pr->u.obj.count; i++) {
-                JS_FreeAtom(ctx, pr->u.obj.entries[i].atom);
-                json_free_parse_record(ctx, &pr->u.obj.entries[i].parse_record);
-            }
-            js_free(ctx, pr->u.obj.entries);
-            js_free(ctx, pr->u.obj.hash_table);
         }
+        if (child) {
+            child->up = pr;
+            pr = child;
+            continue;
+        }
+        if (JS_IsObject(pr->value)) {
+            if (JS_IsArray(ctx, pr->value)) {
+                js_free(ctx, pr->u.array.elements);
+            } else {
+                js_free(ctx, pr->u.obj.entries);
+                js_free(ctx, pr->u.obj.hash_table);
+            }
+        }
+        JS_FreeValue(ctx, pr->value);
+        pr->value = JS_UNDEFINED; /* fail safe */
+        if (!pr->up)
+            break;
+        pr = pr->up;
     }
-    JS_FreeValue(ctx, pr->value);
-    pr->value = JS_UNDEFINED; /* fail safe */
 }
 
 /* 'pr' can be NULL */
@@ -54597,7 +54865,6 @@ static const JSClassExoticMethods js_proxy_exotic_methods = {
     .has_property = js_proxy_has,
     .get_property = js_proxy_get,
     .set_property = js_proxy_set,
-    .get_prototype = js_proxy_get_prototype,
     .set_prototype = js_proxy_set_prototype,
     .is_extensible = js_proxy_is_extensible,
     .prevent_extensions = js_proxy_prevent_extensions,
