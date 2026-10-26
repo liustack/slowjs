@@ -256,6 +256,13 @@ typedef enum {
     JS_GC_PHASE_REMOVE_CYCLES,
 } JSGCPhaseEnum;
 
+/* The recursions that must not fail, each with a slot of JSRuntime.nest
+   (see js_nest_enter). */
+typedef enum {
+    JS_NEST_FREE, /* free_zero_refcount */
+    JS_NEST_COUNT,
+} JSNestEnum;
+
 typedef enum OPCodeEnum OPCodeEnum;
 
 /* JS malloc */
@@ -388,6 +395,9 @@ struct JSRuntime {
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
     int internal_depth;
+    /* the levels of each recursion that cannot fail running now (see
+       js_nest_enter) */
+    int nest[JS_NEST_COUNT];
 
     JSValue current_exception;
     /* true if the current exception cannot be catched */
@@ -2382,6 +2392,23 @@ static int js_internal_enter(JSContext *ctx)
 static inline void js_internal_leave(JSRuntime *rt)
 {
     rt->internal_depth--;
+}
+
+/* A recursion that must not fail, such as freeing, is not counted in either
+   depth: it could not throw when the count runs out. Its data bounds how
+   deep it goes instead, to k levels, a constant, and it counts its levels in
+   its own slot of rt->nest, so that the generator can add k of its frames to
+   the stack the engine may use. Going past k is a bug of the engine and
+   aborts. */
+static inline void js_nest_enter(JSRuntime *rt, JSNestEnum slot, int k)
+{
+    if (unlikely(++rt->nest[slot] > k))
+        abort();
+}
+
+static inline void js_nest_leave(JSRuntime *rt, JSNestEnum slot)
+{
+    rt->nest[slot]--;
 }
 
 /* The runtime is the start of the first chunk of memory the host gives the
@@ -6958,11 +6985,16 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
     }
 }
 
+/* Free the objects whose count reached zero. It runs one level deep: it is
+   only called in the phase JS_GC_PHASE_NONE, and while it runs the phase is
+   JS_GC_PHASE_DECREF, so an object that dies meanwhile only joins the list.
+   No finalizer or free it reaches starts a collection. */
 static void free_zero_refcount(JSRuntime *rt)
 {
     struct list_head *el;
     JSGCObjectHeader *p;
 
+    js_nest_enter(rt, JS_NEST_FREE, 1);
     rt->gc_phase = JS_GC_PHASE_DECREF;
     for(;;) {
         el = rt->gc_zero_ref_count_list.next;
@@ -6973,6 +7005,7 @@ static void free_zero_refcount(JSRuntime *rt)
         free_gc_object(rt, p);
     }
     rt->gc_phase = JS_GC_PHASE_NONE;
+    js_nest_leave(rt, JS_NEST_FREE);
 }
 
 /* Free a string whose ref_count reached zero. */
