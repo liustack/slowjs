@@ -101,10 +101,13 @@ $t/tests/test_language.js $here/compare/upstream/test_language.txt -raw
 $t/tests/test_loop.js $here/compare/upstream/test_loop.txt -raw
 $out/test_builtin.js $here/compare/upstream/test_builtin.txt -raw
 "
+# A script of engine/test/compare names the options it needs in a line
+# "// jsrun: OPTIONS".
 for f in "$here"/compare/*.js "$here"/compare/*.mjs; do
 	[ -f "$f" ] || continue
+	o=$(sed -n 's,^// jsrun: ,,p' "$f" | head -n 1)
 	cases="$cases
-$f ${f%.*}.txt"
+$f ${f%.*}.txt $o"
 done
 
 total=0
