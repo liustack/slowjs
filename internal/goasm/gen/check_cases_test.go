@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -111,6 +112,8 @@ type ckCase struct {
 	callee map[string]string           // the callee signatures the lowering sees
 	lower  func(string, []Meta) string // the lowered text
 	metas  func([]Meta)                // the records and metas, before emit
+	files  func(map[string]string)     // the emitted Go files, before they are built
+	poll   string                      // Go source of host_poll in the built program; "" for none
 	edit   func(*EngineCheck)          // what the check is told
 	calls  func(*testing.T, []Meta)    // what the lowering recorded
 	want   string                      // the reason the check rejects it; "" passes
@@ -182,7 +185,7 @@ func TestCheckCases(t *testing.T) {
 			}
 		}
 	}
-	for _, c := range []ckCase{
+	cases := []ckCase{
 		{name: "body mode"},
 		{name: "preserve_none", pn: true},
 
@@ -268,6 +271,30 @@ func TestCheckCases(t *testing.T) {
 		{name: "preserve_none: the check told the other convention", pn: true,
 			edit: func(c *EngineCheck) { c.PreserveNone = false }, want: "preserve_none"},
 
+		// The Go function the polls call must begin with a stack check.
+		{name: "host_poll with a stack check", poll: pollSplit, edit: needPoll},
+		{name: "host_poll that is not in the binary", edit: needPoll, want: "is not in the binary"},
+		{name: "host_poll marked nosplit", poll: pollWork + "//go:nosplit\n" + pollCall, edit: needPoll, want: "host_poll has no stack check"},
+		{name: "host_poll a small leaf the compiler marks nosplit", poll: pollLeaf, edit: needPoll, want: "host_poll has no stack check"},
+
+		// Go's own frame and stack check around a body, and the return.
+		{name: "a Go frame bigger than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n + 16 }),
+			want: "Go frame is"},
+		{name: "a Go frame smaller than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n - 8 }),
+			want: "Go frame is"},
+		{name: "a calling function with no stack check", files: addFlag("g", "NOSPLIT"),
+			want: "a calling function without Go's stack check"},
+		{name: "a return without its result store", lower: sub("h", `\n\tmovq\s+%rax, 24\(%rsp\)`, ""),
+			want: "is not the store of"},
+		{name: "a result stored in the wrong slot", lower: sub("h", `movq\s+%rax, 24\(%rsp\)`, "movq %rax, 32(%rsp)"),
+			want: "is not the store of"},
+		{name: "a return that is a plain RET", lower: sub("h", `jmp\s+\.Lret_h`, "retq"),
+			want: "is not a jump to the epilogue"},
+		{name: "a return that jumps into the body", lower: sub("g", `jmp\s+\.Lret_g`, "jmp .LBB3_2"),
+			want: "not to the Go epilogue"},
+		{name: "a frameless body with no Go epilogue", files: dropRET("h"), want: "Go epilogue"},
+		{name: "a framed body with no Go epilogue", files: dropRET("g"), want: "Go epilogue"},
+
 		// What the check is told is generated.
 		{name: "a function left out", edit: func(c *EngineCheck) {
 			var ms []Meta
@@ -319,7 +346,9 @@ func TestCheckCases(t *testing.T) {
 			want: "signature symbols in the function"},
 		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
 			ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
-	} {
+	}
+	cases = append(cases, forbiddenCases(sub, llcSub)...)
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ms, err := ckBuild(t, llvm, c)
 			if c.calls != nil {
@@ -453,7 +482,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	}
 	files, err := EmitEngine(low, EngineEmit{Metas: metas, Names: names, MaxBytes: 1 << 20, Plan: plan, Arch: "amd64"})
 	if err != nil {
-		t.Fatal(err)
+		return metas, err
+	}
+	if c.files != nil {
+		c.files(files)
 	}
 	var decls, keep strings.Builder
 	goType := map[Type]string{I64: "uintptr", Ptr: "uintptr", F64: "float64"}
@@ -481,7 +513,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		fmt.Fprintf(&decls, "func %s(%s)%s\n", names[n], strings.Join(ps, ", "), ret)
 		fmt.Fprintf(&keep, "%s, ", names[n])
 	}
-	files["main.go"] = "package main\n\n" + decls.String() + "\nvar keep = []any{" + keep.String() +
+	if c.poll != "" {
+		keep.WriteString("host_poll, ")
+	}
+	files["main.go"] = "package main\n\n" + decls.String() + "\n" + c.poll + "\nvar keep = []any{" + keep.String() +
 		"}\n\nfunc main() {\n\tfor _, f := range keep {\n\t\tprintln(f != nil)\n\t}\n}\n"
 	files["go.mod"] = "module ck\n\ngo 1.22\n"
 	mod := filepath.Join(dir, "mod")
@@ -507,4 +542,119 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	}
 	_, err = CheckEngine(ec)
 	return metas, err
+}
+
+// forbiddenCases put each forbidden instruction into function g three ways,
+// and each is refused as the instruction it is, not only as a difference
+// from the other side: as bytes in the lowered text (emit refuses them), as
+// the first bytes of g's emitted body (the Go binary then holds them, and the
+// check refuses them where it decodes the binary), and as text in llc's code
+// (the check refuses them where it decodes llc's object).
+func forbiddenCases(sub func(fn, re, repl string) func(string, []Meta) string,
+	llcSub func(fn, old, new string, n int) func(string) string) []ckCase {
+	var out []ckCase
+	for _, f := range []struct{ name, bytes, text string }{
+		{"syscall", "0f 05", "syscall"},
+		{"sysenter", "0f 34", "sysenter"},
+		{"int 0x80", "cd 80", "int\t$128"},
+		{"rdtsc", "0f 31", "rdtsc"},
+		{"rdtscp", "0f 01 f9", "rdtscp"},
+		{"rdrand", "48 0f c7 f0", "rdrandq\t%rax"},
+		{"rdseed", "48 0f c7 f8", ".byte 0x48, 0x0f, 0xc7, 0xf8"},
+		{"cpuid", "0f a2", "cpuid"},
+	} {
+		var lit, quad []string
+		for _, h := range strings.Fields(f.bytes) {
+			lit = append(lit, "0x"+h)
+		}
+		for len(lit) < 8 {
+			lit = append(lit, "0x90")
+		}
+		for i := 7; i >= 0; i-- {
+			quad = append(quad, strings.TrimPrefix(lit[i], "0x"))
+		}
+		first := regexp.MustCompile(`(?s)(TEXT ·g\(SB\).*?QUAD \$0x)[0-9a-f]{16}`)
+		out = append(out,
+			ckCase{name: f.name + " in the lowered text", lower: sub("g", `\n\ttestq`, "\n\t.byte "+strings.Join(lit[:len(strings.Fields(f.bytes))], ", ")+"\n\ttestq"),
+				want: "forbidden instruction"},
+			ckCase{name: f.name + " in the linked code", want: "forbidden instruction",
+				files: func(files map[string]string) {
+					for name, text := range files {
+						if first.MatchString(text) {
+							files[name] = first.ReplaceAllString(text, "${1}"+strings.Join(quad, ""))
+							return
+						}
+					}
+					panic("no QUAD in g's emitted text")
+				}},
+			ckCase{name: f.name + " in llc's code", llc: llcSub("g", "\ttestq\t%rdi, %rdi\n", "\t"+f.text+"\n\ttestq\t%rdi, %rdi\n", 1),
+				want: "forbidden instruction"})
+	}
+	return out
+}
+
+// needPoll tells the check the engine calls host_poll.
+func needPoll(c *EngineCheck) { c.HostPoll = true }
+
+// host_poll for the built program: pollCall calls a function the compiler
+// does not inline, so it gets a stack check, and pollLeaf is the small leaf
+// the compiler marks NOSPLIT.
+const (
+	pollWork  = "//go:noinline\nfunc pollWork(x int64) int64 { return x*3 + 1 }\n\n"
+	pollCall  = "func host_poll(sp uintptr) int64 { return pollWork(int64(sp)) }\n"
+	pollSplit = pollWork + pollCall
+	pollLeaf  = "func host_poll(sp uintptr) int64 { return int64(sp) + 1 }\n"
+)
+
+// emitted finds the file of the emitted Go assembly that holds fn's TEXT.
+func emitted(files map[string]string, fn string) (name string, at int) {
+	for n, text := range files {
+		if i := strings.Index(text, "TEXT ·"+fn+"(SB)"); i >= 0 {
+			return n, i
+		}
+	}
+	panic("no TEXT of " + fn + " in the emitted files")
+}
+
+// tweakText changes the number re captures in the TEXT line of fn.
+func tweakText(fn, re string, f func(int) int) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		eol := at + strings.Index(text[at:], "\n")
+		line := regexp.MustCompile(re).ReplaceAllStringFunc(text[at:eol], func(m string) string {
+			n, _ := strconv.Atoi(regexp.MustCompile(`\d+`).FindString(m))
+			return strings.Replace(m, strconv.Itoa(n), strconv.Itoa(f(n)), 1)
+		})
+		files[name] = text[:at] + line + text[eol:]
+	}
+}
+
+// addFlag puts a TEXT flag on fn: "TEXT ·fn(SB), $N-M" becomes "TEXT ·fn(SB), FLAG, $N-M".
+func addFlag(fn, flag string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		pre := "TEXT ·" + fn + "(SB), "
+		files[name] = text[:at] + pre + flag + ", " + text[at+len(pre):]
+	}
+}
+
+// dropRET takes the RET that ends fn's emitted text, which is where the Go
+// assembler writes its epilogue, and puts a no-op in its place.
+func dropRET(fn string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		end := len(text)
+		if i := strings.Index(text[at+1:], "\nTEXT "); i >= 0 {
+			end = at + 1 + i
+		}
+		body := text[at:end]
+		i := strings.LastIndex(body, "\tRET")
+		if i < 0 {
+			panic("no RET in " + fn)
+		}
+		files[name] = text[:at] + body[:i] + "\tBYTE $0x90" + body[i+len("\tRET"):] + text[end:]
+	}
 }

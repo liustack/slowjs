@@ -100,6 +100,21 @@ func TestDecodeFixtures(t *testing.T) {
 			t.Fatalf("% s: decoded as %v, %v (want an error with %q)", hex, in, err, why)
 		}
 	}
+	// The instructions that reach the system or read machine state are
+	// refused as decoded: the lowering reads text, this reads the bytes of
+	// llc's object and of the linked binary. x86asm cannot decode RDSEED,
+	// which decode names before it calls the bytes unknown.
+	for hex, op := range forbiddenEncodings {
+		_, err := dec(hex)
+		if err == nil || !strings.Contains(err.Error(), "forbidden instruction") || !strings.Contains(err.Error(), op) {
+			t.Fatalf("% s (%s): decoded without being refused as forbidden: %v", hex, op, err)
+		}
+	}
+	// The same opcodes with other operands stay what they are: CMPXCHG16B
+	// shares 0F C7 with RDRAND and RDSEED.
+	if in := ok("48 0f c7 0c 24"); in.Op != x86asm.CMPXCHG16B {
+		t.Fatalf("cmpxchg16b decoded as %v", in)
+	}
 	// The padding encodings are skipped, up to 15 bytes.
 	for p := range padNops {
 		var hex []string
@@ -387,4 +402,68 @@ func flip0(m string) string {
 func lastLine(s string) string {
 	ls := strings.Split(strings.TrimSpace(s), "\n")
 	return ls[len(ls)-1]
+}
+
+// forbiddenEncodings are the machine encodings of the instructions the plan
+// bans (and the ones beside them that read machine state), with what each
+// does.
+var forbiddenEncodings = map[string]string{
+	"0f 05":       "system call",
+	"0f 34":       "system call",
+	"0f 35":       "system call",
+	"48 0f 07":    "system call",
+	"cd 80":       "software interrupt",
+	"cc":          "software interrupt",
+	"0f 31":       "time stamp counter",
+	"0f 01 f9":    "time stamp counter",
+	"0f c7 f0":    "hardware random source",
+	"48 0f c7 f0": "hardware random source",
+	"0f c7 f8":    "hardware random source",
+	"48 0f c7 f8": "hardware random source",
+	"66 0f c7 f8": "hardware random source",
+	"0f a2":       "processor's identity",
+	"0f 33":       "performance counter",
+	"0f 32":       "machine register",
+}
+
+// TestStubsNeedKeepGoing: without -keep-going a rejection stops the run and
+// nothing is written, so no package with a stub in it comes from a normal
+// build. With it the same input gives a package. It needs LLVM 22.1.8
+// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+func TestStubsNeedKeepGoing(t *testing.T) {
+	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+	}
+	work := t.TempDir()
+	drv := filepath.Join(work, "engine")
+	cmd := exec.Command("go", "build", "-o", drv, "./cmd/engine")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	// A variadic function, which the driver does not take without -varargs-block.
+	src, err := filepath.Abs(filepath.Join("testdata", "reject", "variadic.c"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(name string, extra ...string) (string, error) {
+		out, err := exec.Command(drv, append([]string{"-src", src, "-llvm", llvm, "-pass", pass, "-leaves", "",
+			"-work", filepath.Join(work, "w-"+name), "-out", filepath.Join(work, "out-"+name), "-pkg", "mini"}, extra...)...).CombinedOutput()
+		return string(out), err
+	}
+	out, err := run("strict")
+	if err == nil || !strings.Contains(out, "-keep-going") {
+		t.Fatalf("a run with rejections and no -keep-going: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(work, "out-strict")); err == nil {
+		t.Fatal("a rejected run wrote a package")
+	}
+	if out, err := run("survey", "-keep-going"); err != nil {
+		t.Fatalf("-keep-going: %v\n%s", err, out)
+	}
+	stubs, err := os.ReadFile(filepath.Join(work, "out-survey", "engine_stubs_amd64.s"))
+	if err != nil || !strings.Contains(string(stubs), "goasmMissing") {
+		t.Fatalf("the survey package has no stub: %v", err)
+	}
 }

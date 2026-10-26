@@ -34,7 +34,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    keeps the id on the machine call.
 3. llc -O2 with shrink-wrapping off writes assembly and an object. The whole
    engine loads `pass/icall.cpp` (built into the same shared object as the
-   pass) with `-load`: after the machine passes it names a symbol at every
+   pass) with `-load`: after the machine passes this run has (the outliner
+   and function splitting are off, and the insertion point has to be checked
+   again if that changes) it names a symbol at every
    indirect call, `goasm.icall.<function>.<n>.<id>`, a label right before
    the call in the text and a local symbol at its address in the object. An
    indirect call without an id stops llc. CheckObject
@@ -99,8 +101,9 @@ as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
 declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
 `malloc_usable_size` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. `-keep-going` lists every function the C must change, by
-class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+in `missingNames`. A rejection stops the run and nothing is written, and the
+default has no stubs. `-keep-going` is for surveys: it lists every function the
+C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
@@ -113,6 +116,17 @@ $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall
 /tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
+
+Before the pass, the C is also compiled without optimization and every call
+that reaches `engine/libc`'s formatter (`snprintf`, `vsnprintf` and any
+variadic function but `code_match` and `unicode_prop_ops`) is held to the
+formats `stdio.c` takes (`formats.go`, `CheckFormats`). A format must be a
+string constant `FormatError` accepts, or a parameter that a wrapper forwards
+(a variadic function's last fixed parameter, or `JS_ThrowError2`). Anything
+else stops the build, so a `%f` cannot reach `abort()` at run time. The accept
+table mirrors `stdio.c` and `testdata/formats/cases.txt` lists the formats both
+must agree on. Keeping `stdio.c` and the table in step needs a libc test in
+`engine/test` that feeds that list to `vsnprintf`, which is the C's to add.
 
 The post-link check is the gate for the output. Build a binary of the
 package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)

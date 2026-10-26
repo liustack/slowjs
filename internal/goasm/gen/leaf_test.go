@@ -20,7 +20,7 @@ func TestAddrTakenLeafRejected(t *testing.T) {
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "a.ll")
-	out, err := exec.Command(filepath.Join(llvm, "clang"), append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...),
+	out, err := exec.Command(filepath.Join(llvm, "clang"), append(append([]string{}, EngineCFlags...),
 		"-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "leaf", "addr_taken.c"))...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("clang: %v\n%s", err, out)

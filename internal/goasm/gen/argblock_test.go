@@ -32,7 +32,7 @@ func TestArgBlockShared(t *testing.T) {
 		}
 		return string(out)
 	}
-	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "argblock.c"))...)
+	run("clang", append(append([]string{}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "argblock.c"))...)
 	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack",
 		"-shadow-add-sp", "-shadow-max-int-args=6", "-shadow-report", "-S", "-o", shadow, ir)
 	if !strings.Contains(out, "PACKED many") {
