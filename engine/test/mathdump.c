@@ -64,6 +64,6 @@ int main(int argc, char **argv)
         JS_FreeValue(ctx, v);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     return 0;
 }
