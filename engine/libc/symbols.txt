@@ -3,6 +3,8 @@
 #
 # libc: defined by engine/libc. The compiler may also call the first four of
 #       them by itself, for a struct copy or a compare, so they are always here.
+#       bzero is there for macOS, where the compiler turns a memset of 0 into a
+#       call of it.
 # host: the callbacks of engine/host.h.
 # alloc: the allocator, until the engine brings its own.
 
@@ -10,6 +12,7 @@ libc memcpy
 libc memmove
 libc memset
 libc bcmp
+libc bzero
 libc memcmp
 libc memchr
 libc strlen
