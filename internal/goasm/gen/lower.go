@@ -102,10 +102,10 @@ var (
 	// another unit. Any other call form is rejected, never passed through.
 	reCall     = regexp.MustCompile(`^call(?:q)?\s+([.\w]+)(?:@PLT)?$`)
 	reIndirect = regexp.MustCompile(`^callq?\s+\*%(\w+)$`)
-	// A call through a pointer in memory: the lowering loads it into R11,
-	// which is neither a SysV argument register nor one of the first ten
-	// preserve_none ones, and calls through that.
-	reIndirectMem = regexp.MustCompile(`^callq?\s+\*(-?\w*\(%\w+(?:,\s*%\w+(?:,\s*\d)?)?\))$`)
+	// A call through a pointer in memory. EngineCFlags set
+	// +slow-two-mem-ops, so llc loads every call target into a register
+	// first and never emits one: the lowering rejects it.
+	reIndirectMem = regexp.MustCompile(`^callq?\s+\*[^%]`)
 	reForbidden   = regexp.MustCompile(`\b(syscall|sysenter|int\s+\$0x80|rdtsc|rdrand|rdseed|cpuid)\b`)
 )
 
@@ -329,7 +329,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			if cs, ok := callSig(m[1], fn, calleeSigs); ok && calleeKinds[m[1]] != Register {
 				consider(cs)
 			}
-		} else if reIndirect.MatchString(n) || reIndirectMem.MatchString(n) {
+		} else if reIndirect.MatchString(n) {
 			hasCall = true
 		} else if env != nil && strings.HasPrefix(n, "@icall ") {
 			// The outgoing area must hold the arguments of every
@@ -446,32 +446,11 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		if reForbidden.MatchString(n) {
 			return "", Meta{}, fmt.Errorf("%s: forbidden instruction: %q", fn.Name, l)
 		}
-		// A call through a pointer LLVM spilled to the frame: load it into
-		// R11 from its moved slot, then call through R11 like any other
-		// pointer. Left to the frame rewrite below, the call would keep its
-		// operand but lose its marshalling.
-		if m := reIndirectMem.FindStringSubmatch(n); m != nil && (strings.Contains(m[1], "%rbp") || strings.Contains(m[1], "%rsp")) {
-			load := "movq " + m[1] + ", %r11"
-			var err error
-			if strings.Contains(m[1], "%rbp") {
-				load, err = rewriteRBPLocals(load, 8*len(pushed), local, localBase)
-			} else {
-				load, err = rewriteRSPLocals(load, local, localBase)
-			}
-			if err == nil {
-				load, err = unalignedStackAccess(norm(load))
-			}
-			if err != nil {
-				return "", Meta{}, fmt.Errorf("%s: call through a pointer in the frame: %w", fn.Name, err)
-			}
-			sig, err := indirectSig()
-			if err != nil {
-				return "", Meta{}, err
-			}
-			out = append(out, load)
-			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallMem, Sig: sig})
-			continue
+		// Checked before the frame rewrite below, which would otherwise
+		// take a call through a frame slot for a plain frame access and
+		// keep it unmarshalled.
+		if reIndirectMem.MatchString(n) {
+			return "", Meta{}, fmt.Errorf("%s: call through memory (the build sets +slow-two-mem-ops so llc never emits one): %q", fn.Name, l)
 		}
 		// Rewrite frame spills: LLVM addresses locals at -N(%rbp), below the
 		// saved callee-saved area. Map each onto the local region of the Go
@@ -510,19 +489,6 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		if n == "retq" || n == "ret" {
 			out = append(out, storeResult()...)
 			out = append(out, "jmp "+retLabel)
-			continue
-		}
-		if m := reIndirectMem.FindStringSubmatch(n); m != nil {
-			if strings.Contains(m[1], "%rip") {
-				return "", Meta{}, fmt.Errorf("%s: call through a pointer in read-only data: %q", fn.Name, l)
-			}
-			sig, err := indirectSig()
-			if err != nil {
-				return "", Meta{}, err
-			}
-			out = append(out, "movq "+m[1]+", %r11")
-			out = append(out, marshalCallTarget(a, "*%r11", sig, saved, saveBase)...)
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallMem, Sig: sig})
 			continue
 		}
 		if m := reIndirect.FindStringSubmatch(n); m != nil {
