@@ -935,6 +935,12 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTrac
    and run with, or none (undefined) */
 JSValue JS_GetAsyncContext(JSContext *ctx);
 void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
+/* the regexp cache of a runtime keeps compiled regexps by pattern and flags:
+   at most n entries in at most bytes bytes, 0 for none. A new runtime keeps
+   JS_REGEXP_CACHE_ENTRIES in JS_REGEXP_CACHE_BYTES. */
+#define JS_REGEXP_CACHE_ENTRIES 256
+#define JS_REGEXP_CACHE_BYTES (1 << 20)
+void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
 
 /* return != 0 if the JS code needs to be interrupted */
 typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);

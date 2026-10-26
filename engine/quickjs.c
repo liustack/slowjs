@@ -213,6 +213,21 @@ typedef enum JSErrorEnum {
 
 typedef struct JSShape JSShape;
 typedef struct JSString JSString;
+typedef struct JSRegExpCacheEntry JSRegExpCacheEntry;
+
+/* The regexp cache of a runtime (see js_compile_regexp). Its zero value is
+   a cache with the default limits and no entries. */
+typedef struct {
+    JSRegExpCacheEntry **table; /* the first entry of each hash chain, NULL until the first entry is kept */
+    uint32_t buckets; /* the number of hash chains of table, a power of 2 */
+    int count; /* the number of entries */
+    JSRegExpCacheEntry *newest; /* the entry used last */
+    JSRegExpCacheEntry *oldest; /* the entry used least recently */
+    size_t bytes; /* the bytes the entries count */
+    BOOL set; /* TRUE once JS_SetRegExpCache set max_count and max_bytes */
+    int max_count; /* the number of entries kept at most, 0 when the cache is off */
+    size_t max_bytes; /* the bytes kept at most */
+} JSRegExpCache;
 typedef struct JSString JSAtomStruct;
 typedef struct JSObject JSObject;
 
@@ -380,6 +395,7 @@ struct JSRuntime {
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
+    JSRegExpCache regexp_cache;
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
@@ -1246,6 +1262,7 @@ static int JS_ToUint8ClampFree(JSContext *ctx, int32_t *pres, JSValue val);
 static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len);
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
+static void js_regexp_cache_off(JSRuntime *rt);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -2413,6 +2430,7 @@ void JS_FreeRuntime(JSRuntime *rt)
     if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
         JS_FreeValueRT(rt, rt->async_context);
     rt->async_context = JS_UNDEFINED;
+    js_regexp_cache_off(rt);
     JS_FreeValueRT(rt, rt->current_exception);
 
     list_for_each_safe(el, el1, &rt->job_list) {
@@ -48259,6 +48277,285 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, re->pattern));
 }
 
+/* The regexp cache of a runtime keeps the bytecode of the regexps it
+   compiled, by pattern and flags, so that compiling the same pattern with
+   the same flags again takes the bytecode made before instead of running
+   lre_compile: js_compile_regexp, which compiles every regexp (a literal,
+   new RegExp, RegExp.prototype.compile, and the regexps that split and the
+   other built-ins make with new flags), asks js_regexp_cache_get first and
+   gives js_regexp_cache_put what it made. The bytecode is an 8-bit string
+   the engine never changes once lre_compile wrote it, and objects already
+   share it (new RegExp(re) holds the bytecode of re).
+
+   Only a pattern that is a string, not a rope, with flags that are
+   undefined or a string, not a rope, is looked up and kept: converting
+   anything else can run javascript or allocate. A compile that fails is
+   not kept, so a SyntaxError is thrown every time.
+
+   An entry holds a reference to the pattern, to the flags and to the
+   bytecode, in memory from js_malloc_rt, as is the table of hash chains:
+   the cache counts against the memory limit. The cache keeps at most
+   JS_REGEXP_CACHE_ENTRIES entries in JS_REGEXP_CACHE_BYTES bytes (the
+   usable size of the entry and of the three strings), or what
+   JS_SetRegExpCache set, and lets go of the entry used least recently
+   first. The table is not in those bytes. Nothing is let go when an
+   allocation fails: freeing a string can free an atom, and the allocation
+   that fails can be one in the middle of growing the atom table. */
+
+struct JSRegExpCacheEntry {
+    JSRegExpCacheEntry *chain; /* the next entry of the same hash chain */
+    JSRegExpCacheEntry *newer; /* the entry used next after this one */
+    JSRegExpCacheEntry *older; /* the entry used before this one */
+    JSString *pattern;
+    JSString *flags; /* NULL for undefined */
+    JSString *bc; /* the bytecode */
+    size_t size; /* the bytes this entry counts */
+    uint32_t hash;
+};
+
+/* The most hash chains a regexp cache has: its table takes at most 512 KiB
+   on 64-bit targets, whatever its limits. */
+#define JS_REGEXP_CACHE_MAX_BUCKETS (1 << 16)
+
+/* The number of hash chains of a cache of max_count entries in max_bytes
+   bytes: the power of 2, from 16 up to JS_REGEXP_CACHE_MAX_BUCKETS, at or
+   above the number of entries that fit. */
+static uint32_t js_regexp_cache_buckets(int max_count, size_t max_bytes)
+{
+    uint64_t fit = max_bytes / sizeof(JSRegExpCacheEntry);
+    uint32_t n = 16;
+
+    if ((uint64_t)max_count < fit)
+        fit = max_count;
+    while (n < fit && n < JS_REGEXP_CACHE_MAX_BUCKETS)
+        n *= 2;
+    return n;
+}
+
+static JSRegExpCacheEntry **js_regexp_cache_chain(JSRegExpCache *rc, uint32_t h)
+{
+    return &rc->table[h & (rc->buckets - 1)];
+}
+
+/* JS_SetRegExpCache sets the regexp cache of rt to keep at most n entries
+   in at most bytes bytes, and lets go of the entries it kept before. An n
+   or bytes of 0 turns the cache off. */
+void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+
+    js_regexp_cache_off(rt);
+    rc->set = TRUE;
+    rc->max_count = 0;
+    rc->max_bytes = 0;
+    if (n > 0 && bytes > 0) {
+        rc->max_count = n;
+        rc->max_bytes = bytes;
+    }
+}
+
+static void js_regexp_cache_entry_free(JSRuntime *rt, JSRegExpCacheEntry *e)
+{
+    js_free_string(rt, e->pattern);
+    if (e->flags)
+        js_free_string(rt, e->flags);
+    js_free_string(rt, e->bc);
+    js_free_rt(rt, e);
+}
+
+/* js_regexp_cache_off lets go of every entry of the regexp cache of rt and
+   of its table. The limits stay. */
+static void js_regexp_cache_off(JSRuntime *rt)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e = rc->newest, *next;
+    JSRegExpCacheEntry **table = rc->table;
+
+    rc->table = NULL;
+    rc->buckets = 0;
+    rc->count = 0;
+    rc->newest = NULL;
+    rc->oldest = NULL;
+    rc->bytes = 0;
+    while (e) {
+        next = e->older;
+        js_regexp_cache_entry_free(rt, e);
+        e = next;
+    }
+    if (table)
+        js_free_rt(rt, table);
+}
+
+/* js_regexp_cache_key gives the strings of pattern and flags (NULL for
+   undefined flags), and returns whether the cache can look them up. */
+static BOOL js_regexp_cache_key(JSValueConst pattern, JSValueConst flags,
+                                JSString **pp, JSString **pf)
+{
+    if (JS_VALUE_GET_TAG(pattern) != JS_TAG_STRING)
+        return FALSE;
+    *pp = JS_VALUE_GET_STRING(pattern);
+    switch (JS_VALUE_GET_TAG(flags)) {
+    case JS_TAG_UNDEFINED:
+        *pf = NULL;
+        return TRUE;
+    case JS_TAG_STRING:
+        *pf = JS_VALUE_GET_STRING(flags);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static uint32_t js_regexp_cache_hash(const JSString *p, const JSString *f)
+{
+    uint32_t h = hash_string(p, 0);
+    if (f)
+        h = hash_string(f, h * 263 + 1);
+    return h;
+}
+
+/* js_regexp_cache_same reports whether the strings a and b, either of
+   which can be NULL, hold the same code units. */
+static BOOL js_regexp_cache_same(JSContext *ctx, const JSString *a,
+                                 const JSString *b)
+{
+    if (a == b)
+        return TRUE;
+    if (!a || !b)
+        return FALSE;
+    return js_string_compare(ctx, a, b) == 0;
+}
+
+/* js_regexp_cache_unlink takes the entry e out of the list by use. It
+   stays in its hash chain. */
+static void js_regexp_cache_unlink(JSRegExpCache *rc, JSRegExpCacheEntry *e)
+{
+    if (e->newer)
+        e->newer->older = e->older;
+    else
+        rc->newest = e->older;
+    if (e->older)
+        e->older->newer = e->newer;
+    else
+        rc->oldest = e->newer;
+    e->newer = NULL;
+    e->older = NULL;
+}
+
+/* js_regexp_cache_push_newest puts the entry e at the newest end of the
+   list by use. */
+static void js_regexp_cache_push_newest(JSRegExpCache *rc, JSRegExpCacheEntry *e)
+{
+    e->older = rc->newest;
+    if (rc->newest)
+        rc->newest->newer = e;
+    else
+        rc->oldest = e;
+    rc->newest = e;
+}
+
+/* js_regexp_cache_drop_oldest lets go of the entry used least recently. */
+static void js_regexp_cache_drop_oldest(JSRuntime *rt, JSRegExpCache *rc)
+{
+    JSRegExpCacheEntry *e = rc->oldest, **at;
+
+    for (at = js_regexp_cache_chain(rc, e->hash); *at != e; at = &(*at)->chain)
+        continue;
+    *at = e->chain;
+    js_regexp_cache_unlink(rc, e);
+    rc->count--;
+    rc->bytes -= e->size;
+    js_regexp_cache_entry_free(rt, e);
+}
+
+/* js_regexp_cache_get returns a new reference to the bytecode the cache
+   holds for pattern and flags, or JS_UNDEFINED. */
+static JSValue js_regexp_cache_get(JSContext *ctx, JSValueConst pattern,
+                                   JSValueConst flags)
+{
+    JSRegExpCache *rc = &ctx->rt->regexp_cache;
+    JSRegExpCacheEntry *e;
+    JSString *p, *f;
+    uint32_t h;
+
+    if (rc->count == 0 || !js_regexp_cache_key(pattern, flags, &p, &f))
+        return JS_UNDEFINED;
+    h = js_regexp_cache_hash(p, f);
+    /* The hash and the compare read the whole pattern, which the
+       interpreter counts as one instruction: count a step for each 32
+       bytes too. */
+    js_charge_interrupts(ctx, (p->len << p->is_wide_char) >> 5);
+    for (e = *js_regexp_cache_chain(rc, h); e; e = e->chain) {
+        if (e->hash != h || !js_regexp_cache_same(ctx, e->pattern, p) ||
+            !js_regexp_cache_same(ctx, e->flags, f))
+            continue;
+        if (rc->newest != e) {
+            js_regexp_cache_unlink(rc, e);
+            js_regexp_cache_push_newest(rc, e);
+        }
+        return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, e->bc));
+    }
+    return JS_UNDEFINED;
+}
+
+/* js_regexp_cache_put keeps a reference to pattern, flags and the bytecode
+   bc js_compile_regexp made for them, if the cache can look them up and
+   has room. When there is no memory for the entry it keeps nothing, and
+   leaves no exception. */
+static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
+                                JSValueConst flags, JSValueConst bc)
+{
+    JSRuntime *rt = ctx->rt;
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e, **at;
+    JSString *p, *f, *b;
+    int max_count;
+    size_t max_bytes, size;
+
+    if (JS_VALUE_GET_TAG(bc) != JS_TAG_STRING ||
+        !js_regexp_cache_key(pattern, flags, &p, &f))
+        return;
+    max_count = rc->set ? rc->max_count : JS_REGEXP_CACHE_ENTRIES;
+    max_bytes = rc->set ? rc->max_bytes : JS_REGEXP_CACHE_BYTES;
+    if (max_count <= 0)
+        return;
+    b = JS_VALUE_GET_STRING(bc);
+    size = sizeof(JSRegExpCacheEntry) + js_malloc_usable_size_rt(rt, b) +
+        js_malloc_usable_size_rt(rt, p);
+    if (f)
+        size += js_malloc_usable_size_rt(rt, f);
+    if (size > max_bytes)
+        return;
+    if (!rc->table) {
+        uint32_t n = js_regexp_cache_buckets(max_count, max_bytes);
+        rc->table = js_mallocz_rt(rt, n * sizeof(rc->table[0]));
+        if (!rc->table)
+            return;
+        rc->buckets = n;
+    }
+    /* bytes never passes max_bytes, so max_bytes - bytes cannot wrap. */
+    while (rc->count > 0 && (rc->count >= max_count || size > max_bytes - rc->bytes))
+        js_regexp_cache_drop_oldest(rt, rc);
+    e = js_mallocz_rt(rt, sizeof(*e));
+    if (!e)
+        return;
+    e->pattern = p;
+    e->flags = f;
+    e->bc = b;
+    e->size = size;
+    e->hash = js_regexp_cache_hash(p, f);
+    JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
+    if (f)
+        JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, f));
+    JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, b));
+    at = js_regexp_cache_chain(rc, e->hash);
+    e->chain = *at;
+    *at = e;
+    js_regexp_cache_push_newest(rc, e);
+    rc->count++;
+    rc->bytes += size;
+}
+
 /* create a string containing the RegExp bytecode */
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
@@ -48271,6 +48568,9 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     JSValue ret;
     char error_msg[64];
 
+    ret = js_regexp_cache_get(ctx, pattern, flags);
+    if (!JS_IsUndefined(ret))
+        return ret;
     re_flags = 0;
     if (!JS_IsUndefined(flags)) {
         str = JS_ToCStringLen(ctx, &len, flags);
@@ -48340,6 +48640,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
 
     ret = js_new_string8_len(ctx, (const char *)re_bytecode_buf, re_bytecode_len);
     js_free(ctx, re_bytecode_buf);
+    js_regexp_cache_put(ctx, pattern, flags, ret);
     return ret;
 }
 
