@@ -33,4 +33,13 @@ func TestAddrTakenLeafRejected(t *testing.T) {
 	if !strings.Contains(string(out), "address is taken") {
 		t.Fatalf("wrong failure: %s", out)
 	}
+	// A rejection is one clean line and an ordinary exit, not an abort that
+	// prints the stack of opt.
+	if ee, ok := err.(*exec.ExitError); !ok || ee.ExitCode() != 1 {
+		t.Errorf("opt ended with %v, want exit status 1", err)
+	}
+	if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); len(lines) != 1 ||
+		!strings.HasPrefix(lines[0], "LLVM ERROR: ") || strings.Contains(string(out), "Stack dump") {
+		t.Errorf("a rejection printed %d lines, want one starting LLVM ERROR:\n%s", len(lines), out)
+	}
 }

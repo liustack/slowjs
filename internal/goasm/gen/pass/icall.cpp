@@ -42,13 +42,13 @@ struct ICallSymbols : MachineFunctionPass {
         bool direct = T.isGlobal() || T.isSymbol() || T.isMCSymbol();
         if (!MI.getCFIType()) {
           if (!direct)
-            report_fatal_error("indirect call without a signature id in " + MF.getName());
+            reportFatalUsageError("indirect call without a signature id in " + MF.getName());
           continue;
         }
         if (direct)
-          report_fatal_error("direct call with a signature id in " + MF.getName());
+          reportFatalUsageError("direct call with a signature id in " + MF.getName());
         if (MI.getPreInstrSymbol())
-          report_fatal_error("indirect call that already has a symbol in " + MF.getName());
+          reportFatalUsageError("indirect call that already has a symbol in " + MF.getName());
         MI.setPreInstrSymbol(MF, MF.getContext().getOrCreateSymbol("goasm.icall." + MF.getName() + "." + Twine(n++) +
                                                                    "." + Twine(MI.getCFIType())));
         changed = true;

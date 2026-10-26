@@ -54,6 +54,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
@@ -89,11 +90,15 @@ static cl::opt<std::string> Probes("shadow-probes", cl::init(""),
 static cl::opt<bool> Varargs("shadow-varargs", cl::init(false),
                              cl::desc("pass the variable arguments of every call in a block of 8-byte slots (experimental)"));
 
+// Every stop of the pass is reportFatalUsageError: one line, "LLVM ERROR: ...",
+// and exit status 1. report_fatal_error aborts instead, and opt prints its own
+// stack as if it had crashed.
+
 // reject stops on a rule the C breaks, or with -shadow-keep-going reports it
 // and empties the function so the rest of the unit still goes through.
 static bool reject(Function &F, const Twine &why) {
   if (!KeepGoing)
-    report_fatal_error(why + " in " + F.getName());
+    reportFatalUsageError(why + " in " + F.getName());
   errs() << "REJECT " << F.getName() << " " << why << "\n";
   F.deleteBody();
   F.setLinkage(GlobalValue::ExternalLinkage);
@@ -148,7 +153,7 @@ static void usePreserveNone(Module &M, const std::set<std::string> &leaves) {
     if (!unified(&F) || F.use_empty() && F.isDeclaration())
       continue;
     if (MaxIntArgs && intArgRegs(F.getFunctionType()) > MaxIntArgs)
-      report_fatal_error(Twine("preserve_none function with more than ") + Twine(MaxIntArgs) +
+      reportFatalUsageError(Twine("preserve_none function with more than ") + Twine(MaxIntArgs) +
                          " integer argument registers: " + F.getName());
     F.setCallingConv(CallingConv::PreserveNone);
   }
@@ -160,7 +165,7 @@ static void usePreserveNone(Module &M, const std::set<std::string> &leaves) {
           if (callee ? !unified(callee) : false)
             continue;
           if (!callee && MaxIntArgs && intArgRegs(CB->getFunctionType()) > MaxIntArgs)
-            report_fatal_error(Twine("indirect preserve_none call with too many integer arguments in ") + F.getName());
+            reportFatalUsageError(Twine("indirect preserve_none call with too many integer arguments in ") + F.getName());
           CB->setCallingConv(CallingConv::PreserveNone);
         }
 }
@@ -239,7 +244,7 @@ static AllocaInst *argBlock(Function *F, uint64_t size, BlockMap &blocks) {
 static void packCall(CallBase *CB, Value *callee, const DataLayout &DL, BlockMap &blocks) {
   auto *CI = dyn_cast<CallInst>(CB);
   if (!CI)
-    report_fatal_error(Twine("argument block on a call that is not a plain call in ") + CB->getFunction()->getName());
+    reportFatalUsageError(Twine("argument block on a call that is not a plain call in ") + CB->getFunction()->getName());
   FunctionType *T = CB->getFunctionType();
   auto byval = [&](unsigned i) { return smallByval(CB->isByValArgument(i) ? CB->getParamByValType(i) : nullptr, DL); };
   SmallVector<uint64_t> offs;
@@ -275,7 +280,7 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
     auto byval = [&](unsigned i) { return smallByval(F.getParamByValType(i), DL); };
     if (unifiedFn(&F, leaves) && needsBlock(F.getFunctionType(), byval)) {
       if (F.isDeclaration() && !F.use_empty())
-        report_fatal_error(Twine("host callback with more than ") + Twine(MaxIntArgs) +
+        reportFatalUsageError(Twine("host callback with more than ") + Twine(MaxIntArgs) +
                            " integer argument registers: " + F.getName());
       if (!F.isDeclaration())
         over.push_back(&F);
@@ -362,7 +367,7 @@ static void lowerVarargs(Module &M) {
   Triple T(M.getTargetTriple());
   if (!(T.getArch() == Triple::x86_64 || T.getArch() == Triple::aarch64) || T.getVendor() != Triple::UnknownVendor ||
       T.getOS() != Triple::Linux || T.getEnvironment() != Triple::GNU)
-    report_fatal_error(Twine("target ") + T.str() +
+    reportFatalUsageError(Twine("target ") + T.str() +
                        ": variable arguments are lowered only for x86_64-linux-gnu and aarch64-linux-gnu");
   bool arm = T.isAArch64();
   const DataLayout &DL = M.getDataLayout();
@@ -930,7 +935,7 @@ static void lowerVarargs(Module &M) {
     FunctionType *T = F->getFunctionType();
     if (F->isDeclaration()) {
       if (!F->use_empty())
-        report_fatal_error(Twine("variadic function defined outside the module: ") + F->getName());
+        reportFatalUsageError(Twine("variadic function defined outside the module: ") + F->getName());
       F->eraseFromParent();
       continue;
     }
@@ -1061,7 +1066,7 @@ static void widenNarrowInts(Module &M, const std::set<std::string> &leaves) {
   for (CallBase *CB : calls) {
     auto *CI = dyn_cast<CallInst>(CB);
     if (!CI)
-      report_fatal_error(Twine("narrow integers on a call that is not a plain call in ") + CB->getFunction()->getName());
+      reportFatalUsageError(Twine("narrow integers on a call that is not a plain call in ") + CB->getFunction()->getName());
     FunctionType *T = CB->getFunctionType();
     IRBuilder<> B(CB);
     SmallVector<Value *> args;
@@ -1132,7 +1137,7 @@ static void widenNarrowInts(Module &M, const std::set<std::string> &leaves) {
 static CallInst *rebuildWithSP(CallBase *CB, Value *callee) {
   auto *CI = dyn_cast<CallInst>(CB);
   if (!CI)
-    report_fatal_error(Twine("call that is not a plain call in ") + CB->getFunction()->getName());
+    reportFatalUsageError(Twine("call that is not a plain call in ") + CB->getFunction()->getName());
   LLVMContext &C = CB->getContext();
   PointerType *P = PointerType::getUnqual(C);
   FunctionType *T = CB->getFunctionType();
@@ -1262,18 +1267,18 @@ static void relativeGotoTables(Module &M) {
     SmallVector<Constant *> offsets;
     for (auto &E : A->operands()) {
       if (cast<BlockAddress>(E)->getFunction() != F)
-        report_fatal_error(Twine("computed goto table with labels of two functions: ") + G->getName());
+        reportFatalUsageError(Twine("computed goto table with labels of two functions: ") + G->getName());
       offsets.push_back(ConstantExpr::getTrunc(ConstantExpr::getSub(ConstantExpr::getPtrToInt(cast<Constant>(E), I64), base), I32));
     }
     R->setInitializer(ConstantArray::get(T, offsets));
     for (User *U : make_early_inc_range(G->users())) {
       auto *P = dyn_cast<GetElementPtrInst>(U);
       if (!P || P->getNumIndices() != 1 || P->getFunction() != F)
-        report_fatal_error(Twine("unreviewed use of the computed goto table ") + G->getName());
+        reportFatalUsageError(Twine("unreviewed use of the computed goto table ") + G->getName());
       for (User *L : make_early_inc_range(P->users())) {
         auto *Load = dyn_cast<LoadInst>(L);
         if (!Load || Load->getPointerOperand() != P)
-          report_fatal_error(Twine("unreviewed use of a computed goto entry in ") + F->getName());
+          reportFatalUsageError(Twine("unreviewed use of a computed goto entry in ") + F->getName());
         IRBuilder<> B(Load);
         Value *index = B.CreateSExtOrTrunc(P->getOperand(P->getNumOperands() - 1), I64);
         Value *offset = B.CreateLoad(I32, B.CreateInBoundsGEP(I32, R, index));
@@ -1284,7 +1289,7 @@ static void relativeGotoTables(Module &M) {
       P->eraseFromParent();
     }
     if (!G->use_empty())
-      report_fatal_error(Twine("computed goto table still used: ") + G->getName());
+      reportFatalUsageError(Twine("computed goto table still used: ") + G->getName());
     G->eraseFromParent();
     errs() << "GOTO-TABLE " << F->getName() << "\n";
   }
@@ -1372,7 +1377,7 @@ static void bindSignatures(Module &M) {
             ind.push_back(CB);
     for (CallBase *CB : ind) {
       if (CB->getOperandBundle(LLVMContext::OB_kcfi))
-        report_fatal_error(Twine("indirect call with a kcfi bundle already in ") + F.getName());
+        reportFatalUsageError(Twine("indirect call with a kcfi bundle already in ") + F.getName());
       std::string code = sigCode(CB->getFunctionType(), [&](unsigned i) { return CB->isByValArgument(i); });
       OperandBundleDef kcfi("kcfi", ConstantInt::get(I32, icallID(code)));
       CallBase *N = CallBase::addOperandBundle(CB, LLVMContext::OB_kcfi, kcfi, CB->getIterator());
@@ -1455,7 +1460,7 @@ static void writeProbes(Module &M, const std::set<std::string> &leaves) {
   std::error_code EC;
   raw_fd_ostream OS(Probes, EC, sys::fs::OF_Text);
   if (EC)
-    report_fatal_error(Twine("cannot write the probe module ") + Probes + ": " + EC.message());
+    reportFatalUsageError(Twine("cannot write the probe module ") + Probes + ": " + EC.message());
   P.print(OS, nullptr);
 }
 
@@ -1493,16 +1498,16 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         for (const Use &U : F.uses()) {
           auto *CB = dyn_cast<CallBase>(U.getUser());
           if (!CB || !CB->isCallee(&U))
-            report_fatal_error(Twine("register-entry leaf whose address is taken (it has no unified entry for an indirect call): ") + F.getName());
+            reportFatalUsageError(Twine("register-entry leaf whose address is taken (it has no unified entry for an indirect call): ") + F.getName());
         }
         for (BasicBlock &B : F)
           for (Instruction &I : B) {
             if (isa<AllocaInst>(&I))
-              report_fatal_error(Twine("register-entry leaf with an addressable local: ") + F.getName());
+              reportFatalUsageError(Twine("register-entry leaf with an addressable local: ") + F.getName());
             if (auto *CB = dyn_cast<CallBase>(&I)) {
               auto *Fn = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
               if (!Fn || !(Fn->isIntrinsic() || leaves.count(Fn->getName().str())))
-                report_fatal_error(Twine("register-entry leaf calls a unified function: ") + F.getName());
+                reportFatalUsageError(Twine("register-entry leaf calls a unified function: ") + F.getName());
             }
           }
         // "reserved": no frame is set up, and llc never allocates RBP,
@@ -1512,7 +1517,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         continue;
       }
       if (F.arg_size() == 0 || !F.getArg(0)->getType()->isPointerTy())
-        report_fatal_error(Twine("function without a shadow-stack pointer: ") + F.getName());
+        reportFatalUsageError(Twine("function without a shadow-stack pointer: ") + F.getName());
       dropMemoryFacts(F);
       // The Go frame cannot be realigned: LLVM must use the stack alignment
       // the target is told (8 on amd64) and spill with unaligned moves.
@@ -1642,7 +1647,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
         if (callee && leaves.count(callee->getName().str()))
           continue;
         if (CB->arg_size() == 0 || !CB->getArgOperand(0)->getType()->isPointerTy())
-          report_fatal_error(Twine("call without a shadow-stack pointer in ") + F.getName());
+          reportFatalUsageError(Twine("call without a shadow-stack pointer in ") + F.getName());
         CB->removeFnAttr(Attribute::Memory);
         for (auto K : {Attribute::ReadNone, Attribute::ReadOnly, Attribute::WriteOnly,
                        Attribute::Captures, Attribute::NoAlias})
@@ -1655,11 +1660,11 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       for (BasicBlock &B : F)
         for (Instruction &I : B)
           if (isa<AllocaInst>(&I))
-            report_fatal_error(Twine("alloca left on the Go stack in ") + F.getName());
+            reportFatalUsageError(Twine("alloca left on the Go stack in ") + F.getName());
     if (CallConv == "preserve_none")
       usePreserveNone(M, leaves);
     else if (!CallConv.empty())
-      report_fatal_error(Twine("unknown -shadow-cc ") + CallConv);
+      reportFatalUsageError(Twine("unknown -shadow-cc ") + CallConv);
     if (Function *R = M.getFunction("__shadow_remaining"))
       if (R->use_empty())
         R->eraseFromParent();
