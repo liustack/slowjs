@@ -17,21 +17,113 @@ import (
 	"golang.org/x/arch/x86/x86asm"
 )
 
-// x86asm gives a 32-bit displacement zero-extended. The check must compare
-// the address the processor uses, which sign-extends it: a frame slot at
-// -256(%rbp) read as +4294967040 would match no rewrite, or the wrong one.
-func TestDecodeSignExtendsDisplacement(t *testing.T) {
-	in, err := decode([]byte{0x48, 0x8b, 0x85, 0x00, 0xff, 0xff, 0xff}) // movq -256(%rbp), %rax
-	if err != nil {
-		t.Fatal(err)
+// The decoder and the check's reading of it, on fixed machine code: the
+// check compares what x86asm gives for both sides, so each rule it relies
+// on is pinned here.
+func TestDecodeFixtures(t *testing.T) {
+	dec := func(hex string) (x86asm.Inst, error) {
+		var b []byte
+		for _, f := range strings.Fields(hex) {
+			v, err := strconv.ParseUint(f, 16, 8)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b = append(b, byte(v))
+		}
+		return decode(b)
 	}
-	if m := in.Args[1].(x86asm.Mem); m.Base != x86asm.RBP || m.Disp != -256 {
-		t.Fatalf("decoded %+v, want RBP-256", m)
+	ok := func(hex string) x86asm.Inst {
+		t.Helper()
+		in, err := dec(hex)
+		if err != nil {
+			t.Fatalf("% s: %v", hex, err)
+		}
+		return in
+	}
+	// x86asm gives a 32-bit displacement zero-extended; the processor
+	// sign-extends it. A slot at -256(%rbp) read as +4294967040 would match
+	// no rewrite, or the wrong one.
+	if m := ok("48 8b 85 00 ff ff ff").Args[1].(x86asm.Mem); m.Base != x86asm.RBP || m.Disp != -256 {
+		t.Fatalf("movq -256(%%rbp), %%rax decoded as %+v", m)
+	}
+	if m := ok("48 8b 45 f8").Args[1].(x86asm.Mem); m.Disp != -8 {
+		t.Fatalf("an 8-bit displacement decoded as %+v", m)
+	}
+	// Width: the same opcode moves 64, 32 or 16 bits, and the check tells
+	// them apart by DataSize.
+	for hex, size := range map[string]int{"48 89 c8": 64, "89 c8": 32, "66 89 c8": 16} {
+		if in := ok(hex); in.Op != x86asm.MOV || in.DataSize != size {
+			t.Fatalf("% s: %v of %d bits, want %d", hex, in, in.DataSize, size)
+		}
+	}
+	// REX picks other registers: R8D for EAX, SIL for DH.
+	if in := ok("41 89 c0"); !isReg(in.Args[0], x86asm.R8L) {
+		t.Fatalf("41 89 c0 decoded as %v", in)
+	}
+	if a, b := ok("40 88 c6"), ok("88 c6"); !isReg(a.Args[0], x86asm.SIB) || !isReg(b.Args[0], x86asm.DH) {
+		t.Fatalf("REX byte registers: %v, %v", a, b)
+	}
+	// The SSE prefixes make different instructions of one opcode.
+	ops := map[string]x86asm.Op{"0f 10 c1": x86asm.MOVUPS, "66 0f 10 c1": x86asm.MOVUPD, "f3 0f 10 c1": x86asm.MOVSS,
+		"f2 0f 10 c1": x86asm.MOVSD_XMM, "66 0f 6f c1": x86asm.MOVDQA, "f3 0f 6f c1": x86asm.MOVDQU, "0f 28 c1": x86asm.MOVAPS}
+	for hex, op := range ops {
+		if in := ok(hex); in.Op != op || len(semPrefixes(in)) != 0 {
+			t.Fatalf("% s: %v, want %v with no prefix left", hex, in, op)
+		}
+	}
+	// A valid LOCK is part of what the instruction does; a segment override
+	// shows in the memory operand.
+	if in := ok("f0 48 01 04 24"); in.Op != x86asm.ADD || len(semPrefixes(in)) != 1 || plain(in) {
+		t.Fatalf("lock add: %v %v", in, semPrefixes(in))
+	}
+	if in := ok("64 48 8b 04 24"); in.Args[1].(x86asm.Mem).Segment != x86asm.FS || !plain(in) {
+		t.Fatalf("an FS load: %v", in)
+	}
+	// What would not run as decoded is refused: LOCK where it faults, a
+	// prefix the processor ignores, an unknown opcode, a cut-short
+	// instruction, a no-op other than the padding encodings.
+	for hex, why := range map[string]string{
+		"f0 90":                "invalid prefix",
+		"f0 48 89 04 24":       "invalid prefix",
+		"f0 48 8b 04 24":       "invalid prefix",
+		"2e 48 8b 04 24":       "ignored prefix",
+		"66 66 89 c8":          "ignored prefix",
+		"f3 48 01 c8":          "ignored prefix",
+		"0f 0a":                "unknown",
+		"66":                   "",
+		"48 8b":                "",
+		"48 90":                "none of the padding encodings",
+		"0f 1f 05 00 00 00 00": "none of the padding encodings",
+	} {
+		in, err := dec(hex)
+		if err == nil || !strings.Contains(err.Error(), why) {
+			t.Fatalf("% s: decoded as %v, %v (want an error with %q)", hex, in, err, why)
+		}
+	}
+	// The padding encodings are skipped, up to 15 bytes.
+	for p := range padNops {
+		var hex []string
+		for _, c := range []byte(p) {
+			hex = append(hex, fmt.Sprintf("%02x", c))
+		}
+		if in := ok(strings.Join(hex, " ")); !isPad(in) || in.Len != len(p) {
+			t.Fatalf("% x: %v, not padding of its length", p, in)
+		}
 	}
 	// XCHG of a 32-bit register with itself clears its upper half: it is
-	// an instruction, not padding.
-	if in, _ := decode([]byte{0x87, 0xc0}); isPad(in) {
-		t.Fatal("xchg of eax with itself taken for padding")
+	// an instruction, not padding. So is PAUSE.
+	for _, hex := range []string{"87 c0", "f3 90"} {
+		if isPad(ok(hex)) {
+			t.Fatalf("% s taken for padding", hex)
+		}
+	}
+	// The templates the check expects take no LOCK or REP: a stack move
+	// with one is not the move.
+	if in := ok("48 89 3c 24"); !isStackMove(in, true, x86asm.RDI, 0, false) {
+		t.Fatalf("movq %%rdi, 0(%%rsp) is not a stack move: %v", in)
+	}
+	if in := ok("f3 48 89 3c 24"); isStackMove(in, true, x86asm.RDI, 0, false) {
+		t.Fatalf("an XRELEASE move taken for a plain one: %v", in)
 	}
 }
 
