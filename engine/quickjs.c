@@ -551,6 +551,9 @@ struct JSContext {
     JSShape *mapped_arguments_shape;  /* shape for mapped arguments objects */
     JSShape *regexp_shape;  /* shape for regexp objects */
     JSShape *regexp_result_shape;  /* shape for regexp result objects */
+    /* for each prototype of new functions, the empty shape and the shape
+       with length and name, or NULL (see js_function_shape) */
+    JSShape *func_shapes[4][2];
 
     JSValue *class_proto;
     JSValue function_proto;
@@ -2798,6 +2801,13 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
 
     if (ctx->regexp_result_shape)
         mark_func(rt, &ctx->regexp_result_shape->header);
+
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0]) {
+            mark_func(rt, &ctx->func_shapes[i][0]->header);
+            mark_func(rt, &ctx->func_shapes[i][1]->header);
+        }
+    }
 }
 
 void JS_FreeContext(JSContext *ctx)
@@ -2860,6 +2870,12 @@ void JS_FreeContext(JSContext *ctx)
     JS_FreeValue(ctx, ctx->function_ctor);
     JS_FreeValue(ctx, ctx->function_proto);
 
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        JSShape *empty = ctx->func_shapes[i][0], *both = ctx->func_shapes[i][1];
+        ctx->func_shapes[i][0] = ctx->func_shapes[i][1] = NULL;
+        js_free_shape_null(ctx->rt, empty);
+        js_free_shape_null(ctx->rt, both);
+    }
     js_free_shape_null(ctx->rt, ctx->array_shape);
     js_free_shape_null(ctx->rt, ctx->arguments_shape);
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
@@ -5968,9 +5984,147 @@ JSValue JS_NewObject(JSContext *ctx)
     return JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT], JS_CLASS_OBJECT);
 }
 
+/* Every new function gets two properties, length and name, from
+   js_function_set_properties, each through JS_DefinePropertyValue and
+   add_property. A new function starts with the empty shape of its
+   prototype, and the two keys move it, through a shape with length only, to
+   the shape with both. Nothing else holds the empty shape or the shape with
+   length only for long, so they were made again for most functions and freed
+   again as the function moved on.
+
+   For each of the four prototypes of new functions (Function.prototype and
+   the prototypes of async, generator and async generator functions), the
+   context remembers the empty shape of the prototype and the shape with both
+   keys in func_shapes, and js_function_shape puts a new function with the
+   empty shape straight onto the shape with both.
+
+   A shape is shared by every object that has it and is never changed while
+   more than one holds it: add_property, js_shape_prepare_update and the
+   others copy a shared shape before they change it. The context holds each
+   of the shapes it remembers, so they stay as they are, and the empty shape
+   cannot be freed and its memory given to another shape: a pointer equal to
+   a remembered empty shape is that shape. The shape with both keys is the
+   one add_property finds after the empty shape, with the same prototype, the
+   same keys in the same order and the same flags, and the same size of the
+   property array, so the function is as add_property leaves it. The context
+   holds the shapes as it holds the shapes of its arrays: JS_MarkContext marks
+   them and JS_FreeContext lets them go. */
+
+/* the slot of func_shapes for the shape sh of a new function of ctx, or -1
+   when sh is not the empty shape of one of the four prototypes of new
+   functions of ctx */
+static int js_function_shape_slot(JSContext *ctx, JSShape *sh)
+{
+    static const JSClassID classes[3] = {
+        JS_CLASS_ASYNC_FUNCTION, JS_CLASS_GENERATOR_FUNCTION,
+        JS_CLASS_ASYNC_GENERATOR_FUNCTION,
+    };
+    JSValue proto;
+    int i;
+
+    if (!sh->is_hashed || sh->prop_count != 0 || sh->deleted_prop_count != 0 ||
+        !sh->proto)
+        return -1;
+    if (JS_VALUE_GET_TAG(ctx->function_proto) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_OBJ(ctx->function_proto) == sh->proto)
+        return 0;
+    for(i = 0; i < countof(classes); i++) {
+        proto = ctx->class_proto[classes[i]];
+        if (JS_VALUE_GET_TAG(proto) == JS_TAG_OBJECT &&
+            JS_VALUE_GET_OBJ(proto) == sh->proto)
+            return 1 + i;
+    }
+    return -1;
+}
+
+/* Report whether both, the shape js_function_set_properties left a new
+   function with, is the shape with length and name after the empty shape
+   empty: a shape in the shape hash table other than empty, with its
+   prototype, the two keys and nothing else, and the size of the property
+   array of empty. The flags of the keys are those of
+   js_function_set_properties: add_property gave them to the two keys it
+   added to empty, which had none. */
+static BOOL js_function_shape_made(JSShape *empty, JSShape *both)
+{
+    JSShapeProperty *pr;
+
+    if (both == empty || !both->is_hashed || both->proto != empty->proto ||
+        both->prop_size != empty->prop_size || both->prop_count != 2 ||
+        both->deleted_prop_count != 0)
+        return FALSE;
+    pr = get_shape_prop(both);
+    return pr[0].atom == JS_ATOM_length && pr[1].atom == JS_ATOM_name;
+}
+
+/* Give the function func_obj, made just now, the properties length and name,
+   as js_function_set_properties does, and report whether it did. When it did
+   not, nothing was done. */
+static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
+                              JSAtom name, int len)
+{
+    JSObject *p;
+    JSShape *sh, *empty, *both, *old_empty, *old_both;
+    JSValue name_val;
+    int i;
+
+    /* what JS_DefinePropertyValue needs to add the two keys to an ordinary
+       object */
+    if (JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    if (!p->extensible || p->is_exotic || p->fast_array ||
+        p->class_id == JS_CLASS_GLOBAL_OBJECT)
+        return FALSE;
+    sh = p->shape;
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0] != sh)
+            continue;
+        both = ctx->func_shapes[i][1];
+        /* made before the object changes: it can allocate and run the
+           cycle collector, which must find the object as it is */
+        name_val = JS_AtomToString(ctx, name);
+        /* what add_property does for the second key, which finds the shape
+           with both in the shape hash table. The property array keeps its
+           size (see js_function_shape_made). */
+        js_shape_found(ctx);
+        p->shape = js_dup_shape(both);
+        js_free_shape(ctx->rt, sh);
+        p->prop[0].u.value = JS_NewInt32(ctx, len);
+        p->prop[1].u.value = name_val;
+        return TRUE;
+    }
+    i = js_function_shape_slot(ctx, sh);
+    if (i < 0)
+        return FALSE;
+    /* held while add_property moves the object on, so that the empty shape
+       stays as it is and is not freed: add_property copies a shape held by
+       more than one rather than grow it */
+    empty = js_dup_shape(sh);
+    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
+                           JS_PROP_CONFIGURABLE);
+    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
+                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    both = p->shape;
+    if (!js_function_shape_made(empty, both)) {
+        js_free_shape(ctx->rt, empty);
+        return TRUE;
+    }
+    old_empty = ctx->func_shapes[i][0];
+    old_both = ctx->func_shapes[i][1];
+    ctx->func_shapes[i][0] = empty;
+    ctx->func_shapes[i][1] = js_dup_shape(both);
+    if (old_empty) {
+        js_free_shape(ctx->rt, old_empty);
+        js_free_shape(ctx->rt, old_both);
+    }
+    return TRUE;
+}
+
 static void js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
                                        JSAtom name, int len)
 {
+    if (js_function_shape(ctx, func_obj, name, len))
+        return;
     /* ES6 feature non compatible with ES5.1: length is configurable */
     JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
                            JS_PROP_CONFIGURABLE);
