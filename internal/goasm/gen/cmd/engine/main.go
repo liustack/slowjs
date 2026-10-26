@@ -96,7 +96,7 @@ func main() {
 			srcs = append(srcs, src{f, strings.TrimSuffix(filepath.Base(f), ".c")})
 		}
 	}
-	cflags := append(append([]string{"--target=x86_64-linux-gnu"}, gen.EngineCFlags...), freeFlags...)
+	cflags := append(append([]string{}, gen.EngineCFlags...), freeFlags...)
 	if *arch == "arm64" {
 		cflags = append(append([]string{}, gen.ARM64CFlags...), freeFlags...)
 	}

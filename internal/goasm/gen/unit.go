@@ -11,7 +11,8 @@ import (
 	"strings"
 )
 
-// EngineCFlags are the clang flags of unified engine code. Frame pointer kept,
+// EngineCFlags are the clang flags of unified engine code, for the one
+// x86-64 target the pass and the lowering know. Frame pointer kept,
 // red zone off, signed wrap, no tail calls, and the stack only 8-byte aligned,
 // as Go's amd64 stack is: with the pass's no-realign-stack, LLVM then spills
 // vectors with unaligned moves and folds no packed operand from the stack.
@@ -19,7 +20,7 @@ import (
 // call, so every indirect call goes through a register and the lowering
 // can marshal it. They travel in the IR as attributes, so llc applies them
 // after the pass.
-var EngineCFlags = []string{"-O2", "-fno-builtin", "-fno-omit-frame-pointer", "-mno-red-zone",
+var EngineCFlags = []string{"--target=x86_64-linux-gnu", "-O2", "-fno-builtin", "-fno-omit-frame-pointer", "-mno-red-zone",
 	"-fwrapv", "-fno-optimize-sibling-calls", "-fcf-protection=none", "-mstack-alignment=8",
 	"-Xclang", "-target-feature", "-Xclang", "+slow-two-mem-ops"}
 

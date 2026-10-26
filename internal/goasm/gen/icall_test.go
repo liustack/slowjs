@@ -101,7 +101,7 @@ func TestICallSymbols(t *testing.T) {
 		t.Fatal(err)
 	}
 	ir, shadow := filepath.Join(work, "c.ll"), filepath.Join(work, "c.shadow.ll")
-	must("clang", append(append([]string{"--target=x86_64-linux-gnu", "-gline-tables-only"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir,
+	must("clang", append(append([]string{"-gline-tables-only"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir,
 		filepath.Join("testdata", "icall", "icall.c"))...)
 	for _, mode := range []string{"body", "pn"} {
 		args := []string{"-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-report", "-shadow-icall-sigs"}
