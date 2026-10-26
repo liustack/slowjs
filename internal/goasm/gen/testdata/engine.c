@@ -321,6 +321,9 @@ long b_uni_p(void *sp, long n) {
 // trap instruction whatever the host does.
 long peek(void *sp, long *p) { return *p; }
 long poke(void *sp, long *p, long v) { *p = v; return v; }
+// Division by zero is undefined in C. x86 raises a divide error (SIGFPE, which
+// Go always turns into a panic) and arm64 gives 0.
+long quot(void *sp, long a, long b) { return a / b; }
 // A local the host sees lives on the shadow stack: with the stack all but
 // full, the stores go past its end.
 long hit_end(void *sp) {
