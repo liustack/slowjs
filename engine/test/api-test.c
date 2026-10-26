@@ -6,7 +6,8 @@
  */
 /*
  * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
- * JS_NewClassID, Atomics and abort. api-test.sh builds and runs it.
+ * JS_NewClassID, Atomics, abort, and snprintf given a format it does not do.
+ * api-test.sh builds and runs it.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -390,9 +391,27 @@ static void call_abort(void)
     abort();
 }
 
+/* snprintf here is the one of engine/libc, which the link puts before the
+   system's, and a format it does not do must reach the host as an abort. */
+static const char *volatile bad_format;
+
+static void call_snprintf(void)
+{
+    char buf[16];
+
+    snprintf(buf, sizeof buf, bad_format);
+}
+
 static void test_abort(void)
 {
+    static const char *bad[] = { "%f", "%ls", "%n", "%1$d", "%", "%99999999999d" };
+    size_t i;
+
     check_abort("abort", call_abort);
+    for (i = 0; i < sizeof bad / sizeof *bad; i++) {
+        bad_format = bad[i];
+        check_abort(bad[i], call_snprintf);
+    }
 }
 
 int main(void)
