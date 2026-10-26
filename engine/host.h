@@ -31,7 +31,24 @@ int64_t host_now(uint32_t vm, int kind);
    engine itself, and the host decides what to do with it. */
 enum {
     HOST_CALL_ABORT = -1, /* the engine met a state it cannot go on from. It does not return */
+    /* This one gives the memory of the heap back (engine/heap.h): a chunk that
+       holds a single block (a dedicated chunk), as soon as its block is freed
+       or has moved. It runs no user code and does not call back into the engine.
+       Its arguments are words, a pointer or a size in the u.ptr of the value
+       (HOST_WORD). The address and the size are exactly those of the chunk
+       the host has: the one host_memory_grow gave, or the last remap. */
+    HOST_CALL_MEMORY_RELEASE = -2, /* (address, size): unmap the chunk. It is already out of the heap, and the result is not read */
+    /* The host tells the engine once, with JS_SetHostRemap right after
+       JS_NewRuntime, that it can remap a chunk. Only then does the engine
+       ask for this, so the host never has to say it cannot. Linux: mremap with
+       MREMAP_MAYMOVE. */
+    HOST_CALL_MEMORY_REMAP = -3,   /* (address, old size, new size): make the dedicated chunk new size bytes (a multiple of 64 KiB, bigger), where it is or elsewhere, with its content. The result is the address of the chunk as a word, or 0 when the system has no memory, and then the chunk is as it was: the engine takes that as out of memory and does not try to copy */
 };
 JSValue host_call(uint32_t vm, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
+
+/* A pointer-sized integer as an argument or a result of the kinds above. The
+   tag is JS_TAG_INT and means nothing: the host reads the word. */
+#define HOST_WORD(x) JS_MKPTR(JS_TAG_INT, (void *)(uintptr_t)(x))
+#define HOST_WORD_VALUE(v) ((uintptr_t)JS_VALUE_GET_PTR(v))
 
 #endif

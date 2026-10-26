@@ -6,7 +6,7 @@
  */
 /*
  * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
- * JS_NewClassID, Atomics, abort, and snprintf given a format it does not do.
+ * JS_NewClassID, the seed of Math.random, Atomics, abort, and snprintf given a format it does not do.
  * api-test.sh builds and runs it.
  */
 #include <stdio.h>
@@ -114,7 +114,7 @@ static void test_dump(void)
     free(cut);
     free(full);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The one decimal of the averages is what printf's %.1f gives for the same
@@ -350,8 +350,127 @@ static void test_class_ids(void)
 
     JS_FreeContext(c1);
     JS_FreeContext(c2);
-    JS_FreeRuntime(rt1);
-    JS_FreeRuntime(rt2);
+    host_free_runtime(rt1);
+    host_free_runtime(rt2);
+}
+
+/* The memory limit decides a resize as upstream QuickJS does: count + the new
+   request - the usable size of the old block, against the limit, and a block
+   that is refused stays as it was. The numbers come from that rule, read off
+   the API (JS_GetMemorySize, js_malloc_usable_size_rt) before the call, not
+   from the allocator. The front cache is off, so that a failed request has no
+   cached block to give back and the count stays where it is. Large blocks
+   only: a small block that fits its slot does not reach the allocator. */
+static void test_realloc_limit(void)
+{
+    static const struct { size_t from, to; const char *what; } cases[] = {
+        { 1000, 1200, "grow a little" },
+        { 1000, 5000, "grow past the neighbor" },
+        { 1000, 300000, "grow into a chunk of its own" },
+        { 4000, 700, "shrink" },
+        { 1000, 0, "same size" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    size_t i;
+
+    JS_SetFrontCache(rt, 0);
+    for (i = 0; i < sizeof cases / sizeof *cases; i++) {
+        size_t from = cases[i].from, to = cases[i].to;
+        uint8_t *p, *next, *q;
+        size_t usable, count, expected, after;
+
+        p = js_malloc_rt(rt, from);
+        next = js_malloc_rt(rt, from); /* behind it, when the allocator puts it there */
+        CHECK(p && next, "%s: alloc", cases[i].what);
+        memset(p, 0x5a, from);
+        usable = js_malloc_usable_size_rt(rt, p);
+        if (!to)
+            to = usable;
+        count = JS_GetMemorySize(rt);
+        expected = count + to - usable; /* the smallest limit that lets the resize pass */
+
+        JS_SetMemoryLimit(rt, expected - 1);
+        q = js_realloc_rt(rt, p, to);
+        CHECK(!q, "%s: a resize one byte over the limit passed", cases[i].what);
+        if (q) {
+            JS_SetMemoryLimit(rt, (size_t)-1);
+            js_free_rt(rt, q);
+            js_free_rt(rt, next);
+            continue;
+        }
+        CHECK(js_malloc_usable_size_rt(rt, p) == usable && p[0] == 0x5a && p[from - 1] == 0x5a,
+              "%s: a refused resize changed the block", cases[i].what);
+        CHECK(JS_GetMemorySize(rt) == count, "%s: a refused resize changed the count", cases[i].what);
+
+        JS_SetMemoryLimit(rt, expected);
+        q = js_realloc_rt(rt, p, to);
+        CHECK(q != NULL, "%s: a resize at the limit failed", cases[i].what);
+        if (q) {
+            size_t keep = from < to ? from : to;
+            after = js_malloc_usable_size_rt(rt, q);
+            CHECK(after >= to, "%s: usable size %zu below the request %zu", cases[i].what, after, to);
+            CHECK(q[0] == 0x5a && q[keep - 1] == 0x5a, "%s: the content did not follow", cases[i].what);
+            CHECK(JS_GetMemorySize(rt) == count - usable + after,
+                  "%s: the count changed by %zd, not by the change of usable size %zd", cases[i].what,
+                  (ssize_t)(JS_GetMemorySize(rt) - count), (ssize_t)(after - usable));
+            p = q;
+        }
+        JS_SetMemoryLimit(rt, (size_t)-1);
+        js_free_rt(rt, p);
+        js_free_rt(rt, next);
+    }
+    host_free_runtime(rt);
+}
+
+/* A block of its own, on the real host: its chunk is mapped when the block is
+   made, grows by mremap on linux (the host tells the engine so) and by a new
+   chunk, a copy and a release elsewhere, with the content and the count right
+   either way, and goes back to the system in the call that frees the block. */
+static void test_dedicated(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    size_t mapped0 = host_mapped_bytes(), count, u0, u1, i;
+    uint8_t *p, *q;
+    int ok = 1;
+
+    p = js_malloc_rt(rt, (size_t)6 << 20);
+    CHECK(p != NULL, "a block of 6 MiB");
+#ifndef JS_HEAP_SYSTEM_MALLOC /* the system malloc has no chunks */
+    CHECK(host_mapped_bytes() >= mapped0 + ((size_t)6 << 20) && host_mapped_bytes() < mapped0 + ((size_t)6 << 20) + 131072,
+          "the block of 6 MiB has a chunk of %zu bytes", host_mapped_bytes() - mapped0);
+#endif
+    memset(p, 0x5a, (size_t)6 << 20);
+    u0 = js_malloc_usable_size_rt(rt, p);
+    count = JS_GetMemorySize(rt);
+    q = js_realloc_rt(rt, p, (size_t)20 << 20);
+    CHECK(q != NULL, "a block of 6 MiB that grows to 20 MiB");
+    u1 = js_malloc_usable_size_rt(rt, q);
+    CHECK(u1 >= (size_t)20 << 20 && JS_GetMemorySize(rt) == count - u0 + u1, "count after a resize of a block of its own");
+#ifndef JS_HEAP_SYSTEM_MALLOC
+    /* a block that grew has an eighth of room in its chunk */
+    CHECK(host_mapped_bytes() >= mapped0 + ((size_t)20 << 20) && host_mapped_bytes() < mapped0 + ((size_t)20 << 20) + ((size_t)20 << 20) / 8 + 131072,
+          "the chunk of the block of 20 MiB is %zu bytes", host_mapped_bytes() - mapped0);
+#endif
+    for (i = 0; i < (size_t)6 << 20; i++)
+        ok &= q[i] == 0x5a;
+    CHECK(ok, "the content of a block of its own did not follow a resize");
+    memset(q, 0xa5, u1);
+    js_free_rt(rt, q);
+    CHECK(host_mapped_bytes() == mapped0, "the chunk of a block of its own should go back to the system with the block, %zu bytes are left",
+          host_mapped_bytes() - mapped0);
+    /* a block that is refused leaves the old one */
+    p = js_malloc_rt(rt, (size_t)5 << 20);
+    CHECK(p != NULL, "a block of 5 MiB");
+    memset(p, 0x3c, (size_t)5 << 20);
+    JS_SetMemoryLimit(rt, JS_GetMemorySize(rt) + 1000);
+    CHECK(js_realloc_rt(rt, p, (size_t)40 << 20) == NULL, "a resize past the limit passed");
+    JS_SetMemoryLimit(rt, (size_t)-1);
+    for (i = 0, ok = 1; i < (size_t)5 << 20; i++)
+        ok &= p[i] == 0x3c;
+    CHECK(ok, "a refused resize of a block of its own changed it");
+    js_free_rt(rt, p);
+    CHECK(host_mapped_bytes() == mapped0, "the chunk of the refused block did not go back");
+    host_free_runtime(rt);
 }
 
 /* Runs fn in a child process with its standard error in a pipe. The child must
@@ -414,19 +533,102 @@ static void test_abort(void)
     }
 }
 
+/* Math.random starts from the seed of the runtime: the same seed gives the same
+   numbers, another seed other numbers, 0 works, and making a context and
+   drawing numbers never reads the clock. */
+static const char draw3[] = "Math.random() + ' ' + Math.random() + ' ' + Math.random()";
+
+static char *draws(uint64_t seed, int contexts, long *reads)
+{
+    JSRuntime *rt = host_new_runtime_seed(seed);
+    JSContext *ctx, *ctx2 = NULL;
+    JSValue v;
+    const char *text;
+    char *copy;
+    long before = host_wall_reads;
+
+    ctx = new_context(rt);
+    if (contexts > 1)
+        ctx2 = new_context(rt);
+    v = JS_Eval(ctx, draw3, strlen(draw3), "<seed>", JS_EVAL_TYPE_GLOBAL);
+    text = JS_ToCString(ctx, v);
+    copy = strdup(text ? text : "");
+    JS_FreeCString(ctx, text);
+    JS_FreeValue(ctx, v);
+    if (ctx2) {
+        /* a second context of the same runtime starts from the same seed */
+        v = JS_Eval(ctx2, "Math.random()", strlen("Math.random()"), "<seed>", JS_EVAL_TYPE_GLOBAL);
+        text = JS_ToCString(ctx2, v);
+        CHECK(text && !strncmp(copy, text, strlen(text)), "a second context starts elsewhere: %s against %s", text, copy);
+        JS_FreeCString(ctx2, text);
+        JS_FreeValue(ctx2, v);
+        JS_FreeContext(ctx2);
+    }
+    *reads = host_wall_reads - before;
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return copy;
+}
+
+static void test_seed(void)
+{
+    long reads;
+    char *a = draws(7, 2, &reads), *b, *c, *z, *z2;
+
+    CHECK(reads == 0, "making contexts and drawing numbers read the clock %ld times", reads);
+    CHECK(strlen(a) > 10, "no numbers: %s", a);
+    b = draws(7, 1, &reads);
+    CHECK(!strcmp(a, b), "the same seed gave other numbers: %s against %s", a, b);
+    c = draws(8, 1, &reads);
+    CHECK(strcmp(a, c) != 0, "another seed gave the same numbers: %s", a);
+    z = draws(0, 1, &reads);
+    z2 = draws(0, 1, &reads);
+    CHECK(!strcmp(z, z2) && strcmp(z, a) != 0, "seed 0: %s and %s", z, z2);
+    CHECK(strstr(z, "NaN") == NULL && strstr(z, "0 0 0") == NULL, "seed 0 gave %s", z);
+    free(a);
+    free(b);
+    free(c);
+    free(z);
+    free(z2);
+}
+
+/* Date.now asks the clock of the VM the runtime was made for. */
+static void test_clock_vm(void)
+{
+    JSRuntime *rt1 = host_new_runtime(), *rt2 = host_new_runtime();
+    JSContext *c1 = new_context(rt1), *c2 = new_context(rt2);
+    uint32_t id1 = host_vm_id(rt1), id2 = host_vm_id(rt2);
+
+    CHECK(id1 != 0 && id2 != 0 && id1 != id2, "VM ids %u and %u", id1, id2);
+    eval_ok(c2, "Date.now()");
+    CHECK(host_wall_vm == id2, "Date.now in the second runtime asked VM %u, not %u", host_wall_vm, id2);
+    eval_ok(c1, "new Date()");
+    CHECK(host_wall_vm == id1, "new Date() in the first runtime asked VM %u, not %u", host_wall_vm, id1);
+    eval_ok(c2, "Date()");
+    CHECK(host_wall_vm == id2, "Date() in the second runtime asked VM %u, not %u", host_wall_vm, id2);
+    JS_FreeContext(c1);
+    JS_FreeContext(c2);
+    host_free_runtime(rt1);
+    host_free_runtime(rt2);
+}
+
 int main(void)
 {
     JSRuntime *rt;
     JSContext *ctx;
 
+    test_clock_vm();
+    test_seed();
     test_dump();
     test_tenths();
     test_class_ids();
+    test_realloc_limit();
+    test_dedicated();
     rt = host_new_runtime();
     ctx = new_context(rt);
     test_atomics(ctx);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     test_abort();
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;

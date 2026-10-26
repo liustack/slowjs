@@ -5,8 +5,7 @@
 #       them by itself, for a struct copy or a compare, so they are always here.
 #       bzero is there for macOS, where the compiler turns a memset of 0 into a
 #       call of it.
-# host: the callbacks of engine/host.h.
-# alloc: the allocator, until the engine brings its own.
+# host: the callbacks of engine/host.h, and host_memory_grow of engine/heap.h.
 
 libc memcpy
 libc memmove
@@ -61,9 +60,3 @@ host host_now
 host host_poll
 host host_call
 host host_release
-
-alloc malloc
-alloc realloc
-alloc free
-alloc malloc_usable_size
-alloc malloc_size

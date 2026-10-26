@@ -29,6 +29,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "heap.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -99,6 +101,10 @@ enum {
 typedef struct JSRefCountHeader {
     int ref_count;
 } JSRefCountHeader;
+
+/* The reference count of every block of the allocator, small or large, is
+   this many bytes before the user data. */
+#define JS_BLOCK_REF_COUNT_OFFSET 4
 
 #define JS_FLOAT64_NAN NAN
 
@@ -350,34 +356,43 @@ typedef JSValue JSCFunction(JSContext *ctx, JSValueConst this_val, int argc, JSV
 typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 typedef JSValue JSCFunctionData(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic, JSValue *func_data);
 
-typedef struct JSMallocState {
-    size_t malloc_count;
-    size_t malloc_size;
-    size_t malloc_limit;
-    void *opaque; /* user opaque */
-} JSMallocState;
-
-typedef struct JSMallocFunctions {
-    void *(*js_malloc)(JSMallocState *s, size_t size);
-    void (*js_free)(JSMallocState *s, void *ptr);
-    void *(*js_realloc)(JSMallocState *s, void *ptr, size_t size);
-    size_t (*js_malloc_usable_size)(const void *ptr);
-} JSMallocFunctions;
-
 typedef struct JSGCObjectHeader JSGCObjectHeader;
 
-JSRuntime *JS_NewRuntime(void);
+/* The runtime lives in the memory the host gives the VM vm
+   (host_memory_grow in heap.h). seed is where Math.random starts, in every
+   context of the runtime: the engine reads no clock for it. 0 is allowed. */
+JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed);
 /* info lifetime must exceed that of rt */
 void JS_SetRuntimeInfo(JSRuntime *rt, const char *info);
 void JS_SetMemoryLimit(JSRuntime *rt, size_t limit);
 void JS_SetGCThreshold(JSRuntime *rt, size_t gc_threshold);
+/* bytes the host may be asked for in all, 0 for no limit. It only stops
+   growth. */
+void JS_SetFootprintLimit(JSRuntime *rt, size_t limit);
+/* what the memory limit and the GC threshold count, and the threshold */
+size_t JS_GetMemorySize(JSRuntime *rt);
+/* The host calls this right after JS_NewRuntime when it can remap a chunk (see
+   HOST_CALL_MEMORY_REMAP in host.h). Off by default. */
+void JS_SetHostRemap(JSRuntime *rt, int on);
+size_t JS_GetGCThreshold(JSRuntime *rt);
+/* give the free memory back to the host except keep bytes: JS_ReleaseStart,
+   then JS_ReleaseNextChunk until its length is 0 and JS_ReleaseNextRange
+   until its length is 0 (see heap.h). The runtime may not be used in
+   between. */
+void JS_ReleaseStart(JSRuntime *rt, size_t keep);
+JSMemRange JS_ReleaseNextChunk(JSRuntime *rt);
+JSMemRange JS_ReleaseNextRange(JSRuntime *rt);
+/* the most freed small blocks of a size class the allocator keeps for the
+   next allocation, 0 to 256. For tests and measuring */
+void JS_SetFrontCache(JSRuntime *rt, int max);
 /* use 0 to disable maximum stack size check */
 void JS_SetMaxStackSize(JSRuntime *rt, size_t stack_size);
 /* should be called when changing thread to update the stack top value
    used to check stack overflow. */
 void JS_UpdateStackTop(JSRuntime *rt);
-JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque);
-void JS_FreeRuntime(JSRuntime *rt);
+/* Returns the number of blocks of the allocator still in use, which is 0 when
+   nothing leaked. The host takes the chunks of memory back after it. */
+size_t JS_FreeRuntime(JSRuntime *rt);
 void *JS_GetRuntimeOpaque(JSRuntime *rt);
 void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque);
 typedef void JS_MarkFunc(JSRuntime *rt, JSGCObjectHeader *gp);
@@ -443,11 +458,20 @@ typedef struct JSMemoryUsage {
     int64_t c_func_count, array_count;
     int64_t fast_array_count, fast_array_elements;
     int64_t binary_object_count, binary_object_size;
+    /* what the runtime took from the host, its limit (0 for none), the
+       chunks, and the bytes offered back so far */
+    int64_t footprint, footprint_limit, chunk_count, release_candidate;
 } JSMemoryUsage;
 
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s);
 /* write a report of s to buf, cut to size bytes, and return its whole length */
 size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRuntime *rt);
+#ifdef JS_HEAP_CHECK
+/* test builds: NULL if the allocator is consistent, else a message */
+const char *JS_CheckMemory(JSRuntime *rt);
+/* test builds: how many freed blocks the front cache holds */
+size_t JS_FrontCacheBlocks(JSRuntime *rt);
+#endif
 
 /* atom support */
 #define JS_ATOM_NULL 0
