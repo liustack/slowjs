@@ -52,53 +52,62 @@ func TestMarkerAcrossBlocks(t *testing.T) {
 func TestMarkerFlow(t *testing.T) {
 	// A marker flows across a direct jump into the call block, no indirect
 	// jump anywhere: accepted.
-	in, err := markerFlow(strings.Split("@icall i>v\njmp\t.LBB0_3\n.LBB0_5:\n@icall i>v\n.LBB0_3:\ncallq\t*%rcx\nretq", "\n"), nil, false)
+	in, err := markerFlow(strings.Split("@icall i>v\njmp\t.LBB0_3\n.LBB0_5:\n@icall i>v\n.LBB0_3:\ncallq\t*%rcx\nretq", "\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if in[".LBB0_3"] != "i>v" {
 		t.Fatalf("flow: %q", in)
 	}
-	if _, err := markerFlow(strings.Split("@icall i>v\nretq", "\n"), nil, false); err == nil {
+	if _, err := markerFlow(strings.Split("@icall i>v\nretq", "\n"), nil); err == nil {
 		t.Fatal("marker before a return accepted")
 	}
 }
 
-// A block the marker reaches across an edge may also be a jump-table target,
-// entered without a marker. The table is not in the function body, so the
-// marker cannot be trusted: reject.
+// The indirect-jump guard is decided per jump. A jump whose block reads no
+// known table could reach any block, so a marker crossing a block edge is
+// rejected. A switch dispatch that reads a known table reaches only that
+// table's blocks, so a marker into a block the table does not name is safe.
 func TestMarkerFlowIndirectJumpEntry(t *testing.T) {
-	// .LBB0_3 has a direct marked in-edge (from .LBB0_2) and the function
-	// has an indirect jump that could also reach it unmarked.
-	body := "\ttestq\t%rsi, %rsi\n\tje\t.LBB0_2\n\tjmpq\t*%rdx\n.LBB0_2:\n" + mark("ii>v") +
-		"\tjmp\t.LBB0_3\n.LBB0_3:\n\tcallq\t*%rax\n"
-	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err == nil ||
-		!strings.Contains(err.Error(), "indirect jump") {
-		t.Fatalf("want rejection for the unmarked indirect-jump entry, got %v", err)
+	// A jmpq through a register with no table reference: targets unknown, so
+	// the marker that crosses into .LBB0_3 is rejected.
+	unknown := strings.Split("testq %rsi, %rsi\nje .LBB0_2\njmpq *%rdx\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
+	if _, err := markerFlow(unknown, nil); err == nil || !strings.Contains(err.Error(), "indirect jump") {
+		t.Fatalf("want rejection for the unknown indirect jump, got %v", err)
 	}
-	// A marker consumed in its own block, with an indirect jump elsewhere,
-	// is still fine: nothing crosses a block edge.
-	ok := "\tjmpq\t*%rdx\n.LBB0_2:\n" + mark("ii>v") + "\tcallq\t*%rax\n"
-	if _, _, err := lowerEngine(t, ok, Sig{Params: []Type{I64, I64}, Ret: Void}, nil); err != nil {
+	// The same unknown jump, but the marker is consumed in its own block:
+	// nothing crosses a block edge, so it is accepted.
+	consumed := strings.Split("jmpq *%rdx\n.LBB0_2:\n@icall ii>v\ncallq *%rax\nretq", "\n")
+	if _, err := markerFlow(consumed, nil); err != nil {
 		t.Fatalf("marker consumed in its own block rejected: %v", err)
 	}
-	// When the jump table is known and does not target the marked block, the
-	// marker is safe (this is the shape of __JS_FreeValueRT: its switch lands
-	// on other blocks). h is the name lowerEngine gives the function.
-	plan := func(targets ...string) *LowerEnv {
-		var lines []string
+	// A switch dispatch that reads a known table .LJTI0_0, with a marker that
+	// crosses into .LBB0_3. When the table does not target .LBB0_3 the marker
+	// is safe (the shape of __JS_FreeValueRT: its switch lands on other
+	// blocks); when it does, the block is reached unmarked, so reject.
+	dispatch := strings.Split("testq %rsi, %rsi\nje .LBB0_2\nleaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
+	tables := func(targets ...string) map[string]map[string]bool {
+		s := map[string]bool{}
 		for _, tg := range targets {
-			lines = append(lines, ".long\t"+tg+"-.Ltab")
+			s[tg] = true
 		}
-		return &LowerEnv{Plan: &DataPlan{InBody: map[string][]*DataObj{"h": {{Lines: lines}}}}, Funcs: map[string]bool{}}
+		return map[string]map[string]bool{".LJTI0_0": s}
 	}
-	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, plan(".LBB0_8", ".LBB0_9")); err != nil {
+	if _, err := markerFlow(dispatch, tables(".LBB0_8", ".LBB0_9")); err != nil {
 		t.Fatalf("marker to a block the table does not target rejected: %v", err)
 	}
-	// When the table does target the marked block, reject.
-	if _, _, err := lowerEngine(t, body, Sig{Params: []Type{I64, I64}, Ret: Void}, plan(".LBB0_3")); err == nil ||
-		!strings.Contains(err.Error(), "indirect jump") {
+	if _, err := markerFlow(dispatch, tables(".LBB0_3")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
 		t.Fatalf("marker to a jump-table target accepted: %v", err)
+	}
+	// The hole the old per-function guard left: a known table (.LJTI0_0,
+	// landing on .LBB0_8) and a separate unknown jump (jmpq *%r8). The old
+	// code trusted the union of known tables and, seeing .LBB0_3 absent from
+	// it, accepted the crossing marker, though the unknown jump could reach
+	// .LBB0_3 unmarked. Per jump, the unknown jump makes the targets unknown,
+	// so the marker is rejected.
+	mixed := strings.Split("testq %rsi, %rsi\nje .LBB0_2\nleaq .LJTI0_0(%rip), %rdx\nmovslq (%rdx,%rcx,4), %rcx\naddq %rdx, %rcx\njmpq *%rcx\n.LBB0_4:\njmpq *%r8\n.LBB0_2:\n@icall ii>v\njmp .LBB0_3\n.LBB0_3:\ncallq *%rax\nretq", "\n")
+	if _, err := markerFlow(mixed, tables(".LBB0_8")); err == nil || !strings.Contains(err.Error(), "indirect jump") {
+		t.Fatalf("a known table alongside an unknown jump accepted the crossing marker: %v", err)
 	}
 }
 
