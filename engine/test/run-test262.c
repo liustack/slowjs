@@ -27,9 +27,11 @@
  * This is run-test262.c of QuickJS 3d5e064 (2026-06-04) for the native test
  * host in this folder. It includes host.h in place of quickjs-libc.h, makes
  * its runtimes with host_new_runtime(), and prints a memory report through
- * print_memory_usage(), as JS_DumpMemoryUsage() fills a buffer. The engine has
- * no threads that block, so JS_SetCanBlock() is gone: a test of
- * Atomics.wait needs its excludes in test262.conf.
+ * print_memory_usage(), as JS_DumpMemoryUsage() fills a buffer. Each test
+ * runs with the shape cache on: run_test_buf() keeps 2048 shapes, as a VM of
+ * the Go API does (DefaultShapeCache). The engine has no threads that block,
+ * so JS_SetCanBlock() is gone: a test of Atomics.wait needs its excludes in
+ * test262.conf.
  */
 #include <stdlib.h>
 #include <stdio.h>
@@ -1745,6 +1747,9 @@ int run_test_buf(ThreadLocalStorage *tls,
     JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader_test, NULL, (void *)filename);
 
     add_helpers(ctx);
+    /* keep shapes as a VM of the Go API does (DefaultShapeCache), so that
+       test262 runs with the shape cache on */
+    JS_SetShapeCache(ctx, 2048);
 
     for (i = 0; i < ip->count; i++) {
         if (eval_file(ctx, harness, ip->array[i],

@@ -931,6 +931,21 @@ typedef void JSHostPromiseRejectionTracker(JSContext *ctx, JSValueConst promise,
                                            JSValueConst reason,
                                            JS_BOOL is_handled, void *opaque);
 void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTracker *cb, void *opaque);
+/* the async context of promise jobs: an object that promise reactions keep
+   and run with, or none (undefined) */
+JSValue JS_GetAsyncContext(JSContext *ctx);
+void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
+/* the regexp cache of a runtime keeps compiled regexps by pattern and flags:
+   at most n entries in at most bytes bytes, 0 for none. A new runtime keeps
+   JS_REGEXP_CACHE_ENTRIES in JS_REGEXP_CACHE_BYTES. */
+#define JS_REGEXP_CACHE_ENTRIES 256
+#define JS_REGEXP_CACHE_BYTES (1 << 20)
+void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
+/* the shape cache of the runtime of ctx keeps the last n shapes of plain
+   objects of ctx after their objects are gone, 0 for none, the default.
+   Return -1 when there is no memory for it. Turn it off before freeing ctx
+   while the runtime lives on. */
+int JS_SetShapeCache(JSContext *ctx, int n);
 
 /* return != 0 if the JS code needs to be interrupted */
 typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);

@@ -213,6 +213,44 @@ typedef enum JSErrorEnum {
 
 typedef struct JSShape JSShape;
 typedef struct JSString JSString;
+typedef struct JSRegExpCacheEntry JSRegExpCacheEntry;
+
+/* The regexp cache of a runtime (see js_compile_regexp). Its zero value is
+   a cache with the default limits and no entries. */
+typedef struct {
+    JSRegExpCacheEntry **table; /* the first entry of each hash chain, NULL until the first entry is kept */
+    uint32_t buckets; /* the number of hash chains of table, a power of 2 */
+    int count; /* the number of entries */
+    JSRegExpCacheEntry *newest; /* the entry used last */
+    JSRegExpCacheEntry *oldest; /* the entry used least recently */
+    size_t bytes; /* the bytes the entries count */
+    BOOL set; /* TRUE once JS_SetRegExpCache set max_count and max_bytes */
+    int max_count; /* the number of entries kept at most, 0 when the cache is off */
+    size_t max_bytes; /* the bytes kept at most */
+} JSRegExpCache;
+
+/* The shape cache of a runtime (see js_shape_keep). Its zero value is a
+   cache that is off. */
+typedef struct {
+    JSShape **ring; /* n kept shapes or NULL, NULL while the cache is off */
+    int n; /* the length of ring */
+    int next; /* the slot of ring for the next kept shape */
+    int count; /* the number of shapes in ring */
+    int credit; /* the copies add_property may make to keep shapes */
+    struct JSObject *proto; /* the Object.prototype whose shapes are kept */
+} JSShapeCache;
+
+/* the most keys of a shape the key cache keeps the kinds of */
+#define JS_OWN_KEY_CACHE_PROPS 24
+/* the number of shapes the key cache keeps the kinds of */
+#define JS_OWN_KEY_CACHE_SIZE 256
+
+/* the kinds of the keys of the shape sh, in the key cache of a runtime (see
+   JS_GetOwnPropertyNamesInternal) */
+typedef struct {
+    JSShape *sh; /* NULL for none */
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+} JSOwnKeyEntry;
 typedef struct JSString JSAtomStruct;
 typedef struct JSObject JSObject;
 
@@ -377,6 +415,12 @@ struct JSRuntime {
     int shape_hash_size;
     int shape_hash_count; /* number of hashed shapes */
     JSShape **shape_hash;
+    /* the async context of promise jobs, an object or any other value for
+       none (see JS_SetAsyncContext) */
+    JSValue async_context;
+    JSRegExpCache regexp_cache;
+    JSShapeCache shape_cache;
+    JSOwnKeyEntry own_key_cache[JS_OWN_KEY_CACHE_SIZE];
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
@@ -520,6 +564,9 @@ struct JSContext {
     JSShape *mapped_arguments_shape;  /* shape for mapped arguments objects */
     JSShape *regexp_shape;  /* shape for regexp objects */
     JSShape *regexp_result_shape;  /* shape for regexp result objects */
+    /* for each prototype of new functions, the empty shape and the shape
+       with length and name, or NULL (see js_function_shape) */
+    JSShape *func_shapes[4][2];
 
     JSValue *class_proto;
     JSValue function_proto;
@@ -1243,6 +1290,8 @@ static int JS_ToUint8ClampFree(JSContext *ctx, int32_t *pres, JSValue val);
 static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len);
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
+static void js_regexp_cache_off(JSRuntime *rt);
+static void js_shape_cache_off(JSRuntime *rt);
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -1919,9 +1968,16 @@ static inline int js_resize_array(JSContext *ctx, void **parray, int elem_size,
         return 0;
 }
 
+/* js_realloc_rt with the type of DynBufReallocFunc, so that a DynBuf calls
+   its realloc function through the type it has */
+static void *js_dbuf_realloc_rt(void *opaque, void *ptr, size_t size)
+{
+    return js_realloc_rt(opaque, ptr, size);
+}
+
 static inline void js_dbuf_init(JSContext *ctx, DynBuf *s)
 {
-    dbuf_init2(s, ctx->rt, (DynBufReallocFunc *)js_realloc_rt);
+    dbuf_init2(s, ctx->rt, js_dbuf_realloc_rt);
 }
 
 static void *js_realloc_bytecode_rt(void *opaque, void *ptr, size_t size)
@@ -2407,6 +2463,11 @@ void JS_FreeRuntime(JSRuntime *rt)
     struct list_head *el, *el1;
     int i;
 
+    if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
+        JS_FreeValueRT(rt, rt->async_context);
+    rt->async_context = JS_UNDEFINED;
+    js_regexp_cache_off(rt);
+    js_shape_cache_off(rt);
     JS_FreeValueRT(rt, rt->current_exception);
 
     list_for_each_safe(el, el1, &rt->job_list) {
@@ -2760,6 +2821,13 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
 
     if (ctx->regexp_result_shape)
         mark_func(rt, &ctx->regexp_result_shape->header);
+
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0]) {
+            mark_func(rt, &ctx->func_shapes[i][0]->header);
+            mark_func(rt, &ctx->func_shapes[i][1]->header);
+        }
+    }
 }
 
 void JS_FreeContext(JSContext *ctx)
@@ -2822,6 +2890,12 @@ void JS_FreeContext(JSContext *ctx)
     JS_FreeValue(ctx, ctx->function_ctor);
     JS_FreeValue(ctx, ctx->function_proto);
 
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        JSShape *empty = ctx->func_shapes[i][0], *both = ctx->func_shapes[i][1];
+        ctx->func_shapes[i][0] = ctx->func_shapes[i][1] = NULL;
+        js_free_shape_null(ctx->rt, empty);
+        js_free_shape_null(ctx->rt, both);
+    }
     js_free_shape_null(ctx->rt, ctx->array_shape);
     js_free_shape_null(ctx->rt, ctx->arguments_shape);
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
@@ -5144,11 +5218,23 @@ static void js_shape_hash_link(JSRuntime *rt, JSShape *sh)
     rt->shape_hash_count++;
 }
 
+/* the entry of the key cache of rt for the shape sh */
+static inline JSOwnKeyEntry *js_own_key_slot(JSRuntime *rt, JSShape *sh)
+{
+    uintptr_t a = (uintptr_t)sh;
+    return &rt->own_key_cache[((a >> 4) ^ (a >> 12)) & (JS_OWN_KEY_CACHE_SIZE - 1)];
+}
+
 static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 {
     uint32_t h;
     JSShape **psh;
+    JSOwnKeyEntry *e;
 
+    /* the shape leaves the shape hash table: the key cache drops it */
+    e = js_own_key_slot(rt, sh);
+    if (e->sh == sh)
+        e->sh = NULL;
     h = get_shape_hash(sh->hash, rt->shape_hash_bits);
     psh = &rt->shape_hash[h];
     while (*psh != sh)
@@ -5244,12 +5330,190 @@ static JSShape *js_dup_shape(JSShape *sh)
     return sh;
 }
 
+/* The shape cache of a runtime keeps the shapes of plain objects alive after
+   their last object is gone, so that the next object that gets the same keys
+   in the same order finds each of its shapes in the shape hash table, instead
+   of copying a shape and growing the copy one key at a time. It is off until
+   JS_SetShapeCache turns it on.
+
+   - add_property, about to add a key to a shape that only its object uses,
+     asks js_shape_keepable, and when it says yes copies the shape as it does
+     a shared one. So the shape without the key stays as it is, in the shape
+     hash table, and its count drops to zero when the object moves on to the
+     copy.
+   - add_property calls js_shape_found when it finds the shape with the new
+     key in the shape hash table.
+   - js_free_shape0 calls js_shape_keep first, which keeps such a shape in the
+     cache, with a count of one, instead of freeing it.
+   - JS_FreeRuntime calls js_shape_cache_off first, which lets every kept
+     shape go.
+
+   A copy costs an allocation and the copying of every key so far: an object
+   that gets keys no other object has, one at a time, pays it for each key and
+   finds no shape again. So the copies are paid for by shapes found: each
+   shape found earns one copy, up to JS_SHAPE_CREDIT_MAX, and
+   js_shape_keepable says no while there is none. Without copies the shapes in
+   between are still kept, only later: an object grows its shape in place
+   until it finds the next one kept, and the shape it leaves then is kept.
+
+   Only shapes whose prototype is the Object.prototype of the context given to
+   JS_SetShapeCache, with at most JS_SHAPE_MAX_PROPS keys, none of them a
+   symbol that is not registered, are kept. So a kept shape holds alive
+   nothing but that prototype, which its context holds anyway, and the atoms
+   of its keys. The cache keeps the last n shapes in a ring: when the ring is
+   full, the oldest shape is let go. Kept shapes count against the memory
+   limit, and the cache does not let them go when an allocation fails:
+   add_property reallocates the properties of an object before it takes the
+   shape it found, which may be one only the cache holds. */
+#define JS_SHAPE_MAX_PROPS 32
+#define JS_SHAPE_CREDIT_MAX 64
+
+/* let go of the shapes the shape cache keeps and turn it off */
+static void js_shape_cache_off(JSRuntime *rt)
+{
+    JSShapeCache off = rt->shape_cache;
+    int i;
+
+    if (!off.ring)
+        return;
+    /* with the cache off, js_free_shape0 frees the shapes let go here */
+    memset(&rt->shape_cache, 0, sizeof(rt->shape_cache));
+    for(i = 0; i < off.n; i++) {
+        if (off.ring[i])
+            js_free_shape(rt, off.ring[i]);
+    }
+    js_free_rt(rt, off.ring);
+}
+
+/* Set the shape cache of the runtime of ctx to keep the last n shapes of
+   plain objects of ctx, letting go of the shapes it kept before. 0 turns the
+   cache off. Return 0, or -1 when there is no memory for the ring, which
+   leaves the cache off. The kept shapes hold the Object.prototype of ctx, and
+   with it ctx: before ctx is freed while the runtime lives on, turn the cache
+   off or set it to another context. JS_FreeRuntime turns it off. */
+int JS_SetShapeCache(JSContext *ctx, int n)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape **ring;
+
+    js_shape_cache_off(rt);
+    if (n <= 0)
+        return 0;
+    /* on a 32-bit target, a ring of 2^30 shapes or more does not fit in a
+       size_t */
+    if ((uint64_t)n * sizeof(ring[0]) > SIZE_MAX / 2)
+        return -1;
+    ring = js_mallocz_rt(rt, (size_t)n * sizeof(ring[0]));
+    if (!ring)
+        return -1;
+    sc->ring = ring;
+    sc->n = n;
+    sc->credit = JS_SHAPE_CREDIT_MAX;
+    sc->proto = JS_VALUE_GET_PTR(ctx->class_proto[JS_CLASS_OBJECT]);
+    return 0;
+}
+
+/* Report whether add_property, adding a key to the shape sh of an object of
+   ctx that only the object uses, should copy sh rather than grow it, so that
+   the cache keeps sh once the object moved on to the copy. Each copy takes
+   one of the credit js_shape_found earns. */
+static BOOL js_shape_keepable(JSContext *ctx, JSShape *sh)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeCache *sc = &rt->shape_cache;
+
+    if (!sc->ring || sc->credit <= 0 || sh->proto != sc->proto ||
+        sh->prop_count >= JS_SHAPE_MAX_PROPS)
+        return FALSE;
+    sc->credit--;
+    /* add_property links the copy into the shape hash table, which only
+       js_new_shape2 grows: grow it as js_new_shape2 does, as sh stays in
+       it */
+    if (2 * (rt->shape_hash_count + 1) > rt->shape_hash_size)
+        resize_shape_hash(rt, rt->shape_hash_bits + 1);
+    return TRUE;
+}
+
+/* add_property found the next shape of an object of ctx in the shape hash
+   table: the shapes of its keys are found again, and the copies that keep
+   them pay. Earn one copy, up to JS_SHAPE_CREDIT_MAX. */
+static inline void js_shape_found(JSContext *ctx)
+{
+    JSShapeCache *sc = &ctx->rt->shape_cache;
+
+    if (sc->credit < JS_SHAPE_CREDIT_MAX)
+        sc->credit++;
+}
+
+/* Report whether a key of sh is a symbol that is not registered (or a
+   private name). Such a symbol can be the target of a WeakRef or a
+   FinalizationRegistry: a kept shape would hold it alive after the last
+   object with the key is gone. A symbol made by Symbol.for cannot be a
+   target, and the symbols of the engine are never freed: shapes with those
+   keys are kept. __JS_NewAtom links every atom but such a symbol into the
+   atom hash table through hash_next, and puts the symbol's own index there
+   instead, as js_get_atom_index and JS_FreeAtomStruct read it: so an atom is
+   such a symbol when its hash_next is its own index. */
+static BOOL js_shape_has_symbol(JSRuntime *rt, JSShape *sh)
+{
+    JSShapeProperty *pr = get_shape_prop(sh);
+    int i;
+
+    for(i = 0; i < sh->prop_count; i++, pr++) {
+        /* a deleted key, an integer key or an atom of the engine */
+        if (__JS_AtomIsConst(pr->atom))
+            continue;
+        if (rt->atom_array[pr->atom]->hash_next == pr->atom)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* Called by js_free_shape0 when the count of sh dropped to zero: keep sh in
+   the cache with a count of one, letting go of the oldest kept shape if the
+   ring is full. Return the shape js_free_shape0 must free now: sh when it is
+   not kept, the oldest kept shape when nothing else holds it, or NULL. The
+   ring is in order before that shape is freed, so a shape freed meanwhile
+   can be kept. */
+static JSShape *js_shape_keep(JSRuntime *rt, JSShape *sh)
+{
+    JSShapeCache *sc = &rt->shape_cache;
+    JSShape *old;
+
+    /* The cycle collector frees the memory of the shapes of a cycle itself,
+       once their objects are gone: a shape freed while it removes cycles
+       cannot be kept. Objects whose count dropped to zero are freed in the
+       phase DECREF, and their shapes can. */
+    if (!sc->ring || rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES)
+        return sh;
+    if (!sh->is_hashed || sh->proto != sc->proto ||
+        sh->prop_count > JS_SHAPE_MAX_PROPS || js_shape_has_symbol(rt, sh))
+        return sh;
+    js_rc(sh)->ref_count = 1;
+    old = sc->ring[sc->next];
+    sc->ring[sc->next] = sh;
+    if (++sc->next == sc->n)
+        sc->next = 0;
+    if (!old) {
+        sc->count++;
+        return NULL;
+    }
+    if (--js_rc(old)->ref_count > 0)
+        return NULL;
+    return old;
+}
+
 static void js_free_shape0(JSRuntime *rt, JSShape *sh)
 {
     uint32_t i;
     JSShapeProperty *pr;
 
     assert(js_rc(sh)->ref_count == 0);
+    /* keep sh in the shape cache, or free the shape the cache let go */
+    sh = js_shape_keep(rt, sh);
+    if (!sh)
+        return;
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -5752,9 +6016,147 @@ JSValue JS_NewObject(JSContext *ctx)
     return JS_NewObjectProtoClass(ctx, ctx->class_proto[JS_CLASS_OBJECT], JS_CLASS_OBJECT);
 }
 
+/* Every new function gets two properties, length and name, from
+   js_function_set_properties, each through JS_DefinePropertyValue and
+   add_property. A new function starts with the empty shape of its
+   prototype, and the two keys move it, through a shape with length only, to
+   the shape with both. Nothing else holds the empty shape or the shape with
+   length only for long, so they were made again for most functions and freed
+   again as the function moved on.
+
+   For each of the four prototypes of new functions (Function.prototype and
+   the prototypes of async, generator and async generator functions), the
+   context remembers the empty shape of the prototype and the shape with both
+   keys in func_shapes, and js_function_shape puts a new function with the
+   empty shape straight onto the shape with both.
+
+   A shape is shared by every object that has it and is never changed while
+   more than one holds it: add_property, js_shape_prepare_update and the
+   others copy a shared shape before they change it. The context holds each
+   of the shapes it remembers, so they stay as they are, and the empty shape
+   cannot be freed and its memory given to another shape: a pointer equal to
+   a remembered empty shape is that shape. The shape with both keys is the
+   one add_property finds after the empty shape, with the same prototype, the
+   same keys in the same order and the same flags, and the same size of the
+   property array, so the function is as add_property leaves it. The context
+   holds the shapes as it holds the shapes of its arrays: JS_MarkContext marks
+   them and JS_FreeContext lets them go. */
+
+/* the slot of func_shapes for the shape sh of a new function of ctx, or -1
+   when sh is not the empty shape of one of the four prototypes of new
+   functions of ctx */
+static int js_function_shape_slot(JSContext *ctx, JSShape *sh)
+{
+    static const JSClassID classes[3] = {
+        JS_CLASS_ASYNC_FUNCTION, JS_CLASS_GENERATOR_FUNCTION,
+        JS_CLASS_ASYNC_GENERATOR_FUNCTION,
+    };
+    JSValue proto;
+    int i;
+
+    if (!sh->is_hashed || sh->prop_count != 0 || sh->deleted_prop_count != 0 ||
+        !sh->proto)
+        return -1;
+    if (JS_VALUE_GET_TAG(ctx->function_proto) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_OBJ(ctx->function_proto) == sh->proto)
+        return 0;
+    for(i = 0; i < countof(classes); i++) {
+        proto = ctx->class_proto[classes[i]];
+        if (JS_VALUE_GET_TAG(proto) == JS_TAG_OBJECT &&
+            JS_VALUE_GET_OBJ(proto) == sh->proto)
+            return 1 + i;
+    }
+    return -1;
+}
+
+/* Report whether both, the shape js_function_set_properties left a new
+   function with, is the shape with length and name after the empty shape
+   empty: a shape in the shape hash table other than empty, with its
+   prototype, the two keys and nothing else, and the size of the property
+   array of empty. The flags of the keys are those of
+   js_function_set_properties: add_property gave them to the two keys it
+   added to empty, which had none. */
+static BOOL js_function_shape_made(JSShape *empty, JSShape *both)
+{
+    JSShapeProperty *pr;
+
+    if (both == empty || !both->is_hashed || both->proto != empty->proto ||
+        both->prop_size != empty->prop_size || both->prop_count != 2 ||
+        both->deleted_prop_count != 0)
+        return FALSE;
+    pr = get_shape_prop(both);
+    return pr[0].atom == JS_ATOM_length && pr[1].atom == JS_ATOM_name;
+}
+
+/* Give the function func_obj, made just now, the properties length and name,
+   as js_function_set_properties does, and report whether it did. When it did
+   not, nothing was done. */
+static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
+                              JSAtom name, int len)
+{
+    JSObject *p;
+    JSShape *sh, *empty, *both, *old_empty, *old_both;
+    JSValue name_val;
+    int i;
+
+    /* what JS_DefinePropertyValue needs to add the two keys to an ordinary
+       object */
+    if (JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    if (!p->extensible || p->is_exotic || p->fast_array ||
+        p->class_id == JS_CLASS_GLOBAL_OBJECT)
+        return FALSE;
+    sh = p->shape;
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0] != sh)
+            continue;
+        both = ctx->func_shapes[i][1];
+        /* made before the object changes: it can allocate and run the
+           cycle collector, which must find the object as it is */
+        name_val = JS_AtomToString(ctx, name);
+        /* what add_property does for the second key, which finds the shape
+           with both in the shape hash table. The property array keeps its
+           size (see js_function_shape_made). */
+        js_shape_found(ctx);
+        p->shape = js_dup_shape(both);
+        js_free_shape(ctx->rt, sh);
+        p->prop[0].u.value = JS_NewInt32(ctx, len);
+        p->prop[1].u.value = name_val;
+        return TRUE;
+    }
+    i = js_function_shape_slot(ctx, sh);
+    if (i < 0)
+        return FALSE;
+    /* held while add_property moves the object on, so that the empty shape
+       stays as it is and is not freed: add_property copies a shape held by
+       more than one rather than grow it */
+    empty = js_dup_shape(sh);
+    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
+                           JS_PROP_CONFIGURABLE);
+    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
+                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    both = p->shape;
+    if (!js_function_shape_made(empty, both)) {
+        js_free_shape(ctx->rt, empty);
+        return TRUE;
+    }
+    old_empty = ctx->func_shapes[i][0];
+    old_both = ctx->func_shapes[i][1];
+    ctx->func_shapes[i][0] = empty;
+    ctx->func_shapes[i][1] = js_dup_shape(both);
+    if (old_empty) {
+        js_free_shape(ctx->rt, old_empty);
+        js_free_shape(ctx->rt, old_both);
+    }
+    return TRUE;
+}
+
 static void js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
                                        JSAtom name, int len)
 {
+    if (js_function_shape(ctx, func_obj, name, len))
+        return;
     /* ES6 feature non compatible with ES5.1: length is configurable */
     JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
                            JS_PROP_CONFIGURABLE);
@@ -9433,6 +9835,283 @@ void JS_FreePropertyEnum(JSContext *ctx, JSPropertyEnum *tab, uint32_t len)
     }
 }
 
+/* The own keys of an object that is not exotic are the keys of its shape.
+   JS_GetOwnPropertyNamesInternal lists them for for in, Object.keys and its
+   kin, spread, Object.assign and JSON.stringify, in two passes that ask the
+   atom table of each key whether it is a string, a symbol or a private name,
+   and whether it is an array index. Then JS_CopyDataProperties, behind
+   object spread and the rest of a destructuring, and
+   JS_GetOwnPropertyNames2, behind Object.keys, values and entries, look each
+   key up again to read its value. The three call js_own_keys,
+   js_copy_data and js_own_keys_array first, which list the keys of such an
+   object from its shape in one pass, and read the values of plain data
+   properties straight from the object. Each does nothing and says so for
+   what it does not handle, and the engine goes on as before.
+
+   The kind of a key depends only on its atom, which stays the same while a
+   shape holds it. The key cache of a runtime keeps the kinds of the keys of
+   recently listed shapes, so that the next listing of an object of such a
+   shape asks the atom table nothing. It keeps them only for shapes in the
+   shape hash table, and drops them when the shape leaves the table:
+   js_shape_hash_unlink drops them. A shape in the table does not change in
+   place: before a key is added to it it leaves the table
+   (add_shape_property), before a key is deleted or the flags of a key change
+   it leaves the table for good or is copied (js_shape_prepare_update), and
+   it leaves the table before it is freed (js_free_shape0). So the kinds the
+   cache has for a shape are those of its keys, and the memory of the shape
+   has not gone to another shape. The cache holds no shape, atom or object,
+   so it keeps nothing alive and does not change when the cycle collector
+   runs: the flags of the keys are read from the shape at each listing. */
+
+/* the kinds of a key, as the key cache keeps them */
+#define JS_OWN_KIND_STRING JS_ATOM_KIND_STRING /* a string that is no array index */
+#define JS_OWN_KIND_SYMBOL JS_ATOM_KIND_SYMBOL
+#define JS_OWN_KIND_PRIVATE JS_ATOM_KIND_PRIVATE
+#define JS_OWN_KIND_INDEX 3 /* an array index */
+#define JS_OWN_KIND_NONE 4 /* a deleted key */
+
+/* the most array indexes a listing sorts: an object with more takes the
+   generic path */
+#define JS_OWN_KEY_NUM_MAX 16
+
+/* the kind of atom, as JS_AtomGetKind and JS_AtomIsArrayIndex tell it, with
+   the value of an array index in *pval */
+static int js_own_key_kind(JSRuntime *rt, JSAtom atom, uint32_t *pval)
+{
+    JSAtomStruct *p;
+    uint32_t v;
+
+    *pval = 0;
+    if (atom == JS_ATOM_NULL)
+        return JS_OWN_KIND_NONE;
+    if (__JS_AtomIsTaggedInt(atom)) {
+        *pval = __JS_AtomToUInt32(atom);
+        return JS_OWN_KIND_INDEX;
+    }
+    p = rt->atom_array[atom];
+    switch(p->atom_type) {
+    case JS_ATOM_TYPE_STRING:
+        /* what JS_AtomIsArrayIndex does for a string */
+        if (is_num_string(&v, p) && v != -1) {
+            *pval = v;
+            return JS_OWN_KIND_INDEX;
+        }
+        return JS_OWN_KIND_STRING;
+    case JS_ATOM_TYPE_GLOBAL_SYMBOL:
+        return JS_OWN_KIND_SYMBOL;
+    case JS_ATOM_TYPE_SYMBOL:
+        if (p->hash == JS_ATOM_HASH_PRIVATE)
+            return JS_OWN_KIND_PRIVATE;
+        return JS_OWN_KIND_SYMBOL;
+    default:
+        abort();
+    }
+}
+
+/* Put the kinds of the keys of the shape sh into kinds, from the key cache
+   or from the atoms, and report whether it did: it does not for a shape of
+   more than JS_OWN_KEY_CACHE_PROPS keys. */
+static BOOL js_own_key_kinds(JSRuntime *rt, JSShape *sh, uint8_t *kinds)
+{
+    JSOwnKeyEntry *e = NULL;
+    JSShapeProperty *prs;
+    uint32_t v;
+    int i;
+
+    if (sh->prop_count > JS_OWN_KEY_CACHE_PROPS)
+        return FALSE;
+    if (sh->is_hashed) {
+        e = js_own_key_slot(rt, sh);
+        if (e->sh == sh) {
+            memcpy(kinds, e->kinds, JS_OWN_KEY_CACHE_PROPS);
+            return TRUE;
+        }
+    }
+    prs = get_shape_prop(sh);
+    for(i = 0; i < sh->prop_count; i++)
+        kinds[i] = js_own_key_kind(rt, prs[i].atom, &v);
+    if (e) {
+        e->sh = sh;
+        memcpy(e->kinds, kinds, JS_OWN_KEY_CACHE_PROPS);
+    }
+    return TRUE;
+}
+
+/* the listing of the own keys of an object that is not exotic, in the order
+   JS_GetOwnPropertyNamesInternal gives them: array indexes by value, then
+   strings, then symbols and private names, each in the order of the shape */
+typedef struct {
+    JSShape *sh; /* the shape of the object */
+    int flags; /* the JS_GPN_ flags of the listing */
+    int nums; /* the count of array indexes */
+    int n; /* the count of keys listed */
+    BOOL plain; /* whether every key listed is a plain data property */
+    BOOL cached; /* whether kinds holds the kinds of the keys of sh */
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+    struct {
+        int i; /* its place in the shape */
+        uint32_t v; /* its value */
+    } num[JS_OWN_KEY_NUM_MAX];
+} JSOwnKeyList;
+
+/* where js_own_keys_next is in a listing */
+typedef struct {
+    int phase; /* 0 for the array indexes, 1 for the strings, 2 for the symbols */
+    int i; /* the next index or place in the shape */
+    BOOL syms; /* whether the shape has a symbol or a private name */
+} JSOwnKeyIter;
+
+/* the kind of the key i of the listing l, whose shape property is prs */
+static inline int js_own_keys_kind(JSRuntime *rt, const JSOwnKeyList *l, int i,
+                                   const JSShapeProperty *prs)
+{
+    uint32_t v;
+
+    if (l->cached)
+        return l->kinds[i];
+    return js_own_key_kind(rt, prs->atom, &v);
+}
+
+/* whether the key of kind k whose shape property is prs is listed with the
+   flags of l */
+static inline BOOL js_own_keys_listed(const JSOwnKeyList *l, int k,
+                                      const JSShapeProperty *prs)
+{
+    if (k == JS_OWN_KIND_NONE)
+        return FALSE;
+    if ((l->flags & JS_GPN_ENUM_ONLY) && !(prs->flags & JS_PROP_ENUMERABLE))
+        return FALSE;
+    if (k == JS_OWN_KIND_INDEX)
+        k = JS_OWN_KIND_STRING;
+    return (l->flags >> k) & 1;
+}
+
+/* List the own keys of p with flags into l, and report whether it could: p
+   is not exotic, has no binding of a module namespace among the keys listed
+   with JS_GPN_SET_ENUM or JS_GPN_ENUM_ONLY, where
+   JS_GetOwnPropertyNamesInternal may throw, and has at most
+   JS_OWN_KEY_NUM_MAX array indexes among them. */
+static BOOL js_own_keys_scan(JSContext *ctx, JSOwnKeyList *l, JSObject *p,
+                             int flags)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShapeProperty *prs;
+    uint32_t v;
+    int i, j, k, t;
+
+    if (p->is_exotic)
+        return FALSE;
+    l->sh = p->shape;
+    l->flags = flags;
+    l->nums = 0;
+    l->n = 0;
+    l->plain = TRUE;
+    l->cached = js_own_key_kinds(rt, l->sh, l->kinds);
+    prs = get_shape_prop(l->sh);
+    for(i = 0; i < l->sh->prop_count; i++, prs++) {
+        k = js_own_keys_kind(rt, l, i, prs);
+        if (!js_own_keys_listed(l, k, prs))
+            continue;
+        t = prs->flags & JS_PROP_TMASK;
+        if (t == JS_PROP_VARREF && (flags & (JS_GPN_SET_ENUM | JS_GPN_ENUM_ONLY)))
+            return FALSE;
+        /* a pending stack is a marker that must not be handed on: values of
+           'stack' are read through the engine */
+        if (t != 0 || prs->atom == JS_ATOM_stack)
+            l->plain = FALSE;
+        if (k == JS_OWN_KIND_INDEX) {
+            if (l->nums == JS_OWN_KEY_NUM_MAX)
+                return FALSE;
+            js_own_key_kind(rt, prs->atom, &v);
+            /* sorted as they come: indexes are few, and mostly in order */
+            for(j = l->nums; j > 0 && l->num[j - 1].v > v; j--)
+                l->num[j] = l->num[j - 1];
+            l->num[j].i = i;
+            l->num[j].v = v;
+            l->nums++;
+        }
+        l->n++;
+    }
+    return TRUE;
+}
+
+/* Return the place in the shape of the next key of the listing l, or -1
+   after the last. it starts zeroed. */
+static int js_own_keys_next(JSRuntime *rt, const JSOwnKeyList *l,
+                            JSOwnKeyIter *it)
+{
+    const JSShapeProperty *prs = get_shape_prop(l->sh);
+    int count = l->sh->prop_count, i, k;
+
+    if (it->phase == 0) {
+        if (it->i < l->nums)
+            return l->num[it->i++].i;
+        if (l->n == l->nums)
+            return -1;
+        it->phase = 1;
+        it->i = 0;
+    }
+    if (it->phase == 1) {
+        while (it->i < count) {
+            i = it->i++;
+            k = js_own_keys_kind(rt, l, i, &prs[i]);
+            if (k == JS_OWN_KIND_STRING) {
+                if (js_own_keys_listed(l, k, &prs[i]))
+                    return i;
+            } else if (k == JS_OWN_KIND_SYMBOL || k == JS_OWN_KIND_PRIVATE) {
+                it->syms = TRUE;
+            }
+        }
+        if (!it->syms)
+            return -1;
+        it->phase = 2;
+        it->i = 0;
+    }
+    while (it->i < count) {
+        i = it->i++;
+        k = js_own_keys_kind(rt, l, i, &prs[i]);
+        if ((k == JS_OWN_KIND_SYMBOL || k == JS_OWN_KIND_PRIVATE) &&
+            js_own_keys_listed(l, k, &prs[i]))
+            return i;
+    }
+    return -1;
+}
+
+/* List the own keys of p as JS_GetOwnPropertyNamesInternal does with flags,
+   into *ptab and *plen with the result in *pret, and report whether it did:
+   when it did not, nothing was done (see js_own_keys_scan). */
+static BOOL js_own_keys(JSContext *ctx, JSPropertyEnum **ptab, uint32_t *plen,
+                        JSObject *p, int flags, int *pret)
+{
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    JSPropertyEnum *tab;
+    JSShapeProperty *prs;
+    int i, k;
+
+    if (!js_own_keys_scan(ctx, &l, p, flags))
+        return FALSE;
+    *ptab = NULL;
+    *plen = 0;
+    tab = js_malloc(ctx, sizeof(tab[0]) * max_int(l.n, 1));
+    if (!tab) {
+        *pret = -1;
+        return TRUE;
+    }
+    prs = get_shape_prop(l.sh);
+    k = 0;
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        tab[k].atom = JS_DupAtom(ctx, prs[i].atom);
+        tab[k].is_enumerable = (prs[i].flags & JS_PROP_ENUMERABLE) != 0;
+        k++;
+    }
+    assert(k == l.n);
+    *ptab = tab;
+    *plen = l.n;
+    *pret = 0;
+    return TRUE;
+}
+
 /* return < 0 in case if exception, 0 if OK. ptab and its atoms must
    be freed by the user. */
 static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
@@ -9450,7 +10129,10 @@ static int __exception JS_GetOwnPropertyNamesInternal(JSContext *ctx,
     BOOL is_enumerable, num_sorted;
     uint32_t num_key;
     JSAtomKindEnum kind;
+    int ret;
 
+    if (js_own_keys(ctx, ptab, plen, p, flags, &ret))
+        return ret;
     /* clear pointer for consistency in case of failure */
     *ptab = NULL;
     *plen = 0;
@@ -9847,6 +10529,16 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
     JSAtom atom;
     uint32_t tag;
     tag = JS_VALUE_GET_TAG(val);
+    if (tag == JS_TAG_STRING) {
+        JSString *p = JS_VALUE_GET_STRING(val);
+        /* A string that is already an atom and does not start with a digit
+           is its own atom: JS_ToPropertyKey would dup it, is_num_string
+           would find no index, and __JS_NewAtom would take its index and
+           keep the dup as the reference of the atom, as JS_DupAtom does. */
+        if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+            !is_digit(string_get(p, 0)))
+            return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+    }
     if (tag == JS_TAG_INT &&
         (uint32_t)JS_VALUE_GET_INT(val) <= JS_ATOM_MAX_INT) {
         /* fast path for integer values */
@@ -10059,11 +10751,13 @@ static JSProperty *add_property(JSContext *ctx,
                     return NULL;
                 p->prop = new_prop;
             }
+            js_shape_found(ctx);
             p->shape = js_dup_shape(new_sh);
             js_free_shape(ctx->rt, sh);
             return &p->prop[new_sh->prop_count - 1];
-        } else if (js_rc(sh)->ref_count != 1) {
-            /* if the shape is shared, clone it */
+        } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {
+            /* if the shape is shared, or the shape cache can keep it, clone
+               it */
             new_sh = js_clone_shape(ctx, sh);
             if (!new_sh)
                 return NULL;
@@ -11525,6 +12219,31 @@ int JS_DefinePropertyValue(JSContext *ctx, JSValueConst this_obj,
                            JSAtom prop, JSValue val, int flags)
 {
     int ret;
+
+    /* A data property that an ordinary extensible object does not have yet,
+       as every object literal, spread, class field, JSON.parse and new
+       function makes: what JS_DefineProperty does when find_own_property
+       finds nothing and the object is no fast array, and JS_CreateProperty
+       when the object is neither exotic nor the global object and is
+       extensible, is add_property with the C_W_E bits of flags, then the
+       value. */
+    if (JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
+        !(flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET))) {
+        JSObject *p = JS_VALUE_GET_OBJ(this_obj);
+        JSProperty *pr;
+
+        if (p->extensible && !p->is_exotic && !p->fast_array &&
+            p->class_id != JS_CLASS_GLOBAL_OBJECT &&
+            !find_own_property1(p, prop)) {
+            pr = add_property(ctx, p, prop, flags & JS_PROP_C_W_E);
+            if (!pr) {
+                JS_FreeValue(ctx, val);
+                return -1;
+            }
+            pr->u.value = val;
+            return TRUE;
+        }
+    }
     ret = JS_DefineProperty(ctx, this_obj, prop, val, JS_UNDEFINED, JS_UNDEFINED,
                             flags | JS_PROP_HAS_VALUE | JS_PROP_HAS_CONFIGURABLE | JS_PROP_HAS_WRITABLE | JS_PROP_HAS_ENUMERABLE);
     JS_FreeValue(ctx, val);
@@ -17093,6 +17812,36 @@ static __exception int js_for_in_start(JSContext *ctx, JSValue *sp)
 }
 
 /* return -1 if exception, 0 if slow case, 1 if the enumeration is finished */
+/* Report whether p, an object of the prototype chain of a for in loop, has
+   no enumerable property, read from its shape. When it has none, also store
+   the empty list of names JS_GetOwnPropertyNamesInternal gives for it with
+   JS_GPN_STRING_MASK and JS_GPN_ENUM_ONLY in *ptab and *plen. For an object
+   that is not exotic, that list holds the shape properties with an atom, the
+   enumerable flag and a string key, and nothing else: no method of the class
+   is called and nothing is thrown for a property left out. So it is empty
+   when no shape property has an atom and the flag. Every other object,
+   also one whose only enumerable keys are symbols, is listed as before. The
+   empty list needs no memory, where JS_GetOwnPropertyNamesInternal mallocs
+   one entry, so with no memory left the loop goes on where it used to
+   fail. */
+static BOOL js_for_in_no_enum(JSObject *p, JSPropertyEnum **ptab, uint32_t *plen)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i;
+
+    if (p->is_exotic)
+        return FALSE;
+    sh = p->shape;
+    for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+        if (prs->atom != JS_ATOM_NULL && (prs->flags & JS_PROP_ENUMERABLE))
+            return FALSE;
+    }
+    *ptab = NULL;
+    *plen = 0;
+    return TRUE;
+}
+
 static __exception int js_for_in_prepare_prototype_chain_enum(JSContext *ctx,
                                                               JSValueConst enum_obj)
 {
@@ -17113,7 +17862,8 @@ static __exception int js_for_in_prepare_prototype_chain_enum(JSContext *ctx,
             break;
         if (JS_IsException(obj1))
             goto fail;
-        if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count,
+        if (!js_for_in_no_enum(JS_VALUE_GET_OBJ(obj1), &tab_atom, &tab_atom_count) &&
+            JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count,
                                            JS_VALUE_GET_OBJ(obj1),
                                            JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY)) {
             JS_FreeValue(ctx, obj1);
@@ -17664,6 +18414,118 @@ exception:
     return -1;
 }
 
+/* Give pt, an ordinary object with no property, the shape and the values of
+   ps, with the result in *pret, and report whether it did: when it did not,
+   nothing was done. It does it when ps is not exotic, has the prototype of
+   pt, and every property of ps is a plain data property, enumerable,
+   writable and configurable, with no array index, no private name and no
+   'stack' key among them and no string after a symbol, so that they are
+   listed in the order of the shape, and the shape of ps is in the shape hash
+   table, as a shape two objects share must be. */
+static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
+{
+    JSShape *ssh = ps->shape, *tsh = pt->shape;
+    JSShapeProperty *prs;
+    uint8_t kinds[JS_OWN_KEY_CACHE_PROPS];
+    BOOL sym = FALSE;
+    int i;
+
+    if (ps->is_exotic || !pt->extensible || pt->is_exotic || pt->fast_array ||
+        pt->class_id != JS_CLASS_OBJECT)
+        return FALSE;
+    if (tsh->prop_count != 0 || !tsh->is_hashed || !ssh->is_hashed ||
+        ssh->proto != tsh->proto || ssh->prop_count == 0)
+        return FALSE;
+    if (!js_own_key_kinds(ctx->rt, ssh, kinds))
+        return FALSE;
+    prs = get_shape_prop(ssh);
+    for(i = 0; i < ssh->prop_count; i++) {
+        if (prs[i].flags != JS_PROP_C_W_E || prs[i].atom == JS_ATOM_stack)
+            return FALSE;
+        switch(kinds[i]) {
+        case JS_OWN_KIND_STRING:
+            if (sym)
+                return FALSE;
+            break;
+        case JS_OWN_KIND_SYMBOL:
+            sym = TRUE;
+            break;
+        default:
+            return FALSE;
+        }
+    }
+    /* what add_property does when it finds the next shape */
+    if (ssh->prop_size != tsh->prop_size) {
+        JSProperty *new_prop;
+        new_prop = js_realloc(ctx, pt->prop, sizeof(pt->prop[0]) * ssh->prop_size);
+        if (!new_prop) {
+            *pret = -1;
+            return TRUE;
+        }
+        pt->prop = new_prop;
+    }
+    pt->shape = js_dup_shape(ssh);
+    js_free_shape(ctx->rt, tsh);
+    for(i = 0; i < ssh->prop_count; i++)
+        pt->prop[i].u.value = JS_DupValue(ctx, ps->prop[i].u.value);
+    *pret = 0;
+    return TRUE;
+}
+
+/* Copy the own properties of source into target as JS_CopyDataProperties
+   does for a spread in an object literal or the rest of a destructuring,
+   which define them on target, a new object, with the result in *pret, and
+   report whether it did: when it did not, nothing was done. It does it when
+   every key listed of source is a plain data property, so that no getter
+   runs during the copy, which could change source: its values are then read
+   from its properties. When target has no property yet, there is no key to
+   leave out, and every property of source is enumerable, writable and
+   configurable, listed in the order of its shape, target takes the shape of
+   source, which defining the keys one by one would have led it to. */
+static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
+                         JSValueConst source, JSValueConst excluded,
+                         BOOL setprop, int *pret)
+{
+    JSObject *ps, *pexcl = NULL;
+    JSShapeProperty *prs;
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    int i, ret;
+
+    if (setprop || JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT)
+        return FALSE;
+    ps = JS_VALUE_GET_OBJ(source);
+    if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
+        pexcl = JS_VALUE_GET_OBJ(excluded);
+    else if (js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
+        return TRUE;
+    if (!js_own_keys_scan(ctx, &l, ps,
+                          JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY) ||
+        !l.plain)
+        return FALSE;
+    prs = get_shape_prop(l.sh);
+    *pret = 0;
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        if (pexcl) {
+            ret = js_get_own_property_flags(ctx, NULL, pexcl, prs[i].atom);
+            if (ret < 0) {
+                *pret = -1;
+                break;
+            }
+            if (ret)
+                continue;
+        }
+        if (JS_DefinePropertyValue(ctx, target, prs[i].atom,
+                                   JS_DupValue(ctx, ps->prop[i].u.value),
+                                   JS_PROP_C_W_E) < 0) {
+            *pret = -1;
+            break;
+        }
+    }
+    return TRUE;
+}
+
 static __exception int JS_CopyDataProperties(JSContext *ctx,
                                              JSValueConst target,
                                              JSValueConst source,
@@ -17679,6 +18541,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     JSPropertyDescriptor desc;
     BOOL is_enumerable;
 
+    if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
+        return ret;
     if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
         return 0;
 
@@ -24055,6 +24919,70 @@ static JSAtom json_parse_ident(JSParseState *s, const uint8_t **pp, int c)
     return atom;
 }
 
+/* Put the run of characters from p, up to end, that json_parse_string takes
+   as they are into b, and return where the run ends: at sep, '\\', a byte
+   below 0x20, end, or a byte that does not start a character of 2, 3 or 4
+   bytes of at most U+10FFFF. json_parse_string then does what it does for
+   that byte: end the string, read an escape, or throw the same error at the
+   same place. Return NULL when b could not grow. */
+static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
+                                      const uint8_t *end, int sep)
+{
+    const uint8_t *q, *lim, *p_next;
+    uint16_t units[64];
+    uint32_t c;
+    int n;
+
+    for(;;) {
+        /* ASCII. The run stops after JS_STRING_LEN_MAX + 1 bytes, so that
+           its length fits an int and string_buffer_write8 throws for a
+           string too long, as string_buffer_putc does: the text of
+           JSON.parse can be longer than any string. */
+        lim = end - p > JS_STRING_LEN_MAX + 1 ? p + JS_STRING_LEN_MAX + 1 : end;
+        for(q = p; q < lim; q++) {
+            c = *q;
+            if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
+                break;
+        }
+        if (q > p) {
+            if (string_buffer_write8(b, p, q - p))
+                return NULL;
+            p = q;
+        }
+        if (p == end || *p < 0x80)
+            return p;
+        /* characters of 2, 3 or 4 bytes and the ASCII between them, as the
+           loop decodes them, 64 code units at a time */
+        n = 0;
+        q = p;
+        while (q < end && n <= countof(units) - 2) {
+            c = *q;
+            if (c < 0x80) {
+                if (c < 0x20 || c == sep || c == '\\')
+                    break;
+                units[n++] = c;
+                q++;
+                continue;
+            }
+            c = unicode_from_utf8(q, UTF8_CHAR_LEN_MAX, &p_next);
+            if (c > 0x10FFFF)
+                break;
+            if (c >= 0x10000) {
+                units[n++] = 0xD800 + ((c - 0x10000) >> 10);
+                units[n++] = 0xDC00 + (c & 0x3FF);
+            } else {
+                units[n++] = c;
+            }
+            q = p_next;
+        }
+        if (n > 0 && string_buffer_write16(b, units, n))
+            return NULL;
+        if (q == p)
+            return p;
+        p = q;
+    }
+}
+
 static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
 {
     const uint8_t *p, *p_next;
@@ -24067,6 +24995,10 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
 
     p = *pp;
     for(;;) {
+        /* the characters taken as they are, in one run */
+        p = json_string_run(b, p, s->buf_end, sep);
+        if (!p)
+            goto fail;
         if (p >= s->buf_end) {
             goto end_of_input;
         }
@@ -41216,6 +42148,81 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* the array [key, value] of Object.entries, taking value */
+static JSValue js_own_key_pair(JSContext *ctx, JSAtom atom, JSValue value)
+{
+    JSValue a, key;
+
+    a = JS_NewArray(ctx);
+    if (JS_IsException(a)) {
+        JS_FreeValue(ctx, value);
+        return a;
+    }
+    key = JS_AtomToValue(ctx, atom);
+    if (JS_IsException(key)) {
+        JS_FreeValue(ctx, value);
+        JS_FreeValue(ctx, a);
+        return key;
+    }
+    if (add_fast_array_element(ctx, JS_VALUE_GET_OBJ(a), key, 0) < 0) {
+        JS_FreeValue(ctx, value);
+        JS_FreeValue(ctx, a);
+        return JS_EXCEPTION;
+    }
+    if (add_fast_array_element(ctx, JS_VALUE_GET_OBJ(a), value, 0) < 0) {
+        JS_FreeValue(ctx, a);
+        return JS_EXCEPTION;
+    }
+    return a;
+}
+
+/* Make the array JS_GetOwnPropertyNames2 makes for obj with flags and kind,
+   of the own keys of obj, of their values, or of pairs of both, into *pr,
+   and report whether it did: when it did not, nothing was done. It does it
+   for an object js_own_keys_scan can list, and for values only when every
+   key listed is a plain data property: then no getter runs between the
+   listing and the reads, which could change the object. */
+static BOOL js_own_keys_array(JSContext *ctx, JSValueConst obj, int flags,
+                              int kind, JSValue *pr)
+{
+    JSObject *p;
+    JSShapeProperty *prs;
+    JSOwnKeyList l;
+    JSOwnKeyIter it = { 0 };
+    JSValue r, v;
+    int i;
+
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (!js_own_keys_scan(ctx, &l, p, flags) ||
+        (kind != JS_ITERATOR_KIND_KEY && !l.plain))
+        return FALSE;
+    r = JS_NewArray(ctx);
+    *pr = r;
+    if (JS_IsException(r))
+        return TRUE;
+    if (l.n > 0 && expand_fast_array(ctx, JS_VALUE_GET_OBJ(r), l.n) < 0)
+        goto fail;
+    prs = get_shape_prop(l.sh);
+    while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        if (kind == JS_ITERATOR_KIND_KEY)
+            v = JS_AtomToValue(ctx, prs[i].atom);
+        else if (kind == JS_ITERATOR_KIND_VALUE)
+            v = JS_DupValue(ctx, p->prop[i].u.value);
+        else
+            v = js_own_key_pair(ctx, prs[i].atom, JS_DupValue(ctx, p->prop[i].u.value));
+        if (JS_IsException(v) ||
+            add_fast_array_element(ctx, JS_VALUE_GET_OBJ(r), v, 0) < 0)
+            goto fail;
+    }
+    return TRUE;
+ fail:
+    JS_FreeValue(ctx, r);
+    *pr = JS_EXCEPTION;
+    return TRUE;
+}
+
 static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
                                        int flags, int kind)
 {
@@ -41223,6 +42230,9 @@ static JSValue JS_GetOwnPropertyNames2(JSContext *ctx, JSValueConst obj1,
     JSObject *p;
     JSPropertyEnum *atoms;
     uint32_t len, i, j;
+
+    if (js_own_keys_array(ctx, obj1, flags, kind, &r))
+        return r;
 
     r = JS_UNDEFINED;
     val = JS_UNDEFINED;
@@ -46410,11 +47420,403 @@ static JSValue js_string_toWellFormed(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
+/* the longest string js_string_find widens or narrows into an array on the
+   stack when the two strings differ in width */
+#define JS_STRING_FIND_ROOM 64
+/* the longest needle js_string_find looks for by comparing it at each index
+   where its first character is, with at most this many units of work for
+   each index of hay and nothing to work out first, rather than with the
+   Two-Way search */
+#define JS_STRING_FIND_SHORT 8
+/* the most units of work a search does between two checks of the
+   interrupt counter: a unit is a character memchr or a loop looks at, a
+   character compared or a window of the Two-Way search */
+#define JS_STRING_FIND_STEP (1 << 16)
+
+typedef struct JSStringFind {
+    JSContext *ctx;
+    int work; /* the units of work not counted yet */
+} JSStringFind;
+
+/* Count the work of a search toward the interrupt counter, a step for each
+   8 units, as the string buffer counts the characters it makes room for,
+   and call the interrupt handler when the counter runs out, as the
+   interpreter does. Return -1, with the exception thrown, when it asks to
+   stop. */
+static no_inline int js_string_find_check(JSStringFind *f)
+{
+    JSContext *ctx = f->ctx;
+
+    js_charge_interrupts(ctx, f->work >> 3);
+    f->work &= 7;
+    if (ctx->interrupt_counter <= 0)
+        return __js_poll_interrupts(ctx);
+    return 0;
+}
+
+/* add n units of work, and return -2 from the search when the check says
+   to stop */
+#define JS_STRING_FIND_WORK(f, n)                                        \
+    do {                                                                \
+        (f)->work += (n);                                               \
+        if (unlikely((f)->work >= JS_STRING_FIND_STEP) &&               \
+            js_string_find_check(f))                                    \
+            return -2;                                                  \
+    } while (0)
+
+/* the character at index i of a string of 8-bit (wide 0) or 16-bit
+   characters */
+static force_inline int js_string_unit(const void *p, int wide, int i)
+{
+    return wide ? ((const uint16_t *)p)[i] : ((const uint8_t *)p)[i];
+}
+
+/* the first index from lo to hi (rev 0) or from hi to lo (rev 1), both
+   included, where the string hay of hw-wide characters has c, or -1, or
+   -2 when the interrupt handler asked to stop */
+static int js_string_find_char(JSStringFind *f, const void *hay, int hw,
+                               int lo, int hi, int c, int rev)
+{
+    int k, e, k0;
+
+    if (!rev) {
+        for(k = lo; k <= hi; k = e) {
+            e = hi - k >= JS_STRING_FIND_STEP ? k + JS_STRING_FIND_STEP : hi + 1;
+            k0 = k;
+            if (!hw) {
+                const uint8_t *s = hay, *q = memchr(s + k, c, e - k);
+                if (q) {
+                    f->work += q - (s + k);
+                    return q - s;
+                }
+            } else {
+                const uint16_t *s = hay;
+                for(; k < e; k++) {
+                    if (s[k] == c) {
+                        f->work += k - k0;
+                        return k;
+                    }
+                }
+            }
+            JS_STRING_FIND_WORK(f, e - k0);
+        }
+        return -1;
+    }
+    for(k = hi; k >= lo; k = e) {
+        e = k - lo >= JS_STRING_FIND_STEP ? k - JS_STRING_FIND_STEP : lo - 1;
+        for(k0 = k; k > e; k--) {
+            if (js_string_unit(hay, hw, k) == c) {
+                f->work += k0 - k;
+                return k;
+            }
+        }
+        JS_STRING_FIND_WORK(f, k0 - e);
+    }
+    return -1;
+}
+
+/* The search of js_string_find for a needle of 2 to JS_STRING_FIND_SHORT
+   characters of the width of hay: find the first character of the needle,
+   then compare the others there. It returns as js_string_two_way does. */
+static no_inline int js_string_find_short(JSStringFind *f, const void *hay,
+                                          int hw, int lo, int hi,
+                                          const void *needle, int l, int rev)
+{
+    int c = js_string_unit(needle, hw, 0), k, j;
+
+    for(;;) {
+        k = js_string_find_char(f, hay, hw, lo, hi, c, rev);
+        if (k < 0)
+            return k;
+        for(j = 1; j < l && js_string_unit(hay, hw, k + j) ==
+                js_string_unit(needle, hw, j); j++)
+            continue;
+        JS_STRING_FIND_WORK(f, j);
+        if (j == l)
+            return k;
+        if (rev)
+            hi = k - 1;
+        else
+            lo = k + 1;
+    }
+}
+
+/* The search of js_string_find for a longer needle: the Two-Way algorithm of
+   Crochemore and Perrin as twoway_memmem in musl (src/string/memmem.c at
+   7ada6dd, MIT, see engine/libc/COPYRIGHT) has it, with the shift of the last
+   character of the window. It returns the first start from lo to hi (rev 0)
+   or from hi to lo (rev 1), both included, where the string hay has the l
+   characters of needle, or -1, or -2 when the interrupt handler asked to
+   stop. hw and nw are the widths of hay and needle (1 for 16-bit characters).
+   The search from hi down is the same search on both strings read from their
+   ends. Its work is linear in the length of the two whatever they hold: it
+   looks at each character of the needle a few times to find its critical
+   factorization, and compares at most two characters for each index of hay.
+   It checks the interrupt counter after at most 2 JS_STRING_FIND_STEP units
+   of work. The table of shifts has an entry for each low byte: 16-bit
+   characters with the same low byte share one, which holds the shift of the
+   one nearest the end of the needle, and a shorter shift is still safe. */
+static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
+                                          int hw, int lo, int hi,
+                                          const void *needle, int nw, int l,
+                                          int rev)
+{
+#define JS_TW_HAY(v) js_string_unit(hay, hw, rev ? hi + l - 1 - (v) : lo + (v))
+#define JS_TW_NEEDLE(j) js_string_unit(needle, nw, rev ? l - 1 - (j) : (j))
+    uint32_t shift[256], set[256 / 32] = { 0 };
+    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e;
+
+    for(i = 0; i < l; i++) {
+        a = JS_TW_NEEDLE(i);
+        /* a string of 8-bit characters cannot have it */
+        if (!hw && a > 0xff)
+            return -1;
+        a &= 0xff;
+        set[a >> 5] |= 1u << (a & 31);
+        shift[a] = i + 1;
+        JS_STRING_FIND_WORK(f, 1);
+    }
+
+    /* the maximal suffix for one order of the characters, and its period */
+    ip = -1;
+    jp = 0;
+    k = p = 1;
+    while (jp + k < l) {
+        JS_STRING_FIND_WORK(f, 1);
+        a = JS_TW_NEEDLE(ip + k);
+        b = JS_TW_NEEDLE(jp + k);
+        if (a == b) {
+            if (k == p) {
+                jp += p;
+                k = 1;
+            } else {
+                k++;
+            }
+        } else if (a > b) {
+            jp += k;
+            k = 1;
+            p = jp - ip;
+        } else {
+            ip = jp++;
+            k = p = 1;
+        }
+    }
+    ms = ip;
+    p0 = p;
+
+    /* and for the other order */
+    ip = -1;
+    jp = 0;
+    k = p = 1;
+    while (jp + k < l) {
+        JS_STRING_FIND_WORK(f, 1);
+        a = JS_TW_NEEDLE(ip + k);
+        b = JS_TW_NEEDLE(jp + k);
+        if (a == b) {
+            if (k == p) {
+                jp += p;
+                k = 1;
+            } else {
+                k++;
+            }
+        } else if (a < b) {
+            jp += k;
+            k = 1;
+            p = jp - ip;
+        } else {
+            ip = jp++;
+            k = p = 1;
+        }
+    }
+    if (ip > ms)
+        ms = ip;
+    else
+        p = p0;
+
+    /* Is the needle periodic: are its first ms + 1 characters the same p
+       characters on? */
+    for(i = 0; i <= ms; i++) {
+        JS_STRING_FIND_WORK(f, 1);
+        if (JS_TW_NEEDLE(i) != JS_TW_NEEDLE(i + p))
+            break;
+    }
+    if (i <= ms) {
+        mem0 = 0;
+        p = max_int(ms, l - ms - 1) + 1;
+    } else {
+        mem0 = l - p;
+    }
+
+    mem = 0;
+    last = hi - lo;
+    for(s = 0;;) {
+        if (s > last)
+            return -1;
+        JS_STRING_FIND_WORK(f, 1);
+        /* the last character first: move on by its shift when it is not
+           the last of the needle */
+        a = JS_TW_HAY(s + l - 1) & 0xff;
+        if (set[a >> 5] >> (a & 31) & 1) {
+            k = l - shift[a];
+            if (k) {
+                if (k < mem)
+                    k = mem;
+                s += k;
+                mem = 0;
+                continue;
+            }
+        } else {
+            s += l;
+            mem = 0;
+            continue;
+        }
+        /* the right half */
+        k = max_int(ms + 1, mem);
+        for(;;) {
+            e = l - k > JS_STRING_FIND_STEP ? k + JS_STRING_FIND_STEP : l;
+            i = k;
+            while (k < e && JS_TW_NEEDLE(k) == JS_TW_HAY(s + k))
+                k++;
+            JS_STRING_FIND_WORK(f, k - i);
+            if (k < e || e == l)
+                break;
+        }
+        if (k < l) {
+            s += k - ms;
+            mem = 0;
+            continue;
+        }
+        /* the left half */
+        k = ms + 1;
+        for(;;) {
+            e = k - mem > JS_STRING_FIND_STEP ? k - JS_STRING_FIND_STEP : mem;
+            i = k;
+            while (k > e && JS_TW_NEEDLE(k - 1) == JS_TW_HAY(s + k - 1))
+                k--;
+            JS_STRING_FIND_WORK(f, i - k);
+            if (k > e || e == mem)
+                break;
+        }
+        if (k <= mem)
+            return rev ? hi - s : lo + s;
+        s += p;
+        mem = mem0;
+    }
+#undef JS_TW_HAY
+#undef JS_TW_NEEDLE
+}
+
+/* js_string_two_way for two strings of 8-bit characters */
+static no_inline int js_string_find8(JSStringFind *f, const uint8_t *hay,
+                                     int lo, int hi, const uint8_t *needle,
+                                     int l, int rev)
+{
+    if (rev)
+        return js_string_two_way(f, hay, 0, lo, hi, needle, 0, l, 1);
+    return js_string_two_way(f, hay, 0, lo, hi, needle, 0, l, 0);
+}
+
+/* js_string_two_way for two strings of 16-bit characters */
+static no_inline int js_string_find16(JSStringFind *f, const uint16_t *hay,
+                                      int lo, int hi, const uint16_t *needle,
+                                      int l, int rev)
+{
+    if (rev)
+        return js_string_two_way(f, hay, 1, lo, hi, needle, 1, l, 1);
+    return js_string_two_way(f, hay, 1, lo, hi, needle, 1, l, 0);
+}
+
+/* js_string_two_way for a needle longer than JS_STRING_FIND_ROOM whose
+   width is not that of hay */
+static no_inline int js_string_find_mixed(JSStringFind *f, JSString *p1,
+                                          int lo, int hi, JSString *p2,
+                                          int rev)
+{
+    return js_string_two_way(f, p1->u.str8, p1->is_wide_char, lo, hi,
+                             p2->u.str8, p2->is_wide_char, p2->len, rev);
+}
+
+/* js_string_find from i to a stop other than i */
+static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
+                                int i, int stop, int inc)
+{
+    int lo = i, hi = stop, n2 = p2->len, rev = inc < 0, wide = p1->is_wide_char, k;
+    const void *needle = p2->u.str8;
+    uint8_t room8[JS_STRING_FIND_ROOM];
+    uint16_t room16[JS_STRING_FIND_ROOM];
+    JSStringFind f;
+
+    if (rev) {
+        lo = stop;
+        hi = i;
+    }
+    if (lo > hi)
+        return -1;
+    assert(lo >= 0 && hi + n2 <= p1->len);
+    if (n2 == 0)
+        return i;
+    f.ctx = ctx;
+    f.work = 0;
+    if (p2->is_wide_char != wide) {
+        if (n2 > JS_STRING_FIND_ROOM) {
+            k = js_string_find_mixed(&f, p1, lo, hi, p2, rev);
+            goto done;
+        }
+        if (!wide) {
+            for(k = 0; k < n2; k++) {
+                if (p2->u.str16[k] > 0xff)
+                    return -1;
+                room8[k] = p2->u.str16[k];
+            }
+            needle = room8;
+        } else {
+            for(k = 0; k < n2; k++)
+                room16[k] = p2->u.str8[k];
+            needle = room16;
+        }
+    }
+    if (n2 == 1)
+        k = js_string_find_char(&f, p1->u.str8, wide, lo, hi,
+                                js_string_unit(needle, wide, 0), rev);
+    else if (n2 <= JS_STRING_FIND_SHORT)
+        k = js_string_find_short(&f, p1->u.str8, wide, lo, hi, needle, n2,
+                                 rev);
+    else if (!wide)
+        k = js_string_find8(&f, p1->u.str8, lo, hi, needle, n2, rev);
+    else
+        k = js_string_find16(&f, p1->u.str16, lo, hi, needle, n2, rev);
+ done:
+    js_charge_interrupts(ctx, f.work >> 3);
+    return k;
+}
+
+/* String.prototype.includes, startsWith, endsWith, indexOf and lastIndexOf
+   look for the string p2 in the string p1 with js_string_find: from the
+   index i toward stop, both included, by step inc (1 or -1), it returns the
+   first index where p1 has the characters of p2, -1 when there is none, or
+   -2 when the interrupt handler asked to stop, with the exception thrown.
+   The searches of js_string_find_range only return an index where they
+   compared all of p2, so the index is taken as it is. When i is stop, one
+   index is left and string_cmp compares p2 there: that is linear in the
+   length of p2 and does not check the interrupt counter, as === and the
+   other operations linear in the length of a string do not. The characters
+   of p1 from the lower of i and stop to the higher plus the length of p2
+   must be in p1, as the callers make sure. A string of 16-bit characters
+   may hold only characters below 0x100, so p2 may be found in p1 whatever
+   their widths. */
+static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
+                                 int i, int stop, int inc)
+{
+    if (i == stop)
+        return string_cmp(p1, p2, i, 0, p2->len) ? -1 : i;
+    return js_string_find_range(ctx, p1, p2, i, stop, inc);
+}
+
 static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int lastIndexOf)
 {
     JSValue str, v;
-    int i, len, v_len, pos, start, stop, ret, inc;
+    int len, v_len, pos, start, stop, ret, inc;
     JSString *p;
     JSString *p1;
 
@@ -46456,14 +47858,9 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
     }
     ret = -1;
     if (len >= v_len && inc * (stop - start) >= 0) {
-        for (i = start;; i += inc) {
-            if (!string_cmp(p, p1, i, 0, v_len)) {
-                ret = i;
-                break;
-            }
-            if (i == stop)
-                break;
-        }
+        ret = js_string_find(ctx, p, p1, start, stop, inc);
+        if (ret == -2)
+            goto fail;
     }
     JS_FreeValue(ctx, str);
     JS_FreeValue(ctx, v);
@@ -46522,14 +47919,10 @@ static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
         start = stop = pos;
     }
     if (start >= 0 && start <= stop) {
-        for (i = start;; i++) {
-            if (!string_cmp(p, p1, i, 0, v_len)) {
-                ret = 1;
-                break;
-            }
-            if (i == stop)
-                break;
-        }
+        i = js_string_find(ctx, p, p1, start, stop, 1);
+        if (i == -2)
+            goto fail;
+        ret = i >= 0;
     }
  done:
     JS_FreeValue(ctx, str);
@@ -47326,7 +48719,7 @@ static int js_string_normalize1(JSContext *ctx, uint32_t **pout_buf,
     if (buf_len < 0)
         return -1;
     out_len = unicode_normalize(&out_buf, buf, buf_len, n_type,
-                                ctx->rt, (DynBufReallocFunc *)js_realloc_rt);
+                                ctx->rt, js_dbuf_realloc_rt);
     js_free(ctx, buf);
     if (out_len < 0)
         return -1;
@@ -48253,6 +49646,285 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_STRING, re->pattern));
 }
 
+/* The regexp cache of a runtime keeps the bytecode of the regexps it
+   compiled, by pattern and flags, so that compiling the same pattern with
+   the same flags again takes the bytecode made before instead of running
+   lre_compile: js_compile_regexp, which compiles every regexp (a literal,
+   new RegExp, RegExp.prototype.compile, and the regexps that split and the
+   other built-ins make with new flags), asks js_regexp_cache_get first and
+   gives js_regexp_cache_put what it made. The bytecode is an 8-bit string
+   the engine never changes once lre_compile wrote it, and objects already
+   share it (new RegExp(re) holds the bytecode of re).
+
+   Only a pattern that is a string, not a rope, with flags that are
+   undefined or a string, not a rope, is looked up and kept: converting
+   anything else can run javascript or allocate. A compile that fails is
+   not kept, so a SyntaxError is thrown every time.
+
+   An entry holds a reference to the pattern, to the flags and to the
+   bytecode, in memory from js_malloc_rt, as is the table of hash chains:
+   the cache counts against the memory limit. The cache keeps at most
+   JS_REGEXP_CACHE_ENTRIES entries in JS_REGEXP_CACHE_BYTES bytes (the
+   usable size of the entry and of the three strings), or what
+   JS_SetRegExpCache set, and lets go of the entry used least recently
+   first. The table is not in those bytes. Nothing is let go when an
+   allocation fails: freeing a string can free an atom, and the allocation
+   that fails can be one in the middle of growing the atom table. */
+
+struct JSRegExpCacheEntry {
+    JSRegExpCacheEntry *chain; /* the next entry of the same hash chain */
+    JSRegExpCacheEntry *newer; /* the entry used next after this one */
+    JSRegExpCacheEntry *older; /* the entry used before this one */
+    JSString *pattern;
+    JSString *flags; /* NULL for undefined */
+    JSString *bc; /* the bytecode */
+    size_t size; /* the bytes this entry counts */
+    uint32_t hash;
+};
+
+/* The most hash chains a regexp cache has: its table takes at most 512 KiB
+   on 64-bit targets, whatever its limits. */
+#define JS_REGEXP_CACHE_MAX_BUCKETS (1 << 16)
+
+/* The number of hash chains of a cache of max_count entries in max_bytes
+   bytes: the power of 2, from 16 up to JS_REGEXP_CACHE_MAX_BUCKETS, at or
+   above the number of entries that fit. */
+static uint32_t js_regexp_cache_buckets(int max_count, size_t max_bytes)
+{
+    uint64_t fit = max_bytes / sizeof(JSRegExpCacheEntry);
+    uint32_t n = 16;
+
+    if ((uint64_t)max_count < fit)
+        fit = max_count;
+    while (n < fit && n < JS_REGEXP_CACHE_MAX_BUCKETS)
+        n *= 2;
+    return n;
+}
+
+static JSRegExpCacheEntry **js_regexp_cache_chain(JSRegExpCache *rc, uint32_t h)
+{
+    return &rc->table[h & (rc->buckets - 1)];
+}
+
+/* JS_SetRegExpCache sets the regexp cache of rt to keep at most n entries
+   in at most bytes bytes, and lets go of the entries it kept before. An n
+   or bytes of 0 turns the cache off. */
+void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+
+    js_regexp_cache_off(rt);
+    rc->set = TRUE;
+    rc->max_count = 0;
+    rc->max_bytes = 0;
+    if (n > 0 && bytes > 0) {
+        rc->max_count = n;
+        rc->max_bytes = bytes;
+    }
+}
+
+static void js_regexp_cache_entry_free(JSRuntime *rt, JSRegExpCacheEntry *e)
+{
+    js_free_string(rt, e->pattern);
+    if (e->flags)
+        js_free_string(rt, e->flags);
+    js_free_string(rt, e->bc);
+    js_free_rt(rt, e);
+}
+
+/* js_regexp_cache_off lets go of every entry of the regexp cache of rt and
+   of its table. The limits stay. */
+static void js_regexp_cache_off(JSRuntime *rt)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e = rc->newest, *next;
+    JSRegExpCacheEntry **table = rc->table;
+
+    rc->table = NULL;
+    rc->buckets = 0;
+    rc->count = 0;
+    rc->newest = NULL;
+    rc->oldest = NULL;
+    rc->bytes = 0;
+    while (e) {
+        next = e->older;
+        js_regexp_cache_entry_free(rt, e);
+        e = next;
+    }
+    if (table)
+        js_free_rt(rt, table);
+}
+
+/* js_regexp_cache_key gives the strings of pattern and flags (NULL for
+   undefined flags), and returns whether the cache can look them up. */
+static BOOL js_regexp_cache_key(JSValueConst pattern, JSValueConst flags,
+                                JSString **pp, JSString **pf)
+{
+    if (JS_VALUE_GET_TAG(pattern) != JS_TAG_STRING)
+        return FALSE;
+    *pp = JS_VALUE_GET_STRING(pattern);
+    switch (JS_VALUE_GET_TAG(flags)) {
+    case JS_TAG_UNDEFINED:
+        *pf = NULL;
+        return TRUE;
+    case JS_TAG_STRING:
+        *pf = JS_VALUE_GET_STRING(flags);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static uint32_t js_regexp_cache_hash(const JSString *p, const JSString *f)
+{
+    uint32_t h = hash_string(p, 0);
+    if (f)
+        h = hash_string(f, h * 263 + 1);
+    return h;
+}
+
+/* js_regexp_cache_same reports whether the strings a and b, either of
+   which can be NULL, hold the same code units. */
+static BOOL js_regexp_cache_same(JSContext *ctx, const JSString *a,
+                                 const JSString *b)
+{
+    if (a == b)
+        return TRUE;
+    if (!a || !b)
+        return FALSE;
+    return js_string_compare(ctx, a, b) == 0;
+}
+
+/* js_regexp_cache_unlink takes the entry e out of the list by use. It
+   stays in its hash chain. */
+static void js_regexp_cache_unlink(JSRegExpCache *rc, JSRegExpCacheEntry *e)
+{
+    if (e->newer)
+        e->newer->older = e->older;
+    else
+        rc->newest = e->older;
+    if (e->older)
+        e->older->newer = e->newer;
+    else
+        rc->oldest = e->newer;
+    e->newer = NULL;
+    e->older = NULL;
+}
+
+/* js_regexp_cache_push_newest puts the entry e at the newest end of the
+   list by use. */
+static void js_regexp_cache_push_newest(JSRegExpCache *rc, JSRegExpCacheEntry *e)
+{
+    e->older = rc->newest;
+    if (rc->newest)
+        rc->newest->newer = e;
+    else
+        rc->oldest = e;
+    rc->newest = e;
+}
+
+/* js_regexp_cache_drop_oldest lets go of the entry used least recently. */
+static void js_regexp_cache_drop_oldest(JSRuntime *rt, JSRegExpCache *rc)
+{
+    JSRegExpCacheEntry *e = rc->oldest, **at;
+
+    for (at = js_regexp_cache_chain(rc, e->hash); *at != e; at = &(*at)->chain)
+        continue;
+    *at = e->chain;
+    js_regexp_cache_unlink(rc, e);
+    rc->count--;
+    rc->bytes -= e->size;
+    js_regexp_cache_entry_free(rt, e);
+}
+
+/* js_regexp_cache_get returns a new reference to the bytecode the cache
+   holds for pattern and flags, or JS_UNDEFINED. */
+static JSValue js_regexp_cache_get(JSContext *ctx, JSValueConst pattern,
+                                   JSValueConst flags)
+{
+    JSRegExpCache *rc = &ctx->rt->regexp_cache;
+    JSRegExpCacheEntry *e;
+    JSString *p, *f;
+    uint32_t h;
+
+    if (rc->count == 0 || !js_regexp_cache_key(pattern, flags, &p, &f))
+        return JS_UNDEFINED;
+    h = js_regexp_cache_hash(p, f);
+    /* The hash and the compare read the whole pattern, which the
+       interpreter counts as one instruction: count a step for each 32
+       bytes too. */
+    js_charge_interrupts(ctx, (p->len << p->is_wide_char) >> 5);
+    for (e = *js_regexp_cache_chain(rc, h); e; e = e->chain) {
+        if (e->hash != h || !js_regexp_cache_same(ctx, e->pattern, p) ||
+            !js_regexp_cache_same(ctx, e->flags, f))
+            continue;
+        if (rc->newest != e) {
+            js_regexp_cache_unlink(rc, e);
+            js_regexp_cache_push_newest(rc, e);
+        }
+        return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, e->bc));
+    }
+    return JS_UNDEFINED;
+}
+
+/* js_regexp_cache_put keeps a reference to pattern, flags and the bytecode
+   bc js_compile_regexp made for them, if the cache can look them up and
+   has room. When there is no memory for the entry it keeps nothing, and
+   leaves no exception. */
+static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
+                                JSValueConst flags, JSValueConst bc)
+{
+    JSRuntime *rt = ctx->rt;
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e, **at;
+    JSString *p, *f, *b;
+    int max_count;
+    size_t max_bytes, size;
+
+    if (JS_VALUE_GET_TAG(bc) != JS_TAG_STRING ||
+        !js_regexp_cache_key(pattern, flags, &p, &f))
+        return;
+    max_count = rc->set ? rc->max_count : JS_REGEXP_CACHE_ENTRIES;
+    max_bytes = rc->set ? rc->max_bytes : JS_REGEXP_CACHE_BYTES;
+    if (max_count <= 0)
+        return;
+    b = JS_VALUE_GET_STRING(bc);
+    size = sizeof(JSRegExpCacheEntry) + js_malloc_usable_size_rt(rt, b) +
+        js_malloc_usable_size_rt(rt, p);
+    if (f)
+        size += js_malloc_usable_size_rt(rt, f);
+    if (size > max_bytes)
+        return;
+    if (!rc->table) {
+        uint32_t n = js_regexp_cache_buckets(max_count, max_bytes);
+        rc->table = js_mallocz_rt(rt, n * sizeof(rc->table[0]));
+        if (!rc->table)
+            return;
+        rc->buckets = n;
+    }
+    /* bytes never passes max_bytes, so max_bytes - bytes cannot wrap. */
+    while (rc->count > 0 && (rc->count >= max_count || size > max_bytes - rc->bytes))
+        js_regexp_cache_drop_oldest(rt, rc);
+    e = js_mallocz_rt(rt, sizeof(*e));
+    if (!e)
+        return;
+    e->pattern = p;
+    e->flags = f;
+    e->bc = b;
+    e->size = size;
+    e->hash = js_regexp_cache_hash(p, f);
+    JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
+    if (f)
+        JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, f));
+    JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, b));
+    at = js_regexp_cache_chain(rc, e->hash);
+    e->chain = *at;
+    *at = e;
+    js_regexp_cache_push_newest(rc, e);
+    rc->count++;
+    rc->bytes += size;
+}
+
 /* create a string containing the RegExp bytecode */
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
@@ -48265,6 +49937,9 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     JSValue ret;
     char error_msg[64];
 
+    ret = js_regexp_cache_get(ctx, pattern, flags);
+    if (!JS_IsUndefined(ret))
+        return ret;
     re_flags = 0;
     if (!JS_IsUndefined(flags)) {
         str = JS_ToCStringLen(ctx, &len, flags);
@@ -48334,6 +50009,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
 
     ret = js_new_string8_len(ctx, (const char *)re_bytecode_buf, re_bytecode_len);
     js_free(ctx, re_bytecode_buf);
+    js_regexp_cache_put(ctx, pattern, flags, ret);
     return ret;
 }
 
@@ -50639,6 +52315,40 @@ typedef struct JSONStringifyContext {
     StringBuffer *b;
 } JSONStringifyContext;
 
+/* Put the run of characters of p from *pi that JSON.stringify keeps as
+   they are into b at once, and move *pi past them. A kept character is not
+   '"', '\\' or below 0x20, which JS_ToQuotedString escapes, and, in a
+   string of 16-bit units, no surrogate: a surrogate pair goes as it is and a
+   lone surrogate as \uXXXX, which JS_ToQuotedString decides. Return -1 when
+   b could not grow. */
+static int json_quote_run(StringBuffer *b, const JSString *p, int *pi)
+{
+    int i = *pi, j = i, n = p->len;
+    uint32_t c;
+
+    if (!p->is_wide_char) {
+        const uint8_t *str = p->u.str8;
+        for(; j < n; j++) {
+            c = str[j];
+            if (c < 0x20 || c == '\"' || c == '\\')
+                break;
+        }
+        if (j > i && string_buffer_write8(b, str + i, j - i))
+            return -1;
+    } else {
+        const uint16_t *str = p->u.str16;
+        for(; j < n; j++) {
+            c = str[j];
+            if (c < 0x20 || c == '\"' || c == '\\' || is_surrogate(c))
+                break;
+        }
+        if (j > i && string_buffer_write16(b, str + i, j - i))
+            return -1;
+    }
+    *pi = j;
+    return 0;
+}
+
 static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
 {
     JSValue val;
@@ -50654,7 +52364,13 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
 
     if (string_buffer_putc8(b, '\"'))
         goto fail;
-    for(i = 0; i < p->len; ) {
+    i = 0;
+    for(;;) {
+        /* the characters kept as they are, in one run */
+        if (json_quote_run(b, p, &i))
+            goto fail;
+        if (i >= p->len)
+            break;
         c = string_getc(p, &i);
         switch(c) {
         case '\t':
@@ -54287,6 +56003,84 @@ static void js_promise_resolve_function_mark(JSRuntime *rt, JSValueConst val,
     }
 }
 
+/* The async context of a runtime is an object the embedder sets, which
+   promise reactions keep: a handler that perform_promise_then registers
+   while the context is an object runs with that context, whatever the
+   context is when its job runs, and the context is given back after it.
+   js_promise_resolve_function_call does the same with the then of a
+   thenable, so the job that calls it runs with the context of the resolve.
+   That is what an AsyncLocalStorage needs to follow await, and what V8
+   keeps for Node as the continuation preserved embedder data. Without a
+   context, which is all a runtime has until one is set, a handler is kept
+   as it is, at the cost of one test. */
+
+/* JS_GetAsyncContext returns the async context of the runtime of ctx,
+   which the caller owns, or undefined when it has none. */
+JSValue JS_GetAsyncContext(JSContext *ctx)
+{
+    JSValue v = ctx->rt->async_context;
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+        return JS_UNDEFINED;
+    return JS_DupValue(ctx, v);
+}
+
+/* JS_SetAsyncContext makes v, which the caller keeps, the async context of
+   the runtime of ctx when it is an object, and leaves the runtime without
+   one for any other value. The runtime frees the context it had. */
+void JS_SetAsyncContext(JSContext *ctx, JSValueConst v)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue old = rt->async_context;
+
+    rt->async_context = JS_UNDEFINED;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_OBJECT)
+        rt->async_context = JS_DupValue(ctx, v);
+    if (JS_VALUE_GET_TAG(old) == JS_TAG_OBJECT)
+        JS_FreeValue(ctx, old);
+}
+
+/* The function js_async_context_wrap makes: func_data holds the async
+   context and the handler. It calls the handler with the context as the
+   context of the runtime, and then gives the runtime the context it had,
+   also when the handler threw or set another context. */
+static JSValue js_async_context_call(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv, int magic,
+                                     JSValue *func_data)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue outer = rt->async_context, ret;
+
+    rt->async_context = JS_DupValue(ctx, func_data[0]);
+    ret = JS_Call(ctx, func_data[1], this_val, argc, argv);
+    if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
+        JS_FreeValue(ctx, rt->async_context);
+    rt->async_context = outer;
+    return ret;
+}
+
+/* js_async_context_wrap takes the reference to handler and returns the
+   handler of a reaction or a job: with an async context and a function
+   handler, a new function of js_async_context_call that holds both, else
+   handler itself. When the function cannot be made (out of memory) the
+   handler runs without the context, and the exception, which cannot be
+   caught, is left for the caller of the engine. */
+static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
+{
+    JSValueConst data[2];
+    JSValue wrapped;
+
+    data[0] = ctx->rt->async_context;
+    if (JS_VALUE_GET_TAG(data[0]) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(handler) != JS_TAG_OBJECT)
+        return handler;
+    data[1] = handler;
+    wrapped = JS_NewCFunctionData(ctx, js_async_context_call, 1, 0, 2, data);
+    if (JS_IsException(wrapped))
+        return handler;
+    JS_FreeValue(ctx, handler);
+    return wrapped;
+}
+
 static JSValue js_promise_resolve_function_call(JSContext *ctx,
                                                 JSValueConst func_obj,
                                                 JSValueConst this_val,
@@ -54331,6 +56125,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
     done:
         fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
     } else {
+        then = js_async_context_wrap(ctx, then);
         args[0] = s->promise;
         args[1] = resolution;
         args[2] = then;
@@ -54923,7 +56718,7 @@ static __exception int perform_promise_then(JSContext *ctx,
         handler = resolve_reject[i];
         if (!JS_IsFunction(ctx, handler))
             handler = JS_UNDEFINED;
-        rd->handler = JS_DupValue(ctx, handler);
+        rd->handler = js_async_context_wrap(ctx, JS_DupValue(ctx, handler));
         rd_array[i] = rd;
     }
 

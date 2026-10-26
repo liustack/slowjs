@@ -2765,6 +2765,183 @@ static no_inline int stack_realloc(REExecContext *s, size_t n)
     return 0;
 }
 
+/* Alternatives that cannot match are not pushed.
+
+   lre_split gives the two ways of a split op of the backtracking machine at
+   the position cptr of the string: *ppc, the way the machine takes now, and
+   *ppc1, the way it pushes to try later, or NULL to push nothing. The split
+   ops call it before they push when the op at pc1 is one of LRE_PEEK_OPS.
+
+   A way that would fail right away when it is popped is not pushed: the ops
+   before the first one that reads a unit only save captures, which the
+   machine undoes when it fails, and that op is a character or a class of
+   characters, of any kind, that the unit at cptr does not match. lre_split
+   reads the unit as GET_CHAR does and tests it as the op does, through the
+   same lre_canonicalize when it ignores case. When the way taken now is
+   another split op, which an alternation of many alternatives is, lre_split
+   goes on with that one, as the machine would, and so on, for up to
+   LRE_SPLIT_BUDGET split ops in one call. Then it gives back the one it is
+   at, which the machine pushes as usual.
+
+   The machine counts a step toward its interrupt check at each jump back,
+   loop and failed pop. When lre_split pushes nothing the split op counts a
+   step and checks itself, so a greedy x+ over a long string, which jumps
+   back by a split op, still stops on an interrupt. A state that is not
+   pushed takes no room on the backtracking stack. */
+
+/* the ops that read one unit and test it alone */
+#define LRE_READ_OPS ((1ULL << REOP_char) | (1ULL << REOP_char_i) |       \
+                      (1ULL << REOP_char32) | (1ULL << REOP_char32_i) |   \
+                      (1ULL << REOP_range) | (1ULL << REOP_range_i) |     \
+                      (1ULL << REOP_range32) | (1ULL << REOP_range32_i))
+/* and the saves lre_split steps over before such an op */
+#define LRE_PEEK_OPS (LRE_READ_OPS | (1ULL << REOP_save_start) |          \
+                      (1ULL << REOP_save_end) | (1ULL << REOP_save_reset))
+/* the most split ops lre_split steps over in one call: an alternation of
+   148 alternatives takes 148 */
+#define LRE_SPLIT_BUDGET 4096
+
+/* every op fits in the bit masks above */
+typedef char lre_ops_fit_in_64_bits[REOP_COUNT <= 64 ? 1 : -1];
+
+/* lre_get_char returns the character at cptr, before cbuf_end, as GET_CHAR
+   reads it. */
+static uint32_t lre_get_char(const uint8_t *cptr, const uint8_t *cbuf_end,
+                             int cbuf_type)
+{
+    const uint16_t *p;
+    uint32_t c;
+
+    if (cbuf_type == 0)
+        return *cptr;
+    p = (const uint16_t *)cptr;
+    c = p[0];
+    if (is_hi_surrogate(c) && cbuf_type == 2 && cptr + 2 < cbuf_end &&
+        is_lo_surrogate(p[1]))
+        c = from_surrogate(c, p[1]);
+    return c;
+}
+
+/* lre_in_range reports whether c is in the op range or range_i at op, as
+   lre_exec_backtrack tests it: n >= 1 pairs of 16-bit bounds, both
+   included, where a last bound of 0xffff stands for every character
+   above. */
+static BOOL lre_in_range(const uint8_t *op, uint32_t c)
+{
+    int n = get_u16(op + 1), min, max, k;
+    const uint8_t *pairs = op + 3;
+    uint32_t high;
+
+    if (c < get_u16(pairs))
+        return FALSE;
+    high = get_u16(pairs + 4 * (n - 1) + 2);
+    if (c >= 0xffff && high == 0xffff)
+        return TRUE;
+    if (c > high)
+        return FALSE;
+    for (min = 0, max = n - 1; min <= max;) {
+        k = (min + max) / 2;
+        if (c < get_u16(pairs + 4 * k))
+            max = k - 1;
+        else if (c > get_u16(pairs + 4 * k + 2))
+            min = k + 1;
+        else
+            return TRUE;
+    }
+    return FALSE;
+}
+
+/* lre_in_range32 reports whether c is in the op range32 or range32_i at
+   op: n >= 1 pairs of 32-bit bounds, both included. */
+static BOOL lre_in_range32(const uint8_t *op, uint32_t c)
+{
+    int n = get_u16(op + 1), min, max, k;
+    const uint8_t *pairs = op + 3;
+
+    if (c < get_u32(pairs) || c > get_u32(pairs + 8 * (n - 1) + 4))
+        return FALSE;
+    for (min = 0, max = n - 1; min <= max;) {
+        k = (min + max) / 2;
+        if (c < get_u32(pairs + 8 * k))
+            max = k - 1;
+        else if (c > get_u32(pairs + 8 * k + 4))
+            min = k + 1;
+        else
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void lre_split(REExecContext *s, const uint8_t **ppc,
+                      const uint8_t **ppc1, const uint8_t *cptr)
+{
+    const uint8_t *pc = *ppc, *pc1 = *ppc1, *q, *next, *far;
+    BOOL end = cptr >= s->cbuf_end, canonical = FALSE, can;
+    uint32_t c = 0, folded = 0, k;
+    int op, n;
+
+    if (!end)
+        c = lre_get_char(cptr, s->cbuf_end, s->cbuf_type);
+    for (n = 0; n < LRE_SPLIT_BUDGET; n++) {
+        q = pc1;
+        op = *q;
+        while (op == REOP_save_start || op == REOP_save_end ||
+               op == REOP_save_reset) {
+            q += op == REOP_save_reset ? 3 : 2;
+            op = *q;
+        }
+        if (!((LRE_READ_OPS >> op) & 1))
+            break;
+        if (!end) {
+            k = c;
+            if (op == REOP_char_i || op == REOP_char32_i ||
+                op == REOP_range_i || op == REOP_range32_i) {
+                if (!canonical) {
+                    canonical = TRUE;
+                    folded = lre_canonicalize(c, s->is_unicode);
+                }
+                k = folded;
+            }
+            switch (op) {
+            case REOP_char:
+            case REOP_char_i:
+                can = k == get_u16(q + 1);
+                break;
+            case REOP_char32:
+            case REOP_char32_i:
+                can = k == get_u32(q + 1);
+                break;
+            case REOP_range:
+            case REOP_range_i:
+                can = lre_in_range(q, k);
+                break;
+            default:
+                can = lre_in_range32(q, k);
+                break;
+            }
+            if (can)
+                break;
+        }
+        /* pc1 cannot start here: push nothing, and go on with pc. */
+        op = *pc;
+        if (op != REOP_split_goto_first && op != REOP_split_next_first) {
+            pc1 = NULL;
+            break;
+        }
+        next = pc + 5;
+        far = next + (int)get_u32(pc + 1);
+        if (op == REOP_split_next_first) {
+            pc = next;
+            pc1 = far;
+        } else {
+            pc = far;
+            pc1 = next;
+        }
+    }
+    *ppc = pc;
+    *ppc1 = pc1;
+}
+
 /* return 1 if match, 0 if not match or < 0 if error. */
 static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                                    const uint8_t *pc, const uint8_t *cptr)
@@ -2949,6 +3126,15 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                 } else {
                     pc1 = pc;
                     pc = pc + (int)val;
+                }
+                /* a way that cannot start here is not pushed */
+                if ((LRE_PEEK_OPS >> pc1[0]) & 1) {
+                    lre_split(s, &pc, &pc1, cptr);
+                    if (!pc1) {
+                        if (lre_poll_timeout(s))
+                            return LRE_RET_TIMEOUT;
+                        break;
+                    }
                 }
                 CHECK_STACK_SPACE(3);
                 sp[0].ptr = (uint8_t *)pc1;
@@ -3315,6 +3501,420 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
     }
 }
 
+/* Skip to where a regexp can match.
+
+   A regexp that is not sticky starts with a loop that tries every position
+   in turn, then saves the start of the match:
+
+     split_goto_first +6   try the match here first
+     any                   else step over one character
+     goto -11              and try again
+     save_start 0
+
+   LRE_SKIP_LOOP is the length of the loop, LRE_SKIP_MATCH the offset of the
+   match at one position (save_start 0) from the start of the bytecode, and
+   LRE_SKIP_BODY the offset of the first op of the regexp itself.
+
+   A match can only start at a position that holds a unit of the set of
+   first units of the regexp (see lre_first_set), which is exact when the
+   first op of the regexp is one character or one class. So lre_skip finds
+   the first such position without the backtracking machine, and lre_run
+   tries the match there without the loop, then at the next such position,
+   and so on. When the first op is ^ outside multiline mode, a match can
+   only start at position 0. Every other regexp starts from cindex with the
+   loop, as do the unicode ones, whose loop steps over surrogate pairs, and
+   the sticky ones, which have no loop. */
+#define LRE_SKIP_LOOP (5 + 1 + 5)
+#define LRE_SKIP_MATCH (RE_HEADER_LEN + LRE_SKIP_LOOP)
+#define LRE_SKIP_BODY (LRE_SKIP_MATCH + 2)
+
+/* how many units of the string lre_skip looks at between two checks for an
+   interrupt */
+#define LRE_SKIP_CHUNK (1 << 16)
+
+/* how many ops lre_first_set reads at most before it gives up: a regexp of
+   148 alternatives, each starting with a character, takes about 300 */
+#define LRE_FIRST_BUDGET 1024
+
+/* how lre_run runs the bytecode from where lre_skip says */
+enum {
+    LRE_RUN_ONCE, /* run once, from pc */
+    LRE_RUN_CHAR, /* match at each position that holds the char at op */
+    LRE_RUN_RANGE, /* match at each position that holds a character of the range at op */
+    LRE_RUN_SET, /* match at each position that holds a unit of set */
+};
+
+/* a set of the units a match can start with: the units below 256 exactly,
+   the others all or none */
+typedef struct {
+    uint64_t bits[4];
+    BOOL high; /* every unit from 256 up */
+} LRESet;
+
+typedef struct {
+    int index; /* the position of the string to start from */
+    int pc; /* the offset in the bytecode of the first op to run, or 0: run nothing, return index */
+    int kind; /* LRE_RUN_ONCE, ... */
+    const uint8_t *op; /* the first op of the regexp, for LRE_RUN_CHAR and LRE_RUN_RANGE */
+    LRESet set; /* for LRE_RUN_SET */
+} LRESkip;
+
+static void lre_set_add(LRESet *set, uint32_t c)
+{
+    if (c < 256)
+        set->bits[c >> 6] |= (uint64_t)1 << (c & 63);
+    else
+        set->high = TRUE;
+}
+
+static BOOL lre_set_has(const LRESet *set, uint32_t c)
+{
+    if (c < 256)
+        return (set->bits[c >> 6] >> (c & 63)) & 1;
+    return set->high;
+}
+
+/* lre_set_add_range adds the units from low to high, both included. */
+static void lre_set_add_range(LRESet *set, uint32_t low, uint32_t high)
+{
+    uint32_t c;
+
+    for (c = low; c <= high && c < 256; c++)
+        lre_set_add(set, c);
+    if (high >= 256)
+        set->high = TRUE;
+}
+
+/* lre_first_set gives the set of units a match of the bytecode from pc can
+   start with, and returns whether it knows them. It follows both ways of
+   each split, steps over the ops that consume nothing, and stops on each
+   path at the first op that consumes a unit: one character, or a class of
+   characters. It skips lookaheads and lookbehinds to the op after them,
+   and steps over the other assertions: they can only stop a match. It
+   gives up when a path can reach the end of the regexp without consuming a
+   unit, at a backward jump, at an op that consumes a unit it does not know
+   (., \s, a back reference, a class that ignores case, ...), at an op that
+   moves back, and after LRE_FIRST_BUDGET ops.
+
+   A character that ignores case matches the units whose canonical form,
+   from lre_canonicalize outside unicode mode, is that character. For the
+   ASCII characters these are the character, and its lower case form for
+   the upper case letters.
+
+   The ways of the splits wait in pending, by their offset from pc: each
+   takes a split op, so there are at most LRE_FIRST_BUDGET. */
+static BOOL lre_first_set(LRESet *set, const uint8_t *pc0)
+{
+    uint32_t pending[LRE_FIRST_BUDGET];
+    int npending = 0, budget = LRE_FIRST_BUDGET, n, k, off;
+    const uint8_t *pc = pc0;
+    uint32_t c;
+
+    memset(set, 0, sizeof(*set));
+    for (;;) {
+        if (--budget < 0)
+            return FALSE;
+        switch (*pc) {
+        case REOP_save_start:
+        case REOP_save_end:
+        case REOP_set_char_pos:
+        case REOP_check_advance:
+            pc += 2;
+            continue;
+        case REOP_save_reset:
+            pc += 3;
+            continue;
+        case REOP_set_i32:
+            pc += 6;
+            continue;
+        case REOP_line_start:
+        case REOP_line_start_m:
+        case REOP_line_end:
+        case REOP_line_end_m:
+        case REOP_word_boundary:
+        case REOP_word_boundary_i:
+        case REOP_not_word_boundary:
+        case REOP_not_word_boundary_i:
+            pc++;
+            continue;
+        case REOP_lookahead:
+        case REOP_negative_lookahead:
+        case REOP_goto:
+            off = get_u32(pc + 1);
+            if (off < 0)
+                return FALSE;
+            pc += 5 + off;
+            continue;
+        case REOP_split_goto_first:
+        case REOP_split_next_first:
+            off = get_u32(pc + 1);
+            if (off < 0)
+                return FALSE;
+            pending[npending++] = pc + 5 + off - pc0;
+            pc += 5;
+            continue;
+        case REOP_char:
+            lre_set_add(set, get_u16(pc + 1));
+            break;
+        case REOP_char_i:
+            c = get_u16(pc + 1);
+            if (c >= 128 || (c >= 'a' && c <= 'z'))
+                return FALSE;
+            lre_set_add(set, c);
+            if (c >= 'A' && c <= 'Z')
+                lre_set_add(set, c + 'a' - 'A');
+            break;
+        case REOP_char32:
+            /* Outside unicode mode a character is one unit, which is
+               never above 0xffff. */
+            c = get_u32(pc + 1);
+            if (c <= 0xffff)
+                lre_set_add(set, c);
+            break;
+        case REOP_range:
+            n = get_u16(pc + 1);
+            for (k = 0; k < n; k++)
+                lre_set_add_range(set, get_u16(pc + 3 + 4 * k), get_u16(pc + 5 + 4 * k));
+            break;
+        case REOP_range32:
+            n = get_u16(pc + 1);
+            for (k = 0; k < n; k++)
+                lre_set_add_range(set, get_u32(pc + 3 + 8 * k), get_u32(pc + 7 + 8 * k));
+            break;
+        default:
+            return FALSE;
+        }
+        /* This path stops at an op that consumes a unit: take the next way
+           that waits. */
+        if (npending == 0)
+            return TRUE;
+        pc = pc0 + pending[--npending];
+    }
+}
+
+/* lre_find_char gives in *pi the first position from *pi to end that holds
+   the character of the op char at op, or end, and returns whether it found
+   one. */
+static BOOL lre_find_char(const uint8_t *op, const uint8_t *cbuf, int *pi,
+                          int end, int cbuf_type)
+{
+    uint32_t want = get_u16(op + 1);
+    int i = *pi;
+
+    if (cbuf_type == 0) {
+        const uint8_t *p = NULL;
+        if (want < 256 && i < end)
+            p = memchr(cbuf + i, want, end - i);
+        if (p) {
+            *pi = p - cbuf;
+            return TRUE;
+        }
+    } else {
+        const uint16_t *p = (const uint16_t *)cbuf;
+        for (; i < end; i++) {
+            if (p[i] == want) {
+                *pi = i;
+                return TRUE;
+            }
+        }
+    }
+    *pi = end;
+    return FALSE;
+}
+
+/* lre_find_range gives in *pi the first position from *pi to end that
+   holds a character of the op range at op, or end, and returns whether it
+   found one. The last bound 0xffff stands for every character above, but a
+   unit is never above it. */
+static BOOL lre_find_range(const uint8_t *op, const uint8_t *cbuf, int *pi,
+                           int end, int cbuf_type)
+{
+    int n = get_u16(op + 1), i, k, min, max;
+    const uint8_t *pairs = op + 3;
+    uint32_t low = get_u16(pairs), high = get_u16(pairs + 4 * (n - 1) + 2), c;
+
+    for (i = *pi; i < end; i++) {
+        c = cbuf_type == 0 ? cbuf[i] : ((const uint16_t *)cbuf)[i];
+        if (c < low || c > high)
+            continue;
+        for (min = 0, max = n - 1; min <= max;) {
+            k = (min + max) / 2;
+            if (c < get_u16(pairs + 4 * k)) {
+                max = k - 1;
+            } else if (c > get_u16(pairs + 4 * k + 2)) {
+                min = k + 1;
+            } else {
+                *pi = i;
+                return TRUE;
+            }
+        }
+    }
+    *pi = end;
+    return FALSE;
+}
+
+/* lre_find_set gives in *pi the first position from *pi to end that holds
+   a unit of set, or end, and returns whether it found one. */
+static BOOL lre_find_set(const LRESet *set, const uint8_t *cbuf, int *pi,
+                         int end, int cbuf_type)
+{
+    int i = *pi;
+
+    if (cbuf_type == 0) {
+        for (; i < end; i++) {
+            if ((set->bits[cbuf[i] >> 6] >> (cbuf[i] & 63)) & 1)
+                goto found;
+        }
+    } else {
+        for (; i < end; i++) {
+            if (lre_set_has(set, ((const uint16_t *)cbuf)[i]))
+                goto found;
+        }
+    }
+    *pi = end;
+    return FALSE;
+ found:
+    *pi = i;
+    return TRUE;
+}
+
+/* lre_find gives in *pi the first position from i to clen that can start
+   a match as st says, and returns 1, or 0 when there is none, or
+   LRE_RET_TIMEOUT when an interrupt comes first. It checks for one after
+   every LRE_SKIP_CHUNK units it looks at. */
+static int lre_find(const LRESkip *st, const uint8_t *cbuf, int i, int clen,
+                    int cbuf_type, void *opaque, int *pi)
+{
+    int end;
+    BOOL found;
+
+    while (i < clen) {
+        end = clen - i > LRE_SKIP_CHUNK ? i + LRE_SKIP_CHUNK : clen;
+        switch (st->kind) {
+        case LRE_RUN_CHAR:
+            found = lre_find_char(st->op, cbuf, &i, end, cbuf_type);
+            break;
+        case LRE_RUN_RANGE:
+            found = lre_find_range(st->op, cbuf, &i, end, cbuf_type);
+            break;
+        default:
+            found = lre_find_set(&st->set, cbuf, &i, end, cbuf_type);
+            break;
+        }
+        if (found) {
+            *pi = i;
+            return 1;
+        }
+        if (i < clen && lre_check_timeout(opaque))
+            return LRE_RET_TIMEOUT;
+    }
+    return 0;
+}
+
+/* lre_clear sets the n captures at capture to NULL. */
+static void lre_clear(uint8_t **capture, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++)
+        capture[i] = NULL;
+}
+
+/* lre_skip fills st with where lre_exec starts to look for a match of the
+   regexp of bytecode bc in the string cbuf of clen units (8-bit when
+   cbuf_type is 0, 16-bit when it is 1) from cindex, and how lre_run goes on
+   from there. When st->pc is 0, lre_exec runs nothing and returns
+   st->index: 0 for no match, or LRE_RET_TIMEOUT when an interrupt came
+   first, with the captures cleared. */
+static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
+                     const uint8_t *cbuf, int cindex, int clen, int cbuf_type,
+                     void *opaque)
+{
+    const uint8_t *loop = bc + RE_HEADER_LEN;
+    int flags = get_u16(bc + RE_HEADER_FLAGS), ret;
+
+    st->index = cindex;
+    st->pc = RE_HEADER_LEN;
+    st->kind = LRE_RUN_ONCE;
+    if ((flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS | LRE_FLAG_STICKY)) ||
+        (cbuf_type != 0 && cbuf_type != 1))
+        return;
+    /* The bytecode holds at least the loop, save_start 0 and the op after
+       it: an empty regexp is followed by save_end 0, then match. */
+    if (get_u32(bc + RE_HEADER_BYTECODE_LEN) < LRE_SKIP_LOOP + 2 + 1)
+        return;
+    if (loop[0] != REOP_split_goto_first || get_u32(loop + 1) != 1 + 5 ||
+        loop[5] != REOP_any || loop[6] != REOP_goto ||
+        (int)get_u32(loop + 7) != -LRE_SKIP_LOOP ||
+        loop[LRE_SKIP_LOOP] != REOP_save_start || loop[LRE_SKIP_LOOP + 1] != 0)
+        return;
+    st->pc = LRE_SKIP_MATCH;
+    st->op = bc + LRE_SKIP_BODY;
+    switch (*st->op) {
+    case REOP_line_start:
+        if (cindex == 0) {
+            st->index = 0;
+            return;
+        }
+        ret = 0;
+        goto none;
+    case REOP_char:
+        st->kind = LRE_RUN_CHAR;
+        break;
+    case REOP_range:
+        st->kind = LRE_RUN_RANGE;
+        break;
+    default:
+        if (!lre_first_set(&st->set, st->op)) {
+            st->pc = RE_HEADER_LEN;
+            return;
+        }
+        st->kind = LRE_RUN_SET;
+        break;
+    }
+    ret = lre_find(st, cbuf, cindex, clen, cbuf_type, opaque, &st->index);
+    if (ret == 1)
+        return;
+ none:
+    lre_clear(capture, 2 * bc[RE_HEADER_CAPTURE_COUNT]);
+    st->index = ret;
+    st->pc = 0;
+}
+
+/* lre_run runs the backtracking machine with its context s from the
+   position cptr of the string as st says, and returns what
+   lre_exec_backtrack returns. For LRE_RUN_ONCE it runs the machine once
+   from st->pc. Otherwise it tries the match at the position, without the
+   loop over positions, and when that fails, at each next position that can
+   start a match, with the captures cleared as the loop has them. Like the
+   loop, it polls the interrupt counter of the machine after each failed
+   match. When no position is left the captures are cleared, as they are
+   when the loop runs out of the string. */
+static intptr_t lre_run(REExecContext *s, uint8_t **capture, const uint8_t *bc,
+                        const uint8_t *cptr, const LRESkip *st)
+{
+    int cbuf_type, clen, i, ret;
+    intptr_t r;
+
+    if (st->kind == LRE_RUN_ONCE)
+        return lre_exec_backtrack(s, capture, bc + st->pc, cptr);
+    cbuf_type = s->cbuf_type;
+    clen = (s->cbuf_end - s->cbuf) >> cbuf_type;
+    i = st->index;
+    for (;;) {
+        r = lre_exec_backtrack(s, capture, bc + LRE_SKIP_MATCH,
+                               s->cbuf + ((size_t)i << cbuf_type));
+        if (r != 0)
+            return r;
+        lre_clear(capture, 2 * s->capture_count);
+        if (lre_poll_timeout(s))
+            return LRE_RET_TIMEOUT;
+        ret = lre_find(st, s->cbuf, i + 1, clen, cbuf_type, s->opaque, &i);
+        if (ret != 1)
+            return ret;
+    }
+}
+
 /* Return 1 if match, 0 if not match or < 0 if error (see LRE_RET_x). cindex is the
    starting position of the match and must be such as 0 <= cindex <=
    clen. */
@@ -3325,7 +3925,12 @@ int lre_exec(uint8_t **capture,
     REExecContext s_s, *s = &s_s;
     int re_flags, i, ret;
     const uint8_t *cptr;
+    LRESkip skip;
 
+    lre_skip(&skip, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque);
+    if (skip.pc == 0)
+        return skip.index;
+    cindex = skip.index;
     re_flags = lre_get_flags(bc_buf);
     s->is_unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
     s->capture_count = bc_buf[RE_HEADER_CAPTURE_COUNT];
@@ -3351,7 +3956,7 @@ int lre_exec(uint8_t **capture,
         }
     }
 
-    ret = lre_exec_backtrack(s, capture, bc_buf + RE_HEADER_LEN, cptr);
+    ret = lre_run(s, capture, bc_buf, cptr, &skip);
 
     if (s->stack_buf != s->static_stack_buf)
         lre_realloc(s->opaque, s->stack_buf, 0);
