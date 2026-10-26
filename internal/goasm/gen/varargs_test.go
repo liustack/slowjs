@@ -95,3 +95,31 @@ func TestVarargsOverAlignedRejected(t *testing.T) {
 		t.Fatalf("take not rejected for over-alignment: %q\n%s", why, out)
 	}
 }
+
+// TestVarargsOverAlignedHelperRejected: the over-aligned read sits in a plain
+// helper the variadic function passes its va_list to, not in the variadic
+// function itself. The pass must follow the va_list into the helper and
+// reject it, otherwise a caller gets a block the helper reads wrong. Needs
+// LLVM 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+func TestVarargsOverAlignedHelperRejected(t *testing.T) {
+	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+	}
+	work := t.TempDir()
+	ir := filepath.Join(work, "h.ll")
+	run := func(name string, args ...string) string {
+		t.Helper()
+		out, err := exec.Command(filepath.Join(llvm, name), args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, out)
+		}
+		return string(out)
+	}
+	run("clang", append(append([]string{"--target=x86_64-linux-gnu"}, EngineCFlags...), "-S", "-emit-llvm", "-o", ir, filepath.Join("testdata", "varargs", "overaligned_helper.c"))...)
+	out := run("opt", "-load-pass-plugin", pass, "-passes=goasm-shadow-stack", "-shadow-add-sp", "-shadow-varargs", "-shadow-keep-going", "-S", "-o", os.DevNull, ir)
+	rep := ParseReport(out)
+	if why := rep.Rejected["read_s"]; !strings.Contains(why, "over-aligned") {
+		t.Fatalf("the helper read_s was not rejected: %q\n%s", why, out)
+	}
+}
