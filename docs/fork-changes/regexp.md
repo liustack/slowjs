@@ -22,6 +22,8 @@ A regexp that is not sticky no longer tries every position of the string in the 
 
 Tests: `lib/regexskip_test.go`, whose `testdata/regex.txt` holds what 61 regexps give on 47 strings through every API that runs one, from the engine before the change, `internal/fixlib/regexskip_test.go`, and `TestRegexScanStops` in `timeout_test.go`.
 
+The C tree (`engine/libregexp.c`) has the same change in C: `lre_skip`, `lre_first_set`, `lre_find` and `lre_run`, called by `lre_exec`. A char at the start of a regexp is found in an 8-bit string with `memchr`. `lre_first_set` walks the ways of the splits with a list of its own instead of recursion, which gives the same set and the same budget. `engine/test/compare.sh` runs `testdata/regex.js`, `regexsplit.js`, `regexpv.js`, `shikire.js` and `engine/test/compare/regexskip.js` (strings longer than a chunk, 8-bit and 16-bit, alternations past both budgets) on it and on the Go engine.
+
 ### When upstream changes it
 
 What to do when `go run ./internal/fixlib` stops on this change after an upstream release. [upgrading.md](../upgrading.md) has the whole procedure and the order in which to update the lists `fixlib` checks against.
@@ -44,6 +46,8 @@ Why this is safe: a state that is not pushed is one that would have been popped 
 `fixlib` puts the question to `lreSplit` into the handler of the split ops in all 5 files, after it finds that the handler pushes the way it computes and jumps to the next op, and pins `lre_canonicalize`, `lre_case_folding_entry` and `lre_poll_timeout` beside the functions `regexSites` pinned already. This changes only the generated Go, with no C hunk (`internal/fixlib/regexskip.go`).
 
 Tests: `lib/regexskip_test.go`, whose `testdata/regexsplit.txt` holds what Node gives for 84 regexps on 73 strings through every API that runs one (the engine before the change gives the same), with `testdata/regex.txt` as before, `lib/regexskip_memgrind_test.go`, `internal/fixlib/regexskip_test.go`, and `TestRegexScanStops` and `TestRegexMatchStops` in `timeout_test.go`, which stop regexps that try every position, and single long matches.
+
+The C tree (`engine/libregexp.c`) has the same change in C: the split ops of `lre_exec_backtrack` call `lre_split`, with the same ops, budget and interrupt step.
 
 ### When upstream changes it
 
