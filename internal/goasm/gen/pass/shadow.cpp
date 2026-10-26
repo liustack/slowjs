@@ -381,7 +381,9 @@ static void lowerVarargs(Module &M) {
   // register save area, which va_start leaves exhausted, or a merge of it
   // with the block pointer). Block and read pointers may be read through,
   // one promoted scalar at a time; only a block pointer may be stored, and
-  // only back into the overflow field, 8 bytes on.
+  // only back into the overflow field, 8 bytes on. The offset fields may
+  // only grow from what va_start set (x86-64 gp_offset 48 and fp_offset 176,
+  // AArch64 both 0), so every va_arg takes the overflow path.
   const int64_t blockField = arm ? 0 : 8;
   auto readField = [&](int64_t off) { return arm ? (off == 8 || off == 16) : off == 16; };
   auto intField = [&](int64_t off) { return arm ? (off == 24 || off == 28) : (off == 0 || off == 4); };
@@ -496,6 +498,36 @@ static void lowerVarargs(Module &M) {
       }
     }
   }
+  // grows: v is the offset field at off of the va_list under obj, as loaded,
+  // plus positive constants, through phis and selects. Storing it keeps the
+  // field at or above what va_start set.
+  std::function<bool(Value *, Value *, int64_t, SmallPtrSetImpl<Value *> &)> grows =
+      [&](Value *v, Value *obj, int64_t off, SmallPtrSetImpl<Value *> &seen) -> bool {
+    if (!seen.insert(v).second)
+      return true; // a cycle through a phi: no other value enters on it
+    if (auto *L = dyn_cast<LoadInst>(v)) {
+      Value *p = L->getPointerOperand();
+      return L->getType()->isIntegerTy(32) && vaList.count(p) && vaList[p] == off && getUnderlyingObject(p) == obj;
+    }
+    if (auto *B = dyn_cast<BinaryOperator>(v)) {
+      if (B->getOpcode() != Instruction::Add)
+        return false;
+      for (unsigned k = 0; k < 2; k++)
+        if (auto *c = dyn_cast<ConstantInt>(B->getOperand(k)))
+          if (c->getValue().isStrictlyPositive() && grows(B->getOperand(1 - k), obj, off, seen))
+            return true;
+      return false;
+    }
+    if (auto *Phi = dyn_cast<PHINode>(v)) {
+      for (Value *in : Phi->incoming_values())
+        if (!grows(in, obj, off, seen))
+          return false;
+      return true;
+    }
+    if (auto *S = dyn_cast<SelectInst>(v))
+      return grows(S->getTrueValue(), obj, off, seen) && grows(S->getFalseValue(), obj, off, seen);
+    return false;
+  };
   // Check every use.
   auto checkList = [&](Value *V, int64_t off, Use &U) {
     auto *I = cast<Instruction>(U.getUser());
@@ -518,8 +550,13 @@ static void lowerVarargs(Module &M) {
         return;
       }
       Value *v = S->getValueOperand();
-      bool ok = (intField(off) && v->getType()->isIntegerTy(32)) || (off == blockField && isBlock(v));
-      if (!ok)
+      if (intField(off)) {
+        SmallPtrSet<Value *, 8> seen;
+        if (!grows(v, getUnderlyingObject(V), off, seen))
+          fail(I, "writes a va_list offset that does not only grow from what va_start set");
+        return;
+      }
+      if (!(off == blockField && isBlock(v)))
         fail(I, "writes a va_list field with a value the pass cannot account for");
       return;
     }
