@@ -46,17 +46,14 @@ var (
 	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: match every generated function and engine_rodata against llc's object")
 	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
 	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
-	nonFormat = flag.String("non-format-variadic", strings.Join(gen.EngineNonFormatVariadic, ","), "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
+	nonFormat = flag.String("non-format-variadic", defaultNonFormat, "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
 	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
 	sizeLog2  = flag.Int("shadow-size-log2", 20, "log2 of the shadow-stack region the engine is generated for (the host's region must be at least as big); engine_decl.go records it")
+	release   = flag.Bool("release", false, "formal build: refuse every switch made for surveys, tests and negative builds, and fail if any function would be a stub")
 	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 )
 
-// FreeFlags are the flags of the small libc branch: no system headers, no
-// errno from math, no fused multiply-add, 32-bit BigInt limbs.
-var freeFlags = []string{"-ffreestanding", "-nostdinc", "-fno-math-errno", "-ffp-contract=off", "-U__FP_FAST_FMA",
-	"-U__FP_FAST_FMAF", "-U__SIZEOF_INT128__", "-fno-stack-protector", "-funsigned-char",
-	"-fno-asynchronous-unwind-tables", "-fno-unwind-tables"}
+var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
 
 // Rejection is one function the generator could not take, or one rule the
 // C breaks.
@@ -73,6 +70,21 @@ func reject(fn, stage, msg string) {
 func main() {
 	flag.Parse()
 	t0 := time.Now()
+	if err := gen.CheckShadowSizeLog2(*sizeLog2); err != nil {
+		die(err)
+	}
+	keepNarrow, err := keepNarrowFromEnv(os.Getenv("GEN_KEEP_NARROW"))
+	if err != nil {
+		die(err)
+	}
+	gen.KeepNarrowSigs = keepNarrow
+	editLoweredEnv := os.Getenv("GEN_EDIT_LOWERED")
+	if *release {
+		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
+			EditLowered: editLoweredEnv, Arch: *arch, NonFormat: *nonFormat}, *out); err != nil {
+			die(err)
+		}
+	}
 	if *arch != "amd64" && *arch != "arm64" {
 		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
 	}
@@ -100,9 +112,12 @@ func main() {
 			srcs = append(srcs, src{f, strings.TrimSuffix(filepath.Base(f), ".c")})
 		}
 	}
-	cflags := append(append([]string{}, gen.EngineCFlags...), freeFlags...)
+	if gen.FlagsErr != nil {
+		die(gen.FlagsErr)
+	}
+	cflags := append([]string{}, gen.EngineCFlags...)
 	if *arch == "arm64" {
-		cflags = append(append([]string{}, gen.ARM64CFlags...), freeFlags...)
+		cflags = append([]string{}, gen.ARM64CFlags...)
 	}
 	libc := filepath.Join(*engineDir, "libc")
 	var lls []string
@@ -208,9 +223,9 @@ func main() {
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
 		"-shadow-icall-sigs", fmt.Sprintf("-shadow-size-log2=%d", *sizeLog2), "-shadow-probes=" + probesLL}
-	if os.Getenv("GEN_KEEP_NARROW") != "" {
+	if keepNarrow {
 		// Negative build: narrow integers as the generator once took them
-		// (gen.SigFromCode reads the same switch).
+		// (gen.KeepNarrowSigs makes SigFromCode follow).
 		passArgs = append(passArgs, "-shadow-keep-narrow")
 	}
 	if *keepGoing {
@@ -404,13 +419,20 @@ func main() {
 		writeFile(*reportOut, string(b))
 	}
 	if len(rejections) > 0 && !*keepGoing {
-		die(fmt.Errorf("%d rejections (run with -keep-going to list them all)", len(rejections)))
+		hint := "run with -keep-going to list them all"
+		if *release {
+			hint = "a release build has no stub, so the C must change: -keep-going, without -release, lists them all"
+		}
+		die(fmt.Errorf("%d rejections (%s)", len(rejections), hint))
+	}
+	if *release && len(stubs) > 0 {
+		die(fmt.Errorf("-release: %d functions would be stubs without a rejection to say why", len(stubs)))
 	}
 
 	// 6. Re-assemble (keeping the temporary labels the check looks up) and
 	// emit.
 	text := lowered.String()
-	if e := os.Getenv("GEN_EDIT_LOWERED"); e != "" {
+	if e := editLoweredEnv; e != "" {
 		text = editLowered(text, e) // negative tests: the check must fail
 	}
 	loweredPath := filepath.Join(*work, "lowered.s")
@@ -474,7 +496,7 @@ func main() {
 		}
 	}
 	files, err := gen.EmitEngine(loweredObj, gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
-		MaxBytes: *maxFile, Stubs: stubs, Plan: plan, Arch: *arch})
+		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch})
 	if err != nil {
 		die(err)
 	}
@@ -488,10 +510,85 @@ func main() {
 		writeFile(filepath.Join(*out, name), text)
 		total += len(text)
 	}
-	writeFile(filepath.Join(*out, "engine_decl.go"), goDecls(metas, stubs, sigs, gonames, rep))
+	writeFile(filepath.Join(*out, "engine_decl.go"), goDecls(metas, stubs, sigs, gonames, rep, keepNarrow))
+	negativeFile := filepath.Join(*out, "engine_negative.go")
+	if keepNarrow {
+		writeFile(negativeFile, negativeBuildFile())
+	} else {
+		os.Remove(negativeFile) // an earlier negative build in this folder
+	}
 	writeFile(filepath.Join(*out, "engine_keep.go"), keepAll(metas, stubs, gonames))
 	fmt.Fprintf(os.Stderr, "wrote %d .s files, %d bytes, to %s\n", len(files), total, *out)
 	fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
+}
+
+// keepNarrowFromEnv reads GEN_KEEP_NARROW, the negative build that leaves
+// narrow integers as the generator once took them. Only 1 turns it on, and an
+// unset or empty variable leaves it off. Any other value (0 among them) is an
+// error, since a build that reads 0 as on is the mistake the switch exists to
+// show.
+func keepNarrowFromEnv(v string) (bool, error) {
+	switch v {
+	case "":
+		return false, nil
+	case "1":
+		return true, nil
+	}
+	return false, fmt.Errorf("GEN_KEEP_NARROW=%q: only 1 turns the negative build on (unset it to build the engine)", v)
+}
+
+// devSwitches are the switches a release build refuses: the ones for
+// surveys (-keep-going, -arch arm64), wrong code on purpose (-loose-varargs),
+// tests of the tests (-poison, GEN_KEEP_NARROW, GEN_EDIT_LOWERED) and a
+// format check made narrower than the default. -src is not among them: a
+// fixture goes through a release build like the engine does, which is how the
+// build is tested.
+type devSwitches struct {
+	KeepGoing, LooseVarargs, Poison, KeepNarrow bool
+	EditLowered, Arch, NonFormat                string
+}
+
+// releaseError says why -release cannot go on with these switches, or is nil.
+// A release build also needs -out: it writes the package.
+func releaseError(d devSwitches, out string) error {
+	var bad []string
+	add := func(on bool, name string) {
+		if on {
+			bad = append(bad, name)
+		}
+	}
+	add(d.KeepGoing, "-keep-going")
+	add(d.LooseVarargs, "-loose-varargs")
+	add(d.Poison, "-poison")
+	add(d.KeepNarrow, "GEN_KEEP_NARROW")
+	add(d.EditLowered != "", "GEN_EDIT_LOWERED")
+	add(d.Arch != "amd64", "-arch "+d.Arch)
+	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
+	if len(bad) > 0 {
+		return fmt.Errorf("-release refuses %s: they are for surveys and tests, not for the engine", strings.Join(bad, ", "))
+	}
+	if out == "" {
+		return fmt.Errorf("-release needs -out: a release build writes the package")
+	}
+	return nil
+}
+
+// negativeBuildFile is engine_negative.go, which a negative build writes next
+// to its other files. Without the tag goasmnegative the package does not
+// compile, so a negative build cannot be taken for an engine.
+func negativeBuildFile() string {
+	return fmt.Sprintf(`// Code generated by internal/goasm/gen. DO NOT EDIT.
+
+//go:build !goasmnegative
+
+package %s
+
+// This package is a negative build of the generator (GEN_KEEP_NARROW=1): its
+// narrow integers are passed as the generator once took them, to show that
+// the tests and the post-link check catch the mistake. It is not an engine,
+// and it does not compile unless the build is given -tags goasmnegative.
+var _ = negative_build_of_the_generator_is_not_an_engine_build_it_with_tag_goasmnegative
+`, *pkg)
 }
 
 // editLowered applies GEN_EDIT_LOWERED to the lowered text: entries
@@ -588,9 +685,13 @@ func layoutOf(s gen.Sig) ([]int, int, int) { return gen.Layout(s) }
 
 // goDecls writes the Go declaration of every unified entry (lowered or
 // stub) and the signature each host callback must have.
-func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap, rep *gen.Report) string {
+func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap, rep *gen.Report, negative bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "// Code generated by internal/goasm/gen. DO NOT EDIT.\n\npackage %s\n\n", *pkg)
+	fmt.Fprintf(&b, "// Code generated by internal/goasm/gen. DO NOT EDIT.\n\n")
+	if negative {
+		b.WriteString("// NEGATIVE BUILD (GEN_KEEP_NARROW=1): this is not an engine. See engine_negative.go.\n\n")
+	}
+	fmt.Fprintf(&b, "package %s\n\n", *pkg)
 	fmt.Fprintf(&b, "// shadowSizeLog2 is log2 of the shadow-stack region the engine was generated\n"+
 		"// for (-shadow-size-log2): it takes the space left from the stack pointer\n"+
 		"// and this size, so the host's region must be aligned to it and no smaller.\n"+

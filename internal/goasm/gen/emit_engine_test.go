@@ -47,3 +47,19 @@ func TestEmitLeafFrame(t *testing.T) {
 		t.Fatalf("leaf frame not declared:\n%s", asmGo[i:i+60])
 	}
 }
+
+// TestEmitNoStubs: a release build never emits a stub. EmitEngine stops on
+// one before it reads the object (the path here does not exist), naming the
+// functions, and without NoStubs the same input gets past that check.
+func TestEmitNoStubs(t *testing.T) {
+	e := EngineEmit{Stubs: []Meta{{Name: "js_atomics_pause"}, {Name: "other"}}, Arch: "amd64"}
+	_, err := EmitEngine("no-such-object.o", e)
+	if err == nil || strings.Contains(err.Error(), "release") {
+		t.Fatalf("without NoStubs: %v", err)
+	}
+	e.NoStubs = true
+	_, err = EmitEngine("no-such-object.o", e)
+	if err == nil || !strings.Contains(err.Error(), "no stub") || !strings.Contains(err.Error(), "js_atomics_pause other") {
+		t.Fatalf("with NoStubs: %v", err)
+	}
+}

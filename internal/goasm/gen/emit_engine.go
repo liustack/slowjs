@@ -21,14 +21,23 @@ type EngineEmit struct {
 	// MaxBytes bounds the size of one .s file.
 	Group    map[string]string
 	MaxBytes int
-	// Stubs are functions emitted as a call to ·goasmMissing(index).
-	Stubs []Meta
-	Plan  *DataPlan
-	Arch  string // file name suffix and build tag
+	// Stubs are functions emitted as a call to ·goasmMissing(index). With
+	// NoStubs (a release build) any stub is an error.
+	Stubs   []Meta
+	NoStubs bool
+	Plan    *DataPlan
+	Arch    string // file name suffix and build tag
 }
 
 // EmitEngine returns the generated .s files by name.
 func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
+	if e.NoStubs && len(e.Stubs) > 0 {
+		var names []string
+		for _, m := range e.Stubs {
+			names = append(names, m.Name)
+		}
+		return nil, fmt.Errorf("a release build has no stub, but %d functions would be: %s", len(names), strings.Join(names, " "))
+	}
 	o, err := readObject(objPath)
 	if err != nil {
 		return nil, err

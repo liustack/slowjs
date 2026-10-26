@@ -16,8 +16,12 @@ runs its own checks and lowering in Go (`debug/elf`,
    the target feature slow-two-mem-ops keeps llc from folding the load of a
    call target into the call, so every indirect call is through a register. On
    arm64 the target is aarch64-linux-gnu with x18 and x26 to x28 fixed, x29
-   reserved and LR kept for return addresses. CheckIR rejects variadics,
-   byval, sret and long double.
+   reserved and LR kept for return addresses. The portable flags (freestanding,
+   no system headers, wrapping signed overflow, unsigned char and the others)
+   are not written here: init runs `engine/test/flags.sh`, which the scripts of
+   the C tree read too, and appends what it gives (`TestFlagsComeFromFlagsSh`
+   keeps the Go lists and `cycles.sh` from repeating them). CheckIR rejects
+   variadics, byval, sret and long double.
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees
@@ -108,7 +112,10 @@ them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
 in `testdata/reject` through the real pipeline, and with `SLOWJS_LLD`
 (ld.lld) as well, `TestNarrowArgs` runs `testdata/narrow` natively and
-generated. `internal/enginecmp` measures
+generated, and `TestSampleRuns` does the same for each sample of
+`testdata/run`: each defines `long run(long *r, int one)`, is run natively
+(also under UBSan) and from Go in body, pn and pn poison builds, and must print
+the same lines, and the post-link check must pass on it. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
 
 ## The whole engine
@@ -118,12 +125,18 @@ as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
 declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
 `malloc_usable_size` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. A rejection stops the run and nothing is written, and the
-default has no stubs. `-keep-going` is for surveys: it lists every function the
-C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
+in `missingNames`. A rejection stops the run and nothing is written (a rejection by the
+pass is one `LLVM ERROR:` line and exit status 1, not an abort with opt's
+stack), and the default has no stubs. `-keep-going` is for surveys: it lists every function the
+C must change, by class, and stubs it instead of stopping. `-release` is the
+formal build: it fails on any stub, needs `-out`, and refuses every switch
+made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
+`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `-arch arm64`, a changed
+`-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
-the engine is made for (20 by default, 25 for the host's whole 32 MiB):
+the engine is made for (20 by default, 25 for the host's whole 32 MiB, and
+from 16 to 40: the driver and the pass refuse any other before they use it):
 `engine_decl.go` records it as `shadowSizeLog2`, and the host refuses a
 smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
@@ -133,7 +146,11 @@ register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
 still pass, so no code reads a register the lowering did not set.
 `GEN_KEEP_NARROW=1` leaves narrow integers as the generator once took them:
-the post-link check must reject the result (`TestNarrowArgs`).
+the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
+turns it on, and any other value but an empty one is an error. The package of
+such a build is marked: `engine_negative.go` does not compile without
+`-tags goasmnegative`, and `engine_decl.go` says so. A later build into the
+same folder removes the file.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
