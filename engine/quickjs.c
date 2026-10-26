@@ -12212,6 +12212,31 @@ int JS_DefinePropertyValue(JSContext *ctx, JSValueConst this_obj,
                            JSAtom prop, JSValue val, int flags)
 {
     int ret;
+
+    /* A data property that an ordinary extensible object does not have yet,
+       as every object literal, spread, class field, JSON.parse and new
+       function makes: what JS_DefineProperty does when find_own_property
+       finds nothing and the object is no fast array, and JS_CreateProperty
+       when the object is neither exotic nor the global object and is
+       extensible, is add_property with the C_W_E bits of flags, then the
+       value. */
+    if (JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
+        !(flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET))) {
+        JSObject *p = JS_VALUE_GET_OBJ(this_obj);
+        JSProperty *pr;
+
+        if (p->extensible && !p->is_exotic && !p->fast_array &&
+            p->class_id != JS_CLASS_GLOBAL_OBJECT &&
+            !find_own_property1(p, prop)) {
+            pr = add_property(ctx, p, prop, flags & JS_PROP_C_W_E);
+            if (!pr) {
+                JS_FreeValue(ctx, val);
+                return -1;
+            }
+            pr->u.value = val;
+            return TRUE;
+        }
+    }
     ret = JS_DefineProperty(ctx, this_obj, prop, val, JS_UNDEFINED, JS_UNDEFINED,
                             flags | JS_PROP_HAS_VALUE | JS_PROP_HAS_CONFIGURABLE | JS_PROP_HAS_WRITABLE | JS_PROP_HAS_ENUMERABLE);
     JS_FreeValue(ctx, val);

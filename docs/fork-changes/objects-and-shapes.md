@@ -20,6 +20,8 @@ Defining a new property on a plain object costs less. Object literals, spread, c
 
 Tests: `lib/objlit_test.go`, `lib/objlit_memgrind_test.go`, `internal/fixlib/define_test.go`.
 
+The C tree (`engine/quickjs.c`) has the same fast path in C, at the start of `JS_DefinePropertyValue`. `engine/test/compare.sh` runs `testdata/objlit.js` on it and on the Go engine.
+
 ### When upstream changes it
 
 What to do when `go run ./internal/fixlib` stops on this change after an upstream release. [upgrading.md](../upgrading.md) has the whole procedure and the order in which to update the lists `fixlib` checks against.
