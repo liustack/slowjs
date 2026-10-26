@@ -10217,6 +10217,16 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
     JSAtom atom;
     uint32_t tag;
     tag = JS_VALUE_GET_TAG(val);
+    if (tag == JS_TAG_STRING) {
+        JSString *p = JS_VALUE_GET_STRING(val);
+        /* A string that is already an atom and does not start with a digit
+           is its own atom: JS_ToPropertyKey would dup it, is_num_string
+           would find no index, and __JS_NewAtom would take its index and
+           keep the dup as the reference of the atom, as JS_DupAtom does. */
+        if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+            !is_digit(string_get(p, 0)))
+            return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+    }
     if (tag == JS_TAG_INT &&
         (uint32_t)JS_VALUE_GET_INT(val) <= JS_ATOM_MAX_INT) {
         /* fast path for integer values */
