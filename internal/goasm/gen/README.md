@@ -121,8 +121,9 @@ as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
 declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
 `malloc_usable_size` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. A rejection stops the run and nothing is written, and the
-default has no stubs. `-keep-going` is for surveys: it lists every function the
+in `missingNames`. A rejection stops the run and nothing is written (a rejection by the
+pass is one `LLVM ERROR:` line and exit status 1, not an abort with opt's
+stack), and the default has no stubs. `-keep-going` is for surveys: it lists every function the
 C must change, by class, and stubs it instead of stopping. `-release` is the
 formal build: it fails on any stub, needs `-out`, and refuses every switch
 made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
