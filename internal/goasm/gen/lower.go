@@ -388,7 +388,8 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	var flow map[string]string
 	if env != nil {
 		var err error
-		if flow, err = markerFlow(inner); err != nil {
+		targets, haveTargets := env.jumpTargets(fn.Name)
+		if flow, err = markerFlow(inner, targets, haveTargets); err != nil {
 			return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 		}
 	}
@@ -746,15 +747,28 @@ func AddCallee(name string, sig Sig, kind Kind) {
 // several predecessors (tail merging), each keeping its own copy of the
 // marker, so a marker is followed along jumps and fall-throughs to its call.
 // Every edge into a block must carry the same marker, or none.
-func markerFlow(lines []string) (map[string]string, error) {
+// markerFlow returns the indirect-call marker pending at the start of each
+// local label. jumpTargets is the set of labels the function's indirect jumps
+// (switch tables, computed gotos) land on, and haveTargets whether that set
+// is known: when an indirect jump has no table markerFlow can read, its
+// landing blocks are unknown and any marker crossing a block edge is unsafe.
+func markerFlow(lines []string, jumpTargets map[string]bool, haveTargets bool) (map[string]string, error) {
 	in := map[string]string{} // present: some edge reaches the label
 	// A label no direct jump names is entered by falling through or from a
 	// jump table. No marker may be pending at an indirect jump (checked
 	// below), so a table entry carries none.
 	targets := map[string]bool{}
+	hasIndirectJump := false
 	for _, l := range lines {
-		if f := strings.Fields(norm(l)); len(f) == 2 && f[0][0] == 'j' && strings.HasPrefix(f[1], ".L") {
+		f := strings.Fields(norm(l))
+		if len(f) == 2 && f[0][0] == 'j' && strings.HasPrefix(f[1], ".L") {
 			targets[f[1]] = true
+		}
+		// jmpq *%rax, jmp *tab(,%rax,8): a block the table targets gets an
+		// unmarked in-edge the body does not name. Which labels those are is
+		// in the jump table, which jumpTargets carries from the data.
+		if len(f) >= 1 && (f[0] == "jmp" || f[0] == "jmpq") && strings.Contains(l, "*") {
+			hasIndirectJump = true
 		}
 	}
 	for iter := 0; ; iter++ {
@@ -814,6 +828,19 @@ func markerFlow(lines []string) (map[string]string, error) {
 			return nil, conflict
 		}
 		if !changed {
+			// A marker pending at the start of a block reaches its call
+			// across a block edge. If the function also has an indirect
+			// jump that could land on that block, the block is reached
+			// along an edge that carries no marker, so the marker cannot be
+			// trusted. Reject when the block is a known jump target, or when
+			// the jump's targets are unknown (no table to read them from).
+			if hasIndirectJump {
+				for _, lab := range SortedKeys(in) {
+					if in[lab] != "" && (!haveTargets || jumpTargets[lab]) {
+						return nil, fmt.Errorf("indirect-call marker %q reaches %s across a block edge while an indirect jump may reach %s unmarked", in[lab], lab, lab)
+					}
+				}
+			}
 			return in, nil
 		}
 	}
@@ -943,6 +970,33 @@ func constantPool(asm string, body []string) (string, error) {
 // __goasm_rodata+offset, any other read of data goes to the function's own
 // copy, a constant pool or jump table keeps its label, and a LEA of a
 // function stays symbolic for emit.
+// reBlockLabel matches a local block label (.LBB.., .Ltmp..) used as a jump
+// target inside a data object, such as a switch table or a computed-goto
+// table.
+var reBlockLabel = regexp.MustCompile(`\.L(?:BB|tmp)[\w.$]*`)
+
+// jumpTargets returns the block labels the function's switch and computed-goto
+// tables land on, and whether such a table was found. markerFlow uses it to
+// tell a block an indirect jump may reach from one it cannot. The targets are
+// in the function's own in-body data objects (llc keeps jump tables private),
+// so a function with an indirect jump but no such object has unknown targets.
+func (env *LowerEnv) jumpTargets(fn string) (map[string]bool, bool) {
+	if env.Plan == nil {
+		return nil, false
+	}
+	t := map[string]bool{}
+	found := false
+	for _, o := range env.Plan.InBody[fn] {
+		for _, l := range o.Lines {
+			for _, m := range reBlockLabel.FindAllString(l, -1) {
+				t[m] = true
+				found = true
+			}
+		}
+	}
+	return t, found
+}
+
 func (env *LowerEnv) dataRefs(fn, l string) (string, error) {
 	n := norm(l)
 	lea := strings.HasPrefix(n, "lea")
