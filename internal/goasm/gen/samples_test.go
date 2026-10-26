@@ -34,6 +34,10 @@ import (
 //     function that forwards its va_list. The pass moves the variable
 //     arguments into a block first and widens the narrow ones after, and the
 //     two meet in these calls.
+//   - trap.c: a __builtin_trap the run does not reach is a call of host_trap in
+//     the generated code and no trap instruction, which the post-link check
+//     refuses. A second run reaches it and must land in host_trap.
+//   - leaf_trap.c: a register-entry leaf that traps is refused.
 //   - icalls.c: for each shape of signature, a function called directly and
 //     through a table gives the same result, and each result is what native C
 //     gives. TestICallSymbols holds each call's id to the type in its source
@@ -78,6 +82,7 @@ func TestSampleRuns(t *testing.T) {
 	}{
 		{"alias.c", nil, 24, false},
 		{"icalls.c", nil, 56, true},
+		{"trap.c", nil, 2, false},
 		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {
 		name := strings.TrimSuffix(s.file, ".c")
@@ -146,6 +151,49 @@ func TestSampleRuns(t *testing.T) {
 		})
 	}
 
+	// The trap is taken: the generated code calls host_trap, which panics,
+	// where a ud2 would have been SIGILL and ended the process.
+	t.Run("trap_reaches_host", func(t *testing.T) {
+		c, err := filepath.Abs(filepath.Join(src, "trap.c"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, mode := range []string{"body", "pn"} {
+			t.Run(mode, func(t *testing.T) {
+				mod := at("trap-" + mode)
+				tool(t, "", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-leaves", "",
+					"-work", at("w-trap-"+mode), "-pkg", "nw", "-out", filepath.Join(mod, "nw"))
+				for f, text := range map[string]string{
+					"go.mod":     "module samples\n\ngo 1.22\n",
+					"main.go":    sampleGoMain,
+					"nw/host.go": sampleGoHostTrap,
+				} {
+					if err := os.WriteFile(filepath.Join(mod, f), []byte(text), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				tool(t, mod, "go", "build", "-o", "run", ".")
+				if have := tool(t, mod, filepath.Join(mod, "run")); have != "1\n" {
+					t.Fatalf("the run with the trap taken printed %q, want the panic of host_trap (1)", have)
+				}
+			})
+		}
+	})
+
+	// A leaf has no shadow pointer to call host_trap with, so one that traps
+	// is refused.
+	t.Run("leaf_trap", func(t *testing.T) {
+		c, err := filepath.Abs(filepath.Join(src, "leaf_trap.c"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := runIn("", goEnv, drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", "pn", "-leaves", "lf",
+			"-work", at("w-leaf-trap"), "-out", at("out-leaf-trap"), "-pkg", "nw")
+		if err == nil || !strings.Contains(out, "register-entry leaf with a trap") {
+			t.Fatalf("a leaf that traps was taken: %v\n%s", err, out)
+		}
+	})
+
 	// The call of a weak alias is refused, whatever mode: the call names a
 	// symbol that is neither a function of the engine nor a host callback.
 	t.Run("alias_weak", func(t *testing.T) {
@@ -192,7 +240,8 @@ func main() {
 `
 
 // sampleGoHost runs a sample's run on a shadow region and a result buffer
-// outside the Go heap. The samples call no host function.
+// outside the Go heap. The samples call no host function, but host_trap,
+// which the pass puts where a trap would be.
 const sampleGoHost = `package nw
 
 import (
@@ -201,6 +250,8 @@ import (
 )
 
 func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
+
+func host_trap(sp uintptr) { panic("host_trap") }
 
 func Run() []int64 {
 	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
@@ -215,5 +266,34 @@ func Run() []int64 {
 		out[i] = *(*int64)(unsafe.Pointer(r + uintptr(8*i)))
 	}
 	return out
+}
+`
+
+// sampleGoHostTrap is the host of trap.c run with the trap taken: Run prints
+// 1 when run lands in host_trap, and fails otherwise.
+const sampleGoHostTrap = `package nw
+
+import "syscall"
+import "unsafe"
+
+func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
+
+func host_trap(sp uintptr) { panic("host_trap") }
+
+func Run() (out []int64) {
+	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	if err != nil {
+		panic(err)
+	}
+	base := (uintptr(unsafe.Pointer(&m[0])) + 1<<20 - 1) &^ (1<<20 - 1)
+	sp, r := base+4096, base+2<<20
+	defer func() {
+		if got := recover(); got != "host_trap" {
+			panic(got)
+		}
+		out = []int64{1}
+	}()
+	run(sp, r, 2)
+	return []int64{0}
 }
 `

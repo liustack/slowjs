@@ -7,6 +7,8 @@ package gohost
 
 import (
 	"errors"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"testing"
@@ -226,6 +228,18 @@ func TestCallAbort(t *testing.T) {
 	}
 }
 
+func TestTrap(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	got := mustPanic(t, "host_trap", func() { Trap(base + 4096) })
+	if err, ok := got.(error); !ok || !errors.Is(err, ErrTrap) {
+		t.Fatalf("host_trap panicked with %v, want ErrTrap", got)
+	}
+	if !v.Broken() {
+		t.Fatal("the VM is not broken after a trap")
+	}
+}
+
 func TestCallUnknown(t *testing.T) {
 	v := newVM(t, small)
 	sp, _ := v.Stack()
@@ -329,6 +343,56 @@ func TestPoll(t *testing.T) {
 	mustPanic(t, "Leave without Enter", v.Leave)
 }
 
+// faultMode is the setting of SetPanicOnFault for the calling goroutine.
+func faultMode() bool {
+	old := debug.SetPanicOnFault(false)
+	debug.SetPanicOnFault(old)
+	return old
+}
+
+// TestEnterPanicOnFault: the outermost entry turns SetPanicOnFault on, and
+// the Leave that matches it puts back what the goroutine had. Inner entries
+// leave it alone.
+func TestEnterPanicOnFault(t *testing.T) {
+	v := newVM(t, small)
+	for _, was := range []bool{false, true} {
+		defer debug.SetPanicOnFault(debug.SetPanicOnFault(was))
+		v.Enter()
+		if !faultMode() {
+			t.Fatalf("was %v: not on inside the engine", was)
+		}
+		v.Enter()
+		v.Leave()
+		if !faultMode() {
+			t.Fatalf("was %v: an inner Leave turned it off", was)
+		}
+		v.Leave()
+		if faultMode() != was {
+			t.Fatalf("was %v: Leave left it %v", was, faultMode())
+		}
+	}
+}
+
+// TestFaultInEngineIsAPanic: an access to an address that is mapped to
+// nothing, such as the guard page of the shadow stack, is a panic that
+// recovers while the engine runs. Without SetPanicOnFault the runtime prints
+// "unexpected fault address" and ends the process.
+func TestFaultInEngineIsAPanic(t *testing.T) {
+	v := newVM(t, small)
+	base, size := v.Stack()
+	guard := (*byte)(addr(base + size))
+	v.Enter()
+	got := mustPanic(t, "a write to the guard page", func() { *guard = 1 })
+	v.Leave()
+	err, ok := got.(runtime.Error)
+	if !ok {
+		t.Fatalf("the fault panicked with %T %v, want a runtime.Error", got, got)
+	}
+	if a, ok := err.(interface{ Addr() uintptr }); !ok || a.Addr() != base+size {
+		t.Fatalf("the fault panic %v does not name the address %#x", err, base+size)
+	}
+}
+
 func TestRelease(t *testing.T) {
 	v := newVM(t, small)
 	type item struct{ n int }
@@ -406,5 +470,19 @@ func TestCloseDropsHandles(t *testing.T) {
 	mustPanic(t, "Keep after Close", func() { v.Keep(1) })
 	if err := v.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// BenchmarkEnterLeave is the cost of an outermost entry and its Leave,
+// SetPanicOnFault included.
+func BenchmarkEnterLeave(b *testing.B) {
+	v, err := New(Options{StackSize: small})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { v.Close() })
+	for b.Loop() {
+		v.Enter()
+		v.Leave()
 	}
 }
