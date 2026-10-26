@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // inChild runs the test again in a child process and fails when the child
@@ -188,4 +189,69 @@ func TestCloseLeavesNothing(t *testing.T) {
 			t.Errorf("%s: Eval after Close did not fail", how)
 		}
 	}
+}
+
+// TestCloseRetry: when the OS refuses to unmap a chunk, Close returns the
+// error and keeps the chunk, and Close again unmaps it without freeing the
+// engine a second time.
+func TestCloseRetry(t *testing.T) {
+	inChild(t, func(t *testing.T) {
+		v := newVM(t, Options{})
+		if got, err := v.Eval(`[1, 2, 3].join()`, "x.js"); err != nil || got != "1,2,3" {
+			t.Fatalf("%q, %v", got, err)
+		}
+		h := v.Host()
+		refused := 0
+		hostmem.SetFault(func(call string, addr, size uintptr) error {
+			if call == "unmap" && refused == 0 {
+				refused++
+				return errStop
+			}
+			return nil
+		})
+		leaked, err := v.Close()
+		hostmem.SetFault(nil)
+		if !errors.Is(err, errStop) || leaked != 0 || refused != 1 {
+			t.Fatalf("Close with an unmap refused: %d blocks, %v", leaked, err)
+		}
+		if u := h.Memory().Usage(); u.Chunks != 1 {
+			t.Fatalf("after the refused unmap the host holds %+v, want the one chunk", u)
+		}
+		leaked, err = v.Close()
+		if err != nil || leaked != 0 {
+			t.Fatalf("Close again: %d blocks, %v", leaked, err)
+		}
+		if v.teardowns != 1 {
+			t.Errorf("the engine was freed %d times", v.teardowns)
+		}
+		gone(t, h, "after Close again")
+	})
+}
+
+// TestCloseTwice: Close after a Close that went well does nothing, and the
+// other entries refuse the closed VM.
+func TestCloseTwice(t *testing.T) {
+	inChild(t, func(t *testing.T) {
+		v := newVM(t, Options{})
+		h := v.Host()
+		closeVM(t, v)
+		if leaked, err := v.Close(); err != nil || leaked != 0 {
+			t.Fatalf("Close again: %d blocks, %v", leaked, err)
+		}
+		if v.teardowns != 1 {
+			t.Errorf("the engine was freed %d times", v.teardowns)
+		}
+		gone(t, h, "after two Closes")
+		if _, err := v.Eval(`1`, "after.js"); !errors.Is(err, ErrClosed) {
+			t.Errorf("Eval after Close: %v", err)
+		}
+		if _, err := v.ReleaseMemory(0); !errors.Is(err, ErrClosed) {
+			t.Errorf("ReleaseMemory after Close: %v", err)
+		}
+		for name, f := range map[string]func(){"RunGC": v.RunGC, "Usage": func() { v.Usage() }} {
+			if r := onOwnGoroutine(f); r != ErrClosed {
+				t.Errorf("%s after Close: %v", name, r)
+			}
+		}
+	})
 }
