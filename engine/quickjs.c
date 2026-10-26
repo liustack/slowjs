@@ -17805,6 +17805,36 @@ static __exception int js_for_in_start(JSContext *ctx, JSValue *sp)
 }
 
 /* return -1 if exception, 0 if slow case, 1 if the enumeration is finished */
+/* Report whether p, an object of the prototype chain of a for in loop, has
+   no enumerable property, read from its shape. When it has none, also store
+   the empty list of names JS_GetOwnPropertyNamesInternal gives for it with
+   JS_GPN_STRING_MASK and JS_GPN_ENUM_ONLY in *ptab and *plen. For an object
+   that is not exotic, that list holds the shape properties with an atom, the
+   enumerable flag and a string key, and nothing else: no method of the class
+   is called and nothing is thrown for a property left out. So it is empty
+   when no shape property has an atom and the flag. Every other object,
+   also one whose only enumerable keys are symbols, is listed as before. The
+   empty list needs no memory, where JS_GetOwnPropertyNamesInternal mallocs
+   one entry, so with no memory left the loop goes on where it used to
+   fail. */
+static BOOL js_for_in_no_enum(JSObject *p, JSPropertyEnum **ptab, uint32_t *plen)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i;
+
+    if (p->is_exotic)
+        return FALSE;
+    sh = p->shape;
+    for(i = 0, prs = get_shape_prop(sh); i < sh->prop_count; i++, prs++) {
+        if (prs->atom != JS_ATOM_NULL && (prs->flags & JS_PROP_ENUMERABLE))
+            return FALSE;
+    }
+    *ptab = NULL;
+    *plen = 0;
+    return TRUE;
+}
+
 static __exception int js_for_in_prepare_prototype_chain_enum(JSContext *ctx,
                                                               JSValueConst enum_obj)
 {
@@ -17825,7 +17855,8 @@ static __exception int js_for_in_prepare_prototype_chain_enum(JSContext *ctx,
             break;
         if (JS_IsException(obj1))
             goto fail;
-        if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count,
+        if (!js_for_in_no_enum(JS_VALUE_GET_OBJ(obj1), &tab_atom, &tab_atom_count) &&
+            JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count,
                                            JS_VALUE_GET_OBJ(obj1),
                                            JS_GPN_STRING_MASK | JS_GPN_ENUM_ONLY)) {
             JS_FreeValue(ctx, obj1);
