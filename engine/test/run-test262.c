@@ -26,7 +26,8 @@
 /*
  * This is run-test262.c of QuickJS 3d5e064 (2026-06-04) for the native test
  * host in this folder. It includes host.h in place of quickjs-libc.h, makes
- * its runtimes with host_new_runtime(), and prints a memory report through
+ * its runtimes with host_new_runtime() and frees them with
+ * host_free_runtime(), and prints a memory report through
  * print_memory_usage(), as JS_DumpMemoryUsage() fills a buffer. Each test
  * runs with the shape cache on: run_test_buf() keeps 2048 shapes, as a VM of
  * the Go API does (DefaultShapeCache). The engine has no threads that block,
@@ -606,7 +607,7 @@ static void *agent_start(void *arg)
     JS_SetRuntimeOpaque(rt, tls);
     ctx = JS_NewContext(rt);
     if (ctx == NULL) {
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
         fatal(1, "JS_NewContext failure");
     }
     JS_SetContextOpaque(ctx, agent);
@@ -661,7 +662,7 @@ static void *agent_start(void *arg)
     JS_FreeValue(ctx, agent->broadcast_func);
 
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     return NULL;
 }
 
@@ -1738,7 +1739,7 @@ int run_test_buf(ThreadLocalStorage *tls,
     JS_SetRuntimeOpaque(rt, tls);
     ctx = JS_NewContext(rt);
     if (ctx == NULL) {
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
         fatal(1, "JS_NewContext failure");
     }
     JS_SetRuntimeInfo(rt, filename);
@@ -1767,7 +1768,7 @@ int run_test_buf(ThreadLocalStorage *tls,
     }
     js_agent_free(ctx);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 
     atomic_inc(&test_count);
     if (ret) {
@@ -2041,7 +2042,7 @@ int run_test262_harness_test(ThreadLocalStorage *tls,
     JS_SetRuntimeOpaque(rt, tls);
     ctx = JS_NewContext(rt);
     if (ctx == NULL) {
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
         fatal(1, "JS_NewContext failure");
     }
     JS_SetRuntimeInfo(rt, filename);
@@ -2093,7 +2094,7 @@ int run_test262_harness_test(ThreadLocalStorage *tls,
     free(buf);
     js_agent_free(ctx);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     return ret_code;
 }
 

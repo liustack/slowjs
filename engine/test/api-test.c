@@ -114,7 +114,7 @@ static void test_dump(void)
     free(cut);
     free(full);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The one decimal of the averages is what printf's %.1f gives for the same
@@ -350,8 +350,76 @@ static void test_class_ids(void)
 
     JS_FreeContext(c1);
     JS_FreeContext(c2);
-    JS_FreeRuntime(rt1);
-    JS_FreeRuntime(rt2);
+    host_free_runtime(rt1);
+    host_free_runtime(rt2);
+}
+
+/* The memory limit decides a resize as upstream QuickJS does: count + the new
+   request - the usable size of the old block, against the limit, and a block
+   that is refused stays as it was. The numbers come from that rule, read off
+   the API (JS_GetMemorySize, js_malloc_usable_size_rt) before the call, not
+   from the allocator. The front cache is off, so that a failed request has no
+   cached block to give back and the count stays where it is. Large blocks
+   only: a small block that fits its slot does not reach the allocator. */
+static void test_realloc_limit(void)
+{
+    static const struct { size_t from, to; const char *what; } cases[] = {
+        { 1000, 1200, "grow a little" },
+        { 1000, 5000, "grow past the neighbor" },
+        { 1000, 300000, "grow into a chunk of its own" },
+        { 4000, 700, "shrink" },
+        { 1000, 0, "same size" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    size_t i;
+
+    JS_SetFrontCache(rt, 0);
+    for (i = 0; i < sizeof cases / sizeof *cases; i++) {
+        size_t from = cases[i].from, to = cases[i].to;
+        uint8_t *p, *next, *q;
+        size_t usable, count, expected, after;
+
+        p = js_malloc_rt(rt, from);
+        next = js_malloc_rt(rt, from); /* behind it, when the allocator puts it there */
+        CHECK(p && next, "%s: alloc", cases[i].what);
+        memset(p, 0x5a, from);
+        usable = js_malloc_usable_size_rt(rt, p);
+        if (!to)
+            to = usable;
+        count = JS_GetMemorySize(rt);
+        expected = count + to - usable; /* the smallest limit that lets the resize pass */
+
+        JS_SetMemoryLimit(rt, expected - 1);
+        q = js_realloc_rt(rt, p, to);
+        CHECK(!q, "%s: a resize one byte over the limit passed", cases[i].what);
+        if (q) {
+            JS_SetMemoryLimit(rt, (size_t)-1);
+            js_free_rt(rt, q);
+            js_free_rt(rt, next);
+            continue;
+        }
+        CHECK(js_malloc_usable_size_rt(rt, p) == usable && p[0] == 0x5a && p[from - 1] == 0x5a,
+              "%s: a refused resize changed the block", cases[i].what);
+        CHECK(JS_GetMemorySize(rt) == count, "%s: a refused resize changed the count", cases[i].what);
+
+        JS_SetMemoryLimit(rt, expected);
+        q = js_realloc_rt(rt, p, to);
+        CHECK(q != NULL, "%s: a resize at the limit failed", cases[i].what);
+        if (q) {
+            size_t keep = from < to ? from : to;
+            after = js_malloc_usable_size_rt(rt, q);
+            CHECK(after >= to, "%s: usable size %zu below the request %zu", cases[i].what, after, to);
+            CHECK(q[0] == 0x5a && q[keep - 1] == 0x5a, "%s: the content did not follow", cases[i].what);
+            CHECK(JS_GetMemorySize(rt) == count - usable + after,
+                  "%s: the count changed by %zd, not by the change of usable size %zd", cases[i].what,
+                  (ssize_t)(JS_GetMemorySize(rt) - count), (ssize_t)(after - usable));
+            p = q;
+        }
+        JS_SetMemoryLimit(rt, (size_t)-1);
+        js_free_rt(rt, p);
+        js_free_rt(rt, next);
+    }
+    host_free_runtime(rt);
 }
 
 /* Runs fn in a child process with its standard error in a pipe. The child must
@@ -422,11 +490,12 @@ int main(void)
     test_dump();
     test_tenths();
     test_class_ids();
+    test_realloc_limit();
     rt = host_new_runtime();
     ctx = new_context(rt);
     test_atomics(ctx);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     test_abort();
     printf("api-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;

@@ -262,7 +262,6 @@ typedef struct DynBuf {
     void *opaque; /* for realloc_func */
 } DynBuf;
 
-void dbuf_init(DynBuf *s);
 void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func);
 int dbuf_claim(DynBuf *s, size_t len);
 int dbuf_put(DynBuf *s, const uint8_t *data, size_t len);

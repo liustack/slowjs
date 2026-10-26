@@ -244,7 +244,10 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
         heap_poison(ptr, old_size);
         tlsf_free(h->tlsf, ptr);
     }
-    h->count = base + new_size;
+    /* the count changes by the difference: a host that gives memory back
+       while it maps a chunk may have changed it since base was taken (the
+       front cache goes back to the arenas) */
+    h->count = h->count - old_size + new_size;
     return p;
 }
 

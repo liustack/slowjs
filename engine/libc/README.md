@@ -1,6 +1,6 @@
 # engine/libc
 
-The small libc of the C tree in `engine/`. The engine C is built with `-ffreestanding -nostdinc` and sees only this folder: no system header, no system library. What it asks of the outside is the callbacks of `engine/host.h` and the allocator.
+The small libc of the C tree in `engine/`. The engine C is built with `-ffreestanding -nostdinc` and sees only this folder: no system header, no system library. What it asks of the outside is the callbacks of `engine/host.h` and `host_memory_grow` of `engine/heap.h`.
 
 ## What is here
 
@@ -13,7 +13,7 @@ The small libc of the C tree in `engine/`. The engine C is built with `-ffreesta
 | `sqrt`, `fabs` | `math.c` | written here, one instruction each. musl's `sqrt` is in software |
 | Headers: `stddef.h stdint.h inttypes.h limits.h float.h stdarg.h stdatomic.h stdlib.h stdio.h string.h strings.h math.h assert.h endian.h fenv.h` | the root | written here, on the compiler's own macros and builtins. `abort()` asks the host (below), `alloca` is the builtin, a failed `assert` is an `abort()` |
 
-The malloc family (`malloc realloc free malloc_usable_size`) is declared in `stdlib.h` but not defined here. The engine will bring its own allocator. Until then the native test host links the system's.
+There is no malloc family here, and the engine files do not call one: the engine has its own allocator (`engine/heap.c` and `engine/tlsf.c`, see [docs/allocator.md](../../docs/allocator.md)) behind `js_malloc`.
 
 There is no `errno`, no `pthread`, no time and no standard stream. The wall clock is the `host_now` callback.
 

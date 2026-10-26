@@ -46,11 +46,8 @@
 #define DIRECT_DISPATCH  1
 #endif
 
-#if defined(__APPLE__)
-#define MALLOC_OVERHEAD  0
-#else
+/* the size word TLSF keeps in front of every block of the heap */
 #define MALLOC_OVERHEAD  8
-#endif
 
 #if !defined(_WIN32)
 /* define it if printf uses the RNDN rounding mode instead of RNDNA */
@@ -273,12 +270,17 @@ typedef enum OPCodeEnum OPCodeEnum;
 #define JS_MALLOC_BLOCK_SIZE_COUNT 31
 #define JS_MALLOC_MIN_SMALL_SIZE 16
 #define JS_MALLOC_MAX_SMALL_SIZE 512
-#if defined(__SANITIZE_ADDRESS__)
-/* use the host malloc() for all allocations */
+#if defined(JS_HEAP_SYSTEM_MALLOC)
+/* test builds: every block alone from the system malloc, see heap.c */
 #define JS_MALLOC_LARGE_BLOCKS_ONLY 1
 #else
 #define JS_MALLOC_LARGE_BLOCKS_ONLY 0
 #endif
+
+/* the front cache: lists of freed small blocks, one per size class, of at
+   most JS_MALLOC_FRONT_MAX blocks each */
+#define JS_MALLOC_FRONT_LISTS 32
+#define JS_MALLOC_FRONT_MAX 256
 
 /* allow iteration among the allocated blocks. Currently not used. May
    be used to suppress the memory overhead of JSGCObjectHeader */
@@ -329,7 +331,16 @@ typedef struct {
     __attribute__((aligned(JS_MALLOC_ALIGN))) uint8_t blocks[];
 } JSMallocArena;
 
+/* The reference count is this many bytes before the user data of every
+   block, small or large (JS_BLOCK_REF_COUNT_OFFSET in quickjs.h). */
+_Static_assert(offsetof(JSMallocBlockHeader, user_data) - offsetof(JSMallocBlockHeader, ref_count) ==
+               JS_BLOCK_REF_COUNT_OFFSET, "the reference count is not where quickjs.h says");
+
 typedef struct {
+    /* The heap is the start of the runtime: heap_create makes both in the
+       first chunk. It counts, limits and gets the memory for the blocks of
+       the arenas and the large blocks. */
+    JSHeap heap;
     struct list_head arena_list[JS_MALLOC_BLOCK_SIZE_COUNT]; /* list of JSMallocArena.link (all arenas) */
     struct list_head free_arena_list[JS_MALLOC_BLOCK_SIZE_COUNT]; /* list of JSMallocArena.free_link (arenas where n_used_blocks < n_blocks) */
 #ifdef JS_MALLOC_USE_ITER
@@ -337,9 +348,11 @@ typedef struct {
 #endif
     __attribute__((aligned(JS_MALLOC_ALIGN))) uint8_t zero_size_block[sizeof(JSMallocBlockHeader)];
 
-    /* callbacks to the host malloc */
-    JSMallocFunctions mf;
-    JSMallocState malloc_state;
+    /* the front cache: JSMallocBlockHeader of the first block of each list,
+       the next one is in the first bytes of the user data of a block */
+    JSMallocBlockHeader *front_head[JS_MALLOC_FRONT_LISTS];
+    int front_count[JS_MALLOC_FRONT_LISTS];
+    int front_max; /* the most blocks of a list, 0 when the cache is off */
 } JSMallocContext;
 
 /* end JS Malloc */
@@ -409,6 +422,7 @@ struct JSRuntime {
     JSSharedArrayBufferFunctions sab_funcs;
     /* see JS_SetStripInfo() */
     uint8_t strip_flags;
+    uint64_t random_seed; /* the seed JS_NewRuntime was given */
     
     /* Shape hash table */
     int shape_hash_bits;
@@ -1503,31 +1517,38 @@ static const uint16_t js_malloc_block_sizes[JS_MALLOC_BLOCK_SIZE_COUNT] = {
     512,
 };
 
+#define JS_MALLOC_CLASS(n) ((n) <= 16 ? 0 : (n) <= 128 ? ((n) + 7) / 8 - 2 : \
+                            (n) <= 256 ? ((n) + 15) / 16 + 6 : (n) <= 512 ? ((n) + 31) / 32 + 14 : \
+                            JS_MALLOC_BLOCK_SIZE_COUNT)
+
 static int get_block_size_index(size_t size)
 {
-    if (size <= 16) {
-        return 0;
-    } else if (size <= 128) {
-        return (size + 7) / 8 - 2;
-    } else if (size <= 256) {
-        return (size + 15) / 16 + 6;
-    } else if (size <= 512) {
-        return (size + 31) / 32 + 14;
-    } else {
-        return JS_MALLOC_BLOCK_SIZE_COUNT;
-    }
+    return JS_MALLOC_CLASS(size);
 }
+
+/* the size class of an allocation of size bytes, 1 to 504, at index
+   (size + 7) / 8: the class get_block_size_index gives to its block */
+#define JS_FRONT_CLASS(k) JS_MALLOC_CLASS(8 * (k) + 8)
+#define JS_FRONT_ROW(k) JS_FRONT_CLASS(k), JS_FRONT_CLASS(k + 1), JS_FRONT_CLASS(k + 2), JS_FRONT_CLASS(k + 3), \
+                        JS_FRONT_CLASS(k + 4), JS_FRONT_CLASS(k + 5), JS_FRONT_CLASS(k + 6), JS_FRONT_CLASS(k + 7)
+static const uint8_t js_front_index[64] = {
+    0, JS_FRONT_CLASS(1), JS_FRONT_CLASS(2), JS_FRONT_CLASS(3), JS_FRONT_CLASS(4), JS_FRONT_CLASS(5),
+    JS_FRONT_CLASS(6), JS_FRONT_CLASS(7),
+    JS_FRONT_ROW(8), JS_FRONT_ROW(16), JS_FRONT_ROW(24), JS_FRONT_ROW(32), JS_FRONT_ROW(40),
+    JS_FRONT_ROW(48), JS_FRONT_ROW(56),
+};
 
 static JSMallocBlockHeader *get_zero_size_block(JSMallocContext *s)
 {
     return (JSMallocBlockHeader *)s->zero_size_block;
 }
 
+/* s is in the runtime that heap_create made and zeroed, with the heap set up */
 static void js_malloc_init(JSMallocContext *s)
 {
     int i;
-    memset(s, 0, sizeof(*s));
     get_zero_size_block(s)->u.block_idx = FREE_NIL;
+    s->front_max = JS_MALLOC_FRONT_MAX;
     for(i = 0; i < JS_MALLOC_BLOCK_SIZE_COUNT; i++) {
         init_list_head(&s->arena_list[i]);
         init_list_head(&s->free_arena_list[i]);
@@ -1547,15 +1568,103 @@ static inline JSMallocBlockHeader *js_rc(void *ptr)
     return container_of(ptr, JSMallocBlockHeader, user_data);
 }
 
+/* the free slots of the blocks in the front cache are in use as far as the
+   arena goes, so the cache never has to be told when an arena goes away */
+static void __js_free_block(JSMallocContext *s, void *ptr);
+
+/* A block of size bytes (1 to 504) from the front cache, or NULL. */
+static inline void *js_front_take(JSMallocContext *s, size_t size)
+{
+    JSMallocBlockHeader *b;
+    int idx;
+
+    if (JS_MALLOC_LARGE_BLOCKS_ONLY ||
+        size - 1 >= JS_MALLOC_MAX_SMALL_SIZE - sizeof(JSMallocBlockHeader))
+        return NULL;
+    idx = js_front_index[(size + (JS_MALLOC_ALIGN - 1)) / JS_MALLOC_ALIGN];
+    b = s->front_head[idx];
+    if (!b)
+        return NULL;
+    s->front_head[idx] = *(JSMallocBlockHeader **)b->user_data;
+    s->front_count[idx]--;
+    heap_unpoison(b->user_data + sizeof(void *),
+                  js_malloc_block_sizes[idx] - sizeof(JSMallocBlockHeader) - sizeof(void *));
+    return b->user_data;
+}
+
+/* Keep the block at ptr in the front cache, and tell whether it did. A large
+   block, the block of size 0 and a block of a full list are left to
+   __js_free_block, and so is every block while the cache is off. */
+static inline int js_front_give(JSMallocContext *s, void *ptr)
+{
+    JSMallocBlockHeader *b = container_of(ptr, JSMallocBlockHeader, user_data);
+    int idx;
+
+    if (b->u.block_idx == FREE_NIL)
+        return 0;
+    idx = b->block_size_idx;
+    if (s->front_count[idx] >= s->front_max)
+        return 0;
+    *(JSMallocBlockHeader **)ptr = s->front_head[idx];
+    s->front_head[idx] = b;
+    s->front_count[idx]++;
+    heap_poison((uint8_t *)ptr + sizeof(void *),
+                js_malloc_block_sizes[idx] - sizeof(JSMallocBlockHeader) - sizeof(void *));
+    return 1;
+}
+
+/* Give every block of the front cache back to its arena, and tell whether
+   there was any. The cache is off while it does. */
+static BOOL js_front_drain(JSMallocContext *s)
+{
+    JSMallocBlockHeader *b, *next;
+    int i, max = s->front_max;
+    BOOL any = FALSE;
+
+    s->front_max = 0;
+    for(i = 0; i < JS_MALLOC_FRONT_LISTS; i++) {
+        for(b = s->front_head[i]; b; b = next) {
+            next = *(JSMallocBlockHeader **)b->user_data;
+            __js_free_block(s, b->user_data);
+            any = TRUE;
+        }
+        s->front_head[i] = NULL;
+        s->front_count[i] = 0;
+    }
+    s->front_max = max;
+    return any;
+}
+
+/* The heap, and when it fails, once more after the front cache is given
+   back: it may hold the memory the request needs, or the count the limit
+   would pass. */
+static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
+{
+    void *p = heap_alloc(&s->heap, size);
+    if (unlikely(!p) && js_front_drain(s))
+        p = heap_alloc(&s->heap, size);
+    return p;
+}
+
+static no_inline void *js_heap_realloc(JSMallocContext *s, void *ptr, size_t size)
+{
+    void *p = heap_realloc(&s->heap, ptr, size);
+    if (unlikely(!p) && js_front_drain(s))
+        p = heap_realloc(&s->heap, ptr, size);
+    return p;
+}
+
 static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int block_size_idx)
 {
     JSMallocBlockHeader *b;
     JSMallocArena *ar;
     int n_blocks, block_size, i;
+    size_t arena_size;
 
     block_size = js_malloc_block_sizes[block_size_idx];
     n_blocks = (JS_MALLOC_ARENA_SIZE - sizeof(JSMallocArena)) / block_size;
-    ar = s->mf.js_malloc(&s->malloc_state, sizeof(JSMallocArena) + n_blocks * block_size);
+    arena_size = sizeof(JSMallocArena) + n_blocks * block_size;
+    ar = js_heap_alloc(s, arena_size);
     if (!ar)
         return NULL;
 
@@ -1574,10 +1683,14 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
         b = get_arena_block(ar, i, block_size);
         b->u.free_next = i + 1;
         b->block_size_idx = block_size_idx;
+        heap_poison(b->user_data, block_size - sizeof(*b));
     }
     b = get_arena_block(ar, n_blocks - 1, block_size);
     b->u.free_next = FREE_NIL;
     b->block_size_idx = block_size_idx;
+    heap_poison(b->user_data, block_size - sizeof(*b));
+    /* what the heap gave beyond the slots */
+    heap_poison((uint8_t *)ar + arena_size, heap_usable_size(ar) - arena_size);
     
     /* add to the head */
     list_add(&ar->link, &s->arena_list[block_size_idx]);
@@ -1588,7 +1701,9 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
 static no_inline void *js_malloc_large(JSMallocContext *s, size_t size)
 {
     JSMallocLargeBlockHeader *b;
-    b = s->mf.js_malloc(&s->malloc_state, sizeof(JSMallocLargeBlockHeader) + size);
+    if (unlikely(size > JS_HEAP_MAX_REQUEST - sizeof(JSMallocLargeBlockHeader)))
+        return NULL;
+    b = js_heap_alloc(s, sizeof(JSMallocLargeBlockHeader) + size);
     if (!b)
         return NULL;
     b->header.u.block_idx = FREE_NIL;
@@ -1602,55 +1717,61 @@ static no_inline void *js_malloc_large(JSMallocContext *s, size_t size)
 static void *__js_malloc(JSMallocContext *s, size_t size)
 {
     size_t total_size;
-    if (unlikely(size == 0)) {
-        JSMallocBlockHeader *b = get_zero_size_block(s);
-        return b->user_data;
+    void *ptr;
+
+    ptr = js_front_take(s, size);
+    if (ptr)
+        return ptr;
+    if (JS_MALLOC_LARGE_BLOCKS_ONLY ||
+        unlikely(size - 1 >= JS_MALLOC_MAX_SMALL_SIZE - sizeof(JSMallocBlockHeader))) {
+        /* the block of size 0, or a large block (and a size that would wrap
+           in the arithmetic below) */
+        if (size == 0) {
+            JSMallocBlockHeader *b = get_zero_size_block(s);
+            return b->user_data;
+        }
+        return js_malloc_large(s, size);
     } else {
+        int block_size_idx;
+        unsigned int block_idx, block_size;
+        JSMallocBlockHeader *b;
+        JSMallocArena *ar;
+        struct list_head *el, *head;
+
         total_size = ((size + JS_MALLOC_ALIGN - 1) & ~(JS_MALLOC_ALIGN - 1)) +
             sizeof(JSMallocBlockHeader);
-        if (!JS_MALLOC_LARGE_BLOCKS_ONLY &&
-            total_size <= JS_MALLOC_MAX_SMALL_SIZE) {
-            int block_size_idx;
-            unsigned int block_idx, block_size;
-            JSMallocBlockHeader *b;
-            JSMallocArena *ar;
-            struct list_head *el, *head;
-            
-            block_size_idx = get_block_size_index(total_size);
-            block_size = js_malloc_block_sizes[block_size_idx];
-            head = &s->free_arena_list[block_size_idx];
-            el = head->next;
-            if (unlikely(el == head)) {
-                ar = js_malloc_new_arena(s, block_size_idx);
-                if (!ar)
-                    return NULL;
-            } else {
-                ar = list_entry(el, JSMallocArena, free_link);
-            }
-            block_idx = ar->first_free_block;
-            b = get_arena_block(ar, ar->first_free_block, block_size);
-            ar->first_free_block = b->u.free_next;
-            b->u.block_idx = block_idx;
-            ar->n_used_blocks++;
-            if (unlikely(ar->n_used_blocks == ar->n_blocks)) {
-                list_del(&ar->free_link);
-            }
-#ifdef JS_MALLOC_USE_ITER
-            ar->bitmap[block_idx / 32] |= 1 << (block_idx % 32);
-#endif
-            return b->user_data;
+        block_size_idx = get_block_size_index(total_size);
+        block_size = js_malloc_block_sizes[block_size_idx];
+        head = &s->free_arena_list[block_size_idx];
+        el = head->next;
+        if (unlikely(el == head)) {
+            ar = js_malloc_new_arena(s, block_size_idx);
+            if (!ar)
+                return NULL;
         } else {
-            return js_malloc_large(s, size);
+            ar = list_entry(el, JSMallocArena, free_link);
         }
+        block_idx = ar->first_free_block;
+        b = get_arena_block(ar, ar->first_free_block, block_size);
+        ar->first_free_block = b->u.free_next;
+        b->u.block_idx = block_idx;
+        ar->n_used_blocks++;
+        if (unlikely(ar->n_used_blocks == ar->n_blocks)) {
+            list_del(&ar->free_link);
+        }
+#ifdef JS_MALLOC_USE_ITER
+        ar->bitmap[block_idx / 32] |= 1 << (block_idx % 32);
+#endif
+        heap_unpoison(b->user_data, block_size - sizeof(*b));
+        return b->user_data;
     }
 }
 
-static void __js_free(JSMallocContext *s, void *ptr)
+/* give a block back to its arena, or to the heap: not to the front cache */
+static void __js_free_block(JSMallocContext *s, void *ptr)
 {
     JSMallocBlockHeader *b;
 
-    if (!ptr)
-        return;
     b = container_of(ptr, JSMallocBlockHeader, user_data);
     if (unlikely(b->u.block_idx == FREE_NIL)) {
         /* large or zero size block */
@@ -1661,13 +1782,14 @@ static void __js_free(JSMallocContext *s, void *ptr)
 #ifdef JS_MALLOC_USE_ITER
             list_del(&lb->link);
 #endif
-            s->mf.js_free(&s->malloc_state, lb);
+            heap_free(&s->heap, lb);
         }
     } else {
         unsigned int block_idx = b->u.block_idx;
         unsigned int block_size_idx = b->block_size_idx;
         unsigned int block_size = js_malloc_block_sizes[block_size_idx];
         JSMallocArena *ar = (JSMallocArena *)((uint8_t *)b - block_size * block_idx - sizeof(JSMallocArena));
+        heap_poison(b->user_data, block_size - sizeof(*b));
         b->u.free_next = ar->first_free_block;
         ar->first_free_block = block_idx;
 #ifdef JS_MALLOC_USE_ITER
@@ -1681,9 +1803,18 @@ static void __js_free(JSMallocContext *s, void *ptr)
         if (unlikely(ar->n_used_blocks == 0)) {
             list_del(&ar->link);
             list_del(&ar->free_link);
-            s->mf.js_free(&s->malloc_state, ar);
+            heap_free(&s->heap, ar);
         }
     }
+}
+
+static void __js_free(JSMallocContext *s, void *ptr)
+{
+    if (!ptr)
+        return;
+    if (js_front_give(s, ptr))
+        return;
+    __js_free_block(s, ptr);
 }
 
 static void *__js_realloc(JSMallocContext *s, void *ptr, size_t size)
@@ -1702,10 +1833,12 @@ static void *__js_realloc(JSMallocContext *s, void *ptr, size_t size)
         } else {
             JSMallocLargeBlockHeader *lb, *new_lb;
             lb = container_of(ptr, JSMallocLargeBlockHeader, header.user_data);
+            if (unlikely(size > JS_HEAP_MAX_REQUEST - sizeof(JSMallocLargeBlockHeader)))
+                return NULL;
 #ifdef JS_MALLOC_USE_ITER
             list_del(&lb->link);
 #endif
-            new_lb = s->mf.js_realloc(&s->malloc_state, lb, sizeof(JSMallocLargeBlockHeader) + size);
+            new_lb = js_heap_realloc(s, lb, sizeof(JSMallocLargeBlockHeader) + size);
             if (!new_lb) {
 #ifdef JS_MALLOC_USE_ITER
                 /* add again in the list */
@@ -1723,13 +1856,11 @@ static void *__js_realloc(JSMallocContext *s, void *ptr, size_t size)
     } else {
         unsigned int block_size_idx = b->block_size_idx;
         size_t block_size = js_malloc_block_sizes[block_size_idx];
-        size_t total_size, old_size;
+        size_t old_size;
         void *new_ptr;
         JSMallocBlockHeader *new_b;
 
-        total_size = ((size + JS_MALLOC_ALIGN - 1) & ~(JS_MALLOC_ALIGN - 1)) +
-            sizeof(JSMallocBlockHeader);
-        if (total_size <= block_size)
+        if (size <= block_size - sizeof(JSMallocBlockHeader))
             return ptr;
         new_ptr = __js_malloc(s, size);
         if (!new_ptr)
@@ -1760,16 +1891,8 @@ static size_t __js_malloc_usable_size(JSMallocContext *s, const char *ptr)
             return 0;
         } else {
             JSMallocLargeBlockHeader *lb;
-            size_t size;
             lb = container_of(ptr, JSMallocLargeBlockHeader, header.user_data);
-            if (s->mf.js_malloc_usable_size) {
-                size = s->mf.js_malloc_usable_size(lb);
-                if (size != 0)
-                    size -= sizeof(JSMallocLargeBlockHeader);
-                return size;
-            } else {
-                return 0;
-            }
+            return heap_usable_size(lb) - sizeof(JSMallocLargeBlockHeader);
         }
     } else {
         size_t block_size = js_malloc_block_sizes[b->block_size_idx];
@@ -1811,6 +1934,94 @@ static __maybe_unused void js_malloc_iter(JSMallocContext *s, JSMallocIterFunc *
 }
 #endif
 
+#ifdef JS_HEAP_CHECK
+/* Test builds: tell whether the allocator is consistent. Returns 0, or a
+   message. It checks the heap (TLSF, the counts, the chunks), then each arena
+   (the free slots against n_used_blocks, the lists of arenas with room) and
+   the front cache (the length of each list, and that each block in it is a
+   slot in use of an arena of its class). */
+const char *JS_CheckMemory(JSRuntime *rt)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+    struct list_head *el;
+    const char *msg;
+    int i;
+
+    msg = heap_check(&s->heap);
+    if (msg)
+        return msg;
+    if (get_zero_size_block(s)->u.block_idx != FREE_NIL)
+        return "the block of size 0 was changed";
+    for(i = 0; i < JS_MALLOC_BLOCK_SIZE_COUNT; i++) {
+        unsigned int block_size = js_malloc_block_sizes[i];
+        size_t with_room = 0, listed = 0, cached = 0;
+        JSMallocBlockHeader *b;
+
+        list_for_each(el, &s->arena_list[i]) {
+            JSMallocArena *ar = list_entry(el, JSMallocArena, link);
+            unsigned int n_free = 0, j;
+
+            if (ar->block_size_idx != i)
+                return "an arena is in the list of another size class";
+            if (ar->n_blocks != (JS_MALLOC_ARENA_SIZE - sizeof(JSMallocArena)) / block_size)
+                return "an arena has the wrong number of slots";
+            if (ar->n_used_blocks == 0 || ar->n_used_blocks > ar->n_blocks)
+                return "an arena has no slot in use or more than it has";
+            for(j = ar->first_free_block; j != FREE_NIL; ) {
+                if (j >= ar->n_blocks || n_free >= ar->n_blocks)
+                    return "the free list of an arena is broken";
+                b = get_arena_block(ar, j, block_size);
+                if (b->block_size_idx != i)
+                    return "a free slot has the wrong size class";
+                n_free++;
+                j = b->u.free_next;
+            }
+            if (n_free != ar->n_blocks - ar->n_used_blocks)
+                return "the free slots of an arena are not n_blocks minus n_used_blocks";
+            if (ar->n_used_blocks < ar->n_blocks)
+                with_room++;
+        }
+        list_for_each(el, &s->free_arena_list[i]) {
+            JSMallocArena *ar = list_entry(el, JSMallocArena, free_link);
+            if (ar->n_used_blocks >= ar->n_blocks)
+                return "a full arena is in the list of arenas with room";
+            listed++;
+        }
+        if (with_room != listed)
+            return "the arenas with room are not the ones in the list";
+        for(b = s->front_head[i]; b; b = *(JSMallocBlockHeader **)b->user_data) {
+            JSMallocArena *ar;
+            unsigned int j, block_idx = b->u.block_idx;
+
+            if (++cached > JS_MALLOC_FRONT_MAX)
+                return "a list of the front cache is too long or loops";
+            if (block_idx == FREE_NIL || b->block_size_idx != i)
+                return "a block of the front cache is not a small block of its list";
+            ar = (JSMallocArena *)((uint8_t *)b - block_size * block_idx - sizeof(JSMallocArena));
+            if (block_idx >= ar->n_blocks || ar->block_size_idx != i)
+                return "a block of the front cache is not in an arena of its class";
+            for(j = ar->first_free_block; j != FREE_NIL; j = ((JSMallocBlockHeader *)get_arena_block(ar, j, block_size))->u.free_next) {
+                if (j == block_idx)
+                    return "a block of the front cache is a free slot of its arena";
+            }
+        }
+        if (cached != (size_t)s->front_count[i])
+            return "front_count is not the length of the list";
+    }
+    return NULL;
+}
+
+size_t JS_FrontCacheBlocks(JSRuntime *rt)
+{
+    size_t n = 0;
+    int i;
+
+    for(i = 0; i < JS_MALLOC_FRONT_LISTS; i++)
+        n += rt->malloc_ctx.front_count[i];
+    return n;
+}
+#endif
+
 /* end JS malloc */
 
 static void js_trigger_gc(JSRuntime *rt, size_t size)
@@ -1819,17 +2030,17 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
 #ifdef FORCE_GC_AT_MALLOC
     force_gc = TRUE;
 #else
-    force_gc = ((rt->malloc_ctx.malloc_state.malloc_size + size) >
+    force_gc = ((rt->malloc_ctx.heap.count + size) >
                 rt->malloc_gc_threshold);
 #endif
     if (force_gc) {
 #ifdef DUMP_GC
         printf("GC: size=%" PRIu64 "\n",
-               (uint64_t)rt->malloc_ctx.malloc_state.malloc_size);
+               (uint64_t)rt->malloc_ctx.heap.count);
 #endif
         JS_RunGC(rt);
-        rt->malloc_gc_threshold = rt->malloc_ctx.malloc_state.malloc_size +
-            (rt->malloc_ctx.malloc_state.malloc_size >> 1);
+        rt->malloc_gc_threshold = rt->malloc_ctx.heap.count +
+            (rt->malloc_ctx.heap.count >> 1);
     }
 }
 
@@ -2118,22 +2329,22 @@ BOOL js_check_stack_overflow(JSRuntime *rt, size_t alloca_size)
 }
 #endif
 
-JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
+/* The runtime is the start of the first chunk of memory the host gives the
+   VM vm (see heap_create). The host takes the chunks back after
+   JS_FreeRuntime, or when this fails. */
+JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
 {
     JSRuntime *rt;
-    JSMallocState ms;
+    JSHeap *heap;
 
-    memset(&ms, 0, sizeof(ms));
-    ms.opaque = opaque;
-    ms.malloc_limit = -1;
-
-    rt = mf->js_malloc(&ms, sizeof(JSRuntime));
-    if (!rt)
+    _Static_assert(offsetof(JSRuntime, malloc_ctx) == 0 && offsetof(JSMallocContext, heap) == 0,
+                   "the heap is the first field of the runtime");
+    heap = heap_create(vm, sizeof(JSRuntime));
+    if (!heap)
         return NULL;
-    memset(rt, 0, sizeof(*rt));
+    rt = (JSRuntime *)heap;
     js_malloc_init(&rt->malloc_ctx);
-    rt->malloc_ctx.mf = *mf;
-    rt->malloc_ctx.malloc_state = ms;
+    rt->random_seed = seed;
     rt->malloc_gc_threshold = 256 * 1024;
 
     init_list_head(&rt->context_list);
@@ -2194,94 +2405,57 @@ void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque)
     rt->user_opaque = opaque;
 }
 
-/* default memory allocation functions with memory limitation */
-static size_t js_def_malloc_usable_size(const void *ptr)
-{
-#if defined(__APPLE__)
-    return malloc_size(ptr);
-#elif defined(_WIN32)
-    return _msize((void *)ptr);
-#elif defined(__EMSCRIPTEN__)
-    return 0;
-#elif defined(__linux__) || defined(__GLIBC__)
-    return malloc_usable_size((void *)ptr);
-#else
-    /* change this to `return 0;` if compilation fails */
-    return malloc_usable_size((void *)ptr);
-#endif
-}
-
-static void *js_def_malloc(JSMallocState *s, size_t size)
-{
-    void *ptr;
-
-    /* Do not allocate zero bytes: behavior is platform dependent */
-    assert(size != 0);
-
-    if (unlikely(s->malloc_size + size > s->malloc_limit))
-        return NULL;
-
-    ptr = malloc(size);
-    if (!ptr)
-        return NULL;
-
-    s->malloc_count++;
-    s->malloc_size += js_def_malloc_usable_size(ptr) + MALLOC_OVERHEAD;
-    return ptr;
-}
-
-static void js_def_free(JSMallocState *s, void *ptr)
-{
-    if (!ptr)
-        return;
-
-    s->malloc_count--;
-    s->malloc_size -= js_def_malloc_usable_size(ptr) + MALLOC_OVERHEAD;
-    free(ptr);
-}
-
-static void *js_def_realloc(JSMallocState *s, void *ptr, size_t size)
-{
-    size_t old_size;
-
-    if (!ptr) {
-        if (size == 0)
-            return NULL;
-        return js_def_malloc(s, size);
-    }
-    old_size = js_def_malloc_usable_size(ptr);
-    if (size == 0) {
-        s->malloc_count--;
-        s->malloc_size -= old_size + MALLOC_OVERHEAD;
-        free(ptr);
-        return NULL;
-    }
-    if (s->malloc_size + size - old_size > s->malloc_limit)
-        return NULL;
-
-    ptr = realloc(ptr, size);
-    if (!ptr)
-        return NULL;
-
-    s->malloc_size += js_def_malloc_usable_size(ptr) - old_size;
-    return ptr;
-}
-
-static const JSMallocFunctions def_malloc_funcs = {
-    js_def_malloc,
-    js_def_free,
-    js_def_realloc,
-    js_def_malloc_usable_size,
-};
-
-JSRuntime *JS_NewRuntime(void)
-{
-    return JS_NewRuntime2(&def_malloc_funcs, NULL);
-}
-
 void JS_SetMemoryLimit(JSRuntime *rt, size_t limit)
 {
-    rt->malloc_ctx.malloc_state.malloc_limit = limit;
+    rt->malloc_ctx.heap.limit = limit;
+}
+
+/* Bytes of memory the host may be asked for, 0 for no limit. It only stops
+   growth: a runtime that holds more keeps it (see ReleaseMemory). */
+void JS_SetFootprintLimit(JSRuntime *rt, size_t limit)
+{
+    rt->malloc_ctx.heap.footprint_limit = limit;
+}
+
+/* what the memory limit and the GC threshold count */
+size_t JS_GetMemorySize(JSRuntime *rt)
+{
+    return rt->malloc_ctx.heap.count;
+}
+
+size_t JS_GetGCThreshold(JSRuntime *rt)
+{
+    return rt->malloc_gc_threshold;
+}
+
+/* The largest number of blocks a size class keeps in the front cache, 0 for
+   none: the blocks already there are given back. For tests and measuring. */
+void JS_SetFrontCache(JSRuntime *rt, int max)
+{
+    JSMallocContext *s = &rt->malloc_ctx;
+
+    js_front_drain(s);
+    s->front_max = max < 0 ? 0 : max > JS_MALLOC_FRONT_MAX ? JS_MALLOC_FRONT_MAX : max;
+}
+
+/* Give memory back to the host: the front cache first, then the free memory
+   but keep bytes of it (see heap_release_start). The host unmaps the chunks
+   JS_ReleaseNextChunk returns and drops the pages of the ranges of
+   JS_ReleaseNextRange. The runtime may not be used in between. */
+void JS_ReleaseStart(JSRuntime *rt, size_t keep)
+{
+    js_front_drain(&rt->malloc_ctx);
+    heap_release_start(&rt->malloc_ctx.heap, keep);
+}
+
+JSMemRange JS_ReleaseNextChunk(JSRuntime *rt)
+{
+    return heap_release_next_chunk(&rt->malloc_ctx.heap);
+}
+
+JSMemRange JS_ReleaseNextRange(JSRuntime *rt)
+{
+    return heap_release_next_range(&rt->malloc_ctx.heap);
 }
 
 /* use -1 to disable automatic GC */
@@ -2458,10 +2632,18 @@ void JS_SetRuntimeInfo(JSRuntime *rt, const char *s)
         rt->rt_info = s;
 }
 
-void JS_FreeRuntime(JSRuntime *rt)
+/* Free everything the runtime holds. Returns the number of blocks of the heap
+   still in use, which is 0 when nothing leaked. The host takes the chunks back
+   after this. */
+size_t JS_FreeRuntime(JSRuntime *rt)
 {
     struct list_head *el, *el1;
     int i;
+    size_t leaked;
+
+    /* what is freed from here on goes to the arenas */
+    js_front_drain(&rt->malloc_ctx);
+    rt->malloc_ctx.front_max = 0;
 
     if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
         JS_FreeValueRT(rt, rt->async_context);
@@ -2634,21 +2816,20 @@ void JS_FreeRuntime(JSRuntime *rt)
             printf("\n");
     }
     {
-        JSMallocState *s = &rt->malloc_ctx.malloc_state;
-        if (s->malloc_count > 1) {
+        JSHeap *h = &rt->malloc_ctx.heap;
+        if (h->blocks > 0) {
             if (rt->rt_info)
                 printf("%s:1: ", rt->rt_info);
             printf("Memory leak: %"PRIu64" bytes lost in %"PRIu64" block%s\n",
-                   (uint64_t)(s->malloc_size - sizeof(JSRuntime)),
-                   (uint64_t)(s->malloc_count - 1), &"s"[s->malloc_count == 2]);
+                   (uint64_t)(h->count - h->rt_size),
+                   (uint64_t)h->blocks, &"s"[h->blocks == 1]);
         }
     }
 #endif
 
-    {
-        JSMallocState ms = rt->malloc_ctx.malloc_state;
-        rt->malloc_ctx.mf.js_free(&ms, rt);
-    }
+    leaked = rt->malloc_ctx.heap.blocks;
+    heap_destroy(&rt->malloc_ctx.heap);
+    return leaked;
 }
 
 JSContext *JS_NewContextRaw(JSRuntime *rt)
@@ -7391,6 +7572,7 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
 void JS_RunGC(JSRuntime *rt)
 {
     JS_RunGCInternal(rt, TRUE);
+    js_front_drain(&rt->malloc_ctx);
 }
 
 /* Young collection: the trial deletion of JS_RunGC over the GC objects made
@@ -7501,6 +7683,7 @@ void JS_RunYoungGC(JSRuntime *rt)
     free_zero_refcount(rt);
 
     gc_remove_weak_objects(rt);
+    js_front_drain(&rt->malloc_ctx);
 }
 
 /* Return false if not an object or if the object has already been
@@ -7601,9 +7784,13 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
 
     young_splice(rt);
     memset(s, 0, sizeof(*s));
-    s->malloc_count = rt->malloc_ctx.malloc_state.malloc_count;
-    s->malloc_size = rt->malloc_ctx.malloc_state.malloc_size;
-    s->malloc_limit = rt->malloc_ctx.malloc_state.malloc_limit;
+    s->malloc_count = rt->malloc_ctx.heap.blocks + 1; /* the blocks and the runtime */
+    s->malloc_size = rt->malloc_ctx.heap.count;
+    s->malloc_limit = rt->malloc_ctx.heap.limit;
+    s->footprint = rt->malloc_ctx.heap.footprint;
+    s->footprint_limit = rt->malloc_ctx.heap.footprint_limit;
+    s->chunk_count = rt->malloc_ctx.heap.chunk_count;
+    s->release_candidate = rt->malloc_ctx.heap.release_candidate;
 
     s->memory_used_count = 2; /* rt + rt->class_array */
     s->memory_used_size = sizeof(JSRuntime) + sizeof(JSValue) * rt->class_count;

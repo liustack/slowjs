@@ -9,16 +9,8 @@
 
 #include <stddef.h>
 
-/* The allocator is not in this library: the engine brings its own, and the
-   native test host still links the system's until it does. */
-void *malloc(size_t size);
-void *realloc(void *ptr, size_t size);
-void free(void *ptr);
-#if defined(__APPLE__)
-size_t malloc_size(const void *ptr);
-#else
-size_t malloc_usable_size(void *ptr);
-#endif
+/* There is no malloc here: the engine has its own allocator (heap.c, behind
+   js_malloc), and the engine files must not call the system's. */
 
 /* There is no process to end. abort asks the host, with host_call and
    HOST_CALL_ABORT in engine/host.h. A trap would be a signal, and in Go a

@@ -81,23 +81,13 @@ int has_suffix(const char *str, const char *suffix)
 
 /* Dynamic buffer package */
 
-static void *dbuf_default_realloc(void *opaque, void *ptr, size_t size)
-{
-    return realloc(ptr, size);
-}
-
+/* The engine has no malloc: every buffer is given the function that
+   allocates it. */
 void dbuf_init2(DynBuf *s, void *opaque, DynBufReallocFunc *realloc_func)
 {
     memset(s, 0, sizeof(*s));
-    if (!realloc_func)
-        realloc_func = dbuf_default_realloc;
     s->opaque = opaque;
     s->realloc_func = realloc_func;
-}
-
-void dbuf_init(DynBuf *s)
-{
-    dbuf_init2(s, NULL, NULL);
 }
 
 /* Try to allocate 'len' more bytes. return < 0 if error */
