@@ -63,21 +63,31 @@ func osReserveStack(size uintptr) (uintptr, error) {
 	if err != nil {
 		return 0, err
 	}
+	// [lo, hi) is what the setup still holds. Once a part is unmapped, another
+	// thread may map there at once, so a failure later unmaps only [lo, hi).
+	lo, hi := start, start+n
+	undo := func(err error) (uintptr, error) {
+		if cerr := osUnmap(lo, hi-lo); cerr != nil {
+			lost(lo, hi-lo, err, cerr)
+		}
+		return 0, err
+	}
 	base := alignUp(start, size)
 	end := base + size + pageSize
-	if base > start {
-		err = osUnmap(start, base-start)
+	if base > lo {
+		if err := osUnmap(lo, base-lo); err != nil {
+			return undo(err)
+		}
+		lo = base
 	}
-	if err == nil && start+n > end {
-		err = osUnmap(end, start+n-end)
+	if hi > end {
+		if err := osUnmap(end, hi-end); err != nil {
+			return undo(err)
+		}
+		hi = end
 	}
-	if err == nil {
-		err = sysMprotect(base, size, unix.PROT_READ|unix.PROT_WRITE)
-	}
-	if err != nil {
-		// Unmapping what is no longer mapped does nothing.
-		osUnmap(start, n)
-		return 0, err
+	if err := sysMprotect(base, size, unix.PROT_READ|unix.PROT_WRITE); err != nil {
+		return undo(err)
 	}
 	return base, nil
 }
