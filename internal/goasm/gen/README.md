@@ -136,7 +136,11 @@ register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
 still pass, so no code reads a register the lowering did not set.
 `GEN_KEEP_NARROW=1` leaves narrow integers as the generator once took them:
-the post-link check must reject the result (`TestNarrowArgs`).
+the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
+turns it on, and any other value but an empty one is an error. The package of
+such a build is marked: `engine_negative.go` does not compile without
+`-tags goasmnegative`, and `engine_decl.go` says so. A later build into the
+same folder removes the file.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
