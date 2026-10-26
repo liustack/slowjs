@@ -609,14 +609,14 @@ func lowerA64Func(asm string, fn FuncSpec, mode ARM64Mode, noSaves bool, u *ARM6
 	}
 	if len(usedPools) > 0 {
 		// Nothing may run into the data: the code before it must end in an
-		// unconditional branch or a trap.
+		// unconditional branch.
 		last := ""
 		for i := len(out) - 1; i >= 0 && last == ""; i-- {
 			if !isA64Label(out[i]) && !strings.HasPrefix(out[i], ".p2align") {
 				last = out[i]
 			}
 		}
-		if !reA64B.MatchString(last) && !strings.HasPrefix(last, "brk ") {
+		if !reA64B.MatchString(last) {
 			out = append(out, "b "+goret)
 		}
 		out = append(out, ".p2align 4", fn.Name+".const:")
@@ -740,6 +740,9 @@ func EmitARM64(objPath string, u *ARM64Unit, buildTag string) (string, error) {
 			}
 			if t, ok := a64BranchTarget(w, pc); ok && (t < r[0] || t > r[1]) {
 				return "", fmt.Errorf("%s: branch at %#x leaves the function", f.Name, pc)
+			}
+			if why := a64ForbiddenWord(w); why != "" {
+				return "", fmt.Errorf("%s: forbidden instruction %#08x at %#x: %s", f.Name, w, pc, why)
 			}
 			fmt.Fprintf(&b, "\tWORD $0x%08x\n", w)
 		}
