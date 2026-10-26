@@ -275,10 +275,13 @@ func TestVarargsRules(t *testing.T) {
 // arguments than registers, none and forty, va_copy, helpers that take the
 // va_list by reference and by value, reads after a host callback that
 // dirties the stack, a formatter, a variadic call from a variadic function
-// and a call through a pointer. It needs LLVM 22.1.8 (SLOWJS_LLVM), the
-// pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD). x86_64 runs on a
-// linux/amd64 host, aarch64 on a linux/arm64 host or under the user-mode
-// emulator SLOWJS_QEMU_AARCH64.
+// and a call through a pointer. On linux/amd64 the whole generator then
+// turns diff.c into Go assembly (cmd/engine, body and pn) and a Go program
+// runs it, with a host callback in Go that grows and so moves the goroutine
+// stack between reads: it must print the same again. It needs LLVM 22.1.8
+// (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD).
+// x86_64 runs on a linux/amd64 host, aarch64 on a linux/arm64 host or under
+// the user-mode emulator SLOWJS_QEMU_AARCH64.
 func TestVarargsNative(t *testing.T) {
 	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
@@ -286,6 +289,7 @@ func TestVarargsNative(t *testing.T) {
 	}
 	src := filepath.Join("testdata", "varargs")
 	free := []string{"-ffreestanding", "-nostdinc", "-fno-builtin", "-fno-stack-protector", "-fno-asynchronous-unwind-tables"}
+	native := map[string]string{}
 	for _, tc := range []struct {
 		arch, goarch, qemu string
 		cflags             []string
@@ -341,6 +345,90 @@ func TestVarargsNative(t *testing.T) {
 				t.Fatalf("the pass's block gives\n%s\nnative variable arguments give\n%s", have, want)
 			}
 			t.Logf("%s: %s", tc.arch, strings.ReplaceAll(strings.TrimSpace(want), "\n", " "))
+			native[tc.arch] = want
 		})
 	}
+	t.Run("x86_64 through Go", func(t *testing.T) {
+		want := native["x86_64"]
+		if want == "" || runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+			t.Skip("needs the native x86_64 run and a linux/amd64 host")
+		}
+		work := t.TempDir()
+		goEnv := append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+		tool := func(dir, name string, args ...string) string {
+			t.Helper()
+			cmd := exec.Command(name, args...)
+			cmd.Dir, cmd.Env = dir, goEnv
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s %v: %v\n%s", filepath.Base(name), args, err, out)
+			}
+			return string(out)
+		}
+		drv := filepath.Join(work, "engine")
+		tool("", "go", "build", "-o", drv, "./cmd/engine")
+		c, err := filepath.Abs(filepath.Join(src, "diff.c"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, mode := range []string{"body", "pn"} {
+			mod := filepath.Join(work, mode)
+			tool("", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-varargs-block", "-allow", "host_cb",
+				"-leaves", "", "-work", filepath.Join(work, "w-"+mode), "-out", filepath.Join(mod, "vd"), "-pkg", "vd")
+			for name, text := range map[string]string{
+				"go.mod":     "module vdiff\n\ngo 1.22\n",
+				"main.go":    "package main\n\nimport (\n\t\"fmt\"\n\n\t\"vdiff/vd\"\n)\n\nfunc main() {\n\tfor _, v := range vd.Run() {\n\t\tfmt.Println(v)\n\t}\n}\n",
+				"vd/host.go": varargsGoHost,
+			} {
+				if err := os.WriteFile(filepath.Join(mod, name), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tool(mod, "go", "build", "-o", "run", ".")
+			if have := tool(mod, filepath.Join(mod, "run")); have != want {
+				t.Fatalf("%s: Go runs the generated code to\n%s\nnative variable arguments give\n%s", mode, have, want)
+			}
+		}
+	})
 }
+
+// varargsGoHost runs diff.c's run on a shadow region and a result buffer
+// outside the Go heap. Its host callback grows the goroutine stack, which
+// copies it, generated frames and all, before it returns the driver's
+// value.
+const varargsGoHost = `package vd
+
+import "syscall"
+import "unsafe"
+
+func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
+
+//go:noinline
+func grow(d int, x int64) int64 {
+	var junk [512]int64
+	for i := range junk {
+		junk[i] = x ^ (0x5a5a5a5a5a5a5a5a + int64(i))
+	}
+	if d == 0 {
+		return junk[3] & 0xff
+	}
+	return (grow(d-1, x+junk[d&63]) & 0xffff)
+}
+
+func host_cb(sp, x uintptr) uintptr { return uintptr(grow(200, int64(x)) % 97) }
+
+func Run() []int64 {
+	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	if err != nil {
+		panic(err)
+	}
+	base := (uintptr(unsafe.Pointer(&m[0])) + 1<<20 - 1) &^ (1<<20 - 1)
+	r := base + 2<<20
+	n := int(run(base+4096, r, 1))
+	out := make([]int64, n)
+	for i := range out {
+		out[i] = *(*int64)(unsafe.Pointer(r + uintptr(8*i)))
+	}
+	return out
+}
+`
