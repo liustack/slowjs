@@ -941,6 +941,11 @@ void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
 #define JS_REGEXP_CACHE_ENTRIES 256
 #define JS_REGEXP_CACHE_BYTES (1 << 20)
 void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
+/* the shape cache of the runtime of ctx keeps the last n shapes of plain
+   objects of ctx after their objects are gone, 0 for none, the default.
+   Return -1 when there is no memory for it. Turn it off before freeing ctx
+   while the runtime lives on. */
+int JS_SetShapeCache(JSContext *ctx, int n);
 
 /* return != 0 if the JS code needs to be interrupted */
 typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);

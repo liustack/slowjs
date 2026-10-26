@@ -16,12 +16,17 @@
    that value returns when it is a function (called after the jobs), or the
    exception. A lone surrogate is printed as \u{...}, as Go would turn it into
    U+FFFD. The scripts find getAsyncContext and setAsyncContext, the
-   Builtins GetAsyncContext and SetAsyncContext of the Go API, as globals. */
+   Builtins GetAsyncContext and SetAsyncContext of the Go API, as globals.
+   Like a VM of the Go API, the context keeps SHAPE_CACHE shapes (see
+   JS_SetShapeCache). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "host.h"
+
+/* DefaultShapeCache of the Go API */
+#define SHAPE_CACHE 2048
 
 /* What both runners call with the completion value. */
 static const char format_src[] =
@@ -125,7 +130,7 @@ static int run(const char *path)
     }
     rt = host_new_runtime();
     ctx = rt ? JS_NewContext(rt) : NULL;
-    if (!ctx || define_globals(ctx) < 0) {
+    if (!ctx || JS_SetShapeCache(ctx, SHAPE_CACHE) < 0 || define_globals(ctx) < 0) {
         fprintf(stderr, "jsrun: no runtime\n");
         return -1;
     }
@@ -172,6 +177,10 @@ static int run(const char *path)
         JS_FreeValue(ctx, s);
     }
  done:
+    /* as VM.Close does: the kept shapes and the async context can hold the
+       context */
+    JS_SetShapeCache(ctx, 0);
+    JS_SetAsyncContext(ctx, JS_UNDEFINED);
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
     return 0;

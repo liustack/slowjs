@@ -260,10 +260,178 @@ static void test_regexp_cache_limits(void)
     free_regexp_context(ctx);
 }
 
+/* shapes returns the number of shapes rt holds. */
+static int64_t shapes(JSRuntime *rt)
+{
+    JSMemoryUsage m;
+
+    JS_ComputeMemoryUsage(rt, &m);
+    return m.shape_count;
+}
+
+/* run_shapes runs src in a new runtime whose shape cache keeps n shapes and
+   returns the number of shapes it left. With off, it turns the cache off
+   again before counting. */
+static int64_t run_shapes(int n, int off, const char *src)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    int64_t before, after;
+
+    before = shapes(rt);
+    CHECK(JS_SetShapeCache(ctx, n) == 0, "no ring of %d shapes", n);
+    CHECK(eval(ctx, src), "the script threw");
+    if (off)
+        JS_SetShapeCache(ctx, 0);
+    after = shapes(rt);
+    JS_SetShapeCache(ctx, 0);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+    return after - before;
+}
+
+/* kept returns the number of shapes the cache keeps after src ran with a
+   ring of n. */
+static int64_t kept(int n, const char *src)
+{
+    return run_shapes(n, 0, src) - run_shapes(0, 0, src);
+}
+
+/* The shape cache keeps the shapes of plain objects whose objects are gone,
+   in a ring, and only those that hold nothing else alive. */
+static void test_shape_cache(void)
+{
+    /* the empty shape and the shapes of 1 to 10 keys */
+    static const char ten[] =
+        "{ let o = {}; o.k0 = 0; o.k1 = 1; o.k2 = 2; o.k3 = 3; o.k4 = 4;\n"
+        "  o.k5 = 5; o.k6 = 6; o.k7 = 7; o.k8 = 8; o.k9 = 9; o = null }\n";
+    /* The shapes of 0 to 31 keys are copied and kept. The shape of 32 keys
+       grows in place, and the shape of 40 is not kept. */
+    static const char forty[] =
+        "{ let o = {}; for (let i = 0; i < 40; i++) o['p' + i] = i; o = null }\n";
+    static const char symbol[] =
+        "{ let s = Symbol('s'); let o = { a: 1 }; o[s] = 2; o = s = null }\n";
+    static const char registered[] =
+        "{ let s = Symbol.for('s'); let o = { a: 1 }; o[s] = 2; o = s = null }\n";
+    static const char no_proto[] =
+        "{ let o = Object.create(null); o.a = 1; o.b = 2; o = null }\n";
+    /* Keys no other object has. The first object copies the empty shape,
+       which the cache keeps, and the next ones share it. The first objects
+       copy their shape of one key, which the cache keeps with the shape of
+       two, until the 64 copies of credit are spent, 63 of them on these.
+       Then each object grows its shape in place and only the shape of two
+       keys is kept. */
+    static const char unique[] =
+        "for (let i = 0; i < 200; i++) { let o = {}; o['a' + i] = 1; o['b' + i] = 2 }\n";
+    int64_t n;
+
+    n = kept(2048, ten);
+    CHECK(n == 11, "%lld shapes kept of 10 keys", (long long)n);
+    n = kept(4, ten);
+    CHECK(n == 4, "%lld shapes kept in a ring of 4", (long long)n);
+    n = run_shapes(2048, 1, ten) - run_shapes(0, 0, ten);
+    CHECK(n == 0, "%lld shapes left with the cache turned off", (long long)n);
+    n = kept(2048, forty);
+    CHECK(n == 32, "%lld shapes kept of 40 keys", (long long)n);
+    n = kept(2048, registered) - kept(2048, symbol);
+    CHECK(n == 1, "%lld more shapes kept with a registered symbol", (long long)n);
+    n = kept(2048, no_proto);
+    CHECK(n == 0, "%lld shapes kept without a prototype", (long long)n);
+    n = kept(2048, unique);
+    CHECK(n == 1 + 63 + 200, "%lld shapes kept of unique keys", (long long)n);
+}
+
+/* The shape cache across the collectors and the end of a runtime: a full
+   and a young collection leave the kept shapes, and the cycle collector
+   frees the shapes of the cycles it frees, which the cache cannot keep. A
+   ring that is full lets its oldest shapes go, before and after a
+   collection. A runtime freed with shapes in the ring frees them and its
+   context. An allocation that fails leaves the ring whole. */
+static void test_shape_cache_lifetime(void)
+{
+    static const char ten[] =
+        "{ let o = {}; o.k0 = 0; o.k1 = 1; o.k2 = 2; o.k3 = 3; o.k4 = 4;\n"
+        "  o.k5 = 5; o.k6 = 6; o.k7 = 7; o.k8 = 8; o.k9 = 9; o = null }\n";
+    /* objects that hold each other, with keys no other object has */
+    static const char cycle[] =
+        "{ let a = {}, b = {}; a.cy0 = b; a.cy1 = 1; b.cz0 = a; b.cz1 = 1; a = b = null }\n";
+    static const char grow[] =
+        "{ let o = {}; for (let i = 0; i < 30; i++) o['g' + i] = i; o = null }\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSMemoryUsage m;
+    JSValue v;
+    int64_t base, n0, n;
+    size_t slack;
+    int ok = 0;
+
+    CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
+    base = shapes(rt);
+    CHECK(eval(ctx, ten), "the script threw");
+    n0 = shapes(rt) - base;
+    CHECK(n0 >= 11, "%lld shapes kept of 10 keys", (long long)n0);
+    JS_RunGC(rt);
+    n = shapes(rt) - base;
+    CHECK(n == n0, "a full collection left %lld of %lld shapes", (long long)n,
+          (long long)n0);
+    JS_RunYoungGC(rt);
+    n = shapes(rt) - base;
+    CHECK(n == n0, "a young collection left %lld of %lld shapes", (long long)n,
+          (long long)n0);
+    CHECK(eval(ctx, cycle), "the script threw");
+    JS_RunGC(rt);
+    n = shapes(rt) - base;
+    CHECK(n == n0 + 2, "%lld shapes more after the cycle collector, want 2 "
+          "(the shapes of one key)", (long long)(n - n0));
+
+    /* a ring of 4 keeps the last 4 shapes */
+    CHECK(JS_SetShapeCache(ctx, 4) == 0, "no ring");
+    base = shapes(rt);
+    CHECK(eval(ctx, grow), "the script threw");
+    n = shapes(rt) - base;
+    CHECK(n <= 4, "%lld shapes kept in a ring of 4", (long long)n);
+    JS_RunGC(rt);
+    CHECK(shapes(rt) - base == n, "a collection changed the ring of 4");
+
+    /* Let each allocation fail in turn while objects grow: the shapes kept
+       before are still there after, so the shapes of ten are found again
+       and none is made. */
+    CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
+    CHECK(eval(ctx, ten), "the script threw");
+    for(slack = 0; slack < 1 << 16 && !ok; slack += 16) {
+        JS_ComputeMemoryUsage(rt, &m);
+        JS_SetMemoryLimit(rt, m.malloc_size + slack);
+        v = JS_Eval(ctx, grow, strlen(grow), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        ok = !JS_IsException(v);
+        if (!ok)
+            JS_FreeValue(ctx, JS_GetException(ctx));
+        JS_FreeValue(ctx, v);
+        JS_SetMemoryLimit(rt, (size_t)-1);
+        n = shapes(rt);
+        CHECK(eval(ctx, ten), "the script threw");
+        CHECK(shapes(rt) == n, "the shapes of ten were made again after a "
+              "failed allocation at %zu bytes", slack);
+    }
+    CHECK(ok, "the objects never grew");
+    JS_SetShapeCache(ctx, 0);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+
+    /* freed with shapes in the ring, which hold the context */
+    rt = host_new_runtime();
+    ctx = JS_NewContext(rt);
+    CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
+    CHECK(eval(ctx, ten), "the script threw");
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 int main(void)
 {
     test_regexp_cache();
     test_regexp_cache_limits();
+    test_shape_cache();
+    test_shape_cache_lifetime();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;
