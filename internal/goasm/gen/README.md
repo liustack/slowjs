@@ -28,7 +28,14 @@ runs its own checks and lowering in Go (`debug/elf`,
    shadow frame. With `-shadow-cc=preserve_none` every unified entry, host
    callback and call to them uses preserve_none. Register-entry leaves stay C
    and get a reserved frame pointer: no frame, and llc never allocates RBP,
-   which Go owns. With `-shadow-icall-sigs` every indirect call gets a
+   which Go owns. Every unified function and every call to one takes and
+   returns an i1, i8 or i16 as an i32: the caller extends it (sign or zero,
+   as the C says, zero for a bool), the callee truncates it. preserve_none
+   puts only 32 and 64-bit integers in its own registers (amd64 R12 on, arm64
+   X20 on) and leaves narrow ones to the C rules (EDI or W0 on), and Go
+   writes whole words. The signatures the pass reports then have no narrow
+   integer, and the generator refuses one (and a float, which Go would move
+   as a whole float64). With `-shadow-icall-sigs` every indirect call gets a
    `"kcfi"` operand bundle whose type id encodes its signature (`icall.go`).
    Without the `"kcfi"` module flag llc emits no check code for it, but it
    keeps the id on the machine call.
@@ -93,7 +100,9 @@ to run the call-overhead timing. The proto
 tests are `testdata/*.txt`, kept as text so this package does not compile
 them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
-in `testdata/reject` through the real pipeline. `internal/enginecmp` measures
+in `testdata/reject` through the real pipeline, and with `SLOWJS_LLD`
+(ld.lld) as well, `TestNarrowArgs` runs `testdata/narrow` natively and
+generated. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
 
 ## The whole engine

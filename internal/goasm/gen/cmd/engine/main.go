@@ -203,6 +203,11 @@ func main() {
 	passArgs := []string{"-load-pass-plugin", *pass, "-passes=goasm-shadow-stack", "-shadow-add-sp",
 		"-shadow-leaf=" + *leaves, fmt.Sprintf("-shadow-max-int-args=%d", maxInt), "-shadow-report",
 		"-shadow-icall-sigs", fmt.Sprintf("-shadow-size-log2=%d", *sizeLog2)}
+	if os.Getenv("GEN_KEEP_NARROW") != "" {
+		// Negative build: narrow integers as the generator once took them
+		// (gen.SigFromCode reads the same switch).
+		passArgs = append(passArgs, "-shadow-keep-narrow")
+	}
 	if *keepGoing {
 		passArgs = append(passArgs, "-shadow-keep-going")
 	}

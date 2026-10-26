@@ -31,6 +31,10 @@
 // lowering reads it to move the arguments into the Go argument area, and
 // the post-link check reads it again from llc's object. -shadow-report prints the signature of every function, the
 // address-taken ones and the call graph for the generator.
+//
+// Every unified function and every call to one takes and returns an i1, i8
+// or i16 as an i32: preserve_none puts only 32 and 64-bit integers in its
+// own registers, and Go writes whole words (see widenNarrowInts).
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -41,6 +45,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
@@ -70,6 +75,9 @@ static cl::opt<bool> Report("shadow-report", cl::init(false),
                             cl::desc("print signatures, address-taken functions and call edges"));
 static cl::opt<bool> KeepGoing("shadow-keep-going", cl::init(false),
                                cl::desc("report a function the C must change (REJECT) and replace its body by a trap, instead of stopping"));
+static cl::opt<bool> KeepNarrow("shadow-keep-narrow", cl::init(false),
+                                cl::desc("negative build: leave i1, i8 and i16 arguments and results narrow (the "
+                                         "post-link check must reject what the generator makes of them)"));
 static cl::opt<bool> Varargs("shadow-varargs", cl::init(false),
                              cl::desc("pass the variable arguments of every call in a block of 8-byte slots (experimental)"));
 
@@ -973,6 +981,142 @@ static void lowerVarargs(Module &M) {
       F.eraseFromParent();
 }
 
+// ---- Narrow integers at the unified boundary ----
+//
+// preserve_none (LLVM 22.1.8, X86CallingConv.td and
+// AArch64CallingConvention.td) puts only i32 and i64 arguments in its own
+// registers, R12 on amd64 and X20 on arm64. It leaves an i1, i8 or i16 to
+// the C rules, which put it in EDI or W0 on: out of the order the
+// generator moves the argument words in, so an entry loaded such an
+// argument into a register the body never read. And a C callee may assume
+// a narrow argument comes zero or sign extended, which Go, writing whole
+// words, does not do. So every unified function, every call to one and
+// every indirect call takes and returns a narrow integer as an i32: the
+// caller extends it (signext as the parameter or the call says, zext
+// otherwise and always for i1), and the callee truncates it at its entry
+// and relies on no bit above. A narrow result goes the other way: the
+// callee extends it, the caller truncates. Register-entry leaves keep C's
+// own rules, which the generator does not model for them. This runs before
+// the argument blocks are counted and the signatures and type ids are
+// written, so all three see only i32.
+static bool isNarrow(Type *T) { return T->isIntegerTy() && T->getIntegerBitWidth() < 32; }
+
+static FunctionType *wideType(FunctionType *T) {
+  Type *I32 = Type::getInt32Ty(T->getContext());
+  SmallVector<Type *> ps;
+  for (Type *P : T->params())
+    ps.push_back(isNarrow(P) ? I32 : P);
+  Type *R = T->getReturnType();
+  return FunctionType::get(isNarrow(R) ? I32 : R, ps, T->isVarArg());
+}
+
+// A widened value keeps noundef and nothing else: zeroext, signext and
+// range describe the narrow value, and returned ties it to a narrow result.
+static AttributeSet wideAttrSet(LLVMContext &C, AttributeSet A) {
+  AttrBuilder B(C);
+  if (A.hasAttribute(Attribute::NoUndef))
+    B.addAttribute(Attribute::NoUndef);
+  return AttributeSet::get(C, B);
+}
+
+static AttributeList wideAttrs(LLVMContext &C, FunctionType *T, AttributeList A, unsigned nargs) {
+  SmallVector<AttributeSet> ps;
+  for (unsigned i = 0; i < nargs; i++)
+    ps.push_back(i < T->getNumParams() && isNarrow(T->getParamType(i)) ? wideAttrSet(C, A.getParamAttrs(i))
+                                                                        : A.getParamAttrs(i));
+  AttributeSet ret = isNarrow(T->getReturnType()) ? wideAttrSet(C, A.getRetAttrs()) : A.getRetAttrs();
+  return AttributeList::get(C, A.getFnAttrs(), ret, ps);
+}
+
+static Value *extendTo32(IRBuilder<> &B, Value *V, bool sext) {
+  if (sext && !V->getType()->isIntegerTy(1))
+    return B.CreateSExt(V, B.getInt32Ty());
+  return B.CreateZExt(V, B.getInt32Ty());
+}
+
+static void widenNarrowInts(Module &M, const std::set<std::string> &leaves) {
+  LLVMContext &C = M.getContext();
+  // Calls first, while their callees still carry the narrow attributes
+  // (paramHasAttr reads the callee's too).
+  SmallVector<CallBase *> calls;
+  for (Function &F : M)
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (CB->isInlineAsm() || wideType(CB->getFunctionType()) == CB->getFunctionType())
+            continue;
+          auto *Fn = dyn_cast<Function>(CB->getCalledOperand()->stripPointerCasts());
+          if (Fn && !unifiedFn(Fn, leaves))
+            continue;
+          calls.push_back(CB);
+        }
+  for (CallBase *CB : calls) {
+    auto *CI = dyn_cast<CallInst>(CB);
+    if (!CI)
+      report_fatal_error(Twine("narrow integers on a call that is not a plain call in ") + CB->getFunction()->getName());
+    FunctionType *T = CB->getFunctionType();
+    IRBuilder<> B(CB);
+    SmallVector<Value *> args;
+    for (unsigned i = 0; i < CB->arg_size(); i++) {
+      Value *V = CB->getArgOperand(i);
+      if (i < T->getNumParams() && isNarrow(T->getParamType(i)))
+        V = extendTo32(B, V, CB->paramHasAttr(i, Attribute::SExt));
+      args.push_back(V);
+    }
+    SmallVector<OperandBundleDef> bundles;
+    CB->getOperandBundlesAsDefs(bundles);
+    CallInst *N = B.CreateCall(wideType(T), CB->getCalledOperand(), args, bundles);
+    N->setCallingConv(CB->getCallingConv());
+    N->setAttributes(wideAttrs(C, T, CB->getAttributes(), CB->arg_size()));
+    N->setTailCallKind(CI->getTailCallKind());
+    N->copyMetadata(*CB);
+    Value *R = N;
+    if (isNarrow(T->getReturnType()))
+      R = B.CreateTrunc(N, T->getReturnType());
+    R->takeName(CB);
+    CB->replaceAllUsesWith(R);
+    CB->eraseFromParent();
+  }
+  SmallVector<Function *> fs;
+  for (Function &F : M)
+    if (unifiedFn(&F, leaves) && wideType(F.getFunctionType()) != F.getFunctionType())
+      fs.push_back(&F);
+  for (Function *F : fs) {
+    FunctionType *T = F->getFunctionType();
+    Function *NF = Function::Create(wideType(T), F->getLinkage(), F->getAddressSpace(), "", &M);
+    NF->copyAttributesFrom(F);
+    NF->setAttributes(wideAttrs(C, T, F->getAttributes(), T->getNumParams()));
+    NF->copyMetadata(F, 0);
+    NF->takeName(F);
+    if (!F->isDeclaration()) {
+      NF->splice(NF->begin(), F);
+      IRBuilder<> E(&*NF->getEntryBlock().getFirstInsertionPt());
+      for (unsigned i = 0; i < T->getNumParams(); i++) {
+        Argument *A = F->getArg(i), *NA = NF->getArg(i);
+        NA->takeName(A);
+        Value *V = NA;
+        if (isNarrow(A->getType()))
+          V = E.CreateTrunc(NA, A->getType(), NA->getName() + ".narrow");
+        A->replaceAllUsesWith(V);
+      }
+      if (isNarrow(T->getReturnType())) {
+        bool sext = F->hasRetAttribute(Attribute::SExt);
+        SmallVector<ReturnInst *> rets;
+        for (BasicBlock &BB : *NF)
+          if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+            rets.push_back(R);
+        for (ReturnInst *R : rets) {
+          IRBuilder<> B(R);
+          B.CreateRet(extendTo32(B, R->getReturnValue(), sext));
+          R->eraseFromParent();
+        }
+      }
+    }
+    F->replaceAllUsesWith(NF);
+    F->eraseFromParent();
+  }
+}
+
 // ---- Shadow pointer insertion (-shadow-add-sp) ----
 
 // rebuildWithSP replaces a call by one that passes a placeholder shadow
@@ -1139,16 +1283,21 @@ static void relativeGotoTables(Module &M) {
 }
 
 // sigCode names a function type the way the generator reads it: one letter
-// per argument word (i integer or pointer, d double, f float, j a pair of
-// 64-bit integers), '>' and the result (v void, i, d, f, j), '?' for a type
-// it cannot carry, "..." for variadic.
+// per argument word (i a 32 or 64-bit integer or a pointer, n an integer
+// narrower than 32 bits, d double, f float, j a pair of 64-bit integers),
+// '>' and the result (v void, i, n, d, f, j), '?' for a type it cannot
+// carry, "..." for variadic. A unified function has no n after
+// widenNarrowInts: the generator refuses one, since its register is not
+// the one it would move it in.
 static std::string sigLetter(Type *t) {
   if (t->isVoidTy())
     return "v";
   if (t->isPointerTy())
     return "i";
-  if (t->isIntegerTy())
-    return t->getIntegerBitWidth() <= 64 ? "i" : "?";
+  if (t->isIntegerTy()) {
+    unsigned w = t->getIntegerBitWidth();
+    return w < 32 ? "n" : w <= 64 ? "i" : "?";
+  }
   if (t->isDoubleTy())
     return "d";
   if (t->isFloatTy())
@@ -1185,12 +1334,15 @@ static uint32_t icallID(const std::string &code) {
   if (gt == std::string::npos || gt > 12)
     return icallUnencodable;
   const std::string params = "idfj", results = "vidfj";
-  size_t r = code.size() == gt + 2 ? results.find(code[gt + 1]) : std::string::npos;
+  char rc = code.size() == gt + 2 ? code[gt + 1] : '?';
+  size_t r = results.find(KeepNarrow && rc == 'n' ? 'i' : rc);
   if (r == std::string::npos)
     return icallUnencodable;
   uint32_t id = 1u << 31 | uint32_t(gt) << 27 | uint32_t(r) << 24;
   for (size_t i = 0; i < gt; i++) {
-    size_t p = params.find(code[i]);
+    // The negative build keeps narrow integers and encodes them as the
+    // generator once did, as integers like any other.
+    size_t p = params.find(KeepNarrow && code[i] == 'n' ? 'i' : code[i]);
     if (p == std::string::npos)
       return icallUnencodable;
     id |= uint32_t(p) << (2 * i);
@@ -1271,6 +1423,8 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       addShadowPointer(M, leaves);
       plainC(M);
     }
+    if (!KeepNarrow)
+      widenNarrowInts(M, leaves);
     if (MaxIntArgs || AddSP)
       packArgs(M, leaves);
     for (Function &F : M) {
