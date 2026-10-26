@@ -1,0 +1,11 @@
+1,7,b,a,Symbol(s0) / 1,7,b,a / 1,7,b,a / Symbol(s0) / 1,7,b,a / 5,3,1,2 / 1,7,b,a,Symbol(s0)
+1,7,b,a,Symbol(s0) / 1,7,b,a / 1,7,b,a / Symbol(s0) / 1,7,b,a / 5,3,1,2 / 1,7,b,a,Symbol(s0)
+1,7,b,a,c,Symbol(s0) / 1,7,b,a,c / 1,7,b,a,c / Symbol(s0) / 1,7,b,a,c / 5,3,1,2,6 / 1,7,b,a,c,Symbol(s0)
+1,7,b,c,Symbol(s0) / 1,7,b,c / 1,7,b,c / Symbol(s0) / 1,7,b,c / 5,3,1,6 / 1,7,b,c,Symbol(s0)
+1,7,b,c,Symbol(s0) / 1,7,c / 1,7,b,c / Symbol(s0) / 1,7,c / 5,3,6 / 1,7,c,Symbol(s0)
+1,7,b,c,Symbol(s0) / 1,7,c / 1,7,b,c / Symbol(s0) / 1,7,c,inherited / 5,3,6 / 1,7,c,Symbol(s0)
+1,7,b,c,Symbol(s0) / 1,7,c / 1,7,b,c / Symbol(s0) / 1,7,c,inherited / 5,3,8 / 1,7,c,Symbol(s0)
+1,3,b,c,Symbol(s0) / 1,3,c / 1,3,b,c / Symbol(s0) / 1,3,c,inherited / 5,9,8 / 1,3,c,Symbol(s0)
+1,3,b,c,Symbol(s0) / 1,3,c / 1,3,b,c / Symbol(s0) / 1,3,c / 5,9,8 / 1,3,c,Symbol(s0)
+1,3,b,c,Symbol(s0) / 1,3,b,c / 1,3,b,c / Symbol(s0) / 1,3,b,c / 5,9,10,8 / 1,3,b,c,Symbol(s0)
+45642 listings, 0 wrong

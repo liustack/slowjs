@@ -1,0 +1,2 @@
+early: ["b","f","late"] ["b","f","late","Symbol(Symbol.toStringTag)"] ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError
+after: ["b","f","late"] ["b","f","late"] ["1","function f() {}","2"] ["b,1","f,function f() {}","late,2"] ["b","f","late"] ["b","f","late"] ["b","f","late"]
