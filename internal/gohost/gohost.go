@@ -69,6 +69,9 @@ const (
 // ErrAbort is what Call panics with when the engine aborts.
 var ErrAbort = errors.New("gohost: the engine aborted")
 
+// ErrTrap is what Trap panics with.
+var ErrTrap = errors.New("gohost: the engine reached a trap")
+
 // Options are the settings of a new VM.
 type Options struct {
 	// StackSize is the size of the shadow stack: a power of two of at least
@@ -449,6 +452,15 @@ func Call(sp uintptr, vm uint32, this uintptr, argc int32, argv uintptr, magic i
 		panic(fmt.Sprintf("gohost: host_call of function %d: the host registers no function yet", magic))
 	}
 	panic(fmt.Sprintf("gohost: host_call with the unknown request %d", magic))
+}
+
+// Trap is host_trap, which the generator puts where the C, or a check the
+// generator made, would trap. A trap instruction ends the process in Go
+// (SIGILL and SIGTRAP cannot be recovered), so there is none in the engine:
+// this panics with ErrTrap instead, and the VM is broken.
+func Trap(sp uintptr) {
+	ByStack(sp).MarkBroken()
+	panic(ErrTrap)
 }
 
 // Release is host_release: the engine dropped the object that held the

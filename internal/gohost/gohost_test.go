@@ -228,6 +228,18 @@ func TestCallAbort(t *testing.T) {
 	}
 }
 
+func TestTrap(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	got := mustPanic(t, "host_trap", func() { Trap(base + 4096) })
+	if err, ok := got.(error); !ok || !errors.Is(err, ErrTrap) {
+		t.Fatalf("host_trap panicked with %v, want ErrTrap", got)
+	}
+	if !v.Broken() {
+		t.Fatal("the VM is not broken after a trap")
+	}
+}
+
 func TestCallUnknown(t *testing.T) {
 	v := newVM(t, small)
 	sp, _ := v.Stack()
