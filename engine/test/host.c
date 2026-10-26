@@ -19,7 +19,6 @@
 
 #include "host.h"
 
-#define HOST_STACK_SIZE (1024 * 1024) /* JS_DEFAULT_STACK_SIZE of QuickJS */
 #define HOST_NOW_SEC 1767225600       /* 2026-01-01T00:00:00Z */
 #define HOST_TIMEOUT_SEC 120          /* the longest a test may run, unless HOST_TIMEOUT_SEC says otherwise */
 
@@ -304,7 +303,6 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
         host_vm_free(vm);
         return NULL;
     }
-    JS_SetMaxStackSize(rt, HOST_STACK_SIZE);
 #ifdef __linux__
     JS_SetHostRemap(rt, !host_no_remap);
 #endif

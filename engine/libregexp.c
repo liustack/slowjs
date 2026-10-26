@@ -1361,16 +1361,13 @@ static int re_parse_class_set_operand(REParseState *s, REStringList *cr, const u
     return 0;
 }
 
-static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_t **pp)
+static int re_parse_nested_class1(REParseState *s, REStringList *cr, const uint8_t **pp)
 {
     const uint8_t *p;
     uint32_t c1, c2;
     int ret;
     REStringList cr1_s, *cr1 = &cr1_s;
     BOOL invert, is_first;
-
-    if (lre_check_stack_overflow(s->opaque, 0))
-        return re_parse_error(s, "stack overflow");
 
     re_string_list_init(s, cr);
     p = *pp;
@@ -1518,6 +1515,18 @@ static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_
  fail:
     re_string_list_free(cr);
     return -1;
+}
+
+/* the nesting of classes counts the internal depth of the engine */
+static int re_parse_nested_class(REParseState *s, REStringList *cr, const uint8_t **pp)
+{
+    int ret;
+
+    if (lre_depth_enter(s->opaque))
+        return re_parse_error(s, "stack overflow");
+    ret = re_parse_nested_class1(s, cr, pp);
+    lre_depth_leave(s->opaque);
+    return ret;
 }
 
 static int re_parse_char_class(REParseState *s, const uint8_t **pp)
@@ -2391,12 +2400,9 @@ static int re_parse_alternative(REParseState *s, BOOL is_backward_dir)
     return 0;
 }
 
-static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
+static int re_parse_disjunction1(REParseState *s, BOOL is_backward_dir)
 {
     int start, len, pos;
-
-    if (lre_check_stack_overflow(s->opaque, 0))
-        return re_parse_error(s, "stack overflow");
 
     start = s->byte_code.size;
     if (re_parse_alternative(s, is_backward_dir))
@@ -2427,6 +2433,18 @@ static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
         put_u32(s->byte_code.buf + pos, len);
     }
     return 0;
+}
+
+/* the nesting of groups counts the internal depth of the engine */
+static int re_parse_disjunction(REParseState *s, BOOL is_backward_dir)
+{
+    int ret;
+
+    if (lre_depth_enter(s->opaque))
+        return re_parse_error(s, "stack overflow");
+    ret = re_parse_disjunction1(s, is_backward_dir);
+    lre_depth_leave(s->opaque);
+    return ret;
 }
 
 /* Allocate the registers as a stack. The control flow is recursive so
