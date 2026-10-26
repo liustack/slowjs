@@ -34,7 +34,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    keeps the id on the machine call.
 3. llc -O2 with shrink-wrapping off writes assembly and an object. The whole
    engine loads `pass/icall.cpp` (built into the same shared object as the
-   pass) with `-load`: after the machine passes it names a symbol at every
+   pass) with `-load`: after the machine passes this run has (the outliner
+   and function splitting are off, and the insertion point has to be checked
+   again if that changes) it names a symbol at every
    indirect call, `goasm.icall.<function>.<n>.<id>`, a label right before
    the call in the text and a local symbol at its address in the object. An
    indirect call without an id stops llc. CheckObject
