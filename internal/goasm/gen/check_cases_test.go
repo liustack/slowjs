@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -268,6 +269,24 @@ func TestCheckCases(t *testing.T) {
 			lower: sub("pg", `movq\s+%r13, 8\(%rsp\)`, "movq %r12, 8(%rsp)"), want: "argument word 1"},
 		{name: "preserve_none: the check told the other convention", pn: true,
 			edit: func(c *EngineCheck) { c.PreserveNone = false }, want: "preserve_none"},
+
+		// Go's own frame and stack check around a body, and the return.
+		{name: "a Go frame bigger than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n + 16 }),
+			want: "Go frame is"},
+		{name: "a Go frame smaller than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n - 8 }),
+			want: "Go frame is"},
+		{name: "a calling function with no stack check", files: addFlag("g", "NOSPLIT"),
+			want: "a calling function without Go's stack check"},
+		{name: "a return without its result store", lower: sub("h", `\n\tmovq\s+%rax, 24\(%rsp\)`, ""),
+			want: "is not the store of"},
+		{name: "a result stored in the wrong slot", lower: sub("h", `movq\s+%rax, 24\(%rsp\)`, "movq %rax, 32(%rsp)"),
+			want: "is not the store of"},
+		{name: "a return that is a plain RET", lower: sub("h", `jmp\s+\.Lret_h`, "retq"),
+			want: "is not a jump to the epilogue"},
+		{name: "a return that jumps into the body", lower: sub("g", `jmp\s+\.Lret_g`, "jmp .LBB3_2"),
+			want: "not to the Go epilogue"},
+		{name: "a frameless body with no Go epilogue", files: dropRET("h"), want: "Go epilogue"},
+		{name: "a framed body with no Go epilogue", files: dropRET("g"), want: "Go epilogue"},
 
 		// What the check is told is generated.
 		{name: "a function left out", edit: func(c *EngineCheck) {
@@ -562,4 +581,57 @@ func forbiddenCases(sub func(fn, re, repl string) func(string, []Meta) string,
 				want: "forbidden instruction"})
 	}
 	return out
+}
+
+// emitted finds the file of the emitted Go assembly that holds fn's TEXT.
+func emitted(files map[string]string, fn string) (name string, at int) {
+	for n, text := range files {
+		if i := strings.Index(text, "TEXT ·"+fn+"(SB)"); i >= 0 {
+			return n, i
+		}
+	}
+	panic("no TEXT of " + fn + " in the emitted files")
+}
+
+// tweakText changes the number re captures in the TEXT line of fn.
+func tweakText(fn, re string, f func(int) int) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		eol := at + strings.Index(text[at:], "\n")
+		line := regexp.MustCompile(re).ReplaceAllStringFunc(text[at:eol], func(m string) string {
+			n, _ := strconv.Atoi(regexp.MustCompile(`\d+`).FindString(m))
+			return strings.Replace(m, strconv.Itoa(n), strconv.Itoa(f(n)), 1)
+		})
+		files[name] = text[:at] + line + text[eol:]
+	}
+}
+
+// addFlag puts a TEXT flag on fn: "TEXT ·fn(SB), $N-M" becomes "TEXT ·fn(SB), FLAG, $N-M".
+func addFlag(fn, flag string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		pre := "TEXT ·" + fn + "(SB), "
+		files[name] = text[:at] + pre + flag + ", " + text[at+len(pre):]
+	}
+}
+
+// dropRET takes the RET that ends fn's emitted text, which is where the Go
+// assembler writes its epilogue, and puts a no-op in its place.
+func dropRET(fn string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		end := len(text)
+		if i := strings.Index(text[at+1:], "\nTEXT "); i >= 0 {
+			end = at + 1 + i
+		}
+		body := text[at:end]
+		i := strings.LastIndex(body, "\tRET")
+		if i < 0 {
+			panic("no RET in " + fn)
+		}
+		files[name] = text[:at] + body[:i] + "\tBYTE $0x90" + body[i+len("\tRET"):] + text[end:]
+	}
 }
