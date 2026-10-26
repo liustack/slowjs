@@ -153,7 +153,7 @@ build_host_test > /dev/null
 # poison-test asks AddressSanitizer what the allocator poisoned
 poisontest=
 case $defs in *JS_HEAP_POISON*) poisontest=poison-test ;; esac
-for f in run-test262 jsrun unit mathdump api-test render $poisontest; do
+for f in run-test262 jsrun unit unit-oom mathdump api-test render $poisontest; do
 	[ -f "$here/$f.c" ] || continue
 	$cc $hostflags -c "$here/$f.c" -o "$out/$f.o"
 	$cc $san $engineobjs $libcobjs "$out/host.o" "$out/$f.o" -o "$out/$f" -lpthread
