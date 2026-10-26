@@ -931,6 +931,10 @@ typedef void JSHostPromiseRejectionTracker(JSContext *ctx, JSValueConst promise,
                                            JSValueConst reason,
                                            JS_BOOL is_handled, void *opaque);
 void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTracker *cb, void *opaque);
+/* the async context of promise jobs: an object that promise reactions keep
+   and run with, or none (undefined) */
+JSValue JS_GetAsyncContext(JSContext *ctx);
+void JS_SetAsyncContext(JSContext *ctx, JSValueConst v);
 
 /* return != 0 if the JS code needs to be interrupted */
 typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);

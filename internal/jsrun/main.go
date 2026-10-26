@@ -13,6 +13,8 @@
 // queued run. jsrun prints "== " and the name of the file, then what the
 // script gave: the string of its completion value, or of what that value
 // returns when it is a function (called after the jobs), or the exception.
+// The scripts find the Builtins GetAsyncContext and SetAsyncContext as the
+// globals getAsyncContext and setAsyncContext.
 package main
 
 import (
@@ -58,6 +60,9 @@ func run(path string) (string, error) {
 		return "", err
 	}
 	defer vm.Close()
+	if err := defineGlobals(vm); err != nil {
+		return "", err
+	}
 	v, err := vm.EvalValue(string(src), slowjs.EvalGlobal)
 	if err != nil {
 		return fmt.Sprintf("<exception=%s>\n", err), nil
@@ -81,4 +86,33 @@ func run(path string) (string, error) {
 		return "", fmt.Errorf("%s: the format gave %T", path, s)
 	}
 	return out + str + "\n", nil
+}
+
+// defineGlobals gives the global object of vm what engine/test/jsrun.c
+// gives it.
+func defineGlobals(vm *slowjs.VM) error {
+	define, err := vm.EvalValue(`(get, set) => {
+  globalThis.getAsyncContext = get
+  globalThis.setAsyncContext = set
+}`, slowjs.EvalGlobal)
+	if err != nil {
+		return err
+	}
+	defer define.Free()
+	get, err := vm.NewBuiltinFunction(slowjs.GetAsyncContext)
+	if err != nil {
+		return err
+	}
+	defer get.Free()
+	set, err := vm.NewBuiltinFunction(slowjs.SetAsyncContext)
+	if err != nil {
+		return err
+	}
+	defer set.Free()
+	r, err := define.CallValue(slowjs.UndefinedValue, get, set)
+	if err != nil {
+		return err
+	}
+	r.Free()
+	return nil
 }

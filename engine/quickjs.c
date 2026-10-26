@@ -377,6 +377,9 @@ struct JSRuntime {
     int shape_hash_size;
     int shape_hash_count; /* number of hashed shapes */
     JSShape **shape_hash;
+    /* the async context of promise jobs, an object or any other value for
+       none (see JS_SetAsyncContext) */
+    JSValue async_context;
     void *user_opaque;
     struct JSGCEphemeron *ephemeron;
     /* the GC objects made since the last collection (see JS_RunYoungGC) */
@@ -2407,6 +2410,9 @@ void JS_FreeRuntime(JSRuntime *rt)
     struct list_head *el, *el1;
     int i;
 
+    if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
+        JS_FreeValueRT(rt, rt->async_context);
+    rt->async_context = JS_UNDEFINED;
     JS_FreeValueRT(rt, rt->current_exception);
 
     list_for_each_safe(el, el1, &rt->job_list) {
@@ -54287,6 +54293,84 @@ static void js_promise_resolve_function_mark(JSRuntime *rt, JSValueConst val,
     }
 }
 
+/* The async context of a runtime is an object the embedder sets, which
+   promise reactions keep: a handler that perform_promise_then registers
+   while the context is an object runs with that context, whatever the
+   context is when its job runs, and the context is given back after it.
+   js_promise_resolve_function_call does the same with the then of a
+   thenable, so the job that calls it runs with the context of the resolve.
+   That is what an AsyncLocalStorage needs to follow await, and what V8
+   keeps for Node as the continuation preserved embedder data. Without a
+   context, which is all a runtime has until one is set, a handler is kept
+   as it is, at the cost of one test. */
+
+/* JS_GetAsyncContext returns the async context of the runtime of ctx,
+   which the caller owns, or undefined when it has none. */
+JSValue JS_GetAsyncContext(JSContext *ctx)
+{
+    JSValue v = ctx->rt->async_context;
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+        return JS_UNDEFINED;
+    return JS_DupValue(ctx, v);
+}
+
+/* JS_SetAsyncContext makes v, which the caller keeps, the async context of
+   the runtime of ctx when it is an object, and leaves the runtime without
+   one for any other value. The runtime frees the context it had. */
+void JS_SetAsyncContext(JSContext *ctx, JSValueConst v)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue old = rt->async_context;
+
+    rt->async_context = JS_UNDEFINED;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_OBJECT)
+        rt->async_context = JS_DupValue(ctx, v);
+    if (JS_VALUE_GET_TAG(old) == JS_TAG_OBJECT)
+        JS_FreeValue(ctx, old);
+}
+
+/* The function js_async_context_wrap makes: func_data holds the async
+   context and the handler. It calls the handler with the context as the
+   context of the runtime, and then gives the runtime the context it had,
+   also when the handler threw or set another context. */
+static JSValue js_async_context_call(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv, int magic,
+                                     JSValue *func_data)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue outer = rt->async_context, ret;
+
+    rt->async_context = JS_DupValue(ctx, func_data[0]);
+    ret = JS_Call(ctx, func_data[1], this_val, argc, argv);
+    if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
+        JS_FreeValue(ctx, rt->async_context);
+    rt->async_context = outer;
+    return ret;
+}
+
+/* js_async_context_wrap takes the reference to handler and returns the
+   handler of a reaction or a job: with an async context and a function
+   handler, a new function of js_async_context_call that holds both, else
+   handler itself. When the function cannot be made (out of memory) the
+   handler runs without the context, and the exception, which cannot be
+   caught, is left for the caller of the engine. */
+static JSValue js_async_context_wrap(JSContext *ctx, JSValue handler)
+{
+    JSValueConst data[2];
+    JSValue wrapped;
+
+    data[0] = ctx->rt->async_context;
+    if (JS_VALUE_GET_TAG(data[0]) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(handler) != JS_TAG_OBJECT)
+        return handler;
+    data[1] = handler;
+    wrapped = JS_NewCFunctionData(ctx, js_async_context_call, 1, 0, 2, data);
+    if (JS_IsException(wrapped))
+        return handler;
+    JS_FreeValue(ctx, handler);
+    return wrapped;
+}
+
 static JSValue js_promise_resolve_function_call(JSContext *ctx,
                                                 JSValueConst func_obj,
                                                 JSValueConst this_val,
@@ -54331,6 +54415,7 @@ static JSValue js_promise_resolve_function_call(JSContext *ctx,
     done:
         fulfill_or_reject_promise(ctx, s->promise, resolution, is_reject);
     } else {
+        then = js_async_context_wrap(ctx, then);
         args[0] = s->promise;
         args[1] = resolution;
         args[2] = then;
@@ -54923,7 +55008,7 @@ static __exception int perform_promise_then(JSContext *ctx,
         handler = resolve_reject[i];
         if (!JS_IsFunction(ctx, handler))
             handler = JS_UNDEFINED;
-        rd->handler = JS_DupValue(ctx, handler);
+        rd->handler = js_async_context_wrap(ctx, JS_DupValue(ctx, handler));
         rd_array[i] = rd;
     }
 
