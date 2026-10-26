@@ -51,13 +51,14 @@ func TestReleaseError(t *testing.T) {
 		t.Fatalf("a release build with no -out: %v", err)
 	}
 	for name, edit := range map[string]func(*devSwitches){
-		"-keep-going":          func(d *devSwitches) { d.KeepGoing = true },
-		"-loose-varargs":       func(d *devSwitches) { d.LooseVarargs = true },
-		"-poison":              func(d *devSwitches) { d.Poison = true },
-		"GEN_KEEP_NARROW":      func(d *devSwitches) { d.KeepNarrow = true },
-		"GEN_EDIT_LOWERED":     func(d *devSwitches) { d.EditLowered = "1" },
-		"-arch arm64":          func(d *devSwitches) { d.Arch = "arm64" },
-		"-non-format-variadic": func(d *devSwitches) { d.NonFormat = "" },
+		"-keep-going":                 func(d *devSwitches) { d.KeepGoing = true },
+		"-loose-varargs":              func(d *devSwitches) { d.LooseVarargs = true },
+		"-poison":                     func(d *devSwitches) { d.Poison = true },
+		"GEN_KEEP_NARROW":             func(d *devSwitches) { d.KeepNarrow = true },
+		"GEN_EDIT_LOWERED":            func(d *devSwitches) { d.EditLowered = "1" },
+		"-arch arm64":                 func(d *devSwitches) { d.Arch = "arm64" },
+		"-non-format-variadic":        func(d *devSwitches) { d.NonFormat = "" },
+		"without polls (-poll=false)": func(d *devSwitches) { d.NoPoll = true },
 	} {
 		d := plain
 		edit(&d)

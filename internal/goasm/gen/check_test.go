@@ -180,9 +180,12 @@ func TestPostLinkCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, text := range map[string]string{
-		"go.mod":       "module checkmini\n\ngo 1.22\n",
-		"main.go":      "package main\n\nimport _ \"checkmini/mini\"\n\nfunc main() {}\n",
-		"mini/host.go": "package mini\n\nfunc goasmMissing(i int64) { panic(missingNames[i]) }\n",
+		"go.mod":  "module checkmini\n\ngo 1.22\n",
+		"main.go": "package main\n\nimport _ \"checkmini/mini\"\n\nfunc main() {}\n",
+		"mini/host.go": "package mini\n\nfunc goasmMissing(i int64) { panic(missingNames[i]) }\n\n" +
+			"//go:noinline\nfunc pollWork(sp uintptr) uintptr { return sp*3 + 1 }\n\nvar pollSink uintptr\n\n" +
+			"// host_poll is called by the polls of the loops: it has a stack check.\n" +
+			"func host_poll(sp uintptr) { pollSink = pollWork(sp) }\n",
 	} {
 		if err := os.WriteFile(filepath.Join(mod, name), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
