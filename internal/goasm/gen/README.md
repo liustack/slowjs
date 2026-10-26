@@ -28,18 +28,33 @@ runs its own checks and lowering in Go (`debug/elf`,
    shadow frame. With `-shadow-cc=preserve_none` every unified entry, host
    callback and call to them uses preserve_none. Register-entry leaves stay C
    and get a reserved frame pointer: no frame, and llc never allocates RBP,
-   which Go owns. With `-shadow-icall-sigs` every indirect call gets a
+   which Go owns. Every unified function and every call to one takes and
+   returns an i1, i8 or i16 as an i32: the caller extends it (sign or zero,
+   as the C says, zero for a bool), the callee truncates it. preserve_none
+   puts only 32 and 64-bit integers in its own registers (amd64 R12 on, arm64
+   X20 on) and leaves narrow ones to the C rules (EDI or W0 on), and Go
+   writes whole words. The signatures the pass reports then have no narrow
+   integer, and the generator refuses one (and a float, which Go would move
+   as a whole float64). With `-shadow-icall-sigs` every indirect call gets a
    `"kcfi"` operand bundle whose type id encodes its signature (`icall.go`).
    Without the `"kcfi"` module flag llc emits no check code for it, but it
-   keeps the id on the machine call.
-3. llc -O2 with shrink-wrapping off writes assembly and an object. The whole
-   engine loads `pass/icall.cpp` (built into the same shared object as the
-   pass) with `-load`: after the machine passes this run has (the outliner
-   and function splitting are off, and the insertion point has to be checked
-   again if that changes) it names a symbol at every
+   keeps the id on the machine call. `-shadow-probes` writes a module with
+   one probe per unified definition, of its type, convention and attributes,
+   that reads every argument and returns a loaded result.
+3. llc -O2 with shrink-wrapping off writes assembly and an object, every
+   function in `.text` (`-profile-guided-section-prefix=false`: otherwise
+   a cold function such as `abort` goes in `.text.unlikely.`). The whole
+   engine loads `pass/icall.cpp` and `pass/facts.cpp` (built into the same
+   shared object as the pass) with `-load`: after the machine passes this run
+   has (the outliner and function splitting are off, and the insertion point
+   has to be checked again if that changes) icall.cpp names a symbol at every
    indirect call, `goasm.icall.<function>.<n>.<id>`, a label right before
    the call in the text and a local symbol at its address in the object. An
-   indirect call without an id stops llc. CheckObject
+   indirect call without an id stops llc. facts.cpp (`-goasm-facts`) writes
+   down the registers llc assigned: each function's argument registers, the
+   ones its code reads at the entry, and for each call and return the
+   argument, result and live registers (`facts.go`). llc runs over the probe
+   module too, for the registers of every argument and result. CheckObject
    rejects writable or thread-local data and any external symbol outside the
    engine and the host callbacks.
 4. LowerUnified / LowerRegister (amd64) and LowerARM64 rewrite each function
@@ -91,7 +106,9 @@ to run the call-overhead timing. The proto
 tests are `testdata/*.txt`, kept as text so this package does not compile
 them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
 dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
-in `testdata/reject` through the real pipeline. `internal/enginecmp` measures
+in `testdata/reject` through the real pipeline, and with `SLOWJS_LLD`
+(ld.lld) as well, `TestNarrowArgs` runs `testdata/narrow` natively and
+generated. `internal/enginecmp` measures
 the current engine under the same GC stop setup as the proto tests.
 
 ## The whole engine
@@ -105,13 +122,23 @@ in `missingNames`. A rejection stops the run and nothing is written, and the
 default has no stubs. `-keep-going` is for surveys: it lists every function the
 C must change, by class, and stubs it instead of stopping. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
-rejecting them. `-arch arm64` stops after llc and counts what the arm64
+rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
+the engine is made for (20 by default, 25 for the host's whole 32 MiB):
+`engine_decl.go` records it as `shadowSizeLog2`, and the host refuses a
+smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
+
+Two negative builds test the tests. `-poison` writes garbage into every
+register at each entry before the arguments are loaded, after each unified
+call before the result is read and at each return: the engine's tests must
+still pass, so no code reads a register the lowering did not set.
+`GEN_KEEP_NARROW=1` leaves narrow integers as the generator once took them:
+the post-link check must reject the result (`TestNarrowArgs`).
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
 L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass
-$L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall.cpp \
+$L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall.cpp $P/facts.cpp \
     -o internal/goasm/gen/internal/_shadow.so
 /tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
@@ -140,9 +167,20 @@ rewrites the lowering wrote down for that function, and it works out what
 each must be from llc's object: the prologue and epilogue it replaced (llc's
 pushes and reserved locals), where each frame offset moves and that the
 access stays inside the Go frame, each call's saves, argument moves, target
-and result, and where each data reference points. llc's own code must keep
-to what the build rules out: a call through memory fails, and so does a frame
-access wider than 8 bytes that is not an unaligned move. Each function's record
+and result, and where each data reference points. The registers in those
+moves are llc's, not the generator's model of the convention: each entry
+loads every argument word into the register llc's probe reads it from, and
+llc's code may read no other register at the entry before writing it but
+the ones its dropped prologue pushes. Each call stores every argument word
+from the register llc passes it in (for a call of a unified definition,
+the one the definition reads it from) and loads each result word into the
+register llc takes it from, and llc's code may read no register after the
+call before writing it but those results and the saved registers. Each
+return stores the registers llc returns. A leaf keeps C's registers, so of
+its facts only its calls' targets and the number of its calls and returns
+are checked. llc's own code must keep to what the build rules out: a call
+through memory fails, and so does a frame access wider than 8 bytes that is
+not an unaligned move. Each function's record
 must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the
@@ -155,15 +193,21 @@ hand-written llc code).
 
 What the check takes on trust, and where it stops:
 
-- The pass's signatures: the one it reports for each function, and the
-  type id it gives each indirect call from the call's own IR type. That LLVM
-  keeps the id on the right call is LLVM's (instruction selection copies it
-  to the machine call and tail merging keeps calls of different ids apart),
-  and the check reads it from llc's object, not from the text the lowering
-  read.
-- preserve_none (`-mode pn`). The check derives each call's argument
-  registers from the convention, but does not work out which registers hold
-  live values across a call: it relies on LLVM having saved them.
+- The pass's signatures, for the number of argument and result words only:
+  the one it reports for each function, and the type id it gives each
+  indirect call from the call's own IR type. That LLVM keeps the id on the
+  right call is LLVM's (instruction selection copies it to the machine call
+  and tail merging keeps calls of different ids apart), and the check reads
+  it from llc's object, not from the text the lowering read.
+- llc's facts: that a probe gets the registers of the function it stands
+  for (llc assigns them from the type, convention and attributes, which the
+  probe copies), and that liveness as LLVM's LivePhysRegs computes it after
+  the last machine pass is what the code reads. The facts of a call are
+  matched to the calls of llc's object in order, and each names its target
+  or type id, which the check compares.
+- The width of a narrow integer: the registers do not say which bits a
+  callee relies on. The pass's widening makes every one a whole i32, and
+  `TestNarrowArgs` runs it with garbage above each narrow value.
 - A Go frame of 4096 bytes or more has a stack check the check does not
   know, so such a function fails it.
 - Only a non-PIE linux/amd64 binary.

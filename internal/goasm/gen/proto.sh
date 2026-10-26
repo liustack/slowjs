@@ -13,7 +13,7 @@ OUT=${OUT:-$G/internal/proto}
 BIN=${BIN:-/tmp/proto.test}
 L=/usr/lib/llvm-22/bin
 PASS=$G/internal/_shadow.so
-[ $PASS -nt $G/pass/shadow.cpp ] && [ $PASS -nt $G/pass/icall.cpp ] || $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $G/pass/shadow.cpp $G/pass/icall.cpp -o $PASS
+[ $PASS -nt $G/pass/shadow.cpp ] && [ $PASS -nt $G/pass/icall.cpp ] && [ $PASS -nt $G/pass/facts.cpp ] || $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $G/pass/shadow.cpp $G/pass/icall.cpp $G/pass/facts.cpp -o $PASS
 rm -rf $OUT
 mkdir -p $OUT
 go run ./$G/cmd/gen -arch $ARCH -mode $MODE -llvm $L -pass $PASS -data $G/testdata -out $OUT

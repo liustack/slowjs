@@ -372,6 +372,9 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 
 	// Build the rewritten body.
 	var out []string
+	if a.Poison {
+		out = append(out, poison()...)
+	}
 	argRegOffsets, _, _ := layout(fn.Sig)
 	// Entry shim: load each argument from the Go argument area into its reg.
 	for k, p := range fn.Sig.Params {
@@ -483,6 +486,9 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		}
 		if n == "retq" || n == "ret" {
 			out = append(out, storeResult()...)
+			if a.Poison {
+				out = append(out, poison()...)
+			}
 			out = append(out, "jmp "+retLabel)
 			continue
 		}
@@ -591,6 +597,9 @@ func marshalCallTarget(a AMD64Arch, callExpr string, sig Sig, saved []string, sa
 		}
 	}
 	g = append(g, "call "+callExpr)
+	if a.Poison {
+		g = append(g, poison()...)
+	}
 	switch sig.Ret {
 	case I64, Ptr:
 		g = append(g, fmt.Sprintf("movq %d(%%rsp), %%rax", retOff))
@@ -602,6 +611,25 @@ func marshalCallTarget(a AMD64Arch, callExpr string, sig Sig, saved []string, sa
 	}
 	for k, r := range saved {
 		g = append(g, fmt.Sprintf("movq %d(%%rsp), %%%s", saveBase+8*k, r))
+	}
+	return g
+}
+
+// poison writes garbage into every register llc's code could read: the
+// general registers but RSP and RBP, and X0 to X15 (through RAX). The
+// poison build puts it at each entry before the argument loads, after each
+// unified call before the result loads and at each return after the result
+// stores, so code that reads a register the lowering did not set reads
+// garbage instead of a value that happened to be right. Each value is a
+// non-canonical address whose low byte is neither 0 nor 1.
+func poison() []string {
+	word := func(i int) string { return fmt.Sprintf("$%#x", uint64(0xdead5a5a5a5a00a5)|uint64(i)<<8) }
+	var g []string
+	for i := 0; i < 16; i++ {
+		g = append(g, "movabsq "+word(16+i)+", %rax", fmt.Sprintf("movq %%rax, %%xmm%d", i))
+	}
+	for i, r := range []string{"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"} {
+		g = append(g, "movabsq "+word(i)+", %"+r)
 	}
 	return g
 }

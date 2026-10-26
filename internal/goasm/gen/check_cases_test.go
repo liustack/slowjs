@@ -106,17 +106,18 @@ var ckPNSigs = map[string]string{"ph": "ii>i", "pg": "ii>i"}
 type ckCase struct {
 	name   string
 	pn     bool
-	input  func(string) string         // the text the lowering reads
-	llc    func(string) string         // the text llc's object is assembled from
-	as     map[string]string           // lower a function with this signature code
-	callee map[string]string           // the callee signatures the lowering sees
-	lower  func(string, []Meta) string // the lowered text
-	metas  func([]Meta)                // the records and metas, before emit
-	files  func(map[string]string)     // the emitted Go files, before they are built
-	poll   string                      // Go source of host_poll in the built program; "" for none
-	edit   func(*EngineCheck)          // what the check is told
-	calls  func(*testing.T, []Meta)    // what the lowering recorded
-	want   string                      // the reason the check rejects it; "" passes
+	input  func(string) string          // the text the lowering reads
+	llc    func(string) string          // the text llc's object is assembled from
+	as     map[string]string            // lower a function with this signature code
+	callee map[string]string            // the callee signatures the lowering sees
+	lower  func(string, []Meta) string  // the lowered text
+	metas  func([]Meta)                 // the records and metas, before emit
+	files  func(map[string]string)      // the emitted Go files, before they are built
+	poll   string                       // Go source of host_poll in the built program; "" for none
+	edit   func(*EngineCheck)           // what the check is told
+	facts  func(probes, facts RegFacts) // what llc's facts say
+	calls  func(*testing.T, []Meta)     // what the lowering recorded
+	want   string                       // the reason the check rejects it; "" passes
 }
 
 func TestCheckCases(t *testing.T) {
@@ -270,6 +271,61 @@ func TestCheckCases(t *testing.T) {
 			lower: sub("pg", `movq\s+%r13, 8\(%rsp\)`, "movq %r12, 8(%rsp)"), want: "argument word 1"},
 		{name: "preserve_none: the check told the other convention", pn: true,
 			edit: func(c *EngineCheck) { c.PreserveNone = false }, want: "preserve_none"},
+
+		// The registers are llc's, not the generator's model: each case
+		// says llc decided otherwise than the lowering took it.
+		{name: "llc reads an argument word from another register",
+			facts: func(p, _ RegFacts) { p[ProbePrefix+"h"].Args = []string{"rdi", "r15d"} },
+			want:  "is not the load of argument word 1 into R15"},
+		{name: "preserve_none: llc reads an argument word from another register", pn: true,
+			facts: func(p, _ RegFacts) { p[ProbePrefix+"ph"].Args = []string{"r12", "edi"} },
+			want:  "is not the load of argument word 1 into RDI"},
+		{name: "llc's probe with a word too few",
+			facts: func(p, _ RegFacts) { p[ProbePrefix+"h"].Args = []string{"rdi"} },
+			want:  "has 2 and 1 words"},
+		{name: "llc's code reads a register at the entry no load sets",
+			facts: func(_, f RegFacts) { f["h"].Entry = append(f["h"].Entry, "r9b") },
+			want:  "reads R9 at the entry"},
+		{name: "llc returns the result in another register",
+			facts: func(p, _ RegFacts) { p[ProbePrefix+"h"].Rets = [][]string{{"xmm0"}} },
+			want:  "is not the store of X0"},
+		{name: "llc's return gives a register the stores do not take",
+			facts: func(_, f RegFacts) { f["h"].Rets[0] = []string{"rax", "rdx"} },
+			want:  "which the result stores do not take"},
+		{name: "llc passes an indirect call's argument word in another register",
+			facts: func(_, f RegFacts) { f["ic"].Calls[0].Args = []string{"rdi", "rcx"} },
+			want:  "is not the move of argument word 1 from RCX"},
+		{name: "llc passes a call's arguments elsewhere than its callee reads them",
+			facts: func(_, f RegFacts) { f["g"].Calls[0].Args = []string{"rsi", "rdi"} },
+			want:  "h reads them from [RDI RSI]"},
+		{name: "llc takes a call's result from another register",
+			facts: func(_, f RegFacts) { f["g"].Calls[0].Defs = []string{"rdx"} },
+			want:  "is not the load of the result into RDX"},
+		{name: "llc reads a register after a call that nothing sets",
+			facts: func(_, f RegFacts) { f["g"].Calls[0].After = append(f["g"].Calls[0].After, "ecx") },
+			want:  "reads RCX after the call"},
+		{name: "preserve_none: llc reads a register after a call that nothing sets", pn: true,
+			facts: func(_, f RegFacts) { f["pg"].Calls[0].After = append(f["pg"].Calls[0].After, "r13") },
+			want:  "reads R13 after the call"},
+		{name: "llc's facts of a call to another function",
+			facts: func(_, f RegFacts) { f["g"].Calls[0].Target = "lf" },
+			want:  "llc's facts give this call to lf"},
+		{name: "llc's facts of an indirect call with another type id",
+			facts: func(_, f RegFacts) { f["ic"].Calls[1].Target = f["ic"].Calls[0].Target },
+			want:  "its signature symbol has type id"},
+		{name: "llc's facts missing a call",
+			facts: func(_, f RegFacts) { f["g"].Calls = f["g"].Calls[:1] },
+			want:  "a call llc's facts do not list"},
+		{name: "llc's facts with a return too many",
+			facts: func(_, f RegFacts) { f["h"].Rets = append(f["h"].Rets, f["h"].Rets[0]) },
+			want:  "llc's facts list 0 calls and 2 returns"},
+		{name: "no probe of a function", facts: func(p, _ RegFacts) { delete(p, ProbePrefix+"h") },
+			want: "no registers"},
+		{name: "llc's facts of a leaf with a call it does not make",
+			facts: func(_, f RegFacts) { f["lf"].Calls = append(f["lf"].Calls, CallFacts{Target: "h"}) },
+			want:  "llc's facts list 1 calls and 1 returns, its object has 0 and 1"},
+		{name: "no facts of a leaf", facts: func(_, f RegFacts) { delete(f, "lf") },
+			want: "llc wrote no register facts of it"},
 
 		// The Go function the polls call must begin with a stack check.
 		{name: "host_poll with a stack check", poll: pollSplit, edit: needPoll},
@@ -535,13 +591,114 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
+	llcText := text
+	if c.llc != nil {
+		llcText = c.llc(text)
+	}
+	probes, facts := ckFacts(t, llcText, codes, leaves, c.pn)
+	if c.facts != nil {
+		c.facts(probes, facts)
+	}
 	ec := EngineCheck{LLC: llc, Lowered: low, Bin: bin, Pkg: "main", Names: names, Unit: unit, Plan: plan,
-		Metas: metas, Sigs: sigs, Leaves: leaves, PreserveNone: c.pn, All: true}
+		Metas: metas, Sigs: sigs, Leaves: leaves, PreserveNone: c.pn, Probes: probes, Facts: facts, All: true}
 	if c.edit != nil {
 		c.edit(&ec)
 	}
 	_, err = CheckEngine(ec)
 	return metas, err
+}
+
+// ckFacts writes what llc reports of the registers of the case's text
+// (pass/facts.cpp): for each unified function a probe with the registers of
+// its argument and result words, as the C convention or preserve_none puts
+// them for its signature (code), and its calls, returns and live registers
+// as its text has them. A case with a fault in them edits these.
+func ckFacts(t *testing.T, text string, codes map[string]string, leaves map[string]bool, pn bool) (probes, facts RegFacts) {
+	t.Helper()
+	regs := func(code string) (args, res []string) {
+		s, err := SigFromCode(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ints := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+		if pn {
+			ints = []string{"r12", "r13", "r14", "r15", "rdi", "rsi", "rdx", "rcx", "r8", "r9", "r11", "rax"}
+		}
+		ni, nx := 0, 0
+		for _, p := range s.Params {
+			for w := 0; w < p.words(); w++ {
+				if p == F64 {
+					args = append(args, fmt.Sprintf("xmm%d", nx))
+					nx++
+				} else {
+					args = append(args, ints[ni])
+					ni++
+				}
+			}
+		}
+		switch s.Ret {
+		case F64:
+			res = []string{"xmm0"}
+		case JSV:
+			res = []string{"rax", "rdx"}
+		case Void:
+		default:
+			res = []string{"rax"}
+		}
+		return args, res
+	}
+	unit, err := SplitAsm(text, "#")
+	if err != nil {
+		t.Fatal(err)
+	}
+	probes, facts = RegFacts{}, RegFacts{}
+	for _, name := range unit.FuncOrder {
+		args, res := regs(codes[name])
+		if !leaves[name] {
+			probes[ProbePrefix+name] = &FuncFacts{Args: args, Entry: args, Rets: [][]string{res}}
+		}
+		f := &FuncFacts{Entry: append([]string{}, args...)}
+		var pushed []string
+		label := ""
+		for i, raw := range unit.Funcs[name].Lines {
+			l := strings.Join(strings.Fields(clean(raw)), " ")
+			switch {
+			case i >= 2 && strings.HasPrefix(l, "pushq %") && len(f.Calls) == 0 && strings.Contains("rbx r12 r13 r14 r15", l[7:]):
+				pushed = append(pushed, l[7:])
+			case strings.HasPrefix(l, ICallPrefix):
+				_, _, id, ok := ParseICallSymbol(strings.TrimSuffix(l, ":"))
+				if !ok {
+					t.Fatalf("bad label %s", l)
+				}
+				label = fmt.Sprintf("*%d", id)
+			case strings.HasPrefix(l, "callq "):
+				target := strings.TrimPrefix(l, "callq ")
+				code := codes[target]
+				if strings.HasPrefix(target, "*") {
+					target, label = label, ""
+					if target == "" {
+						target = "*?"
+					} else {
+						id, _ := strconv.ParseUint(target[1:], 10, 32)
+						if code, err = ICallCode(uint32(id)); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				label = ""
+				var a, r []string
+				if code != "" {
+					a, r = regs(code)
+				}
+				f.Calls = append(f.Calls, CallFacts{Target: target, Args: a, Defs: r, After: append(append([]string{}, r...), pushed...)})
+			case l == "retq":
+				f.Rets = append(f.Rets, res)
+			}
+		}
+		f.Entry = append(f.Entry, pushed...)
+		facts[name] = f
+	}
+	return probes, facts
 }
 
 // forbiddenCases put each forbidden instruction into function g three ways,

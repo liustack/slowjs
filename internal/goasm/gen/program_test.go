@@ -23,10 +23,15 @@ func TestSigFromCode(t *testing.T) {
 	if s, err := SigFromCode(">v"); err != nil || len(s.Params) != 0 || s.Ret != Void {
 		t.Fatalf("empty signature: %+v %v", s, err)
 	}
-	for _, bad := range []string{"ii", "i...>i", "iB>v", "i?>v", "i>?"} {
+	for _, bad := range []string{"ii", "i...>i", "iB>v", "i?>v", "i>?", "in>v", "i>n", "if>v", "i>f"} {
 		if _, err := SigFromCode(bad); err == nil {
 			t.Errorf("%q: accepted", bad)
 		}
+	}
+	// The negative build takes a narrow integer for a word.
+	t.Setenv("GEN_KEEP_NARROW", "1")
+	if s, err := SigFromCode("in>n"); err != nil || !reflect.DeepEqual(s, Sig{Params: []Type{I64, I64}, Ret: I64}) {
+		t.Fatalf("GEN_KEEP_NARROW: %+v %v", s, err)
 	}
 }
 

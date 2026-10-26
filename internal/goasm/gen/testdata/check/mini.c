@@ -4,13 +4,16 @@
 // registers, floating-point constants, a jump table, engine_rodata holding
 // pointers to strings and to functions and tables of relative offsets, an
 // indirect call, the address of a function, a call to a register-entry leaf
-// and a function the generator cannot lower (a stub).
+// and a leaf that calls another, a cold function (which llc would put in
+// .text.unlikely.) and a function the generator cannot lower (a stub).
 
 typedef struct {
 	long tag, val;
 } JSValue;
 
 __attribute__((noinline)) long leafmix(long a, long b) { return a * 3 + b; }
+
+__attribute__((noinline)) long leafwrap(long a, long b) { return leafmix(b, a) ^ 7; }
 
 __attribute__((noinline)) long add3(long a, long b, long c) { return a + b + c + 1234567; }
 
@@ -25,7 +28,7 @@ __attribute__((noinline)) JSValue pair(long a, long b) {
 
 long usepair(long a) {
 	JSValue v = pair(a, a + 1);
-	return v.tag * 10 + v.val + leafmix(v.tag, a);
+	return v.tag * 10 + v.val + leafmix(v.tag, a) + leafwrap(a, v.val);
 }
 
 long spill(long a, long b, long c, long d, long e, long f) {
@@ -104,6 +107,10 @@ long apply(long i, long a, long b) { return ops[i & 1](a, b, i); }
 op3 getop(long i) { return i ? add3 : mul3; }
 
 long fib(long n) { return n < 2 ? n : fib(n - 1) + fib(n - 2); }
+
+__attribute__((cold, noinline)) long rare(long x) { return x * 5 - 3; }
+
+long seldom(long x) { return x > 1000 ? rare(x) : x + 1; }
 
 __attribute__((noinline)) long rejected(long x) {
 	__asm__ volatile("" : "+r"(x));
