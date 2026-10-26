@@ -42,6 +42,7 @@ var (
 	keepGoing = flag.Bool("keep-going", false, "list every rejection and emit stubs instead of stopping")
 	jobs      = flag.Int("j", 2, "parallel clang jobs")
 	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
+	varBlock  = flag.Bool("varargs-block", false, "experimental: the pass passes variable arguments in a shadow-stack block")
 )
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
@@ -155,6 +156,10 @@ func main() {
 	}
 	if *mode == "pn" {
 		passArgs = append(passArgs, "-shadow-cc=preserve_none")
+	}
+	if *varBlock {
+		passArgs = append(passArgs, "-shadow-varargs")
+		varDefs = map[string]bool{}
 	}
 	passArgs = append(passArgs, "-S", "-o", shadowLL, linked)
 	passOut := must1(capture(filepath.Join(*llvm, "opt"), passArgs...))

@@ -44,6 +44,7 @@ func TestParseReport(t *testing.T) {
 		"REJECT k inline assembly",
 		"GOTO-TABLE run",
 		"MISMATCH f g",
+		"VARARGS printf",
 		"some other line",
 	}, "\n"))
 	if r.Sigs["f"] != "ii>i" || !r.Defined["f"] || r.Defined["host_now"] || !r.Leaf["memcpy"] || r.Leaf["f"] {
@@ -55,8 +56,9 @@ func TestParseReport(t *testing.T) {
 	if !r.FrameAddr["g"] || !r.Packed["h"] || r.PackedICalls["f"] != 2 || r.Rejected["k"] != "inline assembly" {
 		t.Errorf("flags: %+v %+v %+v %+v", r.FrameAddr, r.Packed, r.PackedICalls, r.Rejected)
 	}
-	if !reflect.DeepEqual(r.GotoTable, []string{"run"}) || !reflect.DeepEqual(r.Mismatch, [][2]string{{"f", "g"}}) {
-		t.Errorf("lists: %v %v", r.GotoTable, r.Mismatch)
+	if !reflect.DeepEqual(r.GotoTable, []string{"run"}) || !reflect.DeepEqual(r.Mismatch, [][2]string{{"f", "g"}}) ||
+		!reflect.DeepEqual(r.Varargs, []string{"printf"}) {
+		t.Errorf("lists: %v %v %v", r.GotoTable, r.Mismatch, r.Varargs)
 	}
 }
 
