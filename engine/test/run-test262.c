@@ -2199,6 +2199,14 @@ void *run_test_dir_list(void *opaque)
     return NULL;
 }
 
+static void print_memory_usage(const JSMemoryUsage *s)
+{
+    char buf[4096];
+
+    JS_DumpMemoryUsage(buf, sizeof(buf), s, NULL);
+    fputs(buf, stdout);
+}
+
 void help(void)
 {
     printf("run-test262 version " CONFIG_VERSION "\n"
@@ -2462,12 +2470,12 @@ int main(int argc, char **argv)
     if (dump_memory) {
         if (dump_memory > 1 && stats_count > 1) {
             printf("\nMininum memory statistics for %s:\n\n", stats_min_filename);
-            JS_DumpMemoryUsage(stdout, &stats_min, NULL);
+            print_memory_usage(&stats_min);
             printf("\nMaximum memory statistics for %s:\n\n", stats_max_filename);
-            JS_DumpMemoryUsage(stdout, &stats_max, NULL);
+            print_memory_usage(&stats_max);
         }
         printf("\nAverage memory statistics for %d tests:\n\n", stats_count);
-        JS_DumpMemoryUsage(stdout, &stats_avg, NULL);
+        print_memory_usage(&stats_avg);
         printf("\n");
     }
 

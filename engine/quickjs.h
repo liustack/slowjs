@@ -25,7 +25,7 @@
 #ifndef QUICKJS_H
 #define QUICKJS_H
 
-#include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -446,7 +446,8 @@ typedef struct JSMemoryUsage {
 } JSMemoryUsage;
 
 void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s);
-void JS_DumpMemoryUsage(FILE *fp, const JSMemoryUsage *s, JSRuntime *rt);
+/* write a report of s to buf, cut to size bytes, and return its whole length */
+size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRuntime *rt);
 
 /* atom support */
 #define JS_ATOM_NULL 0
