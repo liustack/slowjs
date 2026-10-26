@@ -165,8 +165,9 @@ type AsmUnit struct {
 	Sets map[string]string
 }
 
-// dataDirectives are the ones llc writes in data sections.
-var dataDirectives = []string{".byte", ".short", ".long", ".quad", ".zero", ".ascii", ".asciz", ".value", ".word", ".int", ".string"}
+// dataDirectives are the ones llc writes in data sections; .xword and
+// .hword are aarch64's names for 8 and 2 bytes.
+var dataDirectives = []string{".byte", ".short", ".long", ".quad", ".zero", ".ascii", ".asciz", ".value", ".word", ".int", ".string", ".xword", ".hword"}
 
 func isDataDirective(l string) bool {
 	for _, d := range dataDirectives {
