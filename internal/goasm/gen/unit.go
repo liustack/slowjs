@@ -25,7 +25,7 @@ var EngineCFlags = []string{"--target=x86_64-linux-gnu", "-O2", "-fno-builtin", 
 	"-Xclang", "-target-feature", "-Xclang", "+slow-two-mem-ops"}
 
 // HostCallbacks is the closed list of Go callbacks engine code may call.
-var HostCallbacks = []string{"host_poll", "host_memory_grow", "host_now", "host_call", "host_release", "host_intl"}
+var HostCallbacks = []string{"host_poll", "host_memory_grow", "host_now", "host_call", "host_release"}
 
 // ARM64CFlags are the clang flags of arm64 engine code: plain AAPCS with
 // x18 and x26 to x28 fixed, x29 reserved as the frame pointer, LR reserved

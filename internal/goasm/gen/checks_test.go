@@ -3,6 +3,7 @@
 package gen
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
@@ -160,5 +161,15 @@ func TestCFlagsTargets(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%s has %d --target flags, want one", tc.name, n)
 		}
+	}
+}
+
+// The closed list of host callbacks is the plan's five.
+func TestHostCallbacksList(t *testing.T) {
+	want := "host_call host_memory_grow host_now host_poll host_release"
+	got := append([]string{}, HostCallbacks...)
+	sort.Strings(got)
+	if strings.Join(got, " ") != want {
+		t.Fatalf("HostCallbacks = %v, the plan's five are %s", got, want)
 	}
 }
