@@ -97,3 +97,16 @@ go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
 /tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
+
+The post-link check is the gate for the output. Build a binary of the
+package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)
+and pass it as `-verify-bin`, with the package's import path as
+`-verify-pkg`. The check reads llc's own object file and the binary, and
+matches every generated function instruction by instruction. The only
+differences it allows are the rewrites the lowering wrote down for that
+function (the prologue and epilogue it replaced, the frame offsets, each
+call's saves, argument moves and result, each data reference), and it works
+out what each must be by itself. It compares engine_rodata and the data each
+function carries byte by byte, pointers by what they point to. `-verify-all`
+also fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits
+the lowered text before it is assembled, for the check's own tests.
