@@ -389,7 +389,7 @@ func TestVarargsNative(t *testing.T) {
 		}
 		for _, mode := range []string{"body", "pn"} {
 			mod := filepath.Join(work, mode)
-			tool("", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-varargs-block", "-allow", "host_cb",
+			tool("", drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", mode, "-varargs-block", "-allow", "host_cb", "-non-format-variadic", "mixed,count,twice,helpers,across,wrap,fmt",
 				"-leaves", "", "-work", filepath.Join(work, "w-"+mode), "-out", filepath.Join(mod, "vd"), "-pkg", "vd")
 			for name, text := range map[string]string{
 				"go.mod":     "module vdiff\n\ngo 1.22\n",

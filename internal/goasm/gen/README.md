@@ -116,6 +116,17 @@ $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/icall
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
 
+Before the pass, the C is also compiled without optimization and every call
+that reaches `engine/libc`'s formatter (`snprintf`, `vsnprintf` and any
+variadic function but `code_match` and `unicode_prop_ops`) is held to the
+formats `stdio.c` takes (`formats.go`, `CheckFormats`). A format must be a
+string constant `FormatError` accepts, or a parameter that a wrapper forwards
+(a variadic function's last fixed parameter, or `JS_ThrowError2`). Anything
+else stops the build, so a `%f` cannot reach `abort()` at run time. The accept
+table mirrors `stdio.c` and `testdata/formats/cases.txt` lists the formats both
+must agree on. Keeping `stdio.c` and the table in step needs a libc test in
+`engine/test` that feeds that list to `vsnprintf`, which is the C's to add.
+
 The post-link check is the gate for the output. Build a binary of the
 package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)
 and pass it as `-verify-bin`, with the package's import path as

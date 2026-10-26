@@ -46,6 +46,7 @@ var (
 	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: match every generated function and engine_rodata against llc's object")
 	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
 	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
+	nonFormat = flag.String("non-format-variadic", strings.Join(gen.EngineNonFormatVariadic, ","), "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
 	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
 )
 
@@ -106,6 +107,7 @@ func main() {
 	var wg sync.WaitGroup
 	sem := make(chan bool, *jobs)
 	var cerr error
+	formatCalls := 0
 	for i, s := range srcs {
 		ll := filepath.Join(*work, fmt.Sprintf("%03d_%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c")))
 		lls = append(lls, ll)
@@ -114,6 +116,14 @@ func main() {
 			args = append(args, "-I"+libc, "-I"+filepath.Join(libc, "internal"), "-include", filepath.Join(libc, "internal/features.h"))
 		} else {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
+		}
+		// The formats of the engine's own files are read in IR as written,
+		// before the optimizer changes the calls that carry them.
+		var plainLL string
+		var plainArgs []string
+		if s.group != "libc" {
+			plainLL = strings.TrimSuffix(ll, ".ll") + ".plain.ll"
+			plainArgs = append(append(append([]string{}, args...), "-O0"), "-S", "-emit-llvm", "-o", plainLL, s.path)
 		}
 		args = append(args, "-S", "-emit-llvm", "-o", ll, s.path)
 		wg.Add(1)
@@ -127,6 +137,22 @@ func main() {
 				mu.Unlock()
 				return
 			}
+			if plainLL != "" {
+				if _, err := capture(clang, plainArgs...); err != nil {
+					mu.Lock()
+					cerr = err
+					mu.Unlock()
+					return
+				}
+				// The formats the engine's C gives its libc are all ones stdio.c takes.
+				vs, n := gen.CountFormats(readFile(plainLL), strings.Split(*nonFormat, ","))
+				mu.Lock()
+				formatCalls += n
+				for _, v := range vs {
+					reject(v.Func, "format", v.Rule+": "+v.Line)
+				}
+				mu.Unlock()
+			}
 			b, _ := os.ReadFile(ll)
 			mu.Lock()
 			for _, m := range reDefine.FindAllStringSubmatch(string(b), -1) {
@@ -139,6 +165,7 @@ func main() {
 	if cerr != nil {
 		die(cerr)
 	}
+	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
 	tCompile := time.Since(t0)
@@ -557,6 +584,8 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 func classify(msg string) string {
 	m := strings.ToLower(msg)
 	switch {
+	case strings.Contains(m, "format string"):
+		return "format string"
 	case strings.Contains(m, "variadic") || strings.Contains(m, "va_start"):
 		return "varargs"
 	case strings.Contains(m, "byval") || strings.Contains(m, "sret"):
