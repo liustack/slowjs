@@ -6,13 +6,11 @@
 2 get_class_atom parse_class_string_disjunction
 2 js_print_object js_print_value
 1 get_closure_var
-1 hash_string_rope
 1 js_create_function
 1 js_create_module_function
 1 js_free_function_def
 1 js_print_string_rec
 1 js_resolve_module
 1 json_free_parse_record
-1 string_rope_get
 1 to_nfd_rec
 1 unicode_sequence_prop1

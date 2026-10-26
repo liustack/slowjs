@@ -3281,17 +3281,6 @@ static uint32_t hash_string(const JSString *str, uint32_t h)
     return h;
 }
 
-static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
-{
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        return hash_string(JS_VALUE_GET_STRING(val), h);
-    } else {
-        JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
-        h = hash_string_rope(r->left, h);
-        return hash_string_rope(r->right, h);
-    }
-}
-
 static int JS_ResizeAtomHash(JSRuntime *rt, int new_hash_size)
 {
     JSAtomStruct *p;
@@ -4984,20 +4973,21 @@ static JSValue JS_ConcatString2(JSContext *ctx, JSValue op1, JSValue op2)
 /* Return the character at position 'idx'. 'val' must be a string or rope */
 static int string_rope_get(JSValueConst val, uint32_t idx)
 {
-    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING) {
-        return string_get(JS_VALUE_GET_STRING(val), idx);
-    } else {
+    while (JS_VALUE_GET_TAG(val) != JS_TAG_STRING) {
         JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
         uint32_t len;
         if (JS_VALUE_GET_TAG(r->left) == JS_TAG_STRING)
             len = JS_VALUE_GET_STRING(r->left)->len;
         else
             len = JS_VALUE_GET_STRING_ROPE(r->left)->len;
-        if (idx < len)
-            return string_rope_get(r->left, idx);
-        else
-            return string_rope_get(r->right, idx - len);
+        if (idx < len) {
+            val = r->left;
+        } else {
+            val = r->right;
+            idx -= len;
+        }
     }
+    return string_get(JS_VALUE_GET_STRING(val), idx);
 }
 
 typedef struct {
@@ -5028,6 +5018,19 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
         s->stack[s->stack_len++] = r->right;
         val = r->left;
     }
+}
+
+/* The hash of the characters of a string or rope, from h: the strings of
+   the rope in order, as if it were one string. */
+static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
+{
+    JSStringRopeIter it;
+    JSString *p;
+
+    string_rope_iter_init(&it, val);
+    while ((p = string_rope_iter_next(&it)) != NULL)
+        h = hash_string(p, h);
+    return h;
 }
 
 static uint32_t string_rope_get_len(JSValueConst val)
@@ -6972,6 +6975,70 @@ static void free_zero_refcount(JSRuntime *rt)
     rt->gc_phase = JS_GC_PHASE_NONE;
 }
 
+/* Free a string whose ref_count reached zero. */
+static void js_free_string_rt(JSRuntime *rt, JSString *p)
+{
+    if (p->atom_type) {
+        JS_FreeAtomStruct(rt, p);
+    } else {
+#ifdef DUMP_LEAKS
+        list_del(&p->link);
+#endif
+        js_free_rt(rt, p);
+    }
+}
+
+/* Drop a reference to v, a child of a rope that is being freed. A string
+   whose count reaches zero is freed now. A rope whose count reaches zero is
+   returned, for its own children to be dropped first. */
+static JSStringRope *js_rope_child_free(JSRuntime *rt, JSValue v)
+{
+    if (--__js_rc(JS_VALUE_GET_PTR(v))->ref_count > 0)
+        return NULL;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING) {
+        js_free_string_rt(rt, JS_VALUE_GET_STRING(v));
+        return NULL;
+    }
+    return JS_VALUE_GET_STRING_ROPE(v);
+}
+
+/* Free the rope r, whose ref_count reached zero, and the strings and ropes
+   under it whose count reaches zero, in the order a recursion would: the
+   left child, then the right one, then the rope. There is no recursion, and
+   no memory is taken: a rope waiting for its right child to be done is kept
+   in a list linked through its left child, which it no longer holds, and
+   its right child becomes JS_UNDEFINED once it is taken. */
+static void js_free_rope(JSRuntime *rt, JSStringRope *r)
+{
+    JSStringRope *waiting = NULL, *child;
+    JSValue right;
+
+    for (;;) {
+        child = js_rope_child_free(rt, r->left);
+        r->left = JS_MKPTR(JS_TAG_STRING_ROPE, waiting);
+        waiting = r;
+        if (child) {
+            r = child;
+            continue;
+        }
+        for (;;) {
+            r = waiting;
+            if (!JS_IsUndefined(r->right)) {
+                right = r->right;
+                r->right = JS_UNDEFINED;
+                child = js_rope_child_free(rt, right);
+                if (child)
+                    break;
+            }
+            waiting = JS_VALUE_GET_PTR(r->left);
+            js_free_rt(rt, r);
+            if (!waiting)
+                return;
+        }
+        r = child;
+    }
+}
+
 /* called with the ref_count of 'v' reaches zero. */
 void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
 {
@@ -6991,26 +7058,10 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
 
     switch(tag) {
     case JS_TAG_STRING:
-        {
-            JSString *p = JS_VALUE_GET_STRING(v);
-            if (p->atom_type) {
-                JS_FreeAtomStruct(rt, p);
-            } else {
-#ifdef DUMP_LEAKS
-                list_del(&p->link);
-#endif
-                js_free_rt(rt, p);
-            }
-        }
+        js_free_string_rt(rt, JS_VALUE_GET_STRING(v));
         break;
     case JS_TAG_STRING_ROPE:
-        /* Note: recursion is acceptable because the rope depth is bounded */
-        {
-            JSStringRope *p = JS_VALUE_GET_STRING_ROPE(v);
-            JS_FreeValueRT(rt, p->left);
-            JS_FreeValueRT(rt, p->right);
-            js_free_rt(rt, p);
-        }
+        js_free_rope(rt, JS_VALUE_GET_STRING_ROPE(v));
         break;
     case JS_TAG_OBJECT:
     case JS_TAG_FUNCTION_BYTECODE:

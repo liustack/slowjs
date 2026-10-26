@@ -1116,6 +1116,37 @@ static int test_internal_depth(void *unused)
     return 0;
 }
 
+/* Ropes are read, hashed and freed by loops: a character at any place, a
+   Map key that is the same string as a rope of another shape (the hash goes
+   over the strings in order, whatever the tree), ropes that share their
+   parts, and a long chain of concatenations that the engine rebalances.
+   Everything is freed with no block left. */
+static void test_ropes(void)
+{
+    static const char src[] =
+        "(() => {\n"
+        "  const piece = n => String.fromCharCode(97 + n % 26).repeat(600) + n;\n"
+        "  let s = '', want = [];\n"
+        "  for (let i = 0; i < 20000; i++) { s = s + piece(i); want.push(piece(i)) }\n"
+        "  let t = '';\n"
+        "  for (let i = 19999; i >= 0; i--) t = piece(i) + t;\n"
+        "  const flat = want.join('');\n"
+        "  if (s.length !== flat.length || t.length !== flat.length) return 'length';\n"
+        "  for (let k = 0; k < flat.length; k += 4999) if (s[k] !== flat[k] || t[k] !== flat[k]) return 'char ' + k;\n"
+        "  const m = new Map([[s, 1]]);\n"
+        "  if (m.get(t) !== 1 || m.get(flat) !== 1) return 'hash';\n"
+        "  let a = piece(1) + piece(2), b = a + a, c = b + a + b;\n"
+        "  if (c !== a + a + a + a + a) return 'shared';\n"
+        "  a = b = c = s = t = null;\n"
+        "  return 'ok' })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "ok"), "ropes");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -1123,6 +1154,7 @@ int main(void)
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
+    test_ropes();
     test_regexp_cache();
     test_regexp_cache_limits();
     test_shape_cache();
