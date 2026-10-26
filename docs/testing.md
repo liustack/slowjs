@@ -215,7 +215,7 @@ go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the sam
 
 `jsrun` times one call per run, the evaluation of the script with its jobs and the result as a string, and its `timed:` line says so. The source is already a string and the VM is made, collected, released and closed outside the time.
 
-The tag `testhooks` turns on the hooks of these tests, which the normal build does not have: `hostmem.SetFault` makes calls to the OS fail, and `callbackHook` of `internal/cengine` stops the engine in a callback (with a count of engine teardowns beside it). Without the tag nothing checks for them, in `hostmem` or in the callbacks. A run without the tag skips the tests that need them and says so (`TestFailingCalls`, `TestRefusedCalls`, `TestLifecycleHooks`), so use the tag for the whole suite.
+The tag `testhooks` turns on the hooks of these tests, which the normal build does not have: `hostmem.SetFault` makes calls to the OS fail, and `callbackHook` of `internal/cengine` stops the engine in a callback (with a count of engine teardowns beside it). Without the tag the code holds no check for them, so a normal build pays nothing. A run without the tag skips the tests that need them and says so (`TestFailingCalls`, `TestRefusedCalls`, `TestLifecycleHooks`), so use the tag for the whole suite.
 
 `TestDeepRecursion` recurses to the engine's call depth limit and past it (a `RangeError`, no fault of the process). It needs an engine generated for the whole 32 MiB shadow stack (`-shadow-size-log2=25` of the generator) and skips itself for a smaller one, by the `shadowSizeLog2` that `engine_decl.go` records, which `New` also holds the stack size to.
 
