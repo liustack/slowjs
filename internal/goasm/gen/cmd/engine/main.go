@@ -104,7 +104,7 @@ func main() {
 	}
 	libc := filepath.Join(*engineDir, "libc")
 	var lls []string
-	group := map[string]string{}
+	defined := make([][]string, len(srcs))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan bool, *jobs)
@@ -158,10 +158,12 @@ func main() {
 				mu.Unlock()
 			}
 			b, _ := os.ReadFile(ll)
-			mu.Lock()
+			var names []string
 			for _, m := range reDefine.FindAllStringSubmatch(string(b), -1) {
-				group[strings.Trim(m[1], `"`)] = s.group
+				names = append(names, strings.Trim(m[1], `"`))
 			}
+			mu.Lock()
+			defined[i] = names
 			mu.Unlock()
 		}(s, ll, args)
 	}
@@ -169,6 +171,11 @@ func main() {
 	if cerr != nil {
 		die(cerr)
 	}
+	groups := make([]string, len(srcs))
+	for i, s := range srcs {
+		groups[i] = s.group
+	}
+	group := firstGroups(defined, groups)
 	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
@@ -516,6 +523,22 @@ func allowAll(allow map[string]bool, rep *gen.Report) map[string]bool {
 		}
 	}
 	return m
+}
+
+// firstGroups gives each function the group of the first file that defines
+// it, in the order llvm-link takes the files (a static of the same name in a
+// later file gets a new name there), so the files come out the same each
+// run whatever order the compiles finish in.
+func firstGroups(defined [][]string, groups []string) map[string]string {
+	group := map[string]string{}
+	for i, names := range defined {
+		for _, n := range names {
+			if _, ok := group[n]; !ok {
+				group[n] = groups[i]
+			}
+		}
+	}
+	return group
 }
 
 func dedupe(s []string) []string {
