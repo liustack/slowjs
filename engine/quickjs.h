@@ -1004,9 +1004,14 @@ void JS_SetRegExpCache(JSRuntime *rt, int n, size_t bytes);
    while the runtime lives on. */
 int JS_SetShapeCache(JSContext *ctx, int n);
 
-/* return != 0 if the JS code needs to be interrupted */
-typedef int JSInterruptHandler(JSRuntime *rt, void *opaque);
-void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque);
+/* The interrupt flag of rt. The host sets it to a value other than 0 to
+   stop the script, from the thread that runs it (in a poll or a callback):
+   the engine reads it with plain loads. It reads it where it can throw, in the
+   interpreter (at calls and backward jumps), in regexps, in long string
+   searches, in the long loops of typed arrays, repeat and JSON, and throws
+   the error "interrupted", which no try catches. The engine never clears
+   it: the host does, before it runs code in rt again. */
+volatile int *JS_GetInterruptFlag(JSRuntime *rt);
 /* select which debug info is stripped from the compiled code */
 #define JS_STRIP_SOURCE (1 << 0) /* strip source code */
 #define JS_STRIP_DEBUG  (1 << 1) /* strip all debug info including source code */

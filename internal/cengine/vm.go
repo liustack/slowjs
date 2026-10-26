@@ -44,10 +44,31 @@ const (
 	maxFileName = scratchSize - scratchStr - 1
 )
 
+// The counter of the engine's polls is a word of the scratch, at the offset
+// the generator put in engine_decl.go (pollCounterOffset), between the usage
+// report and the strings: these fail to compile when it is not.
+const (
+	_ = uint(pollCounterOffset - (scratchUsage + unsafe.Sizeof(memoryUsage{})))
+	_ = uint(scratchStr - (pollCounterOffset + 8))
+)
+
+// pollCounter is the offset of the poll counter for gohost, 0 when the engine
+// was generated without polls.
+func pollCounter() uintptr {
+	if !polls {
+		return 0
+	}
+	return pollCounterOffset
+}
+
 // JS tags (engine/quickjs.h).
 const (
 	tagFirst     = -9
 	tagObject    = -1
+	tagNull      = 2
+	tagUndefined = 3
+	tagString    = -7
+	tagRope      = -6
 	tagException = 6
 )
 
@@ -77,6 +98,12 @@ type Options struct {
 // engine frames.
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
 
+// ErrKilled is what Eval returns when the script did not stop by the grace
+// after Interrupt (gohost.VM.SetKillGrace) and a poll killed it. The VM is
+// broken then: only Close works. The other calls into the engine panic with
+// it, as they do with ErrBroken.
+var ErrKilled = gohost.ErrKilled
+
 // ErrClosed is what a VM returns, or panics with where it has no error to
 // return, once Close began: also when Close failed to give all the memory
 // back, since the engine is freed by then.
@@ -95,7 +122,7 @@ func (v *VM) usable() error {
 
 // New makes a runtime and a context.
 func New(o Options) (_ *VM, err error) {
-	h, err := gohost.New(gohost.Options{StackSize: o.StackSize})
+	h, err := gohost.New(gohost.Options{StackSize: o.StackSize, PollCounter: pollCounter()})
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +155,11 @@ func New(o Options) (_ *VM, err error) {
 	if h.AllowRemap() {
 		v.enter(func() { JS_SetHostRemap(v.sp, v.rt, 1) })
 	}
+	// The flag the polls set after Interrupt, which the engine throws
+	// "interrupted" on.
+	var flag uintptr
+	v.enter(func() { flag = JS_GetInterruptFlag(v.sp, v.rt) })
+	h.SetInterruptFlag(flag)
 	v.enter(func() { v.ctx = JS_NewContext(v.sp, v.rt) })
 	if v.ctx == 0 {
 		var leaked uintptr
@@ -156,10 +188,15 @@ func (v *VM) enter(f func()) {
 	ok = true
 }
 
-// JSError is an exception thrown by the script.
+// JSError is an exception thrown by the script, or one the engine ended the
+// call with.
 type JSError struct {
 	Message string // String(e)
 	Stack   string // e.stack, when e is an object that has one
+	// Uncatchable: the engine ended the call with an error no try catches,
+	// "interrupted" (Interrupt) or "out of memory". Message is then
+	// "InternalError: " and the message the engine made it with.
+	Uncatchable bool
 }
 
 func (e *JSError) Error() string {
@@ -175,15 +212,21 @@ func (e *JSError) Error() string {
 // stack of an exception: it is at most maxFileName bytes, and a longer name is
 // an error, not cut, so that two long names that differ only at their end are
 // not taken for one.
-func (v *VM) Eval(src, file string) (string, error) {
+func (v *VM) Eval(src, file string) (out string, err error) {
 	if err := v.usable(); err != nil {
 		return "", err
 	}
 	if len(file) > maxFileName {
 		return "", fmt.Errorf("cengine: a file name of %d bytes, longer than the %d bytes the host holds", len(file), maxFileName)
 	}
-	var out string
-	var err error
+	defer func() {
+		if r := recover(); r != nil {
+			if r != gohost.ErrKilled {
+				panic(r)
+			}
+			out, err = "", ErrKilled
+		}
+	}()
 	v.enter(func() { out, err = v.eval(src, file) })
 	return out, err
 }
@@ -245,8 +288,15 @@ const unprintable = "an exception whose String() threw"
 // an exception may throw again on every conversion, so what a conversion
 // here throws is dropped, not converted in turn.
 func (v *VM) exception() error {
+	// The flag of an uncatchable exception outlives it: cleared here, or
+	// the next exception would be uncatchable too.
+	uncatchable := JS_IsUncatchableException(v.sp, v.ctx) != 0
 	u, tag := JS_GetException(v.sp, v.ctx)
+	JS_SetUncatchableException(v.sp, v.ctx, 0)
 	defer v.free(u, tag)
+	if uncatchable {
+		return v.engineError(u, tag)
+	}
 	e := &JSError{Message: unprintable}
 	if msg, ok := v.text(u, tag); ok {
 		e.Message = msg
@@ -258,7 +308,7 @@ func (v *VM) exception() error {
 		if int32(stag) == tagException {
 			v.dropException()
 		} else {
-			if int32(stag) != 3 { // undefined
+			if int32(stag) != tagUndefined {
 				if s, ok := v.text(su, stag); ok {
 					e.Stack = s
 				} else {
@@ -271,9 +321,64 @@ func (v *VM) exception() error {
 	return e
 }
 
-// dropException frees the pending exception of the context.
+// engineError converts an uncatchable exception, which the engine made, and
+// runs no JavaScript to do it: after an interrupt the engine's flag stays set
+// until the next call from Go, and every call of a function would throw
+// "interrupted" again. It reads message and stack only as own properties of
+// the error, where the engine defined them, so that no getter of a prototype
+// runs. The engine throws null when it runs out of memory making the error.
+func (v *VM) engineError(u, tag uintptr) *JSError {
+	e := &JSError{Message: "InternalError", Uncatchable: true}
+	switch int32(tag) {
+	case tagNull:
+		e.Message = "InternalError: out of memory"
+	case tagObject:
+		if m := v.ownString(u, tag, "message"); m != "" {
+			e.Message += ": " + m
+		}
+		e.Stack = v.ownString(u, tag, "stack")
+	}
+	return e
+}
+
+// ownString is the own property name of the object (u, tag) when that is a
+// string, and "" otherwise. What the read throws is dropped.
+func (v *VM) ownString(u, tag uintptr, name string) string {
+	atom := JS_NewAtom(v.sp, v.ctx, v.cstring(name))
+	if atom == 0 {
+		v.dropException()
+		return ""
+	}
+	defer JS_FreeAtom(v.sp, v.ctx, atom)
+	switch int32(JS_GetOwnProperty(v.sp, v.ctx, 0, u, tag, atom)) {
+	case 1:
+	case 0:
+		return ""
+	default:
+		v.dropException()
+		return ""
+	}
+	pu, ptag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring(name))
+	if int32(ptag) == tagException {
+		v.dropException()
+		return ""
+	}
+	defer v.free(pu, ptag)
+	if int32(ptag) != tagString && int32(ptag) != tagRope {
+		return ""
+	}
+	s, ok := v.text(pu, ptag)
+	if !ok {
+		v.dropException()
+	}
+	return s
+}
+
+// dropException frees the pending exception of the context, and the flag
+// that says it is uncatchable.
 func (v *VM) dropException() {
 	v.free(JS_GetException(v.sp, v.ctx))
+	JS_SetUncatchableException(v.sp, v.ctx, 0)
 }
 
 // free is JS_FreeValue, which is inline in quickjs.h: the reference count is
@@ -378,8 +483,12 @@ func (v *VM) Usage() Usage {
 // SetWallClock sets the clock Date reads: fixed at t, or moving on from t.
 func (v *VM) SetWallClock(t time.Time, moving bool) { v.h.SetWallClock(t, moving) }
 
-// Interrupt asks the running script to stop. It has no effect until the
-// generator inserts polls.
+// Interrupt asks the running script to stop. Any goroutine may call it. The
+// next poll of the engine sets its interrupt flag, and the engine throws the
+// error "interrupted", which no try catches, where it next reads the flag:
+// Eval returns it as a *JSError and the VM goes on. A script still running
+// when the grace is over (gohost.VM.SetKillGrace) is killed at the poll
+// after: Eval returns ErrKilled and the VM takes only Close.
 func (v *VM) Interrupt() { v.h.Interrupt() }
 
 // Close frees the context and the runtime and gives all the memory of the VM

@@ -64,7 +64,9 @@ esac
 # check-symbols.sh reads too.
 . "$here/flags.sh"
 common="-O2 -g -Wall -Wno-array-bounds $san"
-free="$engine_flags $(engine_target_flags native)"
+# JS_HOST_POLL: the engine calls host_poll at each read of a flag that stops
+# it (poll_flag in cutils.h), since no generator adds polls here.
+free="$engine_flags $(engine_target_flags native) -DJS_HOST_POLL"
 version=$engine_version
 libc=$engine/libc
 

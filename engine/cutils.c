@@ -470,7 +470,8 @@ static inline exchange_f exchange_func(const void *base, size_t size) {
     }
 }
 
-static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
+static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
+                      const volatile int *stop)
 {
     uint8_t *basep = (uint8_t *)base;
     size_t i, n, c, r;
@@ -481,6 +482,8 @@ static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *op
         n = nmemb * size;
 
         while (i > 0) {
+            if (poll_flag(stop))
+                return;
             i -= size;
             for (r = i; (c = r * 2 + size) < n; r = c) {
                 if (c < n - size && cmp(basep + c, basep + c + size, opaque) <= 0)
@@ -491,6 +494,8 @@ static void heapsortx(void *base, size_t nmemb, size_t size, cmp_f cmp, void *op
             }
         }
         for (i = n - size; i > 0; i -= size) {
+            if (poll_flag(stop))
+                return;
             swap(basep, basep + i, size);
 
             for (r = 0; (c = r * 2 + size) < i; r = c) {
@@ -512,7 +517,8 @@ static inline void *med3(void *a, void *b, void *c, cmp_f cmp, void *opaque)
 }
 
 /* pointer based version with local stack and insertion sort threshhold */
-void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
+void rqsort_stop(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque,
+                 const volatile int *stop)
 {
     struct { uint8_t *base; size_t count; int depth; } stack[50], *sp = stack;
     uint8_t *ptr, *pi, *pj, *plt, *pgt, *top, *m;
@@ -530,6 +536,8 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
     sp++;
 
     while (sp > stack) {
+        if (poll_flag(stop))
+            return;
         sp--;
         ptr = sp->base;
         nmemb = sp->count;
@@ -538,7 +546,7 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
         while (nmemb > 6) {
             if (++depth > 50) {
                 /* depth check to ensure worst case logarithmic time */
-                heapsortx(ptr, nmemb, size, cmp, opaque);
+                heapsortx(ptr, nmemb, size, cmp, opaque, stop);
                 nmemb = 0;
                 break;
             }
@@ -553,6 +561,8 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
             pj = pgt = top = ptr + nmemb * size;
             for (;;) {
                 while (pi < pj && (c = cmp(ptr, pi, opaque)) >= 0) {
+                    if (poll_flag(stop))
+                        return;
                     if (c == 0) {
                         swap(plt, pi, size);
                         lt++;
@@ -562,12 +572,16 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
                     pi += size;
                 }
                 while (pi < (pj -= size) && (c = cmp(ptr, pj, opaque)) <= 0) {
+                    if (poll_flag(stop))
+                        return;
                     if (c == 0) {
                         gt--;
                         pgt -= size;
                         swap(pgt, pj, size);
                     }
                 }
+                if (poll_flag(stop))
+                    return;
                 if (pi >= pj)
                     break;
                 swap(pi, pj, size);
@@ -629,6 +643,13 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
                 swap(pj, pj - size, size);
         }
     }
+}
+
+void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
+{
+    static const volatile int never;
+
+    rqsort_stop(base, nmemb, size, cmp, opaque, &never);
 }
 
 #endif

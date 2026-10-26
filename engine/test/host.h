@@ -22,6 +22,17 @@ void js_std_dump_error(JSContext *ctx);
    the memory of the heap (host_memory_grow of heap.h) for it. */
 JSRuntime *host_new_runtime(void);
 
+/* Asks, from any thread, that the script running in rt stop: the thread
+   that runs it sets the interrupt flag at its next host_poll, and the engine
+   throws "interrupted". The thread that runs rt sets the flag itself. */
+void host_interrupt(JSRuntime *rt);
+
+/* The engine built for this host (JS_HOST_POLL, see poll_flag in cutils.h)
+   calls this each time it reads a flag that stops it, and reads what it
+   returns, *flag. When a stop of the runtime whose interrupt flag it is was
+   asked, it sets the flag first. */
+int host_poll(const volatile int *flag);
+
 /* host_new_runtime with the seed of Math.random of your choice. The one above
    gives the seed that matches the fixed time, 1767225600000000. */
 JSRuntime *host_new_runtime_seed(uint64_t seed);

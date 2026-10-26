@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "host.h"
 
@@ -54,7 +55,20 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
 
 size_t JS_FreeRuntime(JSRuntime *rt) { (void)rt; return 0; }
 void JS_SetHostRemap(JSRuntime *rt, int on) { (void)rt; (void)on; }
-void JS_SetInterruptHandler(JSRuntime *rt, JSInterruptHandler *cb, void *opaque) { (void)rt; (void)cb; (void)opaque; }
+
+/* The interrupt flag of each runtime. The tests read it as the engine does,
+   through host_poll, in the thread that runs the runtime. */
+#define STUB_VMS 4096
+static volatile int stub_flags[STUB_VMS];
+
+volatile int *JS_GetInterruptFlag(JSRuntime *rt)
+{
+    uintptr_t vm = (uintptr_t)rt / 16 - 1;
+
+    if (vm >= STUB_VMS)
+        abort();
+    return &stub_flags[vm];
+}
 void JS_ReleaseStart(JSRuntime *rt, size_t keep) { (void)rt; (void)keep; }
 JSMemRange JS_ReleaseNextChunk(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)rt; return r; }
 JSMemRange JS_ReleaseNextRange(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)rt; return r; }
@@ -145,11 +159,88 @@ static void test_threads(void)
     CHECK(host_live_vms() == 0 && host_mapped_bytes() == 0, "%zu VMs, %zu bytes after the threads are done", host_live_vms(), host_mapped_bytes());
 }
 
+/* seconds since t0 on the monotonic clock */
+static double since(const struct timespec *t0)
+{
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)(t.tv_sec - t0->tv_sec) + (double)(t.tv_nsec - t0->tv_nsec) / 1e9;
+}
+
+/* run_until_stopped is the engine running a script that never ends: it
+   polls and reads the flag until it is set, or for 10 s, and returns the
+   seconds it ran. Under ThreadSanitizer it is the check that no other thread
+   writes the flag. It reads the clock once in a million turns only: with a
+   clock_gettime at each turn, ThreadSanitizer missed the write of the flag
+   by the watchdog's thread that the host used to make. */
+static double run_until_stopped(volatile int *flag)
+{
+    struct timespec t0;
+    unsigned long turns = 0;
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    while (!host_poll(flag) && ((++turns & 0xfffff) || since(&t0) < 10))
+        ;
+    return since(&t0);
+}
+
+/* asker calls host_interrupt for the runtime arg, as a thread of a test
+   stops a script from outside. */
+static void *asker(void *arg)
+{
+    host_interrupt(arg);
+    return NULL;
+}
+
+/* A stop asked from another thread sets the flag at the next poll of the
+   thread that runs the runtime, once: a flag the host cleared stays clear. */
+static void test_interrupt(void)
+{
+    volatile int *flag;
+    JSRuntime *rt;
+    pthread_t t;
+
+    stub_chunks = 1;
+    rt = host_new_runtime();
+    flag = JS_GetInterruptFlag(rt);
+    CHECK(!host_poll(flag), "a flag set before anyone asked");
+    pthread_create(&t, NULL, asker, rt);
+    run_until_stopped(flag);
+    pthread_join(t, NULL);
+    CHECK(*flag == 1, "the stop asked from another thread did not come in 10 s");
+    *flag = 0;
+    CHECK(!host_poll(flag), "the flag was set again after the host cleared it");
+    host_free_runtime(rt);
+}
+
+/* The watchdog stops a runtime that runs over the timeout (HOST_TIMEOUT_SEC,
+   1 s here). */
+static void test_watchdog(void)
+{
+    volatile int *flag;
+    JSRuntime *rt;
+    double t;
+
+    stub_chunks = 1;
+    rt = host_new_runtime();
+    flag = JS_GetInterruptFlag(rt);
+    t = run_until_stopped(flag);
+    CHECK(*flag == 1, "the watchdog did not stop the runtime in 10 s");
+    CHECK(t >= 1, "the watchdog stopped the runtime after %.3f s", t);
+    host_free_runtime(rt);
+    CHECK(host_live_vms() == 0, "%zu VMs left", host_live_vms());
+}
+
 int main(void)
 {
+    /* before the first runtime, which starts the watchdog */
+    setenv("HOST_TIMEOUT_SEC", "1", 1);
     test_start_and_free();
     test_failed_start();
     test_threads();
+    test_interrupt();
+    test_watchdog();
     printf("host-test: %ld checks, %d failures\n", (long)checks, (int)failures);
     return failures != 0;
 }
