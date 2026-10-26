@@ -99,6 +99,12 @@ var forbiddenAMD64 = map[string]string{
 	"cpuid":    "cpuid",
 	"rdpmc":    "rdpmc",
 	"sysretq":  "sysretq",
+	// The traps: SIGILL, SIGTRAP and a general protection fault, which end a Go
+	// process or (hlt) cannot be told from a bad pointer.
+	"ud2": "ud2",
+	"ud1": "ud1\t%eax, %eax",
+	"ud0": "ud0\t%eax, %eax",
+	"hlt": "hlt",
 }
 
 // Each forbidden instruction is rejected in the body of a unified function
@@ -121,13 +127,15 @@ func TestForbiddenInstructionsAMD64(t *testing.T) {
 
 // arm64: the instructions that call the system or read machine state (svc,
 // the other exception calls, and mrs and msr, which also read the counter
-// and the random number register).
+// and the random number register), and the traps (brk, udf, hlt), which
+// are SIGTRAP and SIGILL and end a Go process.
 func TestForbiddenInstructionsARM64(t *testing.T) {
 	fn := FuncSpec{Name: "foo", Kind: Unified, Sig: Sig{Params: []Type{I64}, Ret: I64}}
 	SetCallees([]FuncSpec{fn})
 	for name, ins := range map[string]string{
 		"svc": "svc\t#0", "hvc": "hvc\t#0", "smc": "smc\t#0",
 		"mrs counter": "mrs\tx0, CNTVCT_EL0", "mrs random": "mrs\tx0, RNDR", "msr": "msr\tTPIDR_EL0, x0",
+		"brk": "brk\t#0x1", "udf": "udf\t#0", "hlt": "hlt\t#0", "dcps1": "dcps1",
 	} {
 		asm := "foo:\n\tmov\tx1, x0\n\t" + ins + "\n\tret\n.Lfunc_end0:\n"
 		_, err := LowerARM64(asm, "", []FuncSpec{fn}, ARM64SaveBody, false)
@@ -138,6 +146,50 @@ func TestForbiddenInstructionsARM64(t *testing.T) {
 	ok := "foo:\n\tmov\tx1, x0\n\tadd\tx0, x1, #1\n\tret\n.Lfunc_end0:\n"
 	if _, err := LowerARM64(ok, "", []FuncSpec{fn}, ARM64SaveBody, false); err != nil {
 		t.Errorf("a plain function: %v", err)
+	}
+}
+
+// A trap does not end a function any more: the code before the constant pool of
+// a function must end in a branch, and a brk there is refused like any other.
+func TestTrapBeforePoolARM64(t *testing.T) {
+	fn := FuncSpec{Name: "foo", Kind: Unified, Sig: Sig{Params: []Type{I64}, Ret: I64}}
+	SetCallees([]FuncSpec{fn})
+	asm := "foo:\n\tadrp\tx8, .LCPI0_0\n\tldr\td0, [x8, :lo12:.LCPI0_0]\n\tbrk\t#0x1\n.Lfunc_end0:\n" +
+		"\t.p2align\t3\n.LCPI0_0:\n\t.xword\t0x4000000000000000\n"
+	if _, err := LowerARM64(asm, "", []FuncSpec{fn}, ARM64SaveBody, false); err == nil || !strings.Contains(err.Error(), "forbidden instruction") {
+		t.Errorf("a brk ending a function with a pool: %v", err)
+	}
+}
+
+// The words of the assembled object: EmitARM64 refuses the exception-generating
+// class and udf, whatever the text said.
+func TestForbiddenWordsARM64(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		w    uint32
+		bad  bool
+	}{
+		{"brk #0x1", 0xd4200020, true},
+		{"brk #0", 0xd4200000, true},
+		{"udf #0", 0x00000000, true},
+		{"udf #0xffff", 0x0000ffff, true},
+		{"hlt #0", 0xd4400000, true},
+		{"svc #0", 0xd4000001, true},
+		{"hvc #0", 0xd4000002, true},
+		{"smc #0", 0xd4000003, true},
+		{"dcps1", 0xd4a00001, true},
+		{"nop", 0xd503201f, false},
+		{"ret", 0xd65f03c0, false},
+		{"add x0, x1, #1", 0x91000420, false},
+		{"ldr x0, [sp, #8]", 0xf94007e0, false},
+		{"b .+4", 0x14000001, false},
+		{"bl .+4", 0x94000001, false},
+		{"mov w0, #1", 0x52800020, false},
+		{"br x0", 0xd61f0000, false},
+	} {
+		if why := a64ForbiddenWord(c.w); (why != "") != c.bad {
+			t.Errorf("%s (%#08x): %q, bad is %v", c.name, c.w, why, c.bad)
+		}
 	}
 }
 
