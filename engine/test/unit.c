@@ -1486,6 +1486,36 @@ static int test_internal_depth(void *unused)
     return 0;
 }
 
+/* The limit of the internal depth is 2000. It is a constant of the build (not a
+   setting like the call depth), and these write it down in numbers: JSON, the
+   parser and a chain of proxies take 2000, 665 and 2000 levels, and the next one
+   is a RangeError. The other tests take their numbers from the constant. */
+static int test_internal_depth_limit(void *unused)
+{
+    static const struct { const char *src, *want; } cases[] = {
+        { "try { JSON.parse('['.repeat(2000) + ']'.repeat(2000)); 'parsed' } catch (e) { e.name }", "parsed" },
+        { "try { JSON.parse('['.repeat(2001) + ']'.repeat(2001)); 'parsed' } catch (e) { e.name }", "RangeError" },
+        { "try { eval('('.repeat(665) + '1' + ')'.repeat(665)); 'parsed' } catch (e) { e.name }", "parsed" },
+        { "try { eval('('.repeat(666) + '1' + ')'.repeat(666)); 'parsed' } catch (e) { e.name }", "RangeError" },
+        { "var chain = n => { let p = {}; for (let i = 0; i < n; i++) p = new Proxy(p, {}); return p };\n"
+          "try { Object.getPrototypeOf(chain(2000)) === Object.prototype ? 'reached' : 'wrong' } catch (e) { e.name }", "reached" },
+        { "try { Object.getPrototypeOf(chain(2001)); 'reached' } catch (e) { e.name }", "RangeError" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(JS_MAX_INTERNAL_DEPTH == 2000, "the limit of the internal depth is %d", JS_MAX_INTERNAL_DEPTH);
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        CHECK(eval_is(ctx, cases[i].src, cases[i].want), "case %zu", i);
+        CHECK(JS_GetInternalDepth(rt) == 0, "case %zu: the internal depth is back at %d", i, JS_GetInternalDepth(rt));
+    }
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* Functions nested as deep as the parser goes are made, each with the
    variables it takes from the functions around it, and direct eval in the
    innermost one sees the variables of the outermost: making them counts a
@@ -2075,6 +2105,7 @@ int main(void)
     host_run_thread(test_depth_handover, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
+    host_run_thread(test_internal_depth_limit, NULL);
     host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);

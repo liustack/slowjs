@@ -398,10 +398,15 @@ int JS_GetMaxCallDepth(JSRuntime *rt);
 /* The recursions of C that make no call (the parsers, JSON, modules, proxies
    without a trap and the like) have a depth of their own, separate from the
    call depth: at most this many levels at once. Past it a script gets a
-   RangeError (a SyntaxError from a regexp). It is fixed, so that the stack
-   the engine may use has a bound for any call depth. The parser counts about
-   14 levels for each nested parenthesis and 30 for each nested function
-   expression: tifa's example shop needs 484, test262 at most 960. */
+   RangeError (a SyntaxError from a regexp). Unlike the call depth it is a
+   constant of the build, not a setting: the proof of the bound on the stack the
+   engine may use (docs/fork-changes/c-engine.md) multiplies it by the stack
+   of the deepest recursion, so it needs one fixed biggest value. The parser
+   counts 3 levels for each nested parenthesis, call or array. Of 79525 files
+   of real code (npm packages, compiled JSX, the output of code generators)
+   the deepest parse reaches 632, in an asm.js build of sql.js, no other goes
+   past 282, and one in a thousand reaches 100: 2000 is more than three times
+   the deepest. */
 #define JS_MAX_INTERNAL_DEPTH 2000
 /* The depths now: how many calls run (the call depth), and how many levels the
    recursions of C that make no call are in (the internal depth). They are for
