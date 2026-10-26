@@ -1168,7 +1168,7 @@ static int test_paren_depth(void *unused)
         "  const nests = (open, close) => { let n = 1;\n"
         "    for (;;) { try { eval(open.repeat(n + 1) + '1' + close.repeat(n + 1)) } catch (e) { return n } n++ } };\n"
         "  return [nests('(', ')'), nests('(1+', ')'), nests('(1*2|', ')'), nests('(1&&', ')'),\n"
-        "          nests('(1||1&&', ')'), nests('(1??', ')'), nests('(1==1<', ')')].join() })()";
+        "          nests('(1||1&&', ')'), nests('(1\?\?', ')'), nests('(1==1<', ')')].join() })()";
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
     char want[128];
