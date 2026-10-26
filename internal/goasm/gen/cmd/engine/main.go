@@ -49,6 +49,7 @@ var (
 	nonFormat = flag.String("non-format-variadic", strings.Join(gen.EngineNonFormatVariadic, ","), "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
 	srcList   = flag.String("src", "", "comma-separated C files to compile instead of the engine tree (for tests)")
 	sizeLog2  = flag.Int("shadow-size-log2", 20, "log2 of the shadow-stack region the engine is generated for (the host's region must be at least as big); engine_decl.go records it")
+	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 )
 
 // FreeFlags are the flags of the small libc branch: no system headers, no
@@ -322,6 +323,10 @@ func main() {
 	if *mode == "pn" {
 		amd.PreserveNone = true
 	}
+	if *poisonF && *verifyBin != "" {
+		die(fmt.Errorf("-poison with -verify-bin: the post-link check takes no poison build"))
+	}
+	amd.Poison = *poisonF
 	variadic := map[string]bool{}
 	for name, code := range rep.Sigs {
 		if strings.Contains(code, "...") {

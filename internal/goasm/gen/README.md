@@ -122,6 +122,11 @@ the engine is made for (20 by default, 25 for the host's whole 32 MiB):
 smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
 
+`-poison` writes garbage into every register at each entry before the
+arguments are loaded, after each unified call before the result is read
+and at each return: the engine's tests must still pass on it, so no code
+reads a register the lowering did not set.
+
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
 L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass

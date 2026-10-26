@@ -14,19 +14,19 @@ import (
 )
 
 // TestNarrowArgs runs testdata/narrow/narrow.c natively and through the
-// whole generator (cmd/engine) in body and pn mode, and requires the same
-// results: f(void*, void*, uint8_t, uint16_t, _Bool, int, long) called
-// directly and through a pointer, g6 with each narrow kind after a pointer,
-// the DynBuf-like writers that take one narrow value, a host callback with
-// narrow arguments, narrow results, and g6 called from Go with garbage above
-// each narrow value. The probe then calls put16 from Go assembly three times
-// with the same value: plainly, with the goroutine's stack guard set so
-// put16's stack check preempts it, and set so it grows (and moves) the
-// stack. All three must write the same bytes: morestack loads the goroutine
-// into DI, which preserve_none would read a narrow argument from. The
-// post-link check must pass on each build. It needs LLVM 22.1.8
-// (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD), on
-// linux/amd64.
+// whole generator (cmd/engine) in body and pn mode, plainly and as a poison
+// build, and requires the same results: f(void*, void*, uint8_t, uint16_t,
+// _Bool, int, long) called directly and through a pointer, g6 with each
+// narrow kind after a pointer, the DynBuf-like writers that take one narrow
+// value, a host callback with narrow arguments, narrow results, and g6
+// called from Go with garbage above each narrow value. The probe then calls
+// put16 from Go assembly three times with the same value: plainly, with the
+// goroutine's stack guard set so put16's stack check preempts it, and set so
+// it grows (and moves) the stack. All three must write the same bytes:
+// morestack loads the goroutine into DI, which preserve_none would read a
+// narrow argument from. The post-link check must pass on each build but the
+// poison ones. It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass
+// (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD), on linux/amd64.
 func TestNarrowArgs(t *testing.T) {
 	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
@@ -78,6 +78,8 @@ func TestNarrowArgs(t *testing.T) {
 	}{
 		{"body", nil},
 		{"pn", nil},
+		{"body", []string{"-poison"}},
+		{"pn", []string{"-poison"}},
 	} {
 		name := b.mode + strings.Join(b.extra, "")
 		t.Run(name, func(t *testing.T) {
@@ -109,6 +111,9 @@ func TestNarrowArgs(t *testing.T) {
 			probe := strings.Fields(tool(t, mod, filepath.Join(mod, "run"), "probe"))
 			if len(probe) != 3 || probe[0] != "plain:3412" || probe[1] != "preempted:3412" || probe[2] != "moved:3412" {
 				t.Fatalf("put16(0x1234) wrote %v, want plain:3412 preempted:3412 moved:3412", probe)
+			}
+			if len(b.extra) > 0 {
+				return // a poison build is for running only
 			}
 			tool(t, mod, "go", "build", "-tags", "goasmkeep", "-o", "keep", ".")
 			out, err := gen(t, append(args, "-verify-bin", filepath.Join(mod, "keep"), "-verify-pkg", "narrow/nw", "-verify-all")...)
