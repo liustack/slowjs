@@ -9,6 +9,7 @@
    see. It exits 0 when every check passes.
 
      unit */
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1022,6 +1023,357 @@ static int test_call_depth_reentry(void *unused)
     return 0;
 }
 
+/* ---- reading and writing the current depths ----
+
+   A host that calls from one runtime into another hands the depth over, so
+   that the runtimes together are held to one limit: it reads the depth of
+   the runtime that calls, sets the other's to it, makes the call, and sets
+   the old depth back. */
+
+static JSValue js_call_depth(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv)
+{
+    return JS_NewInt32(ctx, JS_GetCallDepth(JS_GetRuntime(ctx)));
+}
+
+static JSValue js_internal_depth(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    return JS_NewInt32(ctx, JS_GetInternalDepth(JS_GetRuntime(ctx)));
+}
+
+/* withDepth(n, f): f() with the call depth set to n, and set back after */
+static JSValue js_with_depth(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv)
+{
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    int32_t n;
+    int saved = JS_GetCallDepth(rt);
+    JSValue ret;
+
+    if (JS_ToInt32(ctx, &n, argv[0]))
+        return JS_EXCEPTION;
+    if (JS_SetCallDepth(rt, n) < 0)
+        return JS_ThrowRangeError(ctx, "depth refused");
+    ret = JS_Call(ctx, argv[1], JS_UNDEFINED, 0, NULL);
+    CHECK(JS_SetCallDepth(rt, saved) == 0, "set back");
+    return ret;
+}
+
+/* ends with a RangeError. It reads the name of the error and does not turn the
+   error into a string, which is a call, and fails again at the limit. */
+static int eval_range_error(JSContext *ctx, const char *src)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    JSValue e, name;
+    const char *s;
+    int ok;
+
+    if (!JS_IsException(v)) {
+        printf("%s: no error\n", src);
+        JS_FreeValue(ctx, v);
+        return 0;
+    }
+    e = JS_GetException(ctx);
+    name = JS_GetPropertyStr(ctx, e, "name");
+    s = JS_ToCString(ctx, name);
+    ok = s && strcmp(s, "RangeError") == 0;
+    if (!ok)
+        printf("%s: %s\n", src, s ? s : "?");
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, name);
+    JS_FreeValue(ctx, e);
+    return ok;
+}
+
+/* The completion value of src as an int, or -1 */
+static int eval_int(JSContext *ctx, const char *src)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int32_t n = -1;
+
+    if (JS_IsException(v))
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    else
+        JS_ToInt32(ctx, &n, v);
+    JS_FreeValue(ctx, v);
+    return n;
+}
+
+/* The depth a host function sees is the levels that are open: the host's
+   JS_Eval, the global code, each function, and the host function itself. The
+   limit holds after a write: the next call that does not fit is a RangeError,
+   a runtime set to its limit runs nothing, and one set past it (a depth from a
+   runtime with a bigger limit) ends the first call with a RangeError. A value
+   out of 0 to the limit is refused and changes nothing, and it can be set while
+   code runs, which the limit itself cannot. */
+static int test_call_depth_access(void *unused)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx);
+    int max = JS_GetMaxCallDepth(rt);
+    char src[128];
+
+    JS_SetPropertyStr(ctx, global, "callDepth", JS_NewCFunction(ctx, js_call_depth, "callDepth", 0));
+    JS_SetPropertyStr(ctx, global, "withDepth", JS_NewCFunction(ctx, js_with_depth, "withDepth", 2));
+    JS_FreeValue(ctx, global);
+
+    CHECK(JS_GetCallDepth(rt) == 0, "an idle runtime is at %d", JS_GetCallDepth(rt));
+    CHECK(eval_is(ctx, "String(callDepth())", "3"), "entry, global code, the host function");
+    CHECK(eval_is(ctx, "function f(n) { return n ? f(n - 1) : callDepth() } String(f(10))", "14"), "11 functions");
+    CHECK(JS_GetCallDepth(rt) == 0, "back to %d", JS_GetCallDepth(rt));
+
+    /* a write moves the point the limit counts from */
+    CHECK(JS_SetCallDepth(rt, 100) == 0, "set 100");
+    CHECK(JS_GetCallDepth(rt) == 100, "got %d", JS_GetCallDepth(rt));
+    CHECK(eval_is(ctx, "String(callDepth())", "103"), "counts on from 100");
+    CHECK(depth_reached(ctx) == max - 100 - 2, "recursion from 100 reaches %d", depth_reached(ctx));
+    CHECK(JS_GetCallDepth(rt) == 100, "100 stays %d", JS_GetCallDepth(rt));
+    CHECK(JS_SetMaxCallDepth(rt, 200) < 0, "the limit cannot change at depth 100");
+    CHECK(JS_SetCallDepth(rt, 0) == 0, "set 0");
+    CHECK(depth_reached(ctx) == max - 2, "recursion from 0 reaches %d", depth_reached(ctx));
+
+    /* the edge: the entry, the global code and the call each need a level */
+    CHECK(JS_SetCallDepth(rt, max) == 0, "set the limit");
+    CHECK(eval_range_error(ctx, "1"), "nothing runs at the limit");
+    CHECK(JS_SetCallDepth(rt, max - 1) == 0, "set one below");
+    CHECK(eval_range_error(ctx, "1"), "the global code does not fit one below");
+    CHECK(JS_SetCallDepth(rt, max - 2) == 0, "set two below");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the global code fits two below");
+    CHECK(eval_range_error(ctx, "(function () {})()"), "a call does not fit two below");
+    CHECK(JS_SetCallDepth(rt, max - 3) == 0, "set three below");
+    CHECK(eval_is(ctx, "(function () {})(), 7", "7"), "one call fits three below");
+    CHECK(eval_range_error(ctx, "(function () { (function () {})() })()"), "two do not");
+    CHECK(JS_SetCallDepth(rt, 0) == 0, "set 0");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs after the RangeError");
+
+    /* a depth past the limit of this runtime is kept, and nothing runs */
+    CHECK(JS_SetCallDepth(rt, max + 1000) == 0, "set past the limit");
+    CHECK(JS_GetCallDepth(rt) == max + 1000, "kept %d", JS_GetCallDepth(rt));
+    CHECK(eval_range_error(ctx, "1"), "nothing runs past the limit");
+    CHECK(JS_GetCallDepth(rt) == max + 1000, "nothing counted %d", JS_GetCallDepth(rt));
+    CHECK(JS_SetCallDepth(rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "set the biggest");
+    CHECK(JS_SetCallDepth(rt, 0) == 0, "set 0");
+
+    /* out of range: refused, and the depth is as it was */
+    CHECK(JS_SetCallDepth(rt, 40) == 0, "set 40");
+    CHECK(JS_SetCallDepth(rt, -1) < 0, "-1 refused");
+    CHECK(JS_SetCallDepth(rt, INT_MIN) < 0, "INT_MIN refused");
+    CHECK(JS_SetCallDepth(rt, JS_MAX_CALL_DEPTH_LIMIT + 1) < 0, "past the biggest refused");
+    CHECK(JS_SetCallDepth(rt, INT_MAX) < 0, "INT_MAX refused");
+    CHECK(JS_GetCallDepth(rt) == 40, "unchanged %d", JS_GetCallDepth(rt));
+    CHECK(JS_SetCallDepth(rt, 0) == 0, "set 0");
+
+    /* while code runs: set for a call and set back */
+    CHECK(eval_is(ctx, "String(withDepth(500, () => callDepth()))", "503"), "JS_Call, the function, the host function");
+    CHECK(eval_is(ctx, "String(callDepth())", "3"), "back after it");
+    snprintf(src, sizeof(src), "let r; try { withDepth(%d, () => 1) } catch (e) { r = e.name } r", max);
+    CHECK(eval_is(ctx, src, "RangeError"), "nothing fits at the limit");
+    CHECK(eval_is(ctx, "let r2; try { withDepth(-1, () => 1) } catch (e) { r2 = e.name + e.message } r2", "RangeErrordepth refused"),
+          "-1 is refused while code runs");
+    CHECK(eval_is(ctx, "String(callDepth())", "3"), "back after the RangeError");
+    CHECK(JS_GetCallDepth(rt) == 0, "idle again %d", JS_GetCallDepth(rt));
+    CHECK(JS_SetMaxCallDepth(rt, 200) == 0, "the limit can change again");
+
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* JSON.parse(text) called from C: its result as the name of its type, or the
+   name of the error it threw */
+static int json_parse_is(JSContext *ctx, JSValueConst parse, const char *text, const char *want)
+{
+    JSValue arg = JS_NewString(ctx, text), v;
+    const char *got = "?", *name = NULL;
+    JSValue e = JS_UNDEFINED;
+    int ok;
+
+    v = JS_Call(ctx, parse, JS_UNDEFINED, 1, &arg);
+    JS_FreeValue(ctx, arg);
+    if (JS_IsException(v)) {
+        e = JS_GetException(ctx);
+        name = JS_ToCString(ctx, e);
+        got = name ? name : "?";
+    } else {
+        got = JS_IsObject(v) ? "object" : JS_IsNumber(v) ? "number" : "other";
+    }
+    ok = strncmp(got, want, strlen(want)) == 0;
+    if (!ok)
+        printf("JSON.parse(%s): %s, want %s\n", text, got, want);
+    JS_FreeCString(ctx, name);
+    JS_FreeValue(ctx, e);
+    JS_FreeValue(ctx, v);
+    return ok;
+}
+
+/* The same for the internal depth: the recursions of C that make no call, held
+   to JS_MAX_INTERNAL_DEPTH. A proxy trap runs one level in, and the parser
+   counts as well, so a runtime at the limit cannot even read a script. */
+static int test_internal_depth_access(void *unused)
+{
+    static const char json_src[] =
+        "(() => {\n"
+        "  const nests = n => { try { JSON.parse('['.repeat(n) + ']'.repeat(n)); return true } catch (e) { return false } };\n"
+        "  let n = 1; while (nests(n + 1)) n++; return n })()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx), parse;
+    char want[16];
+
+    JS_SetPropertyStr(ctx, global, "internalDepth", JS_NewCFunction(ctx, js_internal_depth, "internalDepth", 0));
+    JS_FreeValue(ctx, global);
+
+    CHECK(JS_GetInternalDepth(rt) == 0, "an idle runtime is at %d", JS_GetInternalDepth(rt));
+    CHECK(eval_is(ctx, "String(internalDepth())", "0"), "a call is not a level of this count");
+    CHECK(eval_is(ctx, "String(new Proxy({}, { get: internalDepth }).x)", "1"), "a proxy trap runs inside one level");
+    CHECK(eval_is(ctx, "String(new Proxy(new Proxy({}, { get: internalDepth }), {}).x)", "2"), "two proxies, two levels");
+    CHECK(JS_GetInternalDepth(rt) == 0, "back to %d", JS_GetInternalDepth(rt));
+
+    snprintf(want, sizeof(want), "%d", JS_MAX_INTERNAL_DEPTH);
+    CHECK(eval_is(ctx, json_src, want), "JSON fits the limit from 0");
+    CHECK(JS_SetInternalDepth(rt, 30) == 0, "set 30");
+    CHECK(JS_GetInternalDepth(rt) == 30, "got %d", JS_GetInternalDepth(rt));
+    CHECK(eval_is(ctx, "String(new Proxy({}, { get: internalDepth }).x)", "31"), "counts on from 30");
+    snprintf(want, sizeof(want), "%d", JS_MAX_INTERNAL_DEPTH - 30);
+    CHECK(eval_is(ctx, json_src, want), "JSON fits what is left of the limit");
+    CHECK(JS_GetInternalDepth(rt) == 30, "30 stays %d", JS_GetInternalDepth(rt));
+    CHECK(JS_SetMaxCallDepth(rt, 200) < 0, "the call limit cannot change at internal depth 30");
+
+    /* the edge: the parser needs several levels, and JSON.parse one for the
+       value and one more inside each array. JSON.parse is called from C, so
+       that no script is read at depth */
+    parse = JS_Eval(ctx, "JSON.parse", 10, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH) == 0, "set the limit");
+    CHECK(eval_range_error(ctx, "1"), "the parser has no level left");
+    CHECK(json_parse_is(ctx, parse, "1", "RangeError"), "JSON.parse has none either");
+    CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH - 1) == 0, "set one below");
+    CHECK(json_parse_is(ctx, parse, "1", "number"), "JSON.parse fits a value");
+    CHECK(json_parse_is(ctx, parse, "[1]", "RangeError"), "and not an array of one");
+    CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH - 2) == 0, "set two below");
+    CHECK(json_parse_is(ctx, parse, "[1]", "object"), "and fits it two below");
+    CHECK(JS_GetInternalDepth(rt) == JS_MAX_INTERNAL_DEPTH - 2, "kept %d", JS_GetInternalDepth(rt));
+    JS_FreeValue(ctx, parse);
+    CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+
+    CHECK(JS_SetInternalDepth(rt, 30) == 0, "set 30");
+    CHECK(JS_SetInternalDepth(rt, -1) < 0, "-1 refused");
+    CHECK(JS_SetInternalDepth(rt, INT_MIN) < 0, "INT_MIN refused");
+    CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH + 1) < 0, "past the limit refused");
+    CHECK(JS_SetInternalDepth(rt, INT_MAX) < 0, "INT_MAX refused");
+    CHECK(JS_GetInternalDepth(rt) == 30, "unchanged %d", JS_GetInternalDepth(rt));
+    CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+    CHECK(JS_SetMaxCallDepth(rt, 200) == 0, "the call limit can change again");
+
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* Two runtimes that call each other, one thread. hop() runs step() of the
+   other runtime, and step() calls hop() again, until a RangeError. The
+   host's hop hands the depth over as above: with share_call set, the call
+   depth of the runtime that calls; with share_internal set, the internal depth
+   too. The chain is then held to one limit, wherever each level is counted. */
+static JSContext *hop_ctx[2];
+static int hop_share_call, hop_share_internal;
+
+static JSValue js_hop(JSContext *ctx, JSValueConst this_val,
+                      int argc, JSValueConst *argv)
+{
+    JSContext *octx = hop_ctx[ctx == hop_ctx[0]];
+    JSRuntime *rt = JS_GetRuntime(ctx), *ort = JS_GetRuntime(octx);
+    int saved_call = JS_GetCallDepth(ort), saved_internal = JS_GetInternalDepth(ort);
+    JSValue global, fn, ret;
+
+    if (hop_share_call)
+        CHECK(JS_SetCallDepth(ort, JS_GetCallDepth(rt)) == 0, "hand the call depth over");
+    if (hop_share_internal)
+        CHECK(JS_SetInternalDepth(ort, JS_GetInternalDepth(rt)) == 0, "hand the internal depth over");
+    global = JS_GetGlobalObject(octx);
+    fn = JS_GetPropertyStr(octx, global, "step");
+    JS_FreeValue(octx, global);
+    ret = JS_Call(octx, fn, JS_UNDEFINED, 0, NULL);
+    JS_FreeValue(octx, fn);
+    if (hop_share_call)
+        CHECK(JS_SetCallDepth(ort, saved_call) == 0, "hand the call depth back");
+    if (hop_share_internal)
+        CHECK(JS_SetInternalDepth(ort, saved_internal) == 0, "hand the internal depth back");
+    if (JS_IsException(ret)) {
+        /* an error does not cross to the other runtime: say it in this one */
+        JS_FreeValue(octx, JS_GetException(octx));
+        return JS_ThrowRangeError(ctx, "the other runtime ran out of depth");
+    }
+    JS_FreeValue(octx, ret);
+    return JS_UNDEFINED;
+}
+
+/* runs the chain from the first runtime and returns how many steps both ran,
+   or -1 when it did not end in a RangeError */
+static int hop_chain(const char *setup, int share_call, int share_internal)
+{
+    static const char run[] = "var e; try { step() } catch (x) { e = x instanceof RangeError } String(e)";
+    JSRuntime *rt[2];
+    int i, total = 0;
+
+    hop_share_call = share_call;
+    hop_share_internal = share_internal;
+    for (i = 0; i < 2; i++) {
+        JSValue global;
+
+        rt[i] = host_new_runtime();
+        hop_ctx[i] = JS_NewContext(rt[i]);
+        JS_SetMaxCallDepth(rt[i], JS_MAX_CALL_DEPTH_LIMIT);
+        global = JS_GetGlobalObject(hop_ctx[i]);
+        JS_SetPropertyStr(hop_ctx[i], global, "hop", JS_NewCFunction(hop_ctx[i], js_hop, "hop", 0));
+        JS_FreeValue(hop_ctx[i], global);
+        CHECK(eval(hop_ctx[i], setup), "setup");
+    }
+    CHECK(eval_is(hop_ctx[0], run, "true"), "the chain ends with a RangeError");
+    for (i = 0; i < 2; i++) {
+        int n = eval_int(hop_ctx[i], "steps");
+
+        total += n;
+        CHECK(JS_GetCallDepth(rt[i]) == 0 && JS_GetInternalDepth(rt[i]) == 0,
+              "runtime %d is back to depths %d and %d", i, JS_GetCallDepth(rt[i]), JS_GetInternalDepth(rt[i]));
+        CHECK(depth_reached(hop_ctx[i]) == JS_MAX_CALL_DEPTH_LIMIT - 2, "runtime %d recurses as deep as before", i);
+        JS_FreeContext(hop_ctx[i]);
+        host_free_runtime(rt[i]);
+    }
+    return total;
+}
+
+static int test_depth_handover(void *unused)
+{
+    /* every step is 3 levels of the chain: the function, hop, and the entry of
+       the call into the other runtime. The first is at 3 after the host's
+       JS_Eval and the global code, and step k + 1 fits when 3k + 2 is under the
+       limit, so the chain is limit / 3 steps long */
+    static const char calls[] = "var steps = 0; function step() { steps++; hop() }";
+    /* every step is a proxy get, which is a level of the internal depth: the
+       chain is the internal limit long. The call depth is set to its biggest
+       so that it is not what ends the chain */
+    static const char proxies[] =
+        "var steps = 0; var p = new Proxy({}, { get() { steps++; return hop() } });\n"
+        "function step() { return p.x }";
+    int limit = JS_MAX_CALL_DEPTH_LIMIT, n;
+
+    /* with no hand over, each runtime counts the part of the chain it runs
+       alone, so the chain is twice as long (the first runtime ends it) */
+    n = hop_chain(calls, 0, 0);
+    CHECK(n == 2 * (limit / 3), "separate call depths: %d steps", n);
+    n = hop_chain(calls, 1, 0);
+    CHECK(n == limit / 3, "shared call depth: %d steps", n);
+    n = hop_chain(calls, 1, 1);
+    CHECK(n == limit / 3, "both shared: %d steps", n);
+    n = hop_chain(proxies, 0, 0);
+    CHECK(n == 2 * JS_MAX_INTERNAL_DEPTH, "separate internal depths: %d steps", n);
+    n = hop_chain(proxies, 0, 1);
+    CHECK(n == JS_MAX_INTERNAL_DEPTH, "shared internal depth: %d steps", n);
+    return 0;
+}
+
 /* Recursions that go from C to C without JS_CallInternal crashed the native
    host with a segfault: a chain of 300000 functions that Promise.prototype.finally
    makes, and chains of iterator helpers, whose next calls the next of the
@@ -1718,6 +2070,9 @@ int main(void)
     /* the deep recursions run on a thread with a stack large enough for them */
     host_run_thread(test_call_depth, NULL);
     host_run_thread(test_call_depth_reentry, NULL);
+    host_run_thread(test_call_depth_access, NULL);
+    host_run_thread(test_internal_depth_access, NULL);
+    host_run_thread(test_depth_handover, NULL);
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_function_nesting, NULL);
