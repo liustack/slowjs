@@ -102,6 +102,9 @@ JSMemRange heap_release_next_range(JSHeap *h);
 #ifdef JS_HEAP_CHECK
 int heap_contains(const JSHeap *h, const void *ptr);
 const char *heap_check(const JSHeap *h);
+/* The size of the dedicated chunk that holds the block ptr, or 0 when the
+   block is in a shared chunk. */
+size_t heap_dedicated_size(const JSHeap *h, const void *ptr);
 #endif
 
 /* Test builds with AddressSanitizer (-DJS_HEAP_POISON): memory nobody may
