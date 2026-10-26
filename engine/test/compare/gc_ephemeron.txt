@@ -1,0 +1,42 @@
+ephemeron prepass-cascade: ok
+ephemeron prepass-cascade-reverse: ok
+ephemeron cycle: ok
+ephemeron plain-key: ok
+ephemeron no-backref: ok
+ephemeron chain: ok
+ephemeron live-key-chain: ok
+ephemeron weakset: ok
+ephemeron weakset-live: ok
+ephemeron symbol-cycle: ok
+ephemeron symbol-property-cycle: ok
+ephemeron symbol: ok
+ephemeron dead-map: ok
+young ephemeron prepass-cascade: ok
+young ephemeron prepass-cascade-reverse: ok
+young ephemeron cycle: ok
+young ephemeron plain-key: ok
+young ephemeron no-backref: ok
+young ephemeron chain: ok
+young ephemeron live-key-chain: ok
+young ephemeron weakset: ok
+young ephemeron weakset-live: ok
+young ephemeron symbol-cycle: ok
+young ephemeron symbol-property-cycle: ok
+young ephemeron symbol: ok
+young ephemeron dead-map: ok
+run gc no-back-reference: ok
+run gc back-reference: ok
+run gc key-cycle: ok
+run gc chain: ok
+run gc dead-map: ok
+weak observers: ok
+young weak observers: ok
+live symbols globalThis.key=s: ok
+live symbols globalThis.key={[s]:true}: ok
+live symbols globalThis.key=Object(s): ok
+live symbols globalThis.key=new Map([[s,42]]): ok
+live symbols globalThis.key=[s]: ok
+mutation after a collection: ok
+registry unregister: ok
+mixed graphs, 20 seeds: ok
+young mixed graphs, 20 seeds: ok

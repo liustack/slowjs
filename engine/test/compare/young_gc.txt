@@ -1,0 +1,21 @@
+keeps reachable, no engine collection: ok
+keeps reachable, engine collection: ok
+frees young cycles, keeps a generator: ok
+frees what only garbage held, plain: ok
+frees what only garbage held, weak-map-key: ok
+frees what only garbage held, weak-ref: ok
+frees what only garbage held, registry: ok
+frees what only garbage held, old-cycle: ok
+young collection and ephemerons, no-back-reference: ok
+young collection and ephemerons, back-reference: ok
+young collection and ephemerons, key-cycle: ok
+young collection and ephemerons, chain: ok
+young collection and ephemerons, dead-map: ok
+young collection and ephemerons, young-map: ok
+no zero count left, no observer: ok
+no zero count left, wm.set(old, 1);: ok
+no zero count left, wr = new WeakRef(old);: ok
+no zero count left, fr.register(old, 1);: ok
+no zero count left, old.f = async function () {};: ok
+no zero count left, old.g = (function* () { yield 1 })(); old.g.next();: ok
+suspended async frame: ok
