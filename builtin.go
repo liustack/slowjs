@@ -15,7 +15,6 @@ import (
 	"unsafe"
 
 	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -227,50 +226,6 @@ func (a Args) UTF16(i int) (u []uint16, ok bool) {
 		return nil, false
 	}
 	return unsafe.Slice((*uint16)(unsafe.Pointer(p)), n), true
-}
-
-// typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
-func callBuiltin(tls *libc.TLS, ctx uintptr, this lib.TJSValue, argc int32, argv uintptr, magic int32) (r lib.TJSValue) {
-	b := (*builtins.list.Load())[magic]
-	m := vms.vm(uint32(lib.XJS_GetContextOpaque(tls, ctx)))
-	m.host++
-	mark := markTLS(tls)
-	returned := false
-	defer func() {
-		m.host--
-		if m.hostEnded(mark, returned) {
-			return
-		}
-		switch p := recover(); {
-		case p != nil:
-			m.hostPanicked(b.name, p)
-		case !returned:
-			m.broken = true // runtime.Goexit, which goes on up through the engine
-		}
-		// As in callGo: an interrupt or running out of memory in the Go
-		// function stays pending and is the result.
-		if m.uncatchablePending() {
-			if !isException(r) {
-				lib.XFreeValue(tls, ctx, r)
-			}
-			r = exception
-		}
-	}()
-	v, err := b.fn(Args{vm: m, this: this, argv: argv, argc: int(argc)})
-	switch {
-	case err != nil:
-		if v.vm == m {
-			v.Free()
-		}
-		r = m.throw(err)
-	case v.vm != m && v.vm != nil:
-		// Freeing it here would use the other VM, maybe on another goroutine.
-		r = throwTypeError(tls, ctx, fmt.Sprintf("Go function %s returned a Value of another VM", b.name))
-	default:
-		r = v.jsValue()
-	}
-	returned = true
-	return r
 }
 
 // throw throws err in m's context, as NewBuiltin describes, and returns the
