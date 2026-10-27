@@ -6,9 +6,10 @@
 #
 # Run the tests of the allocator (heap-test.c) on a build of the native test
 # host: the scenarios (limit, budget, chunks, resizes, host refusals, release,
-# front cache, retry after a failure), what the poison covers (poison-test, in
-# asan-heap mode), random sequences with a seed on the heap alone and on the
-# runtime, and the libFuzzer target for a fixed time.
+# front cache, cache of large blocks, retry after a failure), what the poison
+# covers and that a use after free is reported (poison-test, in asan-heap
+# mode), random sequences with a seed on the heap alone and on the runtime, and
+# the libFuzzer target for a fixed time.
 #
 #   engine/test/heap.sh [-m MODE] [-s SEEDS] [-n STEPS] [-f SECONDS]
 #
