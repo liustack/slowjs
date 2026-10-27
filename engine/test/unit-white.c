@@ -30,6 +30,8 @@ int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
 int64_t white_backtrace_frame_size(void);
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
 int white_error_nest(JSRuntime *rt, int n);
+JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
+int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
 
 /* ---- texts of every kind of character ---- */
 
@@ -564,6 +566,68 @@ static void test_error_nest(void)
     vm_free(&v);
 }
 
+/* js_function_set_properties gives a new function its length and name. With
+   no memory for the string of a name that is an index atom (which holds no
+   string) or for a property, it returns -1 with the out of memory error
+   pending, and the caller frees the function. It used to say nothing, and
+   JS_NewCFunction2, JS_NewHostFunction and the others returned the function
+   with the error still pending and its name the exception marker. Both
+   paths: a function whose prototype is Function.prototype takes the shape
+   the context keeps for it and gets only the string, and one with another
+   prototype defines both properties. With memory, both get them. */
+static void test_function_properties_oom(void)
+{
+    int other, full;
+
+    for (other = 0; other < 2; other++) {
+        for (full = 0; full < 2; full++) {
+            VM v = vm_new();
+            JSValue g = JS_GetGlobalObject(v.ctx), fp = JS_GetPropertyStr(v.ctx, g, "Function"), proto, f;
+            JSAtom name = JS_NewAtomUInt32(v.ctx, 12345);
+            const char *path = other ? "another prototype" : "Function.prototype";
+            int r, pending, unc;
+
+            proto = JS_GetPropertyStr(v.ctx, fp, "prototype");
+            JS_FreeValue(v.ctx, fp);
+            JS_FreeValue(v.ctx, g);
+            if (other) {
+                JSValue p2 = JS_NewObjectProto(v.ctx, proto);
+
+                JS_FreeValue(v.ctx, proto);
+                proto = p2;
+            }
+            f = white_bare_function(v.ctx, proto);
+            CHECK(!JS_IsException(f), "%s: no function", path);
+            if (full)
+                fill_memory(&v);
+            r = white_function_set_properties(v.ctx, f, name, 2);
+            pending = JS_HasException(v.ctx);
+            unc = JS_IsUncatchableException(v.ctx);
+            if (full)
+                release_memory(&v);
+            if (full) {
+                CHECK(r == -1 && pending && unc, "%s, full heap: returned %d, pending %d, uncatchable %d", path, r, pending, unc);
+                free(exception_text(v.ctx));
+            } else {
+                JSValue n = JS_GetPropertyStr(v.ctx, f, "name"), l = JS_GetPropertyStr(v.ctx, f, "length");
+                const char *s = JS_ToCString(v.ctx, n);
+
+                CHECK(r == 0 && !pending, "%s: returned %d, pending %d", path, r, pending);
+                CHECK(s && !strcmp(s, "12345") && JS_VALUE_GET_TAG(l) == JS_TAG_INT && JS_VALUE_GET_INT(l) == 2,
+                      "%s: name %s, length tag %d", path, s ? s : "?", JS_VALUE_GET_TAG(l));
+                JS_FreeCString(v.ctx, s);
+                JS_FreeValue(v.ctx, n);
+                JS_FreeValue(v.ctx, l);
+            }
+            JS_FreeValue(v.ctx, f);
+            JS_FreeValue(v.ctx, proto);
+            JS_FreeAtom(v.ctx, name);
+            fflush(stdout);
+            vm_free(&v);
+        }
+    }
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -577,6 +641,7 @@ int main(void)
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
+    test_function_properties_oom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

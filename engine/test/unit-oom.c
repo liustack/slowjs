@@ -263,6 +263,95 @@ static void test_define_oom(void)
     vm_free(&v);
 }
 
+/* ---- the name of a new function ---- */
+
+/* A function made by JS_NewHostFunction or JS_NewCFunction2 with little
+   memory left is either whole, with its name and length and no exception
+   pending, or the call returns the exception with the out of memory error
+   pending, and nothing it made is left (vm_free). The name is a number,
+   whose atom is an index atom that holds no string: the string of the name
+   property is made after the function. Three sweeps: the bytes the limit
+   leaves, a full heap with a few blocks given back (fill_rooms), and a full
+   heap with blocks of every size but one given back, so that only the
+   requests of that size fail. (The string of the name never fails alone
+   here, as making the atom frees a string of the same size just before.
+   unit-white fails it alone.) */
+#define FUNCTION_NAME_BYTE_ROOMS (1 + 1024 / 8)
+#define FUNCTION_NAME_BUT_ONE (1024 / 8)
+
+static JSValue function_name_noop(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    return JS_UNDEFINED;
+}
+
+static void test_function_name_oom(void)
+{
+    static const char *const kinds[] = { "JS_NewHostFunction", "JS_NewCFunction2" };
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), k;
+    int kind;
+
+    for (kind = 0; kind < 2; kind++) {
+        int failed = 0, made = 0;
+
+        for (k = 0; k < FUNCTION_NAME_BYTE_ROOMS + nfill + FUNCTION_NAME_BUT_ONE; k++) {
+            VM v = vm_new();
+            JSValue f, e, name, len;
+            int bytes = k < FUNCTION_NAME_BYTE_ROOMS, butone = k >= FUNCTION_NAME_BYTE_ROOMS + nfill, pending, unc;
+            size_t n = bytes ? k * 8 : butone ? 8 * (k - FUNCTION_NAME_BYTE_ROOMS - nfill + 1) : k - FUNCTION_NAME_BYTE_ROOMS;
+            const char *sweep = bytes ? "byte" : butone ? "all but" : "fill";
+            char *t;
+
+            if (bytes) {
+                room(&v, n);
+            } else if (butone) {
+                fill_memory(&v);
+                free_blocks(&v, 8, n - 8, 4);
+                free_blocks(&v, n + 8, MAX_BLOCK, 4);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[n].min, rm[n].max, rm[n].n);
+            }
+            if (kind == 0)
+                f = JS_NewHostFunction(v.ctx, "12345", 5, 2, 7);
+            else
+                f = JS_NewCFunction2(v.ctx, function_name_noop, "12345", 2, JS_CFUNC_generic, 0);
+            pending = JS_HasException(v.ctx);
+            unc = JS_IsUncatchableException(v.ctx);
+            if (bytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (JS_IsException(f)) {
+                failed++;
+                CHECK(pending && unc, "%s %s room %zu: pending %d, uncatchable %d", kinds[kind], sweep, n, pending, unc);
+                JS_SetUncatchableException(v.ctx, 0);
+                e = JS_GetException(v.ctx);
+                JS_FreeValue(v.ctx, e);
+            } else {
+                made++;
+                CHECK(!pending, "%s %s room %zu: a function came back with an exception pending", kinds[kind], sweep, n);
+                free(exception_text(v.ctx));
+                name = JS_GetPropertyStr(v.ctx, f, "name");
+                len = JS_GetPropertyStr(v.ctx, f, "length");
+                t = value_text(v.ctx, name);
+                CHECK(t && !strcmp(t, "12345") && JS_VALUE_GET_TAG(len) == JS_TAG_INT && JS_VALUE_GET_INT(len) == 2,
+                      "%s %s room %zu: name %s (tag %d), length tag %d", kinds[kind], sweep, n,
+                      t ? t : "?", JS_VALUE_GET_TAG(name), JS_VALUE_GET_TAG(len));
+                free(t);
+                JS_FreeValue(v.ctx, name);
+                JS_FreeValue(v.ctx, len);
+                JS_FreeValue(v.ctx, f);
+            }
+            /* a lost object ends the process in vm_free: say what failed first */
+            fflush(stdout);
+            vm_free(&v);
+        }
+        CHECK(failed > 0, "%s: no room made it fail", kinds[kind]);
+        CHECK(made > 0, "%s: no room let it work", kinds[kind]);
+    }
+}
+
 /* ---- compiling and writing bytecode ---- */
 
 /* compile_scripts use the parts of the compiler that move or rewrite code:
@@ -1293,6 +1382,7 @@ int main(void)
     test_throw_error_oom();
     test_tocstring_oom();
     test_define_oom();
+    test_function_name_oom();
     test_compile_oom();
     test_compile_oom_fine();
     test_write_bytecode_oom();
