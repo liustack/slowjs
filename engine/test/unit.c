@@ -2382,6 +2382,45 @@ static void test_sort_stop_bound(void)
     CHECK(worst > 0, "no sort made a comparison after the stop: the bound is not tested");
 }
 
+/* Date.now, new Date() and Date() read the wall clock of the host, in whole
+   milliseconds since 1970, cut off after the millisecond. A clock before 1970
+   gives negative times. */
+static void test_date_clock(void)
+{
+    static const struct {
+        int64_t ns;
+        const char *want;
+    } cases[] = {
+        { INT64_C(1700000000123456789), "1700000000123" },
+        { 999999, "0" },
+        { 1000000, "1" },
+        { 0, "0" },
+        { -500000000, "-500" },
+        { -1000000, "-1" },
+    };
+    static const char *const reads[] = {
+        "String(Date.now())", "String(new Date().getTime())", "String(+new Date())",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i, j;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char src[128];
+
+        host_set_wall(1, cases[i].ns);
+        for (j = 0; j < sizeof(reads) / sizeof(reads[0]); j++)
+            CHECK(eval_is(ctx, reads[j], cases[i].want),
+                  "%lld ns: %s", (long long)cases[i].ns, reads[j]);
+        snprintf(src, sizeof(src), "String(Date() === new Date(%s).toString())",
+                 cases[i].want);
+        CHECK(eval_is(ctx, src, "true"), "%lld ns: Date()", (long long)cases[i].ns);
+    }
+    host_set_wall(0, 0);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -2418,6 +2457,7 @@ int main(void)
     test_search_interrupt();
     test_sort_interrupt();
     test_sort_stop_bound();
+    test_date_clock();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

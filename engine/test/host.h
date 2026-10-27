@@ -41,6 +41,11 @@ JSRuntime *host_new_runtime_seed(uint64_t seed);
    uses it to see that the engine asks for it only when a script does. */
 extern _Thread_local long host_wall_reads;
 
+/* host_set_wall(1, ns) makes the wall clock of every VM in this thread read ns
+   nanoseconds since 1970 (a negative number is before 1970), until
+   host_set_wall(0, 0) gives back the fixed time of the host. */
+void host_set_wall(int on, int64_t ns);
+
 /* The VM host_now was last asked about for the wall clock in this thread, and
    the VM of a runtime made by this host. */
 extern _Thread_local uint32_t host_wall_vm;
