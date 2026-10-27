@@ -827,6 +827,9 @@ typedef struct JSFunctionBytecode {
     JSValue *cpool; /* constant pool (self pointer) */
     int cpool_count;
     int closure_var_count;
+    /* where OP_ret may go, one bit for each byte of the code: the
+       instruction after each OP_gosub (check_polls). NULL with no OP_gosub. */
+    uint32_t *ret_bits;
     struct {
         /* debug info, move to separate structure to save memory? */
         JSAtom filename;
@@ -8248,6 +8251,10 @@ static void compute_bytecode_size(JSFunctionBytecode *b, JSMemoryUsage_helper *h
     }
     if (b->closure_var) {
         js_func_size += b->closure_var_count * sizeof(*b->closure_var);
+    }
+    if (b->ret_bits) {
+        memory_used_count++;
+        js_func_size += sizeof(uint32_t) * ((b->byte_code_len + 31) / 32);
     }
     if (!b->read_only_bytecode && b->byte_code_buf) {
         hp->js_func_code_size += b->byte_code_len;
@@ -21728,7 +21735,11 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 if (unlikely(JS_VALUE_GET_TAG(op1) != JS_TAG_INT))
                     goto ret_fail;
                 pos = JS_VALUE_GET_INT(op1);
-                if (unlikely(pos >= b->byte_code_len)) {
+                /* only where an OP_gosub returns to: code read by
+                   JS_ReadObject can give any number, and pc must stay on
+                   the instructions check_polls followed */
+                if (unlikely(pos >= b->byte_code_len || !b->ret_bits ||
+                             !((b->ret_bits[pos >> 5] >> (pos & 31)) & 1))) {
                 ret_fail:
                     JS_ThrowInternalError(ctx, "invalid ret value");
                     goto exception;
@@ -37998,13 +38009,19 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
 /* check_polls holds the final code of a function to the rule of the polls
    (poll_scan) before it can run: the compiler's (a failure is a bug of
    insert_polls, an InternalError) and code read by JS_ReadObject (a
-   SyntaxError). */
+   SyntaxError). The rule takes OP_ret as the end of a path and the
+   instruction after an OP_gosub as the start of one, so OP_ret may go only
+   there: *ret_bits gets a bit for each byte of the code, set for those
+   places (NULL when there is none), which OP_ret checks its number
+   against. */
 static int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32_t bc_len,
-                       BOOL compiled)
+                       BOOL compiled, uint32_t **ret_bits)
 {
     uint8_t *run;
     const char *why;
+    int pos;
 
+    *ret_bits = NULL;
     if (bc_len > INT32_MAX) {
         why = "code too long";
     } else {
@@ -38014,8 +38031,21 @@ static int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32_t bc_len,
         why = poll_scan(bc_buf, bc_len, run, NULL);
         js_free(ctx, run);
     }
-    if (!why)
+    if (!why) {
+        if (!memchr(bc_buf, OP_gosub, bc_len))
+            return 0;
+        for (pos = 0; pos < (int)bc_len; pos += short_opcode_info(bc_buf[pos]).size) {
+            if (bc_buf[pos] == OP_gosub && pos + 5 < (int)bc_len) {
+                if (!*ret_bits) {
+                    *ret_bits = js_mallocz(ctx, sizeof(uint32_t) * ((bc_len + 31) / 32));
+                    if (!*ret_bits)
+                        return -1;
+                }
+                (*ret_bits)[(pos + 5) >> 5] |= 1U << ((pos + 5) & 31);
+            }
+        }
         return 0;
+    }
     if (compiled)
         JS_ThrowInternalError(ctx, "compiled bytecode: %s", why);
     else
@@ -39435,6 +39465,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     int function_size, byte_code_offset, cpool_offset;
     int closure_var_offset, vardefs_offset;
     BOOL strip_var_debug;
+    uint32_t *ret_bits = NULL;
     
     /* the parser does not stop when emitting the code runs out of memory */
     if (dbuf_error(&fd->byte_code)) {
@@ -39528,7 +39559,8 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     if (resolve_labels(ctx, fd))
         goto fail;
 
-    if (check_polls(ctx, fd->byte_code.buf, fd->byte_code.size, TRUE))
+    if (check_polls(ctx, fd->byte_code.buf, fd->byte_code.size, TRUE,
+                    &ret_bits))
         goto fail;
 
     if (compute_stack_size(ctx, fd, &stack_size) < 0)
@@ -39552,6 +39584,8 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     if (!b)
         goto fail;
     js_rc(b)->ref_count = 1;
+    b->ret_bits = ret_bits;
+    ret_bits = NULL;
 
     b->byte_code_buf = (void *)((uint8_t*)b + byte_code_offset);
     b->byte_code_len = fd->byte_code.size;
@@ -39694,6 +39728,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     js_free(ctx, fd);
     return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
  fail:
+    js_free(ctx, ret_bits);
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
@@ -39742,6 +39777,7 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
         JS_FreeContext(b->realm);
 
     JS_FreeAtomRT(rt, b->func_name);
+    js_free_rt(rt, b->ret_bits);
     if (b->has_debug) {
         JS_FreeAtomRT(rt, b->debug.filename);
         if (!b->shared_debug) {
@@ -42126,7 +42162,7 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
 
     /* code read from outside keeps to the rule of the polls as the
        compiler's does: none of its atoms is the runtime's yet */
-    if (check_polls(s->ctx, bc_buf, bc_len, FALSE)) {
+    if (check_polls(s->ctx, bc_buf, bc_len, FALSE, &b->ret_bits)) {
         b->byte_code_len = 0;
         return -1;
     }

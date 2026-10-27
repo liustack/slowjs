@@ -643,7 +643,7 @@ static void test_function_properties_oom(void)
 enum {
     W_INVALID, W_NOP, W_PUSH_0, W_DROP, W_GOTO, W_GOTO16, W_GOTO8,
     W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
-    W_GOSUB, W_RET, W_WITH_GET_VAR,
+    W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1065,6 +1065,121 @@ static void test_poll_compile(void)
     vm_free(&v);
 }
 
+/* push_i32: an OP_push_i32 of v at the end of c. */
+static void push_i32(Code *c, int32_t v)
+{
+    op_n(c, W_PUSH_I32, 1);
+    memcpy(c->b + c->n, &v, 4);
+    c->n += 4;
+}
+
+/* read_code: c in place of the code of a function, written with
+   JS_WriteObject, read back and run (run_read). The function calls its
+   argument with 300 numbers, which gives c a stack and a length of 1505
+   bytes, and holds no atom, so that its code is in what JS_WriteObject
+   writes as it is in memory. The code past c is OP_return_undef. */
+static void read_code(JSContext *ctx, const Code *c, char *got, size_t cap)
+{
+    size_t scap = 16 * 300 + 100, n, size;
+    char *src = malloc(scap);
+    JSValue top;
+    const uint8_t *code, *at;
+    uint8_t *buf;
+    int len, i;
+
+    n = snprintf(src, scap, "(function (g) { return g(");
+    for (i = 0; i < 300; i++)
+        n += snprintf(src + n, scap - n, "%s%d", i ? ", " : "", 100000 + i);
+    snprintf(src + n, scap - n, ") })");
+    snprintf(got, cap, "no code");
+    if (code_of(ctx, src, &top, &code, &len) == 0) {
+        buf = JS_WriteObject(ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+        at = buf ? memmem(buf, size, code, len) : NULL;
+        if (at && c->n <= len) {
+            memcpy(buf + (at - buf), c->b, c->n);
+            memset(buf + (at - buf) + c->n, white_op(W_RETURN_UNDEF), len - c->n);
+            run_read(ctx, buf, size, got, cap);
+        }
+        js_free(ctx, buf);
+    }
+    JS_FreeValue(ctx, top);
+    free(src);
+}
+
+/* OP_ret goes only where an OP_gosub returns to: code read with
+   JS_ReadObject gives it any number, which must not take the interpreter
+   into the middle of an instruction or to one that does not follow an
+   OP_gosub, where it would run code check_polls did not follow. The two
+   cases: OP_ret to 7, inside an OP_push_i32 whose operand holds an
+   OP_return_undef, and a path of 255 instructions without a count, which
+   runs inside the operands of two runs of 127 that check_polls takes, one
+   ending with an OP_nop. And OP_ret to an instruction that follows no
+   OP_gosub. A finally block read back runs. */
+static void test_poll_ret(void)
+{
+    VM v = vm_new();
+    static Code c;
+    char got[256];
+    const char *src = "(function () { var t = 0; for (var i = 0; i < 3; i++) { try { t += i } finally { t += 10 } } return t })";
+    JSValue top;
+    uint8_t *buf;
+    size_t size;
+    int i;
+
+    /* OP_ret to 7 */
+    c = (Code){{0}, 0};
+    push_i32(&c, 7);
+    op_n(&c, W_RET, 1);
+    push_i32(&c, 0);
+    c.b[7] = white_op(W_RETURN_UNDEF);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "OP_ret to 7: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret into an instruction: %s", got);
+
+    /* 255 instructions without a count */
+    c = (Code){{0}, 0};
+    push_i32(&c, 7);
+    op_n(&c, W_RET, 1);
+    for (i = 0; i < 127; i++)
+        push_i32(&c, 0);
+    op_n(&c, W_NOP, 1);
+    for (i = 0; i < 127; i++)
+        push_i32(&c, 0);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(c.n == 1278, "the code of 255 instructions is %d bytes", c.n);
+    for (i = 0; i < 126; i++) {
+        c.b[6 + 5 * i + 1] = white_op(W_PUSH_I32);
+        c.b[642 + 5 * i + 1] = white_op(W_PUSH_I32);
+    }
+    c.b[637] = white_op(W_PUSH_I16);
+    c.b[640] = white_op(W_PUSH_I16);
+    c.b[1273] = white_op(W_RETURN_UNDEF);
+    CHECK(scan_ok(&c), "255 instructions: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret to a path of 255: %s", got);
+
+    /* OP_ret to the start of an instruction that follows no OP_gosub */
+    c = (Code){{0}, 0};
+    push_i32(&c, 6);
+    op_n(&c, W_RET, 1);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "OP_ret to 6: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret to no OP_gosub: %s", got);
+
+    /* a finally block, compiled and read back */
+    top = JS_Eval(v.ctx, src, strlen(src), "<poll>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "write a finally block");
+    if (buf)
+        run_read(v.ctx, buf, size, got, sizeof(got));
+    CHECK(buf && strcmp(got, "ok 33") == 0, "a finally block read back: %s", buf ? got : "(none)");
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1082,6 +1197,7 @@ int main(void)
     test_poll_scan();
     test_poll_insert();
     test_poll_compile();
+    test_poll_ret();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
