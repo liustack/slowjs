@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build cengine && !testhooks
+//go:build slowjs_cengine && !testhooks
 
 package cengine
 
@@ -13,5 +13,5 @@ import "testing"
 // the OS refuse a call: they need the hooks that only a build with the tag
 // testhooks has.
 func TestLifecycleHooks(t *testing.T) {
-	t.Skip("the tests that stop callbacks or make the OS refuse a call run with -tags cengine,testhooks")
+	t.Skip("the tests that stop callbacks or make the OS refuse a call run with -tags slowjs_cengine,testhooks")
 }

@@ -3,13 +3,13 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build cengine
+//go:build slowjs_cengine
 
 // Package cengine is the C engine of engine/ generated as Go assembly, with
 // its Go host. internal/goasm/gen/cmd/engine writes the assembly and
 // engine_decl.go into this folder (-out internal/cengine), next to the host
 // files checked in here, and nothing generated is checked in. The host files
-// build only with the tag cengine, so that the module builds without the
+// build only with the tag slowjs_cengine, so that the module builds without the
 // generated files.
 //
 // The host is a first one, for running scripts and measuring: VMs with their
