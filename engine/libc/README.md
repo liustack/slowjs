@@ -6,7 +6,8 @@ The small libc of the C tree in `engine/`. The engine C is built with `-ffreesta
 
 | Part | Where | Source |
 | --- | --- | --- |
-| Memory and string functions: `memcpy memmove memset memcmp bcmp bzero memchr strlen strcmp strchr strrchr` | `string/` | musl, as it is |
+| Memory and string functions: `memmove memset memcmp bcmp bzero memchr strlen strcmp strchr strrchr` | `string/` | musl, as it is |
+| `memcpy` | `string/memcpy.c` | written here, in place of musl's. Overlapping loads and stores of one width up to 128 bytes, then a loop of 64 bytes with the destination aligned to 16. SSE2 and NEON moves only, no `REP MOVSB`, no AVX. Tested by `engine/test/libc-test.sh` |
 | 34 math functions: the 22 that need a real algorithm (`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`), the 12 that are exact (`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`), and the helpers and tables they use | `math/`, `internal/libm.h` | musl. `libm.h` has a patch (below) |
 | `snprintf`, `vsnprintf` | `stdio.c` | written here. Flags `- + space 0 #`, width and precision (a number or `*`), lengths `hh h l ll z j t` on the integer conversions only, conversions `d i u x X o c s p %`. No floating-point conversions. Anything else calls `abort` before the argument is read: another conversion, a length on `c s p %`, a format that ends inside a conversion, a width or precision that does not fit an int, an output over INT_MAX |
 | `abort` | `abort.c` | written here. It calls `host_call` with the magic `HOST_CALL_ABORT`. The Go host panics and marks the VM close-only, as it does today. A trap would be a signal, and a signal kills the Go process |
@@ -19,7 +20,7 @@ There is no `errno`, no `pthread`, no time and no standard stream. The wall cloc
 
 ## musl
 
-The files in `string/` and `math/`, `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02), the one `modernc.org/libc` v1.77.1 translates. So the `Math.*` results of linux/amd64 stay what they are in the Go engine. `COPYRIGHT` is musl's license file, MIT.
+The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02), the one `modernc.org/libc` v1.77.1 translates. So the `Math.*` results of linux/amd64 stay what they are in the Go engine. `COPYRIGHT` is musl's license file, MIT.
 
 `MUSL.sha256` lists the SHA-256 of each file in musl and here. `vendor.sh --verify` checks the files here against it. `vendor.sh MUSL_DIR` copies them out of a musl checkout at that commit, applies `patches/` and writes the list again.
 

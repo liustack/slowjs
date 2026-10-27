@@ -133,6 +133,65 @@ static void test_mem(void)
     }
 }
 
+/* memcpy at every size from 0 to 1100 bytes, with the source and the destination
+   each at 16 offsets from a multiple of 64 (so the destination reaches every
+   position the loop of 64 bytes aligns it to, and the source every one it can be
+   misaligned by). The destination holds a byte that no source byte has, so a byte
+   written outside the range, before or after it, shows. The source must not
+   change, and the result is the destination. Then bigger sizes at random
+   offsets, which run the loop many times. */
+#define CPMAX 1100
+#define CPLEAD 64
+#define CPBUF 2048
+#define CPBIG 70000
+
+static void test_memcpy_all(void)
+{
+    static unsigned char src[CPBUF] __attribute__((aligned(64)));
+    static unsigned char src0[CPBUF];
+    static unsigned char dst[CPBUF] __attribute__((aligned(64)));
+    static unsigned char ref[CPBUF];
+    static unsigned char big_src[CPBIG + 256], big_dst[CPBIG + 256], big_ref[CPBIG + 256];
+    const unsigned char guard = 0xAA;
+
+    for (size_t i = 0; i < sizeof src; i++) {
+        src[i] = (unsigned char)rng();
+        if (src[i] == guard)
+            src[i] = guard + 1;
+    }
+    memcpy(src0, src, sizeof src);
+    for (size_t n = 0; n <= CPMAX; n++) {
+        for (size_t so = 0; so < 16; so++) {
+            for (size_t dof = 0; dof < 16; dof++) {
+                memset(dst, guard, sizeof dst);
+                memset(ref, guard, sizeof ref);
+                memcpy(ref + CPLEAD + dof, src + CPLEAD + so, n);
+                void *r = sl_memcpy(dst + CPLEAD + dof, src + CPLEAD + so, n);
+                CHECK(r == dst + CPLEAD + dof, "memcpy result n=%zu so=%zu do=%zu", n, so, dof);
+                CHECK(!memcmp(dst, ref, sizeof dst), "memcpy n=%zu so=%zu do=%zu", n, so, dof);
+                CHECK(!memcmp(src, src0, sizeof src), "memcpy changed its source n=%zu so=%zu do=%zu", n, so, dof);
+            }
+        }
+    }
+
+    for (int iter = 0; iter < 300; iter++) {
+        size_t n = 1025 + rng() % (CPBIG - 1025);
+        size_t so = rng() % 64, dof = rng() % 64;
+        size_t total = so + dof + n;
+
+        for (size_t i = 0; i < total + 128; i++) {
+            big_src[i] = (unsigned char)rng();
+            if (big_src[i] == guard)
+                big_src[i] = guard + 1;
+        }
+        memset(big_dst, guard, total + 128);
+        memset(big_ref, guard, total + 128);
+        memcpy(big_ref + 64 + dof, big_src + 64 + so, n);
+        sl_memcpy(big_dst + 64 + dof, big_src + 64 + so, n);
+        CHECK(!memcmp(big_dst, big_ref, total + 128), "memcpy n=%zu so=%zu do=%zu", n, so, dof);
+    }
+}
+
 static void test_str(void)
 {
     static char a[MAXN + 4 * PAD], b[MAXN + 4 * PAD];
@@ -437,20 +496,44 @@ static int table_run(const char *fmt, const char *kinds, int *how)
 
 static void test_format_table(const char *path)
 {
-    char line[256];
+    char line[256], *text = NULL, *cur;
     FILE *f = path ? fopen(path, "r") : NULL;
+    size_t size = 0, cap = 0, got;
     int ok_n = 0, bad_n = 0;
 
     CHECK(f != NULL, "the table of formats %s cannot be read", path ? path : "(none given)");
     if (!f)
         return;
-    while (fgets(line, sizeof line, f)) {
-        char *tab = strchr(line, '\t'), kinds[8];
-        size_t len = strlen(line);
+    /* The whole table is read before the first child process is made, and the
+       file closed: a child that ends in the C library of macOS moves the offset
+       of a stream that is still open (the offset is shared with the parent), and
+       the parent then reads the same bytes again, for ever. */
+    for (;;) {
+        if (size + 4096 > cap) {
+            cap = cap ? cap * 2 : 65536;
+            text = realloc(text, cap);
+            CHECK(text != NULL, "out of memory");
+            if (!text)
+                return;
+        }
+        got = fread(text + size, 1, cap - size - 1, f);
+        if (!got)
+            break;
+        size += got;
+    }
+    fclose(f);
+    text[size] = 0;
+    for (cur = text; *cur; ) {
+        char *nl = strchr(cur, '\n'), *tab, kinds[8];
+        size_t len = nl ? (size_t)(nl - cur) : strlen(cur);
         int ok, how, took;
 
-        if (len && line[len - 1] == '\n')
-            line[--len] = 0;
+        if (len >= sizeof line)
+            len = sizeof line - 1;
+        memcpy(line, cur, len);
+        line[len] = 0;
+        cur = nl ? nl + 1 : cur + strlen(cur);
+        tab = strchr(line, '\t');
         if (!len || line[0] == '#')
             continue;
         CHECK(tab != NULL, "line without a tab: %s", line);
@@ -478,7 +561,7 @@ static void test_format_table(const char *path)
             CHECK(how == 1 || how == 3, "format %s is bad in the table, and vsnprintf %s", tab, how == 0 ? "takes it" : "dies, but not of an abort");
         }
     }
-    fclose(f);
+    free(text);
     CHECK(ok_n >= 40 && bad_n >= 40, "only %d ok and %d bad formats read", ok_n, bad_n);
 }
 
@@ -574,6 +657,7 @@ static void test_snprintf(void)
 int main(int argc, char **argv)
 {
     test_mem();
+    test_memcpy_all();
     test_str();
     test_snprintf();
     test_aborts();

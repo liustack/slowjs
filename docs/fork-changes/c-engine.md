@@ -32,7 +32,7 @@ read_when:
 
 ## The small libc
 
-`engine/libc` is musl's string and math functions at commit `7ada6dd` (the one `modernc.org/libc` v1.77.1 is translated from), a `snprintf` that does the formats the engine uses, and the headers. See its [README](../../engine/libc/README.md).
+`engine/libc` is musl's string and math functions at commit `7ada6dd` (the one `modernc.org/libc` v1.77.1 is translated from), a `snprintf` that does the formats the engine uses, and the headers. `memcpy` is not musl's: it is written here (overlapping loads and stores of one width up to 128 bytes, then a loop of 64 bytes with the destination aligned to 16, SSE2 and NEON moves only), because musl's is slow for the strings the engine builds. See its [README](../../engine/libc/README.md).
 
 The math is the same C that the Go engine runs on linux/amd64, built with `-ffp-contract=off -U__FP_FAST_FMA`, so that `log`, `log2` and `pow` take the same branch on every machine. What is tested, and what is not:
 
