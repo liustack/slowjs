@@ -6,10 +6,6 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // Error holds structured information from a JavaScript exception. The error
@@ -82,17 +78,17 @@ func (e *Error) Error() string {
 // returning "" when the property is absent or not a string, when reading it
 // throws, or when there is no memory to convert it. Like errString it drops
 // the exception, see there. 'v' is borrowed.
-func errStrProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r string) {
-	vr := lib.XJS_GetPropertyStr(tls, ctx, v, name)
+func (m *VM) errStrProp(v jsValue, name uint32) (r string) {
+	vr := m.jsGetProperty(v, name)
 	if isException(vr) {
-		dropException(tls, ctx)
+		m.dropException()
 		return ""
 	}
 
-	defer lib.XFreeValue(tls, ctx, vr)
+	defer m.jsFreeValue(vr)
 
-	if tag(vr) == lib.EJS_TAG_STRING || tag(vr) == lib.EJS_TAG_STRING_ROPE {
-		return errString(tls, ctx, vr)
+	if tag(vr) == tagString || tag(vr) == tagStringRope {
+		return m.errString(vr)
 	}
 
 	return ""
@@ -101,19 +97,19 @@ func errStrProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r str
 // errIntProp reads the integer-valued property 'name' from error value 'v',
 // returning 0 when the property is absent or not numeric, or when reading it
 // throws. Like errString it drops the exception, see there. 'v' is borrowed.
-func errIntProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r int) {
-	vr := lib.XJS_GetPropertyStr(tls, ctx, v, name)
+func (m *VM) errIntProp(v jsValue, name uint32) (r int) {
+	vr := m.jsGetProperty(v, name)
 	if isException(vr) {
-		dropException(tls, ctx)
+		m.dropException()
 		return 0
 	}
 
-	defer lib.XFreeValue(tls, ctx, vr)
+	defer m.jsFreeValue(vr)
 
 	switch tag(vr) {
-	case lib.EJS_TAG_INT:
+	case tagInt:
 		return int(jsvToInt32(vr))
-	case lib.EJS_TAG_FLOAT64:
+	case tagFloat64:
 		return int(jsvToFloat64(vr))
 	}
 
@@ -133,18 +129,17 @@ func errIntProp(tls *libc.TLS, ctx uintptr, v lib.TJSValue, name uintptr) (r int
 // exception that reading throws is dropped, so ErrorFromValue leaves no
 // exception pending.
 func ErrorFromValue(v Value) *Error {
-	tls := v.vm.runtime.tls
-	ctx := v.vm.cContext
+	m := v.vm
 
 	return &Error{
 		engine:       true,
-		raw:          errString(tls, ctx, v.v),
-		Name:         errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&nameC[0]))),
-		Message:      errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&messageC[0]))),
-		Stack:        errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&stackC[0]))),
-		LineNumber:   errIntProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&lineNumC[0]))),
-		ColumnNumber: errIntProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&colNumC[0]))),
-		FileName:     errStrProp(tls, ctx, v.v, uintptr(unsafe.Pointer(&fileNameC[0]))),
+		raw:          m.errString(v.v),
+		Name:         m.errStrProp(v.v, atomName),
+		Message:      m.errStrProp(v.v, atomMessage),
+		Stack:        m.errStrProp(v.v, atomStack),
+		LineNumber:   m.errIntProp(v.v, atomLineNumber),
+		ColumnNumber: m.errIntProp(v.v, atomColumnNumber),
+		FileName:     m.errStrProp(v.v, atomFileName),
 	}
 }
 
@@ -157,23 +152,21 @@ func (m *VM) errFromException() error {
 // it as an *Error, and whether it was uncatchable (an interrupt, running out
 // of memory, or a panic in a Go function).
 func (m *VM) takeException() (err *Error, uncatchable bool) {
-	tls := m.runtime.tls
-	ctx := m.cContext
 	uncatchable = m.uncatchablePending()
-	e := lib.XJS_GetException(tls, ctx)
+	e := m.jsGetException()
 	// The flag outlives the exception. Clear it, so that it does not stay
 	// with the next exception the engine fails to throw.
-	lib.XJS_SetUncatchableException(tls, ctx, 0)
+	m.jsSetUncatchableException(false)
 
-	defer lib.XFreeValue(tls, ctx, e)
+	defer m.jsFreeValue(e)
 
 	switch {
-	case uncatchable && tag(e) == lib.EJS_TAG_NULL:
+	case uncatchable && tag(e) == tagNull:
 		// The engine throws null when it runs out of memory building an
 		// error.
 		err = outOfMemoryError()
 	case uncatchable:
-		err = uncatchableError(tls, ctx, e)
+		err = m.uncatchableError(e)
 	default:
 		err = ErrorFromValue(Value{vm: m, v: e})
 	}
@@ -196,8 +189,8 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 		// Inside a Go function called from javascript, the exception ends
 		// that javascript too: it stays pending, so that every call into
 		// javascript fails until callGo returns it to the engine.
-		lib.XJS_Throw(tls, ctx, lib.XDupValue(tls, ctx, e))
-		lib.XJS_SetUncatchableException(tls, ctx, 1)
+		m.jsThrow(dupValue(e))
+		m.jsSetUncatchableException(true)
 	}
 	return err, uncatchable
 }
@@ -211,10 +204,8 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 // takes the exception or returns (repanic).
 func (m *VM) hostPanicked(name string, p any) {
 	m.panicked = p
-	tls := m.runtime.tls
-	ctx := m.cContext
-	throwInternalError(tls, ctx, fmt.Sprintf("panic in Go function %s: %v", name, p))
-	lib.XJS_SetUncatchableException(tls, ctx, 1)
+	m.jsThrowError(errorKindInternal, fmt.Sprintf("panic in Go function %s: %v", name, p))
+	m.jsSetUncatchableException(true)
 }
 
 // repanic goes on with the panic hostPanicked kept.
@@ -234,13 +225,13 @@ func (m *VM) repanic() {
 // data properties message and stack are read, the name is InternalError,
 // the class the engine and hostPanicked make all of them with, and the
 // string form is the one Error.prototype.toString makes of the two.
-func uncatchableError(tls *libc.TLS, ctx uintptr, e lib.TJSValue) *Error {
-	message := ownString(tls, ctx, e, lib.EJS_ATOM_message)
+func (m *VM) uncatchableError(e jsValue) *Error {
+	message := m.ownString(e, atomMessage)
 	raw := "InternalError"
 	if message != "" {
 		raw += ": " + message
 	}
-	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: ownString(tls, ctx, e, lib.EJS_ATOM_stack)}
+	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: m.ownString(e, atomStack)}
 }
 
 // ownString returns the own property atom of v, an error the engine or the
@@ -251,31 +242,31 @@ func uncatchableError(tls *libc.TLS, ctx uintptr, e lib.TJSValue) *Error {
 // getter. Reading a stack the engine has not formatted yet formats it, and
 // making the Go string of a string built by concatenation needs memory:
 // running out of memory there is dropped, uncatchable flag and all.
-func ownString(tls *libc.TLS, ctx uintptr, v lib.TJSValue, atom lib.TJSAtom) string {
-	switch lib.XJS_GetOwnProperty(tls, ctx, 0, v, atom) {
+func (m *VM) ownString(v jsValue, atom uint32) string {
+	switch m.jsGetOwnProperty(v, atom) {
 	case 0:
 		return ""
 	case 1:
 	default:
-		dropUncatchable(tls, ctx)
+		m.dropUncatchable()
 		return ""
 	}
 
-	p := lib.XJS_GetPropertyInternal(tls, ctx, v, atom, v, 0)
+	p := m.jsGetPropertyInternal(v, atom, v, 0)
 	if isException(p) {
-		dropUncatchable(tls, ctx)
+		m.dropUncatchable()
 		return ""
 	}
 
-	defer lib.XFreeValue(tls, ctx, p)
+	defer m.jsFreeValue(p)
 
-	if tag(p) != lib.EJS_TAG_STRING && tag(p) != lib.EJS_TAG_STRING_ROPE {
+	if tag(p) != tagString && tag(p) != tagStringRope {
 		return ""
 	}
 
-	str, ok := cString(tls, ctx, p)
+	str, ok := m.toGoString(p, false)
 	if !ok {
-		dropUncatchable(tls, ctx)
+		m.dropUncatchable()
 	}
 	return str
 }
@@ -283,9 +274,9 @@ func ownString(tls *libc.TLS, ctx uintptr, v lib.TJSValue, atom lib.TJSAtom) str
 // dropUncatchable drops the exception pending in ctx and clears the
 // uncatchable flag running out of memory sets, so that it does not stay
 // with the next exception thrown (see takeException).
-func dropUncatchable(tls *libc.TLS, ctx uintptr) {
-	dropException(tls, ctx)
-	lib.XJS_SetUncatchableException(tls, ctx, 0)
+func (m *VM) dropUncatchable() {
+	m.dropException()
+	m.jsSetUncatchableException(false)
 }
 
 // outOfMemoryError is the error the engine throws when it runs out of
@@ -298,7 +289,7 @@ func outOfMemoryError() *Error {
 // interrupt) is pending in m's context. Every call into javascript fails
 // while one is.
 func (m *VM) uncatchablePending() bool {
-	return lib.XJS_IsUncatchableException(m.runtime.tls, m.cContext) != 0
+	return m.jsIsUncatchableException()
 }
 
 // settled returns v, the result of a call into javascript, or the exception
@@ -307,11 +298,11 @@ func (m *VM) uncatchablePending() bool {
 // that rejects its promise when reading 'then' throws, returns as if it had
 // not failed, and the code that called it can go on until its next call,
 // which fails. The call that ran it fails all the same.
-func (m *VM) settled(v lib.TJSValue) lib.TJSValue {
+func (m *VM) settled(v jsValue) jsValue {
 	if isException(v) || !m.uncatchablePending() {
 		return v
 	}
 
-	lib.XFreeValue(m.runtime.tls, m.cContext, v)
+	m.jsFreeValue(v)
 	return exception
 }

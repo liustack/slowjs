@@ -11,9 +11,6 @@ import (
 	"math/bits"
 	"unicode/utf8"
 	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // argString is cString, or cWTF8 when wtf8 is true, for a string argument
@@ -21,10 +18,10 @@ import (
 // JS_ToCStringLen2 makes a UTF-8 copy in engine memory for any string that
 // is not ASCII, which cString then copies again. A rope goes the way of
 // cString, which joins it.
-func argString(tls *libc.TLS, ctx uintptr, v lib.TJSValue, wtf8 bool) (string, bool) {
-	p, n, wide, ok := lib.StringChars(v)
+func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
+	p, n, wide, ok := stringChars(v)
 	if !ok {
-		return toCString(tls, ctx, v, wtf8)
+		return m.toGoString(v, wtf8)
 	}
 	if n == 0 {
 		return "", true
@@ -138,14 +135,14 @@ func utf16String(u []uint16, wtf8 bool) string {
 // where newString copied s to C memory and the engine decoded it there. ok
 // is false for a string longer than the engine holds, which goes the way of
 // the engine to fail as it does.
-func newStringFast(tls *libc.TLS, ctx uintptr, s string) (v lib.TJSValue, ok bool) {
-	if len(s) > lib.MJS_STRING_LEN_MAX {
+func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
+	if len(s) > stringLenMax {
 		return v, false
 	}
 	b := stringBytes(s)
 	i := asciiLen(b)
 	if i == len(b) {
-		v, p := lib.NewStringChars(tls, ctx, len(b), false)
+		v, p := m.newStringChars(len(b), false)
 		if p != 0 {
 			copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
 		}
@@ -153,11 +150,11 @@ func newStringFast(tls *libc.TLS, ctx uintptr, s string) (v lib.TJSValue, ok boo
 	}
 	units, latin1, valid := utf8Units(b[i:])
 	if !valid {
-		return newStringInvalid(tls, ctx, s), true
+		return m.newStringInvalid(s), true
 	}
 	units += i
 	if latin1 {
-		v, p := lib.NewStringChars(tls, ctx, units, false)
+		v, p := m.newStringChars(units, false)
 		if p != 0 {
 			out := unsafe.Slice((*byte)(unsafe.Pointer(p)), units)
 			copy(out, b[:i])
@@ -174,7 +171,7 @@ func newStringFast(tls *libc.TLS, ctx uintptr, s string) (v lib.TJSValue, ok boo
 		}
 		return v, true
 	}
-	v, p := lib.NewStringChars(tls, ctx, units, true)
+	v, p := m.newStringChars(units, true)
 	if p != 0 {
 		out := unsafe.Slice((*uint16)(unsafe.Pointer(p)), units)
 		for j := range i {
@@ -235,7 +232,7 @@ func utf8Units(b []byte) (units int, latin1, valid bool) {
 // newStringInvalid is newStringFast for s that is not valid UTF-8: each
 // byte that does not start a valid sequence is U+FFFD, as for range reads
 // it.
-func newStringInvalid(tls *libc.TLS, ctx uintptr, s string) lib.TJSValue {
+func (m *VM) newStringInvalid(s string) jsValue {
 	units, max := 0, rune(0)
 	for _, r := range s {
 		units++
@@ -244,7 +241,7 @@ func newStringInvalid(tls *libc.TLS, ctx uintptr, s string) lib.TJSValue {
 		}
 		max = maxRune(max, r)
 	}
-	v, p := lib.NewStringChars(tls, ctx, units, max >= 0x100)
+	v, p := m.newStringChars(units, max >= 0x100)
 	if p == 0 {
 		return v
 	}
@@ -285,10 +282,10 @@ func maxRune(a, b rune) rune {
 // [VM.NewString] it decodes no UTF-8, so a [Builtin] that read its argument
 // with [Args.Latin1] returns what it made of it this way, as one copy.
 func (m *VM) NewStringLatin1(b []byte) (Value, error) {
-	if len(b) > lib.MJS_STRING_LEN_MAX {
+	if len(b) > stringLenMax {
 		return Value{}, errStringTooLong(len(b))
 	}
-	v, p := lib.NewStringChars(m.runtime.tls, m.cContext, len(b), false)
+	v, p := m.newStringChars(len(b), false)
 	if p != 0 {
 		copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
 	}
@@ -299,7 +296,7 @@ func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 // surrogates as they are. A [Builtin] that read its argument with
 // [Args.UTF16] returns what it made of it this way, as one copy.
 func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
-	if len(u) > lib.MJS_STRING_LEN_MAX {
+	if len(u) > stringLenMax {
 		return Value{}, errStringTooLong(len(u))
 	}
 	// The engine holds a string whose characters are all below U+0100 one
@@ -311,7 +308,7 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 			break
 		}
 	}
-	v, p := lib.NewStringChars(m.runtime.tls, m.cContext, len(u), wide)
+	v, p := m.newStringChars(len(u), wide)
 	if p == 0 {
 		return Value{vm: m, v: v}, nil
 	}
@@ -327,5 +324,5 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 }
 
 func errStringTooLong(n int) error {
-	return fmt.Errorf("slowjs: a string of %d characters is longer than javascript allows (%d)", n, lib.MJS_STRING_LEN_MAX)
+	return fmt.Errorf("slowjs: a string of %d characters is longer than javascript allows (%d)", n, stringLenMax)
 }

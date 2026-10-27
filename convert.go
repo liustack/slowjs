@@ -15,9 +15,6 @@ import (
 	"strconv"
 	"unicode/utf8"
 	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // NewInt returns a new Value from 'n'.
@@ -55,11 +52,11 @@ func (m *VM) NewString(s string) (r Value, err error) {
 
 // NewObjectValue returns a new Value representing '{}'.
 func (m *VM) NewObjectValue() (r Value, err error) {
-	return Value{vm: m, v: lib.XJS_NewObject(m.runtime.tls, m.cContext)}, nil
+	return Value{vm: m, v: m.jsNewObject()}, nil
 }
 
-func (m *VM) newString(s string) (r lib.TJSValue, err error) {
-	if v, ok := newStringFast(m.runtime.tls, m.cContext, s); ok {
+func (m *VM) newString(s string) (r jsValue, err error) {
+	if v, ok := m.newStringFast(s); ok {
 		return v, nil
 	}
 
@@ -68,21 +65,11 @@ func (m *VM) newString(s string) (r lib.TJSValue, err error) {
 
 // newStringEngine is newString through JS_NewStringLen, for a string longer
 // than newStringFast makes.
-func (m *VM) newStringEngine(s string) (r lib.TJSValue, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	s = validUTF8(s)
-	p, err := libc.CString(s)
-	if err != nil {
-		return r, err
-	}
-
-	defer libc.Xfree(tls, p)
-
-	return lib.XJS_NewStringLen(tls, ctx, p, lib.Tsize_t(len(s))), nil
+func (m *VM) newStringEngine(s string) (r jsValue, err error) {
+	return m.jsNewStringLen(validUTF8(s))
 }
 
-func jsInt(n int64) lib.TJSValue {
+func jsInt(n int64) jsValue {
 	switch {
 	case n >= math.MinInt32 && n <= math.MaxInt32:
 		return newInt32(int32(n))
@@ -91,7 +78,7 @@ func jsInt(n int64) lib.TJSValue {
 	}
 }
 
-func jsUint(n uint64) lib.TJSValue {
+func jsUint(n uint64) jsValue {
 	switch {
 	case n <= math.MaxInt32:
 		return newInt32(int32(n))
@@ -100,23 +87,12 @@ func jsUint(n uint64) lib.TJSValue {
 	}
 }
 
-var (
-	jsonFNC = [...]byte{'J', 'S', 'O', 'N', 0}
-	jsonFN  = uintptr(unsafe.Pointer(&jsonFNC[0]))
-)
-
-func (m *VM) parseJSON(s string, flags int32) (r lib.TJSValue, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-
-	cs, err := libc.CString(s)
+func (m *VM) parseJSON(s string, flags int32) (r jsValue, err error) {
+	r, err = m.jsParseJSON2(s, true, flags)
 	if err != nil {
 		return r, err
 	}
 
-	defer libc.Xfree(tls, cs)
-
-	r = lib.XJS_ParseJSON2(tls, ctx, cs, lib.Tsize_t(len(s)), jsonFN, flags)
 	if isException(r) {
 		err = m.errFromException()
 	}
@@ -176,8 +152,8 @@ func validUTF8(s string) string {
 // goString converts the JS value 'v' to a Go string. When the conversion
 // throws, it takes the exception out of the context and returns it as the
 // error, for example the engine's out of memory error.
-func (m *VM) goString(v lib.TJSValue) (string, error) {
-	s, ok := cString(m.runtime.tls, m.cContext, v)
+func (m *VM) goString(v jsValue) (string, error) {
+	s, ok := m.toGoString(v, false)
 	if !ok {
 		return "", m.errFromException()
 	}
@@ -191,26 +167,24 @@ func (m *VM) goString(v lib.TJSValue) (string, error) {
 // conversion throws, errString drops that new exception and returns "": the
 // exception being read is the one to report, and a second one left pending
 // would be found by the next JS_GetException of an unrelated call.
-func errString(tls *libc.TLS, ctx uintptr, v lib.TJSValue) string {
-	s, ok := cString(tls, ctx, v)
+func (m *VM) errString(v jsValue) string {
+	s, ok := m.toGoString(v, false)
 	if !ok {
-		dropException(tls, ctx)
+		m.dropException()
 	}
 
 	return s
 }
 
-// dropException frees the exception pending in 'ctx'.
-func dropException(tls *libc.TLS, ctx uintptr) {
-	lib.XFreeValue(tls, ctx, lib.XJS_GetException(tls, ctx))
+// dropException frees the exception pending in m's context.
+func (m *VM) dropException() {
+	m.jsFreeValue(m.jsGetException())
 }
 
-func (m *VM) newObject(v lib.TJSValue) (r *Object, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	json := lib.XJS_JSONStringify(tls, ctx, v, undefined, undefined)
+func (m *VM) newObject(v jsValue) (r *Object, err error) {
+	json := m.jsJSONStringify(v)
 
-	defer lib.XFreeValue(tls, ctx, json)
+	defer m.jsFreeValue(json)
 
 	if isException(json) {
 		return nil, m.errFromException()
@@ -224,52 +198,36 @@ func (m *VM) newObject(v lib.TJSValue) (r *Object, err error) {
 	return &Object{json: s}, nil
 }
 
-var (
-	toStringC = [...]byte{'t', 'o', 'S', 't', 'r', 'i', 'n', 'g', 0}
-	toString  = uintptr(unsafe.Pointer(&toStringC[0]))
-
-	// C string property names, read by ErrorFromValue.
-	messageC  = [...]byte{'m', 'e', 's', 's', 'a', 'g', 'e', 0}
-	nameC     = [...]byte{'n', 'a', 'm', 'e', 0}
-	stackC    = [...]byte{'s', 't', 'a', 'c', 'k', 0}
-	lineNumC  = [...]byte{'l', 'i', 'n', 'e', 'N', 'u', 'm', 'b', 'e', 'r', 0}
-	colNumC   = [...]byte{'c', 'o', 'l', 'u', 'm', 'n', 'N', 'u', 'm', 'b', 'e', 'r', 0}
-	fileNameC = [...]byte{'f', 'i', 'l', 'e', 'N', 'a', 'm', 'e', 0}
-)
-
 // value "unpacks" 'v'. FreeValue(v) is called before returning, 'v' must not
 // be used afterwards.
-func (m *VM) value(v lib.TJSValue, free bool) (r any, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
+func (m *VM) value(v jsValue, free bool) (r any, err error) {
 	if free && tag(v) < 0 {
 		// all tags with a reference count are negative
-		defer lib.XFreeValue(tls, ctx, v)
+		defer m.jsFreeValue(v)
 	}
 
 	switch tag(v) {
 	case
-		lib.EJS_TAG_BIG_INT,       // -9,
-		lib.EJS_TAG_SHORT_BIG_INT: // 7,
+		tagBigInt,      // -9,
+		tagShortBigInt: // 7,
 
-		ps := lib.XJS_GetPropertyStr(tls, ctx, v, toString)
+		ps := m.jsGetProperty(v, atomToString)
 		if isException(ps) {
 			return nil, m.errFromException()
 		}
 
-		defer lib.XFreeValue(tls, ctx, ps)
+		defer m.jsFreeValue(ps)
 
-		if tag(ps) != lib.EJS_TAG_OBJECT {
+		if tag(ps) != tagObject {
 			return nil, fmt.Errorf("failed to get BigInt.toString()")
 		}
 
-		*(*lib.TJSValue)(unsafe.Pointer(m.toStringArgv)) = m.int32_16
-		jsString := lib.XJS_Call(tls, ctx, ps, v, 1, m.toStringArgv)
+		jsString := m.jsCall(ps, v, []jsValue{newInt32(16)})
 		if isException(jsString) {
 			return nil, m.errFromException()
 		}
 
-		defer lib.XFreeValue(tls, ctx, jsString)
+		defer m.jsFreeValue(jsString)
 
 		s, err := m.goString(jsString)
 		if err != nil {
@@ -283,32 +241,30 @@ func (m *VM) value(v lib.TJSValue, free bool) (r any, err error) {
 
 		return n, nil
 	case
-		lib.EJS_TAG_STRING_ROPE, // -6,
-		lib.EJS_TAG_STRING:      // -7,
+		tagStringRope, // -6,
+		tagString:     // -7,
 
 		return m.goString(v)
-	case lib.EJS_TAG_OBJECT: // -1
+	case tagObject: // -1
 		return m.newObject(v)
-	case lib.EJS_TAG_INT: //  0,
+	case tagInt: //  0,
 		return int(jsvToInt32(v)), nil
-	case lib.EJS_TAG_BOOL: //  1,
+	case tagBool: //  1,
 		return jsvToInt32(v) != 0, nil
-	case lib.EJS_TAG_NULL: //  2,
+	case tagNull: //  2,
 		return nil, nil
-	case lib.EJS_TAG_UNDEFINED: //  3,
+	case tagUndefined: //  3,
 		return Undefined{}, nil
-	case lib.EJS_TAG_EXCEPTION: // 6,
+	case tagException: // 6,
 		return nil, m.errFromException()
 		panic(todo(""))
-	case lib.EJS_TAG_FLOAT64: // 8,
+	case tagFloat64: // 8,
 		return jsvToFloat64(v), nil
 	}
 	return Unsupported{}, nil
 }
 
-func (m *VM) jsValue(in reflect.Value) (out lib.TJSValue, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
+func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
 	defer func() {
 		if isException(out) && err == nil {
 			err = m.errFromException()
@@ -343,14 +299,11 @@ func (m *VM) jsValue(in reflect.Value) (out lib.TJSValue, err error) {
 			return out, err
 		}
 
-		p, err := libc.CString(string(b))
+		v, err := m.jsParseJSON2(string(b), false, 0)
 		if err != nil {
 			return out, err
 		}
 
-		defer libc.Xfree(tls, p)
-
-		v := lib.XJS_ParseJSON(tls, ctx, p, libc.Tsize_t(len(b)), uintptr(unsafe.Pointer(&evalFN)))
 		if isException(v) {
 			return out, m.errFromException()
 		}
@@ -371,7 +324,7 @@ func (m *VM) jsValue(in reflect.Value) (out lib.TJSValue, err error) {
 	}
 }
 
-func (m *VM) jsInterfaceValue(in reflect.Value) (out lib.TJSValue, err error) {
+func (m *VM) jsInterfaceValue(in reflect.Value) (out jsValue, err error) {
 	if in.IsNil() {
 		return null, nil
 	}
@@ -379,7 +332,7 @@ func (m *VM) jsInterfaceValue(in reflect.Value) (out lib.TJSValue, err error) {
 	return m.jsValue(in.Elem())
 }
 
-func (m *VM) jsPtrValue(in reflect.Value) (out lib.TJSValue, err error) {
+func (m *VM) jsPtrValue(in reflect.Value) (out jsValue, err error) {
 	if in.IsNil() {
 		return null, nil
 	}
@@ -403,7 +356,7 @@ func (m *VM) jsPtrValue(in reflect.Value) (out lib.TJSValue, err error) {
 // jsMap converts a Go map to a Javascript object. Like jsArray, and unlike the
 // JSON round trip used for structs, it converts every value with jsValue, so a
 // Value stays a live reference and a *big.Int stays a BigInt.
-func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
+func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	if in.IsNil() {
 		return null, nil
 	}
@@ -438,9 +391,7 @@ func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
 	// always produces the same object, which is what encoding/json does too.
 	sort.Slice(a, func(i, j int) bool { return a[i].key < a[j].key })
 
-	tls := m.runtime.tls
-	ctx := m.cContext
-	obj := lib.XJS_NewObject(tls, ctx)
+	obj := m.jsNewObject()
 	if isException(obj) {
 		return out, m.errFromException()
 	}
@@ -448,30 +399,27 @@ func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
 	for _, kv := range a {
 		// Like jsArray, a Value is passed on as is rather than converted, and the
 		// reference it holds is the one handed over below.
-		var jv lib.TJSValue
+		var jv jsValue
 		switch x := kv.val.Interface().(type) {
 		case Value:
 			jv = x.v
 		default:
 			if jv, err = m.jsValue(kv.val); err != nil {
-				lib.XFreeValue(tls, ctx, obj)
+				m.jsFreeValue(obj)
 				return out, err
 			}
 		}
 
-		p, err2 := libc.CString(validUTF8(kv.key))
+		// JS_SetPropertyStr takes over the reference to jv, also when there is
+		// no memory for the C string of the name.
+		rc, err2 := m.jsSetPropertyStr(obj, validUTF8(kv.key), jv)
 		if err2 != nil {
-			lib.XFreeValue(tls, ctx, jv)
-			lib.XFreeValue(tls, ctx, obj)
+			m.jsFreeValue(obj)
 			return out, err2
 		}
 
-		// JS_SetPropertyStr takes over the reference to jv, it does not take over
-		// the property name.
-		rc := lib.XJS_SetPropertyStr(tls, ctx, obj, p, jv)
-		libc.Xfree(tls, p)
 		if rc < 0 {
-			lib.XFreeValue(tls, ctx, obj)
+			m.jsFreeValue(obj)
 			return out, m.errFromException()
 		}
 	}
@@ -479,8 +427,8 @@ func (m *VM) jsMap(in reflect.Value) (out lib.TJSValue, err error) {
 	return obj, nil
 }
 
-func (m *VM) jsArray(a []reflect.Value) (out lib.TJSValue, err error) {
-	var s []lib.TJSValue
+func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
+	var s []jsValue
 	for _, v := range a {
 		switch x := v.Interface().(type) {
 		case Value:
@@ -497,24 +445,13 @@ func (m *VM) jsArray(a []reflect.Value) (out lib.TJSValue, err error) {
 	return m.jsArrayOf(s)
 }
 
-func (m *VM) jsArrayOf(a []lib.TJSValue) (out lib.TJSValue, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	argv := libc.Xmalloc(tls, lib.Tsize_t(len(a))*lib.Tsize_t(sizeofJsValue))
-
-	defer libc.Xfree(tls, argv)
-
-	p := argv
-	for _, v := range a {
-		*(*lib.TJSValue)(unsafe.Pointer(p)) = v
-		p += sizeofJsValue
-	}
-	out = lib.Xjs_array_of(tls, ctx, undefined, int32(len(a)), argv)
+func (m *VM) jsArrayOf(a []jsValue) (out jsValue, err error) {
+	out = m.jsArrayOfValues(a)
 	if isException(out) {
 		err = m.errFromException()
 	}
 	for _, v := range a {
-		lib.XFreeValue(tls, ctx, v)
+		m.jsFreeValue(v)
 	}
 	return out, err
 }

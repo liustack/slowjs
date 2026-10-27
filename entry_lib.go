@@ -68,6 +68,9 @@ func (m *VM) Interrupt() {
 // from then on (see hostEnded). When the outermost call returned and left
 // frames, an engine function did not free its frame: leave panics with
 // framesLeftPanic.
+//
+// leave takes the error the call returns, deferred as m.leave(&err), so that
+// an engine can set it when it ends the call. This engine leaves it alone.
 func (m *VM) enter() {
 	if m.broken {
 		panic(brokenPanic)
@@ -79,7 +82,7 @@ func (m *VM) enter() {
 	m.depth++
 }
 
-func (m *VM) leave() {
+func (m *VM) leave(err *error) {
 	m.depth--
 	if m.depth == 0 {
 		// leave recovers only to tell a return from a panic: a panic goes

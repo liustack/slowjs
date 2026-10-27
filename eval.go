@@ -7,19 +7,13 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"errors"
 	"fmt"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // Eval flags.
 const (
-	EvalGlobal = lib.MJS_EVAL_TYPE_GLOBAL // global code
-	EvalModule = lib.MJS_EVAL_TYPE_MODULE // module code
+	EvalGlobal = 0 // global code
+	EvalModule = 1 // module code
 )
-
-var evalFN = [...]byte{'<', 'e', 'v', 'a', 'l', '>', 0}
 
 // Eval evaluates a script or module source in 'javascript'.
 //
@@ -36,18 +30,14 @@ var evalFN = [...]byte{'<', 'e', 'v', 'a', 'l', '>', 0}
 //	object                  *Object                                 nil
 //	any other type          Unsupported                             nil
 func (m *VM) Eval(javascript string, flags int) (r any, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	ps, err := libc.CString(javascript)
+	m.enter()
+	defer m.leave(&err)
+	v, err := m.jsEval(javascript, int32(flags))
 	if err != nil {
-		return nil, fmt.Errorf("OOM")
+		return nil, err
 	}
 
-	defer libc.Xfree(tls, ps)
-
-	m.enter()
-	defer m.leave()
-	return m.value(m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), true)
+	return m.value(m.settled(v), true)
 }
 
 // ExecutePendingJobs runs queued Javascript jobs — Promise reactions (the
@@ -59,28 +49,16 @@ func (m *VM) Eval(javascript string, flags int) (r any, err error) {
 // error — the first one — while the remaining jobs still run; a self-feeding job
 // queue is bounded so it cannot hang the host.
 func (m *VM) ExecutePendingJobs() (n int, err error) {
-	tls := m.runtime.tls
-	rt := m.runtime.cRuntime
-
-	// pctx receives the context of a throwing job; with a single context per VM its
-	// value is not otherwise needed. It is a pointer to one JSContext*.
-	pctx := libc.Xcalloc(tls, 1, libc.Tsize_t(unsafe.Sizeof(uintptr(0))))
-	if pctx == 0 {
-		return 0, fmt.Errorf("OOM")
-	}
-
-	defer libc.Xfree(tls, pctx)
-
 	// Re-arm the eval-timeout deadline, as the Eval* functions do. Draining runs JS
 	// (Promise reactions and async continuations), so without this the whole drain
 	// inherits a stale deadline from the last Eval — one that has kept
 	// ticking through idle time — and is spuriously interrupted.
 	m.enter()
-	defer m.leave()
+	defer m.leave(&err)
 
 	const maxJobs = 1 << 20 // bound a self-feeding microtask loop so it cannot hang the host
 	for n < maxJobs {
-		r := lib.XJS_ExecutePendingJob(tls, rt, pctx)
+		r := m.jsExecutePendingJob()
 		if r == 0 {
 			return n, err // queue drained
 		}
@@ -112,18 +90,14 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error) {
 	defer obj.Free()
 
-	tls := m.runtime.tls
-	ctx := m.cContext
-	ps, err := libc.CString(javascript)
+	m.enter()
+	defer m.leave(&err)
+	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
 	if err != nil {
-		return nil, fmt.Errorf("OOM")
+		return nil, err
 	}
 
-	defer libc.Xfree(tls, ps)
-
-	m.enter()
-	defer m.leave()
-	return m.value(m.settled(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), true)
+	return m.value(m.settled(v), true)
 }
 
 // EvalValue evaluates a script or module source in 'javascript' and returns
@@ -137,20 +111,16 @@ func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	ps, err := libc.CString(javascript)
+	m.enter()
+	defer m.leave(&err)
+	v, err := m.jsEval(javascript, int32(flags))
 	if err != nil {
-		return r, fmt.Errorf("OOM")
+		return r, err
 	}
 
-	defer libc.Xfree(tls, ps)
-
-	m.enter()
-	defer m.leave()
-	v := m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)))
+	v = m.settled(v)
 	if isException(v) {
-		lib.XFreeValue(tls, ctx, v)
+		m.jsFreeValue(v)
 		return r, m.errFromException()
 	}
 
@@ -161,20 +131,16 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, err error) {
 	defer obj.Free()
 
-	tls := m.runtime.tls
-	ctx := m.cContext
-	ps, err := libc.CString(javascript)
+	m.enter()
+	defer m.leave(&err)
+	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
 	if err != nil {
-		return r, fmt.Errorf("OOM")
+		return r, err
 	}
 
-	defer libc.Xfree(tls, ps)
-
-	m.enter()
-	defer m.leave()
-	v := m.settled(lib.XJS_EvalThis(tls, ctx, obj.v, ps, libc.Tsize_t(len(javascript)), uintptr(unsafe.Pointer(&evalFN)), int32(flags)))
+	v = m.settled(v)
 	if isException(v) {
-		lib.XFreeValue(tls, ctx, v)
+		m.jsFreeValue(v)
 		return r, m.errFromException()
 	}
 
@@ -206,57 +172,51 @@ func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
-	ps, err := libc.CString(string(bytecode))
+	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
+	obj, err := m.jsReadObject(bytecode, readObjBytecode)
 	if err != nil {
-		return r, fmt.Errorf("OOM")
+		return r, err
 	}
 
-	defer libc.Xfree(m.runtime.tls, ps)
-
-	return m.evalBytecode(ps, len(bytecode), lib.MJS_READ_OBJ_BYTECODE)
+	return m.evalBytecode(obj)
 }
 
-// evalBytecode reads the n bytes of bytecode at p with the flags of
-// JS_ReadObject and runs what it read.
-func (m *VM) evalBytecode(p uintptr, n int, flags int32) (r Value, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
-	obj := lib.XJS_ReadObject(tls, ctx, p, lib.Tsize_t(n), flags)
+// evalBytecode runs obj, what JS_ReadObject read, which it takes.
+func (m *VM) evalBytecode(obj jsValue) (r Value, err error) {
 	if isException(obj) {
 		return r, m.errFromException()
 	}
 
 	m.enter()
-	defer m.leave()
+	defer m.leave(&err)
 
-	var v lib.TJSValue
-	if tag(obj) == lib.EJS_TAG_MODULE {
-		if lib.XJS_ResolveModule(tls, ctx, obj) < 0 {
-			lib.XFreeValue(tls, ctx, obj)
+	var v jsValue
+	if tag(obj) == tagModule {
+		if m.jsResolveModule(obj) < 0 {
+			m.jsFreeValue(obj)
 			return r, m.errFromException()
 		}
 
-		lib.Xjs_module_set_import_meta(tls, ctx, obj, 0, 1)
+		m.setImportMeta(obj)
 		// JS_EvalFunction takes obj. The hold kept here lets freeTopLevel
 		// reach the module after it ran.
-		lib.XDupValue(tls, ctx, obj)
-		defer lib.XFreeValue(tls, ctx, obj)
+		dupValue(obj)
+		defer m.jsFreeValue(obj)
 		// 'this' is set to ctx->global_obj
 		// see https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs.c#L36045
-		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
+		v = m.settled(m.jsEvalFunction(obj))
 		if !isException(v) {
 			if v, err = m.await(v); err != nil {
 				return r, err
 			}
-			freeTopLevel(tls, ctx, obj)
+			m.freeTopLevel(obj)
 		}
 	} else {
-		v = m.settled(lib.XJS_EvalFunction(tls, ctx, obj))
+		v = m.settled(m.jsEvalFunction(obj))
 	}
 
 	if isException(v) {
-		lib.XFreeValue(tls, ctx, v)
+		m.jsFreeValue(v)
 		return r, m.errFromException()
 	}
 
@@ -282,25 +242,22 @@ var errAwaitPending = errors.New("slowjs: the module's top-level await is still 
 // It replaces js_std_await of quickjs-libc.c, which the qjs shell calls. That
 // one prints a failed job and goes on, and when the queue is empty it reads
 // the state js_std_init_handlers sets up, which a VM has not got.
-func (m *VM) await(v lib.TJSValue) (lib.TJSValue, error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	rt := m.runtime.cRuntime
-	defer lib.XFreeValue(tls, ctx, v)
+func (m *VM) await(v jsValue) (jsValue, error) {
+	defer m.jsFreeValue(v)
 
 	var jobErr error
 	for {
-		switch lib.XJS_PromiseState(tls, ctx, v) {
-		case lib.EJS_PROMISE_FULFILLED:
+		switch m.jsPromiseState(v) {
+		case promiseFulfilled:
 			if jobErr != nil {
 				return exception, jobErr
 			}
-			return lib.XJS_PromiseResult(tls, ctx, v), nil
-		case lib.EJS_PROMISE_REJECTED:
-			lib.XJS_Throw(tls, ctx, lib.XJS_PromiseResult(tls, ctx, v))
+			return m.jsPromiseResult(v), nil
+		case promiseRejected:
+			m.jsThrow(m.jsPromiseResult(v))
 			return exception, m.errFromException()
-		case lib.EJS_PROMISE_PENDING:
-			r := lib.XJS_ExecutePendingJob(tls, rt, 0)
+		case promisePending:
+			r := m.jsExecutePendingJob()
 			if r == 0 {
 				if jobErr != nil {
 					return exception, errors.Join(errAwaitPending, jobErr)
@@ -320,7 +277,7 @@ func (m *VM) await(v lib.TJSValue) (lib.TJSValue, error) {
 				}
 			}
 		default: // not a promise
-			return lib.XDupValue(tls, ctx, v), nil
+			return dupValue(v), nil
 		}
 	}
 }
@@ -331,18 +288,16 @@ func (m *VM) await(v lib.TJSValue) (lib.TJSValue, error) {
 //
 // Note: The bytecode format is linked to a given QuickJS version.
 func (m *VM) Compile(javascript string, flags int) ([]byte, error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/qjsc.c#L346-L360
 
-	flags |= lib.MJS_EVAL_FLAG_COMPILE_ONLY
+	flags |= evalFlagCompileOnly
 
 	v, err := m.eval(javascript, flags)
 	if err != nil {
 		return nil, err
 	}
 
-	defer lib.XFreeValue(tls, ctx, v)
+	defer m.jsFreeValue(v)
 
 	if isException(v) {
 		return nil, m.errFromException()
@@ -351,19 +306,25 @@ func (m *VM) Compile(javascript string, flags int) ([]byte, error) {
 	return m.writeBytecode(v)
 }
 
-func (m *VM) eval(js string, flags int) (r lib.TJSValue, err error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	ps, err := libc.CString(js)
-	if err != nil {
-		return r, fmt.Errorf("OOM")
+// writeBytecode returns the bytecode of the compiled script v.
+func (m *VM) writeBytecode(v jsValue) ([]byte, error) {
+	b, ok := m.jsWriteObject(v)
+	if !ok {
+		return nil, m.errFromException()
 	}
 
-	defer libc.Xfree(tls, ps)
+	return b, nil
+}
 
+func (m *VM) eval(js string, flags int) (r jsValue, err error) {
 	m.enter()
-	defer m.leave()
-	return m.settled(lib.XJS_Eval(tls, ctx, ps, libc.Tsize_t(len(js)), uintptr(unsafe.Pointer(&evalFN)), int32(flags))), nil
+	defer m.leave(&err)
+	v, err := m.jsEval(js, int32(flags))
+	if err != nil {
+		return r, err
+	}
+
+	return m.settled(v), nil
 }
 
 // GlobalObject returns m's global object.
@@ -374,6 +335,6 @@ func (m *VM) GlobalObject() (r Value) {
 	return Value{vm: m, v: m.globalObject()}
 }
 
-func (m *VM) globalObject() lib.TJSValue {
-	return lib.XJS_GetGlobalObject(m.runtime.tls, m.cContext)
+func (m *VM) globalObject() jsValue {
+	return m.jsGetGlobalObject()
 }
