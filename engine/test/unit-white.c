@@ -32,6 +32,8 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
+int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
+int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
 
 /* ---- texts of every kind of character ---- */
 
@@ -628,6 +630,50 @@ static void test_function_properties_oom(void)
     }
 }
 
+/* The compiler adds the variable of this, new.target, the home object, the
+   active function of a derived class constructor, arguments and the name of
+   a function expression the first time code of the function, or of a
+   function in it, uses one. When adding it runs out of memory, resolving the
+   name fails with the out of memory error. It used to take the failure for a
+   function without that variable and look further out: the name became a
+   variable of the script, or a global, with the error left pending, and from
+   an arrow function, arguments and the name of the function read the
+   variable at index -1. The variables a direct eval can use fail the same
+   way. With memory, each gets its variable. */
+static void test_added_vars_oom(void)
+{
+    static const char *const kinds[] = {
+        "this", "new.target", "home object", "active function", "arguments", "function name",
+    };
+    int kind, in_arrow, full;
+
+    for (in_arrow = 0; in_arrow < 2; in_arrow++) {
+        for (full = 0; full < 2; full++) {
+            for (kind = 0; kind <= (int)countof(kinds); kind++) {
+                VM v = vm_new();
+                const char *what = kind < (int)countof(kinds) ? kinds[kind] : "eval";
+                const char *where = in_arrow ? "in an arrow function" : "in the function";
+                size_t room = full ? 4096 : (size_t)-1;
+                int r, pending, made, unc;
+
+                if (kind < (int)countof(kinds))
+                    r = white_resolve_var(v.ctx, kind, in_arrow, room, &pending, &made);
+                else
+                    r = white_eval_vars(v.ctx, in_arrow, room, &pending, &made);
+                unc = JS_IsUncatchableException(v.ctx);
+                CHECK(r != -2, "%s %s: the functions could not be made", what, where);
+                if (full)
+                    CHECK(r == -1 && pending && unc, "%s %s, no memory: returned %d, pending %d, uncatchable %d", what, where, r, pending, unc);
+                else
+                    CHECK(r >= 0 && !pending && made, "%s %s: returned %d, pending %d, made %d", what, where, r, pending, made);
+                free(exception_text(v.ctx));
+                fflush(stdout);
+                vm_free(&v);
+            }
+        }
+    }
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -642,6 +688,7 @@ int main(void)
     test_young_leaves_no_zero_count();
     test_error_nest();
     test_function_properties_oom();
+    test_added_vars_oom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
