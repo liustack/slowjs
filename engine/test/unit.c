@@ -1686,6 +1686,55 @@ static int test_internal_depth_autoinit(void *unused)
     return 0;
 }
 
+/* A String object and an arguments object define a property through the
+   ordinary definition, which counts a level of the internal depth: at the
+   limit a definition, and a write that adds a property, throw a RangeError
+   and change nothing, and one below the limit they work. */
+static int test_internal_depth_define(void *unused)
+{
+    static const char *const holders[] = {
+        "new String('ab')",
+        "(function () { 'use strict'; return arguments })(1, 2)",
+        "(function (a, b) { return arguments })(1, 2)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx);
+    char name[32];
+    size_t i;
+    int d;
+
+    for (i = 0; i < sizeof(holders) / sizeof(holders[0]); i++) {
+        JSValue o = JS_Eval(ctx, holders[i], strlen(holders[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (d = JS_MAX_INTERNAL_DEPTH; d >= JS_MAX_INTERNAL_DEPTH - 1; d--) {
+            int at = d == JS_MAX_INTERNAL_DEPTH, r1, r2;
+
+            CHECK(JS_SetInternalDepth(rt, d) == 0, "set %d", d);
+            r1 = JS_DefinePropertyValueStr(ctx, o, at ? "x" : "y", JS_NewInt32(ctx, 1), JS_PROP_C_W_E | JS_PROP_THROW);
+            if (at) {
+                take_error_name(ctx, name, sizeof(name));
+                CHECK(r1 < 0 && strcmp(name, "RangeError") == 0, "%s: a definition at the limit gave %d, %s", holders[i], r1, name);
+            }
+            r2 = JS_SetPropertyUint32(ctx, o, at ? 5 : 6, JS_NewInt32(ctx, 2));
+            if (at) {
+                take_error_name(ctx, name, sizeof(name));
+                CHECK(r2 < 0 && strcmp(name, "RangeError") == 0, "%s: a new element at the limit gave %d, %s", holders[i], r2, name);
+            } else {
+                CHECK(r1 > 0 && r2 > 0, "%s: one below the limit gave %d and %d", holders[i], r1, r2);
+            }
+            CHECK(JS_GetInternalDepth(rt) == d, "the depth is %d", JS_GetInternalDepth(rt));
+        }
+        CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+        JS_SetPropertyStr(ctx, global, "o", o);
+        CHECK(eval_is(ctx, "Object.keys(o).join()", "0,1,6,y"), "%s: the keys", holders[i]);
+    }
+    JS_FreeValue(ctx, global);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* Functions nested as deep as the parser goes are made, each with the
    variables it takes from the functions around it, and direct eval in the
    innermost one sees the variables of the outermost: making them counts a
@@ -2277,6 +2326,7 @@ int main(void)
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_internal_depth_limit, NULL);
     host_run_thread(test_internal_depth_autoinit, NULL);
+    host_run_thread(test_internal_depth_define, NULL);
     host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);
