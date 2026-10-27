@@ -36,8 +36,8 @@ func TestCheckPollOffset(t *testing.T) {
 }
 
 // TestCheckDispatchCopies: the indirect jumps of llc's text are counted, a
-// count below the least fails and names the llc options, and a function with
-// a table but no least number fails.
+// count below the least fails, and a function with a table but no least
+// number fails.
 func TestCheckDispatchCopies(t *testing.T) {
 	old := DispatchCopies
 	defer func() { DispatchCopies = old }()
@@ -52,7 +52,7 @@ func TestCheckDispatchCopies(t *testing.T) {
 	if n, err := CheckDispatchCopies("interp", text(3)); err != nil || n != 3 {
 		t.Fatalf("3 copies: %d, %v", n, err)
 	}
-	if n, err := CheckDispatchCopies("interp", text(2)); err == nil || n != 2 || !strings.Contains(err.Error(), "-tail-dup-pred-size") {
+	if n, err := CheckDispatchCopies("interp", text(2)); err == nil || n != 2 || !strings.Contains(err.Error(), "stopped copying the dispatch") {
 		t.Fatalf("2 copies: %d, %v", n, err)
 	}
 	if _, err := CheckDispatchCopies("other", text(5)); err == nil || !strings.Contains(err.Error(), "DispatchCopies") {
