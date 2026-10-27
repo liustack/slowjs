@@ -219,6 +219,13 @@ func newEngineVM() (*VM, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Unless the VM is handed back, nothing else closes the engine's VM.
+	handed := false
+	defer func() {
+		if !handed {
+			cv.Close()
+		}
+	}()
 	h := cv.Host()
 	sp := cv.SP()
 	base, _ := h.Stack()
@@ -237,7 +244,10 @@ func newEngineVM() (*VM, error) {
 		},
 	}
 	m.id = h.ID()
+	// The id is free in vms: closeEngine takes it out before the host
+	// hands it out again.
 	vms.Put(m.id, m)
+	handed = true
 	return m, nil
 }
 
@@ -245,14 +255,17 @@ func newEngineVM() (*VM, error) {
 func forgetVM(id uint32) {}
 
 // closeEngine frees the context and the runtime of m, gives its memory back
-// and clears m.vmState. The id of m is out of vms also when it panics: the
-// host hands it out again.
+// and clears m.vmState. The id of m leaves vms before the host takes it back
+// (cvm.Close), also when a panic leaves first: another goroutine may get it
+// for a new VM from then on.
 func (m *VM) closeEngine() error {
-	defer vms.Delete(m.h.ID())
-	if !m.h.Broken() && m.entered == 0 {
-		// The async context may hold what the context holds.
-		m.jsSetAsyncContext(undefined)
-	}
+	func() {
+		defer vms.Delete(m.id)
+		if !m.h.Broken() && m.entered == 0 {
+			// The async context may hold what the context holds.
+			m.jsSetAsyncContext(undefined)
+		}
+	}()
 	_, err := m.cvm.Close()
 	// Interrupt keeps the host: it must not keep what the clock holds.
 	m.h.SetClock(nil)
