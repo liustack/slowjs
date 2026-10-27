@@ -1545,6 +1545,11 @@ static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
                                                   int flags);
 static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
                                                    uint32_t idx, JSValue *pval);
+static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                            uint32_t idx, JSValue *pval);
+static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                           uint32_t idx, JSValue val,
+                                                           int flags);
 static JSValue js_regexp_toString(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv);
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
@@ -2914,7 +2919,9 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     return str;
 }
 
-static JSString *js_alloc_string(JSContext *ctx, int max_len, int is_wide_char)
+/* always inlined, like js_new_string8_len: strings are made on hot paths,
+   and a call costs about as much as the work of either */
+static force_inline JSString *js_alloc_string(JSContext *ctx, int max_len, int is_wide_char)
 {
     JSString *p;
     p = js_alloc_string_rt(ctx->rt, max_len, is_wide_char);
@@ -4103,13 +4110,19 @@ static const char *JS_AtomGetStr(JSContext *ctx, char *buf, int buf_size, JSAtom
     return JS_AtomGetStrRT(ctx->rt, buf, buf_size, atom);
 }
 
-static JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom, BOOL force_string)
+/* the string of an index atom, out of line so that __JS_AtomToValue stays
+   small enough to inline */
+static no_inline JSValue js_index_atom_to_string(JSContext *ctx, JSAtom atom)
 {
     char buf[ATOM_GET_STR_BUF_SIZE];
+    size_t len = u32toa(buf, __JS_AtomToUInt32(atom));
+    return js_new_string8_len(ctx, buf, len);
+}
 
+static JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom, BOOL force_string)
+{
     if (__JS_AtomIsTaggedInt(atom)) {
-        size_t len = u32toa(buf, __JS_AtomToUInt32(atom));
-        return js_new_string8_len(ctx, buf, len);
+        return js_index_atom_to_string(ctx, atom);
     } else {
         JSRuntime *rt = ctx->rt;
         JSAtomStruct *p;
@@ -4443,7 +4456,7 @@ int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def)
     return ret;
 }
 
-static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
+static force_inline JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
 {
     JSString *str;
 
@@ -5182,8 +5195,10 @@ static void copy_str16(uint16_t *dst, const JSString *p, int offset, int len)
     }
 }
 
-static JSValue JS_ConcatString1(JSContext *ctx,
-                                const JSString *p1, const JSString *p2)
+/* out of line, so that JS_ConcatString2 stays small enough to inline into
+   JS_ConcatString */
+static no_inline JSValue JS_ConcatString1(JSContext *ctx,
+                                          const JSString *p1, const JSString *p2)
 {
     JSString *p;
     uint32_t len;
@@ -5435,8 +5450,9 @@ static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope);
 
 /* op1 and op2 must be strings or string ropes. The rope is as deep as the
    deeper of them plus one: js_new_string_rope rebalances it when that is
-   past JS_STRING_ROPE_MAX_DEPTH. */
-static JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
+   past JS_STRING_ROPE_MAX_DEPTH. It is always inlined into
+   js_new_string_rope, whose rebalancing stays out of line. */
+static force_inline JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
 {
     uint32_t len;
     int is_wide_char, depth;
@@ -5517,7 +5533,7 @@ static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
    own: nothing here recurses. (Upstream places the strings by their length,
    after Boehm, Atkinson and Plass, "Ropes: an Alternative to Strings", and
    the rope it builds can get deep enough to rebalance again.) */
-static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
+static no_inline JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
 {
     JSValue buckets[ROPE_N_BUCKETS], a;
     JSStringRopeIter it;
@@ -10214,7 +10230,7 @@ JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
                 if (__JS_AtomIsTaggedInt(prop)) {
                     uint32_t idx = __JS_AtomToUInt32(prop);
                     JSValue val;
-                    if (js_get_fast_array_element(ctx, p, idx, &val)) {
+                    if (js_get_fast_array_element_out_of_line(ctx, p, idx, &val)) {
                         return val;
                     } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
                                p->class_id <= JS_CLASS_FLOAT64_ARRAY) {
@@ -11074,7 +11090,7 @@ retry:
                         desc->getter = JS_UNDEFINED;
                         desc->setter = JS_UNDEFINED;
                         /* an element below the count is always there */
-                        if (unlikely(!js_get_fast_array_element(ctx, p, idx, &desc->value)))
+                        if (unlikely(!js_get_fast_array_element_out_of_line(ctx, p, idx, &desc->value)))
                             abort();
                     }
                     return TRUE;
@@ -11299,6 +11315,15 @@ static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
     default:
         return FALSE;
     }
+}
+
+/* js_get_fast_array_element for the generic paths (JS_GetPropertyInternal,
+   JS_GetOwnPropertyInternal): inlined there, it makes them bigger and slower
+   on their own hot paths. JS_GetPropertyValue keeps it inline. */
+static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                            uint32_t idx, JSValue *pval)
+{
+    return js_get_fast_array_element(ctx, p, idx, pval);
 }
 
 static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
@@ -11971,7 +11996,7 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
                     uint32_t idx = __JS_AtomToUInt32(prop);
                     if (idx < p1->u.array.count) {
                         if (unlikely(p == p1)) {
-                            ret = js_set_fast_array_element(ctx, p, idx, val, flags);
+                            ret = js_set_fast_array_element_out_of_line(ctx, p, idx, val, flags);
                             /* an element below the count is always set */
                             if (unlikely(ret == -2))
                                 abort();
@@ -12287,6 +12312,15 @@ static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
         return -2;
     }
     return TRUE;
+}
+
+/* js_set_fast_array_element for JS_SetPropertyInternal and
+   JS_DefineProperty, as js_get_fast_array_element_out_of_line */
+static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                           uint32_t idx, JSValue val,
+                                                           int flags)
+{
+    return js_set_fast_array_element(ctx, p, idx, val, flags);
 }
 
 /* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
@@ -12884,7 +12918,7 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                 return JS_ThrowTypeErrorOrFalse(ctx, flags, "invalid descriptor flags");
             }
             if (flags & JS_PROP_HAS_VALUE) {
-                ret = js_set_fast_array_element(ctx, p, idx, JS_DupValue(ctx, val), flags);
+                ret = js_set_fast_array_element_out_of_line(ctx, p, idx, JS_DupValue(ctx, val), flags);
                 /* a typed array takes any index */
                 if (unlikely(ret == -2))
                     abort();
@@ -15237,8 +15271,9 @@ static JSValue js_string_to_number(JSContext *ctx, JSValue val)
     return ret;
 }
 
-static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
-                                   JSToNumberHintEnum flag)
+/* out of line: inlined, it grows js_add_slow and JS_CallInternal */
+static no_inline JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
+                                             JSToNumberHintEnum flag)
 {
     uint32_t tag;
     JSValue ret;
