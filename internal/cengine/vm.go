@@ -29,15 +29,18 @@ import (
 	"github.com/liustack/slowjs/internal/hostmem"
 )
 
-// The bottom of the shadow stack is the host's: it holds what the host
-// passes the engine by address (rule 5 of the plan: no address of Go memory
-// goes to C). Every entry starts above it.
+// The bottom of the shadow stack is the host's: past the header of gohost,
+// which names the VM for the callbacks that find it by their shadow pointer,
+// it holds what the host passes the engine by address (rule 5 of the plan:
+// no address of Go memory goes to C). Every entry starts above it.
 const (
-	scratchLen   = 0    // size_t, the length JS_ToCStringLen2 writes
-	scratchCtx   = 8    // JSContext *, the context JS_ExecutePendingJob writes
-	scratchUsage = 16   // JSMemoryUsage
+	scratchLen   = 8    // size_t, the length JS_ToCStringLen2 writes
+	scratchCtx   = 16   // JSContext *, the context JS_ExecutePendingJob writes
+	scratchUsage = 24   // JSMemoryUsage
 	scratchStr   = 512  // C strings: the file name, property names
 	scratchSize  = 4096 // where the engine's own use of the stack starts
+
+	_ = uint(scratchLen - gohost.StackHeader) // fails to compile when they overlap
 
 	// maxFileName is the longest file name the scratch holds, with its 0
 	// byte.

@@ -26,6 +26,12 @@
 // pointer the host does not know, a request it does not have, a chunk the VM
 // does not hold. A panic that leaves through engine frames leaves the VM
 // broken, and then it only takes Close.
+//
+// Finding the VM of a callback takes no lock and writes nothing shared, so
+// that VMs on many goroutines do not slow each other down: a VM id is two
+// atomic reads in a table (package idtable), and a shadow pointer finds the
+// base of its stack by its alignment, where New wrote the VM's id
+// (StackHeader).
 package gohost // import "github.com/liustack/slowjs/internal/gohost"
 
 import (
@@ -40,6 +46,7 @@ import (
 	"unsafe"
 
 	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/idtable"
 )
 
 // Value is a JSValue as the engine passes it: the word of its union, then its
@@ -75,15 +82,21 @@ var ErrTrap = errors.New("gohost: the engine reached a trap")
 // Options are the settings of a new VM.
 type Options struct {
 	// StackSize is the size of the shadow stack: a power of two of at least
-	// 64 KiB, and no smaller than the region the engine was generated for.
-	// 0 is hostmem.DefaultStackSize.
+	// 64 KiB, the size of the region the engine was generated for. 0 is
+	// hostmem.DefaultStackSize.
 	StackSize uintptr
 	// PollCounter is where the counter of the engine's polls is, from the
 	// base of the shadow stack: a word the host keeps for it, which host_poll
-	// sets to the interval of the VM. 0 when the engine counts nothing (the
-	// start of the stack holds other things).
+	// sets to the interval of the VM, above the StackHeader (0 is no
+	// counter: the engine counts nothing).
 	PollCounter uintptr
 }
+
+// StackHeader is the bytes at the base of each shadow stack that the host
+// keeps: the id of the VM as a uint32, then its complement, which tells a
+// header from other data. The engine's entries start above them, and so does
+// what the code that calls the engine keeps there.
+const StackHeader = 8
 
 // DefaultPollInterval is the number of ticks between two polls of a new VM:
 // the engine ticks on every cycle it runs, and polls when the count runs out.
@@ -137,18 +150,35 @@ type VM struct {
 	unmapping sync.Mutex // held while Close or CloseLeftovers unmaps mem
 }
 
-// The VMs alive, by id and by the base of their shadow stack. sizes counts
-// the VMs of each stack size, so that a shadow pointer finds its base.
-// leftovers are the closed VMs that still hold memory the OS refused to
+// vms are the VMs alive, by id. sizes counts the VMs of each stack size, and
+// stackSizes lists them, smallest first, for ByStack to read without the
+// lock. leftovers are the closed VMs that still hold memory the OS refused to
 // unmap, with what it said the last time.
 var (
-	mu        sync.RWMutex
-	byID      = map[uint32]*VM{}
-	byBase    = map[uintptr]*VM{}
-	sizes     = map[uintptr]int{}
-	nextID    uint32
-	leftovers = map[*VM]error{}
+	vms        idtable.Table[VM]
+	mu         sync.Mutex
+	sizes      = map[uintptr]int{}
+	stackSizes atomic.Pointer[[]uintptr]
+	leftovers  = map[*VM]error{}
 )
+
+// countSize adds n VMs of a stack of size bytes, under mu.
+func countSize(size uintptr, n int) {
+	was := sizes[size]
+	sizes[size] += n
+	if sizes[size] == 0 {
+		delete(sizes, size)
+	}
+	if (was == 0) == (sizes[size] == 0) {
+		return // the same sizes
+	}
+	list := make([]uintptr, 0, len(sizes))
+	for s := range sizes {
+		list = append(list, s)
+	}
+	slices.Sort(list)
+	stackSizes.Store(&list)
+}
 
 // New maps the shadow stack of a new VM and gives it an id, which is never 0
 // and not the id of another VM alive. The engine asks for its first chunk
@@ -172,17 +202,16 @@ func New(o Options) (*VM, error) {
 		v.counter = base + o.PollCounter
 		*(*int64)(addr(v.counter)) = v.interval
 	}
-	mu.Lock()
-	for {
-		nextID++
-		if _, used := byID[nextID]; nextID != 0 && !used {
-			break
-		}
+	id, err := vms.Add(v)
+	if err != nil {
+		mem.Close()
+		return nil, fmt.Errorf("gohost: %w", err)
 	}
-	v.id = nextID
-	byID[v.id] = v
-	byBase[base] = v
-	sizes[size]++
+	v.id = id
+	*(*uint32)(addr(base)) = id
+	*(*uint32)(addr(base + 4)) = ^id
+	mu.Lock()
+	countSize(size, 1)
 	mu.Unlock()
 	return v, nil
 }
@@ -197,15 +226,14 @@ func New(o Options) (*VM, error) {
 func (v *VM) Close() error {
 	v.closed = true
 	v.handles = nil
-	mu.Lock()
-	if byID[v.id] == v {
-		delete(byID, v.id)
-		delete(byBase, v.stack)
-		if sizes[v.stackSize]--; sizes[v.stackSize] == 0 {
-			delete(sizes, v.stackSize)
-		}
+	if vms.Get(v.id) == v {
+		// What the OS may refuse to unmap no longer names the VM.
+		*(*uint64)(addr(v.stack)) = 0
+		vms.Remove(v.id)
+		mu.Lock()
+		countSize(v.stackSize, -1)
+		mu.Unlock()
 	}
-	mu.Unlock()
 	return v.unmap()
 }
 
@@ -239,9 +267,9 @@ func Leftovers() []Leftover {
 	for _, v := range leftoverVMs() {
 		v.unmapping.Lock()
 		u := v.mem.Usage()
-		mu.RLock()
+		mu.Lock()
 		err, ok := leftovers[v]
-		mu.RUnlock()
+		mu.Unlock()
 		v.unmapping.Unlock()
 		if ok {
 			out = append(out, Leftover{ID: v.id, Usage: u, Err: err})
@@ -261,12 +289,12 @@ func CloseLeftovers() error {
 }
 
 func leftoverVMs() []*VM {
-	mu.RLock()
+	mu.Lock()
 	vs := make([]*VM, 0, len(leftovers))
 	for v := range leftovers {
 		vs = append(vs, v)
 	}
-	mu.RUnlock()
+	mu.Unlock()
 	slices.SortFunc(vs, func(a, b *VM) int { return cmp.Compare(a.id, b.id) })
 	return vs
 }
@@ -292,22 +320,31 @@ func (v *VM) Counts() Counts {
 // a failure.
 func (v *VM) LastError() error { return v.lastErr }
 
-// Lookup returns the VM of the id, or nil.
-func Lookup(id uint32) *VM {
-	mu.RLock()
-	v := byID[id]
-	mu.RUnlock()
-	return v
-}
+// Lookup returns the VM of the id, or nil. It takes no lock.
+func Lookup(id uint32) *VM { return vms.Get(id) }
 
 // ByStack returns the VM whose shadow stack holds sp, the pointer the engine
-// passes to every callback. It panics when there is none.
+// passes to every callback. It takes no lock: for each size of stack, from
+// the smallest, it reads the header at sp rounded down to the size, and takes
+// the VM the header names when that VM's stack starts there. A smaller size
+// rounds down to an address inside the same stack, so for a pointer the
+// engine passed it reads only memory of that stack. It panics when no VM
+// matches. A pointer the engine did not pass may read memory mapped to
+// nothing, which faults, a panic under the SetPanicOnFault of Enter.
 func ByStack(sp uintptr) *VM {
-	mu.RLock()
-	defer mu.RUnlock()
-	for size := range sizes {
-		if v := byBase[sp&^(size-1)]; v != nil && v.stackSize == size {
-			return v
+	if list := stackSizes.Load(); list != nil {
+		for _, size := range *list {
+			base := sp &^ (size - 1)
+			if base == 0 {
+				continue
+			}
+			id := *(*uint32)(addr(base))
+			if *(*uint32)(addr(base + 4)) != ^id {
+				continue
+			}
+			if v := vms.Get(id); v != nil && v.stack == base && v.stackSize == size {
+				return v
+			}
 		}
 	}
 	panic(fmt.Sprintf("gohost: shadow pointer %#x outside every VM", sp))
