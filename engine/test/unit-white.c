@@ -24,6 +24,7 @@ void white_sb_fake_length(struct StringBuffer *b, int len, int size);
 int white_string_len_max(void);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
+uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 int white_stack_pending(JSContext *ctx, JSValueConst obj);
 int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
@@ -324,6 +325,33 @@ static void test_json_runs_oom(void)
         }
     }
     vm_free(&v);
+}
+
+/* An ASCII run of JSON.parse ends JS_STRING_LEN_MAX + 1 bytes on at the
+   latest, so its length fits an int. The addresses are made up: no run of a
+   gigabyte is read. */
+static void test_json_run_limit(void)
+{
+    uintptr_t p = 0x1000, max = (uintptr_t)white_string_len_max();
+    struct { uintptr_t end, want; } cases[] = {
+        { p, p },
+        { p + 1, p + 1 },
+        { p + max, p + max },
+        { p + max + 1, p + max + 1 },
+        { p + max + 2, p + max + 1 },
+        { p + ((uintptr_t)3 << 30), p + max + 1 },
+        { p + ((uintptr_t)1 << 32) - 1, p + max + 1 },
+        { p + ((uintptr_t)1 << 32) + 5, p + max + 1 },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        uintptr_t got = white_json_run_limit(p, cases[i].end);
+
+        CHECK(got == cases[i].want, "json_run_limit(%#lx, %#lx) = %#lx, want %#lx",
+              (unsigned long)p, (unsigned long)cases[i].end, (unsigned long)got,
+              (unsigned long)cases[i].want);
+    }
 }
 
 /* A run that would make the string longer than the longest string throws
@@ -1232,6 +1260,7 @@ int main(void)
     test_json_quote_run();
     test_json_runs_oom();
     test_json_run_too_long();
+    test_json_run_limit();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();
