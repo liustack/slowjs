@@ -383,7 +383,9 @@ void JS_ReleaseStart(JSRuntime *rt, size_t keep);
 JSMemRange JS_ReleaseNextChunk(JSRuntime *rt);
 JSMemRange JS_ReleaseNextRange(JSRuntime *rt);
 /* the most freed small blocks of a size class the allocator keeps for the
-   next allocation, 0 to 256. For tests and measuring */
+   next allocation, 0 to 256. 0 also turns off the cache of freed large
+   blocks (blocks of 505 to 4096 bytes, see docs/allocator.md), and any other
+   value leaves it on. For tests and measuring */
 void JS_SetFrontCache(JSRuntime *rt, int max);
 /* The call depth: how many calls may run at once, each call of a function
    (built-in functions included) and each entry of the host that runs code
@@ -506,6 +508,13 @@ size_t JS_DumpMemoryUsage(char *buf, size_t size, const JSMemoryUsage *s, JSRunt
 const char *JS_CheckMemory(JSRuntime *rt);
 /* test builds: how many freed blocks the front cache holds */
 size_t JS_FrontCacheBlocks(JSRuntime *rt);
+/* test builds: how many freed large blocks the cache of large blocks holds,
+   and the sum of the sizes the heap gave them (JS_LARGE_CACHE_BYTES at most) */
+size_t JS_LargeCacheBlocks(JSRuntime *rt);
+size_t JS_LargeCacheBytes(JSRuntime *rt);
+/* test builds: the most blocks a class of the large cache keeps, and the most
+   bytes the whole cache keeps */
+void JS_LargeCacheLimits(size_t *per_class, size_t *bytes);
 #endif
 
 /* atom support */

@@ -12,26 +12,42 @@
  * what must stay readable, because the second is where the poison stops:
  *
  *   poisoned:  the user bytes of a free small block (in its arena and in the
- *              front cache but for the first 8 bytes), a freed large block,
- *              the memory of an arena that was given back, the tail a resize
- *              cut off, the old block after a resize that moved
+ *              front cache but for the first 8 bytes), a freed large block
+ *              (also one that waits in the cache of large blocks, where the
+ *              first 8 bytes are poisoned too and are opened only for the
+ *              moment the allocator reads or writes the link), the memory of
+ *              an arena that was given back, the tail a resize cut off, the
+ *              old block after a resize that moved
  *   readable:  a live block up to its usable size, the first 8 bytes of a
  *              block in the front cache (they hold the link), the header of
  *              the slot after a live small block (the allocator reads and
  *              writes it), a block that was taken from the cache or the arena
  *              again, the tail a resize grew into
  *
+ * Then it runs itself as a child process on a use after free of a block in
+ * the cache of large blocks (a read in the middle, a read and a write of the
+ * link, a write at the end) and of a block taken from it again, and checks that
+ * AddressSanitizer reports the first four and not the last: the poison is not
+ * just there, it is what makes a program that frees a block and goes on using it
+ * stop.
+ *
  * So an access that stays within the 8 bytes after a live small block, or that
  * goes into another live block, is not found here. build.sh asan, with every
  * block alone from the system malloc and red zones around each, finds those,
  * and has no front cache and no arenas. Both modes run.
  */
+#include <fcntl.h>
+#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "host.h"
+
+extern char **environ;
 
 int __asan_address_is_poisoned(void const volatile *addr);
 
@@ -171,6 +187,154 @@ static void test_small_in_cache(JSRuntime *rt)
     }
 }
 
+/* With the front cache on, a freed large block of 505 to 4096 bytes waits in
+   the cache of large blocks, with a link in its first 8 bytes: all of it is
+   poisoned, the link too. */
+static void test_large_in_cache(JSRuntime *rt)
+{
+    static const size_t sizes[] = { 505, 512, 600, 1000, 1500, 3000, 4096 };
+    uint8_t *p[8], *q[8];
+    size_t s, i, u;
+
+    JS_SetFrontCache(rt, 256);
+    for (s = 0; s < sizeof sizes / sizeof *sizes; s++) {
+        size_t n = sizes[s];
+
+        for (i = 0; i < 8; i++)
+            p[i] = js_malloc_rt(rt, n);
+        u = js_malloc_usable_size_rt(rt, p[0]);
+        for (i = 0; i < 8; i++)
+            NONE_POISONED(p[i], u, "a live large block");
+        for (i = 0; i < 8; i++)
+            js_free_rt(rt, p[i]);
+        for (i = 0; i < 8; i++)
+            ALL_POISONED(p[i], u, "a large block in the cache of large blocks, its link included");
+        /* the header in front of the user data stays readable, the allocator
+           reads it when it takes the block */
+        NONE_POISONED(p[0] - 8, 8, "the header of a cached large block");
+        /* taken again from the cache */
+        for (i = 0; i < 8; i++) {
+            q[i] = js_malloc_rt(rt, n);
+            NONE_POISONED(q[i], u, "a large block taken from the cache");
+        }
+        for (i = 0; i < 8; i++)
+            js_free_rt(rt, q[i]);
+        /* given back to the heap when the cache is turned off, which poisons the whole block */
+        JS_SetFrontCache(rt, 0);
+        for (i = 0; i < 8; i++)
+            ALL_POISONED(q[i], u, "a large block the cache gave back to the heap");
+        JS_SetFrontCache(rt, 256);
+    }
+    /* a block that is not cached because its class is full is poisoned by the heap */
+    {
+        uint8_t *many[12];
+
+        for (i = 0; i < 12; i++)
+            many[i] = js_malloc_rt(rt, 1000);
+        u = js_malloc_usable_size_rt(rt, many[0]);
+        for (i = 0; i < 12; i++)
+            js_free_rt(rt, many[i]);
+        for (i = 0; i < 12; i++)
+            ALL_POISONED(many[i], u, "a freed large block, cached or not");
+        JS_SetFrontCache(rt, 256);
+    }
+}
+
+/* Child processes: the use after free of a large block that waits in the cache
+   must be reported by AddressSanitizer, and the use of a block taken from the
+   cache again, or of a live one, must not. */
+static int uaf_child(const char *what)
+{
+    JSRuntime *rt = host_new_runtime();
+    volatile uint8_t *p, *q;
+    volatile uint8_t sink = 0;
+
+    JS_SetFrontCache(rt, 256);
+    p = js_malloc_rt(rt, 1000);
+    if (!strcmp(what, "live")) {
+        p[0] = 1;
+        sink = p[500] + p[1023];
+    } else if (!strcmp(what, "taken-again")) {
+        js_free_rt(rt, (void *)p);
+        q = js_malloc_rt(rt, 1000);
+        if (q != p)
+            return 3; /* the cache did not give the block back: the test is void */
+        q[0] = 1;
+        sink = q[500] + q[1023];
+    } else if (!strcmp(what, "read-middle")) {
+        js_free_rt(rt, (void *)p);
+        sink = p[500];
+    } else if (!strcmp(what, "read-link")) {
+        js_free_rt(rt, (void *)p);
+        sink = p[0];
+    } else if (!strcmp(what, "write-link")) {
+        js_free_rt(rt, (void *)p);
+        p[0] = 1;
+    } else if (!strcmp(what, "write-end")) {
+        js_free_rt(rt, (void *)p);
+        p[1023] = 1;
+    } else {
+        return 2;
+    }
+    (void)sink;
+    _exit(0); /* no leak report: the runtime is not freed */
+}
+
+/* Runs this program again as `poison-test uaf WHAT` with its error output in a
+   file, and tells whether AddressSanitizer reported a use after poison. */
+static int uaf_reported(const char *self, const char *what)
+{
+    char path[] = "/tmp/poison-test-XXXXXX";
+    char *argv[4];
+    posix_spawn_file_actions_t fa;
+    pid_t pid;
+    int fd, status = 0, reported = 0, spawned;
+    char buf[8192];
+    ssize_t n;
+
+    fd = mkstemp(path);
+    CHECK(fd >= 0, "mkstemp");
+    if (fd < 0)
+        return -1;
+    close(fd);
+    argv[0] = (char *)self;
+    argv[1] = (char *)"uaf";
+    argv[2] = (char *)what;
+    argv[3] = NULL;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addopen(&fa, 2, path, O_WRONLY | O_TRUNC, 0600);
+    spawned = posix_spawn(&pid, self, &fa, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    CHECK(spawned == 0, "cannot run %s", self);
+    if (spawned == 0) {
+        waitpid(pid, &status, 0);
+        fd = open(path, O_RDONLY);
+        n = fd >= 0 ? read(fd, buf, sizeof buf - 1) : 0;
+        if (n < 0)
+            n = 0;
+        buf[n] = 0;
+        if (fd >= 0)
+            close(fd);
+        reported = strstr(buf, "AddressSanitizer: use-after-poison") != NULL;
+        CHECK(!(WIFEXITED(status) && (WEXITSTATUS(status) == 2 || WEXITSTATUS(status) == 3)),
+              "uaf %s: the child could not set up the case (status %d)", what, WEXITSTATUS(status));
+    }
+    unlink(path);
+    return reported;
+}
+
+static void test_uaf(const char *self)
+{
+    static const char *const caught[] = { "read-middle", "read-link", "write-link", "write-end" };
+    static const char *const quiet[] = { "live", "taken-again" };
+    size_t i;
+
+    for (i = 0; i < sizeof caught / sizeof *caught; i++)
+        CHECK(uaf_reported(self, caught[i]) == 1, "a use after free of a block in the cache of large blocks (%s) was not reported", caught[i]);
+    for (i = 0; i < sizeof quiet / sizeof *quiet; i++)
+        CHECK(uaf_reported(self, quiet[i]) == 0, "a correct use of a large block (%s) was reported", quiet[i]);
+}
+
 static void test_large(JSRuntime *rt)
 {
     uint8_t *p, *q;
@@ -242,14 +406,19 @@ static void test_large(JSRuntime *rt)
     js_free_rt(rt, q);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-    JSRuntime *rt = host_new_runtime();
+    JSRuntime *rt;
 
+    if (argc == 3 && !strcmp(argv[1], "uaf"))
+        return uaf_child(argv[2]);
+    rt = host_new_runtime();
     test_small_in_arena(rt);
     test_small_in_cache(rt);
+    test_large_in_cache(rt);
     test_large(rt);
     host_free_runtime(rt);
+    test_uaf(argv[0]);
     printf("poison-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
 }

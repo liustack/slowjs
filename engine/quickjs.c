@@ -290,6 +290,32 @@ typedef enum OPCodeEnum OPCodeEnum;
 #define JS_MALLOC_FRONT_LISTS 32
 #define JS_MALLOC_FRONT_MAX 256
 
+/* The cache of freed large blocks (docs/allocator.md): a block of 505 to 4096
+   usable bytes that is freed waits in the list of its class, one class per 64
+   bytes, so that the next request of that class does not go through TLSF. It
+   is on while the front cache is (JS_SetFrontCache). While it is on, a request
+   in this range is rounded up to a multiple of 64, so that the block it gets
+   files under the class it will be asked for again.
+   - JS_LARGE_CACHE_N: the most blocks of a class. Between 4 and 32 the hits on
+     the speed scripts hardly change, 8 is the middle.
+   - JS_LARGE_CACHE_BYTES: the most bytes of all the blocks together, as the
+     heap sizes them, headers of 8 bytes included. It is for one runtime and
+     tifa runs several in a process, so it is small: 256 KiB is 0.6% of the
+     biggest app of tifa after 3000 renders (40 MB) and 12% of the smallest
+     (2 MB). At 128 KiB the hits of the string builders fall by 4 to 8 points,
+     and above 256 KiB they do not rise. */
+#define JS_LARGE_CACHE_STEP 64
+#define JS_LARGE_CACHE_FIRST 8  /* the class of a request of 505 to 512 bytes */
+#define JS_LARGE_CACHE_LAST 64  /* the class of a request of 4033 to 4096 bytes */
+#define JS_LARGE_CACHE_MAX (JS_LARGE_CACHE_LAST * JS_LARGE_CACHE_STEP)
+#define JS_LARGE_CACHE_LISTS (JS_LARGE_CACHE_LAST - JS_LARGE_CACHE_FIRST + 1)
+#ifndef JS_LARGE_CACHE_N
+#define JS_LARGE_CACHE_N 8
+#endif
+#ifndef JS_LARGE_CACHE_BYTES
+#define JS_LARGE_CACHE_BYTES (256 * 1024)
+#endif
+
 /* allow iteration among the allocated blocks. Currently not used. May
    be used to suppress the memory overhead of JSGCObjectHeader */
 //#define JS_MALLOC_USE_ITER
@@ -361,6 +387,12 @@ typedef struct {
     JSMallocBlockHeader *front_head[JS_MALLOC_FRONT_LISTS];
     int front_count[JS_MALLOC_FRONT_LISTS];
     int front_max; /* the most blocks of a list, 0 when the cache is off */
+    /* the cache of large blocks: the user data of the first block of each
+       class, the next one in its first bytes. large_bytes is the sum of the
+       sizes the heap gave the blocks in it */
+    void *large_head[JS_LARGE_CACHE_LISTS];
+    int large_count[JS_LARGE_CACHE_LISTS];
+    size_t large_bytes;
 } JSMallocContext;
 
 /* end JS Malloc */
@@ -1625,16 +1657,92 @@ static inline void *js_front_take(JSMallocContext *s, size_t size)
     return b->user_data;
 }
 
+/* ---- the cache of large blocks ---- */
+
+/* The link of a cached block is in its first bytes. The poison covers them
+   too, so that they are opened for a moment to read or write the link. */
+static inline void *js_large_next(void *p)
+{
+    void *next;
+
+    heap_unpoison(p, sizeof(void *));
+    next = *(void **)p;
+    heap_poison(p, sizeof(void *));
+    return next;
+}
+
+static inline void js_large_set_next(void *p, void *next)
+{
+    heap_unpoison(p, sizeof(void *));
+    *(void **)p = next;
+    heap_poison(p, sizeof(void *));
+}
+
+/* The class of a request of size bytes, 505 to JS_LARGE_CACHE_MAX */
+static inline unsigned js_large_class(size_t size)
+{
+    return (size + (JS_LARGE_CACHE_STEP - 1)) / JS_LARGE_CACHE_STEP;
+}
+
+/* A large block of size bytes from the cache, or NULL. */
+static inline void *js_large_take(JSMallocContext *s, size_t size)
+{
+    unsigned i = js_large_class(size) - JS_LARGE_CACHE_FIRST;
+    void *p = s->large_head[i];
+    size_t bytes;
+
+    if (!p)
+        return NULL;
+    s->large_head[i] = js_large_next(p);
+    s->large_count[i]--;
+    bytes = heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
+    s->large_bytes -= bytes;
+    heap_unpoison(p, bytes - sizeof(JSMallocLargeBlockHeader));
+    return p;
+}
+
+/* Keep the large block at ptr (the header b) in the cache, and tell whether it
+   did. The block of size 0, a block of a size outside the cache, a block of a
+   full class, a block that would take the cache past JS_LARGE_CACHE_BYTES, and
+   every block while the cache is off are left to __js_free_block. The class is
+   the usable size in 64 byte steps, rounded down, so a block files under the
+   largest class it can serve. */
+static no_inline int js_large_give(JSMallocContext *s, JSMallocBlockHeader *b, void *ptr)
+{
+    JSMallocLargeBlockHeader *lb;
+    size_t bytes, user;
+    unsigned c;
+
+    if (JS_MALLOC_LARGE_BLOCKS_ONLY || !s->front_max || b == get_zero_size_block(s))
+        return 0;
+    lb = container_of(ptr, JSMallocLargeBlockHeader, header.user_data);
+    bytes = heap_usable_size(lb);
+    user = bytes - sizeof(JSMallocLargeBlockHeader);
+    c = user / JS_LARGE_CACHE_STEP;
+    if (c < JS_LARGE_CACHE_FIRST || c > JS_LARGE_CACHE_LAST)
+        return 0;
+    c -= JS_LARGE_CACHE_FIRST;
+    if (s->large_count[c] >= JS_LARGE_CACHE_N || bytes > JS_LARGE_CACHE_BYTES - s->large_bytes)
+        return 0;
+    heap_poison(ptr, user);
+    js_large_set_next(ptr, s->large_head[c]);
+    s->large_head[c] = ptr;
+    s->large_count[c]++;
+    s->large_bytes += bytes;
+    return 1;
+}
+
 /* Keep the block at ptr in the front cache, and tell whether it did. A large
-   block, the block of size 0 and a block of a full list are left to
-   __js_free_block, and so is every block while the cache is off. */
+   block goes to the cache of large blocks (js_large_give). The block of size 0
+   and a block of a full list are left to __js_free_block, and so is every block
+   while the cache is off. */
 static inline int js_front_give(JSMallocContext *s, void *ptr)
 {
     JSMallocBlockHeader *b = container_of(ptr, JSMallocBlockHeader, user_data);
     int idx;
 
     if (b->u.block_idx == FREE_NIL)
-        return 0;
+        return js_large_give(s, b, ptr);
     idx = b->block_size_idx;
     if (s->front_count[idx] >= s->front_max)
         return 0;
@@ -1664,6 +1772,17 @@ static BOOL js_front_drain(JSMallocContext *s)
         s->front_head[i] = NULL;
         s->front_count[i] = 0;
     }
+    for(i = 0; i < JS_LARGE_CACHE_LISTS; i++) {
+        void *p, *next;
+        for(p = s->large_head[i]; p; p = next) {
+            next = js_large_next(p);
+            heap_free(&s->heap, container_of(p, JSMallocLargeBlockHeader, header.user_data));
+            any = TRUE;
+        }
+        s->large_head[i] = NULL;
+        s->large_count[i] = 0;
+    }
+    s->large_bytes = 0;
     s->front_max = max;
     return any;
 }
@@ -1736,6 +1855,13 @@ static no_inline void *js_malloc_large(JSMallocContext *s, size_t size)
     JSMallocLargeBlockHeader *b;
     if (unlikely(size > JS_HEAP_MAX_REQUEST - sizeof(JSMallocLargeBlockHeader)))
         return NULL;
+    if (!JS_MALLOC_LARGE_BLOCKS_ONLY && size <= JS_LARGE_CACHE_MAX && s->front_max) {
+        void *p = js_large_take(s, size);
+        if (p)
+            return p;
+        /* the class it will be asked for again */
+        size = js_large_class(size) * JS_LARGE_CACHE_STEP;
+    }
     b = js_heap_alloc(s, sizeof(JSMallocLargeBlockHeader) + size);
     if (!b)
         return NULL;
@@ -1972,7 +2098,7 @@ static __maybe_unused void js_malloc_iter(JSMallocContext *s, JSMallocIterFunc *
    message. It checks the heap (TLSF, the counts, the chunks), then each arena
    (the free slots against n_used_blocks, the lists of arenas with room) and
    the front cache (the length of each list, and that each block in it is a
-   slot in use of an arena of its class). */
+   slot in use of an arena of its class), and the cache of large blocks. */
 const char *JS_CheckMemory(JSRuntime *rt)
 {
     JSMallocContext *s = &rt->malloc_ctx;
@@ -2041,6 +2167,42 @@ const char *JS_CheckMemory(JSRuntime *rt)
         if (cached != (size_t)s->front_count[i])
             return "front_count is not the length of the list";
     }
+    /* the cache of large blocks: each block is a large block of the heap, in
+       the list of its class, and the counts and the bytes are what the lists
+       hold. The heap counts them as blocks in use (heap_check) */
+    {
+        size_t bytes = 0, blocks = 0;
+
+        for(i = 0; i < JS_LARGE_CACHE_LISTS; i++) {
+            void *p;
+            size_t n = 0;
+
+            for(p = s->large_head[i]; p; p = js_large_next(p)) {
+                JSMallocBlockHeader *b = container_of(p, JSMallocBlockHeader, user_data);
+                size_t size;
+
+                if (++n > JS_LARGE_CACHE_N)
+                    return "a list of the large cache is too long or loops";
+                if (!heap_contains(&s->heap, b))
+                    return "a block of the large cache is not in the heap";
+                if (b->u.block_idx != FREE_NIL || b == get_zero_size_block(s))
+                    return "a block of the large cache is not a large block";
+                size = heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
+                if ((size - sizeof(JSMallocLargeBlockHeader)) / JS_LARGE_CACHE_STEP != (size_t)i + JS_LARGE_CACHE_FIRST)
+                    return "a block of the large cache is in the list of another class";
+                bytes += size;
+            }
+            if (n != (size_t)s->large_count[i])
+                return "large_count is not the length of the list";
+            blocks += n;
+        }
+        if (bytes != s->large_bytes)
+            return "large_bytes is not the sum of the sizes of the blocks of the large cache";
+        if (bytes > JS_LARGE_CACHE_BYTES)
+            return "the large cache holds more than JS_LARGE_CACHE_BYTES";
+        if (blocks && !s->front_max)
+            return "the large cache holds blocks while the caches are off";
+    }
     return NULL;
 }
 
@@ -2052,6 +2214,27 @@ size_t JS_FrontCacheBlocks(JSRuntime *rt)
     for(i = 0; i < JS_MALLOC_FRONT_LISTS; i++)
         n += rt->malloc_ctx.front_count[i];
     return n;
+}
+
+size_t JS_LargeCacheBlocks(JSRuntime *rt)
+{
+    size_t n = 0;
+    int i;
+
+    for(i = 0; i < JS_LARGE_CACHE_LISTS; i++)
+        n += rt->malloc_ctx.large_count[i];
+    return n;
+}
+
+size_t JS_LargeCacheBytes(JSRuntime *rt)
+{
+    return rt->malloc_ctx.large_bytes;
+}
+
+void JS_LargeCacheLimits(size_t *per_class, size_t *bytes)
+{
+    *per_class = JS_LARGE_CACHE_N;
+    *bytes = JS_LARGE_CACHE_BYTES;
 }
 #endif
 
