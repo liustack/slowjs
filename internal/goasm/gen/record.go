@@ -13,6 +13,10 @@ type FuncRecord struct {
 	Kind                  Kind
 	Sig                   Sig
 	PreserveNone, SaveAll bool
+	// NoSplit: the function is on the generator's NOSPLIT list (Meta.NoSplit),
+	// so the binary has no stack check at its entry, and every unified
+	// function that is not on it has one.
+	NoSplit bool
 	// The canonical prologue the lowering removed: the callee-saved
 	// registers it pushed, in order, and the bytes it reserved below them.
 	Pushed []string

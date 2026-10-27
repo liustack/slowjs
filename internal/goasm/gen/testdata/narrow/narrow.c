@@ -75,6 +75,11 @@ __attribute__((noinline)) int put16(struct buf *b, uint16_t v)
     return 0;
 }
 
+// TestNarrowArgs makes put16's stack check grow the stack, so put16 keeps
+// one: the generator never drops the stack check of a function whose address
+// is taken.
+int (*const put16_ref)(struct buf *, uint16_t) = put16;
+
 __attribute__((noinline)) int putb(struct buf *b, _Bool v)
 {
     if (b->n + 1 > b->cap && grow(b, 1))

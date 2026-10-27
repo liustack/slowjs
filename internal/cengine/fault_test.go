@@ -9,11 +9,16 @@ package cengine
 
 import (
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/liustack/slowjs/internal/gohost"
 )
@@ -249,4 +254,125 @@ func TestFaultsAmongVMs(t *testing.T) {
 	for err := range errs {
 		t.Error(err)
 	}
+}
+
+// TestFaultNoSplit: a fault at the bottom of a chain of functions without a
+// stack check (the generator's NOSPLIT list, noSplitList) is a panic that
+// recovers, wherever the bottom of the goroutine's stack is. The runtime
+// pushes a call of sigpanic where the fault is, and sigpanic's stack check
+// may call morestack: the generator leaves room for both below every chain.
+// js_strdup measures the string with strlen, and both are on the list, so a
+// string that points at nothing faults in strlen with js_strdup above it. One call shows the frames through
+// runtime.Callers, then fresh goroutines make the same call deeper in their
+// stacks, by steps of 8 bytes over 12 KiB, each on a VM of its own.
+func TestFaultNoSplit(t *testing.T) {
+	const wild = 0xdead0000
+	on := map[string]bool{}
+	for _, n := range strings.Fields(noSplitList) {
+		on[n] = true
+	}
+	for _, n := range []string{"js_strdup", "strlen"} {
+		if !on[n] {
+			t.Fatalf("%s is not on the NOSPLIT list: the test needs another chain", n)
+		}
+	}
+	read := func(v *VM) func() { return func() { js_strdup(v.sp, v.ctx, wild) } }
+
+	v := newVM(t, Options{Seed: 1})
+	var frames []string
+	got := func() (got any) {
+		defer func() {
+			got = recover()
+			pc := make([]uintptr, 64)
+			fs := runtime.CallersFrames(pc[:runtime.Callers(1, pc)])
+			for more := true; more; {
+				var f runtime.Frame
+				f, more = fs.Next()
+				frames = append(frames, f.Function)
+			}
+		}()
+		v.enter(read(v))
+		return nil
+	}()
+	wantFault(t, got, "a read through the string", wild, wild+1)
+	at := slices.Index(frames, "runtime.sigpanic")
+	if at < 0 || at+2 >= len(frames) {
+		t.Fatalf("no frames of the engine below sigpanic: %v", frames)
+	}
+	const pkg = "github.com/liustack/slowjs/internal/cengine."
+	if f, g := frames[at+1], frames[at+2]; f != pkg+"strlen" || g != pkg+"js_strdup" {
+		t.Fatalf("the fault is in %s called from %s, want strlen from js_strdup: %v", f, g, frames)
+	}
+	brokenAfter(t, v, "a fault in a NOSPLIT chain")
+
+	depths := map[uintptr]bool{}
+	for n := 0; n < 192; n++ {
+		for k := 0; k < 8; k++ {
+			v := newVM(t, Options{Seed: 1})
+			type result struct {
+				got   any
+				depth uintptr
+			}
+			res := make(chan result, 1)
+			go func() {
+				var top byte
+				var r result
+				noSplitDive(n, k, &top, &r.depth, func() { r.got = fails(v, read(v)) })
+				res <- r
+			}()
+			r := <-res
+			wantFault(t, r.got, fmt.Sprintf("a read %d bytes down the stack", r.depth), wild, wild+1)
+			if _, err := v.Close(); err != nil {
+				t.Fatal(err)
+			}
+			depths[r.depth] = true
+		}
+	}
+	lo := slices.Min(slices.Collect(maps.Keys(depths)))
+	hi := lo
+	for depths[hi+8] {
+		hi += 8
+	}
+	if hi-lo < 8<<10 {
+		t.Fatalf("the calls start at every 8 bytes from %d to %d down the stack only", lo, hi)
+	}
+	t.Logf("%d faults, from %d to %d bytes down the stack", len(depths), lo, hi)
+}
+
+// noSplitDive recurses n times and then calls f through the pad k picks,
+// which takes k+1 words, so that f starts deeper in the goroutine's stack by
+// steps of 8 bytes. depth is how far below top it starts. top is an argument
+// all the way, so that a stack that grows moves it with the frames.
+//
+//go:noinline
+func noSplitDive(n, k int, top *byte, depth *uintptr, f func()) {
+	if n > 0 {
+		noSplitDive(n-1, k, top, depth, f)
+		return
+	}
+	switch k {
+	case 0:
+		noSplitPad[[1]uintptr](top, depth, f)
+	case 1:
+		noSplitPad[[2]uintptr](top, depth, f)
+	case 2:
+		noSplitPad[[3]uintptr](top, depth, f)
+	case 3:
+		noSplitPad[[4]uintptr](top, depth, f)
+	case 4:
+		noSplitPad[[5]uintptr](top, depth, f)
+	case 5:
+		noSplitPad[[6]uintptr](top, depth, f)
+	case 6:
+		noSplitPad[[7]uintptr](top, depth, f)
+	default:
+		noSplitPad[[8]uintptr](top, depth, f)
+	}
+}
+
+//go:noinline
+func noSplitPad[T any](top *byte, depth *uintptr, f func()) {
+	var a T
+	*depth = uintptr(unsafe.Pointer(top)) - uintptr(unsafe.Pointer(&a))
+	f()
 }

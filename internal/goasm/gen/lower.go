@@ -53,6 +53,9 @@ type Meta struct {
 	Frame    int    // Go TEXT frame size
 	ArgBytes int    // Go TEXT argument+result area size
 	RetType  Type
+	// NoSplit says the TEXT has NOSPLIT, so Go puts no stack check at the
+	// entry (ChooseNoSplit). A register-entry leaf always has it.
+	NoSplit bool
 	// Rec is every rewrite the lowering made, for the instruction-level
 	// post-link check (nil for the prototype's units).
 	Rec *FuncRecord
