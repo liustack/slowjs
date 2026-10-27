@@ -1294,8 +1294,15 @@ static int json_parse_is(JSContext *ctx, JSValueConst parse, const char *text, c
     v = JS_Call(ctx, parse, JS_UNDEFINED, 1, &arg);
     JS_FreeValue(ctx, arg);
     if (JS_IsException(v)) {
+        JSRuntime *rt = JS_GetRuntime(ctx);
+        int depth = JS_GetInternalDepth(rt);
+
         e = JS_GetException(ctx);
+        /* the text of the error may need a built-in function made, which
+           takes a level: read it below the depth of the test */
+        JS_SetInternalDepth(rt, 0);
         name = JS_ToCString(ctx, e);
+        JS_SetInternalDepth(rt, depth);
         got = name ? name : "?";
     } else {
         got = JS_IsObject(v) ? "object" : JS_IsNumber(v) ? "number" : "other";
@@ -1612,6 +1619,68 @@ static int test_internal_depth_limit(void *unused)
         CHECK(JS_GetInternalDepth(rt) == 0, "case %zu: the internal depth is back at %d", i, JS_GetInternalDepth(rt));
     }
     CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* The name of the exception, taken out of ctx, or "" when there is none */
+static void take_error_name(JSContext *ctx, char *buf, size_t size)
+{
+    JSValue e, name;
+    const char *s;
+
+    if (!JS_HasException(ctx)) {
+        snprintf(buf, size, "%s", "");
+        return;
+    }
+    e = JS_GetException(ctx);
+    name = JS_GetPropertyStr(ctx, e, "name");
+    s = JS_ToCString(ctx, name);
+    snprintf(buf, size, "%s", s ? s : "");
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, name);
+    JS_FreeValue(ctx, e);
+}
+
+/* A built-in function or object, or the prototype of a function, is made at
+   the first access to its property, and making it counts a level of the
+   internal depth. At the limit the access throws a RangeError and the
+   property stays to be made, which the next access below the limit does. */
+static int test_internal_depth_autoinit(void *unused)
+{
+    static const struct { const char *holder, *prop, *type; } cases[] = {
+        { "globalThis", "Reflect", "object" },
+        { "JSON", "parse", "function" },
+        { "(function f() {})", "prototype", "object" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char name[32];
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        JSValue holder = JS_Eval(ctx, cases[i].holder, strlen(cases[i].holder), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue v;
+        const char *type;
+
+        CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH) == 0, "set the limit");
+        v = JS_GetPropertyStr(ctx, holder, cases[i].prop);
+        CHECK(JS_IsException(v), "%s.%s was made at the limit", cases[i].holder, cases[i].prop);
+        JS_FreeValue(ctx, v);
+        take_error_name(ctx, name, sizeof(name));
+        CHECK(strcmp(name, "RangeError") == 0, "%s.%s at the limit threw %s", cases[i].holder, cases[i].prop, name);
+        CHECK(JS_GetInternalDepth(rt) == JS_MAX_INTERNAL_DEPTH, "the depth is %d", JS_GetInternalDepth(rt));
+        CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH - 1) == 0, "set one below");
+        v = JS_GetPropertyStr(ctx, holder, cases[i].prop);
+        CHECK(JS_GetInternalDepth(rt) == JS_MAX_INTERNAL_DEPTH - 1, "the depth is %d", JS_GetInternalDepth(rt));
+        CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+        type = JS_IsFunction(ctx, v) ? "function" : JS_IsObject(v) ? "object" : "other";
+        CHECK(strcmp(type, cases[i].type) == 0, "%s.%s one below the limit is %s", cases[i].holder, cases[i].prop, type);
+        JS_FreeValue(ctx, v);
+        JS_FreeValue(ctx, holder);
+    }
+    CHECK(eval_is(ctx, "typeof Reflect.ownKeys + typeof JSON.parse('1')", "functionnumber"), "the runtime runs");
     JS_FreeContext(ctx);
     host_free_runtime(rt);
     return 0;
@@ -2207,6 +2276,7 @@ int main(void)
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_internal_depth_limit, NULL);
+    host_run_thread(test_internal_depth_autoinit, NULL);
     host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);
