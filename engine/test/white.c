@@ -202,3 +202,30 @@ int white_error_nest(JSRuntime *rt, int n)
     rt->nest[JS_NEST_ERROR] = n;
     return old;
 }
+
+/* ---- the properties of a new function ---- */
+
+/* A C function as JS_NewCFunction2 makes it, with proto as its prototype and
+   neither length nor name yet, or JS_EXCEPTION. */
+JSValue white_bare_function(JSContext *ctx, JSValueConst proto)
+{
+    JSValue f = JS_NewObjectProtoClass(ctx, proto, JS_CLASS_C_FUNCTION);
+    JSObject *p;
+
+    if (JS_IsException(f))
+        return f;
+    p = JS_VALUE_GET_OBJ(f);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = NULL;
+    p->u.cfunc.length = 0;
+    p->u.cfunc.cproto = JS_CFUNC_generic;
+    p->u.cfunc.magic = 0;
+    p->is_constructor = FALSE;
+    return f;
+}
+
+/* js_function_set_properties: 0, or -1 with the exception pending. */
+int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len)
+{
+    return js_function_set_properties(ctx, f, name, len);
+}

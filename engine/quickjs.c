@@ -6653,11 +6653,32 @@ static BOOL js_function_shape_made(JSShape *empty, JSShape *both)
     return pr[0].atom == JS_ATOM_length && pr[1].atom == JS_ATOM_name;
 }
 
+/* Define length and name on func_obj, one after the other. Returns -1 with
+   the exception pending when it ran out of memory. */
+static int js_function_define_properties(JSContext *ctx, JSValueConst func_obj,
+                                         JSAtom name, int len)
+{
+    JSValue name_val;
+
+    /* ES6 feature non compatible with ES5.1: length is configurable */
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
+                               JS_PROP_CONFIGURABLE) < 0)
+        return -1;
+    name_val = JS_AtomToString(ctx, name);
+    if (JS_IsException(name_val))
+        return -1;
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name_val,
+                               JS_PROP_CONFIGURABLE) < 0)
+        return -1;
+    return 0;
+}
+
 /* Give the function func_obj, made just now, the properties length and name,
-   as js_function_set_properties does, and report whether it did. When it did
-   not, nothing was done. */
-static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
-                              JSAtom name, int len)
+   as js_function_set_properties does. Returns 1 when it did, 0 when it did
+   nothing, and -1 with the exception pending when it ran out of memory: the
+   string of the name, made for an index atom, or a property. */
+static int js_function_shape(JSContext *ctx, JSValueConst func_obj,
+                             JSAtom name, int len)
 {
     JSObject *p;
     JSShape *sh, *empty, *both, *old_empty, *old_both;
@@ -6667,11 +6688,11 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
     /* what JS_DefinePropertyValue needs to add the two keys to an ordinary
        object */
     if (JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)
-        return FALSE;
+        return 0;
     p = JS_VALUE_GET_OBJ(func_obj);
     if (!p->extensible || p->is_exotic || p->fast_array ||
         p->class_id == JS_CLASS_GLOBAL_OBJECT)
-        return FALSE;
+        return 0;
     sh = p->shape;
     for(i = 0; i < countof(ctx->func_shapes); i++) {
         if (ctx->func_shapes[i][0] != sh)
@@ -6680,6 +6701,8 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         /* made before the object changes: it can allocate and run the
            cycle collector, which must find the object as it is */
         name_val = JS_AtomToString(ctx, name);
+        if (JS_IsException(name_val))
+            return -1;
         /* what add_property does for the second key, which finds the shape
            with both in the shape hash table. The property array keeps its
            size (see js_function_shape_made). */
@@ -6688,23 +6711,23 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         js_free_shape(ctx->rt, sh);
         p->prop[0].u.value = JS_NewInt32(ctx, len);
         p->prop[1].u.value = name_val;
-        return TRUE;
+        return 1;
     }
     i = js_function_shape_slot(ctx, sh);
     if (i < 0)
-        return FALSE;
+        return 0;
     /* held while add_property moves the object on, so that the empty shape
        stays as it is and is not freed: add_property copies a shape held by
        more than one rather than grow it */
     empty = js_dup_shape(sh);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
-                           JS_PROP_CONFIGURABLE);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
-                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    if (js_function_define_properties(ctx, func_obj, name, len) < 0) {
+        js_free_shape(ctx->rt, empty);
+        return -1;
+    }
     both = p->shape;
     if (!js_function_shape_made(empty, both)) {
         js_free_shape(ctx->rt, empty);
-        return TRUE;
+        return 1;
     }
     old_empty = ctx->func_shapes[i][0];
     old_both = ctx->func_shapes[i][1];
@@ -6714,19 +6737,20 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         js_free_shape(ctx->rt, old_empty);
         js_free_shape(ctx->rt, old_both);
     }
-    return TRUE;
+    return 1;
 }
 
-static void js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
-                                       JSAtom name, int len)
+/* Give the function func_obj, made just now, the properties length and name.
+   Returns -1 with the exception pending when it ran out of memory, and the
+   caller frees the function. */
+static int js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
+                                      JSAtom name, int len)
 {
-    if (js_function_shape(ctx, func_obj, name, len))
-        return;
-    /* ES6 feature non compatible with ES5.1: length is configurable */
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
-                           JS_PROP_CONFIGURABLE);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
-                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    int r = js_function_shape(ctx, func_obj, name, len);
+
+    if (r != 0)
+        return r < 0 ? -1 : 0;
+    return js_function_define_properties(ctx, func_obj, name, len);
 }
 
 static BOOL js_class_has_bytecode(JSClassID class_id)
@@ -6843,7 +6867,11 @@ static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
         JS_FreeValue(ctx, func_obj);
         return JS_EXCEPTION;
     }
-    js_function_set_properties(ctx, func_obj, name_atom, length);
+    if (js_function_set_properties(ctx, func_obj, name_atom, length) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
     JS_FreeAtom(ctx, name_atom);
     return func_obj;
 }
@@ -6882,7 +6910,11 @@ JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
         JS_FreeValue(ctx, func_obj);
         return JS_EXCEPTION;
     }
-    js_function_set_properties(ctx, func_obj, name_atom, length);
+    if (js_function_set_properties(ctx, func_obj, name_atom, length) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
     JS_FreeAtom(ctx, name_atom);
     return func_obj;
 }
@@ -6967,8 +6999,11 @@ JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
     for(i = 0; i < data_len; i++)
         s->data[i] = JS_DupValue(ctx, data[i]);
     JS_SetOpaque(func_obj, s);
-    js_function_set_properties(ctx, func_obj,
-                               JS_ATOM_empty_string, length);
+    if (js_function_set_properties(ctx, func_obj,
+                                   JS_ATOM_empty_string, length) < 0) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
     return func_obj;
 }
 
@@ -19940,8 +19975,9 @@ static JSValue js_closure(JSContext *ctx, JSValue bfunc,
     name_atom = b->func_name;
     if (name_atom == JS_ATOM_NULL)
         name_atom = JS_ATOM_empty_string;
-    js_function_set_properties(ctx, func_obj, name_atom,
-                               b->defined_arg_count);
+    if (js_function_set_properties(ctx, func_obj, name_atom,
+                                   b->defined_arg_count) < 0)
+        goto fail;
 
     if (b->func_kind & JS_FUNC_GENERATOR) {
         JSValue proto;
@@ -57579,7 +57615,10 @@ static int js_create_resolving_functions(JSContext *ctx,
         s->presolved = sr;
         s->promise = JS_DupValue(ctx, promise);
         JS_SetOpaque(obj, s);
-        js_function_set_properties(ctx, obj, JS_ATOM_empty_string, 1);
+        if (js_function_set_properties(ctx, obj, JS_ATOM_empty_string, 1) < 0) {
+            JS_FreeValue(ctx, obj);
+            goto fail;
+        }
         resolving_funcs[i] = obj;
     }
     js_promise_resolve_function_free_resolved(ctx->rt, sr);
