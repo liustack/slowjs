@@ -1,0 +1,38 @@
+"0": 0 true true true ok 1
+"1": 1 true true true ok 1
+"-0": 0 true false false TypeError undefined
+"0.5": 0.5 true false false TypeError undefined
+"1.0": 1 true true true ok 1
+"01": 1 true true true ok 1
+"+1": 1 true true true ok 1
+" 1": 1 true true true ok 1
+"1 ": 1 true true true ok 1
+"-1": -1 true false false TypeError undefined
+"1e3": 1000 true true true ok 1
+"1000": 1000 true false false TypeError undefined
+"1e21": 1e+21 true true true ok 1
+"1e+21": 1e+21 true false false TypeError undefined
+"0.000001": 0.000001 true false false TypeError undefined
+"1e-7": 1e-7 true false false TypeError undefined
+"0.0000001": 1e-7 true true true ok 1
+"Infinity": Infinity true false false TypeError undefined
+"-Infinity": -Infinity true false false TypeError undefined
+"NaN": NaN true false false TypeError undefined
+"0x10": 16 true true true ok 1
+"0b1": 1 true true true ok 1
+"0o7": 7 true true true ok 1
+"4294967295": 4294967295 true false false TypeError undefined
+"4294967296": 4294967296 true false false TypeError undefined
+"9007199254740993": 9007199254740992 true true true ok 1
+"1.5e300": 1.5e+300 true true true ok 1
+"": 0 true true true ok 1
+"a": NaN true true true ok 1
+"-": NaN true true true ok 1
+"-a": NaN true true true ok 1
+6002: 42 42 42
+6004: 31 31 31
+3042: 1099511627775 1099511627775 1099511627775
+3402: Infinity Infinity Infinity
+3009: -Infinity -Infinity Infinity
+6002: NaN NaN NaN
+3008: 0.007 0.007 0.007

@@ -1534,6 +1534,9 @@ static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
+static JSValue js_string_to_number(JSContext *ctx, JSValue val);
+static JSValue js_dtoa2(JSContext *ctx,
+                        double d, int radix, int n_digits, int flags);
 static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
                                                   uint32_t idx, JSValue val,
                                                   int flags);
@@ -4152,6 +4155,25 @@ static BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
 /* This test must be fast if atom is not a numeric index (e.g. a
    method name). Return JS_UNDEFINED if not a numeric
    index. JS_EXCEPTION can also be returned. */
+/* ToString of val, a number (an int or a float64), as JS_ToString does it
+   without the conversions of other values */
+static JSValue js_number_to_string(JSContext *ctx, JSValueConst val)
+{
+    char buf[32];
+    size_t len;
+
+    switch(JS_VALUE_GET_NORM_TAG(val)) {
+    case JS_TAG_INT:
+        len = i32toa(buf, JS_VALUE_GET_INT(val));
+        return js_new_string8_len(ctx, buf, len);
+    case JS_TAG_FLOAT64:
+        return js_dtoa2(ctx, JS_VALUE_GET_FLOAT64(val), 10, 0,
+                        JS_DTOA_FORMAT_FREE);
+    default:
+        abort();
+    }
+}
+
 static JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
 {
     JSRuntime *rt = ctx->rt;
@@ -4185,10 +4207,10 @@ static JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
     if (!is_num(c) && c != '-')
         return JS_UNDEFINED;
     /* this is ECMA CanonicalNumericIndexString primitive */
-    num = JS_ToNumber(ctx, JS_MKPTR(JS_TAG_STRING, p));
+    num = js_string_to_number(ctx, JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p)));
     if (JS_IsException(num))
         return num;
-    str = JS_ToString(ctx, num);
+    str = js_number_to_string(ctx, num);
     if (JS_IsException(str)) {
         JS_FreeValue(ctx, num);
         return str;
@@ -15153,6 +15175,43 @@ typedef enum JSToNumberHintEnum {
     TON_FLAG_NUMERIC,
 } JSToNumberHintEnum;
 
+/* ToNumber of val, a string or a rope, which is freed. It converts only
+   strings, so that what ToNumber does for other values is out of its reach
+   (JS_AtomIsNumericIndex1 calls it). */
+static JSValue js_string_to_number(JSContext *ctx, JSValue val)
+{
+    const char *str;
+    const char *p;
+    size_t len;
+    JSValue ret;
+
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING_ROPE) {
+        val = js_linearize_string_rope(ctx, val);
+        if (JS_IsException(val))
+            return val;
+    }
+    str = js_string_to_cstring(ctx, &len, val, FALSE);
+    if (!str)
+        return JS_EXCEPTION;
+    p = str;
+    p += skip_spaces(p);
+    if ((p - str) == len) {
+        ret = JS_NewInt32(ctx, 0);
+    } else {
+        int flags = ATOD_ACCEPT_BIN_OCT;
+        ret = js_atof(ctx, p, &p, 0, flags);
+        if (!JS_IsException(ret)) {
+            p += skip_spaces(p);
+            if ((p - str) != len) {
+                JS_FreeValue(ctx, ret);
+                ret = JS_NAN;
+            }
+        }
+    }
+    JS_FreeCString(ctx, str);
+    return ret;
+}
+
 static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
                                    JSToNumberHintEnum flag)
 {
@@ -15189,32 +15248,7 @@ static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
         goto redo;
     case JS_TAG_STRING:
     case JS_TAG_STRING_ROPE:
-        {
-            const char *str;
-            const char *p;
-            size_t len;
-
-            str = JS_ToCStringLen(ctx, &len, val);
-            JS_FreeValue(ctx, val);
-            if (!str)
-                return JS_EXCEPTION;
-            p = str;
-            p += skip_spaces(p);
-            if ((p - str) == len) {
-                ret = JS_NewInt32(ctx, 0);
-            } else {
-                int flags = ATOD_ACCEPT_BIN_OCT;
-                ret = js_atof(ctx, p, &p, 0, flags);
-                if (!JS_IsException(ret)) {
-                    p += skip_spaces(p);
-                    if ((p - str) != len) {
-                        JS_FreeValue(ctx, ret);
-                        ret = JS_NAN;
-                    }
-                }
-            }
-            JS_FreeCString(ctx, str);
-        }
+        ret = js_string_to_number(ctx, val);
         break;
     case JS_TAG_SYMBOL:
         JS_FreeValue(ctx, val);
