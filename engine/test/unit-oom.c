@@ -73,6 +73,30 @@ static void release_blocks(VM *v)
     unlimit(v);
 }
 
+/* The rooms of a full heap: case i of fill_rooms frees rm[i].n blocks of each
+   size from rm[i].min to rm[i].max after fill_memory. The first frees
+   nothing. */
+#define FILL_ROOMS (1 + 512 / 8 + 7 * 4)
+typedef struct {
+    size_t min, max, n;
+} FillRoom;
+
+static size_t fill_rooms(FillRoom *rm)
+{
+    size_t nrooms = 0, size, max, n;
+
+    rm[nrooms].min = 8; rm[nrooms].max = 8; rm[nrooms++].n = 0;
+    for (size = 8; size <= 512; size += 8) {
+        rm[nrooms].min = size; rm[nrooms].max = size; rm[nrooms++].n = 1;
+    }
+    for (max = 64; max <= 4096; max *= 2) {
+        for (n = 1; n <= 4; n++) {
+            rm[nrooms].min = 8; rm[nrooms].max = max; rm[nrooms++].n = n;
+        }
+    }
+    return nrooms;
+}
+
 /* When the memory left cannot hold an error, JS_ThrowError2 throws null,
    uncatchable, which the embedder reports as running out of memory. When it
    can hold the error object but not its message, it does the same, and never
@@ -84,8 +108,8 @@ static void test_throw_error_oom(void)
     VM v = vm_new();
     char name[151];
     JSAtom atom;
-    struct { size_t min, max, n; } rm[600];
-    size_t nrooms = 0, i, size, max, n;
+    FillRoom rm[FILL_ROOMS];
+    size_t nrooms, i;
     int nulls = 0, whole = 0;
 
     memset(name, 'x', 150);
@@ -94,16 +118,7 @@ static void test_throw_error_oom(void)
     atom = JS_NewAtom(v.ctx, name);
     JS_FreeValue(v.ctx, JS_GetProperty(v.ctx, JS_NULL, atom));
     JS_FreeValue(v.ctx, JS_GetException(v.ctx));
-    /* each case frees n blocks of each size from min to max */
-    rm[nrooms].min = 8; rm[nrooms].max = 8; rm[nrooms++].n = 0;
-    for (size = 8; size <= 512; size += 8) {
-        rm[nrooms].min = size; rm[nrooms].max = size; rm[nrooms++].n = 1;
-    }
-    for (max = 64; max <= 4096; max *= 2) {
-        for (n = 1; n <= 4; n++) {
-            rm[nrooms].min = 8; rm[nrooms].max = max; rm[nrooms++].n = n;
-        }
-    }
+    nrooms = fill_rooms(rm);
     for (i = 0; i < nrooms; i++) {
         JSValue r, e, m;
         int uncatchable;
@@ -682,6 +697,126 @@ static void test_throw_stackless_oom(void)
     }
 }
 
+/* ---- lazy properties ---- */
+
+/* Most built-in functions and objects, and the prototype of a function, are
+   made at the first access to their property (an autoinit property). When
+   making one runs out of memory, the access fails with the out of memory
+   error and the property stays as it was, to be made at the next access. It
+   used to become undefined for the life of the context: JSON.parse read for
+   the first time with no memory left was not a function from then on. The
+   global object holds its properties through references, which take a block
+   of their own once the value is made, and a write that finds such a property
+   on the prototype makes it first: neither loses a value when it fails.
+
+   Each case reads (or writes) a property nobody accessed before, in a new
+   runtime, with each room of two sweeps: the bytes the memory limit leaves
+   (room, which the system malloc of the asan build counts to the block), and
+   a full heap with a few blocks given back (fill_memory, which the small
+   blocks of the engine's allocator need). With the memory back, the property
+   must have its value, and the runtime must hold no lost block (vm_free). */
+#define AUTOINIT_BYTE_ROOMS (1 + 1024 / 8)
+static const struct {
+    const char *holder; /* evaluated with memory: the object that has prop */
+    const char *prop;
+    int fn;             /* the value is a function, else an object that is not */
+    int set;            /* write prop on an object whose prototype is holder */
+} autoinit_cases[] = {
+    { "JSON", "parse", 1, 0 },
+    { "(function f() {})", "prototype", 0, 0 },
+    { "globalThis", "decodeURIComponent", 1, 0 },
+    { "globalThis", "Reflect", 0, 0 },
+    { "JSON", "stringify", 1, 1 },
+};
+
+static int autoinit_value_ok(JSContext *ctx, JSValueConst v, int fn)
+{
+    return fn ? JS_IsFunction(ctx, v) : JS_IsObject(v) && !JS_IsFunction(ctx, v);
+}
+
+/* Each kind of failure is counted over the rooms of a case and checked once,
+   with the first room it was seen in, so that every case has its line. */
+typedef struct {
+    int count;
+    char first[32];
+} AutoinitMiss;
+
+static void autoinit_miss(AutoinitMiss *m, int bytes, size_t n)
+{
+    if (!m->count++)
+        snprintf(m->first, sizeof(m->first), "%s room %zu", bytes ? "byte" : "fill", n);
+}
+
+static void test_autoinit_oom(void)
+{
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), c, k;
+
+    for (c = 0; c < countof(autoinit_cases); c++) {
+        const char *hs = autoinit_cases[c].holder, *ps = autoinit_cases[c].prop;
+        int fn = autoinit_cases[c].fn, set = autoinit_cases[c].set;
+        int failed = 0, made = 0;
+        AutoinitMiss catchable = { 0 }, wrong = { 0 }, lost = { 0 };
+
+        for (k = 0; k < AUTOINIT_BYTE_ROOMS + nfill; k++) {
+            VM v = vm_new();
+            JSValue holder = JS_Eval(v.ctx, hs, strlen(hs), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            JSAtom atom = JS_NewAtom(v.ctx, ps);
+            JSValue target, val = JS_UNDEFINED, r = JS_UNDEFINED, again;
+            int bytes = k < AUTOINIT_BYTE_ROOMS, fail, unc;
+            size_t n = bytes ? k * 8 : k - AUTOINIT_BYTE_ROOMS;
+
+            target = set ? JS_NewObjectProto(v.ctx, holder) : JS_DupValue(v.ctx, holder);
+            if (set)
+                val = JS_NewObject(v.ctx);
+            if (bytes) {
+                room(&v, n);
+            } else {
+                fill_memory(&v);
+                free_blocks(&v, rm[n].min, rm[n].max, rm[n].n);
+            }
+            if (set) {
+                fail = JS_SetProperty(v.ctx, target, atom, val) < 0;
+            } else {
+                r = JS_GetProperty(v.ctx, target, atom);
+                fail = JS_IsException(r);
+            }
+            unc = JS_IsUncatchableException(v.ctx);
+            if (bytes)
+                unlimit(&v);
+            else
+                release_blocks(&v);
+            if (fail) {
+                failed++;
+                if (!unc)
+                    autoinit_miss(&catchable, bytes, n);
+                free(exception_text(v.ctx));
+            } else {
+                made++;
+                if (!set && !autoinit_value_ok(v.ctx, r, fn))
+                    autoinit_miss(&wrong, bytes, n);
+            }
+            JS_FreeValue(v.ctx, r);
+            again = JS_GetProperty(v.ctx, holder, atom);
+            if (!autoinit_value_ok(v.ctx, again, fn))
+                autoinit_miss(&lost, bytes, n);
+            JS_FreeValue(v.ctx, again);
+            JS_FreeValue(v.ctx, target);
+            JS_FreeValue(v.ctx, holder);
+            JS_FreeAtom(v.ctx, atom);
+            /* a lost object ends the process in vm_free: say what failed first */
+            fflush(stdout);
+            vm_free(&v);
+        }
+        CHECK(!catchable.count, "%s.%s: the access failed with a catchable exception in %d rooms, the first %s", hs, ps, catchable.count, catchable.first);
+        CHECK(!wrong.count, "%s.%s: the access gave a value that is not %s in %d rooms, the first %s", hs, ps, fn ? "a function" : "an object", wrong.count, wrong.first);
+        CHECK(!lost.count, "%s.%s: with the memory back it is not %s after %d rooms, the first %s", hs, ps, fn ? "a function" : "an object", lost.count, lost.first);
+        CHECK(failed > 0, "%s.%s: no room made the access fail", hs, ps);
+        CHECK(made > 0, "%s.%s: no room let the access work", hs, ps);
+        fflush(stdout);
+    }
+}
+
 /* ---- JSON ---- */
 
 /* When the memory runs out while JSON.stringify or JSON.parse copies a run of
@@ -917,6 +1052,7 @@ int main(void)
     test_backtrace_overwrite();
     test_backtrace_print_oom();
     test_throw_stackless_oom();
+    test_autoinit_oom();
     test_json_strings_oom();
     test_oom_uncatchable();
     test_regexp_oom();
