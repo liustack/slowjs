@@ -180,28 +180,6 @@ func ExampleVM_RegisterFunc_thisNonNull2() {
 	// [{"foo":314},420] <nil>
 }
 
-// Enabling the module loader.
-func ExampleVM_SetDefaultModuleLoader() {
-	m, _ := NewVM()
-	defer m.Close()
-	m.SetDefaultModuleLoader()
-	// testdata/power.js:
-	//  export const name = "Power";
-	//
-	//  export function square(x) {
-	//  	return x*x;
-	//  }
-	//
-	//  export function cube(x) {
-	//  	return x*x*x;
-	//  }
-	m.Eval("import * as Power from './testdata/power.js'; globalThis.Power = Power;", EvalModule)
-	fmt.Println(m.Eval("[Power.square(2), Power.cube(2)];", EvalGlobal))
-
-	// Output:
-	// [4,8] <nil>
-}
-
 func ExampleVM_SetEvalTimeout() {
 	m, _ := NewVM()
 	defer m.Close()

@@ -9,8 +9,6 @@ package engine
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/liustack/slowjs"
@@ -90,13 +88,7 @@ func newLiustack(o Options) (VM, error) {
 			return nil, err
 		}
 	}
-	if o.ModuleDir != "" {
-		dir := o.ModuleDir
-		vm.SetModuleLoader(func(_ *slowjs.VM, name string) (string, error) {
-			b, err := os.ReadFile(filepath.Join(dir, filepath.Base(name)))
-			return string(b), err
-		}, nil)
-	}
+	// slowjs loads no modules: an import of o.ModuleDir fails.
 	return &liustackVM{vm}, nil
 }
 

@@ -270,18 +270,7 @@ func (m *VM) SetStrip(s Strip) {
 	m.jsSetStripInfo(int32(s))
 }
 
-// SetCanBlock configures m's blocking mode.
-func (m *VM) SetCanBlock(value bool) {
-	n := int32(0)
-	if value {
-		n = 1
-	}
-	m.jsSetCanBlock(n)
-}
-
-// Close releases the resources held by 'm'. That includes the module loader
-// and normalizer set by [VM.SetModuleLoader]: Close removes them, so a closed
-// VM keeps nothing they close over reachable.
+// Close releases the resources held by m.
 func (m *VM) Close() error {
 	goFuncsMu.Lock()
 	for _, magic := range m.goFuncs {

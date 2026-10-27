@@ -271,14 +271,6 @@ func (m *VM) closeEngine() error {
 	// tlsMark) left its frames on the TLS stack.
 	m.runtime.base.restore(tls)
 
-	// SetModuleLoader files the loader process-wide under the runtime
-	// pointer, which is freed below and may be reused by a later runtime.
-	// Drop the entry first, so the closures - and whatever host they
-	// capture - do not outlive the VM. Nothing in the teardown loads a module.
-	customLoadersMu.Lock()
-	delete(customLoaders, m.runtime.cRuntime)
-	customLoadersMu.Unlock()
-
 	// Interrupt can run concurrently: let it see the flag gone before it
 	// is freed.
 	m.intr.mu.Lock()
@@ -340,10 +332,6 @@ func (e *engineState) jsSetMaxStackSize(n uintptr) {
 
 func (e *engineState) jsSetStripInfo(flags int32) {
 	lib.XJS_SetStripInfo(e.runtime.tls, e.runtime.cRuntime, flags)
-}
-
-func (e *engineState) jsSetCanBlock(n int32) {
-	lib.XJS_SetCanBlock(e.runtime.tls, e.runtime.cRuntime, n)
 }
 
 func (e *engineState) setClock(now func() time.Time) {
@@ -723,13 +711,6 @@ func (e *engineState) toGoString(v jsValue, wtf8 bool) (s string, ok bool) {
 		return string(b), true
 	}
 	return wellFormed(b), true
-}
-
-// cGoString returns the NUL-terminated C string p, which the engine wrote
-// from a JS string, as a Go string with U+FFFD for each lone surrogate, like
-// toGoString.
-func cGoString(tls *libc.TLS, p uintptr) string {
-	return wellFormed(unsafe.Slice((*byte)(unsafe.Pointer(p)), libc.Xstrlen(tls, p)))
 }
 
 // The kinds of error jsThrowError throws.

@@ -47,7 +47,7 @@ Every function of the engine that reads the time asks Go instead of libc. The `g
 | --- | --- | --- |
 | `date_now` | `Date.now()`, `new Date()`, `Date()` | `time.Now().UnixMilli()`: whole milliseconds since 1970, rounded down, as before |
 | `js_random_init` | the seed of `Math.random` in a new context | `time.Now().UnixMicro()`, and 1 for 0, as before |
-| `get_time_ns` | `performance.now()` of `StdAddHelpers` | Go's monotonic clock, from the start of the process |
+| `get_time_ns` | `performance.now()` of `StdAddHelpers`, now gone ([go-api.md](go-api.md#no-module-loader-shell-helpers-or-setcanblock)) | Go's monotonic clock, from the start of the process |
 
 The function each one replaces stays in the file, with fixlib's other changes, under a name ending in `_libc`, next to the new one. Nothing calls it, so the linker leaves it out, but `fixlib` checks its text against `clockSites` on every run, and `restoreClock` gives the file back byte for byte. `Atomics.wait` still reads libc's `CLOCK_REALTIME`: it hands the deadline to libc's `pthread_cond_timedwait`, which measures it on that clock, and it is not a hot path. The eval timeout already ran on Go's monotonic clock (see [uncatchable.md](uncatchable.md#the-eval-timeout-runs-on-the-monotonic-clock)), and local time stays UTC.
 
@@ -80,7 +80,7 @@ vm.SetClock(nil)
 - The callback must not block, since the eval timeout cannot cut it short. When VMs share one callback, it must be safe for concurrent calls. A panic in it follows the rules of a panic in the engine: close that VM.
 - A non-nil `temporal.Clock` keeps overriding `Temporal.Now` alone and wins over the VM clock. Without it, or with `Clock(nil)`, Temporal reads the VM clock at each call, also after a later `SetClock`.
 - Saved functions read the clock current at the call: a `Date.now` kept at module load, a `Temporal.Now` method, an `Intl` formatter. Intl takes the native `Date.now` when it registers, so a page that replaces `Date.now` does not change what Intl reads.
-- It is a wall clock only. `performance.now()` stays monotonic, counted from the start of the process. The eval timeout, `Atomics.wait` and the seed of `Math.random` keep their clocks.
+- It is a wall clock only. The eval timeout, `Atomics.wait` and the seed of `Math.random` keep their clocks.
 - `Close` and `SetClock(nil)` release the callback, also when it refers to the VM.
 
 How it works: `fixVMClock` changes the two callers of `date_now` (`js_date_constructor` and `js_Date_now`) to call `dateNowContext` of `lib/clock.go`, which takes the runtime of the context. A runtime holds one flag in `TforkRuntime`, never a Go pointer, since runtime memory is outside Go's heap. A VM with a clock has its callback in a Go registry keyed by the runtime, which keeps it alive until it is replaced, reset or closed. Without a clock the call reads Go's clock as before: one flag test, with no lookup, lock or allocation. `fixClock` still replaces `date_now` itself. This is a rewrite of the generated Go with no C hunk (`internal/fixlib/vmclock.go`). It checks that each caller holds one call, that the file holds two, and that `restoreVMClock` gives the file back byte for byte.
