@@ -94,9 +94,10 @@ type VM struct {
 type Options struct {
 	// Seed is where Math.random starts.
 	Seed uint64
-	// StackSize is the size of the shadow stack, 0 for the default of 32
-	// MiB. It must be no smaller than the region the engine was generated
-	// for (-shadow-size-log2 of the generator), or New fails.
+	// StackSize is the size of the shadow stack, 0 for the region the
+	// engine was generated for (-shadow-size-log2 of the generator). Any
+	// other size fails New: the engine finds the base of its stack by
+	// rounding its stack pointer down to that region.
 	StackSize uintptr
 }
 
@@ -128,6 +129,17 @@ func (v *VM) usable() error {
 
 // New makes a runtime and a context.
 func New(o Options) (_ *VM, err error) {
+	if o.StackSize == 0 {
+		o.StackSize = 1 << shadowSizeLog2
+	}
+	if o.StackSize != 1<<shadowSizeLog2 {
+		// The engine takes the space left from its stack pointer and the
+		// size it was generated for (engine_decl.go): in a larger region
+		// the base it rounds to, with the poll counter and the scratch,
+		// would be in the middle of its frames.
+		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, not the %d the engine was generated for",
+			o.StackSize, uintptr(1)<<shadowSizeLog2)
+	}
 	h, err := gohost.New(gohost.Options{StackSize: o.StackSize, PollCounter: pollCounter()})
 	if err != nil {
 		return nil, err
@@ -145,13 +157,7 @@ func New(o Options) (_ *VM, err error) {
 			}
 		}
 	}()
-	base, size := h.Stack()
-	if size < 1<<shadowSizeLog2 {
-		// The engine takes the space left from its stack pointer and the
-		// size it was generated for (engine_decl.go).
-		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, smaller than the %d the engine was generated for",
-			size, uintptr(1)<<shadowSizeLog2)
-	}
+	base, _ := h.Stack()
 	v := &VM{h: h, base: base, sp: base + scratchSize}
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {

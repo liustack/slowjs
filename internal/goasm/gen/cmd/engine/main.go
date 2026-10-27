@@ -770,7 +770,7 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 	fmt.Fprintf(&b, "package %s\n\n", *pkg)
 	fmt.Fprintf(&b, "// shadowSizeLog2 is log2 of the shadow-stack region the engine was generated\n"+
 		"// for (-shadow-size-log2): it takes the space left from the stack pointer\n"+
-		"// and this size, so the host's region must be aligned to it and no smaller.\n"+
+		"// and this size, so the host's region must be this size, aligned to it.\n"+
 		"const shadowSizeLog2 = %d\n\n", *sizeLog2)
 	fmt.Fprintf(&b, "// polls says whether the engine counts its cycles and calls host_poll\n"+
 		"// (-poll). pollCounterOffset is where the counter is from the base of\n"+
