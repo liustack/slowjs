@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, and the module loaders, shell helpers and SetCanBlock that are gone'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -15,6 +15,7 @@ read_when:
   - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
   - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
   - Writing an AsyncLocalStorage, or a value that has to follow an async function across await (GetAsyncContext, SetAsyncContext)
+  - Reading what a VM holds by kind, or giving the memory it keeps free back to the system (MemoryUsage, ReleaseMemory)
   - Moving code that called SetModuleLoader, SetDefaultModuleLoader, StdAddHelpers or SetCanBlock
 ---
 
@@ -176,6 +177,18 @@ Release: v0.26.17.
 With these an embedder can collect between two calls into javascript, where the GC holds up no call, and set the threshold for the next one, as tifa does between two renders, without reading the runtime through `reflect`. As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and a call after `Close` panics.
 
 Test: `gc_test.go`.
+
+## MemoryUsage and ReleaseMemory
+
+Release: Unreleased.
+
+`VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back. The engine of lib takes its memory from libc and leaves them 0.
+
+`VM.ReleaseMemory(keep)` gives memory the VM keeps free back to the system, all but `keep` bytes of it, and returns how many bytes it gave back. The objects stay as they are. It returns an error while the VM runs javascript, as from a Go function that javascript called. On the engine of lib it gives nothing back and returns 0.
+
+As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and `MemoryUsage` after `Close` panics.
+
+Test: `memory_test.go`, also run under memgrind.
 
 ## OnClose
 
