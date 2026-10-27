@@ -60,9 +60,10 @@ func TestCheckDispatchCopies(t *testing.T) {
 	}
 }
 
-// pollIR has one function for each kind of cycle the pass treats apart. interp
-// is an interpreter: its dispatch is a computed goto through ops, and one of
-// its handlers calls a function that ticks.
+// pollIR has one function for each kind of cycle the pass treats apart, and for
+// each place a loop keeps the count. nest has a loop around one that runs in
+// chunks. interp is an interpreter: its dispatch is a computed goto through
+// ops, and one of its handlers calls a function that ticks.
 const pollIR = `declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 @ops = internal constant [2 x ptr] [ptr blockaddress(@interp, %inc), ptr blockaddress(@interp, %done)]
@@ -118,6 +119,30 @@ exit:
   ret void
 }
 
+define i64 @nest(ptr %a, i64 %n, i64 %m) {
+entry:
+  br label %outer
+outer:
+  %j = phi i64 [ 0, %entry ], [ %j1, %olatch ]
+  %t = phi i64 [ 0, %entry ], [ %s1, %olatch ]
+  br label %inner
+inner:
+  %i = phi i64 [ 0, %outer ], [ %i1, %inner ]
+  %s = phi i64 [ %t, %outer ], [ %s1, %inner ]
+  %p = getelementptr i64, ptr %a, i64 %i
+  %v = load i64, ptr %p
+  %s1 = add i64 %s, %v
+  %i1 = add i64 %i, 1
+  %c = icmp ult i64 %i1, %m
+  br i1 %c, label %inner, label %olatch
+olatch:
+  %j1 = add i64 %j, 1
+  %d = icmp ult i64 %j1, %n
+  br i1 %d, label %outer, label %exit
+exit:
+  ret i64 %s1
+}
+
 define void @forever() {
 entry:
   br label %loop
@@ -161,14 +186,16 @@ done:
 // 8 runs has no tick, a loop that calls a function and one that never ends
 // tick, a memcpy of a length that may be long goes through the chunked helper,
 // whose tick counts a whole chunk, one of 4 KiB stays, and the dispatch of the
-// interpreter turns to its poll label when the count runs out. The interpreter
-// keeps the count in a register and stores and loads it around its call. The
-// pass checks its own output, so it must also succeed, and it must stop on the
-// faults -shadow-poll-fault puts in: ticks whose test never holds, a dispatch
-// whose index the count does not change, and a count in a register that is not
-// stored before a call that may tick, not loaded again after it, or not stored
-// where its loop is left. An offset that is not a word inside the region stops
-// it too. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
+// interpreter turns to its poll label when the count runs out. A loop that runs
+// in chunks counts in memory, a loop around one keeps the count in a register
+// for both, and so does a loop that calls a function that does not tick. The
+// interpreter keeps the count in a register and stores and loads it around its
+// call. The pass checks its own output, so it must also succeed, and it must
+// stop on the faults -shadow-poll-fault puts in: ticks whose test never holds,
+// a dispatch whose index the count does not change, and a count in a register
+// that is not stored before a call that may tick, not loaded again after it, or
+// not stored where its loop is left. An offset that is not a word inside the
+// region stops it too. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
 // (SLOWJS_SHADOW_PASS).
 func TestPassPolls(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
@@ -206,7 +233,7 @@ func TestPassPolls(t *testing.T) {
 		return strings.Contains(f, "call void @host_poll(")
 	}
 	for name, want := range map[string]bool{"ext": false, "sum": true, "short": false, "calls": true, "forever": true,
-		"copy": false, "copysmall": false, "goasm_chunked_memcpy": true, "interp": true} {
+		"nest": true, "copy": false, "copysmall": false, "goasm_chunked_memcpy": true, "interp": true} {
 		if got := polls(name); got != want {
 			t.Errorf("%s calls host_poll: %v, want %v", name, got, want)
 		}
@@ -222,6 +249,11 @@ func TestPassPolls(t *testing.T) {
 	}
 	if !strings.Contains(funcs["interp"], "select i1") {
 		t.Errorf("the dispatch does not pick its table entry by the count:\n%s", funcs["interp"])
+	}
+	for name, want := range map[string][2]int{"sum": {0, 1}, "calls": {1, 0}, "nest": {2, 0}} {
+		if reg, mem := tickPlaces(funcs[name]); reg != want[0] || mem != want[1] {
+			t.Errorf("%s ticks %d times in a register and %d in memory, want %d and %d:\n%s", name, reg, mem, want[0], want[1], funcs[name])
+		}
 	}
 	if f := funcs["interp"]; !syncedAround(f, "@calls(") {
 		t.Errorf("interp does not store the count before its call and load it after:\n%s", f)
@@ -240,6 +272,23 @@ func TestPassPolls(t *testing.T) {
 			t.Errorf("-shadow-poll-fault=%s: %v\n%s", fault, err, out)
 		}
 	}
+}
+
+// tickPlaces counts the ticks of a function of the pass's output whose count
+// is a load of the counter (in memory) and the others (in a register).
+func tickPlaces(f string) (reg, mem int) {
+	loads := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(%[\w.]+) = load i64, ptr %poll\.counter`).FindAllStringSubmatch(f, -1) {
+		loads[m[1]] = true
+	}
+	for _, m := range regexp.MustCompile(`= sub i64 (%[\w.]+), \d+, !goasm\.tick`).FindAllStringSubmatch(f, -1) {
+		if loads[m[1]] {
+			mem++
+		} else {
+			reg++
+		}
+	}
+	return reg, mem
 }
 
 // syncedAround tells whether the line of f that calls call has a store to the
