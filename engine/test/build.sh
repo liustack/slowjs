@@ -19,6 +19,10 @@
 #               and LeakSanitizer see each block
 #   asan-heap   AddressSanitizer with the engine's own allocator, which poisons
 #               what is free (free slots, free TLSF blocks, the rest of an arena)
+#   asan-heap-iter
+#               asan-heap with JS_MALLOC_USE_ITER, which keeps every allocated
+#               block in a list (the engine does not use it, but the macro is
+#               still there and must keep building and working)
 #   ubsan       UndefinedBehaviorSanitizer
 #   asan-ubsan  both, on the system malloc
 #   fuzz        the libFuzzer target of the allocator (heap-fuzz), with
@@ -52,11 +56,12 @@ case $mode in
 plain) san= ;;
 asan) san='-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer'; defs=-DJS_HEAP_SYSTEM_MALLOC; system=1 ;;
 asan-heap) san='-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer'; heapsan='-fno-sanitize=address -fno-omit-frame-pointer'; defs=-DJS_HEAP_POISON ;;
+asan-heap-iter) san='-fsanitize=address -fsanitize-recover=address -fno-omit-frame-pointer'; heapsan='-fno-sanitize=address -fno-omit-frame-pointer'; defs='-DJS_HEAP_POISON -DJS_MALLOC_USE_ITER' ;;
 ubsan) san='-fsanitize=undefined -fno-omit-frame-pointer' ;;
 asan-ubsan) san='-fsanitize=address,undefined -fsanitize-recover=address -fno-omit-frame-pointer'; defs=-DJS_HEAP_SYSTEM_MALLOC; system=1 ;;
 tsan) san='-fsanitize=thread -fno-omit-frame-pointer' ;;
 fuzz) san='-fsanitize=address,undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; heapsan='-fsanitize=undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; defs=-DJS_HEAP_POISON; fuzzflags='-fsanitize=fuzzer' ;;
-*) echo "build.sh: unknown mode $mode (plain, asan, asan-heap, ubsan, asan-ubsan, tsan or fuzz)" >&2; exit 2 ;;
+*) echo "build.sh: unknown mode $mode (plain, asan, asan-heap, asan-heap-iter, ubsan, asan-ubsan, tsan or fuzz)" >&2; exit 2 ;;
 esac
 [ -n "$heapsan" ] || heapsan=$san
 

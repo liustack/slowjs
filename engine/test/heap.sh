@@ -14,7 +14,7 @@
 #   engine/test/heap.sh [-m MODE] [-s SEEDS] [-n STEPS] [-f SECONDS]
 #
 # MODE is a mode of build.sh that has the engine's own allocator: plain
-# (default), asan-heap or ubsan, and it must be built already:
+# (default), asan-heap, asan-heap-iter or ubsan, and it must be built already:
 # engine/test/build.sh MODE. SEEDS (default 5) is how many seeds the random
 # sequences run with, STEPS (default 300000) the steps of each. SECONDS (default
 # 0, none) is how long the fuzz target runs: it builds engine/test/out/fuzz
@@ -46,7 +46,7 @@ UBSAN_OPTIONS=halt_on_error=1:exitcode=86:print_stacktrace=1${UBSAN_OPTIONS:+:$U
 export ASAN_OPTIONS UBSAN_OPTIONS
 
 "$bin" scenarios
-# asan-heap mode has poison-test too: what the poison covers
+# asan-heap and asan-heap-iter have poison-test too: what the poison covers
 [ ! -x "$here/out/$mode/poison-test" ] || "$here/out/$mode/poison-test"
 i=1
 while [ "$i" -le "$seeds" ]; do

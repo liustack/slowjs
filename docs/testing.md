@@ -58,6 +58,21 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 
 To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'TestEval/eval1' -v .`.
 
+## Tests that skip without their tools
+
+The tests of the generator in `internal/goasm/gen` need LLVM and skip (and still pass) when it is not given, so `go test ./internal/goasm/gen` on its own checks only the rules. Set these three variables to run all of them:
+
+```sh
+export SLOWJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
+export SLOWJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
+export SLOWJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux)
+go test -p 2 -timeout 30m ./internal/goasm/gen/...
+```
+
+With only `SLOWJS_LLVM` and `SLOWJS_SHADOW_PASS`, the tests that need `ld.lld` (`TestVarargsNative`, `TestSampleRuns`, `TestNarrowArgs`) still skip. A skipped test prints `--- SKIP` with the names of the variables it wants: run with `-v` and look for it before you trust a green run. `SLOWJS_QEMU_AARCH64` (optional) names an emulator that lets the arm64 cases run on an amd64 host.
+
+`go test -race` needs `CGO_ENABLED=1` and a C compiler, as the race runtime is linked through cgo. This repository builds with `CGO_ENABLED=0`, so set it for the command only: `CGO_ENABLED=1 go test -race ...`. Every `-race` command in this doc is meant this way.
+
 ## Focused checks
 
 For the native C dispatch condition, apply `lib/internal/patch/quickjs.diff` to the pinned C source and inspect `DIRECT_DISPATCH` with both gcc and clang preprocessing. It must be `1` with neither translation macro, and `0` with `__CCGO__`, `__EMSCRIPTEN__`, or both. Build the native interpreter with the upstream Makefile and check interrupt and allocation failure propagation, recursion RangeError and error stack descriptors with computed goto enabled. The [native dispatch notes](fork-changes/interpreter-loop.md#native-c-keeps-computed-goto) explain why the Go translation remains unchanged.
@@ -160,7 +175,7 @@ go test -vet=off -run Test262 -v .     # unpacks test262/, builds the runner, ru
 `engine/` is the C tree of the engine to come. `engine/test/` is its native test host: the C tree built with its own small libc (`engine/libc`, see its [README](../engine/libc/README.md)) by plain clang, and test262 run on it. It tests the C itself, with no ccgo and no Go in the way. It is a tool for testing, never part of a Go build or of the product, and `engine/` holds no Go file (`python3 -m unittest discover -s internal/goasm` fails if it does, or if a folder with Go files holds a C file). It started as the pinned archive with `lib/internal/patch/quickjs.diff` and `internal/goasm/cpatch.py` applied, and nothing compares it with them now. Until the switch, a fix to the C of the old engine is made in `engine/` by hand too when it applies there.
 
 ```sh
-engine/test/build.sh asan              # plain (default), asan, asan-heap, ubsan or asan-ubsan: engine/test/out/MODE/run-test262
+engine/test/build.sh asan              # plain (default), asan, asan-heap, asan-heap-iter, ubsan or asan-ubsan: engine/test/out/MODE/run-test262
 engine/test/test262.sh -m asan -T 2    # test262 on that build, with 2 runner threads
 engine/test/libc-test.sh               # the string functions and snprintf of engine/libc against the system's, and vsnprintf against the generator's table of formats
 engine/test/api-test.sh asan           # JS_DumpMemoryUsage, JS_NewClassID, abort and the limit of a resize, on real runtimes
@@ -238,7 +253,7 @@ Two more runs of the same tests guard the calling convention between Go and the 
 CENGINE_HAMMER_N=3000 go test -tags cengine,cenginehammer -run Hammer ./internal/cengine
 ```
 
-[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap` and `ubsan`. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
+[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap`, `asan-heap-iter` and `ubsan`. `asan-heap-iter` is `asan-heap` with `JS_MALLOC_USE_ITER`, the list of every allocated block that the engine does not use: it keeps the macro building, with the scenarios, the random sequences and `poison-test` passing. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
 
 ## Leaks: memgrind
 
