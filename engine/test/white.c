@@ -89,6 +89,12 @@ const uint8_t *white_json_string_run(StringBuffer *b, const uint8_t *p, const ui
     return json_string_run(b, p, end, sep);
 }
 
+/* json_run_limit over addresses that need not be memory: the run is not read. */
+uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end)
+{
+    return (uintptr_t)json_run_limit((const uint8_t *)p, (const uint8_t *)end);
+}
+
 /* json_quote_run over the string value s from *pi. */
 int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
 {
