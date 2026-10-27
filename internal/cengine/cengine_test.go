@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liustack/slowjs/internal/gohost"
 	"github.com/liustack/slowjs/internal/hostmem"
 )
 
@@ -471,5 +472,27 @@ func TestShapeCache(t *testing.T) {
 	}
 	if got := shapes(); kept-got < DefaultShapeCache {
 		t.Errorf("%d shapes with the cache, %d without, want at least %d fewer", kept, got, DefaultShapeCache)
+	}
+}
+
+// TestStackHeaderKept: what the host passes the engine by address in the
+// scratch leaves the header of gohost alone, so a poll after an Eval still
+// finds its VM by the shadow pointer.
+func TestStackHeaderKept(t *testing.T) {
+	v := newVM(t, Options{})
+	defer closeVM(t, v)
+	id := v.Host().ID()
+	for i := range 3 {
+		if got, err := v.Eval(`"a".repeat(1000) + new Error("x").stack`, "header.js"); err != nil || len(got) < 1000 {
+			t.Fatalf("Eval: %d bytes, %v", len(got), err)
+		}
+		v.Usage()
+		header := (*[2]uint32)(addr(v.base))
+		if header[0] != id || header[1] != ^id {
+			t.Fatalf("round %d: the header is %#x %#x, want the id %d and its complement", i, header[0], header[1], id)
+		}
+		if gohost.ByStack(v.sp) != v.Host() {
+			t.Fatalf("round %d: ByStack does not find the VM", i)
+		}
 	}
 }

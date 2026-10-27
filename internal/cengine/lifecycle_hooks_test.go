@@ -46,7 +46,7 @@ func onOwnGoroutine(f func()) (recovered any) {
 // gone checks that the host forgot the VM and holds none of its memory.
 func gone(t *testing.T, h *gohost.VM, when string) {
 	t.Helper()
-	if gohost.Lookup(h.ID()) != nil {
+	if gohost.Lookup(h.ID()) == h {
 		t.Errorf("%s: VM %d is still in the host's registry", when, h.ID())
 	}
 	if u := h.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {

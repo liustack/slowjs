@@ -9,6 +9,7 @@ package cengine
 
 import (
 	"sync"
+	"weak"
 
 	"github.com/liustack/slowjs/internal/gohost"
 )
@@ -38,17 +39,18 @@ func hook(name string, vm uintptr) {
 	}
 }
 
-// The counts are by the id of the host's VM, which no other VM of the process
-// has again, so that a VM closed and forgotten is not kept alive by its count.
+// The counts are by weak pointers to the VMs: the id of a VM goes to another
+// once it is closed, and a VM closed and forgotten is not kept alive by its
+// count.
 var (
 	teardownMu     sync.Mutex
-	teardownCounts = map[uint32]int{}
+	teardownCounts = map[weak.Pointer[VM]]int{}
 )
 
 // engineFreed counts the times Close called into the engine to free v.
 func engineFreed(v *VM) {
 	teardownMu.Lock()
-	teardownCounts[v.h.ID()]++
+	teardownCounts[weak.Make(v)]++
 	teardownMu.Unlock()
 }
 
@@ -56,5 +58,5 @@ func engineFreed(v *VM) {
 func teardowns(v *VM) int {
 	teardownMu.Lock()
 	defer teardownMu.Unlock()
-	return teardownCounts[v.h.ID()]
+	return teardownCounts[weak.Make(v)]
 }

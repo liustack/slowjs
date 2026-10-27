@@ -29,7 +29,7 @@ func newVM(t *testing.T, size uintptr) *VM {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if Lookup(v.ID()) != nil {
+		if Lookup(v.ID()) == v {
 			if err := v.Close(); err != nil {
 				t.Error(err)
 			}
@@ -87,6 +87,11 @@ func TestRegistry(t *testing.T) {
 		}
 	}
 	base, size := a.Stack()
+	// ByStack reads the header of the stack a pointer would be in: outside
+	// every stack that may be memory mapped to nothing, as the guard page
+	// right above a stack is, a fault that SetPanicOnFault makes a panic, as
+	// it is in the engine.
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	mustPanic(t, "ByStack outside every stack", func() { ByStack(base + size) })
 	mustPanic(t, "ByStack(0)", func() { ByStack(0) })
 
@@ -100,6 +105,32 @@ func TestRegistry(t *testing.T) {
 	mustPanic(t, "ByStack of a closed VM", func() { ByStack(base) })
 	if u := a.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
 		t.Fatalf("after Close the VM holds %+v", u)
+	}
+}
+
+// TestStackHeader: New writes the id of the VM and its complement at the
+// base of the stack, and ByStack finds a VM only where the header names a
+// VM whose stack starts there: a header that names another VM, or whose
+// check word is wrong, is a panic, not the wrong VM.
+func TestStackHeader(t *testing.T) {
+	a := newVM(t, small)
+	b := newVM(t, small)
+	base, _ := a.Stack()
+	header := (*[2]uint32)(addr(base))
+	if header[0] != a.ID() || header[1] != ^a.ID() {
+		t.Fatalf("the header is %#x %#x, want the id %d and its complement", header[0], header[1], a.ID())
+	}
+	sp := base + 4096
+	if ByStack(sp) != a {
+		t.Fatal("ByStack does not find the VM of its header")
+	}
+	header[0], header[1] = b.ID(), ^b.ID()
+	mustPanic(t, "a header that names another VM", func() { ByStack(sp) })
+	header[0], header[1] = a.ID(), ^a.ID()+1
+	mustPanic(t, "a header with a wrong check word", func() { ByStack(sp) })
+	header[1] = ^a.ID()
+	if ByStack(sp) != a {
+		t.Fatal("ByStack does not find the VM once its header is back")
 	}
 }
 
