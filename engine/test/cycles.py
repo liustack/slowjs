@@ -15,12 +15,25 @@ docs/fork-changes/c-engine.md) is a cut: a cycle through it is bounded by its
 count. It prints each strongly connected component left once the cuts are taken
 out, with more than one function or a function that calls itself: its size and
 its functions, sorted, one per line, largest first.
+
+It then prints each function of a NO_REACH pair that the other reaches, with
+a shortest path to it: "reach F G via F A B G". None is expected. The bound
+of a nesting rests on these: JS_ThrowError2 nests twice at most because making
+an error runs no JavaScript and turns no interrupt into an exception (see
+js_nest_enter in quickjs.c).
 """
+import collections
 import re
 import sys
 
 COUNTS = {"js_call_enter", "js_internal_enter", "js_internal_enter_rt",
           "lre_depth_enter", "js_nest_enter"}
+
+# (F, G): F must not reach G by any path of calls, counted or not.
+NO_REACH = [
+    ("JS_ThrowError2", "JS_CallInternal"),
+    ("JS_ThrowError2", "JS_ThrowInterrupted"),
+]
 
 DEFINE = re.compile(r'^define\b.*?@("[^"]+"|[-\w.$]+)\(')
 CALL = re.compile(r'(?:^\s+|=\s+)(?:(?:tail|musttail|notail)\s+)?(?:call|invoke)\s'
@@ -131,6 +144,38 @@ def cycles(text):
     return found
 
 
+def path(adj, src, dst):
+    """A shortest path of calls from src to dst, or None."""
+    if src not in adj:
+        return None
+    parent = {src: None}
+    work = collections.deque([src])
+    while work:
+        f = work.popleft()
+        if f == dst:
+            out = []
+            while f is not None:
+                out.append(f)
+                f = parent[f]
+            return out[::-1]
+        for g in sorted(adj[f]):
+            if g not in parent:
+                parent[g] = f
+                work.append(g)
+    return None
+
+
+def reaches(text, pairs=NO_REACH):
+    """The pairs (F, G) of pairs where F reaches G, each with its path."""
+    adj, _ = graph(text)
+    found = []
+    for f, g in pairs:
+        p = path(adj, f, g)
+        if p:
+            found.append((f, g, p))
+    return found
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: cycles.py ENGINE.ll")
@@ -138,6 +183,8 @@ def main():
         text = f.read()
     for c in cycles(text):
         print(len(c), " ".join(c))
+    for f, g, p in reaches(text):
+        print("reach", f, g, "via", " ".join(p))
 
 
 if __name__ == "__main__":

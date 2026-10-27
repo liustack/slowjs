@@ -1508,6 +1508,8 @@ static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
 typedef struct JSBacktrace JSBacktrace;
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags);
+static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
+                                        JSValue val, BOOL cesu8);
 static int js_backtrace_settle(JSContext *ctx, JSObject *p,
                                JSShapeProperty *prs, JSProperty *pr);
 static BOOL js_backtrace_pending(JSShapeProperty *prs, JSProperty *pr);
@@ -4239,7 +4241,6 @@ static BOOL JS_AtomSymbolHasDescription(JSContext *ctx, JSAtom v)
 const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
 {
     JSValue str;
-    const char *cstr;
 
     str = JS_AtomToString(ctx, atom);
     if (JS_IsException(str)) {
@@ -4247,9 +4248,8 @@ const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
             *plen = 0;
         return NULL;
     }
-    cstr = JS_ToCStringLen(ctx, plen, str);
-    JS_FreeValue(ctx, str);
-    return cstr;
+    /* the string of an atom is a string, which needs no conversion */
+    return js_string_to_cstring(ctx, plen, str, FALSE);
 }
 
 /* return a string atom containing name concatenated with str1 */
@@ -4933,23 +4933,14 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
     return val;
 }
 
-/* return (NULL, 0) if exception. */
-/* return pointer into a JSString with a live ref_count */
-/* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
-const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BOOL cesu8)
+/* JS_ToCStringLen2() of val, a string whose reference it takes. It
+   converts nothing, so it runs no JavaScript. */
+static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
+                                        JSValue val, BOOL cesu8)
 {
-    JSValue val;
     JSString *str, *str_new;
     int pos, len, c, c1;
     uint8_t *q;
-
-    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
-        val = JS_ToString(ctx, val1);
-        if (JS_IsException(val))
-            goto fail;
-    } else {
-        val = JS_DupValue(ctx, val1);
-    }
 
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
@@ -5034,6 +5025,26 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
     if (plen)
         *plen = 0;
     return NULL;
+}
+
+/* return (NULL, 0) if exception. */
+/* return pointer into a JSString with a live ref_count */
+/* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
+const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BOOL cesu8)
+{
+    JSValue val;
+
+    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
+        val = JS_ToString(ctx, val1);
+        if (JS_IsException(val)) {
+            if (plen)
+                *plen = 0;
+            return NULL;
+        }
+    } else {
+        val = JS_DupValue(ctx, val1);
+    }
+    return js_string_to_cstring(ctx, plen, val, cesu8);
 }
 
 void JS_FreeCString(JSContext *ctx, const char *ptr)
@@ -8969,7 +8980,9 @@ static BOOL js_backtrace_put_frame(JSContext *ctx, DynBuf *dbuf,
     if (!f->func_name) {
         dbuf_putstr(dbuf, "<anonymous>");
     } else {
-        str = JS_ToCString(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name));
+        str = js_string_to_cstring(ctx, NULL,
+                                   JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name)),
+                                   FALSE);
         if (!str)
             return FALSE;
         dbuf_putstr(dbuf, str[0] == '\0' ? "<anonymous>" : str);
@@ -9440,9 +9453,10 @@ JSValue JS_NewError(JSContext *ctx)
 /* Making an error can run out of memory, which throws an error in turn: the
    two are made at once, and the out of memory error does not throw another
    (JS_ThrowOutOfMemory). Making one runs no JavaScript and reads no
-   interrupt, so no third can start while they are made. Its slot
-   of rt->nest counts them, and a third one, which only a bug would start, is
-   thrown as running out of memory, as is an error there is no memory for. */
+   interrupt (cycles.sh checks it), so no third can start while they are
+   made. Its slot of rt->nest counts them, and a third one, which only a bug
+   would start, is thrown as running out of memory, as is an error there is
+   no memory for. */
 static JSValue __attribute__((format(printf, 3, 0)))
 JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
                const char *fmt, va_list ap, BOOL add_backtrace)
