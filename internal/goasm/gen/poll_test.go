@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -59,8 +60,9 @@ func TestCheckDispatchCopies(t *testing.T) {
 	}
 }
 
-// pollIR has one function for each kind of cycle the pass treats apart.
-// interp is an interpreter: its dispatch is a computed goto through ops.
+// pollIR has one function for each kind of cycle the pass treats apart. interp
+// is an interpreter: its dispatch is a computed goto through ops, and one of
+// its handlers calls a function that ticks.
 const pollIR = `declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 
 @ops = internal constant [2 x ptr] [ptr blockaddress(@interp, %inc), ptr blockaddress(@interp, %done)]
@@ -147,6 +149,7 @@ dispatch:
   indirectbr ptr %to, [label %inc, label %done]
 inc:
   %n1 = add i64 %n, 1
+  call void @calls(i64 %n1)
   br label %dispatch
 done:
   ret i64 %n
@@ -154,16 +157,19 @@ done:
 `
 
 // TestPassPolls runs the pass with -shadow-poll on pollIR. A loop scalar
-// evolution cannot bound runs in chunks and ticks at the end of each, a loop
-// of 8 runs has no tick, a loop that calls a function and one that never
-// ends tick, a memcpy of a length that may be long goes through the chunked
-// helper, whose tick counts a whole chunk, one of 4 KiB stays, and the
-// dispatch of the interpreter turns to its poll label when the count runs
-// out. The pass checks its own output, so it must also succeed, and it must
-// stop on the faults -shadow-poll-fault puts in: ticks whose test never
-// holds, and a dispatch whose index the count does not change. An offset
-// that is not a word inside the region stops it too. It needs LLVM 22.1.8
-// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+// evolution cannot bound runs in chunks and ticks at the end of each, a loop of
+// 8 runs has no tick, a loop that calls a function and one that never ends
+// tick, a memcpy of a length that may be long goes through the chunked helper,
+// whose tick counts a whole chunk, one of 4 KiB stays, and the dispatch of the
+// interpreter turns to its poll label when the count runs out. The interpreter
+// keeps the count in a register and stores and loads it around its call. The
+// pass checks its own output, so it must also succeed, and it must stop on the
+// faults -shadow-poll-fault puts in: ticks whose test never holds, a dispatch
+// whose index the count does not change, and a count in a register that is not
+// stored before a call that may tick, not loaded again after it, or not stored
+// where its loop is left. An offset that is not a word inside the region stops
+// it too. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
+// (SLOWJS_SHADOW_PASS).
 func TestPassPolls(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
@@ -217,15 +223,39 @@ func TestPassPolls(t *testing.T) {
 	if !strings.Contains(funcs["interp"], "select i1") {
 		t.Errorf("the dispatch does not pick its table entry by the count:\n%s", funcs["interp"])
 	}
+	if f := funcs["interp"]; !syncedAround(f, "@calls(") {
+		t.Errorf("interp does not store the count before its call and load it after:\n%s", f)
+	}
 	if out, err := opt(PollCounterOffset + 4); err == nil || !strings.Contains(out, "is not a word inside the region") {
 		t.Errorf("an offset that is not a word: %v\n%s", err, out)
 	}
 	for fault, want := range map[string]string{
-		"cond":     "poll check: a tick whose branch does not poll when the count runs out",
-		"dispatch": "poll check: a dispatch whose index does not turn to the poll label when the count runs out",
+		"cond":      "poll check: a tick whose branch does not poll when the count runs out",
+		"dispatch":  "poll check: a dispatch whose index does not turn to the poll label when the count runs out",
+		"callstore": "poll check: a call that may tick while the count is not in memory",
+		"callload":  "of a value that is not the count as it stands",
+		"exit":      "poll check: a return while the count is not in memory",
 	} {
 		if out, err := opt(PollCounterOffset, "-shadow-poll-fault="+fault); err == nil || !strings.Contains(out, want) {
 			t.Errorf("-shadow-poll-fault=%s: %v\n%s", fault, err, out)
 		}
 	}
+}
+
+// syncedAround tells whether the line of f that calls call has a store to the
+// counter on the line before it and a load of the counter within the five
+// lines after it (the address of the counter comes first).
+func syncedAround(f, call string) bool {
+	ls := strings.Split(f, "\n")
+	for i, l := range ls {
+		if !strings.Contains(l, call) || i == 0 || !regexp.MustCompile(`store i64 %[\w.]+, ptr %poll\.counter`).MatchString(ls[i-1]) {
+			continue
+		}
+		for _, n := range ls[i+1 : min(i+6, len(ls))] {
+			if strings.Contains(n, "load i64, ptr %poll.counter") {
+				return true
+			}
+		}
+	}
+	return false
 }

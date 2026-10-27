@@ -38,8 +38,11 @@
 // that llc copies into the end of every handler.
 //
 // checkPolls verifies the result on its own: removing the blocks that tick or
-// poll from each function must leave no cycle.
+// poll from each function must leave no cycle, each tick must take from the
+// count as it stands, and each call that may tick and each return must find
+// the count in memory (checkCounts).
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -76,7 +79,10 @@ static cl::opt<unsigned> PollOffset("shadow-poll-offset", cl::init(0),
 static cl::opt<std::string> PollFault("shadow-poll-fault", cl::init(""), cl::Hidden,
                                       cl::desc("for the tests of checkPolls only: 'cond' gives every tick outside "
                                                "the dispatch a test that never holds, 'dispatch' leaves the index of "
-                                               "the dispatch as it is"));
+                                               "the dispatch as it is, 'callstore' and 'callload' leave out the store "
+                                               "before and the load after each call that may tick in code that keeps "
+                                               "the count in a register, 'exit' the store where a loop that keeps it "
+                                               "in a register is left"));
 
 static const char *TickMD = "goasm.tick";
 static const char *PollLabelMD = "goasm.poll.dispatch";
@@ -87,8 +93,10 @@ void checkPollOptions(unsigned sizeLog2) {
     return;
   if (PollOffset % 8 != 0 || PollOffset + 8 > (1ull << sizeLog2))
     reportFatalUsageError(Twine("-shadow-poll-offset=") + Twine(PollOffset) + " is not a word inside the region");
-  if (PollFault != "" && PollFault != "cond" && PollFault != "dispatch")
-    reportFatalUsageError(Twine("-shadow-poll-fault=") + PollFault.getValue() + " is not cond or dispatch");
+  if (PollFault != "" && PollFault != "cond" && PollFault != "dispatch" && PollFault != "callstore" &&
+      PollFault != "callload" && PollFault != "exit")
+    reportFatalUsageError(Twine("-shadow-poll-fault=") + PollFault.getValue() +
+                          " is not cond, dispatch, callstore, callload or exit");
 }
 
 // The one indirect branch of F, when F has exactly one: the dispatch of its
@@ -603,9 +611,11 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
         if (!isa<CallInst>(CB))
           reportFatalUsageError(Twine("poll: a call that is not a plain call in ") + F.getName());
         IRBuilder<> BB(CB);
-        BB.CreateStore(BB.CreateLoad(I64, A), counterPtr(BB));
+        if (PollFault != "callstore")
+          BB.CreateStore(BB.CreateLoad(I64, A), counterPtr(BB));
         IRBuilder<> AB(CB->getNextNode());
-        AB.CreateStore(AB.CreateLoad(I64, counterPtr(AB)), A);
+        if (PollFault != "callload")
+          AB.CreateStore(AB.CreateLoad(I64, counterPtr(AB)), A);
         nsync++;
       }
     };
@@ -657,10 +667,11 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       PB.CreateStore(PB.CreateLoad(I64, counterPtr(PB)), A);
       SmallVector<BasicBlock *> exits;
       L->getUniqueExitBlocks(exits);
-      for (BasicBlock *X : exits) {
-        IRBuilder<> XB(&*X->getFirstInsertionPt());
-        XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
-      }
+      if (PollFault != "exit")
+        for (BasicBlock *X : exits) {
+          IRBuilder<> XB(&*X->getFirstInsertionPt());
+          XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
+        }
       local[L] = A;
       nloops++;
     };
@@ -774,6 +785,131 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
          << " bounded edges " << nbounded << "\n";
 }
 
+// checkCounts holds F to the rule that keeps the count whole while code holds
+// it in a register: each tick and each store to the word take the count as it
+// stands, and each call that may tick (or poll) and each return finds the
+// count in memory. It
+// follows, through F, which values hold the count as it stands: the word in
+// memory, a load of the word while that holds, a tick of such a value, a phi
+// all of whose incoming values hold it on their edges. A tick leaves only its
+// result holding the count, until a store of it puts it in memory. A call
+// that may tick leaves only the word holding it (the callee keeps to the same
+// rule), and so does host_poll, which sets the word. A tick or a store of
+// anything else, or a call or a return while the word is behind, fails: a
+// count kept in a register that a callee does not see, or that is stored over
+// what a callee counted, would let the ticks between two polls run past the
+// interval.
+static void checkCounts(Function &F, const std::set<Function *> &ticks, uint64_t mask) {
+  Argument *sp = F.getArg(0);
+  // The word: inttoptr((ptrtoint(sp) & mask) + offset), as counterPtr writes it.
+  auto isCounter = [&](Value *P) {
+    auto *I2P = dyn_cast<IntToPtrInst>(P);
+    auto *Add = I2P ? dyn_cast<BinaryOperator>(I2P->getOperand(0)) : nullptr;
+    if (!Add || Add->getOpcode() != Instruction::Add)
+      return false;
+    auto *Off = dyn_cast<ConstantInt>(Add->getOperand(1));
+    auto *And = dyn_cast<BinaryOperator>(Add->getOperand(0));
+    if (!Off || Off->getZExtValue() != PollOffset || !And || And->getOpcode() != Instruction::And)
+      return false;
+    auto *Mask = dyn_cast<ConstantInt>(And->getOperand(1));
+    auto *P2I = dyn_cast<PtrToIntInst>(And->getOperand(0));
+    return Mask && Mask->getZExtValue() == mask && P2I && P2I->getOperand(0) == sp;
+  };
+  bool any = false;
+  for (BasicBlock &B : F)
+    for (Instruction &I : B)
+      if (I.getMetadata(TickMD) || (isa<LoadInst>(&I) && isCounter(cast<LoadInst>(&I)->getPointerOperand())) ||
+          (isa<StoreInst>(&I) && isCounter(cast<StoreInst>(&I)->getPointerOperand())))
+        any = true;
+  if (!any)
+    return;
+  auto mayTick = [&](Instruction &I) {
+    auto *CB = dyn_cast<CallBase>(&I);
+    if (!CB || CB->isInlineAsm() || isPollCall(I))
+      return false;
+    Function *G = CB->getCalledFunction();
+    return !G || ticks.count(G) > 0;
+  };
+  // What holds the count: the word (mem), and the values in cur. A block not
+  // reached yet (top) takes whatever its other predecessors give.
+  struct State {
+    bool top = true, mem = false;
+    SmallVector<Value *, 4> cur;
+    bool holds(Value *V) const { return top || is_contained(cur, V); }
+    bool operator==(const State &o) const { return top == o.top && mem == o.mem && cur == o.cur; }
+  };
+  auto fail = [&](const Twine &what, Instruction &I) {
+    reportFatalUsageError(Twine("poll check: ") + what + " in " + F.getName() + " (block " +
+                          I.getParent()->getName() + ")");
+  };
+  // Every block has its state from the start, so that no lookup adds one
+  // while a reference to another is held.
+  DenseMap<BasicBlock *, State> out;
+  for (BasicBlock &B : F)
+    out[&B];
+  ReversePostOrderTraversal<Function *> RPO(&F);
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (BasicBlock *B : RPO) {
+      State s;
+      if (B->isEntryBlock()) {
+        s.top = false, s.mem = true;
+      } else {
+        for (BasicBlock *Pd : predecessors(B)) {
+          const State &o = out[Pd];
+          if (o.top)
+            continue;
+          if (s.top) {
+            s = o;
+            s.cur.clear();
+            for (Value *V : o.cur)
+              if (all_of(predecessors(B), [&](BasicBlock *Q) { return out[Q].holds(V); }))
+                s.cur.push_back(V);
+          }
+          s.mem &= o.mem;
+        }
+        for (PHINode &Phi : B->phis())
+          if (!s.top && all_of(predecessors(B), [&](BasicBlock *Q) {
+                return out[Q].holds(Phi.getIncomingValueForBlock(Q));
+              }))
+            s.cur.push_back(&Phi);
+      }
+      if (!s.top)
+        for (Instruction &I : *B) {
+          if (auto *L = dyn_cast<LoadInst>(&I)) {
+            if (isCounter(L->getPointerOperand()) && s.mem)
+              s.cur.push_back(L);
+          } else if (auto *St = dyn_cast<StoreInst>(&I)) {
+            if (isCounter(St->getPointerOperand())) {
+              if (!is_contained(s.cur, St->getValueOperand()))
+                fail("a store of a value that is not the count as it stands", I);
+              s.mem = true;
+            }
+          } else if (I.getMetadata(TickMD)) {
+            if (!is_contained(s.cur, I.getOperand(0)))
+              fail("a tick of a value that is not the count as it stands", I);
+            s.cur.assign({&I});
+            s.mem = false;
+          } else if (isPollCall(I)) {
+            s.cur.clear();
+            s.mem = true;
+          } else if (mayTick(I)) {
+            if (!s.mem)
+              fail("a call that may tick while the count is not in memory", I);
+            s.cur.clear();
+          } else if (isa<ReturnInst>(&I) && !s.mem) {
+            fail("a return while the count is not in memory", I);
+          }
+        }
+      State &o = out[B];
+      if (!(o == s)) {
+        o = std::move(s);
+        changed = true;
+      }
+    }
+  }
+}
+
 // expiredTest tells whether Cond holds whenever the count Tick leaves has run
 // out (is 0 or less): Tick < K with K at least 1, or Tick <= K with K at least
 // 0.
@@ -837,13 +973,16 @@ static bool dispatchPolls(IndirectBrInst *IB, Instruction *Tick) {
 // way out must poll whenever the count it leaves has run out: a conditional
 // branch on a test of the tick that holds then (expiredTest), whose taken
 // side calls host_poll, or, in a dispatch, an indirect branch whose index
-// turns to the entry of the poll label then (dispatchPolls).
-void checkPolls(Module &M, const std::set<std::string> &leaves) {
+// turns to the entry of the poll label then (dispatchPolls). Each function
+// is held to checkCounts first.
+void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2) {
   if (!PollOn)
     return;
+  std::set<Function *> ticks = tickers(M, leaves);
   for (Function &F : M) {
     if (F.isDeclaration() || leaves.count(F.getName().str()))
       continue;
+    checkCounts(F, ticks, ~((1ull << sizeLog2) - 1));
     std::set<Edge> bounded = boundedEdges(F, Triple(M.getTargetTriple()));
     std::set<BasicBlock *> cut;
     for (BasicBlock &B : F)

@@ -184,7 +184,7 @@ void checkPollOptions(unsigned sizeLog2);
 void chunkLeafCalls(Module &M);
 void prepareDispatchPolls(Module &M);
 void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2);
-void checkPolls(Module &M, const std::set<std::string> &leaves);
+void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2);
 
 // Option B: every unified entry and every host callback uses preserve_none,
 // whose only callee-saved registers are FP and LR (amd64: RSP and RBP). The
@@ -1728,7 +1728,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
           if (isa<AllocaInst>(&I))
             reportFatalUsageError(Twine("alloca left on the Go stack in ") + F.getName());
     insertPolls(M, leaves, SizeLog2);
-    checkPolls(M, leaves);
+    checkPolls(M, leaves, SizeLog2);
     if (CallConv == "preserve_none")
       usePreserveNone(M, leaves);
     else if (!CallConv.empty())

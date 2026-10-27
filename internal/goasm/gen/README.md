@@ -171,7 +171,11 @@ blocks that count or poll taken out, and the back edges of the loops it
 proves short, no function has a cycle left. Each count takes at least 1, and
 polls whenever it runs out: its branch tests that it is 0 or less and calls
 `host_poll` on the side taken, or, in the dispatch, a select on that test
-gives the index of the table entry of the poll label. The hidden option
+gives the index of the table entry of the poll label. Each count takes from
+the count as it stands, each store to the counter stores the count as it
+stands, and each call that may poll and each return find the count in
+memory: code that keeps it in a register stores it before such a call and
+loads it after, and stores it where it is left. The hidden option
 `-shadow-poll-fault` breaks one of these on purpose, so that a test can see
 the check stop the pass.
 
