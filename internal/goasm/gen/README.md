@@ -84,9 +84,10 @@ runs its own checks and lowering in Go (`debug/elf`,
    offset is fixed.
 6. Emit writes Go assembly: one TEXT per function, the body as bytes, every
    call a Go-visible CALL or BL.
-7. VerifyLinked checks the linked binary: body bytes unchanged, stack-check
-   prologue on split entries and on `host_poll`, the function table points
-   only at unified entries, no hidden calls or tail jumps.
+7. VerifyLinked checks the linked binary: body bytes unchanged, a stack-check
+   prologue on every entry off the NOSPLIT list and on `host_poll`, none on
+   the entries on it, the function table points only at unified entries, no
+   hidden calls or tail jumps.
 
 ## Call modes
 
@@ -138,7 +139,7 @@ stack), and the default has no stubs. `-keep-going` is for surveys: it lists eve
 C must change, by class, and stubs it instead of stopping. `-release` is the
 formal build: it fails on any stub, needs `-out`, and refuses every switch
 made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
-`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `-arch arm64`, a changed
+`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `GEN_FORCE_NOSPLIT`, `-arch arm64`, a changed
 `-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
@@ -170,7 +171,30 @@ gives the index of the table entry of the poll label. The hidden option
 `-shadow-poll-fault` breaks one of these on purpose, so that a test can see
 the check stop the pass.
 
-Two negative builds test the tests. `-poison` writes garbage into every
+Functions without a stack check: every unified entry starts with Go's
+stack check unless its TEXT says NOSPLIT, and the driver chooses which ones
+do (`ChooseNoSplit`, `nosplit.go`). The list holds the leaves the Go
+assembler marks NOSPLIT by itself (no call and a frame under 128 bytes), the
+register-entry leaves, and the functions it chooses on top of those: a
+function whose address is not taken, that makes no call through a pointer,
+that is on no cycle of direct calls and whose chain of NOSPLIT calls fits the
+room the linker gives one (792 bytes on amd64). Every recursion then goes
+through a stack check, which is where the stack grows and where the runtime
+can stop the goroutine, and every loop still calls `host_poll`, whose own
+stack check is the safe point. The room is counted as the linker counts it,
+with 64 bytes more below the deepest frame of each chain (`FaultRoom`): a
+fault there becomes a call of `runtime.sigpanic` pushed onto the goroutine's
+stack, and sigpanic's stack check may call morestack, which needs 16 bytes
+above the bottom of the stack and ends the process with "split stack
+overflow" when they are not there. A function also leaves room above it for
+the ABI wrapper of a Go func value of it (its arguments and 16 bytes). The
+linker checks the chains again on every build and fails it when one does
+not fit. The driver prints the size of the list, writes each function on it
+with its frame and height to `nosplit.txt` in the work folder, and
+`engine_decl.go` names them in `noSplitList`, for the tests. The post-link
+check holds each entry's stack check to the list.
+
+Three negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
 still pass, so no code reads a register the lowering did not set.
@@ -179,7 +203,10 @@ the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
 turns it on, and any other value but an empty one is an error. The package of
 such a build is marked: `engine_negative.go` does not compile without
 `-tags goasmnegative`, and `engine_decl.go` says so. A later build into the
-same folder removes the file.
+same folder removes the file. `GEN_FORCE_NOSPLIT=f,g` puts those functions
+on the NOSPLIT list whatever the rules say, and marks the package the same
+way: the linker must refuse a recursion or a chain too deep for the room
+(`TestSampleRuns/nosplit_fault`).
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine

@@ -338,8 +338,19 @@ func TestCheckCases(t *testing.T) {
 			want: "Go frame is"},
 		{name: "a Go frame smaller than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n - 8 }),
 			want: "Go frame is"},
-		{name: "a calling function with no stack check", files: addFlag("g", "NOSPLIT"),
-			want: "a calling function without Go's stack check"},
+		// The NOSPLIT list (ChooseNoSplit): g is on it, ic, which calls
+		// through a pointer, is not.
+		{name: "a function off the NOSPLIT list with no stack check", files: addFlag("ic", "NOSPLIT"),
+			want: "not on the NOSPLIT list, but Go does not check the stack"},
+		{name: "a function on the NOSPLIT list with a stack check", files: dropFlag("g", "NOSPLIT"),
+			want: "on the NOSPLIT list, but Go checks the stack"},
+		{name: "a record that says NOSPLIT when the function does not", metas: func(ms []Meta) {
+			for i := range ms {
+				if ms[i].Name == "ic" {
+					ms[i].Rec.NoSplit = true
+				}
+			}
+		}, want: "NOSPLIT true), the function ic"},
 		{name: "a return without its result store", lower: sub("h", `\n\tmovq\s+%rax, 24\(%rsp\)`, ""),
 			want: "is not the store of"},
 		{name: "a result stored in the wrong slot", lower: sub("h", `movq\s+%rax, 24\(%rsp\)`, "movq %rax, 32(%rsp)"),
@@ -523,6 +534,13 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		}
 		lowered += ".p2align 4\n.globl " + n + "\n.type " + n + ",@function\n" + s + ".size " + n + ", .-" + n + "\n"
 		metas = append(metas, m)
+	}
+	callbacks := map[string]bool{}
+	for _, h := range append(append([]string{}, HostCallbacks...), GeneratorCallbacks...) {
+		callbacks[h] = true
+	}
+	if _, _, err := ChooseNoSplit(metas, nil, nil, plan, unit, callbacks, nil); err != nil {
+		t.Fatal(err)
 	}
 	if c.lower != nil {
 		lowered = c.lower(lowered, metas)
@@ -797,6 +815,19 @@ func addFlag(fn, flag string) func(map[string]string) {
 		text := files[name]
 		pre := "TEXT ·" + fn + "(SB), "
 		files[name] = text[:at] + pre + flag + ", " + text[at+len(pre):]
+	}
+}
+
+// dropFlag takes flag out of the TEXT line of fn.
+func dropFlag(fn, flag string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		pre := "TEXT ·" + fn + "(SB), " + flag + ", "
+		if !strings.HasPrefix(text[at:], pre) {
+			panic("the TEXT of " + fn + " does not say " + flag)
+		}
+		files[name] = text[:at] + "TEXT ·" + fn + "(SB), " + text[at+len(pre):]
 	}
 }
 

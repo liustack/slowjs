@@ -173,9 +173,12 @@ func (k *checker) checkMeta(m Meta) error {
 	if r == nil {
 		return fmt.Errorf("no rewrite record")
 	}
-	if r.Name != m.Name || r.Kind != m.Kind || r.Frame != m.Frame {
-		return fmt.Errorf("the record is of %s (kind %v, frame %d), the function %s (kind %v, frame %d)",
-			r.Name, r.Kind, r.Frame, m.Name, m.Kind, m.Frame)
+	if r.Name != m.Name || r.Kind != m.Kind || r.Frame != m.Frame || r.NoSplit != m.NoSplit {
+		return fmt.Errorf("the record is of %s (kind %v, frame %d, NOSPLIT %v), the function %s (kind %v, frame %d, NOSPLIT %v)",
+			r.Name, r.Kind, r.Frame, r.NoSplit, m.Name, m.Kind, m.Frame, m.NoSplit)
+	}
+	if m.Kind == Register && !m.NoSplit {
+		return fmt.Errorf("a register-entry leaf off the NOSPLIT list")
 	}
 	sig, ok := k.c.Sigs[m.Name]
 	if !ok {
@@ -1029,11 +1032,21 @@ func (k *checker) checkUnified(meta Meta) error {
 	if err != nil {
 		return err
 	}
-	// A function that calls must check the stack and keep BP; a frameless
-	// one that does not is a NOSPLIT leaf with its arguments right above the
-	// return address. argBase below follows what Go wrote either way.
-	if len(r.Calls) > 0 && (!g.split || !g.bp) {
-		return fmt.Errorf("a calling function without Go's stack check or frame: split %v, BP %v", g.split, g.bp)
+	// The generator's NOSPLIT list says which functions have no stack
+	// check (PickNoSplit): a function on it must have none, and every other
+	// one must have it, which also catches a leaf the Go assembler made
+	// NOSPLIT by itself without the generator knowing. A function that calls
+	// keeps BP either way; a frameless one that does not is a NOSPLIT leaf
+	// with its arguments right above the return address. argBase below
+	// follows what Go wrote.
+	if r.NoSplit && g.split {
+		return fmt.Errorf("on the NOSPLIT list, but Go checks the stack at its entry")
+	}
+	if !r.NoSplit && !g.split {
+		return fmt.Errorf("not on the NOSPLIT list, but Go does not check the stack at its entry")
+	}
+	if len(r.Calls) > 0 && !g.bp {
+		return fmt.Errorf("a calling function without Go's frame: split %v, BP %v", g.split, g.bp)
 	}
 	if g.frame != int64(r.Frame) {
 		return fmt.Errorf("Go frame is %d bytes, the lowering declared %d", g.frame, r.Frame)

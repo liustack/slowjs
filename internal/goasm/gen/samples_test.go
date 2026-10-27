@@ -5,6 +5,7 @@
 package gen
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +44,11 @@ import (
 //     gives. TestICallSymbols holds each call's id to the type in its source
 //     line, but only the run shows that the arguments moved the way that id
 //     says: a call that carries another call's signature moves them wrongly.
+//   - nosplit.c: the shapes the NOSPLIT choice (PickNoSplit) tells apart run
+//     as native code does. The post-link check holds each function's stack
+//     check to the choice, and nosplit_fault below holds the choice itself,
+//     faults at the bottom of its chain and forces it past what the linker
+//     takes.
 //
 // It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld
 // (SLOWJS_LLD), on linux/amd64.
@@ -82,6 +88,7 @@ func TestSampleRuns(t *testing.T) {
 	}{
 		{"alias.c", nil, 24, false},
 		{"icalls.c", nil, 56, true},
+		{"nosplit.c", nil, 4, false},
 		{"trap.c", nil, 2, false},
 		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {
@@ -180,6 +187,105 @@ func TestSampleRuns(t *testing.T) {
 		}
 	})
 
+	// The NOSPLIT choice on nosplit.c: the bottom of the chain and the
+	// callers of what recurses or goes through a pointer are chosen, what
+	// recurses, has its address taken or calls through a pointer is not, and
+	// one function of the chain is left for the room. A wild pointer read at
+	// the bottom of the chain must be a panic that recovers whatever the depth
+	// of the goroutine's stack above it, and forcing a recursion or the whole
+	// chain onto the list must fail the build at the linker.
+	t.Run("nosplit_fault", func(t *testing.T) {
+		c, err := filepath.Abs(filepath.Join(src, "nosplit.c"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		gen := func(name, main string, env ...string) (string, string) {
+			mod, w := at("nosplit-"+name), at("w-nosplit-"+name)
+			cmd := exec.Command(drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", "pn", "-leaves", "",
+				"-work", w, "-pkg", "nw", "-out", filepath.Join(mod, "nw"))
+			cmd.Env = append(append([]string{}, goEnv...), env...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("the driver: %v\n%s", err, out)
+			}
+			for f, text := range map[string]string{
+				"go.mod":      "module samples\n\ngo 1.22\n",
+				"main.go":     main,
+				"nw/host.go":  sampleGoHost,
+				"nw/sweep.go": sampleGoSweep,
+			} {
+				if err := os.WriteFile(filepath.Join(mod, f), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return mod, w
+		}
+		mod, w := gen("ok", sampleGoMainSweep)
+		b, err := os.ReadFile(filepath.Join(w, "nosplit.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		on := map[string]string{}
+		for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if f := strings.Fields(l); len(f) > 1 {
+				on[f[0]] = f[1]
+			}
+		}
+		for n, kind := range map[string]string{"down23": "auto", "down22": "chosen", "poke": "chosen", "run": "chosen",
+			"callsrec": "chosen", "callsptr": "chosen", "sq": "auto"} {
+			if on[n] != kind {
+				t.Errorf("%s is %q on the list, want %s", n, on[n], kind)
+			}
+		}
+		for _, n := range []string{"self", "ping", "pong", "viaptr", "icaller"} {
+			if on[n] != "" {
+				t.Errorf("%s is on the list", n)
+			}
+		}
+		var cut []string
+		for i := 0; i <= 22; i++ {
+			if n := fmt.Sprintf("down%d", i); on[n] == "" {
+				cut = append(cut, n)
+			}
+		}
+		if len(cut) == 0 || len(cut) > 2 {
+			t.Fatalf("the chain is cut at %v, want one or two functions:\n%s", cut, b)
+		}
+
+		// The goroutine's stack starts at its smallest, so that the sweep
+		// reaches every place of its bottom.
+		tool(t, mod, "go", "build", "-o", "run", ".")
+		out, err := runIn(mod, append(append([]string{}, goEnv...), "GODEBUG=adaptivestackstart=0"), filepath.Join(mod, "run"))
+		if err != nil {
+			t.Fatalf("the sweep: %v\n%s", err, out)
+		}
+		var runs, moved, sigpanic, lo, hi int
+		if _, err := fmt.Sscanf(out, "runs %d moved %d sigpanic %d depths %d to %d", &runs, &moved, &sigpanic, &lo, &hi); err != nil {
+			t.Fatalf("the sweep printed %q: %v", out, err)
+		}
+		// Every place of the first two stacks, 2 and 4 KiB, and faults that
+		// only sigpanic's morestack made room for.
+		if hi-lo < 6<<10 || sigpanic == 0 {
+			t.Fatalf("the sweep did not reach the bottom of the stack: %s", out)
+		}
+		t.Logf("cut at %v, %s", cut, strings.TrimSpace(out))
+
+		for _, force := range []string{"self", "ping,pong", strings.Join(cut, ",")} {
+			t.Run("force_"+force, func(t *testing.T) {
+				// The linker checks what the program reaches: run calls
+				// every function.
+				mod, _ := gen("force", sampleGoMain, "GEN_FORCE_NOSPLIT="+force)
+				if o, err := runIn(mod, goEnv, "go", "build", "-o", "run", "."); err == nil ||
+					!strings.Contains(o, "negative_build_of_the_generator_is_not_an_engine") {
+					t.Fatalf("a forced build compiled without the tag: %v\n%s", err, o)
+				}
+				if o, err := runIn(mod, goEnv, "go", "build", "-tags", "goasmnegative", "-o", "run", "."); err == nil ||
+					!strings.Contains(o, "nosplit stack over 792 byte limit") {
+					t.Fatalf("the linker took %s on the NOSPLIT list: %v\n%s", force, err, o)
+				}
+			})
+		}
+	})
+
 	// A leaf has no shadow pointer to call host_trap with, so one that traps
 	// is refused.
 	t.Run("leaf_trap", func(t *testing.T) {
@@ -272,6 +378,151 @@ func Run() []int64 {
 	return out
 }
 `
+
+// sampleGoMainSweep prints what nw.Sweep finds.
+const sampleGoMainSweep = `package main
+
+import (
+	"fmt"
+
+	"samples/nw"
+)
+
+func main() { fmt.Println(nw.Sweep()) }
+`
+
+// sampleGoSweep calls poke of nosplit.c with a pointer to nothing, which its
+// chain of calls reads at the bottom, from fresh goroutines whose stacks are
+// used to every depth in steps of 8 bytes: dive takes a frame for each level,
+// a pad a frame of 1 to 16 words. Each call must panic with a runtime.Error
+// at the address, which the goroutine recovers, wherever the bottom of the
+// stack is. A fault the runtime cannot take ends the process instead
+// ("unexpected fault address", or "split stack overflow" when sigpanic finds
+// no room for morestack). The byte at the top of the goroutine stays on its
+// stack, and the pointer to it goes down as an argument, so that a stack that
+// grows moves both and the depth is right after it (a probe that held the
+// pointer would take the byte to the heap with what it recovers). moved
+// counts the calls that grew the stack. Each place is also run with a pointer
+// that reads, in a goroutine of its own, which starts with the same stack:
+// sigpanic counts the places where only the fault grew the stack, where the
+// chain went below the guard and the fault came there, so that only the
+// room the chain left let sigpanic call morestack.
+var sampleGoSweep = `package nw
+
+import (
+	"fmt"
+	"runtime"
+	"runtime/debug"
+	"syscall"
+	"unsafe"
+)
+
+const wild = 0xdead0000
+
+type probe struct {
+	sp, k, addr, depth uintptr
+	moved              bool
+	got                any
+}
+
+//go:noinline
+func dive(n int, top *byte, p *probe) {
+	if n > 0 {
+		dive(n-1, top, p)
+		return
+	}
+	switch p.k {
+` + sweepCases() + `	}
+}
+
+//go:noinline
+func fire(top *byte, p *probe) {
+	var here byte
+	p.depth = uintptr(unsafe.Pointer(top)) - uintptr(unsafe.Pointer(&here))
+	defer func() { p.got = recover() }()
+	poke(p.sp, p.addr, 1)
+}
+
+` + sweepPads() + `
+
+func Sweep() string {
+	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	if err != nil {
+		panic(err)
+	}
+	sp := (uintptr(unsafe.Pointer(&m[0]))+1<<20-1)&^(1<<20-1) + 4096
+	run := func(n int, k, addr uintptr) probe {
+		res := make(chan probe, 1)
+		go func() {
+			debug.SetPanicOnFault(true)
+			var top byte
+			p := probe{sp: sp, k: k, addr: addr}
+			dive(n, &top, &p)
+			res <- p
+		}()
+		return <-res
+	}
+	depths := map[uintptr]bool{}
+	runs, moved, sigpanic := 0, 0, 0
+	for n := 0; n < 160; n++ {
+		for k := uintptr(0); k < 16; k++ {
+			ok := run(n, k, sp)
+			if ok.got != nil {
+				panic(fmt.Sprintf("at depth %d poke of a good pointer panicked with %v", ok.depth, ok.got))
+			}
+			p := run(n, k, wild)
+			a, at := p.got.(interface{ Addr() uintptr })
+			if _, re := p.got.(runtime.Error); !re || !at || a.Addr() != wild || p.depth != ok.depth {
+				panic(fmt.Sprintf("at depth %d (%d) poke panicked with %T %v", p.depth, ok.depth, p.got, p.got))
+			}
+			depths[p.depth] = true
+			runs++
+			if p.moved {
+				moved++
+				if !ok.moved {
+					sigpanic++
+				}
+			}
+		}
+	}
+	lo := ^uintptr(0)
+	for d := range depths {
+		lo = min(lo, d)
+	}
+	hi := lo
+	for depths[hi+8] {
+		hi += 8
+	}
+	return fmt.Sprintf("runs %d moved %d sigpanic %d depths %d to %d", runs, moved, sigpanic, lo, hi)
+}
+`
+
+// sweepCases and sweepPads write the pads of sampleGoSweep, which dive calls
+// directly, so that the probe stays on the stack: pad k takes k+1 words of
+// its frame before it fires, and says whether the stack moved meanwhile.
+func sweepCases() string {
+	var b strings.Builder
+	for k := range 16 {
+		fmt.Fprintf(&b, "\tcase %d:\n\t\tpad%d(top, p)\n", k, k)
+	}
+	return b.String()
+}
+
+func sweepPads() string {
+	var b strings.Builder
+	for k := range 16 {
+		fmt.Fprintf(&b, `
+//go:noinline
+func pad%d(top *byte, p *probe) {
+	var a [%d]uintptr
+	before := uintptr(unsafe.Pointer(&a[0]))
+	fire(top, p)
+	p.moved = uintptr(unsafe.Pointer(&a[0])) != before
+}
+`, k, k+1)
+	}
+	return b.String()
+}
 
 const samplePoll = `
 func host_poll(sp uintptr) { pollAgain(sp) }
