@@ -25,8 +25,7 @@ const PollCounterOffset = 384
 // (before, the phis of the dispatch hold it back): the interpreter counts
 // its bytecode in its handlers (pass/poll.cpp), so its dispatch has no tick
 // and is 4 instructions there, with polls or without.
-// JS_CallInternal has 192 (197 in an engine without polls), and its least
-// number is about a tenth below.
+// JS_CallInternal has 204, and its least number is about a seventh below.
 var DispatchCopies = map[string]int{"JS_CallInternal": 175}
 
 // CheckPollOffset checks -poll-offset: a word inside the region.

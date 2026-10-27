@@ -164,7 +164,7 @@ register allocation, which it does for a computed goto of up to 10
 instructions. Without the copies the interpreter is much slower.
 The driver counts the indirect jumps of each function with a computed goto
 table in llc's text and stops below `gen.DispatchCopies` (175 for
-`JS_CallInternal`, which has 192). The pass checks its own output: with the
+`JS_CallInternal`, which has 204). The pass checks its own output: with the
 blocks that count or poll taken out, the back edges of the loops it proves
 short, and the edges into the dispatch of the interpreter, no function has a
 cycle left. The interpreter must count at its entry, and each of its marks
