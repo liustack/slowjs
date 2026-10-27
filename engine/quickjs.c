@@ -10029,8 +10029,15 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
     realm = js_autoinit_get_realm(pr);
     id = js_autoinit_get_id(pr);
     func = js_autoinit_func_table[id];
+    /* Making the value defines its properties, and a definition can make
+       a property of this kind first: a level of the internal depth counts
+       each. The data bounds how deep that goes (the tables of built-in
+       objects), the call graph does not. */
+    if (js_internal_enter(ctx))
+        return -1;
     /* 'func' shall not modify the object properties 'pr' */
     val = func(realm, p, prop, pr->u.init.opaque);
+    js_internal_leave(ctx->rt);
     if (JS_IsException(val))
         return -1;
     /* WARNING: a varref is returned as a string  ! */
