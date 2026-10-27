@@ -173,14 +173,29 @@ const tmpMax = 64 << 10
 // call takes: on the shadow stack at m.sp, past which the call starts, or,
 // for more than tmpMax bytes or more than the stack has left, in the VM's
 // heap, which then counts them against the memory limit until tmpFree. p is
-// 0 when the heap has no memory.
+// 0 when the heap has no room, and the engine's out of memory error is
+// thrown then, as when the engine itself runs out: the caller returns it
+// (tmpError), or the exception.
 func (m *VM) tmp(n uintptr) (p, sp uintptr, heap bool) {
 	if n <= tmpMax {
 		if end := (m.sp + n + 15) &^ 15; end+tmpMax <= m.end {
 			return m.sp, end, false
 		}
 	}
-	return cengine.Malloc(m.sp, m.rt, max(n, 1)), m.sp, true
+	p = cengine.Malloc(m.sp, m.rt, max(n, 1))
+	if p == 0 {
+		cengine.JS_ThrowOutOfMemory(m.sp, m.ctx)
+	}
+	return p, m.sp, true
+}
+
+// tmpError returns the out of memory error tmp threw as the error of the call
+// it could not pass what it needed: uncatchable, and, inside a Go function
+// called from javascript, still pending, so that it ends that javascript too
+// (takeException).
+func (m *VM) tmpError() error {
+	err, _ := m.takeException()
+	return err
 }
 
 // tmpFree gives back what tmp took from the heap.
@@ -569,7 +584,7 @@ func (m *VM) jsSetPropertyStr(obj jsValue, name string, v jsValue) (r int32, err
 	p, sp, heap := m.tmpString(name, true)
 	if p == 0 {
 		m.jsFreeValue(v)
-		return 0, fmt.Errorf("OOM")
+		return 0, m.tmpError()
 	}
 	// JS_SetPropertyStr takes over the reference to v, not the name.
 	r = int32(cengine.JS_SetPropertyStr(sp, m.ctx, obj.u, obj.tag, p, v.u, v.tag))
@@ -586,7 +601,7 @@ func (m *VM) jsNewAtom(s string) (r uint32, err error) {
 	}
 	p, sp, heap := m.tmpString(s, false)
 	if p == 0 {
-		return atomNull, fmt.Errorf("OOM")
+		return atomNull, m.tmpError()
 	}
 	r = uint32(cengine.JS_NewAtomLen(sp, m.ctx, p, uintptr(len(s))))
 	m.tmpFree(p, heap)
@@ -656,7 +671,7 @@ func (m *VM) jsParseJSON2(s string, json bool, flags int32) (r jsValue, err erro
 	// The file name first, then s and the 0 byte the parser reads up to.
 	p, sp, heap := m.tmp(uintptr(len(fn) + len(s) + 1))
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	b := bytesAt(p, uintptr(len(fn)+len(s)+1))
 	copy(b, fn)
@@ -690,7 +705,7 @@ func (m *VM) jsEval(src string, flags int32) (r jsValue, err error) {
 	}
 	p, sp, heap := m.evalSource(src)
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	r = val(cengine.JS_Eval(sp, m.ctx, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
 	m.tmpFree(p, heap)
@@ -705,7 +720,7 @@ func (m *VM) jsEvalThis(this jsValue, src string, flags int32) (r jsValue, err e
 	}
 	p, sp, heap := m.evalSource(src)
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	r = val(cengine.JS_EvalThis(sp, m.ctx, this.u, this.tag, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
 	m.tmpFree(p, heap)
@@ -817,7 +832,7 @@ func (m *VM) tmpValues(a []jsValue) (p, sp uintptr, heap bool, err error) {
 	}
 	p, sp, heap = m.tmp(sizeofJsValue * uintptr(len(a)))
 	if p == 0 {
-		return 0, 0, false, fmt.Errorf("OOM")
+		return 0, 0, false, m.tmpError()
 	}
 	copy(unsafe.Slice((*jsValue)(addr(p)), len(a)), a)
 	return p, sp, heap, nil
@@ -865,7 +880,7 @@ func (m *VM) jsReadObject(bytecode []byte, flags int32) (r jsValue, err error) {
 	}
 	p, sp, heap := m.tmp(uintptr(len(bytecode)))
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	copy(bytesAt(p, uintptr(len(bytecode))), bytecode)
 	r = val(cengine.JS_ReadObject(sp, m.ctx, p, uintptr(len(bytecode)), uintptr(flags)))
@@ -953,7 +968,7 @@ func (m *VM) jsNewStringLen(s string) (r jsValue, err error) {
 	}
 	p, sp, heap := m.tmpString(s, false)
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	r = val(cengine.JS_NewStringLen(sp, m.ctx, p, uintptr(len(s))))
 	m.tmpFree(p, heap)
@@ -1020,7 +1035,7 @@ func (m *VM) jsThrowError(kind int, msg string) (r jsValue) {
 	}
 	p, sp, heap := m.tmpString(msg, false)
 	if p == 0 {
-		return m.jsThrowOutOfMemory()
+		return exception
 	}
 	r = val(cengine.JS_ThrowErrorKind(sp, m.ctx, errorKinds[kind], p, uintptr(len(msg))))
 	m.tmpFree(p, heap)
