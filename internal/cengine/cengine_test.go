@@ -402,3 +402,48 @@ func TestGCWhileRunning(t *testing.T) {
 		closeVM(t, v)
 	}
 }
+
+// TestShapeCache: a new VM keeps the shapes of plain objects after their last
+// object is gone, at most DefaultShapeCache of them, as a VM of package
+// slowjs does. Shapes no later object reuses do not build up, and turning the
+// cache off lets the kept shapes go.
+func TestShapeCache(t *testing.T) {
+	v := newVM(t, Options{Seed: 1})
+	defer closeVM(t, v)
+	// Each round makes objects that die with a key no other object has.
+	unique := `(function (round) {
+		for (let i = 0; i < 3000; i++) {
+			const o = {id: i}
+			o["u" + round + "_" + i] = i
+		}
+		return round
+	})`
+	var settled uintptr
+	for n := range 8 {
+		src := unique + "(" + string(rune('0'+n)) + ")"
+		if got, err := v.Eval(src, "unique.js"); err != nil || got != string(rune('0'+n)) {
+			t.Fatalf("round %d: %q, %v", n, got, err)
+		}
+		v.RunGC()
+		used := v.Usage().MemorySize
+		switch {
+		case n == 3:
+			settled = used
+		case n > 3 && used > settled:
+			t.Fatalf("round %d: MemorySize %d after GC, %d after round 3", n, used, settled)
+		}
+	}
+	shapes := func() int64 {
+		v.Usage()
+		return (*memoryUsage)(addr(v.base + scratchUsage)).ShapeCount
+	}
+	kept := shapes()
+	var r uintptr
+	v.enter(func() { r = JS_SetShapeCache(v.sp, v.ctx, 0) })
+	if int32(r) != 0 {
+		t.Fatalf("JS_SetShapeCache(0) returned %d", int32(r))
+	}
+	if got := shapes(); kept-got < DefaultShapeCache {
+		t.Errorf("%d shapes with the cache, %d without, want at least %d fewer", kept, got, DefaultShapeCache)
+	}
+}

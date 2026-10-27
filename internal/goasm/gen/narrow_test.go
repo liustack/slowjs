@@ -23,7 +23,8 @@ import (
 // called from Go with garbage above each narrow value. The probe then calls
 // put16 from Go assembly three times with the same value: plainly, with the
 // goroutine's stack guard set so put16's stack check preempts it, and set so
-// it grows (and moves) the stack. All three must write the same bytes:
+// it grows (and moves) the stack. put16's address is taken, so that it keeps
+// its stack check (ChooseNoSplit). All three must write the same bytes:
 // morestack loads the goroutine into DI, which preserve_none would read a
 // narrow argument from. The post-link check must pass on each build but the
 // poison ones, and reject the negative build that leaves narrow integers as

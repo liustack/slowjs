@@ -72,6 +72,12 @@ const (
 	tagException = 6
 )
 
+// DefaultShapeCache is the number of shapes of plain objects a new VM keeps
+// after their last object is gone, as a VM of package slowjs does
+// (slowjs.DefaultShapeCache): an object that gets the same keys in the same
+// order as one before it finds its shapes kept.
+const DefaultShapeCache = 2048
+
 // VM is one runtime of the engine with one context.
 type VM struct {
 	h    *gohost.VM
@@ -165,6 +171,16 @@ func New(o Options) (_ *VM, err error) {
 		var leaked uintptr
 		v.enter(func() { leaked = JS_FreeRuntime(v.sp, v.rt) })
 		return nil, fmt.Errorf("cengine: no context (%d blocks left)", leaked)
+	}
+	var shapes uintptr
+	v.enter(func() { shapes = JS_SetShapeCache(v.sp, v.ctx, DefaultShapeCache) })
+	if int32(shapes) != 0 {
+		var leaked uintptr
+		v.enter(func() {
+			JS_FreeContext(v.sp, v.ctx)
+			leaked = JS_FreeRuntime(v.sp, v.rt)
+		})
+		return nil, fmt.Errorf("cengine: no memory for a shape cache of %d shapes (%d blocks left)", DefaultShapeCache, leaked)
 	}
 	handed = true
 	return v, nil
@@ -514,6 +530,8 @@ func (v *VM) Close() (leaked uintptr, err error) {
 			}()
 			engineFreed(v)
 			v.enter(func() {
+				// The kept shapes hold the context: they go first.
+				JS_SetShapeCache(v.sp, v.ctx, 0)
 				JS_FreeContext(v.sp, v.ctx)
 				v.leaked = JS_FreeRuntime(v.sp, v.rt)
 			})
