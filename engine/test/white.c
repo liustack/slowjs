@@ -19,6 +19,19 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+/* JS_HEAP_FAILS makes the engine fail the request to the heap number
+   white_alloc_fail_at (counting from 1 since white_alloc_count was set to 0),
+   and only that one. The requests after it work. A request to the heap is a
+   new arena of small blocks or a large block, as a call of the allocator was
+   on the old engine. */
+static long white_alloc_count, white_alloc_fail_at;
+static int white_alloc_fails(void)
+{
+    white_alloc_count++;
+    return white_alloc_count == white_alloc_fail_at;
+}
+#define JS_HEAP_FAILS(s, size) white_alloc_fails()
+
 #include "../quickjs.c"
 
 /* ---- string buffers and the runs of JSON ---- */
@@ -719,4 +732,21 @@ int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
     *bytes = rc->bytes;
     *buckets = rc->buckets;
     return count;
+}
+
+/* ---- one request to the heap that fails ---- */
+
+/* Compile js (not run) in ctx with request number fail to the heap failing, 0
+   for none, and the others working. *nallocs is how many requests the compile
+   made. Returns what JS_Eval returns. */
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_Eval(ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    return v;
 }

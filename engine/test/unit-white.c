@@ -15,6 +15,7 @@
      unit-white */
 #include <unistd.h>
 
+#include "compile-scripts.h"
 #include "testutil.h"
 
 struct StringBuffer;
@@ -39,6 +40,7 @@ int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *o
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1506,6 +1508,101 @@ static void test_regexp_split_budget(void)
     CHECK(ok, "lre_split gave other than the split at 0 and its char at 5");
 }
 
+/* ---- compiling with one request to the heap failing ---- */
+
+/* compile_failing compiles js in a new runtime where request number fail to
+   the heap fails, 0 for none, and runs the code it compiled with every request
+   working. It puts the result of the code as a string in result (room cap), or
+   "exception" when it threw, and returns 1 when the compile failed, else 0. *n
+   is the number of requests to the heap of the compile. A compile may only
+   fail with the out of memory error. */
+static int compile_failing(const char *what, const char *js, int fail, int *n, char *result, size_t cap)
+{
+    VM v = vm_new();
+    JSValue c = white_compile_failing(v.ctx, js, fail, n);
+    int failed = JS_IsException(c);
+
+    result[0] = 0;
+    if (failed) {
+        CHECK(JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx),
+              "%s, request %d to the heap failing: the compile fails without the out of memory error", what, fail);
+        free(exception_text(v.ctx));
+    } else {
+        JSValue r;
+        char *t;
+
+        CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: the compile works, but leaves an exception", what, fail);
+        r = JS_EvalFunction(v.ctx, c);
+        t = value_text(v.ctx, r);
+        snprintf(result, cap, "%s", t ? t : "exception");
+        free(t);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+    }
+    if (failed)
+        JS_FreeValue(v.ctx, c);
+    CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: an exception is pending", what, fail);
+    vm_free(&v);
+    return failed;
+}
+
+/* Compiling with one request to the heap failing, and the others working,
+   fails with the out of memory error or gives code that works as it should. A
+   request that fails followed by ones that work is what a large block failing
+   under the memory limit, as the small blocks still fit in their arenas,
+   looks like. */
+static void test_compile_one_failure(void)
+{
+    static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
+    const char *scripts[countof(compile_scripts) + countof(compile_fine_scripts) + 5];
+    size_t i, k = 0;
+    int j;
+
+    nested_scopes();
+    strcpy(big_scope, "function f() { let n = 0; ");
+    for (j = 0; j < 400; j++)
+        strcat(big_scope, "{ let a = 1; n += a } ");
+    strcat(big_scope, "return n } f()");
+    for (j = 0; j < 300; j++)
+        strcat(deep_scope, "{ let a = 1; ");
+    for (j = 0; j < 300; j++)
+        strcat(deep_scope, "} ");
+    strcat(deep_scope, "1");
+    strcpy(fields, "class A { #m() { return 1 } ");
+    for (j = 0; j < 200; j++)
+        strcat(fields, "x = 1; ");
+    strcat(fields, "y() { return this.#m() } }; new A().y()");
+    strcpy(cases, "switch (2) { ");
+    for (j = 0; j < 300; j++)
+        strcat(cases, "case 1: break; ");
+    strcat(cases, "default: 3 }");
+    for (i = 0; i < countof(compile_scripts); i++)
+        scripts[k++] = compile_scripts[i];
+    for (i = 0; i < countof(compile_fine_scripts); i++)
+        scripts[k++] = compile_fine_scripts[i];
+    scripts[k++] = big_scope;
+    scripts[k++] = deep_scope;
+    scripts[k++] = fields;
+    scripts[k++] = cases;
+    /* Private methods and no fields: the code that adds the brand is made
+       and patched at the end of the class, with no token between. */
+    scripts[k++] = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
+    for (i = 0; i < k; i++) {
+        char what[32], want[256], got[256];
+        int n, n1, fail, failures = 0;
+
+        snprintf(what, sizeof(what), "script %zu", i);
+        CHECK(!compile_failing(what, scripts[i], 0, &n, want, sizeof(want)), "%s does not compile", what);
+        for (fail = 1; fail <= n; fail++) {
+            if (compile_failing(what, scripts[i], fail, &n1, got, sizeof(got)))
+                failures++;
+            else
+                CHECK(strcmp(got, want) == 0, "%s, request %d to the heap failing: the code compiled gives %s, want %s", what, fail, got, want);
+        }
+        CHECK(failures > 0, "%s: no compile of its %d requests to the heap failed", what, n);
+    }
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1531,6 +1628,7 @@ int main(void)
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
     test_regexp_split_budget();
+    test_compile_one_failure();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

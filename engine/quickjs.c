@@ -1819,12 +1819,25 @@ static BOOL js_front_drain(JSMallocContext *s)
     return any;
 }
 
+/* JS_HEAP_FAILS(s, size) set makes a request to the heap fail when it is true,
+   whatever the memory: white.c sets it to see the compiler meet one request
+   that fails and the others after it that work, as a large block does under
+   the memory limit while the small blocks still come from their arenas. It is
+   0 otherwise, and the engine is the same. */
+#ifndef JS_HEAP_FAILS
+#define JS_HEAP_FAILS(s, size) 0
+#endif
+
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
    would pass. */
 static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 {
-    void *p = heap_alloc(&s->heap, size);
+    void *p;
+
+    if (unlikely(JS_HEAP_FAILS(s, size)))
+        return NULL;
+    p = heap_alloc(&s->heap, size);
     if (unlikely(!p) && js_front_drain(s))
         p = heap_alloc(&s->heap, size);
     return p;
@@ -1832,7 +1845,11 @@ static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 
 static no_inline void *js_heap_realloc(JSMallocContext *s, void *ptr, size_t size)
 {
-    void *p = heap_realloc(&s->heap, ptr, size);
+    void *p;
+
+    if (unlikely(JS_HEAP_FAILS(s, size)))
+        return NULL;
+    p = heap_realloc(&s->heap, ptr, size);
     if (unlikely(!p) && js_front_drain(s))
         p = heap_realloc(&s->heap, ptr, size);
     return p;
