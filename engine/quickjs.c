@@ -827,6 +827,9 @@ typedef struct JSFunctionBytecode {
     JSValue *cpool; /* constant pool (self pointer) */
     int cpool_count;
     int closure_var_count;
+    /* where OP_ret may go, one bit for each byte of the code: the
+       instruction after each OP_gosub (check_polls). NULL with no OP_gosub. */
+    uint32_t *ret_bits;
     struct {
         /* debug info, move to separate structure to save memory? */
         JSAtom filename;
@@ -3224,8 +3227,10 @@ void JS_SetContextOpaque(JSContext *ctx, void *opaque)
 }
 
 /* set the new value and free the old value after (freeing the value
-   can reallocate the object data) */
-static inline void set_value(JSContext *ctx, JSValue *pval, JSValue new_val)
+   can reallocate the object data). Always inline: in JS_CallInternal its
+   calls sit on paths that the likely() tests make cold, where LLVM's
+   inliner uses its threshold for cold call sites and keeps it out of line. */
+static force_inline void set_value(JSContext *ctx, JSValue *pval, JSValue new_val)
 {
     JSValue old_val;
     old_val = *pval;
@@ -8246,6 +8251,10 @@ static void compute_bytecode_size(JSFunctionBytecode *b, JSMemoryUsage_helper *h
     }
     if (b->closure_var) {
         js_func_size += b->closure_var_count * sizeof(*b->closure_var);
+    }
+    if (b->ret_bits) {
+        memory_used_count++;
+        js_func_size += sizeof(uint32_t) * ((b->byte_code_len + 31) / 32);
     }
     if (!b->read_only_bytecode && b->byte_code_buf) {
         hp->js_func_code_size += b->byte_code_len;
@@ -20336,8 +20345,10 @@ typedef enum {
 
 /* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 
-/* Fast paths of the interpreter loop: get_field, ==, bitwise operators, atoms. */
-static inline JSObject *goasm_field_proto(JSContext *ctx, JSValueConst v, JSAtom atom)
+/* Fast paths of the interpreter loop: get_field, ==, bitwise operators, atoms.
+   Always inline, as set_value: most of their calls in JS_CallInternal sit on
+   paths that LLVM takes as cold, and would stay calls. */
+static force_inline JSObject *goasm_field_proto(JSContext *ctx, JSValueConst v, JSAtom atom)
 {
     int class_id;
     switch (JS_VALUE_GET_TAG(v)) {
@@ -20370,7 +20381,7 @@ static inline BOOL goasm_eq_simple_tag(int tag)
 }
 
 /* 1 or 0 when the pair is answered here, -1 for the slow function. */
-static inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL strict)
+static force_inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL strict)
 {
     int ta = JS_VALUE_GET_TAG(a), tb = JS_VALUE_GET_TAG(b);
     if (strict) {
@@ -20438,7 +20449,7 @@ static inline BOOL goasm_number_to_int32(JSValueConst v, int32_t *r)
     }
 }
 
-static inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
+static force_inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
 {
     int32_t x, y, r;
     if (!goasm_number_to_int32(sp[-2], &x) || !goasm_number_to_int32(sp[-1], &y))
@@ -20465,7 +20476,7 @@ static inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
     return TRUE;
 }
 
-static inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
+static force_inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
 {
     if (!__JS_AtomIsTaggedInt(atom)) {
         JSAtomStruct *p = ctx->rt->atom_array[atom];
@@ -20475,6 +20486,21 @@ static inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
     }
     return JS_AtomToValue(ctx, atom);
 }
+
+/* The interpreter counts towards the next poll of the generated engine
+   (poll_count) at the entry of each call, at each move of pc that does not
+   go forward, and at OP_nop, which the compiler puts into every run of more
+   than POLL_RUN instructions that would have none of these (insert_polls).
+   Between two counts pc only goes forward, so check_polls, which every
+   function's bytecode passes before it runs, compiled or read, bounds the
+   run of instructions between two counts to POLL_RUN. Each count is
+   POLL_WEIGHT. A count of the generated engine stands for at most a few
+   hundred machine instructions, about four instructions of bytecode, so the
+   default interval of 10000 brings a poll within 10000 / POLL_WEIGHT counts,
+   at most 40000 instructions of bytecode, around a millisecond, as it does
+   in the loops of the C. */
+#define POLL_RUN 128
+#define POLL_WEIGHT 32
 
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
@@ -20516,7 +20542,23 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #define DEFAULT         case_default
 #define BREAK           SWITCH(pc)
 #endif
+/* pc moves only by a step forward over an instruction, or through these:
+   JUMP_TO counts when the move does not go forward, JUMP_COUNTED always
+   (TestInterpreterJumpsCount holds this function to it). */
+#define JUMP_TO(to)                                             \
+    do {                                                        \
+        const uint8_t *to_ = (to);                              \
+        if (unlikely(to_ <= pc))                                \
+            poll_count(POLL_WEIGHT);                            \
+        pc = to_;                                               \
+    } while (0)
+#define JUMP_COUNTED(to)                                        \
+    do {                                                        \
+        pc = (to);                                              \
+        poll_count(POLL_WEIGHT);                                \
+    } while (0)
 
+    poll_count_entry(POLL_WEIGHT);
     if (js_poll_interrupts(caller_ctx))
         return JS_EXCEPTION;
     /* nothing runs while an uncatchable exception is pending */
@@ -21565,18 +21607,18 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             BREAK;
 
         CASE(OP_goto):
-            pc += (int32_t)get_u32(pc);
+            JUMP_TO(pc + (int32_t)get_u32(pc));
             if (unlikely(js_poll_interrupts(ctx)))
                 goto exception;
             BREAK;
 #if SHORT_OPCODES
         CASE(OP_goto16):
-            pc += (int16_t)get_u16(pc);
+            JUMP_TO(pc + (int16_t)get_u16(pc));
             if (unlikely(js_poll_interrupts(ctx)))
                 goto exception;
             BREAK;
         CASE(OP_goto8):
-            pc += (int8_t)pc[0];
+            JUMP_TO(pc + (int8_t)pc[0]);
             if (unlikely(js_poll_interrupts(ctx)))
                 goto exception;
             BREAK;
@@ -21595,7 +21637,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 }
                 sp--;
                 if (res) {
-                    pc += (int32_t)get_u32(pc - 4) - 4;
+                    JUMP_TO(pc + (int32_t)get_u32(pc - 4) - 4);
                 }
                 if (unlikely(js_poll_interrupts(ctx)))
                     goto exception;
@@ -21616,7 +21658,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 }
                 sp--;
                 if (!res) {
-                    pc += (int32_t)get_u32(pc - 4) - 4;
+                    JUMP_TO(pc + (int32_t)get_u32(pc - 4) - 4);
                 }
                 if (unlikely(js_poll_interrupts(ctx)))
                     goto exception;
@@ -21637,7 +21679,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 }
                 sp--;
                 if (res) {
-                    pc += (int8_t)pc[-1] - 1;
+                    JUMP_TO(pc + (int8_t)pc[-1] - 1);
                 }
                 if (unlikely(js_poll_interrupts(ctx)))
                     goto exception;
@@ -21657,7 +21699,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 }
                 sp--;
                 if (!res) {
-                    pc += (int8_t)pc[-1] - 1;
+                    JUMP_TO(pc + (int8_t)pc[-1] - 1);
                 }
                 if (unlikely(js_poll_interrupts(ctx)))
                     goto exception;
@@ -21680,7 +21722,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 /* XXX: should have a different tag to avoid security flaw */
                 sp[0] = JS_NewInt32(ctx, pc + 4 - b->byte_code_buf);
                 sp++;
-                pc += diff;
+                JUMP_TO(pc + diff);
+                if (unlikely(js_poll_interrupts(ctx)))
+                    goto exception;
             }
             BREAK;
         CASE(OP_ret):
@@ -21691,13 +21735,19 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 if (unlikely(JS_VALUE_GET_TAG(op1) != JS_TAG_INT))
                     goto ret_fail;
                 pos = JS_VALUE_GET_INT(op1);
-                if (unlikely(pos >= b->byte_code_len)) {
+                /* only where an OP_gosub returns to: code read by
+                   JS_ReadObject can give any number, and pc must stay on
+                   the instructions check_polls followed */
+                if (unlikely(pos >= b->byte_code_len || !b->ret_bits ||
+                             !((b->ret_bits[pos >> 5] >> (pos & 31)) & 1))) {
                 ret_fail:
                     JS_ThrowInternalError(ctx, "invalid ret value");
                     goto exception;
                 }
                 sp--;
-                pc = b->byte_code_buf + pos;
+                JUMP_COUNTED(b->byte_code_buf + pos);
+                if (unlikely(js_poll_interrupts(ctx)))
+                    goto exception;
             }
             BREAK;
 
@@ -23211,7 +23261,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                         *sp++ = val;
                         break;
                     }
-                    pc += diff - 5;
+                    JUMP_TO(pc + diff - 5);
+                    if (unlikely(js_poll_interrupts(ctx)))
+                        goto exception;
                 } else {
                 no_with:
                     /* if not jumping, drop the object argument */
@@ -23239,6 +23291,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             goto done_generator;
 
         CASE(OP_nop):
+            /* a poll the compiler put into a long run (insert_polls) */
+            poll_count(POLL_WEIGHT);
+            if (unlikely(js_poll_interrupts(ctx)))
+                goto exception;
             BREAK;
         CASE(OP_is_undefined_or_null):
             if (JS_VALUE_GET_TAG(sp[-1]) == JS_TAG_UNDEFINED ||
@@ -23313,7 +23369,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 } else {
                     *sp++ = rt->current_exception;
                     rt->current_exception = JS_UNINITIALIZED;
-                    pc = b->byte_code_buf + pos;
+                    JUMP_COUNTED(b->byte_code_buf + pos);
+                    if (unlikely(js_poll_interrupts(ctx)))
+                        goto exception;
                     goto restart;
                 }
             }
@@ -37837,6 +37895,311 @@ static void put_short_code(DynBuf *bc_out, int op, int idx)
     dbuf_put_u16(bc_out, idx);
 }
 
+/* The rule of the polls on the final code of a function, which check_polls
+   and insert_polls share. The interpreter counts at the entry of each call,
+   at each jump that does not go forward, at each return from a finally
+   block (OP_ret), at each catch of an exception and at OP_nop
+   (JS_CallInternal). Between two counts pc only goes forward, so the
+   instructions run from one count to the next are a path of steps and jumps
+   forward, which poll_scan follows in one walk in order: run[pos] is the
+   longest such path that reaches the instruction at pos, and with the
+   instruction itself none may be longer than POLL_RUN. A jump forward
+   (OP_catch aside, whose target an exception reaches), an instruction that
+   does not end the path and the paths that meet at a target carry the
+   longest on. With ins not NULL, it marks in ins the instructions before
+   which an OP_nop goes: those a path reaches with POLL_RUN - 1 instructions,
+   unless they end it, so that the OP_nop too fits. It also checks what the
+   walk relies on: each opcode is one the interpreter has, each instruction
+   is inside the code, each jump lands at the start of an instruction, and
+   the last instruction does not run off the end. It returns NULL, or what is
+   wrong. run has bc_len bytes, and POLL_NONE marks those where no
+   instruction starts. */
+#define POLL_NONE 0xff
+
+static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
+                             uint8_t *ins)
+{
+    int pos, len, op, r, in, falls, next, jumps;
+    int64_t target;
+    const JSOpCode *oi;
+
+    memset(run, POLL_NONE, bc_len);
+    for (pos = 0; pos < bc_len; pos += len) {
+        op = bc_buf[pos];
+        if (op == OP_invalid || op >= OP_COUNT)
+            return "an opcode the interpreter does not have";
+        len = short_opcode_info(op).size;
+        if (len > bc_len - pos)
+            return "an instruction past the end of the code";
+        run[pos] = 0;
+    }
+    /* the entry counts */
+    r = 0;
+    falls = TRUE;
+    for (pos = 0; pos < bc_len; pos += len) {
+        op = bc_buf[pos];
+        oi = &short_opcode_info(op);
+        len = oi->size;
+        /* whether it has a target is apart from where: a target can be any
+           value, -1 too */
+        jumps = TRUE;
+        target = 0;
+        switch (oi->fmt) {
+        case OP_FMT_label:
+            target = pos + 1 + (int64_t)(int32_t)get_u32(bc_buf + pos + 1);
+            break;
+        case OP_FMT_label16:
+            target = pos + 1 + (int64_t)(int16_t)get_u16(bc_buf + pos + 1);
+            break;
+        case OP_FMT_label8:
+            target = pos + 1 + (int64_t)(int8_t)bc_buf[pos + 1];
+            break;
+        case OP_FMT_atom_label_u8:
+            target = pos + 5 + (int64_t)(int32_t)get_u32(bc_buf + pos + 5);
+            break;
+        case OP_FMT_atom_label_u16:
+        case OP_FMT_label_u16:
+            return "an opcode the interpreter does not have";
+        default:
+            jumps = FALSE;
+            break;
+        }
+        if (jumps &&
+            (target < 0 || target >= bc_len || run[target] == POLL_NONE))
+            return "a jump that does not land at the start of an instruction";
+        switch (op) {
+        case OP_goto:
+        case OP_goto16:
+        case OP_goto8:
+        case OP_gosub: /* back through OP_ret, which counts */
+        case OP_ret:
+        case OP_return:
+        case OP_return_undef:
+        case OP_return_async:
+        case OP_throw:
+        case OP_throw_error:
+        case OP_tail_call:
+        case OP_tail_call_method:
+            next = FALSE;
+            break;
+        default:
+            next = TRUE;
+            break;
+        }
+        in = run[pos];
+        if (falls)
+            in = max_int(in, r);
+        if (ins && op != OP_nop && in >= POLL_RUN - 1 &&
+            (next || (jumps && target > pos && op != OP_catch))) {
+            ins[pos] = 1;
+            in = 0;
+        }
+        if (in + 1 > POLL_RUN)
+            return "a run of more instructions than POLL_RUN without a count";
+        r = op == OP_nop ? 0 : in + 1;
+        if (jumps && target > pos && op != OP_catch)
+            run[target] = max_int(run[target], r);
+        falls = next;
+    }
+    if (falls)
+        return "a last instruction that runs off the end of the code";
+    return NULL;
+}
+
+/* check_polls holds the final code of a function to the rule of the polls
+   (poll_scan) before it can run: the compiler's (a failure is a bug of
+   insert_polls, an InternalError) and code read by JS_ReadObject (a
+   SyntaxError). The rule takes OP_ret as the end of a path and the
+   instruction after an OP_gosub as the start of one, so OP_ret may go only
+   there: *ret_bits gets a bit for each byte of the code, set for those
+   places (NULL when there is none), which OP_ret checks its number
+   against. */
+static int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32_t bc_len,
+                       BOOL compiled, uint32_t **ret_bits)
+{
+    uint8_t *run;
+    const char *why;
+    int pos;
+
+    *ret_bits = NULL;
+    if (bc_len > INT32_MAX) {
+        why = "code too long";
+    } else {
+        run = js_malloc(ctx, max_int(bc_len, 1));
+        if (!run)
+            return -1;
+        why = poll_scan(bc_buf, bc_len, run, NULL);
+        js_free(ctx, run);
+    }
+    if (!why) {
+        if (!memchr(bc_buf, OP_gosub, bc_len))
+            return 0;
+        for (pos = 0; pos < (int)bc_len; pos += short_opcode_info(bc_buf[pos]).size) {
+            if (bc_buf[pos] == OP_gosub && pos + 5 < (int)bc_len) {
+                if (!*ret_bits) {
+                    *ret_bits = js_mallocz(ctx, sizeof(uint32_t) * ((bc_len + 31) / 32));
+                    if (!*ret_bits)
+                        return -1;
+                }
+                (*ret_bits)[(pos + 5) >> 5] |= 1U << ((pos + 5) & 31);
+            }
+        }
+        return 0;
+    }
+    if (compiled)
+        JS_ThrowInternalError(ctx, "compiled bytecode: %s", why);
+    else
+        JS_ThrowSyntaxError(ctx, "invalid bytecode: %s", why);
+    return -1;
+}
+
+/* JS_POLL_SKIP() set makes insert_polls leave the code as it is: white.c
+   sets it to see check_polls stop the compiler. */
+#ifndef JS_POLL_SKIP
+#define JS_POLL_SKIP() 0
+#endif
+
+/* insert_polls puts an OP_nop before each instruction poll_scan marks, in
+   the final code of resolve_labels (bc), and moves the jumps and the line
+   numbers to match: a jump to a marked instruction goes to its OP_nop. A
+   short jump whose target ends up out of its reach takes the long form,
+   until every one fits. On a failure, bc is as it was. */
+static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
+{
+    const uint8_t *buf = bc->buf;
+    int len = bc->size, pos, sz, k, cur, op, i, n;
+    int64_t target, d;
+    uint8_t *run, *ins, *wide = NULL;
+    int *npos = NULL;
+    const char *why;
+    const JSOpCode *oi;
+    BOOL changed;
+    DynBuf out;
+
+    if (JS_POLL_SKIP())
+        return 0;
+    run = js_malloc(ctx, len * 2 + 1);
+    if (!run)
+        return -1;
+    ins = run + len;
+    memset(ins, 0, len + 1);
+    why = poll_scan(buf, len, run, ins);
+    if (why) {
+        JS_ThrowInternalError(ctx, "compiled bytecode: %s", why);
+        goto fail;
+    }
+    n = 0;
+    for (pos = 0; pos < len; pos++)
+        n += ins[pos];
+    if (n == 0) {
+        js_free(ctx, run);
+        return 0;
+    }
+    /* npos: where each byte of the code goes, and the end. wide: the short
+       jumps that take their long form. */
+    npos = js_malloc(ctx, sizeof(npos[0]) * (len + 1));
+    wide = js_mallocz(ctx, len);
+    if (!npos || !wide)
+        goto fail;
+    do {
+        cur = 0;
+        for (pos = 0; pos < len; pos += sz) {
+            sz = short_opcode_info(buf[pos]).size;
+            cur += ins[pos];
+            for (k = 0; k < sz; k++)
+                npos[pos + k] = cur + k;
+            cur += wide[pos] ? 5 : sz;
+        }
+        npos[len] = cur;
+        changed = FALSE;
+        for (pos = 0; pos < len; pos += sz) {
+            oi = &short_opcode_info(buf[pos]);
+            sz = oi->size;
+            if (wide[pos])
+                continue;
+            if (oi->fmt == OP_FMT_label8)
+                target = pos + 1 + (int8_t)buf[pos + 1];
+            else if (oi->fmt == OP_FMT_label16)
+                target = pos + 1 + (int16_t)get_u16(buf + pos + 1);
+            else
+                continue;
+            d = npos[target] - ins[target] - (npos[pos] + 1);
+            if (d != (oi->fmt == OP_FMT_label8 ? (int8_t)d : (int16_t)d)) {
+                wide[pos] = 1;
+                changed = TRUE;
+            }
+        }
+    } while (changed);
+    js_dbuf_bytecode_init(ctx, &out);
+    for (pos = 0; pos < len; pos += sz) {
+        op = buf[pos];
+        oi = &short_opcode_info(op);
+        sz = oi->size;
+        if (ins[pos])
+            dbuf_putc(&out, OP_nop);
+        switch (oi->fmt) {
+        case OP_FMT_label:
+        case OP_FMT_label16:
+        case OP_FMT_label8:
+            if (oi->fmt == OP_FMT_label)
+                target = pos + 1 + (int32_t)get_u32(buf + pos + 1);
+            else if (oi->fmt == OP_FMT_label16)
+                target = pos + 1 + (int16_t)get_u16(buf + pos + 1);
+            else
+                target = pos + 1 + (int8_t)buf[pos + 1];
+            d = npos[target] - ins[target] - (npos[pos] + 1);
+            if (wide[pos]) {
+                if (op == OP_goto8 || op == OP_goto16)
+                    op = OP_goto;
+                else
+                    op = op == OP_if_false8 ? OP_if_false : OP_if_true;
+                dbuf_putc(&out, op);
+                dbuf_put_u32(&out, d);
+            } else if (oi->fmt == OP_FMT_label) {
+                dbuf_putc(&out, op);
+                dbuf_put_u32(&out, d);
+            } else if (oi->fmt == OP_FMT_label16) {
+                dbuf_putc(&out, op);
+                dbuf_put_u16(&out, d);
+            } else {
+                dbuf_putc(&out, op);
+                dbuf_putc(&out, d);
+            }
+            break;
+        case OP_FMT_atom_label_u8:
+            target = pos + 5 + (int32_t)get_u32(buf + pos + 5);
+            dbuf_put(&out, buf + pos, 5);
+            dbuf_put_u32(&out, npos[target] - ins[target] - (npos[pos] + 5));
+            dbuf_putc(&out, buf[pos + 9]);
+            break;
+        default:
+            dbuf_put(&out, buf + pos, sz);
+            break;
+        }
+    }
+    if (dbuf_error(&out)) {
+        dbuf_free(&out);
+        JS_ThrowOutOfMemory(ctx);
+        goto fail;
+    }
+    for (i = 0; i < s->line_number_count; i++) {
+        pos = s->line_number_slots[i].pc;
+        if (pos <= len)
+            s->line_number_slots[i].pc = npos[pos] - ins[pos];
+    }
+    dbuf_free(bc);
+    *bc = out;
+    js_free(ctx, wide);
+    js_free(ctx, npos);
+    js_free(ctx, run);
+    return 0;
+ fail:
+    js_free(ctx, wide);
+    js_free(ctx, npos);
+    js_free(ctx, run);
+    return -1;
+}
+
 /* peephole optimizations and resolve goto/labels */
 static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 {
@@ -38726,6 +39089,9 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     js_free(ctx, s->jump_slots);
     s->jump_slots = NULL;
 #endif
+    /* a count in every long run of the code (JS_CallInternal) */
+    if (insert_polls(ctx, s, &bc_out))
+        goto fail;
     js_free(ctx, s->label_slots);
     s->label_slots = NULL;
     /* XXX: should delay until copying to runtime bytecode function */
@@ -39099,6 +39465,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     int function_size, byte_code_offset, cpool_offset;
     int closure_var_offset, vardefs_offset;
     BOOL strip_var_debug;
+    uint32_t *ret_bits = NULL;
     
     /* the parser does not stop when emitting the code runs out of memory */
     if (dbuf_error(&fd->byte_code)) {
@@ -39192,6 +39559,10 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     if (resolve_labels(ctx, fd))
         goto fail;
 
+    if (check_polls(ctx, fd->byte_code.buf, fd->byte_code.size, TRUE,
+                    &ret_bits))
+        goto fail;
+
     if (compute_stack_size(ctx, fd, &stack_size) < 0)
         goto fail;
 
@@ -39213,6 +39584,8 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     if (!b)
         goto fail;
     js_rc(b)->ref_count = 1;
+    b->ret_bits = ret_bits;
+    ret_bits = NULL;
 
     b->byte_code_buf = (void *)((uint8_t*)b + byte_code_offset);
     b->byte_code_len = fd->byte_code.size;
@@ -39355,6 +39728,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     js_free(ctx, fd);
     return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
  fail:
+    js_free(ctx, ret_bits);
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
@@ -39403,6 +39777,7 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
         JS_FreeContext(b->realm);
 
     JS_FreeAtomRT(rt, b->func_name);
+    js_free_rt(rt, b->ret_bits);
     if (b->has_debug) {
         JS_FreeAtomRT(rt, b->debug.filename);
         if (!b->shared_debug) {
@@ -41784,6 +42159,13 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
 
     if (is_be())
         bc_byte_swap(bc_buf, bc_len);
+
+    /* code read from outside keeps to the rule of the polls as the
+       compiler's does: none of its atoms is the runtime's yet */
+    if (check_polls(s->ctx, bc_buf, bc_len, FALSE, &b->ret_bits)) {
+        b->byte_code_len = 0;
+        return -1;
+    }
 
     pos = 0;
     while (pos < bc_len) {

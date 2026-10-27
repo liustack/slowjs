@@ -32,6 +32,15 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
+int white_op(int i);
+int white_op_count(void);
+int white_poll_run(void);
+void white_poll_skip(int on);
+const char *white_poll_scan(const uint8_t *code, int len);
+int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out, int cap);
+int white_code_shape(const uint8_t *code, int len, int *shape, int max);
+const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
+int white_nops(const uint8_t *code, int len, int *places, int max);
 
 /* ---- texts of every kind of character ---- */
 
@@ -628,6 +637,549 @@ static void test_function_properties_oom(void)
     }
 }
 
+/* ---- the polls of the bytecode ---- */
+
+/* The opcodes of white_op, in its order. */
+enum {
+    W_INVALID, W_NOP, W_PUSH_0, W_DROP, W_GOTO, W_GOTO16, W_GOTO8,
+    W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
+    W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16,
+};
+
+/* Code written for a test, one instruction at a time. A jump is written
+   with no target, which set_target puts in once its place is known. */
+typedef struct {
+    uint8_t b[4096];
+    int n;
+} Code;
+
+static void op_n(Code *c, int w, int times)
+{
+    while (times-- > 0)
+        c->b[c->n++] = white_op(w);
+}
+
+static int jump(Code *c, int w)
+{
+    int at = c->n, size = 5;
+
+    switch (w) {
+    case W_GOTO16: size = 3; break;
+    case W_GOTO8: case W_IF_TRUE8: case W_IF_FALSE8: size = 2; break;
+    case W_WITH_GET_VAR: size = 10; break;
+    }
+    memset(c->b + at, 0, size);
+    c->b[at] = white_op(w);
+    c->n += size;
+    return at;
+}
+
+static void set_target(Code *c, int at, int target)
+{
+    int op = c->b[at], d = target - (at + 1);
+    int32_t d32;
+    int16_t d16;
+
+    if (op == white_op(W_WITH_GET_VAR)) {
+        d32 = target - (at + 5);
+        memcpy(c->b + at + 5, &d32, 4);
+    } else if (op == white_op(W_GOTO16)) {
+        d16 = d;
+        memcpy(c->b + at + 1, &d16, 2);
+    } else if (op == white_op(W_GOTO8) || op == white_op(W_IF_TRUE8) || op == white_op(W_IF_FALSE8)) {
+        c->b[at + 1] = (uint8_t)d;
+    } else {
+        d32 = d;
+        memcpy(c->b + at + 1, &d32, 4);
+    }
+}
+
+/* scan_ok: c keeps to the rule of the polls. scan_fails: it does not, and
+   what poll_scan says has want in it. */
+static int scan_ok(const Code *c)
+{
+    const char *why = white_poll_scan(c->b, c->n);
+
+    if (why)
+        printf("poll_scan: %s\n", why);
+    return why == NULL;
+}
+
+static int scan_fails(const Code *c, const char *want)
+{
+    const char *why = white_poll_scan(c->b, c->n);
+
+    return why && strstr(why, want);
+}
+
+/* Code with a run of n instructions and a return. */
+static Code straight(int n)
+{
+    Code c = {{0}, 0};
+
+    op_n(&c, W_PUSH_0, n);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    return c;
+}
+
+/* poll_scan, which check_polls runs on all code before it runs, takes a run
+   of POLL_RUN instructions without a count and no more: in straight code, on
+   a jump forward, which carries the run on, and into a finally block. A jump
+   back, an OP_nop and the catch of an exception count. It also stops on code
+   it cannot follow: an opcode the interpreter does not have, an instruction
+   past the end, a jump into an instruction or out of the code, and a last
+   instruction that runs off the end. */
+static void test_poll_scan(void)
+{
+    int run = white_poll_run(), at, x;
+    Code c;
+    static const uint8_t past_end[] = { 0, 0, 0 };
+    uint8_t bad[8];
+
+    c = straight(run - 1);
+    CHECK(scan_ok(&c), "a run of %d", run);
+    c = straight(run);
+    CHECK(scan_fails(&c, "without a count"), "a run of %d", run + 1);
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, 100);
+    op_n(&c, W_NOP, 1);
+    op_n(&c, W_PUSH_0, 100);
+    op_n(&c, W_NOP, 1);
+    op_n(&c, W_PUSH_0, 100);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "runs of 100 between OP_nop");
+
+    /* a loop: the jump back counts */
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, run - 10);
+    set_target(&c, jump(&c, W_GOTO), 0);
+    CHECK(scan_ok(&c), "a loop");
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, run - 10);
+    set_target(&c, jump(&c, W_IF_TRUE8), 0);
+    op_n(&c, W_PUSH_0, 9);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_fails(&c, "without a count"), "a run on past a jump back not taken");
+
+    /* a jump forward carries the run on past code it skips */
+    for (x = 20; x <= 30; x += 10) {
+        int w;
+        for (w = 0; w < 2; w++) {
+            c = (Code){{0}, 0};
+            op_n(&c, W_PUSH_0, 100);
+            at = jump(&c, w ? W_WITH_GET_VAR : W_GOTO16);
+            op_n(&c, W_RETURN_UNDEF, 1);
+            set_target(&c, at, c.n);
+            op_n(&c, W_PUSH_0, x);
+            op_n(&c, W_RETURN_UNDEF, 1);
+            if (x == 20)
+                CHECK(scan_ok(&c), "%d after a jump at 101", x);
+            else
+                CHECK(scan_fails(&c, "without a count"), "%d after a jump at 101 (%d)", x, w);
+        }
+    }
+
+    /* an exception reaches the catch, which counts: a jump would not */
+    for (x = 0; x < 2; x++) {
+        c = (Code){{0}, 0};
+        op_n(&c, W_PUSH_0, 120);
+        at = jump(&c, x ? W_IF_FALSE : W_CATCH);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        set_target(&c, at, c.n);
+        op_n(&c, W_PUSH_0, 20);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        if (x)
+            CHECK(scan_fails(&c, "without a count"), "a jump carries the run");
+        else
+            CHECK(scan_ok(&c), "a catch counts");
+    }
+
+    /* a finally block: OP_gosub goes on with the run, OP_ret counts */
+    for (x = 120; x <= 130; x += 10) {
+        c = (Code){{0}, 0};
+        at = jump(&c, W_GOSUB);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        set_target(&c, at, c.n);
+        op_n(&c, W_PUSH_0, x);
+        op_n(&c, W_RET, 1);
+        if (x == 120)
+            CHECK(scan_ok(&c), "a finally block of %d", x);
+        else
+            CHECK(scan_fails(&c, "without a count"), "a finally block of %d", x);
+    }
+
+    /* code it cannot follow */
+    c = (Code){{0}, 0};
+    op_n(&c, W_INVALID, 1);
+    CHECK(scan_fails(&c, "an opcode the interpreter does not have"), "OP_invalid");
+    bad[0] = white_op_count();
+    bad[1] = white_op(W_RETURN_UNDEF);
+    CHECK(white_poll_scan(bad, 2) && strstr(white_poll_scan(bad, 2), "does not have"), "an opcode past the last");
+    memcpy(bad, past_end, sizeof(past_end));
+    bad[0] = white_op(W_GOTO);
+    CHECK(white_poll_scan(bad, 3) && strstr(white_poll_scan(bad, 3), "past the end"), "a cut instruction");
+    c = (Code){{0}, 0};
+    at = jump(&c, W_GOTO8);
+    x = jump(&c, W_GOTO);
+    set_target(&c, at, x + 2);
+    set_target(&c, x, 0);
+    CHECK(scan_fails(&c, "does not land"), "a jump into an instruction");
+    c = (Code){{0}, 0};
+    at = jump(&c, W_IF_FALSE8);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    set_target(&c, at, -4);
+    CHECK(scan_fails(&c, "does not land"), "a jump out of the code");
+    /* a target of -1, the byte before the code, as a short and a long jump
+       and a catch: [OP_goto8, 0xfe] is the whole code of the first */
+    for (x = 0; x < 3; x++) {
+        static const int w[] = { W_GOTO8, W_GOTO, W_CATCH };
+        c = (Code){{0}, 0};
+        at = jump(&c, w[x]);
+        if (x == 2)
+            op_n(&c, W_RETURN_UNDEF, 1);
+        set_target(&c, at, -1);
+        CHECK(scan_fails(&c, "does not land"), "a jump to -1 (%d)", x);
+    }
+    c = (Code){{0}, 0};
+    at = jump(&c, W_WITH_GET_VAR);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    set_target(&c, at, c.n);
+    CHECK(scan_fails(&c, "does not land"), "a with_ jump past the end");
+    c = straight(3);
+    c.n--;
+    CHECK(scan_fails(&c, "runs off the end"), "no return at the end");
+    CHECK(white_poll_scan(bad, 0) && strstr(white_poll_scan(bad, 0), "runs off the end"), "no code");
+}
+
+/* insert_c puts the polls into c (insert_polls), checks that the result
+   keeps to the rule and has the shape of c, and returns it. */
+static Code insert_c(JSContext *ctx, const Code *c, const char *what)
+{
+    static int s1[8192], s2[8192];
+    Code out = {{0}, 0};
+    int n1, n2;
+
+    out.n = white_poll_insert(ctx, c->b, c->n, out.b, sizeof(out.b));
+    CHECK(out.n > 0, "%s: insert_polls failed", what);
+    if (out.n <= 0)
+        return out;
+    CHECK(scan_ok(&out), "%s: the code with the polls", what);
+    n1 = white_code_shape(c->b, c->n, s1, 4096);
+    n2 = white_code_shape(out.b, out.n, s2, 4096);
+    CHECK(n1 > 0 && n1 == n2 && memcmp(s1, s2, sizeof(int) * 2 * n1) == 0,
+          "%s: the code changed shape (%d and %d instructions)", what, n1, n2);
+    return out;
+}
+
+static int count_nops(const Code *c)
+{
+    int places[256];
+
+    return white_nops(c->b, c->n, places, countof(places));
+}
+
+/* insert_polls puts an OP_nop in where a path reaches POLL_RUN - 1
+   instructions, unless the instruction there ends it, and moves the jumps:
+   one into a run, a short one that no longer reaches, which takes its long
+   form, a jump of with_, of a catch and of a finally block. */
+static void test_poll_insert(void)
+{
+    VM v = vm_new();
+    int run = white_poll_run(), at, at2, at3;
+    Code c, out;
+
+    c = straight(2 * run);
+    out = insert_c(v.ctx, &c, "straight");
+    CHECK(count_nops(&out) == 2, "%d OP_nop in a run of %d", count_nops(&out), 2 * run + 1);
+    c = straight(run - 1);
+    out = insert_c(v.ctx, &c, "a run that fits");
+    CHECK(out.n == c.n, "OP_nop in a run that fits");
+
+    /* a short jump forward over the place of an OP_nop */
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, 100);
+    at = jump(&c, W_IF_FALSE8);
+    op_n(&c, W_PUSH_0, 126);
+    set_target(&c, at, c.n);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    out = insert_c(v.ctx, &c, "a short jump forward");
+    CHECK(count_nops(&out) == 1 && out.b[at] == white_op(W_IF_FALSE),
+          "%d OP_nop and opcode %d, want 1 and if_false", count_nops(&out), out.b[at]);
+
+    /* a short jump back, with an OP_nop before it */
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, run - 1);
+    at = jump(&c, W_IF_TRUE8);
+    set_target(&c, at, 0);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    out = insert_c(v.ctx, &c, "a short jump back");
+    CHECK(count_nops(&out) == 1 && out.b[at + 1] == white_op(W_IF_TRUE),
+          "%d OP_nop and opcode %d, want 1 and if_true", count_nops(&out), out.b[at + 1]);
+
+    /* a goto back that ends a path of POLL_RUN instructions needs none */
+    c = (Code){{0}, 0};
+    op_n(&c, W_PUSH_0, run - 1);
+    set_target(&c, jump(&c, W_GOTO), 0);
+    out = insert_c(v.ctx, &c, "a loop that fits");
+    CHECK(count_nops(&out) == 0, "%d OP_nop in a loop that fits", count_nops(&out));
+
+    /* with_, catch and a finally block, over long runs */
+    c = (Code){{0}, 0};
+    at = jump(&c, W_CATCH);
+    at2 = jump(&c, W_WITH_GET_VAR);
+    op_n(&c, W_PUSH_0, 200);
+    at3 = jump(&c, W_GOSUB);
+    set_target(&c, at2, c.n);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    set_target(&c, at3, c.n);
+    op_n(&c, W_PUSH_0, 200);
+    op_n(&c, W_RET, 1);
+    set_target(&c, at, c.n);
+    op_n(&c, W_PUSH_0, 200);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    out = insert_c(v.ctx, &c, "with_, catch and a finally block");
+    CHECK(count_nops(&out) >= 4, "%d OP_nop in three runs of 200", count_nops(&out));
+    vm_free(&v);
+}
+
+/* long_func: the source of a function of n lines, one assignment each, that
+   returns n - 1, or with throws set throws on its last line. */
+static char *long_func(int n, int throws)
+{
+    size_t cap = 32 * (size_t)n + 100, len;
+    char *s = malloc(cap);
+    int i;
+
+    len = snprintf(s, cap, "(function () { var a = 0;\n");
+    for (i = 1; i < n; i++)
+        len += snprintf(s + len, cap - len, "a = %d;\n", i);
+    snprintf(s + len, cap - len, throws ? "throw new Error('end') })" : "return a })");
+    return s;
+}
+
+/* code_of: the code of the function of src, compiled only, in *top (the
+   script), *code and *len. */
+static int code_of(JSContext *ctx, const char *src, JSValue *top, const uint8_t **code, int *len)
+{
+    *top = JS_Eval(ctx, src, strlen(src), "<poll>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(*top))
+        return -1;
+    *code = white_child_code(*top, 0, len);
+    return *code ? 0 : -1;
+}
+
+/* run_read: read buf back with JS_ReadObject, run the script and call the
+   function it gives. "ok" with the number it returned, or the exception. */
+static void run_read(JSContext *ctx, const uint8_t *buf, size_t size, char *out, size_t cap)
+{
+    JSValue top, fun, r;
+    char *t;
+    int32_t n = -1;
+
+    top = JS_ReadObject(ctx, buf, size, JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(top))
+        goto exception;
+    fun = JS_EvalFunction(ctx, top);
+    if (JS_IsException(fun))
+        goto exception;
+    r = JS_Call(ctx, fun, JS_UNDEFINED, 0, NULL);
+    JS_FreeValue(ctx, fun);
+    if (JS_IsException(r))
+        goto exception;
+    JS_ToInt32(ctx, &n, r);
+    JS_FreeValue(ctx, r);
+    snprintf(out, cap, "ok %d", (int)n);
+    return;
+ exception:
+    t = exception_text(ctx);
+    snprintf(out, cap, "%s", t ? t : "?");
+    free(t);
+}
+
+/* The compiler puts the polls into a long function, which runs and keeps
+   its line numbers. Without them (white_poll_skip) check_polls stops the
+   compiler, and JS_ReadObject reads the function back, but not with its
+   OP_nop taken out or with an opcode the interpreter does not have. */
+static void test_poll_compile(void)
+{
+    VM v = vm_new();
+    char *src = long_func(400, 0), *src2 = long_func(400, 1), *t, got[256];
+    const char *stack;
+    JSValue top, fun, r;
+    const uint8_t *code;
+    uint8_t *buf, *copy;
+    size_t size;
+    int len, places[64], n, i;
+    const uint8_t *at;
+
+    CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile a long function");
+    CHECK(white_poll_scan(code, len) == NULL, "the code of a long function");
+    n = white_nops(code, len, places, countof(places));
+    CHECK(n >= 4, "%d OP_nop in a long function", n);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "write the long function");
+    at = buf ? memmem(buf, size, code, len) : NULL;
+    CHECK(at != NULL, "the code of the long function in what JS_WriteObject wrote");
+    run_read(v.ctx, buf, size, got, sizeof(got));
+    CHECK(strcmp(got, "ok 399") == 0, "read back: %s", got);
+    if (at) {
+        copy = malloc(size);
+        memcpy(copy, buf, size);
+        for (i = 0; i < n && i < (int)countof(places); i++)
+            copy[at - buf + places[i]] = white_op(W_PUSH_0);
+        run_read(v.ctx, copy, size, got, sizeof(got));
+        CHECK(strstr(got, "SyntaxError: invalid bytecode: a run of more instructions than POLL_RUN"), "read without the polls: %s", got);
+        memcpy(copy, buf, size);
+        copy[at - buf] = white_op(W_INVALID);
+        run_read(v.ctx, copy, size, got, sizeof(got));
+        CHECK(strstr(got, "SyntaxError: invalid bytecode: an opcode the interpreter does not have"), "read with OP_invalid: %s", got);
+        free(copy);
+    }
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+
+    /* the line of an error after the OP_nop: the throw is on line 401 */
+    fun = JS_Eval(v.ctx, src2, strlen(src2), "<poll>", JS_EVAL_TYPE_GLOBAL);
+    r = JS_Call(v.ctx, fun, JS_UNDEFINED, 0, NULL);
+    CHECK(JS_IsException(r), "the long function that throws");
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, fun);
+    r = JS_GetException(v.ctx);
+    fun = JS_GetPropertyStr(v.ctx, r, "stack");
+    stack = JS_ToCString(v.ctx, fun);
+    CHECK(stack && strstr(stack, "<poll>:401"), "the stack of the long function: %s", stack ? stack : "(none)");
+    JS_FreeCString(v.ctx, stack);
+    JS_FreeValue(v.ctx, fun);
+    JS_FreeValue(v.ctx, r);
+
+    white_poll_skip(1);
+    top = JS_Eval(v.ctx, src, strlen(src), "<poll>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    white_poll_skip(0);
+    CHECK(JS_IsException(top), "a long function compiled without the polls");
+    t = exception_text(v.ctx);
+    CHECK(t && strstr(t, "InternalError: compiled bytecode: a run of more instructions than POLL_RUN"), "without the polls: %s", t ? t : "(none)");
+    free(t);
+    JS_FreeValue(v.ctx, top);
+    free(src);
+    free(src2);
+    vm_free(&v);
+}
+
+/* push_i32: an OP_push_i32 of v at the end of c. */
+static void push_i32(Code *c, int32_t v)
+{
+    op_n(c, W_PUSH_I32, 1);
+    memcpy(c->b + c->n, &v, 4);
+    c->n += 4;
+}
+
+/* read_code: c in place of the code of a function, written with
+   JS_WriteObject, read back and run (run_read). The function calls its
+   argument with 300 numbers, which gives c a stack and a length of 1505
+   bytes, and holds no atom, so that its code is in what JS_WriteObject
+   writes as it is in memory. The code past c is OP_return_undef. */
+static void read_code(JSContext *ctx, const Code *c, char *got, size_t cap)
+{
+    size_t scap = 16 * 300 + 100, n, size;
+    char *src = malloc(scap);
+    JSValue top;
+    const uint8_t *code, *at;
+    uint8_t *buf;
+    int len, i;
+
+    n = snprintf(src, scap, "(function (g) { return g(");
+    for (i = 0; i < 300; i++)
+        n += snprintf(src + n, scap - n, "%s%d", i ? ", " : "", 100000 + i);
+    snprintf(src + n, scap - n, ") })");
+    snprintf(got, cap, "no code");
+    if (code_of(ctx, src, &top, &code, &len) == 0) {
+        buf = JS_WriteObject(ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+        at = buf ? memmem(buf, size, code, len) : NULL;
+        if (at && c->n <= len) {
+            memcpy(buf + (at - buf), c->b, c->n);
+            memset(buf + (at - buf) + c->n, white_op(W_RETURN_UNDEF), len - c->n);
+            run_read(ctx, buf, size, got, cap);
+        }
+        js_free(ctx, buf);
+    }
+    JS_FreeValue(ctx, top);
+    free(src);
+}
+
+/* OP_ret goes only where an OP_gosub returns to: code read with
+   JS_ReadObject gives it any number, which must not take the interpreter
+   into the middle of an instruction or to one that does not follow an
+   OP_gosub, where it would run code check_polls did not follow. The two
+   cases: OP_ret to 7, inside an OP_push_i32 whose operand holds an
+   OP_return_undef, and a path of 255 instructions without a count, which
+   runs inside the operands of two runs of 127 that check_polls takes, one
+   ending with an OP_nop. And OP_ret to an instruction that follows no
+   OP_gosub. A finally block read back runs. */
+static void test_poll_ret(void)
+{
+    VM v = vm_new();
+    static Code c;
+    char got[256];
+    const char *src = "(function () { var t = 0; for (var i = 0; i < 3; i++) { try { t += i } finally { t += 10 } } return t })";
+    JSValue top;
+    uint8_t *buf;
+    size_t size;
+    int i;
+
+    /* OP_ret to 7 */
+    c = (Code){{0}, 0};
+    push_i32(&c, 7);
+    op_n(&c, W_RET, 1);
+    push_i32(&c, 0);
+    c.b[7] = white_op(W_RETURN_UNDEF);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "OP_ret to 7: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret into an instruction: %s", got);
+
+    /* 255 instructions without a count */
+    c = (Code){{0}, 0};
+    push_i32(&c, 7);
+    op_n(&c, W_RET, 1);
+    for (i = 0; i < 127; i++)
+        push_i32(&c, 0);
+    op_n(&c, W_NOP, 1);
+    for (i = 0; i < 127; i++)
+        push_i32(&c, 0);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(c.n == 1278, "the code of 255 instructions is %d bytes", c.n);
+    for (i = 0; i < 126; i++) {
+        c.b[6 + 5 * i + 1] = white_op(W_PUSH_I32);
+        c.b[642 + 5 * i + 1] = white_op(W_PUSH_I32);
+    }
+    c.b[637] = white_op(W_PUSH_I16);
+    c.b[640] = white_op(W_PUSH_I16);
+    c.b[1273] = white_op(W_RETURN_UNDEF);
+    CHECK(scan_ok(&c), "255 instructions: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret to a path of 255: %s", got);
+
+    /* OP_ret to the start of an instruction that follows no OP_gosub */
+    c = (Code){{0}, 0};
+    push_i32(&c, 6);
+    op_n(&c, W_RET, 1);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "OP_ret to 6: check_polls takes the code");
+    read_code(v.ctx, &c, got, sizeof(got));
+    CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret to no OP_gosub: %s", got);
+
+    /* a finally block, compiled and read back */
+    top = JS_Eval(v.ctx, src, strlen(src), "<poll>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "write a finally block");
+    if (buf)
+        run_read(v.ctx, buf, size, got, sizeof(got));
+    CHECK(buf && strcmp(got, "ok 33") == 0, "a finally block read back: %s", buf ? got : "(none)");
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -642,6 +1194,10 @@ int main(void)
     test_young_leaves_no_zero_count();
     test_error_nest();
     test_function_properties_oom();
+    test_poll_scan();
+    test_poll_insert();
+    test_poll_compile();
+    test_poll_ret();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

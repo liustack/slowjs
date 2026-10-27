@@ -155,19 +155,26 @@ every cycle of the code counts down a counter at `-poll-offset` bytes from
 the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
 `engine_decl.go` records as `pollCounterOffset`), and calls `host_poll`
 when it runs out. `-poll=false` builds an engine without polls, to measure
-what they cost, and `-release` refuses it. With polls, llc gets
-`-tail-dup-pred-size=1000 -tail-dup-succ-size=1000` (`gen.PollLLCFlags`):
-the count in the interpreter's dispatch gives the dispatch more
-predecessors and successors than llc copies by default, and without a copy
-of the dispatch at the end of each handler the interpreter is much slower.
+what they cost, and `-release` refuses it. The interpreter counts its
+bytecode itself: the C marks where (`poll_count` in `engine/cutils.h`, at
+the entry of `JS_CallInternal` and where `pc` does not go forward), the pass
+puts a count at each mark, and the edges into its dispatch get none. So the
+dispatch stays short, and llc copies it into the end of each handler after
+register allocation, which it does for a computed goto of up to 10
+instructions. Without the copies the interpreter is much slower.
 The driver counts the indirect jumps of each function with a computed goto
-table in llc's text and stops below `gen.DispatchCopies` (220 for
-`JS_CallInternal`, which has 245). The pass checks its own output: with the
-blocks that count or poll taken out, and the back edges of the loops it
-proves short, no function has a cycle left. Each count takes at least 1, and
-polls whenever it runs out: its branch tests that it is 0 or less and calls
-`host_poll` on the side taken, or, in the dispatch, a select on that test
-gives the index of the table entry of the poll label. The hidden option
+table in llc's text and stops below `gen.DispatchCopies` (175 for
+`JS_CallInternal`, which has 204). The pass checks its own output: with the
+blocks that count or poll taken out, the back edges of the loops it proves
+short, and the edges into the dispatch of the interpreter, no function has a
+cycle left. The interpreter must count at its entry, and each of its marks
+must come right after a count of its weight. Each count takes at least 1,
+and polls whenever it runs out: its branch tests that it is 0 or less and
+calls `host_poll` on the side taken. Each count takes from
+the count as it stands, each store to the counter stores the count as it
+stands, and each call that may poll and each return find the count in
+memory: code that keeps it in a register stores it before such a call and
+loads it after, and stores it where it is left. The hidden option
 `-shadow-poll-fault` breaks one of these on purpose, so that a test can see
 the check stop the pass.
 

@@ -25,10 +25,15 @@ func needPolls(t *testing.T) {
 }
 
 // The scripts of the poll tests: tight loops of the interpreter and of the
-// C, each with what it gives.
+// C, each with what it gives. forms has the loops of the interpreter that
+// jump back in other ways (do while, continue to a label, a catch, a finally
+// block, with), and straight calls a function of 3000 lines with no jump,
+// where the compiler puts in OP_nop to count.
 var tight = []struct{ name, src, want string }{
 	{"loop", `var s = 0; for (var i = 0; i < 3e6; i++) s += i; s`, "4499998500000"},
 	{"fib", `function fib(n){return n<2?n:fib(n-1)+fib(n-2)} fib(22)`, "17711"},
+	{"forms", `var t = 0; var i = 0; do { t += i } while (++i < 2e5); l: for (var j = 0; j < 1000; j++) { for (var k = 0; k < 100; k++) { if (k == 50) continue l; t++ } } for (var q = 0; q < 2e4; q++) { try { if (q & 1) throw q; t += 1 } catch (e) { t += 2 } finally { t += 3 } } var o = {v: 1}; with (o) { for (var w = 0; w < 1e5; w++) t += v } t`, "20000140000"},
+	{"straight", `var f = new Function("x", Array.from({length: 3000}, (_, i) => "x = (x + " + i + ") % 1000003;").join("\n") + " return x"); var t = 0; for (var i = 0; i < 300; i++) t = f(t); t`, "545953"},
 	{"typed", `var a = new Int32Array(1 << 22); a[a.length - 1] = 1; a.indexOf(1) + ":" + a.lastIndexOf(0) + ":" + a.includes(2)`, "4194303:4194302:false"},
 	{"fill", `var a = new Uint8Array(1 << 23); a.fill(7, 1); a.copyWithin(0, 1); a.copyWithin(2, 0); a[0] + a[a.length - 1] + ":" + a.length`, "14:8388608"},
 	{"regexp", `/(a+)+b/.test('a'.repeat(20)) + ":" + "ab12cd34".repeat(1e4).replace(/\d+/g, "#").length`, "false:60000"},
@@ -125,6 +130,9 @@ func interruptAfter(v *VM, src string, d time.Duration) (string, error, time.Dur
 // The scripts Interrupt stops where the engine reads its interrupt flag.
 var endless = []struct{ name, setup, src string }{
 	{"loop", "", "for (;;) {}"},
+	{"finally", "", "l: do { for (;;) { try { continue l } finally { } } } while (1)"},
+	{"catch", "", "for (;;) { try { throw 1 } catch (e) {} }"},
+	{"straight", "var f = new Function(Array.from({length: 3000}, (_, i) => 'var a' + i + ' = ' + i + ';').join('\\n'))", "for (;;) f()"},
 	{"regexp", "", "/(a+)+b/.test('a'.repeat(60))"},
 	{"sort", "var a = []; for (var i = 0; i < 1 << 18; i++) a.push((i * 7919) % 1000003)", "for (;;) a.slice().sort((x, y) => x - y)"},
 	{"search", "var s = 'a'.repeat(1 << 24)", "for (;;) s.indexOf('ab')"},
