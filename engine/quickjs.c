@@ -3029,8 +3029,11 @@ size_t JS_FreeRuntime(JSRuntime *rt)
             printf("Secondary object leaks: %d\n", count);
     }
 #endif
-    assert(list_empty(&rt->gc_obj_list));
-    assert(list_empty(&rt->weakref_list));
+    /* What the host still holds a reference to, which no collection frees,
+       stays: the runtime is freed no further, and the host gives its memory
+       back as a whole. The blocks in use say that it leaked. */
+    if (!list_empty(&rt->gc_obj_list) || !list_empty(&rt->weakref_list))
+        return rt->malloc_ctx.heap.blocks;
 
     /* free the classes */
     for(i = 0; i < rt->class_count; i++) {
