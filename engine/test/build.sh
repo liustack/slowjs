@@ -166,18 +166,20 @@ for f in run-test262 jsrun unit unit-oom unit-api mathdump api-test render $pois
 	$cc $san $engineobjs $libcobjs "$out/host.o" "$out/$f.o" -o "$out/$f" -lpthread
 done
 # unit-white tests what the public API cannot reach. white.c is quickjs.c with
-# functions added at its end, built as the engine is, and linked in place of
-# quickjs.o.
-if [ -f "$here/white.c" ] && [ -f "$here/unit-white.c" ]; then
+# functions added at its end, and white-regexp.c is libregexp.c with some, both
+# built as the engine is, and linked in place of quickjs.o and libregexp.o.
+if [ -f "$here/white.c" ] && [ -f "$here/white-regexp.c" ] && [ -f "$here/unit-white.c" ]; then
 	# shellcheck disable=SC2086
 	$cc $common $free $defs -DCONFIG_PRINT_VALUE -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$here/white.c" -o "$out/white.o"
+	# shellcheck disable=SC2086
+	$cc $common $free $defs -DCONFIG_PRINT_VALUE -I"$libc" -I"$engine" -DCONFIG_VERSION=\"$version\" -c "$here/white-regexp.c" -o "$out/white-regexp.o"
 	$cc $hostflags -c "$here/unit-white.c" -o "$out/unit-white.o"
 	whiteobjs=
 	for o in $engineobjs; do
-		case $o in */quickjs.o) ;; *) whiteobjs="$whiteobjs $o" ;; esac
+		case $o in */quickjs.o|*/libregexp.o) ;; *) whiteobjs="$whiteobjs $o" ;; esac
 	done
 	# shellcheck disable=SC2086
-	$cc $san $whiteobjs "$out/white.o" $libcobjs "$out/host.o" "$out/unit-white.o" -o "$out/unit-white" -lpthread
+	$cc $san $whiteobjs "$out/white.o" "$out/white-regexp.o" $libcobjs "$out/host.o" "$out/unit-white.o" -o "$out/unit-white" -lpthread
 fi
 # libmath calls the math functions of engine/libc, and nothing else of it. It is
 # not given -ffreestanding and the system's libm, but -fno-builtin, so that
