@@ -829,6 +829,17 @@ static void test_poll_scan(void)
     op_n(&c, W_RETURN_UNDEF, 1);
     set_target(&c, at, -4);
     CHECK(scan_fails(&c, "does not land"), "a jump out of the code");
+    /* a target of -1, the byte before the code, as a short and a long jump
+       and a catch: [OP_goto8, 0xfe] is the whole code of the first */
+    for (x = 0; x < 3; x++) {
+        static const int w[] = { W_GOTO8, W_GOTO, W_CATCH };
+        c = (Code){{0}, 0};
+        at = jump(&c, w[x]);
+        if (x == 2)
+            op_n(&c, W_RETURN_UNDEF, 1);
+        set_target(&c, at, -1);
+        CHECK(scan_fails(&c, "does not land"), "a jump to -1 (%d)", x);
+    }
     c = (Code){{0}, 0};
     at = jump(&c, W_WITH_GET_VAR);
     op_n(&c, W_RETURN_UNDEF, 1);
