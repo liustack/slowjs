@@ -1,8 +1,9 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
+  - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
   - Quoting how fast a release is
@@ -95,6 +96,29 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 - Remove the `replace` before committing in tifa: `TestEngineProfileMatchesTheDependencies` fails for a profile made with a `replace`.
 
 After a release, upgrade tifa and collect its engine profile again (see [releasing.md](releasing.md#after-the-release)).
+
+### Code positions
+
+Where the interpreter's code lands in the binary changes its speed by 5% to 14% on its own, so one build against one build can show a change that is only a move. Measure each side at several positions.
+
+Go puts amd64 functions on 32 bytes, so moving the whole program by less than 32 bytes moves nothing, and the effect repeats every 64 bytes. A position is two numbers:
+
+- The whole program moved by 0 or 32 bytes.
+- The start of the interpreter body moved by 0, 8, 16 or 24 bytes of NOP, put right after its `PCALIGN $16`.
+
+All 8 combinations are the full set. For a quick check use 4: 0 or 32 for the first, 0 or 16 for the second. Build every position with the same flags (`-pgo=off` or the same profile), and put a measurement of the same engine at all positions next to the one of the change.
+
+Making the positions:
+
+- C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `python3 internal/goasm/xform.py DIR shift:32 front:JS_CallInternal:16` on the copy (use `shift:0` and `front:...:0` for no move), and build with the copy. The script puts the bytes after a `RET`, or after `PCALIGN`, so they never run.
+- Current engine (`lib/`): `xform.py DIR front:goasmRun:N` on a copy of `lib/goasm_run_linux_amd64.s` gives the body offset. For the whole-program move, add one function to a local copy of `modernc.org/memory` (point the build at it with `go build -modfile=...` and a `replace` line), kept alive by an `init` that refers to it behind a flag that is never set. Everything linked after it moves: `memory`, `libc`, `lib`, the root package and the program. Its size must round up to 32 bytes for position 0 and to 64 bytes for position 32: with a body of `x[i]++` on a byte array (9 bytes each, plus 1 for RET), 2 statements give 32 bytes and 5 give 64.
+
+Reading the result:
+
+- For each position, run the two builds in turn and take the median of the paired ratios. Report that median per position.
+- Take the range of the baseline's own positions: the same engine, new against itself at each position.
+- A change is real only when the median passes both 2% and half of that range, and most positions agree on the sign.
+- Under 3%, do not argue from timings. Count instructions with callgrind, which hardly move with the position.
 
 ## Intl formatting
 

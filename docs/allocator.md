@@ -76,12 +76,14 @@ All of it runs on the native test host (see [testing.md](testing.md#the-c-tree-a
 
 ```sh
 engine/test/tlsf-edges.sh                    # TLSF edge cases, pinned file and engine/tlsf.c
-engine/test/build.sh plain                   # also asan-heap, ubsan
+engine/test/build.sh plain                   # also asan-heap, asan-heap-iter, ubsan
 engine/test/heap.sh -m plain                 # scenarios and random sequences, heap and runtime
 engine/test/build.sh fuzz && engine/test/heap.sh -m plain -f 300   # the libFuzzer target
 engine/test/build.sh asan                    # every block from the system malloc, with LeakSanitizer
 engine/test/build.sh asan-heap               # the real allocator, free memory poisoned
 engine/test/heap.sh -m asan-heap             # also poison-test: what the poison covers
+engine/test/build.sh asan-heap-iter          # the same with JS_MALLOC_USE_ITER, which keeps a list of every allocated block
+engine/test/heap.sh -m asan-heap-iter        # the macro must keep building and passing
 engine/test/host-test.sh tsan                # the test host, make and free runtimes on two threads
 ```
 
