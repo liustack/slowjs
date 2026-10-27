@@ -245,11 +245,6 @@ void host_interrupt(JSRuntime *rt)
     }
 }
 
-/* The engine built with JS_HOST_POLL calls it each time it reads a flag that
-   stops it, on the thread that runs the script: it stands for the polls the
-   generator adds for the Go host. When a stop of the runtime whose interrupt
-   flag that is was asked, the flag is set here, so that no other thread ever
-   writes it. */
 _Thread_local long host_poll_reads;
 static _Thread_local long host_poll_left;
 
@@ -258,6 +253,11 @@ void host_poll_stop_after(long n)
     host_poll_left = n;
 }
 
+/* The engine built with JS_HOST_POLL calls it each time it reads a flag that
+   stops it, on the thread that runs the script: it stands for the polls the
+   generator adds for the Go host. When a stop of the runtime whose interrupt
+   flag that is was asked, the flag is set here, so that no other thread ever
+   writes it. */
 int host_poll(const volatile int *flag)
 {
     HostVM *vm;
