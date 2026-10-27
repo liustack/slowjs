@@ -136,7 +136,7 @@ static void test_mem(void)
 
 /* memcpy at every size from 0 to 1100 bytes, with the source and the destination
    each at 16 offsets from a multiple of 64 (so the destination reaches every
-   position the loop of 64 bytes aligns it to, and the source every one it can be
+   position the loop of 128 bytes aligns it to, and the source every one it can be
    misaligned by). The destination holds a byte that no source byte has, so a byte
    written outside the range, before or after it, shows. The source must not
    change, and the result is the destination. Then bigger sizes at random
