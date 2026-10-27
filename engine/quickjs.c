@@ -15853,7 +15853,9 @@ static JSValue js_dtoa2(JSContext *ctx,
     return res;
 }
 
-static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToPropertyKey)
+/* JS_ToStringInternal of val, which is not an object */
+static force_inline JSValue js_primitive_to_string(JSContext *ctx, JSValueConst val,
+                                                   BOOL is_ToPropertyKey)
 {
     uint32_t tag;
     char buf[32];
@@ -15881,16 +15883,7 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
     case JS_TAG_EXCEPTION:
         return JS_EXCEPTION;
     case JS_TAG_OBJECT:
-        {
-            JSValue val1, ret;
-            val1 = JS_ToPrimitive(ctx, val, HINT_STRING);
-            if (JS_IsException(val1))
-                return val1;
-            ret = JS_ToStringInternal(ctx, val1, is_ToPropertyKey);
-            JS_FreeValue(ctx, val1);
-            return ret;
-        }
-        break;
+        abort(); /* the callers give no object */
     case JS_TAG_FUNCTION_BYTECODE:
         return js_new_string8(ctx, "[function bytecode]");
     case JS_TAG_SYMBOL:
@@ -15908,6 +15901,20 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
     default:
         return js_new_string8(ctx, "[unsupported type]");
     }
+}
+
+static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToPropertyKey)
+{
+    JSValue val1, ret;
+
+    if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)
+        return js_primitive_to_string(ctx, val, is_ToPropertyKey);
+    val1 = JS_ToPrimitive(ctx, val, HINT_STRING);
+    if (JS_IsException(val1))
+        return val1;
+    ret = js_primitive_to_string(ctx, val1, is_ToPropertyKey);
+    JS_FreeValue(ctx, val1);
+    return ret;
 }
 
 JSValue JS_ToString(JSContext *ctx, JSValueConst val)
