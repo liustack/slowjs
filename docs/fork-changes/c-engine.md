@@ -173,7 +173,7 @@ The engine now finds the variable instead:
 - A right side of more than 512 characters makes a rope as before, and anything else (a rope on the left, other holders, a store into anything else) goes to `JS_ConcatString`.
 - A property name (an atom) is never grown, see the row above.
 
-A string built by n appends is then copied about log1.5(n) times. A string of 64 characters or more that was copied with room keeps up to a third of its block unused until it is freed. A string `+` whose left side is a string runs about 2 more instructions in the interpreter for the checks.
+A string built by n appends is then copied about log1.5(n) times. A string of 64 characters or more that was copied with room keeps up to a third of its block unused until it is freed. A string `+` whose left side is a string runs about 2 more instructions in the interpreter for the checks. What it gains and costs is in [performance.md](../performance.md#strings-built-by-appending).
 
 ## When upstream changes it
 
