@@ -36,14 +36,44 @@ func host_now(sp, vm, kind uintptr) int64 {
 // host_call is JSValue host_call(uint32_t vm, const JSValue *this_val, int
 // argc, JSValueConst *argv, int magic). The this value is passed by address,
 // so that the call has 6 words with the shadow pointer, as many as the body
-// calling mode has registers for.
+// calling mode has registers for. A magic of 0 or more is a function of the
+// host (JS_NewHostFunction), which the HostFunc registered answers. Below 0
+// are the requests of the engine, which gohost answers, and so is a function
+// of the host when none is registered.
 func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
 	hook("host_call", vm)
 	if r, ok := callOverride(int32(magic)); ok {
 		return r.U, r.Tag
 	}
+	if id := int32(magic); id >= 0 && hostFunc != nil {
+		return hostFunc(sp, uint32(vm), this, int32(argc), argv, id)
+	}
 	r := gohost.Call(sp, uint32(vm), this, int32(argc), argv, int32(magic))
 	return r.U, r.Tag
+}
+
+// A HostFunc answers the calls of the functions of the host: id is what
+// JS_NewHostFunction was given, vm the VM's id, this the address of the this
+// value and argv that of argc values, all in the engine's memory. It returns
+// the result as the two words of a JSValue, which the caller owns, or the
+// exception after throwing one. sp is the first free byte of the shadow
+// stack: what the function passes the engine by address, and the frames of a
+// call back into the engine, go above it, since what is below holds the
+// frames of the call. The engine finds the VM again by sp, so a call back
+// into another VM from it is not allowed.
+type HostFunc func(sp uintptr, vm uint32, this uintptr, argc int32, argv uintptr, id int32) (u, tag uintptr)
+
+// hostFunc is the HostFunc registered, or nil.
+var hostFunc HostFunc
+
+// SetHostFunc registers f, which answers the calls of every function of the
+// host from then on. It is registered once, before any VM runs a script,
+// as from an init function: it panics when f is nil or one is registered.
+func SetHostFunc(f HostFunc) {
+	if f == nil || hostFunc != nil {
+		panic("cengine: SetHostFunc of nil, or a second time")
+	}
+	hostFunc = f
 }
 
 // host_trap takes the shadow pointer and returns nothing. The C never calls
