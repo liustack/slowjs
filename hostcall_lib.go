@@ -205,7 +205,7 @@ func (m *VM) newBuiltinFunction(b *Builtin) jsValue {
 // typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 func callBuiltin(tls *libc.TLS, ctx uintptr, this jsValue, argc int32, argv uintptr, magic int32) (r jsValue) {
 	b := (*builtins.list.Load())[magic]
-	m := vms.vm(uint32(lib.XJS_GetContextOpaque(tls, ctx)))
+	m := vms.Get(uint32(lib.XJS_GetContextOpaque(tls, ctx)))
 	m.host++
 	mark := markTLS(tls)
 	returned := false
