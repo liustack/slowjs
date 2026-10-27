@@ -4817,8 +4817,15 @@ static int string_buffer_puts8(StringBuffer *s, const char *str)
     return string_buffer_write8(s, (const uint8_t *)str, strlen(str));
 }
 
-static int string_buffer_concat(StringBuffer *s, const JSString *p,
-                                uint32_t from, uint32_t to)
+/* string_buffer_concat for string_buffer_concat_value, which JSON.stringify
+   and String.prototype.replace call for every piece. When it called itself for
+   ropes, LLVM inlined string_buffer_concat into it at a cost of 70, before
+   string_buffer_concat had taken in string_buffer_write8 and
+   string_buffer_write16. Without that cycle LLVM inlines bottom up, the cost
+   is 540 against a threshold of 400, and every piece paid a call. The other
+   callers keep the call. */
+static force_inline int string_buffer_concat_inline(StringBuffer *s, const JSString *p,
+                                                     uint32_t from, uint32_t to)
 {
     if (to <= from)
         return 0;
@@ -4826,6 +4833,12 @@ static int string_buffer_concat(StringBuffer *s, const JSString *p,
         return string_buffer_write16(s, p->u.str16 + from, to - from);
     else
         return string_buffer_write8(s, p->u.str8 + from, to - from);
+}
+
+static int string_buffer_concat(StringBuffer *s, const JSString *p,
+                                uint32_t from, uint32_t to)
+{
+    return string_buffer_concat_inline(s, p, from, to);
 }
 
 static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope);
@@ -4848,13 +4861,13 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
             if (JS_IsException(v1))
                 return string_buffer_set_error(s);
             p = JS_VALUE_GET_STRING(v1);
-            res = string_buffer_concat(s, p, 0, p->len);
+            res = string_buffer_concat_inline(s, p, 0, p->len);
             JS_FreeValue(s->ctx, v1);
             return res;
         }
     }
     p = JS_VALUE_GET_STRING(v);
-    return string_buffer_concat(s, p, 0, p->len);
+    return string_buffer_concat_inline(s, p, 0, p->len);
 }
 
 static int string_buffer_concat_value_free(StringBuffer *s, JSValue v)

@@ -224,6 +224,57 @@ func TestPostLinkCheck(t *testing.T) {
 		}
 	}
 
+	// -align64: the body of each named function starts the given number of
+	// bytes past a multiple of 64, after a PCALIGN $64 in place of the
+	// PCALIGN $16 and that many bytes of no-ops, and the check finds it there:
+	// fib, which recursion keeps on Go's stack check, and two leaves without
+	// one.
+	align := []string{"fib", "add3", "leafmix"}
+	alignArgs := []string{"-align64", "fib:0,add3:16,leafmix:40"}
+	if out, err := gen("pn", nil, "-align64", "fib:0,nosuch:8", "-out", filepath.Join(work, "nosuch")); err == nil ||
+		!strings.Contains(out, "2 functions to put on 64 bytes, but only 1 of them are lowered") {
+		t.Fatalf("-align64 with a function that is not there: %v\n%s", err, out)
+	}
+	if out, err := gen("pn", nil, append(alignArgs, "-out", pkgDir)...); err != nil {
+		t.Fatalf("generate with -align64: %v\n%s", err, out)
+	}
+	run(mod, "go", "build", "-tags", "goasmkeep", "-o", bin, ".")
+	alignCheck := func() (string, error) {
+		return gen("pn", nil, append(alignArgs, "-verify-bin", bin, "-verify-pkg", "checkmini/mini", "-verify-all")...)
+	}
+	if out, err := alignCheck(); err != nil || !strings.Contains(out, "post-link check passed") {
+		t.Fatalf("-align64: the check rejects correct code: %v\n%s", err, out)
+	}
+	asmFiles, _ := filepath.Glob(filepath.Join(pkgDir, "*_amd64.s"))
+	for _, fn := range align {
+		// The body starts where the PCALIGN $64 and its no-ops put it, and
+		// only there: 8 more bytes of no-op in front of it are refused.
+		re := regexp.MustCompile(`(TEXT ·` + fn + `\(SB\).*\n(?:\tNO_LOCAL_POINTERS\n)?\tPCALIGN \$64\n)`)
+		var path string
+		var orig []byte
+		for _, f := range asmFiles {
+			if b, _ := os.ReadFile(f); re.Match(b) {
+				path, orig = f, b
+			}
+		}
+		if path == "" {
+			t.Fatalf("-align64: no PCALIGN $64 at the start of %s", fn)
+		}
+		bad := re.ReplaceAll(orig, []byte("${1}\tBYTE $$0x0f\n\tBYTE $$0x1f\n\tBYTE $$0x84\n\tBYTE $$0x00\n\tBYTE $$0x00\n\tBYTE $$0x00\n\tBYTE $$0x00\n\tBYTE $$0x00\n"))
+		if err := os.WriteFile(path, bad, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(mod, "go", "build", "-tags", "goasmkeep", "-o", bin, ".")
+		if out, err := alignCheck(); err == nil || strings.Contains(out, "post-link check passed") {
+			t.Errorf("-align64: a body of %s 8 bytes past its place is not refused: %v\n%s", fn, err, out)
+		} else {
+			t.Logf("-align64, %s 8 bytes later: %s", fn, lastLine(out))
+		}
+		if err := os.WriteFile(path, orig, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	// Faults in the lowered text, built the same way the lowering's output
 	// is (the package stays in body mode from here).
 	b, err := os.ReadFile(filepath.Join(work, "w-body", "lowered.s"))

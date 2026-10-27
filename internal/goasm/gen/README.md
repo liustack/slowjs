@@ -205,6 +205,17 @@ with its frame and height to `nosplit.txt` in the work folder, and
 `engine_decl.go` names them in `noSplitList`, for the tests. The post-link
 check holds each entry's stack check to the list.
 
+Where a body starts: after Go's prologue each function has a `PCALIGN $16`,
+so the body starts on 16 bytes and moves within its lines of 64 bytes when
+code before it grows. `-align64 name:offset,...` puts the body of each named
+function `offset` bytes past a multiple of 64 instead (a `PCALIGN $64`, which
+also puts the function on 64 bytes, then `offset` bytes of 8-byte no-ops,
+which run once per call). The engine's default is
+`JS_CallInternal:0,lre_exec_backtrack:16`, the fastest places measured (see
+[performance.md](../../../docs/performance.md#code-positions)), and a `-src`
+build has none unless the flag is given. The post-link check holds each body
+to its place and the padding before it to no-ops.
+
 Three negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
