@@ -22,9 +22,10 @@
 
 /* The small blocks of the allocator come from arenas that are already counted,
    so a limit at what the runtime holds still lets a block out of a free slot.
-   fill_memory sets the limit to what the runtime holds and takes every free
-   block the arenas have left, of each size, so that the next allocation that
-   needs new memory fails. release_blocks gives them back and lifts the limit.
+   fill_memory runs a collection, sets the limit to what the runtime holds
+   and takes every free block the arenas have left, of each size, so that the
+   next allocation that needs new memory fails. take_memory does it with no
+   collection first. release_blocks gives them back and lifts the limit.
    blocks[i] holds the blocks of size 8 * i. */
 #define MAX_BLOCK 4096
 static struct {
@@ -32,11 +33,10 @@ static struct {
     size_t n, cap;
 } blocks[MAX_BLOCK / 8 + 1];
 
-static void fill_memory(VM *v)
+static void take_memory(VM *v)
 {
     size_t size;
 
-    JS_RunGC(v->rt);
     JS_SetMemoryLimit(v->rt, JS_GetMemorySize(v->rt));
     for (size = MAX_BLOCK; size >= 8; size -= 8) {
         for (;;) {
@@ -52,6 +52,12 @@ static void fill_memory(VM *v)
             blocks[i].p[blocks[i].n++] = p;
         }
     }
+}
+
+static void fill_memory(VM *v)
+{
+    JS_RunGC(v->rt);
+    take_memory(v);
 }
 
 /* free_blocks frees up to n blocks of each size from min to max bytes. */
@@ -1191,6 +1197,42 @@ static void test_empty_string_full_heap(void)
     vm_free(&v);
 }
 
+/* The collector queues the callback of a FinalizationRegistry when it
+   frees a target. It cannot throw, so with no memory for the job the job is
+   lost and the collection goes on. With memory the callback runs with the
+   held value. Either way nothing is left behind (vm_free). The heap is
+   filled after the target is let go: what it gave back, which the system
+   malloc of the asan build counts at once, must not hold the job. */
+static void test_finrec_job_full_heap(void)
+{
+    static const char setup[] =
+        "var got = [];\n"
+        "var reg = new FinalizationRegistry(h => got.push(h));\n"
+        "(function () { var t = {}; reg.register(t, 'held'); return t })()";
+    int full;
+
+    for (full = 0; full < 2; full++) {
+        VM v = vm_new();
+        JSValue target = JS_Eval(v.ctx, setup, strlen(setup), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSContext *ctx1;
+
+        CHECK(JS_IsObject(target), "the setup failed");
+        JS_RunGC(v.rt);
+        CHECK(!JS_IsJobPending(v.rt), "full %d: a job before the target is freed", full);
+        JS_FreeValue(v.ctx, target);
+        if (full)
+            take_memory(&v);
+        JS_RunGC(v.rt);
+        CHECK(JS_IsJobPending(v.rt) == !full, "full %d: a job is %s", full, full ? "queued" : "missing");
+        if (full)
+            release_blocks(&v);
+        while (JS_ExecutePendingJob(v.rt, &ctx1) > 0)
+            ;
+        CHECK(eval_is(v.ctx, "got.join()", full ? "" : "held"), "full %d: the callback", full);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1213,6 +1255,7 @@ int main(void)
     test_new_error_stack_oom();
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
+    test_finrec_job_full_heap();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;

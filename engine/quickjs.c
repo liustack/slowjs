@@ -2773,34 +2773,36 @@ int JS_GetStripInfo(JSRuntime *rt)
     return rt->strip_flags;
 }
 
-static int JS_EnqueueJob2(JSContext *ctx, JSJobFunc *job_func,
-                          int argc, JSValueConst *argv, BOOL no_exception)
+static size_t js_job_size(int argc)
 {
-    JSRuntime *rt = ctx->rt;
-    JSJobEntry *e;
+    return sizeof(JSJobEntry) + argc * sizeof(JSValue);
+}
+
+/* queue the job in e, a block of js_job_size(argc) bytes */
+static void js_job_queue(JSContext *ctx, JSJobEntry *e, JSJobFunc *job_func,
+                         int argc, JSValueConst *argv)
+{
     int i;
 
-    if (no_exception)
-        e = js_malloc_rt(ctx->rt, sizeof(*e) + argc * sizeof(JSValue));
-    else
-        e = js_malloc(ctx, sizeof(*e) + argc * sizeof(JSValue));
-    if (!e)
-        return -1;
     e->realm = JS_DupContext(ctx);
     e->job_func = job_func;
     e->argc = argc;
     for(i = 0; i < argc; i++) {
         e->argv[i] = JS_DupValue(ctx, argv[i]);
     }
-    list_add_tail(&e->link, &rt->job_list);
-    return 0;
+    list_add_tail(&e->link, &ctx->rt->job_list);
 }
 
 /* return 0 if OK, < 0 if exception */
 int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func,
                   int argc, JSValueConst *argv)
 {
-    return JS_EnqueueJob2(ctx, job_func, argc, argv, FALSE);
+    JSJobEntry *e = js_malloc(ctx, js_job_size(argc));
+
+    if (!e)
+        return -1;
+    js_job_queue(ctx, e, job_func, argc, argv);
+    return 0;
 }
 
 BOOL JS_IsJobPending(JSRuntime *rt)
@@ -64968,11 +64970,15 @@ static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
 
         if (!js_weakref_is_live(fre->target)) {
             JSValueConst args[2];
+            JSJobEntry *e;
             args[0] = frd->cb;
             args[1] = fre->held_val;
-            /* no exception is raised to avoid recursing into the GC */
-            JS_EnqueueJob2(frd->realm, js_finrec_job, 2, args, TRUE);
-                
+            /* the collector runs this: with no memory the job is lost, as
+               throwing would make an error inside the collector */
+            e = js_malloc_rt(rt, js_job_size(2));
+            if (e)
+                js_job_queue(frd->realm, e, js_finrec_job, 2, args);
+
             js_weakref_free(rt, fre->target);
             js_weakref_free(rt, fre->token);
             JS_FreeValueRT(rt, fre->held_val);

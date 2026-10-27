@@ -19,7 +19,8 @@ its functions, sorted, one per line, largest first.
 It then prints each function of a NO_REACH pair that the other reaches, with
 a shortest path to it: "reach F G via F A B G". None is expected. The bound
 of a nesting rests on these: JS_ThrowError2 nests twice at most because making
-an error runs no JavaScript and turns no interrupt into an exception (see
+an error runs no JavaScript and turns no interrupt into an exception, and
+free_zero_refcount once because freeing starts no collection (see
 js_nest_enter in quickjs.c).
 """
 import collections
@@ -33,6 +34,14 @@ COUNTS = {"js_call_enter", "js_internal_enter", "js_internal_enter_rt",
 NO_REACH = [
     ("JS_ThrowError2", "JS_CallInternal"),
     ("JS_ThrowError2", "JS_ThrowInterrupted"),
+    # A collection throws nothing, so it starts no error, whose object can
+    # start a collection.
+    ("JS_RunGC", "JS_ThrowError2"),
+    ("JS_RunYoungGC", "JS_ThrowError2"),
+    # Freeing starts no collection: free_zero_refcount is never entered
+    # twice (JS_NEST_FREE). The finalizers of the host are not in the graph.
+    ("free_zero_refcount", "JS_RunGC"),
+    ("free_zero_refcount", "JS_RunYoungGC"),
 ]
 
 DEFINE = re.compile(r'^define\b.*?@("[^"]+"|[-\w.$]+)\(')
