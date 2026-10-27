@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, the C API a Go host calls without variable arguments, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, the C API a Go host calls without variable arguments, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -9,6 +9,7 @@ read_when:
   - Asking what a wild pointer, a trap or an abort in the C does to the process and the VM, or changing how the host enters the engine
   - Changing where the generated code polls, where the C reads the interrupt flag, or how Interrupt stops a script
   - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout)
+  - Changing where the generator puts the body of a function, or reading a speed change of the C engine that may be where the interpreter landed
 ---
 
 # The C tree of the new engine
@@ -136,6 +137,12 @@ Measured on linux/amd64 (an AMD EPYC 7B13 on GCP, Go 1.27), each script pinned t
 - Collections. While a tight loop runs (a `for` loop of the interpreter, typed array searches, `fill` and `copyWithin`, regexps, string searches, `repeat`, the sort of a typed array, react), a collection waits at most 0.33 ms for the engine to stop, where it waited up to 1.3 s without polls. Scripts that allocate a lot (`JSON.parse` of 2Mi numbers, a sort with a comparator) have rare waits up to 2.6 ms, with the 99th percentile under 0.25 ms. Straight code of the interpreter, functions of 3000 statements with no loop, where a poll can take up to 40,000 instructions of bytecode to come, makes a collection wait at most 0.1 ms.
 - Interrupt, with `GOMAXPROCS=1`, 100 ms into the script: a `for` loop, regexps, typed array searches, `fill`, `copyWithin`, react and straight code of the interpreter stop within 0.3 ms (straight code within 0.15 ms), and a kill comes within 0.2 ms of the end of the grace. The stop comes later while the engine works where it reads no flag: a collection of the engine's own heap, which the allocation of the error may start (about 18 ns for each element of the arrays the heap holds: 19 ms with two arrays of 1Mi numbers, so a sort of 1Mi numbers stops after 8 to 19 ms), or a long loop such as `Array.prototype.slice` (about 40 ns for each element) or `join`.
 - Speed, with the other hyperthread of the core idle, as the median over 8 code positions: react and the render scripts take 5% longer, fib 4%, a `for` loop 14%, `JSON.parse` of 2Mi numbers 17%, and with the text built first 12%, the sort of a typed array 10%, string searches 8%, and regexps within 2%. Typed array `indexOf` takes 25% longer, `repeat` up to 9%, and `fill` and `copyWithin` within 1%. A tick on every run of the loops that now run in chunks would cost react 6% and regexps 20% more.
+
+## Where the interpreter and the regexp matcher sit
+
+After Go's prologue every generated function has a `PCALIGN $16`, so its body starts on 16 bytes and moves within its lines of 64 bytes whenever code linked before it grows. For the two loops that run longest the generator fixes that place instead (`-align64`, see the generator's [README](../../internal/goasm/gen/README.md#the-whole-engine)): a `PCALIGN $64`, which also puts the function on 64 bytes, then 8-byte no-ops up to the offset. The body of `JS_CallInternal` starts at 0 bytes into its line and the body of `lre_exec_backtrack` at 16, the fastest places measured. The no-ops run once per call: 26 bytes for the interpreter, 69 for the matcher. The post-link check holds each body to its place and the padding before it to no-ops, and a test builds bodies 8 bytes off their place and sees the check refuse them.
+
+A change elsewhere in the engine now moves these bodies by whole lines only. It still changes their speed somewhat, as other code and data move: see [performance.md](../performance.md#code-positions) for the numbers and for how the code positions of a measurement work with the fixed places.
 
 ## Atomics without threads
 

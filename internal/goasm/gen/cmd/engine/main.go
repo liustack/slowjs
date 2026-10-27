@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,9 +54,39 @@ var (
 	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 	pollOn    = flag.Bool("poll", true, "count every cycle of the code and call host_poll when the count runs out, where Go can stop the goroutine; -poll=false, which -release refuses, builds an engine without polls for comparison")
 	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl.go records it)")
+	align64F  = flag.String("align64", engineAlign64, "functions whose body starts at a fixed place in a line of 64 bytes, as name:offset (a multiple of 8 below 64), comma separated (with -src the default is none)")
 )
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
+
+// engineAlign64 places the loops of the engine that run longest, the
+// interpreter and the regexp matcher, at a fixed place in a line of 64 bytes,
+// so that a change elsewhere in the program no longer moves them within their
+// lines. The offsets are the fastest of those measured (docs/performance.md,
+// "Code positions"): the interpreter at 0 rather than 48, the matcher at 16
+// rather than 0.
+const engineAlign64 = "JS_CallInternal:0,lre_exec_backtrack:16"
+
+// parseAlign64 reads -align64: name:offset pairs, the offset a multiple of 8
+// below 64.
+func parseAlign64(s string) (map[string]int, error) {
+	m := map[string]int{}
+	for _, p := range strings.Split(s, ",") {
+		if p == "" {
+			continue
+		}
+		name, o, ok := strings.Cut(p, ":")
+		off, err := strconv.Atoi(o)
+		if !ok || name == "" || err != nil || off < 0 || off >= 64 || off%8 != 0 {
+			return nil, fmt.Errorf("-align64 %q: want name:offset, the offset a multiple of 8 below 64", p)
+		}
+		if _, dup := m[name]; dup {
+			return nil, fmt.Errorf("-align64 names %s twice", name)
+		}
+		m[name] = off
+	}
+	return m, nil
+}
 
 // Rejection is one function the generator could not take, or one rule the
 // C breaks.
@@ -94,6 +125,17 @@ func main() {
 	}
 	if err := gen.CheckPollOffset(*pollOff, *sizeLog2); err != nil {
 		die(err)
+	}
+	// The functions put on 64 bytes: the engine's by default, none for a -src
+	// build unless -align64 names some.
+	align64 := map[string]int{}
+	alignSet := false
+	flag.Visit(func(f *flag.Flag) { alignSet = alignSet || f.Name == "align64" })
+	if *srcList == "" || alignSet {
+		var err error
+		if align64, err = parseAlign64(*align64F); err != nil {
+			die(err)
+		}
 	}
 	must(os.MkdirAll(*work, 0o755))
 	clang := filepath.Join(*llvm, "clang")
@@ -518,7 +560,7 @@ func main() {
 		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls})
+			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls, Align64: align64})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
@@ -549,7 +591,7 @@ func main() {
 		}
 	}
 	files, err := gen.EmitEngine(loweredObj, gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
-		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch})
+		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch, Align64: align64})
 	if err != nil {
 		die(err)
 	}
