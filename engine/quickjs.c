@@ -5249,10 +5249,10 @@ static void copy_str16(uint16_t *dst, const JSString *p, int offset, int len)
     }
 }
 
-/* out of line, so that JS_ConcatString2 stays small enough to inline into
-   JS_ConcatString */
-static no_inline JSValue JS_ConcatString1(JSContext *ctx,
-                                          const JSString *p1, const JSString *p2)
+/* A new string of p1 and p2, with room for 'room' more characters at its
+   end, which js_concat_string_in_place can fill later. */
+static force_inline JSValue js_concat_string_copy(JSContext *ctx, const JSString *p1,
+                                                  const JSString *p2, uint32_t room)
 {
     JSString *p;
     uint32_t len;
@@ -5262,9 +5262,11 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
     if (len > JS_STRING_LEN_MAX)
         return JS_ThrowInternalError(ctx, "string too long");
     is_wide_char = p1->is_wide_char | p2->is_wide_char;
-    p = js_alloc_string(ctx, len, is_wide_char);
+    p = js_alloc_string(ctx, len + room, is_wide_char);
     if (!p)
         return JS_EXCEPTION;
+    if (room)
+        p->len = len;
     if (!is_wide_char) {
         memcpy(p->u.str8, p1->u.str8, p1->len);
         memcpy(p->u.str8 + p1->len, p2->u.str8, p2->len);
@@ -5276,17 +5278,28 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
     return JS_MKPTR(JS_TAG_STRING, p);
 }
 
+/* out of line, so that JS_ConcatString2 stays small enough to inline into
+   JS_ConcatString */
+static no_inline JSValue JS_ConcatString1(JSContext *ctx,
+                                          const JSString *p1, const JSString *p2)
+{
+    return js_concat_string_copy(ctx, p1, p2, 0);
+}
+
 /* Append op2 to p1 in the room at the end of its block. p1 must have no
-   other holder, and must not be an atom: the atom table holds the same
-   JSString without counting a reference. */
-static BOOL JS_ConcatStringInPlace(JSContext *ctx, JSString *p1, JSValueConst op2) {
+   holder but the 'owners' references its caller knows of (1, or 2 for
+   JS_ConcatStringAppend), and must not be an atom: the atom table holds the
+   same JSString without counting a reference. */
+static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
+                                                   JSValueConst op2, int owners)
+{
     if (JS_VALUE_GET_TAG(op2) == JS_TAG_STRING) {
         JSString *p2 = JS_VALUE_GET_STRING(op2);
         size_t size1;
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != 1 || p1->atom_type)
+        if (js_rc(p1)->ref_count != owners || p1->atom_type)
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
@@ -5313,6 +5326,11 @@ static BOOL JS_ConcatStringInPlace(JSContext *ctx, JSString *p1, JSValueConst op
         }
     }
     return FALSE;
+}
+
+static BOOL JS_ConcatStringInPlace(JSContext *ctx, JSString *p1, JSValueConst op2)
+{
+    return js_concat_string_in_place(ctx, p1, op2, 1);
 }
 
 static JSValue JS_ConcatString2(JSContext *ctx, JSValue op1, JSValue op2)
@@ -5716,6 +5734,117 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
         }
     }
     return js_new_string_rope(ctx, op1, op2);
+}
+
+/* Strings shorter than this are appended to as QuickJS does: the checks of
+   JS_ConcatStringAppend would cost more than the copies of a short string,
+   which has the room of its block size class anyway. */
+#define JS_STRING_APPEND_MIN 64
+
+/* 'x = x + op2' or 'x += op2', where op1, a string (not a rope) of at least
+   JS_STRING_APPEND_MIN characters, is the value of the variable x, and the
+   caller holds the reference of the stack. The result goes into x, which
+   then lets go of op1, so op1 with a reference count of 2 has no other
+   holder. op2 is then appended in place when op1 has the room (unless the
+   caller found already that it has not: in_place is FALSE), and else op1 is
+   copied with room for half its length again. A string built by appending
+   to a variable is so copied a few times in all, not once at each append
+   (QuickJS copies it at each append up to JS_STRING_ROPE_SHORT2_LEN
+   characters, then makes a rope). Anything else, and an op2 long enough to
+   make a rope of, goes to JS_ConcatString. */
+static no_inline JSValue JS_ConcatStringAppend(JSContext *ctx, JSValue op1, JSValue op2,
+                                               BOOL in_place)
+{
+    JSString *p1, *p2;
+    uint32_t len, room;
+    JSValue ret;
+
+    if (JS_VALUE_GET_TAG(op2) != JS_TAG_STRING)
+        return JS_ConcatString(ctx, op1, op2);
+    p1 = JS_VALUE_GET_STRING(op1);
+    p2 = JS_VALUE_GET_STRING(op2);
+    if (p2->len > JS_STRING_ROPE_SHORT_LEN)
+        return JS_ConcatString(ctx, op1, op2);
+    if (in_place && js_concat_string_in_place(ctx, p1, op2, 2)) {
+        JS_FreeValue(ctx, op2);
+        return op1;
+    }
+    if (js_rc(p1)->ref_count != 2 || p1->atom_type)
+        return JS_ConcatString(ctx, op1, op2);
+    /* both are at most JS_STRING_LEN_MAX, so the sum fits */
+    len = p1->len + p2->len;
+    room = p1->len / 2;
+    if (len <= JS_STRING_LEN_MAX && room > JS_STRING_LEN_MAX - len)
+        room = JS_STRING_LEN_MAX - len;
+    ret = js_concat_string_copy(ctx, p1, p2, room);
+    JS_FreeValue(ctx, op1);
+    JS_FreeValue(ctx, op2);
+    return ret;
+}
+
+/* 'x = op1 + op2' at pc - 1, op1 and op2 strings or ropes, op1 a string
+   of at least JS_STRING_APPEND_MIN characters with a reference count of 2.
+   When the instruction at pc stores the result into a variable whose value
+   is op1 (or a dup does, then the instruction after it: a let that a
+   closure checks for its temporal dead zone has no set_ form), the other
+   reference is that variable's, and JS_ConcatStringAppend can grow op1.
+   Nothing runs between the add and the store, and when the concatenation
+   throws, the variable keeps op1. */
+static no_inline JSValue js_add_string_store(JSContext *ctx, JSValue op1, JSValue op2,
+                                             const uint8_t *pc, JSValue *arg_buf,
+                                             JSValue *var_buf, JSVarRef **var_refs)
+{
+    JSValue *pv;
+
+    if (*pc == OP_dup)
+        pc++;
+    switch (*pc) {
+    case OP_put_loc:
+    case OP_set_loc:
+    case OP_put_loc_check:
+    case OP_set_loc_check:
+        pv = &var_buf[get_u16(pc + 1)];
+        break;
+    case OP_put_arg:
+    case OP_set_arg:
+        pv = &arg_buf[get_u16(pc + 1)];
+        break;
+    case OP_put_var_ref:
+    case OP_set_var_ref:
+    case OP_put_var_ref_check:
+        pv = var_refs[get_u16(pc + 1)]->pvalue;
+        break;
+#if SHORT_OPCODES
+    case OP_put_loc8:
+    case OP_set_loc8:
+        pv = &var_buf[pc[1]];
+        break;
+    case OP_put_loc0: case OP_put_loc1: case OP_put_loc2: case OP_put_loc3:
+        pv = &var_buf[*pc - OP_put_loc0];
+        break;
+    case OP_set_loc0: case OP_set_loc1: case OP_set_loc2: case OP_set_loc3:
+        pv = &var_buf[*pc - OP_set_loc0];
+        break;
+    case OP_put_arg0: case OP_put_arg1: case OP_put_arg2: case OP_put_arg3:
+        pv = &arg_buf[*pc - OP_put_arg0];
+        break;
+    case OP_set_arg0: case OP_set_arg1: case OP_set_arg2: case OP_set_arg3:
+        pv = &arg_buf[*pc - OP_set_arg0];
+        break;
+    case OP_put_var_ref0: case OP_put_var_ref1: case OP_put_var_ref2: case OP_put_var_ref3:
+        pv = var_refs[*pc - OP_put_var_ref0]->pvalue;
+        break;
+    case OP_set_var_ref0: case OP_set_var_ref1: case OP_set_var_ref2: case OP_set_var_ref3:
+        pv = var_refs[*pc - OP_set_var_ref0]->pvalue;
+        break;
+#endif
+    default:
+        return JS_ConcatString(ctx, op1, op2);
+    }
+    if (JS_VALUE_GET_TAG(*pv) == JS_TAG_STRING &&
+        JS_VALUE_GET_PTR(*pv) == JS_VALUE_GET_PTR(op1))
+        return JS_ConcatStringAppend(ctx, op1, op2, TRUE);
+    return JS_ConcatString(ctx, op1, op2);
 }
 
 /* Shape support */
@@ -22545,7 +22674,13 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     sp[-2] = __JS_NewFloat64(ctx, d1 + d2);
                     sp--;
                 } else if (JS_IsString(op1) && JS_IsString(op2)) {
-                    sp[-2] = JS_ConcatString(ctx, op1, op2);
+                    if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING &&
+                        js_rc(JS_VALUE_GET_PTR(op1))->ref_count == 2 &&
+                        JS_VALUE_GET_STRING(op1)->len >= JS_STRING_APPEND_MIN)
+                        sp[-2] = js_add_string_store(ctx, op1, op2, pc, arg_buf,
+                                                     var_buf, var_refs);
+                    else
+                        sp[-2] = JS_ConcatString(ctx, op1, op2);
                     sp--;
                     if (JS_IsException(sp[-1]))
                         goto exception;
@@ -22588,7 +22723,12 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     if (JS_ConcatStringInPlace(ctx, JS_VALUE_GET_STRING(*pv), op2)) {
                         JS_FreeValue(ctx, op2);
                     } else {
-                        op2 = JS_ConcatString(ctx, JS_DupValue(ctx, *pv), op2);
+                        /* the in place append failed already, and
+                           would fail again with the reference of the dup */
+                        if (JS_VALUE_GET_STRING(*pv)->len >= JS_STRING_APPEND_MIN)
+                            op2 = JS_ConcatStringAppend(ctx, JS_DupValue(ctx, *pv), op2, FALSE);
+                        else
+                            op2 = JS_ConcatString(ctx, JS_DupValue(ctx, *pv), op2);
                         if (JS_IsException(op2))
                             goto exception;
                         set_value(ctx, pv, op2);
