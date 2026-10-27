@@ -13,6 +13,9 @@
    lib/younggc that did this on the old engine.
 
      unit-white */
+#include <unistd.h>
+
+#include "compile-scripts.h"
 #include "testutil.h"
 
 struct StringBuffer;
@@ -24,6 +27,7 @@ void white_sb_fake_length(struct StringBuffer *b, int len, int size);
 int white_string_len_max(void);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
+uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 int white_stack_pending(JSContext *ctx, JSValueConst obj);
 int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
@@ -32,6 +36,12 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
+int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
+int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
+int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
+int white_lre_split_budget(void);
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs);
+int white_every_block_is_a_request(void);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -326,6 +336,33 @@ static void test_json_runs_oom(void)
         }
     }
     vm_free(&v);
+}
+
+/* An ASCII run of JSON.parse ends JS_STRING_LEN_MAX + 1 bytes on at the
+   latest, so its length fits an int. The addresses are made up: no run of a
+   gigabyte is read. */
+static void test_json_run_limit(void)
+{
+    uintptr_t p = 0x1000, max = (uintptr_t)white_string_len_max();
+    struct { uintptr_t end, want; } cases[] = {
+        { p, p },
+        { p + 1, p + 1 },
+        { p + max, p + max },
+        { p + max + 1, p + max + 1 },
+        { p + max + 2, p + max + 1 },
+        { p + ((uintptr_t)3 << 30), p + max + 1 },
+        { p + ((uintptr_t)1 << 32) - 1, p + max + 1 },
+        { p + ((uintptr_t)1 << 32) + 5, p + max + 1 },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        uintptr_t got = white_json_run_limit(p, cases[i].end);
+
+        CHECK(got == cases[i].want, "json_run_limit(%#lx, %#lx) = %#lx, want %#lx",
+              (unsigned long)p, (unsigned long)cases[i].end, (unsigned long)got,
+              (unsigned long)cases[i].want);
+    }
 }
 
 /* A run that would make the string longer than the longest string throws
@@ -1309,12 +1346,363 @@ static void test_string_append_atom(void)
     }
 }
 
+/* ---- the own keys of an object ---- */
+
+/* objects of every kind of key, with the shapes the listing handles itself,
+   keeps in the key cache, and leaves to the generic path */
+static const struct { const char *name, *js; } own_keys_objects[] = {
+    { "empty", "({})" },
+    { "strings", "({a: 1, b: 2, c: 3})" },
+    { "indexes", "({b: 1, 10: 2, 2: 3, a: 4, 4294967294: 5, 4294967295: 6, '01': 7})" },
+    { "symbols", "({[Symbol.iterator]: 1, a: 2, [Symbol('s')]: 3, 1: 4, [Symbol.for('g')]: 5})" },
+    { "hidden", "Object.defineProperties({a: 1}, {h: {value: 2}, [Symbol('h')]: {value: 3}, 3: {value: 4}})" },
+    { "accessors", "({get a() { return 1 }, set b(v) {}, c: 3})" },
+    { "deleted", "(() => { const o = {a: 1, b: 2, 1: 3, c: 4}; delete o.b; delete o[1]; return o })()" },
+    { "private", "(() => { const s = Symbol('s'); class C { #p = 1; x = 2; #q = 3; constructor() { this[s] = 4; this[0] = 5 } }; return new C })()" },
+    { "null proto", "Object.assign(Object.create(null), {z: 1, 0: 2, y: 3})" },
+    { "frozen", "Object.freeze({a: 1, 2: 2})" },
+    { "wide", "({'\\u00e9': 1, '\\u4e2d': 2, '1\\u4e2d': 3})" },
+    { "many strings", "Object.fromEntries(Array.from({length: 40}, (_, i) => ['k' + i, i]))" },
+    { "many indexes", "Object.fromEntries(Array.from({length: 20}, (_, i) => [String(19 - i), i]))" },
+    { "function", "(function f(a, b) {})" },
+    { "class", "(class K { static s = 1; static m() {} })" },
+    { "error", "new Error('m')" },
+    { "array", "Object.assign([1, 2], {x: 3})" },
+    { "arguments", "(function () { return arguments })(1, 2)" },
+    { "string object", "Object.assign(new String('ab'), {x: 1})" },
+    { "typed array", "new Uint8Array(3)" },
+    { "proxy", "new Proxy({a: 1}, {})" },
+};
+
+/* The flags of JS_GetOwnPropertyNames. */
+#define OWN_KEYS_ALL_FLAGS (JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_PRIVATE_MASK | JS_GPN_ENUM_ONLY | JS_GPN_SET_ENUM)
+
+/* For every combination of flags, JS_GetOwnPropertyNames lists the own keys
+   of an ordinary object as the engine does from its shape, also the second
+   time, when the kinds come from the key cache, and lists those of exotic
+   objects without failing. */
+static void test_own_keys_flags(void)
+{
+    VM v = vm_new();
+    static char got[8192], want[8192];
+    size_t i;
+
+    for (i = 0; i < countof(own_keys_objects); i++) {
+        JSValue obj = JS_Eval(v.ctx, own_keys_objects[i].js, strlen(own_keys_objects[i].js),
+                              "<unit>", JS_EVAL_TYPE_GLOBAL);
+        int flags, pass, exotic = 0;
+
+        CHECK(JS_IsObject(obj), "%s: %s is no object", own_keys_objects[i].name, own_keys_objects[i].js);
+        if (!JS_IsObject(obj)) {
+            free(exception_text(v.ctx));
+            continue;
+        }
+        for (flags = 0; flags <= OWN_KEYS_ALL_FLAGS; flags++) {
+            if (flags & ~OWN_KEYS_ALL_FLAGS)
+                continue;
+            for (pass = 0; pass < 2; pass++) {
+                int ng = white_own_keys(v.ctx, obj, flags, 1, got, sizeof(got));
+                int nw = white_own_keys(v.ctx, obj, flags, 0, want, sizeof(want));
+
+                exotic = nw == -2;
+                CHECK(ng >= 0, "%s, flags %#x: JS_GetOwnPropertyNames throws", own_keys_objects[i].name, flags);
+                if (!exotic)
+                    CHECK(ng == nw && strcmp(got, want) == 0,
+                          "%s, flags %#x:\ngot  %s\nwant %s", own_keys_objects[i].name, flags, got, want);
+            }
+        }
+        JS_FreeValue(v.ctx, obj);
+    }
+    vm_free(&v);
+}
+
+/* ---- source text and line tables shared with a buffer ---- */
+
+/* With JS_READ_OBJ_SHARED_DEBUG the source text and line table of a function
+   point into the buffer read, the function says so, the runtime neither
+   counts nor frees them, and they hold what a copy holds. */
+static void test_shared_debug_read(void)
+{
+    enum { PAD = 64 << 10 };
+    static const char head[] = "function f(a) {\n\t/*", tail[] = "*/\n\treturn new Error(a).stack\n}\n";
+    char *js = malloc(sizeof(head) + PAD + sizeof(tail));
+    VM c = vm_new();
+    JSValue compiled;
+    uint8_t *out, *buf;
+    size_t n;
+    char *sources[2] = { NULL, NULL };
+    JSMemoryUsage usage[2];
+    int i;
+
+    memcpy(js, head, sizeof(head) - 1);
+    memset(js + sizeof(head) - 1, 'y', PAD);
+    strcpy(js + sizeof(head) - 1 + PAD, tail);
+    compiled = JS_Eval(c.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(compiled), "the script did not compile");
+    out = JS_WriteObject(c.ctx, &n, compiled, JS_WRITE_OBJ_BYTECODE);
+    CHECK(out != NULL, "the bytecode was not written");
+    buf = malloc(n);
+    memcpy(buf, out, n);
+    js_free(c.ctx, out);
+    JS_FreeValue(c.ctx, compiled);
+    vm_free(&c);
+    free(js);
+
+    for (i = 0; i < 2; i++) {
+        int flags = JS_READ_OBJ_BYTECODE | (i ? JS_READ_OBJ_SHARED_DEBUG : 0);
+        int shared = i, pooled, f_shared;
+        const uint8_t *src, *pc;
+        size_t src_len;
+        VM v = vm_new();
+        JSValue script = JS_ReadObject(v.ctx, buf, n, flags);
+        int in_src, in_pc;
+
+        CHECK(JS_VALUE_GET_TAG(script) == JS_TAG_FUNCTION_BYTECODE, "the bytecode was not read");
+        pooled = white_function_debug(script, 0, &src, &src_len, &pc, &f_shared);
+        CHECK(pooled == 1, "the script has %d constants, want f alone", pooled);
+        in_src = src >= buf && src < buf + n;
+        in_pc = pc >= buf && pc < buf + n;
+        CHECK(in_src == shared && in_pc == shared && f_shared == shared,
+              "flags %d: source in the buffer %d, line table %d, bit %d", flags, in_src, in_pc, f_shared);
+        sources[i] = strndup((const char *)src, src_len);
+        JS_ComputeMemoryUsage(v.rt, &usage[i]);
+        /* freeing the functions must leave the buffer to its owner */
+        JS_FreeValue(v.ctx, script);
+        vm_free(&v);
+    }
+    CHECK(strcmp(sources[0], sources[1]) == 0 && strncmp(sources[0], "function f(a) {", 15) == 0,
+          "source %.40s, shared %.40s", sources[0], sources[1]);
+    CHECK(usage[1].js_func_pc2line_size == 0, "the runtime counts %lld bytes of shared line tables",
+          (long long)usage[1].js_func_pc2line_size);
+    CHECK(usage[0].malloc_size - usage[1].malloc_size >= PAD,
+          "shared, the runtime takes %lld bytes less, want at least %d",
+          (long long)(usage[0].malloc_size - usage[1].malloc_size), PAD);
+    CHECK(usage[0].js_func_size - usage[1].js_func_size >= PAD,
+          "shared, the runtime counts %lld bytes less in its functions, want at least %d",
+          (long long)(usage[0].js_func_size - usage[1].js_func_size), PAD);
+    free(sources[0]);
+    free(sources[1]);
+    free(buf);
+}
+
+/* ---- the regexp cache ---- */
+
+/* The entries the cache of the runtime keeps, newest first (see
+   white_regexp_cache), with its lists checked. */
+static char *cache_entries(VM *v)
+{
+    static char out[4096];
+    size_t bytes;
+    uint32_t buckets;
+    int n = white_regexp_cache(v->rt, out, sizeof(out), &bytes, &buckets);
+
+    CHECK(n >= 0, "the lists of the regexp cache are not whole");
+    return out;
+}
+
+static int cache_count(VM *v)
+{
+    char out[4096];
+    size_t bytes;
+    uint32_t buckets;
+
+    return white_regexp_cache(v->rt, out, sizeof(out), &bytes, &buckets);
+}
+
+/* Only a pattern that is a string with flags that are undefined or a string
+   is kept: anything else is converted again each time, which can run
+   javascript. A compile that fails keeps nothing. */
+static void test_regexp_cache_keeps(void)
+{
+    static const char *const fails[] = {
+        "new RegExp('(')", "new RegExp('a', 'gg')", "new RegExp('a', 'uv')",
+        "new RegExp('a', 'q')", "new RegExp('\\\\p{Nope}', 'u')",
+    };
+    VM v = vm_new();
+    char src[256];
+    int before, i, again;
+
+    eval_ok(v.ctx, "var n = 0, f = {toString() { n++; return 'g' }}, p = {toString() { n++; return 'x' }}; 0");
+    for (i = 0; i < 3; i++)
+        eval_ok(v.ctx, "new RegExp('a', f); new RegExp(p, 'g'); new RegExp(new String('b')); new RegExp('c', new String('i')); 0");
+    CHECK(eval_is(v.ctx, "String(n)", "6"), "toString did not run 6 times");
+    /* The constructor converts a pattern that is not a regexp to a string
+       before it compiles: that string is kept. Flags it hands on as they are. */
+    CHECK(strcmp(cache_entries(&v), "b undefined,x g") == 0, "entries %s, want b undefined,x g", cache_entries(&v));
+    before = cache_count(&v);
+    for (i = 0; i < (int)countof(fails); i++) {
+        for (again = 0; again < 2; again++) {
+            snprintf(src, sizeof(src), "try { %s; 'made' } catch (e) { e.name }", fails[i]);
+            CHECK(eval_is(v.ctx, src, "SyntaxError"), "%s did not throw a SyntaxError", fails[i]);
+        }
+    }
+    CHECK(cache_count(&v) == before, "%d entries after compiles that fail, want %d", cache_count(&v), before);
+    vm_free(&v);
+}
+
+/* The entries, their table and the strings they hold are the memory the cache
+   takes: turning it off gives all of it back, and freeing a runtime with
+   entries leaves no block (the host ends the process if one is left). */
+static void test_regexp_cache_memory(void)
+{
+    static const char js[] = "for (var i = 0; i < 300; i++) new RegExp('(a|b)+c' + i, 'g'); 0";
+    VM v = vm_new();
+    VM w = vm_new();
+    char out[64];
+    size_t off, on, kept, bytes;
+    uint32_t buckets;
+    int n;
+
+    JS_SetRegExpCache(v.rt, 0, 0);
+    eval_ok(v.ctx, js);
+    JS_RunGC(v.rt);
+    off = JS_GetMemorySize(v.rt);
+    JS_SetRegExpCache(v.rt, 256, 512 << 10);
+    eval_ok(v.ctx, js);
+    JS_RunGC(v.rt);
+    on = JS_GetMemorySize(v.rt);
+    n = white_regexp_cache(v.rt, out, sizeof(out), &bytes, &buckets);
+    CHECK(n == 256 && on > off, "%d entries, %zu bytes with the cache, %zu without", n, on, off);
+    /* The cache counts the usable size of each block: the allocator rounds
+       up and adds a header, which the memory size has too. */
+    kept = on - off;
+    CHECK(kept >= bytes / 2 && kept <= bytes * 2 + (16 << 10), "the cache takes %zu bytes and counts %zu", kept, bytes);
+    JS_SetRegExpCache(v.rt, 0, 0);
+    JS_RunGC(v.rt);
+    CHECK(JS_GetMemorySize(v.rt) == off, "%zu bytes after the cache let go, %zu before it", JS_GetMemorySize(v.rt), off);
+    vm_free(&v);
+    /* the default cache, freed with its entries */
+    eval_ok(w.ctx, js);
+    vm_free(&w);
+}
+
+/* ---- the split ops of the regexp machine ---- */
+
+/* lre_split steps over at most LRE_SPLIT_BUDGET split ops in one call, and
+   then gives back the one it is at to be pushed, so a chain of splits that
+   leads back to itself, which lre_compile does not write, cannot hold it. An
+   alarm ends the test if it does. */
+static void test_regexp_split_budget(void)
+{
+    int ok;
+
+    alarm(20);
+    ok = white_lre_split_budget();
+    alarm(0);
+    CHECK(ok, "lre_split gave other than the split at 0 and its char at 5");
+}
+
+/* ---- compiling with one request to the heap failing ---- */
+
+/* compile_failing compiles js in a new runtime where request number fail to
+   the heap fails, 0 for none, and runs the code it compiled with every request
+   working. It puts the result of the code as a string in result (room cap), or
+   "exception" when it threw, and returns 1 when the compile failed, else 0. *n
+   is the number of requests to the heap of the compile. A compile may only
+   fail with the out of memory error. */
+static int compile_failing(const char *what, const char *js, int fail, int *n, char *result, size_t cap)
+{
+    VM v = vm_new();
+    JSValue c = white_compile_failing(v.ctx, js, fail, n);
+    int failed = JS_IsException(c);
+
+    result[0] = 0;
+    if (failed) {
+        CHECK(JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx),
+              "%s, request %d to the heap failing: the compile fails without the out of memory error", what, fail);
+        free(exception_text(v.ctx));
+    } else {
+        JSValue r;
+        char *t;
+
+        CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: the compile works, but leaves an exception", what, fail);
+        r = JS_EvalFunction(v.ctx, c);
+        t = value_text(v.ctx, r);
+        snprintf(result, cap, "%s", t ? t : "exception");
+        free(t);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+    }
+    if (failed)
+        JS_FreeValue(v.ctx, c);
+    CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: an exception is pending", what, fail);
+    vm_free(&v);
+    return failed;
+}
+
+/* Compiling with one request to the heap failing, and the others working,
+   fails with the out of memory error or gives code that works as it should. A
+   request that fails followed by ones that work is what a large block failing
+   under the memory limit, as the small blocks still fit in their arenas,
+   looks like. */
+static void test_compile_one_failure(void)
+{
+    static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
+    const char *scripts[countof(compile_scripts) + countof(compile_fine_scripts) + 5];
+    size_t i, k = 0;
+    int j;
+
+    /* With every block a request, one failing request is one failing small
+       block, and the compiler does not survive all of those: it drops the
+       error of a lookahead (js_parse_skip_parens_token) and goes on, and in a
+       class it reaches the assert on a constant pool index. So this test does
+       not run in those builds. */
+    if (white_every_block_is_a_request()) {
+        printf("unit-white: test_compile_one_failure skipped, every block is a request in this build\n");
+        return;
+    }
+    nested_scopes();
+    strcpy(big_scope, "function f() { let n = 0; ");
+    for (j = 0; j < 400; j++)
+        strcat(big_scope, "{ let a = 1; n += a } ");
+    strcat(big_scope, "return n } f()");
+    for (j = 0; j < 300; j++)
+        strcat(deep_scope, "{ let a = 1; ");
+    for (j = 0; j < 300; j++)
+        strcat(deep_scope, "} ");
+    strcat(deep_scope, "1");
+    strcpy(fields, "class A { #m() { return 1 } ");
+    for (j = 0; j < 200; j++)
+        strcat(fields, "x = 1; ");
+    strcat(fields, "y() { return this.#m() } }; new A().y()");
+    strcpy(cases, "switch (2) { ");
+    for (j = 0; j < 300; j++)
+        strcat(cases, "case 1: break; ");
+    strcat(cases, "default: 3 }");
+    for (i = 0; i < countof(compile_scripts); i++)
+        scripts[k++] = compile_scripts[i];
+    for (i = 0; i < countof(compile_fine_scripts); i++)
+        scripts[k++] = compile_fine_scripts[i];
+    scripts[k++] = big_scope;
+    scripts[k++] = deep_scope;
+    scripts[k++] = fields;
+    scripts[k++] = cases;
+    /* Private methods and no fields: the code that adds the brand is made
+       and patched at the end of the class, with no token between. */
+    scripts[k++] = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
+    for (i = 0; i < k; i++) {
+        char what[32], want[256], got[256];
+        int n, n1, fail, failures = 0;
+
+        snprintf(what, sizeof(what), "script %zu", i);
+        CHECK(!compile_failing(what, scripts[i], 0, &n, want, sizeof(want)), "%s does not compile", what);
+        for (fail = 1; fail <= n; fail++) {
+            if (compile_failing(what, scripts[i], fail, &n1, got, sizeof(got)))
+                failures++;
+            else
+                CHECK(strcmp(got, want) == 0, "%s, request %d to the heap failing: the code compiled gives %s, want %s", what, fail, got, want);
+        }
+        CHECK(failures > 0, "%s: no compile of its %d requests to the heap failed", what, n);
+    }
+}
+
 int main(void)
 {
     test_json_string_run();
     test_json_quote_run();
     test_json_runs_oom();
     test_json_run_too_long();
+    test_json_run_limit();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();
@@ -1330,6 +1718,12 @@ int main(void)
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
+    test_own_keys_flags();
+    test_shared_debug_read();
+    test_regexp_cache_keeps();
+    test_regexp_cache_memory();
+    test_regexp_split_budget();
+    test_compile_one_failure();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

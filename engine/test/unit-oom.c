@@ -10,12 +10,13 @@
    uncatchable), leaves the runtime working and loses nothing. These are the
    tests of the Go packages that did this on the old engine (lib/outofmemory,
    lib/tocstring_oom, lib/backtrace*, lib/jsonstr, lib/objlit, compileoom,
-   uncatchable). Each sweeps the memory it leaves: JS_SetMemoryLimit to what
+   fieldchain, uncatchable). Each sweeps the memory it leaves: JS_SetMemoryLimit to what
    the runtime holds plus a room, for rooms from nothing up. A runtime that
    leaks a block ends the process with status 87 (host_free_runtime).
 
      unit-oom */
 #include "cutils.h"
+#include "compile-scripts.h"
 #include "testutil.h"
 
 /* ---- JS_ThrowError2 ---- */
@@ -353,60 +354,6 @@ static void test_function_name_oom(void)
 }
 
 /* ---- compiling and writing bytecode ---- */
-
-/* compile_scripts use the parts of the compiler that move or rewrite code:
-   loops, labels, scopes, closures, classes, regexps, templates, async code
-   and eval. */
-static const char *compile_scripts[] = {
-    "class A { #p = 1; get p() { return this.#p } static s = [1,2,3].map(x => x * 2) }; const a = new A(); JSON.stringify({p: a.p, s: A.s})",
-    "function f(a, {b, c = 2}, ...r) { let s = 0; for (const x of r) s += x; return a + b + c + s } f(1, {b: 2}, 3, 4, 5)",
-    "const re = /(\\d+)-(\\w+)/g; 'a 12-ab 34-cd'.replace(re, (m, d, w) => w + d) + new RegExp('x(y)+', 'i').test('XYY')",
-    "const t = (s, ...v) => s.raw.join('|') + v.join(); t`a${1}b${2}c` + `x${[1,2].join()}`",
-    "(async () => { const r = await Promise.all([1, 2, Promise.resolve(3)]); return r.reduce((a, b) => a + b) })().then(v => globalThis.out = v)",
-    "const m = new Map([[1, 'a']]); const s = new Set([1, 2]); let o = {...{x: 1}, y: [...s]}; try { null.x } catch { o.z = m.get(1) } JSON.parse(JSON.stringify(o))",
-    "function* g() { let i = 0; while (i < 5) yield i++ } [...g()].map(String).join() + Array.from({length: 3}, (_, i) => i * i)",
-    "eval('var q = 1; q + 1') + new Function('a', 'b', 'return a * b')(3, 4)",
-    "with ({w: 1}) { w + 1 }",
-    "label: for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) { if (j == 1) continue label; if (i == 2) break label } } typeof undefinedThing",
-    "for (const k in {a: 1, b: 2}) { for (var i = 0, n = 0; i < 2; i++) n += i } try { undefinedThing } catch (e) { e.name }",
-    /* Scopes in scopes, which grow the function's scope array: made by
-       nested_scopes, as the Go test made it. */
-    NULL,
-};
-
-/* nested_scopes makes the last script of compile_scripts: eight scopes in
-   scopes, each a block, a loop, a try, a catch and a with. */
-static char nested_script[2048];
-
-static void nested_scopes(void)
-{
-    int i;
-
-    strcpy(nested_script, "function f() { ");
-    for (i = 0; i < 8; i++)
-        strcat(nested_script, "{ let a = 1; for (let i = 0; i < 1; i++) { try { a++ } catch (e) { with ({}) { ");
-    for (i = 0; i < 8; i++)
-        strcat(nested_script, "} } } } ");
-    strcat(nested_script, "} f()");
-    compile_scripts[countof(compile_scripts) - 1] = nested_script;
-}
-
-/* compile_fine_scripts run out of memory where a sweep in steps of 32 bytes
-   of memory left misses it. */
-static const char *const compile_fine_scripts[] = {
-    /* A class constructor with fields and a parameter with a default. When
-       the code of the fields failed, opening the scope of the parameters
-       failed without an exception. */
-    "class A { x = 1; constructor(a = 1) { this.a = a } }; new A().a",
-    /* A derived class constructor with a parameter with a default. When
-       writing the constant pool index of the constructor failed, the parser
-       put it in place at the end of the code anyway, after the bytes the
-       buffer holds. */
-    "class B { constructor() {} }; class A extends B { constructor(a = 1) { super(); this.a = a } }; new A().a",
-    /* When adding an atom to the atom table of the bytecode failed, the
-       writer wrote on and gave the bytecode, with the error left pending. */
-    "for (var [a = 1] of [[]]) ; a",
-};
 
 /* compile_with_room evals, then compiles, js with n bytes of memory left, and
    checks that it fails only with the out of memory error, takes the error out
@@ -1033,6 +980,16 @@ static const struct { const char *name, *js; } uncatchable_cases[] = {
     { "async from sync iterator", "(async () => { try { for await (const x of { [Symbol.iterator]() { return { next() { fail() } } } }) {} } catch (e) { seen.push('catch') } })()" },
 };
 
+/* interrupt_taken_text takes the pending exception out of the context as
+   exception_text does, with the interrupt flag clear first: the host takes
+   an interrupt back once the call that got it has ended, and the conversion
+   of the error to a string runs code. */
+static char *interrupt_taken_text(VM *v)
+{
+    *JS_GetInterruptFlag(v->rt) = 0;
+    return exception_text(v->ctx);
+}
+
 /* run_uncatchable evaluates js and then runs the jobs it queued, and returns
    whether the first error was uncatchable. What page code pushed onto seen is
    put in seen (malloc'd). The error is taken out of the context, and the
@@ -1048,7 +1005,7 @@ static int run_uncatchable(VM *v, const char *js, char **seen, char **text)
        (an async function that ran out of memory before its first await). */
     if (JS_IsException(r) || JS_HasException(v->ctx)) {
         unc = JS_IsUncatchableException(v->ctx);
-        *text = exception_text(v->ctx);
+        *text = interrupt_taken_text(v);
     }
     JS_FreeValue(v->ctx, r);
     /* An uncatchable error stays pending when a job ends with it: the host
@@ -1056,10 +1013,12 @@ static int run_uncatchable(VM *v, const char *js, char **seen, char **text)
     while (!*text && (ret = JS_ExecutePendingJob(v->rt, &jc)) != 0) {
         if (ret < 0 || JS_HasException(v->ctx)) {
             unc = JS_IsUncatchableException(v->ctx);
-            *text = exception_text(v->ctx);
+            *text = interrupt_taken_text(v);
         }
     }
     unlimit(v);
+    /* the host takes the interrupt back once the call that got it has ended */
+    *JS_GetInterruptFlag(v->rt) = 0;
     /* nothing page code queued may run later either */
     while ((ret = JS_ExecutePendingJob(v->rt, &jc)) != 0) {
         if (ret < 0)
@@ -1067,6 +1026,70 @@ static int run_uncatchable(VM *v, const char *js, char **seen, char **text)
     }
     *seen = eval_text(v->ctx, "seen.join()");
     return unc;
+}
+
+/* stop() sets the interrupt flag of the runtime, as a host does to end a
+   script. */
+static JSValue js_stop(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    *JS_GetInterruptFlag(JS_GetRuntime(ctx)) = 1;
+    return JS_UNDEFINED;
+}
+
+/* The two ways page code is ended that it cannot catch: fail() sets the
+   interrupt flag and loops, or runs out of memory. */
+typedef enum { END_INTERRUPT, END_OOM } End;
+
+static const char *const fail_js[] = {
+    "globalThis.fail = () => { stop(); for (;;); }",
+    "globalThis.fail = () => { const a = []; for (;;) a.push('x'.repeat(256) + a.length) }",
+};
+
+/* check_uncatchable runs js in a new runtime where setup (a script) made
+   fail() end the call as end says, and checks that page code cannot catch it
+   in any construct: the error that ends the run is uncatchable and is the
+   interrupt or the out of memory error, null or an error of that name, page
+   code saw nothing of it, and no exception stays pending. */
+static void check_uncatchable(const char *name, End end, const char *setup, const char *js)
+{
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    char *seen, *text;
+    const char *what = end == END_INTERRUPT ? "interrupt" : "out of memory error";
+    int unc, ended;
+
+    JS_SetPropertyStr(v.ctx, g, "stop", JS_NewCFunction(v.ctx, js_stop, "stop", 0));
+    JS_FreeValue(v.ctx, g);
+    eval_ok(v.ctx, "globalThis.seen = []");
+    eval_ok(v.ctx, fail_js[end]);
+    if (setup)
+        eval_ok(v.ctx, setup);
+    if (end == END_OOM)
+        room(&v, 1 << 20);
+    unc = run_uncatchable(&v, js, &seen, &text);
+    ended = end == END_INTERRUPT ? text && strcmp(text, "InternalError: interrupted") == 0 :
+        text && (strstr(text, "out of memory") || strcmp(text, "null") == 0);
+    CHECK(unc, "%s: the error that ended the run is catchable (%s)", name, text ? text : "no error");
+    CHECK(ended, "%s: ended with %s, want the %s", name, text ? text : "no error", what);
+    CHECK(seen && seen[0] == 0, "%s: page code saw the %s: %s", name, what, seen ? seen : "?");
+    CHECK(!JS_HasException(v.ctx), "%s: an exception is pending", name);
+    free(seen);
+    free(text);
+    vm_free(&v);
+}
+
+/* An interrupt ends the call that was running however page code is written:
+   no catch, finally, iterator return or rejection handler sees it, and the
+   call returns it. */
+static void test_interrupt_uncatchable(void)
+{
+    size_t i;
+
+    for (i = 0; i < countof(uncatchable_cases); i++)
+        check_uncatchable(uncatchable_cases[i].name, END_INTERRUPT, NULL, uncatchable_cases[i].js);
 }
 
 /* Running out of memory ends the call: page code cannot catch it in any
@@ -1077,21 +1100,33 @@ static void test_oom_uncatchable(void)
 {
     size_t i;
 
-    for (i = 0; i < countof(uncatchable_cases); i++) {
-        VM v = vm_new();
-        char *seen, *text;
-        int unc;
+    for (i = 0; i < countof(uncatchable_cases); i++)
+        check_uncatchable(uncatchable_cases[i].name, END_OOM, NULL, uncatchable_cases[i].js);
+}
 
-        eval_ok(v.ctx, "globalThis.seen = []; globalThis.fail = () => { const a = []; for (;;) a.push('x'.repeat(256) + a.length) }");
-        room(&v, 1 << 20);
-        unc = run_uncatchable(&v, uncatchable_cases[i].js, &seen, &text);
-        CHECK(unc, "%s: the error that ended the run is catchable (%s)", uncatchable_cases[i].name, text ? text : "no error");
-        CHECK(text && (strstr(text, "out of memory") || strcmp(text, "null") == 0), "%s: ended with %s", uncatchable_cases[i].name, text ? text : "no error");
-        CHECK(seen && seen[0] == 0, "%s: page code saw the out of memory error: %s", uncatchable_cases[i].name, seen ? seen : "?");
-        CHECK(!JS_HasException(v.ctx), "%s: an exception is pending", uncatchable_cases[i].name);
-        free(seen);
-        free(text);
-        vm_free(&v);
+/* An interrupt or running out of memory in a getter or a method reached from
+   a string, a number or an array (the reads by name that go straight to the
+   prototype) ends the call: page code cannot catch it. */
+static void test_field_chain_uncatchable(void)
+{
+    static const struct { const char *name, *setup; } cases[] = {
+        { "string getter", "Object.defineProperty(String.prototype, 'boom', { get() { fail() }, configurable: true }); globalThis.go = () => 'abc'.boom" },
+        { "number getter", "Object.defineProperty(Number.prototype, 'boom', { get() { 'use strict'; fail() }, configurable: true }); globalThis.go = () => (1.5).boom" },
+        { "array getter", "Object.defineProperty(Array.prototype, 'boom', { get() { fail() }, configurable: true }); globalThis.go = () => [1].boom" },
+        { "string method", "String.prototype.boom = function () { fail() }; globalThis.go = () => 'abc'.boom()" },
+        { "array method", "Object.prototype.boom = function () { fail() }; globalThis.go = () => [1].boom()" },
+    };
+    size_t i;
+    int end;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (end = END_INTERRUPT; end <= END_OOM; end++) {
+            char name[64];
+
+            snprintf(name, sizeof(name), "%s, %s", cases[i].name, end == END_OOM ? "out of memory" : "interrupt");
+            check_uncatchable(name, end, cases[i].setup,
+                              "try { go() } catch (e) { seen.push('catch') } finally { seen.push('finally') }");
+        }
     }
 }
 
@@ -1459,7 +1494,9 @@ int main(void)
     test_throw_stackless_oom();
     test_autoinit_oom();
     test_json_strings_oom();
+    test_interrupt_uncatchable();
     test_oom_uncatchable();
+    test_field_chain_uncatchable();
     test_regexp_oom();
     test_thrown_is_not_uncatchable();
     test_new_error_stack_oom();

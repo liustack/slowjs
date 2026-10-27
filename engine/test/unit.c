@@ -18,6 +18,7 @@
 
 #include "host.h"
 #include "cutils.h"
+#include "libregexp.h"
 #include "libunicode.h"
 
 static int failures;
@@ -2382,6 +2383,194 @@ static void test_sort_stop_bound(void)
     CHECK(worst > 0, "no sort made a comparison after the stop: the bound is not tested");
 }
 
+/* A regexp that looks for where a match can start (lre_skip and lre_run) and
+   one whose match runs long read the interrupt flag as the backtracking
+   machine does. T(s) sets the flag as the string is converted, so the regexp
+   starts with the flag set and must stop in its work. A flag set only at the
+   50th reading must stop it too, which shows that the regexp reads the flag
+   again and again as it works, not once at the end of it:
+   when no position can start a match, when each can but the match fails
+   there, and in the loop of a greedy x+, which jumps back by a split op that
+   pushes nothing. */
+static void test_regexp_stops(void)
+{
+    static const struct {
+        const char *name, *s, *re;
+        int log2len;
+    } cases[] = {
+        { "8bit", "'a'", "/[\"&<>]/", 22 },
+        { "16bit", "'\\u4e2d'", "/[\"&<>]/", 22 },
+        { "8bit/each", "'a'", "/ab/", 22 },
+        { "16bit/each", "'\\u4e2d'", "/\\u4e2db/", 22 },
+        { "8bit/set", "'a'", "/(?:a|c)b/", 22 },
+        { "16bit/set", "'\\u4e2d'", "/(?:\\u4e2d|c)b/", 22 },
+        { "plus", "'a'", "/a+b/", 17 },
+        { "plus/unicode", "'a'", "/a+b/u", 17 },
+        { "plus/16bit", "'\\u4e2d'", "/\\u4e2d+b/", 17 },
+        { "plus/ignore case", "'a'", "/A+b/i", 17 },
+        { "class", "'a'", "/\\w+@/", 17 },
+        { "capture", "'a'", "/(a)+b/", 17 },
+        { "alternatives", "'a'", "/(?:a|c)+b/", 17 },
+        /* sticky, a match is tried once: only the split ops that push nothing
+           read the flag on the way */
+        { "plus/sticky", "'a'", "/a+b/y", 17 },
+        { "plus/16bit/sticky", "'\\u4e2d'", "/\\u4e2d+b/y", 17 },
+        { "plus/ignore case/sticky", "'a'", "/A+b/iy", 17 },
+        { "class/sticky", "'a'", "/\\w+@/y", 17 },
+        { "capture/sticky", "'a'", "/(a)+b/y", 17 },
+        { "alternatives/sticky", "'a'", "/(?:a|c)+b/y", 17 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    add_interrupt(ctx);
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char src[256];
+
+        snprintf(src, sizeof(src), "var s = %s.repeat(1 << %d), re = %s; 0",
+                 cases[i].s, cases[i].log2len, cases[i].re);
+        CHECK(eval(ctx, src), "the script threw");
+        CHECK(interrupted(ctx, "re.test(T(s))"), "%s: /%s/ was not interrupted",
+              cases[i].name, cases[i].re);
+        CHECK(interrupted(ctx, "re.exec(T(s))"), "%s: exec was not interrupted",
+              cases[i].name);
+        /* and when it is set in the middle of the work, after a few readings */
+        host_poll_stop_after(50);
+        CHECK(interrupted(ctx, "re.test(s)"), "%s: /%s/ was not stopped in the middle",
+              cases[i].name, cases[i].re);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"),
+              "the context after %s", cases[i].name);
+    }
+    *JS_GetInterruptFlag(rt) = 0;
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* lre_skip reads the interrupt flag after each LRE_SKIP_CHUNK (65536) units
+   it looks at and then answers as the backtracking machine does: lre_exec
+   returns LRE_RET_TIMEOUT. It reads nothing at the end of the string. The
+   readings are counted by the host (host_poll_reads). */
+static void test_regexp_skip_polls(void)
+{
+    enum { CHUNK = 1 << 16 };
+    static const struct {
+        const char *re, *unit;
+        int units, stop, result, reads;
+    } cases[] = {
+        { "a", "x", CHUNK, 1, 0, 0 },
+        { "a", "x", CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "a", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "[ab]", "x", 3 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "a|b", "x", 3 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "a|b", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "a", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "a", "x", 2 * CHUNK, 0, 0, 1 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int wide = cases[i].unit[1] != 0;
+        size_t unit_bytes = wide ? 2 : 1;
+        uint8_t *buf = malloc((size_t)cases[i].units * unit_bytes);
+        uint8_t *capture[2];
+        char msg[64];
+        uint8_t *bc;
+        int len, k, ret;
+        long before;
+
+        for(k = 0; k < cases[i].units; k++) {
+            if (wide) {
+                ((uint16_t *)buf)[k] = 0x4e2d;
+            } else {
+                buf[k] = 'x';
+            }
+        }
+        *JS_GetInterruptFlag(rt) = 0;
+        bc = lre_compile(&len, msg, sizeof(msg), cases[i].re, strlen(cases[i].re), 0, ctx);
+        CHECK(bc != NULL, "/%s/: %s", cases[i].re, msg);
+        if (bc) {
+            *JS_GetInterruptFlag(rt) = cases[i].stop;
+            before = host_poll_reads;
+            ret = lre_exec(capture, bc, buf, 0, cases[i].units, wide, ctx);
+            CHECK(ret == cases[i].result && host_poll_reads - before == cases[i].reads,
+                  "/%s/ on %d units%s, flag %d: result %d, %ld reads, want %d, %d",
+                  cases[i].re, cases[i].units, wide ? " of 16 bits" : "", cases[i].stop,
+                  ret, host_poll_reads - before, cases[i].result, cases[i].reads);
+            *JS_GetInterruptFlag(rt) = 0;
+            lre_realloc(ctx, bc, 0);
+        }
+        free(buf);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
+   letter, every other ASCII unit as it is, and an ASCII unit for no other
+   unit, as Canonicalize of the specification does: a character from 128
+   whose upper case is below 128 stays as it is. lre_first_set relies on it
+   for the characters that ignore case. */
+static void test_canonicalize_ascii(void)
+{
+    uint32_t c, got, want;
+    int bad = 0;
+
+    for (c = 0; c <= 0xffff; c++) {
+        got = lre_canonicalize(c, 0);
+        want = c;
+        if (c >= 'a' && c <= 'z')
+            want = c - 'a' + 'A';
+        if ((c < 128 && got != want) || (c >= 128 && got < 128)) {
+            if (bad++ < 10)
+                printf("lre_canonicalize(%#x) = %#x\n", c, got);
+        }
+    }
+    CHECK(bad == 0, "%d units are canonicalized wrongly", bad);
+}
+
+/* Date.now, new Date() and Date() read the wall clock of the host, in whole
+   milliseconds since 1970, cut off after the millisecond. A clock before 1970
+   gives negative times. */
+static void test_date_clock(void)
+{
+    static const struct {
+        int64_t ns;
+        const char *want;
+    } cases[] = {
+        { INT64_C(1700000000123456789), "1700000000123" },
+        { 999999, "0" },
+        { 1000000, "1" },
+        { 0, "0" },
+        { -500000000, "-500" },
+        { -1000000, "-1" },
+    };
+    static const char *const reads[] = {
+        "String(Date.now())", "String(new Date().getTime())", "String(+new Date())",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i, j;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char src[128];
+
+        host_set_wall(1, cases[i].ns);
+        for (j = 0; j < sizeof(reads) / sizeof(reads[0]); j++)
+            CHECK(eval_is(ctx, reads[j], cases[i].want),
+                  "%lld ns: %s", (long long)cases[i].ns, reads[j]);
+        snprintf(src, sizeof(src), "String(Date() === new Date(%s).toString())",
+                 cases[i].want);
+        CHECK(eval_is(ctx, src, "true"), "%lld ns: Date()", (long long)cases[i].ns);
+    }
+    host_set_wall(0, 0);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -2418,6 +2607,10 @@ int main(void)
     test_search_interrupt();
     test_sort_interrupt();
     test_sort_stop_bound();
+    test_date_clock();
+    test_canonicalize_ascii();
+    test_regexp_stops();
+    test_regexp_skip_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

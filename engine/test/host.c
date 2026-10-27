@@ -250,10 +250,19 @@ void host_interrupt(JSRuntime *rt)
    generator adds for the Go host. When a stop of the runtime whose interrupt
    flag that is was asked, the flag is set here, so that no other thread ever
    writes it. */
+_Thread_local long host_poll_reads;
+static _Thread_local long host_poll_left;
+
+void host_poll_stop_after(long n)
+{
+    host_poll_left = n;
+}
+
 int host_poll(const volatile int *flag)
 {
     HostVM *vm;
 
+    host_poll_reads++;
     if (atomic_load_explicit(&host_asked, memory_order_relaxed)) {
         pthread_mutex_lock(&host_lock);
         for (vm = host_vms; vm; vm = vm->next) {
@@ -266,6 +275,8 @@ int host_poll(const volatile int *flag)
         }
         pthread_mutex_unlock(&host_lock);
     }
+    if (host_poll_left > 0 && --host_poll_left == 0)
+        *(volatile int *)flag = 1;
     return *flag;
 }
 
@@ -503,6 +514,14 @@ static void host_clock_init(void)
 
 _Thread_local long host_wall_reads;
 _Thread_local uint32_t host_wall_vm;
+static _Thread_local int host_wall_fixed;
+static _Thread_local int64_t host_wall_fixed_ns;
+
+void host_set_wall(int on, int64_t ns)
+{
+    host_wall_fixed = on;
+    host_wall_fixed_ns = ns;
+}
 
 uint32_t host_vm_id(JSRuntime *rt)
 {
@@ -531,6 +550,8 @@ int64_t host_now(uint32_t vm, int kind)
     }
     host_wall_reads++;
     host_wall_vm = vm;
+    if (host_wall_fixed)
+        return host_wall_fixed_ns;
     ns = (int64_t)HOST_NOW_SEC * 1000000000;
     if (host_clock_running) {
         clock_gettime(CLOCK_MONOTONIC, &now);
