@@ -13,6 +13,8 @@
    lib/younggc that did this on the old engine.
 
      unit-white */
+#include <unistd.h>
+
 #include "testutil.h"
 
 struct StringBuffer;
@@ -36,6 +38,7 @@ int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, i
 int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
+int white_lre_split_budget(void);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1487,6 +1490,22 @@ static void test_regexp_cache_memory(void)
     vm_free(&w);
 }
 
+/* ---- the split ops of the regexp machine ---- */
+
+/* lre_split steps over at most LRE_SPLIT_BUDGET split ops in one call, and
+   then gives back the one it is at to be pushed, so a chain of splits that
+   leads back to itself, which lre_compile does not write, cannot hold it. An
+   alarm ends the test if it does. */
+static void test_regexp_split_budget(void)
+{
+    int ok;
+
+    alarm(20);
+    ok = white_lre_split_budget();
+    alarm(0);
+    CHECK(ok, "lre_split gave other than the split at 0 and its char at 5");
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1511,6 +1530,7 @@ int main(void)
     test_shared_debug_read();
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
+    test_regexp_split_budget();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
