@@ -1534,6 +1534,9 @@ static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
+static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
+                                                  uint32_t idx, JSValue val,
+                                                  int flags);
 static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
                                                    uint32_t idx, JSValue *pval);
 static JSValue js_regexp_toString(JSContext *ctx, JSValueConst this_val,
@@ -11920,10 +11923,15 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
                 if (__JS_AtomIsTaggedInt(prop)) {
                     uint32_t idx = __JS_AtomToUInt32(prop);
                     if (idx < p1->u.array.count) {
-                        if (unlikely(p == p1))
-                            return JS_SetPropertyValue(ctx, this_obj, JS_NewInt32(ctx, idx), val, flags);
-                        else
+                        if (unlikely(p == p1)) {
+                            ret = js_set_fast_array_element(ctx, p, idx, val, flags);
+                            /* an element below the count is always set */
+                            if (unlikely(ret == -2))
+                                abort();
+                            return ret;
+                        } else {
                             break;
+                        }
                     } else if (p1->class_id >= JS_CLASS_UINT8C_ARRAY &&
                                p1->class_id <= JS_CLASS_FLOAT64_ARRAY) {
                         goto typed_array_oob;
@@ -12123,130 +12131,141 @@ static force_inline BOOL can_extend_fast_array(JSObject *p)
     return proto->is_std_array_prototype;
 }
 
+/* the fast path of JS_SetPropertyValue: set the element idx of the fast
+   array p to val, which is freed, and return TRUE, or -1 on exception.
+   Return -2, with val not freed, if p is of a class with no fast array, or
+   idx is past its count and is not the end of an Array that can grow there.
+   A typed array takes any index: past its count (which the conversion of
+   val can shrink), the write is left out. */
+static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
+                                                  uint32_t idx, JSValue val,
+                                                  int flags)
+{
+    double d;
+    int32_t v;
+
+    switch(p->class_id) {
+    case JS_CLASS_ARRAY:
+        if (unlikely(idx >= (uint32_t)p->u.array.count)) {
+            /* fast path to add an element to the array */
+            if (unlikely(idx != (uint32_t)p->u.array.count ||
+                         !p->fast_array ||
+                         !can_extend_fast_array(p))) {
+                return -2;
+            }
+            /* add element */
+            return add_fast_array_element(ctx, p, val, flags);
+        }
+        set_value(ctx, &p->u.array.u.values[idx], val);
+        break;
+    case JS_CLASS_ARGUMENTS:
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            return -2;
+        set_value(ctx, &p->u.array.u.values[idx], val);
+        break;
+    case JS_CLASS_MAPPED_ARGUMENTS:
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            return -2;
+        set_value(ctx, p->u.array.u.var_refs[idx]->pvalue, val);
+        break;
+    case JS_CLASS_UINT8C_ARRAY:
+        if (JS_ToUint8ClampFree(ctx, &v, val))
+            return -1;
+        /* Note: the conversion can detach the typed array, so the
+           array bound check must be done after */
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint8_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT8_ARRAY:
+    case JS_CLASS_UINT8_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint8_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT16_ARRAY:
+    case JS_CLASS_UINT16_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint16_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT32_ARRAY:
+    case JS_CLASS_UINT32_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint32_ptr[idx] = v;
+        break;
+    case JS_CLASS_BIG_INT64_ARRAY:
+    case JS_CLASS_BIG_UINT64_ARRAY:
+        /* XXX: need specific conversion function */
+        {
+            int64_t v;
+            if (JS_ToBigInt64Free(ctx, &v, val))
+                return -1;
+            if (unlikely(idx >= (uint32_t)p->u.array.count))
+                goto ta_out_of_bound;
+            p->u.array.u.uint64_ptr[idx] = v;
+        }
+        break;
+    case JS_CLASS_FLOAT16_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.fp16_ptr[idx] = tofp16(d);
+        break;
+    case JS_CLASS_FLOAT32_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.float_ptr[idx] = d;
+        break;
+    case JS_CLASS_FLOAT64_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count)) {
+        ta_out_of_bound:
+            return TRUE;
+        }
+        p->u.array.u.double_ptr[idx] = d;
+        break;
+    default:
+        return -2;
+    }
+    return TRUE;
+}
+
 /* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
 static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                JSValue prop, JSValue val, int flags)
 {
+    JSAtom atom;
+    int ret;
+
+    /* fast path for array access */
     if (likely(JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
                JS_VALUE_GET_TAG(prop) == JS_TAG_INT)) {
-        JSObject *p;
-        uint32_t idx;
-        double d;
-        int32_t v;
-
-        /* fast path for array access */
-        p = JS_VALUE_GET_OBJ(this_obj);
-        idx = JS_VALUE_GET_INT(prop);
-        switch(p->class_id) {
-        case JS_CLASS_ARRAY:
-            if (unlikely(idx >= (uint32_t)p->u.array.count)) {
-                /* fast path to add an element to the array */
-                if (unlikely(idx != (uint32_t)p->u.array.count ||
-                             !p->fast_array ||
-                             !can_extend_fast_array(p))) {
-                    goto slow_path;
-                }
-                /* add element */
-                return add_fast_array_element(ctx, p, val, flags);
-            }
-            set_value(ctx, &p->u.array.u.values[idx], val);
-            break;
-        case JS_CLASS_ARGUMENTS:
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto slow_path;
-            set_value(ctx, &p->u.array.u.values[idx], val);
-            break;
-        case JS_CLASS_MAPPED_ARGUMENTS:
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto slow_path;
-            set_value(ctx, p->u.array.u.var_refs[idx]->pvalue, val);
-            break;
-        case JS_CLASS_UINT8C_ARRAY:
-            if (JS_ToUint8ClampFree(ctx, &v, val))
-                return -1;
-            /* Note: the conversion can detach the typed array, so the
-               array bound check must be done after */
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint8_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT8_ARRAY:
-        case JS_CLASS_UINT8_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint8_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT16_ARRAY:
-        case JS_CLASS_UINT16_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint16_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT32_ARRAY:
-        case JS_CLASS_UINT32_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint32_ptr[idx] = v;
-            break;
-        case JS_CLASS_BIG_INT64_ARRAY:
-        case JS_CLASS_BIG_UINT64_ARRAY:
-            /* XXX: need specific conversion function */
-            {
-                int64_t v;
-                if (JS_ToBigInt64Free(ctx, &v, val))
-                    return -1;
-                if (unlikely(idx >= (uint32_t)p->u.array.count))
-                    goto ta_out_of_bound;
-                p->u.array.u.uint64_ptr[idx] = v;
-            }
-            break;
-        case JS_CLASS_FLOAT16_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.fp16_ptr[idx] = tofp16(d);
-            break;
-        case JS_CLASS_FLOAT32_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.float_ptr[idx] = d;
-            break;
-        case JS_CLASS_FLOAT64_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count)) {
-            ta_out_of_bound:
-                return TRUE;
-            }
-            p->u.array.u.double_ptr[idx] = d;
-            break;
-        default:
-            goto slow_path;
-        }
-        return TRUE;
-    } else {
-        JSAtom atom;
-        int ret;
-    slow_path:
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
-        if (unlikely(atom == JS_ATOM_NULL)) {
-            JS_FreeValue(ctx, val);
-            return -1;
-        }
-        ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
-        JS_FreeAtom(ctx, atom);
-        return ret;
+        ret = js_set_fast_array_element(ctx, JS_VALUE_GET_OBJ(this_obj),
+                                        JS_VALUE_GET_INT(prop), val, flags);
+        if (ret != -2)
+            return ret;
     }
+    atom = JS_ValueToAtom(ctx, prop);
+    JS_FreeValue(ctx, prop);
+    if (unlikely(atom == JS_ATOM_NULL)) {
+        JS_FreeValue(ctx, val);
+        return -1;
+    }
+    ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
+    JS_FreeAtom(ctx, atom);
+    return ret;
 }
 
 int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
@@ -12818,7 +12837,11 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                 return JS_ThrowTypeErrorOrFalse(ctx, flags, "invalid descriptor flags");
             }
             if (flags & JS_PROP_HAS_VALUE) {
-                return JS_SetPropertyValue(ctx, this_obj, JS_NewInt32(ctx, idx), JS_DupValue(ctx, val), flags);
+                ret = js_set_fast_array_element(ctx, p, idx, JS_DupValue(ctx, val), flags);
+                /* a typed array takes any index */
+                if (unlikely(ret == -2))
+                    abort();
+                return ret;
             }
             return TRUE;
         typed_array_done: ;
