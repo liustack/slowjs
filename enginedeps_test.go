@@ -63,3 +63,28 @@ func TestEngineDeps(t *testing.T) {
 		})
 	}
 }
+
+// A build with the tag on a target the C engine is not generated for fails
+// with the reason as its only error, not under errors of the files that need
+// the engine.
+func TestEngineUnsupportedTarget(t *testing.T) {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go command")
+	}
+	cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
+	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("the build succeeded")
+	}
+	var errs []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if !strings.HasPrefix(l, "#") {
+			errs = append(errs, l)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_so_far") {
+		t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
+	}
+}
