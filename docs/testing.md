@@ -232,6 +232,7 @@ engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.
 go test -race -tags testhooks ./internal/gohost         # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort, what is left when the OS refuses
 go test -tags slowjs_cengine,testhooks ./internal/cengine      # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap, the shape cache, Close and New under panics and refusals, polls and Interrupt
 go run -tags slowjs_cengine ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one script, timed, on the C engine
+go test -p 1 -tags slowjs_cengine .                    # the tests of package slowjs on the C engine (linux/amd64), lib-only tests left out by their tag
 go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
 ```
 

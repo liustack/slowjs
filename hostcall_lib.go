@@ -2,6 +2,8 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !slowjs_cengine
+
 package slowjs // import "github.com/liustack/slowjs"
 
 // How javascript calls Go on the engine of lib: the C functions that the

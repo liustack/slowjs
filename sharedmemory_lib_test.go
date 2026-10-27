@@ -3,6 +3,8 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
+//go:build !slowjs_cengine
+
 package slowjs // import "github.com/liustack/slowjs"
 
 // A VM of shared bytecode holds less than one of a copy, which only the engine

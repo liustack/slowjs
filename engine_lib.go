@@ -2,6 +2,8 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !slowjs_cengine
+
 package slowjs // import "github.com/liustack/slowjs"
 
 // The engine of lib, as the rest of the package sees it: the JSValue, the
@@ -254,6 +256,9 @@ func (r *runtime) newVM() (*VM, error) {
 	lib.XJS_SetInterruptHandler(tls, r.cRuntime, fp(interruptHandler), interruptData)
 	return m, nil
 }
+
+// forgetVM takes the id of a closed VM back.
+func forgetVM(id uint32) { vms.Remove(id) }
 
 // close releases the resources held by r.
 func (r *runtime) close() error {
