@@ -175,7 +175,7 @@ go test -vet=off -run Test262 -v .     # unpacks test262/, builds the runner, ru
 `engine/` is the C tree of the engine to come. `engine/test/` is its native test host: the C tree built with its own small libc (`engine/libc`, see its [README](../engine/libc/README.md)) by plain clang, and test262 run on it. It tests the C itself, with no ccgo and no Go in the way. It is a tool for testing, never part of a Go build or of the product, and `engine/` holds no Go file (`python3 -m unittest discover -s internal/goasm` fails if it does, or if a folder with Go files holds a C file). It started as the pinned archive with `lib/internal/patch/quickjs.diff` and `internal/goasm/cpatch.py` applied, and nothing compares it with them now. Until the switch, a fix to the C of the old engine is made in `engine/` by hand too when it applies there.
 
 ```sh
-engine/test/build.sh asan              # plain (default), asan, asan-heap, ubsan or asan-ubsan: engine/test/out/MODE/run-test262
+engine/test/build.sh asan              # plain (default), asan, asan-heap, asan-heap-iter, ubsan or asan-ubsan: engine/test/out/MODE/run-test262
 engine/test/test262.sh -m asan -T 2    # test262 on that build, with 2 runner threads
 engine/test/libc-test.sh               # the string functions and snprintf of engine/libc against the system's, and vsnprintf against the generator's table of formats
 engine/test/api-test.sh asan           # JS_DumpMemoryUsage, JS_NewClassID, abort and the limit of a resize, on real runtimes
@@ -253,7 +253,7 @@ Two more runs of the same tests guard the calling convention between Go and the 
 CENGINE_HAMMER_N=3000 go test -tags cengine,cenginehammer -run Hammer ./internal/cengine
 ```
 
-[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap` and `ubsan`. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
+[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap`, `asan-heap-iter` and `ubsan`. `asan-heap-iter` is `asan-heap` with `JS_MALLOC_USE_ITER`, the list of every allocated block that the engine does not use: it keeps the macro building, with the scenarios, the random sequences and `poison-test` passing. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
 
 ## Leaks: memgrind
 
