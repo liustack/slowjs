@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, what the C engine's string appends gained, how to measure an engine change in tifa and across code positions, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -210,6 +210,28 @@ Six alternating timing rounds, 32 warmups and 80 renders per page, one build of 
 
 No row shows a cost that removing the feature wins back on both page sets. Removing the pending check adds instructions because it changes the code Go generates: in the V8 binary an alignment NOP lands on the dispatch path and runs 152,120,292 times. The check's own instructions are 0.19% of V8, 0.30% of the shop and 0.35% of MUI. That is the most removing its call could save, below what these timings can resolve. The hot SSR profiles reach only the backtrace attribute and settle helpers, never stack capture or formatting, so pages that make many errors were not measured.
 
+## The C engine (not released)
+
+The C engine of `internal/cengine` is not in a release yet. Its numbers come from the `jsrun` binary on the Google Cloud VM above, one core pinned with its hyperthread sibling idle, at the 8 code positions of [Code positions](#code-positions), and from callgrind.
+
+### Strings built by appending
+
+A string appended to a variable is [copied with room](fork-changes/c-engine.md#strings-built-by-appending) instead of at each append. Against the engine before it, over 3 rounds at 8 positions of all 37 scripts. Time is the median over positions of the paired ratios, and range is the base's own range over positions:
+
+| Script | Instructions | Time | Range |
+| --- | ---: | ---: | ---: |
+| `r_react_ssr` | -8.6% | 0.933 (0.910 to 0.944) | 3.0% |
+| `c_string_concat` | -17.5% | 0.882 (0.839 to 0.900) | 3.1% |
+| `q_string_build2` (`+=` on an argument) | -35.7% | 0.698 (0.658 to 0.839) | 3.4% |
+| `q_string_build1` (`+=` on a local) | -1.1% | 0.948, within its range | 18.7% |
+| `c_escape_html` | +0.17% | 1.010, within its range | 8.0% |
+| `v8_splay` | +0.16% | 1.000 | 3.6% |
+| `r_bench_table`, `r_bench_spiral` | +0.004%, +0.017% | 1.000, 1.000 | 2.2%, 2.6% |
+
+The other 29 scripts run within 0.08% of the instructions (`c_string_methods` +0.076%, the rest within 0.01%), and no time passes the rule. `c_json_stringify` took 0.972 at all 8 positions with the same instructions, which is the layout, not the change. A string `+` pays about 2 instructions for the checks (`v8_splay`, `c_escape_html`).
+
+Memory of `r_react_ssr`: the most bytes in use at once went from 2.39 MB to 2.46 MB (+2.9%, the room of the page string). That made the heap grow by one more chunk, a quarter of what it had: the footprint went from 3.01 MB to 3.80 MB, and the most memory the process held from 8.05 to 8.31 MB to 8.38 to 8.50 MB. `c_string_concat` uses 35% less at its most.
+
 ## What was tried and not done
 
 Each item says what it would give and why it was dropped. Check here before trying one of them again. The numbers come from tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) and [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md), and from the docs of the changes.
@@ -241,6 +263,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Waiting for Go 1.28**: a development build made the unchanged engine 5% faster on amd64 and 2% on arm64, but the rewritten engine 5% to 6.5% slower on amd64, for a reason not found. The rewrites still win there by 4.2% on amd64 and 15.5% on arm64.
 - **Dropping function source from the bytecode** (`JS_SetStripInfo`) to save VM memory: seroval, which tifa's pages use, reads the source of its own helpers with `toString` and writes it into pages, so the browser would break.
 - **Removing the store of the bytecode position on arm64**: the up to 11.6% of the interpreter's own time it seemed to take is where the sampler puts the wait for the next opcode. The store is Go saving the local `pc` for the calls that read it back, on the path every opcode takes. Only moving the instructions put the samples on the opcode load instead (8.8% down to 0.4%), with the same instruction count, cycles and render time.
+- **Ropes sooner in the C engine**, for React's page string: making a rope of any result over 512 characters (`JS_STRING_ROPE_SHORT2_LEN` of 512 instead of 8192) took `q_string_build1` from 0.18 s to 0.32 s natively, since `+=` on a local then leaves its in-place append for ropes, and gained React no more than copying with room (see [Strings built by appending](#strings-built-by-appending)).
 
 ## Where to continue
 

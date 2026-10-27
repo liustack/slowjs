@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, the C API a Go host calls without variable arguments, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -9,6 +9,7 @@ read_when:
   - Asking what a wild pointer, a trap or an abort in the C does to the process and the VM, or changing how the host enters the engine
   - Changing where the generated code polls, where the C reads the interrupt flag, or how Interrupt stops a script
   - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout)
+  - Changing how `+` and `+=` build strings in the C tree, or asking why a string has room past its end
 ---
 
 # The C tree of the new engine
@@ -32,6 +33,8 @@ read_when:
 | A lazy property that runs out of memory while it is made stays lazy | a built-in function or object (`JSON.parse`, `Reflect`) or the `prototype` of a function is made at the first read of its property. Making it counts a level of the internal depth, and at the limit the read throws a `RangeError` and the property stays lazy too. The Go engine makes it `undefined` for the life of the context when that runs out of memory, so a later call throws a catchable `TypeError` in place of the out of memory error. The next read makes it again now. A value made for the global object whose reference could not be made, and a value written through such a property on a prototype, were lost too, and freeing the runtime aborted on them | `unit-oom` (`test_autoinit_oom`) |
 | The compile fails when adding a variable that code uses runs out of memory | the compiler adds the variable of `this`, `new.target`, `arguments`, the name of a function expression, the home object and the active function of a derived class constructor the first time code of the function, or of a function in it, uses one, and the variables a direct eval can use. The Go engine took a failure to add one for a function without it and looked further out: the name became a variable of the script or a global with the out of memory error left pending, so the code could run and read the wrong value, and `arguments` or the name of the function read from an arrow function wrote and read the variable at index -1, outside the array. Now the compile fails with the out of memory error | `unit-white` (`test_added_vars_oom`) |
 | A name that cannot be made throws the out of memory error | a name (an atom) goes into the atom table of the runtime, which grows by half when it is full. When it could not grow, the Go engine made no name and threw nothing, so a compile that met a new identifier, and code that made a property key from a string, failed with no exception pending. Now the name throws the out of memory error, and the few callers that went on without the name (a string constant of the compiler, an alias of a built-in, the file name of a function, shortening an array with elements past index 2^31 - 1) stop there too | `unit-oom` (`test_compile_names_oom`, `test_key_names_oom`) |
+| A property name is never grown in place | `s += x` grows the string of a local in place when nothing else holds it. A property name (an atom) is such a string too, but the table of names holds it without counting, so a local that held the last other reference to a name changed the text of the name, and a key made later from the same text was a different property. Such a string is now copied | `unit-white` (`test_string_append_atom`) |
+| A string built by appending to a variable is copied a few times, not at each append | `x += y` and `x = x + y`, on a local, an argument or a closure variable, copy a string of 64 characters or more with room for half its length again when the variable holds the only other reference, and fill that room at the next appends (see "Strings built by appending"). Nothing a program reads changes. Such a string can use up to half again its length in memory until it is freed | `unit-white` (`test_string_append_flat`), `unit-oom` (`test_string_append_oom`), `compare/string_append.js` |
 
 ## The small libc
 
@@ -156,6 +159,21 @@ A Go host calls the engine through the generated code, which passes no variable 
 On the Go side, `host_call` of `internal/cengine` gives an id of 0 or more to the `HostFunc` registered with `SetHostFunc`, once, from an init function, and the requests of the engine to `gohost`. The function gets the shadow pointer of the call: what it passes the engine by address, and the frames of a call back into the engine, go above it.
 
 Tests: `test_host_function`, `test_new_string_chars` and `test_throw_error_kind` in `engine/test/unit-api.c` (the shape and calls of a host function, a string written in place by the layout of the table and the strings the engine makes, the atoms of the table, each kind of error and where its message is cut), `TestHostLayout` in `internal/goasm/gen`, and `TestHostFunction` in `internal/cengine`, which calls host functions through the generated engine: they add their arguments, throw with `JS_ThrowErrorKind`, make a string with `JS_NewStringChars` and the layout constants, and evaluate a script above the shadow pointer of their call.
+
+## Strings built by appending
+
+QuickJS grows a string in place in one case only: `x += y` on a local (`add_loc`) whose string nothing else holds. Every other append copies the whole string while the result is shorter than 8192 characters (`JS_STRING_ROPE_SHORT2_LEN`), and then makes a rope, two strings joined only when the result is read. At the `+` of `x = x + y`, or of `x += y` on an argument or a closure variable, both the variable and the stack hold the string, so its reference count is 2 and it is always copied. A string built by n short appends is so copied n times, and the copies add up to the square of its length.
+
+That is how React builds a page: `renderToString` appends each piece of HTML, 1 to 15 characters long, to a closure variable (`push(u) { a += u }`). With any character past Latin-1 on the page the string is 16-bit. A render of the `r_react_ssr` script copied 780 MB in 400,000 copies, 96% of all its `memcpy`. Upstream QuickJS (2026-10-26) and quickjs-ng (2026-10-24) do the same. V8 makes a rope (`ConsString`) of any result of 13 characters or more.
+
+The engine now finds the variable instead:
+
+- `OP_add` with a string of at least 64 characters on the left whose reference count is 2 (`JS_STRING_APPEND_MIN`) reads the next instruction, after one `dup` if there is one: a `let` that a closure checks for its temporal dead zone is stored by `dup` and `put_var_ref_check`. When it stores into a local, an argument or a closure variable whose value is that same string, the other reference is the variable's, which the store drops (`js_add_string_store`).
+- `JS_ConcatStringAppend` then appends in place when the block has room. Else it copies the string with room for half its length again, so the next appends go in place. `add_loc`, when its in-place append fails, takes the same copy.
+- A right side of more than 512 characters makes a rope as before, and anything else (a rope on the left, other holders, a store into anything else) goes to `JS_ConcatString`.
+- A property name (an atom) is never grown, see the row above.
+
+A string built by n appends is then copied about log1.5(n) times. A string of 64 characters or more that was copied with room keeps up to a third of its block unused until it is freed. A string `+` whose left side is a string runs about 2 more instructions in the interpreter for the checks. What it gains and costs is in [performance.md](../performance.md#strings-built-by-appending).
 
 ## When upstream changes it
 

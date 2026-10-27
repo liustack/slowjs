@@ -95,6 +95,36 @@ int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
     return json_quote_run(b, JS_VALUE_GET_STRING(s), pi);
 }
 
+/* ---- strings built by appending ---- */
+
+/* 1 when v is a rope, 0 when it is a flat string, -1 when it is no string. */
+int white_string_is_rope(JSValueConst v)
+{
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING_ROPE:
+        return 1;
+    case JS_TAG_STRING:
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+/* The characters the block of the flat string v has room for past its
+   length, -1 when v is no flat string. */
+int white_string_room(JSContext *ctx, JSValueConst v)
+{
+    JSString *p;
+    size_t size, used;
+
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING)
+        return -1;
+    p = JS_VALUE_GET_STRING(v);
+    size = js_malloc_usable_size(ctx, p);
+    used = sizeof(*p) + (p->len << p->is_wide_char) + 1 - p->is_wide_char;
+    return size < used ? -1 : (int)((size - used) >> p->is_wide_char);
+}
+
 /* ---- pending stacks ---- */
 
 /* Whether the own property 'stack' of obj still holds the pending marker,

@@ -1341,6 +1341,37 @@ static void test_key_names_oom(void)
           want, 65536);
 }
 
+/* Appending to a variable grows its string in place or copies it with room
+   to grow (JS_ConcatStringAppend). Out of memory at any copy fails the
+   append and leaves the variable with the whole string it had: the closure
+   variables are checked, after the failure, to hold whole pieces in order.
+   Each kind of variable an add stores into is swept: a var and a let of a
+   closure, a let and a var local, a var local that add_loc grows, and an
+   argument. The pieces are 3 characters, 8-bit and 16-bit. */
+static void test_string_append_oom(void)
+{
+    static const char setup[] =
+        "function piece(k) { return k % 5 ? 'abc' : '\\u4e2d\\u6587x' }\n"
+        "function whole(s) {\n"
+        "  if (s.length % 3) return 'cut at ' + s.length\n"
+        "  for (let k = 0; k < s.length / 3; k++) if (s.slice(3 * k, 3 * k + 3) !== piece(k)) return 'wrong at ' + k\n"
+        "  return 'ok'\n"
+        "}\n"
+        "var N = 3000\n"
+        "var closureVar = (() => { var s = ''; const add = x => { s = s + x }; return () => { while (s.length < N) add(piece(s.length / 3)); return whole(s) } })()\n"
+        "var closureLet = (() => { let s = ''; const add = x => (s += x); return () => { while (s.length < N) add(piece(s.length / 3)); return whole(s) } })()\n"
+        "function localLet() { let s = ''; for (let k = 0; k < N / 3; k++) s += piece(k); return whole(s) }\n"
+        "function localVar() { var s = ''; for (var k = 0; k < N / 3; k++) s = s + piece(k); return whole(s) }\n"
+        "function addLoc() { var s = '', p = 'abc'; for (var k = 0; k < N / 3; k++) s += p; return s.length === N ? 'ok' : 'cut' }\n"
+        "function arg(s) { s = ''; for (let k = 0; k < N / 3; k++) s += piece(k); return whole(s) }\n";
+    static const char *const want[] = { "ok", NULL };
+    static const char *const calls[] = { "closureVar()", "closureLet()", "localLet()", "localVar()", "addLoc()", "arg()" };
+    size_t i;
+
+    for (i = 0; i < countof(calls); i++)
+        sweep(calls[i], "append.js", setup, calls[i], want, 32768);
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -1438,6 +1469,7 @@ int main(void)
     test_split_paths_oom();
     test_compile_names_oom();
     test_key_names_oom();
+    test_string_append_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
