@@ -1,0 +1,40 @@
+toPrimitive 1: String=1 template=1 concat=x1 key=1 in=true join=1|1
+toPrimitive 0: String=0 template=0 concat=x0 key=0 in=false join=0|0
+toPrimitive 1.5: String=1.5 template=1.5 concat=x1.5 key=1.5 in=false join=1.5|1.5
+toPrimitive 2147483648: String=2147483648 template=2147483648 concat=x2147483648 key=2147483648 in=false join=21 chars
+toPrimitive true: String=true template=true concat=xtrue key=true in=false join=true|true
+toPrimitive null: String=null template=null concat=xnull key=null in=false join=null|null
+toPrimitive undefined: String=undefined template=undefined concat=xundefined key=undefined in=false join=undefined|undefined
+toPrimitive str: String=str template=str concat=xstr key=str in=true join=str|str
+toPrimitive 6000 chars: String=6000 chars template=6000 chars concat=6001 chars key=6000 chars in=false join=12001 chars
+toPrimitive 1000000000000000000000000000000: String=31 chars template=31 chars concat=32 chars key=31 chars in=false join=63 chars
+toPrimitive Symbol(s): String=TypeError template=TypeError concat=TypeError key=Symbol(s) in=false join=TypeError
+toString 1: String=1 template=1 concat=x1 key=1 in=true join=1|1
+toString 0: String=0 template=0 concat=x0 key=0 in=false join=0|0
+toString 1.5: String=1.5 template=1.5 concat=x1.5 key=1.5 in=false join=1.5|1.5
+toString 2147483648: String=2147483648 template=2147483648 concat=x2147483648 key=2147483648 in=false join=21 chars
+toString true: String=true template=true concat=xtrue key=true in=false join=true|true
+toString null: String=null template=null concat=xnull key=null in=false join=null|null
+toString undefined: String=undefined template=undefined concat=xundefined key=undefined in=false join=undefined|undefined
+toString str: String=str template=str concat=xstr key=str in=true join=str|str
+toString 6000 chars: String=6000 chars template=6000 chars concat=6001 chars key=6000 chars in=false join=12001 chars
+toString 1000000000000000000000000000000: String=31 chars template=31 chars concat=32 chars key=31 chars in=false join=63 chars
+toString Symbol(s): String=TypeError template=TypeError concat=TypeError key=Symbol(s) in=false join=TypeError
+valueOf 1: String=1 template=1 concat=x1 key=1 in=true join=1|1
+valueOf 0: String=0 template=0 concat=x0 key=0 in=false join=0|0
+valueOf 1.5: String=1.5 template=1.5 concat=x1.5 key=1.5 in=false join=1.5|1.5
+valueOf 2147483648: String=2147483648 template=2147483648 concat=x2147483648 key=2147483648 in=false join=21 chars
+valueOf true: String=true template=true concat=xtrue key=true in=false join=true|true
+valueOf null: String=null template=null concat=xnull key=null in=false join=null|null
+valueOf undefined: String=undefined template=undefined concat=xundefined key=undefined in=false join=undefined|undefined
+valueOf str: String=str template=str concat=xstr key=str in=true join=str|str
+valueOf 6000 chars: String=6000 chars template=6000 chars concat=6001 chars key=6000 chars in=false join=12001 chars
+valueOf 1000000000000000000000000000000: String=31 chars template=31 chars concat=32 chars key=31 chars in=false join=63 chars
+valueOf Symbol(s): String=TypeError template=TypeError concat=TypeError key=Symbol(s) in=false join=TypeError
+object String: TypeError
+object template: TypeError
+object concat: TypeError
+object key: TypeError
+object in: TypeError
+object join: TypeError
+array: 1,2,3,s 0 5

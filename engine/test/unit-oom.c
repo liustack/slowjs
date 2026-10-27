@@ -22,9 +22,10 @@
 
 /* The small blocks of the allocator come from arenas that are already counted,
    so a limit at what the runtime holds still lets a block out of a free slot.
-   fill_memory sets the limit to what the runtime holds and takes every free
-   block the arenas have left, of each size, so that the next allocation that
-   needs new memory fails. release_blocks gives them back and lifts the limit.
+   fill_memory runs a collection, sets the limit to what the runtime holds
+   and takes every free block the arenas have left, of each size, so that the
+   next allocation that needs new memory fails. take_memory does it with no
+   collection first. release_blocks gives them back and lifts the limit.
    blocks[i] holds the blocks of size 8 * i. */
 #define MAX_BLOCK 4096
 static struct {
@@ -32,11 +33,10 @@ static struct {
     size_t n, cap;
 } blocks[MAX_BLOCK / 8 + 1];
 
-static void fill_memory(VM *v)
+static void take_memory(VM *v)
 {
     size_t size;
 
-    JS_RunGC(v->rt);
     JS_SetMemoryLimit(v->rt, JS_GetMemorySize(v->rt));
     for (size = MAX_BLOCK; size >= 8; size -= 8) {
         for (;;) {
@@ -52,6 +52,12 @@ static void fill_memory(VM *v)
             blocks[i].p[blocks[i].n++] = p;
         }
     }
+}
+
+static void fill_memory(VM *v)
+{
+    JS_RunGC(v->rt);
+    take_memory(v);
 }
 
 /* free_blocks frees up to n blocks of each size from min to max bytes. */
@@ -101,8 +107,34 @@ static size_t fill_rooms(FillRoom *rm)
    uncatchable, which the embedder reports as running out of memory. When it
    can hold the error object but not its message, it does the same, and never
    gives the error the exception marker as its message. Each case frees some
-   blocks from a full heap, then throws a TypeError for a read of a property
-   with a long name. */
+   blocks from a full heap (the small blocks of the engine's allocator need
+   it), or lets the runtime allocate a number of bytes (which the system
+   malloc of the asan build counts to the block), then throws a TypeError for
+   a read of a property with a long name. Some rooms must fail the error and
+   some must give it whole, so that both ends are checked. */
+#define THROW_ERROR_BYTE_ROOMS (1 + 4096 / 16)
+
+/* The error thrown with one room, taken after the memory is back. */
+static void throw_error_check(VM *v, JSValue r, JSValue e, int uncatchable,
+                              const char *kind, size_t i, int *nulls, int *whole)
+{
+    JSValue m;
+
+    CHECK(JS_IsException(r), "%s room %zu: no exception", kind, i);
+    if (JS_IsNull(e)) {
+        (*nulls)++;
+        CHECK(uncatchable, "%s room %zu: null thrown, want it uncatchable", kind, i);
+    } else if (JS_IsObject(e)) {
+        (*whole)++;
+        m = JS_GetPropertyStr(v->ctx, e, "message");
+        CHECK(JS_IsString(m), "%s room %zu: the message of the error has tag %d, want a string", kind, i, JS_VALUE_GET_TAG(m));
+        JS_FreeValue(v->ctx, m);
+    } else {
+        CHECK(0, "%s room %zu: thrown value has tag %d", kind, i, JS_VALUE_GET_TAG(e));
+    }
+    JS_FreeValue(v->ctx, e);
+}
+
 static void test_throw_error_oom(void)
 {
     VM v = vm_new();
@@ -119,32 +151,29 @@ static void test_throw_error_oom(void)
     JS_FreeValue(v.ctx, JS_GetProperty(v.ctx, JS_NULL, atom));
     JS_FreeValue(v.ctx, JS_GetException(v.ctx));
     nrooms = fill_rooms(rm);
-    for (i = 0; i < nrooms; i++) {
-        JSValue r, e, m;
+    for (i = 0; i < nrooms + THROW_ERROR_BYTE_ROOMS; i++) {
+        JSValue r, e;
         int uncatchable;
 
-        fill_memory(&v);
-        free_blocks(&v, rm[i].min, rm[i].max, rm[i].n);
+        if (i < nrooms) {
+            fill_memory(&v);
+            free_blocks(&v, rm[i].min, rm[i].max, rm[i].n);
+        } else {
+            room(&v, (i - nrooms) * 16);
+        }
         r = JS_GetProperty(v.ctx, JS_NULL, atom);
         uncatchable = JS_IsUncatchableException(v.ctx);
         e = JS_GetException(v.ctx);
         JS_SetUncatchableException(v.ctx, 0);
-        release_blocks(&v);
-        CHECK(JS_IsException(r), "room %zu: no exception", i);
-        if (JS_IsNull(e)) {
-            nulls++;
-            CHECK(uncatchable, "room %zu: null thrown, want it uncatchable", i);
-        } else if (JS_IsObject(e)) {
-            whole++;
-            m = JS_GetPropertyStr(v.ctx, e, "message");
-            CHECK(JS_IsString(m), "room %zu: the message of the error has tag %d, want a string", i, JS_VALUE_GET_TAG(m));
-            JS_FreeValue(v.ctx, m);
-        } else {
-            CHECK(0, "room %zu: thrown value has tag %d", i, JS_VALUE_GET_TAG(e));
-        }
-        JS_FreeValue(v.ctx, e);
+        if (i < nrooms)
+            release_blocks(&v);
+        else
+            unlimit(&v);
+        throw_error_check(&v, r, e, uncatchable, i < nrooms ? "fill" : "byte",
+                          i < nrooms ? i : (i - nrooms) * 16, &nulls, &whole);
     }
     CHECK(nulls > 0, "no room made the error fail");
+    CHECK(whole > 0, "no room gave a whole error: its message is not checked");
     JS_FreeAtom(v.ctx, atom);
     vm_free(&v);
 }
@@ -1043,6 +1072,221 @@ static void test_thrown_is_not_uncatchable(void)
     }
 }
 
+/* ---- the paths that no longer recurse ---- */
+
+/* sweep runs setup and then src, both global scripts of the file name file, in
+   a new runtime for each room: every 8 bytes from nothing to max bytes past
+   what the runtime holds, and every room of a full heap (fill_rooms). The text
+   of the value of src must be one of want (a list that ends with NULL), or
+   src must fail uncatchable, as running out of memory does. Then, with the
+   memory back, src must give want[0] in the same runtime, and the runtime
+   must free with no block left. Some room must fail and some must work. */
+static void sweep(const char *what, const char *file, const char *setup,
+                  const char *src, const char *const *want, size_t max)
+{
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = max / 8 + 1, k;
+    int failed = 0, worked = 0;
+
+    for (k = 0; k < nbytes + nfill; k++) {
+        VM v = vm_new();
+        JSValue r;
+        char *t;
+        int unc, i, fail;
+
+        if (setup && !eval_ok(v.ctx, setup)) {
+            CHECK(0, "%s: the setup failed", what);
+            vm_free(&v);
+            return;
+        }
+        if (k < nbytes) {
+            room(&v, k * 8);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+        }
+        r = JS_Eval(v.ctx, src, strlen(src), file, JS_EVAL_TYPE_GLOBAL);
+        fail = JS_IsException(r);
+        unc = JS_IsUncatchableException(v.ctx);
+        if (k < nbytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (fail) {
+            failed++;
+            t = exception_text(v.ctx);
+            CHECK(unc, "%s: room %zu: a catchable exception: %s", what, k, t ? t : "?");
+        } else {
+            t = value_text(v.ctx, r);
+            for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
+                ;
+            CHECK(want[i], "%s: room %zu: got %s", what, k, t ? t : "(no text)");
+            if (t && strcmp(t, want[0]) == 0)
+                worked++;
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, src, strlen(src), file, JS_EVAL_TYPE_GLOBAL);
+        t = value_text(v.ctx, r);
+        CHECK(t && strcmp(t, want[0]) == 0, "%s: room %zu: with the memory back: %s", what, k, t ? t : "(exception)");
+        free(t);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        fflush(stdout);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "%s: no room made it fail", what);
+    CHECK(worked > 0, "%s: no room let it work", what);
+}
+
+/* A TypeError that a built-in function throws gets its stack when it is made,
+   and code of a script on the stack has it formatted at once: the names of the
+   functions and of the file are converted to UTF-8 there, which needs memory
+   when they are not ASCII. Without memory for it the stack is null, or the
+   call fails with the out of memory error. */
+static void test_new_error_stack_oom(void)
+{
+    static const char *const want[] = {
+        "TypeError: empty array\n"
+        "    at reduce (native)\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:17)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "TypeError: empty array\nnull",
+        NULL };
+
+    sweep("new error", "\xc3\xa9.js", NULL,
+          "function f\xc3\xa9() { return [].reduce(Math.max) }\n"
+          "try { f\xc3\xa9() } catch (e) { e + '\\n' + e.stack }",
+          want, 24576);
+}
+
+/* A syntax error gets the place in the source, then the stack of the
+   functions that called eval, formatted at once with the memory that is left.
+   Running out of it there throws, which frees the current exception: the
+   syntax error itself, which was still being given its properties. The
+   syntax error stays the exception. Its stack is null, or missing, which the
+   interpreter then fills with the functions alone, without the place. */
+static void test_syntax_error_stack_oom(void)
+{
+    static const char *const want[] = {
+        "SyntaxError: unexpected token in expression: ''\n"
+        "    at <input>:1:4\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:28)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "SyntaxError: unexpected token in expression: ''\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:28)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "SyntaxError: unexpected token in expression: ''\nundefined",
+        "SyntaxError: unexpected token in expression: ''\nnull",
+        NULL };
+
+    sweep("syntax error", "\xc3\xa9.js", NULL,
+          "function f\xc3\xa9() { return eval('1 +') }\n"
+          "try { f\xc3\xa9() } catch (e) { e + '\\n' + e.stack }",
+          want, 24576);
+}
+
+/* The paths split off the generic conversions and property paths, so that
+   the call graph has no cycle through them, with each room: an element of a
+   fast array read and written by a string key, through a prototype and as a
+   descriptor (a BigInt element needs memory), a rope converted to a number,
+   strings that are and are not canonical numeric keys of a typed array, a
+   length set through valueOf, a rope made flat by a method and as a key, and
+   objects converted to strings and keys. Each works or fails with the out of
+   memory error. */
+static void test_split_paths_oom(void)
+{
+    static const char *const want[] = {
+        "-2,0,3,5,7,42,undefined,undefined,false,false,2,4206,233,3,k4206,k4206,1",
+        NULL };
+
+    sweep("split paths", "split.js",
+          "var ta = new BigInt64Array([1n, -2n]), f64 = new Float64Array([0.5, -0]), a = [1, 2, 3];\n"
+          "var p = 'ab\\u00e9'.repeat(200), rope = p;\n"
+          "for (var i = 0; i < 6; i++) rope = rope + (p + i);\n"
+          "var num = ' '.repeat(600) + (' '.repeat(600) + '42');\n"
+          "var o = { toString() { return 'k' + rope.length } }, len = { valueOf() { return 2 } };\n",
+          "var r = [];\n"
+          "r.push(String(Reflect.get(ta, '1')), String(Object.getOwnPropertyDescriptor(f64, '1').value), Object.create(a)[2]);\n"
+          "Reflect.set(a, '1', 5); Object.defineProperty(ta, '0', { value: 7n }); r.push(a[1], String(ta[0]));\n"
+          "r.push(Number(num), String(ta['1.5']), String(ta['-0']), String('1e21' in f64), String('0.1' in f64));\n"
+          "var b = [1, 2, 3, 4]; b.length = len; r.push(b.length);\n"
+          "r.push(rope.length, rope.charCodeAt(1203), ({ [rope]: 3 })[rope]);\n"
+          "r.push(String(o), `${o}`, { [o]: 1 }['k' + rope.length]);\n"
+          "r.join(',')",
+          want, 24576);
+}
+
+/* The empty string is the string of an atom: making it takes no memory,
+   from a full heap too, where a string of one character fails. The string
+   of an index atom is made, with memory. */
+static void test_empty_string_full_heap(void)
+{
+    VM v = vm_new();
+    JSAtom seven = JS_NewAtomUInt32(v.ctx, 7);
+    JSValue e1, e2, one, s7;
+    char *t1, *t2, *t7;
+
+    fill_memory(&v);
+    e1 = JS_NewStringLen(v.ctx, "", 0);
+    e2 = JS_NewString(v.ctx, "");
+    one = JS_NewStringLen(v.ctx, "a", 1);
+    CHECK(JS_IsString(e1) && JS_IsString(e2), "no empty string from a full heap");
+    CHECK(JS_IsException(one), "a string of one character from a full heap");
+    free(exception_text(v.ctx));
+    release_blocks(&v);
+    s7 = JS_AtomToString(v.ctx, seven);
+    t1 = value_text(v.ctx, e1);
+    t2 = value_text(v.ctx, e2);
+    t7 = value_text(v.ctx, s7);
+    CHECK(t1 && t2 && !strcmp(t1, "") && !strcmp(t2, ""), "the empty strings are %s and %s", t1 ? t1 : "?", t2 ? t2 : "?");
+    CHECK(t7 && !strcmp(t7, "7"), "the string of the atom 7 is %s", t7 ? t7 : "?");
+    free(t1);
+    free(t2);
+    free(t7);
+    JS_FreeValue(v.ctx, e1);
+    JS_FreeValue(v.ctx, e2);
+    JS_FreeValue(v.ctx, s7);
+    JS_FreeAtom(v.ctx, seven);
+    vm_free(&v);
+}
+
+/* The collector queues the callback of a FinalizationRegistry when it
+   frees a target. It cannot throw, so with no memory for the job the job is
+   lost and the collection goes on. With memory the callback runs with the
+   held value. Either way nothing is left behind (vm_free). The heap is
+   filled after the target is let go: what it gave back, which the system
+   malloc of the asan build counts at once, must not hold the job. */
+static void test_finrec_job_full_heap(void)
+{
+    static const char setup[] =
+        "var got = [];\n"
+        "var reg = new FinalizationRegistry(h => got.push(h));\n"
+        "(function () { var t = {}; reg.register(t, 'held'); return t })()";
+    int full;
+
+    for (full = 0; full < 2; full++) {
+        VM v = vm_new();
+        JSValue target = JS_Eval(v.ctx, setup, strlen(setup), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSContext *ctx1;
+
+        CHECK(JS_IsObject(target), "the setup failed");
+        JS_RunGC(v.rt);
+        CHECK(!JS_IsJobPending(v.rt), "full %d: a job before the target is freed", full);
+        JS_FreeValue(v.ctx, target);
+        if (full)
+            take_memory(&v);
+        JS_RunGC(v.rt);
+        CHECK(JS_IsJobPending(v.rt) == !full, "full %d: a job is %s", full, full ? "queued" : "missing");
+        if (full)
+            release_blocks(&v);
+        while (JS_ExecutePendingJob(v.rt, &ctx1) > 0)
+            ;
+        CHECK(eval_is(v.ctx, "got.join()", full ? "" : "held"), "full %d: the callback", full);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1062,6 +1306,11 @@ int main(void)
     test_oom_uncatchable();
     test_regexp_oom();
     test_thrown_is_not_uncatchable();
+    test_new_error_stack_oom();
+    test_syntax_error_stack_oom();
+    test_empty_string_full_heap();
+    test_finrec_job_full_heap();
+    test_split_paths_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;

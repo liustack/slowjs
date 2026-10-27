@@ -1294,8 +1294,15 @@ static int json_parse_is(JSContext *ctx, JSValueConst parse, const char *text, c
     v = JS_Call(ctx, parse, JS_UNDEFINED, 1, &arg);
     JS_FreeValue(ctx, arg);
     if (JS_IsException(v)) {
+        JSRuntime *rt = JS_GetRuntime(ctx);
+        int depth = JS_GetInternalDepth(rt);
+
         e = JS_GetException(ctx);
+        /* the text of the error may need a built-in function made, which
+           takes a level: read it below the depth of the test */
+        JS_SetInternalDepth(rt, 0);
         name = JS_ToCString(ctx, e);
+        JS_SetInternalDepth(rt, depth);
         got = name ? name : "?";
     } else {
         got = JS_IsObject(v) ? "object" : JS_IsNumber(v) ? "number" : "other";
@@ -1612,6 +1619,117 @@ static int test_internal_depth_limit(void *unused)
         CHECK(JS_GetInternalDepth(rt) == 0, "case %zu: the internal depth is back at %d", i, JS_GetInternalDepth(rt));
     }
     CHECK(eval_is(ctx, "1 + 1", "2"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* The name of the exception, taken out of ctx, or "" when there is none */
+static void take_error_name(JSContext *ctx, char *buf, size_t size)
+{
+    JSValue e, name;
+    const char *s;
+
+    if (!JS_HasException(ctx)) {
+        snprintf(buf, size, "%s", "");
+        return;
+    }
+    e = JS_GetException(ctx);
+    name = JS_GetPropertyStr(ctx, e, "name");
+    s = JS_ToCString(ctx, name);
+    snprintf(buf, size, "%s", s ? s : "");
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, name);
+    JS_FreeValue(ctx, e);
+}
+
+/* A built-in function or object, or the prototype of a function, is made at
+   the first access to its property, and making it counts a level of the
+   internal depth. At the limit the access throws a RangeError and the
+   property stays to be made, which the next access below the limit does. */
+static int test_internal_depth_autoinit(void *unused)
+{
+    static const struct { const char *holder, *prop, *type; } cases[] = {
+        { "globalThis", "Reflect", "object" },
+        { "JSON", "parse", "function" },
+        { "(function f() {})", "prototype", "object" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char name[32];
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        JSValue holder = JS_Eval(ctx, cases[i].holder, strlen(cases[i].holder), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue v;
+        const char *type;
+
+        CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH) == 0, "set the limit");
+        v = JS_GetPropertyStr(ctx, holder, cases[i].prop);
+        CHECK(JS_IsException(v), "%s.%s was made at the limit", cases[i].holder, cases[i].prop);
+        JS_FreeValue(ctx, v);
+        take_error_name(ctx, name, sizeof(name));
+        CHECK(strcmp(name, "RangeError") == 0, "%s.%s at the limit threw %s", cases[i].holder, cases[i].prop, name);
+        CHECK(JS_GetInternalDepth(rt) == JS_MAX_INTERNAL_DEPTH, "the depth is %d", JS_GetInternalDepth(rt));
+        CHECK(JS_SetInternalDepth(rt, JS_MAX_INTERNAL_DEPTH - 1) == 0, "set one below");
+        v = JS_GetPropertyStr(ctx, holder, cases[i].prop);
+        CHECK(JS_GetInternalDepth(rt) == JS_MAX_INTERNAL_DEPTH - 1, "the depth is %d", JS_GetInternalDepth(rt));
+        CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+        type = JS_IsFunction(ctx, v) ? "function" : JS_IsObject(v) ? "object" : "other";
+        CHECK(strcmp(type, cases[i].type) == 0, "%s.%s one below the limit is %s", cases[i].holder, cases[i].prop, type);
+        JS_FreeValue(ctx, v);
+        JS_FreeValue(ctx, holder);
+    }
+    CHECK(eval_is(ctx, "typeof Reflect.ownKeys + typeof JSON.parse('1')", "functionnumber"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
+/* A String object and an arguments object define a property through the
+   ordinary definition, which counts a level of the internal depth: at the
+   limit a definition, and a write that adds a property, throw a RangeError
+   and change nothing, and one below the limit they work. */
+static int test_internal_depth_define(void *unused)
+{
+    static const char *const holders[] = {
+        "new String('ab')",
+        "(function () { 'use strict'; return arguments })(1, 2)",
+        "(function (a, b) { return arguments })(1, 2)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global = JS_GetGlobalObject(ctx);
+    char name[32];
+    size_t i;
+    int d;
+
+    for (i = 0; i < sizeof(holders) / sizeof(holders[0]); i++) {
+        JSValue o = JS_Eval(ctx, holders[i], strlen(holders[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (d = JS_MAX_INTERNAL_DEPTH; d >= JS_MAX_INTERNAL_DEPTH - 1; d--) {
+            int at = d == JS_MAX_INTERNAL_DEPTH, r1, r2;
+
+            CHECK(JS_SetInternalDepth(rt, d) == 0, "set %d", d);
+            r1 = JS_DefinePropertyValueStr(ctx, o, at ? "x" : "y", JS_NewInt32(ctx, 1), JS_PROP_C_W_E | JS_PROP_THROW);
+            if (at) {
+                take_error_name(ctx, name, sizeof(name));
+                CHECK(r1 < 0 && strcmp(name, "RangeError") == 0, "%s: a definition at the limit gave %d, %s", holders[i], r1, name);
+            }
+            r2 = JS_SetPropertyUint32(ctx, o, at ? 5 : 6, JS_NewInt32(ctx, 2));
+            if (at) {
+                take_error_name(ctx, name, sizeof(name));
+                CHECK(r2 < 0 && strcmp(name, "RangeError") == 0, "%s: a new element at the limit gave %d, %s", holders[i], r2, name);
+            } else {
+                CHECK(r1 > 0 && r2 > 0, "%s: one below the limit gave %d and %d", holders[i], r1, r2);
+            }
+            CHECK(JS_GetInternalDepth(rt) == d, "the depth is %d", JS_GetInternalDepth(rt));
+        }
+        CHECK(JS_SetInternalDepth(rt, 0) == 0, "set 0");
+        JS_SetPropertyStr(ctx, global, "o", o);
+        CHECK(eval_is(ctx, "Object.keys(o).join()", "0,1,6,y"), "%s: the keys", holders[i]);
+    }
+    JS_FreeValue(ctx, global);
     JS_FreeContext(ctx);
     host_free_runtime(rt);
     return 0;
@@ -2196,6 +2314,74 @@ static void test_class_strings(void)
     host_free_runtime(rt);
 }
 
+/* rqsort_stop stops soon after its stop is set: cmp sets it at the k-th
+   comparison, for every k of sorts of 2 to 64 elements and for k spread over
+   sorts of 100 to 5000, and the comparisons after it are at most the 14 that
+   cutils.h allows outside the heap sort (which random input does not reach). */
+void rqsort_stop(void *base, size_t nmemb, size_t size,
+                 int (*cmp)(const void *, const void *, void *),
+                 void *arg, const volatile int *stop);
+
+typedef struct {
+    long n, k;
+    int stop;
+} SortStop;
+
+static int sort_stop_cmp(const void *a, const void *b, void *opaque)
+{
+    SortStop *s = opaque;
+    int x = *(const int *)a, y = *(const int *)b;
+
+    if (++s->n == s->k)
+        s->stop = 1;
+    return (x > y) - (x < y);
+}
+
+static void test_sort_stop_bound(void)
+{
+    static const int big[] = { 100, 1000, 5000 };
+    static int a[5000];
+    uint32_t seed = 12345;
+    long worst = 0, runs = 0;
+    int size, i, b;
+
+    for (b = -63; b < 3; b++) {
+        long total, k, step;
+        SortStop s;
+
+        size = b < 0 ? 65 + b : big[b];
+        for (i = 0; i < size; i++) {
+            seed = seed * 1103515245 + 12345;
+            a[i] = (int)(seed >> 16) % 1000;
+        }
+        s.n = 0;
+        s.k = 0;
+        s.stop = 0;
+        {
+            static int c[5000];
+            memcpy(c, a, size * sizeof(int));
+            rqsort_stop(c, size, sizeof(int), sort_stop_cmp, &s, &s.stop);
+        }
+        total = s.n;
+        step = size <= 64 ? 1 : total / 300 + 1;
+        for (k = 1; k <= total; k += step) {
+            static int c[5000];
+
+            memcpy(c, a, size * sizeof(int));
+            s.n = 0;
+            s.k = k;
+            s.stop = 0;
+            rqsort_stop(c, size, sizeof(int), sort_stop_cmp, &s, &s.stop);
+            runs++;
+            if (s.n - k > worst)
+                worst = s.n - k;
+            CHECK(s.n - k <= 14, "a sort of %d stopped at comparison %ld made %ld more", size, k, s.n - k);
+        }
+    }
+    CHECK(runs > 2000, "only %ld sorts were stopped", runs);
+    CHECK(worst > 0, "no sort made a comparison after the stop: the bound is not tested");
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -2207,6 +2393,8 @@ int main(void)
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_internal_depth_limit, NULL);
+    host_run_thread(test_internal_depth_autoinit, NULL);
+    host_run_thread(test_internal_depth_define, NULL);
     host_run_thread(test_function_nesting, NULL);
     host_run_thread(test_paren_depth, NULL);
     host_run_thread(test_json_records, NULL);
@@ -2229,6 +2417,7 @@ int main(void)
     test_search_linear();
     test_search_interrupt();
     test_sort_interrupt();
+    test_sort_stop_bound();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

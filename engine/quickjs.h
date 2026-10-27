@@ -512,6 +512,8 @@ size_t JS_FrontCacheBlocks(JSRuntime *rt);
    and the sum of the sizes the heap gave them (JS_LARGE_CACHE_BYTES at most) */
 size_t JS_LargeCacheBlocks(JSRuntime *rt);
 size_t JS_LargeCacheBytes(JSRuntime *rt);
+/* test builds: how many requests the cache of large blocks has served */
+size_t JS_LargeCacheHits(JSRuntime *rt);
 /* test builds: the most blocks a class of the large cache keeps, and the most
    bytes the whole cache keeps */
 void JS_LargeCacheLimits(size_t *per_class, size_t *bytes);
