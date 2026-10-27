@@ -65,7 +65,7 @@ The tests of the generator in `internal/goasm/gen` need LLVM and skip (and still
 ```sh
 export SLOWJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
 export SLOWJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
-export SLOWJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker
+export SLOWJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux)
 go test -p 2 -timeout 30m ./internal/goasm/gen/...
 ```
 
