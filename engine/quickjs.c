@@ -3224,8 +3224,10 @@ void JS_SetContextOpaque(JSContext *ctx, void *opaque)
 }
 
 /* set the new value and free the old value after (freeing the value
-   can reallocate the object data) */
-static inline void set_value(JSContext *ctx, JSValue *pval, JSValue new_val)
+   can reallocate the object data). Always inline: in JS_CallInternal its
+   calls sit on paths that the likely() tests make cold, where LLVM's
+   inliner uses its threshold for cold call sites and keeps it out of line. */
+static force_inline void set_value(JSContext *ctx, JSValue *pval, JSValue new_val)
 {
     JSValue old_val;
     old_val = *pval;
@@ -20336,8 +20338,10 @@ typedef enum {
 
 /* argv[] is modified if (flags & JS_CALL_FLAG_COPY_ARGV) = 0. */
 
-/* Fast paths of the interpreter loop: get_field, ==, bitwise operators, atoms. */
-static inline JSObject *goasm_field_proto(JSContext *ctx, JSValueConst v, JSAtom atom)
+/* Fast paths of the interpreter loop: get_field, ==, bitwise operators, atoms.
+   Always inline, as set_value: most of their calls in JS_CallInternal sit on
+   paths that LLVM takes as cold, and would stay calls. */
+static force_inline JSObject *goasm_field_proto(JSContext *ctx, JSValueConst v, JSAtom atom)
 {
     int class_id;
     switch (JS_VALUE_GET_TAG(v)) {
@@ -20370,7 +20374,7 @@ static inline BOOL goasm_eq_simple_tag(int tag)
 }
 
 /* 1 or 0 when the pair is answered here, -1 for the slow function. */
-static inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL strict)
+static force_inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL strict)
 {
     int ta = JS_VALUE_GET_TAG(a), tb = JS_VALUE_GET_TAG(b);
     if (strict) {
@@ -20438,7 +20442,7 @@ static inline BOOL goasm_number_to_int32(JSValueConst v, int32_t *r)
     }
 }
 
-static inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
+static force_inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
 {
     int32_t x, y, r;
     if (!goasm_number_to_int32(sp[-2], &x) || !goasm_number_to_int32(sp[-1], &y))
@@ -20465,7 +20469,7 @@ static inline BOOL goasm_bitwise_numbers(JSContext *ctx, JSValue *sp, int op)
     return TRUE;
 }
 
-static inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
+static force_inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
 {
     if (!__JS_AtomIsTaggedInt(atom)) {
         JSAtomStruct *p = ctx->rt->atom_array[atom];
