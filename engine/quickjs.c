@@ -1534,6 +1534,8 @@ static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
+static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
+                                                   uint32_t idx, JSValue *pval);
 static JSValue js_regexp_toString(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv);
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
@@ -10161,9 +10163,9 @@ JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
             if (p->fast_array) {
                 if (__JS_AtomIsTaggedInt(prop)) {
                     uint32_t idx = __JS_AtomToUInt32(prop);
-                    if (idx < p->u.array.count) {
-                        /* we avoid duplicating the code */
-                        return JS_GetPropertyUint32(ctx, JS_MKPTR(JS_TAG_OBJECT, p), idx);
+                    JSValue val;
+                    if (js_get_fast_array_element(ctx, p, idx, &val)) {
+                        return val;
                     } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
                                p->class_id <= JS_CLASS_FLOAT64_ARRAY) {
                         return JS_UNDEFINED;
@@ -11021,7 +11023,9 @@ retry:
                             JS_PROP_CONFIGURABLE;
                         desc->getter = JS_UNDEFINED;
                         desc->setter = JS_UNDEFINED;
-                        desc->value = JS_GetPropertyUint32(ctx, JS_MKPTR(JS_TAG_OBJECT, p), idx);
+                        /* an element below the count is always there */
+                        if (unlikely(!js_get_fast_array_element(ctx, p, idx, &desc->value)))
+                            abort();
                     }
                     return TRUE;
                 }
@@ -11181,79 +11185,96 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
     return atom;
 }
 
+/* the element idx of the fast array p in *pval: FALSE, with *pval
+   untouched, if p is of a class with no fast array or idx is not below its
+   count */
+static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
+                                                   uint32_t idx, JSValue *pval)
+{
+    switch(p->class_id) {
+    case JS_CLASS_ARRAY:
+    case JS_CLASS_ARGUMENTS:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_DupValue(ctx, p->u.array.u.values[idx]);
+        return TRUE;
+    case JS_CLASS_MAPPED_ARGUMENTS:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_DupValue(ctx, *p->u.array.u.var_refs[idx]->pvalue);
+        return TRUE;
+    case JS_CLASS_INT8_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int8_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT8C_ARRAY:
+    case JS_CLASS_UINT8_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.uint8_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_INT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int16_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.uint16_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_INT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int32_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewUint32(ctx, p->u.array.u.uint32_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_BIG_INT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewBigInt64(ctx, p->u.array.u.int64_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_BIG_UINT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewBigUint64(ctx, p->u.array.u.uint64_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_FLOAT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, fromfp16(p->u.array.u.fp16_ptr[idx]));
+        return TRUE;
+    case JS_CLASS_FLOAT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, p->u.array.u.float_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_FLOAT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, p->u.array.u.double_ptr[idx]);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                    JSValue prop)
 {
     JSAtom atom;
     JSValue ret;
 
+    /* fast path for array access */
     if (likely(JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
-               JS_VALUE_GET_TAG(prop) == JS_TAG_INT)) {
-        JSObject *p;
-        uint32_t idx;
-        /* fast path for array access */
-        p = JS_VALUE_GET_OBJ(this_obj);
-        idx = JS_VALUE_GET_INT(prop);
-        switch(p->class_id) {
-        case JS_CLASS_ARRAY:
-        case JS_CLASS_ARGUMENTS:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_DupValue(ctx, p->u.array.u.values[idx]);
-        case JS_CLASS_MAPPED_ARGUMENTS:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_DupValue(ctx, *p->u.array.u.var_refs[idx]->pvalue);
-        case JS_CLASS_INT8_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int8_ptr[idx]);
-        case JS_CLASS_UINT8C_ARRAY:
-        case JS_CLASS_UINT8_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.uint8_ptr[idx]);
-        case JS_CLASS_INT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int16_ptr[idx]);
-        case JS_CLASS_UINT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.uint16_ptr[idx]);
-        case JS_CLASS_INT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int32_ptr[idx]);
-        case JS_CLASS_UINT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewUint32(ctx, p->u.array.u.uint32_ptr[idx]);
-        case JS_CLASS_BIG_INT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewBigInt64(ctx, p->u.array.u.int64_ptr[idx]);
-        case JS_CLASS_BIG_UINT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewBigUint64(ctx, p->u.array.u.uint64_ptr[idx]);
-        case JS_CLASS_FLOAT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, fromfp16(p->u.array.u.fp16_ptr[idx]));
-        case JS_CLASS_FLOAT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, p->u.array.u.float_ptr[idx]);
-        case JS_CLASS_FLOAT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, p->u.array.u.double_ptr[idx]);
-        default:
-            goto slow_path;
-        }
-    } else {
-    slow_path:
-        /* ToObject() must be done before ToPropertyKey() */
-        if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
-            JS_FreeValue(ctx, prop);
-            return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
-        }
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
-        if (unlikely(atom == JS_ATOM_NULL))
-            return JS_EXCEPTION;
-        ret = JS_GetProperty(ctx, this_obj, atom);
-        JS_FreeAtom(ctx, atom);
+               JS_VALUE_GET_TAG(prop) == JS_TAG_INT) &&
+        js_get_fast_array_element(ctx, JS_VALUE_GET_OBJ(this_obj),
+                                  JS_VALUE_GET_INT(prop), &ret))
         return ret;
+    /* ToObject() must be done before ToPropertyKey() */
+    if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
+        JS_FreeValue(ctx, prop);
+        return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
     }
+    atom = JS_ValueToAtom(ctx, prop);
+    JS_FreeValue(ctx, prop);
+    if (unlikely(atom == JS_ATOM_NULL))
+        return JS_EXCEPTION;
+    ret = JS_GetProperty(ctx, this_obj, atom);
+    JS_FreeAtom(ctx, atom);
+    return ret;
 }
 
 JSValue JS_GetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
