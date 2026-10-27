@@ -27,6 +27,13 @@ type EngineEmit struct {
 	NoStubs bool
 	Plan    *DataPlan
 	Arch    string // file name suffix and build tag
+	// Align64 maps a function to where its body starts in a line of 64
+	// bytes, a multiple of 8 below 64: a PCALIGN $64 takes the place of the
+	// PCALIGN $16 after Go's prologue (which also puts the function itself
+	// on 64 bytes), followed by that many bytes of 8-byte no-ops. The no-ops
+	// run once per call. A change elsewhere in the program then moves the
+	// body by whole lines of 64 bytes only.
+	Align64 map[string]int
 }
 
 // EmitEngine returns the generated .s files by name.
@@ -60,6 +67,7 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		}
 		return b
 	}
+	aligned := 0
 	for _, m := range e.Metas {
 		vs, ok := o.funcs[m.Name]
 		if !ok {
@@ -69,7 +77,18 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		lo, hi := int(vs[0]), int(vs[0]+vs[1])
 		gn := e.Names[m.Name]
 		fb.WriteString(funcHeader(gn, m))
-		fmt.Fprintf(&fb, "\tPCALIGN $16\n")
+		if off, ok := e.Align64[m.Name]; ok {
+			if off < 0 || off >= 64 || off%8 != 0 {
+				return nil, fmt.Errorf("%s: body at %d bytes into a line of 64, not a multiple of 8 below 64", m.Name, off)
+			}
+			aligned++
+			fmt.Fprintf(&fb, "\tPCALIGN $64\n")
+			for ; off > 0; off -= 8 {
+				fmt.Fprintf(&fb, "\tQUAD $0x0000000000841f0f // NOPL 0(AX)(AX*1)\n")
+			}
+		} else {
+			fmt.Fprintf(&fb, "\tPCALIGN $16\n")
+		}
 		code := hi
 		if cs, ok := o.funcs[m.Name+".const"]; ok {
 			code = int(cs[0])
@@ -86,6 +105,9 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 			group = "engine"
 		}
 		open(group, fb.Len()).WriteString(fb.String())
+	}
+	if aligned != len(e.Align64) {
+		return nil, fmt.Errorf("%d functions to put on 64 bytes, but only %d of them are lowered", len(e.Align64), aligned)
 	}
 	var groups []string
 	for g := range cur {

@@ -64,6 +64,10 @@ type EngineCheck struct {
 	Probes, Facts RegFacts
 	// All requires every function to be in the binary and checked.
 	All bool
+	// Align64 is EngineEmit.Align64: the body of each of these functions
+	// starts that many bytes past a multiple of 64, after the PCALIGN $64
+	// that replaces the usual PCALIGN $16 and the no-ops that follow it.
+	Align64 map[string]int
 	// HostPoll says the engine calls host_poll even though llc's object does
 	// not name it (it is always required when the object does). The poll is
 	// the only place the Go runtime can stop C code to collect garbage, so the
@@ -889,6 +893,17 @@ func (k *checker) goEpilogue(g goFrame, e uint64, sym elf.Symbol) error {
 	return nil
 }
 
+// bodyAt is where the emitter puts the body of a function whose Go prologue
+// ends at lead: after a PCALIGN $64 and the bytes of EngineCheck.Align64 for
+// one of those, else after a PCALIGN $16. The padding runs, so the check
+// holds it to no-ops (allPad).
+func (k *checker) bodyAt(name string, lead uint64) uint64 {
+	if off, ok := k.c.Align64[name]; ok {
+		return alignUp64(lead, 64) + uint64(off)
+	}
+	return alignUp64(lead, 16)
+}
+
 // checkHostPoll holds the Go function host_poll to the one thing the poll
 // is for: a safe point. It must begin with Go's stack check, a compare of the
 // stack (or the stack less the frame) with the guard in g, a branch on below
@@ -1051,7 +1066,7 @@ func (k *checker) checkUnified(meta Meta) error {
 	if g.frame != int64(r.Frame) {
 		return fmt.Errorf("Go frame is %d bytes, the lowering declared %d", g.frame, r.Frame)
 	}
-	body := alignUp64(g.afterLead, 16)
+	body := k.bodyAt(r.Name, g.afterLead)
 	if err := k.allPad(g.afterLead, body); err != nil {
 		return err
 	}
@@ -2003,7 +2018,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 	if g.split || g.frame != int64(r.Frame) || g.bp != (r.Frame > 0 || len(r.Calls) > 0) {
 		return fmt.Errorf("Go prologue of a leaf: split %v, BP %v, frame %d (declared %d)", g.split, g.bp, g.frame, r.Frame)
 	}
-	body := alignUp64(g.afterLead, 16)
+	body := k.bodyAt(r.Name, g.afterLead)
 	if err := k.allPad(g.afterLead, body); err != nil {
 		return err
 	}
