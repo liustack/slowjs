@@ -428,7 +428,9 @@ int JS_SetCallDepth(JSRuntime *rt, int depth);
 int JS_GetInternalDepth(JSRuntime *rt);
 int JS_SetInternalDepth(JSRuntime *rt, int depth);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
-   nothing leaked. The host takes the chunks of memory back after it. */
+   nothing leaked. The host takes the chunks of memory back after it. An
+   object a reference is still held to, such as one the host never freed,
+   stops it before it frees the rest: it returns the blocks in use then. */
 size_t JS_FreeRuntime(JSRuntime *rt);
 void *JS_GetRuntimeOpaque(JSRuntime *rt);
 void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque);
