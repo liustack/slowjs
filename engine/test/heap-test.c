@@ -903,19 +903,25 @@ static void rt_check(RtModel *m)
 /* Why a request the runtime refused may be refused, from the state after the
    call and not from what happened before: a size past the maximum, the host
    refusing a request during the call, the footprint budget set now (the least
-   a growth takes is min_growth, or for a large block that is resized and
-   remapped, anything: its chunk grows by the difference and the model does not
-   know the chunk), or the memory limit set now, which the request (an arena, or
-   the block and its header) would pass. The front cache is given back when a
+   a growth takes is min_growth, and a large block that grows asks the rule of
+   budget_refuses_resize, with the dedicated chunk it lives in, chunk, 0 for
+   none), or the memory limit set now, which the request (an arena, or the
+   block and its header) would pass. The front cache is given back when a
    request fails, so count is the one after the call. */
-static int rt_refusal_explained(RtModel *m, size_t sz, size_t count, long refused, int remapped)
+static int rt_refusal_explained(RtModel *m, size_t sz, size_t count, long refused, int large_growth, size_t chunk)
 {
     size_t request = sz < LARGE_FROM ? ARENA_SIZE : rt_large_request(m, sz) + m->large_hdr;
+    size_t fp = rt_footprint(m->rt);
 
     if (sz > JS_HEAP_MAX_REQUEST - m->large_hdr || vms[m->vm].refused != refused)
         return 1;
-    if (m->fp_limit && (remapped || rt_footprint(m->rt) + min_growth(rt_footprint(m->rt), request) > m->fp_limit))
+    if (large_growth) {
+        /* the heap is asked to resize the block and its header */
+        if (budget_refuses_resize(m->fp_limit, fp, chunk, sz + m->large_hdr, ((const JSHeap *)m->rt)->remap))
+            return 1;
+    } else if (m->fp_limit && fp + min_growth(fp, request) > m->fp_limit) {
         return 1;
+    }
     return m->limit != (size_t)-1 && (unsigned __int128)count + request > m->limit;
 }
 
@@ -959,7 +965,7 @@ static int rt_alloc(RtModel *m, size_t sz)
         CHECK((p == NULL) == (over != 0), "js_malloc_rt(%zu) %s with count %zu and limit %zu", sz, p ? "passed" : "failed", count, m->limit);
     }
     if (!p) {
-        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, 0),
+        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, 0, 0),
               "js_malloc_rt(%zu) failed for no reason (count %zu, limit %zu, footprint %zu, budget %zu, refused %ld)", sz,
               JS_GetMemorySize(m->rt), m->limit, rt_footprint(m->rt), m->fp_limit, vms[m->vm].refused - refused);
         if (alone)
@@ -1011,8 +1017,10 @@ static void rt_realloc(RtModel *m, int i, size_t sz)
     /* a large block resized to a large size or a small one stays one block of
        the heap: its rule is count + the new request - its usable size */
     int alone = rt_limit_alone(m) && b->large && old != 0 && sz != 0 && sz <= JS_HEAP_MAX_REQUEST - m->large_hdr;
-    /* a large block that grows and a host that remaps: the budget is asked for the growth of its chunk alone */
-    int remapped = b->large && sz > old && ((const JSHeap *)m->rt)->remap;
+    /* a large block that grows: in a dedicated chunk, the budget may be
+       asked for the growth of the chunk alone (budget_refuses_resize) */
+    int large_growth = b->large && sz > old;
+    size_t chunk = b->large ? heap_dedicated_size((const JSHeap *)m->rt, (const uint8_t *)b->p - m->large_hdr) : 0;
     uint8_t *p;
 
     p = js_realloc_rt(m->rt, b->p, sz);
@@ -1029,7 +1037,7 @@ static void rt_realloc(RtModel *m, int i, size_t sz)
             m->live[i] = m->live[--m->n];
             return;
         }
-        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, remapped),
+        CHECK(rt_refusal_explained(m, sz, JS_GetMemorySize(m->rt), refused, large_growth, chunk),
               "js_realloc_rt(%zu) of a block of %zu failed for no reason (count %zu, limit %zu, footprint %zu, budget %zu, refused %ld)", sz, old,
               JS_GetMemorySize(m->rt), m->limit, rt_footprint(m->rt), m->fp_limit, vms[m->vm].refused - refused);
         CHECK(js_malloc_usable_size_rt(m->rt, b->p) == old, "a failed js_realloc_rt changed the block");
