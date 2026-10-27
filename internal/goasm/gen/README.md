@@ -155,23 +155,25 @@ every cycle of the code counts down a counter at `-poll-offset` bytes from
 the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
 `engine_decl.go` records as `pollCounterOffset`), and calls `host_poll`
 when it runs out. `-poll=false` builds an engine without polls, to measure
-what they cost, and `-release` refuses it. With polls, llc gets
-`-tail-dup-pred-size=1000 -tail-dup-succ-size=1000` (`gen.PollLLCFlags`),
-so that llc copies the interpreter's dispatch into the end of each handler,
-without which the interpreter is much slower. Before register allocation,
-llc leaves alone a block with more than 16 predecessors and 16 successors
-when it or a successor has a phi, as the dispatch does with polls or
-without. Without polls llc copies it after allocation instead, which it does
-for a computed goto of up to 10 instructions, but the count makes the
-dispatch 15 there. The options raise the two 16s.
+what they cost, and `-release` refuses it. The interpreter counts its
+bytecode itself: the C marks where (`poll_count` in `engine/cutils.h`, at
+the entry of `JS_CallInternal` and where `pc` does not go forward), the pass
+puts a count at each mark, and the edges into its dispatch get none. With
+polls, llc gets `-tail-dup-pred-size=1000 -tail-dup-succ-size=1000`
+(`gen.PollLLCFlags`), so that llc copies the interpreter's dispatch into
+the end of each handler, without which the interpreter is much slower.
+Before register allocation, llc leaves alone a block with more than 16
+predecessors and 16 successors when it or a successor has a phi, as the
+dispatch does. The options raise the two 16s.
 The driver counts the indirect jumps of each function with a computed goto
-table in llc's text and stops below `gen.DispatchCopies` (220 for
-`JS_CallInternal`, which has 245). The pass checks its own output: with the
-blocks that count or poll taken out, and the back edges of the loops it
-proves short, no function has a cycle left. Each count takes at least 1, and
-polls whenever it runs out: its branch tests that it is 0 or less and calls
-`host_poll` on the side taken, or, in the dispatch, a select on that test
-gives the index of the table entry of the poll label. Each count takes from
+table in llc's text and stops below `gen.DispatchCopies` (270 for
+`JS_CallInternal`, which has 298). The pass checks its own output: with the
+blocks that count or poll taken out, the back edges of the loops it proves
+short, and the edges into the dispatch of the interpreter, no function has a
+cycle left. The interpreter must count at its entry, and each of its marks
+must come right after a count of its weight. Each count takes at least 1,
+and polls whenever it runs out: its branch tests that it is 0 or less and
+calls `host_poll` on the side taken. Each count takes from
 the count as it stands, each store to the counter stores the count as it
 stands, and each call that may poll and each return find the count in
 memory: code that keeps it in a register stores it before such a call and

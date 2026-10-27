@@ -13,6 +13,12 @@
    keeps. It is built as the engine is (freestanding, against engine/libc), and
    link instead of quickjs.o: build.sh does that. Everything here is a plain
    function over plain types, with names that begin with white_. */
+
+/* white_poll_skip makes the compiler leave out the polls (insert_polls), so
+   that a test sees check_polls stop it. */
+static int white_poll_skip_flag;
+#define JS_POLL_SKIP() white_poll_skip_flag
+
 #include "../quickjs.c"
 
 /* ---- string buffers and the runs of JSON ---- */
@@ -228,4 +234,162 @@ JSValue white_bare_function(JSContext *ctx, JSValueConst proto)
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len)
 {
     return js_function_set_properties(ctx, f, name, len);
+}
+
+/* ---- the polls of the bytecode ---- */
+
+/* The opcodes the tests of the polls write code with, in the order of
+   WhiteOp in unit-white.c. */
+static const uint8_t white_ops[] = {
+    OP_invalid, OP_nop, OP_push_0, OP_drop, OP_goto, OP_goto16, OP_goto8,
+    OP_if_false, OP_if_true, OP_if_true8, OP_if_false8, OP_return_undef,
+    OP_catch, OP_gosub, OP_ret, OP_with_get_var,
+};
+
+int white_op(int i)
+{
+    return white_ops[i];
+}
+
+int white_op_count(void)
+{
+    return OP_COUNT;
+}
+
+int white_poll_run(void)
+{
+    return POLL_RUN;
+}
+
+void white_poll_skip(int on)
+{
+    white_poll_skip_flag = on;
+}
+
+/* NULL when code keeps to the rule of the polls (poll_scan), else what is
+   wrong. */
+const char *white_poll_scan(const uint8_t *code, int len)
+{
+    static uint8_t run[1 << 16];
+
+    if (len > (int)sizeof(run))
+        return "too long for the test";
+    return poll_scan(code, len, run, NULL);
+}
+
+/* The code with the OP_nop that insert_polls puts in, in out, which has room
+   for cap bytes: its length, or -1. */
+int white_poll_insert(JSContext *ctx, const uint8_t *code, int len,
+                      uint8_t *out, int cap)
+{
+    JSFunctionDef fd;
+    DynBuf bc;
+    int n = -1;
+
+    memset(&fd, 0, sizeof(fd));
+    js_dbuf_bytecode_init(ctx, &bc);
+    if (!dbuf_put(&bc, code, len) && !insert_polls(ctx, &fd, &bc) &&
+        (int)bc.size <= cap) {
+        memcpy(out, bc.buf, bc.size);
+        n = bc.size;
+    }
+    dbuf_free(&bc);
+    return n;
+}
+
+/* The shape of code, in shape (two ints for each instruction but OP_nop):
+   its opcode, with a short jump given as its long form, and for a jump the
+   index of the first instruction other than OP_nop at its target, else -1.
+   The number of instructions, or -1 for code it cannot follow or more than
+   max. A jump moved with the code keeps its shape. */
+int white_code_shape(const uint8_t *code, int len, int *shape, int max)
+{
+    static int index[1 << 16];
+    int pos, n = 0, op, sz, target;
+    const JSOpCode *oi;
+
+    if (len > (int)countof(index))
+        return -1;
+    for (pos = 0; pos < len; pos += sz) {
+        op = code[pos];
+        if (op == OP_invalid || op >= OP_COUNT)
+            return -1;
+        sz = short_opcode_info(op).size;
+        index[pos] = n;
+        n += op != OP_nop;
+    }
+    if (n > max)
+        return -1;
+    n = 0;
+    for (pos = 0; pos < len; pos += sz) {
+        op = code[pos];
+        oi = &short_opcode_info(op);
+        sz = oi->size;
+        if (op == OP_nop)
+            continue;
+        switch (oi->fmt) {
+        case OP_FMT_label:
+            target = pos + 1 + (int32_t)get_u32(code + pos + 1);
+            break;
+        case OP_FMT_label16:
+            target = pos + 1 + (int16_t)get_u16(code + pos + 1);
+            break;
+        case OP_FMT_label8:
+            target = pos + 1 + (int8_t)code[pos + 1];
+            break;
+        case OP_FMT_atom_label_u8:
+            target = pos + 5 + (int32_t)get_u32(code + pos + 5);
+            break;
+        default:
+            target = -1;
+            break;
+        }
+        if (op == OP_goto8 || op == OP_goto16)
+            op = OP_goto;
+        else if (op == OP_if_false8)
+            op = OP_if_false;
+        else if (op == OP_if_true8)
+            op = OP_if_true;
+        shape[2 * n] = op;
+        if (target >= 0) {
+            while (target < len && code[target] == OP_nop)
+                target++;
+            if (target >= len)
+                return -1;
+            target = index[target];
+        }
+        shape[2 * n + 1] = target;
+        n++;
+    }
+    return n;
+}
+
+/* The code of function i of the constant pool of fun, a function compiled
+   with JS_EVAL_FLAG_COMPILE_ONLY, and its length in *len. NULL when there
+   is no such function. */
+const uint8_t *white_child_code(JSValueConst fun, int i, int *len)
+{
+    JSFunctionBytecode *b, *c;
+
+    if (JS_VALUE_GET_TAG(fun) != JS_TAG_FUNCTION_BYTECODE)
+        return NULL;
+    b = JS_VALUE_GET_PTR(fun);
+    if (i >= b->cpool_count || JS_VALUE_GET_TAG(b->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+        return NULL;
+    c = JS_VALUE_GET_PTR(b->cpool[i]);
+    *len = c->byte_code_len;
+    return c->byte_code_buf;
+}
+
+/* The places of the OP_nop of code in places, at most max: how many. */
+int white_nops(const uint8_t *code, int len, int *places, int max)
+{
+    int pos, n = 0, op;
+
+    for (pos = 0; pos < len; pos += short_opcode_info(op).size) {
+        op = code[pos];
+        if (op == OP_nop && n < max)
+            places[n++] = pos;
+    }
+    return n;
 }
