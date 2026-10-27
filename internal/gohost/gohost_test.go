@@ -784,3 +784,38 @@ func BenchmarkEnterLeave(b *testing.B) {
 		v.Leave()
 	}
 }
+
+// A panic or a Goexit of the clock function leaves through the engine's
+// frames that called host_now: the VM is broken. A clock that returns leaves
+// it as it was.
+func TestNowClockPanicBreaks(t *testing.T) {
+	v := newVM(t, small)
+	v.SetClock(func() time.Time { return time.Unix(1, 0) })
+	if Now(v.ID(), NowWall) != int64(time.Second) || v.Broken() {
+		t.Fatalf("a clock that returns: broken %v", v.Broken())
+	}
+	v.SetClock(func() time.Time { panic("clock panic") })
+	func() {
+		defer func() {
+			if p := recover(); p != "clock panic" {
+				t.Fatalf("Now panicked with %v", p)
+			}
+		}()
+		Now(v.ID(), NowWall)
+	}()
+	if !v.Broken() {
+		t.Fatal("a panic of the clock left the VM good")
+	}
+
+	w := newVM(t, small)
+	w.SetClock(func() time.Time { runtime.Goexit(); return time.Time{} })
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Now(w.ID(), NowWall)
+	}()
+	<-done
+	if !w.Broken() {
+		t.Fatal("a Goexit of the clock left the VM good")
+	}
+}

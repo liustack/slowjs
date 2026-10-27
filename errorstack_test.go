@@ -14,9 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 var updateErrorStack = flag.Bool("update-error-stack", false, "rewrite the testdata/error_stack*.golden files")
@@ -84,7 +81,7 @@ func errorStackText(t *testing.T, src string, call bool) string {
 
 	defer m.Close()
 
-	if err := m.RegisterFunc("gc", func() { lib.XJS_RunGC(m.runtime.tls, m.runtime.cRuntime) }, false); err != nil {
+	if err := m.RegisterFunc("gc", func() { m.RunGC() }, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -160,18 +157,6 @@ func errorStackText(t *testing.T, src string, call bool) string {
 	return b.String() + "\n"
 }
 
-// vmMemory runs the GC and returns the memory usage of the runtime of m.
-func vmMemory(m *VM) lib.TJSMemoryUsage {
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
-	lib.XJS_RunGC(tls, rt)
-	// The engine writes the result, so it goes in C memory.
-	n := int(unsafe.Sizeof(lib.TJSMemoryUsage{}))
-	p := tls.Alloc(n)
-	defer tls.Free(n)
-	lib.XJS_ComputeMemoryUsage(tls, rt, p)
-	return *(*lib.TJSMemoryUsage)(unsafe.Pointer(p))
-}
-
 // registerExhaust gives page code exhaust(), which leaves m no memory: it
 // lowers the limit to what m uses and takes every free block the engine's
 // arenas have left. Running out of memory is uncatchable, so page code
@@ -179,28 +164,14 @@ func vmMemory(m *VM) lib.TJSMemoryUsage {
 // and restores limit, and does nothing if exhaust did not run.
 func registerExhaust(t *testing.T, m *VM, limit uintptr) (release func()) {
 	t.Helper()
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
 	var blocks []uintptr
-	exhaust := func() {
-		lib.XJS_SetMemoryLimit(tls, rt, (*lib.TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
-		for size := lib.Tsize_t(4096); size >= 8; size -= 8 {
-			for {
-				p := lib.Xjs_malloc_rt(tls, rt, size)
-				if p == 0 {
-					break
-				}
-				blocks = append(blocks, p)
-			}
-		}
-	}
+	exhaust := func() { blocks = exhaustMemory(m) }
 	if err := m.RegisterFunc("exhaust", exhaust, false); err != nil {
 		t.Fatal(err)
 	}
 
 	return func() {
-		for _, p := range blocks {
-			lib.Xjs_free_rt(tls, rt, p)
-		}
+		freeBlocks(m, blocks)
 		blocks = nil
 		m.SetMemoryLimit(limit)
 	}

@@ -2,6 +2,8 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !slowjs_cengine
+
 package slowjs // import "github.com/liustack/slowjs"
 
 // How javascript calls Go on the engine of lib: the C functions that the
@@ -205,7 +207,7 @@ func (m *VM) newBuiltinFunction(b *Builtin) jsValue {
 // typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 func callBuiltin(tls *libc.TLS, ctx uintptr, this jsValue, argc int32, argv uintptr, magic int32) (r jsValue) {
 	b := (*builtins.list.Load())[magic]
-	m := vms.vm(uint32(lib.XJS_GetContextOpaque(tls, ctx)))
+	m := vms.Get(uint32(lib.XJS_GetContextOpaque(tls, ctx)))
 	m.host++
 	mark := markTLS(tls)
 	returned := false

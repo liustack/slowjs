@@ -11,38 +11,7 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	lib "github.com/liustack/slowjs/lib"
 )
-
-// jsStringCases makes, in javascript, strings of every form the engine
-// holds: empty, ASCII, 8-bit with characters up to U+00FF, 16-bit with
-// characters of every UTF-8 length, surrogate pairs, lone surrogates at the
-// start, the middle and the end, 16-bit strings whose characters are all
-// below U+0100, ropes of each, and long strings, plus random ones.
-const jsStringCases = `(() => {
-  const out = ['', 'a', 'hello, world', 'a\0b', '\x7f\x80', 'é', 'café crème', '\xff'.repeat(9), 'ÿ\x00\x80',
-    '中文', 'a中', '\u07ff\u0800', '\uffff', '\ufffd', '😀', 'x😀y', '\ud800', '\udc00', 'a\ud800', '\ud800a',
-    '\udc00\ud800', '\ud800\ud800\udc00', '\udbff\udfff', '\ud83d' + '\ude00', 'ab\ud83d',
-    '\u0100é'.slice(1), 'é\u0100'.slice(0, 1), 'abcdefghij'.repeat(1000), 'é'.repeat(70000), '中'.repeat(70000),
-    '😀'.repeat(40000), 'a'.repeat(1 << 16) + '\ud800', 'é' + 'a'.repeat(7), 'é' + 'a'.repeat(8), 'é' + 'a'.repeat(9) + 'ÿ',
-    'é' + 'abcdefghijklmnopq' + 'ÿ' + 'ab', 'café crème brûlé'.repeat(64), '中文字符串测试 abc'.repeat(30)]
-  const ropes = []
-  for (const s of out) ropes.push('r'.repeat(600) + s, s + 'é'.repeat(600), s + '中'.repeat(600) + s)
-  let seed = 7
-  const next = (n) => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536) % n
-  for (let k = 0; k < 2000; k++) {
-    let s = ''
-    const len = next(k < 1500 ? 40 : 3000)
-    const kind = next(4)
-    for (let i = 0; i < len; i++) {
-      const r = next(10)
-      s += String.fromCharCode(r < 4 ? 32 + next(95) : r < 6 || kind === 0 ? next(0x100) : r < 8 ? next(0x10000) : 0xd800 + next(0x800))
-    }
-    out.push(s)
-  }
-  return out.concat(ropes)
-})()`
 
 // A string argument of a Builtin reads as JS_ToCStringLen2 converts it, in
 // both forms, whatever form the engine holds it in.
@@ -153,8 +122,8 @@ func TestNewStringSameAsEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, gn, gwide, gflat := lib.StringChars(got.v)
-		_, wn, wwide, wflat := lib.StringChars(want.v)
+		_, gn, gwide, gflat := stringChars(got.v)
+		_, wn, wwide, wflat := stringChars(want.v)
 		if same != true || gn != wn || gflat != wflat || gwide != wwide {
 			bad++
 			if bad <= 5 {

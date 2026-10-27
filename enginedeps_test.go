@@ -14,7 +14,9 @@ import (
 )
 
 // The package builds on one engine, and a program links only that one: the
-// engine of lib, made by ccgo and running on modernc.org/libc.
+// engine of lib, made by ccgo and running on modernc.org/libc, or with the tag
+// slowjs_cengine the C engine of internal/cengine, which is generated for
+// linux/amd64 only so far.
 func TestEngineDeps(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -31,15 +33,18 @@ func TestEngineDeps(t *testing.T) {
 	for _, c := range []struct {
 		name      string
 		args      []string
+		env       []string
 		want, not []string
 	}{
-		{"default", nil, []string{lib, libc}, []string{cengine, gohost, hostmem}},
+		{"default", nil, nil, []string{lib, libc}, []string{cengine, gohost, hostmem}},
+		{"slowjs_cengine", []string{"-tags", "slowjs_cengine"}, []string{"GOOS=linux", "GOARCH=amd64"},
+			[]string{cengine, gohost, hostmem}, []string{lib, libc}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(gobin, append(append([]string{"list", "-deps"}, c.args...), ".")...)
 			// The flags of the run that started the test are not those of
 			// the row.
-			cmd.Env = append(os.Environ(), "GOFLAGS=")
+			cmd.Env = append(append(os.Environ(), "GOFLAGS="), c.env...)
 			out, err := cmd.Output()
 			if err != nil {
 				t.Fatalf("go list: %v", err)
@@ -56,5 +61,30 @@ func TestEngineDeps(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A build with the tag on a target the C engine is not generated for fails
+// with the reason as its only error, not under errors of the files that need
+// the engine.
+func TestEngineUnsupportedTarget(t *testing.T) {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go command")
+	}
+	cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
+	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("the build succeeded")
+	}
+	var errs []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if !strings.HasPrefix(l, "#") {
+			errs = append(errs, l)
+		}
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_so_far") {
+		t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
 	}
 }

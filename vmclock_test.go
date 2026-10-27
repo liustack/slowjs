@@ -6,7 +6,9 @@
 package slowjs
 
 import (
+	"fmt"
 	goruntime "runtime"
+	"strconv"
 	"testing"
 	"time"
 	"weak"
@@ -72,5 +74,27 @@ func TestVMClockReleasesCallback(t *testing.T) {
 			}
 			goruntime.KeepAlive(vm)
 		})
+	}
+}
+
+// Date reads the clock of the VM in whole milliseconds, rounded down: a time
+// before 1970 is in the millisecond it started in, as Go's UnixMilli says.
+func TestVMClockBeforeEpoch(t *testing.T) {
+	vm := newTestVM(t)
+	for _, at := range []time.Time{
+		time.Unix(-1, 999999999), time.Unix(-1, 999000000), time.Unix(-1, 998999999),
+		time.Unix(0, 1), time.Unix(-100000, 123456789), time.Unix(1700000000, 999999),
+	} {
+		vm.SetClock(func() time.Time { return at })
+		want := at.UnixMilli()
+		for _, js := range []string{`Date.now()`, `new Date().getTime()`} {
+			got, err := vm.Eval(fmt.Sprintf("String(%s)", js), EvalGlobal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != strconv.FormatInt(want, 10) {
+				t.Errorf("%s at %v = %v, want %d", js, at, got, want)
+			}
+		}
 	}
 }
