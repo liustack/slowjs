@@ -25,11 +25,14 @@ const (
 const Max = chunks * chunkSize
 
 // A Table holds things by id. The zero Table is empty and ready to use. Add
-// and Remove take a lock, Get takes none.
+// and Remove take a lock, Get takes none. A table hands out its own ids by Add
+// and Remove, or holds things under the ids of another table by Put and
+// Delete, never both.
 type Table[T any] struct {
 	mu     sync.Mutex
 	free   []uint32
 	next   uint32 // the ids handed out so far, 0 is never one
+	put    bool   // the table took an id by Put
 	chunks [chunks]atomic.Pointer[[chunkSize]atomic.Pointer[T]]
 }
 
@@ -42,6 +45,9 @@ func (t *Table[T]) Add(x *T) (uint32, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if t.put {
+		panic("idtable: Add on a table that holds the ids of Put")
+	}
 	var id uint32
 	switch n := len(t.free); {
 	case n > 0:
@@ -53,13 +59,47 @@ func (t *Table[T]) Add(x *T) (uint32, error) {
 		t.next++
 		id = t.next
 	}
+	t.store(id, x)
+	return id, nil
+}
+
+func (t *Table[T]) store(id uint32, x *T) {
 	c := t.chunks[id>>chunkBits].Load()
 	if c == nil {
 		c = new([chunkSize]atomic.Pointer[T])
 		t.chunks[id>>chunkBits].Store(c)
 	}
 	c[id&(chunkSize-1)].Store(x)
-	return id, nil
+}
+
+// Put holds x under id, which another table handed out: never 0, below Max
+// and not holding anything. It panics otherwise.
+func (t *Table[T]) Put(id uint32, x *T) {
+	if x == nil || id == 0 || id >= Max {
+		panic(fmt.Sprintf("idtable: Put of %p under %d", x, id))
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.next != 0 {
+		panic("idtable: Put on a table that hands out ids by Add")
+	}
+	if t.Get(id) != nil {
+		panic(fmt.Sprintf("idtable: Put under %d, which holds something", id))
+	}
+	t.put = true
+	t.store(id, x)
+}
+
+// Delete takes out what Put put under id. It panics when id holds nothing.
+func (t *Table[T]) Delete(id uint32) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if !t.put || t.Get(id) == nil {
+		panic(fmt.Sprintf("idtable: Delete of %d, which Put did not fill", id))
+	}
+	t.chunks[id>>chunkBits].Load()[id&(chunkSize-1)].Store(nil)
 }
 
 // Remove takes id back. It panics when id holds nothing.
