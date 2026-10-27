@@ -281,9 +281,10 @@ func main() {
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
 	if *pollOn {
-		// The tick in the interpreter's dispatch makes it a block of many
-		// predecessors and successors, which llc no longer copies into the
-		// end of every handler by default (gen.DispatchCopies checks it).
+		// With the tick in it, the interpreter's dispatch is too long for
+		// llc to copy into the end of every handler after register
+		// allocation, and these let it make the copies before
+		// (gen.PollLLCFlags says why, gen.DispatchCopies checks them).
 		llcArgs = append(llcArgs, gen.PollLLCFlags...)
 	}
 	factsPath := filepath.Join(*work, "engine.facts")
