@@ -121,7 +121,7 @@ func customModuleNormalize(tls *libc.TLS, ctx uintptr, module_base_name, module_
 		return 0
 	}
 	if err != nil {
-		throwTypeError(tls, ctx, fmt.Sprintf("module normalization failed: %v", err))
+		throwError(tls, ctx, errorKindType, fmt.Sprintf("module normalization failed: %v", err))
 		return 0
 	}
 
@@ -150,13 +150,13 @@ func customModuleLoader(tls *libc.TLS, ctx uintptr, module_name uintptr, opaque 
 		return 0
 	}
 	if err != nil {
-		throwTypeError(tls, ctx, fmt.Sprintf("module load failed: %v", err))
+		throwError(tls, ctx, errorKindType, fmt.Sprintf("module load failed: %v", err))
 		return 0
 	}
 
 	ps, err := libc.CString(source)
 	if err != nil {
-		throwInternalError(tls, ctx, "OOM")
+		throwError(tls, ctx, errorKindInternal, "OOM")
 		return 0
 	}
 	defer libc.Xfree(tls, ps)

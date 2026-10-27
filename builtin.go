@@ -13,8 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -105,15 +103,7 @@ func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin 
 // it passes it to javascript, for example as an argument of [Value.Call] or
 // with [VM.SetPropertyValue], and then frees it.
 func (m *VM) NewBuiltinFunction(b *Builtin) (Value, error) {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	// The engine makes the name an atom, a copy. Freed before it returns, not
-	// in a defer (see tlsMark).
-	n := len(b.name) + 1
-	p := tls.Alloc(n)
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), n), b.name+"\x00")
-	f := lib.XJS_NewCFunction2(tls, ctx, fp(callBuiltin), p, b.length, lib.EJS_CFUNC_generic_magic, b.magic)
-	tls.Free(n)
+	f := m.newBuiltinFunction(b)
 	if isException(f) {
 		return Value{}, m.errFromException()
 	}
@@ -126,7 +116,7 @@ func (m *VM) NewBuiltinFunction(b *Builtin) (Value, error) {
 // call (see [Value.Dup] to keep one longer).
 type Args struct {
 	vm   *VM
-	this lib.TJSValue
+	this jsValue
 	argv uintptr
 	argc int
 }
@@ -145,21 +135,21 @@ func (a Args) This() Value { return Value{vm: a.vm, v: a.this} }
 // Value returns argument i, undefined when the call has no argument i.
 func (a Args) Value(i int) Value { return Value{vm: a.vm, v: a.arg(i)} }
 
-func (a Args) arg(i int) lib.TJSValue {
+func (a Args) arg(i int) jsValue {
 	if i < 0 || i >= a.argc {
 		return undefined
 	}
 
-	return *(*lib.TJSValue)(unsafe.Pointer(a.argv + uintptr(i)*sizeofJsValue))
+	return valueAt(a.argv + uintptr(i)*sizeofJsValue)
 }
 
 // Number returns argument i when it is a number. It converts nothing:
 // a string or a Number object is not a number.
 func (a Args) Number(i int) (float64, bool) {
 	switch v := a.arg(i); tag(v) {
-	case lib.EJS_TAG_INT:
+	case tagInt:
 		return float64(jsvToInt32(v)), true
-	case lib.EJS_TAG_FLOAT64:
+	case tagFloat64:
 		return jsvToFloat64(v), true
 	}
 	return 0, false
@@ -167,7 +157,7 @@ func (a Args) Number(i int) (float64, bool) {
 
 // Bool returns argument i when it is a boolean.
 func (a Args) Bool(i int) (bool, bool) {
-	if v := a.arg(i); tag(v) == lib.EJS_TAG_BOOL {
+	if v := a.arg(i); tag(v) == tagBool {
 		return jsvToInt32(v) != 0, true
 	}
 
@@ -180,8 +170,8 @@ func (a Args) Bool(i int) (bool, bool) {
 // memory error whatever the Builtin returns.
 func (a Args) String(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
-	case lib.EJS_TAG_STRING, lib.EJS_TAG_STRING_ROPE:
-		return argString(a.vm.runtime.tls, a.vm.cContext, v, false)
+	case tagString, tagStringRope:
+		return a.vm.argString(v, false)
 	}
 	return "", false
 }
@@ -193,8 +183,8 @@ func (a Args) String(i int) (s string, ok bool) {
 // surrogates apart, as a collator orders them, reads its string this way.
 func (a Args) WTF8(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
-	case lib.EJS_TAG_STRING, lib.EJS_TAG_STRING_ROPE:
-		return argString(a.vm.runtime.tls, a.vm.cContext, v, true)
+	case tagString, tagStringRope:
+		return a.vm.argString(v, true)
 	}
 	return "", false
 }
@@ -207,7 +197,7 @@ func (a Args) WTF8(i int) (s string, ok bool) {
 // or [Args.String] reads. A Builtin that looks at the characters of short
 // strings, and often returns its argument as it is, reads them this way.
 func (a Args) Latin1(i int) (b []byte, ok bool) {
-	p, n, wide, ok := lib.StringChars(a.arg(i))
+	p, n, wide, ok := stringChars(a.arg(i))
 	if !ok || wide {
 		return nil, false
 	}
@@ -221,21 +211,33 @@ func (a Args) Latin1(i int) (b []byte, ok bool) {
 // returns, and must not be changed. ok is false for any other argument,
 // which [Args.Latin1] or [Args.String] reads.
 func (a Args) UTF16(i int) (u []uint16, ok bool) {
-	p, n, wide, ok := lib.StringChars(a.arg(i))
+	p, n, wide, ok := stringChars(a.arg(i))
 	if !ok || !wide {
 		return nil, false
 	}
 	return unsafe.Slice((*uint16)(unsafe.Pointer(p)), n), true
 }
 
+// builtinFailed is the result of a call of b that returned v with the error
+// err, or a Value v of another VM.
+func (m *VM) builtinFailed(b *Builtin, v Value, err error) jsValue {
+	if err != nil {
+		if v.vm == m {
+			v.Free()
+		}
+		return m.throw(err)
+	}
+
+	// Freeing it here would use the other VM, maybe on another goroutine.
+	return m.jsThrowError(errorKindType, fmt.Sprintf("Go function %s returned a Value of another VM", b.name))
+}
+
 // throw throws err in m's context, as NewBuiltin describes, and returns the
 // exception.
-func (m *VM) throw(err error) lib.TJSValue {
-	tls := m.runtime.tls
-	ctx := m.cContext
+func (m *VM) throw(err error) jsValue {
 	var e *Error
 	if !errors.As(err, &e) {
-		return throwTypeError(tls, ctx, err.Error())
+		return m.jsThrowError(errorKindType, err.Error())
 	}
 
 	if e.Uncatchable && m.uncatchablePending() {
@@ -246,15 +248,15 @@ func (m *VM) throw(err error) lib.TJSValue {
 
 	switch e.Name {
 	case "TypeError":
-		return throwf(tls, ctx, lib.XJS_ThrowTypeError, e.Message)
+		return m.jsThrowError(errorKindType, e.Message)
 	case "RangeError":
-		return throwf(tls, ctx, lib.XJS_ThrowRangeError, e.Message)
+		return m.jsThrowError(errorKindRange, e.Message)
 	case "SyntaxError":
-		return throwf(tls, ctx, lib.XJS_ThrowSyntaxError, e.Message)
+		return m.jsThrowError(errorKindSyntax, e.Message)
 	case "ReferenceError":
-		return throwf(tls, ctx, lib.XJS_ThrowReferenceError, e.Message)
+		return m.jsThrowError(errorKindReference, e.Message)
 	case "InternalError":
-		return throwf(tls, ctx, lib.XJS_ThrowInternalError, e.Message)
+		return m.jsThrowError(errorKindInternal, e.Message)
 	}
 
 	return m.throwError(e.Message)
@@ -265,54 +267,52 @@ func (m *VM) throw(err error) lib.TJSValue {
 // with JS_NewError gets its stack only from the javascript that called the
 // Builtin: so it throws a TypeError, whose stack starts at the Builtin as
 // those of the engine's built-ins do, and makes it an Error.
-func (m *VM) throwError(msg string) lib.TJSValue {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	if r := throwTypeError(tls, ctx, msg); m.uncatchablePending() {
+func (m *VM) throwError(msg string) jsValue {
+	if r := m.jsThrowError(errorKindType, msg); m.uncatchablePending() {
 		return r
 	}
 
-	exc := lib.XJS_GetException(tls, ctx)
-	o := lib.XJS_NewError(tls, ctx)
+	exc := m.jsGetException()
+	o := m.jsNewError()
 	if isException(o) {
-		lib.XFreeValue(tls, ctx, exc)
+		m.jsFreeValue(exc)
 		return o
 	}
 
-	proto := lib.XJS_GetPrototype(tls, ctx, o) // Error.prototype, a page cannot change it
-	lib.XFreeValue(tls, ctx, o)
-	ok := lib.XJS_SetPrototype(tls, ctx, exc, proto) >= 0
-	lib.XFreeValue(tls, ctx, proto)
+	proto := m.jsGetPrototype(o) // Error.prototype, a page cannot change it
+	m.jsFreeValue(o)
+	ok := m.jsSetPrototype(exc, proto) >= 0
+	m.jsFreeValue(proto)
 	if !ok {
-		lib.XFreeValue(tls, ctx, exc)
+		m.jsFreeValue(exc)
 		return exception
 	}
 
 	// The TypeError has the message cut to 255 bytes.
 	s, err := m.newString(msg)
 	if err != nil {
-		lib.XFreeValue(tls, ctx, exc)
-		return lib.XJS_ThrowOutOfMemory(tls, ctx)
+		m.jsFreeValue(exc)
+		return m.jsThrowOutOfMemory()
 	}
 
 	if isException(s) {
-		lib.XFreeValue(tls, ctx, exc)
+		m.jsFreeValue(exc)
 		return s
 	}
 
 	// JS_DefinePropertyValue takes s, also when it fails.
-	if lib.XJS_DefinePropertyValue(tls, ctx, exc, lib.EJS_ATOM_message, s, lib.MJS_PROP_WRITABLE|lib.MJS_PROP_CONFIGURABLE) < 0 {
-		lib.XFreeValue(tls, ctx, exc)
+	if m.jsDefinePropertyValue(exc, atomMessage, s, propWritable|propConfigurable) < 0 {
+		m.jsFreeValue(exc)
 		return exception
 	}
 
-	return lib.XJS_Throw(tls, ctx, exc)
+	return m.jsThrow(exc)
 }
 
 // jsValue returns the javascript value of v, which the caller hands on:
 // undefined for the zero Value.
-func (v Value) jsValue() lib.TJSValue {
-	var zero lib.TJSValue
+func (v Value) jsValue() jsValue {
+	var zero jsValue
 	if v.vm == nil && v.v == zero {
 		return undefined
 	}
@@ -389,18 +389,16 @@ func (m *VM) NewArray(vals ...Value) (Value, error) {
 		}
 	}
 
-	tls := m.runtime.tls
-	ctx := m.cContext
-	a := lib.XJS_NewArray(tls, ctx)
+	a := m.jsNewArray()
 	if isException(a) {
 		return Value{}, m.errFromException()
 	}
 
 	for i, v := range vals {
 		// JS_DefinePropertyValueUint32 takes the copy, also when it fails.
-		e := lib.XDupValue(tls, ctx, v.jsValue())
-		if lib.XJS_DefinePropertyValueUint32(tls, ctx, a, uint32(i), e, lib.MJS_PROP_C_W_E|lib.MJS_PROP_THROW) < 0 {
-			lib.XFreeValue(tls, ctx, a)
+		e := dupValue(v.jsValue())
+		if m.jsDefinePropertyValueUint32(a, uint32(i), e, propCWE|propThrow) < 0 {
+			m.jsFreeValue(a)
 			return Value{}, m.errFromException()
 		}
 	}

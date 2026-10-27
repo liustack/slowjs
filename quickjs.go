@@ -77,8 +77,6 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"encoding/json"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 var (
@@ -127,5 +125,5 @@ func (o *Object) Into(v any) error {
 
 // Version returns the underlying QuickJS version.
 func Version() string {
-	return lib.MCONFIG_VERSION
+	return engineVersion
 }

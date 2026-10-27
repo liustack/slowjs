@@ -11,10 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 var (
@@ -208,35 +204,35 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 // does not use JS_SetPropertyFunctionList, which is meant for new objects:
 // it aborts the process when the property already exists.
 func (m *VM) defineGoFunc(name string, magic, length int32) error {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	cName, err := libc.CString(name)
+	// Both the function's name and the atom copy the string.
+	f, err := m.newGoFunction(name, magic, length)
 	if err != nil {
 		return err
 	}
 
-	// Both the function's name and the atom copy the string.
-	defer libc.Xfree(tls, cName)
-
-	f := lib.XJS_NewCFunction2(tls, ctx, fp(callGo), cName, length, lib.EJS_CFUNC_generic_magic, magic)
 	if isException(f) {
 		return m.errFromException()
 	}
 
-	atom := lib.XJS_NewAtom(tls, ctx, cName)
-	if atom == lib.MJS_ATOM_NULL {
-		lib.XFreeValue(tls, ctx, f)
+	atom, err := m.jsNewAtom(name)
+	if err != nil {
+		m.jsFreeValue(f)
+		return err
+	}
+
+	if atom == atomNull {
+		m.jsFreeValue(f)
 		return m.errFromException()
 	}
 
-	defer lib.XJS_FreeAtom(tls, ctx, atom)
+	defer m.jsFreeAtom(atom)
 
 	g := m.globalObject()
 
-	defer lib.XFreeValue(tls, ctx, g)
+	defer m.jsFreeValue(g)
 
 	// JS_DefinePropertyValue takes f, also when it fails.
-	if lib.XJS_DefinePropertyValue(tls, ctx, g, atom, f, lib.MJS_PROP_WRITABLE|lib.MJS_PROP_CONFIGURABLE|lib.MJS_PROP_THROW) < 0 {
+	if m.jsDefinePropertyValue(g, atom, f, propWritable|propConfigurable|propThrow) < 0 {
 		return m.errFromException()
 	}
 
@@ -298,16 +294,14 @@ func canBeNil(t reflect.Type) bool {
 
 // callGoFunc converts the arguments of a call of info from javascript,
 // calls it and converts its results.
-func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintptr) (r lib.TJSValue) {
-	tls := m.runtime.tls
-	ctx := m.cContext
+func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r jsValue) {
 	haveArgs := int(argc)
 	if haveArgs < info.minArgs {
-		return throwTypeError(tls, ctx, fmt.Sprintf("not enough arguments in call to %s", info.name))
+		return m.jsThrowError(errorKindType, fmt.Sprintf("not enough arguments in call to %s", info.name))
 	}
 
 	if info.maxArgs >= 0 && haveArgs > info.maxArgs {
-		return throwTypeError(tls, ctx, fmt.Sprintf("too many arguments in call to %s", info.name))
+		return m.jsThrowError(errorKindType, fmt.Sprintf("too many arguments in call to %s", info.name))
 	}
 
 	var in []reflect.Value
@@ -315,25 +309,25 @@ func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintpt
 	if info.wantThis {
 		switch {
 		case isNative(info.in[0]):
-			dup := lib.XDupValue(tls, ctx, this)
-			defer lib.XFreeValue(tls, ctx, dup)
+			dup := dupValue(this)
+			defer m.jsFreeValue(dup)
 			in = append(in, reflect.ValueOf(Value{vm: m, v: dup}))
 		default:
 			v, err := m.value(this, false)
 			if err != nil {
-				return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
 			}
 
 			rv := reflect.ValueOf(v)
 			switch {
 			case !rv.IsValid(): // Javascript null, m.value returns a nil any for it.
 				if !canBeNil(info.in[0]) {
-					return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, info.in[0]))
+					return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, info.in[0]))
 				}
 
 				rv = reflect.Zero(info.in[0])
 			case !rv.Type().AssignableTo(info.in[0]):
-				return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), info.in[0]))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), info.in[0]))
 			}
 
 			in = append(in, rv)
@@ -351,25 +345,25 @@ func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintpt
 		}
 		switch {
 		case isNative(typ):
-			dup := lib.XDupValue(tls, ctx, *(*lib.TJSValue)(unsafe.Pointer(argv)))
-			defer lib.XFreeValue(tls, ctx, dup)
+			dup := dupValue(valueAt(argv))
+			defer m.jsFreeValue(dup)
 			in = append(in, reflect.ValueOf(Value{vm: m, v: dup}))
 		default:
-			v, err := m.value(*(*lib.TJSValue)(unsafe.Pointer(argv)), false)
+			v, err := m.value(valueAt(argv), false)
 			if err != nil {
-				return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: argument conversion error: %v", info.name, err))
 			}
 
 			rv := reflect.ValueOf(v)
 			switch {
 			case !rv.IsValid(): // Javascript null, m.value returns a nil any for it.
 				if !canBeNil(typ) {
-					return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, typ))
+					return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign null to %s", info.name, typ))
 				}
 
 				rv = reflect.Zero(typ)
 			case !rv.Type().AssignableTo(typ):
-				return throwTypeError(tls, ctx, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), typ))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("calling %s: cannot assign %s to %s", info.name, rv.Type(), typ))
 			}
 
 			in = append(in, rv)
@@ -385,11 +379,11 @@ func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintpt
 	// error — rather than array-wrapping the (value, error) pair.
 	if info.hostFunc {
 		if e, _ := out[1].Interface().(error); e != nil {
-			return throwTypeError(tls, ctx, e.Error())
+			return m.jsThrowError(errorKindType, e.Error())
 		}
 		r, err = m.jsValue(out[0])
 		if err != nil {
-			return throwTypeError(tls, ctx, fmt.Sprintf("callback %s: %v", info.name, err))
+			return m.jsThrowError(errorKindType, fmt.Sprintf("callback %s: %v", info.name, err))
 		}
 		return r
 	}
@@ -402,21 +396,21 @@ func (m *VM) callGoFunc(info *goFunc, this lib.TJSValue, argc int32, argv uintpt
 		case isNative(info.out[0]):
 			x, ok := out[0].Interface().(Value)
 			if !ok {
-				return throwTypeError(tls, ctx, fmt.Sprintf("internal error: native Javascript value does not have type 'Value' (%v:)", origin(1)))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("internal error: native Javascript value does not have type 'Value' (%v:)", origin(1)))
 			}
 
 			r = x.v
 		default:
 			r, err = m.jsValue(out[0])
 			if err != nil {
-				return throwTypeError(tls, ctx, fmt.Sprintf("cannot convert value: %v", err))
+				return m.jsThrowError(errorKindType, fmt.Sprintf("cannot convert value: %v", err))
 			}
 		}
 	default:
 		r, err = m.jsArray(out)
 	}
 	if err != nil {
-		return throwTypeError(tls, ctx, fmt.Sprintf("callback %s: %v", info.name, err))
+		return m.jsThrowError(errorKindType, fmt.Sprintf("callback %s: %v", info.name, err))
 	}
 
 	return r

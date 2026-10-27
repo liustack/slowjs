@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"math"
 	"time"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // The eval timeout runs on the monotonic clock, which only goes forward. The
@@ -54,17 +50,12 @@ type VM struct {
 
 // vmState is the state of a VM that Close clears.
 type vmState struct {
-	cContext uintptr // lib.TJSContext
+	// engineState is the state of the VM in the engine (engine_lib.go).
+	engineState
 	// id is how a Builtin finds the VM, the context's opaque (see vms).
 	id      uint32
 	goFuncs map[string]int32
-	// Safe to share, not reference counted
-	int32_16      lib.TJSValue
-	int32_2       lib.TJSValue
-	runtime       *runtime
-	timeout       time.Duration
-	interruptData uintptr
-	toStringArgv  uintptr
+	timeout time.Duration
 	// depth counts the calls into javascript in progress: a host function
 	// that evaluates more javascript is one level down.
 	depth int
@@ -74,9 +65,6 @@ type vmState struct {
 	// with, until the panic goes on in the Go code that called javascript
 	// (see hostPanicked).
 	panicked any
-	// entry is where the TLS stack was when the outermost call into
-	// javascript started (see tlsMark).
-	entry tlsMark
 	// onClose holds the functions OnClose was given, for Close to run.
 	onClose []func()
 	// broken is set once a Go panic went up through the engine, after
@@ -89,18 +77,11 @@ type vmState struct {
 
 // NewVM returns a newly created VM.
 func NewVM() (*VM, error) {
-	rt, err := newRuntime()
+	vm, err := newEngineVM()
 	if err != nil {
 		return nil, err
 	}
 
-	vm, err := rt.newVM()
-	if err != nil {
-		rt.close()
-		return nil, err
-	}
-
-	lib.XJS_SetInterruptHandler(rt.tls, rt.cRuntime, fp(interruptHandler), vm.interruptData)
 	if err := vm.SetShapeCache(DefaultShapeCache); err != nil {
 		vm.Close()
 		return nil, err
@@ -134,7 +115,7 @@ func (m *VM) SetShapeCache(n int) error {
 	if n < 0 || n > math.MaxInt32/8 {
 		return fmt.Errorf("slowjs: a shape cache of %d shapes", n)
 	}
-	if lib.XJS_SetShapeCache(m.runtime.tls, m.cContext, int32(n)) != 0 {
+	if m.jsSetShapeCache(int32(n)) != 0 {
 		return fmt.Errorf("slowjs: out of memory for a shape cache of %d shapes", n)
 	}
 	return nil
@@ -144,8 +125,8 @@ func (m *VM) SetShapeCache(n int) error {
 // regexps a new VM keeps at most, and in how many bytes (see
 // [VM.SetRegExpCache]).
 const (
-	DefaultRegExpCache      = lib.RegExpCacheEntries
-	DefaultRegExpCacheBytes = lib.RegExpCacheBytes
+	DefaultRegExpCache      = 256
+	DefaultRegExpCacheBytes = 1 << 20
 )
 
 // SetRegExpCache sets how many compiled regexps m keeps at most, n, and in
@@ -164,10 +145,10 @@ const (
 // fails. So a script that runs close to its memory limit can run out of
 // memory with the cache on where it would not without it.
 func (m *VM) SetRegExpCache(n, bytes int) error {
-	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^lib.Tsize_t(0)) {
+	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^uintptr(0)) {
 		return fmt.Errorf("slowjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
-	lib.XJS_SetRegExpCache(m.runtime.tls, m.runtime.cRuntime, int32(n), lib.Tsize_t(bytes))
+	m.jsSetRegExpCache(int32(n), uint64(bytes))
 	return nil
 }
 
@@ -187,12 +168,12 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 // exception object itself.  The particular value of "small" is unspecified and
 // subject to change without notice.
 func (m *VM) SetMemoryLimit(limit uintptr) {
-	lib.XJS_SetMemoryLimit(m.runtime.tls, m.runtime.cRuntime, max(libc.Tsize_t(limit), 128*1024))
+	m.jsSetMemoryLimit(max(limit, 128*1024))
 }
 
 // SetGCThreshold sets the memory threshold at which a GC will be performed, in bytes.
 func (m *VM) SetGCThreshold(threshold uintptr) {
-	lib.XJS_SetGCThreshold(m.runtime.tls, m.runtime.cRuntime, libc.Tsize_t(threshold))
+	m.jsSetGCThreshold(threshold)
 }
 
 // GCThreshold returns the memory threshold at which a GC will be performed, in
@@ -204,7 +185,7 @@ func (m *VM) SetGCThreshold(threshold uintptr) {
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
 // and a call after Close panics.
 func (m *VM) GCThreshold() uintptr {
-	return uintptr((*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fmalloc_gc_threshold)
+	return m.jsGetGCThreshold()
 }
 
 // RunGC performs a GC now. It frees what javascript can no longer reach,
@@ -218,7 +199,7 @@ func (m *VM) GCThreshold() uintptr {
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
 // and a call after Close panics.
 func (m *VM) RunGC() {
-	lib.XJS_RunGC(m.runtime.tls, m.runtime.cRuntime)
+	m.jsRunGC()
 }
 
 // RunYoungGC performs a young GC now: it frees the reference cycles among
@@ -241,7 +222,7 @@ func (m *VM) RunGC() {
 // runs no javascript and leaves [VM.GCThreshold] as it is. No other
 // goroutine may use m meanwhile (see [VM]), and a call after Close panics.
 func (m *VM) RunYoungGC() {
-	lib.XJS_RunYoungGC(m.runtime.tls, m.runtime.cRuntime)
+	m.jsRunYoungGC()
 }
 
 // MemorySize returns the memory m takes, in bytes, as [VM.SetMemoryLimit] and
@@ -252,7 +233,7 @@ func (m *VM) RunYoungGC() {
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
 // and a call after Close panics.
 func (m *VM) MemorySize() uintptr {
-	return uintptr((*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
+	return m.jsGetMemorySize()
 }
 
 // SetMaxStackSize limits the JS call depth, in libc.TLS stack slots (~one per JS
@@ -260,7 +241,7 @@ func (m *VM) MemorySize() uintptr {
 // RangeError instead of overflowing the Go goroutine stack. 0 restores the
 // MaxStackSlots default.
 func (m *VM) SetMaxStackSize(threshold uintptr) {
-	lib.XJS_SetMaxStackSize(m.runtime.tls, m.runtime.cRuntime, libc.Tsize_t(threshold))
+	m.jsSetMaxStackSize(threshold)
 }
 
 // Strip says what a VM leaves out of the functions it compiles (see
@@ -270,10 +251,10 @@ type Strip int
 const (
 	// StripSource leaves out the source text: the toString of a function
 	// shows [native code] instead, as it does for the engine's built-ins.
-	StripSource Strip = Strip(lib.MJS_STRIP_SOURCE)
+	StripSource Strip = 1
 	// StripDebug leaves out the file name, line and column numbers, so a
 	// stack frame of the function shows only its name, and the source too.
-	StripDebug Strip = Strip(lib.MJS_STRIP_DEBUG)
+	StripDebug Strip = 2
 )
 
 // SetStrip sets what m leaves out of the functions it compiles from then on:
@@ -286,7 +267,7 @@ const (
 // source: compile it on a VM of its own, so that the page's functions keep
 // their source.
 func (m *VM) SetStrip(s Strip) {
-	lib.XJS_SetStripInfo(m.runtime.tls, m.runtime.cRuntime, int32(s))
+	m.jsSetStripInfo(int32(s))
 }
 
 // SetCanBlock configures m's blocking mode.
@@ -295,27 +276,13 @@ func (m *VM) SetCanBlock(value bool) {
 	if value {
 		n = 1
 	}
-	lib.XJS_SetCanBlock(m.runtime.tls, m.runtime.cRuntime, n)
+	m.jsSetCanBlock(n)
 }
 
 // Close releases the resources held by 'm'. That includes the module loader
 // and normalizer set by [VM.SetModuleLoader]: Close removes them, so a closed
 // VM keeps nothing they close over reachable.
 func (m *VM) Close() error {
-	tls := m.runtime.tls
-	ctx := m.cContext
-	// A Go panic in the engine outside a call into javascript (see
-	// tlsMark) left its frames on the TLS stack.
-	m.runtime.base.restore(tls)
-
-	// SetModuleLoader files the loader process-wide under the runtime
-	// pointer, which is freed below and may be reused by a later runtime.
-	// Drop the entry first, so the closures - and whatever host they
-	// capture - do not outlive the VM. Nothing in the teardown loads a module.
-	customLoadersMu.Lock()
-	delete(customLoaders, m.runtime.cRuntime)
-	customLoadersMu.Unlock()
-
 	goFuncsMu.Lock()
 	for _, magic := range m.goFuncs {
 		if goFuncs[magic] != nil {
@@ -325,24 +292,11 @@ func (m *VM) Close() error {
 	}
 	goFuncsMu.Unlock()
 
-	// Interrupt can run concurrently: let it see the flag gone before it
-	// is freed.
-	m.intr.mu.Lock()
-	m.intr.flag = 0
-	m.intr.mu.Unlock()
-	libc.Xfree(tls, m.interruptData)
-	libc.Xfree(tls, m.toStringArgv)
-	// The kept shapes hold the context, and so may the async context.
-	lib.XJS_SetShapeCache(tls, ctx, 0)
-	lib.XJS_SetAsyncContext(tls, ctx, undefined)
-	lib.SetClock(m.runtime.cRuntime, nil)
-	lib.XJS_FreeContext(tls, ctx)
-	vms.remove(m.id)
-	r := m.runtime
+	id := m.id
 	onClose := m.onClose
 	shared := m.shared
-	m.vmState = vmState{}
-	err := r.close()
+	err := m.closeEngine()
+	vms.remove(id)
 	for _, b := range shared {
 		b.drop()
 	}
