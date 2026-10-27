@@ -631,3 +631,27 @@ int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got,
         return n;
     }
 }
+
+/* ---- shared source text and line tables ---- */
+
+/* The source text and the line table of function i of the constant pool of
+   the script script (read with JS_ReadObject), and whether the function says
+   they are shared. 0, or -1 when there is no such function. */
+int white_function_debug(JSValueConst script, int i, const uint8_t **source,
+                         size_t *source_len, const uint8_t **pc2line,
+                         int *shared)
+{
+    JSFunctionBytecode *b, *f;
+
+    if (JS_VALUE_GET_TAG(script) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = JS_VALUE_GET_PTR(script);
+    if (i >= b->cpool_count || JS_VALUE_GET_TAG(b->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    f = JS_VALUE_GET_PTR(b->cpool[i]);
+    *source = (const uint8_t *)f->debug.source;
+    *source_len = f->debug.source_len;
+    *pc2line = f->debug.pc2line_buf;
+    *shared = f->shared_debug;
+    return b->cpool_count;
+}

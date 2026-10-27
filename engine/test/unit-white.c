@@ -34,6 +34,7 @@ int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
 int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
+int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1325,6 +1326,75 @@ static void test_own_keys_flags(void)
     vm_free(&v);
 }
 
+/* ---- source text and line tables shared with a buffer ---- */
+
+/* With JS_READ_OBJ_SHARED_DEBUG the source text and line table of a function
+   point into the buffer read, the function says so, the runtime neither
+   counts nor frees them, and they hold what a copy holds. */
+static void test_shared_debug_read(void)
+{
+    enum { PAD = 64 << 10 };
+    static const char head[] = "function f(a) {\n\t/*", tail[] = "*/\n\treturn new Error(a).stack\n}\n";
+    char *js = malloc(sizeof(head) + PAD + sizeof(tail));
+    VM c = vm_new();
+    JSValue compiled;
+    uint8_t *out, *buf;
+    size_t n;
+    char *sources[2] = { NULL, NULL };
+    JSMemoryUsage usage[2];
+    int i;
+
+    memcpy(js, head, sizeof(head) - 1);
+    memset(js + sizeof(head) - 1, 'y', PAD);
+    strcpy(js + sizeof(head) - 1 + PAD, tail);
+    compiled = JS_Eval(c.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(compiled), "the script did not compile");
+    out = JS_WriteObject(c.ctx, &n, compiled, JS_WRITE_OBJ_BYTECODE);
+    CHECK(out != NULL, "the bytecode was not written");
+    buf = malloc(n);
+    memcpy(buf, out, n);
+    js_free(c.ctx, out);
+    JS_FreeValue(c.ctx, compiled);
+    vm_free(&c);
+    free(js);
+
+    for (i = 0; i < 2; i++) {
+        int flags = JS_READ_OBJ_BYTECODE | (i ? JS_READ_OBJ_SHARED_DEBUG : 0);
+        int shared = i, pooled, f_shared;
+        const uint8_t *src, *pc;
+        size_t src_len;
+        VM v = vm_new();
+        JSValue script = JS_ReadObject(v.ctx, buf, n, flags);
+        int in_src, in_pc;
+
+        CHECK(JS_VALUE_GET_TAG(script) == JS_TAG_FUNCTION_BYTECODE, "the bytecode was not read");
+        pooled = white_function_debug(script, 0, &src, &src_len, &pc, &f_shared);
+        CHECK(pooled == 1, "the script has %d constants, want f alone", pooled);
+        in_src = src >= buf && src < buf + n;
+        in_pc = pc >= buf && pc < buf + n;
+        CHECK(in_src == shared && in_pc == shared && f_shared == shared,
+              "flags %d: source in the buffer %d, line table %d, bit %d", flags, in_src, in_pc, f_shared);
+        sources[i] = strndup((const char *)src, src_len);
+        JS_ComputeMemoryUsage(v.rt, &usage[i]);
+        /* freeing the functions must leave the buffer to its owner */
+        JS_FreeValue(v.ctx, script);
+        vm_free(&v);
+    }
+    CHECK(strcmp(sources[0], sources[1]) == 0 && strncmp(sources[0], "function f(a) {", 15) == 0,
+          "source %.40s, shared %.40s", sources[0], sources[1]);
+    CHECK(usage[1].js_func_pc2line_size == 0, "the runtime counts %lld bytes of shared line tables",
+          (long long)usage[1].js_func_pc2line_size);
+    CHECK(usage[0].malloc_size - usage[1].malloc_size >= PAD,
+          "shared, the runtime takes %lld bytes less, want at least %d",
+          (long long)(usage[0].malloc_size - usage[1].malloc_size), PAD);
+    CHECK(usage[0].js_func_size - usage[1].js_func_size >= PAD,
+          "shared, the runtime counts %lld bytes less in its functions, want at least %d",
+          (long long)(usage[0].js_func_size - usage[1].js_func_size), PAD);
+    free(sources[0]);
+    free(sources[1]);
+    free(buf);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1346,6 +1416,7 @@ int main(void)
     test_poll_ret();
     test_added_vars_oom();
     test_own_keys_flags();
+    test_shared_debug_read();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
