@@ -92,3 +92,20 @@ func TestSizeLog2BeforeLLVM(t *testing.T) {
 		}
 	}
 }
+
+// TestParseAlign64: -align64 takes name:offset pairs with the offset a
+// multiple of 8 below 64, and nothing else.
+func TestParseAlign64(t *testing.T) {
+	got, err := parseAlign64(engineAlign64)
+	if err != nil || !reflect.DeepEqual(got, map[string]int{"JS_CallInternal": 0, "lre_exec_backtrack": 16}) {
+		t.Fatalf("the default: %v, %v", got, err)
+	}
+	if got, err := parseAlign64(""); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v, %v", got, err)
+	}
+	for _, s := range []string{"f", "f:", ":8", "f:4", "f:64", "f:-8", "f:x", "f:8,f:16"} {
+		if got, err := parseAlign64(s); err == nil {
+			t.Errorf("%q: accepted as %v", s, got)
+		}
+	}
+}

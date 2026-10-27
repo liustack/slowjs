@@ -104,7 +104,7 @@ Where the interpreter's code lands in the binary changes its speed by 5% to 14% 
 Go puts amd64 functions on 32 bytes, so moving the whole program by less than 32 bytes moves nothing, and the effect repeats every 64 bytes. A position is two numbers:
 
 - The whole program moved by 0 or 32 bytes.
-- The start of the interpreter body moved by 0, 8, 16 or 24 bytes of NOP, put right after its `PCALIGN $16`.
+- The start of the interpreter body moved by 0, 8, 16 or 24 bytes of NOP, put right after the `PCALIGN` at its start.
 
 All 8 combinations are the full set. For a quick check use 4: 0 or 32 for the first, 0 or 16 for the second. Build every position with the same flags (`-pgo=off` or the same profile), and put a measurement of the same engine at all positions next to the one of the change.
 
@@ -119,6 +119,18 @@ Reading the result:
 - Take the range of the baseline's own positions: the same engine, new against itself at each position.
 - A change is real only when the median passes both 2% and half of that range, and most positions agree on the sign.
 - Under 3%, do not argue from timings. Count instructions with callgrind, which hardly move with the position.
+
+### The C engine's hot loops on fixed places
+
+The generator puts the body of the C engine's interpreter at 0 bytes into a line of 64 bytes and the body of its regexp matcher at 16 (`-align64`, see [c-engine.md](fork-changes/c-engine.md#where-the-interpreter-and-the-regexp-matcher-sit)). Before, each body sat after a `PCALIGN $16` and moved within its lines with any change to code linked before it.
+
+With the bodies fixed, the whole-program move of a position no longer moves the interpreter body within its lines: it moves the code and data around it, and the front NOP still moves the body. So the 8 positions now put the body at 0, 8, 16 and 24 bytes into its line, each with two places of the rest. Keep measuring all 8, or the 4 of the quick check: the move of the rest alone still changes `q_array_read` by up to 8%, `q_int_arith` by up to 6% and `q_prop_read` and `c_string_concat` by up to 5%. Even with the interpreter at the same address in two builds, `q_regexp_ascii` took 389 ms in one and 399 ms in the other.
+
+Measured on 12 scripts of the C engine at all 8 positions, 5 rounds:
+
+- Against the bodies after a `PCALIGN $16`: 0.983 of the time as a geometric mean, `q_prop_read` 0.966, the render scripts 0.995 to 1.000, and the rest within the noise of the positions. `q_array_read` took 0.918 here, but 1.008 in a later run of all 37 scripts against main at 4 positions, where its positions alone ranged from 0.894 to 1.073: it follows where code and data land too closely to read a change of a few percent from it.
+- The position ranges are not narrower as a whole: 5 scripts narrower (`q_int_arith` from 1.157 to 1.091, `v8_richards` from 1.056 to 1.030), 5 wider (`q_array_read` from 1.109 to 1.151, `c_regexp_mix` from 1.014 to 1.038). The largest effect of the whole-program move alone drops from 3.9% to 2.9% on average over the scripts.
+- The place matters. With the function on 64 bytes and the body after a `PCALIGN $16`, the interpreter body sits at 48, and 8 scripts took 1.034 of the time they take with it at 0 (`q_int_arith` 1.091), at 16 1.007, at 32 1.013 (2 positions each). The matcher at 0 makes `q_regexp_ascii` take 1.072 of the time it takes at 16.
 
 ## Intl formatting
 
