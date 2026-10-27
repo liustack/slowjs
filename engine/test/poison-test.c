@@ -288,6 +288,25 @@ typedef struct {
     int any_report;   /* AddressSanitizer reported anything */
 } UafRun;
 
+/* Reads fd to its end into buf, which holds cap bytes, and ends the text with a
+   NUL. Returns 1 when it read to the end, and 0 on a read error or when the
+   output is longer than cap - 1 bytes (buf then holds the start of it). */
+static int read_all(int fd, char *buf, size_t cap, size_t *lenp)
+{
+    size_t len = 0;
+    ssize_t n = 0;
+    char more;
+
+    while (len < cap - 1 && (n = read(fd, buf + len, cap - 1 - len)) > 0)
+        len += (size_t)n;
+    buf[len] = 0;
+    *lenp = len;
+    if (len < cap - 1)
+        return n == 0;
+    /* the buffer is full: a read of no bytes would say 0 whatever is left */
+    return read(fd, &more, 1) == 0;
+}
+
 /* Runs this program again as `poison-test uaf WHAT` with its error output in a
    file, and reads that output. */
 static UafRun uaf_run(const char *self, const char *what)
@@ -318,11 +337,7 @@ static UafRun uaf_run(const char *self, const char *what)
     if (spawned == 0 && waitpid(pid, &status, 0) == pid) {
         fd = open(path, O_RDONLY);
         if (fd >= 0) {
-            ssize_t n;
-
-            while ((n = read(fd, buf + len, sizeof buf - 1 - len)) > 0)
-                len += (size_t)n;
-            read_ok = n == 0;
+            read_ok = read_all(fd, buf, sizeof buf, &len);
             close(fd);
         }
         buf[len] = 0;
@@ -336,6 +351,38 @@ static UafRun uaf_run(const char *self, const char *what)
     }
     unlink(path);
     return r;
+}
+
+/* The output of a child is read through read_all: output that does not fit in
+   the buffer must be reported as cut, not read as if it were whole, as a report
+   past the cut would not be seen and a check for no report would pass. */
+static void test_read_all(void)
+{
+    static const size_t sizes[] = { 0, 1, 99, 100, 101, 5000 };
+    char path[sizeof "/tmp/poison-test-XXXXXX"];
+    char buf[100], big[5000];
+    size_t i, len;
+    int fd;
+
+    memset(big, 'x', sizeof big);
+    for (i = 0; i < sizeof sizes / sizeof *sizes; i++) {
+        int ok;
+
+        strcpy(path, "/tmp/poison-test-XXXXXX");
+        fd = mkstemp(path);
+        CHECK(fd >= 0, "mkstemp");
+        if (fd < 0)
+            return;
+        CHECK(write(fd, big, sizes[i]) == (ssize_t)sizes[i], "write");
+        lseek(fd, 0, SEEK_SET);
+        ok = read_all(fd, buf, sizeof buf, &len);
+        close(fd);
+        unlink(path);
+        /* the buffer keeps 99 bytes and a NUL */
+        CHECK(ok == (sizes[i] <= 99), "read_all of %zu bytes into a buffer of 100 said %d", sizes[i], ok);
+        CHECK(len == (sizes[i] < 99 ? sizes[i] : 99), "read_all of %zu bytes into a buffer of 100 kept %zu", sizes[i], len);
+        CHECK(buf[len] == 0, "read_all of %zu bytes did not end the text", sizes[i]);
+    }
 }
 
 /* A use after free must be reported as one. A correct use must end the child
@@ -441,6 +488,7 @@ int main(int argc, char **argv)
     test_large_in_cache(rt);
     test_large(rt);
     host_free_runtime(rt);
+    test_read_all();
     test_uaf(argv[0]);
     printf("poison-test: %ld checks, %d failures\n", checks, failures);
     return failures != 0;
