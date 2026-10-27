@@ -4406,7 +4406,10 @@ static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
     JSString *str;
 
     if (len <= 0) {
-        return JS_AtomToString(ctx, JS_ATOM_empty_string);
+        /* JS_AtomToString(ctx, JS_ATOM_empty_string) without its path for
+           an index atom, which makes the string here */
+        return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING,
+                                         ctx->rt->atom_array[JS_ATOM_empty_string]));
     }
     str = js_alloc_string(ctx, len, 0);
     if (!str)
