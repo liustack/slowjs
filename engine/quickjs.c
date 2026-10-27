@@ -3949,6 +3949,17 @@ static void __JS_FreeAtom(JSRuntime *rt, uint32_t i)
     JS_FreeAtomStruct(rt, p);
 }
 
+/* The string atom of p for ctx, or JS_ATOM_NULL with the out of memory error
+   pending: __JS_NewAtom throws nothing when the atom table cannot grow or
+   the copy of the string cannot be made. 'p' is freed */
+static JSAtom js_new_string_atom(JSContext *ctx, JSString *p)
+{
+    JSAtom atom = __JS_NewAtom(ctx->rt, p, JS_ATOM_TYPE_STRING);
+    if (atom == JS_ATOM_NULL)
+        JS_ThrowOutOfMemory(ctx);
+    return atom;
+}
+
 /* Warning: 'p' is freed */
 static JSAtom JS_NewAtomStr(JSContext *ctx, JSString *p)
 {
@@ -3960,8 +3971,7 @@ static JSAtom JS_NewAtomStr(JSContext *ctx, JSString *p)
             return __JS_AtomFromUInt32(n);
         }
     }
-    /* XXX: should generate an exception */
-    return __JS_NewAtom(rt, p, JS_ATOM_TYPE_STRING);
+    return js_new_string_atom(ctx, p);
 }
 
 /* XXX: optimize */
@@ -4010,8 +4020,7 @@ JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n)
         val = js_new_string8_len(ctx, buf, len);
         if (JS_IsException(val))
             return JS_ATOM_NULL;
-        return __JS_NewAtom(ctx->rt, JS_VALUE_GET_STRING(val),
-                            JS_ATOM_TYPE_STRING);
+        return js_new_string_atom(ctx, JS_VALUE_GET_STRING(val));
     }
 }
 
@@ -4027,8 +4036,7 @@ static JSAtom JS_NewAtomInt64(JSContext *ctx, int64_t n)
         val = js_new_string8_len(ctx, buf, len);
         if (JS_IsException(val))
             return JS_ATOM_NULL;
-        return __JS_NewAtom(ctx->rt, JS_VALUE_GET_STRING(val),
-                            JS_ATOM_TYPE_STRING);
+        return js_new_string_atom(ctx, JS_VALUE_GET_STRING(val));
     }
 }
 
@@ -11868,6 +11876,11 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                 /* faster to iterate */
                 while (cur_len > len) {
                     atom = JS_NewAtomUInt32(ctx, cur_len - 1);
+                    if (atom == JS_ATOM_NULL) {
+                        /* the elements from cur_len on are gone */
+                        set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, cur_len));
+                        return -1;
+                    }
                     ret = delete_property(ctx, p, atom);
                     JS_FreeAtom(ctx, atom);
                     if (unlikely(!ret)) {
@@ -26695,7 +26708,9 @@ static __exception int emit_push_const(JSParseState *s, JSValueConst val,
         /* warning: JS_NewAtomStr frees the string value */
         JS_DupValue(s->ctx, val);
         atom = JS_NewAtomStr(s->ctx, JS_VALUE_GET_STRING(val));
-        if (atom != JS_ATOM_NULL && !__JS_AtomIsTaggedInt(atom)) {
+        if (atom == JS_ATOM_NULL)
+            return -1;
+        if (!__JS_AtomIsTaggedInt(atom)) {
             emit_op(s, OP_push_atom_value);
             emit_u32(s, atom);
             return 0;
@@ -35045,6 +35060,8 @@ static __exception int js_parse_source_element(JSParseState *s)
     return 0;
 }
 
+static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd);
+
 static JSFunctionDef *js_new_function_def(JSContext *ctx,
                                           JSFunctionDef *parent,
                                           BOOL is_eval,
@@ -35107,6 +35124,10 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     //fd->pc2line_last_line_num = line_num;
     //fd->pc2line_last_pc = 0;
     fd->last_opcode_source_ptr = source_ptr;
+    if (fd->filename == JS_ATOM_NULL) {
+        js_free_function_def(ctx, fd);
+        return NULL;
+    }
     return fd;
 }
 
@@ -42816,6 +42837,8 @@ static int JS_InstantiateFunctionListItem(JSContext *ctx, JSValueConst obj,
     case JS_DEF_ALIAS: /* using autoinit for aliases is not safe */
         {
             JSAtom atom1 = find_atom(ctx, e->u.alias.name);
+            if (atom1 == JS_ATOM_NULL)
+                return -1;
             switch (e->u.alias.base) {
             case -1:
                 val = JS_GetProperty(ctx, obj, atom1);

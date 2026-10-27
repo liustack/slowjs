@@ -1306,6 +1306,41 @@ static void test_split_paths_oom(void)
           want, 24576);
 }
 
+/* ---- atoms ---- */
+
+/* The atom table of a runtime grows by half when it is full, a large block
+   that a limit can refuse while small blocks still come. A runtime starts with
+   about 500 atoms in a table of 711, so 600 new names make it grow. When it
+   could not grow, the name was not made and no error was thrown: compiling
+   failed with no exception pending, and a property key made from a string
+   left the interpreter with no exception to throw. Now both fail with the out
+   of memory error. */
+#define ATOM_NAMES 600
+
+static void test_compile_names_oom(void)
+{
+    static char js[ATOM_NAMES * 12 + 16];
+    size_t len, n;
+    int i, failed = 0;
+
+    len = (size_t)snprintf(js, sizeof(js), "var ");
+    for (i = 0; i < ATOM_NAMES; i++)
+        len += (size_t)snprintf(js + len, sizeof(js) - len, "%sname%d", i ? ", " : "", i);
+    snprintf(js + len, sizeof(js) - len, "; 1");
+    for (n = 0; n <= 48 << 10; n += 32)
+        failed += compile_with_room("many names", js, n);
+    CHECK(failed > 0, "many names never ran out of memory");
+}
+
+static void test_key_names_oom(void)
+{
+    static const char *const want[] = { "600", NULL };
+
+    sweep("keys made from strings", "keys.js", NULL,
+          "var o = {}; for (var i = 0; i < 600; i++) o['key' + i] = i; String(Object.keys(o).length)",
+          want, 65536);
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -1401,6 +1436,8 @@ int main(void)
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
     test_split_paths_oom();
+    test_compile_names_oom();
+    test_key_names_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
