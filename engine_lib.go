@@ -241,7 +241,7 @@ func (r *runtime) newVM() (*VM, error) {
 			},
 		},
 	}
-	id, err := vms.add(m)
+	id, err := vms.Add(m)
 	if err != nil {
 		lib.XJS_FreeContext(tls, c)
 		libc.Xfree(tls, interruptData)

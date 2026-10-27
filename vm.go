@@ -285,7 +285,7 @@ func (m *VM) Close() error {
 	onClose := m.onClose
 	shared := m.shared
 	err := m.closeEngine()
-	vms.remove(id)
+	vms.Remove(id)
 	for _, b := range shared {
 		b.drop()
 	}
