@@ -26023,6 +26023,15 @@ static JSAtom json_parse_ident(JSParseState *s, const uint8_t **pp, int c)
     return atom;
 }
 
+/* The end of the run of ASCII bytes from p that json_string_run looks at: end,
+   or JS_STRING_LEN_MAX + 1 bytes on, so that the length of the run fits an int
+   and string_buffer_write8 throws for a string too long, as string_buffer_putc
+   does: the text of JSON.parse can be longer than any string. */
+static inline const uint8_t *json_run_limit(const uint8_t *p, const uint8_t *end)
+{
+    return end - p > JS_STRING_LEN_MAX + 1 ? p + JS_STRING_LEN_MAX + 1 : end;
+}
+
 /* Put the run of characters from p, up to end, that json_parse_string takes
    as they are into b, and return where the run ends: at sep, '\\', a byte
    below 0x20, end, or a byte that does not start a character of 2, 3 or 4
@@ -26038,11 +26047,8 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
     int n;
 
     for(;;) {
-        /* ASCII. The run stops after JS_STRING_LEN_MAX + 1 bytes, so that
-           its length fits an int and string_buffer_write8 throws for a
-           string too long, as string_buffer_putc does: the text of
-           JSON.parse can be longer than any string. */
-        lim = end - p > JS_STRING_LEN_MAX + 1 ? p + JS_STRING_LEN_MAX + 1 : end;
+        /* ASCII, up to json_run_limit */
+        lim = json_run_limit(p, end);
         for(q = p; q < lim; q++) {
             c = *q;
             if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
