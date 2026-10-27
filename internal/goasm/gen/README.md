@@ -149,6 +149,10 @@ from 16 to 40: the driver and the pass refuse any other before they use it):
 smaller stack. `-arch arm64` stops after llc and counts what the arm64
 lowering would have to handle.
 
+The same C gives the same package, byte for byte, whatever the number of
+compile jobs (`-j`) and the order the compiles finish in, and no file holds the
+path of the work folder (`TestOutputReproducible`).
+
 The engine polls (`pass/poll.cpp`, see
 [c-engine.md](../../../docs/fork-changes/c-engine.md#polls-and-interrupts)):
 every cycle of the code counts down a counter at `-poll-offset` bytes from
