@@ -319,6 +319,17 @@ func TestNow(t *testing.T) {
 	if a < fixed.UnixNano() || b-a < int64(time.Millisecond) || b-fixed.UnixNano() > int64(time.Minute) {
 		t.Fatalf("a moving clock from %d read %d then %d", fixed.UnixNano(), a, b)
 	}
+	// SetClock gives the clock as a function, called on each read, and nil
+	// is the real clock again.
+	reads := 0
+	v.SetClock(func() time.Time { reads++; return fixed.Add(time.Duration(reads) * time.Second) })
+	if a, b := Now(v.ID(), NowWall), Now(v.ID(), NowWall); a != fixed.Add(time.Second).UnixNano() || b != fixed.Add(2*time.Second).UnixNano() {
+		t.Fatalf("the clock function read %d then %d", a, b)
+	}
+	v.SetClock(nil)
+	if d := time.Since(time.Unix(0, Now(v.ID(), NowWall))); d < -time.Second || d > time.Second || reads != 2 {
+		t.Fatalf("after SetClock(nil) the clock is %v off, the function read %d times", d, reads)
+	}
 	// Each VM has its own clock.
 	w := newVM(t, small)
 	w.SetWallClock(fixed.Add(time.Hour), false)
