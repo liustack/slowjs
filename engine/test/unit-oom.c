@@ -1163,6 +1163,37 @@ static void test_syntax_error_stack_oom(void)
           want, 24576);
 }
 
+/* The paths split off the generic conversions and property paths, so that
+   the call graph has no cycle through them, with each room: an element of a
+   fast array read and written by a string key, through a prototype and as a
+   descriptor (a BigInt element needs memory), a rope converted to a number,
+   strings that are and are not canonical numeric keys of a typed array, a
+   length set through valueOf, a rope made flat by a method and as a key, and
+   objects converted to strings and keys. Each works or fails with the out of
+   memory error. */
+static void test_split_paths_oom(void)
+{
+    static const char *const want[] = {
+        "-2,0,3,5,7,42,undefined,undefined,false,false,2,4206,233,3,k4206,k4206,1",
+        NULL };
+
+    sweep("split paths", "split.js",
+          "var ta = new BigInt64Array([1n, -2n]), f64 = new Float64Array([0.5, -0]), a = [1, 2, 3];\n"
+          "var p = 'ab\\u00e9'.repeat(200), rope = p;\n"
+          "for (var i = 0; i < 6; i++) rope = rope + (p + i);\n"
+          "var num = ' '.repeat(600) + (' '.repeat(600) + '42');\n"
+          "var o = { toString() { return 'k' + rope.length } }, len = { valueOf() { return 2 } };\n",
+          "var r = [];\n"
+          "r.push(String(Reflect.get(ta, '1')), String(Object.getOwnPropertyDescriptor(f64, '1').value), Object.create(a)[2]);\n"
+          "Reflect.set(a, '1', 5); Object.defineProperty(ta, '0', { value: 7n }); r.push(a[1], String(ta[0]));\n"
+          "r.push(Number(num), String(ta['1.5']), String(ta['-0']), String('1e21' in f64), String('0.1' in f64));\n"
+          "var b = [1, 2, 3, 4]; b.length = len; r.push(b.length);\n"
+          "r.push(rope.length, rope.charCodeAt(1203), ({ [rope]: 3 })[rope]);\n"
+          "r.push(String(o), `${o}`, { [o]: 1 }['k' + rope.length]);\n"
+          "r.join(',')",
+          want, 24576);
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -1256,6 +1287,7 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_split_paths_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
