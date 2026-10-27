@@ -4768,6 +4768,8 @@ static int string_buffer_concat(StringBuffer *s, const JSString *p,
         return string_buffer_write8(s, p->u.str8 + from, to - from);
 }
 
+static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope);
+
 static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
 {
     JSString *p;
@@ -4780,11 +4782,7 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
     }
     if (unlikely(JS_VALUE_GET_TAG(v) != JS_TAG_STRING)) {
         if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE) {
-            JSStringRope *r = JS_VALUE_GET_STRING_ROPE(v);
-            /* recursion is acceptable because the rope depth is bounded */
-            if (string_buffer_concat_value(s, r->left))
-                return -1;
-            return string_buffer_concat_value(s, r->right);
+            return string_buffer_concat_rope(s, v);
         } else {
             v1 = JS_ToString(s->ctx, v);
             if (JS_IsException(v1))
@@ -5300,6 +5298,20 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
+/* append the strings of a rope in order */
+static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
+{
+    JSStringRopeIter it;
+    JSString *p;
+
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        if (string_buffer_concat(s, p, 0, p->len))
+            return -1;
+    }
+    return 0;
+}
+
 /* The hash of the characters of a string or rope, from h: the strings of
    the rope in order, as if it were one string. */
 static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
@@ -5389,7 +5401,7 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
     }
     if (string_buffer_init2(ctx, b, r->len, r->is_wide_char))
         goto fail;
-    if (string_buffer_concat_value(b, rope))
+    if (string_buffer_concat_rope(b, rope))
         goto fail;
     ret = string_buffer_end(b);
     if (js_rc(r)->ref_count > 1) {
