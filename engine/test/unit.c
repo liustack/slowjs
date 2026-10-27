@@ -2314,6 +2314,74 @@ static void test_class_strings(void)
     host_free_runtime(rt);
 }
 
+/* rqsort_stop stops soon after its stop is set: cmp sets it at the k-th
+   comparison, for every k of sorts of 2 to 64 elements and for k spread over
+   sorts of 100 to 5000, and the comparisons after it are at most the 14 that
+   cutils.h allows outside the heap sort (which random input does not reach). */
+void rqsort_stop(void *base, size_t nmemb, size_t size,
+                 int (*cmp)(const void *, const void *, void *),
+                 void *arg, const volatile int *stop);
+
+typedef struct {
+    long n, k;
+    int stop;
+} SortStop;
+
+static int sort_stop_cmp(const void *a, const void *b, void *opaque)
+{
+    SortStop *s = opaque;
+    int x = *(const int *)a, y = *(const int *)b;
+
+    if (++s->n == s->k)
+        s->stop = 1;
+    return (x > y) - (x < y);
+}
+
+static void test_sort_stop_bound(void)
+{
+    static const int big[] = { 100, 1000, 5000 };
+    static int a[5000];
+    uint32_t seed = 12345;
+    long worst = 0, runs = 0;
+    int size, i, b;
+
+    for (b = -63; b < 3; b++) {
+        long total, k, step;
+        SortStop s;
+
+        size = b < 0 ? 65 + b : big[b];
+        for (i = 0; i < size; i++) {
+            seed = seed * 1103515245 + 12345;
+            a[i] = (int)(seed >> 16) % 1000;
+        }
+        s.n = 0;
+        s.k = 0;
+        s.stop = 0;
+        {
+            static int c[5000];
+            memcpy(c, a, size * sizeof(int));
+            rqsort_stop(c, size, sizeof(int), sort_stop_cmp, &s, &s.stop);
+        }
+        total = s.n;
+        step = size <= 64 ? 1 : total / 300 + 1;
+        for (k = 1; k <= total; k += step) {
+            static int c[5000];
+
+            memcpy(c, a, size * sizeof(int));
+            s.n = 0;
+            s.k = k;
+            s.stop = 0;
+            rqsort_stop(c, size, sizeof(int), sort_stop_cmp, &s, &s.stop);
+            runs++;
+            if (s.n - k > worst)
+                worst = s.n - k;
+            CHECK(s.n - k <= 14, "a sort of %d stopped at comparison %ld made %ld more", size, k, s.n - k);
+        }
+    }
+    CHECK(runs > 2000, "only %ld sorts were stopped", runs);
+    CHECK(worst > 0, "no sort made a comparison after the stop: the bound is not tested");
+}
+
 int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
@@ -2349,6 +2417,7 @@ int main(void)
     test_search_linear();
     test_search_interrupt();
     test_sort_interrupt();
+    test_sort_stop_bound();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
