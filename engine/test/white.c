@@ -750,3 +750,11 @@ JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nal
     white_alloc_fail_at = 0;
     return v;
 }
+
+/* Whether every block of the engine is a request to the heap of its own (the
+   builds that take each block from the system malloc), and not only the
+   arenas of small blocks and the large blocks. */
+int white_every_block_is_a_request(void)
+{
+    return JS_MALLOC_LARGE_BLOCKS_ONLY;
+}
