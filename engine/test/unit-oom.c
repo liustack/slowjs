@@ -1131,6 +1131,32 @@ static void test_new_error_stack_oom(void)
           want, 24576);
 }
 
+/* A syntax error gets the place in the source, then the stack of the
+   functions that called eval, formatted at once with the memory that is left.
+   Running out of it there throws, which frees the current exception: the
+   syntax error itself, which was still being given its properties. The
+   syntax error stays the exception. Its stack is null, or missing, which the
+   interpreter then fills with the functions alone, without the place. */
+static void test_syntax_error_stack_oom(void)
+{
+    static const char *const want[] = {
+        "SyntaxError: unexpected token in expression: ''\n"
+        "    at <input>:1:4\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:28)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "SyntaxError: unexpected token in expression: ''\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:28)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "SyntaxError: unexpected token in expression: ''\nundefined",
+        "SyntaxError: unexpected token in expression: ''\nnull",
+        NULL };
+
+    sweep("syntax error", "\xc3\xa9.js", NULL,
+          "function f\xc3\xa9() { return eval('1 +') }\n"
+          "try { f\xc3\xa9() } catch (e) { e + '\\n' + e.stack }",
+          want, 24576);
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1151,6 +1177,7 @@ int main(void)
     test_regexp_oom();
     test_thrown_is_not_uncatchable();
     test_new_error_stack_oom();
+    test_syntax_error_stack_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
