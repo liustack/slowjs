@@ -243,7 +243,7 @@ int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, i
 static const uint8_t white_ops[] = {
     OP_invalid, OP_nop, OP_push_0, OP_drop, OP_goto, OP_goto16, OP_goto8,
     OP_if_false, OP_if_true, OP_if_true8, OP_if_false8, OP_return_undef,
-    OP_catch, OP_gosub, OP_ret, OP_with_get_var,
+    OP_catch, OP_gosub, OP_ret, OP_with_get_var, OP_push_i32, OP_push_i16,
 };
 
 int white_op(int i)
