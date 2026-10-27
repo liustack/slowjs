@@ -123,8 +123,12 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	m.enter()
 	defer m.leave(&err)
 	thenFn := m.jsGetProperty(v.v, atomThen)
-	result := m.settled(m.jsCall(thenFn, v.v, jsArgs))
+	result, err := m.jsCall(thenFn, v.v, jsArgs)
 	m.jsFreeValue(thenFn)
+	if err != nil {
+		return Value{}, err
+	}
+	result = m.settled(result)
 	if isException(result) {
 		m.jsFreeValue(result)
 		err = m.errFromException()

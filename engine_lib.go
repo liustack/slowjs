@@ -546,35 +546,46 @@ func (e *engineState) jsExecutePendingJob() int32 {
 	return lib.XJS_ExecutePendingJob(e.runtime.tls, e.runtime.cRuntime, 0)
 }
 
-// jsCall is JS_Call with the arguments args, which it borrows.
-func (e *engineState) jsCall(f, this jsValue, args []jsValue) jsValue {
-	tls := e.runtime.tls
-	var argv uintptr
-	if len(args) != 0 {
-		sz := libc.Tsize_t(sizeofJsValue * uintptr(len(args)))
-		argv = libc.Xmalloc(tls, sz)
-
-		defer libc.Xfree(tls, argv)
-
-		copy(unsafe.Slice((*jsValue)(unsafe.Pointer(argv)), len(args)), args)
+// valuesC copies a to C memory, which the caller frees with libc.Xfree, or
+// returns 0 for no values. err is not nil when there is no C memory.
+func (e *engineState) valuesC(a []jsValue) (uintptr, error) {
+	if len(a) == 0 {
+		return 0, nil
 	}
-	return lib.XJS_Call(tls, e.cContext, f, this, int32(len(args)), argv)
+	p := cMalloc(e.runtime.tls, libc.Tsize_t(sizeofJsValue*uintptr(len(a))))
+	if p == 0 {
+		return 0, fmt.Errorf("OOM")
+	}
+	copy(unsafe.Slice((*jsValue)(unsafe.Pointer(p)), len(a)), a)
+	return p, nil
+}
+
+// jsCall is JS_Call with the arguments args, which it borrows. err is not
+// nil when there is no C memory for the arguments.
+func (e *engineState) jsCall(f, this jsValue, args []jsValue) (jsValue, error) {
+	tls := e.runtime.tls
+	argv, err := e.valuesC(args)
+	if err != nil {
+		return jsValue{}, err
+	}
+	if argv != 0 {
+		defer libc.Xfree(tls, argv)
+	}
+	return lib.XJS_Call(tls, e.cContext, f, this, int32(len(args)), argv), nil
 }
 
 // jsArrayOfValues is js_array_of (Array.of) of the values a, which it
-// borrows.
-func (e *engineState) jsArrayOfValues(a []jsValue) jsValue {
+// borrows. err is not nil when there is no C memory for the values.
+func (e *engineState) jsArrayOfValues(a []jsValue) (jsValue, error) {
 	tls := e.runtime.tls
-	argv := libc.Xmalloc(tls, lib.Tsize_t(len(a))*lib.Tsize_t(sizeofJsValue))
-
-	defer libc.Xfree(tls, argv)
-
-	p := argv
-	for _, v := range a {
-		*(*jsValue)(unsafe.Pointer(p)) = v
-		p += sizeofJsValue
+	argv, err := e.valuesC(a)
+	if err != nil {
+		return jsValue{}, err
 	}
-	return lib.Xjs_array_of(tls, e.cContext, undefined, int32(len(a)), argv)
+	if argv != 0 {
+		defer libc.Xfree(tls, argv)
+	}
+	return lib.Xjs_array_of(tls, e.cContext, undefined, int32(len(a)), argv), nil
 }
 
 // jsReadObject is JS_ReadObject of bytecode, with the flags flags. err is
@@ -766,6 +777,10 @@ func throwError(tls *libc.TLS, ctx uintptr, kind int, msg string) (r jsValue) {
 	tls.Free(16)
 	return r
 }
+
+// cMalloc is malloc of the C library: valuesC checks what it returns. A
+// variable, so that a test can make it fail.
+var cMalloc = libc.Xmalloc
 
 func fp(f interface{}) uintptr {
 	type iface [2]uintptr
