@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liustack/slowjs/internal/gohost"
 	"github.com/liustack/slowjs/internal/hostmem"
 )
 
@@ -372,6 +373,32 @@ func TestStackSmallerThanGenerated(t *testing.T) {
 	}
 }
 
+// TestStackLargerThanGenerated: New refuses a shadow stack larger than the
+// region the engine was generated for. The engine finds the base of its stack
+// by rounding its stack pointer down to that size, so in a larger stack the
+// base, the poll counter and the VM id it reads there would fall into live
+// frames.
+func TestStackLargerThanGenerated(t *testing.T) {
+	v, err := New(Options{StackSize: 2 << shadowSizeLog2})
+	if err == nil {
+		closeVM(t, v)
+		t.Fatal("New took a stack twice the size the engine was generated for")
+	}
+	if !strings.Contains(err.Error(), "generated for") {
+		t.Fatalf("New fails for another reason: %v", err)
+	}
+}
+
+// TestStackDefault: with no size given, the shadow stack is the region the
+// engine was generated for.
+func TestStackDefault(t *testing.T) {
+	v := newVM(t, Options{})
+	defer closeVM(t, v)
+	if _, size := v.Host().Stack(); size != 1<<shadowSizeLog2 {
+		t.Fatalf("a shadow stack of %d bytes, want %d", size, uintptr(1)<<shadowSizeLog2)
+	}
+}
+
 // TestGCWhileRunning runs scripts while another goroutine keeps starting
 // collections. Each stops the engine's goroutine at a function prologue, and
 // may shrink its stack with engine frames on it: the results must not
@@ -445,5 +472,27 @@ func TestShapeCache(t *testing.T) {
 	}
 	if got := shapes(); kept-got < DefaultShapeCache {
 		t.Errorf("%d shapes with the cache, %d without, want at least %d fewer", kept, got, DefaultShapeCache)
+	}
+}
+
+// TestStackHeaderKept: what the host passes the engine by address in the
+// scratch leaves the header of gohost alone, so a poll after an Eval still
+// finds its VM by the shadow pointer.
+func TestStackHeaderKept(t *testing.T) {
+	v := newVM(t, Options{})
+	defer closeVM(t, v)
+	id := v.Host().ID()
+	for i := range 3 {
+		if got, err := v.Eval(`"a".repeat(1000) + new Error("x").stack`, "header.js"); err != nil || len(got) < 1000 {
+			t.Fatalf("Eval: %d bytes, %v", len(got), err)
+		}
+		v.Usage()
+		header := (*[2]uint32)(addr(v.base))
+		if header[0] != id || header[1] != ^id {
+			t.Fatalf("round %d: the header is %#x %#x, want the id %d and its complement", i, header[0], header[1], id)
+		}
+		if gohost.ByStack(v.sp) != v.Host() {
+			t.Fatalf("round %d: ByStack does not find the VM", i)
+		}
 	}
 }

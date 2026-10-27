@@ -288,7 +288,7 @@ static void heap_start(void *h, size_t keep) { heap_release_start(h, keep); }
 static JSMemRange heap_chunk(void *h) { return heap_release_next_chunk(h); }
 static JSMemRange heap_range(void *h) { return heap_release_next_range(h); }
 
-static ReleaseResult host_release(uint32_t vm, const Releaser *rl, size_t keep)
+static ReleaseResult release_chunks(uint32_t vm, const Releaser *rl, size_t keep)
 {
     HostVM *h = &vms[vm];
     ReleaseResult res = { 0, 0, 0, 0, 0 };
@@ -742,7 +742,7 @@ static void model_release(HeapModel *m, size_t keep)
     JSHeap *h = m->h;
     Releaser rl = { h, heap_start, heap_chunk, heap_range };
     size_t count = h->count, blocks = h->blocks, fp = h->footprint, cand = h->release_candidate;
-    ReleaseResult r = host_release(m->vm, &rl, keep);
+    ReleaseResult r = release_chunks(m->vm, &rl, keep);
 
     CHECK(h->count == count && h->blocks == blocks, "a release changed the count");
     CHECK(h->footprint == fp - r.chunk_bytes, "footprint did not drop by the chunks released");
@@ -1085,7 +1085,7 @@ static void rt_release(RtModel *m, size_t keep)
     /* a release gives the caches back first, which can change MemorySize
        only by what they held: the rest of it must not change */
     size = JS_GetMemorySize(m->rt);
-    r = host_release(m->vm, &rl, keep);
+    r = release_chunks(m->vm, &rl, keep);
     CHECK(rt_cached(m->rt) == 0, "the caches hold %zu blocks after a release", rt_cached(m->rt));
     CHECK(JS_GetMemorySize(m->rt) <= size && (cached || JS_GetMemorySize(m->rt) == size), "a release changed MemorySize from %zu to %zu with %zu blocks cached",
           size, JS_GetMemorySize(m->rt), cached);
@@ -2159,18 +2159,18 @@ static void scenario_release(void)
     fp = h->footprint;
 
     /* keeping more than is free offers nothing */
-    r = host_release(m.vm, &rl, (size_t)1 << 40);
+    r = release_chunks(m.vm, &rl, (size_t)1 << 40);
     CHECK(r.candidate == 0 && h->footprint == fp, "a release with a huge keep offered %zu", r.candidate);
 
     /* keeping a part offers part */
-    r = host_release(m.vm, &rl, (size_t)1 << 20);
+    r = release_chunks(m.vm, &rl, (size_t)1 << 20);
     heap_model_check(&m);
     CHECK(r.candidate > 0 && h->footprint <= fp, "a release with keep 1 MiB offered nothing");
     for (int i = 0; i < m.n; i++)
         check_content(&m.live[i], m.live[i].usable, "release with keep");
 
     /* keeping nothing offers everything: whole free chunks leave, and what is left is usable */
-    r = host_release(m.vm, &rl, 0);
+    r = release_chunks(m.vm, &rl, 0);
     heap_model_check(&m);
     for (int i = 0; i < m.n; i++)
         check_content(&m.live[i], m.live[i].usable, "release");
@@ -2739,7 +2739,7 @@ static void lc_release_all(uint32_t vm, JSRuntime *rt)
 {
     Releaser rl = { rt, rt_start, rt_chunk, rt_range };
 
-    host_release(vm, &rl, 0);
+    release_chunks(vm, &rl, 0);
 }
 
 static void scenario_large_cache(void)

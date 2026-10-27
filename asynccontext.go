@@ -5,8 +5,6 @@
 
 package slowjs // import "github.com/liustack/slowjs"
 
-import lib "github.com/liustack/slowjs/lib"
-
 // The async context of a VM is an object javascript sets with
 // SetAsyncContext and reads with GetAsyncContext, which promise jobs keep: a
 // reaction, what then, catch, finally and await register, runs with the
@@ -24,12 +22,12 @@ var (
 	// GetAsyncContext returns the async context of the VM, undefined when it
 	// has none.
 	GetAsyncContext = NewBuiltin("getAsyncContext", 0, func(a Args) (Value, error) {
-		return Value{vm: a.vm, v: lib.XJS_GetAsyncContext(a.vm.runtime.tls, a.vm.cContext)}, nil
+		return Value{vm: a.vm, v: a.vm.jsGetAsyncContext()}, nil
 	})
 	// SetAsyncContext sets the async context of the VM to its first argument
 	// when it is an object, and to none for any other value.
 	SetAsyncContext = NewBuiltin("setAsyncContext", 1, func(a Args) (Value, error) {
-		lib.XJS_SetAsyncContext(a.vm.runtime.tls, a.vm.cContext, a.arg(0))
+		a.vm.jsSetAsyncContext(a.arg(0))
 		return UndefinedValue, nil
 	})
 )

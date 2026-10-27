@@ -143,33 +143,3 @@ func TestGoInvalidUTF8(t *testing.T) {
 		}
 	}
 }
-
-// TestGoInvalidUTF8ModuleName gives the engine a module name that is not
-// valid UTF-8 from the normalizer. The engine keeps the name in the form Go
-// decodes it, and hands the loader that form.
-func TestGoInvalidUTF8ModuleName(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	var loaded string
-	m.SetModuleLoader(
-		func(_ *VM, name string) (string, error) {
-			loaded = name
-			return `export default 1;`, nil
-		},
-		func(_ *VM, _, name string) (string, error) {
-			return name + "\x80a", nil
-		},
-	)
-	if _, err := m.Eval(`import x from "mod";`, EvalModule); err != nil {
-		t.Fatal(err)
-	}
-
-	if want := "mod�a"; loaded != want {
-		t.Fatalf("the loader got %q, want %q", loaded, want)
-	}
-}

@@ -52,6 +52,11 @@ enum {
 };
 JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int magic);
 
+/* The engine dropped the last reference to an object that holds the handle
+   of the host: the host lets go of what the handle names. It runs no user
+   code and does not call back into the engine. */
+void host_release(uint32_t vm, uint32_t handle);
+
 /* A pointer-sized integer as an argument or a result of the kinds above. The
    tag is JS_TAG_INT and means nothing: the host reads the word. */
 #define HOST_WORD(x) JS_MKPTR(JS_TAG_INT, (void *)(uintptr_t)(x))

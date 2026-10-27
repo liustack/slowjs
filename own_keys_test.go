@@ -56,12 +56,9 @@ func TestOwnKeys(t *testing.T) {
 // first to the engine.
 func TestOwnKeysModuleNamespace(t *testing.T) {
 	m := newTestVM(t)
-	m.SetModuleLoader(func(m *VM, name string) (string, error) {
-		if name != "self" {
-			return "", fmt.Errorf("no module %s", name)
-		}
-		return `
-			import * as me from "self"
+	// A module of Eval is named <eval>, so it imports itself by that name.
+	if _, err := m.Eval(`
+			import * as me from "<eval>"
 			const r = (f) => { try { return JSON.stringify(f()) } catch (e) { return e.name } }
 			const forIn = () => { const ks = []; for (const k in me) ks.push(k); return ks }
 			globalThis.early = [
@@ -76,9 +73,7 @@ func TestOwnKeysModuleNamespace(t *testing.T) {
 				r(() => Object.getOwnPropertyNames(me)), r(() => Object.keys(me)), r(() => Object.values(me).map(String)),
 				r(() => Object.entries(me).map(String)), r(forIn), r(() => Object.keys({ ...me })), r(() => Object.keys(Object.assign({}, me))),
 			].join(' ')
-		`, nil
-	}, func(m *VM, base, name string) (string, error) { return name, nil })
-	if _, err := m.Eval(`import "self"`, EvalModule); err != nil {
+		`, EvalModule); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ name, want string }{

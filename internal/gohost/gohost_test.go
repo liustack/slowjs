@@ -7,6 +7,7 @@ package gohost
 
 import (
 	"errors"
+	"math"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -29,7 +30,7 @@ func newVM(t *testing.T, size uintptr) *VM {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if Lookup(v.ID()) != nil {
+		if Lookup(v.ID()) == v {
 			if err := v.Close(); err != nil {
 				t.Error(err)
 			}
@@ -87,6 +88,11 @@ func TestRegistry(t *testing.T) {
 		}
 	}
 	base, size := a.Stack()
+	// ByStack reads the header of the stack a pointer would be in: outside
+	// every stack that may be memory mapped to nothing, as the guard page
+	// right above a stack is, a fault that SetPanicOnFault makes a panic, as
+	// it is in the engine.
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	mustPanic(t, "ByStack outside every stack", func() { ByStack(base + size) })
 	mustPanic(t, "ByStack(0)", func() { ByStack(0) })
 
@@ -100,6 +106,32 @@ func TestRegistry(t *testing.T) {
 	mustPanic(t, "ByStack of a closed VM", func() { ByStack(base) })
 	if u := a.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
 		t.Fatalf("after Close the VM holds %+v", u)
+	}
+}
+
+// TestStackHeader: New writes the id of the VM and its complement at the
+// base of the stack, and ByStack finds a VM only where the header names a
+// VM whose stack starts there: a header that names another VM, or whose
+// check word is wrong, is a panic, not the wrong VM.
+func TestStackHeader(t *testing.T) {
+	a := newVM(t, small)
+	b := newVM(t, small)
+	base, _ := a.Stack()
+	header := (*[2]uint32)(addr(base))
+	if header[0] != a.ID() || header[1] != ^a.ID() {
+		t.Fatalf("the header is %#x %#x, want the id %d and its complement", header[0], header[1], a.ID())
+	}
+	sp := base + 4096
+	if ByStack(sp) != a {
+		t.Fatal("ByStack does not find the VM of its header")
+	}
+	header[0], header[1] = b.ID(), ^b.ID()
+	mustPanic(t, "a header that names another VM", func() { ByStack(sp) })
+	header[0], header[1] = a.ID(), ^a.ID()+1
+	mustPanic(t, "a header with a wrong check word", func() { ByStack(sp) })
+	header[1] = ^a.ID()
+	if ByStack(sp) != a {
+		t.Fatal("ByStack does not find the VM once its header is back")
 	}
 }
 
@@ -287,6 +319,17 @@ func TestNow(t *testing.T) {
 	if a < fixed.UnixNano() || b-a < int64(time.Millisecond) || b-fixed.UnixNano() > int64(time.Minute) {
 		t.Fatalf("a moving clock from %d read %d then %d", fixed.UnixNano(), a, b)
 	}
+	// SetClock gives the clock as a function, called on each read, and nil
+	// is the real clock again.
+	reads := 0
+	v.SetClock(func() time.Time { reads++; return fixed.Add(time.Duration(reads) * time.Second) })
+	if a, b := Now(v.ID(), NowWall), Now(v.ID(), NowWall); a != fixed.Add(time.Second).UnixNano() || b != fixed.Add(2*time.Second).UnixNano() {
+		t.Fatalf("the clock function read %d then %d", a, b)
+	}
+	v.SetClock(nil)
+	if d := time.Since(time.Unix(0, Now(v.ID(), NowWall))); d < -time.Second || d > time.Second || reads != 2 {
+		t.Fatalf("after SetClock(nil) the clock is %v off, the function read %d times", d, reads)
+	}
 	// Each VM has its own clock.
 	w := newVM(t, small)
 	w.SetWallClock(fixed.Add(time.Hour), false)
@@ -450,7 +493,8 @@ func TestPollCounter(t *testing.T) {
 
 // TestPollKill: when the script has not stopped by the grace after Interrupt,
 // the next poll panics with ErrKilled and the VM is broken. A negative grace
-// never kills, and a poll before the grace is over goes on.
+// never kills, and a poll before the grace is over goes on. An entry that
+// runs no script is never killed.
 func TestPollKill(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
@@ -458,7 +502,7 @@ func TestPollKill(t *testing.T) {
 		t.Fatalf("the grace of a new VM is %v, want %v", v.KillGrace(), DefaultKillGrace)
 	}
 	v.SetKillGrace(30 * time.Millisecond)
-	v.Enter()
+	v.EnterScript(0)
 	v.Interrupt()
 	Poll(base + 64)
 	if v.Broken() {
@@ -476,7 +520,7 @@ func TestPollKill(t *testing.T) {
 	w := newVM(t, small)
 	wb, _ := w.Stack()
 	w.SetKillGrace(-1)
-	w.Enter()
+	w.EnterScript(0)
 	w.Interrupt()
 	time.Sleep(5 * time.Millisecond)
 	Poll(wb + 64)
@@ -489,11 +533,124 @@ func TestPollKill(t *testing.T) {
 	x := newVM(t, small)
 	xb, _ := x.Stack()
 	x.SetKillGrace(0)
-	x.Enter()
+	x.EnterScript(0)
 	Poll(xb + 64)
 	x.Interrupt()
 	mustPanic(t, "a poll with a grace of 0", func() { Poll(xb + 64) })
 	x.Leave()
+
+	// An outermost entry that runs no script, as a collection is, only
+	// sets the flag, and so does an inner script entry in it.
+	g := newVM(t, small)
+	gb, _ := g.Stack()
+	testFlag = 0
+	g.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	g.SetKillGrace(0)
+	g.Enter()
+	g.Interrupt()
+	time.Sleep(time.Millisecond)
+	Poll(gb + 64)
+	g.EnterScript(0)
+	Poll(gb + 64)
+	g.Leave()
+	if g.Broken() || g.Killed() || testFlag != 1 {
+		t.Fatalf("an entry that runs no script: broken %v, killed %v, flag %d", g.Broken(), g.Killed(), testFlag)
+	}
+	g.Leave()
+	// The next outermost entry decides again.
+	g.EnterScript(0)
+	g.Interrupt()
+	mustPanic(t, "a script entry after one that runs none", func() { Poll(gb + 64) })
+	g.Leave()
+}
+
+// TestPollDeadline: the outermost EnterScript with a timeout sets a deadline,
+// and the first poll past it interrupts as Interrupt at the deadline would
+// have: the flag is set, and the grace counts from the deadline. Inner
+// entries keep the deadline of the outermost one. Enter, a timeout of 0, or
+// one too far to count set none.
+func TestPollDeadline(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	testFlag = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	v.SetKillGrace(-1)
+	v.EnterScript(50 * time.Millisecond)
+	Poll(base + 64)
+	if v.Interrupted() || testFlag != 0 {
+		t.Fatal("interrupted before the deadline")
+	}
+	v.EnterScript(time.Hour)
+	v.Enter()
+	time.Sleep(60 * time.Millisecond)
+	Poll(base + 64)
+	if !v.Interrupted() || testFlag != 1 {
+		t.Fatalf("past the deadline: interrupted %v, flag %d", v.Interrupted(), testFlag)
+	}
+	v.Leave()
+	v.Leave()
+	v.Leave()
+
+	for _, c := range []struct {
+		name  string
+		enter func()
+	}{
+		{"Enter", v.Enter},
+		{"no timeout", func() { v.EnterScript(0) }},
+		{"a negative timeout", func() { v.EnterScript(-time.Second) }},
+		{"a timeout too far to count", func() { v.EnterScript(math.MaxInt64) }},
+	} {
+		c.enter()
+		time.Sleep(2 * time.Millisecond)
+		Poll(base + 64)
+		if v.Interrupted() || testFlag != 0 {
+			t.Fatalf("%s: interrupted", c.name)
+		}
+		v.Leave()
+	}
+
+	// The grace counts from the deadline: soon past it the script goes on,
+	// past the grace the poll kills.
+	w := newVM(t, small)
+	wb, _ := w.Stack()
+	w.SetKillGrace(200 * time.Millisecond)
+	w.EnterScript(5 * time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
+	Poll(wb + 64)
+	if !w.Interrupted() || w.Broken() {
+		t.Fatalf("10 ms past the deadline: interrupted %v, broken %v", w.Interrupted(), w.Broken())
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := mustPanic(t, "a poll past the deadline and the grace", func() { Poll(wb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	w.Leave()
+
+	// An Interrupt later than the deadline, before any poll saw the
+	// deadline, does not move the grace on: it counts from the earlier of
+	// the two.
+	x := newVM(t, small)
+	xb, _ := x.Stack()
+	x.SetKillGrace(50 * time.Millisecond)
+	x.EnterScript(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	x.Interrupt()
+	if got := mustPanic(t, "a poll past the deadline and the grace, after a later Interrupt", func() { Poll(xb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	x.Leave()
+
+	// An Interrupt before the deadline counts from the Interrupt.
+	y := newVM(t, small)
+	yb, _ := y.Stack()
+	y.SetKillGrace(30 * time.Millisecond)
+	y.EnterScript(time.Hour)
+	y.Interrupt()
+	time.Sleep(40 * time.Millisecond)
+	if got := mustPanic(t, "a poll past the grace of an Interrupt before the deadline", func() { Poll(yb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	y.Leave()
 }
 
 // testFlag stands for the engine's interrupt flag: a global, which does not

@@ -10,9 +10,9 @@
 // queued run. jsrun prints "== " and the name of the file, then what the
 // script gave: the string of its completion value, or of what that value
 // returns when it is a function (called after the jobs), or the exception.
-// A file whose name ends in .mjs runs as a module instead, and gives
-// globalThis.result. -result gives globalThis.result for a script too, and
-// -call takes the file as the body of a function that the host calls (see
+// The Go API loads no modules, so a file whose name ends in .mjs, which
+// engine/test/jsrun.c runs as a module, is an error. -result gives
+// globalThis.result for a script that ends in a job, and -call takes the file as the body of a function that the host calls (see
 // engine/test/jsrun.c). The scripts find the Builtins GetAsyncContext and
 // SetAsyncContext as the globals getAsyncContext and setAsyncContext, and
 // gc, youngGC, memorySize and setGCThreshold, which run VM.RunGC and
@@ -88,6 +88,9 @@ func main() {
 }
 
 func run(path string) (string, error) {
+	if strings.HasSuffix(path, ".mjs") {
+		return "", fmt.Errorf("%s: the Go API loads no modules", path)
+	}
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -105,18 +108,8 @@ func run(path string) (string, error) {
 			return "", err
 		}
 	}
-	module := strings.HasSuffix(path, ".mjs")
 	var v slowjs.Value
 	switch {
-	case module:
-		// The file is the module NAME, read from its folder, and a module of
-		// <eval> imports it (see engine/test/jsrun.c).
-		dir, name := filepath.Dir(path), filepath.Base(path)
-		vm.SetModuleLoader(func(_ *slowjs.VM, n string) (string, error) {
-			b, err := os.ReadFile(filepath.Join(dir, n))
-			return string(b), err
-		}, nil)
-		v, err = vm.EvalValue(fmt.Sprintf("import %q;", name), slowjs.EvalModule)
 	case optCall:
 		// The body of a function that the host calls.
 		if _, err = vm.Eval("function run() {\n"+string(src)+"\n}", slowjs.EvalGlobal); err == nil {
@@ -133,7 +126,7 @@ func run(path string) (string, error) {
 	if _, err := vm.ExecutePendingJobs(); err != nil {
 		out = fmt.Sprintf("<job exception=%s>\n", err)
 	}
-	if module || optResult || optCall {
+	if optResult || optCall {
 		v.Free()
 		if v, err = vm.EvalValue("globalThis.result", slowjs.EvalGlobal); err != nil {
 			return out + fmt.Sprintf("<exception=%s>\n", err), nil

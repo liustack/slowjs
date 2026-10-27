@@ -42,11 +42,14 @@ import (
 // of the file uses stops fixlib too.
 
 // quickjsLibcRoots are the functions of quickjs-libc.c that stay, with what
-// they reach.
+// they reach. The Go API no longer reaches js_std_add_helpers and
+// js_module_loader (VM.StdAddHelpers and VM.SetDefaultModuleLoader are gone).
+// They stay until lib is next generated, so that the code of lib does not
+// move.
 var quickjsLibcRoots = []string{
-	"Xjs_std_add_helpers",        // VM.StdAddHelpers
+	"Xjs_std_add_helpers",        // nothing, see above
 	"Xjs_module_set_import_meta", // VM.EvalBytecode of a module
-	"Xjs_module_loader",          // VM.SetDefaultModuleLoader
+	"Xjs_module_loader",          // nothing, see above
 	"Xjs_load_file",              // the test262 runner
 	"Xjs_module_test_json",       // the test262 runner
 	"Xjs_std_dump_error",         // the test262 runner

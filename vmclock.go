@@ -7,8 +7,6 @@ package slowjs
 
 import (
 	"time"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // SetClock sets the wall clock of this VM. Date.now(), new Date(), Date(),
@@ -19,10 +17,10 @@ import (
 // concurrent calls. Close releases it. It does not affect performance.now(),
 // eval timeouts, Atomics.wait or the random seed.
 func (m *VM) SetClock(now func() time.Time) {
-	lib.SetClock(m.runtime.cRuntime, now)
+	m.setClock(now)
 }
 
 // Now reads the VM's wall clock with time.Time precision. Date and Intl use
 // whole milliseconds, while Temporal preserves nanoseconds.
 // Like the VM, Now is not safe for concurrent use.
-func (m *VM) Now() time.Time { return lib.Now(m.runtime.cRuntime) }
+func (m *VM) Now() time.Time { return m.now() }
