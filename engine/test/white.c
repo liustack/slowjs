@@ -97,6 +97,19 @@ int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
 
 /* ---- strings built by appending ---- */
 
+/* 1 when v is a rope, 0 when it is a flat string, -1 when it is no string. */
+int white_string_is_rope(JSValueConst v)
+{
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING_ROPE:
+        return 1;
+    case JS_TAG_STRING:
+        return 0;
+    default:
+        return -1;
+    }
+}
+
 /* The characters the block of the flat string v has room for past its
    length, -1 when v is no flat string. */
 int white_string_room(JSContext *ctx, JSValueConst v)

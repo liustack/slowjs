@@ -43,6 +43,7 @@ const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
+int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 
 /* ---- texts of every kind of character ---- */
@@ -1229,11 +1230,44 @@ static void test_added_vars_oom(void)
 
 /* ---- strings built by appending ---- */
 
+/* A string built by appending to a variable grows in place, in the room its
+   copies get: it stays a flat string past JS_STRING_ROPE_SHORT2_LEN, where
+   QuickJS makes a rope of it, whatever kind of variable it is in. */
+static void test_string_append_flat(void)
+{
+    static const struct {
+        const char *what, *src;
+    } ways[] = {
+        { "closure variable", "(() => { let s = ''; const add = x => { s += x }; for (let i = 0; i < 20000; i++) add(i % 7 ? 'ab' : '\u00e9'); return s })()" },
+        { "argument", "((n, s) => { s = ''; for (let i = 0; i < n; i++) s += i % 7 ? 'ab' : '\u4e2d'; return s })(20000)" },
+        { "local", "(() => { const f = i => i % 7 ? 'ab' : 'c'; let s = ''; for (let i = 0; i < 20000; i++) s = s + f(i); return s })()" },
+        { "local by add_loc", "(() => { let s = ''; for (let i = 0; i < 20000; i++) s += 'ab'; return s })()" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(ways); i++) {
+        VM v = vm_new();
+        JSValue r = JS_Eval(v.ctx, ways[i].src, strlen(ways[i].src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue len;
+
+        CHECK(!JS_IsException(r), "%s: threw", ways[i].what);
+        CHECK(white_string_is_rope(r) == 0, "%s: built %s", ways[i].what,
+              white_string_is_rope(r) == 1 ? "a rope" : "no string");
+        len = JS_GetPropertyStr(v.ctx, r, "length");
+        CHECK(JS_VALUE_GET_TAG(len) == JS_TAG_INT && JS_VALUE_GET_INT(len) > 30000,
+              "%s: built a string of length %d", ways[i].what, JS_VALUE_GET_INT(len));
+        JS_FreeValue(v.ctx, len);
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+    }
+}
+
 /* A string a variable holds can be an atom too, whose table holds the same
    string without counting it. Appending to it makes a new string: grown in
    place, the atom would change under its hash, and the key it names would no
-   longer be the key of its text. add_loc grows a local whose value has no
-   other reference in place. */
+   longer be the key of its text. Both ways a variable can be appended to in
+   place: a closure variable that the add stores into (the stack holds the
+   second reference), and a local that add_loc grows (the only reference). */
 #define ATOM_TAIL ", with a tail that makes it longer than 64 characters"
 
 static void test_string_append_atom(void)
@@ -1241,12 +1275,16 @@ static void test_string_append_atom(void)
     static const struct {
         const char *what, *holder;
     } ways[] = {
+        { "closure variable", "var holder = (() => { let s; return [v => { s = v }, x => (s += x)] })()" },
+        { "let local", "var holder = (() => { let held; return [v => { held = v }, x => { let t = held; held = undefined; t += x; return t }] })()" },
         { "var local, add_loc", "var holder = (() => { let held; return [v => { held = v }, x => { var t = held; held = undefined; t += x; return t }] })()" },
     };
     size_t i;
 
     for (i = 0; i < countof(ways); i++) {
         VM v = vm_new();
+        /* longer than JS_STRING_APPEND_MIN, so that an add takes the path of
+           JS_ConcatStringAppend */
         JSAtom a = JS_NewAtom(v.ctx, "appended atom" ATOM_TAIL);
         JSValue s = JS_AtomToString(v.ctx, a), g, holder, set, r;
 
@@ -1290,6 +1328,7 @@ int main(void)
     test_poll_compile();
     test_poll_ret();
     test_added_vars_oom();
+    test_string_append_flat();
     test_string_append_atom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
