@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, the C API a Go host calls without variable arguments, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -8,6 +8,7 @@ read_when:
   - Looking for what changes for users when the new engine replaces the one of lib/
   - Asking what a wild pointer, a trap or an abort in the C does to the process and the VM, or changing how the host enters the engine
   - Changing where the generated code polls, where the C reads the interrupt flag, or how Interrupt stops a script
+  - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout)
 ---
 
 # The C tree of the new engine
@@ -134,6 +135,18 @@ Measured on linux/amd64 (an AMD EPYC 7B13 on GCP, Go 1.27), each script pinned t
 `Atomics.wait` converts its arguments in the order the specification gives and then throws `TypeError: cannot block in this thread`. `Atomics.notify` converts its arguments and returns 0. test262 gives the same 58 known errors as before with 66 tests excluded in `engine/test/test262.conf`, all of `built-ins/Atomics/wait` and `notify`: 7 wait on the main thread for a time out, and 59 start agents with `$262.agent.safeBroadcast`. That function begins with an `Atomics.wait` on a value that differs, which must return at once and now throws. In 53 of the 59 an agent also waits for a wake up or a time out. In 6 nobody waits and only that probe keeps them out. `api-test.c` keeps what those 6 say that still holds: `Atomics.notify` gives 0 when nobody waits, and `Atomics.wait` converts its arguments in the order of the specification (the array and its shared buffer, the index, the value, the timeout) and throws what a conversion throws before it throws that it cannot block. It also checks that a wait with a value that differs, or with no timeout, throws the same.
 
 `Atomics.pause` is the one function of `Atomics` that is a hint and not an operation. It used to run `pause` (x86) or `yield` (arm64) as inline assembly, which the generator cannot take, so it was the last function the generator had to stub. ecma262 has an engine send the hint only if its platform supports signaling the CPU, so the function now does nothing. Its argument is still checked: undefined or an integral Number, else a `TypeError`. The test262 the tree is pinned to tests that (`non-integral-iterationnumber-throws.js`), but ecma262 dropped the argument in June 2026 (pull request 3847) and test262 stopped testing it a few weeks later (pull request 5075), so the check can go when the pin moves.
+
+## The C API of a Go host
+
+A Go host calls the engine through the generated code, which passes no variable arguments and takes no C function pointer from Go. So the tree has these for it:
+
+- `JS_NewHostFunction(ctx, name, name_len, length, id)` makes a function shaped as a built-in: its name and length, no `prototype`, not a constructor, `[native code]` in `toString`. A call of it is `host_call(vm, &this, argc, argv, id)`, with at least `length` arguments readable in `argv`. The id is an int32 of 0 or more, kept in the function object next to the 16-bit magic of the built-ins (cproto `JS_CFUNC_host`). A negative id throws a `RangeError`: `host_call` keeps the negative magics for the engine's own requests.
+- `JS_NewStringChars(ctx, len, wide)` makes a string whose characters the host writes in place before the string is used, as `lib.NewStringChars` does on the old engine. An 8-bit string gets its NUL. `len` 0 gives the empty string, a length past the most a string holds throws a `RangeError`, and no memory throws the out of memory error.
+- `JS_ThrowErrorKind(ctx, kind, msg, len)` throws an error of a `JSErrorKind` (one per native error constructor) with the message cut where `JS_ThrowTypeError(ctx, "%s", msg)` cuts it: at a NUL byte and at 255 bytes. A kind it does not know throws an `InternalError`.
+- `js_host_layout`, a table of int64 indexed by `JS_HOST_LAYOUT_*`, holds what a host reads and writes in place: where the reference count is from the address a value holds (-4), the mask of the length and the wide bit in the first word of a string, where its characters start (12), the most characters a string holds, and the numbers of the built-in atoms the Go API names (`message`, `stack`, `then` and the like). Nothing in the engine reads it. The generator reads it from llc's text and writes it into `engine_decl.go` as Go constants (`layoutStringChars`, `atomMessage` and so on), and stops when the table has more or fewer entries than it has names for (`gen.HostLayoutNames`). Add an entry at the end of both.
+- `host.h` declares `host_release(vm, handle)`, which the engine will call when it drops an object that holds a handle of the host.
+
+Tests: `test_host_function`, `test_new_string_chars` and `test_throw_error_kind` in `engine/test/unit-api.c` (the shape and calls of a host function, a string written in place by the layout of the table and the strings the engine makes, the atoms of the table, each kind of error and where its message is cut), and `TestHostLayout` in `internal/goasm/gen`.
 
 ## When upstream changes it
 

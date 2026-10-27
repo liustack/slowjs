@@ -1157,12 +1157,13 @@ struct JSObject {
             JSVarRef **var_refs;
             JSObject *home_object; /* for 'super' access */
         } func;
-        struct { /* JS_CLASS_C_FUNCTION: 12/20 bytes */
+        struct { /* JS_CLASS_C_FUNCTION: 16/24 bytes */
             JSContext *realm;
             JSCFunctionType c_function;
             uint8_t length;
             uint8_t cproto;
             int16_t magic;
+            int32_t host_id; /* JS_CFUNC_host: what host_call gets as its magic */
         } cfunc;
         /* array part for fast arrays and typed arrays */
         struct { /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS, JS_CLASS_MAPPED_ARGUMENTS, JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
@@ -4890,6 +4891,46 @@ static JSValue string_buffer_end(StringBuffer *s)
     return JS_MKPTR(JS_TAG_STRING, str);
 }
 
+JSValue JS_NewStringChars(JSContext *ctx, uint32_t len, int wide)
+{
+    JSString *str;
+
+    if (len == 0)
+        return JS_AtomToString(ctx, JS_ATOM_empty_string);
+    if (len > JS_STRING_LEN_MAX)
+        return JS_ThrowRangeError(ctx, "invalid string length");
+    wide = wide != 0;
+    str = js_alloc_string(ctx, len, wide);
+    if (unlikely(!str))
+        return JS_EXCEPTION;
+    if (!wide)
+        str->u.str8[len] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, str);
+}
+
+/* The layout of values that a host reads and writes in place (see
+   JS_HOST_LAYOUT_COUNT in quickjs.h). The length and the wide bit are the
+   bit fields of JSString: the first in the low 31 bits of its first word,
+   the second in its top bit, as the ABIs of the five targets lay them out.
+   unit-api checks them on a string. */
+__attribute__((used)) const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT] = {
+    [JS_HOST_LAYOUT_REFCOUNT_OFFSET] = (int64_t)offsetof(JSMallocBlockHeader, ref_count) -
+                                       (int64_t)offsetof(JSMallocBlockHeader, user_data),
+    [JS_HOST_LAYOUT_STRING_LEN_MASK] = 0x7fffffff,
+    [JS_HOST_LAYOUT_STRING_WIDE_BIT] = 0x80000000,
+    [JS_HOST_LAYOUT_STRING_CHARS] = offsetof(JSString, u),
+    [JS_HOST_LAYOUT_STRING_LEN_MAX] = JS_STRING_LEN_MAX,
+    [JS_HOST_LAYOUT_ATOM_EMPTY_STRING] = JS_ATOM_empty_string,
+    [JS_HOST_LAYOUT_ATOM_FILE_NAME] = JS_ATOM_fileName,
+    [JS_HOST_LAYOUT_ATOM_LINE_NUMBER] = JS_ATOM_lineNumber,
+    [JS_HOST_LAYOUT_ATOM_COLUMN_NUMBER] = JS_ATOM_columnNumber,
+    [JS_HOST_LAYOUT_ATOM_MESSAGE] = JS_ATOM_message,
+    [JS_HOST_LAYOUT_ATOM_STACK] = JS_ATOM_stack,
+    [JS_HOST_LAYOUT_ATOM_NAME] = JS_ATOM_name,
+    [JS_HOST_LAYOUT_ATOM_TO_STRING] = JS_ATOM_toString,
+    [JS_HOST_LAYOUT_ATOM_THEN] = JS_ATOM_then,
+};
+
 /* create a string from a UTF-8 buffer */
 JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {
@@ -6814,6 +6855,36 @@ JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
 {
     return JS_NewCFunction3(ctx, func, name, length, cproto, magic,
                             ctx->function_proto, 0);
+}
+
+JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
+                           int length, int32_t id)
+{
+    JSValue func_obj;
+    JSObject *p;
+    JSAtom name_atom;
+
+    if (id < 0)
+        return JS_ThrowRangeError(ctx, "host function id %d", (int)id);
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto, JS_CLASS_C_FUNCTION);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = NULL;
+    p->u.cfunc.length = length;
+    p->u.cfunc.cproto = JS_CFUNC_host;
+    p->u.cfunc.magic = 0;
+    p->u.cfunc.host_id = id;
+    p->is_constructor = FALSE;
+    name_atom = JS_NewAtomLen(ctx, name, name_len);
+    if (name_atom == JS_ATOM_NULL) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    js_function_set_properties(ctx, func_obj, name_atom, length);
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
 }
 
 typedef struct JSCFunctionDataRecord {
@@ -9574,6 +9645,45 @@ JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
     add_backtrace = !rt->in_out_of_memory &&
         (!sf || (JS_GetFunctionBytecode(sf->cur_func) == NULL));
     return JS_ThrowError2(ctx, error_num, fmt, ap, add_backtrace);
+}
+
+/* JS_ThrowErrorKind with the kinds of the C API, which must be those of the
+   engine */
+_Static_assert(JS_ERROR_KIND_EVAL == (int)JS_EVAL_ERROR &&
+               JS_ERROR_KIND_RANGE == (int)JS_RANGE_ERROR &&
+               JS_ERROR_KIND_REFERENCE == (int)JS_REFERENCE_ERROR &&
+               JS_ERROR_KIND_SYNTAX == (int)JS_SYNTAX_ERROR &&
+               JS_ERROR_KIND_TYPE == (int)JS_TYPE_ERROR &&
+               JS_ERROR_KIND_URI == (int)JS_URI_ERROR &&
+               JS_ERROR_KIND_INTERNAL == (int)JS_INTERNAL_ERROR &&
+               JS_ERROR_KIND_AGGREGATE == (int)JS_AGGREGATE_ERROR &&
+               JS_AGGREGATE_ERROR + 1 == JS_NATIVE_ERROR_COUNT,
+               "JSErrorKind is JSErrorEnum");
+
+static JSValue __attribute__((format(printf, 3, 4)))
+JS_ThrowErrorf(JSContext *ctx, JSErrorEnum error_num, const char *fmt, ...)
+{
+    JSValue val;
+    va_list ap;
+
+    va_start(ap, fmt);
+    val = JS_ThrowError(ctx, error_num, fmt, ap);
+    va_end(ap);
+    return val;
+}
+
+JSValue JS_ThrowErrorKind(JSContext *ctx, int kind, const char *msg, size_t len)
+{
+    /* the buffer of JS_ThrowError2, so the message is cut where "%s" cuts it */
+    char buf[256];
+
+    if (kind < 0 || kind >= JS_NATIVE_ERROR_COUNT)
+        return JS_ThrowInternalError(ctx, "error kind %d", kind);
+    if (len > sizeof(buf) - 1)
+        len = sizeof(buf) - 1;
+    memcpy(buf, msg, len);
+    buf[len] = '\0';
+    return JS_ThrowErrorf(ctx, kind, "%s", buf);
 }
 
 JSValue __attribute__((format(printf, 2, 3))) JS_ThrowSyntaxError(JSContext *ctx, const char *fmt, ...)
@@ -20073,6 +20183,10 @@ static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
     case JS_CFUNC_generic_magic:
         ret_val = func.generic_magic(ctx, this_obj, argc, arg_buf,
                                      p->u.cfunc.magic);
+        break;
+    case JS_CFUNC_host:
+        ret_val = host_call(rt->malloc_ctx.heap.vm, &this_obj, argc, arg_buf,
+                            p->u.cfunc.host_id);
         break;
     case JS_CFUNC_getter:
         ret_val = func.getter(ctx, this_obj);

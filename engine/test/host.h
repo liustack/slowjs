@@ -77,5 +77,8 @@ void host_release_memory(JSRuntime *rt, size_t keep, size_t *candidate, size_t *
    thread that makes a runtime maps its chunks without the lock of the list,
    so call these when no other thread is making or freeing one. */
 size_t host_live_vms(void);
+/* When set, host_call passes the calls of the functions of
+   JS_NewHostFunction (a magic of 0 or more) to it. */
+extern JSValue (*host_function_call)(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id);
 size_t host_mapped_bytes(void);
 #endif

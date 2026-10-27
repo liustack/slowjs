@@ -755,6 +755,23 @@ JSValue __js_printf_like(2, 3) JS_ThrowReferenceError(JSContext *ctx, const char
 JSValue __js_printf_like(2, 3) JS_ThrowRangeError(JSContext *ctx, const char *fmt, ...);
 JSValue __js_printf_like(2, 3) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
 JSValue JS_ThrowOutOfMemory(JSContext *ctx);
+/* The kinds of JS_ThrowErrorKind, one per native error constructor. */
+typedef enum JSErrorKind {
+    JS_ERROR_KIND_EVAL,
+    JS_ERROR_KIND_RANGE,
+    JS_ERROR_KIND_REFERENCE,
+    JS_ERROR_KIND_SYNTAX,
+    JS_ERROR_KIND_TYPE,
+    JS_ERROR_KIND_URI,
+    JS_ERROR_KIND_INTERNAL,
+    JS_ERROR_KIND_AGGREGATE,
+} JSErrorKind;
+/* Throws a new error of kind whose message is the len bytes at msg, as
+   JS_ThrowTypeError(ctx, "%s", msg) and the like do: the message stops at a
+   NUL byte and at 255 bytes. It takes no variable arguments, so a host that
+   cannot pass them calls it. A kind that is not a JSErrorKind throws an
+   InternalError instead. */
+JSValue JS_ThrowErrorKind(JSContext *ctx, int kind, const char *msg, size_t len);
 
 void __JS_FreeValue(JSContext *ctx, JSValue v);
 
@@ -820,6 +837,40 @@ int JS_ToBigInt64(JSContext *ctx, int64_t *pres, JSValueConst val);
 int JS_ToInt64Ext(JSContext *ctx, int64_t *pres, JSValueConst val);
 
 JSValue JS_NewStringLen(JSContext *ctx, const char *str1, size_t len1);
+/* What a host reads and writes in place, by index into js_host_layout, a
+   table of int64_t that quickjs.c defines. Nothing in the engine reads the
+   table: internal/goasm/gen copies it into Go constants (engine_decl.go). */
+enum {
+    /* where the int32 reference count of a value with one is, from the
+       address the value holds */
+    JS_HOST_LAYOUT_REFCOUNT_OFFSET,
+    /* the first uint32 of a string (JS_TAG_STRING) holds its length under
+       this mask, and this bit when its characters are 16-bit units */
+    JS_HOST_LAYOUT_STRING_LEN_MASK,
+    JS_HOST_LAYOUT_STRING_WIDE_BIT,
+    /* where the characters of a string start, from the address the value holds */
+    JS_HOST_LAYOUT_STRING_CHARS,
+    /* the most characters a string holds */
+    JS_HOST_LAYOUT_STRING_LEN_MAX,
+    /* the numbers of the built-in atoms a host names */
+    JS_HOST_LAYOUT_ATOM_EMPTY_STRING,
+    JS_HOST_LAYOUT_ATOM_FILE_NAME,
+    JS_HOST_LAYOUT_ATOM_LINE_NUMBER,
+    JS_HOST_LAYOUT_ATOM_COLUMN_NUMBER,
+    JS_HOST_LAYOUT_ATOM_MESSAGE,
+    JS_HOST_LAYOUT_ATOM_STACK,
+    JS_HOST_LAYOUT_ATOM_NAME,
+    JS_HOST_LAYOUT_ATOM_TO_STRING,
+    JS_HOST_LAYOUT_ATOM_THEN,
+    JS_HOST_LAYOUT_COUNT,
+};
+/* Returns a new string of len characters, 16-bit units when wide is set and
+   bytes (Latin-1) when not, whose characters are not written yet: the host
+   writes all of them in place before the string is used (JS_HOST_LAYOUT_*
+   says where they are). An 8-bit string has its NUL after them. len 0 gives
+   the empty string, len above JS_HOST_LAYOUT_STRING_LEN_MAX throws a
+   RangeError, and no memory throws the out of memory error. */
+JSValue JS_NewStringChars(JSContext *ctx, uint32_t len, int wide);
 static inline JSValue JS_NewString(JSContext *ctx, const char *str)
 {
     return JS_NewStringLen(ctx, str, strlen(str));
@@ -1122,6 +1173,7 @@ typedef enum JSCFunctionEnum {  /* XXX: should rename for namespace isolation */
     JS_CFUNC_getter_magic,
     JS_CFUNC_setter_magic,
     JS_CFUNC_iterator_next,
+    JS_CFUNC_host, /* JS_NewHostFunction */
 } JSCFunctionEnum;
 
 typedef union JSCFunctionType {
@@ -1146,6 +1198,14 @@ JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
 JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
                             int length, int magic, int data_len,
                             JSValueConst *data);
+/* Returns a function of the host, made as the built-in functions are: its
+   name is the name_len bytes at name, its length is length (0 to 255), it
+   has no prototype property, cannot be called with new, and toString shows
+   [native code]. A call of it is host_call(vm, &this, argc, argv, id) (see
+   host.h), with at least length arguments readable in argv. id is 0 or
+   more: a negative one throws a RangeError. */
+JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
+                           int length, int32_t id);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func, const char *name,
                                       int length)
