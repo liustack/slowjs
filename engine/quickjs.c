@@ -9169,18 +9169,17 @@ static BOOL js_backtrace_record(JSContext *ctx, JSValueConst error_obj,
     return TRUE;
 }
 
-/* format the n frames of the stack as build_backtrace() does: the text, or
-   null with *pok FALSE if there is no memory for it */
-static JSValue js_backtrace_now_text(JSContext *ctx, int backtrace_flags, int n,
-                                     BOOL *pok)
+/* format the n frames of the stack as build_backtrace() does, after what
+   dbuf holds: the text, or null with *pok FALSE if there is no memory for
+   it. dbuf is freed. */
+static JSValue js_backtrace_now_text(JSContext *ctx, DynBuf *dbuf,
+                                     int backtrace_flags, int n, BOOL *pok)
 {
     JSStackFrame *sf;
     JSBacktraceFrame f;
-    DynBuf dbuf;
     JSValue str;
     BOOL ok = TRUE;
 
-    js_dbuf_init(ctx, &dbuf);
     for(sf = ctx->rt->current_stack_frame; n > 0; sf = sf->prev_frame) {
         if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
@@ -9188,16 +9187,16 @@ static JSValue js_backtrace_now_text(JSContext *ctx, int backtrace_flags, int n,
         }
         js_backtrace_frame(ctx, &f, sf, FALSE);
         if (ok)
-            ok = js_backtrace_put_frame(ctx, &dbuf, &f);
+            ok = js_backtrace_put_frame(ctx, dbuf, &f);
         if (f.func_name)
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, f.func_name));
         n--;
     }
     if (ok) {
-        str = js_backtrace_text(ctx, &dbuf);
+        str = js_backtrace_text(ctx, dbuf);
         ok = !JS_IsException(str);
     } else {
-        dbuf_free(&dbuf);
+        dbuf_free(dbuf);
     }
     if (!ok)
         str = JS_NULL;
@@ -9211,8 +9210,12 @@ static JSValue js_backtrace_now_text(JSContext *ctx, int backtrace_flags, int n,
 static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
                              int backtrace_flags, int n)
 {
+    DynBuf dbuf;
     BOOL ok;
-    JSValue str = js_backtrace_now_text(ctx, backtrace_flags, n, &ok);
+    JSValue str;
+
+    js_dbuf_init(ctx, &dbuf);
+    str = js_backtrace_now_text(ctx, &dbuf, backtrace_flags, n, &ok);
     return JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) >= 0 && ok;
 }
@@ -9222,10 +9225,15 @@ static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
    add_property alone */
 static BOOL js_backtrace_now_new(JSContext *ctx, JSValueConst error_obj, int n)
 {
+    DynBuf dbuf;
     BOOL ok;
-    JSValue str = js_backtrace_now_text(ctx, 0, n, &ok);
-    JSProperty *pr = add_property(ctx, JS_VALUE_GET_OBJ(error_obj), JS_ATOM_stack,
-                                  JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    JSValue str;
+    JSProperty *pr;
+
+    js_dbuf_init(ctx, &dbuf);
+    str = js_backtrace_now_text(ctx, &dbuf, 0, n, &ok);
+    pr = add_property(ctx, JS_VALUE_GET_OBJ(error_obj), JS_ATOM_stack,
+                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
     if (!pr) {
         JS_FreeValue(ctx, str);
         return FALSE;
@@ -9344,18 +9352,52 @@ static void js_backtrace_build_new(JSContext *ctx, JSValueConst error_obj)
     js_backtrace_restore(ctx, error_obj, &saved, ok);
 }
 
-/* if filename != NULL, an additional level is added with the filename
-   and line number information (used for parse error). */
+/* build_backtrace() with a file name, for a syntax error: the place in
+   the source goes in the properties fileName, lineNumber and columnNumber
+   and is the first line of the stack, which is formatted now. Return FALSE
+   if it ran out of memory. */
+static BOOL js_backtrace_build_at(JSContext *ctx, JSValueConst error_obj,
+                                  const char *filename, int line_num,
+                                  int col_num, int backtrace_flags)
+{
+    DynBuf dbuf;
+    JSValue str;
+    BOOL ok, top_level;
+    int n;
+
+    n = js_backtrace_count(ctx, backtrace_flags, &top_level);
+    str = JS_NewString(ctx, filename);
+    if (JS_IsException(str))
+        return FALSE;
+    /* Note: SpiderMonkey does that, could update once there is a standard */
+    if (JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_fileName, str,
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
+        JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_lineNumber, JS_NewInt32(ctx, line_num),
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
+        JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_columnNumber, JS_NewInt32(ctx, col_num),
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
+        return FALSE;
+    }
+    js_dbuf_init(ctx, &dbuf);
+    dbuf_printf(&dbuf, "    at %s", filename);
+    if (line_num != -1)
+        dbuf_printf(&dbuf, ":%d:%d", line_num, col_num);
+    dbuf_putc(&dbuf, '\n');
+    str = js_backtrace_now_text(ctx, &dbuf, backtrace_flags, n, &ok);
+    return JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
+                                  JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) >= 0 && ok;
+}
+
+/* add a stack to error_obj, and with filename != NULL, a first level with
+   the file name and the line number (used for parse error). It does not
+   throw: when it runs out of memory, error_obj may have no stack or a null
+   one, and the exception is the one there was before. */
 static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
                             const char *filename, int line_num, int col_num,
                             int backtrace_flags)
 {
-    JSStackFrame *sf;
-    JSValue str;
-    DynBuf dbuf;
-    const char *func_name_str;
-    const char *str1;
-    JSObject *p;
+    JSBacktraceSaved saved;
+    BOOL ok;
 
     if (!JS_IsObject(error_obj))
         return; /* protection in the out of memory case */
@@ -9363,72 +9405,10 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
         js_backtrace_build(ctx, error_obj, backtrace_flags);
         return;
     }
-    
-    js_dbuf_init(ctx, &dbuf);
-    if (filename) {
-        dbuf_printf(&dbuf, "    at %s", filename);
-        if (line_num != -1)
-            dbuf_printf(&dbuf, ":%d:%d", line_num, col_num);
-        dbuf_putc(&dbuf, '\n');
-        str = JS_NewString(ctx, filename);
-        if (JS_IsException(str))
-            return;
-        /* Note: SpiderMonkey does that, could update once there is a standard */
-        if (JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_fileName, str,
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
-            JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_lineNumber, JS_NewInt32(ctx, line_num),
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
-            JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_columnNumber, JS_NewInt32(ctx, col_num),
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
-            return;
-        }
-    }
-    for(sf = ctx->rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
-        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
-            break;
-        if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
-            backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
-            continue;
-        }
-        func_name_str = get_prop_string(ctx, sf->cur_func, JS_ATOM_name);
-        if (!func_name_str || func_name_str[0] == '\0')
-            str1 = "<anonymous>";
-        else
-            str1 = func_name_str;
-        dbuf_printf(&dbuf, "    at %s", str1);
-        JS_FreeCString(ctx, func_name_str);
-
-        p = JS_VALUE_GET_OBJ(sf->cur_func);
-        if (js_class_has_bytecode(p->class_id)) {
-            JSFunctionBytecode *b;
-            const char *atom_str;
-            int line_num1, col_num1;
-
-            b = p->u.func.function_bytecode;
-            if (b->has_debug) {
-                line_num1 = find_line_num(ctx, b,
-                                          sf->cur_pc - b->byte_code_buf - 1, &col_num1);
-                atom_str = JS_AtomToCString(ctx, b->debug.filename);
-                dbuf_printf(&dbuf, " (%s",
-                            atom_str ? atom_str : "<null>");
-                JS_FreeCString(ctx, atom_str);
-                if (line_num1 != 0)
-                    dbuf_printf(&dbuf, ":%d:%d", line_num1, col_num1);
-                dbuf_putc(&dbuf, ')');
-            }
-        } else {
-            dbuf_printf(&dbuf, " (native)");
-        }
-        dbuf_putc(&dbuf, '\n');
-    }
-    dbuf_putc(&dbuf, '\0');
-    if (dbuf_error(&dbuf))
-        str = JS_NULL;
-    else
-        str = JS_NewString(ctx, (char *)dbuf.buf);
-    dbuf_free(&dbuf);
-    JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
-                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    js_backtrace_save(ctx, error_obj, &saved);
+    ok = js_backtrace_build_at(ctx, error_obj, filename, line_num, col_num,
+                               backtrace_flags);
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
 }
 
 /* Note: it is important that no exception is returned by this function */
