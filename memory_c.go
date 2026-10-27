@@ -12,27 +12,39 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"github.com/liustack/slowjs/internal/cengine"
 )
 
-// sharedMem keeps the Go memory of each SharedBytecode, by its address, until
-// freeShared: the engine reads a copy of it (jsReadShared), and the address is
-// only a number to the garbage collector.
+// sharedMem holds the mapping of each SharedBytecode, by its address, until
+// freeShared: the engine reads a copy of it (jsReadShared). It is mapped
+// outside the Go heap, so that its address may go to and come back from a
+// uintptr, as that of lib's C memory does.
 var sharedMem sync.Map
 
-// allocShared returns n bytes for a SharedBytecode, at least one.
+// allocShared returns n bytes for a SharedBytecode, at least one, or 0 when
+// the OS gives none.
 func allocShared(n int) uintptr {
-	b := make([]byte, max(n, 1))
+	b, err := syscall.Mmap(-1, 0, max(n, 1), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
+	if err != nil {
+		return 0
+	}
 	p := uintptr(unsafe.Pointer(&b[0]))
 	sharedMem.Store(p, b)
 	return p
 }
 
-// freeShared frees the memory of allocShared.
+// freeShared unmaps the memory of allocShared.
 func freeShared(p uintptr) {
-	sharedMem.Delete(p)
+	b, ok := sharedMem.LoadAndDelete(p)
+	if !ok {
+		panic("slowjs: freeShared of memory allocShared did not give")
+	}
+	if err := syscall.Munmap(b.([]byte)); err != nil {
+		panic("slowjs: unmapping shared bytecode: " + err.Error())
+	}
 }
 
 // jsMemoryUsage is JSMemoryUsage of engine/quickjs.h.
