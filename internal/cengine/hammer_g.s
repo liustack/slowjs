@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build cengine && cenginehammer && amd64
+//go:build slowjs_cengine && cenginehammer && amd64
 
 #include "textflag.h"
 

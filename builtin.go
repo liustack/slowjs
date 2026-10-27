@@ -13,6 +13,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/liustack/slowjs/internal/idtable"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -323,58 +325,7 @@ func (v Value) jsValue() jsValue {
 // vms finds the VM of a context, which javascript calling a Builtin passes
 // on: a VM's id is its context's opaque pointer. Reading takes no lock, so
 // VMs on several goroutines calling Builtins do not wait for each other.
-var vms vmTable
-
-const (
-	vmChunkBits = 10
-	vmChunkSize = 1 << vmChunkBits
-	vmChunks    = 1 << 10 // a million VMs at once
-)
-
-type vmTable struct {
-	mu     sync.Mutex
-	free   []uint32
-	next   uint32 // the ids handed out so far, 0 is never one
-	chunks [vmChunks]atomic.Pointer[[vmChunkSize]atomic.Pointer[VM]]
-}
-
-// add gives m an id.
-func (t *vmTable) add(m *VM) (uint32, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	var id uint32
-	switch n := len(t.free); {
-	case n > 0:
-		id = t.free[n-1]
-		t.free = t.free[:n-1]
-	case t.next+1 >= vmChunks*vmChunkSize:
-		return 0, fmt.Errorf("slowjs: too many VMs")
-	default:
-		t.next++
-		id = t.next
-	}
-	c := t.chunks[id>>vmChunkBits].Load()
-	if c == nil {
-		c = new([vmChunkSize]atomic.Pointer[VM])
-		t.chunks[id>>vmChunkBits].Store(c)
-	}
-	c[id&(vmChunkSize-1)].Store(m)
-	return id, nil
-}
-
-// remove takes id back.
-func (t *vmTable) remove(id uint32) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.chunks[id>>vmChunkBits].Load()[id&(vmChunkSize-1)].Store(nil)
-	t.free = append(t.free, id)
-}
-
-func (t *vmTable) vm(id uint32) *VM {
-	return t.chunks[id>>vmChunkBits].Load()[id&(vmChunkSize-1)].Load()
-}
+var vms idtable.Table[VM]
 
 // NewArray returns a new array of vals, made as an array literal makes one:
 // its elements are own properties, which no setter a page put on

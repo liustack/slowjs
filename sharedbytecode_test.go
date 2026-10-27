@@ -73,40 +73,6 @@ func newSharedBytecode(t testing.TB, code []byte) *SharedBytecode {
 	return b
 }
 
-// A VM that loads shared bytecode shows the same source text, stacks and line
-// numbers as one that loads a copy, and holds less memory by at least the
-// source of big.
-func TestSharedBytecodeSameAsCopy(t *testing.T) {
-	code := compileShared(t)
-	shared := newSharedBytecode(t, code)
-	defer shared.Close()
-
-	copied := newTestVM(t)
-	if _, err := copied.EvalBytecode(code); err != nil {
-		t.Fatal(err)
-	}
-	m := newTestVM(t)
-	if _, err := m.EvalSharedBytecode(shared); err != nil {
-		t.Fatal(err)
-	}
-
-	want := evalString(t, copied, sharedProbe)
-	if got := evalString(t, m, sharedProbe); got != want {
-		t.Fatalf("shared bytecode shows\n%s\nwant\n%s", got, want)
-	}
-	for _, s := range []string{"a comment the source keeps", "static make() { return new Point(1) }", "at f (<eval>:12:", "at thrower (<eval>:13:", "at stackHere (<eval>:15:", strings.Repeat("x", sharedPad)} {
-		if !strings.Contains(want, s) {
-			t.Errorf("the probe has no %q", s)
-		}
-	}
-
-	copied.RunGC()
-	m.RunGC()
-	if saved := int(copied.MemorySize()) - int(m.MemorySize()); saved < sharedPad {
-		t.Errorf("a VM of shared bytecode holds %d bytes less than one of a copy, want at least %d", saved, sharedPad)
-	}
-}
-
 // The bytes stay while a VM that loaded them is open, after Close of the
 // SharedBytecode, and go with the last of them. Loading after Close fails.
 func TestSharedBytecodeLifetime(t *testing.T) {

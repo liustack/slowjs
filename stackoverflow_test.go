@@ -6,6 +6,7 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
+	"fmt"
 	"runtime/debug"
 	"testing"
 )
@@ -69,8 +70,8 @@ func TestDefaultStackLimit(t *testing.T) {
 	}
 
 	// Deep recursion that ends still works: React renders nest deep.
-	v, err = m.Eval(`function d(n) { return n ? d(n - 1) + 1 : 0 } d(5000)`, EvalGlobal)
-	if err != nil || v != 5000 {
-		t.Fatalf("recursing 5000 deep: %v, %v", v, err)
+	v, err = m.Eval(fmt.Sprintf(`function d(n) { return n ? d(n - 1) + 1 : 0 } d(%d)`, deepRecursion), EvalGlobal)
+	if err != nil || v != deepRecursion {
+		t.Fatalf("recursing %d deep: %v, %v", deepRecursion, v, err)
 	}
 }

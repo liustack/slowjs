@@ -11,14 +11,6 @@ import (
 	"testing"
 )
 
-// mustHost registers fn as a host function or fails the test.
-func mustHost(t *testing.T, m *VM, name string, fn HostFunc) {
-	t.Helper()
-	if err := m.RegisterHostFunc(name, fn); err != nil {
-		t.Fatalf("RegisterHostFunc(%q): %v", name, err)
-	}
-}
-
 // TestRegisterHostFunc covers the host-function calling convention: every JS
 // argument arrives in a single []any, a single value is returned (not
 // array-wrapped as RegisterFunc does for a (value, error) pair), a non-nil error

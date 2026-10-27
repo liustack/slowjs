@@ -7,38 +7,7 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"testing"
-	"time"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
-
-// evalRecover evaluates js and returns what it panicked with.
-func evalRecover(m *VM, js string) (p any) {
-	defer func() { p = recover() }()
-	m.Eval(js, EvalGlobal)
-	return nil
-}
-
-// wantTimeoutWorks checks that the eval timeout stops a script that runs
-// forever.
-func wantTimeoutWorks(t *testing.T, m *VM) {
-	t.Helper()
-	m.SetEvalTimeout(50 * time.Millisecond)
-	defer m.SetEvalTimeout(0)
-	done := make(chan error, 1)
-	go func() {
-		_, err := m.Eval(`for (;;);`, EvalGlobal)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		wantError(t, err, "InternalError", "interrupted")
-		wantKind(t, err, interrupted)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the timeout did not stop the script")
-	}
-}
 
 // A Go function that panics: the panic reaches the caller of Eval, page code
 // does not see it on the way (no catch or finally runs), and the VM works
@@ -67,8 +36,8 @@ func TestHostPanic(t *testing.T) {
 			if p != "boom" {
 				t.Fatalf("recovered %v, want the Go function's panic", p)
 			}
-			if f := (*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fcurrent_stack_frame; f != 0 {
-				t.Fatalf("the engine still has a stack frame: %#x", f)
+			if engineFramesLeft(m) {
+				t.Fatal("the engine still has a stack frame")
 			}
 			wantNoPendingException(t, m)
 			if seen, err := m.Eval(`seen.join()`, EvalGlobal); err != nil || seen != "" {

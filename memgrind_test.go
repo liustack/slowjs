@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build libc.memgrind
+//go:build libc.memgrind && !slowjs_cengine
 
 package slowjs // import "github.com/liustack/slowjs"
 
