@@ -158,16 +158,13 @@ when it runs out. `-poll=false` builds an engine without polls, to measure
 what they cost, and `-release` refuses it. The interpreter counts its
 bytecode itself: the C marks where (`poll_count` in `engine/cutils.h`, at
 the entry of `JS_CallInternal` and where `pc` does not go forward), the pass
-puts a count at each mark, and the edges into its dispatch get none. With
-polls, llc gets `-tail-dup-pred-size=1000 -tail-dup-succ-size=1000`
-(`gen.PollLLCFlags`), so that llc copies the interpreter's dispatch into
-the end of each handler, without which the interpreter is much slower.
-Before register allocation, llc leaves alone a block with more than 16
-predecessors and 16 successors when it or a successor has a phi, as the
-dispatch does. The options raise the two 16s.
+puts a count at each mark, and the edges into its dispatch get none. So the
+dispatch stays short, and llc copies it into the end of each handler after
+register allocation, which it does for a computed goto of up to 10
+instructions. Without the copies the interpreter is much slower.
 The driver counts the indirect jumps of each function with a computed goto
-table in llc's text and stops below `gen.DispatchCopies` (270 for
-`JS_CallInternal`, which has 298). The pass checks its own output: with the
+table in llc's text and stops below `gen.DispatchCopies` (175 for
+`JS_CallInternal`, which has 192). The pass checks its own output: with the
 blocks that count or poll taken out, the back edges of the loops it proves
 short, and the edges into the dispatch of the interpreter, no function has a
 cycle left. The interpreter must count at its entry, and each of its marks
