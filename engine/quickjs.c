@@ -37908,7 +37908,7 @@ static void put_short_code(DynBuf *bc_out, int op, int idx)
 static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
                              uint8_t *ins)
 {
-    int pos, len, op, r, in, falls, next;
+    int pos, len, op, r, in, falls, next, jumps;
     int64_t target;
     const JSOpCode *oi;
 
@@ -37929,6 +37929,10 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         op = bc_buf[pos];
         oi = &short_opcode_info(op);
         len = oi->size;
+        /* whether it has a target is apart from where: a target can be any
+           value, -1 too */
+        jumps = TRUE;
+        target = 0;
         switch (oi->fmt) {
         case OP_FMT_label:
             target = pos + 1 + (int64_t)(int32_t)get_u32(bc_buf + pos + 1);
@@ -37946,10 +37950,10 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         case OP_FMT_label_u16:
             return "an opcode the interpreter does not have";
         default:
-            target = -1;
+            jumps = FALSE;
             break;
         }
-        if (target != -1 &&
+        if (jumps &&
             (target < 0 || target >= bc_len || run[target] == POLL_NONE))
             return "a jump that does not land at the start of an instruction";
         switch (op) {
@@ -37975,14 +37979,14 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         if (falls)
             in = max_int(in, r);
         if (ins && op != OP_nop && in >= POLL_RUN - 1 &&
-            (next || (target > pos && op != OP_catch))) {
+            (next || (jumps && target > pos && op != OP_catch))) {
             ins[pos] = 1;
             in = 0;
         }
         if (in + 1 > POLL_RUN)
             return "a run of more instructions than POLL_RUN without a count";
         r = op == OP_nop ? 0 : in + 1;
-        if (target > pos && op != OP_catch)
+        if (jumps && target > pos && op != OP_catch)
             run[target] = max_int(run[target], r);
         falls = next;
     }
