@@ -241,7 +241,10 @@ func main() {
 
 // sampleGoHost runs a sample's run on a shadow region and a result buffer
 // outside the Go heap. The samples call no host function, but host_trap,
-// which the pass puts where a trap would be.
+// which the pass puts where a trap would be, and host_poll, which the
+// generator calls when the count of cycles runs out. host_poll sets the count
+// again, as the host of the engine does, and calls a function so that it
+// keeps its stack check, which the post-link check holds it to.
 const sampleGoHost = `package nw
 
 import (
@@ -252,6 +255,7 @@ import (
 func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
 
 func host_trap(sp uintptr) { panic("host_trap") }
+` + samplePoll + `
 
 func Run() []int64 {
 	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
@@ -269,6 +273,15 @@ func Run() []int64 {
 }
 `
 
+const samplePoll = `
+func host_poll(sp uintptr) { pollAgain(sp) }
+
+//go:noinline
+func pollAgain(sp uintptr) {
+	*(*int64)(unsafe.Pointer(sp&^(1<<shadowSizeLog2-1) + pollCounterOffset)) = 1 << 10
+}
+`
+
 // sampleGoHostTrap is the host of trap.c run with the trap taken: Run prints
 // 1 when run lands in host_trap, and fails otherwise.
 const sampleGoHostTrap = `package nw
@@ -279,6 +292,7 @@ import "unsafe"
 func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
 
 func host_trap(sp uintptr) { panic("host_trap") }
+` + samplePoll + `
 
 func Run() (out []int64) {
 	m, err := syscall.Mmap(-1, 0, 4<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)

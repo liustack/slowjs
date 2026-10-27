@@ -488,9 +488,16 @@ func main() {
 		if err != nil {
 			die(err)
 		}
+		// Code with no cycle has no tick, and its binary no host_poll.
+		polls := false
+		for _, m := range metas {
+			for _, c := range m.Rec.Calls {
+				polls = polls || c.Target == "host_poll"
+			}
+		}
 		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn})
+			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
