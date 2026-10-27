@@ -941,10 +941,17 @@ static int rt_limit_alone(RtModel *m)
 static int rt_alloc(RtModel *m, size_t sz)
 {
     size_t count = JS_GetMemorySize(m->rt), cached = rt_cached(m->rt), large_cached = JS_LargeCacheBlocks(m->rt);
+    size_t hits = JS_LargeCacheHits(m->rt), hit;
     int alone = rt_limit_alone(m) && sz >= LARGE_FROM && sz <= JS_HEAP_MAX_REQUEST - m->large_hdr;
     long refused = vms[m->vm].refused;
     uint8_t *p = js_malloc_rt(m->rt, sz);
     Block *b;
+
+    /* a request the cache served took one block from it */
+    hit = JS_LargeCacheHits(m->rt) - hits;
+    CHECK(hit == 0 || (p && hit == 1 && JS_LargeCacheBlocks(m->rt) == large_cached - 1),
+          "js_malloc_rt(%zu): %zu hits of the cache of large blocks, which held %zu blocks and holds %zu", sz, hit,
+          large_cached, JS_LargeCacheBlocks(m->rt));
 
     if (alone) {
         /* count + request > limit, request = the block and its header */
@@ -965,7 +972,7 @@ static int rt_alloc(RtModel *m, size_t sz)
     CHECK(sz <= JS_HEAP_MAX_REQUEST - 8, "js_malloc_rt(%zu) succeeded", sz);
     CHECK((uintptr_t)p % 8 == 0, "block not aligned");
     CHECK(JS_LargeCacheBlocks(m->rt) <= large_cached, "js_malloc_rt(%zu) put a block in the large cache", sz);
-    total_large_hits += JS_LargeCacheBlocks(m->rt) < large_cached;
+    total_large_hits += hit;
     b = &m->live[m->n++];
     b->p = p;
     b->usable = js_malloc_usable_size_rt(m->rt, p);

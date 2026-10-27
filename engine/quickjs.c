@@ -398,6 +398,9 @@ typedef struct {
     void *large_head[JS_LARGE_CACHE_LISTS];
     int large_count[JS_LARGE_CACHE_LISTS];
     size_t large_bytes;
+#ifdef JS_HEAP_CHECK
+    size_t large_hits; /* the requests the cache of large blocks served */
+#endif
 } JSMallocContext;
 
 /* end JS Malloc */
@@ -1713,6 +1716,9 @@ static inline void *js_large_take(JSMallocContext *s, size_t size)
     bytes = heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
     s->large_bytes -= bytes;
     heap_unpoison(p, bytes - sizeof(JSMallocLargeBlockHeader));
+#ifdef JS_HEAP_CHECK
+    s->large_hits++;
+#endif
     return p;
 }
 
@@ -2246,6 +2252,11 @@ size_t JS_LargeCacheBlocks(JSRuntime *rt)
 size_t JS_LargeCacheBytes(JSRuntime *rt)
 {
     return rt->malloc_ctx.large_bytes;
+}
+
+size_t JS_LargeCacheHits(JSRuntime *rt)
+{
+    return rt->malloc_ctx.large_hits;
 }
 
 void JS_LargeCacheLimits(size_t *per_class, size_t *bytes)
