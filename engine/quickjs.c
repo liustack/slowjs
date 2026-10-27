@@ -59983,9 +59983,11 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     return JS_NewStringLen(ctx, buf, pos);
 }
 
-/* return the UTC time in ms since 1970, on the clock of the VM of ctx */
+/* return the UTC time in ms since 1970, on the clock of the VM of ctx,
+   rounded down: a time before 1970 is in the millisecond it started in */
 static int64_t date_now(JSContext *ctx) {
-    return host_now(ctx->rt->malloc_ctx.heap.vm, HOST_NOW_WALL) / 1000000;
+    int64_t ns = host_now(ctx->rt->malloc_ctx.heap.vm, HOST_NOW_WALL);
+    return ns / 1000000 - (ns % 1000000 < 0);
 }
 
 static JSValue js_date_constructor(JSContext *ctx, JSValueConst new_target,
