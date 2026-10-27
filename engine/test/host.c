@@ -503,6 +503,14 @@ static void host_clock_init(void)
 
 _Thread_local long host_wall_reads;
 _Thread_local uint32_t host_wall_vm;
+static _Thread_local int host_wall_fixed;
+static _Thread_local int64_t host_wall_fixed_ns;
+
+void host_set_wall(int on, int64_t ns)
+{
+    host_wall_fixed = on;
+    host_wall_fixed_ns = ns;
+}
 
 uint32_t host_vm_id(JSRuntime *rt)
 {
@@ -531,6 +539,8 @@ int64_t host_now(uint32_t vm, int kind)
     }
     host_wall_reads++;
     host_wall_vm = vm;
+    if (host_wall_fixed)
+        return host_wall_fixed_ns;
     ns = (int64_t)HOST_NOW_SEC * 1000000000;
     if (host_clock_running) {
         clock_gettime(CLOCK_MONOTONIC, &now);
