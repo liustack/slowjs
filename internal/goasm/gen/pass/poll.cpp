@@ -14,16 +14,17 @@
 // The counter is a 64-bit word at a fixed offset (-shadow-poll-offset) from
 // the base of the shadow-stack region, which the host keeps for it: the
 // region is aligned to its size, so the base is the shadow pointer with its
-// low bits cleared. Loops keep it in a register where that pays:
+// low bits cleared. Each loop counts where that costs less (chooseLocals):
 //
-//   - Each outermost loop with no call that may tick loads the word into a
-//     local at its preheader and stores it back at its exits, so its ticks
-//     are a decrement of a register. A loop with such a call counts in
-//     memory, as the call does, and its inner loops are taken in turn: a
-//     local there would be written back and read again around every call.
-//     So does a loop that ticks only at the ends of its chunks: it ticks
-//     once a chunk, and the load and the store of a local would cost each
-//     entry more than that.
+//   - A loop that keeps the count in a local loads the word into it where the
+//     loop is entered and stores it back where the loop is left, and stores
+//     it before and loads it after each call in the loop that may tick, so
+//     its ticks are a decrement of a register, mem2reg's. Its inner loops
+//     count in the same local.
+//   - A loop that counts in memory loads and stores the word at each tick,
+//     and its inner loops choose for themselves. A loop that ticks only at
+//     the ends of its chunks counts in memory, and so does one whose hot
+//     code already needs about every register.
 //   - A function with a dispatch keeps the word in a local from its entry to
 //     its returns, and stores and loads it around every call that may tick.
 //   - Ticks on cycles outside these count in memory.
@@ -44,11 +45,15 @@
 // poll from each function must leave no cycle, each tick must take from the
 // count as it stands, and each call that may tick and each return must find
 // the count in memory (checkCounts).
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/BlockFrequencyInfo.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
@@ -86,6 +91,10 @@ static cl::opt<std::string> PollFault("shadow-poll-fault", cl::init(""), cl::Hid
                                                "before and the load after each call that may tick in code that keeps "
                                                "the count in a register, 'exit' the store where a loop that keeps it "
                                                "in a register is left"));
+static cl::opt<bool> PollTrace("shadow-poll-trace", cl::init(false), cl::Hidden,
+                               cl::desc("print where each loop keeps the count, and why"));
+static cl::opt<bool> PollStats("shadow-poll-stats", cl::init(false), cl::Hidden,
+                               cl::desc("print the ticks, locals and syncs of each function"));
 
 static const char *TickMD = "goasm.tick";
 static const char *PollLabelMD = "goasm.poll.dispatch";
@@ -546,6 +555,184 @@ static std::map<BasicBlock *, uint64_t> stripLoops(Function &F, unsigned &n) {
   return chunks;
 }
 
+// liveness gives the integer and pointer values live where each block of F
+// starts (its phis among them). A pointer that adds a constant to another is
+// left out, as llc folds it into the address of its uses.
+struct Liveness {
+  DenseMap<Value *, unsigned> idx;
+  DenseMap<BasicBlock *, BitVector> in;
+};
+static Liveness liveness(Function &F) {
+  Liveness R;
+  auto tracked = [](Value *V) {
+    Type *T = V->getType();
+    if (auto *G = dyn_cast<GetElementPtrInst>(V); G && G->hasAllConstantIndices())
+      return false;
+    return (T->isIntegerTy() && T->getIntegerBitWidth() <= 64) || T->isPointerTy();
+  };
+  for (Argument &A : F.args())
+    if (tracked(&A))
+      R.idx[&A] = R.idx.size();
+  for (BasicBlock &B : F)
+    for (Instruction &I : B)
+      if (tracked(&I))
+        R.idx[&I] = R.idx.size();
+  unsigned n = R.idx.size();
+  struct Sets {
+    BitVector use, def, phis, in;
+  };
+  DenseMap<BasicBlock *, Sets> sets;
+  for (BasicBlock &B : F) {
+    Sets &S = sets[&B];
+    S.use.resize(n), S.def.resize(n), S.phis.resize(n), S.in.resize(n);
+    for (Instruction &I : B) {
+      if (!isa<PHINode>(&I))
+        for (Value *Op : I.operands()) {
+          auto it = R.idx.find(Op);
+          if (it != R.idx.end() && !S.def.test(it->second))
+            S.use.set(it->second);
+        }
+      auto it = R.idx.find(&I);
+      if (it != R.idx.end()) {
+        S.def.set(it->second);
+        if (isa<PHINode>(&I))
+          S.phis.set(it->second);
+      }
+    }
+  }
+  std::vector<BasicBlock *> order;
+  for (BasicBlock *B : post_order(&F.getEntryBlock()))
+    order.push_back(B);
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (BasicBlock *B : order) {
+      Sets &S = sets[B];
+      BitVector in(n);
+      for (BasicBlock *Sx : successors(B)) {
+        Sets &T = sets[Sx];
+        BitVector x = T.in;
+        x.reset(T.phis);
+        in |= x;
+        for (PHINode &Phi : Sx->phis()) {
+          auto it = R.idx.find(Phi.getIncomingValueForBlock(B));
+          if (it != R.idx.end())
+            in.set(it->second);
+        }
+      }
+      in.reset(S.def);
+      in |= S.use;
+      in |= S.phis;
+      if (in != S.in) {
+        S.in = std::move(in);
+        changed = true;
+      }
+    }
+  }
+  for (auto &[B, S] : sets)
+    R.in[B] = std::move(S.in);
+  return R;
+}
+
+// Where a loop counts. A loop that keeps the count in a local, which mem2reg
+// puts in a register, loads it where the loop is entered, stores it back
+// where the loop is left and around each call in the loop that may tick, and
+// loads it again after such a call. Its ticks are a decrement of a register.
+// A loop that counts in memory loads and stores the counter at each tick and
+// holds no register for it. chooseLocals weighs the two by how often LLVM
+// expects each block to run (BlockFrequencyInfo), from the outermost loops
+// in: a loop that keeps a local keeps it for its inner loops too, and the
+// inner loops of one that counts in memory are weighed in turn.
+//
+//   - A loop whose only ticks are the ends of its chunks (stripLoops) counts
+//     in memory: it ticks once a chunk, and the load and the stores of a
+//     local would cost each entry more than that.
+//   - A loop whose hot code already needs about every register counts in
+//     memory, as a register for the count would push another value out to
+//     the stack in that code. The need is the most values that the loop uses
+//     and that are live at once where one of its blocks starts, among the
+//     blocks that run at least a quarter as often as its most frequent one.
+//     A loop needs at least PollRegs of them to count in memory. The
+//     estimate counts more values than llc keeps in registers (constants,
+//     addresses it can work out again), so the bound is above the 15
+//     registers llc has: in the engine, loops that needed up to 18 lost
+//     speed in memory, and the digit loop of js_atod, at 24, lost it in a
+//     register.
+//   - Otherwise the loop keeps a local when that costs fewer instructions:
+//     PollEntry and PollExit for each entry and exit, PollRegTick for each
+//     tick and PollSync for each call that may tick, against PollMemTick for
+//     each tick in memory.
+static constexpr double PollEntry = 3, PollExit = 2, PollSync = 4, PollRegTick = 3, PollMemTick = 5;
+static constexpr unsigned PollRegs = 20;
+
+static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree &DT, const std::vector<Edge> &sites,
+                                        const std::map<BasicBlock *, uint64_t> &chunks,
+                                        const std::function<bool(Instruction &)> &mayTick) {
+  Triple T(F.getParent()->getTargetTriple());
+  TargetLibraryInfoImpl TLII(T);
+  TargetLibraryInfo TLI(TLII, &F);
+  PostDominatorTree PDT(F);
+  BranchProbabilityInfo BPI(F, LI, &TLI, &DT, &PDT);
+  BlockFrequencyInfo BFI(F, BPI, LI);
+  Liveness live = liveness(F);
+  auto freq = [&](BasicBlock *B) { return (double)BFI.getBlockFreq(B).getFrequency(); };
+  auto edge = [&](BasicBlock *u, BasicBlock *v) {
+    BranchProbability p = BPI.getEdgeProbability(u, v);
+    return freq(u) * p.getNumerator() / BranchProbability::getDenominator();
+  };
+  std::vector<Loop *> chosen;
+  std::function<void(Loop *)> weigh = [&](Loop *L) {
+    double entries = 0, exits = 0, ticks = 0, calls = 0, hottest = 0;
+    bool chunkOnly = true;
+    unsigned nticks = 0, need = 0;
+    for (BasicBlock *P : predecessors(L->getHeader()))
+      if (!L->contains(P))
+        entries += edge(P, L->getHeader());
+    BitVector used(live.idx.size());
+    for (BasicBlock *B : L->blocks()) {
+      hottest = std::max(hottest, freq(B));
+      for (BasicBlock *Sx : successors(B))
+        if (!L->contains(Sx))
+          exits += edge(B, Sx);
+      for (Instruction &I : *B) {
+        if (mayTick(I))
+          calls += freq(B);
+        for (Value *Op : I.operands())
+          if (auto it = live.idx.find(Op); it != live.idx.end())
+            used.set(it->second);
+      }
+    }
+    for (BasicBlock *B : L->blocks())
+      if (freq(B) * 4 >= hottest) {
+        BitVector u = live.in.lookup(B);
+        u &= used;
+        need = std::max(need, (unsigned)u.count());
+      }
+    for (auto [u, v] : sites)
+      if (L->contains(u) && L->contains(v)) {
+        ticks += edge(u, v);
+        nticks++;
+        chunkOnly &= chunks.count(u) > 0;
+      }
+    double reg = PollEntry * entries + PollExit * exits + PollRegTick * ticks + PollSync * calls;
+    double mem = PollMemTick * ticks;
+    bool keep = nticks > 0 && !chunkOnly && need < PollRegs && reg < mem;
+    if (PollTrace)
+      errs() << "POLL-LOOP " << F.getName() << " " << L->getHeader()->getName() << " depth " << L->getLoopDepth()
+             << " blocks " << L->getNumBlocks() << " ticks " << nticks << (chunkOnly ? " chunks" : "") << " need "
+             << need << " freq entry " << entries << " exit " << exits << " tick " << ticks << " call " << calls
+             << " cost reg " << reg << " mem " << mem << (keep ? " -> register" : " -> memory") << "\n";
+    if (keep) {
+      chosen.push_back(L);
+      return;
+    }
+    for (Loop *Sub : *L)
+      weigh(Sub);
+  };
+  for (Loop *L : LI)
+    weigh(L);
+  return chosen;
+}
+
 void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2) {
   if (!PollOn)
     return;
@@ -567,6 +754,7 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       continue;
     if (F.arg_size() == 0 || !F.getArg(0)->getType()->isPointerTy())
       reportFatalUsageError(Twine("poll: function without a shadow pointer: ") + F.getName());
+    unsigned fticks = nticks, freg = nreg, floops = nloops, fsync = nsync, fstrip = nstrip;
     Argument *sp = F.getArg(0);
     IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
     auto counterPtr = [&](IRBuilder<> &B) -> Value * {
@@ -595,7 +783,7 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
     std::map<Loop *, AllocaInst *> local;
     SmallVector<AllocaInst *> allocas;
     // A call that may tick: through a pointer, or to a function that ticks.
-    auto mayTick = [&](Instruction &I) {
+    std::function<bool(Instruction &)> mayTick = [&](Instruction &I) {
       auto *CB = dyn_cast<CallBase>(&I);
       if (!CB || CB->isInlineAsm() || isPollCall(I))
         return false;
@@ -650,51 +838,34 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
           es.push_back({u, v});
       return es;
     };
-    // Elsewhere, the outermost loops with no call that may tick keep the
-    // count in a local, which mem2reg puts in a register. A loop with such a
-    // call counts in memory, as the call does: a local would be written back
-    // and read again around every call, which costs more than the tick. So
-    // does a loop whose only ticks are the ends of its chunks (or that has
-    // none). Their inner loops are taken in turn.
-    std::vector<Edge> sites = tickEdges();
-    std::function<void(Loop *)> keepLocal = [&](Loop *L) {
-      bool chunkOnly = true, calls = false;
-      for (auto [u, v] : sites)
-        if (L->contains(u) && L->contains(v))
-          chunkOnly &= chunks.count(u) > 0;
-      for (BasicBlock *Bk : L->blocks())
-        for (Instruction &I : *Bk)
-          calls |= mayTick(I);
-      if (chunkOnly || calls) {
-        for (Loop *Sub : SmallVector<Loop *>(L->begin(), L->end()))
-          keepLocal(Sub);
-        return;
-      }
-      BasicBlock *ph = L->getLoopPreheader();
-      if (!ph)
-        ph = InsertPreheaderForLoop(L, &DT, &LI, nullptr, false);
-      if (!ph)
-        return;
-      formDedicatedExitBlocks(L, &DT, &LI, nullptr, false);
-      if (!L->hasDedicatedExits())
-        return;
-      AllocaInst *A = E.CreateAlloca(I64, nullptr, "poll.local");
-      allocas.push_back(A);
-      IRBuilder<> PB(ph->getTerminator());
-      PB.CreateStore(PB.CreateLoad(I64, counterPtr(PB)), A);
-      SmallVector<BasicBlock *> exits;
-      L->getUniqueExitBlocks(exits);
-      if (PollFault != "exit")
-        for (BasicBlock *X : exits) {
-          IRBuilder<> XB(&*X->getFirstInsertionPt());
-          XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
-        }
-      local[L] = A;
-      nloops++;
-    };
+    // Elsewhere, each loop chooseLocals picks keeps the count in a local from
+    // where it is entered to where it is left, and stores it back and loads
+    // it again around each call in it that may tick.
     if (!whole)
-      for (Loop *L : SmallVector<Loop *>(LI.begin(), LI.end()))
-        keepLocal(L);
+      for (Loop *L : chooseLocals(F, LI, DT, tickEdges(), chunks, mayTick)) {
+        BasicBlock *ph = L->getLoopPreheader();
+        if (!ph)
+          ph = InsertPreheaderForLoop(L, &DT, &LI, nullptr, false);
+        if (!ph)
+          continue;
+        formDedicatedExitBlocks(L, &DT, &LI, nullptr, false);
+        if (!L->hasDedicatedExits())
+          continue;
+        AllocaInst *A = E.CreateAlloca(I64, nullptr, "poll.local");
+        allocas.push_back(A);
+        IRBuilder<> PB(ph->getTerminator());
+        PB.CreateStore(PB.CreateLoad(I64, counterPtr(PB)), A);
+        SmallVector<BasicBlock *> exits;
+        L->getUniqueExitBlocks(exits);
+        if (PollFault != "exit")
+          for (BasicBlock *X : exits) {
+            IRBuilder<> XB(&*X->getFirstInsertionPt());
+            XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
+          }
+        syncCalls(SmallVector<BasicBlock *>(L->blocks()), A);
+        local[L] = A;
+        nloops++;
+      }
     // The local of an edge: that of the loop with one that holds both ends.
     auto localOf = [&](BasicBlock *u, BasicBlock *v) -> AllocaInst * {
       if (whole)
@@ -794,6 +965,10 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       for (Instruction &I : B)
         if (isa<AllocaInst>(&I))
           reportFatalUsageError(Twine("poll: a counter left in an alloca in ") + F.getName());
+    if (PollStats)
+      errs() << "POLLFN " << F.getName() << " ticks " << nticks - fticks << " inreg " << nreg - freg << " localloops "
+             << nloops - floops << " synced " << nsync - fsync << " dispatch " << (dispatch ? 1 : 0) << " chunked "
+             << nstrip - fstrip << " bounded " << exempt.size() << "\n";
   }
   errs() << "POLL ticks " << nticks << " in registers " << nreg << " loops in registers " << nloops
          << " synced calls " << nsync << " dispatch " << ndispatch << " chunked loops " << nstrip
