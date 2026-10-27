@@ -38,6 +38,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -137,6 +138,11 @@ type VM struct {
 	flag      uintptr // the engine's interrupt flag (SetInterruptFlag), or 0
 	interval  int64
 	grace     time.Duration
+	// script: the outermost entry runs a script (EnterScript), which a
+	// poll may kill. deadline is when it is interrupted, on the monotonic
+	// clock of Now, or 0.
+	script    bool
+	deadline  int64
 	killed    bool
 	counts    Counts
 	lastErr   error
@@ -365,9 +371,12 @@ func (v *VM) Broken() bool { return v.broken }
 // engine's state is halfway, and the VM takes only Close from now on.
 func (v *VM) MarkBroken() { v.broken = true }
 
-// Enter is called before each call into the engine and Leave after it. The
-// outermost entry clears the interrupt: a request holds until the engine has
-// left completely, whatever inner entries saw. It also turns on
+// Enter is called before each call into the engine that runs no script, as
+// a collection or a report of memory does, and Leave after it. A poll in it
+// never kills (SetKillGrace), so that an Interrupt during a long collection
+// does not break a VM that runs nothing of a page. The outermost entry
+// clears the interrupt: a request holds until the engine has left
+// completely, whatever inner entries saw. It also turns on
 // debug.SetPanicOnFault for the goroutine until the matching Leave, which puts
 // back what the goroutine had: a C access to an address that is mapped to
 // nothing (a wild pointer, the guard page of the shadow stack) is then a
@@ -380,7 +389,18 @@ func (v *VM) MarkBroken() { v.broken = true }
 // being synchronous. A fault that does not come as SIGSEGV or SIGBUS (an
 // illegal instruction, a breakpoint) is not helped by it: the generator
 // leaves no such instruction in the engine (see internal/goasm/gen).
-func (v *VM) Enter() {
+func (v *VM) Enter() { v.enter(false, 0) }
+
+// EnterScript is Enter for a call that runs a script: an evaluation, a call
+// of a function, the jobs. When it is the outermost entry, a poll kills the
+// script that runs on past the grace after Interrupt, and a timeout above 0
+// sets a deadline: the first poll past it acts as if Interrupt had been
+// called at the deadline. One too far to count has no deadline. An inner
+// entry keeps what the outermost one set: a script that a callback runs
+// has the time that is left.
+func (v *VM) EnterScript(timeout time.Duration) { v.enter(true, timeout) }
+
+func (v *VM) enter(script bool, timeout time.Duration) {
 	if v.broken {
 		panic("gohost: a VM broken by a panic in the engine takes only Close")
 	}
@@ -388,6 +408,10 @@ func (v *VM) Enter() {
 		v.interrupt.Store(0)
 		if v.flag != 0 {
 			*(*int32)(addr(v.flag)) = 0
+		}
+		v.script, v.deadline = script, 0
+		if now := time.Since(start); script && timeout > 0 && timeout < math.MaxInt64-now {
+			v.deadline = int64(now + timeout)
 		}
 		v.faultWas = debug.SetPanicOnFault(true)
 	}
@@ -441,10 +465,11 @@ func (v *VM) SetPollInterval(n int64) {
 	}
 }
 
-// SetKillGrace sets how long a script may run on after Interrupt before the
-// next poll kills it: the poll panics with ErrKilled through the engine's
-// frames, and the VM takes only Close from then on. A negative grace never
-// kills.
+// SetKillGrace sets how long a script may run on after Interrupt, or after
+// its deadline, before the next poll kills it: the poll panics with ErrKilled
+// through the engine's frames, and the VM takes only Close from then on. A
+// negative grace never kills, and neither does an entry that runs no script
+// (Enter).
 func (v *VM) SetKillGrace(d time.Duration) { v.grace = d }
 
 // KillGrace is the grace SetKillGrace set.
@@ -513,10 +538,11 @@ func Now(vm uint32, kind int32) int64 {
 // Poll is host_poll, which the engine calls when its count of cycles runs
 // out. Its stack check is where the Go scheduler and garbage collector stop
 // the goroutine in the engine: nothing in the generated code is stopped
-// otherwise. It sets the counter again. Once Interrupt asked to stop, it sets
-// the engine's interrupt flag, which the engine throws "interrupted" on where
-// it can, and kills a script still running longer than the grace after the
-// Interrupt. It does not call into the engine.
+// otherwise. It sets the counter again. Past the deadline of EnterScript it
+// interrupts as Interrupt would have at the deadline. Once Interrupt asked to
+// stop, it sets the engine's interrupt flag, which the engine throws
+// "interrupted" on where it can, and kills a script still running longer
+// than the grace after the Interrupt. It does not call into the engine.
 func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
@@ -525,12 +551,16 @@ func Poll(sp uintptr) {
 	}
 	t := v.interrupt.Load()
 	if t == 0 {
-		return
+		if v.deadline == 0 || int64(time.Since(start)) < v.deadline {
+			return
+		}
+		v.interrupt.CompareAndSwap(0, v.deadline+1)
+		t = v.interrupt.Load()
 	}
 	if v.flag != 0 {
 		*(*int32)(addr(v.flag)) = 1
 	}
-	if v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
+	if v.script && v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
 		v.killed = true
 		v.MarkBroken()
 		panic(ErrKilled)
