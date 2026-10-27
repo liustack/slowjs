@@ -211,7 +211,11 @@ func (m *VM) callValue(f, this jsValue, args ...any) (r Value, err error) {
 			}
 		}()
 	}
-	v := m.settled(m.jsCall(f, this, jsArgs))
+	v, err := m.jsCall(f, this, jsArgs)
+	if err != nil {
+		return r, err
+	}
+	v = m.settled(v)
 	if isException(v) {
 		m.jsFreeValue(v)
 		return r, m.errFromException()
@@ -237,5 +241,9 @@ func (m *VM) call(f, this jsValue, args ...any) (r any, err error) {
 			}
 		}()
 	}
-	return m.value(m.settled(m.jsCall(f, this, jsArgs)), true)
+	v, err := m.jsCall(f, this, jsArgs)
+	if err != nil {
+		return nil, err
+	}
+	return m.value(m.settled(v), true)
 }

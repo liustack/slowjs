@@ -222,7 +222,10 @@ func (m *VM) value(v jsValue, free bool) (r any, err error) {
 			return nil, fmt.Errorf("failed to get BigInt.toString()")
 		}
 
-		jsString := m.jsCall(ps, v, []jsValue{newInt32(16)})
+		jsString, err := m.jsCall(ps, v, []jsValue{newInt32(16)})
+		if err != nil {
+			return nil, err
+		}
 		if isException(jsString) {
 			return nil, m.errFromException()
 		}
@@ -446,8 +449,8 @@ func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
 }
 
 func (m *VM) jsArrayOf(a []jsValue) (out jsValue, err error) {
-	out = m.jsArrayOfValues(a)
-	if isException(out) {
+	out, err = m.jsArrayOfValues(a)
+	if err == nil && isException(out) {
 		err = m.errFromException()
 	}
 	for _, v := range a {
