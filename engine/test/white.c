@@ -393,3 +393,148 @@ int white_nops(const uint8_t *code, int len, int *places, int max)
     }
     return n;
 }
+
+/* ---- variables the compiler adds when code uses them ---- */
+
+/* A script, a function f in it and an arrow function in f, as the parser
+   leaves them before the variables are resolved. f is a named function
+   expression with this, arguments, new.target, a home object and the active
+   function of a derived class constructor, so the compiler adds the variable
+   of each the first time code uses it. Its variable array is full and holds
+   more than a thousand variables with no name, so that adding one more takes
+   a large block, which a limit can refuse while small blocks still come. */
+typedef struct {
+    GetLineColCache cache;
+    JSFunctionDef *script, *f, *arrow;
+} WhiteFuncs;
+
+static int white_funcs_new(JSContext *ctx, WhiteFuncs *w)
+{
+    static const uint8_t src[] = "";
+    JSFunctionDef *f;
+
+    memset(w, 0, sizeof(*w));
+    w->cache.buf_start = src;
+    w->cache.ptr = src;
+    w->script = js_new_function_def(ctx, NULL, TRUE, FALSE, "<white>", src, &w->cache);
+    if (!w->script)
+        return -1;
+    w->script->has_this_binding = TRUE;
+    f = js_new_function_def(ctx, w->script, FALSE, TRUE, "<white>", src, &w->cache);
+    if (!f)
+        return -1;
+    w->f = f;
+    f->func_name = JS_NewAtom(ctx, "white_f");
+    if (f->func_name == JS_ATOM_NULL)
+        return -1;
+    f->has_this_binding = TRUE;
+    f->has_arguments_binding = TRUE;
+    f->has_home_object = TRUE;
+    f->is_derived_class_constructor = TRUE;
+    w->arrow = js_new_function_def(ctx, f, FALSE, FALSE, "<white>", src, &w->cache);
+    if (!w->arrow)
+        return -1;
+    while (f->var_count < 1024 || f->var_count < f->var_size) {
+        if (add_var(ctx, f, JS_ATOM_NULL) < 0)
+            return -1;
+    }
+    return 0;
+}
+
+static void white_funcs_free(JSContext *ctx, WhiteFuncs *w)
+{
+    if (w->script)
+        js_free_function_def(ctx, w->script);
+}
+
+/* Lets the runtime allocate room bytes more than it holds, or lifts the
+   limit when room is (size_t)-1. */
+static void white_room(JSRuntime *rt, size_t room)
+{
+    if (room == (size_t)-1) {
+        JS_SetMemoryLimit(rt, room);
+    } else {
+        JS_RunGC(rt);
+        JS_SetMemoryLimit(rt, JS_GetMemorySize(rt) + room);
+    }
+}
+
+/* The names white_resolve_var resolves, by kind: this, new.target, the home
+   object, the active function, arguments and the name of f. */
+#define WHITE_VAR_KINDS 6
+
+/* The index of the variable of kind that f has, or -1. */
+static int white_var_index(JSFunctionDef *f, int kind)
+{
+    switch (kind) {
+    case 0: return f->this_var_idx;
+    case 1: return f->new_target_var_idx;
+    case 2: return f->home_object_var_idx;
+    case 3: return f->this_active_func_var_idx;
+    case 4: return f->arguments_var_idx;
+    default: return f->func_var_idx;
+    }
+}
+
+/* Resolve the name of kind as code of f reads it (in_arrow 0) or as code of
+   the arrow function in f reads it (in_arrow 1), with room bytes of memory
+   left ((size_t)-1 for no limit). Returns what resolve_scope_var returned (the
+   position of the next opcode, or -1 for an error), and sets *pending when an
+   exception is pending after it and *made when f has the variable then. The
+   limit is lifted before it returns. -2 when the functions could not be
+   made. */
+int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room,
+                      int *pending, int *made)
+{
+    static const JSAtom names[WHITE_VAR_KINDS - 1] = {
+        JS_ATOM_this, JS_ATOM_new_target, JS_ATOM_home_object,
+        JS_ATOM_this_active_func, JS_ATOM_arguments,
+    };
+    WhiteFuncs w;
+    DynBuf bc;
+    JSAtom name;
+    int r;
+
+    if (white_funcs_new(ctx, &w) < 0) {
+        white_funcs_free(ctx, &w);
+        return -2;
+    }
+    name = kind < WHITE_VAR_KINDS - 1 ? names[kind] : w.f->func_name;
+    js_dbuf_init(ctx, &bc);
+    white_room(ctx->rt, room);
+    r = resolve_scope_var(ctx, in_arrow ? w.arrow : w.f, name, 0,
+                          OP_scope_get_var, &bc, NULL, NULL, 0);
+    white_room(ctx->rt, (size_t)-1);
+    *pending = JS_HasException(ctx);
+    *made = white_var_index(w.f, kind) >= 0;
+    dbuf_free(&bc);
+    white_funcs_free(ctx, &w);
+    return r;
+}
+
+/* Add the variables a direct eval in f (in_arrow 0) or in the arrow function
+   in f (in_arrow 1) can use, with room bytes of memory left, as
+   white_resolve_var does. Returns what add_eval_variables returned, and sets
+   *made when f has every variable white_resolve_var resolves then. */
+int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending,
+                    int *made)
+{
+    WhiteFuncs w;
+    int r, kind;
+
+    if (white_funcs_new(ctx, &w) < 0) {
+        white_funcs_free(ctx, &w);
+        return -2;
+    }
+    white_room(ctx->rt, room);
+    r = add_eval_variables(ctx, in_arrow ? w.arrow : w.f);
+    white_room(ctx->rt, (size_t)-1);
+    *pending = JS_HasException(ctx);
+    *made = 1;
+    for (kind = 0; kind < WHITE_VAR_KINDS; kind++)
+        *made &= white_var_index(w.f, kind) >= 0;
+    if (!in_arrow)
+        *made &= w.f->var_object_idx >= 0;
+    white_funcs_free(ctx, &w);
+    return r;
+}
