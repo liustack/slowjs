@@ -8,5 +8,6 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 // The C engine is generated for linux/amd64 only so far: the tag
-// slowjs_cengine on another target stops the build here.
-var _ = the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_so_far
+// slowjs_cengine on another target stops the build in this import, before
+// the files that need the engine fail.
+import _ "github.com/liustack/slowjs/internal/unsupported"
