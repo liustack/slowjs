@@ -5309,10 +5309,13 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
                     p1->len += p2->len;
                     return TRUE;
                 } else {
+                    /* the length is a bit field: set it once, not at
+                       each character */
+                    uint16_t *d = p1->u.str16 + p1->len;
                     size_t i;
-                    for (i = 0; i < p2->len; i++) {
-                        p1->u.str16[p1->len++] = p2->u.str8[i];
-                    }
+                    for (i = 0; i < p2->len; i++)
+                        d[i] = p2->u.str8[i];
+                    p1->len += p2->len;
                     return TRUE;
                 }
             }
