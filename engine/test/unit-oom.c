@@ -1157,6 +1157,40 @@ static void test_syntax_error_stack_oom(void)
           want, 24576);
 }
 
+/* The empty string is the string of an atom: making it takes no memory,
+   from a full heap too, where a string of one character fails. The string
+   of an index atom is made, with memory. */
+static void test_empty_string_full_heap(void)
+{
+    VM v = vm_new();
+    JSAtom seven = JS_NewAtomUInt32(v.ctx, 7);
+    JSValue e1, e2, one, s7;
+    char *t1, *t2, *t7;
+
+    fill_memory(&v);
+    e1 = JS_NewStringLen(v.ctx, "", 0);
+    e2 = JS_NewString(v.ctx, "");
+    one = JS_NewStringLen(v.ctx, "a", 1);
+    CHECK(JS_IsString(e1) && JS_IsString(e2), "no empty string from a full heap");
+    CHECK(JS_IsException(one), "a string of one character from a full heap");
+    free(exception_text(v.ctx));
+    release_blocks(&v);
+    s7 = JS_AtomToString(v.ctx, seven);
+    t1 = value_text(v.ctx, e1);
+    t2 = value_text(v.ctx, e2);
+    t7 = value_text(v.ctx, s7);
+    CHECK(t1 && t2 && !strcmp(t1, "") && !strcmp(t2, ""), "the empty strings are %s and %s", t1 ? t1 : "?", t2 ? t2 : "?");
+    CHECK(t7 && !strcmp(t7, "7"), "the string of the atom 7 is %s", t7 ? t7 : "?");
+    free(t1);
+    free(t2);
+    free(t7);
+    JS_FreeValue(v.ctx, e1);
+    JS_FreeValue(v.ctx, e2);
+    JS_FreeValue(v.ctx, s7);
+    JS_FreeAtom(v.ctx, seven);
+    vm_free(&v);
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1178,6 +1212,7 @@ int main(void)
     test_thrown_is_not_uncatchable();
     test_new_error_stack_oom();
     test_syntax_error_stack_oom();
+    test_empty_string_full_heap();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
