@@ -19,9 +19,10 @@ its functions, sorted, one per line, largest first.
 It then prints each function of a NO_REACH pair that the other reaches, with
 a shortest path to it: "reach F G via F A B G". None is expected. The bound
 of a nesting rests on these: JS_ThrowError2 nests twice at most because making
-an error runs no JavaScript and turns no interrupt into an exception, and
+an error runs no JavaScript and reads no interrupt flag, and
 free_zero_refcount once because freeing starts no collection (see
-js_nest_enter in quickjs.c).
+js_nest_enter in quickjs.c). A function of a pair that the module does not
+define is an error.
 """
 import collections
 import re
@@ -34,6 +35,12 @@ COUNTS = {"js_call_enter", "js_internal_enter", "js_internal_enter_rt",
 NO_REACH = [
     ("JS_ThrowError2", "JS_CallInternal"),
     ("JS_ThrowError2", "JS_ThrowInterrupted"),
+    # Nor does it read the interrupt flag: these are the functions that do
+    # (poll_flag), or that the flag is handed to.
+    ("JS_ThrowError2", "js_poll_interrupts"),
+    ("JS_ThrowError2", "lre_check_timeout"),
+    ("JS_ThrowError2", "lre_poll_timeout"),
+    ("JS_ThrowError2", "rqsort_stop"),
     # A collection throws nothing, so it starts no error, whose object can
     # start a collection.
     ("JS_RunGC", "JS_ThrowError2"),
@@ -175,10 +182,15 @@ def path(adj, src, dst):
 
 
 def reaches(text, pairs=NO_REACH):
-    """The pairs (F, G) of pairs where F reaches G, each with its path."""
+    """The pairs (F, G) of pairs where F reaches G, each with its path. A
+    function of a pair that the module does not define, which would check
+    nothing, is an error."""
     adj, _ = graph(text)
     found = []
     for f, g in pairs:
+        for h in (f, g):
+            if h not in adj:
+                raise SystemExit("cycles.py: %s of NO_REACH is not in the module" % h)
         p = path(adj, f, g)
         if p:
             found.append((f, g, p))

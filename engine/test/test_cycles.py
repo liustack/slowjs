@@ -129,9 +129,22 @@ entry:
   ret void
 }
 """)
-        pairs = [("a", "c"), ("c", "a"), ("a", "missing")]
+        pairs = [("a", "c"), ("c", "a")]
         self.assertEqual(cycles.reaches(ir, pairs),
                          [("a", "c", ["a", "b", "target", "c"])])
+
+    def test_reach_unknown_function(self):
+        # a pair naming a function the module does not define checks
+        # nothing, as after a rename: it is an error
+        ir = module("""\
+define internal void @a() {
+entry:
+  ret void
+}
+""")
+        for pair in [("a", "missing"), ("missing", "a")]:
+            with self.assertRaises(SystemExit):
+                cycles.reaches(ir, [pair])
 
     def test_reach_other_type(self):
         ir = module("""\
