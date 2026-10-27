@@ -7,6 +7,7 @@ package gohost
 
 import (
 	"errors"
+	"math"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -481,7 +482,8 @@ func TestPollCounter(t *testing.T) {
 
 // TestPollKill: when the script has not stopped by the grace after Interrupt,
 // the next poll panics with ErrKilled and the VM is broken. A negative grace
-// never kills, and a poll before the grace is over goes on.
+// never kills, and a poll before the grace is over goes on. An entry that
+// runs no script is never killed.
 func TestPollKill(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
@@ -489,7 +491,7 @@ func TestPollKill(t *testing.T) {
 		t.Fatalf("the grace of a new VM is %v, want %v", v.KillGrace(), DefaultKillGrace)
 	}
 	v.SetKillGrace(30 * time.Millisecond)
-	v.Enter()
+	v.EnterScript(0)
 	v.Interrupt()
 	Poll(base + 64)
 	if v.Broken() {
@@ -507,7 +509,7 @@ func TestPollKill(t *testing.T) {
 	w := newVM(t, small)
 	wb, _ := w.Stack()
 	w.SetKillGrace(-1)
-	w.Enter()
+	w.EnterScript(0)
 	w.Interrupt()
 	time.Sleep(5 * time.Millisecond)
 	Poll(wb + 64)
@@ -520,11 +522,98 @@ func TestPollKill(t *testing.T) {
 	x := newVM(t, small)
 	xb, _ := x.Stack()
 	x.SetKillGrace(0)
-	x.Enter()
+	x.EnterScript(0)
 	Poll(xb + 64)
 	x.Interrupt()
 	mustPanic(t, "a poll with a grace of 0", func() { Poll(xb + 64) })
 	x.Leave()
+
+	// An outermost entry that runs no script, as a collection is, only
+	// sets the flag, and so does an inner script entry in it.
+	g := newVM(t, small)
+	gb, _ := g.Stack()
+	testFlag = 0
+	g.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	g.SetKillGrace(0)
+	g.Enter()
+	g.Interrupt()
+	time.Sleep(time.Millisecond)
+	Poll(gb + 64)
+	g.EnterScript(0)
+	Poll(gb + 64)
+	g.Leave()
+	if g.Broken() || g.Killed() || testFlag != 1 {
+		t.Fatalf("an entry that runs no script: broken %v, killed %v, flag %d", g.Broken(), g.Killed(), testFlag)
+	}
+	g.Leave()
+	// The next outermost entry decides again.
+	g.EnterScript(0)
+	g.Interrupt()
+	mustPanic(t, "a script entry after one that runs none", func() { Poll(gb + 64) })
+	g.Leave()
+}
+
+// TestPollDeadline: the outermost EnterScript with a timeout sets a deadline,
+// and the first poll past it interrupts as Interrupt at the deadline would
+// have: the flag is set, and the grace counts from the deadline. Inner
+// entries keep the deadline of the outermost one. Enter, a timeout of 0, or
+// one too far to count set none.
+func TestPollDeadline(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	testFlag = 0
+	v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)))
+	v.SetKillGrace(-1)
+	v.EnterScript(50 * time.Millisecond)
+	Poll(base + 64)
+	if v.Interrupted() || testFlag != 0 {
+		t.Fatal("interrupted before the deadline")
+	}
+	v.EnterScript(time.Hour)
+	v.Enter()
+	time.Sleep(60 * time.Millisecond)
+	Poll(base + 64)
+	if !v.Interrupted() || testFlag != 1 {
+		t.Fatalf("past the deadline: interrupted %v, flag %d", v.Interrupted(), testFlag)
+	}
+	v.Leave()
+	v.Leave()
+	v.Leave()
+
+	for _, c := range []struct {
+		name  string
+		enter func()
+	}{
+		{"Enter", v.Enter},
+		{"no timeout", func() { v.EnterScript(0) }},
+		{"a negative timeout", func() { v.EnterScript(-time.Second) }},
+		{"a timeout too far to count", func() { v.EnterScript(math.MaxInt64) }},
+	} {
+		c.enter()
+		time.Sleep(2 * time.Millisecond)
+		Poll(base + 64)
+		if v.Interrupted() || testFlag != 0 {
+			t.Fatalf("%s: interrupted", c.name)
+		}
+		v.Leave()
+	}
+
+	// The grace counts from the deadline: soon past it the script goes on,
+	// past the grace the poll kills.
+	w := newVM(t, small)
+	wb, _ := w.Stack()
+	w.SetKillGrace(200 * time.Millisecond)
+	w.EnterScript(5 * time.Millisecond)
+	time.Sleep(15 * time.Millisecond)
+	Poll(wb + 64)
+	if !w.Interrupted() || w.Broken() {
+		t.Fatalf("10 ms past the deadline: interrupted %v, broken %v", w.Interrupted(), w.Broken())
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := mustPanic(t, "a poll past the deadline and the grace", func() { Poll(wb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	w.Leave()
 }
 
 // testFlag stands for the engine's interrupt flag: a global, which does not

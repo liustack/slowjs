@@ -89,8 +89,9 @@ type VM struct {
 	base uintptr // the scratch
 	sp   uintptr // where each entry starts
 
-	freed  bool    // Close freed the engine, or tried to
-	leaked uintptr // what JS_FreeRuntime returned
+	freed   bool          // Close freed the engine, or tried to
+	leaked  uintptr       // what JS_FreeRuntime returned
+	timeout time.Duration // of Eval (SetTimeout)
 }
 
 // Options are the settings of a new VM.
@@ -198,10 +199,21 @@ func New(o Options) (_ *VM, err error) {
 // Host is the host side of the VM: its clock, interrupt, memory and counts.
 func (v *VM) Host() *gohost.VM { return v.h }
 
-// enter runs f, which calls into the engine. A panic or a Goexit that leaves
-// through the engine's frames leaves the VM broken.
+// enter runs f, which calls into the engine and runs no script: a poll in it
+// never kills (gohost.VM.Enter). A panic or a Goexit that leaves through the
+// engine's frames leaves the VM broken.
 func (v *VM) enter(f func()) {
 	v.h.Enter()
+	v.run(f)
+}
+
+// enterScript is enter for f that runs a script, with the timeout of the VM.
+func (v *VM) enterScript(f func()) {
+	v.h.EnterScript(v.timeout)
+	v.run(f)
+}
+
+func (v *VM) run(f func()) {
 	ok := false
 	defer func() {
 		v.h.Leave()
@@ -252,9 +264,15 @@ func (v *VM) Eval(src, file string) (out string, err error) {
 			out, err = "", ErrKilled
 		}
 	}()
-	v.enter(func() { out, err = v.eval(src, file) })
+	v.enterScript(func() { out, err = v.eval(src, file) })
 	return out, err
 }
+
+// SetTimeout makes each Eval stop its script once it has run for d, as
+// Interrupt at that moment would: with the error "interrupted", or killed
+// when it runs on past the grace (gohost.VM.SetKillGrace). 0, as a new VM
+// has, is no timeout.
+func (v *VM) SetTimeout(d time.Duration) { v.timeout = d }
 
 func (v *VM) eval(src, file string) (string, error) {
 	// JS_Eval reads the source up to a 0 byte past its end.
