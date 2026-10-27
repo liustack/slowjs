@@ -266,8 +266,13 @@ typedef enum {
    (see js_nest_enter). */
 typedef enum {
     JS_NEST_FREE, /* free_zero_refcount */
+    JS_NEST_ERROR, /* JS_ThrowError2 */
     JS_NEST_COUNT,
 } JSNestEnum;
+
+/* The errors JS_ThrowError2 makes at once: one, and the out of memory error
+   that making it can throw. */
+#define JS_NEST_ERROR_MAX 2
 
 typedef enum OPCodeEnum OPCodeEnum;
 
@@ -9151,11 +9156,10 @@ static BOOL js_backtrace_record(JSContext *ctx, JSValueConst error_obj,
     return TRUE;
 }
 
-/* format the n frames of the stack of error_obj and store the text as
-   build_backtrace() does, or null if there is no memory for it. Return
-   FALSE if it ran out of memory. */
-static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
-                             int backtrace_flags, int n)
+/* format the n frames of the stack as build_backtrace() does: the text, or
+   null with *pok FALSE if there is no memory for it */
+static JSValue js_backtrace_now_text(JSContext *ctx, int backtrace_flags, int n,
+                                     BOOL *pok)
 {
     JSStackFrame *sf;
     JSBacktraceFrame f;
@@ -9184,8 +9188,92 @@ static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
     }
     if (!ok)
         str = JS_NULL;
+    *pok = ok;
+    return str;
+}
+
+/* format the n frames of the stack of error_obj and store the text as
+   build_backtrace() does, or null if there is no memory for it. Return
+   FALSE if it ran out of memory. */
+static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
+                             int backtrace_flags, int n)
+{
+    BOOL ok;
+    JSValue str = js_backtrace_now_text(ctx, backtrace_flags, n, &ok);
     return JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) >= 0 && ok;
+}
+
+/* js_backtrace_now() for a new error of JS_ThrowError2, which has no
+   exotic behavior and no 'stack': JS_DefinePropertyValue would add it with
+   add_property alone */
+static BOOL js_backtrace_now_new(JSContext *ctx, JSValueConst error_obj, int n)
+{
+    BOOL ok;
+    JSValue str = js_backtrace_now_text(ctx, 0, n, &ok);
+    JSProperty *pr = add_property(ctx, JS_VALUE_GET_OBJ(error_obj), JS_ATOM_stack,
+                                  JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (!pr) {
+        JS_FreeValue(ctx, str);
+        return FALSE;
+    }
+    pr->u.value = str;
+    return ok;
+}
+
+/* the number of frames build_backtrace() puts in a stack, and whether
+   top-level code (a script, an eval or a module body) is among them */
+static int js_backtrace_count(JSContext *ctx, int backtrace_flags,
+                              BOOL *ptop_level)
+{
+    JSStackFrame *sf;
+    JSFunctionBytecode *b;
+    int n = 0;
+
+    *ptop_level = FALSE;
+    for(sf = ctx->rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
+        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
+            break;
+        if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
+            backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
+            continue;
+        }
+        b = JS_GetFunctionBytecode(sf->cur_func);
+        if (b && b->func_name == JS_ATOM__eval_)
+            *ptop_level = TRUE;
+        n++;
+    }
+    return n;
+}
+
+/* the exception state a build of a stack puts back when it fails */
+typedef struct {
+    JSValue exception;
+    BOOL uncatchable;
+} JSBacktraceSaved;
+
+/* error_obj may be the current exception, and running out of memory throws
+   a new one, which frees it. Keep it until the stack is in place, and the
+   exception, to put it back. */
+static void js_backtrace_save(JSContext *ctx, JSValueConst error_obj,
+                              JSBacktraceSaved *saved)
+{
+    JS_DupValue(ctx, error_obj);
+    saved->exception = JS_DupValue(ctx, ctx->rt->current_exception);
+    saved->uncatchable = ctx->rt->current_exception_is_uncatchable;
+}
+
+static void js_backtrace_restore(JSContext *ctx, JSValueConst error_obj,
+                                 JSBacktraceSaved *saved, BOOL ok)
+{
+    if (ok) {
+        JS_FreeValue(ctx, saved->exception);
+    } else {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        JS_Throw(ctx, saved->exception);
+        JS_SetUncatchableException(ctx, saved->uncatchable);
+    }
+    JS_FreeValue(ctx, error_obj);
 }
 
 /* build_backtrace() for a stack without a file name. It records the stack
@@ -9200,36 +9288,13 @@ static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags)
 {
-    JSRuntime *rt = ctx->rt;
     JSObject *p = JS_VALUE_GET_OBJ(error_obj);
-    JSStackFrame *sf;
-    JSFunctionBytecode *b;
-    JSValue exception;
-    BOOL uncatchable, ok, top_level;
-    int n, flags;
+    JSBacktraceSaved saved;
+    BOOL ok, top_level;
+    int n;
 
-    n = 0;
-    top_level = FALSE;
-    flags = backtrace_flags;
-    for(sf = rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
-        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
-            break;
-        if (flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
-            flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
-            continue;
-        }
-        b = JS_GetFunctionBytecode(sf->cur_func);
-        if (b && b->func_name == JS_ATOM__eval_)
-            top_level = TRUE;
-        n++;
-    }
-
-    /* error_obj may be the current exception, and running out of memory
-       throws a new one, which frees it. Keep it until the stack is in
-       place, and the exception, to put it back. */
-    JS_DupValue(ctx, error_obj);
-    exception = JS_DupValue(ctx, rt->current_exception);
-    uncatchable = rt->current_exception_is_uncatchable;
+    n = js_backtrace_count(ctx, backtrace_flags, &top_level);
+    js_backtrace_save(ctx, error_obj, &saved);
     /* JS_DefineProperty would add 'stack' with add_property alone: an Error
        object has no exotic behavior */
     if (top_level || p->class_id != JS_CLASS_ERROR || !p->extensible ||
@@ -9241,14 +9306,29 @@ static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
     } else {
         ok = TRUE;
     }
-    if (ok) {
-        JS_FreeValue(ctx, exception);
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
+}
+
+/* js_backtrace_build() for a new error of JS_ThrowError2 (see
+   js_backtrace_now_new). Neither defines a property but by add_property, so
+   making an error runs no JavaScript. */
+static void js_backtrace_build_new(JSContext *ctx, JSValueConst error_obj)
+{
+    JSBacktraceSaved saved;
+    BOOL ok, top_level;
+    int n;
+
+    n = js_backtrace_count(ctx, 0, &top_level);
+    js_backtrace_save(ctx, error_obj, &saved);
+    if (top_level) {
+        ok = js_backtrace_now_new(ctx, error_obj, n);
+    } else if (!js_backtrace_record(ctx, error_obj, 0, n)) {
+        js_backtrace_now_new(ctx, error_obj, n);
+        ok = FALSE;
     } else {
-        JS_FreeValue(ctx, JS_GetException(ctx));
-        JS_Throw(ctx, exception);
-        JS_SetUncatchableException(ctx, uncatchable);
+        ok = TRUE;
     }
-    JS_FreeValue(ctx, error_obj);
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
 }
 
 /* if filename != NULL, an additional level is added with the filename
@@ -9357,13 +9437,27 @@ JSValue JS_NewError(JSContext *ctx)
     return JS_NewObjectClass(ctx, JS_CLASS_ERROR);
 }
 
+/* Making an error can run out of memory, which throws an error in turn: the
+   two are made at once, and the out of memory error does not throw another
+   (JS_ThrowOutOfMemory). Making one runs no JavaScript and reads no
+   interrupt, so no third can start while they are made. Its slot
+   of rt->nest counts them, and a third one, which only a bug would start, is
+   thrown as running out of memory, as is an error there is no memory for. */
 static JSValue __attribute__((format(printf, 3, 0)))
 JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
                const char *fmt, va_list ap, BOOL add_backtrace)
 {
+    JSRuntime *rt = ctx->rt;
     char buf[256];
     JSValue msg, obj, ret;
+    JSProperty *pr;
 
+    if (unlikely(rt->nest[JS_NEST_ERROR] >= JS_NEST_ERROR_MAX)) {
+        JS_Throw(ctx, JS_NULL);
+        JS_SetUncatchableException(ctx, TRUE);
+        return JS_EXCEPTION;
+    }
+    js_nest_enter(rt, JS_NEST_ERROR, JS_NEST_ERROR_MAX);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     /* The message first: an error without its message is no use. */
     msg = JS_NewString(ctx, buf);
@@ -9375,21 +9469,28 @@ JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
         JS_FreeValue(ctx, msg);
         goto out_of_memory;
     }
-    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_message, msg,
-                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
+    /* a new error has no exotic behavior and no property of its own, so
+       JS_DefinePropertyValue would add 'message' with add_property alone */
+    pr = add_property(ctx, JS_VALUE_GET_OBJ(obj), JS_ATOM_message,
+                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (unlikely(!pr)) {
+        JS_FreeValue(ctx, msg);
         JS_FreeValue(ctx, obj);
         goto out_of_memory;
     }
+    pr->u.value = msg;
     if (add_backtrace) {
-        build_backtrace(ctx, obj, NULL, 0, 0, 0);
+        js_backtrace_build_new(ctx, obj);
     }
     ret = JS_Throw(ctx, obj);
+    js_nest_leave(rt, JS_NEST_ERROR);
     return ret;
  out_of_memory:
     /* throw JS_NULL to avoid recursing, uncatchable as the out of memory
        error is: the embedder reports it as one */
     JS_Throw(ctx, JS_NULL);
     JS_SetUncatchableException(ctx, TRUE);
+    js_nest_leave(rt, JS_NEST_ERROR);
     return JS_EXCEPTION;
 }
 

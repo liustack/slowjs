@@ -29,6 +29,7 @@ int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
 int64_t white_backtrace_frame_size(void);
 void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
+int white_error_nest(JSRuntime *rt, int n);
 
 /* ---- texts of every kind of character ---- */
 
@@ -524,6 +525,45 @@ static void test_young_leaves_no_zero_count(void)
     }
 }
 
+/* JS_ThrowError2 makes at most two errors at once: one, and the out of
+   memory error that making it can throw. Inside two it throws null,
+   uncatchable, as it does when there is no memory for an error, and it does
+   not abort. Inside one it makes the error as usual. Each leaves the count
+   as it found it. */
+static void test_error_nest(void)
+{
+    VM v = vm_new();
+    int n;
+
+    for (n = 0; n <= 3; n++) {
+        JSValue e;
+        int uncatchable;
+
+        CHECK(white_error_nest(v.rt, n) == 0, "%d: the count of errors was not 0", n);
+        JS_ThrowTypeError(v.ctx, "made inside %d", n);
+        CHECK(white_error_nest(v.rt, 0) == n, "%d: the count of errors moved", n);
+        uncatchable = JS_IsUncatchableException(v.ctx);
+        e = JS_GetException(v.ctx);
+        JS_SetUncatchableException(v.ctx, 0);
+        if (n < 2) {
+            JSValue m = JS_GetPropertyStr(v.ctx, e, "message");
+            const char *s = JS_ToCString(v.ctx, m);
+            char want[32];
+
+            snprintf(want, sizeof want, "made inside %d", n);
+            CHECK(JS_IsError(v.ctx, e) && !uncatchable, "%d: want a catchable error", n);
+            CHECK(s && strcmp(s, want) == 0, "%d: message %s", n, s ? s : "(none)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, m);
+        } else {
+            CHECK(JS_IsNull(e) && uncatchable, "%d: want null, uncatchable, got tag %d", n, JS_VALUE_GET_TAG(e));
+        }
+        JS_FreeValue(v.ctx, e);
+    }
+    CHECK(eval_is(v.ctx, "try { null.x } catch (e) { String(e instanceof TypeError) }", "true"), "the runtime does not throw after");
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -536,6 +576,7 @@ int main(void)
     test_backtrace_memory_usage();
     test_young_lists();
     test_young_leaves_no_zero_count();
+    test_error_nest();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
