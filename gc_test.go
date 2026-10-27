@@ -3,25 +3,15 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"testing"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // mallocSize is malloc_size as JS_ComputeMemoryUsage reports it, without a GC.
 func mallocSize(m *VM) uintptr {
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
-	n := int(unsafe.Sizeof(lib.TJSMemoryUsage{}))
-	p := tls.Alloc(n)
-	defer tls.Free(n)
-	lib.XJS_ComputeMemoryUsage(tls, rt, p)
-	return uintptr((*lib.TJSMemoryUsage)(unsafe.Pointer(p)).Fmalloc_size)
+	return uintptr(m.MemoryUsage().MallocSize)
 }
 
 // TestRunGC pins that RunGC frees objects in reference cycles, that

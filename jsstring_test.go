@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
@@ -13,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // A string argument of a Builtin reads as JS_ToCStringLen2 converts it, in
@@ -126,8 +122,8 @@ func TestNewStringSameAsEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, gn, gwide, gflat := lib.StringChars(got.v)
-		_, wn, wwide, wflat := lib.StringChars(want.v)
+		_, gn, gwide, gflat := stringChars(got.v)
+		_, wn, wwide, wflat := stringChars(want.v)
 		if same != true || gn != wn || gflat != wflat || gwide != wwide {
 			bad++
 			if bad <= 5 {

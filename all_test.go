@@ -2,8 +2,6 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
@@ -18,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	lib "github.com/liustack/slowjs/lib"
 	_ "golang.org/x/mod/modfile" // generator.go
 	util "modernc.org/fileutil/ccgo"
 )
@@ -335,7 +332,7 @@ obj;
 
 	defer x.Free()
 
-	if g, e := tag(x.v), lib.EJS_TAG_OBJECT; g != int32(e) {
+	if g, e := tag(x.v), tagObject; g != int32(e) {
 		t.Fatal(g, e)
 	}
 
@@ -562,13 +559,13 @@ func TestAtom(t *testing.T) {
 
 	n, err := m.NewAtom("foo")
 	t.Logf("n=%v err=%v", n, err)
-	if n == lib.MJS_ATOM_NULL || err != nil {
+	if n == atomNull || err != nil {
 		t.Fatal("FAIL")
 	}
 
 	n2, err := m.NewAtom("bar")
 	t.Logf("n2=%v err=%v", n2, err)
-	if n2 == lib.MJS_ATOM_NULL || n2 == n || err != nil {
+	if n2 == atomNull || n2 == n || err != nil {
 		t.Fatal("FAIL")
 	}
 }

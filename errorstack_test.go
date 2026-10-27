@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
@@ -16,9 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 var updateErrorStack = flag.Bool("update-error-stack", false, "rewrite the testdata/error_stack*.golden files")
@@ -86,7 +81,7 @@ func errorStackText(t *testing.T, src string, call bool) string {
 
 	defer m.Close()
 
-	if err := m.RegisterFunc("gc", func() { lib.XJS_RunGC(m.runtime.tls, m.runtime.cRuntime) }, false); err != nil {
+	if err := m.RegisterFunc("gc", func() { m.RunGC() }, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,28 +164,14 @@ func errorStackText(t *testing.T, src string, call bool) string {
 // and restores limit, and does nothing if exhaust did not run.
 func registerExhaust(t *testing.T, m *VM, limit uintptr) (release func()) {
 	t.Helper()
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
 	var blocks []uintptr
-	exhaust := func() {
-		lib.XJS_SetMemoryLimit(tls, rt, (*lib.TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
-		for size := lib.Tsize_t(4096); size >= 8; size -= 8 {
-			for {
-				p := lib.Xjs_malloc_rt(tls, rt, size)
-				if p == 0 {
-					break
-				}
-				blocks = append(blocks, p)
-			}
-		}
-	}
+	exhaust := func() { blocks = exhaustMemory(m) }
 	if err := m.RegisterFunc("exhaust", exhaust, false); err != nil {
 		t.Fatal(err)
 	}
 
 	return func() {
-		for _, p := range blocks {
-			lib.Xjs_free_rt(tls, rt, p)
-		}
+		freeBlocks(m, blocks)
 		blocks = nil
 		m.SetMemoryLimit(limit)
 	}

@@ -3,16 +3,12 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"strings"
 	"testing"
 	"time"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // An interrupt, from Interrupt or from the eval timeout, ends the call that
@@ -67,9 +63,8 @@ func TestOutOfMemoryUncatchable(t *testing.T) {
 // memory error.
 func TestUncatchableNullIsOutOfMemory(t *testing.T) {
 	m := newTestVM(t)
-	tls, ctx := m.runtime.tls, m.cContext
-	lib.XJS_Throw(tls, ctx, null)
-	lib.XJS_SetUncatchableException(tls, ctx, 1)
+	m.jsThrow(null)
+	m.jsSetUncatchableException(true)
 	err := m.errFromException()
 	wantError(t, err, "InternalError", "out of memory")
 	wantKind(t, err, outOfMemory)
@@ -89,8 +84,8 @@ func TestUncatchableNullIsOutOfMemory(t *testing.T) {
 	// with the null, and so does the call that got there.
 	var nestedErr error
 	mustHost(t, m, "nested", func([]any) (any, error) {
-		lib.XJS_Throw(tls, ctx, null)
-		lib.XJS_SetUncatchableException(tls, ctx, 1)
+		m.jsThrow(null)
+		m.jsSetUncatchableException(true)
 		_, nestedErr = m.Eval(`globalThis.ran = true`, EvalGlobal)
 		return nil, nil
 	})
