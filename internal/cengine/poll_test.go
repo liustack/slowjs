@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 func needPolls(t *testing.T) {
@@ -216,5 +218,95 @@ func TestKill(t *testing.T) {
 			t.Errorf("%s: the host does not say killed", c.name)
 		}
 		brokenAfter(t, v, c.name+" killed")
+	}
+}
+
+// TestTimeout: a script that runs past the timeout of the VM stops with the
+// error "interrupted", as after Interrupt, and each Eval has the whole
+// timeout. One that never reads the flag is killed once the grace after the
+// deadline is over.
+func TestTimeout(t *testing.T) {
+	needPolls(t)
+	v := newVM(t, Options{Seed: 1})
+	defer closeVM(t, v)
+	v.Host().SetKillGrace(-1)
+	v.SetTimeout(50 * time.Millisecond)
+	for i := range 2 {
+		t0 := time.Now()
+		_, err := v.Eval("for (;;) {}", "stop.js")
+		var je *JSError
+		if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable {
+			t.Fatalf("round %d: Eval gave %#v, want the error interrupted", i, err)
+		}
+		if d := time.Since(t0); d < 50*time.Millisecond || d > 500*time.Millisecond {
+			t.Errorf("round %d: stopped after %v, with a timeout of 50 ms", i, d)
+		}
+	}
+	if got, err := v.Eval("1 + 1", "after.js"); err != nil || got != "2" {
+		t.Fatalf("after the timeouts: %q, %v", got, err)
+	}
+
+	w := newVM(t, Options{Seed: 1})
+	w.Host().SetKillGrace(30 * time.Millisecond)
+	if _, err := w.Eval("var a = Array(1 << 22).fill(1.5)", "setup.js"); err != nil {
+		t.Fatal(err)
+	}
+	w.RunGC()
+	w.SetTimeout(50 * time.Millisecond)
+	t0 := time.Now()
+	if _, err := w.Eval("for (;;) a.join()", "join.js"); !errors.Is(err, ErrKilled) {
+		t.Errorf("an endless join: Eval gave %v, want ErrKilled", err)
+	}
+	if d := time.Since(t0); d < 80*time.Millisecond || d > 2*time.Second {
+		t.Errorf("killed after %v, with a timeout of 50 ms and a grace of 30 ms", d)
+	}
+	brokenAfter(t, w, "killed after its timeout")
+}
+
+// TestNoKillOutsideScripts: an Interrupt while the VM collects, which runs
+// no script, sets the flag and kills nothing, even with a grace of 0 and a
+// poll on every cycle. The next Eval starts afresh.
+func TestNoKillOutsideScripts(t *testing.T) {
+	needPolls(t)
+	v := newVM(t, Options{Seed: 1})
+	defer closeVM(t, v)
+	if _, err := v.Eval("globalThis.a = Array.from({ length: 300000 }, (_, i) => ({ i, s: 'x' + i }))", "setup.js"); err != nil {
+		t.Fatal(err)
+	}
+	v.Host().SetKillGrace(0)
+	v.Host().SetPollInterval(1)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				v.Interrupt()
+			}
+		}
+	}()
+	before := v.Host().Counts().Polls
+	for range 3 {
+		v.RunGC()
+	}
+	interrupted := v.Host().Interrupted()
+	v.Usage()
+	close(stop)
+	<-done
+	if polls := v.Host().Counts().Polls - before; polls == 0 {
+		t.Fatal("the collections did not poll")
+	}
+	if !interrupted {
+		t.Fatal("no Interrupt came during the collections")
+	}
+	if v.Host().Broken() || v.Host().Killed() {
+		t.Fatalf("a collection was killed: broken %v, killed %v", v.Host().Broken(), v.Host().Killed())
+	}
+	v.Host().SetKillGrace(gohost.DefaultKillGrace)
+	if got, err := v.Eval("a.length", "after.js"); err != nil || got != "300000" {
+		t.Fatalf("after the collections: %q, %v", got, err)
 	}
 }

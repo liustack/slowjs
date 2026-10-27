@@ -51,16 +51,15 @@ func TestArgStringSameAsEngine(t *testing.T) {
 	var forms [4]int
 	defineBuiltin(t, m, "compare", NewBuiltin("compare", 1, func(a Args) (Value, error) {
 		v := a.arg(0)
-		if _, n, wide, flat := lib.StringChars(v); !flat {
+		if _, n, wide, flat := stringChars(v); !flat {
 			forms[0]++
 		} else if n > 0 && !wide {
 			forms[1]++
 		} else if wide {
 			forms[2]++
 		}
-		tls, ctx := a.vm.runtime.tls, a.vm.cContext
 		for _, wtf8 := range []bool{false, true} {
-			want, wok := toCString(tls, ctx, v, wtf8)
+			want, wok := a.vm.toGoString(v, wtf8)
 			var got string
 			var gok bool
 			if wtf8 {

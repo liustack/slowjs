@@ -21,10 +21,11 @@
 # the file when they differ). Wrap the script in taskset or systemd-run to
 # keep it to the CPUs and the memory you give it.
 #
-# COMPARE_GO=1 also runs the Go engine (internal/jsrun) on every script and
-# requires it to print what the C tree prints, in the form that writes a lone
-# surrogate as \u{...}. It is for as long as the Go engine is in the
-# repository, and has no other use.
+# COMPARE_GO=1 also runs the Go engine (internal/jsrun) on every script but
+# the modules (.mjs), which the Go API cannot load, and requires it to print
+# what the C tree prints, in the form that writes a lone surrogate as \u{...}.
+# It is for as long as the Go engine is in the repository, and has no other
+# use.
 #
 # COMPARE_UPDATE=native|go writes the file of each script that has none yet
 # (those of engine/test/compare), from the output of the C tree or of the Go
@@ -150,7 +151,7 @@ while read -r script want opts; do
 		head -20 "$out/$tag.diff" >&2
 		failed=$((failed + 1))
 	fi
-	if [ -n "$withgo" ]; then
+	if [ -n "$withgo" ] && [ "${script%.mjs}" = "$script" ]; then
 		# Both in the form that writes a lone surrogate as \u{...}.
 		goopts=$(echo "$opts" | sed 's/-raw//')
 		# shellcheck disable=SC2086

@@ -1,8 +1,8 @@
 ---
-summary: 'How the module is built: the three layers from the Go API down to libc, what each folder holds, the core types and their rules, the value form, how Go functions are called from javascript, how the eval timeout and Interrupt work, and which platforms must keep building'
+summary: 'How the module is built: the three layers from the Go API down to libc, the engine layer of the Go API, what each folder holds, the core types and their rules, the value form, how Go functions are called from javascript, how the eval timeout and Interrupt work, and which platforms must keep building'
 read_when:
   - Starting work in this repository for the first time
-  - Changing quickjs.go or quickjs64.go, or adding a method that runs javascript
+  - Changing the Go API in the root package, calling the engine from it, or adding a method that runs javascript
   - Looking for where a piece of the engine, a fork change or a tool lives
   - Touching how a value is encoded, or reading a JSValue by hand
   - Changing the intl, temporal, fmt or compare packages, internal/gointl, internal/intlhook, generator.go or internal/autogen
@@ -27,12 +27,25 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 2. **`modernc.org/libc`** (external): the C runtime in Go. `libc.TLS` is the emulated thread-local storage and C stack, where the engine keeps C locals whose address is taken (its "TLS frames"). Memory the engine touches is allocated with `libc.Xcalloc`, `libc.Xmalloc` and `libc.Xfree`, and strings with `libc.CString`, not on Go's heap.
 3. **The Go API** (`quickjs.go` and the files next to it): what users import.
 
+## The engine layer
+
+The Go API calls the engine only through the files below, so that another engine can stand in for lib with files of its own and the rest of the package unchanged. The rest of the package names no `lib.*` or `libc.*`.
+
+| File | What it holds |
+| --- | --- |
+| `engine_lib.go` | The value type `jsValue` and its helpers (`tag`, `newInt32`, `valueAt`, `dupValue`, `stringChars` and the like), the tags, atoms and flags the package uses, the runtime and context of a VM (`engineState`, which `vmState` embeds), and one method per C function the package calls, named after it (`jsEval`, `jsFreeValue`, `jsGetProperty` and so on) |
+| `entry_lib.go` | Going into the engine and out of it (`enter`, `leave`), the eval timeout and `Interrupt`, and what a panic leaves behind |
+| `hostcall_lib.go` | The C functions the engine calls back into Go (`callGo`, `callBuiltin`, the class of `Then` callbacks) and the function objects that call them |
+| `memory_lib.go` | `MemoryUsage`, `ReleaseMemory` and the memory of `SharedBytecode` |
+| `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
+
+The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links only lib and libc as its engine.
+
 ## Folders
 
 | Path | What it holds |
 | --- | --- |
-| `quickjs.go`, `quickjs64.go`, `promise.go`, `builtin.go`, `etc.go` | The Go API |
-| `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
+| `quickjs.go` and the other `.go` files of the root | The Go API, on the engine layer (see [The engine layer](#the-engine-layer)) |
 | `lib/ccgo_*.go` | The generated engine. Never edited by hand: `internal/fixlib` rewrites them |
 | `lib/*.go` (the rest) | Hand-written Go the generated engine calls: `backtrace.go` (lazy error stacks), `uncatchable.go`, `outofmemory.go`, `objlit.go`, `regexskip.go`, `poll.go`, `runtime.go` (the fork's state at the end of `JSRuntime`), `frontcache.go`, `shareddebug.go` (source text and line tables read in place), `shapecache.go`, `forin.go`, `bitwise.go`, `eq.go`, `atomkey.go`, `jsonstr.go`, `stringsearch.go` (string searches), `funcshape.go`, `regexcache.go`, `clock.go` (the engine's clocks), `expect.go` (likely and unlikely tests), `fastframes_linux.go` (TLS frames without a call on linux), `test262_runner.go` |
 | `lib/goasm_*` | The interpreter in Go assembly that linux/amd64 runs by default, made by `internal/goasm`, and the Go side that calls it. `-tags slowjs_nogoasm` builds the generated Go interpreter there too (see [go-assembly.md](fork-changes/go-assembly.md)) |
@@ -72,13 +85,13 @@ There is no C compiler, no cgo and no shared library: the whole engine cross-com
 
 ## Values
 
-`JSValue` is NaN-boxed. Every supported target is 64-bit and little-endian, so `TJSValue` is a struct with an `.Ftag` field, and `quickjs64.go` defines the helpers that read and build it: `sizeofJsValue`, `null`, `undefined`, `newFloat`, `newBool`, `tag`, `isException`, `jsvToInt32`, `jsvSetInt32`, `jsvToFloat64`, `jsvToPtr`.
+`JSValue` is NaN-boxed. Every supported target is 64-bit and little-endian, so `TJSValue` is a struct with an `.Ftag` field, and `engine_lib.go` defines `jsValue` as it and the helpers that read and build it: `sizeofJsValue`, `null`, `undefined`, `newInt32`, `newFloat`, `newBool`, `tag`, `isException`, `jsvToInt32`, `jsvSetInt32`, `jsvToFloat64`, `jsvToPtr`.
 
 ccgo represents `JSValueUnion` as its widest member, a `uint64`, and reads the narrow members as values (`JS_MKVAL` zero-extends into the low 32 bits, `JS_VALUE_GET_INT` truncates). So the `int32` or bool payload lives in the low 32 bits of the union. Read and write it through `jsvToInt32` and `jsvSetInt32`, not through the address of the union. The float64 and pointer payloads are as wide as the union, so those stay plain casts.
 
 ## Go functions called from javascript
 
-`fp(f)` takes the raw code pointer out of a Go func value (the second word of the interface) so that it can be handed to C as a function pointer: the interrupt handler, host functions and module loaders use it. Go functions given to javascript with `RegisterFunc` or `RegisterHostFunc` are kept alive in registries for the whole process, keyed by an int32 "magic": `goFuncs` (and `freeMagic` for reuse) under `goFuncsMu`, with magics handed out by the atomic counter `staticMagic`. Module loaders live in `customLoaders` under `customLoadersMu`. These are global to the process, not per VM.
+`fp(f)` takes the raw code pointer out of a Go func value (the second word of the interface) so that it can be handed to C as a function pointer: the interrupt handler and host functions use it. Go functions given to javascript with `RegisterFunc` or `RegisterHostFunc` are kept alive in registries for the whole process, keyed by an int32 "magic": `goFuncs` (and `freeMagic` for reuse) under `goFuncsMu`, with magics handed out by the atomic counter `staticMagic`. These are global to the process, not per VM.
 
 A `Builtin` (`builtin.go`) is the fast path: made once per process by `NewBuiltin`, kept in the copy-on-write `builtins.list` indexed by its magic, and turned into a function object per VM by `VM.NewBuiltinFunction`. `callBuiltin` finds its VM from the context's opaque, the VM's id in `vms`, a table read without a lock. It keeps the `host` count, the TLS mark and the panic and uncatchable handling of `callGo`: change one, change the other. `VM.NewArray` builds an array with `JS_DefinePropertyValueUint32`, so no setter on `Array.prototype` runs: a Builtin returns a list with it.
 

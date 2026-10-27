@@ -47,9 +47,11 @@ func TestLeftovers(t *testing.T) {
 	}
 	lostID := lost.ID()
 	lost = nil
+	// Leftovers lists them by id, and ids that VMs closed before gave back
+	// are handed out again, last first.
 	got := Leftovers()
-	if len(got) != 2 || got[0].ID != lostID || got[1].ID != kept.ID() {
-		t.Fatalf("leftovers %+v, want VMs %d and %d", got, lostID, kept.ID())
+	if want := []uint32{min(lostID, kept.ID()), max(lostID, kept.ID())}; len(got) != 2 || got[0].ID != want[0] || got[1].ID != want[1] {
+		t.Fatalf("leftovers %+v, want VMs %d and %d", got, want[0], want[1])
 	}
 	for _, l := range got {
 		if !errors.Is(l.Err, errRefused) || l.Usage.Chunks != 1 || l.Usage.Stack != small {

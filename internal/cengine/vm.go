@@ -29,15 +29,18 @@ import (
 	"github.com/liustack/slowjs/internal/hostmem"
 )
 
-// The bottom of the shadow stack is the host's: it holds what the host
-// passes the engine by address (rule 5 of the plan: no address of Go memory
-// goes to C). Every entry starts above it.
+// The bottom of the shadow stack is the host's: past the header of gohost,
+// which names the VM for the callbacks that find it by their shadow pointer,
+// it holds what the host passes the engine by address (rule 5 of the plan:
+// no address of Go memory goes to C). Every entry starts above it.
 const (
-	scratchLen   = 0    // size_t, the length JS_ToCStringLen2 writes
-	scratchCtx   = 8    // JSContext *, the context JS_ExecutePendingJob writes
-	scratchUsage = 16   // JSMemoryUsage
+	scratchLen   = 8    // size_t, the length JS_ToCStringLen2 writes
+	scratchCtx   = 16   // JSContext *, the context JS_ExecutePendingJob writes
+	scratchUsage = 24   // JSMemoryUsage
 	scratchStr   = 512  // C strings: the file name, property names
 	scratchSize  = 4096 // where the engine's own use of the stack starts
+
+	_ = uint(scratchLen - gohost.StackHeader) // fails to compile when they overlap
 
 	// maxFileName is the longest file name the scratch holds, with its 0
 	// byte.
@@ -86,17 +89,19 @@ type VM struct {
 	base uintptr // the scratch
 	sp   uintptr // where each entry starts
 
-	freed  bool    // Close freed the engine, or tried to
-	leaked uintptr // what JS_FreeRuntime returned
+	freed   bool          // Close freed the engine, or tried to
+	leaked  uintptr       // what JS_FreeRuntime returned
+	timeout time.Duration // of Eval (SetTimeout)
 }
 
 // Options are the settings of a new VM.
 type Options struct {
 	// Seed is where Math.random starts.
 	Seed uint64
-	// StackSize is the size of the shadow stack, 0 for the default of 32
-	// MiB. It must be no smaller than the region the engine was generated
-	// for (-shadow-size-log2 of the generator), or New fails.
+	// StackSize is the size of the shadow stack, 0 for the region the
+	// engine was generated for (-shadow-size-log2 of the generator). Any
+	// other size fails New: the engine finds the base of its stack by
+	// rounding its stack pointer down to that region.
 	StackSize uintptr
 }
 
@@ -128,6 +133,17 @@ func (v *VM) usable() error {
 
 // New makes a runtime and a context.
 func New(o Options) (_ *VM, err error) {
+	if o.StackSize == 0 {
+		o.StackSize = 1 << shadowSizeLog2
+	}
+	if o.StackSize != 1<<shadowSizeLog2 {
+		// The engine takes the space left from its stack pointer and the
+		// size it was generated for (engine_decl.go): in a larger region
+		// the base it rounds to, with the poll counter and the scratch,
+		// would be in the middle of its frames.
+		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, not the %d the engine was generated for",
+			o.StackSize, uintptr(1)<<shadowSizeLog2)
+	}
 	h, err := gohost.New(gohost.Options{StackSize: o.StackSize, PollCounter: pollCounter()})
 	if err != nil {
 		return nil, err
@@ -145,13 +161,7 @@ func New(o Options) (_ *VM, err error) {
 			}
 		}
 	}()
-	base, size := h.Stack()
-	if size < 1<<shadowSizeLog2 {
-		// The engine takes the space left from its stack pointer and the
-		// size it was generated for (engine_decl.go).
-		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, smaller than the %d the engine was generated for",
-			size, uintptr(1)<<shadowSizeLog2)
-	}
+	base, _ := h.Stack()
 	v := &VM{h: h, base: base, sp: base + scratchSize}
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {
@@ -189,10 +199,21 @@ func New(o Options) (_ *VM, err error) {
 // Host is the host side of the VM: its clock, interrupt, memory and counts.
 func (v *VM) Host() *gohost.VM { return v.h }
 
-// enter runs f, which calls into the engine. A panic or a Goexit that leaves
-// through the engine's frames leaves the VM broken.
+// enter runs f, which calls into the engine and runs no script: a poll in it
+// never kills (gohost.VM.Enter). A panic or a Goexit that leaves through the
+// engine's frames leaves the VM broken.
 func (v *VM) enter(f func()) {
 	v.h.Enter()
+	v.run(f)
+}
+
+// enterScript is enter for f that runs a script, with the timeout of the VM.
+func (v *VM) enterScript(f func()) {
+	v.h.EnterScript(v.timeout)
+	v.run(f)
+}
+
+func (v *VM) run(f func()) {
 	ok := false
 	defer func() {
 		v.h.Leave()
@@ -243,9 +264,15 @@ func (v *VM) Eval(src, file string) (out string, err error) {
 			out, err = "", ErrKilled
 		}
 	}()
-	v.enter(func() { out, err = v.eval(src, file) })
+	v.enterScript(func() { out, err = v.eval(src, file) })
 	return out, err
 }
+
+// SetTimeout makes each Eval stop its script once it has run for d, as
+// Interrupt at that moment would: with the error "interrupted", or killed
+// when it runs on past the grace (gohost.VM.SetKillGrace). 0, as a new VM
+// has, is no timeout.
+func (v *VM) SetTimeout(d time.Duration) { v.timeout = d }
 
 func (v *VM) eval(src, file string) (string, error) {
 	// JS_Eval reads the source up to a 0 byte past its end.

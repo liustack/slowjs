@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, and the async context that promise jobs keep for an AsyncLocalStorage'
+summary: 'The fork changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -15,6 +15,8 @@ read_when:
   - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
   - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
   - Writing an AsyncLocalStorage, or a value that has to follow an async function across await (GetAsyncContext, SetAsyncContext)
+  - Reading what a VM holds by kind, or giving the memory it keeps free back to the system (MemoryUsage, ReleaseMemory)
+  - Moving code that called SetModuleLoader, SetDefaultModuleLoader, StdAddHelpers or SetCanBlock
 ---
 
 # The Go API
@@ -176,6 +178,18 @@ With these an embedder can collect between two calls into javascript, where the 
 
 Test: `gc_test.go`.
 
+## MemoryUsage and ReleaseMemory
+
+Release: Unreleased.
+
+`VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back. The engine of lib takes its memory from libc and leaves them 0.
+
+`VM.ReleaseMemory(keep)` gives memory the VM keeps free back to the system, all but `keep` bytes of it, and returns how many bytes it gave back. The objects stay as they are. It returns an error while the VM runs javascript, as from a Go function that javascript called. On the engine of lib it gives nothing back and returns 0.
+
+As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and `MemoryUsage` after `Close` panics.
+
+Test: `memory_test.go`, also run under memgrind.
+
 ## OnClose
 
 Release: v0.27.0.
@@ -248,3 +262,15 @@ What follows the context and what does not, checked against Node 24 with `AsyncL
 The C tree (`engine/quickjs.c`) has the same change in C: `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
 
 Test: `asynccontext_test.go`, also run under memgrind (`TestMemgrind2AsyncContext`) and with `-tags slowjs_nogoasm` on linux/amd64, and `TestAsyncContextRewrite` in `internal/fixlib`. `engine/test/compare/asynccontext.js` runs the same cases on the C tree and on the Go engine (`engine/test/compare.sh`), and `engine/test/unit.c` checks the context the handler of a reaction, the rejection tracker of the host and a reaction registered with no context see.
+
+## No module loader, shell helpers or SetCanBlock
+
+Release: Unreleased.
+
+`VM.SetModuleLoader` with `ModuleLoaderFunc` and `ModuleNormalizeFunc`, `VM.SetDefaultModuleLoader`, `VM.StdAddHelpers` and `VM.SetCanBlock` are gone. They are not part of what a renderer needs, and the engine of C has none of them: it reads no files and has no threads.
+
+- A module evaluated with `EvalModule` can import only a module the VM already has. Its own name is `<eval>`, so it can import itself. An import of anything else throws a `ReferenceError` (`could not load module`). Bundle the modules of a script into one before you evaluate it.
+- `console.log`, `print`, `performance.now` and `__loadScript` are not defined. Give a VM what it needs as Builtins or with `RegisterFunc`.
+- `Atomics.wait` throws a `TypeError` (`cannot block in this thread`), which it already did unless `SetCanBlock(true)` was called.
+
+Tests: `own_keys_test.go` (a module that imports itself by `<eval>`) and `quickjslibc_test.go` (the bytecode of a module with a top-level `await` and `import.meta`).

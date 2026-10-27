@@ -26,12 +26,19 @@
 // pointer the host does not know, a request it does not have, a chunk the VM
 // does not hold. A panic that leaves through engine frames leaves the VM
 // broken, and then it only takes Close.
+//
+// Finding the VM of a callback takes no lock and writes nothing shared, so
+// that VMs on many goroutines do not slow each other down: a VM id is two
+// atomic reads in a table (package idtable), and a shadow pointer finds the
+// base of its stack by its alignment, where New wrote the VM's id
+// (StackHeader).
 package gohost // import "github.com/liustack/slowjs/internal/gohost"
 
 import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"runtime/debug"
 	"slices"
 	"sync"
@@ -40,6 +47,7 @@ import (
 	"unsafe"
 
 	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/idtable"
 )
 
 // Value is a JSValue as the engine passes it: the word of its union, then its
@@ -75,15 +83,21 @@ var ErrTrap = errors.New("gohost: the engine reached a trap")
 // Options are the settings of a new VM.
 type Options struct {
 	// StackSize is the size of the shadow stack: a power of two of at least
-	// 64 KiB, and no smaller than the region the engine was generated for.
-	// 0 is hostmem.DefaultStackSize.
+	// 64 KiB, the size of the region the engine was generated for. 0 is
+	// hostmem.DefaultStackSize.
 	StackSize uintptr
 	// PollCounter is where the counter of the engine's polls is, from the
 	// base of the shadow stack: a word the host keeps for it, which host_poll
-	// sets to the interval of the VM. 0 when the engine counts nothing (the
-	// start of the stack holds other things).
+	// sets to the interval of the VM, above the StackHeader (0 is no
+	// counter: the engine counts nothing).
 	PollCounter uintptr
 }
+
+// StackHeader is the bytes at the base of each shadow stack that the host
+// keeps: the id of the VM as a uint32, then its complement, which tells a
+// header from other data. The engine's entries start above them, and so does
+// what the code that calls the engine keeps there.
+const StackHeader = 8
 
 // DefaultPollInterval is the number of ticks between two polls of a new VM:
 // the engine ticks on every cycle it runs, and polls when the count runs out.
@@ -115,7 +129,7 @@ type VM struct {
 	mem       *hostmem.Memory
 	stack     uintptr
 	stackSize uintptr
-	wall      clock
+	clock     func() time.Time // the wall clock, nil for time.Now
 	// interrupt is 0, or the time of the first Interrupt since the
 	// outermost entry began, on the monotonic clock of Now, plus 1.
 	interrupt atomic.Int64
@@ -124,6 +138,11 @@ type VM struct {
 	flag      uintptr // the engine's interrupt flag (SetInterruptFlag), or 0
 	interval  int64
 	grace     time.Duration
+	// script: the outermost entry runs a script (EnterScript), which a
+	// poll may kill. deadline is when it is interrupted, on the monotonic
+	// clock of Now, or 0.
+	script    bool
+	deadline  int64
 	killed    bool
 	counts    Counts
 	lastErr   error
@@ -137,18 +156,35 @@ type VM struct {
 	unmapping sync.Mutex // held while Close or CloseLeftovers unmaps mem
 }
 
-// The VMs alive, by id and by the base of their shadow stack. sizes counts
-// the VMs of each stack size, so that a shadow pointer finds its base.
-// leftovers are the closed VMs that still hold memory the OS refused to
+// vms are the VMs alive, by id. sizes counts the VMs of each stack size, and
+// stackSizes lists them, smallest first, for ByStack to read without the
+// lock. leftovers are the closed VMs that still hold memory the OS refused to
 // unmap, with what it said the last time.
 var (
-	mu        sync.RWMutex
-	byID      = map[uint32]*VM{}
-	byBase    = map[uintptr]*VM{}
-	sizes     = map[uintptr]int{}
-	nextID    uint32
-	leftovers = map[*VM]error{}
+	vms        idtable.Table[VM]
+	mu         sync.Mutex
+	sizes      = map[uintptr]int{}
+	stackSizes atomic.Pointer[[]uintptr]
+	leftovers  = map[*VM]error{}
 )
+
+// countSize adds n VMs of a stack of size bytes, under mu.
+func countSize(size uintptr, n int) {
+	was := sizes[size]
+	sizes[size] += n
+	if sizes[size] == 0 {
+		delete(sizes, size)
+	}
+	if (was == 0) == (sizes[size] == 0) {
+		return // the same sizes
+	}
+	list := make([]uintptr, 0, len(sizes))
+	for s := range sizes {
+		list = append(list, s)
+	}
+	slices.Sort(list)
+	stackSizes.Store(&list)
+}
 
 // New maps the shadow stack of a new VM and gives it an id, which is never 0
 // and not the id of another VM alive. The engine asks for its first chunk
@@ -163,7 +199,7 @@ func New(o Options) (*VM, error) {
 		return nil, err
 	}
 	base, _ := mem.Stack()
-	v := &VM{mem: mem, stack: base, stackSize: size, wall: realClock(), interval: DefaultPollInterval, grace: DefaultKillGrace}
+	v := &VM{mem: mem, stack: base, stackSize: size, interval: DefaultPollInterval, grace: DefaultKillGrace}
 	if o.PollCounter != 0 {
 		if o.PollCounter%8 != 0 || o.PollCounter > size-8 {
 			mem.Close()
@@ -172,17 +208,16 @@ func New(o Options) (*VM, error) {
 		v.counter = base + o.PollCounter
 		*(*int64)(addr(v.counter)) = v.interval
 	}
-	mu.Lock()
-	for {
-		nextID++
-		if _, used := byID[nextID]; nextID != 0 && !used {
-			break
-		}
+	id, err := vms.Add(v)
+	if err != nil {
+		mem.Close()
+		return nil, fmt.Errorf("gohost: %w", err)
 	}
-	v.id = nextID
-	byID[v.id] = v
-	byBase[base] = v
-	sizes[size]++
+	v.id = id
+	*(*uint32)(addr(base)) = id
+	*(*uint32)(addr(base + 4)) = ^id
+	mu.Lock()
+	countSize(size, 1)
 	mu.Unlock()
 	return v, nil
 }
@@ -197,15 +232,14 @@ func New(o Options) (*VM, error) {
 func (v *VM) Close() error {
 	v.closed = true
 	v.handles = nil
-	mu.Lock()
-	if byID[v.id] == v {
-		delete(byID, v.id)
-		delete(byBase, v.stack)
-		if sizes[v.stackSize]--; sizes[v.stackSize] == 0 {
-			delete(sizes, v.stackSize)
-		}
+	if vms.Get(v.id) == v {
+		// What the OS may refuse to unmap no longer names the VM.
+		*(*uint64)(addr(v.stack)) = 0
+		vms.Remove(v.id)
+		mu.Lock()
+		countSize(v.stackSize, -1)
+		mu.Unlock()
 	}
-	mu.Unlock()
 	return v.unmap()
 }
 
@@ -239,9 +273,9 @@ func Leftovers() []Leftover {
 	for _, v := range leftoverVMs() {
 		v.unmapping.Lock()
 		u := v.mem.Usage()
-		mu.RLock()
+		mu.Lock()
 		err, ok := leftovers[v]
-		mu.RUnlock()
+		mu.Unlock()
 		v.unmapping.Unlock()
 		if ok {
 			out = append(out, Leftover{ID: v.id, Usage: u, Err: err})
@@ -261,12 +295,12 @@ func CloseLeftovers() error {
 }
 
 func leftoverVMs() []*VM {
-	mu.RLock()
+	mu.Lock()
 	vs := make([]*VM, 0, len(leftovers))
 	for v := range leftovers {
 		vs = append(vs, v)
 	}
-	mu.RUnlock()
+	mu.Unlock()
 	slices.SortFunc(vs, func(a, b *VM) int { return cmp.Compare(a.id, b.id) })
 	return vs
 }
@@ -292,22 +326,31 @@ func (v *VM) Counts() Counts {
 // a failure.
 func (v *VM) LastError() error { return v.lastErr }
 
-// Lookup returns the VM of the id, or nil.
-func Lookup(id uint32) *VM {
-	mu.RLock()
-	v := byID[id]
-	mu.RUnlock()
-	return v
-}
+// Lookup returns the VM of the id, or nil. It takes no lock.
+func Lookup(id uint32) *VM { return vms.Get(id) }
 
 // ByStack returns the VM whose shadow stack holds sp, the pointer the engine
-// passes to every callback. It panics when there is none.
+// passes to every callback. It takes no lock: for each size of stack, from
+// the smallest, it reads the header at sp rounded down to the size, and takes
+// the VM the header names when that VM's stack starts there. A smaller size
+// rounds down to an address inside the same stack, so for a pointer the
+// engine passed it reads only memory of that stack. It panics when no VM
+// matches. A pointer the engine did not pass may read memory mapped to
+// nothing, which faults, a panic under the SetPanicOnFault of Enter.
 func ByStack(sp uintptr) *VM {
-	mu.RLock()
-	defer mu.RUnlock()
-	for size := range sizes {
-		if v := byBase[sp&^(size-1)]; v != nil && v.stackSize == size {
-			return v
+	if list := stackSizes.Load(); list != nil {
+		for _, size := range *list {
+			base := sp &^ (size - 1)
+			if base == 0 {
+				continue
+			}
+			id := *(*uint32)(addr(base))
+			if *(*uint32)(addr(base + 4)) != ^id {
+				continue
+			}
+			if v := vms.Get(id); v != nil && v.stack == base && v.stackSize == size {
+				return v
+			}
 		}
 	}
 	panic(fmt.Sprintf("gohost: shadow pointer %#x outside every VM", sp))
@@ -328,9 +371,12 @@ func (v *VM) Broken() bool { return v.broken }
 // engine's state is halfway, and the VM takes only Close from now on.
 func (v *VM) MarkBroken() { v.broken = true }
 
-// Enter is called before each call into the engine and Leave after it. The
-// outermost entry clears the interrupt: a request holds until the engine has
-// left completely, whatever inner entries saw. It also turns on
+// Enter is called before each call into the engine that runs no script, as
+// a collection or a report of memory does, and Leave after it. A poll in it
+// never kills (SetKillGrace), so that an Interrupt during a long collection
+// does not break a VM that runs nothing of a page. The outermost entry
+// clears the interrupt: a request holds until the engine has left
+// completely, whatever inner entries saw. It also turns on
 // debug.SetPanicOnFault for the goroutine until the matching Leave, which puts
 // back what the goroutine had: a C access to an address that is mapped to
 // nothing (a wild pointer, the guard page of the shadow stack) is then a
@@ -343,7 +389,18 @@ func (v *VM) MarkBroken() { v.broken = true }
 // being synchronous. A fault that does not come as SIGSEGV or SIGBUS (an
 // illegal instruction, a breakpoint) is not helped by it: the generator
 // leaves no such instruction in the engine (see internal/goasm/gen).
-func (v *VM) Enter() {
+func (v *VM) Enter() { v.enter(false, 0) }
+
+// EnterScript is Enter for a call that runs a script: an evaluation, a call
+// of a function, the jobs. When it is the outermost entry, a poll kills the
+// script that runs on past the grace after Interrupt, and a timeout above 0
+// sets a deadline: the first poll past it acts as if Interrupt had been
+// called at the deadline. One too far to count has no deadline. An inner
+// entry keeps what the outermost one set: a script that a callback runs
+// has the time that is left.
+func (v *VM) EnterScript(timeout time.Duration) { v.enter(true, timeout) }
+
+func (v *VM) enter(script bool, timeout time.Duration) {
 	if v.broken {
 		panic("gohost: a VM broken by a panic in the engine takes only Close")
 	}
@@ -351,6 +408,10 @@ func (v *VM) Enter() {
 		v.interrupt.Store(0)
 		if v.flag != 0 {
 			*(*int32)(addr(v.flag)) = 0
+		}
+		v.script, v.deadline = script, 0
+		if now := time.Since(start); script && timeout > 0 && timeout < math.MaxInt64-now {
+			v.deadline = int64(now + timeout)
 		}
 		v.faultWas = debug.SetPanicOnFault(true)
 	}
@@ -404,10 +465,11 @@ func (v *VM) SetPollInterval(n int64) {
 	}
 }
 
-// SetKillGrace sets how long a script may run on after Interrupt before the
-// next poll kills it: the poll panics with ErrKilled through the engine's
-// frames, and the VM takes only Close from then on. A negative grace never
-// kills.
+// SetKillGrace sets how long a script may run on after Interrupt, or after
+// its deadline, before the next poll kills it: the poll panics with ErrKilled
+// through the engine's frames, and the VM takes only Close from then on. A
+// negative grace never kills, and neither does an entry that runs no script
+// (Enter).
 func (v *VM) SetKillGrace(d time.Duration) { v.grace = d }
 
 // KillGrace is the grace SetKillGrace set.
@@ -462,13 +524,17 @@ func MemoryGrow(vm uint32, size uintptr) uintptr {
 }
 
 // Now is host_now: the wall clock of the VM, or the monotonic clock, which
-// needs no VM.
+// needs no VM. A panic of the clock function leaves through the engine's
+// frames, and the VM is broken.
 func Now(vm uint32, kind int32) int64 {
 	switch kind {
 	case NowMonotonic:
 		return int64(time.Since(start))
 	case NowWall:
-		return mustLookup(vm, "the wall clock").wall.now()
+		if c := mustLookup(vm, "the wall clock").clock; c != nil {
+			return c().UnixNano()
+		}
+		return time.Now().UnixNano()
 	}
 	panic(fmt.Sprintf("gohost: host_now of kind %d", kind))
 }
@@ -476,24 +542,35 @@ func Now(vm uint32, kind int32) int64 {
 // Poll is host_poll, which the engine calls when its count of cycles runs
 // out. Its stack check is where the Go scheduler and garbage collector stop
 // the goroutine in the engine: nothing in the generated code is stopped
-// otherwise. It sets the counter again. Once Interrupt asked to stop, it sets
-// the engine's interrupt flag, which the engine throws "interrupted" on where
-// it can, and kills a script still running longer than the grace after the
-// Interrupt. It does not call into the engine.
+// otherwise. It sets the counter again. Past the deadline of EnterScript it
+// interrupts as Interrupt would have at the deadline. Once Interrupt asked to
+// stop, it sets the engine's interrupt flag, which the engine throws
+// "interrupted" on where it can, and kills a script still running longer
+// than the grace after the Interrupt or the deadline, whichever came first.
+// It does not call into the engine.
 func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
 	if v.counter != 0 {
 		*(*int64)(addr(v.counter)) = v.interval
 	}
+	// t is when the engine was asked to stop, plus 1: at Interrupt or at
+	// the deadline, whichever came first, so that an Interrupt after the
+	// deadline does not move the grace on.
 	t := v.interrupt.Load()
+	if v.deadline != 0 && (t == 0 || t-1 > v.deadline) {
+		if int64(time.Since(start)) >= v.deadline {
+			v.interrupt.CompareAndSwap(0, v.deadline+1)
+			t = v.deadline + 1
+		}
+	}
 	if t == 0 {
 		return
 	}
 	if v.flag != 0 {
 		*(*int32)(addr(v.flag)) = 1
 	}
-	if v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
+	if v.script && v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
 		v.killed = true
 		v.MarkBroken()
 		panic(ErrKilled)
@@ -593,29 +670,20 @@ func addr(a uintptr) unsafe.Pointer {
 // start is where the monotonic clock counts from.
 var start = time.Now()
 
-// clock is the wall clock of a VM: base nanoseconds since 1970 at the
-// moment at, and moving from there with the monotonic clock, or fixed.
-type clock struct {
-	base   int64
-	at     time.Time
-	moving bool
-}
-
-func realClock() clock {
-	now := time.Now()
-	return clock{base: now.UnixNano(), at: now, moving: true}
-}
-
-func (c clock) now() int64 {
-	if !c.moving {
-		return c.base
-	}
-	return c.base + int64(time.Since(c.at))
-}
+// SetClock sets the wall clock of the VM, which Date reads: now is called on
+// the goroutine that runs the engine, and must not block or call the engine.
+// nil, as a new VM has, is time.Now, which follows the system's clock when it
+// is set.
+func (v *VM) SetClock(now func() time.Time) { v.clock = now }
 
 // SetWallClock sets the wall clock of the VM to t: fixed there, as for a
-// render that must give the same page every time, or moving on from there.
-// A new VM has the real clock, moving.
+// render that must give the same page every time, or moving on from there
+// with the monotonic clock.
 func (v *VM) SetWallClock(t time.Time, moving bool) {
-	v.wall = clock{base: t.UnixNano(), at: time.Now(), moving: moving}
+	if !moving {
+		v.clock = func() time.Time { return t }
+		return
+	}
+	at := time.Now()
+	v.clock = func() time.Time { return t.Add(time.Since(at)) }
 }

@@ -10,9 +10,6 @@ import (
 	"fmt"
 	"sync"
 	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
-	"modernc.org/libc"
 )
 
 // SharedBytecode is bytecode of [VM.Compile] that several VMs load with
@@ -48,9 +45,7 @@ var errSharedClosed = errors.New("slowjs: the shared bytecode is closed")
 // bytecode is not checked, so it must not come from an untrusted source.
 func NewSharedBytecode(bytecode []byte) (*SharedBytecode, error) {
 	n := len(bytecode)
-	tls := libc.NewTLS()
-	defer tls.Close()
-	p := libc.Xmalloc(tls, libc.Tsize_t(max(n, 1)))
+	p := allocShared(n)
 	if p == 0 {
 		return nil, fmt.Errorf("slowjs: out of memory for %d bytes of shared bytecode", n)
 	}
@@ -100,9 +95,7 @@ func (b *SharedBytecode) dropLocked() {
 	if b.refs--; b.refs > 0 {
 		return
 	}
-	tls := libc.NewTLS()
-	libc.Xfree(tls, b.p)
-	tls.Close()
+	freeShared(b.p)
 	b.p = 0
 }
 
@@ -127,5 +120,5 @@ func (m *VM) EvalSharedBytecodeValue(b *SharedBytecode) (r Value, err error) {
 	// The functions read from b point into it until the runtime is freed, also
 	// when the read fails half way, so m keeps its hold until Close.
 	m.shared = append(m.shared, b)
-	return m.evalBytecode(b.p, b.n, lib.MJS_READ_OBJ_BYTECODE|lib.ReadObjSharedDebug)
+	return m.evalBytecode(m.jsReadShared(b, readObjBytecode|readObjSharedDebug))
 }

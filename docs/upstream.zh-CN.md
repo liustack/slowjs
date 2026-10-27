@@ -26,17 +26,17 @@ fork 保留 modernc.org/quickjs 的 Go API，以及 ccgo 生成的引擎。`lib/
 - **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/slowjs`，包名 `quickjs` 改成 `slowjs`，它的 `intl` 和 `fmt` 包跟着改。引擎是 `github.com/liustack/slowjs/lib`，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
 - **Go 版本。** 需要 Go 1.27，上游需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](fork-changes/time-and-intl.md#local-time-is-utc-in-every-vm)）。
-- **performance.now。** `StdAddHelpers` 的 `performance.now` 从进程启动开始计时。上游从系统启动开始，在 Windows 上读的是墙上时钟，从 1970 年开始。在 macOS 上不计入系统睡眠的时间（[详情](fork-changes/time-and-intl.md#the-engine-reads-gos-clocks)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，上游只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](fork-changes/time-and-intl.md#intl-in-every-locale-chromium-has)）。
 - **限额一到，调用就结束。** 中断、执行时限和内存耗尽都不能再被脚本捕获，`catch`、promise、迭代器和 Go 函数都不行（[详情](fork-changes/uncatchable.md)）。
 - **错误信息更多。** `*Error` 有 `Uncatchable`、`OutOfMemory` 和 `Interrupted`。转换不了的字符串会作为错误返回，不再是 `""`。Go 里建的 `*Error` 的 `Error()` 是 `Name: Message`，不再是空字符串（[详情](fork-changes/go-api.md)）。
 - **字符串。** 从 JavaScript 拿到的 Go 字符串一定是合法的 UTF-8，Go 传过去的非法 UTF-8 每个字节变成一个 U+FFFD（[详情](fork-changes/go-api.md#valid-utf-8-for-lone-surrogates)）。
 - **panic。** 引擎自身 panic，或者 Go 函数调用了 `runtime.Goexit`，这个 VM 之后只能 `Close`（[详情](fork-changes/calls-and-tls-frames.md#frames-freed-without-defer)）。
 - **无限递归** 抛 `RangeError`，不会让进程退出（[详情](fork-changes/errors-and-stacks.md#endless-recursion-throws-rangeerror)）。
-- **`lib` 里没有 std、os 和 Worker。** 引擎去掉了 QuickJS 命令行里 Go API 从来走不到的部分：`lib` 不再有 `js_init_module_std`、`js_init_module_os`、`js_std_loop`、`js_std_init_handlers` 等 11 个函数。`StdAddHelpers`、`SetDefaultModuleLoader` 和模块的字节码照常可用，程序小几百 KB（[详情](fork-changes/trimmed.md)）。
+- **`lib` 里没有 std、os 和 Worker。** 引擎去掉了 QuickJS 命令行里 Go API 从来走不到的部分：`lib` 不再有 `js_init_module_std`、`js_init_module_os`、`js_std_loop`、`js_std_init_handlers` 等 11 个函数。模块的字节码照常可用，程序小几百 KB（[详情](fork-changes/trimmed.md)）。
+- **不能加载模块，没有命令行的辅助函数，不能阻塞。** `VM.SetModuleLoader`、`VM.SetDefaultModuleLoader` 以及 `ModuleLoaderFunc` 和 `ModuleNormalizeFunc`，`VM.StdAddHelpers`（`console.log`、`print`、`performance.now`、`__loadScript`），还有 `VM.SetCanBlock` 都删了。模块只能 import VM 里已有的模块，比如用名字 `<eval>` import 它自己，`Atomics.wait` 总是抛错（[详情](fork-changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)）。
 - **只支持五个平台。** 模块只为 linux 和 darwin 的 amd64 与 arm64，以及 windows 的 amd64 构建。在其他平台上构建会报错，错误里写明这几个平台（[详情](architecture.md#platforms)）。
 - **linux/amd64 上换了解释器。** 这里的字节码解释器是从 C 编译出的 Go 汇编，加 `-tags slowjs_nogoasm` 就换回 Go 解释器。两种解释器跑脚本的结果相同（[详情](fork-changes/go-assembly.md)）。
-- **新 API。** `NewBuiltin`、`VM.NewBuiltinFunction` 和 `Args`，`VM.NewArray`，`VM.SetStrip` 和 `type Strip`，`VM.RunGC`、`VM.RunYoungGC`（[详情](fork-changes/young-collection.md)）、`VM.MemorySize` 和 `VM.GCThreshold`，`VM.SetShapeCache` 和 `DefaultShapeCache`，`VM.OnClose`，`NewSharedBytecode` 和 `VM.EvalSharedBytecode`，`GetAsyncContext` 和 `SetAsyncContext`（[详情](fork-changes/go-api.md)），`VM.SetClock` 和 `VM.Now`（[详情](fork-changes/time-and-intl.md#one-wall-clock-per-vm)），以及 `temporal` 包（[详情](fork-changes/temporal.md)）。
+- **新 API。** `NewBuiltin`、`VM.NewBuiltinFunction` 和 `Args`，`VM.NewArray`，`VM.SetStrip` 和 `type Strip`，`VM.RunGC`、`VM.RunYoungGC`（[详情](fork-changes/young-collection.md)）、`VM.MemorySize` 和 `VM.GCThreshold`，`VM.MemoryUsage` 和 `type MemoryUsage`，`VM.ReleaseMemory`，`VM.SetShapeCache` 和 `DefaultShapeCache`，`VM.OnClose`，`NewSharedBytecode` 和 `VM.EvalSharedBytecode`，`GetAsyncContext` 和 `SetAsyncContext`（[详情](fork-changes/go-api.md)），`VM.SetClock` 和 `VM.Now`（[详情](fork-changes/time-and-intl.md#one-wall-clock-per-vm)），以及 `temporal` 包（[详情](fork-changes/temporal.md)）。
 
 每个版本的所有改动见[更新记录](../CHANGELOG.zh-CN.md)。
 

@@ -1157,12 +1157,13 @@ struct JSObject {
             JSVarRef **var_refs;
             JSObject *home_object; /* for 'super' access */
         } func;
-        struct { /* JS_CLASS_C_FUNCTION: 12/20 bytes */
+        struct { /* JS_CLASS_C_FUNCTION: 16/24 bytes */
             JSContext *realm;
             JSCFunctionType c_function;
             uint8_t length;
             uint8_t cproto;
             int16_t magic;
+            int32_t host_id; /* JS_CFUNC_host: what host_call gets as its magic */
         } cfunc;
         /* array part for fast arrays and typed arrays */
         struct { /* JS_CLASS_ARRAY, JS_CLASS_ARGUMENTS, JS_CLASS_MAPPED_ARGUMENTS, JS_CLASS_UINT8C_ARRAY..JS_CLASS_FLOAT64_ARRAY */
@@ -4890,6 +4891,46 @@ static JSValue string_buffer_end(StringBuffer *s)
     return JS_MKPTR(JS_TAG_STRING, str);
 }
 
+JSValue JS_NewStringChars(JSContext *ctx, uint32_t len, int wide)
+{
+    JSString *str;
+
+    if (len == 0)
+        return JS_AtomToString(ctx, JS_ATOM_empty_string);
+    if (len > JS_STRING_LEN_MAX)
+        return JS_ThrowRangeError(ctx, "invalid string length");
+    wide = wide != 0;
+    str = js_alloc_string(ctx, len, wide);
+    if (unlikely(!str))
+        return JS_EXCEPTION;
+    if (!wide)
+        str->u.str8[len] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, str);
+}
+
+/* The layout of values that a host reads and writes in place (see
+   JS_HOST_LAYOUT_COUNT in quickjs.h). The length and the wide bit are the
+   bit fields of JSString: the first in the low 31 bits of its first word,
+   the second in its top bit, as the ABIs of the five targets lay them out.
+   unit-api checks them on a string. */
+__attribute__((used)) const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT] = {
+    [JS_HOST_LAYOUT_REFCOUNT_OFFSET] = (int64_t)offsetof(JSMallocBlockHeader, ref_count) -
+                                       (int64_t)offsetof(JSMallocBlockHeader, user_data),
+    [JS_HOST_LAYOUT_STRING_LEN_MASK] = 0x7fffffff,
+    [JS_HOST_LAYOUT_STRING_WIDE_BIT] = 0x80000000,
+    [JS_HOST_LAYOUT_STRING_CHARS] = offsetof(JSString, u),
+    [JS_HOST_LAYOUT_STRING_LEN_MAX] = JS_STRING_LEN_MAX,
+    [JS_HOST_LAYOUT_ATOM_EMPTY_STRING] = JS_ATOM_empty_string,
+    [JS_HOST_LAYOUT_ATOM_FILE_NAME] = JS_ATOM_fileName,
+    [JS_HOST_LAYOUT_ATOM_LINE_NUMBER] = JS_ATOM_lineNumber,
+    [JS_HOST_LAYOUT_ATOM_COLUMN_NUMBER] = JS_ATOM_columnNumber,
+    [JS_HOST_LAYOUT_ATOM_MESSAGE] = JS_ATOM_message,
+    [JS_HOST_LAYOUT_ATOM_STACK] = JS_ATOM_stack,
+    [JS_HOST_LAYOUT_ATOM_NAME] = JS_ATOM_name,
+    [JS_HOST_LAYOUT_ATOM_TO_STRING] = JS_ATOM_toString,
+    [JS_HOST_LAYOUT_ATOM_THEN] = JS_ATOM_then,
+};
+
 /* create a string from a UTF-8 buffer */
 JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {
@@ -6612,11 +6653,32 @@ static BOOL js_function_shape_made(JSShape *empty, JSShape *both)
     return pr[0].atom == JS_ATOM_length && pr[1].atom == JS_ATOM_name;
 }
 
+/* Define length and name on func_obj, one after the other. Returns -1 with
+   the exception pending when it ran out of memory. */
+static int js_function_define_properties(JSContext *ctx, JSValueConst func_obj,
+                                         JSAtom name, int len)
+{
+    JSValue name_val;
+
+    /* ES6 feature non compatible with ES5.1: length is configurable */
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
+                               JS_PROP_CONFIGURABLE) < 0)
+        return -1;
+    name_val = JS_AtomToString(ctx, name);
+    if (JS_IsException(name_val))
+        return -1;
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name_val,
+                               JS_PROP_CONFIGURABLE) < 0)
+        return -1;
+    return 0;
+}
+
 /* Give the function func_obj, made just now, the properties length and name,
-   as js_function_set_properties does, and report whether it did. When it did
-   not, nothing was done. */
-static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
-                              JSAtom name, int len)
+   as js_function_set_properties does. Returns 1 when it did, 0 when it did
+   nothing, and -1 with the exception pending when it ran out of memory: the
+   string of the name, made for an index atom, or a property. */
+static int js_function_shape(JSContext *ctx, JSValueConst func_obj,
+                             JSAtom name, int len)
 {
     JSObject *p;
     JSShape *sh, *empty, *both, *old_empty, *old_both;
@@ -6626,11 +6688,11 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
     /* what JS_DefinePropertyValue needs to add the two keys to an ordinary
        object */
     if (JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)
-        return FALSE;
+        return 0;
     p = JS_VALUE_GET_OBJ(func_obj);
     if (!p->extensible || p->is_exotic || p->fast_array ||
         p->class_id == JS_CLASS_GLOBAL_OBJECT)
-        return FALSE;
+        return 0;
     sh = p->shape;
     for(i = 0; i < countof(ctx->func_shapes); i++) {
         if (ctx->func_shapes[i][0] != sh)
@@ -6639,6 +6701,8 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         /* made before the object changes: it can allocate and run the
            cycle collector, which must find the object as it is */
         name_val = JS_AtomToString(ctx, name);
+        if (JS_IsException(name_val))
+            return -1;
         /* what add_property does for the second key, which finds the shape
            with both in the shape hash table. The property array keeps its
            size (see js_function_shape_made). */
@@ -6647,23 +6711,23 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         js_free_shape(ctx->rt, sh);
         p->prop[0].u.value = JS_NewInt32(ctx, len);
         p->prop[1].u.value = name_val;
-        return TRUE;
+        return 1;
     }
     i = js_function_shape_slot(ctx, sh);
     if (i < 0)
-        return FALSE;
+        return 0;
     /* held while add_property moves the object on, so that the empty shape
        stays as it is and is not freed: add_property copies a shape held by
        more than one rather than grow it */
     empty = js_dup_shape(sh);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
-                           JS_PROP_CONFIGURABLE);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
-                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    if (js_function_define_properties(ctx, func_obj, name, len) < 0) {
+        js_free_shape(ctx->rt, empty);
+        return -1;
+    }
     both = p->shape;
     if (!js_function_shape_made(empty, both)) {
         js_free_shape(ctx->rt, empty);
-        return TRUE;
+        return 1;
     }
     old_empty = ctx->func_shapes[i][0];
     old_both = ctx->func_shapes[i][1];
@@ -6673,19 +6737,20 @@ static BOOL js_function_shape(JSContext *ctx, JSValueConst func_obj,
         js_free_shape(ctx->rt, old_empty);
         js_free_shape(ctx->rt, old_both);
     }
-    return TRUE;
+    return 1;
 }
 
-static void js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
-                                       JSAtom name, int len)
+/* Give the function func_obj, made just now, the properties length and name.
+   Returns -1 with the exception pending when it ran out of memory, and the
+   caller frees the function. */
+static int js_function_set_properties(JSContext *ctx, JSValueConst func_obj,
+                                      JSAtom name, int len)
 {
-    if (js_function_shape(ctx, func_obj, name, len))
-        return;
-    /* ES6 feature non compatible with ES5.1: length is configurable */
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, JS_NewInt32(ctx, len),
-                           JS_PROP_CONFIGURABLE);
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name,
-                           JS_AtomToString(ctx, name), JS_PROP_CONFIGURABLE);
+    int r = js_function_shape(ctx, func_obj, name, len);
+
+    if (r != 0)
+        return r < 0 ? -1 : 0;
+    return js_function_define_properties(ctx, func_obj, name, len);
 }
 
 static BOOL js_class_has_bytecode(JSClassID class_id)
@@ -6802,7 +6867,11 @@ static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
         JS_FreeValue(ctx, func_obj);
         return JS_EXCEPTION;
     }
-    js_function_set_properties(ctx, func_obj, name_atom, length);
+    if (js_function_set_properties(ctx, func_obj, name_atom, length) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
     JS_FreeAtom(ctx, name_atom);
     return func_obj;
 }
@@ -6814,6 +6883,40 @@ JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
 {
     return JS_NewCFunction3(ctx, func, name, length, cproto, magic,
                             ctx->function_proto, 0);
+}
+
+JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
+                           int length, int32_t id)
+{
+    JSValue func_obj;
+    JSObject *p;
+    JSAtom name_atom;
+
+    if (id < 0)
+        return JS_ThrowRangeError(ctx, "host function id %d", (int)id);
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto, JS_CLASS_C_FUNCTION);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = NULL;
+    p->u.cfunc.length = length;
+    p->u.cfunc.cproto = JS_CFUNC_host;
+    p->u.cfunc.magic = 0;
+    p->u.cfunc.host_id = id;
+    p->is_constructor = FALSE;
+    name_atom = JS_NewAtomLen(ctx, name, name_len);
+    if (name_atom == JS_ATOM_NULL) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    if (js_function_set_properties(ctx, func_obj, name_atom, length) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
 }
 
 typedef struct JSCFunctionDataRecord {
@@ -6896,8 +6999,11 @@ JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
     for(i = 0; i < data_len; i++)
         s->data[i] = JS_DupValue(ctx, data[i]);
     JS_SetOpaque(func_obj, s);
-    js_function_set_properties(ctx, func_obj,
-                               JS_ATOM_empty_string, length);
+    if (js_function_set_properties(ctx, func_obj,
+                                   JS_ATOM_empty_string, length) < 0) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
     return func_obj;
 }
 
@@ -9574,6 +9680,45 @@ JS_ThrowError(JSContext *ctx, JSErrorEnum error_num,
     add_backtrace = !rt->in_out_of_memory &&
         (!sf || (JS_GetFunctionBytecode(sf->cur_func) == NULL));
     return JS_ThrowError2(ctx, error_num, fmt, ap, add_backtrace);
+}
+
+/* JS_ThrowErrorKind with the kinds of the C API, which must be those of the
+   engine */
+_Static_assert(JS_ERROR_KIND_EVAL == (int)JS_EVAL_ERROR &&
+               JS_ERROR_KIND_RANGE == (int)JS_RANGE_ERROR &&
+               JS_ERROR_KIND_REFERENCE == (int)JS_REFERENCE_ERROR &&
+               JS_ERROR_KIND_SYNTAX == (int)JS_SYNTAX_ERROR &&
+               JS_ERROR_KIND_TYPE == (int)JS_TYPE_ERROR &&
+               JS_ERROR_KIND_URI == (int)JS_URI_ERROR &&
+               JS_ERROR_KIND_INTERNAL == (int)JS_INTERNAL_ERROR &&
+               JS_ERROR_KIND_AGGREGATE == (int)JS_AGGREGATE_ERROR &&
+               JS_AGGREGATE_ERROR + 1 == JS_NATIVE_ERROR_COUNT,
+               "JSErrorKind is JSErrorEnum");
+
+static JSValue __attribute__((format(printf, 3, 4)))
+JS_ThrowErrorf(JSContext *ctx, JSErrorEnum error_num, const char *fmt, ...)
+{
+    JSValue val;
+    va_list ap;
+
+    va_start(ap, fmt);
+    val = JS_ThrowError(ctx, error_num, fmt, ap);
+    va_end(ap);
+    return val;
+}
+
+JSValue JS_ThrowErrorKind(JSContext *ctx, int kind, const char *msg, size_t len)
+{
+    /* the buffer of JS_ThrowError2, so the message is cut where "%s" cuts it */
+    char buf[256];
+
+    if (kind < 0 || kind >= JS_NATIVE_ERROR_COUNT)
+        return JS_ThrowInternalError(ctx, "error kind %d", kind);
+    if (len > sizeof(buf) - 1)
+        len = sizeof(buf) - 1;
+    memcpy(buf, msg, len);
+    buf[len] = '\0';
+    return JS_ThrowErrorf(ctx, kind, "%s", buf);
 }
 
 JSValue __attribute__((format(printf, 2, 3))) JS_ThrowSyntaxError(JSContext *ctx, const char *fmt, ...)
@@ -19830,8 +19975,9 @@ static JSValue js_closure(JSContext *ctx, JSValue bfunc,
     name_atom = b->func_name;
     if (name_atom == JS_ATOM_NULL)
         name_atom = JS_ATOM_empty_string;
-    js_function_set_properties(ctx, func_obj, name_atom,
-                               b->defined_arg_count);
+    if (js_function_set_properties(ctx, func_obj, name_atom,
+                                   b->defined_arg_count) < 0)
+        goto fail;
 
     if (b->func_kind & JS_FUNC_GENERATOR) {
         JSValue proto;
@@ -20073,6 +20219,10 @@ static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
     case JS_CFUNC_generic_magic:
         ret_val = func.generic_magic(ctx, this_obj, argc, arg_buf,
                                      p->u.cfunc.magic);
+        break;
+    case JS_CFUNC_host:
+        ret_val = host_call(rt->malloc_ctx.heap.vm, &this_obj, argc, arg_buf,
+                            p->u.cfunc.host_id);
         break;
     case JS_CFUNC_getter:
         ret_val = func.getter(ctx, this_obj);
@@ -57465,7 +57615,10 @@ static int js_create_resolving_functions(JSContext *ctx,
         s->presolved = sr;
         s->promise = JS_DupValue(ctx, promise);
         JS_SetOpaque(obj, s);
-        js_function_set_properties(ctx, obj, JS_ATOM_empty_string, 1);
+        if (js_function_set_properties(ctx, obj, JS_ATOM_empty_string, 1) < 0) {
+            JS_FreeValue(ctx, obj);
+            goto fail;
+        }
         resolving_funcs[i] = obj;
     }
     js_promise_resolve_function_free_resolved(ctx->rt, sr);
