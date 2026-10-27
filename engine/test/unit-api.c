@@ -326,6 +326,218 @@ static void test_json_bytes(void)
     vm_free(&v);
 }
 
+/* ---- the C API a Go host calls ---- */
+
+/* what the functions of JS_NewHostFunction were last called with */
+static struct {
+    uint32_t vm;
+    int id, argc, has_this;
+    char this_text[64];
+} host_last;
+
+static JSContext *host_ctx;
+
+/* The functions of test_host_function: id 1 adds its two arguments, id
+   0x7fffffff returns how many it got, and id 2 throws. */
+static JSValue test_host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id)
+{
+    host_last.vm = vm;
+    host_last.id = id;
+    host_last.argc = argc;
+    host_last.has_this = this_val != NULL;
+    host_last.this_text[0] = '\0';
+    if (this_val) {
+        const char *t = JS_ToCString(host_ctx, *this_val);
+
+        snprintf(host_last.this_text, sizeof(host_last.this_text), "%s", t ? t : "?");
+        JS_FreeCString(host_ctx, t);
+    }
+    switch (id) {
+    case 1:
+        return JS_NewInt32(host_ctx, JS_VALUE_GET_INT(argv[0]) + JS_VALUE_GET_INT(argv[1]));
+    case 0x7fffffff:
+        return JS_NewInt32(host_ctx, argc);
+    case 2:
+        return JS_ThrowErrorKind(host_ctx, JS_ERROR_KIND_RANGE, "from the host", 13);
+    }
+    return JS_UNDEFINED;
+}
+
+static void define_host(JSContext *ctx, const char *name, int length, int32_t id)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue f = JS_NewHostFunction(ctx, name, strlen(name), length, id);
+
+    CHECK(!JS_IsException(f), "JS_NewHostFunction %s", name);
+    JS_SetPropertyStr(ctx, g, name, f);
+    JS_FreeValue(ctx, g);
+}
+
+/* A function of the host is shaped as a built-in, and a call of it reaches
+   host_call with the VM, this, the arguments and its id. */
+static void test_host_function(void)
+{
+    VM v = vm_new();
+    JSValue f;
+    char *t;
+
+    host_ctx = v.ctx;
+    host_function_call = test_host_call;
+    define_host(v.ctx, "add", 2, 1);
+    define_host(v.ctx, "count", 3, 0x7fffffff);
+    define_host(v.ctx, "fail", 0, 2);
+    CHECK(eval_is(v.ctx, "add(2, 3)", "5"), "add");
+    CHECK(host_last.vm == host_vm_id(v.rt) && host_last.id == 1 && host_last.argc == 2 && host_last.has_this &&
+          strcmp(host_last.this_text, "undefined") == 0,
+          "the call of add: vm %u id %d argc %d this %s", host_last.vm, host_last.id, host_last.argc, host_last.this_text);
+    CHECK(eval_is(v.ctx, "add.call({ toString() { return 'me' } }, 1, 1)", "2"), "add with this");
+    CHECK(strcmp(host_last.this_text, "me") == 0, "this %s", host_last.this_text);
+    /* argc is what the call passed, and argv has at least length values */
+    CHECK(eval_is(v.ctx, "count(1) + ',' + count(1, 2, 3, 4)", "1,4"), "count");
+    CHECK(host_last.id == 0x7fffffff, "the id of count: %d", host_last.id);
+    CHECK(eval_is(v.ctx,
+                  "JSON.stringify([add.name, add.length, count.length, Object.hasOwn(add, 'prototype'),\n"
+                  "  String(add), Object.getPrototypeOf(add) === Function.prototype,\n"
+                  "  (() => { try { new add(1, 2); return 'made' } catch (e) { return e.name } })()])",
+                  "[\"add\",2,3,false,\"function add() {\\n    [native code]\\n}\",true,\"TypeError\"]"),
+          "the shape of add");
+    CHECK(eval_is(v.ctx, "try { fail() } catch (e) { e.name + ': ' + e.message }", "RangeError: from the host"), "fail");
+    f = JS_NewHostFunction(v.ctx, "bad", 3, 0, -1);
+    CHECK(JS_IsException(f), "a negative id made a function");
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "RangeError: host function id -1") == 0, "the error of a negative id: %s", t ? t : "?");
+    free(t);
+    host_function_call = NULL;
+    vm_free(&v);
+}
+
+/* JS_NewStringChars gives a string whose characters the host writes where
+   JS_HOST_LAYOUT_* says, and the layout is that of the strings the engine
+   makes. */
+static void test_new_string_chars(void)
+{
+    extern const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT];
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    JSValue s;
+    uint8_t *p;
+    uint32_t word;
+    char *t;
+    int i;
+
+    /* an 8-bit string */
+    s = JS_NewStringChars(v.ctx, 5, 0);
+    CHECK(JS_VALUE_GET_TAG(s) == JS_TAG_STRING, "an 8-bit string");
+    p = JS_VALUE_GET_PTR(s);
+    memcpy(&word, p, 4);
+    CHECK((word & js_host_layout[JS_HOST_LAYOUT_STRING_LEN_MASK]) == 5 &&
+          !(word & js_host_layout[JS_HOST_LAYOUT_STRING_WIDE_BIT]), "the first word %#x", word);
+    memcpy(p + js_host_layout[JS_HOST_LAYOUT_STRING_CHARS], "h\xe9llo", 5);
+    CHECK(p[js_host_layout[JS_HOST_LAYOUT_STRING_CHARS] + 5] == 0, "the NUL after the characters");
+    JS_SetPropertyStr(v.ctx, g, "s8", s);
+    CHECK(eval_is(v.ctx, "s8 === 'h\\xe9llo' && s8.length", "5"), "the 8-bit string");
+
+    /* a 16-bit string */
+    s = JS_NewStringChars(v.ctx, 3, 1);
+    p = JS_VALUE_GET_PTR(s);
+    memcpy(&word, p, 4);
+    CHECK((word & js_host_layout[JS_HOST_LAYOUT_STRING_LEN_MASK]) == 3 &&
+          (word & js_host_layout[JS_HOST_LAYOUT_STRING_WIDE_BIT]), "the first word %#x", word);
+    {
+        static const uint16_t chars[3] = { 0x4e2d, 0xd83d, 0xde00 };
+        memcpy(p + js_host_layout[JS_HOST_LAYOUT_STRING_CHARS], chars, sizeof(chars));
+    }
+    JS_SetPropertyStr(v.ctx, g, "s16", s);
+    CHECK(eval_is(v.ctx, "s16 === '\\u4e2d\\u{1f600}' && s16.length", "3"), "the 16-bit string");
+
+    /* the reference count, and the strings the engine makes */
+    for (i = 0; i < 2; i++) {
+        static const char *texts[] = { "abcdddddddddd", "abc\xe4\xb8\xad" };
+        static const uint32_t lens[] = { 13, 4 };
+        int32_t rc, rc2;
+
+        s = JS_NewString(v.ctx, texts[i]);
+        CHECK(JS_VALUE_GET_TAG(s) == JS_TAG_STRING, "a string of the engine");
+        p = JS_VALUE_GET_PTR(s);
+        memcpy(&word, p, 4);
+        CHECK((word & js_host_layout[JS_HOST_LAYOUT_STRING_LEN_MASK]) == lens[i] &&
+              !(word & js_host_layout[JS_HOST_LAYOUT_STRING_WIDE_BIT]) == !i,
+              "the first word of %s: %#x", texts[i], word);
+        CHECK(memcmp(p + js_host_layout[JS_HOST_LAYOUT_STRING_CHARS], i ? (const void *)"a\0b\0c\0\x2d\x4e" : "abcd", 4 << i) == 0,
+              "the characters of %s", texts[i]);
+        memcpy(&rc, p + js_host_layout[JS_HOST_LAYOUT_REFCOUNT_OFFSET], 4);
+        JS_DupValue(v.ctx, s);
+        memcpy(&rc2, p + js_host_layout[JS_HOST_LAYOUT_REFCOUNT_OFFSET], 4);
+        CHECK(rc2 == rc + 1, "the reference count went from %d to %d", rc, rc2);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, s);
+    }
+
+    /* an empty string, and one too long */
+    s = JS_NewStringChars(v.ctx, 0, 1);
+    CHECK(JS_IsString(s), "the empty string");
+    JS_SetPropertyStr(v.ctx, g, "s0", s);
+    CHECK(eval_is(v.ctx, "s0 === '' ? 'empty' : 'not'", "empty"), "the empty string");
+    s = JS_NewStringChars(v.ctx, js_host_layout[JS_HOST_LAYOUT_STRING_LEN_MAX] + 1, 0);
+    CHECK(JS_IsException(s), "a string past the most");
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "RangeError: invalid string length") == 0, "the error of a string past the most: %s", t ? t : "?");
+    free(t);
+
+    /* the atoms */
+    for (i = JS_HOST_LAYOUT_ATOM_EMPTY_STRING; i <= JS_HOST_LAYOUT_ATOM_THEN; i++) {
+        static const char *names[] = { "", "fileName", "lineNumber", "columnNumber", "message", "stack", "name", "toString", "then" };
+        JSAtom a = JS_NewAtom(v.ctx, names[i - JS_HOST_LAYOUT_ATOM_EMPTY_STRING]);
+
+        CHECK(a == (JSAtom)js_host_layout[i], "the atom of %s: %u, table %lld", names[i - JS_HOST_LAYOUT_ATOM_EMPTY_STRING], a, (long long)js_host_layout[i]);
+        JS_FreeAtom(v.ctx, a);
+    }
+    JS_FreeValue(v.ctx, g);
+
+    /* no memory: the out of memory error */
+    room(&v, 64);
+    s = JS_NewStringChars(v.ctx, 100000, 1);
+    CHECK(JS_IsException(s) && JS_IsUncatchableException(v.ctx), "a string with no memory");
+    free(exception_text(v.ctx));
+    unlimit(&v);
+    vm_free(&v);
+}
+
+/* JS_ThrowErrorKind throws each kind of error, its message cut as "%s" cuts
+   it. */
+static void test_throw_error_kind(void)
+{
+    static const char *names[] = { "EvalError", "RangeError", "ReferenceError", "SyntaxError", "TypeError", "URIError", "InternalError", "AggregateError" };
+    VM v = vm_new();
+    char long_msg[400];
+    char *t;
+    int k;
+
+    for (k = JS_ERROR_KIND_EVAL; k <= JS_ERROR_KIND_AGGREGATE; k++) {
+        char want[64];
+
+        JS_ThrowErrorKind(v.ctx, k, "it went wrong", 13);
+        t = exception_text(v.ctx);
+        snprintf(want, sizeof(want), "%s: it went wrong", names[k]);
+        CHECK(t && strcmp(t, want) == 0, "kind %d: %s", k, t ? t : "?");
+        free(t);
+    }
+    memset(long_msg, 'x', sizeof(long_msg));
+    JS_ThrowErrorKind(v.ctx, JS_ERROR_KIND_TYPE, long_msg, sizeof(long_msg));
+    t = exception_text(v.ctx);
+    CHECK(t && strlen(t) == strlen("TypeError: ") + 255, "a long message: %zu bytes", t ? strlen(t) : 0);
+    free(t);
+    JS_ThrowErrorKind(v.ctx, JS_ERROR_KIND_TYPE, "ab\0cd", 5);
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "TypeError: ab") == 0, "a NUL in the message: %s", t ? t : "?");
+    free(t);
+    JS_ThrowErrorKind(v.ctx, 99, "x", 1);
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "InternalError: error kind 99") == 0, "a bad kind: %s", t ? t : "?");
+    free(t);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_backtrace_shares_shape();
@@ -335,6 +547,9 @@ int main(void)
     test_error_stack_top_level();
     test_proxy_own_property();
     test_json_bytes();
+    test_host_function();
+    test_new_string_chars();
+    test_throw_error_kind();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;
