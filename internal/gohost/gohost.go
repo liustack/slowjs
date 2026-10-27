@@ -129,7 +129,7 @@ type VM struct {
 	mem       *hostmem.Memory
 	stack     uintptr
 	stackSize uintptr
-	wall      clock
+	clock     func() time.Time // the wall clock, nil for time.Now
 	// interrupt is 0, or the time of the first Interrupt since the
 	// outermost entry began, on the monotonic clock of Now, plus 1.
 	interrupt atomic.Int64
@@ -199,7 +199,7 @@ func New(o Options) (*VM, error) {
 		return nil, err
 	}
 	base, _ := mem.Stack()
-	v := &VM{mem: mem, stack: base, stackSize: size, wall: realClock(), interval: DefaultPollInterval, grace: DefaultKillGrace}
+	v := &VM{mem: mem, stack: base, stackSize: size, interval: DefaultPollInterval, grace: DefaultKillGrace}
 	if o.PollCounter != 0 {
 		if o.PollCounter%8 != 0 || o.PollCounter > size-8 {
 			mem.Close()
@@ -524,13 +524,17 @@ func MemoryGrow(vm uint32, size uintptr) uintptr {
 }
 
 // Now is host_now: the wall clock of the VM, or the monotonic clock, which
-// needs no VM.
+// needs no VM. A panic of the clock function leaves through the engine's
+// frames, and the VM is broken.
 func Now(vm uint32, kind int32) int64 {
 	switch kind {
 	case NowMonotonic:
 		return int64(time.Since(start))
 	case NowWall:
-		return mustLookup(vm, "the wall clock").wall.now()
+		if c := mustLookup(vm, "the wall clock").clock; c != nil {
+			return c().UnixNano()
+		}
+		return time.Now().UnixNano()
 	}
 	panic(fmt.Sprintf("gohost: host_now of kind %d", kind))
 }
@@ -660,29 +664,20 @@ func addr(a uintptr) unsafe.Pointer {
 // start is where the monotonic clock counts from.
 var start = time.Now()
 
-// clock is the wall clock of a VM: base nanoseconds since 1970 at the
-// moment at, and moving from there with the monotonic clock, or fixed.
-type clock struct {
-	base   int64
-	at     time.Time
-	moving bool
-}
-
-func realClock() clock {
-	now := time.Now()
-	return clock{base: now.UnixNano(), at: now, moving: true}
-}
-
-func (c clock) now() int64 {
-	if !c.moving {
-		return c.base
-	}
-	return c.base + int64(time.Since(c.at))
-}
+// SetClock sets the wall clock of the VM, which Date reads: now is called on
+// the goroutine that runs the engine, and must not block or call the engine.
+// nil, as a new VM has, is time.Now, which follows the system's clock when it
+// is set.
+func (v *VM) SetClock(now func() time.Time) { v.clock = now }
 
 // SetWallClock sets the wall clock of the VM to t: fixed there, as for a
-// render that must give the same page every time, or moving on from there.
-// A new VM has the real clock, moving.
+// render that must give the same page every time, or moving on from there
+// with the monotonic clock.
 func (v *VM) SetWallClock(t time.Time, moving bool) {
-	v.wall = clock{base: t.UnixNano(), at: time.Now(), moving: moving}
+	if !moving {
+		v.clock = func() time.Time { return t }
+		return
+	}
+	at := time.Now()
+	v.clock = func() time.Time { return t.Add(time.Since(at)) }
 }
