@@ -43,6 +43,14 @@ func (m *VM) Interrupt() {
 // leave takes the error the call returns, deferred as m.leave(&err): when a
 // poll killed the script, the outermost leave sets it to the interrupted
 // error, and the VM is broken.
+//
+// A memory fault that leaves the call went up through the engine's frames:
+// each level marks the VM broken, so that a Go function that called this one
+// from javascript and recovers the panic finds it so (called). A panic or a
+// Goexit that started in Go code the engine called is marked where the engine
+// called it (called, gohost). A panic of a Go function called from
+// javascript (repanic) went up through no frame of the engine and leaves the
+// VM as it is.
 func (m *VM) enter() {
 	if m.h.Broken() {
 		panic(brokenPanic)
@@ -59,21 +67,20 @@ func (m *VM) leave(err *error) {
 	m.depth--
 	m.entered--
 	m.h.Leave()
-	if m.entered == 0 {
-		// leave recovers only to tell a return from a panic: a panic goes
-		// on with the same value.
-		switch p := recover(); {
-		case p == gohost.ErrKilled:
-			m.panicked = nil
-			*err = killedError()
-			return
-		case p != nil:
-			if isFault(p) {
-				m.h.MarkBroken()
-			}
-			m.panicked = nil
-			panic(p)
+	// leave recovers only to tell a return from a panic: a panic goes on with
+	// the same value.
+	if p := recover(); p != nil {
+		if isFault(p) {
+			m.h.MarkBroken()
 		}
+		if m.entered == 0 {
+			m.panicked = nil
+			if p == gohost.ErrKilled {
+				*err = killedError()
+				return
+			}
+		}
+		panic(p)
 	}
 	m.repanic()
 }

@@ -524,19 +524,32 @@ func MemoryGrow(vm uint32, size uintptr) uintptr {
 }
 
 // Now is host_now: the wall clock of the VM, or the monotonic clock, which
-// needs no VM. A panic of the clock function leaves through the engine's
-// frames, and the VM is broken.
+// needs no VM.
 func Now(vm uint32, kind int32) int64 {
 	switch kind {
 	case NowMonotonic:
 		return int64(time.Since(start))
 	case NowWall:
-		if c := mustLookup(vm, "the wall clock").clock; c != nil {
-			return c().UnixNano()
+		if v := mustLookup(vm, "the wall clock"); v.clock != nil {
+			return v.readClock()
 		}
 		return time.Now().UnixNano()
 	}
 	panic(fmt.Sprintf("gohost: host_now of kind %d", kind))
+}
+
+// readClock calls the clock function of v. A panic or a Goexit of it leaves
+// through the engine's frames that asked for the time, and the VM is broken.
+func (v *VM) readClock() int64 {
+	done := false
+	defer func() {
+		if !done {
+			v.MarkBroken()
+		}
+	}()
+	t := v.clock().UnixNano()
+	done = true
+	return t
 }
 
 // Poll is host_poll, which the engine calls when its count of cycles runs
