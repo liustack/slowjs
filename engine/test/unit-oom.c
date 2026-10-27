@@ -1043,6 +1043,94 @@ static void test_thrown_is_not_uncatchable(void)
     }
 }
 
+/* ---- the paths that no longer recurse ---- */
+
+/* sweep runs setup and then src, both global scripts of the file name file, in
+   a new runtime for each room: every 8 bytes from nothing to max bytes past
+   what the runtime holds, and every room of a full heap (fill_rooms). The text
+   of the value of src must be one of want (a list that ends with NULL), or
+   src must fail uncatchable, as running out of memory does. Then, with the
+   memory back, src must give want[0] in the same runtime, and the runtime
+   must free with no block left. Some room must fail and some must work. */
+static void sweep(const char *what, const char *file, const char *setup,
+                  const char *src, const char *const *want, size_t max)
+{
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = max / 8 + 1, k;
+    int failed = 0, worked = 0;
+
+    for (k = 0; k < nbytes + nfill; k++) {
+        VM v = vm_new();
+        JSValue r;
+        char *t;
+        int unc, i, fail;
+
+        if (setup && !eval_ok(v.ctx, setup)) {
+            CHECK(0, "%s: the setup failed", what);
+            vm_free(&v);
+            return;
+        }
+        if (k < nbytes) {
+            room(&v, k * 8);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+        }
+        r = JS_Eval(v.ctx, src, strlen(src), file, JS_EVAL_TYPE_GLOBAL);
+        fail = JS_IsException(r);
+        unc = JS_IsUncatchableException(v.ctx);
+        if (k < nbytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (fail) {
+            failed++;
+            t = exception_text(v.ctx);
+            CHECK(unc, "%s: room %zu: a catchable exception: %s", what, k, t ? t : "?");
+        } else {
+            t = value_text(v.ctx, r);
+            for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
+                ;
+            CHECK(want[i], "%s: room %zu: got %s", what, k, t ? t : "(no text)");
+            if (t && strcmp(t, want[0]) == 0)
+                worked++;
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        r = JS_Eval(v.ctx, src, strlen(src), file, JS_EVAL_TYPE_GLOBAL);
+        t = value_text(v.ctx, r);
+        CHECK(t && strcmp(t, want[0]) == 0, "%s: room %zu: with the memory back: %s", what, k, t ? t : "(exception)");
+        free(t);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        fflush(stdout);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "%s: no room made it fail", what);
+    CHECK(worked > 0, "%s: no room let it work", what);
+}
+
+/* A TypeError that a built-in function throws gets its stack when it is made,
+   and code of a script on the stack has it formatted at once: the names of the
+   functions and of the file are converted to UTF-8 there, which needs memory
+   when they are not ASCII. Without memory for it the stack is null, or the
+   call fails with the out of memory error. */
+static void test_new_error_stack_oom(void)
+{
+    static const char *const want[] = {
+        "TypeError: empty array\n"
+        "    at reduce (native)\n"
+        "    at f\xc3\xa9 (\xc3\xa9.js:1:17)\n"
+        "    at <eval> (\xc3\xa9.js:2:9)\n",
+        "TypeError: empty array\nnull",
+        NULL };
+
+    sweep("new error", "\xc3\xa9.js", NULL,
+          "function f\xc3\xa9() { return [].reduce(Math.max) }\n"
+          "try { f\xc3\xa9() } catch (e) { e + '\\n' + e.stack }",
+          want, 24576);
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1062,6 +1150,7 @@ int main(void)
     test_oom_uncatchable();
     test_regexp_oom();
     test_thrown_is_not_uncatchable();
+    test_new_error_stack_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
