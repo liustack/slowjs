@@ -107,8 +107,34 @@ static size_t fill_rooms(FillRoom *rm)
    uncatchable, which the embedder reports as running out of memory. When it
    can hold the error object but not its message, it does the same, and never
    gives the error the exception marker as its message. Each case frees some
-   blocks from a full heap, then throws a TypeError for a read of a property
-   with a long name. */
+   blocks from a full heap (the small blocks of the engine's allocator need
+   it), or lets the runtime allocate a number of bytes (which the system
+   malloc of the asan build counts to the block), then throws a TypeError for
+   a read of a property with a long name. Some rooms must fail the error and
+   some must give it whole, so that both ends are checked. */
+#define THROW_ERROR_BYTE_ROOMS (1 + 4096 / 16)
+
+/* The error thrown with one room, taken after the memory is back. */
+static void throw_error_check(VM *v, JSValue r, JSValue e, int uncatchable,
+                              const char *kind, size_t i, int *nulls, int *whole)
+{
+    JSValue m;
+
+    CHECK(JS_IsException(r), "%s room %zu: no exception", kind, i);
+    if (JS_IsNull(e)) {
+        (*nulls)++;
+        CHECK(uncatchable, "%s room %zu: null thrown, want it uncatchable", kind, i);
+    } else if (JS_IsObject(e)) {
+        (*whole)++;
+        m = JS_GetPropertyStr(v->ctx, e, "message");
+        CHECK(JS_IsString(m), "%s room %zu: the message of the error has tag %d, want a string", kind, i, JS_VALUE_GET_TAG(m));
+        JS_FreeValue(v->ctx, m);
+    } else {
+        CHECK(0, "%s room %zu: thrown value has tag %d", kind, i, JS_VALUE_GET_TAG(e));
+    }
+    JS_FreeValue(v->ctx, e);
+}
+
 static void test_throw_error_oom(void)
 {
     VM v = vm_new();
@@ -125,32 +151,29 @@ static void test_throw_error_oom(void)
     JS_FreeValue(v.ctx, JS_GetProperty(v.ctx, JS_NULL, atom));
     JS_FreeValue(v.ctx, JS_GetException(v.ctx));
     nrooms = fill_rooms(rm);
-    for (i = 0; i < nrooms; i++) {
-        JSValue r, e, m;
+    for (i = 0; i < nrooms + THROW_ERROR_BYTE_ROOMS; i++) {
+        JSValue r, e;
         int uncatchable;
 
-        fill_memory(&v);
-        free_blocks(&v, rm[i].min, rm[i].max, rm[i].n);
+        if (i < nrooms) {
+            fill_memory(&v);
+            free_blocks(&v, rm[i].min, rm[i].max, rm[i].n);
+        } else {
+            room(&v, (i - nrooms) * 16);
+        }
         r = JS_GetProperty(v.ctx, JS_NULL, atom);
         uncatchable = JS_IsUncatchableException(v.ctx);
         e = JS_GetException(v.ctx);
         JS_SetUncatchableException(v.ctx, 0);
-        release_blocks(&v);
-        CHECK(JS_IsException(r), "room %zu: no exception", i);
-        if (JS_IsNull(e)) {
-            nulls++;
-            CHECK(uncatchable, "room %zu: null thrown, want it uncatchable", i);
-        } else if (JS_IsObject(e)) {
-            whole++;
-            m = JS_GetPropertyStr(v.ctx, e, "message");
-            CHECK(JS_IsString(m), "room %zu: the message of the error has tag %d, want a string", i, JS_VALUE_GET_TAG(m));
-            JS_FreeValue(v.ctx, m);
-        } else {
-            CHECK(0, "room %zu: thrown value has tag %d", i, JS_VALUE_GET_TAG(e));
-        }
-        JS_FreeValue(v.ctx, e);
+        if (i < nrooms)
+            release_blocks(&v);
+        else
+            unlimit(&v);
+        throw_error_check(&v, r, e, uncatchable, i < nrooms ? "fill" : "byte",
+                          i < nrooms ? i : (i - nrooms) * 16, &nulls, &whole);
     }
     CHECK(nulls > 0, "no room made the error fail");
+    CHECK(whole > 0, "no room gave a whole error: its message is not checked");
     JS_FreeAtom(v.ctx, atom);
     vm_free(&v);
 }
