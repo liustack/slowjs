@@ -73,6 +73,30 @@ static void release_blocks(VM *v)
     unlimit(v);
 }
 
+/* The rooms of a full heap: case i of fill_rooms frees rm[i].n blocks of each
+   size from rm[i].min to rm[i].max after fill_memory. The first frees
+   nothing. */
+#define FILL_ROOMS (1 + 512 / 8 + 7 * 4)
+typedef struct {
+    size_t min, max, n;
+} FillRoom;
+
+static size_t fill_rooms(FillRoom *rm)
+{
+    size_t nrooms = 0, size, max, n;
+
+    rm[nrooms].min = 8; rm[nrooms].max = 8; rm[nrooms++].n = 0;
+    for (size = 8; size <= 512; size += 8) {
+        rm[nrooms].min = size; rm[nrooms].max = size; rm[nrooms++].n = 1;
+    }
+    for (max = 64; max <= 4096; max *= 2) {
+        for (n = 1; n <= 4; n++) {
+            rm[nrooms].min = 8; rm[nrooms].max = max; rm[nrooms++].n = n;
+        }
+    }
+    return nrooms;
+}
+
 /* When the memory left cannot hold an error, JS_ThrowError2 throws null,
    uncatchable, which the embedder reports as running out of memory. When it
    can hold the error object but not its message, it does the same, and never
@@ -84,8 +108,8 @@ static void test_throw_error_oom(void)
     VM v = vm_new();
     char name[151];
     JSAtom atom;
-    struct { size_t min, max, n; } rm[600];
-    size_t nrooms = 0, i, size, max, n;
+    FillRoom rm[FILL_ROOMS];
+    size_t nrooms, i;
     int nulls = 0, whole = 0;
 
     memset(name, 'x', 150);
@@ -94,16 +118,7 @@ static void test_throw_error_oom(void)
     atom = JS_NewAtom(v.ctx, name);
     JS_FreeValue(v.ctx, JS_GetProperty(v.ctx, JS_NULL, atom));
     JS_FreeValue(v.ctx, JS_GetException(v.ctx));
-    /* each case frees n blocks of each size from min to max */
-    rm[nrooms].min = 8; rm[nrooms].max = 8; rm[nrooms++].n = 0;
-    for (size = 8; size <= 512; size += 8) {
-        rm[nrooms].min = size; rm[nrooms].max = size; rm[nrooms++].n = 1;
-    }
-    for (max = 64; max <= 4096; max *= 2) {
-        for (n = 1; n <= 4; n++) {
-            rm[nrooms].min = 8; rm[nrooms].max = max; rm[nrooms++].n = n;
-        }
-    }
+    nrooms = fill_rooms(rm);
     for (i = 0; i < nrooms; i++) {
         JSValue r, e, m;
         int uncatchable;
