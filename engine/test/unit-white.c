@@ -43,6 +43,7 @@ const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
+int white_string_room(JSContext *ctx, JSValueConst v);
 
 /* ---- texts of every kind of character ---- */
 
@@ -1226,6 +1227,50 @@ static void test_added_vars_oom(void)
     }
 }
 
+/* ---- strings built by appending ---- */
+
+/* A string a variable holds can be an atom too, whose table holds the same
+   string without counting it. Appending to it makes a new string: grown in
+   place, the atom would change under its hash, and the key it names would no
+   longer be the key of its text. add_loc grows a local whose value has no
+   other reference in place. */
+#define ATOM_TAIL ", with a tail that makes it longer than 64 characters"
+
+static void test_string_append_atom(void)
+{
+    static const struct {
+        const char *what, *holder;
+    } ways[] = {
+        { "var local, add_loc", "var holder = (() => { let held; return [v => { held = v }, x => { var t = held; held = undefined; t += x; return t }] })()" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(ways); i++) {
+        VM v = vm_new();
+        JSAtom a = JS_NewAtom(v.ctx, "appended atom" ATOM_TAIL);
+        JSValue s = JS_AtomToString(v.ctx, a), g, holder, set, r;
+
+        CHECK(eval_ok(v.ctx, ways[i].holder), "%s: no holder", ways[i].what);
+        g = JS_GetGlobalObject(v.ctx);
+        holder = JS_GetPropertyStr(v.ctx, g, "holder");
+        set = JS_GetPropertyUint32(v.ctx, holder, 0);
+        r = JS_Call(v.ctx, set, JS_UNDEFINED, 1, &s);
+        JS_FreeValue(v.ctx, r);
+        CHECK(white_string_room(v.ctx, s) > 0, "%s: the atom has no room to grow into, the test checks nothing", ways[i].what);
+        /* then the variable holds the only reference to the atom's string */
+        JS_FreeValue(v.ctx, s);
+        JS_FreeAtom(v.ctx, a);
+        /* no literal of the atom's text in the scripts: it would hold the atom */
+        CHECK(eval_ok(v.ctx, "var k = holder[1]('!')"), "%s: the append threw", ways[i].what);
+        CHECK(eval_is(v.ctx, "var o = {}; o[k] = 1; String(o['appended ' + 'atom" ATOM_TAIL "!'])", "1"),
+              "%s: the atom was changed in place", ways[i].what);
+        JS_FreeValue(v.ctx, set);
+        JS_FreeValue(v.ctx, holder);
+        JS_FreeValue(v.ctx, g);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1245,6 +1290,7 @@ int main(void)
     test_poll_compile();
     test_poll_ret();
     test_added_vars_oom();
+    test_string_append_atom();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

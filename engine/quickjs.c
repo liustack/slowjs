@@ -5276,6 +5276,9 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
     return JS_MKPTR(JS_TAG_STRING, p);
 }
 
+/* Append op2 to p1 in the room at the end of its block. p1 must have no
+   other holder, and must not be an atom: the atom table holds the same
+   JSString without counting a reference. */
 static BOOL JS_ConcatStringInPlace(JSContext *ctx, JSString *p1, JSValueConst op2) {
     if (JS_VALUE_GET_TAG(op2) == JS_TAG_STRING) {
         JSString *p2 = JS_VALUE_GET_STRING(op2);
@@ -5283,7 +5286,7 @@ static BOOL JS_ConcatStringInPlace(JSContext *ctx, JSString *p1, JSValueConst op
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != 1)
+        if (js_rc(p1)->ref_count != 1 || p1->atom_type)
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
