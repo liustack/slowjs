@@ -129,7 +129,7 @@ func (m *VM) newHostFunction(name string, length, id int32) (r jsValue, err erro
 	}
 	p, sp, heap := m.tmpString(name, false)
 	if p == 0 {
-		return jsValue{}, fmt.Errorf("OOM")
+		return jsValue{}, m.tmpError()
 	}
 	r = val(cengine.JS_NewHostFunction(sp, m.ctx, p, uintptr(len(name)), uintptr(length), uintptr(id)))
 	m.tmpFree(p, heap)

@@ -22,11 +22,11 @@ type Atom = uint32
 func (m *VM) NewAtom(s string) (r Atom, err error) {
 	r, err = m.jsNewAtom(validUTF8(s))
 	if err != nil {
-		return atomNull, fmt.Errorf("OOM")
+		return atomNull, err
 	}
 
 	if r == atomNull {
-		err = fmt.Errorf("OOM")
+		err = m.errFromException()
 	}
 
 	return r, err
