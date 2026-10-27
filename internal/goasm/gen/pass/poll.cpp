@@ -21,6 +21,9 @@
 //     are a decrement of a register. A loop with such a call counts in
 //     memory, as the call does, and its inner loops are taken in turn: a
 //     local there would be written back and read again around every call.
+//     So does a loop that ticks only at the ends of its chunks: it ticks
+//     once a chunk, and the load and the store of a local would cost each
+//     entry more than that.
 //   - A function with a dispatch keeps the word in a local from its entry to
 //     its returns, and stores and loads it around every call that may tick.
 //   - Ticks on cycles outside these count in memory.
@@ -637,22 +640,36 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
           RB.CreateStore(RB.CreateLoad(I64, whole), counterPtr(RB));
         }
     }
+    // The edges that tick: every retreating edge but those into the dispatch
+    // (it counts itself), out of its poll label, and the back edges of the
+    // loops scalar evolution bounds.
+    auto tickEdges = [&]() {
+      std::vector<Edge> es;
+      for (auto [u, v] : retreatingEdges(F))
+        if (!(v == dispatch || u == label || exempt.count({u, v})))
+          es.push_back({u, v});
+      return es;
+    };
     // Elsewhere, the outermost loops with no call that may tick keep the
     // count in a local, which mem2reg puts in a register. A loop with such a
     // call counts in memory, as the call does: a local would be written back
-    // and read again around every call, which costs more than the tick. Its
-    // inner loops without one get a local of their own.
+    // and read again around every call, which costs more than the tick. So
+    // does a loop whose only ticks are the ends of its chunks (or that has
+    // none). Their inner loops are taken in turn.
+    std::vector<Edge> sites = tickEdges();
     std::function<void(Loop *)> keepLocal = [&](Loop *L) {
-      // A bounded loop has no tick.
-      if (L->isInnermost() && exempt.count({L->getLoopLatch(), L->getHeader()}))
-        return;
+      bool chunkOnly = true, calls = false;
+      for (auto [u, v] : sites)
+        if (L->contains(u) && L->contains(v))
+          chunkOnly &= chunks.count(u) > 0;
       for (BasicBlock *Bk : L->blocks())
         for (Instruction &I : *Bk)
-          if (mayTick(I)) {
-            for (Loop *Sub : SmallVector<Loop *>(L->begin(), L->end()))
-              keepLocal(Sub);
-            return;
-          }
+          calls |= mayTick(I);
+      if (chunkOnly || calls) {
+        for (Loop *Sub : SmallVector<Loop *>(L->begin(), L->end()))
+          keepLocal(Sub);
+        return;
+      }
       BasicBlock *ph = L->getLoopPreheader();
       if (!ph)
         ph = InsertPreheaderForLoop(L, &DT, &LI, nullptr, false);
@@ -748,9 +765,7 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
         std::get<2>(at[it->second]) = std::max(std::get<2>(at[it->second]), weight);
     };
 
-    for (auto [u, v] : retreatingEdges(F)) {
-      if (v == dispatch || u == label || exempt.count({u, v}))
-        continue;
+    for (auto [u, v] : tickEdges()) {
       auto ch = chunks.find(u);
       uint64_t weight = ch == chunks.end() ? 1 : ch->second;
       if (MDNode *W = u->getTerminator()->getMetadata(ChunkWeightMD))
