@@ -9,8 +9,6 @@ import (
 	"errors"
 	"strconv"
 	"testing"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // stringOOMSize is the length of the string the tests below convert. Its
@@ -45,17 +43,6 @@ func wantOutOfMemory(t *testing.T, what string, err error) {
 	var e *Error
 	if !errors.As(err, &e) || e.Name != "InternalError" || e.Message != "out of memory" {
 		t.Fatalf("%s: got error %v, want InternalError: out of memory", what, err)
-	}
-}
-
-// wantNoPendingException fails the test if an exception is still pending in
-// m's context. A failed call must take its exception out of the context: one
-// left there is what the next caller of JS_GetException finds, and it keeps
-// the thrown value alive.
-func wantNoPendingException(t *testing.T, m *VM) {
-	t.Helper()
-	if lib.XJS_HasException(m.runtime.tls, m.cContext) != 0 {
-		t.Fatal("an exception is still pending in the context")
 	}
 }
 

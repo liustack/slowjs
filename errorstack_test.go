@@ -160,18 +160,6 @@ func errorStackText(t *testing.T, src string, call bool) string {
 	return b.String() + "\n"
 }
 
-// vmMemory runs the GC and returns the memory usage of the runtime of m.
-func vmMemory(m *VM) lib.TJSMemoryUsage {
-	tls, rt := m.runtime.tls, m.runtime.cRuntime
-	lib.XJS_RunGC(tls, rt)
-	// The engine writes the result, so it goes in C memory.
-	n := int(unsafe.Sizeof(lib.TJSMemoryUsage{}))
-	p := tls.Alloc(n)
-	defer tls.Free(n)
-	lib.XJS_ComputeMemoryUsage(tls, rt, p)
-	return *(*lib.TJSMemoryUsage)(unsafe.Pointer(p))
-}
-
 // registerExhaust gives page code exhaust(), which leaves m no memory: it
 // lowers the limit to what m uses and takes every free block the engine's
 // arenas have left. Running out of memory is uncatchable, so page code

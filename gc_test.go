@@ -12,28 +12,6 @@ import (
 	lib "github.com/liustack/slowjs/lib"
 )
 
-// cycles defines garbage(n), which leaves n pairs of objects that point at
-// each other: reference counting never frees them, only the GC does.
-const cycles = `globalThis.garbage = n => {
-	for (let i = 0; i < n; i++) {
-		const a = {}, b = {a};
-		a.b = b;
-	}
-}`
-
-func newGCVM(t *testing.T) *VM {
-	t.Helper()
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { m.Close() })
-	if _, err := m.Eval(cycles, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	return m
-}
-
 // mallocSize is malloc_size as JS_ComputeMemoryUsage reports it, without a GC.
 func mallocSize(m *VM) uintptr {
 	tls, rt := m.runtime.tls, m.runtime.cRuntime
