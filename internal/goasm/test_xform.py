@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -100,7 +102,8 @@ class XformTests(unittest.TestCase):
         self.assertEqual(self.read("engine_amd64.s"), ENGINE.replace("PCALIGN $16", "PCALIGN $64"))
 
     def test_endalign_only_the_named_function(self):
-        xform.apply(self.dir, ["endalign:32:other"])
+        with contextlib.redirect_stdout(io.StringIO()):
+            xform.apply(self.dir, ["endalign:32:other"])
         text = self.read("cutils_amd64.s")
         self.assertEqual(text.count("PCALIGN $32"), 1)
         self.assertLess(text.index("TEXT ·other"), text.index("PCALIGN $32"))
