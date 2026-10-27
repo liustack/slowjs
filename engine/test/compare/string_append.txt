@@ -1,0 +1,17 @@
+narrow 1 2 3105: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+narrow 40 200 609341284: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+narrow 1000 5000 -989556540: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+narrow 6000 30000 1816389784: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+wide 1 2 620523: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+wide 40 80 -921211744: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+wide 1000 2000 1449177056: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+wide 6000 12000 -279174064: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+widens 1 3 96354: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+widens 40 120 -1931731200: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+widens 1000 2999 1481815327: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+widens 6000 17999 121928479: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+long 1 600 -1023385088: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+long 40 639 2033661457: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+long 1000 12980 1198739264: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+long 6000 77880 -260899968: local localPlus arg closure closureVar used usedClosure tdz keep keyed
+held 100 150 800
