@@ -496,20 +496,44 @@ static int table_run(const char *fmt, const char *kinds, int *how)
 
 static void test_format_table(const char *path)
 {
-    char line[256];
+    char line[256], *text = NULL, *cur;
     FILE *f = path ? fopen(path, "r") : NULL;
+    size_t size = 0, cap = 0, got;
     int ok_n = 0, bad_n = 0;
 
     CHECK(f != NULL, "the table of formats %s cannot be read", path ? path : "(none given)");
     if (!f)
         return;
-    while (fgets(line, sizeof line, f)) {
-        char *tab = strchr(line, '\t'), kinds[8];
-        size_t len = strlen(line);
+    /* The whole table is read before the first child process is made, and the
+       file closed: a child that ends in the C library of macOS moves the offset
+       of a stream that is still open (the offset is shared with the parent), and
+       the parent then reads the same bytes again, for ever. */
+    for (;;) {
+        if (size + 4096 > cap) {
+            cap = cap ? cap * 2 : 65536;
+            text = realloc(text, cap);
+            CHECK(text != NULL, "out of memory");
+            if (!text)
+                return;
+        }
+        got = fread(text + size, 1, cap - size - 1, f);
+        if (!got)
+            break;
+        size += got;
+    }
+    fclose(f);
+    text[size] = 0;
+    for (cur = text; *cur; ) {
+        char *nl = strchr(cur, '\n'), *tab, kinds[8];
+        size_t len = nl ? (size_t)(nl - cur) : strlen(cur);
         int ok, how, took;
 
-        if (len && line[len - 1] == '\n')
-            line[--len] = 0;
+        if (len >= sizeof line)
+            len = sizeof line - 1;
+        memcpy(line, cur, len);
+        line[len] = 0;
+        cur = nl ? nl + 1 : cur + strlen(cur);
+        tab = strchr(line, '\t');
         if (!len || line[0] == '#')
             continue;
         CHECK(tab != NULL, "line without a tab: %s", line);
@@ -537,7 +561,7 @@ static void test_format_table(const char *path)
             CHECK(how == 1 || how == 3, "format %s is bad in the table, and vsnprintf %s", tab, how == 0 ? "takes it" : "dies, but not of an abort");
         }
     }
-    fclose(f);
+    free(text);
     CHECK(ok_n >= 40 && bad_n >= 40, "only %d ok and %d bad formats read", ok_n, bad_n);
 }
 
