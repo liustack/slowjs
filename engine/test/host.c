@@ -250,10 +250,19 @@ void host_interrupt(JSRuntime *rt)
    generator adds for the Go host. When a stop of the runtime whose interrupt
    flag that is was asked, the flag is set here, so that no other thread ever
    writes it. */
+_Thread_local long host_poll_reads;
+static _Thread_local long host_poll_left;
+
+void host_poll_stop_after(long n)
+{
+    host_poll_left = n;
+}
+
 int host_poll(const volatile int *flag)
 {
     HostVM *vm;
 
+    host_poll_reads++;
     if (atomic_load_explicit(&host_asked, memory_order_relaxed)) {
         pthread_mutex_lock(&host_lock);
         for (vm = host_vms; vm; vm = vm->next) {
@@ -266,6 +275,8 @@ int host_poll(const volatile int *flag)
         }
         pthread_mutex_unlock(&host_lock);
     }
+    if (host_poll_left > 0 && --host_poll_left == 0)
+        *(volatile int *)flag = 1;
     return *flag;
 }
 
