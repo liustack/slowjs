@@ -169,6 +169,8 @@ func TestMemgrind2(t *testing.T) {
 	t.Run("enginePanicCall", testEnginePanicCall)
 	t.Run("ownKeys", TestOwnKeys)
 	t.Run("ownKeysModuleNamespace", TestOwnKeysModuleNamespace)
+	t.Run("memoryUsage", TestMemoryUsage)
+	t.Run("releaseMemory", TestReleaseMemory)
 
 	if err := libc.MemAuditReport(); err != nil {
 		t.Fatal(err)
