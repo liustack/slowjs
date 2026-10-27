@@ -3,15 +3,10 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build !slowjs_cengine
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"testing"
-	"unsafe"
-
-	lib "github.com/liustack/slowjs/lib"
 )
 
 // A Go function that panics: the panic reaches the caller of Eval, page code
@@ -41,8 +36,8 @@ func TestHostPanic(t *testing.T) {
 			if p != "boom" {
 				t.Fatalf("recovered %v, want the Go function's panic", p)
 			}
-			if f := (*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fcurrent_stack_frame; f != 0 {
-				t.Fatalf("the engine still has a stack frame: %#x", f)
+			if engineFramesLeft(m) {
+				t.Fatal("the engine still has a stack frame")
 			}
 			wantNoPendingException(t, m)
 			if seen, err := m.Eval(`seen.join()`, EvalGlobal); err != nil || seen != "" {
