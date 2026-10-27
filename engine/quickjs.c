@@ -15664,8 +15664,10 @@ static int JS_ToUint8ClampFree(JSContext *ctx, int32_t *pres, JSValue val)
     return 0;
 }
 
-static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
-                                            JSValue val, BOOL is_array_ctor)
+/* the array length of val, a number, a boolean or null: -1 with a
+   RangeError if it is not a valid one */
+static int js_number_to_array_length(JSContext *ctx, uint32_t *plen,
+                                     JSValueConst val)
 {
     uint32_t tag, len;
 
@@ -15683,44 +15685,54 @@ static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
         }
         break;
     default:
-        if (JS_TAG_IS_FLOAT64(tag)) {
+        {
             double d;
+            if (!JS_TAG_IS_FLOAT64(tag))
+                abort(); /* the callers give a number */
             d = JS_VALUE_GET_FLOAT64(val);
             if (!(d >= 0 && d <= UINT32_MAX))
                 goto fail;
             len = (uint32_t)d;
             if (len != d)
                 goto fail;
-        } else {
-            uint32_t len1;
-
-            if (is_array_ctor) {
-                val = JS_ToNumberFree(ctx, val);
-                if (JS_IsException(val))
-                    return -1;
-                /* cannot recurse because val is a number */
-                if (JS_ToArrayLengthFree(ctx, &len, val, TRUE))
-                    return -1;
-            } else {
-                /* legacy behavior: must do the conversion twice and compare */
-                if (JS_ToUint32(ctx, &len, val)) {
-                    JS_FreeValue(ctx, val);
-                    return -1;
-                }
-                val = JS_ToNumberFree(ctx, val);
-                if (JS_IsException(val))
-                    return -1;
-                /* cannot recurse because val is a number */
-                if (JS_ToArrayLengthFree(ctx, &len1, val, FALSE))
-                    return -1;
-                if (len1 != len) {
-                fail:
-                    JS_ThrowRangeError(ctx, "invalid array length");
-                    return -1;
-                }
-            }
         }
         break;
+    }
+    *plen = len;
+    return 0;
+ fail:
+    JS_ThrowRangeError(ctx, "invalid array length");
+    return -1;
+}
+
+static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
+                                            JSValue val, BOOL is_array_ctor)
+{
+    uint32_t tag, len, len1;
+
+    tag = JS_VALUE_GET_TAG(val);
+    if (tag == JS_TAG_INT || tag == JS_TAG_BOOL || tag == JS_TAG_NULL ||
+        JS_TAG_IS_FLOAT64(tag))
+        return js_number_to_array_length(ctx, plen, val);
+    if (is_array_ctor) {
+        val = JS_ToNumberFree(ctx, val);
+        if (JS_IsException(val))
+            return -1;
+        return js_number_to_array_length(ctx, plen, val);
+    }
+    /* legacy behavior: must do the conversion twice and compare */
+    if (JS_ToUint32(ctx, &len, val)) {
+        JS_FreeValue(ctx, val);
+        return -1;
+    }
+    val = JS_ToNumberFree(ctx, val);
+    if (JS_IsException(val))
+        return -1;
+    if (js_number_to_array_length(ctx, &len1, val))
+        return -1;
+    if (len1 != len) {
+        JS_ThrowRangeError(ctx, "invalid array length");
+        return -1;
     }
     *plen = len;
     return 0;

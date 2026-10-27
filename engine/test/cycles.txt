@@ -1,2 +1,1 @@
 10 JS_AtomIsNumericIndex JS_AtomIsNumericIndex1 JS_GetPropertyInternal JS_ToPrimitive JS_ToPrimitiveFree JS_ToString JS_ToStringInternal js_linearize_string_rope js_string_to_number string_buffer_concat_value
-1 JS_ToArrayLengthFree
