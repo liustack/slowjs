@@ -25,8 +25,6 @@
 //     and its inner loops choose for themselves. A loop that ticks only at
 //     the ends of its chunks counts in memory, and so does one whose hot
 //     code already needs about every register.
-//   - A function with a dispatch keeps the word in a local from its entry to
-//     its returns, and stores and loads it around every call that may tick.
 //   - Ticks on cycles outside these count in memory.
 //
 // Every retreating edge of a depth-first walk gets a tick, since every cycle
@@ -35,16 +33,21 @@
 // that calls nothing and is not proved short runs in chunks (stripLoops),
 // which makes it short, and the end of each chunk ticks for the chunk.
 // Calls of memcpy, memmove and memset, which have no ticks, go through
-// helpers that do at most LeafChunk bytes at a time (chunkLeafCalls). The
-// dispatch of a computed goto (the interpreter's) counts itself instead: an
-// expired count sends the indirect branch to a poll label at the end of its
-// table, which polls and dispatches again, so the dispatch stays one block
-// that llc copies into the end of every handler.
+// helpers that do at most LeafChunk bytes at a time (chunkLeafCalls).
+//
+// The interpreter counts its bytecode itself: the C marks where it counts
+// (poll_count in engine/cutils.h), at the entry of JS_CallInternal and where
+// pc does not go forward, and the compiler of the C holds the bytecode to a
+// bound of instructions between two of them (check_polls in quickjs.c). Each
+// mark becomes a tick of its weight (takePollMarks), and the edges into the
+// dispatch of a function with an entry mark get none, so that the dispatch
+// stays one short block that llc copies into the end of every handler.
 //
 // checkPolls verifies the result on its own: removing the blocks that tick or
-// poll from each function must leave no cycle, each tick must take from the
-// count as it stands, and each call that may tick and each return must find
-// the count in memory (checkCounts).
+// poll from each function, and the edges into a dispatch that counts its
+// bytecode, must leave no cycle, each mark must come after a tick of its
+// weight, each tick must take from the count as it stands, and each call that
+// may tick and each return must find the count in memory (checkCounts).
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -85,19 +88,22 @@ static cl::opt<bool> PollOn("shadow-poll", cl::init(false),
 static cl::opt<unsigned> PollOffset("shadow-poll-offset", cl::init(0),
                                     cl::desc("offset of the poll counter from the base of the shadow-stack region"));
 static cl::opt<std::string> PollFault("shadow-poll-fault", cl::init(""), cl::Hidden,
-                                      cl::desc("for the tests of checkPolls only: 'cond' gives every tick outside "
-                                               "the dispatch a test that never holds, 'dispatch' leaves the index of "
-                                               "the dispatch as it is, 'callstore' and 'callload' leave out the store "
-                                               "before and the load after each call that may tick in code that keeps "
-                                               "the count in a register, 'exit' the store where a loop that keeps it "
-                                               "in a register is left"));
+                                      cl::desc("for the tests of checkPolls only: 'cond' gives every tick a test "
+                                               "that never holds, 'entry' takes out the entry mark, "
+                                               "'mark' those of the other marks, 'callstore' and 'callload' leave "
+                                               "out the store before and the load after each call that may tick in "
+                                               "code that keeps the count in a register, 'exit' the store where a "
+                                               "loop that keeps it in a register is left"));
 static cl::opt<bool> PollTrace("shadow-poll-trace", cl::init(false), cl::Hidden,
                                cl::desc("print where each loop keeps the count, and why"));
 static cl::opt<bool> PollStats("shadow-poll-stats", cl::init(false), cl::Hidden,
                                cl::desc("print the ticks, locals and syncs of each function"));
 
 static const char *TickMD = "goasm.tick";
-static const char *PollLabelMD = "goasm.poll.dispatch";
+// MarkMD is on the marks of takePollMarks: !{weight, entry}. CountedMD is on
+// the dispatch of a function with an entry mark.
+static const char *MarkMD = "goasm.poll.mark";
+static const char *CountedMD = "goasm.poll.counted";
 
 // checkPollOptions stops on an offset that is not a word inside the region.
 void checkPollOptions(unsigned sizeLog2) {
@@ -105,10 +111,10 @@ void checkPollOptions(unsigned sizeLog2) {
     return;
   if (PollOffset % 8 != 0 || PollOffset + 8 > (1ull << sizeLog2))
     reportFatalUsageError(Twine("-shadow-poll-offset=") + Twine(PollOffset) + " is not a word inside the region");
-  if (PollFault != "" && PollFault != "cond" && PollFault != "dispatch" && PollFault != "callstore" &&
-      PollFault != "callload" && PollFault != "exit")
+  if (PollFault != "" && PollFault != "cond" && PollFault != "entry" && PollFault != "mark" &&
+      PollFault != "callstore" && PollFault != "callload" && PollFault != "exit")
     reportFatalUsageError(Twine("-shadow-poll-fault=") + PollFault.getValue() +
-                          " is not cond, dispatch, callstore, callload or exit");
+                          " is not cond, entry, mark, callstore, callload or exit");
 }
 
 // The one indirect branch of F, when F has exactly one: the dispatch of its
@@ -122,70 +128,71 @@ static IndirectBrInst *dispatchOf(Function &F) {
   return n == 1 ? IB : nullptr;
 }
 
-// prepareDispatchPolls runs before the computed goto tables become offsets
-// and before the shadow pointer is added. Each table gets one more entry, a
-// poll label that calls host_poll and dispatches again from its own copy of
-// the dispatch. A branch from the label back to the dispatch would give the
-// dispatch's phis an incoming value from a block they dominate, and llc then
-// stops copying the dispatch into the end of every handler.
-void prepareDispatchPolls(Module &M) {
-  if (!PollOn)
-    return;
+// A mark of takePollMarks: its weight, and whether it is an entry mark.
+static bool pollMark(const Instruction &I, uint64_t *weight = nullptr, bool *entry = nullptr) {
+  MDNode *N = I.getMetadata(MarkMD);
+  if (!N)
+    return false;
+  if (weight)
+    *weight = mdconst::extract<ConstantInt>(N->getOperand(0))->getZExtValue();
+  if (entry)
+    *entry = mdconst::extract<ConstantInt>(N->getOperand(1))->isOne();
+  return true;
+}
+
+// takePollMarks runs first. The C marks where the interpreter counts its
+// bytecode with calls of goasm_poll_count(n) and, at the entry of
+// JS_CallInternal, goasm_poll_entry(n) (poll_count in engine/cutils.h). Each
+// becomes a mark, a call of llvm.donothing with MarkMD, where insertPolls
+// puts a tick of n. The function with an entry mark must have one indirect
+// branch, its dispatch, which gets CountedMD: the bytecode counts on the
+// cycles through it, so the edges into it need no tick. Without -shadow-poll
+// the calls go.
+void takePollMarks(Module &M) {
   LLVMContext &C = M.getContext();
-  SmallVector<GlobalVariable *> tables;
-  for (GlobalVariable &G : M.globals()) {
-    auto *A = G.hasInitializer() ? dyn_cast<ConstantArray>(G.getInitializer()) : nullptr;
-    if (!A || A->getNumOperands() == 0)
+  Type *I64 = Type::getInt64Ty(C), *I1 = Type::getInt1Ty(C);
+  for (const char *name : {"goasm_poll_count", "goasm_poll_entry"}) {
+    Function *G = M.getFunction(name);
+    if (!G)
       continue;
-    bool labels = true;
-    for (auto &E : A->operands())
-      labels &= isa<BlockAddress>(E);
-    if (labels)
-      tables.push_back(&G);
-  }
-  // host_poll before -shadow-add-sp gives it the shadow pointer.
-  FunctionCallee poll = M.getOrInsertFunction("host_poll", FunctionType::get(Type::getVoidTy(C), {}, false));
-  for (GlobalVariable *G : tables) {
-    auto *A = cast<ConstantArray>(G->getInitializer());
-    Function *F = cast<BlockAddress>(A->getOperand(0))->getFunction();
-    IndirectBrInst *IB = dispatchOf(*F);
-    if (!IB)
-      reportFatalUsageError(Twine("poll: computed goto table of a function without exactly one indirect branch: ") +
-                            F->getName());
-    BasicBlock *D = IB->getParent();
-    BasicBlock *PB = BasicBlock::Create(C, "poll.dispatch", F);
-    IRBuilder<> B(PB);
-    CallInst *call = B.CreateCall(poll, {});
-    call->setMetadata(PollLabelMD, MDNode::get(C, {}));
-    ValueToValueMapTy VM;
-    for (Instruction &I : *D) {
-      if (isa<PHINode>(&I))
-        continue;
-      Instruction *NI = I.clone();
-      RemapInstruction(NI, VM, RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
-      B.Insert(NI);
-      VM[&I] = NI;
-    }
-    std::set<BasicBlock *> succs(succ_begin(D), succ_end(D));
-    for (BasicBlock *S : succs)
-      for (PHINode &Phi : S->phis()) {
-        Value *V = Phi.getIncomingValueForBlock(D);
-        auto it = VM.find(V);
-        Phi.addIncoming(it != VM.end() ? cast<Value>(it->second) : V, PB);
+    bool entry = StringRef(name) == "goasm_poll_entry";
+    for (User *U : make_early_inc_range(G->users())) {
+      auto *CB = dyn_cast<CallInst>(U);
+      auto *W = CB && CB->getCalledFunction() == G && CB->arg_size() == 1 ? dyn_cast<ConstantInt>(CB->getArgOperand(0))
+                                                                            : nullptr;
+      if (!W || W->getSExtValue() < 1)
+        reportFatalUsageError(Twine("poll: ") + name + " used other than in a call with a weight of at least 1");
+      Function *F = CB->getFunction();
+      if (PollOn) {
+        if (entry) {
+          IndirectBrInst *IB = dispatchOf(*F);
+          if (!IB)
+            reportFatalUsageError(Twine("poll: an entry mark in a function without exactly one indirect branch: ") +
+                                  F->getName());
+          IB->setMetadata(CountedMD, MDNode::get(C, {}));
+        }
+        IRBuilder<> B(CB);
+        auto *mark = cast<CallInst>(B.CreateIntrinsic(Intrinsic::donothing, {}));
+        mark->setMetadata(MarkMD, MDNode::get(C, {ConstantAsMetadata::get(ConstantInt::get(I64, W->getZExtValue())),
+                                                  ConstantAsMetadata::get(ConstantInt::get(I1, entry))}));
       }
-    IB->addDestination(PB);
-    SmallVector<Constant *> es;
-    for (auto &E : A->operands())
-      es.push_back(cast<Constant>(E));
-    es.push_back(BlockAddress::get(F, PB));
-    auto *T = ArrayType::get(A->getType()->getElementType(), es.size());
-    auto *G2 = new GlobalVariable(M, T, true, G->getLinkage(), ConstantArray::get(T, es), "");
-    G2->takeName(G);
-    G2->setAlignment(G->getAlign());
-    G->replaceAllUsesWith(G2);
-    G->eraseFromParent();
-    errs() << "POLL-DISPATCH " << F->getName() << " " << es.size() - 1 << "\n";
+      CB->eraseFromParent();
+    }
+    if (G->use_empty())
+      G->eraseFromParent();
   }
+}
+
+// dropPollMarks runs after checkPolls: the marks have done their work.
+void dropPollMarks(Module &M) {
+  for (Function &F : M)
+    for (BasicBlock &B : F)
+      for (Instruction &I : make_early_inc_range(B))
+        if (pollMark(I))
+          I.eraseFromParent();
+  if (Function *D = M.getFunction("llvm.donothing"))
+    if (D->use_empty())
+      D->eraseFromParent();
 }
 
 // LeafChunk is the most a call of a register-entry leaf (memcpy, memmove,
@@ -375,10 +382,10 @@ static bool isPollCall(const Instruction &I) {
 
 // mayTick tells whether a call can tick or poll before it returns, so that a
 // loop keeping the count in a register must store it before the call and
-// load it after: a call through a pointer, a function with a cycle or one
-// that calls such a function, host_poll and host_call (which may enter the
-// engine again). The other host callbacks and the register-entry leaves run
-// no engine code.
+// load it after: a call through a pointer, a function with a cycle or a mark
+// or one that calls such a function, host_poll and host_call (which may
+// enter the engine again). The other host callbacks and the register-entry
+// leaves run no engine code.
 static std::set<Function *> tickers(Module &M, const std::set<std::string> &leaves) {
   std::set<Function *> t;
   std::map<Function *, std::vector<Function *>> callees;
@@ -396,6 +403,8 @@ static std::set<Function *> tickers(Module &M, const std::set<std::string> &leav
     for (BasicBlock &B : F)
       for (Instruction &I : B)
         if (auto *CB = dyn_cast<CallBase>(&I)) {
+          if (pollMark(I))
+            tick = true;
           if (CB->isInlineAsm())
             continue;
           Function *G = CB->getCalledFunction();
@@ -441,8 +450,8 @@ static uint64_t loopSize(const Loop *L) {
 }
 
 // callFree: no call in the loop but intrinsics llc expands in place, and a
-// memory intrinsic only of a small constant length. Its branches are plain
-// ones, so its cycles are the loop's.
+// memory intrinsic only of a small constant length, and no mark. Its
+// branches are plain ones, so its cycles are the loop's.
 static bool callFree(const Loop *L) {
   for (BasicBlock *B : L->blocks()) {
     const Instruction *T = B->getTerminator();
@@ -452,7 +461,7 @@ static bool callFree(const Loop *L) {
       auto *CB = dyn_cast<CallBase>(&I);
       if (!CB)
         continue;
-      if (!isa<IntrinsicInst>(CB))
+      if (!isa<IntrinsicInst>(CB) || pollMark(*CB))
         return false;
       if (auto *MI = dyn_cast<MemIntrinsic>(CB)) {
         auto *N = dyn_cast<ConstantInt>(MI->getLength());
@@ -665,6 +674,7 @@ static constexpr double PollEntry = 3, PollExit = 2, PollSync = 4, PollRegTick =
 static constexpr unsigned PollRegs = 20;
 
 static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree &DT, const std::vector<Edge> &sites,
+                                        const std::vector<BasicBlock *> &marks,
                                         const std::map<BasicBlock *, uint64_t> &chunks,
                                         const std::function<bool(Instruction &)> &mayTick) {
   Triple T(F.getParent()->getTargetTriple());
@@ -713,6 +723,12 @@ static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree
         nticks++;
         chunkOnly &= chunks.count(u) > 0;
       }
+    for (BasicBlock *B : marks)
+      if (L->contains(B)) {
+        ticks += freq(B);
+        nticks++;
+        chunkOnly = false;
+      }
     double reg = PollEntry * entries + PollExit * exits + PollRegTick * ticks + PollSync * calls;
     double mem = PollMemTick * ticks;
     bool keep = nticks > 0 && !chunkOnly && need < PollRegs && reg < mem;
@@ -746,33 +762,32 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
   MDBuilder MDB(C);
   MDNode *tickMD = MDNode::get(C, {});
   std::set<Function *> ticks = tickers(M, leaves);
-  unsigned nticks = 0, nreg = 0, nloops = 0, ndispatch = 0, nsync = 0, nstrip = 0, nbounded = 0;
+  unsigned nticks = 0, nreg = 0, nloops = 0, ncounted = 0, nmarks = 0, nsync = 0, nstrip = 0, nbounded = 0;
   for (Function &F : M) {
     if (F.isDeclaration() || leaves.count(F.getName().str()))
       continue;
-    if (retreatingEdges(F).empty())
+    // The marks of F, and its dispatch when it counts its bytecode.
+    std::vector<Instruction *> marks;
+    BasicBlock *dispatch = nullptr;
+    for (BasicBlock &B : F) {
+      for (Instruction &I : B)
+        if (pollMark(I))
+          marks.push_back(&I);
+      if (B.getTerminator()->getMetadata(CountedMD))
+        dispatch = &B;
+    }
+    if (retreatingEdges(F).empty() && marks.empty())
       continue;
     if (F.arg_size() == 0 || !F.getArg(0)->getType()->isPointerTy())
       reportFatalUsageError(Twine("poll: function without a shadow pointer: ") + F.getName());
     unsigned fticks = nticks, freg = nreg, floops = nloops, fsync = nsync, fstrip = nstrip;
+    ncounted += dispatch != nullptr;
     Argument *sp = F.getArg(0);
     IRBuilder<> E(&*F.getEntryBlock().getFirstInsertionPt());
     auto counterPtr = [&](IRBuilder<> &B) -> Value * {
       Value *base = B.CreateAnd(B.CreatePtrToInt(sp, I64), B.getInt64(~(S - 1)));
       return B.CreateIntToPtr(B.CreateAdd(base, B.getInt64(PollOffset)), P, "poll.counter");
     };
-    // The dispatch is the indirect branch that can go to the poll label
-    // (the label's own copy of it cannot).
-    BasicBlock *dispatch = nullptr, *label = nullptr;
-    for (BasicBlock &D : F)
-      if (isa<IndirectBrInst>(D.getTerminator()))
-        for (BasicBlock *Sx : successors(&D))
-          for (Instruction &I : *Sx)
-            if (I.getMetadata(PollLabelMD)) {
-              if (dispatch)
-                reportFatalUsageError(Twine("poll: two dispatches reach a poll label in ") + F.getName());
-              dispatch = &D, label = Sx;
-            }
     std::map<BasicBlock *, uint64_t> chunks = stripLoops(F, nstrip);
     std::set<Edge> exempt = boundedEdges(F, Triple(M.getTargetTriple()));
     nbounded += exempt.size();
@@ -810,66 +825,48 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
         nsync++;
       }
     };
-    // In a function with a dispatch, the dispatch is on cycles that no
-    // natural loop holds, so the whole function keeps the count in one local,
-    // from its entry to each return.
-    AllocaInst *whole = nullptr;
-    if (dispatch) {
-      whole = E.CreateAlloca(I64, nullptr, "poll.local");
-      allocas.push_back(whole);
-      SmallVector<BasicBlock *> blocks;
-      for (BasicBlock &Bk : F)
-        blocks.push_back(&Bk);
-      syncCalls(blocks, whole);
-      E.CreateStore(E.CreateLoad(I64, counterPtr(E)), whole);
-      for (BasicBlock *Bk : blocks)
-        if (isa<ReturnInst>(Bk->getTerminator())) {
-          IRBuilder<> RB(Bk->getTerminator());
-          RB.CreateStore(RB.CreateLoad(I64, whole), counterPtr(RB));
-        }
-    }
-    // The edges that tick: every retreating edge but those into the dispatch
-    // (it counts itself), out of its poll label, and the back edges of the
-    // loops scalar evolution bounds.
+    // The edges that tick: every retreating edge but those into a dispatch
+    // that counts its bytecode and the back edges of the loops scalar
+    // evolution bounds.
     auto tickEdges = [&]() {
       std::vector<Edge> es;
       for (auto [u, v] : retreatingEdges(F))
-        if (!(v == dispatch || u == label || exempt.count({u, v})))
+        if (!(v == dispatch || exempt.count({u, v})))
           es.push_back({u, v});
       return es;
     };
-    // Elsewhere, each loop chooseLocals picks keeps the count in a local from
-    // where it is entered to where it is left, and stores it back and loads
-    // it again around each call in it that may tick.
-    if (!whole)
-      for (Loop *L : chooseLocals(F, LI, DT, tickEdges(), chunks, mayTick)) {
-        BasicBlock *ph = L->getLoopPreheader();
-        if (!ph)
-          ph = InsertPreheaderForLoop(L, &DT, &LI, nullptr, false);
-        if (!ph)
-          continue;
-        formDedicatedExitBlocks(L, &DT, &LI, nullptr, false);
-        if (!L->hasDedicatedExits())
-          continue;
-        AllocaInst *A = E.CreateAlloca(I64, nullptr, "poll.local");
-        allocas.push_back(A);
-        IRBuilder<> PB(ph->getTerminator());
-        PB.CreateStore(PB.CreateLoad(I64, counterPtr(PB)), A);
-        SmallVector<BasicBlock *> exits;
-        L->getUniqueExitBlocks(exits);
-        if (PollFault != "exit")
-          for (BasicBlock *X : exits) {
-            IRBuilder<> XB(&*X->getFirstInsertionPt());
-            XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
-          }
-        syncCalls(SmallVector<BasicBlock *>(L->blocks()), A);
-        local[L] = A;
-        nloops++;
-      }
+    std::vector<BasicBlock *> markBlocks;
+    for (Instruction *I : marks)
+      markBlocks.push_back(I->getParent());
+    // Each loop chooseLocals picks keeps the count in a local from where it
+    // is entered to where it is left, and stores it back and loads it again
+    // around each call in it that may tick.
+    for (Loop *L : chooseLocals(F, LI, DT, tickEdges(), markBlocks, chunks, mayTick)) {
+      BasicBlock *ph = L->getLoopPreheader();
+      if (!ph)
+        ph = InsertPreheaderForLoop(L, &DT, &LI, nullptr, false);
+      if (!ph)
+        continue;
+      formDedicatedExitBlocks(L, &DT, &LI, nullptr, false);
+      if (!L->hasDedicatedExits())
+        continue;
+      AllocaInst *A = E.CreateAlloca(I64, nullptr, "poll.local");
+      allocas.push_back(A);
+      IRBuilder<> PB(ph->getTerminator());
+      PB.CreateStore(PB.CreateLoad(I64, counterPtr(PB)), A);
+      SmallVector<BasicBlock *> exits;
+      L->getUniqueExitBlocks(exits);
+      if (PollFault != "exit")
+        for (BasicBlock *X : exits) {
+          IRBuilder<> XB(&*X->getFirstInsertionPt());
+          XB.CreateStore(XB.CreateLoad(I64, A), counterPtr(XB));
+        }
+      syncCalls(SmallVector<BasicBlock *>(L->blocks()), A);
+      local[L] = A;
+      nloops++;
+    }
     // The local of an edge: that of the loop with one that holds both ends.
     auto localOf = [&](BasicBlock *u, BasicBlock *v) -> AllocaInst * {
-      if (whole)
-        return whole;
       for (Loop *L = LI.getLoopFor(u); L; L = L->getParentLoop()) {
         auto it = local.find(L);
         if (it != local.end())
@@ -894,35 +891,6 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       if (A)
         B.CreateStore(B.CreateLoad(I64, counterPtr(B)), A);
     };
-    if (dispatch) {
-      // The index into the offsets of the table (relativeGotoTables): an
-      // expired count picks the last entry, the poll label.
-      GetElementPtrInst *idxGEP = nullptr;
-      for (Instruction &I : *dispatch)
-        if (auto *G = dyn_cast<GetElementPtrInst>(&I))
-          if (auto *GV = dyn_cast<GlobalVariable>(G->getPointerOperand()))
-            if (GV->getName().ends_with(".rel") && G->getNumIndices() == 1 &&
-                G->getSourceElementType()->isIntegerTy(32))
-              idxGEP = G;
-      if (!idxGEP)
-        reportFatalUsageError(Twine("poll: no table load in the dispatch of ") + F.getName());
-      auto *GV = cast<GlobalVariable>(idxGEP->getPointerOperand());
-      uint64_t last = cast<ArrayType>(GV->getValueType())->getNumElements() - 1;
-      AllocaInst *A = localOf(dispatch, dispatch);
-      IRBuilder<> B(idxGEP);
-      Value *c1 = tick(B, A, 1);
-      Value *idx = idxGEP->getOperand(1);
-      Value *expired = B.CreateICmpSLT(c1, B.getInt64(1));
-      if (PollFault != "dispatch")
-        idxGEP->setOperand(1, B.CreateSelect(expired, ConstantInt::get(idx->getType(), last), idx));
-      for (Instruction &I : *label)
-        if (I.getMetadata(PollLabelMD)) {
-          IRBuilder<> AB(I.getNextNode());
-          reload(AB, A);
-          break;
-        }
-      ndispatch++;
-    }
     // Where each edge's tick goes: the end of its source when the edge is
     // the only way out of it (or the way out is an indirect branch), else a
     // block of its own on the edge. All are placed before any is inserted.
@@ -936,6 +904,18 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
         std::get<2>(at[it->second]) = std::max(std::get<2>(at[it->second]), weight);
     };
 
+    // A mark ticks where it is. -shadow-poll-fault=entry takes out the
+    // entry mark, and mark leaves the others without a tick.
+    for (Instruction *I : marks) {
+      uint64_t weight;
+      bool entry;
+      pollMark(*I, &weight, &entry);
+      nmarks++;
+      if (entry && PollFault == "entry")
+        I->eraseFromParent();
+      else if (entry || PollFault != "mark")
+        placeTick(I, localOf(I->getParent(), I->getParent()), weight);
+    }
     for (auto [u, v] : tickEdges()) {
       auto ch = chunks.find(u);
       uint64_t weight = ch == chunks.end() ? 1 : ch->second;
@@ -967,12 +947,12 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
           reportFatalUsageError(Twine("poll: a counter left in an alloca in ") + F.getName());
     if (PollStats)
       errs() << "POLLFN " << F.getName() << " ticks " << nticks - fticks << " inreg " << nreg - freg << " localloops "
-             << nloops - floops << " synced " << nsync - fsync << " dispatch " << (dispatch ? 1 : 0) << " chunked "
-             << nstrip - fstrip << " bounded " << exempt.size() << "\n";
+             << nloops - floops << " synced " << nsync - fsync << " marks " << marks.size() << " counted "
+             << (dispatch ? 1 : 0) << " chunked " << nstrip - fstrip << " bounded " << exempt.size() << "\n";
   }
   errs() << "POLL ticks " << nticks << " in registers " << nreg << " loops in registers " << nloops
-         << " synced calls " << nsync << " dispatch " << ndispatch << " chunked loops " << nstrip
-         << " bounded edges " << nbounded << "\n";
+         << " synced calls " << nsync << " marks " << nmarks << " counted dispatches " << ncounted
+         << " chunked loops " << nstrip << " bounded edges " << nbounded << "\n";
 }
 
 // checkCounts holds F to the rule that keeps the count whole while code holds
@@ -1115,56 +1095,44 @@ static bool expiredTest(Value *Cond, Instruction *Tick) {
   return false;
 }
 
-// dispatchPolls tells whether the indirect branch IB goes to a poll label
-// whenever the count Tick leaves has run out. Its address must be the table
-// of offsets (relativeGotoTables) plus the entry it reads at an index that a
-// select on an expired test turns into an entry naming a poll label of IB:
-//
-//   R + sext(load(R + 4 * select(expired, K, index)))
-//   R[K] = trunc(ptrtoint(blockaddress(label)) - ptrtoint(R))
-static bool dispatchPolls(IndirectBrInst *IB, Instruction *Tick) {
-  auto *A = dyn_cast<GetElementPtrInst>(IB->getAddress());
-  auto *R = A ? dyn_cast<GlobalVariable>(A->getPointerOperand()) : nullptr;
-  if (!R || !R->isConstant() || !R->hasInitializer() || A->getNumIndices() != 1 ||
-      !A->getSourceElementType()->isIntegerTy(8))
+// tickBefore tells whether a mark at the start of its block B comes right
+// after a tick of at least weight: one predecessor of B ticks and branches
+// to B or to a block of its own that polls and goes on to B, and B has no
+// other predecessor.
+static bool tickBefore(Instruction *Mark, uint64_t weight) {
+  BasicBlock *B = Mark->getParent();
+  if (&B->front() != Mark)
     return false;
-  auto *X = dyn_cast<SExtInst>(A->getOperand(1));
-  auto *L = X ? dyn_cast<LoadInst>(X->getOperand(0)) : nullptr;
-  auto *G = L ? dyn_cast<GetElementPtrInst>(L->getPointerOperand()) : nullptr;
-  if (!G || G->getPointerOperand() != R || G->getNumIndices() != 1 || !G->getSourceElementType()->isIntegerTy(32))
+  BasicBlock *H = nullptr;
+  for (BasicBlock *P : predecessors(B)) {
+    auto *Br = dyn_cast<BranchInst>(P->getTerminator());
+    if (!Br || !Br->isConditional() || Br->getSuccessor(1) != B)
+      continue;
+    auto *Cmp = dyn_cast<ICmpInst>(Br->getCondition());
+    auto *Tick = Cmp ? dyn_cast<BinaryOperator>(Cmp->getOperand(0)) : nullptr;
+    auto *W = Tick && Tick->getMetadata(TickMD) ? dyn_cast<ConstantInt>(Tick->getOperand(1)) : nullptr;
+    if (W && Tick->getParent() == P && expiredTest(Cmp, Tick) && W->getZExtValue() >= weight)
+      H = P;
+  }
+  if (!H)
     return false;
-  auto *S = dyn_cast<SelectInst>(G->getOperand(1));
-  auto *K = S ? dyn_cast<ConstantInt>(S->getTrueValue()) : nullptr;
-  auto *T = dyn_cast<ConstantArray>(R->getInitializer());
-  if (!K || !T || !expiredTest(S->getCondition(), Tick) || K->getZExtValue() >= T->getNumOperands())
-    return false;
-  auto *Tr = dyn_cast<ConstantExpr>(T->getOperand(K->getZExtValue()));
-  auto *Sub = Tr && Tr->getOpcode() == Instruction::Trunc ? dyn_cast<ConstantExpr>(Tr->getOperand(0)) : nullptr;
-  if (!Sub || Sub->getOpcode() != Instruction::Sub)
-    return false;
-  auto *To = dyn_cast<ConstantExpr>(Sub->getOperand(0)), *From = dyn_cast<ConstantExpr>(Sub->getOperand(1));
-  if (!To || !From || To->getOpcode() != Instruction::PtrToInt || From->getOpcode() != Instruction::PtrToInt ||
-      From->getOperand(0) != R)
-    return false;
-  auto *BA = dyn_cast<BlockAddress>(To->getOperand(0));
-  if (!BA || !is_contained(successors(IB->getParent()), BA->getBasicBlock()))
-    return false;
-  for (Instruction &J : *BA->getBasicBlock())
-    if (isPollCall(J) && J.getMetadata(PollLabelMD))
-      return true;
-  return false;
+  for (BasicBlock *P : predecessors(B))
+    if (P != H && !(P->getSinglePredecessor() == H && any_of(*P, [](Instruction &I) { return isPollCall(I); })))
+      return false;
+  return true;
 }
 
 // checkPolls holds every function to the rule, apart from how the ticks were
 // placed: with the blocks that tick (a decrement tagged goasm.tick) or call
 // host_poll taken out, and the back edges of the loops scalar evolution
 // bounds (boundedEdges, worked out again here), the control flow graph has
-// no cycle left. A tick must take at least 1 from the count, and its block's
+// no cycle left. In a function whose dispatch counts its bytecode
+// (CountedMD), the edges into the dispatch are taken out too: the entry block
+// must tick, and each mark must come right after a tick of its weight
+// (tickBefore). A tick must take at least 1 from the count, and its block's
 // way out must poll whenever the count it leaves has run out: a conditional
 // branch on a test of the tick that holds then (expiredTest), whose taken
-// side calls host_poll, or, in a dispatch, an indirect branch whose index
-// turns to the entry of the poll label then (dispatchPolls). Each function
-// is held to checkCounts first.
+// side calls host_poll. Each function is held to checkCounts first.
 void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog2) {
   if (!PollOn)
     return;
@@ -1174,13 +1142,20 @@ void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog
       continue;
     checkCounts(F, ticks, ~((1ull << sizeLog2) - 1));
     std::set<Edge> bounded = boundedEdges(F, Triple(M.getTargetTriple()));
-    std::set<BasicBlock *> cut;
+    std::set<BasicBlock *> cut, counted;
+    bool entryTicks = false;
     for (BasicBlock &B : F)
       for (Instruction &I : B) {
+        uint64_t weight;
+        if (pollMark(I, &weight) && !tickBefore(&I, weight))
+          reportFatalUsageError(Twine("poll check: a mark without a tick of its weight before it in ") + F.getName());
         if (isPollCall(I))
           cut.insert(&B);
+        if (I.isTerminator() && I.getMetadata(CountedMD))
+          counted.insert(&B);
         if (!I.getMetadata(TickMD))
           continue;
+        entryTicks |= B.isEntryBlock();
         cut.insert(&B);
         auto *Sub = dyn_cast<BinaryOperator>(&I);
         auto *W = Sub && Sub->getOpcode() == Instruction::Sub ? dyn_cast<ConstantInt>(Sub->getOperand(1)) : nullptr;
@@ -1188,13 +1163,6 @@ void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog
           reportFatalUsageError(Twine("poll check: a tick that does not take at least 1 from the count in ") +
                                 F.getName());
         Instruction *T = B.getTerminator();
-        if (auto *IB = dyn_cast<IndirectBrInst>(T)) {
-          if (!dispatchPolls(IB, &I))
-            reportFatalUsageError(
-                Twine("poll check: a dispatch whose index does not turn to the poll label when the count runs out in ") +
-                F.getName());
-          continue;
-        }
         bool ok = false;
         if (auto *Br = dyn_cast<BranchInst>(T))
           if (Br->isConditional() && expiredTest(Br->getCondition(), &I))
@@ -1204,6 +1172,13 @@ void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog
           reportFatalUsageError(Twine("poll check: a tick whose branch does not poll when the count runs out in ") +
                                 F.getName());
       }
+    if (!counted.empty() && !entryTicks)
+      reportFatalUsageError(Twine("poll check: a dispatch that counts its bytecode in a function that does not tick "
+                                  "at its entry: ") +
+                            F.getName());
+    // The edges of the cycle search: not those of the bounded loops, nor
+    // those into a dispatch that counts its bytecode.
+    auto follows = [&](BasicBlock *u, BasicBlock *v) { return !bounded.count({u, v}) && !counted.count(v); };
     for (scc_iterator<Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
       if (!I.hasCycle())
         continue;
@@ -1220,7 +1195,7 @@ void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog
         indeg[B];
       for (BasicBlock *B : in)
         for (BasicBlock *Sx : successors(B))
-          if (in.count(Sx) && !bounded.count({B, Sx}))
+          if (in.count(Sx) && follows(B, Sx))
             indeg[Sx]++;
       std::vector<BasicBlock *> q;
       for (auto &[B, d] : indeg)
@@ -1232,7 +1207,7 @@ void checkPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLog
         q.pop_back();
         done++;
         for (BasicBlock *Sx : successors(B))
-          if (in.count(Sx) && !bounded.count({B, Sx}) && --indeg[Sx] == 0)
+          if (in.count(Sx) && follows(B, Sx) && --indeg[Sx] == 0)
             q.push_back(Sx);
       }
       if (done != in.size()) {

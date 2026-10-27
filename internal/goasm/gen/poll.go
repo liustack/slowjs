@@ -18,24 +18,20 @@ import (
 const PollCounterOffset = 384
 
 // PollLLCFlags are the llc options an engine with polls is built with, so
-// that llc copies the interpreter's dispatch into the end of every handler,
-// without which the interpreter is much slower. Before register allocation
-// llc's tail duplication leaves alone a block with more than 16 predecessors
-// and more than 16 successors when it or one of its successors has a phi,
-// and the dispatch does, with polls or without. An engine without polls gets
-// its copies after allocation instead, where llc copies a computed goto of
-// up to 10 instructions, but the tick makes the dispatch 15 instructions
-// there. These options raise the two 16s, so that the copies are made before
-// allocation. CheckDispatchCopies holds the output to it.
+// that llc copies the interpreter's dispatch into the end of every handler
+// before register allocation, without which the interpreter is much slower.
+// There llc's tail duplication leaves alone a block with more than 16
+// predecessors and more than 16 successors when it or one of its successors
+// has a phi, and the dispatch does, with polls or without. These options
+// raise the two 16s. CheckDispatchCopies holds the output to it.
 var PollLLCFlags = []string{"-tail-dup-pred-size=1000", "-tail-dup-succ-size=1000"}
 
 // DispatchCopies is the least number of indirect jumps each function with a
 // computed goto table must have in llc's output: one at the end of each
 // handler, where llc copied the dispatch. A function with a table and no
 // entry here fails, so that a new one gets a number of its own.
-// JS_CallInternal has 245 (204 in an engine without polls, which llc builds
-// without these options), and its least number is about a tenth below.
-var DispatchCopies = map[string]int{"JS_CallInternal": 220}
+// JS_CallInternal has 298, and its least number is about a tenth below.
+var DispatchCopies = map[string]int{"JS_CallInternal": 270}
 
 // CheckPollOffset checks -poll-offset: a word inside the region.
 func CheckPollOffset(offset, sizeLog2 int) error {
