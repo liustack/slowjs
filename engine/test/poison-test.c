@@ -280,22 +280,31 @@ static int uaf_child(const char *what)
     _exit(0); /* no leak report: the runtime is not freed */
 }
 
+/* What a child run of `poison-test uaf WHAT` did */
+typedef struct {
+    int ran;          /* it ran, ended and its error output could be read whole */
+    int exited_0;     /* it exited normally with status 0 */
+    int use_after_poison; /* AddressSanitizer reported a use after poison */
+    int any_report;   /* AddressSanitizer reported anything */
+} UafRun;
+
 /* Runs this program again as `poison-test uaf WHAT` with its error output in a
-   file, and tells whether AddressSanitizer reported a use after poison. */
-static int uaf_reported(const char *self, const char *what)
+   file, and reads that output. */
+static UafRun uaf_run(const char *self, const char *what)
 {
     char path[] = "/tmp/poison-test-XXXXXX";
     char *argv[4];
     posix_spawn_file_actions_t fa;
     pid_t pid;
-    int fd, status = 0, reported = 0, spawned;
-    char buf[8192];
-    ssize_t n;
+    int fd, status = 0, spawned, read_ok = 0;
+    static char buf[1 << 16];
+    size_t len = 0;
+    UafRun r = { 0, 0, 0, 0 };
 
     fd = mkstemp(path);
     CHECK(fd >= 0, "mkstemp");
     if (fd < 0)
-        return -1;
+        return r;
     close(fd);
     argv[0] = (char *)self;
     argv[1] = (char *)"uaf";
@@ -306,33 +315,47 @@ static int uaf_reported(const char *self, const char *what)
     spawned = posix_spawn(&pid, self, &fa, NULL, argv, environ);
     posix_spawn_file_actions_destroy(&fa);
     CHECK(spawned == 0, "cannot run %s", self);
-    if (spawned == 0) {
-        waitpid(pid, &status, 0);
+    if (spawned == 0 && waitpid(pid, &status, 0) == pid) {
         fd = open(path, O_RDONLY);
-        n = fd >= 0 ? read(fd, buf, sizeof buf - 1) : 0;
-        if (n < 0)
-            n = 0;
-        buf[n] = 0;
-        if (fd >= 0)
+        if (fd >= 0) {
+            ssize_t n;
+
+            while ((n = read(fd, buf + len, sizeof buf - 1 - len)) > 0)
+                len += (size_t)n;
+            read_ok = n == 0;
             close(fd);
-        reported = strstr(buf, "AddressSanitizer: use-after-poison") != NULL;
+        }
+        buf[len] = 0;
+        r.ran = read_ok;
+        r.exited_0 = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+        r.use_after_poison = strstr(buf, "AddressSanitizer: use-after-poison") != NULL;
+        r.any_report = strstr(buf, "AddressSanitizer") != NULL;
+        CHECK(read_ok, "uaf %s: the error output could not be read whole", what);
         CHECK(!(WIFEXITED(status) && (WEXITSTATUS(status) == 2 || WEXITSTATUS(status) == 3)),
               "uaf %s: the child could not set up the case (status %d)", what, WEXITSTATUS(status));
     }
     unlink(path);
-    return reported;
+    return r;
 }
 
+/* A use after free must be reported as one. A correct use must end the child
+   with status 0, an error output read whole, and no report of any kind: a
+   crash or another report is not a pass. */
 static void test_uaf(const char *self)
 {
     static const char *const caught[] = { "read-middle", "read-link", "write-link", "write-end" };
     static const char *const quiet[] = { "live", "taken-again" };
     size_t i;
 
-    for (i = 0; i < sizeof caught / sizeof *caught; i++)
-        CHECK(uaf_reported(self, caught[i]) == 1, "a use after free of a block in the cache of large blocks (%s) was not reported", caught[i]);
-    for (i = 0; i < sizeof quiet / sizeof *quiet; i++)
-        CHECK(uaf_reported(self, quiet[i]) == 0, "a correct use of a large block (%s) was reported", quiet[i]);
+    for (i = 0; i < sizeof caught / sizeof *caught; i++) {
+        UafRun r = uaf_run(self, caught[i]);
+        CHECK(r.ran && r.use_after_poison, "a use after free of a block in the cache of large blocks (%s) was not reported", caught[i]);
+    }
+    for (i = 0; i < sizeof quiet / sizeof *quiet; i++) {
+        UafRun r = uaf_run(self, quiet[i]);
+        CHECK(r.ran && r.exited_0 && !r.any_report, "a correct use of a large block (%s) did not end cleanly (ran %d, status 0 %d, report %d)",
+              quiet[i], r.ran, r.exited_0, r.any_report);
+    }
 }
 
 static void test_large(JSRuntime *rt)
