@@ -158,6 +158,10 @@ static void test_tocstring_oom(void)
         for (i = 0; i < 256; i++)
             memcpy(buf + 2 * i + (k ? i : 0), kinds[k], k ? 3 : 2);
         len = k ? 256 * 3 : 256 * 2;
+        /* the blocks in the caches are blocks in use as far as the heap
+           counts them, and a request that fails gives them back: count the
+           blocks with the caches empty */
+        JS_SetFrontCache(v.rt, 256);
         JS_ComputeMemoryUsage(v.rt, &u);
         before = u.malloc_count;
         str = JS_NewStringLen(v.ctx, buf, len);
@@ -171,6 +175,7 @@ static void test_tocstring_oom(void)
         unlimit(&v);
         free(exception_text(v.ctx));
         JS_FreeValue(v.ctx, str);
+        JS_SetFrontCache(v.rt, 256);
         JS_ComputeMemoryUsage(v.rt, &u);
         CHECK(u.malloc_count == before, "%s: string not freed after a failed JS_ToCStringLen2: %lld allocations before, %lld after",
               k ? "wide" : "latin1", (long long)before, (long long)u.malloc_count);

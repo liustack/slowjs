@@ -88,6 +88,8 @@ typedef struct HostVM {
 static HostVM vms[MAX_VM];
 /* dedicated chunks the heaps of this run gave back: a run that makes none tested nothing of them */
 static long total_releases, total_remaps;
+/* requests the cache of large blocks served in the runs on the runtime, so that a run can tell it exercised the cache */
+static long total_large_hits;
 
 /* How the fake host remaps: with mremap, which moves a chunk only when it must
    (linux), or by mapping a new chunk, copying and unmapping the old one, which
@@ -856,6 +858,21 @@ typedef struct RtModel {
     size_t large_hdr; /* what a large block costs on top of its usable size and the 8 byte word of the heap */
 } RtModel;
 
+/* How many freed blocks the two caches hold. A request that fails at the heap
+   gives all of them back, and so do a collection, a release and a change of the
+   caches. */
+static size_t rt_cached(JSRuntime *rt)
+{
+    return JS_FrontCacheBlocks(rt) + JS_LargeCacheBlocks(rt);
+}
+
+/* What a request of sz bytes asks of the heap: a large block of 505 to 4096
+   bytes is rounded up to a multiple of 64 while the cache is on. */
+static size_t rt_large_request(const RtModel *m, size_t sz)
+{
+    return m->front && sz >= LARGE_FROM && sz <= 4096 ? (sz + 63) / 64 * 64 : sz;
+}
+
 static size_t rt_footprint(JSRuntime *rt)
 {
     JSMemoryUsage u;
@@ -880,6 +897,7 @@ static void rt_check(RtModel *m)
     for (int i = 0; i + 1 < m->nspans; i++)
         CHECK(m->spans[i].hi <= m->spans[i + 1].lo, "two blocks overlap");
     CHECK(JS_FrontCacheBlocks(m->rt) <= (size_t)m->front * 32, "the front cache holds more than %d blocks a list", m->front);
+    CHECK(m->front || JS_LargeCacheBlocks(m->rt) == 0, "the large cache holds blocks while the caches are off");
 }
 
 /* Why a request the runtime refused may be refused, from the state after the
@@ -892,7 +910,7 @@ static void rt_check(RtModel *m)
    request fails, so count is the one after the call. */
 static int rt_refusal_explained(RtModel *m, size_t sz, size_t count, long refused, int remapped)
 {
-    size_t request = sz < LARGE_FROM ? ARENA_SIZE : sz + m->large_hdr;
+    size_t request = sz < LARGE_FROM ? ARENA_SIZE : rt_large_request(m, sz) + m->large_hdr;
 
     if (sz > JS_HEAP_MAX_REQUEST - m->large_hdr || vms[m->vm].refused != refused)
         return 1;
@@ -910,18 +928,19 @@ static int rt_reaches_heap(const RtModel *m, size_t sz)
 }
 
 /* Whether the memory limit alone decides a request for a large block: the
-   front cache is empty (nothing is given back and tried again), no budget,
+   caches are empty (nothing is served from them, nothing is given back and
+   tried again), no budget,
    no refusal of the host (of a chunk or of a remap) is waiting. Then the rule of upstream gives the
    verdict to the byte. */
 static int rt_limit_alone(RtModel *m)
 {
-    return JS_FrontCacheBlocks(m->rt) == 0 && !m->fp_limit && vms[m->vm].refuse_at <= vms[m->vm].grows &&
+    return rt_cached(m->rt) == 0 && !m->fp_limit && vms[m->vm].refuse_at <= vms[m->vm].grows &&
         vms[m->vm].refuse_remap_at <= vms[m->vm].remaps;
 }
 
 static int rt_alloc(RtModel *m, size_t sz)
 {
-    size_t count = JS_GetMemorySize(m->rt), cached = JS_FrontCacheBlocks(m->rt);
+    size_t count = JS_GetMemorySize(m->rt), cached = rt_cached(m->rt), large_cached = JS_LargeCacheBlocks(m->rt);
     int alone = rt_limit_alone(m) && sz >= LARGE_FROM && sz <= JS_HEAP_MAX_REQUEST - m->large_hdr;
     long refused = vms[m->vm].refused;
     uint8_t *p = js_malloc_rt(m->rt, sz);
@@ -929,7 +948,7 @@ static int rt_alloc(RtModel *m, size_t sz)
 
     if (alone) {
         /* count + request > limit, request = the block and its header */
-        int over = m->limit != (size_t)-1 && (unsigned __int128)count + sz + m->large_hdr > m->limit;
+        int over = m->limit != (size_t)-1 && (unsigned __int128)count + rt_large_request(m, sz) + m->large_hdr > m->limit;
         CHECK((p == NULL) == (over != 0), "js_malloc_rt(%zu) %s with count %zu and limit %zu", sz, p ? "passed" : "failed", count, m->limit);
     }
     if (!p) {
@@ -940,11 +959,13 @@ static int rt_alloc(RtModel *m, size_t sz)
             CHECK(JS_GetMemorySize(m->rt) == count, "a refused large block changed the count");
         /* the heap failed it, the cache was given back and it was tried again */
         if (cached && rt_reaches_heap(m, sz))
-            CHECK(JS_FrontCacheBlocks(m->rt) == 0, "js_malloc_rt(%zu) failed and left %zu blocks in the front cache", sz, JS_FrontCacheBlocks(m->rt));
+            CHECK(rt_cached(m->rt) == 0, "js_malloc_rt(%zu) failed and left %zu blocks in the caches", sz, rt_cached(m->rt));
         return 0;
     }
     CHECK(sz <= JS_HEAP_MAX_REQUEST - 8, "js_malloc_rt(%zu) succeeded", sz);
     CHECK((uintptr_t)p % 8 == 0, "block not aligned");
+    CHECK(JS_LargeCacheBlocks(m->rt) <= large_cached, "js_malloc_rt(%zu) put a block in the large cache", sz);
+    total_large_hits += JS_LargeCacheBlocks(m->rt) < large_cached;
     b = &m->live[m->n++];
     b->p = p;
     b->usable = js_malloc_usable_size_rt(m->rt, p);
@@ -977,7 +998,7 @@ static void rt_free(RtModel *m, int i)
 static void rt_realloc(RtModel *m, int i, size_t sz)
 {
     Block *b = &m->live[i];
-    size_t old = b->usable, count = JS_GetMemorySize(m->rt), cached = JS_FrontCacheBlocks(m->rt);
+    size_t old = b->usable, count = JS_GetMemorySize(m->rt), cached = rt_cached(m->rt);
     uint32_t old_seed = b->seed;
     long refused = vms[m->vm].refused;
     /* a large block resized to a large size or a small one stays one block of
@@ -1010,7 +1031,7 @@ static void rt_realloc(RtModel *m, int i, size_t sz)
             CHECK(JS_GetMemorySize(m->rt) == count, "a refused resize changed the count");
         /* a block that fits its slot is not a request to the heap, and a large block is one at any size */
         if (cached && rt_reaches_heap(m, sz) && (b->large || sz > old))
-            CHECK(JS_FrontCacheBlocks(m->rt) == 0, "js_realloc_rt(%zu) failed and left %zu blocks in the front cache", sz, JS_FrontCacheBlocks(m->rt));
+            CHECK(rt_cached(m->rt) == 0, "js_realloc_rt(%zu) failed and left %zu blocks in the caches", sz, rt_cached(m->rt));
         return;
     }
     CHECK(sz <= JS_HEAP_MAX_REQUEST - 8, "js_realloc_rt(%zu) succeeded", sz);
@@ -1043,14 +1064,14 @@ static JSMemRange rt_range(void *rt) { return JS_ReleaseNextRange(rt); }
 static void rt_release(RtModel *m, size_t keep)
 {
     Releaser rl = { m->rt, rt_start, rt_chunk, rt_range };
-    size_t size, cached = JS_FrontCacheBlocks(m->rt);
+    size_t size, cached = rt_cached(m->rt);
     ReleaseResult r;
 
-    /* a release gives the front cache back first, which can change MemorySize
-       only by what the cache held: the rest of it must not change */
+    /* a release gives the caches back first, which can change MemorySize
+       only by what they held: the rest of it must not change */
     size = JS_GetMemorySize(m->rt);
     r = host_release(m->vm, &rl, keep);
-    CHECK(JS_FrontCacheBlocks(m->rt) == 0, "the front cache holds %zu blocks after a release", JS_FrontCacheBlocks(m->rt));
+    CHECK(rt_cached(m->rt) == 0, "the caches hold %zu blocks after a release", rt_cached(m->rt));
     CHECK(JS_GetMemorySize(m->rt) <= size && (cached || JS_GetMemorySize(m->rt) == size), "a release changed MemorySize from %zu to %zu with %zu blocks cached",
           size, JS_GetMemorySize(m->rt), cached);
     rt_check(m);
@@ -1059,17 +1080,17 @@ static void rt_release(RtModel *m, size_t keep)
     (void)r;
 }
 
-/* A collection of the objects gives the front cache back and takes nothing
-   else. The runtime of this test holds no objects, so it is the cache alone. */
+/* A collection of the objects gives the caches back and takes nothing
+   else. The runtime of this test holds no objects, so it is the caches alone. */
 static void rt_gc(RtModel *m, int young)
 {
-    size_t count = JS_GetMemorySize(m->rt), cached = JS_FrontCacheBlocks(m->rt);
+    size_t count = JS_GetMemorySize(m->rt), cached = rt_cached(m->rt);
 
     if (young)
         JS_RunYoungGC(m->rt);
     else
         JS_RunGC(m->rt);
-    CHECK(JS_FrontCacheBlocks(m->rt) == 0, "the front cache holds %zu blocks after %s", JS_FrontCacheBlocks(m->rt), young ? "JS_RunYoungGC" : "JS_RunGC");
+    CHECK(rt_cached(m->rt) == 0, "the caches hold %zu blocks after %s", rt_cached(m->rt), young ? "JS_RunYoungGC" : "JS_RunGC");
     CHECK(JS_GetMemorySize(m->rt) <= count && (cached || JS_GetMemorySize(m->rt) == count), "%s changed the count from %zu to %zu with %zu blocks cached",
           young ? "JS_RunYoungGC" : "JS_RunGC", count, JS_GetMemorySize(m->rt), cached);
 }
@@ -1081,7 +1102,7 @@ static void rt_step(RtModel *m, Src *r)
     if (op < 40 || m->n == 0) {
         size_t sz = pick_size(r, 1);
         /* the front cache and the arenas are what this level is about: small sizes most of the time */
-        if (src_below(r, 3)) sz = 1 + src_below(r, 520);
+        if (src_below(r, 3)) sz = src_below(r, 2) ? 1 + src_below(r, 520) : 505 + src_below(r, 3800);
         if (m->n < MAX_LIVE && (m->bytes < ((size_t)96 << 20) || sz > JS_HEAP_MAX_REQUEST))
             rt_alloc(m, sz);
     } else if (op < 78) {
@@ -1089,7 +1110,7 @@ static void rt_step(RtModel *m, Src *r)
     } else if (op < 92) {
         size_t sz = pick_size(r, 1);
         int i = (int)src_below(r, m->n), big = src_below(r, 6) == 0 ? biggest_block(m->live, m->n) : -1;
-        if (src_below(r, 2)) sz = 1 + src_below(r, 600);
+        if (src_below(r, 2)) sz = src_below(r, 2) ? 1 + src_below(r, 600) : 505 + src_below(r, 3800);
         if (big >= 0) {
             i = big;
             sz = m->live[big].usable + 1 + src_below(r, m->live[big].usable);
@@ -1104,7 +1125,7 @@ static void rt_step(RtModel *m, Src *r)
         m->front = src_below(r, 4) == 0 ? 0 : (int)src_below(r, 300);
         if (m->front > 256) m->front = 256;
         JS_SetFrontCache(m->rt, m->front);
-        CHECK(JS_FrontCacheBlocks(m->rt) == 0, "JS_SetFrontCache left blocks in the cache");
+        CHECK(rt_cached(m->rt) == 0, "JS_SetFrontCache left blocks in the caches");
     } else if (op < 95) {
         rt_release(m, src_below(r, 2) ? 0 : (size_t)src_below(r, (size_t)1 << 20));
     } else if (op < 97) {
@@ -2682,6 +2703,296 @@ static void scenario_runtime(void)
     ok("runtime: front cache, retry after a failure, zero size block, huge sizes, leak count");
 }
 
+/* ---- the cache of freed large blocks ----
+
+   A freed block of 505 to 4096 bytes waits in the list of its class (one class
+   per 64 bytes) for the next request of that class. It stays a block in use as
+   far as the heap goes: it counts in MemorySize and for the limit, and
+   heap_check and JS_ComputeMemoryUsage count it. It is given back to the heap
+   when the cache is turned off, by a collection, by a release, when a request
+   fails at the heap, and when the runtime ends. The cache keeps at most
+   JS_LargeCacheLimits blocks of a class and bytes in all. */
+
+static size_t lc_cost(JSRuntime *rt, void *p, size_t hdr)
+{
+    /* what a large block adds to the count: its user size, its header and the
+       8 byte word of the heap */
+    return js_malloc_usable_size_rt(rt, p) + hdr + 8;
+}
+
+static void lc_release_all(uint32_t vm, JSRuntime *rt)
+{
+    Releaser rl = { rt, rt_start, rt_chunk, rt_range };
+
+    host_release(vm, &rl, 0);
+}
+
+static void scenario_large_cache(void)
+{
+    uint32_t vm = host_open();
+    JSRuntime *rt = JS_NewRuntime(vm, 1);
+    JSMemoryUsage u0, u1;
+    size_t per_class, cap, count0, hdr, cost, n;
+    uint8_t *p, *q, *live[600];
+    int i, k;
+
+    CHECK(rt, "JS_NewRuntime");
+    JS_LargeCacheLimits(&per_class, &cap);
+    CHECK(per_class == 8 && cap == (size_t)256 << 10, "the limits are %zu blocks a class and %zu bytes", per_class, cap);
+
+    /* what a large block costs on top of its user size, from the cache off */
+    JS_SetFrontCache(rt, 0);
+    count0 = JS_GetMemorySize(rt);
+    p = js_malloc_rt(rt, 1000);
+    hdr = JS_GetMemorySize(rt) - count0 - js_malloc_usable_size_rt(rt, p) - 8;
+    CHECK(hdr >= 8 && hdr <= 32, "header of a large block %zu", hdr);
+    js_free_rt(rt, p);
+    CHECK(JS_GetMemorySize(rt) == count0 && JS_LargeCacheBlocks(rt) == 0, "with the cache off a freed large block is not kept");
+    JS_SetFrontCache(rt, 256);
+    CHECK(!JS_CheckMemory(rt), "check at the start");
+
+    /* a freed block waits, counts, and is the next one asked for. A request is
+       rounded up to its class, so the block holds the whole class */
+    count0 = JS_GetMemorySize(rt);
+    JS_ComputeMemoryUsage(rt, &u0);
+    p = js_malloc_rt(rt, 1000);
+    cost = lc_cost(rt, p, hdr);
+    CHECK(js_malloc_usable_size_rt(rt, p) >= 1024, "a request of 1000 is rounded up to 1024, got %zu", js_malloc_usable_size_rt(rt, p));
+    CHECK(JS_GetMemorySize(rt) == count0 + cost, "a large block costs %zu", JS_GetMemorySize(rt) - count0);
+    js_free_rt(rt, p);
+    CHECK(JS_LargeCacheBlocks(rt) == 1, "a freed large block is not in the cache");
+    CHECK(JS_LargeCacheBytes(rt) == cost - 8, "the cache holds %zu bytes, a block is %zu", JS_LargeCacheBytes(rt), cost - 8);
+    CHECK(JS_GetMemorySize(rt) == count0 + cost, "a cached block must keep counting: %zu, was %zu", JS_GetMemorySize(rt), count0 + cost);
+    JS_ComputeMemoryUsage(rt, &u1);
+    CHECK(u1.malloc_count == u0.malloc_count + 1 && (size_t)u1.malloc_size == count0 + cost, "JS_ComputeMemoryUsage does not count the cached block as a block in use");
+    CHECK(!JS_CheckMemory(rt), "check with one cached block (heap_check counts it as in use)");
+    q = js_malloc_rt(rt, 1000);
+    CHECK(q == p, "the request did not get the cached block");
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_LargeCacheBytes(rt) == 0, "the cache is not empty after its block was taken");
+    CHECK(JS_GetMemorySize(rt) == count0 + cost, "taking a block from the cache changed the count");
+    js_free_rt(rt, q);
+
+    /* one class is 64 bytes: 1001 to 1024 share the block, 1025 does not */
+    CHECK(js_malloc_rt(rt, 1024) == p, "1024 is in the class of 1000");
+    js_free_rt(rt, p);
+    q = js_malloc_rt(rt, 1025);
+    CHECK(q != p && JS_LargeCacheBlocks(rt) == 1, "1025 is in the next class");
+    js_free_rt(rt, q);
+    CHECK(JS_LargeCacheBlocks(rt) == 2, "two classes");
+    CHECK(js_malloc_rt(rt, 1025) == q && js_malloc_rt(rt, 1001) == p && JS_LargeCacheBlocks(rt) == 0, "each class gives its own block");
+    js_free_rt(rt, p);
+    js_free_rt(rt, q);
+    JS_SetFrontCache(rt, 256);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "JS_SetFrontCache gives the cache back");
+
+    /* the smallest and the largest class: 505 to 512 and 4033 to 4096 */
+    p = js_malloc_rt(rt, 505);
+    q = js_malloc_rt(rt, 4096);
+    CHECK(js_malloc_usable_size_rt(rt, p) >= 512 && js_malloc_usable_size_rt(rt, q) >= 4096, "classes at the ends");
+    js_free_rt(rt, p);
+    js_free_rt(rt, q);
+    CHECK(JS_LargeCacheBlocks(rt) == 2, "the ends of the range are cached");
+    CHECK(js_malloc_rt(rt, 512) == p && js_malloc_rt(rt, 4033) == q, "the ends of the range are served from the cache");
+    js_free_rt(rt, p);
+    js_free_rt(rt, q);
+    /* a block of 5000 bytes is out of the range: it goes to the heap at once */
+    JS_SetFrontCache(rt, 256);
+    count0 = JS_GetMemorySize(rt);
+    p = js_malloc_rt(rt, 5000);
+    js_free_rt(rt, p);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "a block over 4159 bytes is not cached");
+
+    /* a class keeps at most per_class blocks, the rest go to the heap */
+    for (i = 0; i < 12; i++)
+        live[i] = js_malloc_rt(rt, 1000);
+    cost = lc_cost(rt, live[0], hdr);
+    for (i = 0; i < 12; i++)
+        js_free_rt(rt, live[i]);
+    CHECK(JS_LargeCacheBlocks(rt) == per_class, "a class holds %zu blocks, not %zu", JS_LargeCacheBlocks(rt), per_class);
+    CHECK(JS_GetMemorySize(rt) == count0 + per_class * cost, "the blocks that were not cached still count: %zu, want %zu", JS_GetMemorySize(rt), count0 + per_class * cost);
+    CHECK(JS_LargeCacheBytes(rt) == per_class * (cost - 8), "bytes of a full class");
+    CHECK(!JS_CheckMemory(rt), "check with a full class");
+    JS_SetFrontCache(rt, 256);
+    CHECK(JS_GetMemorySize(rt) == count0, "count after the cache was given back");
+
+    /* the whole cache keeps at most cap bytes, however many classes: every
+       class is offered per_class blocks, which is more than cap */
+    n = 0;
+    for (k = 0; k < 57; k++) {
+        size_t sz = 505 + (size_t)k * 64;
+
+        for (i = 0; i < (int)per_class; i++) {
+            live[n] = js_malloc_rt(rt, sz > 4096 ? 4096 : sz);
+            n++;
+        }
+    }
+    {
+        size_t offered = 0;
+
+        for (i = 0; i < (int)n; i++)
+            offered += lc_cost(rt, live[i], hdr) - 8;
+        CHECK(offered > cap, "the test offers %zu bytes to a cache of %zu", offered, cap);
+    }
+    for (i = 0; i < (int)n; i++)
+        js_free_rt(rt, live[i]);
+    CHECK(JS_LargeCacheBytes(rt) <= cap, "the cache holds %zu bytes, past its %zu", JS_LargeCacheBytes(rt), cap);
+    /* it is full: the biggest block would not fit (a block is at most 4096 bytes and a header) */
+    CHECK(cap - JS_LargeCacheBytes(rt) < 4096 + 64, "the cache holds %zu bytes of %zu, and it refused blocks that fit", JS_LargeCacheBytes(rt), cap);
+    CHECK(JS_LargeCacheBlocks(rt) < n, "the cache refused no block");
+    {
+        size_t bytes = JS_LargeCacheBytes(rt), blocks = JS_LargeCacheBlocks(rt);
+
+        CHECK(JS_GetMemorySize(rt) == count0 + bytes + 8 * blocks, "count %zu with %zu bytes in %zu cached blocks", JS_GetMemorySize(rt), bytes, blocks);
+    }
+    CHECK(!JS_CheckMemory(rt), "check with a full cache");
+    /* a block taken from it lowers the bytes by its size */
+    {
+        size_t bytes = JS_LargeCacheBytes(rt);
+
+        p = js_malloc_rt(rt, 4096);
+        q = js_malloc_rt(rt, 505);
+        CHECK(JS_LargeCacheBytes(rt) < bytes, "taking blocks did not lower the bytes");
+        js_free_rt(rt, p);
+        js_free_rt(rt, q);
+    }
+    JS_SetFrontCache(rt, 0);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_LargeCacheBytes(rt) == 0 && JS_GetMemorySize(rt) == count0, "turning the cache off did not give it all back");
+    JS_SetFrontCache(rt, 256);
+
+    /* a collection and a release give the cache back */
+    for (i = 0; i < 5; i++)
+        live[i] = js_malloc_rt(rt, 700 + (size_t)i * 70);
+    for (i = 0; i < 5; i++)
+        js_free_rt(rt, live[i]);
+    CHECK(JS_LargeCacheBlocks(rt) == 5, "five cached");
+    JS_RunYoungGC(rt);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "JS_RunYoungGC did not give the cache back");
+    for (i = 0; i < 5; i++)
+        live[i] = js_malloc_rt(rt, 700 + (size_t)i * 70);
+    for (i = 0; i < 5; i++)
+        js_free_rt(rt, live[i]);
+    JS_RunGC(rt);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "JS_RunGC did not give the cache back");
+    for (i = 0; i < 5; i++)
+        live[i] = js_malloc_rt(rt, 700 + (size_t)i * 70);
+    for (i = 0; i < 5; i++)
+        js_free_rt(rt, live[i]);
+    lc_release_all(vm, rt);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_LargeCacheBytes(rt) == 0 && JS_GetMemorySize(rt) == count0, "a release did not give the cache back");
+    CHECK(!JS_CheckMemory(rt), "check after the release");
+
+    /* the limit counts the cached blocks, and a request that fits once they
+       are given back passes: the heap fails it, the cache goes back, and the
+       heap is asked again */
+    for (i = 0; i < 8; i++)
+        live[i] = js_malloc_rt(rt, 1000);
+    for (i = 0; i < 8; i++)
+        js_free_rt(rt, live[i]);
+    CHECK(JS_LargeCacheBlocks(rt) == 8, "eight cached");
+    count0 = JS_GetMemorySize(rt);
+    JS_SetMemoryLimit(rt, count0);
+    p = js_malloc_rt(rt, 3000);
+    CHECK(p != NULL, "a request that fits once the large cache is given back failed");
+    CHECK(JS_LargeCacheBlocks(rt) == 0, "the cache was not given back for the retry");
+    js_free_rt(rt, p);
+    JS_SetFrontCache(rt, 256);
+    JS_SetMemoryLimit(rt, (size_t)-1);
+    /* a request that fails anyway gives the cache back too, and leaves the count as the cache's return makes it */
+    count0 = JS_GetMemorySize(rt);
+    for (i = 0; i < 8; i++)
+        live[i] = js_malloc_rt(rt, 1000);
+    cost = lc_cost(rt, live[0], hdr);
+    for (i = 0; i < 8; i++)
+        js_free_rt(rt, live[i]);
+    JS_SetMemoryLimit(rt, JS_GetMemorySize(rt));
+    CHECK(js_malloc_rt(rt, 1 << 20) == NULL, "a request past the limit passed");
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "a failed request did not give the cache back");
+    /* a resize that fails does the same */
+    p = js_malloc_rt(rt, 2000);
+    memset(p, 0x5a, 2000);
+    for (i = 0; i < 8; i++)
+        live[i] = js_malloc_rt(rt, 1000);
+    for (i = 0; i < 8; i++)
+        js_free_rt(rt, live[i]);
+    JS_SetMemoryLimit(rt, JS_GetMemorySize(rt));
+    CHECK(js_realloc_rt(rt, p, 1 << 20) == NULL, "a resize past the limit passed");
+    CHECK(JS_LargeCacheBlocks(rt) == 0, "a failed resize did not give the cache back");
+    for (i = 0; i < 2000; i++)
+        CHECK(p[i] == 0x5a, "content after a failed resize");
+    JS_SetMemoryLimit(rt, (size_t)-1);
+    js_free_rt(rt, p);
+    JS_SetFrontCache(rt, 256);
+    /* a request the cache can serve adds nothing to the count, so the limit
+       does not refuse it even when the count is over the limit */
+    p = js_malloc_rt(rt, 1000);
+    js_free_rt(rt, p);
+    JS_SetMemoryLimit(rt, 1);
+    q = js_malloc_rt(rt, 1000);
+    CHECK(q == p, "a request served from the cache was refused by the limit");
+    CHECK(js_malloc_rt(rt, 1000) == NULL, "a request the cache cannot serve passed a limit under the count");
+    JS_SetMemoryLimit(rt, (size_t)-1);
+    js_free_rt(rt, q);
+    JS_SetFrontCache(rt, 256);
+
+    /* a resize: a small block that grows into the range is served from the
+       cache, and a large block that is cut under 512 bytes is not cached when
+       it is freed. A resized block is filed under the class its size holds */
+    p = js_malloc_rt(rt, 1500);
+    js_free_rt(rt, p);
+    q = js_malloc_rt(rt, 100);
+    memset(q, 0x3c, 100);
+    q = js_realloc_rt(rt, q, 1500);
+    CHECK(q == p, "a small block that grew to 1500 did not take the cached block");
+    for (i = 0; i < 100; i++)
+        CHECK(q[i] == 0x3c, "content of a block that grew into a cached block");
+    js_free_rt(rt, q);
+    JS_SetFrontCache(rt, 256);
+    count0 = JS_GetMemorySize(rt);
+    p = js_malloc_rt(rt, 2000);
+    p = js_realloc_rt(rt, p, 100);
+    js_free_rt(rt, p);
+    CHECK(JS_LargeCacheBlocks(rt) == 0 && JS_GetMemorySize(rt) == count0, "a large block cut to 100 bytes was cached");
+    p = js_malloc_rt(rt, 600);
+    p = js_realloc_rt(rt, p, 3000);
+    n = js_malloc_usable_size_rt(rt, p);
+    js_free_rt(rt, p);
+    CHECK(JS_LargeCacheBlocks(rt) == 1, "a resized block is not cached");
+    CHECK(js_malloc_rt(rt, n / 64 * 64) == p, "a resized block of %zu bytes did not serve the class under it", n);
+    js_free_rt(rt, p);
+    JS_SetFrontCache(rt, 256);
+
+    /* two runtimes in one process each keep their own cache, and each is bound by the limit */
+    {
+        uint32_t vm2 = host_open();
+        JSRuntime *rt2 = JS_NewRuntime(vm2, 1);
+        size_t leaked;
+
+        CHECK(rt2, "JS_NewRuntime");
+        for (k = 0; k < 2; k++) {
+            JSRuntime *r = k ? rt2 : rt;
+
+            for (n = 0, i = 0; i < 400; i++)
+                live[n++] = js_malloc_rt(r, 505 + (size_t)(i % 57) * 64);
+            for (i = 0; i < (int)n; i++)
+                js_free_rt(r, live[i]);
+            CHECK(JS_LargeCacheBytes(r) <= cap && JS_LargeCacheBlocks(r) > 0, "a runtime holds %zu bytes in its cache", JS_LargeCacheBytes(r));
+        }
+        CHECK(!JS_CheckMemory(rt2), "check of the second runtime");
+        /* the cached blocks are not leaks: the end of a runtime gives them back */
+        leaked = JS_FreeRuntime(rt2);
+        CHECK(leaked == 0, "JS_FreeRuntime reported %zu blocks with a cache", leaked);
+        host_close(vm2);
+    }
+    CHECK(!JS_CheckMemory(rt), "check at the end");
+    {
+        size_t leaked = JS_FreeRuntime(rt);
+
+        CHECK(leaked == 0, "JS_FreeRuntime reported %zu blocks with a cache", leaked);
+    }
+    host_close(vm);
+    ok("large block cache: classes, limits per class and in bytes, counts, given back by every route, resizes");
+}
+
 /* Real objects: a script that makes objects with cycles, closures, strings,
    maps and typed arrays, collections between rounds (the full one and the
    young one), a script that runs out of memory under a limit, and the end of
@@ -2727,7 +3038,7 @@ static void scenario_js_objects(void)
             JS_RunGC(rt);
         else
             JS_RunYoungGC(rt);
-        CHECK(JS_FrontCacheBlocks(rt) == 0, "the front cache holds %zu blocks after a collection", JS_FrontCacheBlocks(rt));
+        CHECK(JS_FrontCacheBlocks(rt) == 0 && JS_LargeCacheBlocks(rt) == 0, "the caches hold %zu and %zu blocks after a collection", JS_FrontCacheBlocks(rt), JS_LargeCacheBlocks(rt));
         CHECK(!JS_CheckMemory(rt), "check after the collection of round %d", round);
     }
     /* out of memory in the middle of a script: an exception, and the runtime goes on */
@@ -2775,6 +3086,7 @@ static void scenarios(void)
     scenario_release_exact();
 #ifdef HEAP_TEST_RUNTIME
     scenario_runtime();
+    scenario_large_cache();
     scenario_js_objects();
 #endif
 }
@@ -2812,6 +3124,7 @@ int main(int argc, char **argv)
         Src r;
         uint64_t seed = strtoull(argv[2], NULL, 10);
         long steps = atol(argv[3]);
+        char hits[64];
 
         memset(&r, 0, sizeof r);
         r.s = seed * 0x9E3779B97F4A7C15ull + 88172645463325252ull;
@@ -2829,12 +3142,15 @@ int main(int argc, char **argv)
         }
         if (steps >= 100000) {
             CHECK(total_releases > 0, "no dedicated chunk was given back in %ld steps", steps);
+            if (!strcmp(argv[1], "stress-runtime"))
+                CHECK(total_large_hits > 0, "the cache of large blocks served no request in %ld steps", steps);
             if (seed & 1)
                 CHECK(total_remaps > 0, "no dedicated chunk was remapped in %ld steps", steps);
             else
                 CHECK(total_remaps == 0, "a host that does not remap was asked to");
         }
-        printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld, remapped: %ld)\n", argv[1], seed, steps, total_releases, total_remaps);
+        printf("PASS  %s seed %" PRIu64 " steps %ld (dedicated chunks given back: %ld, remapped: %ld%s)\n", argv[1], seed, steps, total_releases, total_remaps,
+               !strcmp(argv[1], "stress-runtime") ? (snprintf(hits, sizeof hits, ", large cache hits: %ld", total_large_hits), hits) : "");
         return 0;
     }
     if (argc >= 3 && !strcmp(argv[1], "fuzz")) {
