@@ -1791,7 +1791,9 @@ static BOOL js_front_drain(JSMallocContext *s)
         void *p, *next;
         for(p = s->large_head[i]; p; p = next) {
             next = js_large_next(p);
-            heap_free(&s->heap, container_of(p, JSMallocLargeBlockHeader, header.user_data));
+            /* as any large block: with JS_MALLOC_USE_ITER it leaves the list
+               of large blocks too */
+            __js_free_block(s, p);
             any = TRUE;
         }
         s->large_head[i] = NULL;
