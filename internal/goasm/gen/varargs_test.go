@@ -411,13 +411,14 @@ func TestVarargsNative(t *testing.T) {
 // varargsGoHost runs diff.c's run on a shadow region and a result buffer
 // outside the Go heap. Its host callback grows the goroutine stack, which
 // copies it, generated frames and all, before it returns the driver's
-// value.
+// value. host_poll is the samples' (samplePoll).
 const varargsGoHost = `package vd
 
 import "syscall"
 import "unsafe"
 
 func goasmMissing(i int64) { panic("missing: " + missingNames[i]) }
+` + samplePoll + `
 
 //go:noinline
 func grow(d int, x int64) int64 {

@@ -100,6 +100,9 @@ func funcHeader(goName string, m Meta) string {
 	if m.Kind == Register {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-0\n", goName, m.Frame)
 	}
+	if m.NoSplit {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
+	}
 	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
 }
 

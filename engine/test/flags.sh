@@ -25,8 +25,11 @@
 #   small libc does only the formats the engine uses and aborts on the rest at
 #   run time, and the generator checks the constants (internal/goasm/gen/formats.go)
 #   but cannot see a format that is not one
+# - an inline threshold of 400 in place of LLVM's 225: the generated engine
+#   runs about 3% faster for 8% more binary. 300 and 500 gain about half of
+#   that, and 500 makes each level of a JS recursion take more of the stack
 engine_version=2026-06-04
-engine_flags="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char -Werror=format -Werror=format-nonliteral"
+engine_flags="-ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF -U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char -Werror=format -Werror=format-nonliteral -mllvm -inline-threshold=400"
 
 # The flags a target needs on top of those: engine_target_flags native, or a
 # clang target triple. On arm64 the compiler must not turn an atomic into a
