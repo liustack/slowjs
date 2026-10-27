@@ -35,6 +35,7 @@ JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
 int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
+int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1395,6 +1396,97 @@ static void test_shared_debug_read(void)
     free(buf);
 }
 
+/* ---- the regexp cache ---- */
+
+/* The entries the cache of the runtime keeps, newest first (see
+   white_regexp_cache), with its lists checked. */
+static char *cache_entries(VM *v)
+{
+    static char out[4096];
+    size_t bytes;
+    uint32_t buckets;
+    int n = white_regexp_cache(v->rt, out, sizeof(out), &bytes, &buckets);
+
+    CHECK(n >= 0, "the lists of the regexp cache are not whole");
+    return out;
+}
+
+static int cache_count(VM *v)
+{
+    char out[4096];
+    size_t bytes;
+    uint32_t buckets;
+
+    return white_regexp_cache(v->rt, out, sizeof(out), &bytes, &buckets);
+}
+
+/* Only a pattern that is a string with flags that are undefined or a string
+   is kept: anything else is converted again each time, which can run
+   javascript. A compile that fails keeps nothing. */
+static void test_regexp_cache_keeps(void)
+{
+    static const char *const fails[] = {
+        "new RegExp('(')", "new RegExp('a', 'gg')", "new RegExp('a', 'uv')",
+        "new RegExp('a', 'q')", "new RegExp('\\\\p{Nope}', 'u')",
+    };
+    VM v = vm_new();
+    char src[256];
+    int before, i, again;
+
+    eval_ok(v.ctx, "var n = 0, f = {toString() { n++; return 'g' }}, p = {toString() { n++; return 'x' }}; 0");
+    for (i = 0; i < 3; i++)
+        eval_ok(v.ctx, "new RegExp('a', f); new RegExp(p, 'g'); new RegExp(new String('b')); new RegExp('c', new String('i')); 0");
+    CHECK(eval_is(v.ctx, "String(n)", "6"), "toString did not run 6 times");
+    /* The constructor converts a pattern that is not a regexp to a string
+       before it compiles: that string is kept. Flags it hands on as they are. */
+    CHECK(strcmp(cache_entries(&v), "b undefined,x g") == 0, "entries %s, want b undefined,x g", cache_entries(&v));
+    before = cache_count(&v);
+    for (i = 0; i < (int)countof(fails); i++) {
+        for (again = 0; again < 2; again++) {
+            snprintf(src, sizeof(src), "try { %s; 'made' } catch (e) { e.name }", fails[i]);
+            CHECK(eval_is(v.ctx, src, "SyntaxError"), "%s did not throw a SyntaxError", fails[i]);
+        }
+    }
+    CHECK(cache_count(&v) == before, "%d entries after compiles that fail, want %d", cache_count(&v), before);
+    vm_free(&v);
+}
+
+/* The entries, their table and the strings they hold are the memory the cache
+   takes: turning it off gives all of it back, and freeing a runtime with
+   entries leaves no block (the host ends the process if one is left). */
+static void test_regexp_cache_memory(void)
+{
+    static const char js[] = "for (var i = 0; i < 300; i++) new RegExp('(a|b)+c' + i, 'g'); 0";
+    VM v = vm_new();
+    VM w = vm_new();
+    char out[64];
+    size_t off, on, kept, bytes;
+    uint32_t buckets;
+    int n;
+
+    JS_SetRegExpCache(v.rt, 0, 0);
+    eval_ok(v.ctx, js);
+    JS_RunGC(v.rt);
+    off = JS_GetMemorySize(v.rt);
+    JS_SetRegExpCache(v.rt, 256, 512 << 10);
+    eval_ok(v.ctx, js);
+    JS_RunGC(v.rt);
+    on = JS_GetMemorySize(v.rt);
+    n = white_regexp_cache(v.rt, out, sizeof(out), &bytes, &buckets);
+    CHECK(n == 256 && on > off, "%d entries, %zu bytes with the cache, %zu without", n, on, off);
+    /* The cache counts the usable size of each block: the allocator rounds
+       up and adds a header, which the memory size has too. */
+    kept = on - off;
+    CHECK(kept >= bytes / 2 && kept <= bytes * 2 + (16 << 10), "the cache takes %zu bytes and counts %zu", kept, bytes);
+    JS_SetRegExpCache(v.rt, 0, 0);
+    JS_RunGC(v.rt);
+    CHECK(JS_GetMemorySize(v.rt) == off, "%zu bytes after the cache let go, %zu before it", JS_GetMemorySize(v.rt), off);
+    vm_free(&v);
+    /* the default cache, freed with its entries */
+    eval_ok(w.ctx, js);
+    vm_free(&w);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1417,6 +1509,8 @@ int main(void)
     test_added_vars_oom();
     test_own_keys_flags();
     test_shared_debug_read();
+    test_regexp_cache_keeps();
+    test_regexp_cache_memory();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

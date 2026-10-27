@@ -655,3 +655,68 @@ int white_function_debug(JSValueConst script, int i, const uint8_t **source,
     *shared = f->shared_debug;
     return b->cpool_count;
 }
+
+/* ---- the regexp cache ---- */
+
+/* The characters of the string p below 128 appended to out (room cap, n used),
+   others as '?'. Returns the new length. */
+static size_t white_text_add(const JSString *p, char *out, size_t cap, size_t n)
+{
+    int i;
+
+    for (i = 0; i < p->len && n + 1 < cap; i++) {
+        uint32_t c = p->is_wide_char ? p->u.str16[i] : p->u.str8[i];
+
+        out[n++] = c < 128 ? (char)c : '?';
+    }
+    out[n] = 0;
+    return n;
+}
+
+/* The entries of the regexp cache of rt, newest first, written into out as
+   "PATTERN FLAGS" separated by a comma ("undefined" for flags that are
+   undefined), after checking the lists the way the cache keeps them: each
+   entry's newer is the one before it, it is in its hash chain, the oldest is
+   the last, and the count and the bytes are the sums. Returns how many
+   entries there are, or -1 when a check fails. *bytes is the bytes the cache
+   counts and *buckets the chains of its table. */
+int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
+                       uint32_t *buckets)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e, *prev = NULL, *c;
+    size_t sum = 0, n = 0;
+    int count = 0, found;
+
+    out[0] = 0;
+    for (e = rc->newest; e; e = e->older) {
+        if (e->newer != prev)
+            return -1;
+        prev = e;
+        found = 0;
+        for (c = rc->table[e->hash & (rc->buckets - 1)]; c; c = c->chain)
+            found |= c == e;
+        if (!found)
+            return -1;
+        if (count && n + 1 < cap) {
+            out[n++] = ',';
+            out[n] = 0;
+        }
+        n = white_text_add(e->pattern, out, cap, n);
+        if (n + 1 < cap)
+            out[n++] = ' ';
+        if (e->flags) {
+            n = white_text_add(e->flags, out, cap, n);
+        } else {
+            memcpy(out + n, "undefined", 10);
+            n += 9;
+        }
+        sum += e->size;
+        count++;
+    }
+    if (rc->oldest != prev || count != rc->count || sum != rc->bytes)
+        return -1;
+    *bytes = rc->bytes;
+    *buckets = rc->buckets;
+    return count;
+}
