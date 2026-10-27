@@ -18227,6 +18227,25 @@ static JSValue js_function_proto_lineNumber(JSContext *ctx,
     return JS_UNDEFINED;
 }
 
+/* the define_own_property of an exotic class going on to the ordinary
+   definition: JS_DefineProperty with JS_PROP_NO_EXOTIC, which does not call
+   the class again. The call graph cannot see the flag, so a level of the
+   internal depth counts it. */
+static int js_define_own_property_ordinary(JSContext *ctx, JSValueConst this_obj,
+                                           JSAtom prop, JSValueConst val,
+                                           JSValueConst getter,
+                                           JSValueConst setter, int flags)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
+                            flags | JS_PROP_NO_EXOTIC);
+    js_internal_leave(ctx->rt);
+    return ret;
+}
+
 static int js_arguments_define_own_property(JSContext *ctx,
                                             JSValueConst this_obj,
                                             JSAtom prop, JSValueConst val,
@@ -18242,8 +18261,8 @@ static int js_arguments_define_own_property(JSContext *ctx,
             return -1;
     }
     /* run the default define own property */
-    return JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
-                             flags | JS_PROP_NO_EXOTIC);
+    return js_define_own_property_ordinary(ctx, this_obj, prop, val, getter,
+                                           setter, flags);
 }
 
 static const JSClassExoticMethods js_arguments_exotic_methods = {
@@ -48075,8 +48094,8 @@ static int js_string_define_own_property(JSContext *ctx,
         return TRUE;
     } else {
     def:
-        return JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
-                                 flags | JS_PROP_NO_EXOTIC);
+        return js_define_own_property_ordinary(ctx, this_obj, prop, val,
+                                               getter, setter, flags);
     }
 }
 
