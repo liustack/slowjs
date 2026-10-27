@@ -15,10 +15,16 @@
    (src/runtime/memmove_amd64.s), and so does LLVM's libc
    (libc/src/string/memory_utils/x86_64/inline_memcpy.h). There is no loop and
    no branch on alignment. A copy of 129 bytes or more writes the first 16 bytes,
-   brings the destination to a multiple of 16 and loops 64 bytes at a time with
-   unaligned loads and aligned stores, then writes the last 64 bytes. The
+   brings the destination to a multiple of 16 and loops 128 bytes at a time with
+   unaligned loads and aligned stores, then writes the last 128 bytes. The
    destination aligned and the source not is what glibc picks for its loops
-   (sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S).
+   (sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S). The loop is 8 loads
+   and 8 stores with one counter: 19 instructions for 128 bytes on amd64, where
+   64 bytes at a time took 13 for 64. Almost all the instructions memcpy runs in
+   a React render are in this loop, since the strings that are concatenated are
+   a few KB long. A loop of 256 bytes takes all 16 SSE registers, gains 1% to 3%
+   on copies of 8 KB and more and loses 10% to 50% on copies of 130 to 300 bytes,
+   since its last copy is 256 bytes.
 
    What it does not use: REP MOVSB (glibc does not use it on AMD either below
    its non-temporal threshold, and an unaligned destination made it up to 20
@@ -33,6 +39,21 @@
 #include <stdint.h>
 
 #define CP(d, s, n) __builtin_memcpy_inline((d), (s), (n))
+
+/* A 16 byte move that needs no alignment (movups, ldr q). The loop below uses
+   it rather than CP(d, s, 128), which LLVM expands into pairs of one load and
+   one store through a single register, and unrolls four times. */
+typedef long long v16 __attribute__((vector_size(16), aligned(1), may_alias));
+
+/* 128 bytes: eight loads, then eight stores */
+#define CP128(d, s) do { \
+	const v16 *s_ = (const v16 *)(s); \
+	v16 *d_ = (v16 *)(d); \
+	v16 a0 = s_[0], a1 = s_[1], a2 = s_[2], a3 = s_[3]; \
+	v16 a4 = s_[4], a5 = s_[5], a6 = s_[6], a7 = s_[7]; \
+	d_[0] = a0; d_[1] = a1; d_[2] = a2; d_[3] = a3; \
+	d_[4] = a4; d_[5] = a5; d_[6] = a6; d_[7] = a7; \
+} while (0)
 
 void *memcpy(void *restrict dest, const void *restrict src, size_t n)
 {
@@ -73,16 +94,16 @@ void *memcpy(void *restrict dest, const void *restrict src, size_t n)
 	{
 		unsigned char *dend = d + n;
 		const unsigned char *send = s + n;
-		size_t adv;
+		size_t adv = 16 - ((uintptr_t)d & 15), i, lim;
 
 		CP(d, s, 16);
-		adv = 16 - ((uintptr_t)d & 15);
 		d += adv; s += adv; n -= adv;
-		while (n > 64) {
-			CP(d, s, 64);
-			d += 64; s += 64; n -= 64;
-		}
-		CP(dend - 64, send - 64, 64);
+		/* the loop leaves 1 to 128 bytes, which the last copy covers */
+		lim = (n - 1) & ~(size_t)127;
+		#pragma clang loop unroll(disable)
+		for (i = 0; i < lim; i += 128)
+			CP128(d + i, s + i);
+		CP128(dend - 128, send - 128);
 	}
 	return dest;
 }
