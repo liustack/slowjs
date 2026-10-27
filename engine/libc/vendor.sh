@@ -5,6 +5,8 @@
 # root of this repository.
 #
 # Copy the files this library takes from musl, or check the copies.
+# string/memcpy.c is not one of them: it is written here, and the script leaves it
+# alone.
 #
 #   engine/libc/vendor.sh MUSL_DIR            copy the files out of a musl checkout at the
 #                                             pinned commit, apply patches/, and write MUSL.sha256
@@ -38,7 +40,6 @@ src/string/bcmp.c string/bcmp.c
 src/string/bzero.c string/bzero.c
 src/string/memchr.c string/memchr.c
 src/string/memcmp.c string/memcmp.c
-src/string/memcpy.c string/memcpy.c
 src/string/memmove.c string/memmove.c
 src/string/memrchr.c string/memrchr.c
 src/string/memset.c string/memset.c
@@ -83,7 +84,7 @@ if [ "${1:-}" = --verify ]; then
 	# the files are the ones the script copies, those the list names, and those here
 	files | awk '{print $2}' | sort > "$tmp/script"
 	grep -v '^#' "$manifest" | awk '{print $4}' | sort > "$tmp/listed"
-	(cd "$here" && find string math -type f; echo internal/libm.h; echo COPYRIGHT) | sort > "$tmp/present"
+	(cd "$here" && find string math -type f | grep -v '^string/memcpy.c$'; echo internal/libm.h; echo COPYRIGHT) | sort > "$tmp/present"
 	cmp -s "$tmp/script" "$tmp/listed" || bad "MUSL.sha256 does not list the files this script copies"
 	cmp -s "$tmp/listed" "$tmp/present" || bad "the files here are not the ones MUSL.sha256 lists: $(diff "$tmp/listed" "$tmp/present" | tr '\n' ' ')"
 
