@@ -58,6 +58,21 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 
 To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'TestEval/eval1' -v .`.
 
+## Tests that skip without their tools
+
+The tests of the generator in `internal/goasm/gen` need LLVM and skip (and still pass) when it is not given, so `go test ./internal/goasm/gen` on its own checks only the rules. Set these three variables to run all of them:
+
+```sh
+export SLOWJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
+export SLOWJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
+export SLOWJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker
+go test -p 2 -timeout 30m ./internal/goasm/gen/...
+```
+
+With only `SLOWJS_LLVM` and `SLOWJS_SHADOW_PASS`, the tests that need `ld.lld` (`TestVarargsNative`, `TestSampleRuns`, `TestNarrowArgs`) still skip. A skipped test prints `--- SKIP` with the names of the variables it wants: run with `-v` and look for it before you trust a green run. `SLOWJS_QEMU_AARCH64` (optional) names an emulator that lets the arm64 cases run on an amd64 host.
+
+`go test -race` needs `CGO_ENABLED=1` and a C compiler, as the race runtime is linked through cgo. This repository builds with `CGO_ENABLED=0`, so set it for the command only: `CGO_ENABLED=1 go test -race ...`. Every `-race` command in this doc is meant this way.
+
 ## Focused checks
 
 For the native C dispatch condition, apply `lib/internal/patch/quickjs.diff` to the pinned C source and inspect `DIRECT_DISPATCH` with both gcc and clang preprocessing. It must be `1` with neither translation macro, and `0` with `__CCGO__`, `__EMSCRIPTEN__`, or both. Build the native interpreter with the upstream Makefile and check interrupt and allocation failure propagation, recursion RangeError and error stack descriptors with computed goto enabled. The [native dispatch notes](fork-changes/interpreter-loop.md#native-c-keeps-computed-goto) explain why the Go translation remains unchanged.
