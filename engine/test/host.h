@@ -41,6 +41,20 @@ JSRuntime *host_new_runtime_seed(uint64_t seed);
    uses it to see that the engine asks for it only when a script does. */
 extern _Thread_local long host_wall_reads;
 
+/* host_set_wall(1, ns) makes the wall clock of every VM in this thread read ns
+   nanoseconds since 1970 (a negative number is before 1970), until
+   host_set_wall(0, 0) gives back the fixed time of the host. */
+void host_set_wall(int on, int64_t ns);
+
+/* How many times the engine read a flag that stops it (host_poll) in this
+   thread. A test takes the difference of two readings. */
+extern _Thread_local long host_poll_reads;
+
+/* host_poll_stop_after(n) sets the interrupt flag at the n-th reading from now
+   in this thread, as a host that was asked to stop in the middle of a run
+   does (0 cancels it). The reading that sets it returns 1. */
+void host_poll_stop_after(long n);
+
 /* The VM host_now was last asked about for the wall clock in this thread, and
    the VM of a runtime made by this host. */
 extern _Thread_local uint32_t host_wall_vm;

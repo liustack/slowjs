@@ -19,6 +19,19 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+/* JS_HEAP_FAILS makes the engine fail the request to the heap number
+   white_alloc_fail_at (counting from 1 since white_alloc_count was set to 0),
+   and only that one. The requests after it work. A request to the heap is a
+   new arena of small blocks or a large block, as a call of the allocator was
+   on the old engine. */
+static long white_alloc_count, white_alloc_fail_at;
+static int white_alloc_fails(void)
+{
+    white_alloc_count++;
+    return white_alloc_count == white_alloc_fail_at;
+}
+#define JS_HEAP_FAILS(s, size) white_alloc_fails()
+
 #include "../quickjs.c"
 
 /* ---- string buffers and the runs of JSON ---- */
@@ -87,6 +100,12 @@ int white_string_len_max(void)
 const uint8_t *white_json_string_run(StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep)
 {
     return json_string_run(b, p, end, sep);
+}
+
+/* json_run_limit over addresses that need not be memory: the run is not read. */
+uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end)
+{
+    return (uintptr_t)json_run_limit((const uint8_t *)p, (const uint8_t *)end);
 }
 
 /* json_quote_run over the string value s from *pi. */
@@ -567,4 +586,205 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending,
         *made &= w.f->var_object_idx >= 0;
     white_funcs_free(ctx, &w);
     return r;
+}
+
+/* ---- the own keys of an object ---- */
+
+/* One key as "NAME(KIND)/ENUMERABLE" appended to out, which has room for cap
+   bytes with n used; KIND is what JS_AtomGetKind says (0 string, 1 symbol, 2
+   private name). Returns the new length. */
+static size_t white_key_text(JSContext *ctx, char *out, size_t cap, size_t n,
+                             JSAtom atom, int enumerable)
+{
+    const char *name = JS_AtomToCString(ctx, atom);
+
+    n += snprintf(out + n, cap - n, "%s%s(%d)/%d", n ? "\n" : "", name ? name : "?",
+                  (int)JS_AtomGetKind(ctx, atom), enumerable);
+    JS_FreeCString(ctx, name);
+    return n < cap ? n : cap - 1;
+}
+
+/* The own keys of the object obj listed by JS_GetOwnPropertyNames with flags
+   (got set), or as JS_GetOwnPropertyNamesInternal lists them from the shape
+   of an object that is not exotic (got clear): array indexes by value, then
+   strings, then symbols and private names, each in the order of the shape,
+   the kinds told by JS_AtomGetKind and JS_AtomIsArrayIndex. Written into out
+   as the lines of white_key_text. Returns the length, or -1 when the listing
+   threw, or -2 when the object is exotic and has no listing from its shape. */
+int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got,
+                   char *out, size_t cap)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    size_t n = 0;
+
+    out[0] = 0;
+    if (got) {
+        JSPropertyEnum *tab;
+        uint32_t len, i;
+
+        if (JS_GetOwnPropertyNames(ctx, &tab, &len, obj, flags))
+            return -1;
+        for (i = 0; i < len; i++)
+            n = white_key_text(ctx, out, cap, n, tab[i].atom, tab[i].is_enumerable != 0);
+        JS_FreePropertyEnum(ctx, tab, len);
+        return n;
+    } else {
+        JSShape *sh = p->shape;
+        JSShapeProperty *prs = get_shape_prop(sh);
+        uint32_t nums[256];
+        int order[3][256], count[3] = { 0, 0, 0 }, i, j, k, c;
+
+        if (p->is_exotic)
+            return -2;
+        for (i = 0; i < sh->prop_count; i++) {
+            JSAtom atom = prs[i].atom;
+            int enumerable = (prs[i].flags & JS_PROP_ENUMERABLE) != 0;
+            uint32_t v;
+
+            if (atom == JS_ATOM_NULL || ((flags & JS_GPN_ENUM_ONLY) && !enumerable))
+                continue;
+            if (!((flags >> JS_AtomGetKind(ctx, atom)) & 1))
+                continue;
+            if (JS_AtomIsArrayIndex(ctx, &v, atom)) {
+                nums[count[0]] = v;
+                order[0][count[0]++] = i;
+            } else if (JS_AtomGetKind(ctx, atom) == JS_ATOM_KIND_STRING) {
+                order[1][count[1]++] = i;
+            } else {
+                order[2][count[2]++] = i;
+            }
+        }
+        /* the indexes by value, equal values in the order of the shape */
+        for (j = 1; j < count[0]; j++) {
+            uint32_t v = nums[j];
+            int o = order[0][j];
+
+            for (k = j - 1; k >= 0 && nums[k] > v; k--) {
+                nums[k + 1] = nums[k];
+                order[0][k + 1] = order[0][k];
+            }
+            nums[k + 1] = v;
+            order[0][k + 1] = o;
+        }
+        for (c = 0; c < 3; c++) {
+            for (j = 0; j < count[c]; j++)
+                n = white_key_text(ctx, out, cap, n, prs[order[c][j]].atom,
+                                   (prs[order[c][j]].flags & JS_PROP_ENUMERABLE) != 0);
+        }
+        return n;
+    }
+}
+
+/* ---- shared source text and line tables ---- */
+
+/* The source text and the line table of function i of the constant pool of
+   the script script (read with JS_ReadObject), and whether the function says
+   they are shared. 0, or -1 when there is no such function. */
+int white_function_debug(JSValueConst script, int i, const uint8_t **source,
+                         size_t *source_len, const uint8_t **pc2line,
+                         int *shared)
+{
+    JSFunctionBytecode *b, *f;
+
+    if (JS_VALUE_GET_TAG(script) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = JS_VALUE_GET_PTR(script);
+    if (i >= b->cpool_count || JS_VALUE_GET_TAG(b->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    f = JS_VALUE_GET_PTR(b->cpool[i]);
+    *source = (const uint8_t *)f->debug.source;
+    *source_len = f->debug.source_len;
+    *pc2line = f->debug.pc2line_buf;
+    *shared = f->shared_debug;
+    return b->cpool_count;
+}
+
+/* ---- the regexp cache ---- */
+
+/* The characters of the string p below 128 appended to out (room cap, n used),
+   others as '?'. Returns the new length. */
+static size_t white_text_add(const JSString *p, char *out, size_t cap, size_t n)
+{
+    int i;
+
+    for (i = 0; i < p->len && n + 1 < cap; i++) {
+        uint32_t c = p->is_wide_char ? p->u.str16[i] : p->u.str8[i];
+
+        out[n++] = c < 128 ? (char)c : '?';
+    }
+    out[n] = 0;
+    return n;
+}
+
+/* The entries of the regexp cache of rt, newest first, written into out as
+   "PATTERN FLAGS" separated by a comma ("undefined" for flags that are
+   undefined), after checking the lists the way the cache keeps them: each
+   entry's newer is the one before it, it is in its hash chain, the oldest is
+   the last, and the count and the bytes are the sums. Returns how many
+   entries there are, or -1 when a check fails. *bytes is the bytes the cache
+   counts and *buckets the chains of its table. */
+int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
+                       uint32_t *buckets)
+{
+    JSRegExpCache *rc = &rt->regexp_cache;
+    JSRegExpCacheEntry *e, *prev = NULL, *c;
+    size_t sum = 0, n = 0;
+    int count = 0, found;
+
+    out[0] = 0;
+    for (e = rc->newest; e; e = e->older) {
+        if (e->newer != prev)
+            return -1;
+        prev = e;
+        found = 0;
+        for (c = rc->table[e->hash & (rc->buckets - 1)]; c; c = c->chain)
+            found |= c == e;
+        if (!found)
+            return -1;
+        if (count && n + 1 < cap) {
+            out[n++] = ',';
+            out[n] = 0;
+        }
+        n = white_text_add(e->pattern, out, cap, n);
+        if (n + 1 < cap)
+            out[n++] = ' ';
+        if (e->flags) {
+            n = white_text_add(e->flags, out, cap, n);
+        } else {
+            memcpy(out + n, "undefined", 10);
+            n += 9;
+        }
+        sum += e->size;
+        count++;
+    }
+    if (rc->oldest != prev || count != rc->count || sum != rc->bytes)
+        return -1;
+    *bytes = rc->bytes;
+    *buckets = rc->buckets;
+    return count;
+}
+
+/* ---- one request to the heap that fails ---- */
+
+/* Compile js (not run) in ctx with request number fail to the heap failing, 0
+   for none, and the others working. *nallocs is how many requests the compile
+   made. Returns what JS_Eval returns. */
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_Eval(ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    return v;
+}
+
+/* Whether every block of the engine is a request to the heap of its own (the
+   builds that take each block from the system malloc), and not only the
+   arenas of small blocks and the large blocks. */
+int white_every_block_is_a_request(void)
+{
+    return JS_MALLOC_LARGE_BLOCKS_ONLY;
 }
