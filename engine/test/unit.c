@@ -2382,6 +2382,29 @@ static void test_sort_stop_bound(void)
     CHECK(worst > 0, "no sort made a comparison after the stop: the bound is not tested");
 }
 
+/* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
+   letter, every other ASCII unit as it is, and an ASCII unit for no other
+   unit, as Canonicalize of the specification does: a character from 128
+   whose upper case is below 128 stays as it is. lre_first_set relies on it
+   for the characters that ignore case. */
+static void test_canonicalize_ascii(void)
+{
+    uint32_t c, got, want;
+    int bad = 0;
+
+    for (c = 0; c <= 0xffff; c++) {
+        got = lre_canonicalize(c, 0);
+        want = c;
+        if (c >= 'a' && c <= 'z')
+            want = c - 'a' + 'A';
+        if ((c < 128 && got != want) || (c >= 128 && got < 128)) {
+            if (bad++ < 10)
+                printf("lre_canonicalize(%#x) = %#x\n", c, got);
+        }
+    }
+    CHECK(bad == 0, "%d units are canonicalized wrongly", bad);
+}
+
 /* Date.now, new Date() and Date() read the wall clock of the host, in whole
    milliseconds since 1970, cut off after the millisecond. A clock before 1970
    gives negative times. */
@@ -2458,6 +2481,7 @@ int main(void)
     test_sort_interrupt();
     test_sort_stop_bound();
     test_date_clock();
+    test_canonicalize_ascii();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
