@@ -33,6 +33,7 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad);
 int white_error_nest(JSRuntime *rt, int n);
 JSValue white_bare_function(JSContext *ctx, JSValueConst proto);
 int white_function_set_properties(JSContext *ctx, JSValueConst f, JSAtom name, int len);
+int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *out, size_t cap);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1254,6 +1255,76 @@ static void test_added_vars_oom(void)
     }
 }
 
+/* ---- the own keys of an object ---- */
+
+/* objects of every kind of key, with the shapes the listing handles itself,
+   keeps in the key cache, and leaves to the generic path */
+static const struct { const char *name, *js; } own_keys_objects[] = {
+    { "empty", "({})" },
+    { "strings", "({a: 1, b: 2, c: 3})" },
+    { "indexes", "({b: 1, 10: 2, 2: 3, a: 4, 4294967294: 5, 4294967295: 6, '01': 7})" },
+    { "symbols", "({[Symbol.iterator]: 1, a: 2, [Symbol('s')]: 3, 1: 4, [Symbol.for('g')]: 5})" },
+    { "hidden", "Object.defineProperties({a: 1}, {h: {value: 2}, [Symbol('h')]: {value: 3}, 3: {value: 4}})" },
+    { "accessors", "({get a() { return 1 }, set b(v) {}, c: 3})" },
+    { "deleted", "(() => { const o = {a: 1, b: 2, 1: 3, c: 4}; delete o.b; delete o[1]; return o })()" },
+    { "private", "(() => { const s = Symbol('s'); class C { #p = 1; x = 2; #q = 3; constructor() { this[s] = 4; this[0] = 5 } }; return new C })()" },
+    { "null proto", "Object.assign(Object.create(null), {z: 1, 0: 2, y: 3})" },
+    { "frozen", "Object.freeze({a: 1, 2: 2})" },
+    { "wide", "({'\\u00e9': 1, '\\u4e2d': 2, '1\\u4e2d': 3})" },
+    { "many strings", "Object.fromEntries(Array.from({length: 40}, (_, i) => ['k' + i, i]))" },
+    { "many indexes", "Object.fromEntries(Array.from({length: 20}, (_, i) => [String(19 - i), i]))" },
+    { "function", "(function f(a, b) {})" },
+    { "class", "(class K { static s = 1; static m() {} })" },
+    { "error", "new Error('m')" },
+    { "array", "Object.assign([1, 2], {x: 3})" },
+    { "arguments", "(function () { return arguments })(1, 2)" },
+    { "string object", "Object.assign(new String('ab'), {x: 1})" },
+    { "typed array", "new Uint8Array(3)" },
+    { "proxy", "new Proxy({a: 1}, {})" },
+};
+
+/* The flags of JS_GetOwnPropertyNames. */
+#define OWN_KEYS_ALL_FLAGS (JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_PRIVATE_MASK | JS_GPN_ENUM_ONLY | JS_GPN_SET_ENUM)
+
+/* For every combination of flags, JS_GetOwnPropertyNames lists the own keys
+   of an ordinary object as the engine does from its shape, also the second
+   time, when the kinds come from the key cache, and lists those of exotic
+   objects without failing. */
+static void test_own_keys_flags(void)
+{
+    VM v = vm_new();
+    static char got[8192], want[8192];
+    size_t i;
+
+    for (i = 0; i < countof(own_keys_objects); i++) {
+        JSValue obj = JS_Eval(v.ctx, own_keys_objects[i].js, strlen(own_keys_objects[i].js),
+                              "<unit>", JS_EVAL_TYPE_GLOBAL);
+        int flags, pass, exotic = 0;
+
+        CHECK(JS_IsObject(obj), "%s: %s is no object", own_keys_objects[i].name, own_keys_objects[i].js);
+        if (!JS_IsObject(obj)) {
+            free(exception_text(v.ctx));
+            continue;
+        }
+        for (flags = 0; flags <= OWN_KEYS_ALL_FLAGS; flags++) {
+            if (flags & ~OWN_KEYS_ALL_FLAGS)
+                continue;
+            for (pass = 0; pass < 2; pass++) {
+                int ng = white_own_keys(v.ctx, obj, flags, 1, got, sizeof(got));
+                int nw = white_own_keys(v.ctx, obj, flags, 0, want, sizeof(want));
+
+                exotic = nw == -2;
+                CHECK(ng >= 0, "%s, flags %#x: JS_GetOwnPropertyNames throws", own_keys_objects[i].name, flags);
+                if (!exotic)
+                    CHECK(ng == nw && strcmp(got, want) == 0,
+                          "%s, flags %#x:\ngot  %s\nwant %s", own_keys_objects[i].name, flags, got, want);
+            }
+        }
+        JS_FreeValue(v.ctx, obj);
+    }
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_json_string_run();
@@ -1274,6 +1345,7 @@ int main(void)
     test_poll_compile();
     test_poll_ret();
     test_added_vars_oom();
+    test_own_keys_flags();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

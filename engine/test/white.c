@@ -544,3 +544,90 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending,
     white_funcs_free(ctx, &w);
     return r;
 }
+
+/* ---- the own keys of an object ---- */
+
+/* One key as "NAME(KIND)/ENUMERABLE" appended to out, which has room for cap
+   bytes with n used; KIND is what JS_AtomGetKind says (0 string, 1 symbol, 2
+   private name). Returns the new length. */
+static size_t white_key_text(JSContext *ctx, char *out, size_t cap, size_t n,
+                             JSAtom atom, int enumerable)
+{
+    const char *name = JS_AtomToCString(ctx, atom);
+
+    n += snprintf(out + n, cap - n, "%s%s(%d)/%d", n ? "\n" : "", name ? name : "?",
+                  (int)JS_AtomGetKind(ctx, atom), enumerable);
+    JS_FreeCString(ctx, name);
+    return n < cap ? n : cap - 1;
+}
+
+/* The own keys of the object obj listed by JS_GetOwnPropertyNames with flags
+   (got set), or as JS_GetOwnPropertyNamesInternal lists them from the shape
+   of an object that is not exotic (got clear): array indexes by value, then
+   strings, then symbols and private names, each in the order of the shape,
+   the kinds told by JS_AtomGetKind and JS_AtomIsArrayIndex. Written into out
+   as the lines of white_key_text. Returns the length, or -1 when the listing
+   threw, or -2 when the object is exotic and has no listing from its shape. */
+int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got,
+                   char *out, size_t cap)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    size_t n = 0;
+
+    out[0] = 0;
+    if (got) {
+        JSPropertyEnum *tab;
+        uint32_t len, i;
+
+        if (JS_GetOwnPropertyNames(ctx, &tab, &len, obj, flags))
+            return -1;
+        for (i = 0; i < len; i++)
+            n = white_key_text(ctx, out, cap, n, tab[i].atom, tab[i].is_enumerable != 0);
+        JS_FreePropertyEnum(ctx, tab, len);
+        return n;
+    } else {
+        JSShape *sh = p->shape;
+        JSShapeProperty *prs = get_shape_prop(sh);
+        uint32_t nums[256];
+        int order[3][256], count[3] = { 0, 0, 0 }, i, j, k, c;
+
+        if (p->is_exotic)
+            return -2;
+        for (i = 0; i < sh->prop_count; i++) {
+            JSAtom atom = prs[i].atom;
+            int enumerable = (prs[i].flags & JS_PROP_ENUMERABLE) != 0;
+            uint32_t v;
+
+            if (atom == JS_ATOM_NULL || ((flags & JS_GPN_ENUM_ONLY) && !enumerable))
+                continue;
+            if (!((flags >> JS_AtomGetKind(ctx, atom)) & 1))
+                continue;
+            if (JS_AtomIsArrayIndex(ctx, &v, atom)) {
+                nums[count[0]] = v;
+                order[0][count[0]++] = i;
+            } else if (JS_AtomGetKind(ctx, atom) == JS_ATOM_KIND_STRING) {
+                order[1][count[1]++] = i;
+            } else {
+                order[2][count[2]++] = i;
+            }
+        }
+        /* the indexes by value, equal values in the order of the shape */
+        for (j = 1; j < count[0]; j++) {
+            uint32_t v = nums[j];
+            int o = order[0][j];
+
+            for (k = j - 1; k >= 0 && nums[k] > v; k--) {
+                nums[k + 1] = nums[k];
+                order[0][k + 1] = order[0][k];
+            }
+            nums[k + 1] = v;
+            order[0][k + 1] = o;
+        }
+        for (c = 0; c < 3; c++) {
+            for (j = 0; j < count[c]; j++)
+                n = white_key_text(ctx, out, cap, n, prs[order[c][j]].atom,
+                                   (prs[order[c][j]].flags & JS_PROP_ENUMERABLE) != 0);
+        }
+        return n;
+    }
+}
