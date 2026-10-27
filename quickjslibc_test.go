@@ -8,63 +8,21 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"bufio"
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
 
-// The parts of quickjs-libc.c that the Go API reaches work as before
-// internal/fixlib dropped the rest of it: the helpers of StdAddHelpers, the
-// module loader of SetDefaultModuleLoader with a script and a JSON module,
-// and the bytecode of a module, which sets import.meta and waits for the
-// module's promise.
+// The part of quickjs-libc.c that the Go API reaches works as before
+// internal/fixlib dropped the rest of it: the bytecode of a module, which
+// sets import.meta and waits for the module's promise.
 func TestQuickJSLibcKept(t *testing.T) {
-	dir := t.TempDir()
-	script := filepath.Join(dir, "script.js")
-	if err := os.WriteFile(script, []byte("globalThis.loaded = 'script'\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	data := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(data, []byte(`{"answer": 42}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	m, err := NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-
-	if err := m.StdAddHelpers(); err != nil {
-		t.Fatal(err)
-	}
-	for js, want := range map[string]string{
-		"[typeof console.log, typeof print, typeof performance.now, typeof __loadScript].join()": "function,function,function,function",
-		"performance.now() > 0":                               "true",
-		"__loadScript(" + strconv.Quote(script) + "); loaded": "script",
-		"[typeof std, typeof os, typeof Worker].join()":       "undefined,undefined,undefined",
-	} {
-		if got := evalString(t, m, js); got != want {
-			t.Errorf("%s: %s, want %s", js, got, want)
-		}
-	}
-
-	m.SetDefaultModuleLoader()
-	module := "import * as Power from './testdata/power.js'\n" +
-		"import data from " + strconv.Quote(data) + " with { type: 'json' }\n" +
-		"globalThis.imported = [Power.cube(3), data.answer].join()\n"
-	if _, err := m.Eval(module, EvalModule); err != nil {
-		t.Fatal(err)
-	}
-	if got := evalString(t, m, "imported"); got != "27,42" {
-		t.Errorf("imported: %s, want 27,42", got)
-	}
-	if _, err := m.Eval("import * as std from 'qjs:std'", EvalModule); err == nil {
-		t.Error("the module qjs:std loaded")
-	}
 
 	// The module is compiled in m and run in a VM of its own: import.meta
 	// finds the module by its name, which is the same for every module

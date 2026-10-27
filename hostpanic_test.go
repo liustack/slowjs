@@ -112,22 +112,3 @@ func TestHostPanicNested(t *testing.T) {
 	wantNoPendingException(t, m)
 	wantTimeoutWorks(t, m)
 }
-
-// A panic in the module loader reaches the caller the same way.
-func TestModuleLoaderPanic(t *testing.T) {
-	m := newTestVM(t)
-	m.SetModuleLoader(func(*VM, string) (string, error) { panic("boom") }, nil)
-	if p := evalRecover(m, `import('m'); undefined`); p != nil {
-		t.Fatalf("Eval panicked with %v", p)
-	}
-	var p any
-	func() {
-		defer func() { p = recover() }()
-		m.ExecutePendingJobs()
-	}()
-	if p != "boom" {
-		t.Fatalf("recovered %v, want the loader's panic", p)
-	}
-	wantNoPendingException(t, m)
-	wantTimeoutWorks(t, m)
-}

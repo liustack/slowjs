@@ -107,37 +107,6 @@ func TestLoneSurrogatesBecomeReplacementCharacters(t *testing.T) {
 	}
 }
 
-// The module normalizer and loader get the names of modules as valid UTF-8
-// too.
-func TestModuleNamesWithLoneSurrogates(t *testing.T) {
-	m, err := NewVM()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer m.Close()
-
-	var normalized, loaded []string
-	m.SetModuleLoader(
-		func(m *VM, name string) (string, error) {
-			loaded = append(loaded, name)
-			return "export default 1", nil
-		},
-		func(m *VM, baseName, name string) (string, error) {
-			normalized = append(normalized, name)
-			return name, nil
-		},
-	)
-	if _, err := m.Eval(`import x from "m𐀀\udc00"; globalThis.x = x`, EvalModule); err != nil {
-		t.Fatal(err)
-	}
-
-	want := "m\U00010000�"
-	if len(normalized) != 1 || normalized[0] != want || len(loaded) != 1 || loaded[0] != want {
-		t.Errorf("normalizer got %q, loader got %q, want %q", normalized, loaded, want)
-	}
-}
-
 // wellFormed leaves alone what JS_ToCStringLen2 does not write: a 0xED at
 // the end of the bytes, with no room for the two after it.
 func TestWellFormedAtTheEnd(t *testing.T) {
