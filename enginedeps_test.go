@@ -14,7 +14,9 @@ import (
 )
 
 // The package builds on one engine, and a program links only that one: the
-// engine of lib, made by ccgo and running on modernc.org/libc.
+// engine of lib, made by ccgo and running on modernc.org/libc, or with the tag
+// slowjs_cengine the C engine of internal/cengine, which is generated for
+// linux/amd64 only so far.
 func TestEngineDeps(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -31,15 +33,18 @@ func TestEngineDeps(t *testing.T) {
 	for _, c := range []struct {
 		name      string
 		args      []string
+		env       []string
 		want, not []string
 	}{
-		{"default", nil, []string{lib, libc}, []string{cengine, gohost, hostmem}},
+		{"default", nil, nil, []string{lib, libc}, []string{cengine, gohost, hostmem}},
+		{"slowjs_cengine", []string{"-tags", "slowjs_cengine"}, []string{"GOOS=linux", "GOARCH=amd64"},
+			[]string{cengine, gohost, hostmem}, []string{lib, libc}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(gobin, append(append([]string{"list", "-deps"}, c.args...), ".")...)
 			// The flags of the run that started the test are not those of
 			// the row.
-			cmd.Env = append(os.Environ(), "GOFLAGS=")
+			cmd.Env = append(append(os.Environ(), "GOFLAGS="), c.env...)
 			out, err := cmd.Output()
 			if err != nil {
 				t.Fatalf("go list: %v", err)

@@ -38,6 +38,7 @@ The Go API calls the engine only through the files below, so that another engine
 | `hostcall_lib.go` | The C functions the engine calls back into Go (`callGo`, `callBuiltin`, the class of `Then` callbacks) and the function objects that call them |
 | `memory_lib.go` | `MemoryUsage`, `ReleaseMemory` and the memory of `SharedBytecode` |
 | `tlsstack_linux.go`, `tlsstack_other.go` | How the VM puts libc's TLS stack back after a panic, and the 1 MiB block kept outside linux |
+| `engine_c.go`, `entry_c.go`, `hostcall_c.go`, `memory_c.go` | The same layer on the C engine of `internal/cengine`, built with `-tags slowjs_cengine` on linux/amd64 (`engine_unsupported.go` stops the build elsewhere). The files of lib build without the tag. A Go function that javascript calls gets the shadow stack above the frames of the call, and a panic that goes up through the engine leaves the VM good only for `Close`. `Then`'s callback class and freeing a module's top level are lib-only so far |
 
 The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links only lib and libc as its engine.
 
