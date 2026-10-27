@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -190,6 +191,51 @@ static void test_memcpy_all(void)
         sl_memcpy(big_dst + 64 + dof, big_src + 64 + so, n);
         CHECK(!memcmp(big_dst, big_ref, total + 128), "memcpy n=%zu so=%zu do=%zu", n, so, dof);
     }
+}
+
+/* memcpy with its source at the very end and at the very start of readable
+   memory: a page that cannot be read is on either side, so a read past the
+   last byte of the source or before its first faults and ends the test, even
+   one inside a word the copy loads whole. The source ends at the page after
+   it for every size up to CPMAX (which puts its start at every alignment) and
+   for sizes up to CPBIG, and starts at the page before it for the same
+   sizes, with the destination at 16 offsets. */
+static void test_memcpy_borders(void)
+{
+    static unsigned char dst[CPBIG + 256], ref[CPBIG + 256];
+    const unsigned char guard = 0xAA;
+    size_t page = (size_t)sysconf(_SC_PAGESIZE);
+    size_t span = (CPBIG + page - 1) / page * page;
+    unsigned char *m, *lo, *hi;
+
+    m = mmap(NULL, span + 2 * page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    CHECK(m != MAP_FAILED, "mmap");
+    if (m == MAP_FAILED)
+        return;
+    lo = m + page;
+    hi = lo + span;
+    for (size_t i = 0; i < span; i++) {
+        lo[i] = (unsigned char)rng();
+        if (lo[i] == guard)
+            lo[i] = guard + 1;
+    }
+    CHECK(mprotect(m, page, PROT_NONE) == 0 && mprotect(hi, page, PROT_NONE) == 0, "mprotect");
+    for (int end = 0; end < 2; end++) {
+        for (size_t k = 0; k <= CPMAX + 300; k++) {
+            /* every size to CPMAX, then 300 at random to CPBIG */
+            size_t n = k <= CPMAX ? k : CPMAX + 1 + rng() % (CPBIG - CPMAX);
+            const unsigned char *src = end ? hi - n : lo;
+
+            for (size_t dof = 0; dof < 16; dof += k <= CPMAX ? 1 : 5) {
+                memset(dst, guard, n + 128);
+                memset(ref, guard, n + 128);
+                memcpy(ref + 64 + dof, src, n);
+                sl_memcpy(dst + 64 + dof, src, n);
+                CHECK(!memcmp(dst, ref, n + 128), "memcpy n=%zu from the %s of readable memory do=%zu", n, end ? "end" : "start", dof);
+            }
+        }
+    }
+    munmap(m, span + 2 * page);
 }
 
 static void test_str(void)
@@ -658,6 +704,7 @@ int main(int argc, char **argv)
 {
     test_mem();
     test_memcpy_all();
+    test_memcpy_borders();
     test_str();
     test_snprintf();
     test_aborts();

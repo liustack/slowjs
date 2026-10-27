@@ -266,8 +266,13 @@ typedef enum {
    (see js_nest_enter). */
 typedef enum {
     JS_NEST_FREE, /* free_zero_refcount */
+    JS_NEST_ERROR, /* JS_ThrowError2 */
     JS_NEST_COUNT,
 } JSNestEnum;
+
+/* The errors JS_ThrowError2 makes at once: one, and the out of memory error
+   that making it can throw. */
+#define JS_NEST_ERROR_MAX 2
 
 typedef enum OPCodeEnum OPCodeEnum;
 
@@ -393,6 +398,9 @@ typedef struct {
     void *large_head[JS_LARGE_CACHE_LISTS];
     int large_count[JS_LARGE_CACHE_LISTS];
     size_t large_bytes;
+#ifdef JS_HEAP_CHECK
+    size_t large_hits; /* the requests the cache of large blocks served */
+#endif
 } JSMallocContext;
 
 /* end JS Malloc */
@@ -1503,6 +1511,8 @@ static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
 typedef struct JSBacktrace JSBacktrace;
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags);
+static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
+                                        JSValue val, BOOL cesu8);
 static int js_backtrace_settle(JSContext *ctx, JSObject *p,
                                JSShapeProperty *prs, JSProperty *pr);
 static BOOL js_backtrace_pending(JSShapeProperty *prs, JSProperty *pr);
@@ -1527,6 +1537,19 @@ static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
+static JSValue js_string_to_number(JSContext *ctx, JSValue val);
+static JSValue js_dtoa2(JSContext *ctx,
+                        double d, int radix, int n_digits, int flags);
+static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
+                                                  uint32_t idx, JSValue val,
+                                                  int flags);
+static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
+                                                   uint32_t idx, JSValue *pval);
+static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                            uint32_t idx, JSValue *pval);
+static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                           uint32_t idx, JSValue val,
+                                                           int flags);
 static JSValue js_regexp_toString(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv);
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
@@ -1698,6 +1721,9 @@ static inline void *js_large_take(JSMallocContext *s, size_t size)
     bytes = heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
     s->large_bytes -= bytes;
     heap_unpoison(p, bytes - sizeof(JSMallocLargeBlockHeader));
+#ifdef JS_HEAP_CHECK
+    s->large_hits++;
+#endif
     return p;
 }
 
@@ -1776,7 +1802,9 @@ static BOOL js_front_drain(JSMallocContext *s)
         void *p, *next;
         for(p = s->large_head[i]; p; p = next) {
             next = js_large_next(p);
-            heap_free(&s->heap, container_of(p, JSMallocLargeBlockHeader, header.user_data));
+            /* as any large block: with JS_MALLOC_USE_ITER it leaves the list
+               of large blocks too */
+            __js_free_block(s, p);
             any = TRUE;
         }
         s->large_head[i] = NULL;
@@ -2229,6 +2257,11 @@ size_t JS_LargeCacheBlocks(JSRuntime *rt)
 size_t JS_LargeCacheBytes(JSRuntime *rt)
 {
     return rt->malloc_ctx.large_bytes;
+}
+
+size_t JS_LargeCacheHits(JSRuntime *rt)
+{
+    return rt->malloc_ctx.large_hits;
 }
 
 void JS_LargeCacheLimits(size_t *per_class, size_t *bytes)
@@ -2766,34 +2799,36 @@ int JS_GetStripInfo(JSRuntime *rt)
     return rt->strip_flags;
 }
 
-static int JS_EnqueueJob2(JSContext *ctx, JSJobFunc *job_func,
-                          int argc, JSValueConst *argv, BOOL no_exception)
+static size_t js_job_size(int argc)
 {
-    JSRuntime *rt = ctx->rt;
-    JSJobEntry *e;
+    return sizeof(JSJobEntry) + argc * sizeof(JSValue);
+}
+
+/* queue the job in e, a block of js_job_size(argc) bytes */
+static void js_job_queue(JSContext *ctx, JSJobEntry *e, JSJobFunc *job_func,
+                         int argc, JSValueConst *argv)
+{
     int i;
 
-    if (no_exception)
-        e = js_malloc_rt(ctx->rt, sizeof(*e) + argc * sizeof(JSValue));
-    else
-        e = js_malloc(ctx, sizeof(*e) + argc * sizeof(JSValue));
-    if (!e)
-        return -1;
     e->realm = JS_DupContext(ctx);
     e->job_func = job_func;
     e->argc = argc;
     for(i = 0; i < argc; i++) {
         e->argv[i] = JS_DupValue(ctx, argv[i]);
     }
-    list_add_tail(&e->link, &rt->job_list);
-    return 0;
+    list_add_tail(&e->link, &ctx->rt->job_list);
 }
 
 /* return 0 if OK, < 0 if exception */
 int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func,
                   int argc, JSValueConst *argv)
 {
-    return JS_EnqueueJob2(ctx, job_func, argc, argv, FALSE);
+    JSJobEntry *e = js_malloc(ctx, js_job_size(argc));
+
+    if (!e)
+        return -1;
+    js_job_queue(ctx, e, job_func, argc, argv);
+    return 0;
 }
 
 BOOL JS_IsJobPending(JSRuntime *rt)
@@ -2884,7 +2919,9 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     return str;
 }
 
-static JSString *js_alloc_string(JSContext *ctx, int max_len, int is_wide_char)
+/* always inlined, like js_new_string8_len: strings are made on hot paths,
+   and a call costs about as much as the work of either */
+static force_inline JSString *js_alloc_string(JSContext *ctx, int max_len, int is_wide_char)
 {
     JSString *p;
     p = js_alloc_string_rt(ctx->rt, max_len, is_wide_char);
@@ -4073,13 +4110,19 @@ static const char *JS_AtomGetStr(JSContext *ctx, char *buf, int buf_size, JSAtom
     return JS_AtomGetStrRT(ctx->rt, buf, buf_size, atom);
 }
 
-static JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom, BOOL force_string)
+/* the string of an index atom, out of line so that __JS_AtomToValue stays
+   small enough to inline */
+static no_inline JSValue js_index_atom_to_string(JSContext *ctx, JSAtom atom)
 {
     char buf[ATOM_GET_STR_BUF_SIZE];
+    size_t len = u32toa(buf, __JS_AtomToUInt32(atom));
+    return js_new_string8_len(ctx, buf, len);
+}
 
+static JSValue __JS_AtomToValue(JSContext *ctx, JSAtom atom, BOOL force_string)
+{
     if (__JS_AtomIsTaggedInt(atom)) {
-        size_t len = u32toa(buf, __JS_AtomToUInt32(atom));
-        return js_new_string8_len(ctx, buf, len);
+        return js_index_atom_to_string(ctx, atom);
     } else {
         JSRuntime *rt = ctx->rt;
         JSAtomStruct *p;
@@ -4138,6 +4181,25 @@ static BOOL JS_AtomIsArrayIndex(JSContext *ctx, uint32_t *pval, JSAtom atom)
 /* This test must be fast if atom is not a numeric index (e.g. a
    method name). Return JS_UNDEFINED if not a numeric
    index. JS_EXCEPTION can also be returned. */
+/* ToString of val, a number (an int or a float64), as JS_ToString does it
+   without the conversions of other values */
+static JSValue js_number_to_string(JSContext *ctx, JSValueConst val)
+{
+    char buf[32];
+    size_t len;
+
+    switch(JS_VALUE_GET_NORM_TAG(val)) {
+    case JS_TAG_INT:
+        len = i32toa(buf, JS_VALUE_GET_INT(val));
+        return js_new_string8_len(ctx, buf, len);
+    case JS_TAG_FLOAT64:
+        return js_dtoa2(ctx, JS_VALUE_GET_FLOAT64(val), 10, 0,
+                        JS_DTOA_FORMAT_FREE);
+    default:
+        abort();
+    }
+}
+
 static JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
 {
     JSRuntime *rt = ctx->rt;
@@ -4171,10 +4233,10 @@ static JSValue JS_AtomIsNumericIndex1(JSContext *ctx, JSAtom atom)
     if (!is_num(c) && c != '-')
         return JS_UNDEFINED;
     /* this is ECMA CanonicalNumericIndexString primitive */
-    num = JS_ToNumber(ctx, JS_MKPTR(JS_TAG_STRING, p));
+    num = js_string_to_number(ctx, JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p)));
     if (JS_IsException(num))
         return num;
-    str = JS_ToString(ctx, num);
+    str = js_number_to_string(ctx, num);
     if (JS_IsException(str)) {
         JS_FreeValue(ctx, num);
         return str;
@@ -4234,7 +4296,6 @@ static BOOL JS_AtomSymbolHasDescription(JSContext *ctx, JSAtom v)
 const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
 {
     JSValue str;
-    const char *cstr;
 
     str = JS_AtomToString(ctx, atom);
     if (JS_IsException(str)) {
@@ -4242,9 +4303,8 @@ const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
             *plen = 0;
         return NULL;
     }
-    cstr = JS_ToCStringLen(ctx, plen, str);
-    JS_FreeValue(ctx, str);
-    return cstr;
+    /* the string of an atom is a string, which needs no conversion */
+    return js_string_to_cstring(ctx, plen, str, FALSE);
 }
 
 /* return a string atom containing name concatenated with str1 */
@@ -4396,12 +4456,15 @@ int JS_NewClass(JSRuntime *rt, JSClassID class_id, const JSClassDef *class_def)
     return ret;
 }
 
-static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
+static force_inline JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len)
 {
     JSString *str;
 
     if (len <= 0) {
-        return JS_AtomToString(ctx, JS_ATOM_empty_string);
+        /* JS_AtomToString(ctx, JS_ATOM_empty_string) without its path for
+           an index atom, which makes the string here */
+        return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING,
+                                         ctx->rt->atom_array[JS_ATOM_empty_string]));
     }
     str = js_alloc_string(ctx, len, 0);
     if (!str)
@@ -4731,6 +4794,8 @@ static int string_buffer_concat(StringBuffer *s, const JSString *p,
         return string_buffer_write8(s, p->u.str8 + from, to - from);
 }
 
+static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope);
+
 static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
 {
     JSString *p;
@@ -4743,11 +4808,7 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
     }
     if (unlikely(JS_VALUE_GET_TAG(v) != JS_TAG_STRING)) {
         if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE) {
-            JSStringRope *r = JS_VALUE_GET_STRING_ROPE(v);
-            /* recursion is acceptable because the rope depth is bounded */
-            if (string_buffer_concat_value(s, r->left))
-                return -1;
-            return string_buffer_concat_value(s, r->right);
+            return string_buffer_concat_rope(s, v);
         } else {
             v1 = JS_ToString(s->ctx, v);
             if (JS_IsException(v1))
@@ -4928,23 +4989,14 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
     return val;
 }
 
-/* return (NULL, 0) if exception. */
-/* return pointer into a JSString with a live ref_count */
-/* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
-const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BOOL cesu8)
+/* JS_ToCStringLen2() of val, a string whose reference it takes. It
+   converts nothing, so it runs no JavaScript. */
+static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
+                                        JSValue val, BOOL cesu8)
 {
-    JSValue val;
     JSString *str, *str_new;
     int pos, len, c, c1;
     uint8_t *q;
-
-    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
-        val = JS_ToString(ctx, val1);
-        if (JS_IsException(val))
-            goto fail;
-    } else {
-        val = JS_DupValue(ctx, val1);
-    }
 
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
@@ -5029,6 +5081,26 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
     if (plen)
         *plen = 0;
     return NULL;
+}
+
+/* return (NULL, 0) if exception. */
+/* return pointer into a JSString with a live ref_count */
+/* cesu8 determines if non-BMP1 codepoints are encoded as 1 or 2 utf-8 sequences */
+const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BOOL cesu8)
+{
+    JSValue val;
+
+    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
+        val = JS_ToString(ctx, val1);
+        if (JS_IsException(val)) {
+            if (plen)
+                *plen = 0;
+            return NULL;
+        }
+    } else {
+        val = JS_DupValue(ctx, val1);
+    }
+    return js_string_to_cstring(ctx, plen, val, cesu8);
 }
 
 void JS_FreeCString(JSContext *ctx, const char *ptr)
@@ -5123,8 +5195,10 @@ static void copy_str16(uint16_t *dst, const JSString *p, int offset, int len)
     }
 }
 
-static JSValue JS_ConcatString1(JSContext *ctx,
-                                const JSString *p1, const JSString *p2)
+/* out of line, so that JS_ConcatString2 stays small enough to inline into
+   JS_ConcatString */
+static no_inline JSValue JS_ConcatString1(JSContext *ctx,
+                                          const JSString *p1, const JSString *p2)
 {
     JSString *p;
     uint32_t len;
@@ -5252,6 +5326,20 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
+/* append the strings of a rope in order */
+static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
+{
+    JSStringRopeIter it;
+    JSString *p;
+
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        if (string_buffer_concat(s, p, 0, p->len))
+            return -1;
+    }
+    return 0;
+}
+
 /* The hash of the characters of a string or rope, from h: the strings of
    the rope in order, as if it were one string. */
 static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
@@ -5341,7 +5429,7 @@ static JSValue js_linearize_string_rope(JSContext *ctx, JSValue rope)
     }
     if (string_buffer_init2(ctx, b, r->len, r->is_wide_char))
         goto fail;
-    if (string_buffer_concat_value(b, rope))
+    if (string_buffer_concat_rope(b, rope))
         goto fail;
     ret = string_buffer_end(b);
     if (js_rc(r)->ref_count > 1) {
@@ -5362,8 +5450,9 @@ static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope);
 
 /* op1 and op2 must be strings or string ropes. The rope is as deep as the
    deeper of them plus one: js_new_string_rope rebalances it when that is
-   past JS_STRING_ROPE_MAX_DEPTH. */
-static JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
+   past JS_STRING_ROPE_MAX_DEPTH. It is always inlined into
+   js_new_string_rope, whose rebalancing stays out of line. */
+static force_inline JSValue js_new_string_rope1(JSContext *ctx, JSValue op1, JSValue op2)
 {
     uint32_t len;
     int is_wide_char, depth;
@@ -5444,7 +5533,7 @@ static JSValue js_new_string_rope(JSContext *ctx, JSValue op1, JSValue op2)
    own: nothing here recurses. (Upstream places the strings by their length,
    after Boehm, Atkinson and Plass, "Ropes: an Alternative to Strings", and
    the rope it builds can get deep enough to rebalance again.) */
-static JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
+static no_inline JSValue js_rebalancee_string_rope(JSContext *ctx, JSValueConst rope)
 {
     JSValue buckets[ROPE_N_BUCKETS], a;
     JSStringRopeIter it;
@@ -8964,7 +9053,9 @@ static BOOL js_backtrace_put_frame(JSContext *ctx, DynBuf *dbuf,
     if (!f->func_name) {
         dbuf_putstr(dbuf, "<anonymous>");
     } else {
-        str = JS_ToCString(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name));
+        str = js_string_to_cstring(ctx, NULL,
+                                   JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name)),
+                                   FALSE);
         if (!str)
             return FALSE;
         dbuf_putstr(dbuf, str[0] == '\0' ? "<anonymous>" : str);
@@ -9151,19 +9242,17 @@ static BOOL js_backtrace_record(JSContext *ctx, JSValueConst error_obj,
     return TRUE;
 }
 
-/* format the n frames of the stack of error_obj and store the text as
-   build_backtrace() does, or null if there is no memory for it. Return
-   FALSE if it ran out of memory. */
-static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
-                             int backtrace_flags, int n)
+/* format the n frames of the stack as build_backtrace() does, after what
+   dbuf holds: the text, or null with *pok FALSE if there is no memory for
+   it. dbuf is freed. */
+static JSValue js_backtrace_now_text(JSContext *ctx, DynBuf *dbuf,
+                                     int backtrace_flags, int n, BOOL *pok)
 {
     JSStackFrame *sf;
     JSBacktraceFrame f;
-    DynBuf dbuf;
     JSValue str;
     BOOL ok = TRUE;
 
-    js_dbuf_init(ctx, &dbuf);
     for(sf = ctx->rt->current_stack_frame; n > 0; sf = sf->prev_frame) {
         if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
@@ -9171,21 +9260,114 @@ static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
         }
         js_backtrace_frame(ctx, &f, sf, FALSE);
         if (ok)
-            ok = js_backtrace_put_frame(ctx, &dbuf, &f);
+            ok = js_backtrace_put_frame(ctx, dbuf, &f);
         if (f.func_name)
             JS_FreeValue(ctx, JS_MKPTR(JS_TAG_STRING, f.func_name));
         n--;
     }
     if (ok) {
-        str = js_backtrace_text(ctx, &dbuf);
+        str = js_backtrace_text(ctx, dbuf);
         ok = !JS_IsException(str);
     } else {
-        dbuf_free(&dbuf);
+        dbuf_free(dbuf);
     }
     if (!ok)
         str = JS_NULL;
+    *pok = ok;
+    return str;
+}
+
+/* format the n frames of the stack of error_obj and store the text as
+   build_backtrace() does, or null if there is no memory for it. Return
+   FALSE if it ran out of memory. */
+static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
+                             int backtrace_flags, int n)
+{
+    DynBuf dbuf;
+    BOOL ok;
+    JSValue str;
+
+    js_dbuf_init(ctx, &dbuf);
+    str = js_backtrace_now_text(ctx, &dbuf, backtrace_flags, n, &ok);
     return JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) >= 0 && ok;
+}
+
+/* js_backtrace_now() for a new error of JS_ThrowError2, which has no
+   exotic behavior and no 'stack': JS_DefinePropertyValue would add it with
+   add_property alone */
+static BOOL js_backtrace_now_new(JSContext *ctx, JSValueConst error_obj, int n)
+{
+    DynBuf dbuf;
+    BOOL ok;
+    JSValue str;
+    JSProperty *pr;
+
+    js_dbuf_init(ctx, &dbuf);
+    str = js_backtrace_now_text(ctx, &dbuf, 0, n, &ok);
+    pr = add_property(ctx, JS_VALUE_GET_OBJ(error_obj), JS_ATOM_stack,
+                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (!pr) {
+        JS_FreeValue(ctx, str);
+        return FALSE;
+    }
+    pr->u.value = str;
+    return ok;
+}
+
+/* the number of frames build_backtrace() puts in a stack, and whether
+   top-level code (a script, an eval or a module body) is among them */
+static int js_backtrace_count(JSContext *ctx, int backtrace_flags,
+                              BOOL *ptop_level)
+{
+    JSStackFrame *sf;
+    JSFunctionBytecode *b;
+    int n = 0;
+
+    *ptop_level = FALSE;
+    for(sf = ctx->rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
+        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
+            break;
+        if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
+            backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
+            continue;
+        }
+        b = JS_GetFunctionBytecode(sf->cur_func);
+        if (b && b->func_name == JS_ATOM__eval_)
+            *ptop_level = TRUE;
+        n++;
+    }
+    return n;
+}
+
+/* the exception state a build of a stack puts back when it fails */
+typedef struct {
+    JSValue exception;
+    BOOL uncatchable;
+} JSBacktraceSaved;
+
+/* error_obj may be the current exception, and running out of memory throws
+   a new one, which frees it. Keep it until the stack is in place, and the
+   exception, to put it back. */
+static void js_backtrace_save(JSContext *ctx, JSValueConst error_obj,
+                              JSBacktraceSaved *saved)
+{
+    JS_DupValue(ctx, error_obj);
+    saved->exception = JS_DupValue(ctx, ctx->rt->current_exception);
+    saved->uncatchable = ctx->rt->current_exception_is_uncatchable;
+}
+
+static void js_backtrace_restore(JSContext *ctx, JSValueConst error_obj,
+                                 JSBacktraceSaved *saved, BOOL ok)
+{
+    if (ok) {
+        JS_FreeValue(ctx, saved->exception);
+    } else {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        JS_Throw(ctx, saved->exception);
+        JS_SetUncatchableException(ctx, saved->uncatchable);
+    }
+    JS_FreeValue(ctx, error_obj);
 }
 
 /* build_backtrace() for a stack without a file name. It records the stack
@@ -9200,36 +9382,13 @@ static BOOL js_backtrace_now(JSContext *ctx, JSValueConst error_obj,
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags)
 {
-    JSRuntime *rt = ctx->rt;
     JSObject *p = JS_VALUE_GET_OBJ(error_obj);
-    JSStackFrame *sf;
-    JSFunctionBytecode *b;
-    JSValue exception;
-    BOOL uncatchable, ok, top_level;
-    int n, flags;
+    JSBacktraceSaved saved;
+    BOOL ok, top_level;
+    int n;
 
-    n = 0;
-    top_level = FALSE;
-    flags = backtrace_flags;
-    for(sf = rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
-        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
-            break;
-        if (flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
-            flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
-            continue;
-        }
-        b = JS_GetFunctionBytecode(sf->cur_func);
-        if (b && b->func_name == JS_ATOM__eval_)
-            top_level = TRUE;
-        n++;
-    }
-
-    /* error_obj may be the current exception, and running out of memory
-       throws a new one, which frees it. Keep it until the stack is in
-       place, and the exception, to put it back. */
-    JS_DupValue(ctx, error_obj);
-    exception = JS_DupValue(ctx, rt->current_exception);
-    uncatchable = rt->current_exception_is_uncatchable;
+    n = js_backtrace_count(ctx, backtrace_flags, &top_level);
+    js_backtrace_save(ctx, error_obj, &saved);
     /* JS_DefineProperty would add 'stack' with add_property alone: an Error
        object has no exotic behavior */
     if (top_level || p->class_id != JS_CLASS_ERROR || !p->extensible ||
@@ -9241,28 +9400,77 @@ static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
     } else {
         ok = TRUE;
     }
-    if (ok) {
-        JS_FreeValue(ctx, exception);
-    } else {
-        JS_FreeValue(ctx, JS_GetException(ctx));
-        JS_Throw(ctx, exception);
-        JS_SetUncatchableException(ctx, uncatchable);
-    }
-    JS_FreeValue(ctx, error_obj);
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
 }
 
-/* if filename != NULL, an additional level is added with the filename
-   and line number information (used for parse error). */
+/* js_backtrace_build() for a new error of JS_ThrowError2 (see
+   js_backtrace_now_new). Neither defines a property but by add_property, so
+   making an error runs no JavaScript. */
+static void js_backtrace_build_new(JSContext *ctx, JSValueConst error_obj)
+{
+    JSBacktraceSaved saved;
+    BOOL ok, top_level;
+    int n;
+
+    n = js_backtrace_count(ctx, 0, &top_level);
+    js_backtrace_save(ctx, error_obj, &saved);
+    if (top_level) {
+        ok = js_backtrace_now_new(ctx, error_obj, n);
+    } else if (!js_backtrace_record(ctx, error_obj, 0, n)) {
+        js_backtrace_now_new(ctx, error_obj, n);
+        ok = FALSE;
+    } else {
+        ok = TRUE;
+    }
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
+}
+
+/* build_backtrace() with a file name, for a syntax error: the place in
+   the source goes in the properties fileName, lineNumber and columnNumber
+   and is the first line of the stack, which is formatted now. Return FALSE
+   if it ran out of memory. */
+static BOOL js_backtrace_build_at(JSContext *ctx, JSValueConst error_obj,
+                                  const char *filename, int line_num,
+                                  int col_num, int backtrace_flags)
+{
+    DynBuf dbuf;
+    JSValue str;
+    BOOL ok, top_level;
+    int n;
+
+    n = js_backtrace_count(ctx, backtrace_flags, &top_level);
+    str = JS_NewString(ctx, filename);
+    if (JS_IsException(str))
+        return FALSE;
+    /* Note: SpiderMonkey does that, could update once there is a standard */
+    if (JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_fileName, str,
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
+        JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_lineNumber, JS_NewInt32(ctx, line_num),
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
+        JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_columnNumber, JS_NewInt32(ctx, col_num),
+                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
+        return FALSE;
+    }
+    js_dbuf_init(ctx, &dbuf);
+    dbuf_printf(&dbuf, "    at %s", filename);
+    if (line_num != -1)
+        dbuf_printf(&dbuf, ":%d:%d", line_num, col_num);
+    dbuf_putc(&dbuf, '\n');
+    str = js_backtrace_now_text(ctx, &dbuf, backtrace_flags, n, &ok);
+    return JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
+                                  JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) >= 0 && ok;
+}
+
+/* add a stack to error_obj, and with filename != NULL, a first level with
+   the file name and the line number (used for parse error). It does not
+   throw: when it runs out of memory, error_obj may have no stack or a null
+   one, and the exception is the one there was before. */
 static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
                             const char *filename, int line_num, int col_num,
                             int backtrace_flags)
 {
-    JSStackFrame *sf;
-    JSValue str;
-    DynBuf dbuf;
-    const char *func_name_str;
-    const char *str1;
-    JSObject *p;
+    JSBacktraceSaved saved;
+    BOOL ok;
 
     if (!JS_IsObject(error_obj))
         return; /* protection in the out of memory case */
@@ -9270,72 +9478,10 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
         js_backtrace_build(ctx, error_obj, backtrace_flags);
         return;
     }
-    
-    js_dbuf_init(ctx, &dbuf);
-    if (filename) {
-        dbuf_printf(&dbuf, "    at %s", filename);
-        if (line_num != -1)
-            dbuf_printf(&dbuf, ":%d:%d", line_num, col_num);
-        dbuf_putc(&dbuf, '\n');
-        str = JS_NewString(ctx, filename);
-        if (JS_IsException(str))
-            return;
-        /* Note: SpiderMonkey does that, could update once there is a standard */
-        if (JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_fileName, str,
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
-            JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_lineNumber, JS_NewInt32(ctx, line_num),
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0 ||
-            JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_columnNumber, JS_NewInt32(ctx, col_num),
-                                   JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
-            return;
-        }
-    }
-    for(sf = ctx->rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
-        if (sf->js_mode & JS_MODE_BACKTRACE_BARRIER)
-            break;
-        if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
-            backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
-            continue;
-        }
-        func_name_str = get_prop_string(ctx, sf->cur_func, JS_ATOM_name);
-        if (!func_name_str || func_name_str[0] == '\0')
-            str1 = "<anonymous>";
-        else
-            str1 = func_name_str;
-        dbuf_printf(&dbuf, "    at %s", str1);
-        JS_FreeCString(ctx, func_name_str);
-
-        p = JS_VALUE_GET_OBJ(sf->cur_func);
-        if (js_class_has_bytecode(p->class_id)) {
-            JSFunctionBytecode *b;
-            const char *atom_str;
-            int line_num1, col_num1;
-
-            b = p->u.func.function_bytecode;
-            if (b->has_debug) {
-                line_num1 = find_line_num(ctx, b,
-                                          sf->cur_pc - b->byte_code_buf - 1, &col_num1);
-                atom_str = JS_AtomToCString(ctx, b->debug.filename);
-                dbuf_printf(&dbuf, " (%s",
-                            atom_str ? atom_str : "<null>");
-                JS_FreeCString(ctx, atom_str);
-                if (line_num1 != 0)
-                    dbuf_printf(&dbuf, ":%d:%d", line_num1, col_num1);
-                dbuf_putc(&dbuf, ')');
-            }
-        } else {
-            dbuf_printf(&dbuf, " (native)");
-        }
-        dbuf_putc(&dbuf, '\n');
-    }
-    dbuf_putc(&dbuf, '\0');
-    if (dbuf_error(&dbuf))
-        str = JS_NULL;
-    else
-        str = JS_NewString(ctx, (char *)dbuf.buf);
-    dbuf_free(&dbuf);
-    JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
-                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    js_backtrace_save(ctx, error_obj, &saved);
+    ok = js_backtrace_build_at(ctx, error_obj, filename, line_num, col_num,
+                               backtrace_flags);
+    js_backtrace_restore(ctx, error_obj, &saved, ok);
 }
 
 /* Note: it is important that no exception is returned by this function */
@@ -9357,13 +9503,28 @@ JSValue JS_NewError(JSContext *ctx)
     return JS_NewObjectClass(ctx, JS_CLASS_ERROR);
 }
 
+/* Making an error can run out of memory, which throws an error in turn: the
+   two are made at once, and the out of memory error does not throw another
+   (JS_ThrowOutOfMemory). Making one runs no JavaScript and reads no
+   interrupt (cycles.sh checks it), so no third can start while they are
+   made. Its slot of rt->nest counts them, and a third one, which only a bug
+   would start, is thrown as running out of memory, as is an error there is
+   no memory for. */
 static JSValue __attribute__((format(printf, 3, 0)))
 JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
                const char *fmt, va_list ap, BOOL add_backtrace)
 {
+    JSRuntime *rt = ctx->rt;
     char buf[256];
     JSValue msg, obj, ret;
+    JSProperty *pr;
 
+    if (unlikely(rt->nest[JS_NEST_ERROR] >= JS_NEST_ERROR_MAX)) {
+        JS_Throw(ctx, JS_NULL);
+        JS_SetUncatchableException(ctx, TRUE);
+        return JS_EXCEPTION;
+    }
+    js_nest_enter(rt, JS_NEST_ERROR, JS_NEST_ERROR_MAX);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     /* The message first: an error without its message is no use. */
     msg = JS_NewString(ctx, buf);
@@ -9375,21 +9536,28 @@ JS_ThrowError2(JSContext *ctx, JSErrorEnum error_num,
         JS_FreeValue(ctx, msg);
         goto out_of_memory;
     }
-    if (JS_DefinePropertyValue(ctx, obj, JS_ATOM_message, msg,
-                               JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
+    /* a new error has no exotic behavior and no property of its own, so
+       JS_DefinePropertyValue would add 'message' with add_property alone */
+    pr = add_property(ctx, JS_VALUE_GET_OBJ(obj), JS_ATOM_message,
+                      JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (unlikely(!pr)) {
+        JS_FreeValue(ctx, msg);
         JS_FreeValue(ctx, obj);
         goto out_of_memory;
     }
+    pr->u.value = msg;
     if (add_backtrace) {
-        build_backtrace(ctx, obj, NULL, 0, 0, 0);
+        js_backtrace_build_new(ctx, obj);
     }
     ret = JS_Throw(ctx, obj);
+    js_nest_leave(rt, JS_NEST_ERROR);
     return ret;
  out_of_memory:
     /* throw JS_NULL to avoid recursing, uncatchable as the out of memory
        error is: the embedder reports it as one */
     JS_Throw(ctx, JS_NULL);
     JS_SetUncatchableException(ctx, TRUE);
+    js_nest_leave(rt, JS_NEST_ERROR);
     return JS_EXCEPTION;
 }
 
@@ -9929,8 +10097,15 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
     realm = js_autoinit_get_realm(pr);
     id = js_autoinit_get_id(pr);
     func = js_autoinit_func_table[id];
+    /* Making the value defines its properties, and a definition can make
+       a property of this kind first: a level of the internal depth counts
+       each. The data bounds how deep that goes (the tables of built-in
+       objects), the call graph does not. */
+    if (js_internal_enter(ctx))
+        return -1;
     /* 'func' shall not modify the object properties 'pr' */
     val = func(realm, p, prop, pr->u.init.opaque);
+    js_internal_leave(ctx->rt);
     if (JS_IsException(val))
         return -1;
     /* WARNING: a varref is returned as a string  ! */
@@ -10054,9 +10229,9 @@ JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
             if (p->fast_array) {
                 if (__JS_AtomIsTaggedInt(prop)) {
                     uint32_t idx = __JS_AtomToUInt32(prop);
-                    if (idx < p->u.array.count) {
-                        /* we avoid duplicating the code */
-                        return JS_GetPropertyUint32(ctx, JS_MKPTR(JS_TAG_OBJECT, p), idx);
+                    JSValue val;
+                    if (js_get_fast_array_element_out_of_line(ctx, p, idx, &val)) {
+                        return val;
                     } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
                                p->class_id <= JS_CLASS_FLOAT64_ARRAY) {
                         return JS_UNDEFINED;
@@ -10914,7 +11089,9 @@ retry:
                             JS_PROP_CONFIGURABLE;
                         desc->getter = JS_UNDEFINED;
                         desc->setter = JS_UNDEFINED;
-                        desc->value = JS_GetPropertyUint32(ctx, JS_MKPTR(JS_TAG_OBJECT, p), idx);
+                        /* an element below the count is always there */
+                        if (unlikely(!js_get_fast_array_element_out_of_line(ctx, p, idx, &desc->value)))
+                            abort();
                     }
                     return TRUE;
                 }
@@ -11074,79 +11251,105 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
     return atom;
 }
 
+/* the element idx of the fast array p in *pval: FALSE, with *pval
+   untouched, if p is of a class with no fast array or idx is not below its
+   count */
+static force_inline BOOL js_get_fast_array_element(JSContext *ctx, JSObject *p,
+                                                   uint32_t idx, JSValue *pval)
+{
+    switch(p->class_id) {
+    case JS_CLASS_ARRAY:
+    case JS_CLASS_ARGUMENTS:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_DupValue(ctx, p->u.array.u.values[idx]);
+        return TRUE;
+    case JS_CLASS_MAPPED_ARGUMENTS:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_DupValue(ctx, *p->u.array.u.var_refs[idx]->pvalue);
+        return TRUE;
+    case JS_CLASS_INT8_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int8_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT8C_ARRAY:
+    case JS_CLASS_UINT8_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.uint8_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_INT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int16_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.uint16_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_INT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewInt32(ctx, p->u.array.u.int32_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_UINT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewUint32(ctx, p->u.array.u.uint32_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_BIG_INT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewBigInt64(ctx, p->u.array.u.int64_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_BIG_UINT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = JS_NewBigUint64(ctx, p->u.array.u.uint64_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_FLOAT16_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, fromfp16(p->u.array.u.fp16_ptr[idx]));
+        return TRUE;
+    case JS_CLASS_FLOAT32_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, p->u.array.u.float_ptr[idx]);
+        return TRUE;
+    case JS_CLASS_FLOAT64_ARRAY:
+        if (unlikely(idx >= p->u.array.count)) return FALSE;
+        *pval = __JS_NewFloat64(ctx, p->u.array.u.double_ptr[idx]);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+/* js_get_fast_array_element for the generic paths (JS_GetPropertyInternal,
+   JS_GetOwnPropertyInternal): inlined there, it makes them bigger and slower
+   on their own hot paths. JS_GetPropertyValue keeps it inline. */
+static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                            uint32_t idx, JSValue *pval)
+{
+    return js_get_fast_array_element(ctx, p, idx, pval);
+}
+
 static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                    JSValue prop)
 {
     JSAtom atom;
     JSValue ret;
 
+    /* fast path for array access */
     if (likely(JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
-               JS_VALUE_GET_TAG(prop) == JS_TAG_INT)) {
-        JSObject *p;
-        uint32_t idx;
-        /* fast path for array access */
-        p = JS_VALUE_GET_OBJ(this_obj);
-        idx = JS_VALUE_GET_INT(prop);
-        switch(p->class_id) {
-        case JS_CLASS_ARRAY:
-        case JS_CLASS_ARGUMENTS:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_DupValue(ctx, p->u.array.u.values[idx]);
-        case JS_CLASS_MAPPED_ARGUMENTS:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_DupValue(ctx, *p->u.array.u.var_refs[idx]->pvalue);
-        case JS_CLASS_INT8_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int8_ptr[idx]);
-        case JS_CLASS_UINT8C_ARRAY:
-        case JS_CLASS_UINT8_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.uint8_ptr[idx]);
-        case JS_CLASS_INT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int16_ptr[idx]);
-        case JS_CLASS_UINT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.uint16_ptr[idx]);
-        case JS_CLASS_INT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewInt32(ctx, p->u.array.u.int32_ptr[idx]);
-        case JS_CLASS_UINT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewUint32(ctx, p->u.array.u.uint32_ptr[idx]);
-        case JS_CLASS_BIG_INT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewBigInt64(ctx, p->u.array.u.int64_ptr[idx]);
-        case JS_CLASS_BIG_UINT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return JS_NewBigUint64(ctx, p->u.array.u.uint64_ptr[idx]);
-        case JS_CLASS_FLOAT16_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, fromfp16(p->u.array.u.fp16_ptr[idx]));
-        case JS_CLASS_FLOAT32_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, p->u.array.u.float_ptr[idx]);
-        case JS_CLASS_FLOAT64_ARRAY:
-            if (unlikely(idx >= p->u.array.count)) goto slow_path;
-            return __JS_NewFloat64(ctx, p->u.array.u.double_ptr[idx]);
-        default:
-            goto slow_path;
-        }
-    } else {
-    slow_path:
-        /* ToObject() must be done before ToPropertyKey() */
-        if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
-            JS_FreeValue(ctx, prop);
-            return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
-        }
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
-        if (unlikely(atom == JS_ATOM_NULL))
-            return JS_EXCEPTION;
-        ret = JS_GetProperty(ctx, this_obj, atom);
-        JS_FreeAtom(ctx, atom);
+               JS_VALUE_GET_TAG(prop) == JS_TAG_INT) &&
+        js_get_fast_array_element(ctx, JS_VALUE_GET_OBJ(this_obj),
+                                  JS_VALUE_GET_INT(prop), &ret))
         return ret;
+    /* ToObject() must be done before ToPropertyKey() */
+    if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
+        JS_FreeValue(ctx, prop);
+        return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
     }
+    atom = JS_ValueToAtom(ctx, prop);
+    JS_FreeValue(ctx, prop);
+    if (unlikely(atom == JS_ATOM_NULL))
+        return JS_EXCEPTION;
+    ret = JS_GetProperty(ctx, this_obj, atom);
+    JS_FreeAtom(ctx, atom);
+    return ret;
 }
 
 JSValue JS_GetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
@@ -11792,10 +11995,15 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
                 if (__JS_AtomIsTaggedInt(prop)) {
                     uint32_t idx = __JS_AtomToUInt32(prop);
                     if (idx < p1->u.array.count) {
-                        if (unlikely(p == p1))
-                            return JS_SetPropertyValue(ctx, this_obj, JS_NewInt32(ctx, idx), val, flags);
-                        else
+                        if (unlikely(p == p1)) {
+                            ret = js_set_fast_array_element_out_of_line(ctx, p, idx, val, flags);
+                            /* an element below the count is always set */
+                            if (unlikely(ret == -2))
+                                abort();
+                            return ret;
+                        } else {
                             break;
+                        }
                     } else if (p1->class_id >= JS_CLASS_UINT8C_ARRAY &&
                                p1->class_id <= JS_CLASS_FLOAT64_ARRAY) {
                         goto typed_array_oob;
@@ -11995,130 +12203,150 @@ static force_inline BOOL can_extend_fast_array(JSObject *p)
     return proto->is_std_array_prototype;
 }
 
+/* the fast path of JS_SetPropertyValue: set the element idx of the fast
+   array p to val, which is freed, and return TRUE, or -1 on exception.
+   Return -2, with val not freed, if p is of a class with no fast array, or
+   idx is past its count and is not the end of an Array that can grow there.
+   A typed array takes any index: past its count (which the conversion of
+   val can shrink), the write is left out. */
+static force_inline int js_set_fast_array_element(JSContext *ctx, JSObject *p,
+                                                  uint32_t idx, JSValue val,
+                                                  int flags)
+{
+    double d;
+    int32_t v;
+
+    switch(p->class_id) {
+    case JS_CLASS_ARRAY:
+        if (unlikely(idx >= (uint32_t)p->u.array.count)) {
+            /* fast path to add an element to the array */
+            if (unlikely(idx != (uint32_t)p->u.array.count ||
+                         !p->fast_array ||
+                         !can_extend_fast_array(p))) {
+                return -2;
+            }
+            /* add element */
+            return add_fast_array_element(ctx, p, val, flags);
+        }
+        set_value(ctx, &p->u.array.u.values[idx], val);
+        break;
+    case JS_CLASS_ARGUMENTS:
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            return -2;
+        set_value(ctx, &p->u.array.u.values[idx], val);
+        break;
+    case JS_CLASS_MAPPED_ARGUMENTS:
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            return -2;
+        set_value(ctx, p->u.array.u.var_refs[idx]->pvalue, val);
+        break;
+    case JS_CLASS_UINT8C_ARRAY:
+        if (JS_ToUint8ClampFree(ctx, &v, val))
+            return -1;
+        /* Note: the conversion can detach the typed array, so the
+           array bound check must be done after */
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint8_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT8_ARRAY:
+    case JS_CLASS_UINT8_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint8_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT16_ARRAY:
+    case JS_CLASS_UINT16_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint16_ptr[idx] = v;
+        break;
+    case JS_CLASS_INT32_ARRAY:
+    case JS_CLASS_UINT32_ARRAY:
+        if (JS_ToInt32Free(ctx, &v, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.uint32_ptr[idx] = v;
+        break;
+    case JS_CLASS_BIG_INT64_ARRAY:
+    case JS_CLASS_BIG_UINT64_ARRAY:
+        /* XXX: need specific conversion function */
+        {
+            int64_t v;
+            if (JS_ToBigInt64Free(ctx, &v, val))
+                return -1;
+            if (unlikely(idx >= (uint32_t)p->u.array.count))
+                goto ta_out_of_bound;
+            p->u.array.u.uint64_ptr[idx] = v;
+        }
+        break;
+    case JS_CLASS_FLOAT16_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.fp16_ptr[idx] = tofp16(d);
+        break;
+    case JS_CLASS_FLOAT32_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count))
+            goto ta_out_of_bound;
+        p->u.array.u.float_ptr[idx] = d;
+        break;
+    case JS_CLASS_FLOAT64_ARRAY:
+        if (JS_ToFloat64Free(ctx, &d, val))
+            return -1;
+        if (unlikely(idx >= (uint32_t)p->u.array.count)) {
+        ta_out_of_bound:
+            return TRUE;
+        }
+        p->u.array.u.double_ptr[idx] = d;
+        break;
+    default:
+        return -2;
+    }
+    return TRUE;
+}
+
+/* js_set_fast_array_element for JS_SetPropertyInternal and
+   JS_DefineProperty, as js_get_fast_array_element_out_of_line */
+static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
+                                                           uint32_t idx, JSValue val,
+                                                           int flags)
+{
+    return js_set_fast_array_element(ctx, p, idx, val, flags);
+}
+
 /* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
 static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                JSValue prop, JSValue val, int flags)
 {
+    JSAtom atom;
+    int ret;
+
+    /* fast path for array access */
     if (likely(JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
                JS_VALUE_GET_TAG(prop) == JS_TAG_INT)) {
-        JSObject *p;
-        uint32_t idx;
-        double d;
-        int32_t v;
-
-        /* fast path for array access */
-        p = JS_VALUE_GET_OBJ(this_obj);
-        idx = JS_VALUE_GET_INT(prop);
-        switch(p->class_id) {
-        case JS_CLASS_ARRAY:
-            if (unlikely(idx >= (uint32_t)p->u.array.count)) {
-                /* fast path to add an element to the array */
-                if (unlikely(idx != (uint32_t)p->u.array.count ||
-                             !p->fast_array ||
-                             !can_extend_fast_array(p))) {
-                    goto slow_path;
-                }
-                /* add element */
-                return add_fast_array_element(ctx, p, val, flags);
-            }
-            set_value(ctx, &p->u.array.u.values[idx], val);
-            break;
-        case JS_CLASS_ARGUMENTS:
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto slow_path;
-            set_value(ctx, &p->u.array.u.values[idx], val);
-            break;
-        case JS_CLASS_MAPPED_ARGUMENTS:
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto slow_path;
-            set_value(ctx, p->u.array.u.var_refs[idx]->pvalue, val);
-            break;
-        case JS_CLASS_UINT8C_ARRAY:
-            if (JS_ToUint8ClampFree(ctx, &v, val))
-                return -1;
-            /* Note: the conversion can detach the typed array, so the
-               array bound check must be done after */
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint8_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT8_ARRAY:
-        case JS_CLASS_UINT8_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint8_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT16_ARRAY:
-        case JS_CLASS_UINT16_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint16_ptr[idx] = v;
-            break;
-        case JS_CLASS_INT32_ARRAY:
-        case JS_CLASS_UINT32_ARRAY:
-            if (JS_ToInt32Free(ctx, &v, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.uint32_ptr[idx] = v;
-            break;
-        case JS_CLASS_BIG_INT64_ARRAY:
-        case JS_CLASS_BIG_UINT64_ARRAY:
-            /* XXX: need specific conversion function */
-            {
-                int64_t v;
-                if (JS_ToBigInt64Free(ctx, &v, val))
-                    return -1;
-                if (unlikely(idx >= (uint32_t)p->u.array.count))
-                    goto ta_out_of_bound;
-                p->u.array.u.uint64_ptr[idx] = v;
-            }
-            break;
-        case JS_CLASS_FLOAT16_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.fp16_ptr[idx] = tofp16(d);
-            break;
-        case JS_CLASS_FLOAT32_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count))
-                goto ta_out_of_bound;
-            p->u.array.u.float_ptr[idx] = d;
-            break;
-        case JS_CLASS_FLOAT64_ARRAY:
-            if (JS_ToFloat64Free(ctx, &d, val))
-                return -1;
-            if (unlikely(idx >= (uint32_t)p->u.array.count)) {
-            ta_out_of_bound:
-                return TRUE;
-            }
-            p->u.array.u.double_ptr[idx] = d;
-            break;
-        default:
-            goto slow_path;
-        }
-        return TRUE;
-    } else {
-        JSAtom atom;
-        int ret;
-    slow_path:
-        atom = JS_ValueToAtom(ctx, prop);
-        JS_FreeValue(ctx, prop);
-        if (unlikely(atom == JS_ATOM_NULL)) {
-            JS_FreeValue(ctx, val);
-            return -1;
-        }
-        ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
-        JS_FreeAtom(ctx, atom);
-        return ret;
+        ret = js_set_fast_array_element(ctx, JS_VALUE_GET_OBJ(this_obj),
+                                        JS_VALUE_GET_INT(prop), val, flags);
+        if (ret != -2)
+            return ret;
     }
+    atom = JS_ValueToAtom(ctx, prop);
+    JS_FreeValue(ctx, prop);
+    if (unlikely(atom == JS_ATOM_NULL)) {
+        JS_FreeValue(ctx, val);
+        return -1;
+    }
+    ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
+    JS_FreeAtom(ctx, atom);
+    return ret;
 }
 
 int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
@@ -12690,7 +12918,11 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                 return JS_ThrowTypeErrorOrFalse(ctx, flags, "invalid descriptor flags");
             }
             if (flags & JS_PROP_HAS_VALUE) {
-                return JS_SetPropertyValue(ctx, this_obj, JS_NewInt32(ctx, idx), JS_DupValue(ctx, val), flags);
+                ret = js_set_fast_array_element_out_of_line(ctx, p, idx, JS_DupValue(ctx, val), flags);
+                /* a typed array takes any index */
+                if (unlikely(ret == -2))
+                    abort();
+                return ret;
             }
             return TRUE;
         typed_array_done: ;
@@ -15002,8 +15234,46 @@ typedef enum JSToNumberHintEnum {
     TON_FLAG_NUMERIC,
 } JSToNumberHintEnum;
 
-static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
-                                   JSToNumberHintEnum flag)
+/* ToNumber of val, a string or a rope, which is freed. It converts only
+   strings, so that what ToNumber does for other values is out of its reach
+   (JS_AtomIsNumericIndex1 calls it). */
+static JSValue js_string_to_number(JSContext *ctx, JSValue val)
+{
+    const char *str;
+    const char *p;
+    size_t len;
+    JSValue ret;
+
+    if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING_ROPE) {
+        val = js_linearize_string_rope(ctx, val);
+        if (JS_IsException(val))
+            return val;
+    }
+    str = js_string_to_cstring(ctx, &len, val, FALSE);
+    if (!str)
+        return JS_EXCEPTION;
+    p = str;
+    p += skip_spaces(p);
+    if ((p - str) == len) {
+        ret = JS_NewInt32(ctx, 0);
+    } else {
+        int flags = ATOD_ACCEPT_BIN_OCT;
+        ret = js_atof(ctx, p, &p, 0, flags);
+        if (!JS_IsException(ret)) {
+            p += skip_spaces(p);
+            if ((p - str) != len) {
+                JS_FreeValue(ctx, ret);
+                ret = JS_NAN;
+            }
+        }
+    }
+    JS_FreeCString(ctx, str);
+    return ret;
+}
+
+/* out of line: inlined, it grows js_add_slow and JS_CallInternal */
+static no_inline JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
+                                             JSToNumberHintEnum flag)
 {
     uint32_t tag;
     JSValue ret;
@@ -15038,32 +15308,7 @@ static JSValue JS_ToNumberHintFree(JSContext *ctx, JSValue val,
         goto redo;
     case JS_TAG_STRING:
     case JS_TAG_STRING_ROPE:
-        {
-            const char *str;
-            const char *p;
-            size_t len;
-
-            str = JS_ToCStringLen(ctx, &len, val);
-            JS_FreeValue(ctx, val);
-            if (!str)
-                return JS_EXCEPTION;
-            p = str;
-            p += skip_spaces(p);
-            if ((p - str) == len) {
-                ret = JS_NewInt32(ctx, 0);
-            } else {
-                int flags = ATOD_ACCEPT_BIN_OCT;
-                ret = js_atof(ctx, p, &p, 0, flags);
-                if (!JS_IsException(ret)) {
-                    p += skip_spaces(p);
-                    if ((p - str) != len) {
-                        JS_FreeValue(ctx, ret);
-                        ret = JS_NAN;
-                    }
-                }
-            }
-            JS_FreeCString(ctx, str);
-        }
+        ret = js_string_to_number(ctx, val);
         break;
     case JS_TAG_SYMBOL:
         JS_FreeValue(ctx, val);
@@ -15479,8 +15724,10 @@ static int JS_ToUint8ClampFree(JSContext *ctx, int32_t *pres, JSValue val)
     return 0;
 }
 
-static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
-                                            JSValue val, BOOL is_array_ctor)
+/* the array length of val, a number, a boolean or null: -1 with a
+   RangeError if it is not a valid one */
+static int js_number_to_array_length(JSContext *ctx, uint32_t *plen,
+                                     JSValueConst val)
 {
     uint32_t tag, len;
 
@@ -15498,44 +15745,54 @@ static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
         }
         break;
     default:
-        if (JS_TAG_IS_FLOAT64(tag)) {
+        {
             double d;
+            if (!JS_TAG_IS_FLOAT64(tag))
+                abort(); /* the callers give a number */
             d = JS_VALUE_GET_FLOAT64(val);
             if (!(d >= 0 && d <= UINT32_MAX))
                 goto fail;
             len = (uint32_t)d;
             if (len != d)
                 goto fail;
-        } else {
-            uint32_t len1;
-
-            if (is_array_ctor) {
-                val = JS_ToNumberFree(ctx, val);
-                if (JS_IsException(val))
-                    return -1;
-                /* cannot recurse because val is a number */
-                if (JS_ToArrayLengthFree(ctx, &len, val, TRUE))
-                    return -1;
-            } else {
-                /* legacy behavior: must do the conversion twice and compare */
-                if (JS_ToUint32(ctx, &len, val)) {
-                    JS_FreeValue(ctx, val);
-                    return -1;
-                }
-                val = JS_ToNumberFree(ctx, val);
-                if (JS_IsException(val))
-                    return -1;
-                /* cannot recurse because val is a number */
-                if (JS_ToArrayLengthFree(ctx, &len1, val, FALSE))
-                    return -1;
-                if (len1 != len) {
-                fail:
-                    JS_ThrowRangeError(ctx, "invalid array length");
-                    return -1;
-                }
-            }
         }
         break;
+    }
+    *plen = len;
+    return 0;
+ fail:
+    JS_ThrowRangeError(ctx, "invalid array length");
+    return -1;
+}
+
+static __exception int JS_ToArrayLengthFree(JSContext *ctx, uint32_t *plen,
+                                            JSValue val, BOOL is_array_ctor)
+{
+    uint32_t tag, len, len1;
+
+    tag = JS_VALUE_GET_TAG(val);
+    if (tag == JS_TAG_INT || tag == JS_TAG_BOOL || tag == JS_TAG_NULL ||
+        JS_TAG_IS_FLOAT64(tag))
+        return js_number_to_array_length(ctx, plen, val);
+    if (is_array_ctor) {
+        val = JS_ToNumberFree(ctx, val);
+        if (JS_IsException(val))
+            return -1;
+        return js_number_to_array_length(ctx, plen, val);
+    }
+    /* legacy behavior: must do the conversion twice and compare */
+    if (JS_ToUint32(ctx, &len, val)) {
+        JS_FreeValue(ctx, val);
+        return -1;
+    }
+    val = JS_ToNumberFree(ctx, val);
+    if (JS_IsException(val))
+        return -1;
+    if (js_number_to_array_length(ctx, &len1, val))
+        return -1;
+    if (len1 != len) {
+        JS_ThrowRangeError(ctx, "invalid array length");
+        return -1;
     }
     *plen = len;
     return 0;
@@ -15644,7 +15901,9 @@ static JSValue js_dtoa2(JSContext *ctx,
     return res;
 }
 
-static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToPropertyKey)
+/* JS_ToStringInternal of val, which is not an object */
+static force_inline JSValue js_primitive_to_string(JSContext *ctx, JSValueConst val,
+                                                   BOOL is_ToPropertyKey)
 {
     uint32_t tag;
     char buf[32];
@@ -15672,16 +15931,7 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
     case JS_TAG_EXCEPTION:
         return JS_EXCEPTION;
     case JS_TAG_OBJECT:
-        {
-            JSValue val1, ret;
-            val1 = JS_ToPrimitive(ctx, val, HINT_STRING);
-            if (JS_IsException(val1))
-                return val1;
-            ret = JS_ToStringInternal(ctx, val1, is_ToPropertyKey);
-            JS_FreeValue(ctx, val1);
-            return ret;
-        }
-        break;
+        abort(); /* the callers give no object */
     case JS_TAG_FUNCTION_BYTECODE:
         return js_new_string8(ctx, "[function bytecode]");
     case JS_TAG_SYMBOL:
@@ -15699,6 +15949,20 @@ static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToP
     default:
         return js_new_string8(ctx, "[unsupported type]");
     }
+}
+
+static JSValue JS_ToStringInternal(JSContext *ctx, JSValueConst val, BOOL is_ToPropertyKey)
+{
+    JSValue val1, ret;
+
+    if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)
+        return js_primitive_to_string(ctx, val, is_ToPropertyKey);
+    val1 = JS_ToPrimitive(ctx, val, HINT_STRING);
+    if (JS_IsException(val1))
+        return val1;
+    ret = js_primitive_to_string(ctx, val1, is_ToPropertyKey);
+    JS_FreeValue(ctx, val1);
+    return ret;
 }
 
 JSValue JS_ToString(JSContext *ctx, JSValueConst val)
@@ -18120,6 +18384,25 @@ static JSValue js_function_proto_lineNumber(JSContext *ctx,
     return JS_UNDEFINED;
 }
 
+/* the define_own_property of an exotic class going on to the ordinary
+   definition: JS_DefineProperty with JS_PROP_NO_EXOTIC, which does not call
+   the class again. The call graph cannot see the flag, so a level of the
+   internal depth counts it. */
+static int js_define_own_property_ordinary(JSContext *ctx, JSValueConst this_obj,
+                                           JSAtom prop, JSValueConst val,
+                                           JSValueConst getter,
+                                           JSValueConst setter, int flags)
+{
+    int ret;
+
+    if (js_internal_enter(ctx))
+        return -1;
+    ret = JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
+                            flags | JS_PROP_NO_EXOTIC);
+    js_internal_leave(ctx->rt);
+    return ret;
+}
+
 static int js_arguments_define_own_property(JSContext *ctx,
                                             JSValueConst this_obj,
                                             JSAtom prop, JSValueConst val,
@@ -18135,8 +18418,8 @@ static int js_arguments_define_own_property(JSContext *ctx,
             return -1;
     }
     /* run the default define own property */
-    return JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
-                             flags | JS_PROP_NO_EXOTIC);
+    return js_define_own_property_ordinary(ctx, this_obj, prop, val, getter,
+                                           setter, flags);
 }
 
 static const JSClassExoticMethods js_arguments_exotic_methods = {
@@ -47968,8 +48251,8 @@ static int js_string_define_own_property(JSContext *ctx,
         return TRUE;
     } else {
     def:
-        return JS_DefineProperty(ctx, this_obj, prop, val, getter, setter,
-                                 flags | JS_PROP_NO_EXOTIC);
+        return js_define_own_property_ordinary(ctx, this_obj, prop, val,
+                                               getter, setter, flags);
     }
 }
 
@@ -64870,11 +65153,15 @@ static void finrec_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
 
         if (!js_weakref_is_live(fre->target)) {
             JSValueConst args[2];
+            JSJobEntry *e;
             args[0] = frd->cb;
             args[1] = fre->held_val;
-            /* no exception is raised to avoid recursing into the GC */
-            JS_EnqueueJob2(frd->realm, js_finrec_job, 2, args, TRUE);
-                
+            /* the collector runs this: with no memory the job is lost, as
+               throwing would make an error inside the collector */
+            e = js_malloc_rt(rt, js_job_size(2));
+            if (e)
+                js_job_queue(frd->realm, e, js_finrec_job, 2, args);
+
             js_weakref_free(rt, fre->target);
             js_weakref_free(rt, fre->token);
             JS_FreeValueRT(rt, fre->held_val);

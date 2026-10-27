@@ -190,3 +190,15 @@ void white_gc_lists(JSRuntime *rt, int *old, int *young, int *bad)
     *old = counts[0];
     *young = counts[1];
 }
+
+/* ---- the errors being made ---- */
+
+/* Set the count of the errors JS_ThrowError2 is making to n, so that a test
+   throws as if it were inside that many, and return the count it had. */
+int white_error_nest(JSRuntime *rt, int n)
+{
+    int old = rt->nest[JS_NEST_ERROR];
+
+    rt->nest[JS_NEST_ERROR] = n;
+    return old;
+}

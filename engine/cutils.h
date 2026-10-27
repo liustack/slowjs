@@ -377,7 +377,16 @@ void rqsort(void *base, size_t nmemb, size_t size,
             int (*cmp)(const void *, const void *, void *),
             void *arg);
 /* rqsort that returns early, with the elements in some order, once *stop
-   is not 0: it reads it after each comparison and between two parts */
+   is not 0. It reads *stop between two parts, in the loop that splits a part
+   after each comparison that does not end the loop and once more after the
+   loop, and before each step of the heap sort it turns to for a part too
+   deep. So once a comparison set *stop, a few more may run before it
+   returns: the rest of the median of three and the first comparison of each
+   half of the loop (4 at most), the rest of the insertion sort of a part of
+   at most 6 elements (14), or the rest of a step of the heap sort (2 for each
+   level of the heap). cmp must answer without effect then, as
+   js_array_cmp_generic and js_TA_cmp_generic do once they have an
+   exception. */
 void rqsort_stop(void *base, size_t nmemb, size_t size,
                  int (*cmp)(const void *, const void *, void *),
                  void *arg, const volatile int *stop);
