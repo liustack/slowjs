@@ -133,6 +133,65 @@ static void test_mem(void)
     }
 }
 
+/* memcpy at every size from 0 to 1100 bytes, with the source and the destination
+   each at 16 offsets from a multiple of 64 (so the destination reaches every
+   position the loop of 64 bytes aligns it to, and the source every one it can be
+   misaligned by). The destination holds a byte that no source byte has, so a byte
+   written outside the range, before or after it, shows. The source must not
+   change, and the result is the destination. Then bigger sizes at random
+   offsets, which run the loop many times. */
+#define CPMAX 1100
+#define CPLEAD 64
+#define CPBUF 2048
+#define CPBIG 70000
+
+static void test_memcpy_all(void)
+{
+    static unsigned char src[CPBUF] __attribute__((aligned(64)));
+    static unsigned char src0[CPBUF];
+    static unsigned char dst[CPBUF] __attribute__((aligned(64)));
+    static unsigned char ref[CPBUF];
+    static unsigned char big_src[CPBIG + 256], big_dst[CPBIG + 256], big_ref[CPBIG + 256];
+    const unsigned char guard = 0xAA;
+
+    for (size_t i = 0; i < sizeof src; i++) {
+        src[i] = (unsigned char)rng();
+        if (src[i] == guard)
+            src[i] = guard + 1;
+    }
+    memcpy(src0, src, sizeof src);
+    for (size_t n = 0; n <= CPMAX; n++) {
+        for (size_t so = 0; so < 16; so++) {
+            for (size_t dof = 0; dof < 16; dof++) {
+                memset(dst, guard, sizeof dst);
+                memset(ref, guard, sizeof ref);
+                memcpy(ref + CPLEAD + dof, src + CPLEAD + so, n);
+                void *r = sl_memcpy(dst + CPLEAD + dof, src + CPLEAD + so, n);
+                CHECK(r == dst + CPLEAD + dof, "memcpy result n=%zu so=%zu do=%zu", n, so, dof);
+                CHECK(!memcmp(dst, ref, sizeof dst), "memcpy n=%zu so=%zu do=%zu", n, so, dof);
+                CHECK(!memcmp(src, src0, sizeof src), "memcpy changed its source n=%zu so=%zu do=%zu", n, so, dof);
+            }
+        }
+    }
+
+    for (int iter = 0; iter < 300; iter++) {
+        size_t n = 1025 + rng() % (CPBIG - 1025);
+        size_t so = rng() % 64, dof = rng() % 64;
+        size_t total = so + dof + n;
+
+        for (size_t i = 0; i < total + 128; i++) {
+            big_src[i] = (unsigned char)rng();
+            if (big_src[i] == guard)
+                big_src[i] = guard + 1;
+        }
+        memset(big_dst, guard, total + 128);
+        memset(big_ref, guard, total + 128);
+        memcpy(big_ref + 64 + dof, big_src + 64 + so, n);
+        sl_memcpy(big_dst + 64 + dof, big_src + 64 + so, n);
+        CHECK(!memcmp(big_dst, big_ref, total + 128), "memcpy n=%zu so=%zu do=%zu", n, so, dof);
+    }
+}
+
 static void test_str(void)
 {
     static char a[MAXN + 4 * PAD], b[MAXN + 4 * PAD];
@@ -574,6 +633,7 @@ static void test_snprintf(void)
 int main(int argc, char **argv)
 {
     test_mem();
+    test_memcpy_all();
     test_str();
     test_snprintf();
     test_aborts();
