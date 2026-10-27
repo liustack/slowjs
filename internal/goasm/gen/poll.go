@@ -17,11 +17,16 @@ import (
 // address, and this word among it.
 const PollCounterOffset = 384
 
-// PollLLCFlags are the llc options an engine with polls is built with. The
-// tick in the interpreter's dispatch gives the dispatch block more
-// predecessors and successors than llc's tail duplication takes by default,
-// and without the copies of the dispatch at the end of every handler the
-// interpreter is much slower. CheckDispatchCopies holds the output to it.
+// PollLLCFlags are the llc options an engine with polls is built with, so
+// that llc copies the interpreter's dispatch into the end of every handler,
+// without which the interpreter is much slower. Before register allocation
+// llc's tail duplication leaves alone a block with more than 16 predecessors
+// and more than 16 successors when it or one of its successors has a phi,
+// and the dispatch does, with polls or without. An engine without polls gets
+// its copies after allocation instead, where llc copies a computed goto of
+// up to 10 instructions, but the tick makes the dispatch 15 instructions
+// there. These options raise the two 16s, so that the copies are made before
+// allocation. CheckDispatchCopies holds the output to it.
 var PollLLCFlags = []string{"-tail-dup-pred-size=1000", "-tail-dup-succ-size=1000"}
 
 // DispatchCopies is the least number of indirect jumps each function with a

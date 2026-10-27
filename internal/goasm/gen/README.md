@@ -156,10 +156,14 @@ the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
 `engine_decl.go` records as `pollCounterOffset`), and calls `host_poll`
 when it runs out. `-poll=false` builds an engine without polls, to measure
 what they cost, and `-release` refuses it. With polls, llc gets
-`-tail-dup-pred-size=1000 -tail-dup-succ-size=1000` (`gen.PollLLCFlags`):
-the count in the interpreter's dispatch gives the dispatch more
-predecessors and successors than llc copies by default, and without a copy
-of the dispatch at the end of each handler the interpreter is much slower.
+`-tail-dup-pred-size=1000 -tail-dup-succ-size=1000` (`gen.PollLLCFlags`),
+so that llc copies the interpreter's dispatch into the end of each handler,
+without which the interpreter is much slower. Before register allocation,
+llc leaves alone a block with more than 16 predecessors and 16 successors
+when it or a successor has a phi, as the dispatch does with polls or
+without. Without polls llc copies it after allocation instead, which it does
+for a computed goto of up to 10 instructions, but the count makes the
+dispatch 15 there. The options raise the two 16s.
 The driver counts the indirect jumps of each function with a computed goto
 table in llc's text and stops below `gen.DispatchCopies` (220 for
 `JS_CallInternal`, which has 245). The pass checks its own output: with the
