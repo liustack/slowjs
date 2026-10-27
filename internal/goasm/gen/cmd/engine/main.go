@@ -280,12 +280,6 @@ func main() {
 	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
-	if *pollOn {
-		// The tick in the interpreter's dispatch makes it a block of many
-		// predecessors and successors, which llc no longer copies into the
-		// end of every handler by default (gen.DispatchCopies checks it).
-		llcArgs = append(llcArgs, gen.PollLLCFlags...)
-	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")
 	os.Remove(factsPath)

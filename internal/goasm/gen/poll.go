@@ -8,7 +8,6 @@ package gen
 import (
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // PollCounterOffset is where the poll counter is by default, from the base of
@@ -17,20 +16,17 @@ import (
 // address, and this word among it.
 const PollCounterOffset = 384
 
-// PollLLCFlags are the llc options an engine with polls is built with. The
-// tick in the interpreter's dispatch gives the dispatch block more
-// predecessors and successors than llc's tail duplication takes by default,
-// and without the copies of the dispatch at the end of every handler the
-// interpreter is much slower. CheckDispatchCopies holds the output to it.
-var PollLLCFlags = []string{"-tail-dup-pred-size=1000", "-tail-dup-succ-size=1000"}
-
 // DispatchCopies is the least number of indirect jumps each function with a
 // computed goto table must have in llc's output: one at the end of each
-// handler, where llc copied the dispatch. A function with a table and no
-// entry here fails, so that a new one gets a number of its own.
-// JS_CallInternal has 245 (204 in an engine without polls, which llc builds
-// without these options), and its least number is about a tenth below.
-var DispatchCopies = map[string]int{"JS_CallInternal": 220}
+// handler, where llc copied the dispatch, without which the interpreter is
+// much slower. A function with a table and no entry here fails, so that a
+// new one gets a number of its own. llc makes the copies after register
+// allocation, where it copies a computed goto of up to 10 instructions
+// (before, the phis of the dispatch hold it back): the interpreter counts
+// its bytecode in its handlers (pass/poll.cpp), so its dispatch has no tick
+// and is 4 instructions there, with polls or without.
+// JS_CallInternal has 204, and its least number is about a seventh below.
+var DispatchCopies = map[string]int{"JS_CallInternal": 175}
 
 // CheckPollOffset checks -poll-offset: a word inside the region.
 func CheckPollOffset(offset, sizeLog2 int) error {
@@ -57,8 +53,8 @@ func CheckDispatchCopies(name string, lines []string) (int, error) {
 		return n, fmt.Errorf("a computed goto table in %s, which has no least number of dispatch copies (gen.DispatchCopies)", name)
 	}
 	if n < min {
-		return n, fmt.Errorf("%d indirect jumps, fewer than the %d copies of the dispatch it must have: llc stopped copying the dispatch into the handlers (%s)",
-			n, min, strings.Join(PollLLCFlags, " "))
+		return n, fmt.Errorf("%d indirect jumps, fewer than the %d copies of the dispatch it must have: llc stopped copying the dispatch into the handlers",
+			n, min)
 	}
 	return n, nil
 }

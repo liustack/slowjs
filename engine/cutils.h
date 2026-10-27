@@ -405,6 +405,23 @@ int host_poll(const volatile int *flag);
 #define poll_flag(p) (*(p))
 #endif
 
+/* poll_count(n) counts n towards the next poll of the generated engine: the
+   generator's poll pass (internal/goasm/gen/pass/poll.cpp) turns each call
+   of goasm_poll_count into a count, which polls when the counter runs out,
+   as it does for the cycles it counts itself. poll_count_entry(n) is the
+   same, at the entry of a function whose computed goto runs bytecode that
+   counts this way: the pass then counts nothing in that dispatch. The native
+   builds (JS_HOST_POLL) have no counter. */
+#ifdef JS_HOST_POLL
+#define poll_count(n) ((void)0)
+#define poll_count_entry(n) ((void)0)
+#else
+void goasm_poll_count(int n);
+void goasm_poll_entry(int n);
+#define poll_count(n) goasm_poll_count(n)
+#define poll_count_entry(n) goasm_poll_entry(n)
+#endif
+
 static inline uint64_t float64_as_uint64(double d)
 {
     union {
