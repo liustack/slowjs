@@ -625,6 +625,32 @@ func TestPollDeadline(t *testing.T) {
 		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
 	}
 	w.Leave()
+
+	// An Interrupt later than the deadline, before any poll saw the
+	// deadline, does not move the grace on: it counts from the earlier of
+	// the two.
+	x := newVM(t, small)
+	xb, _ := x.Stack()
+	x.SetKillGrace(50 * time.Millisecond)
+	x.EnterScript(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	x.Interrupt()
+	if got := mustPanic(t, "a poll past the deadline and the grace, after a later Interrupt", func() { Poll(xb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	x.Leave()
+
+	// An Interrupt before the deadline counts from the Interrupt.
+	y := newVM(t, small)
+	yb, _ := y.Stack()
+	y.SetKillGrace(30 * time.Millisecond)
+	y.EnterScript(time.Hour)
+	y.Interrupt()
+	time.Sleep(40 * time.Millisecond)
+	if got := mustPanic(t, "a poll past the grace of an Interrupt before the deadline", func() { Poll(yb + 64) }); got != ErrKilled {
+		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	}
+	y.Leave()
 }
 
 // testFlag stands for the engine's interrupt flag: a global, which does not

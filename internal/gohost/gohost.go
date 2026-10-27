@@ -546,20 +546,26 @@ func Now(vm uint32, kind int32) int64 {
 // interrupts as Interrupt would have at the deadline. Once Interrupt asked to
 // stop, it sets the engine's interrupt flag, which the engine throws
 // "interrupted" on where it can, and kills a script still running longer
-// than the grace after the Interrupt. It does not call into the engine.
+// than the grace after the Interrupt or the deadline, whichever came first.
+// It does not call into the engine.
 func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
 	if v.counter != 0 {
 		*(*int64)(addr(v.counter)) = v.interval
 	}
+	// t is when the engine was asked to stop, plus 1: at Interrupt or at
+	// the deadline, whichever came first, so that an Interrupt after the
+	// deadline does not move the grace on.
 	t := v.interrupt.Load()
-	if t == 0 {
-		if v.deadline == 0 || int64(time.Since(start)) < v.deadline {
-			return
+	if v.deadline != 0 && (t == 0 || t-1 > v.deadline) {
+		if int64(time.Since(start)) >= v.deadline {
+			v.interrupt.CompareAndSwap(0, v.deadline+1)
+			t = v.deadline + 1
 		}
-		v.interrupt.CompareAndSwap(0, v.deadline+1)
-		t = v.interrupt.Load()
+	}
+	if t == 0 {
+		return
 	}
 	if v.flag != 0 {
 		*(*int32)(addr(v.flag)) = 1
