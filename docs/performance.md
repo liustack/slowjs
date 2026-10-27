@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -131,6 +131,19 @@ Measured on 12 scripts of the C engine at all 8 positions, 5 rounds:
 - Against the bodies after a `PCALIGN $16`: 0.983 of the time as a geometric mean, `q_prop_read` 0.966, the render scripts 0.995 to 1.000, and the rest within the noise of the positions. `q_array_read` took 0.918 here, but 1.008 in a later run of all 37 scripts against main at 4 positions, where its positions alone ranged from 0.894 to 1.073: it follows where code and data land too closely to read a change of a few percent from it.
 - The position ranges are not narrower as a whole: 5 scripts narrower (`q_int_arith` from 1.157 to 1.091, `v8_richards` from 1.056 to 1.030), 5 wider (`q_array_read` from 1.109 to 1.151, `c_regexp_mix` from 1.014 to 1.038). The largest effect of the whole-program move alone drops from 3.9% to 2.9% on average over the scripts.
 - The place matters. With the function on 64 bytes and the body after a `PCALIGN $16`, the interpreter body sits at 48, and 8 scripts took 1.034 of the time they take with it at 0 (`q_int_arith` 1.091), at 16 1.007, at 32 1.013 (2 positions each). The matcher at 0 makes `q_regexp_ascii` take 1.072 of the time it takes at 16.
+
+### The C engine after the property-layer cut and the polls
+
+Measured by the rule above on the C engine (`jsrun`, one core of an EPYC 7B13, its other hyperthread idle):
+
+- **Cutting the call cycle of the property layer** made the loops that turn numbers into strings faster, against the commit before it at 8 positions: `m_num_to_str` 0.875 of the time, `m_concat_short` 0.912, `m_concat_num` 0.957, `c_string_concat` 0.939, `c_string_methods` 0.945, `r_react_ssr` 0.869. Only `c_json_stringify` got slower (1.038, 8 of 8 positions, 0.77% more instructions): with the recursion gone LLVM inlined in another order, and `string_buffer_concat` went from a cost of 70, inlined, to 540 against the threshold of 400, a call. `JSON.stringify` paid it for every piece it writes, 3.25 million calls and 58.5 million instructions. An always inlined copy for `string_buffer_concat_value` gives it back: 0.978 of the time of main at 4 positions and 0.974 in the run of all 37 scripts below, with 0.6% fewer instructions than before the cut.
+- **The polls** left `q_int_arith` as it was: 0.984 of the time of the engine before them at 8 positions, within its own range of 1.10 (a process runs it in either about 507 or about 633 ms). It now runs 219 instructions a loop where it ran 353, in the same time. The loop waits on memory, not on instructions: each turn the value stack has two loads of 16 bytes of a value that two stores of 8 bytes wrote, and on Zen 3 that store cannot be forwarded to the load (24 cycles, against 1 for a load of 8 bytes of a store of 8). That is about 77 cycles a turn with and without the polls. Changing the base register between the store and the load costs nothing more, nor do a load and a store 4 KiB apart. `q_array_read` waits the same way and took 1.082 of the time in that run with 36% fewer instructions, but its time follows its layout closely (see above).
+- **All 37 scripts** with the inlined copy and the loops on fixed places, against main at 4 positions: 0.997 of the time as a geometric mean. Faster: `q_prop_read` 0.942, `q_string_build1` 0.952, `c_string_concat` 0.969, `c_json_stringify` 0.974. `q_string_build2` took 1.027 with the same instructions (0.999996), so that is layout. The render scripts are 0.989 to 1.002.
+
+Not done:
+
+- **`+slow-unaligned-mem-16`**, which stops LLVM from copying 16-byte values with SSE moves, to avoid the failed forwards above (not yet checked in the code it makes): 0.975 of the time on 12 scripts at 4 positions (`q_func_call` 0.938, `v8_richards` 0.941, `q_regexp_ascii` 0.948, `q_prop_read` 0.952, `r_shiki_regexp` 0.976, the other render scripts within noise), but `c_string_concat` 1.032, and `q_int_arith` itself within noise with 0.9% more instructions. It needs a run of all 37 scripts and a look at `c_string_concat` first.
+- **Moving the heap path of `js_dtoa2` out of line**, which LLVM no longer inlines either (cost 1370 against 230): 1.5 million fewer instructions on `c_json_stringify`, too few to keep.
 
 ## Intl formatting
 
