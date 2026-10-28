@@ -1,5 +1,5 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine, and what CI on GitHub checks and leaves out'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
@@ -12,6 +12,7 @@ read_when:
   - Co-developing modernc.org/libc next to this repository with a go.work
   - Generating the C engine, running the fast or the full checks of a change to it, or timing one build of it against another
   - Running any of that on the Google Cloud build machine, on chosen cores under a memory cap
+  - Changing `.github/workflows/`, or a CI run is red and you need to know what it runs
 ---
 
 # Testing and verification
@@ -457,6 +458,47 @@ scripts/remote.sh -g shop.jsonl HEAD -- make bench ARGS='report ...'      # copy
 - The log of the target is printed (its last 40 lines) and saved in `.build/remote/`. `-w SECONDS` (default 3600) is how long to wait, then the script exits with 124 and the job goes on, with its log and done file in `DIR/jobs`. The exit status is the target's.
 - Cores: a timing job uses one core and leaves its hyperthread sibling idle. Builds and checks may use both. Keep to the cores that are yours when the machine is shared.
 - Nothing here kills a process. A job you started is stopped through its own scope.
+
+## CI
+
+GitHub Actions (`.github/workflows/`) checks every push, and every pull request from a fork, on linux/amd64 (`ubuntu-24.04`) and darwin/arm64 (`macos-15`), the two targets of the C engine. It checks that things are right and times nothing: shared machines are too noisy for that, so timing stays on the build machine.
+
+`ci.yml` has these steps, each one on its own so that the run page shows how long it took (8 to 12 minutes in all on both platforms with a warm Go cache, most of it the root package and the native C engine):
+
+| Step | What it runs |
+| --- | --- |
+| Build, Vet | `go build ./...` and the `go vet` line of [Before committing](#before-committing) |
+| Format and docs | the `gofmt` and `docs` steps of `scripts/check.sh` |
+| Test, default build | `go test -count=1 -short -p 2` on every package except `internal/fixlib` (the engine of `lib/`) |
+| Test, C engine | `go test -tags slowjs_cengine,testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable` (without `TestTimeout`, see below), then the `root` step (`go test -p 1 -tags slowjs_cengine .`) |
+| Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on both, so nothing is installed) |
+
+The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
+
+`go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on both platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
+
+One test depends on the speed of the machine. `TestTimeout` in `internal/cengine` sets a timeout of 50 ms and a kill grace of 30 ms, then runs `a.lastIndexOf(-1)` over 8Mi doubles in a loop, and expects the VM to be killed. That needs the first call to run past 80 ms, since the script reads the interrupt flag only between calls. One call takes about 130 ms on an AMD EPYC 7763 and about 77 ms on an EPYC 9V45, which some linux runners have: there the call ends 3 ms before the kill, the script stops with `interrupted`, and the test fails (27 failures in 30 runs on a 9V45, none on a 7763 or a 9V74). CI leaves it out with `-skip '^TestTimeout$'` in `ci.yml` and `go-latest.yml` until the test is fixed (take the flag out then), and does not retry it or loosen it.
+
+Left out on purpose:
+
+- **Everything that needs LLVM 22.1.8**: `make gen`, `make check-gen`, and the `goasm` and `cycles` steps. They run on linux only, and CI does not install LLVM yet.
+- **`internal/fixlib` tests** (16 minutes or more on one core), `fixlib -check`, test262, the race detector and the sanitizer builds. They guard the engine of `lib/`, which is frozen, or take long. Run them with `make check-full`.
+- **Timing and memory measurements**, `make gointl` (it clones go-intl) and `make build_all_targets`.
+
+To add the LLVM steps, add a linux job that installs LLVM from apt.llvm.org, which carries exactly 22.1.8, the version `scripts/gen-engine.sh` insists on, and runs the steps:
+
+```yaml
+- run: |
+    curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+    echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
+    sudo apt-get update -qq
+    sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22
+- run: make check-gen
+  env: { GEN_JOBS: "4" }
+- run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
+```
+
+On `ubuntu-24.04` the install took 15 to 25 seconds, `make check-gen` 1.5 to 2.5 minutes, and the other two steps 0.5 to 1 minute together (two runs). `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
 
 ## Speed
 
