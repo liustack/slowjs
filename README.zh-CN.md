@@ -16,7 +16,7 @@ slowjs 渲染 React 比 Node 慢，比其他任何纯 Go JavaScript 引擎都快
 go get github.com/liustack/slowjs
 ```
 
-需要 Go 1.27 或更新。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。
+需要 Go 1.27 或更新。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。C 引擎的 Go 汇编是照 Go 1.27.2 核对过的。它依赖 Go 怎么开始一个函数、怎么处理出错，所以换更新的 Go 构建之前，先跑一遍测试（见 [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)）。
 
 ## 支持的平台
 
