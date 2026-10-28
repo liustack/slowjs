@@ -247,10 +247,11 @@ func (m *VM) MemorySize() uintptr {
 	return m.jsGetMemorySize()
 }
 
-// SetMaxStackSize limits the JS call depth, in libc.TLS stack slots (~one per JS
-// call frame in the CGo-free port). Deep recursion then throws a catchable
-// RangeError instead of overflowing the Go goroutine stack. 0 restores the
-// MaxStackSlots default.
+// SetMaxStackSize limits the JS call depth. Deep recursion then throws a
+// catchable RangeError instead of overflowing the stack. On the engine of lib
+// the limit is in libc.TLS stack slots (about one per JS call frame), and 0
+// restores the default. On the C engine (-tags slowjs_cengine)
+// it is in calls, at most 10000, and 0 restores the default of 5000.
 func (m *VM) SetMaxStackSize(threshold uintptr) {
 	m.jsSetMaxStackSize(threshold)
 }
