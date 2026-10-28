@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -120,5 +121,27 @@ func TestSharedCFlagsErrors(t *testing.T) {
 	got, err := SharedCFlags(write("ok.sh", "engine_flags=\"-a -b\"\nengine_target_flags() { echo \"-t-$1\"; }\n"), "x86_64-linux-gnu")
 	if err != nil || strings.Join(got, " ") != "-a -b -t-x86_64-linux-gnu" {
 		t.Errorf("a small file: %v, %v", got, err)
+	}
+}
+
+// TestFlagsSameFloats: the engine's C is compiled to give the same numbers
+// on every target. It contracts no multiply and add into one rounding
+// (-ffp-contract=off: aarch64 would fuse them, amd64 without FMA does not)
+// and takes no flag that lets the compiler reorder, approximate or assume
+// away floating-point results.
+func TestFlagsSameFloats(t *testing.T) {
+	for name, flags := range map[string][]string{"amd64": EngineCFlags, "arm64": ARM64CFlags} {
+		if !slices.Contains(flags, "-ffp-contract=off") {
+			t.Errorf("%s: no -ffp-contract=off in %v", name, flags)
+		}
+		for _, f := range flags {
+			for _, bad := range []string{"-ffast-math", "-funsafe-math-optimizations", "-fassociative-math", "-freciprocal-math",
+				"-ffinite-math-only", "-fno-honor-nans", "-fno-honor-infinities", "-fno-signed-zeros", "-fapprox-func",
+				"-ffp-contract=fast", "-ffp-contract=on", "-ffp-model=fast", "-Ofast", "-mfma"} {
+				if f == bad || strings.HasPrefix(f, bad+"=") {
+					t.Errorf("%s: %s", name, f)
+				}
+			}
+		}
 	}
 }
