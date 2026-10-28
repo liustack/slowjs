@@ -10,7 +10,7 @@ ENGINE.ll is the engine as one module of LLVM IR, built with -O0 and
 -fsanitize=kcfi (see cycles.sh). A function calls the functions it names, and
 an indirect call reaches every function whose address is taken and whose kcfi
 type is that of the call, as the generator joins them. A function that calls
-one of COUNTS (js_call_enter, js_internal_enter and the like, see
+one of COUNTS (js_call_enter, js_internal_enter, js_json_enter and the like, see
 docs/fork-changes/c-engine.md) is a cut: a cycle through it is bounded by its
 count. It prints each strongly connected component left once the cuts are taken
 out, with more than one function or a function that calls itself: its size and
@@ -28,8 +28,9 @@ import collections
 import re
 import sys
 
+# js_json_enter is js_internal_enter with the error of JSON: it counts the same level.
 COUNTS = {"js_call_enter", "js_internal_enter", "js_internal_enter_rt",
-          "lre_depth_enter", "js_nest_enter"}
+          "lre_depth_enter", "js_nest_enter", "js_json_enter"}
 
 # (F, G): F must not reach G by any path of calls, counted or not.
 NO_REACH = [
