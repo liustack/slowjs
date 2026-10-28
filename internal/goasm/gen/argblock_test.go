@@ -38,6 +38,11 @@ func TestArgBlockShared(t *testing.T) {
 	if !strings.Contains(out, "PACKED many") {
 		t.Fatalf("many not packed:\n%s", out)
 	}
+	// withval's value of two words, which C passes in memory, is the pair
+	// the Go host passes (gen.PackedGo), not a byval it cannot.
+	if !strings.Contains(out, "PACKED withval iiiiiiij>i\n") {
+		t.Fatalf("want withval packed with its value as a pair:\n%s", out)
+	}
 	if !strings.Contains(out, "SHADOW three 64\n") {
 		t.Fatalf("want one 64-byte block for three:\n%s", out)
 	}
@@ -52,7 +57,8 @@ func TestArgBlockShared(t *testing.T) {
 		t.Fatalf("run: %v\n%s", err, got)
 	}
 	// three(5) = 3*(5+21) = 78. nested(10) = many(10,0..) + 1..6 = 10+21 = 31.
-	if s := strings.TrimSpace(string(got)); s != "78 31" {
-		t.Fatalf("got %q, want %q", s, "78 31")
+	// callval(7) = 1..6 + 7*3 = 42.
+	if s := strings.TrimSpace(string(got)); s != "78 31 42" {
+		t.Fatalf("got %q, want %q", s, "78 31 42")
 	}
 }

@@ -140,18 +140,26 @@ func TestLeafSavesAndCallsLeaf(t *testing.T) {
 func TestCheckIRFuncs(t *testing.T) {
 	ll := "define i64 @ok(ptr %sp) {\n  ret i64 0\n}\n" +
 		"define i64 @var(ptr %sp, ...) {\n  call void @llvm.va_start.p0(ptr %ap)\n  ret i64 0\n}\n" +
-		"define void @caller(ptr %sp) {\n  %r = call i64 (ptr, ...) @var(ptr %sp, i64 1)\n  ret void\n}\n"
+		"define void @caller(ptr %sp) {\n  %r = call i64 (ptr, ...) @var(ptr %sp, i64 1)\n  ret void\n}\n" +
+		"define double @okfp(double %a, double %b) {\n  %m = fmul double %a, %b\n  %s = fadd double %m, %a\n  %c = call fastcc double @okfp(double %s, double %b)\n  ret double %c\n}\n" +
+		"define double @fused(double %a, double %b) {\n  %r = call double @llvm.fmuladd.f64(double %a, double %b, double %a)\n  ret double %r\n}\n" +
+		"define double @fma(double %a, double %b) {\n  %r = call double @llvm.fma.f64(double %a, double %b, double %a)\n  ret double %r\n}\n" +
+		"define double @reassoc(double %a, double %b) {\n  %r = fadd reassoc nsz double %a, %b\n  ret double %r\n}\n" +
+		"define double @fastcall(double %a) {\n  %r = call fast double @llvm.sqrt.f64(double %a)\n  ret double %r\n}\n" +
+		"define double @afn(double %a) #0 {\n  ret double %a\n}\n" +
+		"attributes #0 = { \"unsafe-fp-math\"=\"true\" }\n"
 	got := map[string]string{}
 	for _, v := range CheckIRFuncs(ll) {
 		got[v.Func+" "+v.Rule] = v.Line
 	}
-	for _, want := range []string{"var variadic definition", "var va_start", "caller variadic call"} {
+	for _, want := range []string{"var variadic definition", "var va_start", "caller variadic call", "fused fused multiply-add",
+		"fma fused multiply-add", "reassoc fast-math", "fastcall fast-math", " fast-math"} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("missing %q in %v", want, got)
 		}
 	}
 	for k := range got {
-		if strings.HasPrefix(k, "ok ") {
+		if strings.HasPrefix(k, "ok ") || strings.HasPrefix(k, "okfp ") {
 			t.Errorf("valid function flagged: %s", k)
 		}
 	}

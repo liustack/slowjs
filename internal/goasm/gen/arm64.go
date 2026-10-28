@@ -217,7 +217,7 @@ var (
 	reA64LR       = regexp.MustCompile(`\b(x30|w30|lr)\b`)
 )
 
-var reA64PairSP = regexp.MustCompile(`^(stp|ldp) ([xwdsq])(\d+), ([xwdsq])(\d+), \[sp, #(\d+)\]$`)
+var reA64PairSP = regexp.MustCompile(`^(stp|ldp) ([xwdsq])(\d+|zr), ([xwdsq])(\d+|zr), \[sp, #(\d+)\]$`)
 
 // a64FitPair splits a register pair store or load whose rebased offset no
 // longer fits the pair form (a signed 7-bit multiple of the register size)

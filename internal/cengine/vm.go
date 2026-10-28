@@ -7,7 +7,7 @@
 
 // Package cengine is the C engine of engine/ generated as Go assembly, with
 // its Go host. internal/goasm/gen/cmd/engine writes the assembly and
-// engine_decl.go into this folder (-out internal/cengine), next to the host
+// engine_decl_<arch>.go into this folder (-out internal/cengine), next to the host
 // files checked in here, and nothing generated is checked in. The host files
 // build only with the tag slowjs_cengine, so that the module builds without the
 // generated files.
@@ -48,7 +48,7 @@ const (
 )
 
 // The counter of the engine's polls is a word of the scratch, at the offset
-// the generator put in engine_decl.go (pollCounterOffset), between the usage
+// the generator put in engine_decl_<arch>.go (pollCounterOffset), between the usage
 // report and the strings: these fail to compile when it is not.
 const (
 	_ = uint(pollCounterOffset - (scratchUsage + unsafe.Sizeof(memoryUsage{})))
@@ -138,7 +138,7 @@ func New(o Options) (_ *VM, err error) {
 	}
 	if o.StackSize != 1<<shadowSizeLog2 {
 		// The engine takes the space left from its stack pointer and the
-		// size it was generated for (engine_decl.go): in a larger region
+		// size it was generated for (engine_decl_<arch>.go): in a larger region
 		// the base it rounds to, with the poll counter and the scratch,
 		// would be in the middle of its frames.
 		return nil, fmt.Errorf("cengine: a shadow stack of %d bytes, not the %d the engine was generated for",

@@ -25,7 +25,8 @@ const PollCounterOffset = 384
 // (before, the phis of the dispatch hold it back): the interpreter counts
 // its bytecode in its handlers (pass/poll.cpp), so its dispatch has no tick
 // and is 4 instructions there, with polls or without.
-// JS_CallInternal has 204, and its least number is about a seventh below.
+// JS_CallInternal has 204 on amd64 and 208 on arm64, and its least number is
+// about a seventh below.
 var DispatchCopies = map[string]int{"JS_CallInternal": 175}
 
 // CheckPollOffset checks -poll-offset: a word inside the region.
@@ -44,7 +45,8 @@ var reIndirectJmp = regexp.MustCompile(`^jmpq?\s+\*%r\w+$`)
 func CheckDispatchCopies(name string, lines []string) (int, error) {
 	n := 0
 	for _, l := range lines {
-		if reIndirectJmp.MatchString(norm(clean(l))) {
+		// jmp *%reg on amd64, br xN on arm64.
+		if reIndirectJmp.MatchString(norm(clean(l))) || reA64BR.MatchString(a64Clean(l)) {
 			n++
 		}
 	}
