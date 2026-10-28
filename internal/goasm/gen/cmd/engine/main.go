@@ -301,7 +301,8 @@ func main() {
 	}
 	post := gen.CheckIRFuncs(readFile(shadowLL))
 	for _, v := range post {
-		if v.Rule == "byval aggregate" || v.Rule == "sret aggregate" || v.Rule == "long double" || v.Rule == "thread-local storage" {
+		if v.Rule == "byval aggregate" || v.Rule == "sret aggregate" || v.Rule == "long double" || v.Rule == "thread-local storage" ||
+			v.Rule == "fused multiply-add" || v.Rule == "fast-math" {
 			reject(v.Func, "ir", v.Rule+": "+v.Line)
 		}
 	}
