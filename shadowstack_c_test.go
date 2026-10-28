@@ -155,3 +155,48 @@ func TestShadowStackAtDepth(t *testing.T) {
 		}
 	}
 }
+
+// TestShadowStackInternalDepth does the same for the recursions of C that make
+// no call of javascript: the parser, JSON, the regexp parser, flat and
+// toString of nested arrays. Their count is the internal depth, 2000 levels.
+// They must end in an error, with room on the shadow stack to spare.
+func TestShadowStackInternalDepth(t *testing.T) {
+	size := uintptr(cengine.ShadowSize)
+	for _, c := range []struct{ name, js string }{
+		{"parse_array", `eval('['.repeat(100000))`},
+		{"parse_paren", `eval('('.repeat(100000))`},
+		{"parse_function", `eval('function f() {'.repeat(20000))`},
+		{"parse_json", `JSON.parse('['.repeat(100000))`},
+		{"parse_json_object", `JSON.parse('{"a":'.repeat(100000))`},
+		{"parse_regexp", `new RegExp('('.repeat(100000))`},
+		{"stringify", `let o = {}; for (let i = 0; i < 100000; i++) o = { a: o }; JSON.stringify(o)`},
+		{"flat", `let a = []; for (let i = 0; i < 100000; i++) a = [a]; a.flat(Infinity)`},
+		{"to_string_nested", `let a = []; for (let i = 0; i < 100000; i++) a = [a]; String(a)`},
+		{"proxy_chain", `let p = {}; for (let i = 0; i < 100000; i++) p = new Proxy(p, {}); Object.keys(p)`},
+		// The name of each bound function holds the names of all below it, so a long chain takes memory
+		// by the square of its length.
+		{"bound_chain", `let f = function () {}; for (let i = 0; i < 4000; i++) f = f.bind(null); f()`},
+	} {
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.SetMaxStackSize(10000)
+		m.SetMemoryLimit(512 << 20)
+		_, err = m.Eval(c.js, EvalGlobal)
+		used := shadowStackUsed(m)
+		t.Logf("  %-18s used %9d bytes (%5.1f%% of the stack)  ended with %v", c.name, used, 100*float64(used)/float64(size), firstLine(err))
+		if used > size/4*3 {
+			t.Errorf("%s: used %d%% of the shadow stack", c.name, 100*used/size)
+		}
+		m.Close()
+	}
+}
+
+func firstLine(err error) string {
+	if err == nil {
+		return "no error"
+	}
+	s, _, _ := strings.Cut(err.Error(), "\n")
+	return s
+}
