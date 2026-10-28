@@ -42,9 +42,6 @@ func (m *VM) NewFloat64(n float64) Value {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) NewString(s string) (r Value, err error) {
-	if err := m.usable(); err != nil {
-		return r, err
-	}
 	v, err := m.newString(s)
 	if err != nil {
 		return r, err
@@ -61,7 +58,13 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 	return Value{vm: m, v: m.jsNewObject()}, nil
 }
 
+// newString makes the string of NewString, and of the Go strings of the
+// other methods. It refuses a VM a kill left good only for Close here, not in
+// NewString, which stays small enough to inline (Builtins return strings).
 func (m *VM) newString(s string) (r jsValue, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	if v, ok := m.newStringFast(s); ok {
 		return v, nil
 	}
