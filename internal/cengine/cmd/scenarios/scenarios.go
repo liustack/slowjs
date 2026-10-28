@@ -28,7 +28,7 @@ var All = []Scenario{
 	{"array_join", `const a = Array.from({ length: 2000000 }, (_, i) => 'item' + i); for (;;) { a.join(',') }`},
 	{"sort_typed", `const a = new Float64Array(1 << 22).map(() => Math.random()); for (;;) { a.slice().sort() }`},
 	{"sort_default", `const a = Array.from({ length: 500000 }, () => Math.random()); for (;;) { a.slice().sort() }`},
-	{"bigint_mul", `let x = 7n ** 300000n; for (;;) { x * x }`},
+	{"bigint_mul", `let x = 3n ** 300000n; for (;;) { x * x }`},
 	{"array_fill", `for (;;) { new Array(1 << 22).fill(0).reverse().indexOf(1) }`},
 	{"normalize", `const s = 'éå'.repeat(1 << 20); for (;;) { s.normalize('NFC') }`},
 }
