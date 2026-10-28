@@ -77,7 +77,9 @@ func runCheckGen(dir string) (string, error) {
 }
 
 // TestCheckGenScript: check-gen takes the checked-in files from git, so a
-// file git does not hold (ignored, or just not added) is not checked in.
+// file git does not hold (ignored, or just not added) is not checked in, and
+// it finds every generated file of the folder by its header, so one of a name
+// the generator no longer makes is a file too many.
 func TestCheckGenScript(t *testing.T) {
 	dir := checkGenRepo(t)
 	if out, err := runCheckGen(dir); err != nil {
@@ -107,6 +109,23 @@ func TestCheckGenScript(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "engine_amd64.s"},
+		"old name, in git": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("engine_decl.go"), []byte(checkGenMarker+"old\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, dir, "add", "internal/cengine/engine_decl.go")
+		}, "engine_decl.go"},
+		"old name, not in git": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("engine_negative.go"), []byte(checkGenMarker+"old\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "engine_negative.go"},
+		"a name no rule lists": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("quickjs_3.s"), []byte(checkGenMarker+"old\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, dir, "add", "internal/cengine/quickjs_3.s")
+		}, "quickjs_3.s"},
 	} {
 		d := checkGenRepo(t)
 		dir = d
@@ -115,5 +134,14 @@ func TestCheckGenScript(t *testing.T) {
 		if err == nil || !strings.Contains(out, c.want) {
 			t.Errorf("%s: %v, want %q in\n%s", name, err, c.want, out)
 		}
+	}
+	// A file by hand with no header is not the generator's concern.
+	dir = checkGenRepo(t)
+	if err := os.WriteFile(cengine("note.s"), []byte("// by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "add", "internal/cengine/note.s")
+	if out, err := runCheckGen(dir); err != nil {
+		t.Errorf("a file by hand: %v\n%s", err, out)
 	}
 }
