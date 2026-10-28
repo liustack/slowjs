@@ -470,14 +470,12 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 | Build, Vet | `go build ./...` and the `go vet` line of [Before committing](#before-committing) |
 | Format and docs | the `gofmt` and `docs` steps of `scripts/check.sh` |
 | Test, default build | `go test -count=1 -short -p 2` on every package except `internal/fixlib` (the engine of `lib/`) |
-| Test, C engine | `go test -tags slowjs_cengine,testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable` (without `TestTimeout`, see below), then the `root` step (`go test -p 1 -tags slowjs_cengine .`) |
+| Test, C engine | `go test -tags slowjs_cengine,testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable`, then the `root` step (`go test -p 1 -tags slowjs_cengine .`) |
 | Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on both, so nothing is installed) |
 
 The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
 
 `go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on both platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
-
-One test depends on the speed of the machine. `TestTimeout` in `internal/cengine` sets a timeout of 50 ms and a kill grace of 30 ms, then runs `a.lastIndexOf(-1)` over 8Mi doubles in a loop, and expects the VM to be killed. That needs the first call to run past 80 ms, since the script reads the interrupt flag only between calls. One call takes about 130 ms on an AMD EPYC 7763 and about 77 ms on an EPYC 9V45, which some linux runners have: there the call ends 3 ms before the kill, the script stops with `interrupted`, and the test fails (27 failures in 30 runs on a 9V45, none on a 7763 or a 9V74). CI leaves it out with `-skip '^TestTimeout$'` in `ci.yml` and `go-latest.yml` until the test is fixed (take the flag out then), and does not retry it or loosen it.
 
 Left out on purpose:
 
