@@ -62,6 +62,9 @@ func (m *VM) MemoryUsage() MemoryUsage {
 // javascript called. As with SetGCThreshold, no other goroutine may use m
 // meanwhile (see [VM]).
 func (m *VM) ReleaseMemory(keep uintptr) (uintptr, error) {
+	if err := m.usable(); err != nil {
+		return 0, err
+	}
 	if m.depth != 0 {
 		return 0, errors.New("slowjs: ReleaseMemory while the VM runs javascript")
 	}

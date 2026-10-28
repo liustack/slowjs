@@ -2,11 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !slowjs_cengine
-
 package slowjs
-
-// The tests of Value.Then, which only the engine of lib has so far.
 
 import (
 	"testing"
@@ -245,4 +241,61 @@ func TestThenLeak(t *testing.T) {
 		}
 		pc.Free()
 	}
+}
+
+// The handlers of Then are let go when the engine frees the functions that
+// call them: once the promise settles and its job ran, the one that did not
+// run as well, and with the promise when it never settles.
+func TestThenReleasesHandlers(t *testing.T) {
+	t.Run("settled", func(t *testing.T) {
+		m := newTestVM(t)
+		n := heldFuncs(m)
+		pc, err := m.NewPromiseCapability()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ran := 0
+		res, err := pc.Promise.Then(func(Value) { ran++ }, func(Value) { t.Error("onRejected ran") })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := heldFuncs(m); got != n+2 {
+			t.Fatalf("%d Go functions held after Then, want %d", got, n+2)
+		}
+		res.Free()
+		if _, err := pc.Resolve.Call(UndefinedValue, "ok"); err != nil {
+			t.Fatal(err)
+		}
+		pc.Free()
+		if _, err := m.ExecutePendingJobs(); err != nil {
+			t.Fatal(err)
+		}
+		if ran != 1 {
+			t.Fatalf("onFulfilled ran %d times, want 1", ran)
+		}
+		if got := heldFuncs(m); got != n {
+			t.Fatalf("%d Go functions held after the job ran, want %d", got, n)
+		}
+	})
+
+	t.Run("pending", func(t *testing.T) {
+		m := newTestVM(t)
+		n := heldFuncs(m)
+		pc, err := m.NewPromiseCapability()
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := pc.Promise.Then(func(Value) { t.Error("onFulfilled ran") }, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Free()
+		if got := heldFuncs(m); got != n+1 {
+			t.Fatalf("%d Go functions held after Then, want %d", got, n+1)
+		}
+		pc.Free()
+		if got := heldFuncs(m); got != n {
+			t.Fatalf("%d Go functions held after the promise was freed, want %d", got, n)
+		}
+	})
 }

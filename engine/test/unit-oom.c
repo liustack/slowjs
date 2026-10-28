@@ -266,10 +266,12 @@ static void test_define_oom(void)
 
 /* ---- the name of a new function ---- */
 
-/* A function made by JS_NewHostFunction or JS_NewCFunction2 with little
-   memory left is either whole, with its name and length and no exception
-   pending, or the call returns the exception with the out of memory error
-   pending, and nothing it made is left (vm_free). The name is a number,
+/* A function made by JS_NewHostFunction, JS_NewHostFunctionRelease or
+   JS_NewCFunction2 with little memory left is either whole, with its name and
+   length and no exception pending, or the call returns the exception with the
+   out of memory error pending, and nothing it made is left (vm_free). One of
+   JS_NewHostFunctionRelease that failed releases nothing, and one that was
+   made releases its handle once, when it is freed. The name is a number,
    whose atom is an index atom that holds no string: the string of the name
    property is made after the function. Three sweeps: the bytes the limit
    leaves, a full heap with a few blocks given back (fill_rooms), and a full
@@ -285,14 +287,22 @@ static JSValue function_name_noop(JSContext *ctx, JSValueConst this_val, int arg
     return JS_UNDEFINED;
 }
 
+static int function_name_releases;
+
+static void function_name_release(uint32_t vm, uint32_t handle)
+{
+    function_name_releases += handle == 7 ? 1 : 1000;
+}
+
 static void test_function_name_oom(void)
 {
-    static const char *const kinds[] = { "JS_NewHostFunction", "JS_NewCFunction2" };
+    static const char *const kinds[] = { "JS_NewHostFunction", "JS_NewCFunction2", "JS_NewHostFunctionRelease" };
     FillRoom rm[FILL_ROOMS];
     size_t nfill = fill_rooms(rm), k;
     int kind;
 
-    for (kind = 0; kind < 2; kind++) {
+    host_release_call = function_name_release;
+    for (kind = 0; kind < 3; kind++) {
         int failed = 0, made = 0;
 
         for (k = 0; k < FUNCTION_NAME_BYTE_ROOMS + nfill + FUNCTION_NAME_BUT_ONE; k++) {
@@ -313,10 +323,13 @@ static void test_function_name_oom(void)
                 fill_memory(&v);
                 free_blocks(&v, rm[n].min, rm[n].max, rm[n].n);
             }
+            function_name_releases = 0;
             if (kind == 0)
                 f = JS_NewHostFunction(v.ctx, "12345", 5, 2, 7);
-            else
+            else if (kind == 1)
                 f = JS_NewCFunction2(v.ctx, function_name_noop, "12345", 2, JS_CFUNC_generic, 0);
+            else
+                f = JS_NewHostFunctionRelease(v.ctx, "12345", 5, 2, 7);
             pending = JS_HasException(v.ctx);
             unc = JS_IsUncatchableException(v.ctx);
             if (bytes)
@@ -344,6 +357,8 @@ static void test_function_name_oom(void)
                 JS_FreeValue(v.ctx, len);
                 JS_FreeValue(v.ctx, f);
             }
+            CHECK(function_name_releases == (kind == 2 && !JS_IsException(f)),
+                  "%s %s room %zu: %d releases", kinds[kind], sweep, n, function_name_releases);
             /* a lost object ends the process in vm_free: say what failed first */
             fflush(stdout);
             vm_free(&v);
@@ -351,6 +366,7 @@ static void test_function_name_oom(void)
         CHECK(failed > 0, "%s: no room made it fail", kinds[kind]);
         CHECK(made > 0, "%s: no room let it work", kinds[kind]);
     }
+    host_release_call = NULL;
 }
 
 /* ---- compiling and writing bytecode ---- */

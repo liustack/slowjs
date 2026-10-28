@@ -53,7 +53,9 @@ type vmState struct {
 	// engineState is the state of the VM in the engine (engine_lib.go).
 	engineState
 	// id is how a Builtin finds the VM, the context's opaque (see vms).
-	id      uint32
+	id uint32
+	// goFuncs holds the names of the Go functions of RegisterFunc and their
+	// ids, which RegisterFunc refuses to take again.
 	goFuncs map[string]int32
 	timeout time.Duration
 	// depth counts the calls into javascript in progress: a host function
@@ -112,6 +114,9 @@ const DefaultShapeCache = 2048
 // on where it would not without it: give such a VM a smaller cache, or 0.
 // Kept shapes are not let go when an allocation fails.
 func (m *VM) SetShapeCache(n int) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	if n < 0 || n > math.MaxInt32/8 {
 		return fmt.Errorf("slowjs: a shape cache of %d shapes", n)
 	}
@@ -145,6 +150,9 @@ const (
 // fails. So a script that runs close to its memory limit can run out of
 // memory with the cache on where it would not without it.
 func (m *VM) SetRegExpCache(n, bytes int) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^uintptr(0)) {
 		return fmt.Errorf("slowjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
@@ -159,6 +167,9 @@ func (m *VM) SetRegExpCache(n, bytes int) error {
 // monotonic clock, so setting the system clock does not move it. A timeout
 // too long for that clock (about 292 years) never fires.
 func (m *VM) SetEvalTimeout(d time.Duration) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	m.timeout = d
 	return nil
 }
@@ -236,10 +247,11 @@ func (m *VM) MemorySize() uintptr {
 	return m.jsGetMemorySize()
 }
 
-// SetMaxStackSize limits the JS call depth, in libc.TLS stack slots (~one per JS
-// call frame in the CGo-free port). Deep recursion then throws a catchable
-// RangeError instead of overflowing the Go goroutine stack. 0 restores the
-// MaxStackSlots default.
+// SetMaxStackSize limits the JS call depth. Deep recursion then throws a
+// catchable RangeError instead of overflowing the stack. On the engine of lib
+// the limit is in libc.TLS stack slots (about one per JS call frame), and 0
+// restores the default. On the C engine (-tags slowjs_cengine)
+// it is in calls, at most 10000, and 0 restores the default of 5000.
 func (m *VM) SetMaxStackSize(threshold uintptr) {
 	m.jsSetMaxStackSize(threshold)
 }
@@ -272,14 +284,7 @@ func (m *VM) SetStrip(s Strip) {
 
 // Close releases the resources held by m.
 func (m *VM) Close() error {
-	goFuncsMu.Lock()
-	for _, magic := range m.goFuncs {
-		if goFuncs[magic] != nil {
-			delete(goFuncs, magic)
-			freeMagic = append(freeMagic, magic)
-		}
-	}
-	goFuncsMu.Unlock()
+	m.forgetFuncs()
 
 	id := m.id
 	onClose := m.onClose

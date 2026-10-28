@@ -11,39 +11,24 @@ package slowjs // import "github.com/liustack/slowjs"
 // bytecode outside every VM.
 
 import (
-	"sync"
-	"syscall"
 	"unsafe"
 
 	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
-// sharedMem holds the mapping of each SharedBytecode, by its address, until
-// freeShared: the engine reads a copy of it (jsReadShared). It is mapped
-// outside the Go heap, so that its address may go to and come back from a
-// uintptr, as that of lib's C memory does.
-var sharedMem sync.Map
-
-// allocShared returns n bytes for a SharedBytecode, at least one, or 0 when
-// the OS gives none.
-func allocShared(n int) uintptr {
-	b, err := syscall.Mmap(-1, 0, max(n, 1), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
-	if err != nil {
-		return 0
-	}
-	p := uintptr(unsafe.Pointer(&b[0]))
-	sharedMem.Store(p, b)
-	return p
+// allocShared returns a copy of the bytes of a SharedBytecode in a read-only
+// mapping outside every VM, which the engine of each VM that loads it reads
+// in place (jsReadShared).
+func allocShared(b []byte) (uintptr, error) {
+	return hostmem.MapReadOnly(b)
 }
 
-// freeShared unmaps the memory of allocShared.
-func freeShared(p uintptr) {
-	b, ok := sharedMem.LoadAndDelete(p)
-	if !ok {
-		panic("slowjs: freeShared of memory allocShared did not give")
-	}
-	if err := syscall.Munmap(b.([]byte)); err != nil {
-		panic("slowjs: unmapping shared bytecode: " + err.Error())
+// freeShared unmaps the n bytes of allocShared at p, which no VM reads any
+// more.
+func freeShared(p uintptr, n int) {
+	if err := hostmem.UnmapReadOnly(p, n); err != nil {
+		panic("slowjs: " + err.Error())
 	}
 }
 

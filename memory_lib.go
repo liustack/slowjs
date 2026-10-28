@@ -11,22 +11,27 @@ package slowjs // import "github.com/liustack/slowjs"
 // outside every VM.
 
 import (
+	"fmt"
 	"unsafe"
 
 	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
 
-// allocShared returns n bytes of C memory for a SharedBytecode, at least one,
-// or 0 when there is no memory.
-func allocShared(n int) uintptr {
+// allocShared returns a copy of the bytes of a SharedBytecode in C memory.
+func allocShared(b []byte) (uintptr, error) {
 	tls := libc.NewTLS()
 	defer tls.Close()
-	return libc.Xmalloc(tls, libc.Tsize_t(max(n, 1)))
+	p := libc.Xmalloc(tls, libc.Tsize_t(max(len(b), 1)))
+	if p == 0 {
+		return 0, fmt.Errorf("slowjs: out of memory for %d bytes of shared bytecode", len(b))
+	}
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
+	return p, nil
 }
 
-// freeShared frees the memory of allocShared.
-func freeShared(p uintptr) {
+// freeShared frees the n bytes of allocShared at p.
+func freeShared(p uintptr, n int) {
 	tls := libc.NewTLS()
 	libc.Xfree(tls, p)
 	tls.Close()

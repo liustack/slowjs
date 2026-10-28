@@ -20,6 +20,9 @@ type Atom = uint32
 
 // NewAtom returns an unique indentifier of 's' or an error, if any.
 func (m *VM) NewAtom(s string) (r Atom, err error) {
+	if err := m.usable(); err != nil {
+		return atomNull, err
+	}
 	r, err = m.jsNewAtom(validUTF8(s))
 	if err != nil {
 		return atomNull, err
@@ -34,6 +37,9 @@ func (m *VM) NewAtom(s string) (r Atom, err error) {
 
 // SetPropertyValue sets this.prop = val.
 func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	dup := val.Dup()
 	if m.jsSetProperty(this.v, prop, dup.v) < 0 {
 		return fmt.Errorf("failed to set property")
@@ -44,6 +50,9 @@ func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
 
 // SetProperty sets this.prop = val.
 func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	jsArgs, free, err := m.convertArgs(val)
 	if err != nil {
 		return err
@@ -65,6 +74,9 @@ func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	v := m.jsGetProperty(this.v, prop)
 	if isException(v) {
 		err = m.errFromException()
@@ -74,6 +86,9 @@ func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 
 // GetProperty returns this.prop.
 func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
+	if err := m.usable(); err != nil {
+		return nil, err
+	}
 	return m.value(m.jsGetProperty(this.v, prop), true)
 }
 
@@ -171,6 +186,9 @@ func (v Value) Property(prop Atom) (r any, err error) {
 // MarshalJSON implements encoding/json.Marshaler.
 func (v Value) MarshalJSON() (r []byte, err error) {
 	m := v.vm
+	if err := m.usable(); err != nil {
+		return nil, err
+	}
 	json := m.jsJSONStringify(v.v)
 
 	defer m.jsFreeValue(json)
@@ -207,6 +225,12 @@ func (v *Value) Free() {
 // Any attemtps to convert 'v' to any using the same rules as there are for
 // the return value of VM.Eval.
 func (v Value) Any() (r any, err error) {
+	// A Value of no VM, such as UndefinedValue, converts without one.
+	if v.vm != nil {
+		if err := v.vm.usable(); err != nil {
+			return nil, err
+		}
+	}
 	return v.vm.value(v.v, false)
 }
 
@@ -241,7 +265,9 @@ func (v Value) Call(this Value, args ...any) (r any, err error) {
 	}
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	v.vm.enter()
+	if err = v.vm.enter(); err != nil {
+		return
+	}
 	defer v.vm.leave(&err)
 	return v.vm.call(v.v, this.v, args...)
 }
@@ -257,7 +283,9 @@ func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
 	}
 
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see VM.Call).
-	v.vm.enter()
+	if err = v.vm.enter(); err != nil {
+		return
+	}
 	defer v.vm.leave(&err)
 	return v.vm.callValue(v.v, this.v, args...)
 }

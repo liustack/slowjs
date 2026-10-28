@@ -105,6 +105,9 @@ func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin 
 // it passes it to javascript, for example as an argument of [Value.Call] or
 // with [VM.SetPropertyValue], and then frees it.
 func (m *VM) NewBuiltinFunction(b *Builtin) (Value, error) {
+	if err := m.usable(); err != nil {
+		return Value{}, err
+	}
 	f := m.newBuiltinFunction(b)
 	if isException(f) {
 		return Value{}, m.errFromException()
@@ -334,6 +337,9 @@ var vms idtable.Table[VM]
 // A Value of another VM, a number too, is an error, as it is for a
 // [Builtin] to return one.
 func (m *VM) NewArray(vals ...Value) (Value, error) {
+	if err := m.usable(); err != nil {
+		return Value{}, err
+	}
 	for _, v := range vals {
 		if v.vm != m && v.vm != nil {
 			return Value{}, errors.New("slowjs: NewArray of a Value of another VM")

@@ -12,13 +12,72 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
-	"reflect"
+	"math"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	lib "github.com/liustack/slowjs/lib"
 	"modernc.org/libc"
 )
+
+// The Go functions of RegisterFunc and Then are kept for the whole process,
+// by an id the function objects that call them hold in their magic: an
+// int16, so at most 32767 at once.
+var (
+	staticMagic atomic.Int32
+
+	goFuncsMu sync.Mutex
+	goFuncs   = map[int32]*goFunc{}
+	freeMagic []int32
+)
+
+// keepFunc keeps info, which m's functions call, and returns its id.
+func (m *VM) keepFunc(info *goFunc) (int32, error) {
+	goFuncsMu.Lock()
+	defer goFuncsMu.Unlock()
+	if n := len(freeMagic); n > 0 {
+		k := freeMagic[n-1]
+		freeMagic = freeMagic[:n-1]
+		goFuncs[k] = info
+		return k, nil
+	}
+	magic := staticMagic.Add(1)
+	if magic > math.MaxInt16 {
+		staticMagic.Add(-1)
+		return -1, fmt.Errorf("too many registered functions")
+	}
+	goFuncs[magic] = info
+	return magic, nil
+}
+
+// releaseMagic removes the Go function associated with magic from the global
+// tables, returning it to the free pool.
+func releaseMagic(magic int32) {
+	goFuncsMu.Lock()
+	// Append only if the magic was actually registered. freeMagic is a slice,
+	// so unlike the old map it does not dedup: a double release would queue the
+	// same magic twice and later hand it to two live callbacks at once.
+	if _, ok := goFuncs[magic]; ok {
+		delete(goFuncs, magic)
+		freeMagic = append(freeMagic, magic)
+	}
+	goFuncsMu.Unlock()
+}
+
+// goFuncFreed gives up id, whose function of newGoFunction the engine freed
+// before javascript could reach it: such a function does not let go of its
+// Go function when it is freed.
+func (m *VM) goFuncFreed(id int32) { releaseMagic(id) }
+
+// forgetFuncs lets go of the Go functions of RegisterFunc, which the VM
+// keeps until it closes. Those of Then go as their callback objects are
+// freed.
+func (m *VM) forgetFuncs() {
+	for _, magic := range m.goFuncs {
+		releaseMagic(magic)
+	}
+}
 
 // typedef JSValue JSCFunctionMagic(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic);
 func callGo(tls *libc.TLS, ctx uintptr, this jsValue, argc int32, argv uintptr, magic int32) (r jsValue) {
@@ -62,19 +121,25 @@ func callGo(tls *libc.TLS, ctx uintptr, this jsValue, argc int32, argv uintptr, 
 }
 
 // newGoFunction returns a new function object named name, of length length,
-// that calls the Go function registered as magic (callGo). name must not hold
-// a NUL byte. It returns the exception when the engine threw.
+// that calls the Go function kept as magic (callGo). name must not hold a
+// NUL byte. When it makes no function it gives magic up.
 func (m *VM) newGoFunction(name string, magic, length int32) (jsValue, error) {
 	tls := m.runtime.tls
 	cName, err := libc.CString(name)
 	if err != nil {
+		releaseMagic(magic)
 		return jsValue{}, err
 	}
 
 	// The function's name copies the string.
 	defer libc.Xfree(tls, cName)
 
-	return lib.XJS_NewCFunction2(tls, m.cContext, fp(callGo), cName, length, lib.EJS_CFUNC_generic_magic, magic), nil
+	f := lib.XJS_NewCFunction2(tls, m.cContext, fp(callGo), cName, length, lib.EJS_CFUNC_generic_magic, magic)
+	if isException(f) {
+		releaseMagic(magic)
+		return f, m.errFromException()
+	}
+	return f, nil
 }
 
 var (
@@ -94,22 +159,15 @@ var (
 // the callback never fires (e.g. the sibling handler in a .then(f, g)).
 //
 // Callers must free the returned TJSValue when it is no longer needed.
-func (m *VM) newCallback(name string, fn func(Value)) (jsValue, int32, error) {
+func (m *VM) newCallback(name string, fn func(Value)) (jsValue, error) {
 	var zero jsValue
 	if err := m.ensureCallbackClass(); err != nil {
-		return zero, -1, err
+		return zero, err
 	}
 
-	magic, err := registerCallback(&goFunc{
-		f:       reflect.ValueOf(fn),
-		maxArgs: 1,
-		minArgs: 1,
-		name:    name,
-		vm:      m,
-		in:      []reflect.Type{rvt},
-	})
+	magic, err := m.keepFunc(callbackFunc(m, name, fn))
 	if err != nil {
-		return zero, -1, err
+		return zero, err
 	}
 
 	tls := m.runtime.tls
@@ -119,10 +177,10 @@ func (m *VM) newCallback(name string, fn func(Value)) (jsValue, int32, error) {
 	if isException(obj) {
 		lib.XFreeValue(tls, ctx, obj)
 		releaseMagic(magic)
-		return zero, -1, m.errFromException()
+		return zero, m.errFromException()
 	}
 	lib.XJS_SetOpaque(tls, obj, uintptr(magic))
-	return obj, magic, nil
+	return obj, nil
 }
 
 // ensureCallbackClass registers the custom callback class on m's runtime if

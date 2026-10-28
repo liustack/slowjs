@@ -99,3 +99,7 @@ func osReserveStack(size uintptr) (uintptr, error) {
 func osFreeStack(base, size uintptr) error {
 	return osUnmap(base, size+pageSize)
 }
+
+func osProtectRead(addr, size uintptr) error {
+	return sysMprotect(addr, size, unix.PROT_READ)
+}

@@ -7078,8 +7078,12 @@ JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
                             ctx->function_proto, 0);
 }
 
-JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
-                           int length, int32_t id)
+/* JS_NewHostFunction and JS_NewHostFunctionRelease: release sets the magic,
+   unused by a function of the host, which tells js_c_function_finalizer to
+   call host_release. It is set last, once nothing can fail: a function the
+   call frees on its way out releases nothing. */
+static JSValue js_new_host_function(JSContext *ctx, const char *name, size_t name_len,
+                                    int length, int32_t id, BOOL release)
 {
     JSValue func_obj;
     JSObject *p;
@@ -7109,7 +7113,20 @@ JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
         return JS_EXCEPTION;
     }
     JS_FreeAtom(ctx, name_atom);
+    p->u.cfunc.magic = release;
     return func_obj;
+}
+
+JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
+                           int length, int32_t id)
+{
+    return js_new_host_function(ctx, name, name_len, length, id, FALSE);
+}
+
+JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_len,
+                                  int length, int32_t id)
+{
+    return js_new_host_function(ctx, name, name_len, length, id, TRUE);
 }
 
 typedef struct JSCFunctionDataRecord {
@@ -7350,6 +7367,8 @@ static void js_c_function_finalizer(JSRuntime *rt, JSValue val)
 {
     JSObject *p = JS_VALUE_GET_OBJ(val);
 
+    if (p->u.cfunc.cproto == JS_CFUNC_host && p->u.cfunc.magic)
+        host_release(rt->malloc_ctx.heap.vm, p->u.cfunc.host_id);
     if (p->u.cfunc.realm)
         JS_FreeContext(p->u.cfunc.realm);
 }
@@ -34178,6 +34197,21 @@ JSAtom JS_GetScriptOrModuleName(JSContext *ctx, int n_stack_levels)
 JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m)
 {
     return JS_DupAtom(ctx, m->module_name);
+}
+
+/* Once a module has run to its end, nothing calls its top-level function
+   again, and the variables it exports and those its functions use live apart
+   from it: freeing it frees the code of the top level and its other
+   variables. QuickJS keeps it until the module goes. */
+void JS_FreeModuleTopLevel(JSContext *ctx, JSModuleDef *m)
+{
+    JSValue f;
+
+    if (m->status != JS_MODULE_STATUS_EVALUATED || m->eval_has_exception)
+        return;
+    f = m->func_obj;
+    m->func_obj = JS_UNDEFINED;
+    JS_FreeValue(ctx, f);
 }
 
 JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m)

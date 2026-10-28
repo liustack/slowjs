@@ -33,7 +33,9 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 	// evaluates the function reference and invokes it), so without this the
 	// deadline set by the last Eval keeps ticking through idle time and interrupts a
 	// later Call that has not itself run long.
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 
 	f, err := m.jsEval(function, EvalGlobal)
@@ -63,7 +65,9 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 // management of Value objects.
 func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
 	// Re-arm the eval-timeout deadline, as the Eval* functions do (see Call).
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 
 	f, err := m.jsEval(function, EvalGlobal)
