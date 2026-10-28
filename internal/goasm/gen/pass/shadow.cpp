@@ -318,6 +318,8 @@ static void packCall(CallBase *CB, Value *callee, const DataLayout &DL, BlockMap
   CB->eraseFromParent();
 }
 
+static std::string sigLetter(Type *t);
+
 static void packArgs(Module &M, const std::set<std::string> &leaves) {
   const DataLayout &DL = M.getDataLayout();
   BlockMap blocks;
@@ -337,6 +339,19 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
   for (Function *F : over) {
     FunctionType *T = F->getFunctionType();
     auto byval = [&](unsigned i) { return smallByval(F->getParamByValType(i), DL); };
+    // The signature it had, which a caller outside the engine (the Go host)
+    // still calls it by: the generator writes it a Go function that makes
+    // the block. A small aggregate C passed in memory (byval, a JSValue on
+    // amd64) is written as the words of it the block holds: a pair (j) for
+    // more than 8 bytes, a word (i) for 8 or less. The block slot holds its
+    // contents and the host passes them as words, so a B there would leave
+    // the function without a Go function to call it by.
+    std::string was;
+    for (unsigned i = 0; i < T->getNumParams(); i++) {
+      Type *bt = byval(i);
+      was += bt ? (DL.getTypeStoreSize(bt).getFixedValue() > 8 ? "j" : "i") : sigLetter(T->getParamType(i));
+    }
+    was += ">" + sigLetter(T->getReturnType());
     SmallVector<uint64_t> offs;
     blockLayout(T, DL, byval, offs);
     Function *NF = Function::Create(packedType(T), F->getLinkage(), F->getAddressSpace(), "", &M);
@@ -369,7 +384,7 @@ static void packArgs(Module &M, const std::set<std::string> &leaves) {
     // an argument. Constants (tables) need the replacement through RAUW.
     F->replaceAllUsesWith(NF);
     F->eraseFromParent();
-    errs() << "PACKED " << NF->getName() << "\n";
+    errs() << "PACKED " << NF->getName() << " " << was << "\n";
   }
   for (Function &F : M) {
     SmallVector<CallBase *> ind;

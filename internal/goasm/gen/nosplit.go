@@ -116,19 +116,64 @@ type NoSplitPick struct {
 	Left map[string][]string
 }
 
-// local is the bytes a function's own frame takes below its entry: the
-// frame and the base pointer the Go assembler saves, which it leaves out
-// for a function with no frame that calls nothing.
-func (f *NoSplitFunc) local() int {
-	if f.Frame == 0 && len(f.Calls) == 0 && !f.Indirect {
-		return 0
-	}
-	return f.Frame + 8
+// StackRules are the numbers of the Go toolchain the choice counts with,
+// which differ by architecture.
+type StackRules struct {
+	Arch string
+	// Limit is the room the linker gives a chain of NOSPLIT calls.
+	Limit int
+	// Call is what a call adds to the stack: the return address amd64
+	// pushes, nothing on arm64, which keeps it in LR.
+	Call int
+	// Wrapper is what the ABI wrapper of a Go func value adds above a
+	// function with argBytes of arguments and results.
+	Wrapper func(argBytes int) int
+	// Local is the bytes a frame of the TEXT size frame takes below the
+	// entry, for a function that calls (or calls nothing).
+	Local func(frame int, calls bool) int
 }
 
-// autoNoSplit says whether the Go assembler marks f NOSPLIT by itself.
-func (f *NoSplitFunc) autoNoSplit() bool {
-	return f.Kind == Unified && !f.Stub && len(f.Calls) == 0 && !f.Indirect && f.local() < autoNoSplitFrame
+// AMD64Stack: the linker gives 800 bytes less one CALL (cmd/link/internal/
+// ld/stackcheck.go), a frame takes the saved base pointer on top, and the
+// wrapper its arguments, the base pointer and its CALL.
+var AMD64Stack = StackRules{Arch: "amd64", Limit: 792, Call: 8,
+	Wrapper: func(a int) int { return a + 16 },
+	Local: func(frame int, calls bool) int {
+		if frame == 0 && !calls {
+			return 0
+		}
+		return frame + 8
+	}}
+
+// ARM64Stack: the linker gives 800 bytes less 8 for the frame pointer a
+// callee saves below its SP, a call pushes nothing, and a frame is the TEXT
+// size with the saved LR rounded up as cmd/internal/obj/arm64/obj7.go does:
+// 8 more bytes when that is 8 past a multiple of 16, else 16, for the frame
+// pointer. A leaf with no frame gets no frame at all (NOFRAME). The wrapper
+// of a func value has its arguments, the LR and the frame pointer, rounded
+// the same way: at most ArgBytes + 24.
+var ARM64Stack = StackRules{Arch: "arm64", Limit: 792, Call: 0,
+	Wrapper: func(a int) int { return a + 24 },
+	Local: func(frame int, calls bool) int {
+		if frame == 0 && !calls {
+			return 0
+		}
+		s := frame + 8
+		if s%16 == 8 {
+			return s + 8
+		}
+		return s + 16
+	}}
+
+// local is the bytes a function's own frame takes below its entry.
+func (f *NoSplitFunc) local(r StackRules) int {
+	return r.Local(f.Frame, len(f.Calls) > 0 || f.Indirect)
+}
+
+// autoNoSplit says whether the Go assembler marks f NOSPLIT by itself (or,
+// for an arm64 leaf with no frame, gives it no stack check at all).
+func (f *NoSplitFunc) autoNoSplit(r StackRules) bool {
+	return f.Kind == Unified && !f.Stub && len(f.Calls) == 0 && !f.Indirect && f.local(r) < autoNoSplitFrame
 }
 
 // PickNoSplit chooses the NOSPLIT functions of funcs. taken lists the
@@ -138,6 +183,11 @@ func (f *NoSplitFunc) autoNoSplit() bool {
 // fails when a call goes to a function it does not know, or when the
 // choice breaks its own rules.
 func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []string) (*NoSplitPick, error) {
+	return PickNoSplitFor(AMD64Stack, funcs, taken, callbacks, force)
+}
+
+// PickNoSplitFor is PickNoSplit with the numbers of an architecture.
+func PickNoSplitFor(r StackRules, funcs []NoSplitFunc, taken, callbacks map[string]bool, force []string) (*NoSplitPick, error) {
 	by := map[string]*NoSplitFunc{}
 	for i := range funcs {
 		f := &funcs[i]
@@ -164,7 +214,7 @@ func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []
 		case f.Kind == Register:
 			p.Set[n] = true
 			p.Register = append(p.Register, n)
-		case f.autoNoSplit():
+		case f.autoNoSplit(r):
 			p.Set[n] = true
 			p.Auto = append(p.Auto, n)
 		}
@@ -180,7 +230,7 @@ func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []
 			return h
 		}
 		f := by[n]
-		l := f.local()
+		l := f.local(r)
 		h := l + FaultRoom
 		for _, c := range f.Calls {
 			var below int
@@ -188,16 +238,16 @@ func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []
 			case p.Set[c]:
 				below = height(c)
 			case by[c] != nil:
-				below = 8 // the CALL of morestack in its stack check
+				below = r.Call // the CALL of morestack in its stack check
 			default: // a Go callback
 				below = CallbackHeight
 			}
-			h = max(h, l+8+below)
+			h = max(h, l+r.Call+below)
 		}
 		memo[n] = h
 		return h
 	}
-	fits := func(f *NoSplitFunc) bool { return height(f.Name)+f.ArgBytes+16 <= NoSplitLimit }
+	fits := func(f *NoSplitFunc) bool { return height(f.Name)+r.Wrapper(f.ArgBytes) <= r.Limit }
 	for _, n := range calleesFirst(names, by) {
 		f := by[n]
 		if p.Set[n] {
@@ -254,12 +304,12 @@ func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []
 			continue
 		}
 		f := by[n]
-		if f.Kind == Unified && !f.autoNoSplit() {
+		if f.Kind == Unified && !f.autoNoSplit(r) {
 			if taken[n] || f.Indirect || cyclic[n] || f.Stub {
 				return nil, fmt.Errorf("nosplit: %s was chosen against the rules", n)
 			}
 			if !fits(f) {
-				return nil, fmt.Errorf("nosplit: %s takes %d bytes with its arguments, over %d", n, height(n)+f.ArgBytes+16, NoSplitLimit)
+				return nil, fmt.Errorf("nosplit: %s takes %d bytes with its arguments, over %d", n, height(n)+r.Wrapper(f.ArgBytes), r.Limit)
 			}
 		}
 		p.Height[n] = height(n)
@@ -353,6 +403,11 @@ func calleesFirst(names []string, by map[string]*NoSplitFunc) []string {
 // calls of a function name their targets as llc's text does, an alias
 // (unit.Sets) going to the function it names.
 func ChooseNoSplit(metas, stubs []Meta, addrTaken map[string]bool, plan *DataPlan, unit *AsmUnit, callbacks map[string]bool, force []string) (*NoSplitPick, []NoSplitFunc, error) {
+	return ChooseNoSplitFor(AMD64Stack, metas, stubs, addrTaken, plan, unit, callbacks, force)
+}
+
+// ChooseNoSplitFor is ChooseNoSplit with the numbers of an architecture.
+func ChooseNoSplitFor(r StackRules, metas, stubs []Meta, addrTaken map[string]bool, plan *DataPlan, unit *AsmUnit, callbacks map[string]bool, force []string) (*NoSplitPick, []NoSplitFunc, error) {
 	resolve := func(n string) string {
 		for i := 0; i < 8; i++ {
 			t, ok := unit.Sets[n]
@@ -398,7 +453,7 @@ func ChooseNoSplit(metas, stubs []Meta, addrTaken map[string]bool, plan *DataPla
 			mark(r.Sym)
 		}
 	}
-	p, err := PickNoSplit(fs, taken, callbacks, force)
+	p, err := PickNoSplitFor(r, fs, taken, callbacks, force)
 	if err != nil {
 		return nil, nil, err
 	}
