@@ -1,0 +1,42 @@
+# Once a week, the C engine tests on the newest stable Go. The generated
+# assembly depends on details inside Go (stack layout, the runtime's use of
+# registers, linker names), and a new Go release can change them. A failure
+# here is a warning for us to read. It is not a check for merging.
+name: go-latest
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  cengine:
+    name: cengine (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux/amd64
+            os: ubuntu-24.04
+          - name: darwin/arm64
+            os: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          check-latest: true
+          cache: true
+      - run: go version
+      - name: Test, C engine, internal packages
+        run: go test -count=1 -tags slowjs_cengine,testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+      - name: Test, C engine, root package
+        run: go test -count=1 -p 1 -timeout 60m -tags slowjs_cengine .

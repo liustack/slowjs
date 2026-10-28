@@ -1,0 +1,72 @@
+# What runs on every push and pull request. See "CI" in docs/testing.md for what
+# it covers and what it leaves out (no LLVM, no timing).
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref stops the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    # A pull request from a branch of this repository is already tested by the
+    # push of that branch. Only pull requests from forks run here.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    name: test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux/amd64
+            os: ubuntu-24.04
+          - name: darwin/arm64
+            os: macos-15
+    env:
+      # The checks that need no LLVM. scripts/check.sh runs them and keeps a log
+      # for each in .build/check-logs.
+      CHECK_LOGS: ${{ github.workspace }}/.build/check-logs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./internal/fixlib ./intl/... ./fmt
+      - name: Format and docs
+        run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
+
+      - name: Test, default build
+        run: go test -short -p 2 -timeout 60m $(go list ./... | grep -v '/internal/fixlib$')
+      - name: Test, C engine, internal packages
+        run: CHECK_ONLY="cengine testhooks" scripts/check.sh full
+      - name: Test, C engine, root package
+        run: CHECK_ONLY="root" scripts/check.sh full
+
+      - name: Native C engine against the recorded outputs
+        run: CHECK_ONLY="host-plain compare-plain" scripts/check.sh fast
+
+      - name: Keep the logs of the checks
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: check-logs-${{ strategy.job-index }}
+          path: .build/check-logs
+          if-no-files-found: ignore
+          retention-days: 7
