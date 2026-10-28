@@ -63,9 +63,10 @@ var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
 // interpreter and the regexp matcher, at a fixed place in a line of 64 bytes,
 // so that a change elsewhere in the program no longer moves them within their
 // lines. The offsets are the fastest of those measured (docs/performance.md,
-// "Code positions"): the interpreter at 0 rather than 48, the matcher at 16
-// rather than 0.
-const engineAlign64 = "JS_CallInternal:0,lre_exec_backtrack:16"
+// "Code positions"): the matcher at 16 rather than 0, the interpreter at 40,
+// which is where it ran fastest once a JSValue is copied in two moves of 8
+// bytes (EngineValueFlags), against 0 before.
+const engineAlign64 = "JS_CallInternal:40,lre_exec_backtrack:16"
 
 // parseAlign64 reads -align64: name:offset pairs, the offset a multiple of 8
 // below 64.
@@ -186,6 +187,7 @@ func main() {
 				filepath.Join(libc, "internal/features.h"))
 		} else {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
+			args = append(args, gen.ValueFlagsFor(*arch, s.group)...)
 		}
 		// The formats of the engine's own files are read in IR as written,
 		// before the optimizer changes the calls that carry them.
