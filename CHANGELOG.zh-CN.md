@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 对已经关闭的 VM 再调 `Close`，什么都不做并返回 nil。以前它会空指针 panic，所以 `defer vm.Close()` 加一次显式 `Close` 会崩。`OnClose` 的函数仍然只跑一次。
+
 ## [v0.28.6] - 2026-10-24
 
 ### 变更

@@ -45,6 +45,9 @@ type VM struct {
 	// intr is set when the VM is made and never written again, Close
 	// included, so that Interrupt can read it from any goroutine.
 	intr *interrupter
+	// closed is set by the first Close, which Close again reads to do nothing.
+	// Like intr it lives outside vmState, which Close clears.
+	closed bool
 	vmState
 }
 
@@ -282,8 +285,13 @@ func (m *VM) SetStrip(s Strip) {
 	m.jsSetStripInfo(int32(s))
 }
 
-// Close releases the resources held by m.
+// Close releases the resources held by m. Close of a VM that is closed does
+// nothing and returns nil, so a deferred Close may follow an explicit one.
 func (m *VM) Close() error {
+	if m.closed {
+		return nil
+	}
+	m.closed = true
 	m.forgetFuncs()
 
 	id := m.id
