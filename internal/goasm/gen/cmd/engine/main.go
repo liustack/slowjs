@@ -31,7 +31,7 @@ var (
 	engineDir = flag.String("engine", "engine", "the C tree")
 	llvm      = flag.String("llvm", "/usr/lib/llvm-22/bin", "LLVM 22.1.8 bin dir")
 	pass      = flag.String("pass", "", "shadow-stack pass plugin")
-	arch      = flag.String("arch", "amd64", "amd64, or arm64 (up to llc and a survey of its output: the arm64 lowering takes no whole-engine input yet)")
+	arch      = flag.String("arch", "amd64", "amd64 or arm64 (arm64 takes -mode pn only)")
 	mode      = flag.String("mode", "body", "body or pn (preserve_none)")
 	work      = flag.String("work", "_engine_work", "work dir")
 	out       = flag.String("out", "", "Go package dir to write (empty: no output)")
@@ -117,12 +117,15 @@ func main() {
 	negative := keepNarrow || forceNoSplit != ""
 	if *release {
 		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
-			EditLowered: editLoweredEnv, ForceNoSplit: forceNoSplit, Arch: *arch, NonFormat: *nonFormat, NoPoll: !*pollOn}, *out); err != nil {
+			EditLowered: editLoweredEnv, ForceNoSplit: forceNoSplit, NonFormat: *nonFormat, NoPoll: !*pollOn}, *out); err != nil {
 			die(err)
 		}
 	}
 	if *arch != "amd64" && *arch != "arm64" {
 		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
+	}
+	if *arch == "arm64" && *mode != "pn" {
+		die(fmt.Errorf("-arch arm64 lowers the whole engine with -mode pn only (the other modes are the prototype's, proto.sh)"))
 	}
 	if err := gen.CheckPollOffset(*pollOff, *sizeLog2); err != nil {
 		die(err)
@@ -132,7 +135,8 @@ func main() {
 	align64 := map[string]int{}
 	alignSet := false
 	flag.Visit(func(f *flag.Flag) { alignSet = alignSet || f.Name == "align64" })
-	if *srcList == "" || alignSet {
+	// The offsets were measured on amd64: arm64 takes none unless named.
+	if (*srcList == "" && *arch == "amd64") || alignSet {
 		var err error
 		if align64, err = parseAlign64(*align64F); err != nil {
 			die(err)
@@ -355,17 +359,13 @@ func main() {
 
 	// 5. Split the text, place the data, lower every function.
 	asm := readFile(asmPath)
-	if *arch == "arm64" {
+	a64 := *arch == "arm64"
+	comment := "#"
+	if a64 {
 		surveyARM64(asm, rep)
-		summary(rep, &gen.DataPlan{}, pre, nil, nil, len(rep.Defined))
-		if *reportOut != "" {
-			b, _ := json.MarshalIndent(rejections, "", " ")
-			writeFile(*reportOut, string(b))
-		}
-		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v\n", tCompile, tLLVM)
-		return
+		comment = "//"
 	}
-	unit, err := gen.SplitAsm(asm, "#")
+	unit, err := gen.SplitAsm(asm, comment)
 	if err != nil {
 		die(err)
 	}
@@ -382,6 +382,9 @@ func main() {
 		_ = target
 	}
 	plan := gen.PlanData(unit, funcs)
+	if a64 {
+		plan = gen.PlanDataARM64(unit, funcs)
+	}
 	for fn, errs := range plan.Errors {
 		for _, e := range errs {
 			reject(fn, "data", e.Error())
@@ -423,6 +426,19 @@ func main() {
 		}
 	}
 	env := &gen.LowerEnv{Plan: plan, Funcs: funcs, Variadic: variadic, LooseVarargs: *looseVar}
+	// arm64 holds each entry and call to llc's registers as it lowers them.
+	var a64env *gen.ARM64Env
+	if a64 {
+		probes, err := gen.ParseRegFacts(readFile(probeFacts))
+		if err != nil {
+			die(err)
+		}
+		facts, err := gen.ParseRegFacts(readFile(factsPath))
+		if err != nil {
+			die(err)
+		}
+		a64env = &gen.ARM64Env{Plan: plan, Funcs: funcs, Facts: facts, Probes: probes, Variadic: variadic}
+	}
 	failed := map[string]bool{}
 	for _, r := range rejections {
 		// A function the pass emptied is a trap: its stub names it instead.
@@ -450,8 +466,13 @@ func main() {
 		var meta gen.Meta
 		if leafSet[name] {
 			spec.Kind = gen.Register
+		}
+		switch {
+		case a64:
+			text, meta, err = gen.LowerARM64EngineFunc(unit.Funcs[name].Lines, spec, a64env)
+		case leafSet[name]:
 			text, meta, err = gen.LowerRegister(asm, spec)
-		} else {
+		default:
 			text, meta, err = gen.LowerUnifiedFunc(amd, unit.Funcs[name].Lines, spec, env, "")
 		}
 		if err != nil {
@@ -463,8 +484,12 @@ func main() {
 			stubs = append(stubs, gen.Meta{Name: name, Kind: gen.Unified, ArgBytes: ab, RetType: s.Ret})
 			continue
 		}
-		lowered.WriteString(".p2align 4\n.globl " + name + "\n.type " + name + ",@function\n" + text +
-			".size " + name + ", .-" + name + "\n")
+		if a64 {
+			lowered.WriteString(text)
+		} else {
+			lowered.WriteString(".p2align 4\n.globl " + name + "\n.type " + name + ",@function\n" + text +
+				".size " + name + ", .-" + name + "\n")
+		}
 		metas = append(metas, meta)
 	}
 	tLower := time.Since(t0)
@@ -474,7 +499,11 @@ func main() {
 	if forceNoSplit != "" {
 		forced = strings.Split(forceNoSplit, ",")
 	}
-	nosplit, nosplitFuncs, err := gen.ChooseNoSplit(metas, stubs, rep.AddrTaken, plan, unit, allow, forced)
+	stackRules := gen.AMD64Stack
+	if a64 {
+		stackRules = gen.ARM64Stack
+	}
+	nosplit, nosplitFuncs, err := gen.ChooseNoSplitFor(stackRules, metas, stubs, rep.AddrTaken, plan, unit, allow, forced)
 	if err != nil {
 		die(err)
 	}
@@ -530,8 +559,8 @@ func main() {
 	writeFile(loweredPath, text)
 	loweredObj := filepath.Join(*work, "lowered.o")
 	os.Remove(loweredObj)
-	must1(capture(filepath.Join(*llvm, "llvm-mc"), "-filetype=obj", "-triple=x86_64-linux-gnu", "--save-temp-labels",
-		"-o", loweredObj, loweredPath))
+	must1(capture(filepath.Join(*llvm, "llvm-mc"), "-filetype=obj", "-triple="+map[string]string{"amd64": "x86_64-linux-gnu", "arm64": "aarch64-linux-gnu"}[*arch],
+		"--save-temp-labels", "-o", loweredObj, loweredPath))
 	for name := range rep.Sigs {
 		names = append(names, name)
 	}
@@ -567,7 +596,26 @@ func main() {
 	}
 	// The post-link check: every generated function, instruction by
 	// instruction, and engine_rodata, byte by byte, against llc's object.
-	if *verifyBin != "" {
+	if *verifyBin != "" && a64 {
+		vpkg := *verifyPkg
+		if vpkg == "" {
+			vpkg = *pkg
+		}
+		cr, err := gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg, Names: gonames, Plan: plan,
+			Metas: metas, Stubs: stubs, All: *verifyAll, Align64: align64})
+		if cr != nil {
+			for _, k := range gen.SortedKeys(cr.Checked) {
+				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
+			}
+			for _, why := range gen.SortedKeys(cr.Skipped) {
+				fmt.Fprintf(os.Stderr, "not checked: %d functions, %s\n", len(cr.Skipped[why]), why)
+			}
+		}
+		if err != nil {
+			die(fmt.Errorf("post-link check: %w", err))
+		}
+		fmt.Fprintf(os.Stderr, "post-link check passed for %s\n", *verifyBin)
+	} else if *verifyBin != "" {
 		vpkg := *verifyPkg
 		if vpkg == "" {
 			vpkg = *pkg
@@ -619,8 +667,13 @@ func main() {
 			}
 		}
 	}
-	files, err := gen.EmitEngine(loweredObj, gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
-		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch, Align64: align64})
+	ee := gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
+		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch, Align64: align64}
+	emit := gen.EmitEngine
+	if a64 {
+		emit = gen.EmitARM64Engine
+	}
+	files, err := emit(loweredObj, ee)
 	if err != nil {
 		die(err)
 	}
@@ -634,14 +687,20 @@ func main() {
 		writeFile(filepath.Join(*out, name), text)
 		total += len(text)
 	}
-	writeFile(filepath.Join(*out, "engine_decl.go"), goDecls(metas, stubs, sigs, gonames, rep, negative, layout, wrappers))
-	negativeFile := filepath.Join(*out, "engine_negative.go")
+	// The Go files are by architecture too, so that one folder holds the
+	// engine of each (the suffix is a build constraint). An unsuffixed one
+	// is from a generator before that.
+	for _, f := range []string{"engine_decl.go", "engine_keep.go", "engine_negative.go"} {
+		os.Remove(filepath.Join(*out, f))
+	}
+	writeFile(filepath.Join(*out, "engine_decl_"+*arch+".go"), goDecls(metas, stubs, sigs, gonames, rep, negative, layout, wrappers))
+	negativeFile := filepath.Join(*out, "engine_negative_"+*arch+".go")
 	if negative {
 		writeFile(negativeFile, negativeBuildFile(keepNarrow, forceNoSplit))
 	} else {
 		os.Remove(negativeFile) // an earlier negative build in this folder
 	}
-	writeFile(filepath.Join(*out, "engine_keep.go"), keepAll(metas, stubs, gonames))
+	writeFile(filepath.Join(*out, "engine_keep_"+*arch+".go"), keepAll(metas, stubs, gonames))
 	fmt.Fprintf(os.Stderr, "wrote %d .s files, %d bytes, to %s\n", len(files), total, *out)
 	fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
 }
@@ -662,14 +721,14 @@ func keepNarrowFromEnv(v string) (bool, error) {
 }
 
 // devSwitches are the switches a release build refuses: the ones for
-// surveys (-keep-going, -arch arm64), wrong code on purpose (-loose-varargs),
+// surveys (-keep-going), wrong code on purpose (-loose-varargs),
 // tests of the tests (-poison, GEN_KEEP_NARROW, GEN_EDIT_LOWERED) and a
 // format check made narrower than the default. -src is not among them: a
 // fixture goes through a release build like the engine does, which is how the
 // build is tested.
 type devSwitches struct {
 	KeepGoing, LooseVarargs, Poison, KeepNarrow, NoPoll bool
-	EditLowered, ForceNoSplit, Arch, NonFormat          string
+	EditLowered, ForceNoSplit, NonFormat                string
 }
 
 // releaseError says why -release cannot go on with these switches, or is nil.
@@ -687,7 +746,6 @@ func releaseError(d devSwitches, out string) error {
 	add(d.KeepNarrow, "GEN_KEEP_NARROW")
 	add(d.EditLowered != "", "GEN_EDIT_LOWERED")
 	add(d.ForceNoSplit != "", "GEN_FORCE_NOSPLIT")
-	add(d.Arch != "amd64", "-arch "+d.Arch)
 	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
 	add(d.NoPoll, "an engine without polls (-poll=false)")
 	if len(bad) > 0 {

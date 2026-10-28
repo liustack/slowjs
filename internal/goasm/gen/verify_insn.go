@@ -368,13 +368,16 @@ type binFile struct {
 	secs map[*elf.Section][]byte
 }
 
-func openBin(path string) (*binFile, error) {
+func openBin(path string) (*binFile, error) { return openBinMachine(path, elf.EM_X86_64) }
+
+// openBinMachine opens a linked executable of the machine m.
+func openBinMachine(path string, m elf.Machine) (*binFile, error) {
 	f, err := elf.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if f.Type != elf.ET_EXEC || f.Machine != elf.EM_X86_64 {
-		return nil, fmt.Errorf("%s: not a linked amd64 executable (PIE pointers are not in the file)", path)
+	if f.Type != elf.ET_EXEC || f.Machine != m {
+		return nil, fmt.Errorf("%s: not a linked %v executable (PIE pointers are not in the file)", path, m)
 	}
 	syms, err := f.Symbols()
 	if err != nil {
