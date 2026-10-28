@@ -13,6 +13,8 @@
    lib/younggc that did this on the old engine.
 
      unit-white */
+#include <errno.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "compile-scripts.h"
@@ -40,7 +42,7 @@ int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *o
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
-JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs);
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 int white_every_block_is_a_request(void);
 int white_op(int i);
 int white_op_count(void);
@@ -1594,28 +1596,36 @@ static void test_regexp_split_budget(void)
 
 /* ---- compiling with one request to the heap failing ---- */
 
-/* compile_failing compiles js in a new runtime where request number fail to
-   the heap fails, 0 for none, and runs the code it compiled with every request
-   working. It puts the result of the code as a string in result (room cap), or
-   "exception" when it threw, and returns 1 when the compile failed, else 0. *n
-   is the number of requests to the heap of the compile. A compile may only
-   fail with the out of memory error. */
-static int compile_failing(const char *what, const char *js, int fail, int *n, char *result, size_t cap)
+/* The bits of the mode of a compile: any call of js_malloc_rt or js_realloc_rt
+   is a request (small blocks too), and js is a module. */
+#define MODE_CALLS 1
+#define MODE_MODULE 2
+
+/* compile_failing compiles js in a new runtime where request number fail
+   fails, 0 for none, and runs the code it compiled with every request
+   working. A request is a request to the heap, or with MODE_CALLS a call of
+   js_malloc_rt or js_realloc_rt (small blocks too). It puts the result of the
+   code as a string in result (room cap), or "exception" when it threw, and
+   returns 1 when the compile failed, else 0. *n is the number of requests of
+   the compile. A compile may only fail with the out of memory error. */
+static int compile_failing(const char *what, const char *js, int fail, int mode, int *n, char *result, size_t cap)
 {
     VM v = vm_new();
-    JSValue c = white_compile_failing(v.ctx, js, fail, n);
+    JSValue c = white_compile_failing(v.ctx, js, fail, mode, n);
     int failed = JS_IsException(c);
 
     result[0] = 0;
     if (failed) {
-        CHECK(JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx),
-              "%s, request %d to the heap failing: the compile fails without the out of memory error", what, fail);
-        free(exception_text(v.ctx));
+        int oom = JS_HasException(v.ctx) && JS_IsUncatchableException(v.ctx);
+        char *t = exception_text(v.ctx);
+
+        CHECK(oom, "%s, request %d failing: the compile fails with %s, not the out of memory error", what, fail, t ? t : "no exception");
+        free(t);
     } else {
         JSValue r;
         char *t;
 
-        CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: the compile works, but leaves an exception", what, fail);
+        CHECK(!JS_HasException(v.ctx), "%s, request %d failing: the compile works, but leaves an exception", what, fail);
         r = JS_EvalFunction(v.ctx, c);
         t = value_text(v.ctx, r);
         snprintf(result, cap, "%s", t ? t : "exception");
@@ -1625,30 +1635,95 @@ static int compile_failing(const char *what, const char *js, int fail, int *n, c
     }
     if (failed)
         JS_FreeValue(v.ctx, c);
-    CHECK(!JS_HasException(v.ctx), "%s, request %d to the heap failing: an exception is pending", what, fail);
+    CHECK(!JS_HasException(v.ctx), "%s, request %d failing: an exception is pending", what, fail);
     vm_free(&v);
     return failed;
 }
 
-/* Compiling with one request to the heap failing, and the others working,
-   fails with the out of memory error or gives code that works as it should. A
-   request that fails followed by ones that work is what a large block failing
-   under the memory limit, as the small blocks still fit in their arenas,
-   looks like. */
-static void test_compile_one_failure(void)
+/* compile_failing_alone is compile_failing in a child process, so that a
+   compile that aborts is one failed case with its script and request, not the
+   end of the test. It returns 1 when the compile failed with the out of memory
+   error, 0 when it worked and gave want, and -1 for any other outcome. */
+static int compile_failing_alone(const char *what, const char *js, int fail, int mode, const char *want)
+{
+    pid_t pid, r;
+    int st;
+
+    fflush(stdout);
+    pid = fork();
+    if (pid < 0) {
+        perror("fork");
+        exit(2);
+    }
+    if (pid == 0) {
+        char got[256];
+        int n, failed;
+
+        failures = 0;
+        failed = compile_failing(what, js, fail, mode, &n, got, sizeof(got));
+        if (!failed)
+            CHECK(strcmp(got, want) == 0, "%s, request %d failing: the code compiled gives %s, want %s", what, fail, got, want);
+        fflush(stdout);
+        host_leave(failures ? 1 : failed ? 10 : 0);
+    }
+    while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR)
+        ;
+    if (r != pid) {
+        perror("waitpid");
+        exit(2);
+    }
+    if (WIFEXITED(st) && (WEXITSTATUS(st) == 0 || WEXITSTATUS(st) == 10))
+        return WEXITSTATUS(st) == 10;
+    CHECK(0, "%s, request %d failing: the case %s", what, fail,
+          WIFSIGNALED(st) ? "was stopped by a signal (the engine aborted)" : "failed");
+    return -1;
+}
+
+/* More scripts for the sweep where any block may fail: each uses a place of
+   the parser that looks ahead, patches code it wrote before, or adds to a
+   table (the constant pool, the closure variables, the labels). */
+static const char *const compile_alloc_scripts[] = {
+    /* a destructuring pattern that is not an arrow function or a declaration:
+       the parser looks ahead to the token after its closing bracket */
+    "[aa, bb] = [1, 2]; ({cc, dd} = {cc: 1, dd: 2}); (ee, ff); [(gg), hh] = [3, 4]; aa + hh",
+    "var a, b; for ([a, b] of [[1, 2]]) ; for ({a, b} of [{a: 1, b: 2}]) ; for ([a, b] in {x: 1}) ; typeof a",
+    "var {x: {y}, z: [w]} = {x: {y: 1}, z: [2]}; ({p: [q]} = {p: [3]}); var q; y + w + q",
+    /* parentheses and templates the lookahead reads through */
+    "var o = {a: 1}; var t = (o.a, (o.a + 1) * 2, [o.a, (o)]); `x${(1, 2)}y${`z${(3)}`}` + (1) + t.length",
+};
+
+/* The modules of the sweep (compiled with MODE_MODULE): exports of every
+   form, top level await and import.meta. None has an import: the compile
+   loads the modules it imports, and nothing here loads one. */
+static const char *const compile_module_scripts[] = {
+    "export const a = 1, b = [2]; export let c; export var d = 4; export function f() { return a } export class K { static s = 1 } export default 5; export { a as e, b as default2 }; export { f as 'string name' }",
+    "var r = import.meta.url, s = import.meta; import('lazy').then(() => {}, () => {}); export { r, s as meta }; export { r as 'quoted name' }",
+    "export default function () { return 1 } export const g = async () => { await 1 }; await Promise.resolve(2); for await (const v of [Promise.resolve(1)]) ; export { g as h }",
+    "export default class { static #p = 1; static q() { return #p in this } } export const { a, b: [c = 1] } = { a: 1, b: [] }; export const [d, ...e] = [1, 2, 3]",
+};
+
+/* Compiling with one request failing, and the others working, fails with the
+   out of memory error or gives code that works as it should. A request is a
+   request to the heap (what a large block failing under the memory limit
+   looks like, as the small blocks still fit in their arenas), or with calls
+   set any call of js_malloc_rt or js_realloc_rt, small blocks too (what every
+   block failing alone looks like, as it does in the builds that take each
+   block from the system malloc). */
+static void test_compile_one_failure(int calls)
 {
     static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
-    const char *scripts[countof(compile_scripts) + countof(compile_fine_scripts) + 5];
+    struct {
+        const char *js;
+        int mode;
+    } scripts[countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + 5];
     size_t i, k = 0;
+    long cases_run = 0, bad = 0;
     int j;
 
-    /* With every block a request, one failing request is one failing small
-       block, and the compiler does not survive all of those: it drops the
-       error of a lookahead (js_parse_skip_parens_token) and goes on, and in a
-       class it reaches the assert on a constant pool index. So this test does
-       not run in those builds. */
-    if (white_every_block_is_a_request()) {
-        printf("unit-white: test_compile_one_failure skipped, every block is a request in this build\n");
+    /* With every block a request, a sweep of the requests to the heap is a
+       sweep of all the calls. That one runs in these builds. */
+    if (!calls && white_every_block_is_a_request()) {
+        printf("unit-white: test_compile_one_failure (heap requests) skipped, every block is a request in this build\n");
         return;
     }
     nested_scopes();
@@ -1656,6 +1731,7 @@ static void test_compile_one_failure(void)
     for (j = 0; j < 400; j++)
         strcat(big_scope, "{ let a = 1; n += a } ");
     strcat(big_scope, "return n } f()");
+    deep_scope[0] = 0;
     for (j = 0; j < 300; j++)
         strcat(deep_scope, "{ let a = 1; ");
     for (j = 0; j < 300; j++)
@@ -1669,31 +1745,51 @@ static void test_compile_one_failure(void)
     for (j = 0; j < 300; j++)
         strcat(cases, "case 1: break; ");
     strcat(cases, "default: 3 }");
-    for (i = 0; i < countof(compile_scripts); i++)
-        scripts[k++] = compile_scripts[i];
-    for (i = 0; i < countof(compile_fine_scripts); i++)
-        scripts[k++] = compile_fine_scripts[i];
-    scripts[k++] = big_scope;
-    scripts[k++] = deep_scope;
-    scripts[k++] = fields;
-    scripts[k++] = cases;
-    /* Private methods and no fields: the code that adds the brand is made
-       and patched at the end of the class, with no token between. */
-    scripts[k++] = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
+    if (!calls) {
+        for (i = 0; i < countof(compile_scripts); i++)
+            scripts[k++].js = compile_scripts[i];
+        for (i = 0; i < countof(compile_fine_scripts); i++)
+            scripts[k++].js = compile_fine_scripts[i];
+    }
+    for (i = 0; i < countof(compile_alloc_scripts); i++)
+        scripts[k++].js = compile_alloc_scripts[i];
+    if (!calls) {
+        scripts[k++].js = big_scope;
+        scripts[k++].js = deep_scope;
+        scripts[k++].js = fields;
+        scripts[k++].js = cases;
+        /* Private methods and no fields: the code that adds the brand is made
+           and patched at the end of the class, with no token between. */
+        scripts[k++].js = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
+    }
+    for (i = 0; i < k; i++)
+        scripts[i].mode = calls ? MODE_CALLS : 0;
+    for (i = 0; i < countof(compile_module_scripts) && !calls; i++) {
+        scripts[k].js = compile_module_scripts[i];
+        scripts[k++].mode = (calls ? MODE_CALLS : 0) | MODE_MODULE;
+    }
     for (i = 0; i < k; i++) {
-        char what[32], want[256], got[256];
-        int n, n1, fail, failures = 0;
+        char what[32], want[256];
+        int n, fail, failures_of_script = 0, bad_of_script = 0;
 
         snprintf(what, sizeof(what), "script %zu", i);
-        CHECK(!compile_failing(what, scripts[i], 0, &n, want, sizeof(want)), "%s does not compile", what);
+        CHECK(!compile_failing(what, scripts[i].js, 0, scripts[i].mode, &n, want, sizeof(want)), "%s does not compile", what);
         for (fail = 1; fail <= n; fail++) {
-            if (compile_failing(what, scripts[i], fail, &n1, got, sizeof(got)))
-                failures++;
-            else
-                CHECK(strcmp(got, want) == 0, "%s, request %d to the heap failing: the code compiled gives %s, want %s", what, fail, got, want);
+            int r = compile_failing_alone(what, scripts[i].js, fail, scripts[i].mode, want);
+
+            cases_run++;
+            if (r < 0) {
+                bad++;
+                bad_of_script++;
+            } else {
+                failures_of_script += r;
+            }
         }
-        CHECK(failures > 0, "%s: no compile of its %d requests to the heap failed", what, n);
+        if (bad_of_script)
+            printf("unit-white: %s (%.40s): %d of %d requests bad\n", what, scripts[i].js, bad_of_script, n);
+        CHECK(failures_of_script > 0, "%s: no compile of its %d requests failed", what, n);
     }
+    printf("unit-white: test_compile_one_failure (%s): %ld cases, %ld bad\n", calls ? "every call" : "heap requests", cases_run, bad);
 }
 
 int main(void)
@@ -1723,7 +1819,8 @@ int main(void)
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
     test_regexp_split_budget();
-    test_compile_one_failure();
+    test_compile_one_failure(0);
+    test_compile_one_failure(1);
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
