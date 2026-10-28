@@ -1625,6 +1625,46 @@ static int test_internal_depth_limit(void *unused)
     return 0;
 }
 
+/* JSON nested past the limit of the internal depth says so: the error is a
+   RangeError that names the JSON, in the parse, in the reviver that walks the
+   result and in stringify, and not the stack overflow of a call that recurses
+   too deep, which stays as it is. */
+static int test_json_nesting_error(void *unused)
+{
+    static const struct { const char *src, *want; } cases[] = {
+        { "try { JSON.parse('['.repeat(2001) + ']'.repeat(2001)) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: JSON nesting too deep" },
+        { "try { JSON.parse('{\"a\":'.repeat(2001) + '1' + '}'.repeat(2001)) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: JSON nesting too deep" },
+        { "try { JSON.parse('['.repeat(2001) + ']'.repeat(2001), (k, v) => v) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: JSON nesting too deep" },
+        { "var a = []; for (let i = 1; i < 2001; i++) a = [a];\n"
+          "try { JSON.stringify(a) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: JSON nesting too deep" },
+        { "var a = []; for (let i = 1; i < 2001; i++) a = [a];\n"
+          "try { JSON.stringify(a, (k, v) => v) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: JSON nesting too deep" },
+        { "function f() { return f() }\n"
+          "try { f() } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: Maximum call stack size exceeded" },
+        { "var o = { toJSON() { return JSON.stringify(this) } };\n"
+          "try { JSON.stringify(o) } catch (e) { e.name + ': ' + e.message }",
+          "RangeError: Maximum call stack size exceeded" },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        CHECK(eval_is(ctx, cases[i].src, cases[i].want), "case %zu", i);
+        CHECK(JS_GetInternalDepth(rt) == 0, "case %zu: the internal depth is back at %d", i, JS_GetInternalDepth(rt));
+    }
+    CHECK(eval_is(ctx, "JSON.stringify(JSON.parse('[[1]]'))", "[[1]]"), "the runtime runs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* The name of the exception, taken out of ctx, or "" when there is none */
 static void take_error_name(JSContext *ctx, char *buf, size_t size)
 {
@@ -2584,6 +2624,7 @@ int main(void)
     host_run_thread(test_call_depth_chains, NULL);
     host_run_thread(test_internal_depth, NULL);
     host_run_thread(test_internal_depth_limit, NULL);
+    host_run_thread(test_json_nesting_error, NULL);
     host_run_thread(test_internal_depth_autoinit, NULL);
     host_run_thread(test_internal_depth_define, NULL);
     host_run_thread(test_function_nesting, NULL);
