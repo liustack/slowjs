@@ -269,6 +269,13 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
     _exit(134);
 }
 
+/* The tests make no function of the host, so nothing holds a handle. */
+void host_release(uint32_t vm, uint32_t handle)
+{
+    fprintf(stderr, "heap-test: host_release of handle %u, which no function holds\n", handle);
+    abort();
+}
+
 /* What Go does after a release: unmap the chunks, and take the pages of the
    ranges. Here the whole range is filled, not only the pages inside it, so
    that the heap is caught reading or keeping anything of it. */

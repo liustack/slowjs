@@ -94,5 +94,7 @@ size_t host_live_vms(void);
 /* When set, host_call passes the calls of the functions of
    JS_NewHostFunction (a magic of 0 or more) to it. */
 extern JSValue (*host_function_call)(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id);
+/* When set, host_release passes the handles the engine lets go of to it. */
+extern void (*host_release_call)(uint32_t vm, uint32_t handle);
 size_t host_mapped_bytes(void);
 #endif

@@ -1208,6 +1208,13 @@ JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
    more: a negative one throws a RangeError. */
 JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
                            int length, int32_t id);
+/* JS_NewHostFunction of a function that holds the handle id of the host:
+   when the engine frees the function, at the drop of its last reference, in
+   a collection or when the runtime is freed, it calls host_release(vm, id)
+   (see host.h), once. When it returns the exception it made no function and
+   calls nothing: the handle stays the host's. */
+JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_len,
+                                  int length, int32_t id);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func, const char *name,
                                       int length)

@@ -629,6 +629,21 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
     _exit(134);
 }
 
+void (*host_release_call)(uint32_t vm, uint32_t handle);
+
+/* The engine let go of a function of JS_NewHostFunctionRelease. The test host
+   holds no handle of its own: a test that makes such functions sets
+   host_release_call, and a release without it ends the process. */
+void host_release(uint32_t vm, uint32_t handle)
+{
+    if (host_release_call) {
+        host_release_call(vm, handle);
+        return;
+    }
+    fprintf(stderr, "engine: host_release of handle %u, which the test host does not hold\n", handle);
+    _exit(87);
+}
+
 uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)
 {
     FILE *f;
