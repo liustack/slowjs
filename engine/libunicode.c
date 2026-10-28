@@ -1115,16 +1115,22 @@ static int unicode_get_cc(uint32_t c)
     }
 }
 
-static void sort_cc(int *buf, int len)
+#define NORMALIZE_POLL_MASK 4095
+
+static int sort_cc(int *buf, int len, const volatile int *stop)
 {
     int i, j, k, cc, cc1, start, ch1;
 
     for(i = 0; i < len; i++) {
+        if ((i & NORMALIZE_POLL_MASK) == 0 && poll_flag(stop))
+            return -1;
         cc = unicode_get_cc(buf[i]);
         if (cc != 0) {
             start = i;
             j = i + 1;
             while (j < len) {
+                if ((j & NORMALIZE_POLL_MASK) == 0 && poll_flag(stop))
+                    return -1;
                 ch1 = buf[j];
                 cc1 = unicode_get_cc(ch1);
                 if (cc1 == 0)
@@ -1149,6 +1155,7 @@ static void sort_cc(int *buf, int len)
             i = j;
         }
     }
+    return 0;
 }
 
 /* The decomposition of a character can hold characters that decompose in
@@ -1157,14 +1164,17 @@ static void sort_cc(int *buf, int len)
    UNICODE_DECOMP_LEN_MAX of them (test/unit.c goes over them all). */
 #define NFD_STACK_LEN_MAX (4 * UNICODE_DECOMP_LEN_MAX)
 
-static void to_nfd(DynBuf *dbuf,
-                   const int *src, int src_len, int is_compat)
+static int to_nfd(DynBuf *dbuf,
+                  const int *src, int src_len, int is_compat,
+                  const volatile int *stop)
 {
     uint32_t c, v;
     int i, l, sp;
     uint32_t res[UNICODE_DECOMP_LEN_MAX], stack[NFD_STACK_LEN_MAX];
 
     for(i = 0; i < src_len; i++) {
+        if ((i & NORMALIZE_POLL_MASK) == 0 && poll_flag(stop))
+            return -1;
         stack[0] = src[i];
         sp = 1;
         while (sp > 0) {
@@ -1191,6 +1201,7 @@ static void to_nfd(DynBuf *dbuf,
             }
         }
     }
+    return 0;
 }
 
 /* return 0 if not found */
@@ -1211,7 +1222,8 @@ static int compose_pair(uint32_t c0, uint32_t c1)
 
 int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
                       UnicodeNormalizationEnum n_type,
-                      void *opaque, DynBufReallocFunc *realloc_func)
+                      void *opaque, DynBufReallocFunc *realloc_func,
+                      const volatile int *stop)
 {
     int *buf, buf_len, i, p, starter_pos, cc, last_cc, out_len;
     BOOL is_compat;
@@ -1237,7 +1249,12 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     not_latin1: ;
     }
 
-    to_nfd(dbuf, (const int *)src, src_len, is_compat);
+    if (to_nfd(dbuf, (const int *)src, src_len, is_compat, stop)) {
+    stopped:
+        dbuf_free(dbuf);
+        *pdst = NULL;
+        return -2;
+    }
     if (dbuf_error(dbuf)) {
     fail:
         *pdst = NULL;
@@ -1246,7 +1263,8 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     buf = (int *)dbuf->buf;
     buf_len = dbuf->size / sizeof(int);
 
-    sort_cc(buf, buf_len);
+    if (sort_cc(buf, buf_len, stop))
+        goto stopped;
 
     if (buf_len <= 1 || (n_type & 1) != 0) {
         /* NFD / NFKD */
@@ -1257,6 +1275,8 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     i = 1;
     out_len = 1;
     while (i < buf_len) {
+        if ((i & NORMALIZE_POLL_MASK) == 0 && poll_flag(stop))
+            goto stopped;
         /* find the starter character and test if it is blocked from
            the character at 'i' */
         last_cc = unicode_get_cc(buf[i]);

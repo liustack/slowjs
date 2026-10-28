@@ -102,9 +102,13 @@ typedef enum {
     UNICODE_NFKD,
 } UnicodeNormalizationEnum;
 
+/* Return the length of the result, -1 when it runs out of memory, or -2 when
+   *stop is set (poll_flag of cutils.h): a long string is read every 4096
+   characters, so that the host can stop it. */
 int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
                       UnicodeNormalizationEnum n_type,
-                      void *opaque, void *(*realloc_func)(void *opaque, void *ptr, size_t size));
+                      void *opaque, void *(*realloc_func)(void *opaque, void *ptr, size_t size),
+                      const volatile int *stop);
 
 /* Unicode character range functions */
 
