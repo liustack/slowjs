@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl
+.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl gen check-fast check-full bench remote
 
 all: editor
 	golint 2>&1
@@ -17,6 +17,34 @@ benchmark:
 # make compare-engines ARGS="-cpu 1 -sibling 5".
 compare-engines:
 	cd compare/engines && go run ./cmd/compare $(ARGS)
+
+# The C engine of engine/ as Go assembly in internal/cengine, on a machine with
+# LLVM 22.1.8: make gen, make gen ARCH=arm64. GEN_KEEP=dir keeps a copy of the
+# generated files (see docs/testing.md).
+ARCH ?= amd64
+gen:
+	scripts/gen-engine.sh $(ARCH)
+
+# The checks of a change to the C engine, one table at the end: fast for every
+# commit, full for the end of a batch. The steps are in scripts/check.sh.
+check-fast:
+	scripts/check.sh fast
+
+check-full:
+	scripts/check.sh full
+
+# Code-position timing and callgrind (internal/sjdev), for example
+# make bench ARGS="report -in shop.jsonl -base base -new new".
+bench:
+	go tool sjdev bench $(ARGS)
+
+# A make target on another machine (scripts/remote.sh): make remote RUN="gen",
+# make remote REF=my-branch TREE=new RUN="check-fast". The machine comes from
+# SLOWJS_REMOTE and SLOWJS_REMOTE_DIR, the cores from SLOWJS_REMOTE_CPUS.
+REF ?= HEAD
+TREE ?= main
+remote:
+	scripts/remote.sh -t $(TREE) $(REMOTE_FLAGS) $(REF) -- make $(RUN)
 
 build_all_targets:
 	./build_all_targets.sh

@@ -9,8 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/liustack/slowjs/internal/sjdev/hwm"
 )
 
 // TestMain lets the tests run this binary as jsrun: with JSRUN_AS_MAIN set it
@@ -52,5 +55,26 @@ func TestOutputSaysWhatIsTimed(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "result: done") || !strings.Contains(string(out), "eval: 2 runs") {
 		t.Errorf("the usual output is missing:\n%s", out)
+	}
+}
+
+// TestOutputEndsWithItsOwnPeakMemory: sjdev bench run reads the peak memory from
+// the line the process prints itself.
+func TestOutputEndsWithItsOwnPeakMemory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("needs /proc/self/status")
+	}
+	file := filepath.Join(t.TempDir(), "job.js")
+	if err := os.WriteFile(file, []byte(`"done"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], file)
+	cmd.Env = append(os.Environ(), "JSRUN_AS_MAIN=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("jsrun: %v\n%s", err, out)
+	}
+	if kb, ok := hwm.Find(string(out)); !ok || kb <= 0 {
+		t.Errorf("no vmhwm-kb line:\n%s", out)
 	}
 }
