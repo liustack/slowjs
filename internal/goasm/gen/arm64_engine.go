@@ -38,8 +38,10 @@
 // the PC instead, and llc may keep its page in a register across blocks. So
 // for that data the lowering follows the register through the blocks of the
 // function (arm64_pages.go): a use is accepted where every way in has the
-// register holding exactly the page of that data, and any other read of such
-// a register is refused. A page with an offset added to it, which the
+// register holding the page of that data from an adrp with an offset the use
+// shares a page with. Any other read of a register that holds a page, or may
+// on some way in, is refused, for every adrp and not only those of the
+// function's own data. A page with an offset added to it, which the
 // PC-relative form would read without the offset, never gets through.
 package gen
 
@@ -273,8 +275,8 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		}
 	}
 	// The registers that hold the page of an adrp of the function's own data.
-	ownPage := func(sym string) bool { _, ok := env.Plan.Rename[fn.Name][sym]; return ok }
-	pages := a64FollowOwnPages(body, ownPage, a64IndirectLabels(body, env.Plan.BodyData(fn.Name)))
+	data := env.Plan.BodyData(fn.Name)
+	pages := a64FollowPages(body, a64IndirectLabels(body, data), a64LabelTables(data))
 	var out []string
 	D := 0 // bytes of the LLVM frame allocated at this point
 	goOff := func(k int) int { return L + (F - D) + k }
@@ -413,8 +415,14 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 				} else {
 					return fail("unreviewed use of the function's own data %q", l)
 				}
-				if pages.At(li, a64RegNumber(base)) != m[1] {
+				sym, add, def, _ := pages.Page(li, a64RegNumber(base))
+				if !def || sym != m[1] {
 					return fail("%q is not in the block of an adrp of %s in %s", l, m[1], base)
+				}
+				// The PC-relative form reads sym+k whatever the adrp added,
+				// which is what the pair reads where both are in one page.
+				if k-add < 0 || k-add > 4095 {
+					return fail("offset %d from the adrp of %s%+d in %q", k-add, sym, add, l)
 				}
 				for r := range a64Uses(l) {
 					if _, w := a64Reads(l, r); w {
@@ -479,9 +487,12 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		// Any other instruction: a register holding a page may be written
 		// over, never read.
 		for r := 0; r < 31; r++ {
-			if sym := pages.At(li, r); sym != "" {
+			if sym, _, def, held := pages.Page(li, r); held {
 				if reads, _ := a64Reads(l, r); reads {
-					return fail("%q reads x%d, which holds the page of an adrp of %s", l, r, sym)
+					if def {
+						return fail("%q reads x%d, which holds the page of an adrp of %s", l, r, sym)
+					}
+					return fail("%q reads x%d, which may hold the page of an adrp", l, r)
 				}
 			}
 		}
