@@ -4,3 +4,6 @@ mem.out
 
 .DS_Store
 __pycache__/
+
+# Made by make gen, make check-* and make remote.
+/.build/
