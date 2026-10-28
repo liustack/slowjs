@@ -19,6 +19,8 @@ fork 保留 modernc.org/quickjs 的 Go API，以及 ccgo 生成的引擎。`lib/
 
 改了什么逐项列在 [fork-changes](fork-changes/README.md)：脚本捕获不了的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。怎么合入 libquickjs、modernc.org/quickjs 或 modernc.org/libc 的新版本，见 [upgrading.md](upgrading.md)。
 
+将来换掉 `lib/` 的 `engine/` 里的 C 树不跟着上游走。钉住的提交之后上游的提交，要让渲染更快，或者去掉页面碰得到的崩溃和错误结果，才单独搬进来，带测试，其余不搬。搬进来的、试过又撤回的提交都在 [upstream-commits.md](fork-changes/upstream-commits.md)。
+
 ## 从 modernc.org/quickjs 换过来
 
 用过 modernc.org/quickjs v0.25.0 的程序会遇到这些：

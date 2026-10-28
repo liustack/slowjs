@@ -27,6 +27,8 @@ The fork keeps the Go API of modernc.org/quickjs and the engine as ccgo makes it
 
 What it changed is listed one change at a time in [fork-changes](fork-changes/README.md): limits that no script can catch, the same output on every machine, `Intl` in every locale Chromium has, and faster renders. [upgrading.md](upgrading.md) says how a new release of libquickjs, of modernc.org/quickjs or of modernc.org/libc is taken in.
 
+The C tree in `engine/` that will replace `lib/` does not follow upstream. A commit of upstream QuickJS made after the pinned one is taken into it on its own, with a test, when it makes renders faster or removes a crash or a wrong answer a page can reach, and left out otherwise. Those commits, and the ones tried and taken back, are in [upstream-commits.md](fork-changes/upstream-commits.md).
+
 ## Switching from modernc.org/quickjs
 
 What a program that used modernc.org/quickjs v0.25.0 runs into:
