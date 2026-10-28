@@ -43,7 +43,7 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 // tests and negative builds, one at a time, and a plain build with an output
 // folder goes on.
 func TestReleaseError(t *testing.T) {
-	plain := devSwitches{Arch: "amd64", NonFormat: defaultNonFormat}
+	plain := devSwitches{NonFormat: defaultNonFormat}
 	if err := releaseError(plain, "out"); err != nil {
 		t.Fatalf("a plain release build: %v", err)
 	}
@@ -57,7 +57,6 @@ func TestReleaseError(t *testing.T) {
 		"GEN_KEEP_NARROW":             func(d *devSwitches) { d.KeepNarrow = true },
 		"GEN_EDIT_LOWERED":            func(d *devSwitches) { d.EditLowered = "1" },
 		"GEN_FORCE_NOSPLIT":           func(d *devSwitches) { d.ForceNoSplit = "f" },
-		"-arch arm64":                 func(d *devSwitches) { d.Arch = "arm64" },
 		"-non-format-variadic":        func(d *devSwitches) { d.NonFormat = "" },
 		"without polls (-poll=false)": func(d *devSwitches) { d.NoPoll = true },
 	} {
