@@ -43,7 +43,6 @@ int white_function_debug(JSValueConst script, int i, const uint8_t **source, siz
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
-int white_every_block_is_a_request(void);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -1775,12 +1774,6 @@ static void test_compile_one_failure(int calls)
     long cases_run = 0, bad = 0;
     int j;
 
-    /* With every block a request, a sweep of the requests to the heap is a
-       sweep of all the calls. That one runs in these builds. */
-    if (!calls && white_every_block_is_a_request()) {
-        printf("unit-white: test_compile_one_failure (heap requests) skipped, every block is a request in this build\n");
-        return;
-    }
     nested_scopes();
     strcpy(big_scope, "function f() { let n = 0; ");
     for (j = 0; j < 400; j++)
