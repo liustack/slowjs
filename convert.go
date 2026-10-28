@@ -162,7 +162,7 @@ func validUTF8(s string) string {
 // throws, it takes the exception out of the context and returns it as the
 // error, for example the engine's out of memory error.
 func (m *VM) goString(v jsValue) (string, error) {
-	s, ok := m.toGoString(v, false)
+	s, ok := m.argString(v, false)
 	if !ok {
 		return "", m.errFromException()
 	}
@@ -177,7 +177,7 @@ func (m *VM) goString(v jsValue) (string, error) {
 // exception being read is the one to report, and a second one left pending
 // would be found by the next JS_GetException of an unrelated call.
 func (m *VM) errString(v jsValue) string {
-	s, ok := m.toGoString(v, false)
+	s, ok := m.argString(v, false)
 	if !ok {
 		m.dropException()
 	}
