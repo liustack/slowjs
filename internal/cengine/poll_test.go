@@ -198,11 +198,13 @@ func TestInterruptOneProc(t *testing.T) {
 // kill: the collection after the setup keeps one from starting while Eval
 // compiles, and Interrupt comes once the call runs, since the interpreter
 // reads the flag when it calls the script. The call must outlast the
-// Interrupt and the grace. Over a dense Array it takes the generic steps of
-// the specification, one index at a time: 8 Mi elements take about 200 ms
-// on the machine of the measurements, and the Interrupt comes once Eval has
-// compiled the call, also under an emulator. (slice, which this test used,
-// copies a dense Array in one go and ends in 25 ms.)
+// Interrupt and the grace on any machine, so it goes over an array-like
+// object of 2^31-1 indices with none of them set: the generic steps of the
+// specification, one index at a time, take a minute or more, where a dense
+// Array of 8 Mi elements took 200 ms on the Linux machine of the first
+// measurements and ended before the kill on a Mac.
+// (slice, which this test used before, copies a dense Array in one go and
+// ends in 25 ms.)
 func TestKill(t *testing.T) {
 	needPolls(t)
 	for _, c := range []struct {
@@ -210,7 +212,7 @@ func TestKill(t *testing.T) {
 		at, grace        time.Duration
 	}{
 		{"loop", "", "for (;;) {}", 20 * time.Millisecond, 0},
-		{"lastIndexOf", "var a = Array(1 << 23).fill(1.5)", "a.lastIndexOf(-1)", 100 * time.Millisecond, 30 * time.Millisecond},
+		{"lastIndexOf", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 100 * time.Millisecond, 30 * time.Millisecond},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)
