@@ -473,28 +473,21 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 | Test, C engine | `go test -tags slowjs_cengine,testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable`, then the `root` step (`go test -p 1 -tags slowjs_cengine .`) |
 | Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on both, so nothing is installed) |
 
+`llvm-steps.yml` is a second workflow with one job, on linux/amd64 only, that installs LLVM 22.1.8 from apt.llvm.org (15 to 25 seconds, the version `scripts/gen-engine.sh` insists on) and runs these steps. It stops a commit that leaves the checked-in generated engine different from what the generator makes from `engine/`:
+
+| Step | What it runs |
+| --- | --- |
+| Generated engine | `make check-gen` (`GEN_JOBS=4`): the `.s` and `engine_*` files of amd64 and arm64 against a fresh `make gen` |
+| goasm and cycles | `CHECK_ONLY="goasm cycles" scripts/check.sh fast`: the tests of `internal/goasm` (the generator and the Go assembly of the old engine) and the check that every recursion of the C engine is counted |
+
 The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
 
 `go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on both platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
 
 Left out on purpose:
 
-- **Everything that needs LLVM 22.1.8**: `make gen`, `make check-gen`, and the `goasm` and `cycles` steps. They run on linux only, and CI does not install LLVM yet.
 - **`internal/fixlib` tests** (16 minutes or more on one core), `fixlib -check`, test262, the race detector and the sanitizer builds. They guard the engine of `lib/`, which is frozen, or take long. Run them with `make check-full`.
 - **Timing and memory measurements**, `make gointl` (it clones go-intl) and `make build_all_targets`.
-
-To add the LLVM steps, add a linux job that installs LLVM from apt.llvm.org, which carries exactly 22.1.8, the version `scripts/gen-engine.sh` insists on, and runs the steps:
-
-```yaml
-- run: |
-    curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
-    echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
-    sudo apt-get update -qq
-    sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22
-- run: make check-gen
-  env: { GEN_JOBS: "4" }
-- run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
-```
 
 On `ubuntu-24.04` the install took 15 to 25 seconds, `make check-gen` 1.5 to 2.5 minutes, and the other two steps 0.5 to 1 minute together (two runs). `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
 

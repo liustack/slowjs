@@ -1,5 +1,6 @@
 # What runs on every push and pull request. See "CI" in docs/testing.md for what
-# it covers and what it leaves out (no LLVM, no timing).
+# it covers and what it leaves out (no timing). The LLVM steps are in
+# llvm-steps.yml.
 name: ci
 
 on:
