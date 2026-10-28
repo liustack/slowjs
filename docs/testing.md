@@ -93,7 +93,7 @@ go test -run ClassEscapes ./internal/fixlib              # fixClassEscapes puts 
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run ColdPath ./lib                              # ===, Object.is and key names give what they gave before fixColdFrames
 go test -run ForIn ./lib                                 # for in gives what it gave before fixForIn
-go test -tags testhooks ./internal/hostmem               # the host memory of the new engine: chunks, footprint, remap, shadow stack pages and guard page, and what each keeps when the OS refuses
+go test -tags testhooks ./internal/hostmem               # the host memory of the new engine: chunks, footprint, remap, shadow stack pages and guard page, read-only mappings, and what each keeps when the OS refuses
 HOSTMEM_RESIDENCY=1 go test -run StackResidency ./internal/hostmem # exact counts of shadow stack pages in memory, a snapshot the system can change
 HOSTMEM_BIGCOMMIT=1 go test -run ManyStacks ./internal/hostmem     # on windows: 300 stacks of 32 MiB, which commit 9.4 GiB
 go test -run Bitwise ./lib                               # bitwise operators give what they gave before fixBitwise
