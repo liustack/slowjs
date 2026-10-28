@@ -1318,6 +1318,13 @@ static void test_string_append_atom(void)
     };
     size_t i;
 
+    /* An atom grows in place only into the room at the end of its block.
+       Where every block is a request to the system malloc (asan), a block
+       has no more room than was asked for, and nothing would be checked. */
+    if (white_every_block_is_a_request()) {
+        printf("unit-white: test_string_append_atom skipped, every block is a request in this build\n");
+        return;
+    }
     for (i = 0; i < countof(ways); i++) {
         VM v = vm_new();
         /* longer than JS_STRING_APPEND_MIN, so that an add takes the path of
