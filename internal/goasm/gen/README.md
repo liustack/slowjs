@@ -176,7 +176,10 @@ another, or a call llc's facts do not have stops the build. llc reaches its
 data through `adrp` and `:lo12:`: the lowering writes the whole address in
 its Go symbol (`engine_rodata`, or a function), takes a
 `:lo12:` use only in the block of its `adrp`, and reads a function's own
-constant pool and jump tables PC-relative. It refuses `svc`, system
+constant pool and jump tables PC-relative, after following the register of
+its `adrp` through the blocks (`arm64_pages.go`) to see that it still holds
+exactly that page: an offset added to it, which the PC-relative form would
+drop, stops the build. It refuses `svc`, system
 registers, X18, X26 to X29 as values, LR outside a save, tail jumps, a frame
 that grows after the prologue, a stack address that escapes and fused
 multiply-adds (`fmadd`, `fmla` and the rest), with a test for each

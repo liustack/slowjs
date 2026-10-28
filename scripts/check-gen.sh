@@ -12,6 +12,12 @@
 # A change to the C of engine/ or to the generator goes in with the files this
 # check wants: make gen and make gen ARCH=arm64, then commit them with it.
 #
+# "Checked in" is what git holds (git ls-files), not what the folder holds: a
+# file that is ignored or not added is not checked in. The generated files of
+# the folder are found by the header the generator writes (Code generated ...
+# DO NOT EDIT.), not by their names, so one the generator no longer makes (the
+# names it had before the files took an architecture) is a file too many.
+#
 # Environment: LLVM_BIN, GEN_JOBS as for gen-engine.sh.
 set -eu
 
@@ -21,6 +27,7 @@ tmp=.build/check-gen
 rm -rf "$tmp"
 mkdir -p "$tmp"
 bad=0
+marker='^// Code generated .* DO NOT EDIT\.$'
 
 for arch in amd64 arm64; do
 	echo "check-gen: generating $arch"
@@ -29,29 +36,38 @@ for arch in amd64 arm64; do
 		echo "check-gen: the generator failed for $arch" >&2
 		exit 1
 	fi
-	# What the generator writes for this architecture, by name: the files
-	# of that name in the checked-in folder must be the same set.
+	# What the generator writes for this architecture, by name.
 	(cd "$tmp/$arch" && ls | sort) > "$tmp/$arch.made"
-	(cd "$dir" && ls *_"$arch".s engine_decl_"$arch".go engine_keep_"$arch".go engine_negative_"$arch".go 2>/dev/null | sort) > "$tmp/$arch.kept"
-	if ! cmp -s "$tmp/$arch.made" "$tmp/$arch.kept"; then
-		echo "check-gen: $arch: the files differ in name (< generated now, > checked in):" >&2
-		diff "$tmp/$arch.made" "$tmp/$arch.kept" >&2 || true
-		bad=1
-	fi
 	while read -r f; do
-		[ -f "$dir/$f" ] || continue
-		if ! cmp -s "$tmp/$arch/$f" "$dir/$f"; then
+		if [ ! -f "$dir/$f" ]; then
+			echo "check-gen: $dir/$f is missing from the folder" >&2
+			bad=1
+		elif ! cmp -s "$tmp/$arch/$f" "$dir/$f"; then
 			echo "check-gen: $dir/$f is not what the generator makes now" >&2
 			bad=1
 		fi
 	done < "$tmp/$arch.made"
-	# A generated file nobody added to git is as good as not checked in.
-	loose=$(cd "$dir" && git ls-files --others --exclude-standard -- "*_$arch.s" "engine_*_$arch.go")
-	if [ -n "$loose" ]; then
-		echo "check-gen: $arch: generated files not in git: $loose" >&2
-		bad=1
+done
+
+# The generated files git holds in the folder (its own files, not those of the
+# folders below it), by their header in the index, must be the files the
+# generator makes for the two architectures and no others.
+sort -u "$tmp/amd64.made" "$tmp/arm64.made" > "$tmp/made"
+git grep -l --cached -E "$marker" -- "$dir" | sed "s|^$dir/||" | grep -v / | sort > "$tmp/kept" || true
+if ! cmp -s "$tmp/made" "$tmp/kept"; then
+	echo "check-gen: the files differ in name (< generated now, > in git with a generated header):" >&2
+	diff "$tmp/made" "$tmp/kept" >&2 || true
+	bad=1
+fi
+# A generated file git does not hold, ignored or not, is not checked in and
+# still takes part in a build of the folder.
+git ls-files --others -- "$dir" | sed "s|^$dir/||" | grep -v / | while read -r f; do
+	if head -n 3 "$dir/$f" | grep -q -E "$marker"; then
+		echo "check-gen: $dir/$f is generated and not in git: add it, or delete it" >&2
+		echo bad >> "$tmp/loose"
 	fi
 done
+[ ! -s "$tmp/loose" ] || bad=1
 
 if [ "$bad" = 1 ]; then
 	echo "check-gen: run make gen and make gen ARCH=arm64 on a machine with LLVM 22.1.8, and commit the files with the change that needs them" >&2
