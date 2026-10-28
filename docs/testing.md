@@ -496,7 +496,7 @@ To add the LLVM steps, add a linux job that installs LLVM from apt.llvm.org, whi
 - run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
 ```
 
-On `ubuntu-24.04` the install took 15 seconds, `make check-gen` 2.5 minutes, and the other two steps 1 minute together. `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
+On `ubuntu-24.04` the install took 15 to 25 seconds, `make check-gen` 1.5 to 2.5 minutes, and the other two steps 0.5 to 1 minute together (two runs). `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
 
 ## Speed
 
