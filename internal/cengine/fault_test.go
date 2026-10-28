@@ -58,9 +58,12 @@ func wantFault(t *testing.T, got any, what string, lo, hi uintptr) {
 }
 
 // TestFaultWildPointer: the engine reads and writes through a pointer that
-// points at nothing, as a bug in the C would.
+// points at nothing, as a bug in the C would. The low address is past the
+// page Go takes for a nil pointer (a fault there names no address) and below
+// what any target maps: Go links linux/arm64 text at 0x10000, and Linux keeps
+// the first 32 KiB (arm64) or 64 KiB (amd64) unmapped.
 func TestFaultWildPointer(t *testing.T) {
-	wilds := []uintptr{0xdead0000, 0x10000, 1 << 46}
+	wilds := []uintptr{0xdead0000, 0x4000, 1 << 46}
 	if runtime.GOARCH == "amd64" {
 		wilds = append(wilds, 0xdeadbeefdeadbeef) // not canonical: a general protection fault, no address
 	}
