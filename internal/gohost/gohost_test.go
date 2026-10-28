@@ -691,10 +691,19 @@ func TestInterruptFlag(t *testing.T) {
 	mustPanic(t, "a flag off a word", func() { v.SetInterruptFlag(uintptr(unsafe.Pointer(&testFlag)) + 1) })
 }
 
+func mustKeep(t *testing.T, v *VM, x any) uint32 {
+	t.Helper()
+	h, err := v.Keep(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
 func TestRelease(t *testing.T) {
 	v := newVM(t, small)
 	type item struct{ n int }
-	a, b := v.Keep(&item{1}), v.Keep(&item{2})
+	a, b := mustKeep(t, v, &item{1}), mustKeep(t, v, &item{2})
 	if a == b || a == 0 || b == 0 {
 		t.Fatalf("handles %d and %d", a, b)
 	}
@@ -705,8 +714,66 @@ func TestRelease(t *testing.T) {
 	if v.Handle(a) != nil || v.Handle(b) == nil {
 		t.Fatal("release dropped the wrong item")
 	}
+	if v.Handles() != 1 {
+		t.Fatalf("%d handles held, want 1", v.Handles())
+	}
 	mustPanic(t, "releasing a handle twice", func() { Release(v.ID(), a) })
 	mustPanic(t, "releasing for no VM", func() { Release(0, b) })
+	mustPanic(t, "releasing handle 0", func() { Release(v.ID(), 0) })
+	mustPanic(t, "releasing a handle never given", func() { Release(v.ID(), 1000) })
+	if v.Handle(0) != nil || v.Handle(1000) != nil {
+		t.Fatal("a handle never given holds something")
+	}
+
+	// A released handle goes to the next Keep, and the handles stay as few
+	// as the items held at once.
+	c := mustKeep(t, v, &item{3})
+	if c != a || v.Handle(c).(*item).n != 3 {
+		t.Fatalf("Keep after a release gave handle %d, want %d again", c, a)
+	}
+	for i := range 1000 {
+		h := mustKeep(t, v, i)
+		Release(v.ID(), h)
+	}
+	if h := mustKeep(t, v, 4); h != 3 {
+		t.Fatalf("handle %d after 1000 kept and released one at a time, want 3", h)
+	}
+}
+
+// TestKeepFull: a VM holds at most MaxHandles handles (3 here), and Keep
+// fails past them.
+func TestKeepFull(t *testing.T) {
+	defer func(n int) { handleLimit = n }(handleLimit)
+	handleLimit = 3
+	v := newVM(t, small)
+	for range 3 {
+		mustKeep(t, v, 1)
+	}
+	if _, err := v.Keep(1); err == nil {
+		t.Fatalf("Keep past %d handles worked", handleLimit)
+	}
+	Release(v.ID(), 2)
+	if h := mustKeep(t, v, 1); h != 2 {
+		t.Fatalf("Keep after a release when full gave %d", h)
+	}
+}
+
+// TestEnterWhileReleasing: nothing enters the engine while it releases a
+// handle, which it does from the finalizer of an object, in the middle of a
+// collection: Enter and EnterScript panic then.
+func TestEnterWhileReleasing(t *testing.T) {
+	v := newVM(t, small)
+	h := mustKeep(t, v, 1)
+	v.releasing = true
+	mustPanic(t, "Enter while the engine releases a handle", v.Enter)
+	mustPanic(t, "EnterScript while the engine releases a handle", func() { v.EnterScript(0) })
+	v.releasing = false
+	Release(v.ID(), h)
+	if v.releasing {
+		t.Fatal("Release left the VM releasing")
+	}
+	v.Enter()
+	v.Leave()
 }
 
 func TestMarkBroken(t *testing.T) {
@@ -757,8 +824,8 @@ func TestConcurrentVMs(t *testing.T) {
 // engine released it or not, and a VM kept after Close holds nothing.
 func TestCloseDropsHandles(t *testing.T) {
 	v := newVM(t, small)
-	big := v.Keep(make([]byte, 64<<20))
-	small := v.Keep("small")
+	big := mustKeep(t, v, make([]byte, 64<<20))
+	small := mustKeep(t, v, "small")
 	if err := v.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -766,6 +833,9 @@ func TestCloseDropsHandles(t *testing.T) {
 		t.Fatal("handles still held after Close")
 	}
 	mustPanic(t, "Keep after Close", func() { v.Keep(1) })
+	if v.Handles() != 0 {
+		t.Fatalf("%d handles held after Close", v.Handles())
+	}
 	if err := v.Close(); err != nil {
 		t.Fatal(err)
 	}
