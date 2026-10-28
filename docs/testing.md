@@ -1,5 +1,5 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, and the local go.work'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, the local go.work, and the make targets that generate the C engine, run its checks in two tiers, time builds at several code positions and do it all on another machine'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
@@ -10,6 +10,8 @@ read_when:
   - Changing code that several goroutines or VMs share
   - Checking that the committed lib/ccgo_*.go files are exactly what fixlib makes from upstream
   - Co-developing modernc.org/libc next to this repository with a go.work
+  - Generating the C engine, running the fast or the full checks of a change to it, or timing one build of it against another
+  - Running any of that on the Google Cloud build machine, on chosen cores under a memory cap
 ---
 
 # Testing and verification
@@ -367,6 +369,88 @@ There is normally no `go.work`. The whole repository, `make benchmark` in `compa
 Make one with `make work` for one case only: working on a checkout of `modernc.org/libc` next to this one (`../libc`), when a change here needs an unreleased libc. Delete it (`make clean`, or `rm -f go.work go.work.sum`) once the change is in a libc release, or the tree keeps building against whatever is in the working copy next door instead of the version in `go.mod`.
 
 While a `go.work` exists it must keep listing `./compare`. A workspace is found by walking up from the current folder, so it also governs builds inside `compare/`, which then fail with `main module (github.com/liustack/slowjs) does not contain package github.com/liustack/slowjs/compare`. `make work` writes the current toolchain into the `go` line: a `go.work` left over from an older toolchain, below the `go` version of `compare/go.mod`, breaks `make benchmark` with `module . listed in go.work file requires go >= …`.
+
+## Developer tools: generate, check, time
+
+Make targets run the work on the machine you are on. Linux with LLVM 22.1.8 (`/usr/lib/llvm-22/bin`, `LLVM_BIN` changes it) is all that `make gen` and the generator tests of `make check-*` need. `make remote` runs the same targets on another machine over ssh, for a Mac or a laptop without LLVM.
+
+### Generate and check
+
+```sh
+make gen                       # the engine into internal/cengine: the pass, the generator, a formal build (-release)
+make gen ARCH=arm64            # the other architecture, next to the first
+GEN_KEEP=.build/gen-base make gen    # also keep a copy of the generated files
+CHECK_LIST=1 scripts/check.sh full   # the steps and their tier
+make check-fast                # every commit
+make check-full                # the end of a batch
+CHECK_ONLY="goasm root" make check-full     # some steps (CHECK_SKIP leaves some out, CHECK_STOP=1 stops at the first failure)
+```
+
+`scripts/gen-engine.sh` checks the LLVM version, rebuilds the pass when its sources changed, builds the generator and runs it with the flags of a formal build (`GEN_RELEASE=0` allows the survey and test switches and says so). `scripts/check.sh` runs its steps one after another, writes a log for each under `.build/check-logs/` (`CHECK_LOGS` changes it), goes on after a failure and ends with one table. Skips inside `go test` are counted and named in the table, because a skipped test checked nothing: the one expected skip is `TestVarargsNative/aarch64`, which wants `ld.lld` and an aarch64 emulator. Generate the engine before `make check-*`: the steps that need it fail without it.
+
+| Step | Tier | What it runs |
+| --- | --- | --- |
+| `build`, `gofmt`, `docs` | fast | `go build ./...`, `gofmt -l -s .` (generated files left out), `scripts/docs-list.sh --check` |
+| `goasm` | fast | the tests of `internal/goasm/...` with `SLOWJS_LLVM`, `SLOWJS_SHADOW_PASS` and `SLOWJS_LLD` set, so that they do not skip |
+| `cengine` | fast | `go test -tags slowjs_cengine,testhooks ./internal/cengine` |
+| `host-plain`, `compare-plain`, `cycles` | fast | `engine/test/build.sh plain`, `compare.sh plain`, `cycles.sh` |
+| `fixlib` | full | `go run ./internal/fixlib -check` |
+| `testhooks` | full | `go test -tags slowjs_cengine,testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
+| `root` | full | `go test -p 1 -tags slowjs_cengine .` |
+| `race` | full | `go test -race -short -p 1 -tags slowjs_cengine` of the root package and the three above |
+| `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` | full | `engine/test/build.sh` and `compare.sh` under the sanitizers |
+| `test262` | full | `engine/test/test262.sh -m plain -T 2` |
+
+The list is in `scripts/check.sh`. A new check goes there and into the table above.
+
+### Time one build against another
+
+A speed result is read at several code positions (see [Code positions](performance.md#code-positions)). `go tool sjdev bench` (the Go program in `internal/sjdev`, standard library only, registered as a tool in `go.mod`) makes the positions, runs them in turn and reads the result by that rule. `make bench ARGS="..."` runs the same.
+
+```sh
+# 1. a binary per position for each side. Generate the engine in each tree first (make gen).
+go tool sjdev bench build -side base -tree ../base -app ../tifa -pkg ./test/ssr -test -out bin
+go tool sjdev bench build -side new  -tree .       -app ../tifa -pkg ./test/ssr -test -out bin   # -positions all for 8
+# 2. run them in turn, 5 rounds. Records are appended to the file, so a stopped run goes on.
+go tool sjdev bench run -bin bin -out shop.jsonl -kind shop -rounds 5 -parse gobench:p50-ms \
+    -dir ../tifa/test/ssr -env TIFA_SSR_SHOP=1 -env GOMAXPROCS=1 -cpu 1 -sib 5 \
+    -- -test.run '^$' -test.bench 'Shop/^render' -test.benchtime 100x
+# 3. the result, as a Markdown table
+go tool sjdev bench report -in shop.jsonl -kind shop -base base -new new          # -detail adds each position
+```
+
+- `bench build` copies the generated `*_amd64.s` files, moves the code with `internal/goasm/cmd/xform` (the whole program by 0 or 32 bytes, the body of the interpreter by 0, 8, 16 or 24) and builds with `go build -overlay`, so the tree is not touched. A position is written `shift.front`, such as `32.16`. `quick` is 0.0, 0.16, 32.0 and 32.16. The interpreter is `JS_CallInternal_block` in the generated assembly, since it takes its arguments in a block, and `bench build` finds that name by itself. With `-app`, it builds in that module (tifa) through a `go.work` it writes. Only amd64 has positions.
+- `bench run` runs the binaries as `side@position` in a random order per round (the order depends on the round only, so a restart repeats it), and both sides of a position one after the other. With `-cpu` and `-sib` it reads `/proc/stat` and runs a process again, up to 3 tries, when the sibling hyperthread or other work was busy while it ran. `-parse gobench:UNIT` reads the UNIT metric of each Benchmark line, `-parse jsrun` the median of the `eval:` line of `jsrun`.
+- The memory of a process is the `vmhwm-kb: N` line it prints itself (`internal/sjdev/hwm`, which `jsrun` uses). Reading the peak of a child with `wait4` is wrong: the child starts with the peak of its parent.
+- `bench report` takes, for each metric and position, the median over rounds of the paired ratios of the two sides, then the median over positions, and the range of the base's own positions. It calls a change "faster" or "slower" only when it is over 2% **and** over half of that range **and** most positions agree on the sign. A change under 3% is marked "see callgrind": count instructions instead.
+
+```sh
+go tool sjdev bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 2 -big 12 -out cg \
+    -- -test.run '^$' -test.bench 'Shop/^render' -test.benchtime {N}x    # instructions per render, side by side
+go tool sjdev bench cgdiff -renders 10 small.incl big.incl                  # the same from callgrind_annotate files you have
+```
+
+`bench cg` runs valgrind's callgrind on each binary twice and takes the difference, so that loading and compiling cancel. `-valgrind-root DIR` names a folder with `usr/bin/valgrind` inside when valgrind is not installed (`apt-get download valgrind` and `dpkg -x` into a folder is enough). Collect inside one function with `-toggle`.
+
+A run on the same code on both sides (an A/A run) must say "no change" for every metric. Do one after a change to the tool or to the machine.
+
+### On another machine
+
+`scripts/remote.sh` (POSIX sh) runs a make target on a machine you can reach with ssh, in the background, in a checkout of its own, on chosen cores under a memory cap. Nothing about the machine is in the repository: it all comes from the environment.
+
+```sh
+export SLOWJS_REMOTE=user@host SLOWJS_REMOTE_DIR='~/work'     # the machine and a folder it may own
+export SLOWJS_REMOTE_CPUS=1,5 SLOWJS_REMOTE_MEM=4G           # optional: taskset and a systemd memory cap
+make remote RUN="gen"                          # HEAD, as the tree "main" on the machine
+make remote REF=my-branch TREE=new RUN="check-fast"
+make remote RUN="bench ARGS='run ...'" SLOWJS_REMOTE_CPUS=1      # a timing job on one core, its sibling idle
+scripts/remote.sh -g shop.jsonl HEAD -- make bench ARGS='report ...'      # copy a file back to .build/remote/
+```
+
+- Push the branch first. The machine fetches the commit from the git remote `origin` (the machine needs access to it, and `. ~/.profile` runs before the target). A commit that is not pushed, or that the machine cannot fetch, goes as a git bundle with only what the machine lacks. A tree is a clone of its own that shares the objects of `DIR/repo.git`, never a git worktree. A new commit moves the tracked files only: the generated engine and `.build/` stay.
+- The log of the target is printed (its last 40 lines) and saved in `.build/remote/`. `-w SECONDS` (default 3600) is how long to wait, then the script exits with 124 and the job goes on, with its log and done file in `DIR/jobs`. The exit status is the target's.
+- Cores: a timing job uses one core and leaves its hyperthread sibling idle. Builds and checks may use both. Keep to the cores that are yours when the machine is shared.
+- Nothing here kills a process. A job you started is stopped through its own scope.
 
 ## Speed
 
