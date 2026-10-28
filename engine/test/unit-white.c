@@ -56,6 +56,7 @@ int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
+int white_every_block_is_a_request(void);
 
 /* ---- texts of every kind of character ---- */
 
