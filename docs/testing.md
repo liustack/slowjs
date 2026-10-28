@@ -1,5 +1,5 @@
 ---
-summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, the local go.work, and the make targets that generate the C engine, run its checks in two tiers, time builds at several code positions and do it all on another machine'
+summary: 'Testing and verification: the checks to run before committing, the Makefile targets, the focused checks of each fork change, test262 and its 58 known errors, test262 and the sanitizers on the C tree with the native test host, leak checks with memgrind, the race detector subset, building every target, checking that fixlib turns the upstream files into the committed ones byte for byte, the local go.work, and the make targets that generate the C engine and check that what is checked in is what the generator makes, run its checks in two tiers, time builds at several code positions and do it all on another machine'
 read_when:
   - Getting ready to commit and checking which checks to run
   - Writing a new test or fixing a bug
@@ -379,6 +379,7 @@ Make targets run the work on the machine you are on. Linux with LLVM 22.1.8 (`/u
 ```sh
 make gen                       # the engine into internal/cengine: the pass, the generator, a formal build (-release)
 make gen ARCH=arm64            # the other architecture, next to the first
+make check-gen                 # the files checked in are what the generator makes now, for both architectures
 GEN_KEEP=.build/gen-base make gen    # also keep a copy of the generated files
 CHECK_LIST=1 scripts/check.sh full   # the steps and their tier
 make check-fast                # every commit
@@ -386,7 +387,9 @@ make check-full                # the end of a batch
 CHECK_ONLY="goasm root" make check-full     # some steps (CHECK_SKIP leaves some out, CHECK_STOP=1 stops at the first failure)
 ```
 
-`scripts/gen-engine.sh` checks the LLVM version, rebuilds the pass when its sources changed, builds the generator and runs it with the flags of a formal build (`GEN_RELEASE=0` allows the survey and test switches and says so). `scripts/check.sh` runs its steps one after another, writes a log for each under `.build/check-logs/` (`CHECK_LOGS` changes it), goes on after a failure and ends with one table. Skips inside `go test` are counted and named in the table, because a skipped test checked nothing: the one expected skip is `TestVarargsNative/aarch64`, which wants `ld.lld` and an aarch64 emulator. Generate the engine before `make check-*`: the steps that need it fail without it.
+The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_decl_<arch>.go` and `engine_keep_<arch>.go` files of amd64 and arm64 (about 15 MiB, 3 MiB compressed), because a user of the module has no LLVM. A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` goes in with the files made again by `make gen` and `make gen ARCH=arm64`, in the same commit, and `make check-gen` fails when they are not. The generator gives the same bytes whatever `GEN_JOBS` and whichever folder it runs in. Every generated file needs the tag `slowjs_cengine` (`-build-tag`), so a build without the tag sees none of them.
+
+`scripts/gen-engine.sh` checks the LLVM version, rebuilds the pass when its sources changed, builds the generator and runs it with the flags of a formal build (`GEN_RELEASE=0` allows the survey and test switches and says so). `scripts/check.sh` runs its steps one after another, writes a log for each under `.build/check-logs/` (`CHECK_LOGS` changes it), goes on after a failure and ends with one table. Skips inside `go test` are counted and named in the table, because a skipped test checked nothing: the one expected skip is `TestVarargsNative/aarch64`, which wants `ld.lld` and an aarch64 emulator. The steps that need the engine use the one checked in, so run `make gen` first only after a change that needs new files.
 
 | Step | Tier | What it runs |
 | --- | --- | --- |
@@ -395,6 +398,7 @@ CHECK_ONLY="goasm root" make check-full     # some steps (CHECK_SKIP leaves some
 | `cengine` | fast | `go test -tags slowjs_cengine,testhooks ./internal/cengine` |
 | `host-plain`, `compare-plain`, `cycles` | fast | `engine/test/build.sh plain`, `compare.sh plain`, `cycles.sh` |
 | `fixlib` | full | `go run ./internal/fixlib -check` |
+| `gen` | full | `scripts/check-gen.sh` (`make check-gen`): generates both architectures into `.build/check-gen/` and requires every file of `internal/cengine` to be the same bytes, with none missing, none left over and none outside git |
 | `testhooks` | full | `go test -tags slowjs_cengine,testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | full | `go test -p 1 -tags slowjs_cengine .` |
 | `race` | full | `go test -race -short -p 1 -tags slowjs_cengine` of the root package and the three above |
