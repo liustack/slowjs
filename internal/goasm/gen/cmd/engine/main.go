@@ -121,11 +121,8 @@ func main() {
 			die(err)
 		}
 	}
-	if *arch != "amd64" && *arch != "arm64" {
-		die(fmt.Errorf("-arch %s: amd64 or arm64", *arch))
-	}
-	if *arch == "arm64" && *mode != "pn" {
-		die(fmt.Errorf("-arch arm64 lowers the whole engine with -mode pn only (the other modes are the prototype's, proto.sh)"))
+	if err := archError(*arch, *mode, *poisonF, *looseVar); err != nil {
+		die(err)
 	}
 	if err := gen.CheckPollOffset(*pollOff, *sizeLog2); err != nil {
 		die(err)
@@ -718,6 +715,27 @@ func keepNarrowFromEnv(v string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("GEN_KEEP_NARROW=%q: only 1 turns the negative build on (unset it to build the engine)", v)
+}
+
+// archError says why the driver cannot lower for arch with these switches,
+// or is nil. arm64 lowers the whole engine with -mode pn only (the other
+// modes are the prototype's, proto.sh), and its lowering has no poison and
+// no loose variadic calls: with either switch it would build the engine as
+// if the switch had not been given.
+func archError(arch, mode string, poison, loose bool) error {
+	switch {
+	case arch != "amd64" && arch != "arm64":
+		return fmt.Errorf("-arch %s: amd64 or arm64", arch)
+	case arch == "amd64":
+		return nil
+	case mode != "pn":
+		return fmt.Errorf("-arch arm64 lowers the whole engine with -mode pn only (the other modes are the prototype's, proto.sh)")
+	case poison:
+		return fmt.Errorf("-arch arm64 has no -poison build")
+	case loose:
+		return fmt.Errorf("-arch arm64 has no -loose-varargs build")
+	}
+	return nil
 }
 
 // devSwitches are the switches a release build refuses: the ones for
