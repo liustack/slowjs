@@ -322,7 +322,7 @@ func TestGoHeap(t *testing.T) {
 // the process, and the VM recurses as deep as before. The levels need room on
 // the shadow stack, so it runs only for an engine generated for the whole
 // 32 MiB stack of the host (-shadow-size-log2=25 of the generator, which
-// engine_decl.go records).
+// engine_decl_<arch>.go records).
 func TestDeepRecursion(t *testing.T) {
 	if shadowSizeLog2 < 25 {
 		t.Skipf("the engine was generated for a shadow stack of 2^%d bytes, and a deep recursion needs 2^25", shadowSizeLog2)

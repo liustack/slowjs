@@ -197,7 +197,10 @@ func TestInterruptOneProc(t *testing.T) {
 // Array.prototype.slice never reads the flag, so it runs until the kill: the
 // collection after the setup keeps one from starting while Eval compiles,
 // and Interrupt comes once the slice runs, since the interpreter reads the
-// flag when it calls the script.
+// flag when it calls the script. The slice must outlast the Interrupt and the
+// grace: 8 Mi elements take about 230 ms on an Apple M-series core and more
+// elsewhere, and the Interrupt comes once Eval has compiled the call, also
+// under an emulator.
 func TestKill(t *testing.T) {
 	needPolls(t)
 	for _, c := range []struct {
@@ -205,7 +208,7 @@ func TestKill(t *testing.T) {
 		at, grace        time.Duration
 	}{
 		{"loop", "", "for (;;) {}", 20 * time.Millisecond, 0},
-		{"slice", "var a = Array(1 << 22).fill(1.5)", "a.slice()", 100 * time.Millisecond, 30 * time.Millisecond},
+		{"slice", "var a = Array(1 << 23).fill(1.5)", "a.slice()", 100 * time.Millisecond, 30 * time.Millisecond},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)

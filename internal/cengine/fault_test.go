@@ -13,7 +13,6 @@ import (
 	"maps"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -39,51 +38,6 @@ func fails(v *VM, f func()) (got any) {
 	return nil
 }
 
-// brokenAfter checks what a VM must be after the engine failed in it: broken,
-// refusing every entry with ErrBroken, and closing without a leak of host
-// memory. The goroutine must have its setting of SetPanicOnFault back.
-func brokenAfter(t *testing.T, v *VM, what string) {
-	t.Helper()
-	if !v.Host().Broken() {
-		t.Errorf("%s: the VM is not broken", what)
-	}
-	if _, err := v.Eval("1", "after.js"); !errors.Is(err, ErrBroken) {
-		t.Errorf("%s: Eval after the failure gave %v, want ErrBroken", what, err)
-	}
-	if _, err := v.ReleaseMemory(0); !errors.Is(err, ErrBroken) {
-		t.Errorf("%s: ReleaseMemory after the failure gave %v, want ErrBroken", what, err)
-	}
-	if got := catch(v.RunGC); !errors.Is(asError(got), ErrBroken) {
-		t.Errorf("%s: RunGC after the failure panicked with %v, want ErrBroken", what, got)
-	}
-	if _, err := v.Close(); err != nil {
-		t.Errorf("%s: Close: %v", what, err)
-	}
-	if u := v.Host().Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
-		t.Errorf("%s: after Close the host holds %+v", what, u)
-	}
-	if debug.SetPanicOnFault(false) {
-		t.Errorf("%s: the goroutine still has SetPanicOnFault on", what)
-	}
-	// A process that survived must also run a new VM.
-	w := newVM(t, Options{Seed: 1})
-	if got, err := w.Eval(`[1,2,3].map(x => x * 2).join()`, "next.js"); err != nil || got != "2,4,6" {
-		t.Errorf("%s: a new VM gave %q, %v", what, got, err)
-	}
-	closeVM(t, w)
-}
-
-func catch(f func()) (got any) {
-	defer func() { got = recover() }()
-	f()
-	return nil
-}
-
-func asError(x any) error {
-	err, _ := x.(error)
-	return err
-}
-
 // wantFault checks that got is the panic of a fault: a runtime.Error that
 // names an address, which is in [lo, hi) when hi is not 0.
 func wantFault(t *testing.T, got any, what string, lo, hi uintptr) {
@@ -104,9 +58,12 @@ func wantFault(t *testing.T, got any, what string, lo, hi uintptr) {
 }
 
 // TestFaultWildPointer: the engine reads and writes through a pointer that
-// points at nothing, as a bug in the C would.
+// points at nothing, as a bug in the C would. The low address is past the
+// page Go takes for a nil pointer (a fault there names no address) and below
+// what any target maps: Go links linux/arm64 text at 0x10000, and Linux keeps
+// the first 32 KiB (arm64) or 64 KiB (amd64) unmapped.
 func TestFaultWildPointer(t *testing.T) {
-	wilds := []uintptr{0xdead0000, 0x10000, 1 << 46}
+	wilds := []uintptr{0xdead0000, 0x4000, 1 << 46}
 	if runtime.GOARCH == "amd64" {
 		wilds = append(wilds, 0xdeadbeefdeadbeef) // not canonical: a general protection fault, no address
 	}

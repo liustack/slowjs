@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && linux && amd64
+//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
 
 package slowjs // import "github.com/liustack/slowjs"
 
@@ -533,21 +533,14 @@ func (m *VM) jsGetPropertyInternal(obj jsValue, prop uint32, this jsValue, throw
 
 // jsSetProperty is JS_SetProperty, an inline function of quickjs.h:
 // JS_SetPropertyInternal, whose arguments go in a block on the shadow stack
-// (the generator packs them, as there are more than the registers hold).
+// (the generator packs them, as there are more than the registers hold, and
+// writes the Go function that makes the block, gen.PackedGo).
 func (m *VM) jsSetProperty(this jsValue, prop uint32, v jsValue) (r int32) {
 	if m.entered == 0 {
 		m.outer(func() { r = m.jsSetProperty(this, prop, v) })
 		return r
 	}
-	blk := m.sp
-	w := unsafe.Slice((*uintptr)(addr(blk)), 9)
-	w[0] = m.ctx
-	w[1], w[2] = this.u, this.tag
-	w[3] = uintptr(prop)
-	w[4], w[5] = v.u, v.tag
-	w[6], w[7] = this.u, this.tag
-	w[8] = propThrow
-	return int32(cengine.JS_SetPropertyInternal(blk+80, blk))
+	return int32(cengine.JS_SetPropertyInternal(m.sp, m.ctx, this.u, this.tag, uintptr(prop), v.u, v.tag, this.u, this.tag, propThrow))
 }
 
 // jsGetOwnProperty is JS_GetOwnProperty without a descriptor.
@@ -641,13 +634,7 @@ func (m *VM) jsJSONStringify(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsJSONStringify(v) })
 		return r
 	}
-	blk := m.sp
-	w := unsafe.Slice((*uintptr)(addr(blk)), 7)
-	w[0] = m.ctx
-	w[1], w[2] = v.u, v.tag
-	w[3], w[4] = undefined.u, undefined.tag
-	w[5], w[6] = undefined.u, undefined.tag
-	return val(cengine.JS_JSONStringify(blk+64, blk))
+	return val(cengine.JS_JSONStringify(m.sp, m.ctx, v.u, v.tag, undefined.u, undefined.tag, undefined.u, undefined.tag))
 }
 
 // The file names of syntax errors.

@@ -145,9 +145,27 @@ func CheckIRFuncs(ll string) []IRViolation {
 		if strings.Contains(line, "thread_local") {
 			add("thread-local storage")
 		}
+		if reFMA.MatchString(line) {
+			add("fused multiply-add")
+		}
+		if reFastMath.MatchString(line) || reFastMathAttr.MatchString(line) {
+			add("fast-math")
+		}
 	}
 	return out
 }
+
+// A multiply and an add rounded once (llvm.fmuladd, llvm.fma) gives other
+// results than the two rounded each, and only some targets fuse them: the
+// engine is built with -ffp-contract=off so that every target gives the same
+// numbers. Fast-math flags on a floating-point operation (or a function
+// attribute that implies them) let LLVM reorder or approximate it, which the
+// engine never allows.
+var (
+	reFMA          = regexp.MustCompile(`@llvm\.(fmuladd|fma)\.`)
+	reFastMath     = regexp.MustCompile(`= (?:fadd|fsub|fmul|fdiv|frem|fneg|fcmp|call|select|phi)\b(?: [a-z]+)*? (?:fast|reassoc|nnan|ninf|nsz|arcp|contract|afn)\b`)
+	reFastMathAttr = regexp.MustCompile(`"(?:unsafe-fp-math|no-nans-fp-math|no-infs-fp-math|no-signed-zeros-fp-math|approx-func-fp-math)"="true"`)
+)
 
 // A call of a variadic function: its type in the call reads (..., ...).
 var reVarCall = regexp.MustCompile(`\bcall\b[^(]*\([^()]*\.\.\.\)\s*@`)
