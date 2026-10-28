@@ -157,7 +157,11 @@ smaller stack.
 `-arch` is `amd64` (the default) or `arm64`, and every file the driver
 writes ends in the architecture (`engine_arm64.s`, `engine_decl_arm64.go`,
 `engine_keep_arm64.go`), so one folder holds both and Go picks one. A build
-removes only the files of its own architecture. The arm64 engine runs on
+removes only the files of its own architecture. `-build-tag T` puts the tag T in
+front of the architecture in the `//go:build` line of every file (`slowjs_cengine && amd64` for the `.s`
+files, `slowjs_cengine` for `engine_decl_<arch>.go`), so that a build without
+the tag sees none of them. `scripts/gen-engine.sh` always passes
+`-build-tag slowjs_cengine`. The arm64 engine runs on
 linux/arm64 and darwin/arm64 alike. arm64 takes `-mode pn` only:
 preserve_none passes integers in X20 to X25 there, and its next registers,
 X26 to X28, are Go's. The other modes stay with the prototype (`proto.sh`).
