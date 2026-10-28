@@ -30,3 +30,5 @@ require (
 	modernc.org/strutil v1.2.1 // indirect
 	modernc.org/token v1.1.0 // indirect
 )
+
+tool github.com/liustack/slowjs/internal/sjdev/cmd/sjdev
