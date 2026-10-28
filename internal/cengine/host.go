@@ -18,7 +18,7 @@ import (
 // first free byte of the shadow stack, then one word for each argument of
 // the C function and two for a JSValue, and the result likewise. A C int
 // comes in a whole word whose upper half is garbage, so each is cut to its
-// C type here. engine_decl.go lists the signatures the engine was generated
+// C type here. engine_decl_<arch>.go lists the signatures the engine was generated
 // with at its end.
 
 // host_memory_grow is uintptr_t host_memory_grow(uint32_t vm, uintptr_t size).
@@ -99,7 +99,7 @@ func host_release(sp, vm, handle uintptr) {
 }
 
 // goasmMissing is what a function the generator could not take calls in its
-// place: i indexes missingNames of engine_decl.go.
+// place: i indexes missingNames of engine_decl_<arch>.go.
 func goasmMissing(i uintptr) {
 	panic(fmt.Sprintf("cengine: %s was not generated", missingNames[i]))
 }
