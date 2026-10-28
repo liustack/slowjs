@@ -269,3 +269,54 @@ func TestBuiltinLatin1UTF16(t *testing.T) {
 		t.Errorf("NewStringUTF16 of units below U+0100 is held one byte each: %s", got)
 	}
 }
+
+// BenchmarkUTF16String converts the 16-bit units of a page in Chinese:
+// markup in ASCII around runs of text.
+func BenchmarkUTF16String(b *testing.B) {
+	page := strings.Repeat(`<div class="order-row"><span class="label">订单状态</span><a href="/orders/1240">已发货，预计明天送达</a></div>`, 2000)
+	u := make([]uint16, 0, len(page))
+	for _, r := range page {
+		u = append(u, uint16(r))
+	}
+	b.SetBytes(int64(len(u)))
+	for b.Loop() {
+		utf16String(u, false)
+	}
+}
+
+// utf16String gives what decoding unit by unit gives, for runs of every kind
+// of unit across the blocks of four it takes at a time: ASCII, two and three
+// bytes, pairs, and lone surrogates.
+func TestUTF16StringUnitByUnit(t *testing.T) {
+	r := rand.New(rand.NewSource(5))
+	kinds := [][2]int{{0, 0x80}, {0x80, 0x800}, {0x800, 0xD800}, {0xD800, 0xDC00}, {0xDC00, 0xE000}, {0xE000, 0x10000}}
+	for k := 0; k < 20000; k++ {
+		var u []uint16
+		for len(u) < r.Intn(40) {
+			kind := kinds[r.Intn(len(kinds))]
+			for range 1 + r.Intn(6) {
+				u = append(u, uint16(kind[0]+r.Intn(kind[1]-kind[0])))
+			}
+		}
+		for _, wtf8 := range []bool{false, true} {
+			var want []byte
+			for i := 0; i < len(u); i++ {
+				c := rune(u[i])
+				if c&0xFC00 == 0xD800 && i+1 < len(u) && u[i+1]&0xFC00 == 0xDC00 {
+					c = 0x10000 + (c-0xD800)<<10 + rune(u[i+1]) - 0xDC00
+					i++
+				} else if c&0xF800 == 0xD800 {
+					if wtf8 {
+						want = append(want, 0xE0|byte(c>>12), 0x80|byte(c>>6)&0x3F, 0x80|byte(c)&0x3F)
+						continue
+					}
+					c = utf8.RuneError
+				}
+				want = utf8.AppendRune(want, c)
+			}
+			if got := utf16String(u, wtf8); got != string(want) {
+				t.Fatalf("units %x, wtf8 %v: got %q, want %q", u, wtf8, got, want)
+			}
+		}
+	}
+}
