@@ -34120,6 +34120,21 @@ JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m)
     return JS_DupAtom(ctx, m->module_name);
 }
 
+/* Once a module has run to its end, nothing calls its top-level function
+   again, and the variables it exports and those its functions use live apart
+   from it: freeing it frees the code of the top level and its other
+   variables. QuickJS keeps it until the module goes. */
+void JS_FreeModuleTopLevel(JSContext *ctx, JSModuleDef *m)
+{
+    JSValue f;
+
+    if (m->status != JS_MODULE_STATUS_EVALUATED || m->eval_has_exception)
+        return;
+    f = m->func_obj;
+    m->func_obj = JS_UNDEFINED;
+    JS_FreeValue(ctx, f);
+}
+
 JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m)
 {
     JSValue obj;

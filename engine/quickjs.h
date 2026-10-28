@@ -1117,6 +1117,11 @@ void JS_SetModuleLoaderFunc2(JSRuntime *rt,
 JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m);
 JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m);
 JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m);
+/* Frees the function of the top level of m once m has run to its end without
+   an exception, with the code of the top level and the variables that neither
+   an export nor a function of m holds. It does nothing to a module that has
+   not run, still runs (a top-level await) or threw. */
+void JS_FreeModuleTopLevel(JSContext *ctx, JSModuleDef *m);
 
 /* JS Job support */
 

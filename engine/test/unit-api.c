@@ -484,6 +484,59 @@ static void test_host_release(void)
     host_release_call = NULL;
 }
 
+/* JS_FreeModuleTopLevel frees the top-level function of a module that has
+   run, and with it a variable of the top level that no function of the module
+   uses, while the variables its functions and exports use stay. It does
+   nothing to a module that has not run, or that threw. */
+static void test_module_top_level(void)
+{
+    static const char *srcs[] = {
+        "const big = new Uint8Array(4 << 20).fill(1); let kept = big[0] + 1;\n"
+        "export let seen = 7;\nglobalThis.get = () => kept++\n",
+        "const big = new Uint8Array(4 << 20).fill(1); let kept = big[0] + 1;\nawait null;\n"
+        "export let seen = 7;\nglobalThis.get = () => kept++\n",
+    };
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        VM v = vm_new();
+        JSValue mod = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "<top>", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        JSModuleDef *m;
+        JSValue p;
+        JSMemoryUsage before, after;
+
+        CHECK(JS_VALUE_GET_TAG(mod) == JS_TAG_MODULE, "the module did not compile");
+        m = JS_VALUE_GET_PTR(mod);
+        /* not run yet: nothing to free */
+        JS_FreeModuleTopLevel(v.ctx, m);
+        p = JS_EvalFunction(v.ctx, JS_DupValue(v.ctx, mod));
+        CHECK(!JS_IsException(p), "the module threw");
+        if (i == 1) {
+            /* the top level waits at its await: still running */
+            JS_FreeModuleTopLevel(v.ctx, m);
+        }
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_FULFILLED, "module %d did not run to its end", i);
+        JS_FreeValue(v.ctx, p);
+        before = usage(&v);
+        JS_FreeModuleTopLevel(v.ctx, m);
+        after = usage(&v);
+        CHECK(before.memory_used_size - after.memory_used_size >= 4 << 20,
+              "module %d: freeing the top level gave back %lld bytes", i,
+              (long long)(before.memory_used_size - after.memory_used_size));
+        CHECK(eval_is(v.ctx, "get() + get()", "5"), "module %d: the variable of a function", i);
+        /* again does nothing */
+        JS_FreeModuleTopLevel(v.ctx, m);
+        p = JS_GetModuleNamespace(v.ctx, m);
+        CHECK(!JS_IsException(p), "module %d: no namespace", i);
+        JS_FreeValue(v.ctx, p);
+        CHECK(eval_is(v.ctx, "get()", "4"), "module %d: the variable after the namespace", i);
+        JS_FreeValue(v.ctx, mod);
+        vm_free(&v);
+    }
+}
+
 /* JS_NewStringChars gives a string whose characters the host writes where
    JS_HOST_LAYOUT_* says, and the layout is that of the strings the engine
    makes. */
@@ -622,6 +675,7 @@ int main(void)
     test_json_bytes();
     test_host_function();
     test_host_release();
+    test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();
     if (failures) {
