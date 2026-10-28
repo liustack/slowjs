@@ -194,9 +194,9 @@ func TestInterruptOneProc(t *testing.T) {
 // killed at the next poll. Eval returns ErrKilled, the VM takes only Close,
 // the goroutine has its setting of SetPanicOnFault back, and a new VM runs.
 // A grace of 0 kills at the first poll, before the loop reads the flag.
-// Array.prototype.join never reads the flag, so it runs until the kill: the
+// Array.prototype.slice never reads the flag, so it runs until the kill: the
 // collection after the setup keeps one from starting while Eval compiles,
-// and Interrupt comes once the join runs, since the interpreter reads the
+// and Interrupt comes once the slice runs, since the interpreter reads the
 // flag when it calls the script.
 func TestKill(t *testing.T) {
 	needPolls(t)
@@ -205,7 +205,7 @@ func TestKill(t *testing.T) {
 		at, grace        time.Duration
 	}{
 		{"loop", "", "for (;;) {}", 20 * time.Millisecond, 0},
-		{"join", "var a = Array(1 << 22).fill(1.5)", "a.join()", 100 * time.Millisecond, 30 * time.Millisecond},
+		{"slice", "var a = Array(1 << 22).fill(1.5)", "a.slice()", 100 * time.Millisecond, 30 * time.Millisecond},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)
@@ -262,8 +262,8 @@ func TestTimeout(t *testing.T) {
 	w.RunGC()
 	w.SetTimeout(50 * time.Millisecond)
 	t0 := time.Now()
-	if _, err := w.Eval("for (;;) a.join()", "join.js"); !errors.Is(err, ErrKilled) {
-		t.Errorf("an endless join: Eval gave %v, want ErrKilled", err)
+	if _, err := w.Eval("for (;;) a.slice()", "slice.js"); !errors.Is(err, ErrKilled) {
+		t.Errorf("an endless slice: Eval gave %v, want ErrKilled", err)
 	}
 	if d := time.Since(t0); d < 80*time.Millisecond || d > 2*time.Second {
 		t.Errorf("killed after %v, with a timeout of 50 ms and a grace of 30 ms", d)
