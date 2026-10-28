@@ -108,3 +108,27 @@ func TestParseAlign64(t *testing.T) {
 		}
 	}
 }
+
+// TestArchError: arm64 lowers the whole engine with -mode pn only, and
+// refuses the switches its lowering does not do (-poison, -loose-varargs),
+// which would otherwise build an engine as if they had not been given.
+func TestArchError(t *testing.T) {
+	for _, c := range []struct {
+		arch, mode    string
+		poison, loose bool
+		want          string
+	}{
+		{"amd64", "body", false, false, ""},
+		{"amd64", "pn", true, true, ""},
+		{"arm64", "pn", false, false, ""},
+		{"riscv64", "pn", false, false, "amd64 or arm64"},
+		{"arm64", "body", false, false, "-mode pn only"},
+		{"arm64", "pn", true, false, "-poison"},
+		{"arm64", "pn", false, true, "-loose-varargs"},
+	} {
+		err := archError(c.arch, c.mode, c.poison, c.loose)
+		if (c.want == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: %v", c, err)
+		}
+	}
+}
