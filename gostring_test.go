@@ -8,13 +8,22 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 )
 
 // stringOOMSize is the length of the string the tests below convert. Its
-// characters are not ASCII, so the UTF-8 copy JS_ToCStringLen2 makes takes two
-// bytes per character for "é" and three for "中".
+// characters are not ASCII: "é" is one byte in the engine and two in UTF-8,
+// "中" two bytes in the engine and three in UTF-8.
 const stringOOMSize = 1 << 20
+
+// unitBytes is how many bytes the engine keeps for each character of ch.
+func unitBytes(ch string) uintptr {
+	if ch == "é" {
+		return 1
+	}
+	return 2
+}
 
 // newStringOOMVM returns a VM holding globalThis.s, a string of
 // stringOOMSize copies of ch, and globalThis.o = {s}. Its memory limit then
@@ -60,14 +69,48 @@ func wantUsable(t *testing.T, m *VM) {
 	}
 }
 
-// A string returned to Go that has no room for its UTF-8 copy must come back
-// as the out of memory error, not as "".
+// A string returned to Go is read where the engine keeps it: it needs no
+// room in the VM for a UTF-8 copy, so a result as large as the memory left
+// comes back whole. A rope, a string the engine keeps as the pieces it was
+// joined from, needs room for one copy of its characters, joined, and no
+// more.
+func TestGoStringNeedsNoRoom(t *testing.T) {
+	for _, ch := range []string{"é", "中"} {
+		t.Run(ch, func(t *testing.T) {
+			// Less room than the characters of s take, let alone their UTF-8.
+			m := newStringOOMVM(t, ch, stringOOMSize/2)
+			v, err := m.Eval("s", EvalGlobal)
+			if err != nil {
+				t.Fatalf("Eval(s): %v", err)
+			}
+			if v != strings.Repeat(ch, stringOOMSize) {
+				t.Fatalf("Eval(s) returned a %T of %d bytes", v, len(v.(string)))
+			}
+
+			// Room for the joined rope, half a MiB to spare, but not for its
+			// UTF-8 next to it.
+			m.SetMemoryLimit(^uintptr(0))
+			m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + stringOOMSize*unitBytes(ch) + stringOOMSize/2)
+			v, err = m.Eval("s + '!'", EvalGlobal)
+			if err != nil {
+				t.Fatalf("Eval(s + '!'): %v", err)
+			}
+			if v != strings.Repeat(ch, stringOOMSize)+"!" {
+				t.Fatalf("Eval(s + '!') returned a %T of %d bytes", v, len(v.(string)))
+			}
+			wantNoPendingException(t, m)
+		})
+	}
+}
+
+// A rope returned to Go that has no room to be joined must come back as the
+// out of memory error, not as "".
 func TestGoStringOutOfMemory(t *testing.T) {
 	for _, ch := range []string{"é", "中"} {
 		t.Run(ch, func(t *testing.T) {
-			// The UTF-8 copy needs stringOOMSize*2 or *3 bytes.
+			// Joining s + '!' needs stringOOMSize or twice that.
 			m := newStringOOMVM(t, ch, stringOOMSize/2)
-			v, err := m.Eval("s", EvalGlobal)
+			v, err := m.Eval("s + '!'", EvalGlobal)
 			if err == nil {
 				t.Fatalf("Eval returned a %T of %d bytes, want an error", v, len(v.(string)))
 			}
@@ -79,10 +122,11 @@ func TestGoStringOutOfMemory(t *testing.T) {
 	}
 }
 
-// The JSON of an object returned to Go that has no room for its UTF-8 copy
-// must come back as the out of memory error, not as an empty Object, and so
-// must Value.MarshalJSON.
-func TestObjectJSONOutOfMemory(t *testing.T) {
+// The JSON of an object returned to Go, and that of Value.MarshalJSON, is
+// read where JSON.stringify left it: with room for JSON.stringify but none for
+// a UTF-8 copy of its result, the JSON comes back whole. With no room for
+// JSON.stringify it is the out of memory error, not an empty Object.
+func TestObjectJSON(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		get  func(m *VM) (string, error)
@@ -112,12 +156,22 @@ func TestObjectJSONOutOfMemory(t *testing.T) {
 			// half as much again while its buffer grows, but not for the
 			// stringOOMSize*2 bytes of its UTF-8 copy next to it.
 			m := newStringOOMVM(t, "é", stringOOMSize*2)
-			// JSON.stringify itself fits, so what fails below is the copy.
 			if v, err := m.Eval("JSON.stringify(o).length", EvalGlobal); err != nil || v != stringOOMSize+8 {
 				t.Fatalf("JSON.stringify(o).length: %v, %v", v, err)
 			}
 
 			json, err := c.get(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := `{"s":"` + strings.Repeat("é", stringOOMSize) + `"}`; json != want {
+				t.Fatalf("got %d bytes of JSON, want %d", len(json), len(want))
+			}
+
+			// No room for JSON.stringify(o) itself.
+			m.SetMemoryLimit(^uintptr(0))
+			m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + stringOOMSize/2)
+			json, err = c.get(m)
 			if err == nil {
 				t.Fatalf("got %d bytes of JSON, want an error", len(json))
 			}
@@ -129,18 +183,26 @@ func TestObjectJSONOutOfMemory(t *testing.T) {
 	}
 }
 
-// A host function whose string argument has no room for its UTF-8 copy must
-// not be called with "". Running out of memory there ends the call: page code
+// A host function's string argument is read where the engine keeps it, so it
+// needs no room. One that is a rope with no room to be joined must not be
+// passed as "": running out of memory there ends the call, and page code
 // cannot catch it.
 func TestHostFuncArgumentOutOfMemory(t *testing.T) {
-	// The UTF-8 copy needs stringOOMSize*2 bytes.
+	// Less room than s takes: joining s + '!' needs stringOOMSize bytes.
 	m := newStringOOMVM(t, "é", stringOOMSize/2)
-	called := false
-	if err := m.RegisterFunc("take", func(s string) { called = true }, false); err != nil {
+	var got []int
+	if err := m.RegisterFunc("take", func(s string) { got = append(got, len(s)) }, false); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := m.Eval("try { take(s) } catch (e) { globalThis.caught = true } finally { globalThis.finished = true }", EvalGlobal)
+	if _, err := m.Eval("take(s)", EvalGlobal); err != nil {
+		t.Fatalf("take(s): %v", err)
+	}
+	if len(got) != 1 || got[0] != 2*stringOOMSize {
+		t.Fatalf("take(s) got strings of %v bytes, want one of %d", got, 2*stringOOMSize)
+	}
+
+	_, err := m.Eval("try { take(s + '!') } catch (e) { globalThis.caught = true } finally { globalThis.finished = true }", EvalGlobal)
 	var e *Error
 	if !errors.As(err, &e) || e.Name != "InternalError" || e.Message != "out of memory" {
 		t.Fatalf("got error %v, want the out of memory error", err)
@@ -150,8 +212,8 @@ func TestHostFuncArgumentOutOfMemory(t *testing.T) {
 		t.Fatalf("page code saw the out of memory error: %v, %v", v, err)
 	}
 
-	if called {
-		t.Fatal("take was called")
+	if len(got) != 1 {
+		t.Fatal("take was called with the rope")
 	}
 
 	wantNoPendingException(t, m)

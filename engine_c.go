@@ -418,6 +418,14 @@ func (m *VM) now() time.Time {
 	return time.Now()
 }
 
+func (m *VM) jsToString(v jsValue) (r jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsToString(v) })
+		return r
+	}
+	return val(cengine.JS_ToString(m.sp, m.ctx, v.u, v.tag))
+}
+
 func (m *VM) jsGetException() (r jsValue) {
 	if m.entered == 0 {
 		m.outer(func() { r = m.jsGetException() })

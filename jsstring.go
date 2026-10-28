@@ -13,15 +13,29 @@ import (
 	"unsafe"
 )
 
-// argString is cString, or cWTF8 when wtf8 is true, for a string argument
-// of a Builtin. A string the engine holds in one piece is read in Go, where
-// JS_ToCStringLen2 makes a UTF-8 copy in engine memory for any string that
-// is not ASCII, which cString then copies again. A rope goes the way of
-// cString, which joins it.
+// argString returns the Go string of v, a lone surrogate as U+FFFD, or as
+// the three bytes of its code point when wtf8 is true: the string every
+// value javascript gives Go becomes, a result, the argument of a Builtin or of
+// a Go function, the JSON of an object. A string the engine holds in one
+// piece is read where it is, as one copy, where JS_ToCStringLen2 made a UTF-8
+// copy of any string that is not ASCII in the VM's memory, which Go then
+// copied again. A rope, a string kept as the pieces it was joined from, is
+// joined first (JS_ToString), and any other value goes the way of
+// toGoString. ok is false, and the exception pending, when that threw, as
+// when there is no memory to join a rope.
 func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 	p, n, wide, ok := stringChars(v)
 	if !ok {
-		return m.toGoString(v, wtf8)
+		if tag(v) != tagStringRope {
+			return m.toGoString(v, wtf8)
+		}
+		flat := m.jsToString(v)
+		if isException(flat) {
+			return "", false
+		}
+		s, ok := m.argString(flat, wtf8)
+		m.jsFreeValue(flat)
+		return s, ok
 	}
 	if n == 0 {
 		return "", true
