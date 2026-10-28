@@ -15,6 +15,8 @@
    leaks a block ends the process with status 87 (host_free_runtime).
 
      unit-oom */
+#include <unistd.h>
+
 #include "cutils.h"
 #include "compile-scripts.h"
 #include "testutil.h"
@@ -1279,6 +1281,25 @@ static void sweep(const char *what, const char *file, const char *setup,
     CHECK(worked > 0, "%s: no room let it work", what);
 }
 
+/* A script name in a regexp (\p{Script=...}, \p{Script_Extensions=...}) is
+   turned into ranges of characters by unicode_script, which gives them back
+   with an error when it runs out of memory. Its error path once jumped to
+   itself, so a pattern compiled with too little memory never returned. With
+   each room the compile either works or fails with the out of memory error.
+   An alarm ends a run that hangs. */
+static void test_regexp_script_oom(void)
+{
+    static const char *const want[] = { "true,false,true,false,false,false,false", NULL };
+
+    alarm(300);
+    sweep("regexp script", "script.js", NULL,
+          "['\\\\p{Script=Greek}', '\\\\p{sc=Latn}', '\\\\p{scx=Greek}', '\\\\p{scx=Common}',"
+          " '[\\\\p{Script=Zzzz}]', '\\\\p{scx=Latn}', '[^\\\\p{sc=Grek}]']"
+          ".map(p => new RegExp(p, 'u').test('\\u03b1')).join()",
+          want, 98304);
+    alarm(0);
+}
+
 /* A TypeError that a built-in function throws gets its stack when it is made,
    and code of a script on the stack has it formatted at once: the names of the
    functions and of the file are converted to UTF-8 there, which needs memory
@@ -1514,6 +1535,7 @@ int main(void)
     test_oom_uncatchable();
     test_field_chain_uncatchable();
     test_regexp_oom();
+    test_regexp_script_oom();
     test_thrown_is_not_uncatchable();
     test_new_error_stack_oom();
     test_syntax_error_stack_oom();

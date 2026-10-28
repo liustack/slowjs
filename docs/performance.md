@@ -296,6 +296,25 @@ The other 29 scripts run within 0.08% of the instructions (`c_string_methods` +0
 
 Memory of `r_react_ssr`: the most bytes in use at once went from 2.39 MB to 2.46 MB (+2.9%, the room of the page string). That made the heap grow by one more chunk, a quarter of what it had: the footprint went from 3.01 MB to 3.80 MB, and the most memory the process held from 8.05 to 8.31 MB to 8.38 to 8.50 MB. `c_string_concat` uses 35% less at its most.
 
+### Upstream commits and the scripts where the C engine was slower than C
+
+[upstream-commits.md](fork-changes/upstream-commits.md) lists the commits of upstream QuickJS taken into the C tree and the ones tried and taken back, with their speed. Against main (`c4dcea91`) before the batch, all 37 scripts at 8 positions, 2 rounds: geometric mean 0.917, with `q_array_slice` at 0.085 and `c_array_methods` at 0.530 and the other 35 scripts together at 0.997. `r_react_ssr` took 0.977, within its noise.
+
+Where the C engine was slower than the C QuickJS builds, the same C of `engine/` built with clang -O2 for the machine (the objects of `engine/test` and a runner like `jsrun`) shows where the time goes. Time as a ratio to the C engine as Go assembly (fin2, before the search change below), median of 5 rounds, the assembly at its 8 positions:
+
+| Script | C engine, ms | same C, clang | pinned 3d5e064, clang | pinned, gcc | latest 19d6bd8, clang | latest, gcc |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `c_array_methods` | 395.3 | 0.744 | 0.813 | 0.815 | 0.719 | 0.701 |
+| `c_string_methods` | 358.3 | 0.785 | 0.796 | 0.880 | 0.809 | 0.874 |
+| `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
+| `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
+
+The fork's C changes cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
+
+- `c_array_methods`: `js_array_includes` 6020 samples against 1826, `js_array_indexOf` 3915 against 957, `JS_CallInternal` 10743 against 8749, the rest alike (`js_strict_eq2` 13630 against 13231). The loops called `js_strict_eq2` for each element, and a loop with a call that may poll keeps its poll counter in memory, which is a read, decrement and write of one word per turn: 36% of the samples of `js_array_includes` sit on that decrement. Fixed by [deciding most elements without a call](fork-changes/upstream-commits.md#indexof-and-includes-decide-most-elements-without-a-call): the script took 0.583 of the time.
+- `c_string_methods`: 38900 samples against 30440, spread over many small functions: `JS_CallInternal` +940, `js_call_c_function` 1964 against 1210, `JS_ToStringInternal` 1726 against 1122, `JS_ConcatString` 1182 against 658, `js_string_includes` 967 against 523. No loop with one hot instruction. It is the cost of each call of the generated code (arguments and results through memory, a stack check, the poll counter).
+- `q_regexp_ascii`: 39700 samples against 33500. The matcher `lre_exec_backtrack` is alike (10390 against 10002) and so is `JS_CallInternal`. The extra samples are in what surrounds it: `js_regexp_exec` 3582 against 2374, `lre_find` 1540 against 615, `lre_exec` 2367 against 1660, `free_object` 2440 against 1650. Calls again.
+
 ### Stability under load
 
 Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the engine of `lib/`, built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.
