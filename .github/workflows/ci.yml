@@ -40,6 +40,8 @@ jobs:
       CHECK_LOGS: ${{ github.workspace }}/.build/check-logs
     steps:
       - uses: actions/checkout@v7
+      - name: Show the machine
+        run: (lscpu | grep "Model name") || sysctl -n machdep.cpu.brand_string
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
