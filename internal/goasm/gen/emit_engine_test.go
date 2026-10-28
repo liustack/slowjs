@@ -63,3 +63,19 @@ func TestEmitNoStubs(t *testing.T) {
 		t.Fatalf("with NoStubs: %v", err)
 	}
 }
+
+// TestBuildExpr: the build line of a generated .s file is the architecture,
+// and with a tag set it also requires the tag, so that a package whose files
+// all need the tag has no file in a build without it.
+func TestBuildExpr(t *testing.T) {
+	for _, c := range []struct{ tag, arch, want string }{
+		{"", "amd64", "amd64"},
+		{"", "arm64", "arm64"},
+		{"slowjs_cengine", "amd64", "slowjs_cengine && amd64"},
+		{"slowjs_cengine", "arm64", "slowjs_cengine && arm64"},
+	} {
+		if got := BuildExpr(c.tag, c.arch); got != c.want {
+			t.Errorf("BuildExpr(%q, %q) = %q, want %q", c.tag, c.arch, got, c.want)
+		}
+	}
+}

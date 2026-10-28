@@ -3,10 +3,11 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && !((linux && (amd64 || arm64)) || (darwin && arm64))
+//go:build slowjs_cengine && !((linux && amd64) || (darwin && arm64))
 
 package unsupported
 
-// The C engine is generated for linux/amd64, linux/arm64 and darwin/arm64
-// only so far.
-var _ = the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_linux_arm64_and_darwin_arm64_so_far
+// The C engine runs on linux/amd64 and darwin/arm64 only. linux/arm64 is
+// generated too, but no machine of its own has run it yet. Any other target
+// stops here, with this name in the error.
+var _ = the_C_engine_runs_only_on_linux_amd64_and_darwin_arm64_this_target_is_not_supported

@@ -5,12 +5,15 @@
 package main
 
 import (
+	"go/format"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	gen "github.com/liustack/slowjs/internal/goasm/gen"
 )
 
 // TestFirstGroups: a function two files define goes with the first one, as
@@ -129,6 +132,50 @@ func TestArchError(t *testing.T) {
 		err := archError(c.arch, c.mode, c.poison, c.loose)
 		if (c.want == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%+v: %v", c, err)
+		}
+	}
+}
+
+// TestGoFileHeaders: with -build-tag the Go files the driver writes require
+// the tag, the keep file together with goasmkeep and the negative build file
+// together with its own. Without it they carry only their own.
+func TestGoFileHeaders(t *testing.T) {
+	defer func(old string) { *buildTag = old }(*buildTag)
+	for _, c := range []struct{ tag, decl, keep, neg string }{
+		{"", "", "//go:build goasmkeep\n", "//go:build !goasmnegative\n"},
+		{"slowjs_cengine", "//go:build slowjs_cengine\n", "//go:build slowjs_cengine && goasmkeep\n", "//go:build slowjs_cengine && !goasmnegative\n"},
+	} {
+		*buildTag = c.tag
+		if got := declBuildLine(); got != c.decl {
+			t.Errorf("tag %q: decl line %q, want %q", c.tag, got, c.decl)
+		}
+		if got := keepAll(nil, nil, nil); !strings.Contains(got, c.keep) {
+			t.Errorf("tag %q: keep file lacks %q:\n%s", c.tag, c.keep, got)
+		}
+		if got := negativeBuildFile(true, ""); !strings.Contains(got, c.neg) {
+			t.Errorf("tag %q: negative file lacks %q", c.tag, c.neg)
+		}
+	}
+}
+
+// TestMissingNamesFormat: the list of stub names is written as gofmt writes
+// it, whether it is empty (a release build) or not, so that the checked-in
+// engine_decl_<arch>.go passes gofmt -s.
+func TestMissingNamesFormat(t *testing.T) {
+	for _, c := range []struct {
+		stubs []gen.Meta
+		want  string
+	}{
+		{nil, "var missingNames = []string{}\n"},
+		{[]gen.Meta{{Name: "a"}, {Name: "b"}}, "var missingNames = []string{\n\t\"a\",\n\t\"b\",\n}\n"},
+	} {
+		got := missingNamesDecl(c.stubs)
+		if got != c.want {
+			t.Errorf("%d stubs: got %q, want %q", len(c.stubs), got, c.want)
+		}
+		src := "package p\n\n" + got
+		if f, err := format.Source([]byte(src)); err != nil || string(f) != src {
+			t.Errorf("%d stubs: gofmt changes %q to %q (%v)", len(c.stubs), src, f, err)
 		}
 	}
 }

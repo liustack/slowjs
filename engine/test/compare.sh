@@ -21,16 +21,10 @@
 # the file when they differ). Wrap the script in taskset or systemd-run to
 # keep it to the CPUs and the memory you give it.
 #
-# COMPARE_GO=1 also runs the Go engine (internal/jsrun) on every script but
-# the modules (.mjs), which the Go API cannot load, and requires it to print
-# what the C tree prints, in the form that writes a lone surrogate as \u{...}.
-# It is for as long as the Go engine is in the repository, and has no other
-# use.
-#
-# COMPARE_UPDATE=native|go writes the file of each script that has none yet
-# (those of engine/test/compare), from the output of the C tree or of the Go
-# engine. Read what it wrote before it goes into a commit: a file kept is a
-# claim about what the engine must print.
+# COMPARE_UPDATE=native writes the file of each script that has none yet
+# (those of engine/test/compare) from the output of the C tree. Read what it
+# wrote before it goes into a commit: a file kept is a claim about what the
+# engine must print.
 #
 # A file named FILE#go is the part of FILE before its line "== go: eval": the
 # goldens of testdata/error_stack.js hold the stacks the script collects and,
@@ -42,14 +36,10 @@ root=$(dirname "$(dirname "$here")")
 mode=${1:-plain}
 out=$here/out/compare-$mode
 update=${COMPARE_UPDATE:-}
-withgo=${COMPARE_GO:-}
 
 bin=$here/out/$mode/jsrun
 [ -x "$bin" ] || { echo "compare.sh: $bin is missing: run engine/test/build.sh $mode" >&2; exit 2; }
 mkdir -p "$out"
-if [ -n "$withgo" ] || [ "$update" = go ]; then
-	(cd "$root" && go build -o "$out/jsrun-go" ./internal/jsrun)
-fi
 
 # shikire.js runs on the regexps and the text that its test sets first.
 python3 - "$root/lib/testdata" "$out/shikire.js" <<'PY'
@@ -134,13 +124,8 @@ while read -r script want opts; do
 		if [ "$update" = native ]; then
 			cp "$out/$tag.out" "$want"
 			echo "compare: wrote $want from the C tree"
-		elif [ "$update" = go ]; then
-			# The Go engine cannot write a lone surrogate raw.
-			# shellcheck disable=SC2086
-			"$out/jsrun-go" $(echo "$opts" | sed 's/-raw//') "$script" | tail -n +2 > "$want"
-			echo "compare: wrote $want from the Go engine"
 		else
-			echo "compare: $want is missing (COMPARE_UPDATE=native or go writes it)" >&2
+			echo "compare: $want is missing (COMPARE_UPDATE=native writes it)" >&2
 			failed=$((failed + 1))
 		fi
 		continue
@@ -150,20 +135,6 @@ while read -r script want opts; do
 		echo "compare: $tag differs from $want, see $out/$tag.diff" >&2
 		head -20 "$out/$tag.diff" >&2
 		failed=$((failed + 1))
-	fi
-	if [ -n "$withgo" ] && [ "${script%.mjs}" = "$script" ]; then
-		# Both in the form that writes a lone surrogate as \u{...}.
-		goopts=$(echo "$opts" | sed 's/-raw//')
-		# shellcheck disable=SC2086
-		"$bin" $goopts "$script" > "$out/$tag.native"
-		# shellcheck disable=SC2086
-		"$out/jsrun-go" $goopts "$script" > "$out/$tag.go"
-		if ! cmp -s "$out/$tag.native" "$out/$tag.go"; then
-			diff "$out/$tag.go" "$out/$tag.native" > "$out/$tag.godiff" || true
-			echo "compare: $tag differs from the Go engine, see $out/$tag.godiff" >&2
-			head -20 "$out/$tag.godiff" >&2
-			failed=$((failed + 1))
-		fi
 	fi
 done < "$out/cases.list"
 
@@ -175,8 +146,4 @@ if [ "$failed" -ne 0 ]; then
 	echo "compare: $failed of $total runs differ" >&2
 	exit 1
 fi
-if [ -n "$withgo" ]; then
-	echo "compare: the C tree prints the files and what the Go engine prints, for $total runs"
-else
-	echo "compare: the C tree prints the files, for $total runs"
-fi
+echo "compare: the C tree prints the files, for $total runs"

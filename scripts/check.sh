@@ -85,6 +85,7 @@ step compare-plain fast last "engine/test/compare.sh plain"
 step cycles fast last "engine/test/cycles.sh"
 # Full: the end of a batch.
 step fixlib full - "$gc run ./internal/fixlib -check"
+step gen full last "scripts/check-gen.sh"
 step testhooks full tests "$gc test -count=1 -v -tags $tags,testhooks ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m -tags $tags ."
 step race full tests "env CGO_ENABLED=1 go test -count=1 -v -race -short -timeout 60m -p 1 -tags $tags . ./internal/gohost ./internal/hostmem ./internal/idtable"

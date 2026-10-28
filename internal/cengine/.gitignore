@@ -1,7 +1,3 @@
-# What internal/goasm/gen/cmd/engine writes here. It is made on the build
-# machine and never checked in.
-*_amd64.s
-*_arm64.s
-engine_decl_*.go
-engine_keep_*.go
+# A negative build of the generator (GEN_KEEP_NARROW or GEN_FORCE_NOSPLIT)
+# leaves a file of this name next to the engine. It is never checked in.
 engine_negative_*.go

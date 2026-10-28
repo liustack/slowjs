@@ -15,8 +15,8 @@ import (
 
 // The package builds on one engine, and a program links only that one: the
 // engine of lib, made by ccgo and running on modernc.org/libc, or with the tag
-// slowjs_cengine the C engine of internal/cengine, which is generated for
-// linux/amd64 only so far.
+// slowjs_cengine the C engine of internal/cengine, which runs on linux/amd64
+// and darwin/arm64 only.
 func TestEngineDeps(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -64,27 +64,33 @@ func TestEngineDeps(t *testing.T) {
 	}
 }
 
-// A build with the tag on a target the C engine is not generated for fails
-// with the reason as its only error, not under errors of the files that need
-// the engine.
+// A build with the tag on a target the C engine does not run on fails with
+// the reason as its only error, not under errors of the files that need the
+// engine. The engine runs on linux/amd64 and darwin/arm64 only: linux/arm64 is
+// generated but was never run on a machine of its own, so it is refused too.
 func TestEngineUnsupportedTarget(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("no go command")
 	}
-	cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
-	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=0")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatal("the build succeeded")
-	}
-	var errs []string
-	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if !strings.HasPrefix(l, "#") {
-			errs = append(errs, l)
-		}
-	}
-	if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_linux_arm64_and_darwin_arm64_so_far") {
-		t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
+	for _, target := range []string{"windows/amd64", "darwin/amd64", "linux/arm64", "linux/386"} {
+		t.Run(target, func(t *testing.T) {
+			goos, goarch, _ := strings.Cut(target, "/")
+			cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
+			cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatal("the build succeeded")
+			}
+			var errs []string
+			for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				if !strings.HasPrefix(l, "#") {
+					errs = append(errs, l)
+				}
+			}
+			if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_runs_only_on_linux_amd64_and_darwin_arm64_this_target_is_not_supported") {
+				t.Fatalf("the build said\n%s\nwant only the error that names the two targets", out)
+			}
+		})
 	}
 }
