@@ -73,7 +73,7 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 		t.Skip("no go command")
 	}
 	cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
-	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0")
+	cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS=windows", "GOARCH=amd64", "CGO_ENABLED=0")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("the build succeeded")
@@ -84,7 +84,7 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 			errs = append(errs, l)
 		}
 	}
-	if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_so_far") {
+	if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_of_tag_slowjs_cengine_builds_only_on_linux_amd64_linux_arm64_and_darwin_arm64_so_far") {
 		t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
 	}
 }
