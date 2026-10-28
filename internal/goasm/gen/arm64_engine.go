@@ -27,12 +27,20 @@
 // and an add, or an adr of data placed in the function), and each :lo12: use
 // takes the offset from sym the page form would have reached. That is the
 // same address only where the register still holds the page of that adrp, so
-// the lowering accepts an :lo12: use only in the block of its adrp, with no
-// other instruction in between that reads the register, and refuses an adrp
-// whose register is read by anything but those uses before it is written
-// again. A page address is only ever the base of an :lo12: use in llc's code,
-// so a use in a later block (whose block has no adrp of it) is refused rather
-// than followed.
+// the lowering accepts an :lo12: use of other data only in the block of its
+// adrp, with no other instruction in between that reads the register, and
+// refuses an adrp whose register is read by anything but those uses before it
+// is written again. A page address is only ever the base of an :lo12: use in
+// llc's code, so a use in a later block (whose block has no adrp of it) is
+// refused rather than followed.
+//
+// The function's own data (constant pools, jump tables) is read relative to
+// the PC instead, and llc may keep its page in a register across blocks. So
+// for that data the lowering follows the register through the blocks of the
+// function (arm64_pages.go): a use is accepted where every way in has the
+// register holding exactly the page of that data, and any other read of such
+// a register is refused. A page with an offset added to it, which the
+// PC-relative form would read without the offset, never gets through.
 package gen
 
 import (
@@ -264,6 +272,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			return fail("%v", err)
 		}
 	}
+	// The registers that hold the page of an adrp of the function's own data.
+	ownPage := func(sym string) bool { _, ok := env.Plan.Rename[fn.Name][sym]; return ok }
+	pages := a64FollowOwnPages(body, ownPage, a64IndirectLabels(body, env.Plan.BodyData(fn.Name)))
 	var out []string
 	D := 0 // bytes of the LLVM frame allocated at this point
 	goOff := func(k int) int { return L + (F - D) + k }
@@ -390,12 +401,20 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			// in a register across blocks, so its uses read it relative to the
 			// PC instead, whatever the register holds.
 			if lbl, own := env.Plan.Rename[fn.Name][m[1]]; own {
+				// The register must hold the page of this data and nothing
+				// more: the PC-relative form drops whatever else was added.
+				var base string
 				if a := reA64AddLo.FindStringSubmatch(l); a != nil {
+					base = a[2]
 					out = append(out, fmt.Sprintf("adr %s, %s%s", a[1], lbl, a64Add(k)))
 				} else if a := reA64LdLo.FindStringSubmatch(l); a != nil && (a[1] == "ldr" || a[1] == "ldrsw") {
+					base = a[3]
 					out = append(out, fmt.Sprintf("%s %s, %s%s", a[1], a[2], lbl, a64Add(k)))
 				} else {
 					return fail("unreviewed use of the function's own data %q", l)
+				}
+				if pages.At(li, a64RegNumber(base)) != m[1] {
+					return fail("%q is not in the block of an adrp of %s in %s", l, m[1], base)
 				}
 				for r := range a64Uses(l) {
 					if _, w := a64Reads(l, r); w {
@@ -459,6 +478,13 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		}
 		// Any other instruction: a register holding a page may be written
 		// over, never read.
+		for r := 0; r < 31; r++ {
+			if sym := pages.At(li, r); sym != "" {
+				if reads, _ := a64Reads(l, r); reads {
+					return fail("%q reads x%d, which holds the page of an adrp of %s", l, r, sym)
+				}
+			}
+		}
 		for r := range refs {
 			reads, writes := a64Reads(l, r)
 			if reads {
