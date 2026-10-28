@@ -110,6 +110,9 @@ func (m *VM) EvalSharedBytecode(b *SharedBytecode) (r any, err error) {
 // EvalSharedBytecodeValue is like [VM.EvalBytecodeValue], but loads b as
 // [VM.EvalSharedBytecode] does.
 func (m *VM) EvalSharedBytecodeValue(b *SharedBytecode) (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	if !b.hold() {
 		return r, errSharedClosed
 	}

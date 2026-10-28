@@ -42,6 +42,9 @@ func (m *VM) NewFloat64(n float64) Value {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) NewString(s string) (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	v, err := m.newString(s)
 	if err != nil {
 		return r, err
@@ -52,6 +55,9 @@ func (m *VM) NewString(s string) (r Value, err error) {
 
 // NewObjectValue returns a new Value representing '{}'.
 func (m *VM) NewObjectValue() (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	return Value{vm: m, v: m.jsNewObject()}, nil
 }
 

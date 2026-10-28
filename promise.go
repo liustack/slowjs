@@ -53,6 +53,9 @@ func (pc *PromiseCapability) Dup() *PromiseCapability {
 //	    return pc.Promise
 //	}, false)
 func (m *VM) NewPromiseCapability() (*PromiseCapability, error) {
+	if err := m.usable(); err != nil {
+		return nil, err
+	}
 	promise, resolve, reject, err := m.jsNewPromiseCapability()
 	if err != nil {
 		return nil, err

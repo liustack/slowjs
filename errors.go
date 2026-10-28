@@ -5,6 +5,7 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -34,6 +35,7 @@ import (
 type Error struct {
 	raw    string
 	engine bool // made of an exception, raw is the engine's text
+	killed bool // the script was killed (ErrKilled)
 
 	Name         string // e.g. "ReferenceError", "TypeError"
 	Message      string // the error message
@@ -51,6 +53,24 @@ type Error struct {
 	Uncatchable bool
 	OutOfMemory bool // the VM ran out of memory (Uncatchable is true)
 	Interrupted bool // Interrupt or the eval timeout stopped the script (Uncatchable is true)
+}
+
+// ErrKilled is what [errors.Is] finds in the error of a call whose script
+// was killed, and in the error of each method called on its VM after that.
+// The C engine (-tags slowjs_cengine) kills a script that runs on 50 ms past
+// its eval timeout or an [VM.Interrupt], as can happen in a Go function it
+// called or in a long collection: the call returns an *Error with
+// Uncatchable and Interrupted set, and the VM is good only for Close. Its
+// methods that return an error return one that matches ErrKilled, the others
+// panic, and [Value.Free] does nothing. The engine of lib never kills.
+var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
+
+// errKilledVM is the error of a method called after a kill.
+var errKilledVM = fmt.Errorf("slowjs: the VM is good only for Close: %w", ErrKilled)
+
+// Is reports whether e is the error of a killed call, for target ErrKilled.
+func (e *Error) Is(target error) bool {
+	return e.killed && target == ErrKilled
 }
 
 // Error implements the error interface. It returns the same string the engine

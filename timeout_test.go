@@ -210,6 +210,13 @@ var nestedEntries = map[string]func(m *VM) error{
 	},
 }
 
+// pastDeadline is how long after the deadline of the outer call
+// TestNestedEvalKeepsTimeout starts the nested one: well within the grace of
+// 50 ms the C engine gives a script after its deadline before it kills it
+// (see TestNestedEvalPastGrace), as the time the host function sleeps
+// counts.
+const pastDeadline = 10 * time.Millisecond
+
 // TestNestedEvalKeepsTimeout runs javascript from a host function after the
 // outer call's time is up. The nested call runs inside the outer call's
 // budget instead of starting a new one, so it and the outer call are
@@ -231,7 +238,7 @@ func TestNestedEvalKeepsTimeout(t *testing.T) {
 
 			var nestedErr error
 			mustHost(t, m, "nested", func([]any) (any, error) {
-				time.Sleep(timeout + 50*time.Millisecond)
+				time.Sleep(timeout + pastDeadline)
 				nestedErr = nested(m)
 				return nil, nil
 			})

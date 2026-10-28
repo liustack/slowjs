@@ -282,6 +282,9 @@ func maxRune(a, b rune) rune {
 // [VM.NewString] it decodes no UTF-8, so a [Builtin] that read its argument
 // with [Args.Latin1] returns what it made of it this way, as one copy.
 func (m *VM) NewStringLatin1(b []byte) (Value, error) {
+	if err := m.usable(); err != nil {
+		return Value{}, err
+	}
 	if len(b) > stringLenMax {
 		return Value{}, errStringTooLong(len(b))
 	}
@@ -296,6 +299,9 @@ func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 // surrogates as they are. A [Builtin] that read its argument with
 // [Args.UTF16] returns what it made of it this way, as one copy.
 func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
+	if err := m.usable(); err != nil {
+		return Value{}, err
+	}
 	if len(u) > stringLenMax {
 		return Value{}, errStringTooLong(len(u))
 	}

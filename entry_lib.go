@@ -73,7 +73,7 @@ func (m *VM) Interrupt() {
 //
 // leave takes the error the call returns, deferred as m.leave(&err), so that
 // an engine can set it when it ends the call. This engine leaves it alone.
-func (m *VM) enter() {
+func (m *VM) enter() error {
 	if m.broken {
 		panic(brokenPanic)
 	}
@@ -82,7 +82,12 @@ func (m *VM) enter() {
 		m.configureInterrupt()
 	}
 	m.depth++
+	return nil
 }
+
+// usable returns the error of a method on a VM that a kill left good only
+// for Close: none, as this engine never kills.
+func (m *VM) usable() error { return nil }
 
 func (m *VM) leave(err *error) {
 	m.depth--
