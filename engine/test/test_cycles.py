@@ -56,6 +56,22 @@ entry:
 """)
         self.assertEqual(cycles.cycles(ir), [])
 
+    def test_json_count_cuts(self):
+        ir = module("""\
+define internal void @a() {
+entry:
+  %call = call i32 @js_json_enter(ptr noundef null)
+  call void @b()
+  ret void
+}
+define internal void @b() {
+entry:
+  call void @a()
+  ret void
+}
+""")
+        self.assertEqual(cycles.cycles(ir), [])
+
     def test_two_functions(self):
         ir = module("""\
 define internal { i64, i64 } @a() {
