@@ -489,7 +489,7 @@ Left out on purpose:
 - **`internal/fixlib` tests** (16 minutes or more on one core), `fixlib -check`, test262, the race detector and the sanitizer builds. They guard the engine of `lib/`, which is frozen, or take long. Run them with `make check-full`.
 - **Timing and memory measurements**, `make gointl` (it clones go-intl) and `make build_all_targets`.
 
-On `ubuntu-24.04` the install took 15 to 25 seconds, `make check-gen` 1.5 to 2.5 minutes, and the other two steps 0.5 to 1 minute together (two runs). `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
+The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make check-gen` 2.3 minutes, the other two steps 1.1 minutes together. `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
 
 ## Speed
 
