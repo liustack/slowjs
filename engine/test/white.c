@@ -19,18 +19,41 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+#include "../quickjs.h"
+
 /* JS_HEAP_FAILS makes the engine fail the request to the heap number
    white_alloc_fail_at (counting from 1 since white_alloc_count was set to 0),
    and only that one. The requests after it work. A request to the heap is a
    new arena of small blocks or a large block, as a call of the allocator was
-   on the old engine. */
+   on the old engine.
+
+   With white_alloc_calls set, JS_ALLOC_FAILS counts instead: the calls of
+   js_malloc_rt and js_realloc_rt, whatever their size and wherever the block
+   comes from (an arena, the front cache, the heap). A call for size 0 never
+   counts, as the engine answers it without a block. A call of js_realloc_rt
+   that fits the block it has does not count either: the engine answers it
+   with the same block and cannot fail it. */
 static long white_alloc_count, white_alloc_fail_at;
+static int white_alloc_calls;
 static int white_alloc_fails(void)
 {
+    if (white_alloc_calls)
+        return 0;
     white_alloc_count++;
     return white_alloc_count == white_alloc_fail_at;
 }
 #define JS_HEAP_FAILS(s, size) white_alloc_fails()
+
+static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
+{
+    if (!white_alloc_calls || size == 0)
+        return 0;
+    if (ptr && size <= js_malloc_usable_size_rt(rt, ptr))
+        return 0;
+    white_alloc_count++;
+    return white_alloc_count == white_alloc_fail_at;
+}
+#define JS_ALLOC_FAILS(rt, ptr, size) white_call_fails(rt, ptr, size)
 
 #include "../quickjs.c"
 
@@ -766,25 +789,21 @@ int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
 
 /* ---- one request to the heap that fails ---- */
 
-/* Compile js (not run) in ctx with request number fail to the heap failing, 0
-   for none, and the others working. *nallocs is how many requests the compile
-   made. Returns what JS_Eval returns. */
-JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int *nallocs)
+/* Compile js (not run) in ctx with request number fail failing, 0 for none, and
+   the others working. A request is a request to the heap, or with bit 0 of
+   mode set a call of js_malloc_rt or js_realloc_rt (see JS_ALLOC_FAILS
+   above). js is a module when bit 1 of mode is set. *nallocs is how many
+   requests the compile made. Returns what JS_Eval returns. */
+JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs)
 {
     JSValue v;
 
+    white_alloc_calls = mode & 1;
     white_alloc_count = 0;
     white_alloc_fail_at = fail;
-    v = JS_Eval(ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    v = JS_Eval(ctx, js, strlen(js), "<unit>", ((mode & 2) ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL) | JS_EVAL_FLAG_COMPILE_ONLY);
     *nallocs = white_alloc_count;
     white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
     return v;
-}
-
-/* Whether every block of the engine is a request to the heap of its own (the
-   builds that take each block from the system malloc), and not only the
-   arenas of small blocks and the large blocks. */
-int white_every_block_is_a_request(void)
-{
-    return JS_MALLOC_LARGE_BLOCKS_ONLY;
 }
