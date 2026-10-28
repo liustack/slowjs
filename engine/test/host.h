@@ -80,6 +80,13 @@ int host_run_thread(int (*fn)(void *), void *arg);
    the host says so, and the process exits with status 87. */
 void host_free_runtime(JSRuntime *rt);
 
+/* Leave the process at once with status, as exit does for the check of the
+   host (a runtime freed with blocks still in use ends it with status 87), but
+   without the exit handlers of anything else. A child process of a test that
+   leaves this way costs nothing for a sanitizer's leak check, which would
+   stop threads the child does not have. */
+void host_leave(int status);
+
 /* What Go does for VM.ReleaseMemory: JS_ReleaseStart, unmap the chunks
    JS_ReleaseNextChunk gives, take the pages of the ranges JS_ReleaseNextRange
    gives. The sizes in bytes, before and after rounding to pages, are stored

@@ -312,6 +312,12 @@ static void host_atexit(void)
     }
 }
 
+void host_leave(int status)
+{
+    host_atexit();
+    _exit(status);
+}
+
 static void host_register_exit(void)
 {
     const char *max = getenv("HOST_MAX_MEMORY");
