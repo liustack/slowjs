@@ -122,9 +122,9 @@ Reading the result:
 
 ### The C engine's hot loops on fixed places
 
-The generator puts the body of the C engine's interpreter at 0 bytes into a line of 64 bytes and the body of its regexp matcher at 16 (`-align64`, see [c-engine.md](fork-changes/c-engine.md#where-the-interpreter-and-the-regexp-matcher-sit)). Before, each body sat after a `PCALIGN $16` and moved within its lines with any change to code linked before it.
+The generator puts the body of the C engine's interpreter at 40 bytes into a line of 64 bytes (0 until a JSValue was copied in two moves of 8 bytes, see [below](#the-c-engine-copies-a-jsvalue-in-two-moves-of-8-bytes)) and the body of its regexp matcher at 16 (`-align64`, see [c-engine.md](fork-changes/c-engine.md#where-the-interpreter-and-the-regexp-matcher-sit)). Before, each body sat after a `PCALIGN $16` and moved within its lines with any change to code linked before it.
 
-With the bodies fixed, the whole-program move of a position no longer moves the interpreter body within its lines: it moves the code and data around it, and the front NOP still moves the body. So the 8 positions now put the body at 0, 8, 16 and 24 bytes into its line, each with two places of the rest. Keep measuring all 8, or the 4 of the quick check: the move of the rest alone still changes `q_array_read` by up to 8%, `q_int_arith` by up to 6% and `q_prop_read` and `c_string_concat` by up to 5%. Even with the interpreter at the same address in two builds, `q_regexp_ascii` took 389 ms in one and 399 ms in the other.
+With the bodies fixed, the whole-program move of a position no longer moves the interpreter body within its lines: it moves the code and data around it, and the front NOP still moves the body. So the 8 positions now put the body 0, 8, 16 and 24 bytes past its place, each with two places of the rest. Keep measuring all 8, or the 4 of the quick check: the move of the rest alone still changes `q_array_read` by up to 8%, `q_int_arith` by up to 6% and `q_prop_read` and `c_string_concat` by up to 5%. Even with the interpreter at the same address in two builds, `q_regexp_ascii` took 389 ms in one and 399 ms in the other.
 
 Measured on 12 scripts of the C engine at all 8 positions, 5 rounds:
 
@@ -137,13 +137,51 @@ Measured on 12 scripts of the C engine at all 8 positions, 5 rounds:
 Measured by the rule above on the C engine (`jsrun`, one core of an EPYC 7B13, its other hyperthread idle):
 
 - **Cutting the call cycle of the property layer** made the loops that turn numbers into strings faster, against the commit before it at 8 positions: `m_num_to_str` 0.875 of the time, `m_concat_short` 0.912, `m_concat_num` 0.957, `c_string_concat` 0.939, `c_string_methods` 0.945, `r_react_ssr` 0.869. Only `c_json_stringify` got slower (1.038, 8 of 8 positions, 0.77% more instructions): with the recursion gone LLVM inlined in another order, and `string_buffer_concat` went from a cost of 70, inlined, to 540 against the threshold of 400, a call. `JSON.stringify` paid it for every piece it writes, 3.25 million calls and 58.5 million instructions. An always inlined copy for `string_buffer_concat_value` gives it back: 0.978 of the time of main at 4 positions and 0.974 in the run of all 37 scripts below, with 0.6% fewer instructions than before the cut.
-- **The polls** left `q_int_arith` as it was: 0.984 of the time of the engine before them at 8 positions, within its own range of 1.10 (a process runs it in either about 507 or about 633 ms). It now runs 219 instructions a loop where it ran 353, in the same time. The loop waits on memory, not on instructions: each turn the value stack has two loads of 16 bytes of a value that two stores of 8 bytes wrote, and on Zen 3 that store cannot be forwarded to the load (24 cycles, against 1 for a load of 8 bytes of a store of 8). That is about 77 cycles a turn with and without the polls. Changing the base register between the store and the load costs nothing more, nor do a load and a store 4 KiB apart. `q_array_read` waits the same way and took 1.082 of the time in that run with 36% fewer instructions, but its time follows its layout closely (see above).
+- **The polls** left `q_int_arith` as it was: 0.984 of the time of the engine before them at 8 positions, within its own range of 1.10 (a process runs it in either about 507 or about 633 ms). It now runs 219 instructions a loop where it ran 353, in the same time. The loop is not bound by instructions. Each turn the value stack has two loads of 16 bytes of a value that two stores of 8 bytes wrote, and on Zen 3 that cannot be forwarded (24 cycles, against 1 for a load of 8 bytes of a store of 8), but [removing them](#the-c-engine-copies-a-jsvalue-in-two-moves-of-8-bytes) left the time as it was. Changing the base register between the store and the load costs nothing more, nor do a load and a store 4 KiB apart. What binds the 77 cycles a turn is not found. `q_array_read` took 1.082 of the time in that run with 36% fewer instructions, but its time follows its layout closely (see above).
 - **All 37 scripts** with the inlined copy and the loops on fixed places, against main at 4 positions: 0.997 of the time as a geometric mean. Faster: `q_prop_read` 0.942, `q_string_build1` 0.952, `c_string_concat` 0.969, `c_json_stringify` 0.974. `q_string_build2` took 1.027 with the same instructions (0.999996), so that is layout. The render scripts are 0.989 to 1.002.
 
 Not done:
 
-- **`+slow-unaligned-mem-16`**, which stops LLVM from copying 16-byte values with SSE moves, to avoid the failed forwards above (not yet checked in the code it makes): 0.975 of the time on 12 scripts at 4 positions (`q_func_call` 0.938, `v8_richards` 0.941, `q_regexp_ascii` 0.948, `q_prop_read` 0.952, `r_shiki_regexp` 0.976, the other render scripts within noise), but `c_string_concat` 1.032, and `q_int_arith` itself within noise with 0.9% more instructions. It needs a run of all 37 scripts and a look at `c_string_concat` first.
 - **Moving the heap path of `js_dtoa2` out of line**, which LLVM no longer inlines either (cost 1370 against 230): 1.5 million fewer instructions on `c_json_stringify`, too few to keep.
+
+### The C engine copies a JSValue in two moves of 8 bytes
+
+`quickjs.c` is built without the SLP vectorizer and with `+slow-unaligned-mem-16` (see [c-engine.md](fork-changes/c-engine.md#how-a-jsvalue-is-copied)), so a JSValue is copied with two loads and two stores of 8 bytes in place of one SSE move of 16. The interpreter writes a JSValue as two stores of 8 bytes, and on Zen 3 (EPYC 7B13) a load of 16 bytes over them cannot be forwarded. It waits for both stores to reach the cache. Counted with a memory trace, the loads like that fell from 433,938 to 4,541 in short runs of `r_react_ssr`, and the 16-byte stores read back in parts from 813,223 to 14,349.
+
+Measured by the rule above, against main (5db67b0f). The interpreter body is now fixed at 40 bytes into its line, main's at 0, so each side is at its own place and the positions left are the whole-program move of 0 and 32 bytes. Time is the median of the paired ratios over the 2 positions, 4 rounds, all 37 scripts:
+
+- **Geometric mean 0.954** (0.953 and 0.955 at the two positions). 22 scripts are faster by more than the rule asks, 13 are within it, 2 are slower.
+- **The render scripts**, 10 rounds: `r_react_ssr` 0.979, `r_bench_table` 0.977, `r_bench_spiral` 0.976, `r_shiki_regexp` 0.986, the same at both positions.
+- **Most gained**: `q_prop_write` 0.523 (`obj.a = j` four times a loop: each `put_field` copies its object and value), `v8_deltablue` 0.860, `v8_richards` 0.853, `q_func_closure_call` 0.880, `q_func_call` 0.936, `q_prop_create` 0.940, `v8_crypto` 0.941, `v8_earley_boyer` 0.951, `q_array_push` 0.957, `v8_navier_stokes` 0.963, `q_regexp_ascii` 0.970. `q_prop_update` took 0.834 with the body at 16 and 0.995 at 40: its time follows the place of the body.
+- **Slower**: `q_string_build2` 1.061 (`r += "x"` on an argument, 0.93% more instructions, and 1.04 to 1.35 at the other places of the body), and `c_closures` 1.021 with 0.5% more instructions, under the 3% below which the rule counts instructions.
+
+Instructions, `JS_CallInternal` holding all but 0.1% of the change: `r_react_ssr` +0.71%, `r_bench_table` +0.62%, `r_bench_spiral` +0.76%, `r_shiki_regexp` +0.47%, `q_func_call` +1.4%, `v8_richards` +1.6%, `v8_deltablue` +1.6%, `q_int_arith` +1.8%, `q_prop_write` +5.3%, `c_json_parse` +0.03%. A copy is four instructions in place of two, and the place of the body adds 40 bytes of no-ops, once per call.
+
+The place of the body: the 8 places on 14 scripts, the engine of this change against main with its body at 0. The first column is the geometric mean of the 4 render scripts, the second of all 14.
+
+| Body at | Render | All 14 | `q_string_build2` |
+| ---: | ---: | ---: | ---: |
+| 0 | 1.003 | 0.934 | 1.243 |
+| 8 | 0.993 | 0.947 | 1.354 |
+| 16 | 0.983 | 0.919 | 1.040 |
+| 24 | 1.002 | 0.940 | 1.153 |
+| 32 | 0.986 | 0.932 | 1.148 |
+| 40 | 0.977 | 0.924 | 1.085 |
+| 48 | 0.990 | 0.921 | 1.063 |
+| 56 | 0.992 | 0.930 | 1.165 |
+
+At 0, where main has it, `r_react_ssr` took 1.015 of main's time. 16 and 40 were run on all 37 scripts: 16 gave 0.957 and three slower scripts, 40 gave 0.954 and two, with the render scripts 0.967 to 1.004 and 0.977 to 0.985 (4 rounds, 2 positions). 40 is the default.
+
+At the 8 positions of the rule, which move the body from 40 to 48, 56 and 0 past its place, over 8 scripts and 4 rounds: geometric mean 0.959, `v8_richards` 0.861, `q_func_call` 0.936, `c_string_concat` 0.974, `r_bench_spiral` 0.978 (8 of 8), `r_bench_table` 0.978, `r_react_ssr` 0.988 (6 of 8), `r_shiki_regexp` 0.992, and `q_int_arith` 0.974 within its own range of 1.14. The two positions that put the body at 0 are the two where `r_react_ssr` was slower than main, 1.037 and 1.029: with this code 0 is a bad place for the interpreter.
+
+Findings on the way:
+
+- **`q_int_arith` is not bound by the forwards.** A trace of the generated engine finds 525 loads of the kind in 69.6 million instructions where main has 301,167 in 68.4 million (`put_loc2` once a turn), and its time is the same within its range of 1.05 to 1.11. What binds its 77 cycles a turn is not found. [The polls](#the-c-engine-after-the-property-layer-cut-and-the-polls) blamed these forwards for it, which this shows wrong.
+- **The combinations that were not kept**, 8 positions (or 4) on the scripts above, the geometric mean of 37 scripts at 4 positions against main: the feature on all files, the libc's included, 0.952, with `r_shiki_regexp` 1.033 (8 of 8) and 29 SSE moves left in `JS_CallInternal`. The feature on all files but the libc, 0.963, `r_shiki_regexp` 1.029. The feature on `quickjs.c` alone, `r_shiki_regexp` 1.028. With the vectorizer off, on `quickjs.c` alone or on every file but the libc, `r_shiki_regexp` is 0.992 to 1.004. The vectorizer off without the feature leaves 201 SSE moves and was timed on `q_int_arith` only (608 ms against 601).
+- **Cycles were not counted.** The trace counts loads, and the VM does not expose the PMU (`perf stat` has no cycles), so what the 1.25 million loads of the render cost in cycles is not known. The time of `q_prop_write` says what they cost where nothing else runs: half of it.
+- **What still fails**: in `c_string_concat` 112,740 loads of 4 bytes in `memcpy` over bytes the string code wrote one at a time, and in a render 12,315 loads of 4 bytes of `JS_NewObjectFromShape` over two stores of 2 bytes. Neither holds a JSValue.
+- **Spread of `q_int_arith`**: a process runs it at about 510 to 550 ms or at about 590 to 640, and the VMs of one process (each run is a new VM) range 512 to 660 ms. With address randomization off none of 16 processes ran fast, against 4 of 16 with it on, for main, so the addresses the kernel hands out count. A build with the change has the fast mode too (1 of 12 processes), so it is not the change. The cause is not found.
+
 
 ## Intl formatting
 
@@ -285,6 +323,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **A table of shape steps for new keys**: `add_property` looks for the shape an object goes to in the shape hash table, and that lookup misses the cache often (2.4% of the instructions of a render of the shop, 7.7% of its cache misses). A table of 1024 steps per runtime, from a shape and a key to the next shape, holding both, cut 0.8% of the instructions on the shop and the MUI pages, but the shop took 1.008 of the time and the MUI pages 1.019 (6 rounds, 3 layouts): the shapes it holds alive (2718 to 3504 on an MUI page) add 28 KB to 142 KB per VM and change when the cycle collector runs.
 - **Fast arrays in `every`, `some`, `forEach`, `map` and `filter`**, without asking `JS_TryGetPropertyInt64` for each element: `js_array_every`, which runs all five, spends 0.67 s of its own outside the callbacks in a profile of 85.6 s of the ten store pages of tifa's example shop, `JS_TryGetPropertyInt64` 0.19 s of it. A fast path would save at most about 0.5% of a store render, which the layout of the code hides. `find`, `findIndex` and `includes` already read fast arrays directly.
 - **One libc allocator per VM**, to avoid its global lock: with 8 VMs on Linux the lock costs 0.4% to 0.9% of the CPU, and since v0.26.15 10 VMs on an Apple M4 wait on locks for about 0.7% of their time.
+- **`+slow-unaligned-mem-16` on every file, or with the SLP vectorizer on** (C engine): the libc gets 8-byte moves in its `memcpy`, and with the vectorizer on `r_shiki_regexp` took 1.028 to 1.033 of the time and 29 SSE moves stayed in `JS_CallInternal`. Only `quickjs.c` gets it, with the vectorizer off ([numbers](#the-c-engine-copies-a-jsvalue-in-two-moves-of-8-bytes)).
 - **Waiting for Go 1.28**: a development build made the unchanged engine 5% faster on amd64 and 2% on arm64, but the rewritten engine 5% to 6.5% slower on amd64, for a reason not found. The rewrites still win there by 4.2% on amd64 and 15.5% on arm64.
 - **Dropping function source from the bytecode** (`JS_SetStripInfo`) to save VM memory: seroval, which tifa's pages use, reads the source of its own helpers with `toString` and writes it into pages, so the browser would break.
 - **Removing the store of the bytecode position on arm64**: the up to 11.6% of the interpreter's own time it seemed to take is where the sampler puts the wait for the next opcode. The store is Go saving the local `pc` for the calls that read it back, on the path every opcode takes. Only moving the instructions put the samples on the opcode load instead (8.8% down to 0.4%), with the same instruction count, cycles and render time.
