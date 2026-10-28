@@ -1868,6 +1868,8 @@ static uint64_t fnv_word(uint64_t h, uint32_t v)
     return h;
 }
 
+static const volatile int no_stop = 0;
+
 static void *unicode_realloc(void *opaque, void *ptr, size_t size)
 {
     (void)opaque;
@@ -2271,7 +2273,7 @@ static void test_unicode_tables(void)
         conv = fnv_word(conv, lre_canonicalize(c, 0));
         conv = fnv_word(conv, lre_canonicalize(c, 1));
         for (t = UNICODE_NFC; t <= UNICODE_NFKD; t++) {
-            len = unicode_normalize(&dst, &c, 1, t, NULL, unicode_realloc);
+            len = unicode_normalize(&dst, &c, 1, t, NULL, unicode_realloc, &no_stop);
             CHECK(len >= 0, "normalize U+%04X", c);
             if (len < 0)
                 return;

@@ -46365,6 +46365,8 @@ static JSValue js_array_fill(JSContext *ctx, JSValueConst this_val,
 
     /* XXX: should special case fast arrays */
     while (start < end) {
+        if ((start & 4095) == 0 && js_poll_interrupts(ctx))
+            goto exception;
         if (JS_SetPropertyInt64(ctx, obj, start,
                                 JS_DupValue(ctx, argv[0])) < 0)
             goto exception;
@@ -46645,6 +46647,8 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
     string_buffer_init(ctx, b, 0);
 
     for(i = 0; i < n; i++) {
+        if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto fail;
         if (i > 0) {
             if (c >= 0) {
                 string_buffer_putc8(b, c);
@@ -50872,6 +50876,8 @@ static JSValue JS_NewUTF32String(JSContext *ctx, const uint32_t *buf, int len)
     for(i = 0; i < len; i++) {
         if (string_buffer_putc(b, buf[i]))
             goto fail;
+        if ((i & 4095) == 4095 && js_poll_interrupts(ctx))
+            goto fail;
     }
     return string_buffer_end(b);
  fail:
@@ -50890,8 +50896,11 @@ static int js_string_normalize1(JSContext *ctx, uint32_t **pout_buf,
     if (buf_len < 0)
         return -1;
     out_len = unicode_normalize(&out_buf, buf, buf_len, n_type,
-                                ctx->rt, js_dbuf_realloc_rt);
+                                ctx->rt, js_dbuf_realloc_rt,
+                                &ctx->rt->interrupt_flag);
     js_free(ctx, buf);
+    if (out_len == -2)
+        __js_poll_interrupts(ctx);
     if (out_len < 0)
         return -1;
     *pout_buf = out_buf;
@@ -52933,6 +52942,10 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     str_buf = str->u.str8;
     next_src_pos = 0;
     for (;;) {
+        /* a global replace of a long string makes a match for every few
+           characters, none of which reads the flag by itself */
+        if (js_poll_interrupts(ctx))
+            goto fail;
         if (last_index > str->len) {
             ret = 0;
         } else {
