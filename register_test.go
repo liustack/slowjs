@@ -71,14 +71,6 @@ func (b *lockedBuffer) String() string {
 	return b.b.String()
 }
 
-// registeredMagics returns how many Go functions are registered in the
-// process.
-func registeredMagics() int {
-	goFuncsMu.Lock()
-	defer goFuncsMu.Unlock()
-	return len(goFuncs)
-}
-
 // testRegisterExistingName is the body of TestRegisterExistingName, run in
 // process by TestMemgrind2, so it must create and Close its own VMs.
 func testRegisterExistingName(t *testing.T) {
@@ -139,7 +131,7 @@ func testRegisterExistingName(t *testing.T) {
 		{"f", `typeof f() === 'number' ? 'kept' : 'lost'`},
 	} {
 		before := eval(test.js)
-		n := registeredMagics()
+		n := heldFuncs(m)
 		for _, host := range []bool{false, true} {
 			if host {
 				err = m.RegisterHostFunc(test.name, func([]any) (any, error) { return 2, nil })
@@ -150,7 +142,7 @@ func testRegisterExistingName(t *testing.T) {
 				t.Errorf("registering %q (host %v): got error %v, want one saying it is not configurable", test.name, host, err)
 			}
 		}
-		if g := registeredMagics(); g != n {
+		if g := heldFuncs(m); g != n {
 			t.Errorf("registering %q failed and left %d Go functions registered, want %d", test.name, g, n)
 		}
 		if g := eval(test.js); g != before {
@@ -162,11 +154,11 @@ func testRegisterExistingName(t *testing.T) {
 	// different Go string that becomes the same javascript name.
 	alreadyRegistered := func(name string) {
 		t.Helper()
-		n := registeredMagics()
+		n := heldFuncs(m)
 		if err := m.RegisterFunc(name, func() int { return 3 }, false); err == nil || !strings.Contains(err.Error(), "func already registered") {
 			t.Errorf("RegisterFunc(%q) again: got error %v, want func already registered", name, err)
 		}
-		if g := registeredMagics(); g != n {
+		if g := heldFuncs(m); g != n {
 			t.Errorf("registering %q failed and left %d Go functions registered, want %d", name, g, n)
 		}
 	}
@@ -204,11 +196,11 @@ func testRegisterExistingName(t *testing.T) {
 
 	// A global object that takes no new properties.
 	eval(`Object.preventExtensions(globalThis)`)
-	n := registeredMagics()
+	n := heldFuncs(m)
 	if err := m.RegisterFunc("fresh", func() int { return 2 }, false); err == nil {
 		t.Errorf("RegisterFunc on a global object that is not extensible: no error")
 	}
-	if g := registeredMagics(); g != n {
+	if g := heldFuncs(m); g != n {
 		t.Errorf("registering on a global object that is not extensible left %d Go functions registered, want %d", g, n)
 	}
 	if g, e := eval(`typeof fresh`), "undefined"; g != e {

@@ -81,3 +81,9 @@ func freeBlocks(m *VM, blocks []uintptr) {
 		m.outer(func() { cengine.FreeRT(m.sp, m.rt, p) })
 	}
 }
+
+// heldFuncs returns how many Go functions of RegisterFunc and Then the host
+// of m holds for it, until the engine releases them or m closes.
+func heldFuncs(m *VM) int {
+	return m.h.Handles()
+}

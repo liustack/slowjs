@@ -2,17 +2,17 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !slowjs_cengine
-
 package slowjs
 
 import (
 	"fmt"
+	"reflect"
 )
 
 // Then attaches fulfillment and rejection handlers to the Promise v,
 // returning the new promise for chaining. Either onFulfilled or onRejected
-// may be nil.
+// may be nil. A handler is held until the engine frees the function that
+// calls it, also when it never runs, or until the VM closes.
 func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	if v.vm == nil {
 		return Value{}, fmt.Errorf("cannot call Then on a Value not associated with a VM")
@@ -22,34 +22,23 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	fns := [2]func(Value){onFulfilled, onRejected}
 	names := [2]string{"onFulfilled", "onRejected"}
 
+	// A nil handler stays undefined, which freeing leaves alone.
 	jsArgs := []jsValue{undefined, undefined}
-
-	// magics[i] >= 0 marks a slot for which we created a callback and so own a
-	// reference to jsArgs[i]; -1 means a nil handler or a slot whose callback
-	// was never created (e.g. newCallback failed on the other slot).
-	magics := [2]int32{-1, -1}
-
 	defer func() {
-		for i := range jsArgs {
-			if magics[i] < 0 {
-				continue
-			}
-			m.jsFreeValue(jsArgs[i])
+		for _, f := range jsArgs {
+			m.jsFreeValue(f)
 		}
 	}()
 
 	for i, fn := range fns {
 		if fn == nil {
-			jsArgs[i] = undefined
-			magics[i] = -1
 			continue
 		}
-		jsFn, magic, err := m.newCallback(names[i], fn)
+		jsFn, err := m.newCallback(names[i], fn)
 		if err != nil {
 			return Value{}, err
 		}
 		jsArgs[i] = jsFn
-		magics[i] = magic
 	}
 
 	// Re-arm the eval-timeout deadline, as the Eval*/Call entry points do:
@@ -72,4 +61,17 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	}
 
 	return Value{vm: m, v: result}, nil
+}
+
+// callbackFunc is the Go function of a handler fn of Then, which takes one
+// Value.
+func callbackFunc(m *VM, name string, fn func(Value)) *goFunc {
+	return &goFunc{
+		f:       reflect.ValueOf(fn),
+		maxArgs: 1,
+		minArgs: 1,
+		name:    name,
+		vm:      m,
+		in:      []reflect.Type{rvt},
+	}
 }
