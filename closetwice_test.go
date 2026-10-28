@@ -18,6 +18,7 @@ func TestCloseTwice(t *testing.T) {
 	if err := m.RegisterFunc("twice", func() int { return 1 }, false); err != nil {
 		t.Fatal(err)
 	}
+	oldID := m.id
 	ran := 0
 	m.OnClose(func() { ran++ })
 	if _, err := m.Eval(`twice()`, EvalGlobal); err != nil {
@@ -38,11 +39,19 @@ func TestCloseTwice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
+	if other.id != oldID {
+		t.Fatalf("the new VM has id %d, not the %d of the closed one", other.id, oldID)
+	}
+	// A Builtin finds its VM by id in vms: it fails if Close again took the
+	// entry of the new VM out.
+	defineBuiltin(t, other, "answer", NewBuiltin("answer", 0, func(a Args) (Value, error) {
+		return a.VM().NewInt(42), nil
+	}))
 	if err := m.Close(); err != nil {
 		t.Fatalf("Close after another VM was made: %v", err)
 	}
-	v, err := other.Eval(`1 + 1`, EvalGlobal)
-	if err != nil || v != int64(2) && v != 2 {
+	v, err := other.Eval(`answer()`, EvalGlobal)
+	if err != nil || v != int64(42) && v != 42 {
 		t.Fatalf("the other VM gives %v, %v", v, err)
 	}
 }

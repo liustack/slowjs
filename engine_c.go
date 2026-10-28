@@ -273,7 +273,19 @@ func forgetVM(id uint32) {}
 // and clears m.vmState. The id of m leaves vms before the host takes it back
 // (cvm.Close), also when a panic leaves first: another goroutine may get it
 // for a new VM from then on.
-func (m *VM) closeEngine() error {
+func (m *VM) closeEngine() (err error) {
+	cvm := m.cvm
+	done := false
+	defer func() {
+		// Interrupt keeps the host: it must not keep what the clock holds.
+		m.h.SetClock(nil)
+		m.vmState = vmState{}
+		if !done || err != nil {
+			// The OS refused some memory, or a panic left first: cvm stays
+			// for closeEngineAgain to free what is left.
+			m.cvm = cvm
+		}
+	}()
 	func() {
 		defer vms.Delete(m.id)
 		if !m.h.Broken() && m.entered == 0 {
@@ -281,11 +293,22 @@ func (m *VM) closeEngine() error {
 			m.jsSetAsyncContext(undefined)
 		}
 	}()
-	_, err := m.cvm.Close()
-	// Interrupt keeps the host: it must not keep what the clock holds.
-	m.h.SetClock(nil)
-	m.vmState = vmState{}
+	_, err = cvm.Close()
+	done = true
 	return err
+}
+
+// closeEngineAgain frees what the OS refused to unmap in the Close before, and
+// does nothing when that Close freed all.
+func (m *VM) closeEngineAgain() error {
+	if m.cvm == nil {
+		return nil
+	}
+	if _, err := m.cvm.Close(); err != nil {
+		return err
+	}
+	m.cvm = nil
+	return nil
 }
 
 // The functions of the engine. Each is the C function of the name, JS_ for

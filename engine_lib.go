@@ -292,6 +292,10 @@ func (m *VM) closeEngine() error {
 	return r.close()
 }
 
+// closeEngineAgain does nothing: closeEngine frees all of the engine, and a
+// runtime has nothing the OS can refuse.
+func (m *VM) closeEngineAgain() error { return nil }
+
 // The functions of the engine. Each is the C function of the name, JS_ for
 // js, on the runtime or the context of the VM.
 
