@@ -32,6 +32,18 @@ func sysFree(addr uintptr) error {
 	return windows.VirtualFree(addr, 0, windows.MEM_RELEASE)
 }
 
+func sysProtect(addr, size uintptr, prot uint32) error {
+	if err := faulted("protect", addr, size); err != nil {
+		return err
+	}
+	var old uint32
+	return windows.VirtualProtect(addr, size, prot, &old)
+}
+
+func osProtectRead(addr, size uintptr) error {
+	return sysProtect(addr, size, windows.PAGE_READONLY)
+}
+
 // osMap reserves and commits in one step. The engine never needs a chunk to
 // grow in place, so nothing is gained by reserving more than it commits.
 func osMap(size uintptr) (uintptr, error) {

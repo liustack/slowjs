@@ -24,7 +24,8 @@
 //
 // None of these runs javascript or calls into the engine. A Memory is used by
 // one goroutine at a time, as its VM is, and needs no lock. Nothing is shared
-// between Memories but the page size.
+// between Memories but the page size. Apart from them, MapReadOnly maps bytes
+// that several VMs read at once (readonly.go).
 //
 // The errors are what the OS refused, with what was asked, and three more:
 //

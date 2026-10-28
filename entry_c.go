@@ -51,8 +51,11 @@ func (m *VM) Interrupt() {
 // called it (called, gohost). A panic of a Go function called from
 // javascript (repanic) went up through no frame of the engine and leaves the
 // VM as it is.
-func (m *VM) enter() {
+func (m *VM) enter() error {
 	if m.h.Broken() {
+		if m.h.Killed() {
+			return errKilledVM
+		}
 		panic(brokenPanic)
 	}
 	if m.entered == 0 && m.sp != m.start {
@@ -61,6 +64,16 @@ func (m *VM) enter() {
 	m.h.EnterScript(m.timeout)
 	m.entered++
 	m.depth++
+	return nil
+}
+
+// usable returns the error of a method on a VM that a kill left good only
+// for Close.
+func (m *VM) usable() error {
+	if m.h.Killed() {
+		return errKilledVM
+	}
+	return nil
 }
 
 func (m *VM) leave(err *error) {
@@ -87,7 +100,7 @@ func (m *VM) leave(err *error) {
 
 // killedError is the error of a call whose script a poll killed.
 func killedError() *Error {
-	return &Error{engine: true, raw: "InternalError: interrupted", Name: "InternalError", Message: "interrupted",
+	return &Error{engine: true, killed: true, raw: "InternalError: interrupted", Name: "InternalError", Message: "interrupted",
 		Uncatchable: true, Interrupted: true}
 }
 

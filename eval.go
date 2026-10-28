@@ -30,7 +30,9 @@ const (
 //	object                  *Object                                 nil
 //	any other type          Unsupported                             nil
 func (m *VM) Eval(javascript string, flags int) (r any, err error) {
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	v, err := m.jsEval(javascript, int32(flags))
 	if err != nil {
@@ -53,7 +55,9 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 	// (Promise reactions and async continuations), so without this the whole drain
 	// inherits a stale deadline from the last Eval — one that has kept
 	// ticking through idle time — and is spuriously interrupted.
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 
 	const maxJobs = 1 << 20 // bound a self-feeding microtask loop so it cannot hang the host
@@ -90,7 +94,9 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error) {
 	defer obj.Free()
 
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
 	if err != nil {
@@ -111,7 +117,9 @@ func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	v, err := m.jsEval(javascript, int32(flags))
 	if err != nil {
@@ -131,7 +139,9 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, err error) {
 	defer obj.Free()
 
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
 	if err != nil {
@@ -172,6 +182,9 @@ func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
 	obj, err := m.jsReadObject(bytecode, readObjBytecode)
 	if err != nil {
@@ -187,7 +200,9 @@ func (m *VM) evalBytecode(obj jsValue) (r Value, err error) {
 		return r, m.errFromException()
 	}
 
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 
 	var v jsValue
@@ -317,7 +332,9 @@ func (m *VM) writeBytecode(v jsValue) ([]byte, error) {
 }
 
 func (m *VM) eval(js string, flags int) (r jsValue, err error) {
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	v, err := m.jsEval(js, int32(flags))
 	if err != nil {

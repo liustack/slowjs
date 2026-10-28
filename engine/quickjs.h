@@ -1117,6 +1117,11 @@ void JS_SetModuleLoaderFunc2(JSRuntime *rt,
 JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m);
 JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m);
 JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m);
+/* Frees the function of the top level of m once m has run to its end without
+   an exception, with the code of the top level and the variables that neither
+   an export nor a function of m holds. It does nothing to a module that has
+   not run, still runs (a top-level await) or threw. */
+void JS_FreeModuleTopLevel(JSContext *ctx, JSModuleDef *m);
 
 /* JS Job support */
 
@@ -1208,6 +1213,13 @@ JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
    more: a negative one throws a RangeError. */
 JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
                            int length, int32_t id);
+/* JS_NewHostFunction of a function that holds the handle id of the host:
+   when the engine frees the function, at the drop of its last reference, in
+   a collection or when the runtime is freed, it calls host_release(vm, id)
+   (see host.h), once. When it returns the exception it made no function and
+   calls nothing: the handle stays the host's. */
+JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_len,
+                                  int length, int32_t id);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func, const char *name,
                                       int length)

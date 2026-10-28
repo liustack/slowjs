@@ -59,7 +59,9 @@ Release: v0.26.7.
 
 `*Error` says whether the call ended with an exception no script could catch, and why, so that an embedder need not compare names and messages, which a script can copy. `Uncatchable` is true when the VM ran out of memory (`OutOfMemory`, also when the engine could not build the error and threw `null`), when `Interrupt` or the eval timeout stopped the script (`Interrupted`), and when a Go function that javascript called panicked (neither of the two). The same holds for the error a Go function gets from javascript it evaluates. What a script throws is never uncatchable, even `new InternalError('interrupted')` or `{name: 'InternalError', message: 'out of memory'}`, which used to look exactly like the real thing. Taking an uncatchable error runs no page code: `Name` is `InternalError`, `Message` and `Stack` are the error's own properties, and `Error()` is `InternalError: <message>`. It used to call an `Error.prototype.toString` or a `name` getter that page code installed, which could rewrite the message. An interrupt that runs out of memory building its error counts as `OutOfMemory`.
 
-Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`.
+On the C engine (`-tags slowjs_cengine`) a script that runs on 50 ms past its eval timeout or an `Interrupt`, in a Go function it called for example, is killed. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. A pool replaces such a VM. The engine of lib never kills.
+
+Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_c_test.go` on the C engine.
 
 ## RegisterFunc no longer aborts on an existing name
 

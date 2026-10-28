@@ -52,10 +52,19 @@ func (m *VM) NewString(s string) (r Value, err error) {
 
 // NewObjectValue returns a new Value representing '{}'.
 func (m *VM) NewObjectValue() (r Value, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	return Value{vm: m, v: m.jsNewObject()}, nil
 }
 
+// newString makes the string of NewString, and of the Go strings of the
+// other methods. It refuses a VM a kill left good only for Close here, not in
+// NewString, which stays small enough to inline (Builtins return strings).
 func (m *VM) newString(s string) (r jsValue, err error) {
+	if err := m.usable(); err != nil {
+		return r, err
+	}
 	if v, ok := m.newStringFast(s); ok {
 		return v, nil
 	}

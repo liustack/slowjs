@@ -411,6 +411,132 @@ static void test_host_function(void)
     vm_free(&v);
 }
 
+/* The handles test_host_release saw released, in order. */
+static struct {
+    uint32_t vm, handles[8];
+    int n;
+} released;
+
+static void test_release_call(uint32_t vm, uint32_t handle)
+{
+    released.vm = vm;
+    if (released.n < (int)countof(released.handles))
+        released.handles[released.n] = handle;
+    released.n++;
+}
+
+static JSValue new_release(JSContext *ctx, const char *name, int32_t id)
+{
+    JSValue f = JS_NewHostFunctionRelease(ctx, name, strlen(name), 1, id);
+
+    CHECK(!JS_IsException(f), "JS_NewHostFunctionRelease %s", name);
+    return f;
+}
+
+/* A function of JS_NewHostFunctionRelease is called as one of
+   JS_NewHostFunction, and the engine calls host_release with its id once,
+   when it frees the function: at the drop of its last reference, in the
+   collection of a cycle, and when the runtime is freed. One of
+   JS_NewHostFunction releases nothing. */
+static void test_host_release(void)
+{
+    VM v = vm_new();
+    JSValue g, f;
+
+    host_ctx = v.ctx;
+    host_function_call = test_host_call;
+    host_release_call = test_release_call;
+    memset(&released, 0, sizeof(released));
+    g = JS_GetGlobalObject(v.ctx);
+
+    f = new_release(v.ctx, "add", 1);
+    JS_SetPropertyStr(v.ctx, g, "add", f);
+    CHECK(eval_is(v.ctx, "add(2, 3) + ':' + add.name + ':' + add.length", "5:add:1"), "a released function calls");
+    CHECK(released.n == 0, "%d released while the function is held", released.n);
+    eval_ok(v.ctx, "delete globalThis.add");
+    CHECK(released.n == 1 && released.handles[0] == 1 && released.vm == host_vm_id(v.rt),
+          "deleting the last reference released %d handles (first %u, vm %u)", released.n, released.handles[0], released.vm);
+
+    /* a cycle goes in a collection */
+    JS_SetPropertyStr(v.ctx, g, "cyc", new_release(v.ctx, "cyc", 2));
+    eval_ok(v.ctx, "cyc.self = cyc; delete globalThis.cyc");
+    CHECK(released.n == 1, "a cycle released before the collection");
+    JS_RunGC(v.rt);
+    CHECK(released.n == 2 && released.handles[1] == 2, "the collection released %d handles", released.n);
+
+    /* a function of JS_NewHostFunction has nothing to release */
+    define_host(v.ctx, "plain", 0, 3);
+    eval_ok(v.ctx, "delete globalThis.plain");
+    JS_RunGC(v.rt);
+    CHECK(released.n == 2, "a function of JS_NewHostFunction released a handle");
+
+    /* the failure of a negative id makes nothing to release */
+    f = JS_NewHostFunctionRelease(v.ctx, "bad", 3, 0, -1);
+    CHECK(JS_IsException(f), "a negative id made a function");
+    free(exception_text(v.ctx));
+
+    /* held when the runtime goes, released then */
+    JS_SetPropertyStr(v.ctx, g, "kept", new_release(v.ctx, "kept", 0x7fffffff));
+    JS_FreeValue(v.ctx, g);
+    vm_free(&v);
+    CHECK(released.n == 3 && released.handles[2] == 0x7fffffff, "freeing the runtime released %d handles", released.n);
+    host_function_call = NULL;
+    host_release_call = NULL;
+}
+
+/* JS_FreeModuleTopLevel frees the top-level function of a module that has
+   run, and with it a variable of the top level that no function of the module
+   uses, while the variables its functions and exports use stay. It does
+   nothing to a module that has not run, or that threw. */
+static void test_module_top_level(void)
+{
+    static const char *srcs[] = {
+        "const big = new Uint8Array(4 << 20).fill(1); let kept = big[0] + 1;\n"
+        "export let seen = 7;\nglobalThis.get = () => kept++\n",
+        "const big = new Uint8Array(4 << 20).fill(1); let kept = big[0] + 1;\nawait null;\n"
+        "export let seen = 7;\nglobalThis.get = () => kept++\n",
+    };
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        VM v = vm_new();
+        JSValue mod = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "<top>", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        JSModuleDef *m;
+        JSValue p;
+        JSMemoryUsage before, after;
+
+        CHECK(JS_VALUE_GET_TAG(mod) == JS_TAG_MODULE, "the module did not compile");
+        m = JS_VALUE_GET_PTR(mod);
+        /* not run yet: nothing to free */
+        JS_FreeModuleTopLevel(v.ctx, m);
+        p = JS_EvalFunction(v.ctx, JS_DupValue(v.ctx, mod));
+        CHECK(!JS_IsException(p), "the module threw");
+        if (i == 1) {
+            /* the top level waits at its await: still running */
+            JS_FreeModuleTopLevel(v.ctx, m);
+        }
+        while (JS_ExecutePendingJob(v.rt, NULL) > 0)
+            ;
+        CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_FULFILLED, "module %d did not run to its end", i);
+        JS_FreeValue(v.ctx, p);
+        before = usage(&v);
+        JS_FreeModuleTopLevel(v.ctx, m);
+        after = usage(&v);
+        CHECK(before.memory_used_size - after.memory_used_size >= 4 << 20,
+              "module %d: freeing the top level gave back %lld bytes", i,
+              (long long)(before.memory_used_size - after.memory_used_size));
+        CHECK(eval_is(v.ctx, "get() + get()", "5"), "module %d: the variable of a function", i);
+        /* again does nothing */
+        JS_FreeModuleTopLevel(v.ctx, m);
+        p = JS_GetModuleNamespace(v.ctx, m);
+        CHECK(!JS_IsException(p), "module %d: no namespace", i);
+        JS_FreeValue(v.ctx, p);
+        CHECK(eval_is(v.ctx, "get()", "4"), "module %d: the variable after the namespace", i);
+        JS_FreeValue(v.ctx, mod);
+        vm_free(&v);
+    }
+}
+
 /* JS_NewStringChars gives a string whose characters the host writes where
    JS_HOST_LAYOUT_* says, and the layout is that of the strings the engine
    makes. */
@@ -548,6 +674,8 @@ int main(void)
     test_proxy_own_property();
     test_json_bytes();
     test_host_function();
+    test_host_release();
+    test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();
     if (failures) {

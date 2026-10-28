@@ -888,16 +888,14 @@ func (m *VM) jsReadObject(bytecode []byte, flags int32) (r jsValue, err error) {
 	return r, nil
 }
 
-// jsReadShared is JS_ReadObject of the bytes of b. The engine reads a copy
-// of them in the VM's memory, and the functions keep their own source and
-// line tables (JS_READ_OBJ_SHARED_DEBUG is left out): no memory outside the
-// VM is shared yet.
-func (m *VM) jsReadShared(b *SharedBytecode, flags int32) jsValue {
-	r, err := m.jsReadObject(unsafe.Slice((*byte)(addr(b.p)), b.n), flags&^readObjSharedDebug)
-	if err != nil {
-		return m.jsThrowOutOfMemory()
+// jsReadShared is JS_ReadObject of the bytes of b, which stay where they
+// are: with JS_READ_OBJ_SHARED_DEBUG the functions point into them.
+func (m *VM) jsReadShared(b *SharedBytecode, flags int32) (r jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsReadShared(b, flags) })
+		return r
 	}
-	return r
+	return val(cengine.JS_ReadObject(m.sp, m.ctx, b.p, uintptr(b.n), uintptr(flags)))
 }
 
 // jsWriteObject returns the bytecode of the compiled script v, and false
@@ -917,10 +915,15 @@ func (m *VM) jsWriteObject(v jsValue) (b []byte, ok bool) {
 	return b, true
 }
 
-// freeTopLevel would free the function of a module that has run (see
-// engine_lib.go): the engine has no way to yet, so the module keeps it until
-// the VM closes.
-func (m *VM) freeTopLevel(mod jsValue) {}
+// freeTopLevel frees the function of the module mod, which has run to its
+// end (see engine_lib.go), with JS_FreeModuleTopLevel.
+func (m *VM) freeTopLevel(mod jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { m.freeTopLevel(mod) })
+		return
+	}
+	cengine.JS_FreeModuleTopLevel(m.sp, m.ctx, mod.u)
+}
 
 func (m *VM) jsNewPromiseCapability() (promise, resolve, reject jsValue, err error) {
 	if m.entered == 0 {
