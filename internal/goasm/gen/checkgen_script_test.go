@@ -120,6 +120,16 @@ func TestCheckGenScript(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "engine_negative.go"},
+		"index holds an old version": {func(t *testing.T) {
+			// Staged as it was, regenerated in the folder only.
+			if err := os.WriteFile(cengine("engine_keep_arm64.go"), []byte(checkGenMarker+"older\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, dir, "add", "internal/cengine/engine_keep_arm64.go")
+			if err := os.WriteFile(cengine("engine_keep_arm64.go"), []byte(checkGenMarker+"body arm64\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "engine_keep_arm64.go is not what the generator makes in the index"},
 		"a name no rule lists": {func(t *testing.T) {
 			if err := os.WriteFile(cengine("quickjs_3.s"), []byte(checkGenMarker+"old\n"), 0o644); err != nil {
 				t.Fatal(err)

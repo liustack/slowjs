@@ -12,11 +12,14 @@
 # A change to the C of engine/ or to the generator goes in with the files this
 # check wants: make gen and make gen ARCH=arm64, then commit them with it.
 #
-# "Checked in" is what git holds (git ls-files), not what the folder holds: a
-# file that is ignored or not added is not checked in. The generated files of
-# the folder are found by the header the generator writes (Code generated ...
-# DO NOT EDIT.), not by their names, so one the generator no longer makes (the
-# names it had before the files took an architecture) is a file too many.
+# "Checked in" is what git holds, not what the folder holds: the bytes of a file
+# are those of the index (git show :path), so the files have to be git added
+# after make gen and before this check, and a file that is ignored or not added
+# is not checked in. The folder has to be the same bytes, so what is built and
+# tested is what is committed. The generated files of the folder are found by
+# the header the generator writes (Code generated ... DO NOT EDIT.), not by
+# their names, so one the generator no longer makes (the names it had before
+# the files took an architecture) is a file too many.
 #
 # Environment: LLVM_BIN, GEN_JOBS as for gen-engine.sh.
 set -eu
@@ -44,6 +47,9 @@ for arch in amd64 arm64; do
 			bad=1
 		elif ! cmp -s "$tmp/$arch/$f" "$dir/$f"; then
 			echo "check-gen: $dir/$f is not what the generator makes now" >&2
+			bad=1
+		elif ! git show ":$dir/$f" 2>/dev/null | cmp -s - "$tmp/$arch/$f"; then
+			echo "check-gen: $dir/$f is not what the generator makes in the index: git add it" >&2
 			bad=1
 		fi
 	done < "$tmp/$arch.made"
