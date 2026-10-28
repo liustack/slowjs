@@ -1690,6 +1690,58 @@ static const char *const compile_alloc_scripts[] = {
     "var {x: {y}, z: [w]} = {x: {y: 1}, z: [2]}; ({p: [q]} = {p: [3]}); var q; y + w + q",
     /* parentheses and templates the lookahead reads through */
     "var o = {a: 1}; var t = (o.a, (o.a + 1) * 2, [o.a, (o)]); `x${(1, 2)}y${`z${(3)}`}` + (1) + t.length",
+    /* class fields: the function that sets them, computed keys, static blocks */
+    "class A { a = 1; ['b' + 1] = 2; static c = 3; static { A.d = 4 } #e = 5; e() { return this.#e } }; const o = new A(); o.a + o.b1 + A.c + A.d + o.e()",
+    /* private methods, accessors and static ones, with a brand check */
+    "class A { #m() { return 1 } get #g() { return 2 } set #g(v) {} static #s() { return 3 } static t(o) { return #m in o } u() { return this.#m() + this.#g + A.#s() } }; new A().u() + A.t(new A())",
+    /* derived class with fields, an arrow in the constructor and super */
+    "class B { constructor(x) { this.x = x } } class A extends B { f = () => this.x; constructor(a = 1, ...r) { super(a); this.r = r } }; new A(2, 3).f() + new A(4).r.length",
+    /* a class with only static fields, one with only a brand, an empty one */
+    "class A { static a = 1; static b = A.a + 1 } class B { #p = 1; static has(o) { return #p in o } } class C {} A.b + B.has(new B()) + typeof C",
+    /* arrow functions: parameters that need a lookahead to tell from parens */
+    "const f = (a, b = (1, 2), {c, d = 3} = {}, [e, ...g] = [5]) => a + b + c + d + e + g.length; const h = async (x) => await x; (a => a)(1) + f(1, undefined, {c: 4}) + ((x, y) => x * y)(2, 3)",
+    "var v = 1; (v, (v), ((v))); ((a, b) => (a, b))(1, 2) + (typeof (() => {}))",
+    /* templates, tagged and nested, with escapes (and a bad escape in a tag) */
+    "const t = (s, ...v) => s.raw.length + v.length; `a${`b${1 + 1}c`}d` + t`x\\n${1}y${2}z` + `\\u{41}${'q'}`",
+    "const t = (s, ...v) => String(s[0]) + s.raw[0] + v.length; t`\\unicode and \\xerxes ${1} \\u{110000}`",
+    /* destructuring with defaults in every place */
+    "var {a = 1, b: {c = 2, ...d} = {}, ...e} = {z: 1}; var [f = 3, [g = 4] = [], ...h] = []; function k({p = 5} = {}, [q = 6] = []) { return p + q } let l, m; ({l = 7, m = 8} = {}); a + c + f + g + k() + l + m + Object.keys(e).length",
+    "var a, b, c; [a, [b = 2], ...c] = [1, [], 3, 4]; ({x: a, y: [b], ...c} = {x: 1, y: [2], z: 3}); for ([a, b] of [[1, 2]]) ; for ({a, b} of [{a: 1, b: 2}]) ; for (var {x, y = 2} of [{x: 1}]) ; a + b + x + y",
+    "function f({a, b} = {}, [c, d] = [], ...[e, f]) { return a + b + c + d + e + f } const g = async ({a}, [b]) => a + b; f({a: 1, b: 2}, [3, 4], 5, 6)",
+    /* generators, async generators, for await and labels */
+    "async function* g() { yield 1; yield* [2, 3] } async function f() { let s = 0; outer: for await (const x of g()) { for (const y of [1, 2]) { if (y > 1) continue outer; s += x } } return s } f().then(v => globalThis.r = v); typeof g",
+    /* getters and setters, computed names, spread, optional chaining */
+    "const k = 'p'; const o = { get [k]() { return 1 }, set [k](v) {}, ['q' + 1]: 2, ...{r: 3}, m() { return super.toString }, async *n() {} }; o?.p + o.q1 + o.r + (o.zz?.[0] ?? 4) + (o.m?.() ? 1 : 0)",
+    /* switch, try/finally and closures that capture loop variables */
+    "var fs = []; for (let i = 0; i < 3; i++) { switch (i) { case 0: fs.push(() => i); break; default: try { fs.push(() => i * 2) } finally { i += 0 } } } fs.map(f => f()).join()",
+    /* eval and with, which keep variables by name */
+    "function f(s) { with ({w: 2}) { return eval(s) + w } } f('var u = 1; u + 1')",
+    /* let as a name, async as a name, yield and await as names */
+    "var let_ = 1; var async = (x) => x; async\n(1); var yield_ = function* () { var yield2 = yield 1 }; var o = { async, get: 1, set: 2, static: 3 }; async(2) + o.get",
+    /* new.target, super calls and properties, arguments, home objects */
+    "function F() { return new.target === F } class B { m() { return 1 } } class A extends B { m() { return super.m() + (() => super.m())() + arguments.length } static s() { return super.name } }; new F() instanceof F",
+    /* strict mode: directives, names that are checked, duplicate parameters */
+    "function f(a, b) { 'use strict'; var eval_ = 1; return (function g(c) { return c })(a + b) } (function () { 'use strict'; return [typeof f, this === undefined] })()",
+    /* catch with a pattern, optional catch, finally with a return, labels */
+    "function f() { try { throw {message: 'm', code: 1} } catch ({message, code = 2}) { try { throw 1 } catch { return message + code } finally { var z = 1 } } } a: b: for (;;) { break a } f()",
+    /* class heritage expression, computed members and arrows in fields */
+    "const mix = (B) => class extends B { ['x' + 1] = () => this; static ['y' + 2] = (a = 1) => a; get [Symbol.toStringTag]() { return 'M' } }; class A {} const M = mix(A); new M().x1() instanceof A",
+    /* spread in calls and arrays, comma, in operator in a for head, delete, void */
+    "var o = {a: 1}, arr = [1, 2]; for (var i = ('a' in o) ? 0 : 1, j = (1, 2); i < 1; i++) ; Math.max(...arr, ...[3], 4) + (delete o.a ? 1 : 0) + (void 0 === undefined) + [...arr, ...'ab'].length",
+    /* async arrows and methods with destructuring and defaults */
+    "const f = async ({a = 1, ...r} = {}, [b] = [2], c = async () => 3) => a + b + await c(); const o = { async m({x}) { return x }, async *g(a = 1) { yield a }, get v() { return 1 } }; f().then(() => {}); o.v",
+    /* try/finally with break, continue and return across loops and a switch */
+    "function f(n) { for (var i = 0; i < n; i++) { try { if (i == 1) continue; if (i == 3) break; switch (i) { case 2: return i; default: } } finally { n += 0 } } return -1 } f(5)",
+    /* getters and setters on classes with super, static blocks, new.target in arrows */
+    "class B { get a() { return 1 } set a(v) {} static m() { return 2 } } class A extends B { get a() { return super.a + 1 } set a(v) { super.a = v } static m() { return super.m() + (() => new.target)() } static { this.k = super.m() } }; new A().a + A.k",
+    /* nested functions that close over arguments, this, eval-free vars */
+    "function outer(a) { var x = arguments; return function () { return () => [a, x.length, this, new.target, arguments.length] } } outer(1, 2)()()",
+    /* object literals: shorthand, methods, __proto__, numeric and string keys */
+    "var a = 1, __proto__ = 2; var o = { a, b() {}, 1: 'n', 'c d': 3, [a + 1]: 4, __proto__: null, get 5() { return 5 }, set 'e'(v) {}, async f() {}, *g() {}, async *h() {} }; Object.keys(o).length",
+    /* very long expression and a long chain of calls and properties */
+    "var x = 1 + 2 * 3 - 4 / 2 % 3 << 1 >> 1 >>> 1 & 7 | 8 ^ 9; var y = x.toString().length.toFixed(1).split('').join('-').toUpperCase(); var z = x < 1 ? y : x > 2 ? 'a' : 'b'; (x && y || z) ?? x",
+    /* numbers, bigints, strings with escapes, comments, labels, exponent */
+    "var a = 0x1f + 0o7 + 0b11 + 1_000 + 1e3 + .5 + 5. + 08; var b = 10n ** 3n + 0xffn; var c = '\\x41\\u0042\\u{43}\\101\\\n' + \"\\0\"; /* c */ // d\nvar e = 2 ** 3 ** 2, f = (-2) ** 2; l: { break l } a + c.length + e + f + typeof b",
 };
 
 /* The modules of the sweep (compiled with MODE_MODULE): exports of every
@@ -1745,26 +1797,22 @@ static void test_compile_one_failure(int calls)
     for (j = 0; j < 300; j++)
         strcat(cases, "case 1: break; ");
     strcat(cases, "default: 3 }");
-    if (!calls) {
-        for (i = 0; i < countof(compile_scripts); i++)
-            scripts[k++].js = compile_scripts[i];
-        for (i = 0; i < countof(compile_fine_scripts); i++)
-            scripts[k++].js = compile_fine_scripts[i];
-    }
+    for (i = 0; i < countof(compile_scripts); i++)
+        scripts[k++].js = compile_scripts[i];
+    for (i = 0; i < countof(compile_fine_scripts); i++)
+        scripts[k++].js = compile_fine_scripts[i];
     for (i = 0; i < countof(compile_alloc_scripts); i++)
         scripts[k++].js = compile_alloc_scripts[i];
-    if (!calls) {
-        scripts[k++].js = big_scope;
-        scripts[k++].js = deep_scope;
-        scripts[k++].js = fields;
-        scripts[k++].js = cases;
-        /* Private methods and no fields: the code that adds the brand is made
-           and patched at the end of the class, with no token between. */
-        scripts[k++].js = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
-    }
+    scripts[k++].js = big_scope;
+    scripts[k++].js = deep_scope;
+    scripts[k++].js = fields;
+    scripts[k++].js = cases;
+    /* Private methods and no fields: the code that adds the brand is made
+       and patched at the end of the class, with no token between. */
+    scripts[k++].js = "class A { #m() { return 1 } y() { return this.#m() } }; new A().y()";
     for (i = 0; i < k; i++)
         scripts[i].mode = calls ? MODE_CALLS : 0;
-    for (i = 0; i < countof(compile_module_scripts) && !calls; i++) {
+    for (i = 0; i < countof(compile_module_scripts); i++) {
         scripts[k].js = compile_module_scripts[i];
         scripts[k++].mode = (calls ? MODE_CALLS : 0) | MODE_MODULE;
     }

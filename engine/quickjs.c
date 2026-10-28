@@ -27529,6 +27529,11 @@ static __exception int js_parse_template(JSParseState *s, int call, int *argc)
                syntax error if it contains invalid sequences
              */
             if (js_parse_string(s, '`', FALSE, p, &cooked, &p)) {
+                /* an invalid escape sequence makes the cooked string
+                   undefined and leaves no exception: one that is pending is
+                   out of memory */
+                if (JS_HasException(ctx))
+                    return -1;
                 cooked.u.str.str = JS_UNDEFINED;
             }
             if (JS_DefinePropertyValueUint32(ctx, template_object, depth,
@@ -28174,12 +28179,15 @@ static __exception int js_parse_class_default_ctor(JSParseState *s,
     emit_return(s, FALSE);
 
     s->cur_func = fd->parent;
+
+    /* the real object will be set at the end of the compilation. fd stays in
+       the list of the functions of its parent, which frees it */
+    idx = cpool_add(s, JS_NULL);
+    if (idx < 0)
+        return -1;
+    fd->parent_cpool_idx = idx;
     if (pfd)
         *pfd = fd;
-
-    /* the real object will be set at the end of the compilation */
-    idx = cpool_add(s, JS_NULL);
-    fd->parent_cpool_idx = idx;
 
     return 0;
 }
@@ -28277,7 +28285,7 @@ static __exception int emit_class_init_start(JSParseState *s,
     return 0;
 }
 
-static void emit_class_init_end(JSParseState *s, ClassFieldsDef *cf)
+static __exception int emit_class_init_end(JSParseState *s, ClassFieldsDef *cf)
 {
     int cpool_idx;
 
@@ -28286,10 +28294,13 @@ static void emit_class_init_end(JSParseState *s, ClassFieldsDef *cf)
     s->cur_func = s->cur_func->parent;
 
     cpool_idx = cpool_add(s, JS_NULL);
+    if (cpool_idx < 0)
+        return -1;
     cf->fields_init_fd->parent_cpool_idx = cpool_idx;
     emit_op(s, OP_fclosure);
     emit_u32(s, cpool_idx);
     emit_op(s, OP_set_home_object);
+    return 0;
 }
 
 
@@ -28736,7 +28747,8 @@ static __exception int js_parse_class(JSParseState *s, BOOL is_class_expr,
         if (var_idx < 0)
             goto fail;
         if (cf->fields_init_fd) {
-            emit_class_init_end(s, cf);
+            if (emit_class_init_end(s, cf))
+                goto fail;
         } else {
             emit_op(s, OP_undefined);
         }
@@ -28769,7 +28781,8 @@ static __exception int js_parse_class(JSParseState *s, BOOL is_class_expr,
     if (class_fields[1].fields_init_fd != NULL) {
         ClassFieldsDef *cf = &class_fields[1];
         emit_op(s, OP_dup);
-        emit_class_init_end(s, cf);
+        if (emit_class_init_end(s, cf))
+            goto fail;
         emit_op(s, OP_call_method);
         emit_u16(s, 0);
         emit_op(s, OP_drop);
@@ -29950,6 +29963,8 @@ static __exception int js_parse_postfix_expr1(JSParseState *s, int parse_flags)
             if (js_parse_regexp(s))
                 return -1;
             ret = emit_push_const(s, s->token.u.regexp.body, 0);
+            if (ret)
+                return -1;
             str = s->ctx->compile_regexp(s->ctx, s->token.u.regexp.body,
                                          s->token.u.regexp.flags);
             if (JS_IsException(str)) {
@@ -40515,6 +40530,8 @@ static __exception int js_parse_function_decl21(JSParseState *s,
                 } else {
                     /* unnamed arg for destructuring */
                     idx = add_arg(ctx, fd, JS_ATOM_NULL);
+                    if (idx < 0)
+                        goto fail;
                     emit_op(s, OP_get_arg);
                     emit_u16(s, idx);
                 }
@@ -40748,6 +40765,8 @@ static __exception int js_parse_function_decl21(JSParseState *s,
 
         /* the real object will be set at the end of the compilation */
         idx = cpool_add(s, JS_NULL);
+        if (idx < 0)
+            goto fail;
         fd->parent_cpool_idx = idx;
 
         if (is_expr) {
