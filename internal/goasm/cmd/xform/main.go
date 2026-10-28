@@ -22,7 +22,7 @@
 //	                       of function NAME, right after its PCALIGN, which
 //	                       run at each call. They move the code of that
 //	                       function only. Use 0, 8, 16 or 24 on the
-//	                       interpreter (JS_CallInternal in the C engine,
+//	                       interpreter (JS_CallInternal_block in the C engine,
 //	                       goasmRun in lib/goasm_run_linux_amd64.s).
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
 //	                       functions, or only the named): the linker then
@@ -33,7 +33,7 @@
 // Example, the position "moved 32 bytes, 16 NOP bytes in front of the
 // interpreter":
 //
-//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_CallInternal:16
+//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_CallInternal_block:16
 package main
 
 import (

@@ -731,6 +731,11 @@ go run ./cmd/compare -cpu 1 -sibling 5 -engines moejs -name 2026-10-21-v0.26.16-
 go run ./cmd/compare -name 2026-10-21-v0.26.16-gcp -merge results/2026-10-21-v0.26.16-gcp-moejs.json -merge-engines
 ```
 
+To time a change to this engine against the engine before it, not against
+other engines, use the tool in [testing.md](testing.md#developer-tools-generate-check-time):
+it builds both at several code positions and reads the result by the rule of
+[Code positions](performance.md#code-positions).
+
 To measure on another machine, build there or cross-build and copy `bin/`
 with it:
 
@@ -757,6 +762,11 @@ terms retained in each downloaded distribution:
 | QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
 | Node, Linux x64 binary | v24.11.1 | [MIT and third-party notices](https://github.com/nodejs/node/blob/v24.11.1/LICENSE), including V8 (BSD-3-Clause), OpenSSL (Apache-2.0) and ICU (Unicode) |
 | CMake, Linux x86_64 binary | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt), with third-party terms under `Licenses/` in the distribution |
+
+The two C QuickJS rows are built by the Makefile that ships with them, which
+defines no `NDEBUG`, so their `assert` calls run, while QuickJS-NG's CMake
+Release build defines `-DNDEBUG`. A row of C QuickJS built for speed adds
+`-DNDEBUG` to `DEFINES` in its Makefile. Say which one a table shows.
 
 The tifa pages and the native reference rows have a script of their own
 (Linux, CPU 1 and its sibling CPU 5):

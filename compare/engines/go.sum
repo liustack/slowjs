@@ -1,5 +1,5 @@
-github.com/Calcium-Ion/moejs v0.1.0-alpha.9 h1:WY1ebChegtafhPjHSQx3Q+gfnrjqYwHewHuO9k+v7e0=
-github.com/Calcium-Ion/moejs v0.1.0-alpha.9/go.mod h1:9YqHj36EV7pzV/vlEYSw49f3oggeJFdmqcjM9TmDpHs=
+github.com/MoeForge/moejs v0.1.0-alpha.11 h1:VVDuqn14Dzlhcs17gDp3X43uvKkxi7OK7SZvkd0moEc=
+github.com/MoeForge/moejs v0.1.0-alpha.11/go.mod h1:YG2Y3bZuThN7hkSBext9MHPUPSrAIdpiE+6v+QO+LX0=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/go-quickjs/go-intl v0.6.0 h1:d1BFuDOL7OPfyw9a+9Ubis3thsqrvr2xqBMqz+I4pqA=
