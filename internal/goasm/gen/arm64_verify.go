@@ -420,8 +420,10 @@ func (k *a64Checker) checkRodata() (int, error) {
 					return 0, fmt.Errorf("pointer at %d to %s, which is not in the binary", off, r.Sym)
 				}
 				want = uint64(int64(f.Value) + r.Add)
-			} else if r.Sym != RodataSym {
-				return 0, fmt.Errorf("pointer at %d to %s", off, r.Sym)
+			} else if r.Sym != "" {
+				// PlanData gives a pointer between data no symbol: its
+				// addend is the offset in engine_rodata.
+				return 0, fmt.Errorf("pointer at %d to %s, which is not engine_rodata", off, r.Sym)
 			}
 			if got := binary.LittleEndian.Uint64(blob[off:]); got != want {
 				return 0, fmt.Errorf("pointer at %d is %#x, want %#x (%s%+d)", off, got, want, r.Sym, r.Add)

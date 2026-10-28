@@ -112,3 +112,47 @@ func TestARM64StackLocal(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckARM64Rodata: engine_rodata in the binary holds the planned bytes,
+// a pointer into itself where the plan has one (a pointer between data,
+// which names no symbol) and the address of the function a pointer names.
+// The check takes it as made and refuses each change to it.
+func TestCheckARM64Rodata(t *testing.T) {
+	const rodata, gAt = 0x20000, 0x8000
+	plan := &DataPlan{Blob: make([]byte, 24), Relocs: []BlobReloc{
+		{Off: 8, Add: 4, Label: "data", LabelAdd: 4},
+		{Off: 16, Sym: "g", Func: true, Label: "g"},
+	}}
+	copy(plan.Blob, "engine!!")
+	made := func() []byte {
+		b := append([]byte(nil), plan.Blob...)
+		binary.LittleEndian.PutUint64(b[8:], rodata+4)
+		binary.LittleEndian.PutUint64(b[16:], gAt)
+		return b
+	}
+	check := func(b []byte) error {
+		sec := &elf.Section{SectionHeader: elf.SectionHeader{Type: elf.SHT_PROGBITS, Addr: rodata, Size: uint64(len(b))}}
+		bin := &binFile{f: &elf.File{Sections: []*elf.Section{sec}}, secs: map[*elf.Section][]byte{sec: b},
+			syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}, "p." + RodataGo: {Value: rodata, Size: uint64(len(b))}}}
+		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan}, bin: bin, rodata: rodata}
+		_, err := k.checkRodata()
+		return err
+	}
+	if err := check(made()); err != nil {
+		t.Fatalf("engine_rodata as made: %v", err)
+	}
+	for name, c := range map[string]struct {
+		at   int
+		want string
+	}{
+		"other byte":           {3, "byte 3"},
+		"data pointer moved":   {8, "pointer at 8"},
+		"function pointer off": {16, "pointer at 16"},
+	} {
+		b := made()
+		b[c.at]++
+		if err := check(b); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
