@@ -117,6 +117,19 @@ newest proposals (`import defer`, iterator chunking and joining, immutable
 ArrayBuffer). moejs fails the probes for Intl, `FinalizationRegistry`,
 iterator helpers, `RegExp.escape`, JSON modules and proper tail calls.
 
+Code highlighting is where engines split most. shiki 4.5.0 turns the
+TextMate grammars of bash, css, go, html, json, typescript and yaml into 552
+regexps, many with the `v` flag, lookbehind and named groups (they are in
+`lib/testdata/shiki`, and `TestRegexpShiki` checks all of them against
+Node). On every fifth of them, 111 regexps run over the code they were
+made for, both slowjs engines, go-quickjs v0.28.0 and moejs
+v0.1.0-alpha.9 give what Node gives for all 111. The others throw on or
+match differently for some of them: QuickJS at `19d6bd86` 31, QuickJS at
+`3d5e064e` (the commit slowjs's C engine comes from) 37, quickjs-ng at
+`7a23d8e3` 14, modernc.org/quickjs v0.25.0 37 and goant v0.2.1 31. On
+those engines a page that highlights code with shiki fails or comes out
+wrong.
+
 ## Speed
 
 CPU time per operation (user and system, all threads), in milliseconds,
