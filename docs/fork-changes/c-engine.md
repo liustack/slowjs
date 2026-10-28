@@ -10,6 +10,7 @@ read_when:
   - Changing where the generated code polls, where the C reads the interrupt flag, or how Interrupt stops a script
   - Choosing the size of the shadow stack, or asking what a deep recursion with big frames does when it fills the stack
   - Asking what happens to a render when the system refuses the VM memory
+  - Asking how much Go stack the engine can use, or what happens when it passes the Go limit
   - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout)
   - Changing how `+` and `+=` build strings in the C tree, or asking why a string has room past its end
   - Changing where the generator puts the body of a function, or reading a speed change of the C engine that may be where the interpreter landed
@@ -104,6 +105,12 @@ The property layer (properties, atoms, conversions, errors, string buffers, big 
 - **Two counts of the internal depth** (above): `JS_AutoInitProperty` and `js_define_own_property_ordinary`.
 
 The checks: `unit.c` (see [testing.md](../testing.md#the-c-tree-and-its-native-test-host)) and test262, whose 58 known errors stay the same.
+
+### Go stack room
+
+The generated code runs on the stack of the goroutine that calls it, and the Go runtime ends the whole process, with no panic to recover, when that stack passes its limit of 1 GB (the default on 64-bit targets). The two counts keep the engine far below it. At their largest settings (call depth 10000, internal depth 2000), one VM uses about 65 MB of Go stack, taken from the stack use per level measured on the generated code: a bit over 6% of the limit, and less with the defaults (call depth 5000). Many VMs called from inside each other on one goroutine share one stack, and the hand over of the depths above holds the chain to one limit, so that about 100 of them would be needed to reach 1 GB.
+
+This is a measurement and not a proof. The bound the design started from (5600 bytes for each call level and 4704 for each level of the internal depth, 62.4 MiB at the largest settings) was worked out for the engine before calls were inlined, and has not been worked out again for the code that is checked in. The proof, and a check of it by the generator, are to be redone after the switch to the new engine. Until then the room (15 times what a VM uses) is what holds.
 
 ## When the engine fails
 

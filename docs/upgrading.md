@@ -8,6 +8,7 @@ read_when:
   - Moving intl to a new CLDR, tzdb or Chromium release
   - Moving internal/gointl to a new go-intl release, or changing qjs.patch, qjs-sync.sh or the packs in qjsdata/
   - Moving Temporal's time zones to a new tz release (internal/gointl/qjstz)
+  - Building or testing with a newer Go than 1.27.2, or moving the checked-in assembly of the C engine to one
 ---
 
 # Upgrading from upstream
@@ -140,6 +141,21 @@ The calls without `alloca`, the functions without a TLS frame, the changes to th
 - `lib/internal/run-test262/ccgo_*.go`: ccgo links a whole copy of the engine into the test262 runner, so as generated the runner tests that copy and not `lib/`. `fixlib` turns each engine API function of the runner into a call of the same function in `lib/` (`lib/test262_runner.go` exports the one ccgo leaves unexported). Take the upstream files and run `fixlib`, as for `lib/ccgo_*.go`.
 
 This fork does not regenerate `lib/ccgo_*.go` itself. `lib/generator.go` still assumes it is the root of its own module.
+
+## Moving to a newer Go
+
+The Go assembly of the C engine (`internal/cengine`, checked in) was made and checked with Go 1.27.2, on linux/amd64 and darwin/arm64. `go.mod` asks for 1.27.0 or later and nothing stops a build with a newer Go, so a user on a newer Go runs assembly that was never checked against it. The checks of the generator and its tests depend on these things of Go 1.27.2:
+
+- The stack check at the start of every function that is not NOSPLIT: a compare of the stack pointer with the guard in the goroutine, `g.stackguard0` (offset 16 of `g`, with `g` in R14 on amd64 and X28 on arm64), a branch to a call of `runtime.morestack_noctxt.abi0`, and a jump back to the start (`internal/goasm/gen/verify_insn.go`, `arm64_verify.go`).
+- The room of a chain of NOSPLIT functions: the linker gives 800 bytes, and the generator keeps 64 of them free below the deepest frame for the call of `runtime.sigpanic` that a fault adds and its call of morestack (`internal/goasm/gen/nosplit.go`). The 64 bytes come from the source of Go 1.27.2.
+- The preemption hammer (`internal/cengine/hammer_test.go`) reads `g` and writes its stack guard.
+
+When Go changes any of these, a check of the generator or a test fails. A program built with the new Go is not checked when it is built. So, before you move to a newer Go:
+
+1. Run `go test -p 1 -tags slowjs_cengine,testhooks ./internal/cengine .`, and the hammer (`CENGINE_HAMMER_N=3000 go test -tags slowjs_cengine,cenginehammer -run Hammer ./internal/cengine`). The fault tests (`TestFault*`, `TestFaultNoSplit`) are the ones that see a changed signal path.
+2. Run the generator's tests with the new Go (`make check-fast`, its `goasm` step). They build sample programs, link them, and check the stack check, the call of `runtime.morestack_noctxt.abi0` and the NOSPLIT room in the linked binary, so a changed shape fails there. Then check the engine itself the same way, with the post-link check of [testing.md](testing.md#the-go-host-of-the-generated-engine) (`-verify-bin`, on a test binary built with `-tags slowjs_cengine,goasmkeep`). `make check-gen` does not test the Go version: it only checks that the files checked in are what the generator makes.
+3. Read the source of `runtime.sigpanic` and the stack check of the new release if the fault tests fail, and update `FaultRoom` only for what you read there.
+4. When all pass, write the new version here and in the README, in both languages.
 
 ## Taking a new release of the Go API
 
