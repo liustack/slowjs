@@ -16,7 +16,7 @@ English · [简体中文](README.zh-CN.md)
 go get github.com/liustack/slowjs
 ```
 
-Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code.
+Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the C engine was checked against Go 1.27.2. It leans on how Go starts a function and handles a fault, so before you build with a newer Go, run the tests (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
 
 ## Platforms
 

@@ -46505,13 +46505,19 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
             if (JS_ToInt64Clamp(ctx, &n, argv[1], 0, len, len))
                 goto exception;
         }
-        if (js_get_fast_array(ctx, obj, &arrp, &count) && n < count) {
-            if (js_fast_array_find(ctx, arrp, n, count, argv[0],
-                                   JS_EQ_SAME_VALUE_ZERO) >= 0) {
-                res = TRUE;
-                goto done;
+        if (js_get_fast_array(ctx, obj, &arrp, &count)) {
+            /* fromIndex may have run a script that grew the array: search the
+               length read before it, as the loop below does */
+            if (count > len)
+                count = len;
+            if (n < count) {
+                if (js_fast_array_find(ctx, arrp, n, count, argv[0],
+                                       JS_EQ_SAME_VALUE_ZERO) >= 0) {
+                    res = TRUE;
+                    goto done;
+                }
+                n = count;
             }
-            n = count;
         }
         for (; n < len; n++) {
             val = JS_GetPropertyInt64(ctx, obj, n);
@@ -46554,11 +46560,18 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
             if (JS_ToInt64Clamp(ctx, &n, argv[1], 0, len, len))
                 goto exception;
         }
-        if (js_get_fast_array(ctx, obj, &arrp, &count) && n < count) {
-            res = js_fast_array_find(ctx, arrp, n, count, argv[0], JS_EQ_STRICT);
-            if (res >= 0)
-                goto done;
-            n = count;
+        if (js_get_fast_array(ctx, obj, &arrp, &count)) {
+            /* fromIndex may have run a script that grew the array: search the
+               length read before it, as the loop below does */
+            if (count > len)
+                count = len;
+            if (n < count) {
+                res = js_fast_array_find(ctx, arrp, n, count, argv[0],
+                                         JS_EQ_STRICT);
+                if (res >= 0)
+                    goto done;
+                n = count;
+            }
         }
         for (; n < len; n++) {
             int present = JS_TryGetPropertyInt64(ctx, obj, n, &val);
