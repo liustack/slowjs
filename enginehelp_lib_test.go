@@ -17,6 +17,11 @@ import (
 	lib "github.com/liustack/slowjs/lib"
 )
 
+// cptr turns an address in C memory, which libc allocates outside the Go heap
+// and never moves, into a pointer. go vet flags the direct conversion of a
+// uintptr, which is right for an address in Go memory and wrong for these.
+func cptr(a uintptr) unsafe.Pointer { return *(*unsafe.Pointer)(unsafe.Pointer(&a)) }
+
 // deepRecursion is how deep a recursion that ends goes in a test of the
 // default limits.
 const deepRecursion = 5000
@@ -30,7 +35,7 @@ func vmMemory(m *VM) lib.TJSMemoryUsage {
 	p := tls.Alloc(n)
 	defer tls.Free(n)
 	lib.XJS_ComputeMemoryUsage(tls, rt, p)
-	return *(*lib.TJSMemoryUsage)(unsafe.Pointer(p))
+	return *(*lib.TJSMemoryUsage)(cptr(p))
 }
 
 // wantNoPendingException fails the test if an exception is still pending in
@@ -47,7 +52,7 @@ func wantNoPendingException(t *testing.T, m *VM) {
 // engineFramesLeft reports whether the engine still has a stack frame of
 // javascript: none is left outside a call.
 func engineFramesLeft(m *VM) bool {
-	return (*lib.TJSRuntime)(unsafe.Pointer(m.runtime.cRuntime)).Fcurrent_stack_frame != 0
+	return (*lib.TJSRuntime)(cptr(m.runtime.cRuntime)).Fcurrent_stack_frame != 0
 }
 
 // exhaustMemory leaves m no memory: it lowers the limit to what m uses and
@@ -55,7 +60,7 @@ func engineFramesLeft(m *VM) bool {
 // gives back.
 func exhaustMemory(m *VM) (blocks []uintptr) {
 	tls, rt := m.runtime.tls, m.runtime.cRuntime
-	lib.XJS_SetMemoryLimit(tls, rt, (*lib.TJSRuntime)(unsafe.Pointer(rt)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
+	lib.XJS_SetMemoryLimit(tls, rt, (*lib.TJSRuntime)(cptr(rt)).Fmalloc_ctx.Fmalloc_state.Fmalloc_size)
 	for size := lib.Tsize_t(4096); size >= 8; size -= 8 {
 		for {
 			p := lib.Xjs_malloc_rt(tls, rt, size)
