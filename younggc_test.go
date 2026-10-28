@@ -175,6 +175,11 @@ func TestYoungGCFreesCycles(t *testing.T) {
 	}
 }
 
+// youngGCRoom is what a young collection may allocate while it frees: the
+// collection that frees an object a FinalizationRegistry watches queues a job
+// for its callback.
+const youngGCRoom = 64 << 10
+
 // An old object that only young garbage holds is freed by the young
 // collection that frees the garbage, whether or not a weak map, a WeakRef or
 // a FinalizationRegistry observes it, and its weak references go with it. One
@@ -202,7 +207,11 @@ func TestYoungGCFreesWhatOnlyGarbageHeld(t *testing.T) {
 			m.RunYoungGC()
 			after := m.MemorySize()
 			t.Logf("before %d, after the young GC %d", base, after)
-			if freed := after+2<<20 <= base; freed != tc.young {
+			// The old object holds 2 MiB of characters, and what the
+			// collection makes takes a little: on the C engine, the job
+			// of the callback of a registry takes a new block of 4 KiB
+			// for the small blocks.
+			if freed := after+2<<20-youngGCRoom <= base; freed != tc.young {
 				t.Fatalf("the young GC freed the old object: %v, want %v (%d bytes before, %d after)", freed, tc.young, base, after)
 			}
 			if got := youngEval(t, m, "String("+tc.check+")"); got != "true" {
