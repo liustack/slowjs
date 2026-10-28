@@ -20611,18 +20611,10 @@ static force_inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL stric
                 return 0;
             return -1;
         }
-        case JS_TAG_FLOAT64:
-            /* as in C: NaN differs from itself and 0 equals -0 */
-            return JS_VALUE_GET_FLOAT64(a) == JS_VALUE_GET_FLOAT64(b);
         default:
             return -1;
         }
     }
-    /* an int and a float (a pair of ints never gets here) */
-    if (ta == JS_TAG_INT && tb == JS_TAG_FLOAT64)
-        return (double)JS_VALUE_GET_INT(a) == JS_VALUE_GET_FLOAT64(b);
-    if (ta == JS_TAG_FLOAT64 && tb == JS_TAG_INT)
-        return JS_VALUE_GET_FLOAT64(a) == (double)JS_VALUE_GET_INT(b);
     if (strict && (goasm_eq_simple_tag(ta) || goasm_eq_simple_tag(tb)))
         return 0;
     return -1;
