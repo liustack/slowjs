@@ -57,7 +57,7 @@ func TestHostLayout(t *testing.T) {
 			t.Errorf("the constants have no %q:\n%s", l, decls)
 		}
 	}
-	// engine_decl.go is as gofmt writes it: the constants end with a blank
+	// engine_decl_<arch>.go is as gofmt writes it: the constants end with a blank
 	// line before what follows them.
 	src := "package cengine\n\n" + strings.TrimSuffix(decls, "\n")
 	if f, err := format.Source([]byte(src)); err != nil || string(f) != src {

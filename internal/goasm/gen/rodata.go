@@ -70,6 +70,8 @@ type DataPlan struct {
 	Errors map[string][]error
 	// Stats for the report.
 	Objects, BlobObjects, InBodyObjects, DupObjects, Dropped int
+	// arch is the target the text is for: amd64 or arm64.
+	arch string
 }
 
 // RIP-relative operand: sym, sym+N or sym-N before (%rip).
@@ -91,9 +93,16 @@ func isTextLabel(s string) bool {
 
 // PlanData classifies the data objects of an amd64 unit. funcs are the
 // functions of the module (defined or external).
-func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
+func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan { return planData(u, funcs, "amd64") }
+
+// PlanDataARM64 does the same for an aarch64 unit, whose code takes the
+// address of data with adrp and an add (or a load) of :lo12:, and whose
+// .word is 4 bytes.
+func PlanDataARM64(u *AsmUnit, funcs map[string]bool) *DataPlan { return planData(u, funcs, "arm64") }
+
+func planData(u *AsmUnit, funcs map[string]bool, arch string) *DataPlan {
 	p := &DataPlan{BlobOff: map[string]int{}, InBody: map[string][]*DataObj{}, Rename: map[string]map[string]string{},
-		Errors: map[string][]error{}}
+		Errors: map[string][]error{}, arch: arch}
 	fail := func(fn string, f string, a ...any) { p.Errors[fn] = append(p.Errors[fn], fmt.Errorf(f, a...)) }
 	p.Objects = len(u.DataOrder)
 	for _, o := range u.DataOrder {
@@ -103,23 +112,10 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 	}
 	// References from code.
 	var refs []textRef
-	for _, name := range u.FuncOrder {
-		for _, raw := range u.Funcs[name].Lines {
-			l := clean(raw)
-			if l == "" || strings.HasSuffix(l, ":") || strings.HasPrefix(l, ".") {
-				continue
-			}
-			mn := strings.Fields(l)[0]
-			for _, m := range reRIP.FindAllStringSubmatch(l, -1) {
-				refs = append(refs, textRef{name, m[1], strings.HasPrefix(mn, "lea")})
-			}
-			if m := reAbsSym.FindStringSubmatch(l); m != nil && !strings.Contains(l, "(%rip)") {
-				fail(name, "absolute address of %s (needs a 32-bit relocation): %q", m[1], l)
-			}
-			if m := reImmSym.FindStringSubmatch(l); m != nil {
-				fail(name, "absolute address of %s as an immediate: %q", m[1], l)
-			}
-		}
+	if arch == "arm64" {
+		refs = arm64TextRefs(u, fail)
+	} else {
+		refs = amd64TextRefs(u, fail)
 	}
 	// References from data, and the owner of each object that holds text
 	// labels.
@@ -288,7 +284,7 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 			// aligns the object's real position (its start is aligned to at
 			// least its own alignment), not a position measured from its
 			// start.
-			b, fx, err := encodeDirective(l, len(p.Blob))
+			b, fx, err := encodeDirectiveArch(l, len(p.Blob), p.arch)
 			if err != nil {
 				fail("", "data %s: %v", o.Label, err)
 				continue
@@ -326,6 +322,31 @@ func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan {
 	}
 	sort.Slice(p.Relocs, func(i, j int) bool { return p.Relocs[i].Off < p.Relocs[j].Off })
 	return p
+}
+
+// amd64TextRefs lists the RIP-relative references of the code, and fails
+// on an absolute one.
+func amd64TextRefs(u *AsmUnit, fail func(fn, f string, a ...any)) []textRef {
+	var refs []textRef
+	for _, name := range u.FuncOrder {
+		for _, raw := range u.Funcs[name].Lines {
+			l := clean(raw)
+			if l == "" || strings.HasSuffix(l, ":") || strings.HasPrefix(l, ".") {
+				continue
+			}
+			mn := strings.Fields(l)[0]
+			for _, m := range reRIP.FindAllStringSubmatch(l, -1) {
+				refs = append(refs, textRef{name, m[1], strings.HasPrefix(mn, "lea")})
+			}
+			if m := reAbsSym.FindStringSubmatch(l); m != nil && !strings.Contains(l, "(%rip)") {
+				fail(name, "absolute address of %s (needs a 32-bit relocation): %q", m[1], l)
+			}
+			if m := reImmSym.FindStringSubmatch(l); m != nil {
+				fail(name, "absolute address of %s as an immediate: %q", m[1], l)
+			}
+		}
+	}
+	return refs
 }
 
 func alignUp(x, a int) int { return (x + a - 1) / a * a }
@@ -439,11 +460,20 @@ func exprSymbols(l string) []string {
 // encodeDirective returns the bytes of one data directive; values that name
 // a symbol come back as fixes, left zero for now.
 func encodeDirective(l string, at int) ([]byte, []exprFix, error) {
+	return encodeDirectiveArch(l, at, "amd64")
+}
+
+// encodeDirectiveArch is encodeDirective for the GNU syntax of arch: on
+// aarch64 .word is 4 bytes, .hword 2 and .xword 8.
+func encodeDirectiveArch(l string, at int, arch string) ([]byte, []exprFix, error) {
 	dir, arg := l, ""
 	if i := strings.IndexAny(l, " \t"); i >= 0 {
 		dir, arg = l[:i], strings.TrimSpace(l[i+1:])
 	}
 	size := map[string]int{".byte": 1, ".short": 2, ".value": 2, ".word": 2, ".long": 4, ".int": 4, ".quad": 8}
+	if arch == "arm64" {
+		size = map[string]int{".byte": 1, ".short": 2, ".hword": 2, ".word": 4, ".long": 4, ".int": 4, ".quad": 8, ".xword": 8}
+	}
 	switch dir {
 	case ".p2align":
 		a, fill, skip, err := parseP2align(arg)

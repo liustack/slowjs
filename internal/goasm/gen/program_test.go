@@ -45,7 +45,7 @@ func TestParseReport(t *testing.T) {
 		"CALL f host_now",
 		"ICALL f iii>v",
 		"FRAMEADDR g",
-		"PACKED h",
+		"PACKED h ijiiii>j",
 		"PACKED-ICALL f",
 		"PACKED-ICALL f",
 		"REJECT k inline assembly",
@@ -60,8 +60,8 @@ func TestParseReport(t *testing.T) {
 	if !r.AddrTaken["f"] || !reflect.DeepEqual(r.Calls["f"], []string{"host_now"}) || !reflect.DeepEqual(r.ICalls["f"], []string{"iii>v"}) {
 		t.Errorf("graph: %+v %+v %+v", r.AddrTaken, r.Calls, r.ICalls)
 	}
-	if !r.FrameAddr["g"] || !r.Packed["h"] || r.PackedICalls["f"] != 2 || r.Rejected["k"] != "inline assembly" {
-		t.Errorf("flags: %+v %+v %+v %+v", r.FrameAddr, r.Packed, r.PackedICalls, r.Rejected)
+	if !r.FrameAddr["g"] || !r.Packed["h"] || r.PackedWas["h"] != "ijiiii>j" || r.PackedICalls["f"] != 2 || r.Rejected["k"] != "inline assembly" {
+		t.Errorf("flags: %+v %+v %+v %+v %+v", r.FrameAddr, r.Packed, r.PackedWas, r.PackedICalls, r.Rejected)
 	}
 	if !reflect.DeepEqual(r.GotoTable, []string{"run"}) || !reflect.DeepEqual(r.Mismatch, [][2]string{{"f", "g"}}) ||
 		!reflect.DeepEqual(r.Varargs, []string{"printf"}) {
