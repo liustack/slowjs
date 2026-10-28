@@ -44,8 +44,8 @@ var engineOnly = []string{"--target=x86_64-linux-gnu", "-O2", "-fno-builtin", "-
 // cache), and 8-byte loads of a 16-byte store are slow to forward. So the file
 // is built without the SLP vectorizer and with +slow-unaligned-mem-16, which
 // makes LLVM expand a copy of an object aligned to 8 bytes into 8-byte moves.
-// The feature needs the SLP vectorizer off: the two together made the regexp
-// scripts about 3% slower. The small libc is left out, since its memcpy and
+// The feature needs the SLP vectorizer off: with it on, the feature made the
+// regexp scripts about 3% slower. The small libc is left out, since its memcpy and
 // memmove move 16 bytes at a time on purpose. arm64 is not given them.
 var EngineValueFlags = []string{"-fno-slp-vectorize", "-Xclang", "-target-feature", "-Xclang", "+slow-unaligned-mem-16"}
 
