@@ -7,29 +7,56 @@ package gen
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
-// a64Pages says, per register, which data symbol's page the register holds
-// right now: 0 for none, else the number of the symbol plus one.
+// a64Pages says, per register, whether it holds the page an adrp made: 0 for
+// a value that is no page, a64MaybePage when some ways to this point leave a
+// page in it and others do not, else the number of the page (see a64PageKey)
+// plus one.
 type a64Pages [32]int16
 
-// a64OwnPages says which registers hold the page of an adrp of the function's
-// own data (constant pools, jump tables) before each line of its body. The
-// lowering reads such data relative to the PC, which is the same bytes only
-// where the register holds exactly that page, so a use needs to know it, and a
-// read of the register as anything else is refused.
+const a64MaybePage = -1
+
+type a64PageKey struct {
+	sym string
+	add int64
+}
+
+// a64OwnPages says which registers hold the page of an adrp (of the function's
+// own data, of other data or of a function) before each line of its body. The
+// lowering puts the whole address in the register at the adrp, so a register
+// that holds a page is no plain value: a :lo12: use of the function's own data
+// reads it relative to the PC, which is the same bytes only where the
+// register holds exactly the page of the address of the use, and any other
+// read of a register that holds a page, or may, is refused.
 type a64OwnPages struct {
-	syms   []string
+	keys   []a64PageKey
 	before []a64Pages // before[i]: the registers before line i of the body runs
 }
 
-// At is the symbol whose page register r holds before line i, or "".
-func (p *a64OwnPages) At(i, r int) string {
+// Page says what register r holds before line i: def is true for the page of
+// sym+add on every way here, held is true if it holds a page on some way
+// (def or not).
+func (p *a64OwnPages) Page(i, r int) (sym string, add int64, def, held bool) {
 	if r < 0 || r >= len(p.before[i]) || p.before[i][r] == 0 {
-		return ""
+		return "", 0, false, false
 	}
-	return p.syms[p.before[i][r]-1]
+	v := p.before[i][r]
+	if v == a64MaybePage {
+		return "", 0, false, true
+	}
+	k := p.keys[v-1]
+	return k.sym, k.add, true, true
+}
+
+// joinPage is what a register holds where two ways meet.
+func joinPage(a, b int16) int16 {
+	if a == b {
+		return a
+	}
+	return a64MaybePage
 }
 
 var reA64Label = regexp.MustCompile(`\.L[\w$.]+`)
@@ -50,21 +77,91 @@ func a64IndirectLabels(body []string, data string) map[string]bool {
 	return out
 }
 
-// a64FollowOwnPages runs the data flow over body (the lines the lowering
-// walks: instructions, labels, indirect-call markers). A label with an
-// unknown way in and the entry start with no page, and a call ends the pages
-// of the registers it may change. At a join a register keeps a page only if
-// every way in agrees.
-func a64FollowOwnPages(body []string, own func(sym string) bool, indirect map[string]bool) *a64OwnPages {
+var reA64TableEntry = regexp.MustCompile(`(\.L[\w$.]+)-([\w$.]+)`)
+
+// a64LabelTables reads the tables of labels in a function's data: an entry is
+// a label minus the base of the table, which is a label of the code for a jump
+// table and a symbol of the data for the table of the computed goto. The
+// result maps each base to the labels of the entries.
+func a64LabelTables(data string) map[string][]string {
+	out := map[string][]string{}
+	for _, m := range reA64TableEntry.FindAllStringSubmatch(data, -1) {
+		out[m[2]] = append(out[m[2]], m[1])
+	}
+	return out
+}
+
+// a64BrTargets says where the indirect jump at body[at] can go, from the
+// tables of the function: a jump table (the register is the base from an adr
+// plus an entry, and the table has that base) goes to the labels of that
+// table, the computed goto (the register is a base plus an offset loaded from
+// the base) goes to the labels of the tables that have no adr for a base.
+// Any other shape, or a table not known, goes everywhere (nil).
+func a64BrTargets(body []string, start, at int, tables map[string][]string, adrBase map[string]bool) []string {
+	_, ops := a64Operands(body[at])
+	if len(ops) != 1 {
+		return nil
+	}
+	// def finds the last line of the block before line i that writes register
+	// reg as its first operand with one of the mnemonics, or -1.
+	def := func(i int, reg string, mnemonics ...string) (int, string, []string) {
+		for k := i - 1; k >= start; k-- {
+			op, o := a64Operands(body[k])
+			if len(o) == 0 || isA64Label(body[k]) || a64RegNumber(o[0]) != a64RegNumber(reg) || (o[0][0] != 'x' && o[0][0] != 'w') {
+				continue
+			}
+			for _, m := range mnemonics {
+				if op == m {
+					return k, op, o
+				}
+			}
+			return -1, "", nil
+		}
+		return -1, "", nil
+	}
+	d1, _, o1 := def(at, ops[0], "add")
+	if d1 < 0 || len(o1) < 3 {
+		return nil
+	}
+	if d2, _, o2 := def(d1, o1[1], "adr"); d2 >= 0 && len(o2) == 2 && adrBase[o2[1]] {
+		return tables[o2[1]]
+	}
+	// The computed goto: the offset added was loaded from the base.
+	if d2, _, o2 := def(d1, o1[2], "ldrsw", "ldr"); d2 >= 0 && len(o2) == 2 && strings.HasPrefix(o2[1], "["+o1[1]+",") {
+		var out []string
+		for base, ls := range tables {
+			if !adrBase[base] {
+				out = append(out, ls...)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// a64FollowPages runs the data flow over body (the lines the lowering walks:
+// instructions, labels, indirect-call markers). Every adrp starts a page in its
+// register. A call ends the pages of the registers it may change. Where two
+// ways meet, a register holds a page only if both ways agree on it, and holds
+// the maybe of a64MaybePage if just one has a page or they have two. An
+// indirect jump (br) goes where a64BrTargets says, or to every label the code
+// can reach that way.
+func a64FollowPages(body []string, indirect map[string]bool, tables map[string][]string) *a64OwnPages {
+	adrBase := map[string]bool{}
+	for _, l := range body {
+		if m := reA64Adr.FindStringSubmatch(l); m != nil {
+			adrBase[m[2]] = true
+		}
+	}
 	res := &a64OwnPages{before: make([]a64Pages, len(body))}
-	id := map[string]int16{}
-	symID := func(s string) int16 {
-		if v, ok := id[s]; ok {
+	id := map[a64PageKey]int16{}
+	pageID := func(k a64PageKey) int16 {
+		if v, ok := id[k]; ok {
 			return v
 		}
-		res.syms = append(res.syms, s)
-		id[s] = int16(len(res.syms))
-		return id[s]
+		res.keys = append(res.keys, k)
+		id[k] = int16(len(res.keys))
+		return id[k]
 	}
 	labelAt := map[string]int{}
 	for i, l := range body {
@@ -104,11 +201,11 @@ func a64FollowOwnPages(body []string, own func(sym string) bool, indirect map[st
 			return
 		}
 		if m := reA64Adrp.FindStringSubmatch(l); m != nil {
-			r := a64RegNumber(m[1])
-			st[r] = 0
-			if own(m[2]) {
-				st[r] = symID(m[2])
+			add := int64(0)
+			if m[3] != "" {
+				add, _ = strconv.ParseInt(m[3], 10, 64)
 			}
+			st[a64RegNumber(m[1])] = pageID(a64PageKey{m[2], add})
 			return
 		}
 		op := strings.Fields(l)[0]
@@ -126,16 +223,15 @@ func a64FollowOwnPages(body []string, own func(sym string) bool, indirect map[st
 			}
 			return
 		}
-		// A :lo12: use of the function's own data keeps every page except
-		// the register it writes.
-		if m := reA64Lo12.FindStringSubmatch(l); m != nil && own(m[1]) {
+		// A :lo12: use keeps every page except the register it writes.
+		if m := reA64Lo12.FindStringSubmatch(l); m != nil {
 			if dest, _ := a64Lo12Regs(l); dest >= 0 {
 				st[dest] = 0
 			}
 			return
 		}
 		// Anything else that mentions a page register reads the page (the
-		// lowering refuses that) or writes over it.
+		// lowering refuses that) or writes over it with a plain value.
 		for r := range st {
 			if st[r] != 0 {
 				if reads, writes := a64Reads(l, r); reads || writes {
@@ -181,17 +277,13 @@ func a64FollowOwnPages(body []string, own func(sym string) bool, indirect map[st
 		return res
 	}
 	blocks[0].known = true
-	for _, b := range blocks {
-		if isA64Label(body[b.start]) && indirect[strings.TrimSuffix(body[b.start], ":")] {
-			b.known = true
-		}
-	}
-	work := []int{}
+	var indirectBlocks []int
 	for i, b := range blocks {
-		if b.known {
-			work = append(work, i)
+		if isA64Label(body[b.start]) && indirect[strings.TrimSuffix(body[b.start], ":")] {
+			indirectBlocks = append(indirectBlocks, i)
 		}
 	}
+	work := []int{0}
 	for len(work) > 0 {
 		bi := work[len(work)-1]
 		work = work[:len(work)-1]
@@ -209,23 +301,30 @@ func a64FollowOwnPages(body []string, own func(sym string) bool, indirect map[st
 					succs = append(succs, blockOf[t])
 				}
 			}
+			if strings.Fields(body[last])[0] == "br" {
+				if ls := a64BrTargets(body, b.start, last, tables, adrBase); ls != nil {
+					for _, l := range ls {
+						if i, ok := labelAt[l]; ok {
+							succs = append(succs, blockOf[i])
+						}
+					}
+				} else {
+					succs = append(succs, indirectBlocks...)
+				}
+			}
 		}
 		if !stops && bi+1 < len(blocks) {
 			succs = append(succs, bi+1)
 		}
 		for _, s := range succs {
 			sb := blocks[s]
-			// Blocks with an unknown way in stay empty.
-			if sb.known && isA64Label(body[sb.start]) && indirect[strings.TrimSuffix(body[sb.start], ":")] {
-				continue
-			}
 			changed := false
 			if !sb.known {
 				sb.in, sb.known, changed = st, true, true
 			} else {
 				for r := range sb.in {
-					if sb.in[r] != 0 && sb.in[r] != st[r] {
-						sb.in[r] = 0
+					if j := joinPage(sb.in[r], st[r]); j != sb.in[r] {
+						sb.in[r] = j
 						changed = true
 					}
 				}

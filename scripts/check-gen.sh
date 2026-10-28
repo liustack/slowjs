@@ -12,11 +12,14 @@
 # A change to the C of engine/ or to the generator goes in with the files this
 # check wants: make gen and make gen ARCH=arm64, then commit them with it.
 #
-# "Checked in" is what git holds (git ls-files), not what the folder holds: a
-# file that is ignored or not added is not checked in. The generated files of
-# the folder are found by the header the generator writes (Code generated ...
-# DO NOT EDIT.), not by their names, so one the generator no longer makes (the
-# names it had before the files took an architecture) is a file too many.
+# "Checked in" is what git holds, not what the folder holds: the bytes of a file
+# are those of the index (git show :path), so the files have to be git added
+# after make gen and before this check, and a file that is ignored or not added
+# is not checked in. The folder has to be the same bytes, so what is built and
+# tested is what is committed. The generated files of the folder are found by
+# the header the generator writes (Code generated ... DO NOT EDIT.) anywhere in
+# them, and the names the generator had before the files took an architecture
+# are left over whatever they hold.
 #
 # Environment: LLVM_BIN, GEN_JOBS as for gen-engine.sh.
 set -eu
@@ -28,6 +31,9 @@ rm -rf "$tmp"
 mkdir -p "$tmp"
 bad=0
 marker='^// Code generated .* DO NOT EDIT\.$'
+# The files an older generator wrote, which the current one removes (see
+# internal/goasm/gen/cmd/engine/main.go). Keep the two lists the same.
+old_names="engine_decl.go engine_keep.go engine_negative.go"
 
 for arch in amd64 arm64; do
 	echo "check-gen: generating $arch"
@@ -44,6 +50,9 @@ for arch in amd64 arm64; do
 			bad=1
 		elif ! cmp -s "$tmp/$arch/$f" "$dir/$f"; then
 			echo "check-gen: $dir/$f is not what the generator makes now" >&2
+			bad=1
+		elif ! git show ":$dir/$f" 2>/dev/null | cmp -s - "$tmp/$arch/$f"; then
+			echo "check-gen: $dir/$f is not what the generator makes in the index: git add it" >&2
 			bad=1
 		fi
 	done < "$tmp/$arch.made"
@@ -62,8 +71,15 @@ fi
 # A generated file git does not hold, ignored or not, is not checked in and
 # still takes part in a build of the folder.
 git ls-files --others -- "$dir" | sed "s|^$dir/||" | grep -v / | while read -r f; do
-	if head -n 3 "$dir/$f" | grep -q -E "$marker"; then
+	if grep -q -E "$marker" "$dir/$f"; then
 		echo "check-gen: $dir/$f is generated and not in git: add it, or delete it" >&2
+		echo bad >> "$tmp/loose"
+	fi
+done
+# The names of an older generator are left over, with a header or without.
+for f in $old_names; do
+	if [ -e "$dir/$f" ] || git ls-files --error-unmatch -- "$dir/$f" > /dev/null 2>&1; then
+		echo "check-gen: $dir/$f is a file of an older generator: delete it" >&2
 		echo bad >> "$tmp/loose"
 	fi
 done
