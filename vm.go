@@ -45,9 +45,11 @@ type VM struct {
 	// intr is set when the VM is made and never written again, Close
 	// included, so that Interrupt can read it from any goroutine.
 	intr *interrupter
-	// closed is set by the first Close, which Close again reads to do nothing.
-	// Like intr it lives outside vmState, which Close clears.
-	closed bool
+	// closed is set by the first Close, which Close again reads to do nothing
+	// (or to free what the OS refused, closeEngineAgain). closing is set while
+	// that first Close runs, so that a Close inside OnClose does nothing.
+	// Like intr they live outside vmState, which Close clears.
+	closed, closing bool
 	vmState
 }
 
@@ -287,15 +289,21 @@ func (m *VM) SetStrip(s Strip) {
 
 // Close releases the resources held by m. Close of a VM that is closed does
 // nothing and returns nil, so a deferred Close may follow an explicit one.
+// When the OS refuses to give some of the memory back, Close returns the error
+// and Close again tries what is left.
 //
 // A step of Close that panics does not keep the others from running: if a
 // function of OnClose panics, the rest still run. Close then panics with the
 // first panic. A Close inside a function of OnClose returns nil.
 func (m *VM) Close() error {
-	if m.closed {
+	if m.closing {
 		return nil
 	}
-	m.closed = true
+	if m.closed {
+		return m.closeEngineAgain()
+	}
+	m.closed, m.closing = true, true
+	defer func() { m.closing = false }()
 	m.forgetFuncs()
 
 	id := m.id
