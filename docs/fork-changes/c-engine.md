@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, and which checks and tests guard them'
+summary: 'The changes of the C tree in engine/ that the switch to the new engine will bring and that no release has yet: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, and which checks and tests guard them'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -11,6 +11,7 @@ read_when:
   - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout)
   - Changing how `+` and `+=` build strings in the C tree, or asking why a string has room past its end
   - Changing where the generator puts the body of a function, or reading a speed change of the C engine that may be where the interpreter landed
+  - Changing the flags the generator gives quickjs.c, or finding why a JSValue is copied in two moves of 8 bytes and not one of 16
 ---
 
 # The C tree of the new engine
@@ -143,9 +144,30 @@ Measured on linux/amd64 (an AMD EPYC 7B13 on GCP, Go 1.27), each script pinned t
 
 ## Where the interpreter and the regexp matcher sit
 
-After Go's prologue every generated function has a `PCALIGN $16`, so its body starts on 16 bytes and moves within its lines of 64 bytes whenever code linked before it grows. For the two loops that run longest the generator fixes that place instead (`-align64`, see the generator's [README](../../internal/goasm/gen/README.md#the-whole-engine)): a `PCALIGN $64`, which also puts the function on 64 bytes, then 8-byte no-ops up to the offset. The body of `JS_CallInternal` starts at 0 bytes into its line and the body of `lre_exec_backtrack` at 16, the fastest places measured. The no-ops run once per call: 26 bytes for the interpreter, 69 for the matcher. The post-link check holds each body to its place and the padding before it to no-ops, and a test builds bodies 8 bytes off their place and sees the check refuse them.
+After Go's prologue every generated function has a `PCALIGN $16`, so its body starts on 16 bytes and moves within its lines of 64 bytes whenever code linked before it grows. For the two loops that run longest the generator fixes that place instead (`-align64`, see the generator's [README](../../internal/goasm/gen/README.md#the-whole-engine)): a `PCALIGN $64`, which also puts the function on 64 bytes, then 8-byte no-ops up to the offset. The body of `JS_CallInternal` starts at 40 bytes into its line and the body of `lre_exec_backtrack` at 16, the fastest places measured (the interpreter was at 0 until a JSValue was copied in two moves of 8 bytes, see [below](#how-a-jsvalue-is-copied)). The no-ops run once per call: 66 bytes for the interpreter, 69 for the matcher. The post-link check holds each body to its place and the padding before it to no-ops, and a test builds bodies 8 bytes off their place and sees the check refuse them.
 
 A change elsewhere in the engine now moves these bodies by whole lines only. It still changes their speed somewhat, as other code and data move: see [performance.md](../performance.md#code-positions) for the numbers and for how the code positions of a measurement work with the fixed places.
+
+## How a JSValue is copied
+
+A JSValue is 16 bytes, a value and a tag. The interpreter writes one to the value stack as two stores of 8 bytes, since the value is in a register and the tag is a constant. LLVM copies one with a single 16-byte SSE move. It makes that move in two ways: the SLP vectorizer joins two moves of neighbouring 8 bytes, and a struct copy becomes a `memcpy` of 16 bytes that LLVM expands. On Zen 3 a load of 16 bytes cannot be served from two stores of 8 bytes that are still in flight: it waits until both reach the cache (24 cycles in a loop that does nothing else, against 1 for a load of 8 bytes of a store of 8). A load of 8 bytes of a store of 16 is slow too, 11 to 13 cycles.
+
+A trace of every load and store (valgrind lackey) of short runs counted the loads fed by two or more stores in the 120 instructions before, and the loads of less than 16 bytes fed by a 16-byte store. 95% to 99.8% of them are in `JS_CallInternal`. Per 100 instructions, the first kind and then the second: `v8_richards` 0.45 and 0.87, `q_func_call` 0.28 and 0.55, `q_int_arith` 0.44 and 0.88, `r_react_ssr` 0.13 and 0.24. The opcodes that hold most of them are the calls (`call_method`, `call1`, `call`, `tail_call_method`: they copy the function and `this` into the argument block of the callee), `put_field` (it passes the object and the value by value), `put_loc*` (the copy of the top of the stack into the local), `inc_loc` (it copies the local to a temporary and reads its halves), `get_loc*` and, in string loops, `add`.
+
+On amd64 the generator builds `quickjs.c`, the one engine file that holds JSValues, with `-fno-slp-vectorize` and the LLVM target feature `+slow-unaligned-mem-16` (`EngineValueFlags` in `internal/goasm/gen/unit.go`). The feature tells LLVM that an unaligned move of 16 bytes is slow. A JSValue is aligned to 8 bytes only, so LLVM now expands its copy into two loads and two stores of 8 bytes, which a load of 8 bytes can be served from. The moves the SLP vectorizer makes are not expanded again, so it is off. The same trace of the generated engine finds at most 1.5% of them left (`r_react_ssr` 4,541 and 14,349 against 433,938 and 813,223, `v8_richards` 776 and 2,056 against 408,409 and 790,662, `q_func_call` 538 and 740 against 100,676 and 201,060), and no SSE move is left in `JS_CallInternal`.
+
+What is left out, and why:
+
+- **The small libc and the other C files.** The `memcpy` and `memmove` of the libc move 16 bytes at a time on purpose, and with the feature a copy of 17 to 128 bytes becomes 8-byte moves, twice the loads and stores. The other files hold no JSValue.
+- **The feature with the SLP vectorizer on.** It leaves 29 SSE moves in `JS_CallInternal` (the copies the vectorizer made, in `put_loc` and others), and made `r_shiki_regexp` 2.8% to 3.3% slower, at 7 or 8 of 8 positions.
+- **The vectorizer off alone.** It leaves 201 SSE moves in `JS_CallInternal`, the expanded `memcpy`.
+- **arm64.** Not given the flags: the feature is x86 only, and nothing was measured there.
+
+The instructions grow a little, since a copy is four instructions in place of two: against the engine before, 0.03% to 1.8% more on 13 of the 14 scripts counted, 5.3% on `q_prop_write`, and 0.7% on `r_react_ssr`. The time goes down where the copies were on the way, see [performance.md](../performance.md#the-c-engine-copies-a-jsvalue-in-two-moves-of-8-bytes).
+
+The change moved the best place of the interpreter's body. With the code of before it was 0 bytes into its line. With 8-byte copies, 40 was the fastest of the 8 places tried on the render scripts (see [above](#where-the-interpreter-and-the-regexp-matcher-sit)).
+
+`TestValueFlagsCopyInEightByteMoves` and `TestValueFlagsFor` in `internal/goasm/gen` hold the flags to what they do: a copy of a 16-byte struct is four moves of 8 bytes and no SSE move with them, and quickjs.c on amd64 is the only file that gets them.
 
 ## Atomics without threads
 

@@ -20,8 +20,14 @@ runs its own checks and lowering in Go (`debug/elf`,
    no system headers, wrapping signed overflow, unsigned char and the others)
    are not written here: init runs `engine/test/flags.sh`, which the scripts of
    the C tree read too, and appends what it gives (`TestFlagsComeFromFlagsSh`
-   keeps the Go lists and `cycles.sh` from repeating them). CheckIR rejects
-   variadics, byval, sret and long double.
+   keeps the Go lists and `cycles.sh` from repeating them). On amd64 `quickjs.c`,
+   the one file that holds JSValues, also gets `-fno-slp-vectorize` and the
+   target feature `slow-unaligned-mem-16` (`EngineValueFlags`), so that LLVM
+   copies a JSValue (16 bytes) as two 8-byte moves and not one SSE move: the
+   interpreter writes the two halves one at a time, and Zen 3 cannot forward a
+   16-byte load from them (see [c-engine.md](../../../docs/fork-changes/c-engine.md#how-a-jsvalue-is-copied)).
+   The small libc is left out, since its `memcpy` moves 16 bytes at a time on
+   purpose. CheckIR rejects variadics, byval, sret and long double.
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees
@@ -211,7 +217,7 @@ code before it grows. `-align64 name:offset,...` puts the body of each named
 function `offset` bytes past a multiple of 64 instead (a `PCALIGN $64`, which
 also puts the function on 64 bytes, then `offset` bytes of 8-byte no-ops,
 which run once per call). The engine's default is
-`JS_CallInternal:0,lre_exec_backtrack:16`, the fastest places measured (see
+`JS_CallInternal:40,lre_exec_backtrack:16`, the fastest places measured (see
 [performance.md](../../../docs/performance.md#code-positions)), and a `-src`
 build has none unless the flag is given. The post-link check holds each body
 to its place and the padding before it to no-ops.

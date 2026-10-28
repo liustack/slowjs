@@ -34,6 +34,31 @@ var engineOnly = []string{"--target=x86_64-linux-gnu", "-O2", "-fno-builtin", "-
 	"-fno-asynchronous-unwind-tables", "-fno-unwind-tables",
 	"-Xclang", "-target-feature", "-Xclang", "+slow-two-mem-ops"}
 
+// EngineValueFlags are the x86-64 flags of quickjs.c, the one engine file that
+// holds JSValues, on top of EngineCFlags. A JSValue is 16 bytes. The
+// interpreter writes one to the value stack as two 8-byte stores (the value is
+// in a register and the tag is a constant), and LLVM copies one with a single
+// 16-byte SSE move: the SLP vectorizer joins two 8-byte moves into it, and the
+// expansion of the memcpy of a struct copy makes it. On Zen 3 a 16-byte load
+// cannot be forwarded from two 8-byte stores (it waits for both to reach the
+// cache), and 8-byte loads of a 16-byte store are slow to forward. So the file
+// is built without the SLP vectorizer and with +slow-unaligned-mem-16, which
+// makes LLVM expand a copy of an object aligned to 8 bytes into 8-byte moves.
+// The feature needs the SLP vectorizer off: the two together made the regexp
+// scripts about 3% slower. The small libc is left out, since its memcpy and
+// memmove move 16 bytes at a time on purpose. arm64 is not given them.
+var EngineValueFlags = []string{"-fno-slp-vectorize", "-Xclang", "-target-feature", "-Xclang", "+slow-unaligned-mem-16"}
+
+// ValueFlagsFor gives the extra clang flags of one engine file: EngineValueFlags
+// for quickjs.c on amd64, none for anything else (group is the name of the file
+// without .c, or "libc").
+func ValueFlagsFor(arch, group string) []string {
+	if arch == "amd64" && group == "quickjs" {
+		return EngineValueFlags
+	}
+	return nil
+}
+
 // arm64Only are the arm64 flags of engine code: plain AAPCS with x18 and x26
 // to x28 fixed, x29 reserved as the frame pointer, LR reserved for return
 // addresses, no tail calls and no unwind tables.
