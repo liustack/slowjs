@@ -46409,6 +46409,82 @@ static JSValue js_array_fill(JSContext *ctx, JSValueConst this_val,
     return JS_EXCEPTION;
 }
 
+/* The part of a strict or same-value-zero comparison of a with b that needs
+   no call: 1 when they are equal, 0 when they are not, and -1 when
+   js_strict_eq2 must tell (two strings that are not the same string and not
+   two different atoms, a rope, a BigInt). It reads no reference count and
+   frees nothing. */
+static force_inline int js_quick_strict_eq(JSValueConst a, JSValueConst b,
+                                           BOOL same_value_zero)
+{
+    int ta = JS_VALUE_GET_TAG(a), tb = JS_VALUE_GET_TAG(b);
+
+    if (ta == tb) {
+        switch (ta) {
+        case JS_TAG_INT:
+        case JS_TAG_BOOL:
+            return JS_VALUE_GET_INT(a) == JS_VALUE_GET_INT(b);
+        case JS_TAG_NULL:
+        case JS_TAG_UNDEFINED:
+            return 1;
+        case JS_TAG_OBJECT:
+        case JS_TAG_SYMBOL:
+            return JS_VALUE_GET_PTR(a) == JS_VALUE_GET_PTR(b);
+        case JS_TAG_FLOAT64: {
+            double d1 = JS_VALUE_GET_FLOAT64(a), d2 = JS_VALUE_GET_FLOAT64(b);
+            return d1 == d2 || (same_value_zero && isnan(d1) && isnan(d2));
+        }
+        case JS_TAG_STRING: {
+            JSString *pa = JS_VALUE_GET_STRING(a), *pb = JS_VALUE_GET_STRING(b);
+            if (pa == pb)
+                return 1;
+            if (pa->len != pb->len ||
+                (pa->atom_type == JS_ATOM_TYPE_STRING && pb->atom_type == JS_ATOM_TYPE_STRING))
+                return 0;
+            return -1;
+        }
+        default:
+            return -1;
+        }
+    }
+    if (ta == JS_TAG_INT && tb == JS_TAG_FLOAT64)
+        return (double)JS_VALUE_GET_INT(a) == JS_VALUE_GET_FLOAT64(b);
+    if (ta == JS_TAG_FLOAT64 && tb == JS_TAG_INT)
+        return JS_VALUE_GET_FLOAT64(a) == (double)JS_VALUE_GET_INT(b);
+    /* a string and a rope, or a short BigInt and a long one, may be equal */
+    if ((tag_is_string(ta) && tag_is_string(tb)) ||
+        ((ta == JS_TAG_SHORT_BIG_INT || ta == JS_TAG_BIG_INT) &&
+         (tb == JS_TAG_SHORT_BIG_INT || tb == JS_TAG_BIG_INT)))
+        return -1;
+    /* values of two other kinds are never equal */
+    return 0;
+}
+
+/* The index of the first element of arrp[from, count) equal to v, or -1.
+   js_strict_eq2 is called only for the pairs js_quick_strict_eq cannot tell,
+   so a run of ints or of strings that are atoms loops with no call. */
+static int64_t js_fast_array_find(JSContext *ctx, JSValue *arrp,
+                                  uint32_t from, uint32_t count,
+                                  JSValueConst v, JSStrictEqModeEnum mode)
+{
+    uint32_t n = from;
+    BOOL svz = (mode == JS_EQ_SAME_VALUE_ZERO);
+    int r = 0;
+
+    for (;;) {
+        for (; n < count; n++) {
+            r = js_quick_strict_eq(v, arrp[n], svz);
+            if (r != 0)
+                break;
+        }
+        if (n >= count)
+            return -1;
+        if (r > 0 || js_strict_eq2(ctx, v, arrp[n], mode))
+            return n;
+        n++;
+    }
+}
+
 static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
 {
@@ -46429,14 +46505,13 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
             if (JS_ToInt64Clamp(ctx, &n, argv[1], 0, len, len))
                 goto exception;
         }
-        if (js_get_fast_array(ctx, obj, &arrp, &count)) {
-            for (; n < count; n++) {
-                if (js_strict_eq2(ctx, argv[0], arrp[n],
-                                  JS_EQ_SAME_VALUE_ZERO)) {
-                    res = TRUE;
-                    goto done;
-                }
+        if (js_get_fast_array(ctx, obj, &arrp, &count) && n < count) {
+            if (js_fast_array_find(ctx, arrp, n, count, argv[0],
+                                   JS_EQ_SAME_VALUE_ZERO) >= 0) {
+                res = TRUE;
+                goto done;
             }
+            n = count;
         }
         for (; n < len; n++) {
             val = JS_GetPropertyInt64(ctx, obj, n);
@@ -46479,13 +46554,11 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
             if (JS_ToInt64Clamp(ctx, &n, argv[1], 0, len, len))
                 goto exception;
         }
-        if (js_get_fast_array(ctx, obj, &arrp, &count)) {
-            for (; n < count; n++) {
-                if (js_strict_eq2(ctx, argv[0], arrp[n], JS_EQ_STRICT)) {
-                    res = n;
-                    goto done;
-                }
-            }
+        if (js_get_fast_array(ctx, obj, &arrp, &count) && n < count) {
+            res = js_fast_array_find(ctx, arrp, n, count, argv[0], JS_EQ_STRICT);
+            if (res >= 0)
+                goto done;
+            n = count;
         }
         for (; n < len; n++) {
             int present = JS_TryGetPropertyInt64(ctx, obj, n, &val);

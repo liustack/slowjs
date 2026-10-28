@@ -88,6 +88,27 @@ const { rope1, rope2, obj, sym } = makeVals()
   const big = Array.from({ length: 1000 }, (_, i) => (i % 3 ? 'k' + i : i % 5 ? i : BigInt(i)))
   out.push('big: ' + big.indexOf('k998') + ' ' + big.indexOf(999n) + ' ' + big.lastIndexOf(0n) + ' ' + big.includes(990) + ' ' + big.indexOf('k' + 997))
 }
+// the same search through arrays that hold one kind of value for a long run (ints, floats, strings that are atoms and strings that are
+// not), where the search of a dense Array decides most elements without a call, and through one that holds every kind of value
+{
+  const row = (hay, needles) => needles.map(v => hay.indexOf(v) + '/' + hay.indexOf(v, 3) + '/' + hay.lastIndexOf(v) + '/' + (hay.includes(v) ? 1 : 0) + '/' + (hay.includes(v, -2) ? 1 : 0)).join(' ')
+  const ints = Array.from({ length: 300 }, (_, i) => i - 5)
+  out.push('ints: ' + row(ints, [0, 1, 294, 295, -5, -6, 1.5, 3.0, 2 ** 31, NaN, -0, '5', 5n, true, null, undefined, {}, 'x']))
+  const floats = Array.from({ length: 200 }, (_, i) => i + 0.5).concat([NaN, -0, 7, Infinity])
+  out.push('floats: ' + row(floats, [0.5, 199.5, 200, NaN, 0, -0, 7, 7.0, Infinity, -Infinity, 1, '0.5', 0.5 + 0]))
+  const word = n => ['w', n].join('')
+  const atoms = Array.from({ length: 200 }, (_, i) => 'k' + (i % 50))
+  out.push('atoms: ' + row(atoms, ['k0', 'k49', 'k50', word(''), 'x', ['k', '7'].join(''), ['k', 49].join(''), 'k4', 'k', '', 7, null, 1n]))
+  const fresh = Array.from({ length: 100 }, (_, i) => ['f', i].join(''))
+  out.push('fresh: ' + row(fresh, ['f0', ['f', 5].join(''), 'f99', 'f100', 'F5', 'f', 5, {}, Symbol('f')]))
+  const mixed = [1, '1', 1n, 1.0, true, null, undefined, {}, [], 'a', ['a', 'b'].join(''), 2n ** 64n, NaN, -0, 0, Symbol.iterator, ...Array.from({ length: 40 }, (_, i) => i * 3)]
+  const needles = [1, '1', 1n, 1.5, true, false, null, undefined, mixed[7], mixed[8], {}, 'a', ['a', 'b'].join(''), 'ab', 2n ** 64n, 2n ** 64n + 1n, NaN, -0, 0, Symbol.iterator, Symbol('x'), 117, 120, '120']
+  out.push('mixed: ' + row(mixed, needles))
+  const all = makeVals(), others = makeVals()
+  const rows = []
+  for (let i = 0; i < others.length; i++) rows.push(all.indexOf(others[i]) + ',' + all.lastIndexOf(others[i]) + ',' + all.indexOf(others[i], 20) + ',' + (all.includes(others[i]) ? 1 : 0) + ',' + (all.includes(others[i], 30) ? 1 : 0))
+  out.push('every kind: ' + rows.join(' '))
+}
 // exceptions while looking: a getter that throws, one that changes the array
 {
   const thrower = { length: 3, 0: 'a', get 1() { throw new RangeError('x') }, 2: 'c' }
