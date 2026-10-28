@@ -32,8 +32,11 @@ type Report struct {
 	// FrameAddr lists the functions that read the machine frame address
 	// (QuickJS's stack overflow checks), Packed the ones the pass gave an
 	// argument block, Rejected the ones the pass emptied, with the reason.
-	FrameAddr    map[string]bool
-	Packed       map[string]bool
+	FrameAddr map[string]bool
+	Packed    map[string]bool
+	// PackedWas is the signature code a packed function had before the
+	// pass gave it the block.
+	PackedWas    map[string]string
 	PackedICalls map[string]int
 	Rejected     map[string]string
 	GotoTable    []string
@@ -46,7 +49,7 @@ type Report struct {
 func ParseReport(text string) *Report {
 	r := &Report{Sigs: map[string]string{}, Defined: map[string]bool{}, Leaf: map[string]bool{},
 		AddrTaken: map[string]bool{}, Calls: map[string][]string{}, ICalls: map[string][]string{},
-		FrameAddr: map[string]bool{}, Packed: map[string]bool{}, PackedICalls: map[string]int{},
+		FrameAddr: map[string]bool{}, Packed: map[string]bool{}, PackedWas: map[string]string{}, PackedICalls: map[string]int{},
 		Rejected: map[string]string{}}
 	for _, l := range strings.Split(text, "\n") {
 		f := strings.Fields(l)
@@ -74,6 +77,9 @@ func ParseReport(text string) *Report {
 			r.FrameAddr[f[1]] = true
 		case "PACKED":
 			r.Packed[f[1]] = true
+			if len(f) >= 3 {
+				r.PackedWas[f[1]] = f[2]
+			}
 		case "PACKED-ICALL":
 			r.PackedICalls[f[1]]++
 		case "REJECT":
