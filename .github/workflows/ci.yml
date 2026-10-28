@@ -53,7 +53,7 @@ jobs:
         run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
 
       - name: Test, default build
-        run: go test -short -p 2 -timeout 60m $(go list ./... | grep -v '/internal/fixlib$')
+        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/internal/fixlib$')
       - name: Test, C engine, internal packages
         run: CHECK_ONLY="cengine testhooks" scripts/check.sh full
       - name: Test, C engine, root package
