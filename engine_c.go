@@ -917,10 +917,15 @@ func (m *VM) jsWriteObject(v jsValue) (b []byte, ok bool) {
 	return b, true
 }
 
-// freeTopLevel would free the function of a module that has run (see
-// engine_lib.go): the engine has no way to yet, so the module keeps it until
-// the VM closes.
-func (m *VM) freeTopLevel(mod jsValue) {}
+// freeTopLevel frees the function of the module mod, which has run to its
+// end (see engine_lib.go), with JS_FreeModuleTopLevel.
+func (m *VM) freeTopLevel(mod jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { m.freeTopLevel(mod) })
+		return
+	}
+	cengine.JS_FreeModuleTopLevel(m.sp, m.ctx, mod.u)
+}
 
 func (m *VM) jsNewPromiseCapability() (promise, resolve, reject jsValue, err error) {
 	if m.entered == 0 {
