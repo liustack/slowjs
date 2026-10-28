@@ -347,6 +347,10 @@ func (e *engineState) now() time.Time {
 	return lib.Now(e.runtime.cRuntime)
 }
 
+func (e *engineState) jsToString(v jsValue) jsValue {
+	return lib.XJS_ToString(e.runtime.tls, e.cContext, v)
+}
+
 func (e *engineState) jsGetException() jsValue {
 	return lib.XJS_GetException(e.runtime.tls, e.cContext)
 }

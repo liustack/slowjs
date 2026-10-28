@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against lib and what tifa's wiring gained, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -373,6 +373,49 @@ What decides the time is of two kinds. A loop that does not read the flag runs t
 | both | 1947 | 24.3 ms | 112.8 ms | 49, all failed | 24 | 1633 | 28.7 ms | 130.5 ms |
 
 Every bad request failed with a deadline error, every one got a new VM, no good render failed, and all 4 VMs were back in the pool at the end. Killed VMs were replaced like timed out ones. The good renders' p99 grew 3% to 17% on the C engine and by at most 6% on lib, the cost of loading a replacement VM while the others render. The C engine's p99 stays under lib's in every row.
+
+### tifa's pages on the C engine
+
+Measured with tifa's `test/ssr` on the Google Cloud VM above, one core pinned with its hyperthread sibling idle: the six workbench pages of `examples/shop` (the pages of `BenchmarkShop`), the three pages of `test/apps/mui` and the two of `test/apps/bench`. Each page renders in a warm pool of one VM with `GOMAXPROCS=1`, 64 renders to warm up, then the P50 of 100 renders (60 on the MUI pages). 3 rounds at the 8 [code positions](#code-positions). The engine of `lib/` is built without PGO and with a profile of 500 renders of the shop. A ratio is the median over positions of the paired ratios, and the C engine was faster at all 8 positions on every page.
+
+| Page | lib (ms) | lib with PGO (ms) | C engine (ms) | C / lib | C / lib with PGO |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shop: studio | 71.16 | 70.71 | 59.61 | 0.837 | 0.848 |
+| shop: studio orders | 12.34 | 12.23 | 10.47 | 0.846 | 0.861 |
+| shop: studio stats | 14.18 | 14.04 | 12.04 | 0.842 | 0.854 |
+| shop: weekend | 42.12 | 41.58 | 35.40 | 0.839 | 0.849 |
+| shop: weekend orders | 11.75 | 11.62 | 9.97 | 0.847 | 0.857 |
+| shop: weekend stats | 12.07 | 11.98 | 10.24 | 0.845 | 0.855 |
+| MUI: `/` | 44.10 | 43.38 | 37.57 | 0.848 | 0.867 |
+| MUI: `/orders` | 94.93 | 93.05 | 81.54 | 0.861 | 0.872 |
+| MUI: `/orders/ORD-1240` | 41.58 | 40.99 | 35.61 | 0.852 | 0.867 |
+| bench: `/spiral` | 25.45 | 24.92 | 20.82 | 0.819 | 0.836 |
+| bench: `/table` | 22.20 | 21.96 | 18.31 | 0.824 | 0.836 |
+
+Memory, from the resident memory of the process (VmRSS, after a Go GC that gives the Go heap back) with a pool of 8 VMs less that with 1, divided by 7, after loading and after every VM rendered every page 32 times:
+
+| Per VM | lib, loaded | lib, rendered | C, loaded | C, rendered |
+| --- | ---: | ---: | ---: | ---: |
+| shop | 8.7 MiB | 11.6 MiB | 8.4 MiB | 12.3 MiB |
+| MUI | 4.1 MiB | 7.5 MiB | 3.9 MiB | 7.7 MiB |
+
+The process with one VM is smaller on the C engine: 34.0 MiB against 42.4 MiB after the shop's renders, 26.2 MiB against 31.8 MiB after MUI's. A VM of the shop holds 7.8 MiB of allocations after loading and 8.3 MiB after the renders (9.0 and 9.5 MiB on lib), in a footprint of 10.2 and 12.7 MiB.
+
+What tifa's wiring changed, against the C engine before it, by callgrind's instructions per render (the difference of a run of 12 renders a page and one of 2, so that loading cancels out) and by time at the 8 positions (with the engine of main at 09e731a3 on both sides):
+
+- **Strings that javascript gives Go are read where the engine keeps them**: a render's result, the JSON of an object and the arguments of Go functions. `JS_ToCStringLen2` made a UTF-8 copy in the VM's memory of any string that is not ASCII (3 bytes a unit for a 16-bit string), which failed with out of memory when the VM had no room. A rope is joined first. A 16-bit string goes to UTF-8 in one pass, four units at a time where they are ASCII or all from U+0800, into a buffer that is reused, then one copy. Counting the bytes first, a second pass, made it slower than the C: 1.05% more instructions on the shop, whose pages are Chinese. The one pass takes 1.03 million instructions a render of the shop where the C took 1.34 million: 0.22% fewer on the shop, 0.03% on MUI and the bench pages.
+- **The hash of emotion** (tifa's Builtin for `@emotion/hash`) reads 8-bit and 16-bit strings where the engine keeps them and multiplies in 32 bits, as the JavaScript's halves amount to: 5.1 million instructions a render of an MUI page down to 1.1 million, 1.86% of the render.
+- **tifa takes `startRender` and its readers once at Load**, where each render compiled three small scripts: 0.07% to 0.14% fewer instructions.
+- **tifa gives memory back** with `ReleaseMemory`: all the free memory after Load (2.1 MB on the shop, 1.0 MB on MUI), and after a full GC what is beyond what the renders until the next GC fill. Loaded VMs take 0.2 to 0.4 MiB less. After renders the free memory is taken again, and the full GC gives back only what a big render took once the GC threshold has come back down.
+
+Together: the shop 0.37% fewer instructions and 0.994 of the time (7 of 8 positions faster), MUI 1.96% and 0.984 (8 of 8), the bench pages 0.12% and 0.994 (7 of 8). Each is under the 2% the rule counts as time, and none is slower.
+
+Measured and left (shares of a render on the C engine, from callgrind):
+
+- **The path of a Builtin call** (`hostCall`, `callBuiltin`, reading the arguments and making the result) is 0.34% of a shop render with the Builtin's own work, and about 0.2% of an MUI render beside the hash.
+- **Joining ropes in Go** instead of `JS_ToString`: the join takes 0.33% of a shop render and 0.23% of MUI. Walking the pieces in Go still reads every character, so it would save part of that.
+- **AsyncContext as C**: its Builtins are under 0.05% of a render.
+- **The polls**: `host_poll` is 0.06% to 0.16% of a render.
 
 ## What was tried and not done
 
