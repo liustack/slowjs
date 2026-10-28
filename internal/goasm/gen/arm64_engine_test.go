@@ -237,9 +237,22 @@ func TestLowerARM64EngineOwnData(t *testing.T) {
 			"not in the block of an adrp"},
 		"label reached by a jump table": {wrap("adrp x8, .LCPI0_0", "br x1", ".LBB0_9:", "ldr x0, [x8, :lo12:.LCPI0_0]"),
 			"not in the block of an adrp"},
-		"page overwritten":   {wrap("adrp x8, .LCPI0_0", "mov x8, #5", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
-		"no page":            {wrap("ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
-		"page of other data": {wrap("adrp x8, data", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		// An addend on the adrp that the :lo12: use does not share.
+		"page of another address": {wrap("adrp x8, .LCPI0_0+4096", "ldr x0, [x8, :lo12:.LCPI0_0]"), "from the adrp"},
+		"page of a later address": {wrap("adrp x8, .LCPI0_0+8", "ldr x0, [x8, :lo12:.LCPI0_0]"), "from the adrp"},
+		"other addend on one way in": {wrap("adrp x8, .LCPI0_0", "cbz x0, .LBB0_2", "adrp x8, .LCPI0_0+4096", ".LBB0_2:",
+			"ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		// A page that only some ways in carry is a page all the same.
+		"maybe a page, read":      {wrap("cbz x0, .LBB0_1", "adrp x8, .LCPI0_0", "b .LBB0_2", ".LBB0_1:", "mov x8, #0", ".LBB0_2:", "and x0, x8, #4095"), "may hold the page"},
+		"maybe a page, copied":    {wrap("cbz x0, .LBB0_1", "mov x8, #0", "b .LBB0_2", ".LBB0_1:", "adrp x8, .LCPI0_0", ".LBB0_2:", "mov x1, x8"), "may hold the page"},
+		"maybe a page, in a loop": {wrap("mov x8, #0", ".LBB0_2:", "and x0, x8, #4095", "adrp x8, .LCPI0_0", "cbnz x1, .LBB0_2"), "may hold the page"},
+		"maybe a page, used":      {wrap("cbz x0, .LBB0_1", "adrp x8, .LCPI0_0", "b .LBB0_2", ".LBB0_1:", "mov x8, #0", ".LBB0_2:", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		// The page of data that is not the function's own is a page too.
+		"page of data over a label": {wrap("adrp x8, data", ".LBB0_2:", "and x0, x8, #4095"), "holds the page"},
+		"page of data over a join":  {wrap("cbz x0, .LBB0_1", "adrp x8, data", "b .LBB0_2", ".LBB0_1:", "mov x8, #0", ".LBB0_2:", "and x0, x8, #4095"), "may hold the page"},
+		"page overwritten":          {wrap("adrp x8, .LCPI0_0", "mov x8, #5", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"no page":                   {wrap("ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"page of other data":        {wrap("adrp x8, data", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
 		"page after a full address": {wrap("adrp x8, .LCPI0_0", "add x8, x8, :lo12:.LCPI0_0", "ldr x0, [x8, :lo12:.LCPI0_0]"),
 			"not in the block of an adrp"},
 	} {

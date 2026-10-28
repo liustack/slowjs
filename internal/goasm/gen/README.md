@@ -179,7 +179,8 @@ its Go symbol (`engine_rodata`, or a function), takes a
 constant pool and jump tables PC-relative, after following the register of
 its `adrp` through the blocks (`arm64_pages.go`) to see that it still holds
 exactly that page: an offset added to it, which the PC-relative form would
-drop, stops the build. It refuses `svc`, system
+drop, stops the build. So does a read of a register that holds a page of any
+`adrp` on some way in. It refuses `svc`, system
 registers, X18, X26 to X29 as values, LR outside a save, tail jumps, a frame
 that grows after the prologue, a stack address that escapes and fused
 multiply-adds (`fmadd`, `fmla` and the rest), with a test for each
