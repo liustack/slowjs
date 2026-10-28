@@ -34,7 +34,7 @@ func TestReleaseBuild(t *testing.T) {
 	if _, err := os.Stat(at("out-clean/engine_stubs_amd64.s")); err == nil {
 		t.Fatal("a release build wrote a stub file")
 	}
-	if _, err := os.Stat(at("out-clean/engine_decl.go")); err != nil {
+	if _, err := os.Stat(at("out-clean/engine_decl_amd64.go")); err != nil {
 		t.Fatalf("a release build wrote no package: %v", err)
 	}
 
