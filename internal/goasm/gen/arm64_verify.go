@@ -47,6 +47,8 @@ const (
 	a64BigSave    = 0xa93ffa9d // stp x29, x30, [x20, #-8]
 	a64BigSetSP   = 0x9100029f // mov sp, x20
 	a64BigLoad    = 0xa97ffbfd // ldp x29, x30, [sp, #-8]
+	a64AddFP      = 0x910003fd // add x29, sp, #0: the leaf epilogue, with #frame-8 in bits 10 to 21
+	a64AddSP      = 0x910003ff // add sp, sp, #0: with #frame in bits 10 to 21
 )
 
 // CheckEngineARM64 runs the check on c.Bin, a linked linux/arm64 binary of
@@ -300,7 +302,22 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			}
 		}
 	}
-	if m.Frame > 0 || calls {
+	if m.Frame > 0 && !calls {
+		// A function with a frame and no call is a leaf to the Go
+		// assembler, which restores the frame pointer and the stack pointer
+		// with two ADDs and leaves the saved registers in the frame
+		// (cmd/internal/obj/arm64/obj7.go, ARET of a leaf). A frame past
+		// 4095 bytes needs a longer sequence, which nothing has reviewed.
+		if frame > 4095 {
+			return fmt.Errorf("a leaf frame of %d bytes: its epilogue is not reviewed", frame)
+		}
+		if w, err := next(); err != nil || w != a64AddFP|uint32(frame-8)<<10 {
+			return fmt.Errorf("frame pointer not restored: %#08x", w)
+		}
+		if w, err := next(); err != nil || w != a64AddSP|uint32(frame)<<10 {
+			return fmt.Errorf("frame not freed as made: %#08x", w)
+		}
+	} else if m.Frame > 0 || calls {
 		w, err := next()
 		if err != nil {
 			return err

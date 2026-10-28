@@ -156,3 +156,55 @@ func TestCheckARM64Rodata(t *testing.T) {
 		}
 	}
 }
+
+// a64LeafCase is f(I64) I64 at 0x1000 that keeps a frame of 40 bytes and calls
+// nothing, as the Go assembler makes it: a leaf with locals is NOSPLIT, and
+// its epilogue restores the frame pointer and the stack pointer with two ADDs
+// (cmd/internal/obj/arm64/obj7.go, the leaf case of ARET) and does not load
+// the saved registers back.
+func a64LeafCase() (*a64Checker, Meta, []uint32) {
+	const base = 0x1000
+	sig := Sig{Params: []Type{I64}, Ret: I64}
+	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16, NoSplit: true, Rec: &FuncRecord{Name: "f", Sig: sig}}
+	obj := []uint32{0xaa1403e0} // mov x0, x20
+	code := make([]byte, 4*len(obj))
+	binary.LittleEndian.PutUint32(code, obj[0])
+	o := &a64Object{code: code, addr: map[string][2]int{"f": {0, len(code)}}, relocs: map[int]a64Reloc{}}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f"}}, o: o, bin: &binFile{}}
+	// A frame of 64 (40, the LR, rounded for the frame pointer), the argument
+	// from 72(RSP), the body, the result to 80(RSP), the two ADDs, RET.
+	w := []uint32{0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, 0xaa1403e0,
+		0xf9000000 | 10<<10 | 31<<5 | 0, 0x910003fd | 56<<10, 0x910003ff | 64<<10, a64Ret}
+	return k, m, w
+}
+
+// TestCheckARM64LeafFrame: a function with a frame and no call frees it with
+// the leaf epilogue of the Go assembler, and with no other.
+func TestCheckARM64LeafFrame(t *testing.T) {
+	k, m, w := a64LeafCase()
+	if err := k.function(m, 0x1000, a64Bytes(w)); err != nil {
+		t.Fatalf("the leaf as made: %v", err)
+	}
+	for name, c := range map[string]struct {
+		edit func(w []uint32)
+		want string
+	}{
+		"frame pointer from elsewhere": {func(w []uint32) { w[6] = 0x910003fd | 48<<10 }, "frame pointer not restored"},
+		"stack freed by another size":  {func(w []uint32) { w[7] = 0x910003ff | 48<<10 }, "frame not freed as made"},
+		"stack pointer not restored":   {func(w []uint32) { w[7] = a64Nop }, "frame not freed as made"},
+		"the epilogue of a caller":     {func(w []uint32) { w[6], w[7] = a64LoadFP, 0xf84407fe }, "frame pointer not restored"},
+		"shifted amount":               {func(w []uint32) { w[7] = 0x914003ff | 1<<10 }, "frame not freed as made"},
+	} {
+		k, m, w := a64LeafCase()
+		c.edit(w)
+		if err := k.function(m, 0x1000, a64Bytes(w)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+	// A caller keeps the epilogue that loads the saved registers back.
+	k, m, w = a64CheckCase()
+	w[13], w[14] = 0x910003fd|32<<10, 0x910003ff|64<<10
+	if err := k.function(m, 0x1000, a64Bytes(w)); err == nil || !strings.Contains(err.Error(), "unknown epilogue") {
+		t.Errorf("a leaf epilogue in a function that calls: %v", err)
+	}
+}
