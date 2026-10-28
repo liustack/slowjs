@@ -74,3 +74,11 @@ func freeBlocks(m *VM, blocks []uintptr) {
 		lib.Xjs_free_rt(m.runtime.tls, m.runtime.cRuntime, p)
 	}
 }
+
+// heldFuncs returns how many Go functions of RegisterFunc and Then the engine
+// of lib holds, for every VM of the process: it keeps them in one table.
+func heldFuncs(*VM) int {
+	goFuncsMu.Lock()
+	defer goFuncsMu.Unlock()
+	return len(goFuncs)
+}

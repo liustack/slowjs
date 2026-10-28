@@ -53,7 +53,9 @@ type vmState struct {
 	// engineState is the state of the VM in the engine (engine_lib.go).
 	engineState
 	// id is how a Builtin finds the VM, the context's opaque (see vms).
-	id      uint32
+	id uint32
+	// goFuncs holds the names of the Go functions of RegisterFunc and their
+	// ids, which RegisterFunc refuses to take again.
 	goFuncs map[string]int32
 	timeout time.Duration
 	// depth counts the calls into javascript in progress: a host function
@@ -272,14 +274,7 @@ func (m *VM) SetStrip(s Strip) {
 
 // Close releases the resources held by m.
 func (m *VM) Close() error {
-	goFuncsMu.Lock()
-	for _, magic := range m.goFuncs {
-		if goFuncs[magic] != nil {
-			delete(goFuncs, magic)
-			freeMagic = append(freeMagic, magic)
-		}
-	}
-	goFuncsMu.Unlock()
+	m.forgetFuncs()
 
 	id := m.id
 	onClose := m.onClose

@@ -6,21 +6,12 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
-	"sync"
-	"sync/atomic"
 )
 
-var (
-	staticMagic atomic.Int32
-
-	goFuncsMu sync.Mutex
-	goFuncs   = map[int32]*goFunc{}
-	freeMagic []int32
-)
-
+// goFunc is a Go function of RegisterFunc, RegisterHostFunc or Then, which the
+// engine keeps under an id (keepFunc) for the function objects that call it.
 type goFunc struct {
 	f            reflect.Value
 	in           []reflect.Type
@@ -56,8 +47,9 @@ type goFunc struct {
 // Any Go <-> Javascript failing type conversion between arguments/return
 // values throws a Javascript type error exception.
 //
-// There is a limit on the total number of currently registered Go
-// functions.
+// There is a limit on the number of Go functions registered at once: on the
+// engine of lib, 32767 for the whole process, and on the C engine, about a
+// billion for each VM.
 //
 // The function becomes the property 'name' of the global object: writable,
 // configurable and not enumerable. A configurable property already there,
@@ -176,7 +168,7 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 		info.out = append(info.out, typ.Out(i))
 	}
 
-	magic, err := registerCallback(info)
+	id, err := m.keepFunc(info)
 	if err != nil {
 		return err
 	}
@@ -185,43 +177,42 @@ func (m *VM) registerFunc(name string, f any, wantThis, host bool) (err error) {
 	if argc < 0 {
 		argc = 0
 	}
-	if err := m.defineGoFunc(jsName, magic, argc); err != nil {
-		releaseMagic(magic)
+	if err := m.defineGoFunc(jsName, id, argc); err != nil {
 		return fmt.Errorf("cannot register func %s: %w", name, err)
 	}
 
 	if m.goFuncs == nil {
 		m.goFuncs = map[string]int32{}
 	}
-	m.goFuncs[jsName] = magic
+	m.goFuncs[jsName] = id
 	return nil
 }
 
 // defineGoFunc defines the global property name, a valid UTF-8 string without
 // NUL bytes, as a javascript function of length 'length' that calls the Go
-// function registered as magic. The property is writable, configurable and
-// not enumerable, and it replaces a configurable property of that name. It
-// does not use JS_SetPropertyFunctionList, which is meant for new objects:
-// it aborts the process when the property already exists.
-func (m *VM) defineGoFunc(name string, magic, length int32) error {
-	// Both the function's name and the atom copy the string.
-	f, err := m.newGoFunction(name, magic, length)
+// function kept as id. The property is writable, configurable and not
+// enumerable, and it replaces a configurable property of that name. It does
+// not use JS_SetPropertyFunctionList, which is meant for new objects: it
+// aborts the process when the property already exists. When it fails, the
+// id is given up (goFuncFreed).
+func (m *VM) defineGoFunc(name string, id, length int32) error {
+	// Both the function's name and the atom copy the string. newGoFunction
+	// gives the id up when it makes no function.
+	f, err := m.newGoFunction(name, id, length)
 	if err != nil {
 		return err
-	}
-
-	if isException(f) {
-		return m.errFromException()
 	}
 
 	atom, err := m.jsNewAtom(name)
 	if err != nil {
 		m.jsFreeValue(f)
+		m.goFuncFreed(id)
 		return err
 	}
 
 	if atom == atomNull {
 		m.jsFreeValue(f)
+		m.goFuncFreed(id)
 		return m.errFromException()
 	}
 
@@ -233,44 +224,11 @@ func (m *VM) defineGoFunc(name string, magic, length int32) error {
 
 	// JS_DefinePropertyValue takes f, also when it fails.
 	if m.jsDefinePropertyValue(g, atom, f, propWritable|propConfigurable|propThrow) < 0 {
+		m.goFuncFreed(id)
 		return m.errFromException()
 	}
 
 	return nil
-}
-
-// registerCallback allocates a magic number for the given goFunc and stores
-// it in the global goFuncs map. It returns the allocated magic number or an error.
-func registerCallback(info *goFunc) (int32, error) {
-	goFuncsMu.Lock()
-	defer goFuncsMu.Unlock()
-	if n := len(freeMagic); n > 0 {
-		k := freeMagic[n-1]
-		freeMagic = freeMagic[:n-1]
-		goFuncs[k] = info
-		return k, nil
-	}
-	magic := staticMagic.Add(1)
-	if magic > math.MaxInt16 {
-		staticMagic.Add(-1)
-		return -1, fmt.Errorf("too many registered functions")
-	}
-	goFuncs[magic] = info
-	return magic, nil
-}
-
-// releaseMagic removes the Go function associated with magic from the global
-// tables, returning it to the free pool.
-func releaseMagic(magic int32) {
-	goFuncsMu.Lock()
-	// Append only if the magic was actually registered. freeMagic is a slice,
-	// so unlike the old map it does not dedup: a double release would queue the
-	// same magic twice and later hand it to two live callbacks at once.
-	if _, ok := goFuncs[magic]; ok {
-		delete(goFuncs, magic)
-		freeMagic = append(freeMagic, magic)
-	}
-	goFuncsMu.Unlock()
 }
 
 var rvt = reflect.TypeOf(Value{})
