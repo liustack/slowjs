@@ -42,9 +42,9 @@ func TestNegativeBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a negative build: %v\n%s", err, out)
 	}
-	decl, err := os.ReadFile(filepath.Join(work, "out-neg", "engine_decl.go"))
+	decl, err := os.ReadFile(filepath.Join(work, "out-neg", "engine_decl_amd64.go"))
 	if err != nil || !strings.Contains(string(decl), "NEGATIVE BUILD") {
-		t.Fatalf("engine_decl.go of a negative build: %v\n%s", err, decl)
+		t.Fatalf("engine_decl_amd64.go of a negative build: %v\n%s", err, decl)
 	}
 	if err := os.WriteFile(filepath.Join(work, "go.mod"), []byte("module negmod\n\ngo 1.22\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -65,8 +65,8 @@ func TestNegativeBuild(t *testing.T) {
 	if out, err := run("neg", clean, nil); err != nil {
 		t.Fatalf("a normal build over it: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(work, "out-neg", "engine_negative.go")); err == nil {
-		t.Fatal("a normal build left engine_negative.go of the negative build before it")
+	if _, err := os.Stat(filepath.Join(work, "out-neg", "engine_negative_amd64.go")); err == nil {
+		t.Fatal("a normal build left engine_negative_amd64.go of the negative build before it")
 	}
 	if o, err := gobuild(); err != nil {
 		t.Fatalf("the normal build does not compile without the tag: %v\n%s", err, o)
