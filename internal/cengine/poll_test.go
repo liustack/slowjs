@@ -198,9 +198,11 @@ func TestInterruptOneProc(t *testing.T) {
 // collection after the setup keeps one from starting while Eval compiles,
 // and Interrupt comes once the slice runs, since the interpreter reads the
 // flag when it calls the script. The slice must outlast the Interrupt and the
-// grace: 8 Mi elements take about 230 ms on an Apple M-series core and more
-// elsewhere, and the Interrupt comes once Eval has compiled the call, also
-// under an emulator.
+// grace. A slice of a dense Array copies its elements in one go and takes
+// 25 ms for 8 Mi of them, so the slice here is of an array-like, which the
+// generic steps of the specification read one index at a time: 8 Mi indexes
+// take several hundred ms, and the Interrupt comes once Eval has compiled the
+// call, also under an emulator.
 func TestKill(t *testing.T) {
 	needPolls(t)
 	for _, c := range []struct {
@@ -208,7 +210,7 @@ func TestKill(t *testing.T) {
 		at, grace        time.Duration
 	}{
 		{"loop", "", "for (;;) {}", 20 * time.Millisecond, 0},
-		{"slice", "var a = Array(1 << 23).fill(1.5)", "a.slice()", 100 * time.Millisecond, 30 * time.Millisecond},
+		{"slice", "var a = { length: 1 << 23 }", "Array.prototype.slice.call(a)", 100 * time.Millisecond, 30 * time.Millisecond},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)
@@ -259,13 +261,13 @@ func TestTimeout(t *testing.T) {
 
 	w := newVM(t, Options{Seed: 1})
 	w.Host().SetKillGrace(30 * time.Millisecond)
-	if _, err := w.Eval("var a = Array(1 << 22).fill(1.5)", "setup.js"); err != nil {
+	if _, err := w.Eval("var a = { length: 1 << 22 }", "setup.js"); err != nil {
 		t.Fatal(err)
 	}
 	w.RunGC()
 	w.SetTimeout(50 * time.Millisecond)
 	t0 := time.Now()
-	if _, err := w.Eval("for (;;) a.slice()", "slice.js"); !errors.Is(err, ErrKilled) {
+	if _, err := w.Eval("for (;;) Array.prototype.slice.call(a)", "slice.js"); !errors.Is(err, ErrKilled) {
 		t.Errorf("an endless slice: Eval gave %v, want ErrKilled", err)
 	}
 	if d := time.Since(t0); d < 80*time.Millisecond || d > 2*time.Second {
