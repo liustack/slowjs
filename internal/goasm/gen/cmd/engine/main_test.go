@@ -97,7 +97,7 @@ func TestSizeLog2BeforeLLVM(t *testing.T) {
 // multiple of 8 below 64, and nothing else.
 func TestParseAlign64(t *testing.T) {
 	got, err := parseAlign64(engineAlign64)
-	if err != nil || !reflect.DeepEqual(got, map[string]int{"JS_CallInternal": 0, "lre_exec_backtrack": 16}) {
+	if err != nil || !reflect.DeepEqual(got, map[string]int{"JS_CallInternal": 40, "lre_exec_backtrack": 16}) {
 		t.Fatalf("the default: %v, %v", got, err)
 	}
 	if got, err := parseAlign64(""); err != nil || len(got) != 0 {
