@@ -62,7 +62,9 @@ type Error struct {
 // called or in a long collection: the call returns an *Error with
 // Uncatchable and Interrupted set, and the VM is good only for Close. Its
 // methods that return an error return one that matches ErrKilled, the others
-// panic, and [Value.Free] does nothing. The engine of lib never kills.
+// panic, and [Value.Free] does nothing. The exceptions are [VM.MemorySize] and
+// [VM.GCThreshold], which only read a counter and answer as they do on any VM.
+// The engine of lib never kills.
 var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
 
 // errKilledVM is the error of a method called after a kill.
