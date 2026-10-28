@@ -175,3 +175,82 @@ func TestLowerARM64EngineLeaf(t *testing.T) {
 		t.Errorf("a leaf calling a unified entry: %v", err)
 	}
 }
+
+// TestLowerARM64EngineOwnData: a use of the function's own data reads it
+// relative to the PC, so the register that holds its page must still hold
+// exactly that page at the use. A register changed in between, or read as a
+// value, would make the PC-relative read mean something else, and is refused.
+func TestLowerARM64EngineOwnData(t *testing.T) {
+	wrap := func(mid ...string) []string {
+		out := []string{"str x30, [sp, #-16]!"}
+		out = append(out, mid...)
+		return append(out, "ldr x30, [sp], #16", "ret")
+	}
+	// The page stays in the register across a label: llc hoists it.
+	text, _, err := lowerOwn(t, wrap("adrp x10, .LCPI0_0", ".LBB0_1:", "ldr d0, [x10, :lo12:.LCPI0_0]",
+		"ldr d1, [x10, :lo12:.LCPI0_0+8]", "cbnz x0, .LBB0_1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ldr d0, .LCPI0_0\n", "ldr d1, .LCPI0_0+8\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in\n%s", want, text)
+		}
+	}
+	// The register is a plain value on a path that never saw the adrp, even
+	// when the text puts that path after it.
+	if _, _, err := lowerOwn(t, wrap("cbz x0, .LBB0_2", "adrp x8, .LCPI0_0", "ldr d0, [x8, :lo12:.LCPI0_0]", "b .LBB0_3",
+		".LBB0_2:", "cmp w8, #1", ".LBB0_3:")); err != nil {
+		t.Errorf("a path without the adrp: %v", err)
+	}
+	// A leaf keeps the callee-saved registers.
+	if _, _, err := lowerOwn(t, wrap("adrp x25, .LCPI0_0", "bl memcpy", "ldr x0, [x25, :lo12:.LCPI0_0]")); err != nil {
+		t.Errorf("a page over a leaf call: %v", err)
+	}
+	// Both ways in agree, the loop included.
+	if _, _, err := lowerOwn(t, wrap("adrp x8, .LCPI0_0", "cbz x0, .LBB0_2", "mov x1, #1", ".LBB0_2:", ".LBB0_3:",
+		"ldr d0, [x8, :lo12:.LCPI0_0]", "sub x0, x0, #1", "cbnz x0, .LBB0_3")); err != nil {
+		t.Errorf("the page kept over a join and a loop: %v", err)
+	}
+	// The address of the pool in full, then used as a base.
+	if _, _, err := lowerOwn(t, wrap("adrp x8, .LCPI0_0", "add x8, x8, :lo12:.LCPI0_0+8", "ldr x0, [x8]")); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		lines []string
+		want  string
+	}{
+		// The three lines of the review: the second element of a pool.
+		"offset added to the page": {wrap("adrp x8, .LCPI0_0", "add x8, x8, #8", "ldr x0, [x8, :lo12:.LCPI0_0]"), "holds the page"},
+		"page copied":              {wrap("adrp x8, .LCPI0_0", "mov x1, x8", "ldr x0, [x8, :lo12:.LCPI0_0]"), "holds the page"},
+		"page used as an index":    {wrap("adrp x8, .LCPI0_0", "ldr x1, [x2, x8]", "ldr x0, [x8, :lo12:.LCPI0_0]"), "holds the page"},
+		"offset added over a label": {wrap("adrp x8, .LCPI0_0", ".LBB0_1:", "add x8, x8, #8",
+			"ldr x0, [x8, :lo12:.LCPI0_0]"), "holds the page"},
+		"overwritten on one way in": {wrap("adrp x8, .LCPI0_0", "cbz x0, .LBB0_2", "mov x8, #5", ".LBB0_2:",
+			"ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"overwritten by the loop": {wrap("adrp x8, .LCPI0_0", ".LBB0_2:", "ldr d0, [x8, :lo12:.LCPI0_0]", "mov x8, #5",
+			"cbnz x0, .LBB0_2"), "not in the block of an adrp"},
+		"other page on one way in": {wrap("adrp x8, .LCPI0_0", "cbz x0, .LBB0_2", "adrp x8, data", ".LBB0_2:",
+			"ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"after a call": {wrap("adrp x25, .LCPI0_0", "bl callee", "ldr x0, [x25, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"after a leaf, in a scratch register": {wrap("adrp x8, .LCPI0_0", "bl memcpy", "ldr x0, [x8, :lo12:.LCPI0_0]"),
+			"not in the block of an adrp"},
+		"label reached by a jump table": {wrap("adrp x8, .LCPI0_0", "br x1", ".LBB0_9:", "ldr x0, [x8, :lo12:.LCPI0_0]"),
+			"not in the block of an adrp"},
+		"page overwritten":   {wrap("adrp x8, .LCPI0_0", "mov x8, #5", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"no page":            {wrap("ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"page of other data": {wrap("adrp x8, data", "ldr x0, [x8, :lo12:.LCPI0_0]"), "not in the block of an adrp"},
+		"page after a full address": {wrap("adrp x8, .LCPI0_0", "add x8, x8, :lo12:.LCPI0_0", "ldr x0, [x8, :lo12:.LCPI0_0]"),
+			"not in the block of an adrp"},
+	} {
+		if _, _, err := lowerOwn(t, c.lines); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+func lowerOwn(t *testing.T, lines []string) (string, Meta, error) {
+	t.Helper()
+	fn, env := a64TestEnv()
+	return LowerARM64EngineFunc(lines, fn, env)
+}
