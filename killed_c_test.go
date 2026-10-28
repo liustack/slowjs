@@ -144,7 +144,7 @@ func TestKilledVM(t *testing.T) {
 	}
 	for name, call := range map[string]func(){
 		"RunGC":      func() { m.RunGC() },
-		"MemorySize": func() { m.MemorySize() },
+		"RunYoungGC": func() { m.RunYoungGC() },
 	} {
 		if p := panicked(call); p != brokenPanic {
 			t.Errorf("%s after a kill panicked with %v, want %q", name, p, brokenPanic)
@@ -171,4 +171,29 @@ func panicked(f func()) (r any) {
 	defer func() { r = recover() }()
 	f()
 	return nil
+}
+
+// MemorySize and GCThreshold read one counter of the runtime and change
+// nothing, so they answer on a killed VM as they do on one that an Interrupt
+// stopped (the engine of lib never kills). The methods that collect, which
+// need the engine in a state a kill does not leave, still panic.
+func TestKilledVMReportsItsMemory(t *testing.T) {
+	m := newTestVM(t)
+	before := m.MemorySize()
+	threshold := m.GCThreshold()
+	if _, err := killedVMWith(t, m, nestedEntries["Eval"]); !errors.Is(err, ErrKilled) {
+		t.Fatalf("the killed call got %v", err)
+	}
+	if p := panicked(func() { got := m.MemorySize(); _ = got }); p != nil {
+		t.Fatalf("MemorySize after a kill panicked with %v", p)
+	}
+	if got := m.MemorySize(); got == 0 {
+		t.Errorf("MemorySize after a kill is 0, it was %d before", before)
+	}
+	if p := panicked(func() { got := m.GCThreshold(); _ = got }); p != nil {
+		t.Fatalf("GCThreshold after a kill panicked with %v", p)
+	}
+	if got := m.GCThreshold(); got != threshold {
+		t.Errorf("GCThreshold after a kill is %d, want the %d it had", got, threshold)
+	}
 }
