@@ -73,6 +73,9 @@ type goFunc struct {
 // has to look like a built-in, is better a [Builtin]: it converts nothing and
 // uses no reflection, so a call costs far less.
 func (m *VM) RegisterFunc(name string, f any, wantThis bool) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	return m.registerFunc(name, f, wantThis, false)
 }
 
@@ -102,6 +105,9 @@ type HostFunc func(args []any) (any, error)
 // The name is handled as by RegisterFunc, including when the global object
 // already has it.
 func (m *VM) RegisterHostFunc(name string, fn HostFunc) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	if fn == nil {
 		return fmt.Errorf("host func %q cannot be nil", name)
 	}

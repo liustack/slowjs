@@ -114,6 +114,9 @@ const DefaultShapeCache = 2048
 // on where it would not without it: give such a VM a smaller cache, or 0.
 // Kept shapes are not let go when an allocation fails.
 func (m *VM) SetShapeCache(n int) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	if n < 0 || n > math.MaxInt32/8 {
 		return fmt.Errorf("slowjs: a shape cache of %d shapes", n)
 	}
@@ -147,6 +150,9 @@ const (
 // fails. So a script that runs close to its memory limit can run out of
 // memory with the cache on where it would not without it.
 func (m *VM) SetRegExpCache(n, bytes int) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^uintptr(0)) {
 		return fmt.Errorf("slowjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
@@ -161,6 +167,9 @@ func (m *VM) SetRegExpCache(n, bytes int) error {
 // monotonic clock, so setting the system clock does not move it. A timeout
 // too long for that clock (about 292 years) never fires.
 func (m *VM) SetEvalTimeout(d time.Duration) error {
+	if err := m.usable(); err != nil {
+		return err
+	}
 	m.timeout = d
 	return nil
 }

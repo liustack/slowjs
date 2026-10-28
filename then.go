@@ -18,6 +18,9 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 		return Value{}, fmt.Errorf("cannot call Then on a Value not associated with a VM")
 	}
 	m := v.vm
+	if err := m.usable(); err != nil {
+		return Value{}, err
+	}
 
 	fns := [2]func(Value){onFulfilled, onRejected}
 	names := [2]string{"onFulfilled", "onRejected"}
@@ -45,7 +48,9 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	// fetching and invoking .then runs Javascript (a then getter or a
 	// user-overridden then), so without this the deadline from the last Eval
 	// keeps ticking through idle time and could interrupt this call.
-	m.enter()
+	if err = m.enter(); err != nil {
+		return
+	}
 	defer m.leave(&err)
 	thenFn := m.jsGetProperty(v.v, atomThen)
 	result, err := m.jsCall(thenFn, v.v, jsArgs)
