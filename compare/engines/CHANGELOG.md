@@ -1,5 +1,9 @@
 # Changes to the engine comparison
 
+## 2026-10-28: moejs moved
+
+- moejs is now `github.com/MoeForge/moejs`, v0.1.0-alpha.11 (it was `github.com/Calcium-Ion/moejs`, v0.1.0-alpha.9). Numbers in earlier result files are those of alpha.9. The C QuickJS rows keep their Makefile's build, which has no `-DNDEBUG` (see `docs/benchmarks.md`).
+
 What changed in how the comparison measures, so that numbers from different
 runs can be read side by side. A run's file in `results/` says which
 version of the comparison made it (the commit of this repository).

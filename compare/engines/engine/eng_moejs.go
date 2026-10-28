@@ -14,14 +14,14 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/Calcium-Ion/moejs"
-	mengine "github.com/Calcium-Ion/moejs/engine"
+	"github.com/MoeForge/moejs"
+	mengine "github.com/MoeForge/moejs/engine"
 )
 
 func init() {
 	register(&Engine{
 		Name:           "moejs",
-		Module:         "github.com/Calcium-Ion/moejs",
+		Module:         "github.com/MoeForge/moejs",
 		New:            newMoejs,
 		SharedPrograms: true,
 		CompileShared:  compileMoejs,
