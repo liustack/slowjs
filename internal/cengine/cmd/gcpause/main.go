@@ -35,29 +35,8 @@ import (
 	"time"
 
 	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/cengine/cmd/scenarios"
 )
-
-// scenarios run one script each, which never ends by itself. Every one keeps
-// the engine inside one long operation for as long as the operation takes.
-var scenarios = []struct{ name, js string }{
-	{"loop", `let a = 0; for (let i = 0; ; i++) { a += i * i }`},
-	{"fib", `function f(n) { return n < 2 ? n : f(n - 1) + f(n - 2) } for (;;) f(27)`},
-	{"regexp_backtrack", `const s = 'x'.repeat(24); for (;;) { /(x+x+)+y/.test(s) }`},
-	{"regexp_scan", `const s = 'a'.repeat(1 << 26); for (;;) { /a*b/.test(s) }`},
-	{"regexp_replace", `const s = 'ab'.repeat(1 << 24); for (;;) { s.replace(/a/g, 'cc') }`},
-	{"json_parse", `const s = JSON.stringify(Array.from({ length: 300000 }, (_, i) => ({ id: i, name: 'item ' + i, tags: ['a', 'b'], v: i / 3 })));
-		for (;;) { JSON.parse(s) }`},
-	{"json_stringify", `const o = Array.from({ length: 300000 }, (_, i) => ({ id: i, name: 'item ' + i, tags: ['a', 'b'], v: i / 3 }));
-		for (;;) { JSON.stringify(o) }`},
-	{"string_search", `const s = 'ab'.repeat(1 << 26); for (;;) { s.indexOf('c'); s.lastIndexOf('c'); s.includes('ba' + 'c') }`},
-	{"string_repeat_split", `for (;;) { 'ab'.repeat(1 << 25).split('b').length }`},
-	{"array_join", `const a = Array.from({ length: 2000000 }, (_, i) => 'item' + i); for (;;) { a.join(',') }`},
-	{"sort_typed", `const a = new Float64Array(1 << 22).map(() => Math.random()); for (;;) { a.slice().sort() }`},
-	{"sort_default", `const a = Array.from({ length: 500000 }, () => Math.random()); for (;;) { a.slice().sort() }`},
-	{"bigint_mul", `let x = 7n ** 300000n; for (;;) { x * x }`},
-	{"array_fill", `for (;;) { new Array(1 << 24).fill(0).reverse().indexOf(1) }`},
-	{"normalize", `const s = 'éå'.repeat(1 << 22); for (;;) { s.normalize('NFC') }`},
-}
 
 type histo struct {
 	counts []uint64
@@ -114,12 +93,12 @@ func main() {
 		}
 	}
 	fmt.Println("label\tscenario\tvms\tgomaxprocs\tgcs\tstop_p50_us\tstop_p99_us\tstop_max_us\ttotal_p50_us\ttotal_p99_us\ttotal_max_us\tinterrupt_ms")
-	for _, sc := range scenarios {
-		if len(want) > 0 && !want[sc.name] {
+	for _, sc := range scenarios.All {
+		if len(want) > 0 && !want[sc.Name] {
 			continue
 		}
-		if err := run(*label, sc.name, sc.js, *vms, *secs, *gap); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", sc.name, err)
+		if err := run(*label, sc.Name, sc.JS, *vms, *secs, *gap); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", sc.Name, err)
 			os.Exit(1)
 		}
 	}
