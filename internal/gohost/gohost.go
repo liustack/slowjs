@@ -141,18 +141,25 @@ type VM struct {
 	// script: the outermost entry runs a script (EnterScript), which a
 	// poll may kill. deadline is when it is interrupted, on the monotonic
 	// clock of Now, or 0.
-	script    bool
-	deadline  int64
-	killed    bool
-	counts    Counts
-	lastErr   error
-	depth     int
-	faultWas  bool // SetPanicOnFault of the goroutine before the outermost Enter
-	broken    bool
-	remap     bool
-	closed    bool
-	handles   map[uint32]any
-	handle    uint32
+	script   bool
+	deadline int64
+	killed   bool
+	counts   Counts
+	lastErr  error
+	depth    int
+	faultWas bool // SetPanicOnFault of the goroutine before the outermost Enter
+	broken   bool
+	remap    bool
+	closed   bool
+	// handles holds what Keep stores, handle h at h-1, nil once released.
+	// free lists the released handles, for Keep to give again, so that the
+	// handles stay as few as the things held at once.
+	handles []any
+	free    []uint32
+	// releasing is set while the engine releases a handle (Release): it
+	// does that from the finalizer of an object, inside a collection, where
+	// nothing may enter the engine again.
+	releasing bool
 	unmapping sync.Mutex // held while Close or CloseLeftovers unmaps mem
 }
 
@@ -231,7 +238,7 @@ func New(o Options) (*VM, error) {
 // itself is, as after a panic in the constructor of the engine's VM.
 func (v *VM) Close() error {
 	v.closed = true
-	v.handles = nil
+	v.handles, v.free = nil, nil
 	if vms.Get(v.id) == v {
 		// What the OS may refuse to unmap no longer names the VM.
 		*(*uint64)(addr(v.stack)) = 0
@@ -404,6 +411,9 @@ func (v *VM) enter(script bool, timeout time.Duration) {
 	if v.broken {
 		panic("gohost: a VM broken by a panic in the engine takes only Close")
 	}
+	if v.releasing {
+		panic("gohost: an entry into the engine while it releases a handle, inside a collection")
+	}
 	if v.depth == 0 {
 		v.interrupt.Store(0)
 		if v.flag != 0 {
@@ -486,27 +496,46 @@ func (v *VM) AllowRemap() bool {
 	return v.remap
 }
 
-// Keep stores x for the engine, which knows it by the handle returned until
-// host_release or Close.
-func (v *VM) Keep(x any) uint32 {
+// MaxHandles is the most handles a VM holds at once.
+const MaxHandles = 1 << 30
+
+// handleLimit is MaxHandles, which a test lowers.
+var handleLimit = MaxHandles
+
+// Keep stores x, which must not be nil, for the engine, which knows it by the
+// handle returned until host_release or Close: a number from 1 to
+// MaxHandles. A released handle goes to a later Keep. It fails when the VM
+// holds MaxHandles handles.
+func (v *VM) Keep(x any) (uint32, error) {
 	if v.closed {
 		panic("gohost: Keep on a closed VM")
 	}
-	if v.handles == nil {
-		v.handles = map[uint32]any{}
+	if x == nil {
+		panic("gohost: Keep of nil")
 	}
-	for {
-		v.handle++
-		if _, used := v.handles[v.handle]; v.handle != 0 && !used {
-			break
-		}
+	if n := len(v.free); n > 0 {
+		h := v.free[n-1]
+		v.free = v.free[:n-1]
+		v.handles[h-1] = x
+		return h, nil
 	}
-	v.handles[v.handle] = x
-	return v.handle
+	if len(v.handles) >= handleLimit {
+		return 0, fmt.Errorf("gohost: VM %d holds %d handles, the most it can", v.id, handleLimit)
+	}
+	v.handles = append(v.handles, x)
+	return uint32(len(v.handles)), nil
 }
 
-// Handle returns what Keep stored under h, or nil.
-func (v *VM) Handle(h uint32) any { return v.handles[h] }
+// Handle returns what Keep stored under h, or nil when h holds nothing.
+func (v *VM) Handle(h uint32) any {
+	if h-1 < uint32(len(v.handles)) {
+		return v.handles[h-1]
+	}
+	return nil
+}
+
+// Handles is how many handles the VM holds.
+func (v *VM) Handles() int { return len(v.handles) - len(v.free) }
 
 // MemoryGrow is host_memory_grow: a new chunk of size bytes, a multiple of
 // 64 KiB, or 0 when the OS refuses, and the engine runs out of memory.
@@ -652,13 +681,17 @@ func Trap(sp uintptr) {
 }
 
 // Release is host_release: the engine dropped the object that held the
-// handle.
+// handle, from its finalizer. It runs no code of the user, and the VM may not
+// be entered while it runs (Enter panics).
 func Release(vm uint32, h uint32) {
 	v := mustLookup(vm, "a handle to release")
-	if _, ok := v.handles[h]; !ok {
+	if v.Handle(h) == nil {
 		panic(fmt.Sprintf("gohost: VM %d releases handle %d, which it does not hold", vm, h))
 	}
-	delete(v.handles, h)
+	v.releasing = true
+	v.handles[h-1] = nil
+	v.free = append(v.free, h)
+	v.releasing = false
 }
 
 func mustArgs(argc, want int32, what string) {
