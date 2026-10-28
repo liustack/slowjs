@@ -71,6 +71,8 @@ Why it is safe:
 
 In C the flag is kept in `BCReaderState` and read by `bc_get_debug_buf`, which `JS_ReadFunctionTag` calls for the two buffers. In the generated Go the bit fields of `BCReaderState` fill their word and its size is written into the frame of `JS_ReadObject` as a number, so rather than add a field there, `JS_ReadObject` passes its flags to `readSharedDebug`, which keeps the flag in the fork's state of the runtime (`lib/runtime.go`): only `JS_ReadObject` reads functions, and it runs no javascript, so the flag is always the one of the read in progress. `fixSharedDebug` (`internal/fixlib/shareddebug.go`) puts `debugAlloc` and `debugGetBuf` of `lib/shareddebug.go` in place of the `js_mallocz` and `bc_get_buf` of the two buffers, `debugFree` in place of their two frees, and `debugShared` into the two counts of `compute_bytecode_size`. It is made after `fixYoungGC`, and only `fixAsyncContext` comes after it.
 
+On the C engine (`-tags slowjs_cengine`) the C source has the flag in `BCReaderState` as it is, and the copy is a read-only mapping outside every VM (`hostmem.MapReadOnly`): the engine of each VM reads it in place, with no lock, and a write to it faults (`TestSharedBytecodeReadOnly`). The last hold unmaps it.
+
 What it saves, on linux/amd64 (AMD EPYC 7B13), measured in tifa with its pool, which loads the bundle with `EvalSharedBytecode` (`JS_ComputeMemoryUsage` of a VM after loading, the same in each VM):
 
 | Bundle | Bytecode | A VM after loading, before | After | Less per VM |

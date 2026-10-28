@@ -7,9 +7,7 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
-	"fmt"
 	"sync"
-	"unsafe"
 )
 
 // SharedBytecode is bytecode of [VM.Compile] that several VMs load with
@@ -29,7 +27,7 @@ import (
 // several VMs on several goroutines can load it at the same time.
 type SharedBytecode struct {
 	mu sync.Mutex
-	p  uintptr // the bytes, in C memory, 0 once freed
+	p  uintptr // the bytes, outside the Go heap, 0 once freed
 	n  int
 	// refs counts the holds on the bytes: the one of the SharedBytecode until
 	// Close, and one for each VM that loaded it until that VM is closed.
@@ -44,13 +42,11 @@ var errSharedClosed = errors.New("slowjs: the shared bytecode is closed")
 // VMs to load with [VM.EvalSharedBytecode]. As with [VM.EvalBytecode], the
 // bytecode is not checked, so it must not come from an untrusted source.
 func NewSharedBytecode(bytecode []byte) (*SharedBytecode, error) {
-	n := len(bytecode)
-	p := allocShared(n)
-	if p == 0 {
-		return nil, fmt.Errorf("slowjs: out of memory for %d bytes of shared bytecode", n)
+	p, err := allocShared(bytecode)
+	if err != nil {
+		return nil, err
 	}
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), n), bytecode)
-	return &SharedBytecode{p: p, n: n, refs: 1}, nil
+	return &SharedBytecode{p: p, n: len(bytecode), refs: 1}, nil
 }
 
 // Len returns the size of the bytecode in bytes, the memory it takes once
@@ -95,7 +91,7 @@ func (b *SharedBytecode) dropLocked() {
 	if b.refs--; b.refs > 0 {
 		return
 	}
-	freeShared(b.p)
+	freeShared(b.p, b.n)
 	b.p = 0
 }
 
