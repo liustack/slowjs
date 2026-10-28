@@ -87,3 +87,8 @@ func freeBlocks(m *VM, blocks []uintptr) {
 func heldFuncs(m *VM) int {
 	return m.h.Handles()
 }
+
+// jsonTooDeep is the error of JSON.parse and JSON.stringify of data nested
+// past the internal depth, which names the JSON (the engine of lib runs out
+// of stack there, enginehelp_lib_test.go).
+const jsonTooDeep = "RangeError: JSON nesting too deep"
