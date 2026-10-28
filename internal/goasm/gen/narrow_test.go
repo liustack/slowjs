@@ -173,8 +173,9 @@ func TestNarrowArgs(t *testing.T) {
 // with the pass's widening they arrive in X20 to X25 in order, the
 // registers the arm64 lowering moves argument words in. The negative build
 // (GEN_KEEP_NARROW) shows the mistake the widening removes: preserve_none
-// leaves the narrow ones to the C rules, which start at W0. It needs LLVM
-// 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+// leaves the narrow ones to the C rules, which start at W0, and the lowering
+// refuses each function whose entry llc reads from other registers than it
+// loads. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
 func TestNarrowArgsARM64(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
@@ -197,8 +198,12 @@ func TestNarrowArgsARM64(t *testing.T) {
 		if keep {
 			cmd.Env = append(cmd.Env, "GEN_KEEP_NARROW=1")
 		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("generate (keep narrow %v): %v\n%s", keep, err, out)
+		out, err := cmd.CombinedOutput()
+		switch {
+		case !keep && err != nil:
+			t.Fatalf("generate: %v\n%s", err, out)
+		case keep && (err == nil || !strings.Contains(string(out), "g6: entry registers [x20 x21 x22 x23 x24 x25], llc's are [x20 x21 w0")):
+			t.Fatalf("the negative build was not refused for g6's entry: %v\n%s", err, out)
 		}
 		b, err := os.ReadFile(filepath.Join(w, "probes.facts"))
 		if err != nil {

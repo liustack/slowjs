@@ -8,12 +8,12 @@
 package cengine
 
 // What package slowjs needs of the engine besides the JS_ functions of
-// engine_decl.go, which it calls directly: the layout of values it reads and
+// engine_decl_<arch>.go, which it calls directly: the layout of values it reads and
 // writes in place, the built-in atoms it names, the few lower-case functions
 // it calls, and where a VM's runtime, context and stack are.
 
 // The layout of values, and the built-in atoms, of the engine the generator
-// wrote (engine_decl.go).
+// wrote (engine_decl_<arch>.go).
 const (
 	RefCountOffset = layoutRefCountOffset // the int32 reference count, from the address a value holds
 	StringLenMask  = layoutStringLenMask  // the length in the first uint32 of a string

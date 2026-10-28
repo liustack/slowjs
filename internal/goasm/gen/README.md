@@ -145,15 +145,49 @@ stack), and the default has no stubs. `-keep-going` is for surveys: it lists eve
 C must change, by class, and stubs it instead of stopping. `-release` is the
 formal build: it fails on any stub, needs `-out`, and refuses every switch
 made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
-`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `GEN_FORCE_NOSPLIT`, `-arch arm64`, a changed
+`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `GEN_FORCE_NOSPLIT`, a changed
 `-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
 the engine is made for (20 by default, 25 for the host's whole 32 MiB, and
 from 16 to 40: the driver and the pass refuse any other before they use it):
-`engine_decl.go` records it as `shadowSizeLog2`, and the host refuses a
-smaller stack. `-arch arm64` stops after llc and counts what the arm64
-lowering would have to handle.
+`engine_decl_<arch>.go` records it as `shadowSizeLog2`, and the host refuses a
+smaller stack.
+
+`-arch` is `amd64` (the default) or `arm64`, and every file the driver
+writes ends in the architecture (`engine_arm64.s`, `engine_decl_arm64.go`,
+`engine_keep_arm64.go`), so one folder holds both and Go picks one. A build
+removes only the files of its own architecture. The arm64 engine runs on
+linux/arm64 and darwin/arm64 alike. arm64 takes `-mode pn` only:
+preserve_none passes integers in X20 to X25 there, and its next registers,
+X26 to X28, are Go's. The other modes stay with the prototype (`proto.sh`).
+Measured on the prototype on an Apple M-series core, a call through a stub
+or with all callee-saved registers saved took about 3.9 ns, `body` about 1 ns
+and `pn` about 1.1 ns, and `pn` has no saves at any call site. arm64 has no
+`-poison` or `-loose-varargs` build and refuses both. It lowers each function
+in `LowerARM64EngineFunc` (`arm64_engine.go`) and holds every entry, call and
+return to the registers llc's facts and probes name, as the amd64 post-link
+check does: a narrow integer in another register, a result read from
+another, or a call llc's facts do not have stops the build. llc reaches its
+data through `adrp` and `:lo12:`: the lowering writes the whole address in
+its Go symbol (`engine_rodata`, or a function), takes a
+`:lo12:` use only in the block of its `adrp`, and reads a function's own
+constant pool and jump tables PC-relative. It refuses `svc`, system
+registers, X18, X26 to X29 as values, LR outside a save, tail jumps, a frame
+that grows after the prologue, a stack address that escapes and fused
+multiply-adds (`fmadd`, `fmla` and the rest), with a test for each
+(`TestLowerARM64EngineRejects`, `TestLowerARM64EngineFacts`).
+
+A function whose arguments need more integer registers than a unified entry
+has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
+block of them instead (`f(sp, blk)`). Its generated entry is named
+`<name>_block`, and the driver writes a Go function by its C name and
+signature into `engine_decl_<arch>.go` (`PackedGo` in `packed.go`): it stores
+each argument in its 8-byte slot (16 for a JSValue) of a block at the shadow
+pointer, as the pass lays the block out, and calls the entry with the shadow
+pointer above the block. So a host calls the API by the C signature on every
+architecture, while which functions are packed differs (20 on amd64, 205 on
+arm64).
 
 The same C gives the same package, byte for byte, whatever the number of
 compile jobs (`-j`) and the order the compiles finish in, and no file holds the
@@ -163,7 +197,7 @@ The engine polls (`pass/poll.cpp`, see
 [c-engine.md](../../../docs/fork-changes/c-engine.md#polls-and-interrupts)):
 every cycle of the code counts down a counter at `-poll-offset` bytes from
 the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
-`engine_decl.go` records as `pollCounterOffset`), and calls `host_poll`
+`engine_decl_<arch>.go` records as `pollCounterOffset`), and calls `host_poll`
 when it runs out. `-poll=false` builds an engine without polls, to measure
 what they cost, and `-release` refuses it. The interpreter counts its
 bytecode itself: the C marks where (`poll_count` in `engine/cutils.h`, at
@@ -195,7 +229,9 @@ assembler marks NOSPLIT by itself (no call and a frame under 128 bytes), the
 register-entry leaves, and the functions it chooses on top of those: a
 function whose address is not taken, that makes no call through a pointer,
 that is on no cycle of direct calls and whose chain of NOSPLIT calls fits the
-room the linker gives one (792 bytes on amd64). Every recursion then goes
+room the linker gives one (792 bytes on amd64 and on arm64, counted
+by `AMD64Stack` and `ARM64Stack`, which differ in the frame each call
+adds). Every recursion then goes
 through a stack check, which is where the stack grows and where the runtime
 can stop the goroutine, and every loop still calls `host_poll`, whose own
 stack check is the safe point. The room is counted as the linker counts it,
@@ -208,7 +244,7 @@ the ABI wrapper of a Go func value of it (its arguments and 16 bytes). The
 linker checks the chains again on every build and fails it when one does
 not fit. The driver prints the size of the list, writes each function on it
 with its frame and height to `nosplit.txt` in the work folder, and
-`engine_decl.go` names them in `noSplitList`, for the tests. The post-link
+`engine_decl_<arch>.go` names them in `noSplitList`, for the tests. The post-link
 check holds each entry's stack check to the list.
 
 Where a body starts: after Go's prologue each function has a `PCALIGN $16`,
@@ -216,10 +252,10 @@ so the body starts on 16 bytes and moves within its lines of 64 bytes when
 code before it grows. `-align64 name:offset,...` puts the body of each named
 function `offset` bytes past a multiple of 64 instead (a `PCALIGN $64`, which
 also puts the function on 64 bytes, then `offset` bytes of 8-byte no-ops,
-which run once per call). The engine's default is
+which run once per call). The default of the amd64 engine is
 `JS_CallInternal:40,lre_exec_backtrack:16`, the fastest places measured (see
-[performance.md](../../../docs/performance.md#code-positions)), and a `-src`
-build has none unless the flag is given. The post-link check holds each body
+[performance.md](../../../docs/performance.md#code-positions)). arm64 and a
+`-src` build have none unless the flag is given. The post-link check holds each body
 to its place and the padding before it to no-ops.
 
 Three negative builds test the tests. `-poison` writes garbage into every
@@ -229,8 +265,8 @@ still pass, so no code reads a register the lowering did not set.
 `GEN_KEEP_NARROW=1` leaves narrow integers as the generator once took them:
 the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
 turns it on, and any other value but an empty one is an error. The package of
-such a build is marked: `engine_negative.go` does not compile without
-`-tags goasmnegative`, and `engine_decl.go` says so. A later build into the
+such a build is marked: `engine_negative_<arch>.go` does not compile without
+`-tags goasmnegative`, and `engine_decl_<arch>.go` says so. A later build into the
 same folder removes the file. `GEN_FORCE_NOSPLIT=f,g` puts those functions
 on the NOSPLIT list whatever the rules say, and marks the package the same
 way: the linker must refuse a recursion or a chain too deep for the room
@@ -257,7 +293,7 @@ must agree on. `engine/test/libc-test.c` feeds that list to `vsnprintf`, so that
 the table cannot drift apart.
 
 The post-link check is the gate for the output. Build a binary of the
-package with `-tags goasmkeep` (`engine_keep.go` then keeps every function)
+package with `-tags goasmkeep` (`engine_keep_<arch>.go` then keeps every function)
 and pass it as `-verify-bin`, with the package's import path as
 `-verify-pkg`. The check reads llc's own object file and the binary, decodes
 both with x/arch, and matches every generated function instruction by
@@ -311,4 +347,21 @@ What the check takes on trust, and where it stops:
   `TestNarrowArgs` runs it with garbage above each narrow value.
 - A Go frame of 4096 bytes or more has a stack check the check does not
   know, so such a function fails it.
-- Only a non-PIE linux/amd64 binary.
+- Only a non-PIE linux binary: linux/amd64, or linux/arm64 for the arm64
+  engine. darwin/arm64 links the same code, so the linux/arm64 check covers
+  it.
+
+On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
+holds each generated function in the linked binary to the object llvm-mc
+made of the lowered text: Go's prologue (a stack check exactly when the
+function is off the NOSPLIT list, whose load of the guard and branch to
+morestack it reads but not the compare between them, and the frame the TEXT
+asks for, below 4096 bytes or a multiple of 4096), the
+loads of the arguments, the no-ops before the body, the body word for word
+with each `BL` and `ADRP`/`ADD` at the target the object names, the stores
+of the result, Go's epilogue, one RET and the call of morestack. It
+compares `engine_rodata` byte for byte, pointers by what they point to. It
+does not read llc's own object: that the lowering kept the meaning of llc's
+code rests on the lowering's rules and llc's register facts, which the
+lowering checks as it goes. `TestCheckARM64Function` changes each part of a
+function and requires the check to refuse it.

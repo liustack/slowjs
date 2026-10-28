@@ -43,7 +43,7 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 // tests and negative builds, one at a time, and a plain build with an output
 // folder goes on.
 func TestReleaseError(t *testing.T) {
-	plain := devSwitches{Arch: "amd64", NonFormat: defaultNonFormat}
+	plain := devSwitches{NonFormat: defaultNonFormat}
 	if err := releaseError(plain, "out"); err != nil {
 		t.Fatalf("a plain release build: %v", err)
 	}
@@ -57,7 +57,6 @@ func TestReleaseError(t *testing.T) {
 		"GEN_KEEP_NARROW":             func(d *devSwitches) { d.KeepNarrow = true },
 		"GEN_EDIT_LOWERED":            func(d *devSwitches) { d.EditLowered = "1" },
 		"GEN_FORCE_NOSPLIT":           func(d *devSwitches) { d.ForceNoSplit = "f" },
-		"-arch arm64":                 func(d *devSwitches) { d.Arch = "arm64" },
 		"-non-format-variadic":        func(d *devSwitches) { d.NonFormat = "" },
 		"without polls (-poll=false)": func(d *devSwitches) { d.NoPoll = true },
 	} {
@@ -106,6 +105,30 @@ func TestParseAlign64(t *testing.T) {
 	for _, s := range []string{"f", "f:", ":8", "f:4", "f:64", "f:-8", "f:x", "f:8,f:16"} {
 		if got, err := parseAlign64(s); err == nil {
 			t.Errorf("%q: accepted as %v", s, got)
+		}
+	}
+}
+
+// TestArchError: arm64 lowers the whole engine with -mode pn only, and
+// refuses the switches its lowering does not do (-poison, -loose-varargs),
+// which would otherwise build an engine as if they had not been given.
+func TestArchError(t *testing.T) {
+	for _, c := range []struct {
+		arch, mode    string
+		poison, loose bool
+		want          string
+	}{
+		{"amd64", "body", false, false, ""},
+		{"amd64", "pn", true, true, ""},
+		{"arm64", "pn", false, false, ""},
+		{"riscv64", "pn", false, false, "amd64 or arm64"},
+		{"arm64", "body", false, false, "-mode pn only"},
+		{"arm64", "pn", true, false, "-poison"},
+		{"arm64", "pn", false, true, "-loose-varargs"},
+	} {
+		err := archError(c.arch, c.mode, c.poison, c.loose)
+		if (c.want == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: %v", c, err)
 		}
 	}
 }

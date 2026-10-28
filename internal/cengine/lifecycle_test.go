@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"testing"
 	"time"
 )
@@ -66,4 +67,49 @@ func TestExceptionConversionThrows(t *testing.T) {
 			closeVM(t, v)
 		}
 	})
+}
+
+// brokenAfter checks what a VM must be after the engine failed in it: broken,
+// refusing every entry with ErrBroken, and closing without a leak of host
+// memory. The goroutine must have its setting of SetPanicOnFault back.
+func brokenAfter(t *testing.T, v *VM, what string) {
+	t.Helper()
+	if !v.Host().Broken() {
+		t.Errorf("%s: the VM is not broken", what)
+	}
+	if _, err := v.Eval("1", "after.js"); !errors.Is(err, ErrBroken) {
+		t.Errorf("%s: Eval after the failure gave %v, want ErrBroken", what, err)
+	}
+	if _, err := v.ReleaseMemory(0); !errors.Is(err, ErrBroken) {
+		t.Errorf("%s: ReleaseMemory after the failure gave %v, want ErrBroken", what, err)
+	}
+	if got := catch(v.RunGC); !errors.Is(asError(got), ErrBroken) {
+		t.Errorf("%s: RunGC after the failure panicked with %v, want ErrBroken", what, got)
+	}
+	if _, err := v.Close(); err != nil {
+		t.Errorf("%s: Close: %v", what, err)
+	}
+	if u := v.Host().Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
+		t.Errorf("%s: after Close the host holds %+v", what, u)
+	}
+	if debug.SetPanicOnFault(false) {
+		t.Errorf("%s: the goroutine still has SetPanicOnFault on", what)
+	}
+	// A process that survived must also run a new VM.
+	w := newVM(t, Options{Seed: 1})
+	if got, err := w.Eval(`[1,2,3].map(x => x * 2).join()`, "next.js"); err != nil || got != "2,4,6" {
+		t.Errorf("%s: a new VM gave %q, %v", what, got, err)
+	}
+	closeVM(t, w)
+}
+
+func catch(f func()) (got any) {
+	defer func() { got = recover() }()
+	f()
+	return nil
+}
+
+func asError(x any) error {
+	err, _ := x.(error)
+	return err
 }
