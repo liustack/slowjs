@@ -30,7 +30,6 @@ var recursionCases = []string{
 	`class A { constructor() { new A() } }; new A()`,
 	`const g = function () { return h() }; const h = g.bind(null); h()`,
 	`const r = /a/; r[Symbol.replace] = function (s) { return s.replace(this) }; 'a'.replace(r)`,
-	`let a = []; for (let i = 0; i < 1e5; i++) a = [a]; JSON.stringify(a)`,
 	`let a = []; for (let i = 0; i < 1e5; i++) a = [a]; String(a)`,
 }
 
@@ -53,13 +52,20 @@ func TestDefaultStackLimit(t *testing.T) {
 		}
 	}
 
-	// The parser and JSON.parse report nesting too deep for the stack with
-	// the same RangeError, as V8 does for the parser. V8 parses JSON
-	// without recursing, so it has no such limit there.
-	for _, js := range []string{`eval('['.repeat(1e6))`, `eval('('.repeat(1e6))`, `JSON.parse('['.repeat(1e6))`} {
+	// The parser reports nesting too deep for the stack with the same
+	// RangeError, as V8 does. JSON.parse and JSON.stringify of data nested
+	// too deep throw a RangeError too, with the text jsonTooDeep says (V8
+	// parses JSON without recursing, so it has no such limit there).
+	for js, want := range map[string]string{
+		`eval('['.repeat(1e6))`:           stackOverflow,
+		`eval('('.repeat(1e6))`:           stackOverflow,
+		`JSON.parse('['.repeat(1e6))`:     jsonTooDeep,
+		`JSON.parse('{"a":'.repeat(1e6))`: jsonTooDeep,
+		`let a = []; for (let i = 0; i < 1e5; i++) a = [a]; JSON.stringify(a)`: jsonTooDeep,
+	} {
 		v, err := m.Eval(`try { `+js+`; 'no error' } catch (e) { (e instanceof RangeError) + ' ' + e }`, EvalGlobal)
-		if err != nil || v != "true "+stackOverflow {
-			t.Fatalf("%s: got %v, %v, want %s", js, v, err, stackOverflow)
+		if err != nil || v != "true "+want {
+			t.Fatalf("%s: got %v, %v, want %s", js, v, err, want)
 		}
 	}
 

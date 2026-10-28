@@ -87,3 +87,7 @@ func heldFuncs(*VM) int {
 	defer goFuncsMu.Unlock()
 	return len(goFuncs)
 }
+
+// jsonTooDeep is the error of JSON.parse and JSON.stringify of data nested too
+// deep: the engine of lib runs out of stack, as it does for a recursion.
+const jsonTooDeep = stackOverflow

@@ -2653,6 +2653,20 @@ static inline void js_internal_leave(JSRuntime *rt)
     rt->internal_depth--;
 }
 
+/* js_internal_enter for the recursions of JSON (JSON.parse, the reviver that
+   walks its result, JSON.stringify). Past the limit of levels the error names
+   the JSON: it is the data that nests too deep, and the caller did not
+   recurse. A stack that runs short before the limit still throws the stack
+   overflow of js_internal_enter. */
+static int js_json_enter(JSContext *ctx)
+{
+    if (unlikely(ctx->rt->internal_depth >= JS_MAX_INTERNAL_DEPTH)) {
+        JS_ThrowRangeError(ctx, "JSON nesting too deep");
+        return -1;
+    }
+    return js_internal_enter(ctx);
+}
+
 /* A recursion that must not fail, such as freeing, is not counted in either
    depth: it could not throw when the count runs out. Its data bounds how
    deep it goes instead, to k levels, a constant, and it counts its levels in
@@ -54265,7 +54279,7 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
 
     if (js_poll_interrupts(s->ctx))
         return JS_EXCEPTION;
-    if (js_internal_enter(s->ctx))
+    if (js_json_enter(s->ctx))
         return JS_EXCEPTION;
     ret = json_parse_value1(s, pr);
     js_internal_leave(s->ctx->rt);
@@ -54421,7 +54435,7 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
 {
     JSValue ret;
 
-    if (js_internal_enter(ctx))
+    if (js_json_enter(ctx))
         return JS_EXCEPTION;
     ret = internalize_json_property1(ctx, holder, name, reviver, text_str, pr);
     js_internal_leave(ctx->rt);
@@ -54910,7 +54924,7 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
     int ret;
 
     /* each value reads the interrupt flag, so that a long stringify stops */
-    if (js_poll_interrupts(ctx) || js_internal_enter(ctx)) {
+    if (js_poll_interrupts(ctx) || js_json_enter(ctx)) {
         JS_FreeValue(ctx, val); /* js_json_to_str1 takes it */
         return -1;
     }
