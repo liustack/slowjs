@@ -1701,6 +1701,9 @@ static const char *const compile_alloc_scripts[] = {
     /* arrow functions: parameters that need a lookahead to tell from parens */
     "const f = (a, b = (1, 2), {c, d = 3} = {}, [e, ...g] = [5]) => a + b + c + d + e + g.length; const h = async (x) => await x; (a => a)(1) + f(1, undefined, {c: 4}) + ((x, y) => x * y)(2, 3)",
     "var v = 1; (v, (v), ((v))); ((a, b) => (a, b))(1, 2) + (typeof (() => {}))",
+    /* regexp literals and flags, with a group name read before a class escape */
+    "const a = /[a-z]+(?<n>\\d)\\k<n>/giu, b = /(?:x|y)+?z$/m, c = /\\p{L}+/v; 'ab11'.match(a)[0] + b.test('xyz') + c.test('ab') + /[/]\\//.source",
+    "const r = /(?<year>\\d{4})-(?<month>\\d\\d)|[\\w&&[^\\d]]\\s\\S\\W\\D/gs; 'x 2024-05'.replace(r, '$<month>') + /\\u{1F600}/u.test('x')",
     /* templates, tagged and nested, with escapes (and a bad escape in a tag) */
     "const t = (s, ...v) => s.raw.length + v.length; `a${`b${1 + 1}c`}d` + t`x\\n${1}y${2}z` + `\\u{41}${'q'}`",
     "const t = (s, ...v) => String(s[0]) + s.raw[0] + v.length; t`\\unicode and \\xerxes ${1} \\u{110000}`",

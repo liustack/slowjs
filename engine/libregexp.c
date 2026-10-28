@@ -79,6 +79,10 @@ typedef struct {
     int has_named_captures; /* -1 = don't know, 0 = no, 1 = yes */
     void *opaque;
     DynBuf group_names;
+    /* set by re_parse_error. error_msg shares its memory with tmp_buf, which
+       holds a group name after one is read, so an empty error_msg does not
+       tell that no error was set */
+    BOOL error_set;
     union {
         char error_msg[TMP_BUF_SIZE];
         char tmp_buf[TMP_BUF_SIZE];
@@ -627,6 +631,7 @@ static int __attribute__((format(printf, 2, 3))) re_parse_error(REParseState *s,
     va_start(ap, fmt);
     vsnprintf(s->u.error_msg, sizeof(s->u.error_msg), fmt, ap);
     va_end(ap);
+    s->error_set = TRUE;
     return -1;
 }
 
@@ -2579,9 +2584,10 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
     if (re_parse_disjunction(s, FALSE)) {
     error:
         /* The parser leaves no message only when it runs out of memory,
-           and what it reads back of the code is wrong once writing the
-           code failed. */
-        if (s->u.error_msg[0] == '\0' || dbuf_error(&s->byte_code))
+           and what it reads back of the code or of the group names is wrong
+           once writing them failed. */
+        if (!s->error_set || dbuf_error(&s->byte_code) ||
+            dbuf_error(&s->group_names))
             re_parse_out_of_memory(s);
         dbuf_free(&s->byte_code);
         dbuf_free(&s->group_names);
@@ -2599,7 +2605,7 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         goto error;
     }
 
-    if (dbuf_error(&s->byte_code)) {
+    if (dbuf_error(&s->byte_code) || dbuf_error(&s->group_names)) {
         re_parse_out_of_memory(s);
         goto error;
     }
@@ -2617,7 +2623,10 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
 
     /* add the named groups if needed */
     if (s->group_names.size > (s->capture_count - 1) * LRE_GROUP_NAME_TRAILER_LEN) {
-        dbuf_put(&s->byte_code, s->group_names.buf, s->group_names.size);
+        if (dbuf_put(&s->byte_code, s->group_names.buf, s->group_names.size)) {
+            re_parse_out_of_memory(s);
+            goto error;
+        }
         put_u16(s->byte_code.buf + RE_HEADER_FLAGS,
                 lre_get_flags(s->byte_code.buf) | LRE_FLAG_NAMED_GROUPS);
     }
