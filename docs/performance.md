@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -7,6 +7,7 @@ read_when:
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
   - Quoting how fast a release is
+  - Checking that the C engine stays flat, scales over VMs, stops soon after Interrupt and holds the GC up for no longer than the old engine
 ---
 
 # Performance
@@ -294,6 +295,84 @@ A string appended to a variable is [copied with room](fork-changes/c-engine.md#s
 The other 29 scripts run within 0.08% of the instructions (`c_string_methods` +0.076%, the rest within 0.01%), and no time passes the rule. `c_json_stringify` took 0.972 at all 8 positions with the same instructions, which is the layout, not the change. A string `+` pays about 2 instructions for the checks (`v8_splay`, `c_escape_html`).
 
 Memory of `r_react_ssr`: the most bytes in use at once went from 2.39 MB to 2.46 MB (+2.9%, the room of the page string). That made the heap grow by one more chunk, a quarter of what it had: the footprint went from 3.01 MB to 3.80 MB, and the most memory the process held from 8.05 to 8.31 MB to 8.38 to 8.50 MB. `c_string_concat` uses 35% less at its most.
+
+### Stability under load
+
+Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the engine of `lib/`, built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.
+
+**Soak.** 35 minutes, 2 VMs, 2 callers that render in turn without a pause, memory read every minute (after a full GC for the VMs). The C engine made 106,194 renders and the engine of `lib/` 91,131, with 0 errors and no VM replaced in either.
+
+| After the first 5 minutes | C engine | lib |
+| --- | --- | --- |
+| Memory of the VMs (`MemoryUsage.MallocSize`, summed) | 21.79 MB at minute 5, 21.85 MB at minute 35 (+0.3%) | 24.71 MB, 24.72 MB (+0.06%) |
+| What the VMs took from the system (`Footprint`) | 34 MB, not a byte more | not counted |
+| Process RSS | 64.1 MB, then 65.1 MB (+1.0 MB, still creeping) | 68.8 MB, then 69.8 MB (flat from minute 20) |
+
+The rise of the RSS is the same size in both engines (+957 KB and +925 KB between the first 5 and the last 5 samples), and it is not the VMs. The Go runtime asked the system for no more memory (`Sys` did not change). The stacks of goroutines grew by 550 KB (C engine) and 400 KB (lib), taking pages the heap had held. The rest, 400 to 500 KB, cannot be told apart in these data: pages that were mapped and are first touched, pages of the Go heap used again, and memory outside Go. They would need `smaps` and `HeapReleased` in each sample. 35 minutes cannot say whether the C engine's creep stops.
+
+**Several VMs.** Renders a second and the latency of `Render` (median of 3 alternating rounds of 15 seconds, one caller for each VM):
+
+| Cores | VMs | C engine renders/s | p50 | p99 | lib renders/s | p50 | p99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,3 | 1 | 49.5 | 19.7 ms | 63.1 ms | 40.9 | 21.5 ms | 80.2 ms |
+| 1,3 | 2 | 98.8 (2.00x) | 17.8 ms | 63.6 ms | 80.2 (1.96x) | 21.4 ms | 82.5 ms |
+| 1,3,5,7 | 1 | 49.5 | 19.6 ms | 63.2 ms | 41.1 | 21.5 ms | 80.3 ms |
+| 1,3,5,7 | 2 | 94.8 (1.92x) | 18.0 ms | 69.3 ms | 77.6 (1.89x) | 21.5 ms | 90.3 ms |
+| 1,3,5,7 | 4 | 117.7 (2.38x) | 28.5 ms | 118.8 ms | 96.8 (2.36x) | 34.1 ms | 147.4 ms |
+
+Two VMs on two physical cores give twice one VM. Four VMs on two cores and their hyperthreads give 2.4 times, which is what the hardware has. Time spent waiting for a lock was at most 0.002% of the render time on the C engine (0.05% on lib), so no lock or shared state holds the VMs back. The C engine renders 20% to 24% more a second and its p99 is 21% to 22% lower at the same load.
+
+**Go GC pauses.** The same pool renders while a goroutine allocates 512 MB a second (75 to 98 GCs a second, with a graph of 100,000 nodes on the heap). Stop-the-world pauses from `/sched/pauses/total/gc:seconds`, and the time the runtime waited for the Ps to stop (`/sched/pauses/stopping/gc:seconds`), which is the part a VM that does not reach a poll would add. The buckets are about 6% apart, so these are upper bounds. One run of 60 seconds each:
+
+| | C engine, 1 VM | lib, 1 VM | C engine, 3 VMs | lib, 3 VMs |
+| --- | ---: | ---: | ---: | ---: |
+| Pauses in total: P50 / P99 / max | 33 / 131 / 3146 µs | 33 / 164 / 4194 µs | 57 / 197 / 524 µs | 57 / 197 / 2097 µs |
+| Waiting to stop: P50 / P99 / max | 25 / 131 / 655 µs | 25 / 131 / 197 µs | 41 / 197 / 459 µs | 41 / 197 / 328 µs |
+| Renders a second, p99 of a render | 45.2, 68.8 ms | 38.4, 84.4 ms | 92.1, 115.0 ms | 75.4, 143.8 ms |
+
+The P50 and P99 are the same in both engines. The maximum of the C engine is the longest wait for a poll in these runs: 0.66 ms with 1 VM and 0.46 ms with 3. Those are single samples out of 5,600 and 4,500 GCs.
+
+A script that stays inside one operation of the engine, with the GC forced every 5 ms for 10 seconds (the scripts of `internal/cengine/cmd/scenarios`, run by `gcpause`), 1 VM, cores 3 and 7. Time the runtime waited to stop, P50 / P99 / max in µs:
+
+| Script | C engine | lib |
+| --- | --- | --- |
+| `for` loop, `fib(27)` | 25 / 41 / 82 and 25 / 41 / 1311 | 328 / 328 / 655 and 25 / 41 / 197 |
+| regexp that backtracks, regexp scan of 64 MiB | 57 / 82 / 98 and 49 / 66 / 98 | 25 / 41 / 49 and 25 / 41 / 229 |
+| `replace` with a global regexp of 8 Mi characters | 25 / 131 / 164 | 25 / 49 / 5243 |
+| `JSON.parse`, `JSON.stringify` of 300,000 objects | 25 / 41 / 786 and 25 / 49 / 197 | 25 / 41 / 2621 and 25 / 41 / 917 |
+| `indexOf` over 128 MiB | 164 / 229 / 393 | 25 / 14680 / 14680 |
+| `split` of 4 Mi characters, `join` of 2 Mi strings | 25 / 98 / 197 and 25 / 164 / 262 | 25 / 16777 / 20971 and 25 / 524 / 917 |
+| typed array sort, `sort()` of 500,000 numbers, `fill` of 4 Mi | 29 / 164 / 197, 25 / 82 / 197, 29 / 82 / 197 | does not stop, see below |
+| `normalize` of 4 Mi characters | 66 / 98 / 393 | 25 / 41 / 57 |
+| multiplication of 475,000-bit BigInts | 33 / 49 / 98 | does not stop |
+
+The longest wait of the C engine, 1.3 ms in `fib`, came once in 1,857 GCs, and the 786 µs of `JSON.parse` once in 1,857. The rest is under 0.4 ms. The engine of `lib/` waits up to 21 ms in two string loops. (`lib` rows marked "does not stop": the script did not end a minute after `Interrupt`, so the run has no figure.)
+
+**Interrupt.** `interrupt` (`internal/cengine/cmd/interrupt`) stops the same scripts at random points of their run and times the return of `Eval`. Median in ms, 6 stops each, on the first sizes of the scripts (32 Mi characters to `replace`, 64 Mi to `split`, 16 Mi to `fill` and `normalize`, 2 Mi strings to `join`). A stop at 50 ms is the kill of the C engine, which comes 50 ms after `Interrupt` for a script that reads no flag. The engine of `lib/` kills nothing, so it keeps running until it reads the flag:
+
+| Script | C engine before | C engine after | lib |
+| --- | ---: | ---: | ---: |
+| `replace` with a global regexp (generic path) | 50.1 (killed 6 of 6) | 50 (killed) | 231 |
+| `JSON.parse` of 300,000 objects | 22 | 22 | 265 |
+| `JSON.stringify` of 300,000 objects | 4.1 | 4.1 | 125 |
+| `split` | 50.5 (killed) | 50 (killed) | 2406 |
+| `fill` | 50.1 (killed) | 38 | does not stop |
+| `join` | 47.4 | 3.2 | 56 |
+| `normalize` | 50.1 (killed) | 13.3 | 1709 |
+| `sort()` of 500,000 numbers, sort of 4 Mi doubles | 13.3, 3.8 | 13.3, 3.8 | does not stop |
+
+What decides the time is of two kinds. A loop that does not read the flag runs to its end or to the kill: `fill`, `join`, `normalize` and the global `replace` that matches in C were such, and read it now every 4096, 1024, 4096 characters and each match. After an error the call also frees what it made, and that has no flag to read: the 300,000 objects of a `JSON.parse` take 36 ms to free (the engine of `lib/`: 58 ms), and so would the 33 million strings of a `split` of 64 Mi characters and the 16 million arrays that a generic `replace` of 32 Mi characters holds until it ends (not timed apart). A script that builds more than about 400,000 objects in one call can be killed while it frees them. The stop of a `JSON.parse` loop follows the size of the tree: 1.8 ms for 10,000 objects, 5.5 ms for 30,000, 20 ms for 100,000, and the kill at 600,000 (lib: 12.5 ms, 38 ms, 145 ms, 1.4 s). The VM is gone either way, and the pool replaces it. `JSON.stringify` reads the flag at every value, and its 2.5 to 4 ms are the free of the half-written string (1.7 ms for 25 MB) and the allocation of the error. Multiplying or powering BigInts of hundreds of thousands of bits reads no flag in libbf: it runs to the kill.
+
+**Timeouts and kills in the pool.** 4 VMs, 3 callers rendering all the time, 300 ms timeout. A fourth caller sends a request every second that loops for ever (`loop`), one that sleeps 1.5 s in a Go function it called (`sleep`, so the first poll after it is past the grace and kills), or both in turn. Two runs of 20 seconds each, cores 1,3,5,7:
+
+| | C engine good renders/run | p50 | p99 | bad requests | killed | lib good renders/run | p50 | p99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| No bad requests | 2164 | 22.2 ms | 100.2 ms | | | 1752 | 27.2 ms | 132.0 ms |
+| `loop` | 1928 | 25.1 ms | 116.9 ms | 50, all failed | 0 | 1609 | 30.1 ms | 140.2 ms |
+| `sleep` | 2040 | 23.2 ms | 103.7 ms | 34, all failed | 34 | 1688 | 28.4 ms | 127.8 ms |
+| both | 1947 | 24.3 ms | 112.8 ms | 49, all failed | 24 | 1633 | 28.7 ms | 130.5 ms |
+
+Every bad request failed with a deadline error, every one got a new VM, no good render failed, and all 4 VMs were back in the pool at the end. Killed VMs were replaced like timed out ones. The good renders' p99 grew 3% to 17% on the C engine and by at most 6% on lib, the cost of loading a replacement VM while the others render. The C engine's p99 stays under lib's in every row.
 
 ## What was tried and not done
 
