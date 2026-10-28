@@ -7,6 +7,7 @@
 ### 修复
 
 - 对已经关闭的 VM 再调 `Close`，什么都不做并返回 nil。以前它会空指针 panic，所以 `defer vm.Close()` 加一次显式 `Close` 会崩。`OnClose` 的函数仍然只跑一次。
+- `Close` 中间某一步 panic 时，后面的步骤照样做完。`OnClose` 里的函数 panic，不再让排在它后面的函数永远不跑。`Close` 里的清理也不会被永久跳过：VM 会从查找表里去掉，它占着的共享字节码会释放，最后 `Close` 把第一个 panic 继续抛出去。在 `OnClose` 的函数里再调 `Close`，直接返回 nil。
 
 ## [v0.28.6] - 2026-10-24
 

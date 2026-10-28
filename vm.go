@@ -287,6 +287,10 @@ func (m *VM) SetStrip(s Strip) {
 
 // Close releases the resources held by m. Close of a VM that is closed does
 // nothing and returns nil, so a deferred Close may follow an explicit one.
+//
+// A step of Close that panics does not keep the others from running: if a
+// function of OnClose panics, the rest still run. Close then panics with the
+// first panic. A Close inside a function of OnClose returns nil.
 func (m *VM) Close() error {
 	if m.closed {
 		return nil
@@ -297,13 +301,26 @@ func (m *VM) Close() error {
 	id := m.id
 	onClose := m.onClose
 	shared := m.shared
-	err := m.closeEngine()
-	forgetVM(id)
+	var first any
+	step := func(f func()) {
+		defer func() {
+			if r := recover(); r != nil && first == nil {
+				first = r
+			}
+		}()
+		f()
+	}
+	var err error
+	step(func() { err = m.closeEngine() })
+	step(func() { forgetVM(id) })
 	for _, b := range shared {
-		b.drop()
+		step(b.drop)
 	}
 	for _, f := range onClose {
-		f()
+		step(f)
+	}
+	if first != nil {
+		panic(first)
 	}
 	return err
 }
