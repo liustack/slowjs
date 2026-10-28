@@ -888,16 +888,14 @@ func (m *VM) jsReadObject(bytecode []byte, flags int32) (r jsValue, err error) {
 	return r, nil
 }
 
-// jsReadShared is JS_ReadObject of the bytes of b. The engine reads a copy
-// of them in the VM's memory, and the functions keep their own source and
-// line tables (JS_READ_OBJ_SHARED_DEBUG is left out): no memory outside the
-// VM is shared yet.
-func (m *VM) jsReadShared(b *SharedBytecode, flags int32) jsValue {
-	r, err := m.jsReadObject(unsafe.Slice((*byte)(addr(b.p)), b.n), flags&^readObjSharedDebug)
-	if err != nil {
-		return m.jsThrowOutOfMemory()
+// jsReadShared is JS_ReadObject of the bytes of b, which stay where they
+// are: with JS_READ_OBJ_SHARED_DEBUG the functions point into them.
+func (m *VM) jsReadShared(b *SharedBytecode, flags int32) (r jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsReadShared(b, flags) })
+		return r
 	}
-	return r
+	return val(cengine.JS_ReadObject(m.sp, m.ctx, b.p, uintptr(b.n), uintptr(flags)))
 }
 
 // jsWriteObject returns the bytecode of the compiled script v, and false
