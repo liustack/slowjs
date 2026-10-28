@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Fixed
+
+- `Close` of a VM that is already closed does nothing and returns nil. It used to panic on a nil pointer, so a deferred `Close` after an explicit one crashed. The functions of `OnClose` still run once.
+
 ## [v0.28.6] - 2026-10-24
 
 ### Changed
