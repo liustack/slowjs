@@ -13,6 +13,8 @@
 #   GEN_JOBS     parallel clang jobs (default 2)
 #   GEN_SHADOW   log2 of the shadow stack (default 25, the 32 MiB the host uses)
 #   GEN_KEEP     copy the generated files to this folder
+#   GEN_OUT      write to this folder instead of internal/cengine (make check-gen
+#                regenerates into one and compares)
 #   GEN_RELEASE  1 (default) is a formal build. 0 allows the survey and test
 #                switches of the generator and prints a warning.
 set -eu
@@ -23,6 +25,7 @@ llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
 want=22.1.8
 
 cd "$(dirname "$0")/.."
+out=${GEN_OUT:-internal/cengine}
 got=$("$llvm/clang" --version 2>/dev/null | sed -n 's/.*clang version \([0-9][0-9.]*\).*/\1/p' | head -n 1)
 if [ "$got" != "$want" ]; then
 	echo "gen-engine.sh: clang in $llvm is '${got:-missing}': the engine is generated with LLVM $want only (set LLVM_BIN)" >&2
@@ -55,12 +58,12 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
-	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out internal/cengine \
+	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -build-tag slowjs_cengine \
 	-j "${GEN_JOBS:-2}" $release
 
 if [ -n "${GEN_KEEP:-}" ]; then
 	rm -rf "$GEN_KEEP"
 	mkdir -p "$GEN_KEEP"
-	cp internal/cengine/*_"$arch".s internal/cengine/engine_*_"$arch".go "$GEN_KEEP"/
+	cp "$out"/*_"$arch".s "$out"/engine_*_"$arch".go "$GEN_KEEP"/
 	echo "kept a copy in $GEN_KEEP"
 fi

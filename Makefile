@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl gen check-fast check-full bench remote
+.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl gen check-gen check-fast check-full bench remote
 
 all: editor
 	golint 2>&1
@@ -32,6 +32,11 @@ check-fast:
 
 check-full:
 	scripts/check.sh full
+
+# The generated engine checked in under internal/cengine is what make gen makes
+# now, for both architectures (scripts/check-gen.sh, part of check-full).
+check-gen:
+	scripts/check-gen.sh
 
 # Code-position timing and callgrind (internal/sjdev), for example
 # make bench ARGS="report -in shop.jsonl -base base -new new".

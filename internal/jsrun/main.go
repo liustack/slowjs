@@ -1,8 +1,7 @@
 // Command jsrun runs scripts on the Go engine as engine/test/jsrun.c runs
-// them on the C tree, and prints what they give in the same form. Its output
-// is what engine/test/compare.sh compares the C tree with when COMPARE_GO=1
-// asks for it. The repository holds files for the C tree to be compared with
-// when the Go engine is gone.
+// them on the C tree, and prints what they give in the same form. It is for
+// comparing two builds of the engine (docs/testing.md). engine/test/compare.sh
+// compares the C tree with files kept in the repository and does not run it.
 //
 //	go run ./internal/jsrun [-result] [-call] [-regexp-cache=N,BYTES] FILE...
 //
