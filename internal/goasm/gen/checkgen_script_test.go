@@ -130,6 +130,22 @@ func TestCheckGenScript(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, "engine_keep_arm64.go is not what the generator makes in the index"},
+		"old name, header taken off, in git": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("engine_decl.go"), []byte("package cengine\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, dir, "add", "internal/cengine/engine_decl.go")
+		}, "engine_decl.go is a file of an older generator"},
+		"old name, header taken off, not in git": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("engine_negative.go"), []byte("package cengine\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "engine_negative.go is a file of an older generator"},
+		"header on the fourth line, not in git": {func(t *testing.T) {
+			if err := os.WriteFile(cengine("quickjs_3.s"), []byte("// one\n// two\n// three\n"+checkGenMarker), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, "quickjs_3.s is generated and not in git"},
 		"a name no rule lists": {func(t *testing.T) {
 			if err := os.WriteFile(cengine("quickjs_3.s"), []byte(checkGenMarker+"old\n"), 0o644); err != nil {
 				t.Fatal(err)
