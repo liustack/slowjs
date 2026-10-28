@@ -475,6 +475,8 @@ The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are
 
 `go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on both platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
 
+One test depends on the speed of the machine. `TestTimeout` in `internal/cengine` sets a timeout of 50 ms and a kill grace of 30 ms, then runs `a.lastIndexOf(-1)` over 8Mi doubles in a loop, and expects the VM to be killed. That needs the first call to run past 80 ms, since the script reads the interrupt flag only between calls. One call takes about 130 ms on an AMD EPYC 7763 and about 77 ms on an EPYC 9V45, which some linux runners have: there the call ends 3 ms before the kill, the script stops with `interrupted`, and the test fails (27 failures in 30 runs on a 9V45, none on a 7763 or a 9V74). A red run in which only that test failed is this, not a change of yours. CI does not retry it or loosen it.
+
 Left out on purpose:
 
 - **Everything that needs LLVM 22.1.8**: `make gen`, `make check-gen`, and the `goasm` and `cycles` steps. They run on linux only, and CI does not install LLVM yet.
