@@ -274,6 +274,11 @@ func forgetVM(id uint32) {}
 // (cvm.Close), also when a panic leaves first: another goroutine may get it
 // for a new VM from then on.
 func (m *VM) closeEngine() error {
+	defer func() {
+		// Interrupt keeps the host: it must not keep what the clock holds.
+		m.h.SetClock(nil)
+		m.vmState = vmState{}
+	}()
 	func() {
 		defer vms.Delete(m.id)
 		if !m.h.Broken() && m.entered == 0 {
@@ -282,9 +287,6 @@ func (m *VM) closeEngine() error {
 		}
 	}()
 	_, err := m.cvm.Close()
-	// Interrupt keeps the host: it must not keep what the clock holds.
-	m.h.SetClock(nil)
-	m.vmState = vmState{}
 	return err
 }
 
