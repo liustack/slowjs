@@ -9,19 +9,34 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/bits"
+	"sync"
 	"unicode/utf8"
 	"unsafe"
 )
 
-// argString is cString, or cWTF8 when wtf8 is true, for a string argument
-// of a Builtin. A string the engine holds in one piece is read in Go, where
-// JS_ToCStringLen2 makes a UTF-8 copy in engine memory for any string that
-// is not ASCII, which cString then copies again. A rope goes the way of
-// cString, which joins it.
+// argString returns the Go string of v, a lone surrogate as U+FFFD, or as
+// the three bytes of its code point when wtf8 is true: the string every
+// value javascript gives Go becomes, a result, the argument of a Builtin or of
+// a Go function, the JSON of an object. A string the engine holds in one
+// piece is read where it is, as one copy, where JS_ToCStringLen2 made a UTF-8
+// copy of any string that is not ASCII in the VM's memory, which Go then
+// copied again. A rope, a string kept as the pieces it was joined from, is
+// joined first (JS_ToString), and any other value goes the way of
+// toGoString. ok is false, and the exception pending, when that threw, as
+// when there is no memory to join a rope.
 func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 	p, n, wide, ok := stringChars(v)
 	if !ok {
-		return m.toGoString(v, wtf8)
+		if tag(v) != tagStringRope {
+			return m.toGoString(v, wtf8)
+		}
+		flat := m.jsToString(v)
+		if isException(flat) {
+			return "", false
+		}
+		s, ok := m.argString(flat, wtf8)
+		m.jsFreeValue(flat)
+		return s, ok
 	}
 	if n == 0 {
 		return "", true
@@ -88,19 +103,61 @@ func latin1String(b []byte) string {
 // or with wtf8 the three bytes of its code point, as JS_ToCStringLen2 writes
 // it.
 func utf16String(u []uint16, wtf8 bool) string {
-	n := len(u)
-	for i := 0; i < len(u); i++ {
-		c := uint32(u[i])
-		// One byte more from U+0080 and another from U+0800.
-		n += int((c+0xFF80)>>16 + (c+0xF800)>>16)
-		if c&0xFC00 == 0xD800 && i+1 < len(u) && u[i+1]&0xFC00 == 0xDC00 {
-			i++ // 4 bytes for the pair: 3 for the first unit and 1 for the second
-		}
+	// Each unit takes at most 3 bytes, a pair 4. The UTF-8 is written once,
+	// into memory on the stack for a short string and kept for the next ones
+	// otherwise, and copied into a string of its size, as JS_ToCStringLen2
+	// wrote it in C and Go copied it, where counting the bytes first took a
+	// second pass over u.
+	if len(u) <= utf16Short {
+		var b [3 * utf16Short]byte
+		return string(b[:utf16Write(b[:], u, wtf8)])
 	}
-	out := make([]byte, n)
+	p := utf16Scratch.Get().(*[]byte)
+	if cap(*p) < 3*len(u) {
+		*p = make([]byte, 3*len(u))
+	}
+	s := string((*p)[:utf16Write((*p)[:3*len(u)], u, wtf8)])
+	utf16Scratch.Put(p)
+	return s
+}
+
+// utf16Short is the length of the strings utf16String converts on the stack.
+const utf16Short = 64
+
+// utf16Scratch keeps the memory utf16String writes longer strings in.
+var utf16Scratch = sync.Pool{New: func() any { return new([]byte) }}
+
+// utf16Write writes the UTF-8 of u to out, which has room for 3 bytes a
+// unit, as utf16String converts it, and returns how many bytes it wrote.
+func utf16Write(out []byte, u []uint16, wtf8 bool) int {
+	if len(out) < 3*len(u) {
+		panic("slowjs: no room for the UTF-8 of the units")
+	}
 	d := unsafe.Pointer(unsafe.SliceData(out))
 	j := uintptr(0)
 	for i := 0; i < len(u); i++ {
+		// Pages are mostly ASCII markup around runs of text, so this takes
+		// four units at a time while they are ASCII, or all from U+0800 and
+		// none a surrogate.
+		if i+4 <= len(u) {
+			w := unitsAt(u, i)
+			if w&laneNotASCII == 0 {
+				*(*[4]byte)(unsafe.Add(d, j)) = [4]byte{byte(w), byte(w >> 16), byte(w >> 32), byte(w >> 48)}
+				i += 3
+				j += 4
+				continue
+			}
+			if lanesFrom(w, 11) == laneTop && noSurrogate(w) {
+				p := (*[12]byte)(unsafe.Add(d, j))
+				for k := range 4 {
+					c := uint16(w >> (16 * k))
+					p[3*k], p[3*k+1], p[3*k+2] = 0xE0|byte(c>>12), 0x80|byte(c>>6)&0x3F, 0x80|byte(c)&0x3F
+				}
+				i += 3
+				j += 12
+				continue
+			}
+		}
 		c := uint32(u[i])
 		switch {
 		case c < 0x80:
@@ -124,7 +181,38 @@ func utf16String(u []uint16, wtf8 bool) string {
 		*(*[3]byte)(unsafe.Add(d, j)) = [3]byte{0xE0 | byte(c>>12), 0x80 | byte(c>>6)&0x3F, 0x80 | byte(c)&0x3F}
 		j += 3
 	}
-	return unsafe.String(unsafe.SliceData(out), n)
+	return int(j)
+}
+
+// Four 16-bit units in a uint64: lanes repeats a unit in each, laneTop is the
+// top bit of each, and laneNotASCII the bits of each from 0x80 up.
+const (
+	lanes        = 0x0001_0001_0001_0001
+	laneTop      = 0x8000 * lanes
+	laneNotASCII = 0xFF80 * lanes
+)
+
+// lanesFrom returns laneTop with the top bit of each unit of w from 1<<shift
+// up, and none of the others: the bits of the unit from shift up, plus
+// 0x7FFF, carry into the top bit unless they are all zero, and never out of
+// the unit.
+func lanesFrom(w uint64, shift uint) uint64 {
+	return ((w>>shift)&((0xFFFF>>shift)*lanes) + 0x7FFF*lanes) & laneTop
+}
+
+// noSurrogate reports whether none of the units of w is from U+D800 to
+// U+DFFF: each has a bit from 0x800 up that is not that of 0xD800.
+func noSurrogate(w uint64) bool {
+	return lanesFrom(w&(0xF800*lanes)^(0xD800*lanes), 11) == laneTop
+}
+
+// unitsAt returns the four units of u from i, the first in the low bits. It
+// reads them as bytes, which the compiler makes one load, as a pointer to a
+// uint64 would not be aligned.
+func unitsAt(u []uint16, i int) uint64 {
+	b := unsafe.Slice((*byte)(unsafe.Pointer(&u[i])), 8)
+	_ = u[i+3]
+	return binary.LittleEndian.Uint64(b)
 }
 
 // newStringFast makes the JS string of s in Go, as validUTF8 and

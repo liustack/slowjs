@@ -284,7 +284,7 @@ func (m *VM) ownString(v jsValue, atom uint32) string {
 		return ""
 	}
 
-	str, ok := m.toGoString(p, false)
+	str, ok := m.argString(p, false)
 	if !ok {
 		m.dropUncatchable()
 	}
