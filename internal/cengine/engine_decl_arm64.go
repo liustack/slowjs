@@ -1363,8 +1363,7 @@ func young_scan_incref_child(a0 uintptr, a1 uintptr, a2 uintptr)
 func young_scan_incref_child2(a0 uintptr, a1 uintptr, a2 uintptr)
 
 // missingNames lists the stubs in index order.
-var missingNames = []string{
-}
+var missingNames = []string{}
 
 // Host callbacks the engine calls (implemented in Go):
 //   host_call iiiiii>j

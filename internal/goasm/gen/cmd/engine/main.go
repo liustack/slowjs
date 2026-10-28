@@ -972,11 +972,8 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		}
 		decl(m.Name)
 	}
-	b.WriteString("\n// missingNames lists the stubs in index order.\nvar missingNames = []string{\n")
-	for _, m := range stubs {
-		fmt.Fprintf(&b, "\t%q,\n", m.Name)
-	}
-	b.WriteString("}\n\n// Host callbacks the engine calls (implemented in Go):\n")
+	b.WriteString("\n// missingNames lists the stubs in index order.\n" + missingNamesDecl(stubs))
+	b.WriteString("\n// Host callbacks the engine calls (implemented in Go):\n")
 	for _, name := range gen.SortedKeys(rep.Defined) {
 		if !rep.Defined[name] {
 			fmt.Fprintf(&b, "//   %s %s\n", name, rep.Sigs[name])
@@ -1201,4 +1198,19 @@ func declBuildLine() string {
 		return ""
 	}
 	return "//go:build " + *buildTag + "\n"
+}
+
+// missingNamesDecl is the declaration of missingNames as gofmt writes it,
+// which is one line when there is no stub.
+func missingNamesDecl(stubs []gen.Meta) string {
+	if len(stubs) == 0 {
+		return "var missingNames = []string{}\n"
+	}
+	var b strings.Builder
+	b.WriteString("var missingNames = []string{\n")
+	for _, m := range stubs {
+		fmt.Fprintf(&b, "\t%q,\n", m.Name)
+	}
+	b.WriteString("}\n")
+	return b.String()
 }
