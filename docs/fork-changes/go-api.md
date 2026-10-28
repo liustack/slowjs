@@ -200,6 +200,8 @@ Release: v0.27.0.
 
 It is for a package that keeps something per VM in a table of its own. An entry whose value is a closure that references the VM keeps the VM reachable from the table, so a cleanup the garbage collector would run for the VM never runs, and the entry stays for the life of the process. Dropping the entry in `OnClose` ends that. Package `temporal` keeps the clock of a VM this way.
 
+`Close` finishes every step even when one panics. If a function of `OnClose` panics, the functions after it still run, and so do the steps after it (the VM leaves the table that finds it, the shared bytecode it loaded is released). `Close` then panics with the first panic. A `Close` inside a function of `OnClose` returns nil. On the C engine, when the OS refuses to unmap some of the VM's memory, `Close` returns the error and `Close` again unmaps what is left, as `internal/cengine`'s `VM.Close` does. Nothing else runs twice.
+
 Test: `onclose_test.go`.
 
 ## EvalBytecode waits for a module's top-level await in Go
