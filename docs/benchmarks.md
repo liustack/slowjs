@@ -700,6 +700,7 @@ go run ./cmd/compare                        # every workload, 5 rounds
 go run ./cmd/compare -cpu 1 -sibling 5      # Linux: pin to CPU 1, rerun when CPU 5 was busy
 go run ./cmd/compare -phases react,v8       # some workloads
 go run ./cmd/compare -engines slowjs,go-quickjs-interp
+go run ./cmd/compare -engines slowjs -extra-tags slowjs_cengine -phases t262   # the slowjs row on the C engine
 go run ./cmd/compare -report results/<run>.json   # Markdown again from the JSON
 ```
 
