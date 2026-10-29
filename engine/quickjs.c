@@ -23904,8 +23904,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             /* variable references reference the stack: must close them */
             close_var_refs(rt, b, sf);
         }
-        /* free the local variables and stack, two to a turn */
-        for(pval = local_buf; pval + 1 < sp; pval += 2) {
+        /* free the local variables and stack, two to a turn. The test counts
+           what is left: when the stack is full, sp is the end of the frame,
+           and pval + 1 would point past it, which C does not allow */
+        for(pval = local_buf; sp - pval >= 2; pval += 2) {
             JS_FreeValue(ctx, pval[0]);
             JS_FreeValue(ctx, pval[1]);
         }

@@ -1,0 +1,12 @@
+call1: 1,1
+callArg: 7,5,6
+call3: 4,0ab1
+call2: 5,5
+fewer: 1,1
+method0: 10,own
+method1: 11
+method2: 16,16
+method2 fewer: 13
+throws: Error: in callee | TypeError: in method | TypeError: not a function | TypeError: not a function
+chains: 0,2000
+loop: 740000 heap 0
