@@ -6,7 +6,9 @@
 #
 # gen-engine.sh [ARCH]: generate the C engine of engine/ as Go assembly into
 # internal/cengine (make gen). Run it from anywhere inside the repository on a
-# machine with LLVM 22.1.8. ARCH is amd64 (default) or arm64.
+# machine with LLVM 22.1.8. ARCH is amd64 (default) or arm64. ARCH pass only
+# builds the LLVM pass into .build/shadow.so, which the tests of
+# internal/goasm/gen need (scripts/check.sh does it before them).
 #
 # Environment:
 #   LLVM_BIN     bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
@@ -20,7 +22,7 @@
 set -eu
 
 arch=${1:-amd64}
-case $arch in amd64|arm64) ;; *) echo "gen-engine.sh: ARCH $arch: want amd64 or arm64" >&2; exit 2 ;; esac
+case $arch in amd64|arm64|pass) ;; *) echo "gen-engine.sh: ARCH $arch: want amd64, arm64 or pass" >&2; exit 2 ;; esac
 llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
 want=22.1.8
 
@@ -47,6 +49,7 @@ if [ $stale = 1 ]; then
 else
 	echo "the pass is up to date"
 fi
+[ "$arch" = pass ] && exit 0
 
 go build -o .build/engine-gen ./internal/goasm/gen/cmd/engine
 rm -rf ".build/w-$arch"
@@ -58,7 +61,7 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
-	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -build-tag slowjs_cengine \
+	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" \
 	-j "${GEN_JOBS:-2}" $release
 
 if [ -n "${GEN_KEEP:-}" ]; then

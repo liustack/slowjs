@@ -1,10 +1,10 @@
 ---
-summary: 'Commit rules: commit message format, the type list, atomic commits, changes to the generated Go, branches and merge commits'
+summary: 'Commit rules: commit message format, the type list, atomic commits, changes to the C engine and its generated files, branches and merge commits'
 read_when:
   - Getting ready to commit
   - Writing a commit message or a merge message
   - Splitting up a set of changes
-  - Committing a change to internal/fixlib together with the lib/ files it rewrites
+  - Committing a change to engine/ together with the generated files of internal/cengine
 ---
 
 # Commit rules
@@ -19,7 +19,7 @@ read_when:
 
 - The summary is at most 72 characters, with no period at the end.
 - type: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`.
-- scope is the affected package or area, such as `lib`, `fixlib`, `intl`, `vm`, `patch`, `readme`.
+- scope is the affected package or area, such as `engine`, `gen`, `intl`, `vm`, `compare`, `readme`.
 - For a breaking change, add `!` after the type, or write `BREAKING CHANGE:` at the end of the body.
 - Do not use semicolons in commit messages, and do not use dashes as punctuation.
 - No signature or co-author lines.
@@ -27,9 +27,9 @@ read_when:
 Examples from the history:
 
 ```
-fix(lib): make javascript's local time UTC whatever zone the process has
-perf(fixlib): count the interrupt counter down inside the interpreter
-feat(fixlib): pin JS_GetOwnPropertyInternal, which gets the descriptor
+fix(engine): make javascript's local time UTC whatever zone the process has
+perf(engine): count the interrupt counter down inside the interpreter
+feat(gen): refuse a call the stack check does not cover
 build!: rename the module to github.com/liustack/quickjs
 ```
 
@@ -38,9 +38,8 @@ build!: rename the module to github.com/liustack/quickjs
 - One commit does one thing, and can be verified and reverted on its own.
 - A behavior change and its tests go in the same commit.
 - Mechanical changes such as pure refactors, formatting and renames are committed separately, not mixed with behavior changes.
-- A change to `internal/fixlib` goes in the same commit as the `lib/ccgo_*.go` and `lib/internal/run-test262/ccgo_*.go` files it rewrites, so that `go run ./internal/fixlib -check` passes at every commit. Never edit the generated files by hand.
-- A change to the engine that has a C form also updates `lib/internal/patch/quickjs.diff` (see [upgrading.md](upgrading.md#the-c-patch)) and, when it applies there too, the same lines of `engine/` by hand (nothing compares the two).
-- Do not commit build or test output: `*.test`, `mem.out`, the test262 and QuickJS archives and the `test262/` folder `lib/` unpacks, `go.work`. They are in `.gitignore`.
+- A change to the C of `engine/`, to the generator under `internal/goasm/gen` or to the flags of `scripts/gen-engine.sh` goes in the same commit as the files of `internal/cengine` that `make gen` and `make gen ARCH=arm64` make from it, so that `make check-gen` passes at every commit. Never edit the generated files by hand.
+- Do not commit build or test output: `*.test`, `mem.out`, the test262 archive and the folders `engine/test/out` and `.build`, `go.work`. They are in `.gitignore`.
 - Do not use summaries like "WIP" or "fix stuff" that do not say what changed.
 
 ## Branches and merges

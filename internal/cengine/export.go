@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine
-
 package cengine
 
 // What package slowjs needs of the engine besides the JS_ functions of

@@ -64,7 +64,7 @@ Three more commits were taken and then reverted, each by a commit of its own, be
 
 ## A negative BigInt and a negative float
 
-`js_bigint_float64_cmp` compared the exponents of a BigInt and a float of the same sign and answered "less" for the smaller exponent whatever the sign. For two negative numbers the smaller exponent is the larger number, so `-0.5 < -1n` was true and `-2147483648 < -1n` false. Upstream QuickJS (`3d5e064` and `19d6bd8`) and the engine of `lib/` have the same bug. It is reported upstream as [bellard/quickjs#583](https://github.com/bellard/quickjs/issues/583). It is fixed in `engine/` only. `compare/number_compare.js` found it: it prints all eight comparison operators for every pair of 41 numbers and 19 other values, and the call order of `valueOf`.
+`js_bigint_float64_cmp` compared the exponents of a BigInt and a float of the same sign and answered "less" for the smaller exponent whatever the sign. For two negative numbers the smaller exponent is the larger number, so `-0.5 < -1n` was true and `-2147483648 < -1n` false. It is reported upstream as [bellard/quickjs#583](https://github.com/bellard/quickjs/issues/583). It is fixed in `engine/` only. `compare/number_compare.js` found it: it prints all eight comparison operators for every pair of 41 numbers and 19 other values, and the call order of `valueOf`.
 
 ## What changes for a program
 
@@ -83,6 +83,3 @@ Judged by reading each diff against the fork's tree. None is a speed change tifa
 - New features, which Vite compiles away: the iterator helpers, `Promise.allKeyed`, `Array.fromAsync`, explicit resource management, `Atomics.waitAsync`.
 - API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (the fork has go-intl) and upstream's test tools.
 
-## When upstream changes it
-
-Nothing follows upstream. To take another commit, apply it to `engine/` (by hand where it conflicts, keeping the fork's change), add a test that prints what Node prints, measure it by the rule above and add a row here.

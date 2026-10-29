@@ -7,8 +7,8 @@
 /*
  * libmath INPUTS: calls each math function of engine/libc that the engine uses
  * on the inputs that mathcmp.js made (the "in" lines of mathdump's output), and
- * prints the bits of the results in the format of mathdump. libmdump does the
- * same with the libc of modernc.org/libc, and math.sh compares the two.
+ * prints the bits of the results in the format of mathdump. math.sh checks them
+ * against the hashes kept in engine/test/math.
  *
  * It is linked with the math objects of engine/libc and not with a libm, and
  * built with -fno-builtin, so every call is a call of engine/libc.

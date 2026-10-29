@@ -47,8 +47,7 @@ type goFunc struct {
 // Any Go <-> Javascript failing type conversion between arguments/return
 // values throws a Javascript type error exception.
 //
-// There is a limit on the number of Go functions registered at once: on the
-// engine of lib, 32767 for the whole process, and on the C engine, about a
+// There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
 //
 // The function becomes the property 'name' of the global object: writable,

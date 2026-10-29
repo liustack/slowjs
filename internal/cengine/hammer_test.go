@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && cenginehammer && amd64
+//go:build cenginehammer && amd64
 
 package cengine
 
@@ -32,7 +32,7 @@ const stackPreempt = ^uintptr(1313)
 // (its stack guard is the third word), which the runtime does not promise,
 // hence the tag of its own:
 //
-//	go test -tags slowjs_cengine,cenginehammer -run Hammer ./internal/cengine
+//	go test -tags cenginehammer -run Hammer ./internal/cengine
 //
 // CENGINE_HAMMER_N is the number of runs, 300 by default.
 func TestPreemptionHammer(t *testing.T) {

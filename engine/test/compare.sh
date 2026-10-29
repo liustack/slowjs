@@ -5,13 +5,14 @@
 # root of this repository.
 #
 # Compare the C tree with the files kept in the repository: the transcripts
-# of lib/testdata (NAME.txt) and testdata (NAME.golden), and the cases of
+# of engine/test/compare/recorded and engine/test/compare/upstream
+# (NAME.txt next to NAME.js), of testdata (NAME.golden), and the cases of
 # engine/test/compare (NAME.txt next to NAME.js or NAME.mjs). jsrun
 # (engine/test/jsrun.c) runs each script in a fresh runtime, then its jobs,
 # and prints its completion value (or what it returns when it is a function),
 # and what it prints has to be the file, byte for byte. The files of
-# lib/testdata and testdata hold a lone surrogate as the engine converts it
-# (jsrun -raw). The files of engine/test/compare write it as \u{...}.
+# recorded, upstream and testdata hold a lone surrogate as the engine converts
+# it (jsrun -raw). The files of engine/test/compare write it as \u{...}.
 #
 #   engine/test/compare.sh [MODE]
 #
@@ -42,14 +43,17 @@ bin=$here/out/$mode/jsrun
 mkdir -p "$out"
 
 # shikire.js runs on the regexps and the text that its test sets first.
-python3 - "$root/lib/testdata" "$out/shikire.js" <<'PY'
-import json, sys
-d, dst = sys.argv[1], sys.argv[2]
-regexps = open(d + '/shiki/regexps.json', encoding='utf-8').read()
-text = open(d + '/shiki/input.md', encoding='utf-8').read()
-src = open(d + '/shikire.js', encoding='utf-8').read()
-open(dst, 'w', encoding='utf-8').write('var shikiRegexps = ' + regexps + ';\nvar shikiInput = ' + json.dumps(text) + ';\n' + src)
-PY
+r="$here/compare/recorded"
+{
+	printf 'var shikiRegexps = '
+	cat "$r/shiki/regexps.json"
+	printf ';\nvar shikiInput = "'
+	# The text as one JavaScript string: it is ASCII, with no control character
+	# but tab and newline.
+	sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' "$r/shiki/input.md" | awk '{ printf "%s\\n", $0 }'
+	printf '";\n'
+	cat "$r/shikire.js"
+} > "$out/shikire.js"
 
 # test_builtin.js calls std.gc and os.setTimeout of qjs, which the C tree has
 # no module for: gc() is the global of jsrun, and a timer is a callback that
@@ -58,10 +62,10 @@ PY
 {
 	printf '"use strict"; var std = { gc: gc };\n'
 	printf 'var os = { setTimeout(f) { Promise.resolve().then(() => {}).then(() => {}).then(f); } };\n'
-	cat "$root/lib/testdata/tests/test_builtin.js"
+	cat "$here/compare/upstream/test_builtin.js"
 } > "$out/test_builtin.js"
 
-t=$root/lib/testdata
+t=$here/compare/recorded
 # The scripts that have a file in the repository: SCRIPT FILE [OPTIONS of jsrun]
 # regexcache.js runs with the cache at its default, at a few entries and off,
 # and prints the same each time.
@@ -86,10 +90,10 @@ $root/testdata/field_chain.js $root/testdata/field_chain.golden -raw
 $root/testdata/own_keys.js $root/testdata/own_keys.golden -raw
 $root/testdata/error_stack.js $root/testdata/error_stack.golden#go -raw -result
 $root/testdata/error_stack.js $root/testdata/error_stack_call.golden#go -raw -call
-$t/tests/test_bigint.js $here/compare/upstream/test_bigint.txt -raw
-$t/tests/test_closure.js $here/compare/upstream/test_closure.txt -raw
-$t/tests/test_language.js $here/compare/upstream/test_language.txt -raw
-$t/tests/test_loop.js $here/compare/upstream/test_loop.txt -raw
+$here/compare/upstream/test_bigint.js $here/compare/upstream/test_bigint.txt -raw
+$here/compare/upstream/test_closure.js $here/compare/upstream/test_closure.txt -raw
+$here/compare/upstream/test_language.js $here/compare/upstream/test_language.txt -raw
+$here/compare/upstream/test_loop.js $here/compare/upstream/test_loop.txt -raw
 $out/test_builtin.js $here/compare/upstream/test_builtin.txt -raw
 "
 # A script of engine/test/compare names the options it needs in a line

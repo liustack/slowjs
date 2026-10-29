@@ -22,8 +22,7 @@
 //	                       of function NAME, right after its PCALIGN, which
 //	                       run at each call. They move the code of that
 //	                       function only. Use 0, 8, 16 or 24 on the
-//	                       interpreter (JS_CallInternal_block in the C engine,
-//	                       goasmRun in lib/goasm_run_linux_amd64.s).
+//	                       interpreter (JS_CallInternal_block).
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
 //	                       functions, or only the named): the linker then
 //	                       starts the function on a multiple of A.
@@ -86,7 +85,7 @@ func main() {
 
 // head matches the start of a function NAME: its TEXT line, the
 // NO_LOCAL_POINTERS line it may have and the PCALIGN of its body, with or
-// without the tab lib/goasm_run_linux_amd64.s leaves out.
+// without a tab before the lines after TEXT.
 func head(name string) *regexp.Regexp {
 	return regexp.MustCompile(`(?m)^(TEXT ·` + regexp.QuoteMeta(name) + `\(SB\).*\n(?:[ \t]*NO_LOCAL_POINTERS\n)?)([ \t]*)PCALIGN \$\d+\n`)
 }

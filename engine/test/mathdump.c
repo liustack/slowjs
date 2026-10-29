@@ -6,8 +6,8 @@
  */
 /*
  * mathdump SCRIPT NAME...: runs mathcmp.js, which defines runFn(), and prints
- * what runFn(NAME) returns for each NAME. math.sh compares this output with
- * the one of the Go engine.
+ * what runFn(NAME) returns for each NAME. math.sh checks this output against the
+ * hashes kept in engine/test/math.
  */
 #include <stdio.h>
 #include <stdlib.h>

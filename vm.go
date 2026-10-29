@@ -55,7 +55,7 @@ type VM struct {
 
 // vmState is the state of a VM that Close clears.
 type vmState struct {
-	// engineState is the state of the VM in the engine (engine_lib.go).
+	// engineState is the state of the VM in the engine (engine.go).
 	engineState
 	// id is how a Builtin finds the VM, the context's opaque (see vms).
 	id uint32
@@ -253,10 +253,8 @@ func (m *VM) MemorySize() uintptr {
 }
 
 // SetMaxStackSize limits the JS call depth. Deep recursion then throws a
-// catchable RangeError instead of overflowing the stack. On the engine of lib
-// the limit is in libc.TLS stack slots (about one per JS call frame), and 0
-// restores the default. On the C engine (-tags slowjs_cengine)
-// it is in calls, at most 10000, and 0 restores the default of 5000.
+// catchable RangeError instead of overflowing the stack. The limit is in calls,
+// at most 10000, and 0 restores the default of 5000.
 func (m *VM) SetMaxStackSize(threshold uintptr) {
 	m.jsSetMaxStackSize(threshold)
 }

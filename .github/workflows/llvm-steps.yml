@@ -49,7 +49,7 @@ jobs:
         run: make check-gen
         env:
           GEN_JOBS: "4"
-      - name: Go assembly of the old engine, and cycles
+      - name: Generator checks and cycles
         run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
 
       - name: Keep the logs of the checks
