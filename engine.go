@@ -14,7 +14,7 @@ package slowjs // import "github.com/liustack/slowjs"
 // above the frames of the call (hostcall.go). What a call needs passed by
 // address goes on the shadow stack at m.sp, and the call takes the pointer
 // past it (tmp). Outside a call into javascript, a function first enters the
-// engine (outer in entry_c.go).
+// engine (outer in entry.go).
 
 import (
 	"fmt"
