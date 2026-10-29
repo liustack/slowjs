@@ -269,7 +269,6 @@ func (m *VM) value(v jsValue, free bool) (r any, err error) {
 		return Undefined{}, nil
 	case tagException: // 6,
 		return nil, m.errFromException()
-		panic(todo(""))
 	case tagFloat64: // 8,
 		return jsvToFloat64(v), nil
 	}

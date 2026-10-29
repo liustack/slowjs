@@ -42,9 +42,9 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 		return "", true
 	}
 	if !wide {
-		return latin1String(unsafe.Slice((*byte)(unsafe.Pointer(p)), n)), true
+		return latin1String(unsafe.Slice((*byte)(addr(p)), n)), true
 	}
-	return utf16String(unsafe.Slice((*uint16)(unsafe.Pointer(p)), n), wtf8), true
+	return utf16String(unsafe.Slice((*uint16)(addr(p)), n), wtf8), true
 }
 
 // asciiLen returns the length of the run of ASCII bytes b starts with.
@@ -232,7 +232,7 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 	if i == len(b) {
 		v, p := m.newStringChars(len(b), false)
 		if p != 0 {
-			copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
+			copy(unsafe.Slice((*byte)(addr(p)), len(b)), b)
 		}
 		return v, true
 	}
@@ -244,7 +244,7 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 	if latin1 {
 		v, p := m.newStringChars(units, false)
 		if p != 0 {
-			out := unsafe.Slice((*byte)(unsafe.Pointer(p)), units)
+			out := unsafe.Slice((*byte)(addr(p)), units)
 			copy(out, b[:i])
 			for j := i; i < len(b); j++ {
 				c := b[i]
@@ -261,7 +261,7 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 	}
 	v, p := m.newStringChars(units, true)
 	if p != 0 {
-		out := unsafe.Slice((*uint16)(unsafe.Pointer(p)), units)
+		out := unsafe.Slice((*uint16)(addr(p)), units)
 		for j := range i {
 			out[j] = uint16(b[j])
 		}
@@ -334,7 +334,7 @@ func (m *VM) newStringInvalid(s string) jsValue {
 		return v
 	}
 	if max < 0x100 {
-		out := unsafe.Slice((*byte)(unsafe.Pointer(p)), units)
+		out := unsafe.Slice((*byte)(addr(p)), units)
 		j := 0
 		for _, r := range s {
 			out[j] = byte(r)
@@ -342,7 +342,7 @@ func (m *VM) newStringInvalid(s string) jsValue {
 		}
 		return v
 	}
-	out := unsafe.Slice((*uint16)(unsafe.Pointer(p)), units)
+	out := unsafe.Slice((*uint16)(addr(p)), units)
 	j := 0
 	for _, r := range s {
 		if r > 0xFFFF {
@@ -378,7 +378,7 @@ func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 	}
 	v, p := m.newStringChars(len(b), false)
 	if p != 0 {
-		copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)), b)
+		copy(unsafe.Slice((*byte)(addr(p)), len(b)), b)
 	}
 	return Value{vm: m, v: v}, nil
 }
@@ -407,9 +407,9 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 		return Value{vm: m, v: v}, nil
 	}
 	if wide {
-		copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(u)), u)
+		copy(unsafe.Slice((*uint16)(addr(p)), len(u)), u)
 	} else {
-		out := unsafe.Slice((*byte)(unsafe.Pointer(p)), len(u))
+		out := unsafe.Slice((*byte)(addr(p)), len(u))
 		for i, c := range u {
 			out[i] = byte(c)
 		}
