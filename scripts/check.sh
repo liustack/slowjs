@@ -78,7 +78,7 @@ tags=slowjs_cengine
 step build fast - "$gc build ./..."
 step gofmt fast - "out=\$(gofmt -l -s . | grep -v -e ccgo_ -e '^\\.build/' -e '^lib/goasm_' -e '^internal/cengine/engine_'); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
 step docs fast - "scripts/docs-list.sh --check"
-step goasm fast tests "env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$root/.build/shadow.so SLOWJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
+step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$root/.build/shadow.so SLOWJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
 step cengine fast tests "$gc test -count=1 -v -tags $tags,testhooks ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain"
