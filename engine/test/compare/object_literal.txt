@@ -1,0 +1,53 @@
+plain => a=1:wec b=y:wec c=null:wec d=undefined:wec e=obj:wec
+shorthand => a=1:wec b=[2]:wec c=fn:c:wec
+one field => only=1:wec
+empty => |Object
+string keys => a b=1:wec =2:wec é=3:wec constructor=4:wec toString=5:wec hasOwnProperty=6:wec
+order of values => 1,2,3,4,5 a=1:wec b=2:wec c=obj:wec f=5:wec d=3:wec e=4:wec
+repeated key => a=3:wec b=2:wec c=4:wec
+repeated key later => a=3:wec b=2:wec a1,b,a2
+index keys => 1=one:wec 2=two:wec 3=three:wec 16=hex:wec b=1:wec a=3:wec 1.5=f:wec 4294967295=big:wec -1=neg:wec
+index first => 0=z:wec a=1:wec
+__proto__ value => a=1:wec b=2:wec inh=1
+__proto__ string => a=1:wec b=2:wec null
+__proto__ shorthand => a=1:wec __proto__=5:wec Object
+__proto__ computed => a=1:wec __proto__=7:wec b=2:wec Object
+__proto__ not object => a=1:wec Object
+__proto__ twice => SyntaxError
+computed keys => a=1:wec k2=2:wec b=3:wec k4=4:wec v1,key2,v2,v3,key4,v4
+computed first => x=1:wec a=2:wec b=3:wec
+spread => a=1:wec s=s:wec t=2:wec b=2:wec a2=3:wec a,get s,b
+spread overrides => a=3:wec b=5:wec c=4:wec
+spread first => x=1:wec a=2:wec
+spread null => a=1:wec b=2:wec
+methods => a=1:wec m=fn:m:wec b=2:wec g=fn:g:wec am=fn:am:wec ag=fn:ag:wec c=3:wec m=2 g=1
+accessors => a=1:wec b=get/set:ec c=3:wec d=get/set:ec b=2 s=9 d=4
+get set async as keys => get=g:wec set=s:wec async=a:wec static=st:wec | get=1:wec set=2:wec async=3:wec | get=1:wec | a=0:wec async=3:wec
+get set async methods => get=fn:get:wec set=fn:set:wec async=fn:async:wec 123
+async arrow value => a=fn:a:wec b=fn:b:wec
+names => f=fn:f:wec g=fn:g:wec c=fn:c:wec h=fn:named:wec k=fn:K:wec n=fn::wec comp=fn:comp:wec f,g,c,named,K,,comp
+throw in value => a,RangeError boom
+throw in nested value => ReferenceError made=1
+throw then same literal => TypeError a=1:wec b=2:wec c=3:wec a=1:wec b=2:wec c=3:wec
+outer references => 11,12
+literal refers to itself => a=1:wec f=fn:f:wec b=undefined:wec 1
+this and arguments => t=true:wec a=2:wec l=X:wec
+same literal, objects apart => a=1:wec b=2:wec c=3:wec d=added:wec/Object/open | b=4:wec c=7:wec/Object/open | a=5:wec b=6:ec c=changed:wec/Object/open | a=7:e b=8:e c=15:e/Object/frozen | a=9:wec b=10:wec c=19:wec/null/open | a=11:wec b=12:wec c=23:wec/Object/open
+same keys, other ways => a=1:wec b=2:wec c=3:wec e=5:wec | a=1:wec b=2:wec c=3:wec d=4:wec | a=1:wec b=2:wec c=3:wec | a=1:wec b=2:wec c=3:wec
+reads and writes => a=2:wec c=6:wec b=back:wec a,c,b {"a":2,"c":6,"b":"back"} truetrue3
+setter on Object.prototype => a=1:wec zz=2:wec b=3:wec called=0
+read-only on Object.prototype => ro=1:wec a=2:wec
+32 keys => 32 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+33 keys => k0,k1,k2,k3,k4,k5,k6,k7,k8,k9,k10,k11,k12,k13,k14,k15,k16,k17,k18,k19,k20,k21,k22,k23,k24,k25,k26,k27,k28,k29,k30,k31,k32 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32
+many keys with repeats past 32 => 45 k30,k31,k32,k33,k34,k35 45,44,31,32
+nested => 0
+generator values => 1,3,4,5 a=A:wec b=2:wec c=C:wec s=S:wec d=D:wec
+generator closed in a literal => {"value":9,"done":true} fin=1
+destructuring still => 1,2,3,6
+cover grammar error => SyntaxError
+undeclared shorthand => ReferenceError
+eval and Function => e=1:wec v=2:wec | a=4:wec f=5:wec
+in a loop => i=0:wec sq=0:wec | i=1:wec sq=1:wec odd=true:wec | i=2:wec sq=4:wec | i=3:wec sq=9:wec odd=true:wec | i=4:wec sq=16:wec
+class bodies => a=1:wec b=2:wec a=1:wec b=true:wec s=1:wec
+more literals than 16 bits => 65535 a=1:wec | x=obj:wec w=4:wec | y=2:wec | z=3:wec v=obj:wec | u=5:wec
+memory after: 0
