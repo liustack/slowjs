@@ -689,7 +689,7 @@ TEXT ·unicode_from_utf8(SB), NOSPLIT, $72-40
 	WORD $0x7100f51f
 	WORD $0x54000108
 	WORD $0x92401d08
-	MOVD $·engine_rodata+87056(SB), R9
+	MOVD $·engine_rodata+87040(SB), R9
 	WORD $0xb8687928
 	WORD $0x510006c9
 	WORD $0x6b09011f
@@ -698,7 +698,7 @@ TEXT ·unicode_from_utf8(SB), NOSPLIT, $72-40
 	WORD $0xf94023fe
 	WORD $0x14000036
 	WORD $0x5100050c
-	MOVD $·engine_rodata+87027(SB), R8
+	MOVD $·engine_rodata+87011(SB), R8
 	WORD $0x386c6908
 	WORD $0x8b0c02a9
 	WORD $0x2a0c03ed
@@ -743,7 +743,7 @@ TEXT ·unicode_from_utf8(SB), NOSPLIT, $72-40
 	WORD $0xf9400ff4
 	WORD $0xb9404fe0
 	WORD $0x17fffff5
-	MOVD $·engine_rodata+87032(SB), R8
+	MOVD $·engine_rodata+87016(SB), R8
 	WORD $0xb86c7908
 	WORD $0x6b08013f
 	WORD $0x54fff7c2
@@ -1454,10 +1454,10 @@ TEXT ·rqsort(SB), NOSPLIT, $40-48
 	PCALIGN $16
 	WORD $0xf90013fe
 	WORD $0xaa1403e8
-	MOVD $·engine_rodata+87052(SB), R9
+	MOVD $·engine_rodata+87036(SB), R9
 	WORD $0xa9005a95
-	WORD $0xaa0803f5
 	WORD $0xa9016297
+	WORD $0xaa0803f5
 	WORD $0xa9022699
 	WORD $0x9100c294
 	WORD $0xf90007f4
@@ -1723,8 +1723,8 @@ TEXT ·rqsort_stop_block(SB), $216-16
 	WORD $0xea0c017f
 	WORD $0x540000e0
 	MOVD $·exchange_int16s(SB), R11
-	WORD $0xf10009bf
 	MOVD $·exchange_one_int16(SB), R12
+	WORD $0xf10009bf
 	WORD $0x14000025
 	WORD $0x5280002b
 	WORD $0x5282020c
@@ -1732,19 +1732,19 @@ TEXT ·rqsort_stop_block(SB), $216-16
 	WORD $0xea0c017f
 	WORD $0x540000e0
 	MOVD $·exchange_int32s(SB), R11
-	WORD $0xf10011bf
 	MOVD $·exchange_one_int32(SB), R12
+	WORD $0xf10011bf
 	WORD $0x1400001a
 	WORD $0xf100215f
 	WORD $0x540000e1
 	MOVD $·exchange_int64s(SB), R11
-	WORD $0xf10021bf
 	MOVD $·exchange_one_int64(SB), R10
+	WORD $0xf10021bf
 	WORD $0x14000007
 	WORD $0xb500018a
 	MOVD $·exchange_int128s(SB), R11
-	WORD $0xf10041bf
 	MOVD $·exchange_one_int128(SB), R10
+	WORD $0xf10041bf
 	WORD $0x9a8b014a
 	WORD $0xf9002beb
 	WORD $0xf9004fea
@@ -1752,8 +1752,8 @@ TEXT ·rqsort_stop_block(SB), $216-16
 	WORD $0x54000522
 	WORD $0x1400021e
 	MOVD $·exchange_bytes(SB), R11
-	WORD $0xf10005bf
 	MOVD $·exchange_one_byte(SB), R12
+	WORD $0xf10005bf
 	WORD $0x9a8b018b
 	WORD $0xf100395f
 	WORD $0xf9004feb
@@ -2311,8 +2311,8 @@ TEXT ·heapsortx_block(SB), $152-16
 	WORD $0xea0b015f
 	WORD $0x540000e0
 	MOVD $·exchange_int16s(SB), R9
-	WORD $0xf100099f
 	MOVD $·exchange_one_int16(SB), R10
+	WORD $0xf100099f
 	WORD $0x14000020
 	WORD $0x5280002a
 	WORD $0x5282020b
@@ -2320,23 +2320,23 @@ TEXT ·heapsortx_block(SB), $152-16
 	WORD $0xea0b015f
 	WORD $0x540000e0
 	MOVD $·exchange_int32s(SB), R9
-	WORD $0xf100119f
 	MOVD $·exchange_one_int32(SB), R10
+	WORD $0xf100119f
 	WORD $0x14000015
 	WORD $0xf100213f
 	WORD $0x540000e1
 	MOVD $·exchange_int64s(SB), R9
-	WORD $0xf100219f
 	MOVD $·exchange_one_int64(SB), R10
+	WORD $0xf100219f
 	WORD $0x1400000d
 	WORD $0xb50000e9
 	MOVD $·exchange_int128s(SB), R9
-	WORD $0xf100419f
 	MOVD $·exchange_one_int128(SB), R10
+	WORD $0xf100419f
 	WORD $0x14000006
 	MOVD $·exchange_bytes(SB), R9
-	WORD $0xf100059f
 	MOVD $·exchange_one_byte(SB), R10
+	WORD $0xf100059f
 	WORD $0x9a89014b
 	WORD $0xd341fd09
 	WORD $0xf90047ec
