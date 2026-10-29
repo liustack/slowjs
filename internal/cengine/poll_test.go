@@ -8,6 +8,7 @@ package cengine
 import (
 	"errors"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +32,9 @@ var tight = []struct{ name, src, want string }{
 	{"loop", `var s = 0; for (var i = 0; i < 3e6; i++) s += i; s`, "4499998500000"},
 	{"fib", `function fib(n){return n<2?n:fib(n-1)+fib(n-2)} fib(22)`, "17711"},
 	{"forms", `var t = 0; var i = 0; do { t += i } while (++i < 2e5); l: for (var j = 0; j < 1000; j++) { for (var k = 0; k < 100; k++) { if (k == 50) continue l; t++ } } for (var q = 0; q < 2e4; q++) { try { if (q & 1) throw q; t += 1 } catch (e) { t += 2 } finally { t += 3 } } var o = {v: 1}; with (o) { for (var w = 0; w < 1e5; w++) t += v } t`, "20000140000"},
+	// f takes a few polls, and the poll that asks to stop comes in it or in
+	// the loop that calls it, by where the counts fall: on linux/amd64 the
+	// poll of TestInterrupt comes in the loop, on darwin/arm64 in f.
 	{"straight", `var f = new Function("x", Array.from({length: 3000}, (_, i) => "x = (x + " + i + ") % 1000003;").join("\n") + " return x"); var t = 0; for (var i = 0; i < 300; i++) t = f(t); t`, "545953"},
 	{"typed", `var a = new Int32Array(1 << 22); a[a.length - 1] = 1; a.indexOf(1) + ":" + a.lastIndexOf(0) + ":" + a.includes(2)`, "4194303:4194302:false"},
 	{"fill", `var a = new Uint8Array(1 << 23); a.fill(7, 1); a.copyWithin(0, 1); a.copyWithin(2, 0); a[0] + a[a.length - 1] + ":" + a.length`, "14:8388608"},
@@ -148,67 +152,65 @@ func runGC(v *VM) int64 {
 	return v.Host().Polls() - before
 }
 
-// The scripts Interrupt stops where the engine reads its interrupt flag.
-var endless = []struct{ name, setup, src string }{
-	{"loop", "", "for (;;) {}"},
-	{"finally", "", "l: do { for (;;) { try { continue l } finally { } } } while (1)"},
-	{"catch", "", "for (;;) { try { throw 1 } catch (e) {} }"},
-	{"straight", "var f = new Function(Array.from({length: 3000}, (_, i) => 'var a' + i + ' = ' + i + ';').join('\\n'))", "for (;;) f()"},
-	{"regexp", "", "/(a+)+b/.test('a'.repeat(60))"},
-	{"sort", "var a = []; for (var i = 0; i < 1 << 18; i++) a.push((i * 7919) % 1000003)", "for (;;) a.slice().sort((x, y) => x - y)"},
-	{"search", "var s = 'a'.repeat(1 << 24)", "for (;;) s.indexOf('ab')"},
-	{"typed", "var ta = new Int32Array(1 << 24)", "for (;;) ta.indexOf(1)"},
-	{"json", "var j = '[' + Array(1 << 20).fill(1).join() + ']'", "for (;;) JSON.parse(j)"},
-	{"repeat", "", "for (;;) 'ab'.repeat(1 << 24)"},
-	{"tasort", "var f = new Float64Array(1 << 23); for (var i = 0; i < f.length; i++) f[i] = (i * 7919) % 1000003", "for (;;) f.sort()"},
+// endlessScript is a script that runs until it is stopped, with the frames
+// of which one must be on top of the stack of the error when Interrupt stops
+// it: the part that reads the flag.
+type endlessScript struct {
+	name, setup, src string
+	tops             []string
 }
 
-// stopsSoftly checks that Interrupt stopped src with the error "interrupted"
-// soon after it, before gohost.KillPolls polls saw the request, with the kill
-// grace given, and that the VM runs code again.
-func stopsSoftly(t *testing.T, name, setup, src string, grace time.Duration) {
+// The scripts Interrupt stops where the engine reads its interrupt flag.
+var endless = []endlessScript{
+	{"loop", "", "for (;;) {}", []string{"<eval> (stop.js"}},
+	{"finally", "", "l: do { for (;;) { try { continue l } finally { } } } while (1)", []string{"<eval> (stop.js"}},
+	{"catch", "", "for (;;) { try { throw 1 } catch (e) {} }", []string{"<eval> (stop.js"}},
+	{"straight", "var f = new Function(Array.from({length: 3000}, (_, i) => 'var a' + i + ' = ' + i + ';').join('\\n'))", "for (;;) f()", []string{"anonymous (", "<eval> (stop.js"}},
+	{"regexp", "", "/(a+)+b/.test('a'.repeat(60))", []string{"exec (native)"}},
+	{"sort", "var a = []; for (var i = 0; i < 1 << 18; i++) a.push((i * 7919) % 1000003)", "for (;;) a.slice().sort((x, y) => x - y)", []string{"sort (native)"}},
+	{"search", "var s = 'a'.repeat(1 << 24)", "for (;;) s.indexOf('ab')", []string{"indexOf (native)"}},
+	{"typed", "var ta = new Int32Array(1 << 24)", "for (;;) ta.indexOf(1)", []string{"indexOf (native)"}},
+	{"json", "var j = '[' + Array(1 << 20).fill(1).join() + ']'", "for (;;) JSON.parse(j)", []string{"parse (native)"}},
+	{"repeat", "", "for (;;) 'ab'.repeat(1 << 24)", []string{"repeat (native)"}},
+	{"tasort", "var f = new Float64Array(1 << 23); for (var i = 0; i < f.length; i++) f[i] = (i * 7919) % 1000003", "for (;;) f.sort()", []string{"sort (native)"}},
+}
+
+// stoppedSoftly checks that err, what Eval of an endless script gave after
+// Interrupt, is the error "interrupted" thrown in one of c.tops, that the engine
+// stopped before gohost.KillPolls polls saw the request, and that the VM runs
+// code again.
+func stoppedSoftly(t *testing.T, v *VM, c endlessScript, err error) {
 	t.Helper()
-	v := newVM(t, Options{Seed: 1})
-	defer closeVM(t, v)
-	v.Host().SetKillGrace(grace)
-	if setup != "" {
-		if _, err := v.Eval(setup, "setup.js"); err != nil {
-			t.Fatalf("%s: setup: %v", name, err)
-		}
-	}
-	_, err, _ := interruptRunning(v, src, runGC(v))
 	var je *JSError
-	if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable || !strings.Contains(je.Stack, "stop.js") {
-		t.Errorf("%s: Eval gave %#v, want the error interrupted", name, err)
+	if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable {
+		t.Errorf("%s: Eval gave %#v, want the error interrupted", c.name, err)
 		return
 	}
+	if !slices.ContainsFunc(c.tops, func(top string) bool { return strings.HasPrefix(je.Stack, "    at "+top) }) {
+		t.Errorf("%s: interrupted with the stack %q, not in %q", c.name, je.Stack, c.tops)
+	}
 	if n := v.Host().StopPolls(); n > gohost.KillPolls {
-		t.Errorf("%s: stopped %d polls after Interrupt, want at most %d", name, n, gohost.KillPolls)
+		t.Errorf("%s: stopped %d polls after Interrupt, want at most %d", c.name, n, gohost.KillPolls)
 	}
 	// The next call runs, and its exceptions are caught again.
 	if got, err := v.Eval(`[1, 2, 3].map(x => x * 2).join() + (() => { try { null.x } catch (e) { return " caught" } })()`, "after.js"); err != nil || got != "2,4,6 caught" {
-		t.Errorf("%s: after the interrupt: %q, %v", name, got, err)
-	}
-}
-
-// TestInterrupt: Interrupt stops each endless script with the error
-// "interrupted", which the engine throws where it reads the flag the next
-// poll set, and the VM goes on.
-func TestInterrupt(t *testing.T) {
-	needPolls(t)
-	for _, c := range endless {
-		stopsSoftly(t, c.name, c.setup, c.src, -1)
+		t.Errorf("%s: after the interrupt: %q, %v", c.name, got, err)
 	}
 }
 
 // TestInterruptOneProc: with one P, the goroutine that calls Interrupt runs
 // only when the engine's goroutine stops at a poll, as the scheduler asks it
-// to after its time slice.
+// to after its time slice. (TestInterrupt, with the tag testhooks, stops
+// every endless script at a set poll.)
 func TestInterruptOneProc(t *testing.T) {
 	needPolls(t)
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	for _, c := range endless[:3] {
-		stopsSoftly(t, c.name, c.setup, c.src, -1)
+		v := newVM(t, Options{Seed: 1})
+		v.Host().SetKillGrace(-1)
+		_, err, _ := interruptRunning(v, c.src, runGC(v))
+		stoppedSoftly(t, v, c, err)
+		closeVM(t, v)
 	}
 }
 
@@ -258,17 +260,6 @@ func TestKill(t *testing.T) {
 			t.Errorf("%s: the host does not say killed", c.name)
 		}
 		brokenAfter(t, v, c.name+" killed")
-	}
-}
-
-// TestNoKillBeforeThePolls: with a grace of 0, Interrupt still stops each
-// endless script with the error "interrupted" and kills none: each reads the
-// flag, or frees what it made, well within gohost.KillPolls polls of it being
-// set.
-func TestNoKillBeforeThePolls(t *testing.T) {
-	needPolls(t)
-	for _, c := range endless {
-		stopsSoftly(t, c.name, c.setup, c.src, 0)
 	}
 }
 
