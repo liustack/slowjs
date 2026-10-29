@@ -8,12 +8,14 @@
 
 - 普通对象（对象字面量、`{}`、React 元素的 props）占 48 字节内存，不再是 72 字节。长 Markdown 页面渲染时 `MemorySize` 的最高值平均低 3.8%，示例商店的 20 个页面渲染结束时占用少 1.8%。没有页面渲染变快或变慢（数字见 [Performance](docs/performance.md#ordinary-objects-of-48-bytes)）。
 - `EvalSharedBytecode` 加载同一个 `SharedBytecode` 时，第一次之后只花原来的 0.79（React 页面的包）到 0.86（tifa 商店的包）：引擎对字节码代码的检查（是否遵守轮询规则）每个 `SharedBytecode` 只做一次，不再每个 VM 做一次（见 [Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)）。`EvalBytecode` 仍然每次都检查。
+- 只有普通键的对象字面量一次拿到全部键，用所在函数为它留着的 shape，属性数组正好那么大。不开 PGO，linux/amd64，8 个代码位置，HTML 不变：tifa 示例商店的工作台页面耗时为原来的 0.956，tifa 测试应用的 MUI 页面为 0.969，bench 应用的表格页面为 0.942，React 服务端渲染没有变化（0.991）。商店的一个 VM 多占约 0.17 MiB，长 Markdown 页面的峰值少 1.6%。细节见 [objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)。
 
 ### 变更
 
 - `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
 - 脚本在执行时限或 `Interrupt` 之后，除了过了 50 毫秒，还要让引擎又干了 1000 次轮询的活，才会被杀。引擎没在干活的时间（在脚本调用的 Go 函数里，或者 OS、Go 调度器在跑别的线程或 goroutine）不再让一个本来会自己停下的脚本被杀：调用返回 interrupted 错误，VM 照常可用。以前在负载高的机器上，一个不到 1 毫秒的活就能停下的脚本也可能被杀。
 - `String.prototype.normalize`、`localeCompare`、`toUpperCase` 和 `toLowerCase` 在 `Interrupt` 或执行时限之后，几千个字符之内就停下。以前遇到长字符串，它们要把整个字符串转成码点、比较完或改完大小写才停。
+- 字节码版本升到 6，用来存对象字面量的键：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 
 ## [v0.29.0] - 2026-10-29
 
