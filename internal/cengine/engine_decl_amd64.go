@@ -151,7 +151,7 @@ func JS_GetPropertyUint32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func JS_GetPropertyValue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_GetPrototype(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func JS_GetPrototypeFree(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func JS_GetPrototypePrimitive(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
+func JS_GetPrototypePrimitive(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func JS_GetRuntime(a0 uintptr, a1 uintptr) uintptr
 func JS_GetRuntimeOpaque(a0 uintptr, a1 uintptr) uintptr
 func JS_GetScriptOrModuleName(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -753,7 +753,6 @@ func js_finrec_register(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintp
 func js_finrec_unregister(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_for_in_iterator_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_for_in_iterator_mark(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
-func js_for_in_prepare_prototype_chain_enum(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_free(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_desc(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_function_def(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -781,6 +780,7 @@ func js_generator_next(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintpt
 func js_get_array_buffer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_get_exception(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_get_fast_array_element_out_of_line(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func js_get_function_name(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_get_length32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_get_length64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_get_own_property_flags(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
