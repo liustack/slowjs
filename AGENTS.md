@@ -56,7 +56,7 @@
   ```
 
 - A file that came from upstream (QuickJS, modernc.org/quickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much the fork changes them.
-- Add a new author of the fork to `AUTHORS-FORK`. `AUTHORS` lists upstream's authors and stays as upstream has it.
+- Add a new author of the fork to `AUTHORS-SLOWJS`. `AUTHORS` lists upstream's authors and stays as upstream has it.
 - New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
 
 ## Draft folder
