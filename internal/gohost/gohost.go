@@ -507,6 +507,13 @@ func (v *VM) SetKillGrace(d time.Duration) { v.grace = d }
 // KillGrace is the grace SetKillGrace set.
 func (v *VM) KillGrace() time.Duration { return v.grace }
 
+// StopPolls is how many polls saw the request to stop, from Interrupt or the
+// deadline, since the outermost entry began: 0 when there was none, 1 when
+// the engine stopped before the poll after the one that set the flag. After
+// the entry it holds until the next outermost one. It tells how much work
+// the engine did before it stopped, whatever the clock says.
+func (v *VM) StopPolls() int64 { return v.seen }
+
 // Killed reports whether a poll killed the script.
 func (v *VM) Killed() bool { return v.killed }
 
