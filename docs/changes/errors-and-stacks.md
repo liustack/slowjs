@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to errors and stacks: error stacks formatted when first read, what that costs in memory and what reads format them, the audit of property slots that keeps a pending stack from leaking out, and endless recursion throwing RangeError instead of killing the process'
+summary: 'Changes to errors and stacks: error stacks formatted when first read, what that costs in memory and what reads format them, the audit of property slots that keeps a pending stack from leaking out, and endless recursion throwing RangeError instead of killing the process'
 read_when:
   - An error's stack text differs from upstream, or a kept error holds much memory
   - A script recurses without end, or asking how deep a script can recurse

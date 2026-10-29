@@ -19,7 +19,7 @@ read_when:
 
 # The C engine
 
-`engine/` is the engine of the module: QuickJS at the pinned commit with the fork's changes, compiled to Go assembly by the generator. What follows is what it does differently from upstream QuickJS. The column "What changes for a program" compares with the engine before it, the QuickJS that ccgo translated to Go (the "previous engine" below), which is what users of v0.28 and earlier ran. The changelogs have the same list for users.
+`engine/` is the engine of the module: QuickJS at the pinned commit with slowjs's changes, compiled to Go assembly by the generator. What follows is what it does differently from upstream QuickJS. The column "What changes for a program" compares with the engine before it, the QuickJS that ccgo translated to Go (the "previous engine" below), which is what users of v0.28 and earlier ran. The changelogs have the same list for users.
 
 | Change | What changes for a program | Checked by |
 | --- | --- | --- |

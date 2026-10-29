@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, and regexp compiles, parsing and string building counted toward the interrupt check'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, and regexp compiles, parsing and string building counted toward the interrupt check'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
