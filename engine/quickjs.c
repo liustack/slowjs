@@ -40,7 +40,7 @@
 
 #define OPTIMIZE         1
 #define SHORT_OPCODES    1
-#if defined(__EMSCRIPTEN__) || defined(__CCGO__)
+#if defined(__EMSCRIPTEN__)
 #define DIRECT_DISPATCH  0
 #else
 #define DIRECT_DISPATCH  1
@@ -45813,10 +45813,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
     return r;
 }
 
-#ifndef __CCGO__
-static
-#endif
-JSValue js_array_of(JSContext *ctx, JSValueConst this_val,
+static JSValue js_array_of(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
     JSValue obj, args[1];
@@ -66423,35 +66420,3 @@ int JS_AddIntrinsicWeakRef(JSContext *ctx)
     JS_FreeValue(ctx, obj);
     return 0;
 }
-
-#ifdef __CCGO__
-void init() {
-	// nop
-}
-
-JSValue DupValue(JSContext *ctx, JSValueConst v) {
-       return JS_DupValue(ctx, v);
-}
-
-void FreeValue(JSContext *ctx, JSValue v) {
-       JS_FreeValue(ctx, v);
-}
-
-char *ToCString(JSContext *ctx, JSValueConst val1)
-{
-    return JS_ToCStringLen2(ctx, NULL, val1, 0);
-}
-
-JSValue NewInt32(JSContext *ctx, int32_t val)
-{
-    return JS_NewInt32(ctx, val);
-}
-
-int SetProperty(JSContext *ctx, JSValueConst this_obj, JSAtom prop, JSValue val) {
-	return JS_SetProperty(ctx, this_obj, prop, val);
-}
-
-JSValue GetProperty(JSContext *ctx, JSValueConst this_obj, JSAtom prop) {
-	return JS_GetProperty(ctx, this_obj, prop);
-}
-#endif
