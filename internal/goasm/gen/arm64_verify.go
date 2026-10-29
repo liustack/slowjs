@@ -218,12 +218,14 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			}
 		}
 	}
-	// No-ops up to the body.
-	align, skew := uint64(16), uint64(0)
+	// No-ops up to the body: it starts after the PCALIGN $16 that follows the
+	// prologue, or after the PCALIGN $64 that does and its offset of no-ops
+	// (the emitter's rule, as bodyAt of the amd64 check has it).
+	bodyAt := alignUp64(base+uint64(4*i), 16)
 	if off, ok := k.c.Align64[m.Name]; ok {
-		align, skew = 64, uint64(off)
+		bodyAt = alignUp64(base+uint64(4*i), 64) + uint64(off)
 	}
-	for (base+uint64(4*i))%align != skew {
+	for base+uint64(4*i) < bodyAt {
 		if w, err := next(); err != nil || w != a64Nop {
 			return fmt.Errorf("%#08x before the body, where only no-ops go", w)
 		}

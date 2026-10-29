@@ -30,6 +30,13 @@ func a64CheckCase() (*a64Checker, Meta, []uint32) { return a64CheckCaseData(nil)
 // the binary, and the last four of them are a constant pool of 16 bytes
 // aligned to 16 (the label .LCPI0_0.f, the symbol f.const) that the plan holds.
 func a64CheckCaseData(tail []uint32) (*a64Checker, Meta, []uint32) {
+	return a64CheckCaseNops(tail, 1, nil)
+}
+
+// a64CheckCaseNops is a64CheckCaseData with nops words of no-ops between the
+// prologue and the body (one pads the prologue of 28 bytes to the 16 of the
+// body), and the places of the bodies that -align64 names.
+func a64CheckCaseNops(tail []uint32, nops int, align64 map[string]int) (*a64Checker, Meta, []uint32) {
 	const base, gAt, rodata, morestack = 0x1000, 0x8000, 0x20000, 0x9000
 	sig := Sig{Params: []Type{I64}, Ret: I64}
 	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16,
@@ -55,10 +62,13 @@ func a64CheckCaseData(tail []uint32) (*a64Checker, Meta, []uint32) {
 		plan.InBody = map[string][]*DataObj{"f": {{Label: ".LCPI0_0", Align: 4}}}
 		plan.Rename = map[string]map[string]string{"f": {".LCPI0_0": ".LCPI0_0.f"}}
 	}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan}, o: o, bin: bin, morestack: morestack, rodata: rodata}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
 	// Go's prologue: the stack check, a frame of 64 (40, the LR, rounded
 	// for the frame pointer), the argument from 72(RSP), no-ops to 16.
-	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, a64Nop}
+	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20}
+	for range nops {
+		w = append(w, a64Nop)
+	}
 	at := func() uint64 { return base + uint64(4*len(w)) }
 	w = append(w, 0xaa1403e0, a64BL(at()+4, gAt))
 	w = append(w, a64Adrp(at(), rodata+16, 8), 0x91000108|uint32((rodata+16)&0xfff)<<10)
@@ -249,5 +259,37 @@ func TestCheckARM64DataAlignment(t *testing.T) {
 		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
 			t.Errorf("%d no-ops before the pool: %v, want %q", c.pads, err, c.want)
 		}
+	}
+}
+
+// TestCheckARM64BodyPlace: the body of a function put on 64 bytes with
+// -align64 starts after the PCALIGN $64 that follows the prologue and the
+// offset of no-ops, wherever the prologue ends in its line. A prologue of 28
+// bytes at 0x1000 and an offset of 40 put the body at 0x1068, not at 0x1028,
+// the first address in front of it with the offset in its line.
+func TestCheckARM64BodyPlace(t *testing.T) {
+	a64 := map[string]int{"f": 40}
+	for _, c := range []struct {
+		nops int
+		want string
+	}{
+		{19, ""}, // 0x101c up to 0x1068
+		{3, "before the body, where only no-ops"}, // the body at 0x1028
+		{1, "before the body, where only no-ops"}, // the body at 0x1020
+		{20, "the object has"},                    // the body at 0x106c
+	} {
+		k, m, w := a64CheckCaseNops(nil, c.nops, a64)
+		err := k.function(m, 0x1000, a64Bytes(w))
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%d no-ops: %v", c.nops, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%d no-ops: %v, want %q", c.nops, err, c.want)
+		}
+	}
+	// Without -align64 the body starts on the next 16 bytes.
+	k, m, w := a64CheckCaseNops(nil, 1, nil)
+	if err := k.function(m, 0x1000, a64Bytes(w)); err != nil {
+		t.Errorf("a plain body: %v", err)
 	}
 }
