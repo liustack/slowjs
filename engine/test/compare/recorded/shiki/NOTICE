@@ -1,4 +1,4 @@
-Test data of TestRegexpShiki (lib/regexpv_test.go)
+Test data of shikire.js (engine/test/compare.sh)
 
 regexps.json holds the regexps that the JavaScript engine of shiki 4.5.0
 (MIT) makes from the TextMate grammars that @shikijs/langs 4.5.0 ships, from
