@@ -13,7 +13,7 @@ read_when:
 
 ## Branches and remotes
 
-`main` is the branch of slowjs. `master` and a few other old branches mirror gitlab.com/cznic/quickjs, where the Go API started, and get no commits of their own.
+`main` is the branch of slowjs.
 
 Set up the remote once in a fresh clone. It is Fabrice Bellard's repository, where the C comes from:
 
