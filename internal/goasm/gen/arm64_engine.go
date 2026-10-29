@@ -267,14 +267,18 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			rec.Refs = append(rec.Refs, RefRecord{Label: sym, Func: true})
 			return []string{"adrp " + reg + ", go_" + sym, "add " + reg + ", " + reg + ", :lo12:go_" + sym}, nil
 		}
-		if r, ok := env.Plan.Rename[fn.Name][sym]; ok {
-			rec.Refs = append(rec.Refs, RefRecord{Label: sym, Add: add})
-			return []string{fmt.Sprintf("adr %s, %s%s", reg, r, a64Add(add))}, nil
-		}
+		// An object in engine_rodata has its address there, even in a
+		// function that also loads it and so has a copy of it in its body:
+		// the copy is for the loads only, so every function takes the same
+		// address. Only the function's own data has its address in the body.
 		if off, ok := env.Plan.BlobOff[sym]; ok {
 			rec.Refs = append(rec.Refs, RefRecord{Label: sym, Add: add, Blob: true})
 			t := fmt.Sprintf("__goasm_rodata+%d", int64(off)+add)
 			return []string{"adrp " + reg + ", " + t, "add " + reg + ", " + reg + ", :lo12:" + t}, nil
+		}
+		if r, ok := env.Plan.Rename[fn.Name][sym]; ok {
+			rec.Refs = append(rec.Refs, RefRecord{Label: sym, Add: add})
+			return []string{fmt.Sprintf("adr %s, %s%s", reg, r, a64Add(add))}, nil
 		}
 		return nil, fmt.Errorf("unplaced data %s", sym)
 	}
