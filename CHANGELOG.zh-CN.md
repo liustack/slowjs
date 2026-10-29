@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
+
 ## [v0.29.0] - 2026-10-29
 
 ### 变更
