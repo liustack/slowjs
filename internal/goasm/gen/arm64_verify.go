@@ -218,12 +218,14 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			}
 		}
 	}
-	// No-ops up to the body.
-	align, skew := uint64(16), uint64(0)
+	// No-ops up to the body: it starts after the PCALIGN $16 that follows the
+	// prologue, or after the PCALIGN $64 that does and its offset of no-ops
+	// (the emitter's rule, as bodyAt of the amd64 check has it).
+	bodyAt := alignUp64(base+uint64(4*i), 16)
 	if off, ok := k.c.Align64[m.Name]; ok {
-		align, skew = 64, uint64(off)
+		bodyAt = alignUp64(base+uint64(4*i), 64) + uint64(off)
 	}
-	for (base+uint64(4*i))%align != skew {
+	for base+uint64(4*i) < bodyAt {
 		if w, err := next(); err != nil || w != a64Nop {
 			return fmt.Errorf("%#08x before the body, where only no-ops go", w)
 		}
@@ -236,6 +238,19 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	dataAt := r[1]
 	if c, ok := k.o.addr[m.Name+".const"]; ok {
 		dataAt = c[0]
+	}
+	// The function's data is aligned as llc aligned it, where it sits in the
+	// binary and not only from the start of the body, which Go puts at its own
+	// place (Align64 puts it at an offset past a multiple of 64).
+	for _, o := range k.c.Plan.InBody[m.Name] {
+		label := k.c.Plan.Rename[m.Name][o.Label]
+		off, ok := k.o.label[label]
+		if !ok {
+			return fmt.Errorf("body data %s absent from the re-assembled object", label)
+		}
+		if at, a := base+uint64(4*i)+uint64(off-r[0]), uint64(1)<<o.Align; at%a != 0 {
+			return fmt.Errorf("body data %s sits at %#x, which is not a multiple of its alignment %d", o.Label, at, a)
+		}
 	}
 	icalls := 0
 	for _, c := range m.Rec.Calls {

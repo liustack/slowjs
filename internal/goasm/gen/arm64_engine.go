@@ -57,6 +57,10 @@ type ARM64Env struct {
 	// Variadic are the functions the pass left variadic: a call to one is
 	// refused, since its arguments past the registers go on the stack.
 	Variadic map[string]bool
+	// Align64 is EngineEmit.Align64: where the body of each of these functions
+	// starts in a line of 64 bytes, which FuncPlace puts the function at in
+	// the lowered object.
+	Align64 map[string]int
 }
 
 var (
@@ -553,7 +557,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	}
 	rec.Frame = meta.Frame
 	var b strings.Builder
-	fmt.Fprintf(&b, ".globl %s\n.p2align 4\n.type %s,@function\n%s:\n", fn.Name, fn.Name, fn.Name)
+	fmt.Fprintf(&b, "%s.globl %s\n.type %s,@function\n%s:\n", FuncPlace(env.Align64, fn.Name), fn.Name, fn.Name, fn.Name)
 	for _, l := range out {
 		b.WriteString("\t" + l + "\n")
 	}
@@ -942,6 +946,7 @@ func a64AccessBytes(l string) int {
 type a64Object struct {
 	code   []byte
 	addr   map[string][2]int
+	label  map[string]int // the offset of every symbol of the text, the labels of the data in a body among them
 	relocs map[int]a64Reloc
 }
 
@@ -977,7 +982,7 @@ func readA64Object(path string) (*a64Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	o := &a64Object{code: code, addr: map[string][2]int{}, relocs: map[int]a64Reloc{}}
+	o := &a64Object{code: code, addr: map[string][2]int{}, label: map[string]int{}, relocs: map[int]a64Reloc{}}
 	for _, s := range ef.Sections {
 		if s.Type != elf.SHT_RELA || int(s.Info) >= len(ef.Sections) || ef.Sections[s.Info] != text {
 			continue
@@ -997,6 +1002,9 @@ func readA64Object(path string) (*a64Object, error) {
 		}
 	}
 	for _, s := range syms {
+		if int(s.Section) < len(ef.Sections) && ef.Sections[s.Section] == text {
+			o.label[s.Name] = int(s.Value)
+		}
 		if elf.ST_TYPE(s.Info) == elf.STT_FUNC || strings.HasSuffix(s.Name, ".const") {
 			o.addr[s.Name] = [2]int{int(s.Value), int(s.Value + s.Size)}
 		}

@@ -118,3 +118,17 @@ __attribute__((noinline)) long rejected(long x) {
 }
 
 long callsrejected(long x) { return rejected(x) * 2 + scale(1.0, x); }
+
+// A vector constant read by paddd and pxor with a memory operand: the pool
+// must be on 16 bytes where the code runs, also in a body that Align64 puts 8
+// bytes past a multiple of 16.
+typedef unsigned v4u __attribute__((vector_size(16)));
+
+__attribute__((noinline)) long vecpool(unsigned long *p, long k)
+{
+	v4u x;
+	__builtin_memcpy(&x, p, 16);
+	x = (x + (v4u){1, 2, 3, 4}) ^ (v4u){0x55, 0x66, 0x77, 0x88};
+	__builtin_memcpy(p, &x, 16);
+	return (long)(p[0] + p[1] * 3) + k;
+}

@@ -23,13 +23,27 @@ func a64Adrp(at, to uint64, rd uint32) uint32 {
 // a64CheckCase is f(I64) I64 at 0x1000 in a binary, with a stack check and
 // a frame, which calls g and takes the address of engine_rodata+16, and the
 // object its body comes from.
-func a64CheckCase() (*a64Checker, Meta, []uint32) {
+func a64CheckCase() (*a64Checker, Meta, []uint32) { return a64CheckCaseData(nil) }
+
+// a64CheckCaseData is a64CheckCase with the function's data after its code:
+// the words of tail follow the four words of the body, in the object and in
+// the binary, and the last four of them are a constant pool of 16 bytes
+// aligned to 16 (the label .LCPI0_0.f, the symbol f.const) that the plan holds.
+func a64CheckCaseData(tail []uint32) (*a64Checker, Meta, []uint32) {
+	return a64CheckCaseNops(tail, 1, nil)
+}
+
+// a64CheckCaseNops is a64CheckCaseData with nops words of no-ops between the
+// prologue and the body (one pads the prologue of 28 bytes to the 16 of the
+// body), and the places of the bodies that -align64 names.
+func a64CheckCaseNops(tail []uint32, nops int, align64 map[string]int) (*a64Checker, Meta, []uint32) {
 	const base, gAt, rodata, morestack = 0x1000, 0x8000, 0x20000, 0x9000
 	sig := Sig{Params: []Type{I64}, Ret: I64}
 	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16,
 		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g"}}}}
 	// The object: mov x0, x20; bl go_g; adrp x8 and add x8 of rodata+16.
 	obj := []uint32{0xaa1403e0, 0x94000000, 0x90000008, 0x91000108}
+	obj = append(obj, tail...)
 	code := make([]byte, 4*len(obj))
 	for i, w := range obj {
 		binary.LittleEndian.PutUint32(code[4*i:], w)
@@ -40,13 +54,25 @@ func a64CheckCase() (*a64Checker, Meta, []uint32) {
 		12: {elf.R_AARCH64_ADD_ABS_LO12_NC, "__goasm_rodata", 16},
 	}}
 	bin := &binFile{syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}}}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}}, o: o, bin: bin, morestack: morestack, rodata: rodata}
+	plan := &DataPlan{}
+	if tail != nil {
+		at := 4 * (len(obj) - 4)
+		o.addr["f.const"] = [2]int{at, len(code)}
+		o.label = map[string]int{".LCPI0_0.f": at}
+		plan.InBody = map[string][]*DataObj{"f": {{Label: ".LCPI0_0", Align: 4}}}
+		plan.Rename = map[string]map[string]string{"f": {".LCPI0_0": ".LCPI0_0.f"}}
+	}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
 	// Go's prologue: the stack check, a frame of 64 (40, the LR, rounded
 	// for the frame pointer), the argument from 72(RSP), no-ops to 16.
-	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, a64Nop}
+	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20}
+	for range nops {
+		w = append(w, a64Nop)
+	}
 	at := func() uint64 { return base + uint64(4*len(w)) }
 	w = append(w, 0xaa1403e0, a64BL(at()+4, gAt))
 	w = append(w, a64Adrp(at(), rodata+16, 8), 0x91000108|uint32((rodata+16)&0xfff)<<10)
+	w = append(w, tail...)
 	// The result to 80(RSP), the epilogue, RET, morestack.
 	w = append(w, 0xf9000000|10<<10|31<<5|0, a64LoadFP, 0xf84407fe, a64Ret)
 	w[2] = 0x54000009 | uint32(len(w)-2)<<5
@@ -170,7 +196,7 @@ func a64LeafCase() (*a64Checker, Meta, []uint32) {
 	code := make([]byte, 4*len(obj))
 	binary.LittleEndian.PutUint32(code, obj[0])
 	o := &a64Object{code: code, addr: map[string][2]int{"f": {0, len(code)}}, relocs: map[int]a64Reloc{}}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f"}}, o: o, bin: &binFile{}}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f"}, Plan: &DataPlan{}}, o: o, bin: &binFile{}}
 	// A frame of 64 (40, the LR, rounded for the frame pointer), the argument
 	// from 72(RSP), the body, the result to 80(RSP), the two ADDs, RET.
 	w := []uint32{0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, 0xaa1403e0,
@@ -206,5 +232,64 @@ func TestCheckARM64LeafFrame(t *testing.T) {
 	w[13], w[14] = 0x910003fd|32<<10, 0x910003ff|64<<10
 	if err := k.function(m, 0x1000, a64Bytes(w)); err == nil || !strings.Contains(err.Error(), "unknown epilogue") {
 		t.Errorf("a leaf epilogue in a function that calls: %v", err)
+	}
+}
+
+// TestCheckARM64DataAlignment: the constant pool of a function is on the 16
+// bytes llc gave it where it sits in the binary. The case has its body on 16
+// (the no-ops before it fill the prologue to 32 bytes), so the pool is
+// aligned after four words of code, and a pool put two words later, as a
+// function whose body started 8 bytes off in the object would have it, is
+// refused.
+func TestCheckARM64DataAlignment(t *testing.T) {
+	pool := []uint32{0x11111111, 0x22222222, 0x33333333, 0x44444444}
+	for _, c := range []struct {
+		pads int
+		want string
+	}{{0, ""}, {4, ""}, {2, "is not a multiple of its alignment 16"}, {1, "is not a multiple of its alignment 16"}} {
+		tail := make([]uint32, c.pads)
+		for i := range tail {
+			tail[i] = a64Nop
+		}
+		k, m, w := a64CheckCaseData(append(tail, pool...))
+		err := k.function(m, 0x1000, a64Bytes(w))
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%d no-ops before the pool: %v", c.pads, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%d no-ops before the pool: %v, want %q", c.pads, err, c.want)
+		}
+	}
+}
+
+// TestCheckARM64BodyPlace: the body of a function put on 64 bytes with
+// -align64 starts after the PCALIGN $64 that follows the prologue and the
+// offset of no-ops, wherever the prologue ends in its line. A prologue of 28
+// bytes at 0x1000 and an offset of 40 put the body at 0x1068, not at 0x1028,
+// the first address in front of it with the offset in its line.
+func TestCheckARM64BodyPlace(t *testing.T) {
+	a64 := map[string]int{"f": 40}
+	for _, c := range []struct {
+		nops int
+		want string
+	}{
+		{19, ""}, // 0x101c up to 0x1068
+		{3, "before the body, where only no-ops"}, // the body at 0x1028
+		{1, "before the body, where only no-ops"}, // the body at 0x1020
+		{20, "the object has"},                    // the body at 0x106c
+	} {
+		k, m, w := a64CheckCaseNops(nil, c.nops, a64)
+		err := k.function(m, 0x1000, a64Bytes(w))
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%d no-ops: %v", c.nops, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%d no-ops: %v, want %q", c.nops, err, c.want)
+		}
+	}
+	// Without -align64 the body starts on the next 16 bytes.
+	k, m, w := a64CheckCaseNops(nil, 1, nil)
+	if err := k.function(m, 0x1000, a64Bytes(w)); err != nil {
+		t.Errorf("a plain body: %v", err)
 	}
 }
