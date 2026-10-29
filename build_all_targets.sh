@@ -1,14 +1,15 @@
+# Builds every package and compiles the tests of every package for the two
+# targets the engine runs on, plain and with the test hooks. (Any other target
+# is refused on purpose, see TestEngineUnsupportedTarget.)
 set -e
-targets="darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64"
+targets="darwin/arm64 linux/amd64"
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
-for tag in none libc.memgrind slowjs_nogoasm slowjs_nogoasm,libc.memgrind
+for tag in none testhooks
 do
 	echo "-tags=$tag"
 	for target in $targets
 	do
-		# slowjs_nogoasm changes the build of linux/amd64 alone.
-		case $tag,$target in slowjs_nogoasm*,linux/amd64) ;; slowjs_nogoasm*) continue ;; esac
 		goos=${target%/*}
 		goarch=${target#*/}
 		echo "GOOS=$goos GOARCH=$goarch"

@@ -1,9 +1,7 @@
 ---
 summary: 'How full GC collects WeakMap ephemerons, including back references and symbol keys, without keeping their values through an unreachable key'
 read_when:
-  - Changing lib/ephemeron.go or the collector and weak-reference hooks in internal/fixlib
   - WeakMap values survive after their keys become unreachable
-  - fixlib reports an ephemeron fingerprint mismatch
 ---
 
 # Weak collections
@@ -28,9 +26,9 @@ Symbols are reference counted but are not nodes on the GC object list. When a we
 
 Before freeing anything, the collector restores all withheld and garbage-owned references. The entries still registered are exactly those with dead keys. It removes them while recursive object freeing is disabled, then sweeps cycles. A dead key can carry either a trial-deletion mark or a zero strong count on a shell that only weak references keep allocated. The weak pass that runs before trial deletion skips weak maps and sets, so entries with a shell key go through the scan and are removed with the others. Changed maps rebuild their hash buckets once, avoiding repeated searches through a collision chain. Finally it clears dead WeakRefs and queues FinalizationRegistry jobs. Collection does not execute JavaScript. Callbacks still run through pending-job execution, and unregister still suppresses them.
 
-The key index, the list of registered entries, the symbol table and the callbacks live only for the collection, and the index and list are made only when an entry has to wait. They take 56 to 88 bytes per weak map entry on 64-bit targets for that collection. No Go pointer is stored in C memory. The runtime stores one phase byte. Callbacks passed as ccgo function pointers are held in pinned heap cells and kept alive across all uses, including goroutine stack growth. A runtime with no WeakMap, WeakSet, WeakRef or FinalizationRegistry takes the original collector path. One whose weak maps and sets are all empty runs the original steps, and clears WeakRefs and queues FinalizationRegistry jobs once more after the sweep. `JS_FreeRuntime` keeps its existing teardown path.
+The key index, the list of registered entries, the symbol table and the callbacks live only for the collection, and the index and list are made only when an entry has to wait. They take 56 to 88 bytes per weak map entry on 64-bit targets for that collection. No Go pointer is stored in C memory. The runtime stores one phase byte. A runtime with no WeakMap, WeakSet, WeakRef or FinalizationRegistry takes the original collector path. One whose weak maps and sets are all empty runs the original steps, and clears WeakRefs and queues FinalizationRegistry jobs once more after the sweep. `JS_FreeRuntime` keeps its existing teardown path.
 
-The C form is in `lib/internal/patch/quickjs.diff`. It gives the same result with the first version's steps: it keeps the full weak pass before trial deletion, scans every map's entries for dead keys afterwards and has none of the cost reductions above. It uses temporary hash tables and pending-entry storage in place of Go maps. If C scratch allocation fails before trial deletion, it frees the scratch storage and retains the original collector path. The Go scratch storage is on the Go heap, outside the engine allocator's memory counter, like other Go-side temporary work.
+It gives the same result with the first version's steps: it keeps the full weak pass before trial deletion, scans every map's entries for dead keys afterwards and has none of the cost reductions above. It uses temporary hash tables and pending-entry storage in place of Go maps. If C scratch allocation fails before trial deletion, it frees the scratch storage and retains the original collector path. The Go scratch storage is on the Go heap, outside the engine allocator's memory counter, like other Go-side temporary work.
 
 ## What it costs
 
@@ -44,14 +42,9 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against main `453def5` (th
 
 ## Tests
 
-`gc_ephemeron_test.go` checks one full collection through `VM.RunGC`. `lib/ephemeron_test.go` checks the C API, live and dead keys, chains, WeakSet, object and symbol cycles, symbols held through property names and containers, dead maps, mutation after collection, WeakRef, deferred finalization and unregister. A deterministic mixed-graph test compares against an independent reachability oracle.
+`gc_ephemeron_test.go` checks one full collection through `VM.RunGC`. A deterministic mixed-graph test compares against an independent reachability oracle.
 
-The `TestMemgrind2Ephemeron` tests in both packages audit those paths with `-tags=libc.memgrind`. `BenchmarkEphemeronGC` measures fresh graphs of 10,000 and 100,000 entries, with setup and teardown outside the timer, including reverse-order live chains in one map and spread over 1 map per 10 entries, live keys held from an array, and ordinary cycles without weak collections.
+`BenchmarkEphemeronGC` measures fresh graphs of 10,000 and 100,000 entries, with setup and teardown outside the timer, including reverse-order live chains in one map and spread over 1 map per 10 entries, live keys held from an array, and ordinary cycles without weak collections.
 
-`internal/fixlib/ephemeron_test.go` checks every target's rewrite, exact inverse, idempotence, altered collector rejection and partial-hook rejection. It also compares the header masks in `ephemeronbits.go` against each generated collector. The focused and full test262 results and render measurements must be checked when changing these paths.
+The focused and full test262 results and render measurements must be checked when changing these paths.
 
-## When upstream changes it
-
-`internal/fixlib/ephemeronsites.go` fingerprints the collector, value marking, weak record release and key liveness functions on each target. Read the changed ownership and mark transitions before updating a fingerprint with `go run ./internal/fixlib -ephemeron`. `fixEphemeron` is a final rewrite and its exact inverse runs before earlier rules, so unrelated rules still see their original input.
-
-After regenerating from a C source containing the ephemeron patch, remove the corresponding Go helper and hooks only after verifying the full behavioral matrix and all target builds. Do not retain both collectors. Update symbol accounting if upstream introduces another GC-managed location that owns a symbol atom.

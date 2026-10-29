@@ -9,7 +9,7 @@ read_when:
 
 # The allocator of the C engine
 
-`engine/` is the C tree of the engine to come. Its allocator is not wired into the Go engine yet: the Go engine in `lib/` keeps modernc.org/memory and its own front cache until the switch. The native test host (`engine/test/`) is the only user.
+The allocator of the C engine in `engine/`. The Go host and the native test host (`engine/test/`) both use it.
 
 ## Layers
 
@@ -34,7 +34,7 @@ host_memory_grow, host_call (memory release, remap)            the host
 - `count` (`JS_GetMemorySize`, `malloc_size` of `JS_ComputeMemoryUsage`) is the size of the runtime plus, for each block in use, its TLSF block size and the 8 byte size word before it. An arena counts whole, slots in the front cache included. A freed large block that waits in the cache of large blocks counts too (see below). Free memory and chunk headers do not count. `count` is what the memory limit and the GC threshold use.
 - The memory limit (`JS_SetMemoryLimit`) fails an allocation when `count` plus the size asked for (the arena, or the user size plus the 8 byte header) passes it, then counts the real block. A resize is checked as upstream checks it: `count` plus the new size, less the usable size of the old block, against the limit (the old block does not count twice, and its 8 byte word stays in `count`, since the block is still a block). Once the resize is done, `count` changes by the difference of the two usable sizes. Lowering the limit frees nothing. A failure makes the engine throw out of memory.
 - The footprint is what the VM took from the host, the sum of its chunks. `JS_SetFootprintLimit` bounds it, 0 for none. It only stops growth: a VM that holds more keeps it, and nothing is taken back by it. It covers the chunks only, not the shadow stack, shared bytecode or the Go side. There is no default.
-- TLSF rounds a block up by at most 1/32, where the Go engine's allocator (modernc.org/memory) rounds to a power of two, so `count` is about 13% to 15% lower than the Go engine's `MemorySize` for the same heap. Against glibc's malloc in the C tree it is the same within 1.3%: after 3000 renders of tifa's pages the shop holds 39.84 MB against 39.85, the MUI test app 29.91 against 29.52, the bench app 2.15 against 2.12.
+- TLSF rounds a block up by at most 1/32, where the allocator of the ccgo engine (modernc.org/memory) rounded to a power of two, so `count` is about 13% to 15% lower than that engine's `MemorySize` was for the same heap. Against glibc's malloc in the C tree it is the same within 1.3%: after 3000 renders of tifa's pages the shop holds 39.84 MB against 39.85, the MUI test app 29.91 against 29.52, the bench app 2.15 against 2.12.
 
 ## Chunks
 

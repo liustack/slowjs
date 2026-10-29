@@ -1,4 +1,4 @@
-# Once a week, the C engine tests on the newest stable Go. The generated
+# Once a week, the tests on the newest stable Go. The generated
 # assembly depends on details inside Go (stack layout, the runtime's use of
 # registers, linker names), and a new Go release can change them. A failure
 # here is a warning for us to read. It is not a check for merging.
@@ -16,8 +16,8 @@ env:
   CGO_ENABLED: "0"
 
 jobs:
-  cengine:
-    name: cengine (${{ matrix.name }})
+  engine:
+    name: engine (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -36,7 +36,7 @@ jobs:
           check-latest: true
           cache: true
       - run: go version
-      - name: Test, C engine, internal packages
-        run: go test -count=1 -tags slowjs_cengine,testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
-      - name: Test, C engine, root package
-        run: go test -count=1 -p 1 -timeout 60m -tags slowjs_cengine .
+      - name: Test, internal packages with the test hooks
+        run: go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+      - name: Test, root package
+        run: go test -count=1 -p 1 -timeout 60m .

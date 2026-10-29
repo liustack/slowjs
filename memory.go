@@ -36,8 +36,7 @@ type MemoryUsage struct {
 	BinaryObjectCount, BinaryObjectSize int64
 
 	// What the VM took from the system, its limit (0 for none), in how many
-	// chunks, and the bytes [VM.ReleaseMemory] offered back so far. The
-	// engine of lib takes its memory from libc and leaves all four 0.
+	// chunks, and the bytes [VM.ReleaseMemory] offered back so far.
 	Footprint, FootprintLimit, Chunks, ReleaseCandidate int64
 }
 
@@ -55,8 +54,7 @@ func (m *VM) MemoryUsage() MemoryUsage {
 // keep bytes of it, and returns how many bytes it gave back. The objects of m
 // stay as they are. Call it when m has done a large piece of work, such as
 // after loading a bundle or after [VM.RunGC]: the memory comes back when m
-// needs it again. On the engine of lib, which takes its memory from libc, it
-// gives nothing back and returns 0.
+// needs it again.
 //
 // It returns an error while m runs javascript, as from a Go function that
 // javascript called. As with SetGCThreshold, no other goroutine may use m

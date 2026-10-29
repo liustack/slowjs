@@ -26,7 +26,7 @@ type BuildOptions struct {
 	App       string     // build in this module instead (tifa), with a go.work that uses Tree
 	Pkg       string     // the package to build, relative to App (or Tree)
 	Test      bool       // build the test binary of Pkg (go test -c)
-	Tags      string     // build tags
+	Tags      string     // build tags, if any
 	PGO       string     // the -pgo flag: "off" or a profile
 	Front     string     // the interpreter function whose body moves
 	Positions []Position // the positions to build
@@ -43,9 +43,6 @@ func (o *BuildOptions) Defaults() {
 	}
 	if o.Front == "" {
 		o.Front = "JS_CallInternal"
-	}
-	if o.Tags == "" {
-		o.Tags = "slowjs_cengine"
 	}
 	if len(o.Positions) == 0 {
 		o.Positions = Quick()
@@ -64,9 +61,6 @@ func (o BuildOptions) Check() error {
 	}
 	if o.Out == "" {
 		return fmt.Errorf("no output folder: pass -out")
-	}
-	if !strings.Contains(o.Tags, "slowjs_cengine") {
-		return fmt.Errorf("tags %q: positions are made for the C engine, which needs slowjs_cengine", o.Tags)
 	}
 	return nil
 }
@@ -180,7 +174,11 @@ func (o BuildOptions) BuildArgs(overlay, bin string) []string {
 	if o.Test {
 		args = []string{"test", "-c"}
 	}
-	args = append(args, "-overlay", overlay, "-pgo="+o.PGO, "-buildvcs=false", "-tags", o.Tags, "-o", bin, o.Pkg)
+	args = append(args, "-overlay", overlay, "-pgo="+o.PGO, "-buildvcs=false")
+	if o.Tags != "" {
+		args = append(args, "-tags", o.Tags)
+	}
+	args = append(args, "-o", bin, o.Pkg)
 	return args
 }
 

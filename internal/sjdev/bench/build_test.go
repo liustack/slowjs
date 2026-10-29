@@ -137,9 +137,9 @@ func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 }
 
 func TestBuildArgs(t *testing.T) {
-	o := BuildOptions{Pkg: "./test/ssr", Test: true, Tags: "slowjs_cengine", PGO: "off"}
+	o := BuildOptions{Pkg: "./test/ssr", Test: true, Tags: "testhooks", PGO: "off"}
 	got := strings.Join(o.BuildArgs("/o.json", "/b"), " ")
-	if got != "test -c -overlay /o.json -pgo=off -buildvcs=false -tags slowjs_cengine -o /b ./test/ssr" {
+	if got != "test -c -overlay /o.json -pgo=off -buildvcs=false -tags testhooks -o /b ./test/ssr" {
 		t.Errorf("args = %s", got)
 	}
 	o.Test = false
@@ -149,7 +149,7 @@ func TestBuildArgs(t *testing.T) {
 }
 
 func TestBuildCheck(t *testing.T) {
-	ok := BuildOptions{Side: "a", Pkg: "./x", Out: "o", Tags: "slowjs_cengine"}
+	ok := BuildOptions{Side: "a", Pkg: "./x", Out: "o"}
 	if err := ok.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,6 @@ func TestBuildCheck(t *testing.T) {
 		"side": func(o *BuildOptions) { o.Side = "a b" },
 		"pkg":  func(o *BuildOptions) { o.Pkg = "" },
 		"out":  func(o *BuildOptions) { o.Out = "" },
-		"tags": func(o *BuildOptions) { o.Tags = "other" },
 	} {
 		o := ok
 		mod(&o)

@@ -25,7 +25,7 @@ static int white_poll_skip_flag;
    white_alloc_fail_at (counting from 1 since white_alloc_count was set to 0),
    and only that one. The requests after it work. A request to the heap is a
    new arena of small blocks or a large block, as a call of the allocator was
-   on the old engine.
+   on the ccgo engine.
 
    With white_alloc_calls set, JS_ALLOC_FAILS counts instead: the calls of
    js_malloc_rt and js_realloc_rt, whatever their size and wherever the block

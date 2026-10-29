@@ -87,7 +87,7 @@ func getTest(b *testing.B, fn string, bn int) (r string) {
 	return r
 }
 
-func BenchmarkCCGO(b *testing.B) {
+func BenchmarkSLOWJS(b *testing.B) {
 	for _, v := range files {
 		fn := v.Name()
 		b.Run(fn, func(b *testing.B) {

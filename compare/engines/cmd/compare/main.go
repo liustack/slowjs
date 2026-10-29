@@ -89,7 +89,7 @@ var (
 	flagMerge     = flag.String("merge", "", "copy the test262 results of this results JSON into the run named by -name, and exit")
 	flagMergeEng  = flag.Bool("merge-engines", false, "with -merge: copy every result of the engines in that JSON (made by other binaries too) into the run, replacing what the run has for them")
 	flagAdd       = flag.Bool("add", false, "add to the existing run named by -name: timed workloads get -rounds more rounds, other phases are replaced. Splits a long run into short ones")
-	flagExtraTags = flag.String("extra-tags", "", "build tags added to every engine binary, such as slowjs_cengine to run the C engine in the slowjs row")
+	flagExtraTags = flag.String("extra-tags", "", "build tags added to every engine binary, such as testhooks")
 )
 
 // Pinned inputs.

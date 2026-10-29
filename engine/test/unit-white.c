@@ -9,8 +9,9 @@
    the JSON runs, which it feeds buffers of every room, the marker of a pending
    stack, and the lists the collector keeps. The engine it runs on is white.c,
    which is quickjs.c with the functions below added (build.sh links it in
-   place of quickjs.o). They are the tests of lib/jsonstr, lib/backtrace* and
-   lib/younggc that did this on the old engine.
+   place of quickjs.o). They took over the
+   tests of JSON, backtraces and the young collection that did this on the
+   engine before it.
 
      unit-white */
 #include <errno.h>

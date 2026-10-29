@@ -13,9 +13,8 @@ import (
 	"testing"
 )
 
-// Every way of listing the own keys of an object, which lib/ownkeys.go
-// takes over for ordinary objects (see fixOwnKeys), gives what the engine
-// gave before it. testdata/own_keys.golden is that output. Node gives the
+// Every way of listing the own keys of an object, gives
+// what the engine always gave. testdata/own_keys.golden is that output. Node gives the
 // same but for what the engine did differently before: functions have no
 // own arguments and caller, the stack of an error comes after its message
 // as a data property, for in over a proxy asks the traps in another order,
@@ -52,8 +51,7 @@ func TestOwnKeys(t *testing.T) {
 
 // The keys of a module namespace are bindings of the module. Listing them
 // with their values, or only the enumerable ones, throws for a binding not
-// yet initialized, and the names alone do not: lib/ownkeys.go leaves the
-// first to the engine.
+// yet initialized, and the names alone do not.
 func TestOwnKeysModuleNamespace(t *testing.T) {
 	m := newTestVM(t)
 	// A module of Eval is named <eval>, so it imports itself by that name.

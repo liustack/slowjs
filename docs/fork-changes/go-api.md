@@ -59,7 +59,7 @@ Release: v0.26.7.
 
 `*Error` says whether the call ended with an exception no script could catch, and why, so that an embedder need not compare names and messages, which a script can copy. `Uncatchable` is true when the VM ran out of memory (`OutOfMemory`, also when the engine could not build the error and threw `null`), when `Interrupt` or the eval timeout stopped the script (`Interrupted`), and when a Go function that javascript called panicked (neither of the two). The same holds for the error a Go function gets from javascript it evaluates. What a script throws is never uncatchable, even `new InternalError('interrupted')` or `{name: 'InternalError', message: 'out of memory'}`, which used to look exactly like the real thing. Taking an uncatchable error runs no page code: `Name` is `InternalError`, `Message` and `Stack` are the error's own properties, and `Error()` is `InternalError: <message>`. It used to call an `Error.prototype.toString` or a `name` getter that page code installed, which could rewrite the message. An interrupt that runs out of memory building its error counts as `OutOfMemory`.
 
-On the C engine (`-tags slowjs_cengine`) a script that runs on 50 ms past its eval timeout or an `Interrupt`, in a Go function it called for example, is killed. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it. The engine of lib never kills.
+A script that runs on 50 ms past its eval timeout or an `Interrupt`, in a Go function it called for example, is killed. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
 
 Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_c_test.go` on the C engine.
 
@@ -115,7 +115,7 @@ Test: `builtin_test.go`.
 
 Release: v0.27.2.
 
-`Args.String`, `Args.WTF8` and `VM.NewString` convert in Go, with the same results. `Args.String` and `Args.WTF8` read a string the engine holds in one piece straight from its characters, where `JS_ToCStringLen2` scanned every string in engine code, made a UTF-8 copy in engine memory of any string that was not ASCII, and Go copied that again. `NewString` (and every Go string that becomes a JS string: arguments of `Call`, results of Go functions and the rest) writes the characters straight into the new string, where it copied the Go string to C memory for `JS_NewStringLen` to decode. A string the engine left in pieces by concatenation (a rope) is still joined by the engine, and a string longer than javascript allows still goes through `JS_NewStringLen`, which throws as before. `Value.Dup` adds its reference in Go, where `JS_DupValue` took a TLS frame to do it.
+`Args.String`, `Args.WTF8` and `VM.NewString` convert in Go, with the same results. `Args.String` and `Args.WTF8` read a string the engine holds in one piece straight from its characters, where `JS_ToCStringLen2` scanned every string in engine code, made a UTF-8 copy in engine memory of any string that was not ASCII, and Go copied that again. `NewString` (and every Go string that becomes a JS string: arguments of `Call`, results of Go functions and the rest) writes the characters straight into the new string, where it copied the Go string to C memory for `JS_NewStringLen` to decode. A string the engine left in pieces by concatenation (a rope) is still joined by the engine, and a string longer than javascript allows still goes through `JS_NewStringLen`, which throws as before.
 
 It is safe because the results are the same strings: the tests convert each string both ways and compare. For reading, every form the engine holds (8-bit and 16-bit, ASCII, Latin-1, every UTF-8 length, surrogate pairs, lone surrogates at the start, middle and end, ropes, strings up to 65,000 characters and 2,000 random ones). For making strings, the same strings with each kind of invalid UTF-8, where the new string must also be 8-bit or 16-bit as `JS_NewStringLen` made it. The UTF-8 check is compared with Go's on every string of up to three bytes. Reading a string in one piece no longer needs engine memory, so near the memory limit it can no longer fail there: only a rope still can.
 
@@ -134,7 +134,7 @@ A Builtin that adds two numbers took 72 ns before and 75 to 81 ns after, dependi
 
 Tests: `TestArgStringSameAsEngine`, `TestNewStringSameAsEngine`, `TestUTF8Units` and `TestBuiltinStringRoundTrip` in `jsstring_test.go`, also run under memgrind.
 
-When upstream changes it: `lib/strchars.go` reads and writes a string with the offsets of its length, its wide bit and its characters that fixlib takes from `JSString` for [the JSON strings](json.md), so a new layout reaches it through those constants, and it makes strings with `js_alloc_string`. If upstream changes how `JS_ToCStringLen2` or `JS_NewStringLen` convert, change `jsstring.go` to match: the tests above compare the two on every form of string and fail first.
+If upstream changes how `JS_ToCStringLen2` or `JS_NewStringLen` convert, change `jsstring.go` to match: the tests above compare the two on every form of string and fail first.
 
 ## Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16
 
@@ -184,9 +184,9 @@ Test: `gc_test.go`.
 
 Release: Unreleased.
 
-`VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back. The engine of lib takes its memory from libc and leaves them 0.
+`VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back.
 
-`VM.ReleaseMemory(keep)` gives memory the VM keeps free back to the system, all but `keep` bytes of it, and returns how many bytes it gave back. The objects stay as they are. It returns an error while the VM runs javascript, as from a Go function that javascript called. On the engine of lib it gives nothing back and returns 0.
+`VM.ReleaseMemory(keep)` gives memory the VM keeps free back to the system, all but `keep` bytes of it, and returns how many bytes it gave back. The objects stay as they are. It returns an error while the VM runs javascript, as from a Go function that javascript called.
 
 As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and `MemoryUsage` after `Close` panics.
 
@@ -261,11 +261,9 @@ What follows the context and what does not, checked against Node 24 with `AsyncL
 - The `then` of a thenable that is not a promise runs in a job with the context of the code that resolved a promise with it, as `await thenable` does.
 - Timers, I/O and events do not exist in the engine, so a host that adds them saves and sets the context itself.
 
-`lib/asynccontext.go` has the code, and `fixAsyncContext` (`internal/fixlib/asynccontext.go`) passes the handler of each reaction through `asyncContextWrap` in `perform_promise_then`, and the `then` of a thenable through it in `js_promise_resolve_function_call`, before it queues the job that calls it. It is the last final change. It fingerprints those two functions and the two jobs, `promise_reaction_job` and `js_promise_resolve_thenable_job`, in `asyncContextSites`, and stops when a release adds another store into the handler of a reaction or another place that queues the thenable job. The goasm interpreter compiles none of these functions in: it calls their Go copies, so it keeps the async context too, and `TestGoasmCoversHelperRules` asks for a row if one of them ever joins `lib/goasm_helpers.txt`.
+It is the last final change. It fingerprints those two functions and the two jobs, `promise_reaction_job` and `js_promise_resolve_thenable_job`, in `asyncContextSites`, and stops when a release adds another store into the handler of a reaction or another place that queues the thenable job.
 
-The C tree (`engine/quickjs.c`) has the same change in C: `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
-
-Test: `asynccontext_test.go`, also run under memgrind (`TestMemgrind2AsyncContext`) and with `-tags slowjs_nogoasm` on linux/amd64, and `TestAsyncContextRewrite` in `internal/fixlib`. `engine/test/compare/asynccontext.js` runs the same cases on the C tree and on the Go engine (`engine/test/compare.sh`), and `engine/test/unit.c` checks the context the handler of a reaction, the rejection tracker of the host and a reaction registered with no context see.
+The change is in C (`engine/quickjs.c`): `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
 
 ## No module loader, shell helpers or SetCanBlock
 

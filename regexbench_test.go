@@ -15,14 +15,14 @@ import (
 // its values against, an alternation of 148 color names, on a value with no
 // name (a shadow) and on one with a name in it. ns/op is per replace.
 func BenchmarkRegexColors(b *testing.B) {
-	js, err := os.ReadFile("lib/testdata/regexsplit.js")
+	js, err := os.ReadFile("engine/test/compare/recorded/regexsplit.js")
 	if err != nil {
 		b.Fatal(err)
 	}
 	start := strings.Index(string(js), "var colors = [")
 	end := strings.Index(string(js)[start:], "];")
 	if start < 0 || end < 0 {
-		b.Fatal("no colors in lib/testdata/regexsplit.js")
+		b.Fatal("no colors in engine/test/compare/recorded/regexsplit.js")
 	}
 	colors := string(js)[start : start+end+2]
 	for _, c := range []struct{ name, s string }{

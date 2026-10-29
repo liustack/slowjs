@@ -962,7 +962,7 @@ static void track_rejection(JSContext *ctx, JSValueConst promise,
 }
 
 /* The async context covers the handler of a reaction, not the whole job, as
-   in the Go engine: the handler runs with the context of its then, and the
+   the Go API does: the handler runs with the context of its then, and the
    rest of the job, the rejection of the promise then returned and the
    tracker of the host that hears of it, sees the context the runtime has
    when the job runs. A handler registered with no context runs with the

@@ -5,9 +5,8 @@
  * root of this repository.
  */
 
-/* jsrun runs scripts on the C tree as internal/jsrun runs them on the Go
-   engine, so that compare.sh can compare what they print with the files kept
-   in the repository (and with the Go engine, while it is there).
+/* jsrun runs scripts on the C tree, so that compare.sh can compare what they
+   print with the files kept in the repository.
 
      jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] FILE...
 
@@ -18,7 +17,7 @@
    exception. A lone surrogate is printed as \u{...}, as Go would turn it into
    U+FFFD, unless -raw is given: then the string is written as the engine
    converts it (three bytes for a lone surrogate), which is how the files in
-   lib/testdata hold it.
+   engine/test/compare/recorded and testdata hold it.
 
    A file whose name ends in .mjs runs as a module instead. It has no
    completion value: what it gives is the string of globalThis.result once the

@@ -7,10 +7,10 @@
 
 /* unit-oom runs the engine with little memory left, which scripts cannot do:
    a call that runs out of memory fails with the out of memory error (null,
-   uncatchable), leaves the runtime working and loses nothing. These are the
-   tests of the Go packages that did this on the old engine (lib/outofmemory,
-   lib/tocstring_oom, lib/backtrace*, lib/jsonstr, lib/objlit, compileoom,
-   fieldchain, uncatchable). Each sweeps the memory it leaves: JS_SetMemoryLimit to what
+   uncatchable), leaves the runtime working and loses nothing. They took over
+   the tests that did this on the engine before it (out of memory,
+   string conversion, backtraces, JSON, object literals, compiling, field
+   chains, uncatchable errors). Each sweeps the memory it leaves: JS_SetMemoryLimit to what
    the runtime holds plus a room, for rooms from nothing up. A runtime that
    leaks a block ends the process with status 87 (host_free_runtime).
 
