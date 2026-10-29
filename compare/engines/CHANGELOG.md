@@ -1,5 +1,10 @@
 # Changes to the engine comparison
 
+## 2026-10-29: the C engine, and the helper tools in Go
+
+- The slowjs rows run the C engine (v0.29.0). The `slowjs-tifa-nogoasm` row is gone: there is one interpreter now, so it would repeat `slowjs-tifa`. Earlier results files keep it.
+- The helper tools are Go programs run from `compare/engines`: `cmd/behind` (the far-behind list), `cmd/pages` (page tables and archive), `cmd/modulescript` (a tifa module bundle as a script) and `cmd/notices` (the third-party notices). They replace the Python files with the same names and write the same output for the same input. The method of the measurements did not change.
+
 ## 2026-10-28: moejs moved
 
 - moejs is now `github.com/MoeForge/moejs`, v0.1.0-alpha.11 (it was `github.com/Calcium-Ion/moejs`, v0.1.0-alpha.9). Numbers in earlier result files are those of alpha.9. The C QuickJS rows keep their Makefile's build, which has no `-DNDEBUG` (see `docs/benchmarks.md`).

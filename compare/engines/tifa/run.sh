@@ -27,9 +27,6 @@
 # its own Intl and Temporal, tifa's Go functions, no polyfill. It runs bench,
 # native and mui-native, never pf.
 #
-# slowjs-tifa-nogoasm is the same row built with slowjs_nogoasm, as tifa
-# builds an app with build.goasm off: the interpreter in Go on linux/amd64.
-#
 # TIFA_ONLY=<engine>,<engine> runs only those engines (names as in the result
 # files). The check, timer and mem runs belong to slowjs.
 #
@@ -37,7 +34,7 @@
 # laid out as this folder: bundles/<app>.js and in/<app>/*.json) in place of
 # the pinned ones. A bundle that tifa built as an ES module goes there twice:
 # as bundles/<app>.mjs, which the slowjs-tifa rows compile as a module as
-# tifa does, and as bundles/<app>.js made by module-script.py, which every
+# tifa does, and as bundles/<app>.js made by `go run ./cmd/modulescript` (run in compare/engines), which every
 # other row runs as a script.
 #
 # Results: <out dir>/<engine>-<kind>.json and .meta, HTML in <out dir>/html.
@@ -87,7 +84,6 @@ done
 fi
 go_runs liustack slowjs yes
 go_runs liustacktifa slowjs-tifa tifa
-go_runs liustacktifanogoasm slowjs-tifa-nogoasm tifa
 if want slowjs; then
 run "$out/slowjs-timer-pf" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude $PF,prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100
 run "$out/slowjs-timer-native" "$bin/liustack" tifa-ssr -bundle $B/bundles/shop.js -inputs $SHOP -prelude prelude/intl-timer.js -probe '__intlTime()' -warm 20 -n 100

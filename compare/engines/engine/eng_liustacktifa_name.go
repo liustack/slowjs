@@ -3,10 +3,9 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build eng_liustacktifa && !slowjs_nogoasm
+//go:build eng_liustacktifa
 
 package engine
 
-// tifaName is the name of the row: slowjs as tifa runs it, with the default
-// interpreter of the platform (the Go assembly one on linux/amd64).
+// tifaName is the name of the row: slowjs as tifa runs it.
 const tifaName = "slowjs-tifa"

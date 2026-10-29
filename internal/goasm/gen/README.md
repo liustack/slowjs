@@ -1,8 +1,7 @@
-# C-engine generator (phase-0 prototype)
+# Engine generator
 
-Prototype of the new generator for the C-source engine. It is separate from
-the committed Python generator in `internal/goasm`, which keeps producing the
-old interpreter. This one proves the calling convention, the stack rules and
+The generator turns the C engine in `engine/` into the Go assembly in
+`internal/cengine`. It handles the calling convention, the stack rules and
 the shadow stack on amd64 and arm64.
 
 It is a maintainer tool: it shells out to LLVM 22.1.8 (clang, opt, llc) and

@@ -9,8 +9,8 @@
 # the generator's flags) but at -O0, so that every function of the source is
 # there and each count is a call, with -fsanitize=kcfi for the types of
 # indirect calls, links them into one module and lists the cycles of its call
-# graph that no count cuts (cycles.py). The list must be the one in
-# cycles.txt, line for line, which is empty: every recursion goes through a
+# graph that no count cuts (internal/goasm/cmd/cycles). The list must be the
+# one in cycles.txt, line for line, which is empty: every recursion goes through a
 # count (see docs/fork-changes/c-engine.md). A cycle that appears is a
 # recursion with no bound the generator can prove: cut it, or count it.
 #
@@ -23,6 +23,7 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 engine=$(dirname "$here")
+root=$(dirname "$engine")
 llvm=${1:-/usr/lib/llvm-22/bin}
 out=$here/out/cycles
 rm -rf "$out"
@@ -39,7 +40,7 @@ for f in quickjs libregexp libunicode cutils dtoa; do
 	lls="$lls $out/$f.ll"
 done
 "$llvm/llvm-link" -S -o "$out/engine.ll" $lls
-python3 "$here/cycles.py" "$out/engine.ll" > "$out/cycles.txt"
+(cd "$root" && go run ./internal/goasm/cmd/cycles "$out/engine.ll") > "$out/cycles.txt"
 if diff "$here/cycles.txt" "$out/cycles.txt"; then
 	echo "cycles: the cycles are the known ones ($(wc -l < "$out/cycles.txt"))"
 else

@@ -1,7 +1,7 @@
 ---
-summary: 'How slowjs compares with the other pure Go JavaScript engines that run current JavaScript: what each supports, how fast each is on server-side rendering and on general workloads, where slowjs is far behind, what limits each has, what slowjs does as tifa runs it, and how to run the comparison again'
+summary: 'How slowjs compares with the other pure Go JavaScript engines that run current JavaScript: what each supports, how fast each is on server-side rendering and on general workloads, where slowjs is far behind, what limits each has, what slowjs does as tifa runs it, how it ranks against C QuickJS and Node on tifa pages, and how to run the comparison again'
 read_when:
-  - Saying anything in public about how this engine compares with other Go engines
+  - Saying anything in public about how this engine compares with other Go engines, C QuickJS or Node
   - Choosing a pure Go JavaScript engine for a job
   - Looking for the workloads where this engine is slowest, to make it faster
   - Releasing a new version (rerun the comparison and update this page)
@@ -10,79 +10,83 @@ read_when:
 
 # Pure Go JavaScript engines compared
 
-This page records the run of 2026-10-23 with slowjs v0.27.2, whose engine was QuickJS translated to Go by ccgo. The C engine replaced that engine after v0.28. [performance.md](performance.md#acceptance-before-the-switch) has what the C engine measured against it on tifa's pages (0.83 to 0.86 of the time). Run the comparison again on the first release of the C engine, as [releasing.md](releasing.md) says, before this page says anything new about how slowjs ranks.
-
-Run of 2026-10-23: slowjs v0.27.2 against four other engines that
-build with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
+Run of 2026-10-29: slowjs v0.29.0, the first release of the C engine
+(QuickJS compiled to Go assembly), against five other engines that build
+with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
 GCP c2d-standard-8 (AMD EPYC 7B13), Linux 7.3, Go 1.27.2, every engine
 process on one CPU with its hyperthread sibling idle, GOMAXPROCS=1. The full
 tables are in
-[`compare/engines/results/2026-10-23-v0.27.2-gcp.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp.md),
-the raw numbers in the `.json` next to it. The slowjs numbers are
-from the engine code of the v0.27.2 tag. Only the tifa pages were run
-again since, on v0.28.6, with and without tifa's PGO profile (see
-[tifa's current bundles](#tifas-current-bundles)): every other table here is
-from the v0.27.2 run. The earlier runs are in
+[`compare/engines/results/2026-10-29-v0.29.0-gcp.md`](../compare/engines/results/2026-10-29-v0.29.0-gcp.md),
+the raw numbers in the `.json` next to it. The slowjs numbers are from the
+engine code of `main` at `0cc6d332`, the commit v0.29.0 is tagged on. Every
+table here is from this run. The earlier runs, made with the engine that was
+QuickJS translated to Go by ccgo (up to v0.28.6), are in
 [History](#history).
 
-The slowjs rows are named `slowjs`, `slowjs-tifa` and `slowjs-tifa-nogoasm`.
-The results files of runs up to 2026-10-24 name them `liustack-quickjs`,
-`liustack-tifa` and `liustack-tifa-nogoasm`, from the module's name before
-v0.28.0 (`github.com/liustack/quickjs`).
+The slowjs rows are named `slowjs` and `slowjs-tifa`. The results files of
+runs up to 2026-10-24 name them `liustack-quickjs` and `liustack-tifa`, from
+the module's name before v0.28.0 (`github.com/liustack/quickjs`), and have
+a `slowjs-tifa-nogoasm` row that the C engine does not need.
 
 ## In short
 
 - **Support.** go-quickjs and goant pass 99.3% of test262 (language,
   built-ins and intl402), Temporal and Intl included. slowjs
-  passes 83.1%: its Intl now has every constructor, but the comparison
+  passes 83.1%: its Intl has every constructor, but the comparison
   runs it without Temporal (package `temporal` is not registered), and
-  Temporal is 13426 of the runs. moejs passes 79.6% and has no Intl. On
-  ES2023 and older, every engine passes 99.1% to 99.3%.
+  Temporal is 13426 of the runs. moejs passes 81.3%. On
+  ES2023 and older, every engine passes 99.1% to 99.3%. slowjs has no module
+  loader any more: it fails the probes for `import()` and static `import`.
 - **Server-side rendering.** On the server bundles of real tifa apps,
-  slowjs needs the least CPU of the pure Go engines (see
-  [tifa pages](#tifa-pages)). On the smaller React page of the speed table,
-  moejs needs 7% less CPU than slowjs and go-quickjs 5% more.
+  slowjs needs the least CPU of the pure Go engines on every page set (see
+  [tifa pages](#tifa-pages)). On the React page of the speed table it
+  needs 9.8 ms of CPU, moejs 1.4 times and go-quickjs 1.6 times as much.
+- **Against C QuickJS.** On the same JavaScript on the same core, slowjs
+  takes 0.98 times the time of C QuickJS 2026-06-04 on the bench pages (which
+  need no Intl), 0.81 on the MUI pages and 1.06 on the shop (both on the
+  FormatJS polyfill, as C QuickJS has no Intl). With its own Intl the shop
+  takes 0.82 and the MUI pages 0.52 of the time C needs on the polyfill.
+- **Against Node.** Node with its JIT is 4.8 to 6.1 times as fast as slowjs
+  on the same JavaScript, and Node with `--jitless` is 1.7 to 1.9 times as
+  fast (see [tifa pages](#tifa-pages)).
 - **As tifa runs it.** The tifa pages are also run with slowjs set up the
   way tifa sets it up: its own Intl and Temporal, no polyfill, tifa's Go
   functions and tifa's GC rules (see
   [slowjs as tifa runs it](#slowjs-as-tifa-runs-it)). On the Go side that
   is the only row with features the C QuickJS and Node rows cannot have.
-  With v0.28.6, its Go assembly interpreter, the bundles tifa builds today
-  and tifa's PGO profile, it takes 1.14 to 1.15 times the time of C QuickJS
-  2026-06-04 on the bench pages, which need no Intl, 0.91 to 0.93 on the
-  shop and 0.43 on the MUI pages. On the same JavaScript, polyfill included,
-  slowjs takes 1.17 to 1.26 times the time of C on bench and the shop (see
-  [tifa's current bundles](#tifas-current-bundles)).
+  It takes 0.98 of the time of C QuickJS on the bench pages, 0.79 on the
+  shop and 0.38 on the MUI pages.
 - **General speed.** slowjs is not the fastest pure Go engine.
-  go-quickjs without its JIT (its default) scores 1.8 times as high on the
-  V8 suite, parses and writes JSON in 56% to 62% of the time, runs regular
-  expressions 3.5 times faster and is faster on 55 of 63 QuickJS micro
-  benchmarks. moejs writes JSON 3.7 times faster and builds strings 1.3
-  times faster.
-- **Far behind.** Empty loops and number arithmetic take 2.0 to 2.9 times
-  the median of the other pure Go engines, V8's Crypto 2.1 times, property
-  reads, array reads and strings to integers about 2 times (see
-  [Where slowjs is far behind](#where-slowjs-is-far-behind)).
-  `Date.now()`, at 6.9 times in the v0.26.17 run, is now 1.07 times: since
-  v0.27.0 the engine reads Go's clocks.
+  go-quickjs without its JIT (its default) scores 1.2 times as high on the
+  V8 suite (3.0 times with it), parses JSON in 81% of the time, runs regular
+  expressions 2.4 times faster and is faster on 26 of 63 QuickJS micro
+  benchmarks. moejs writes JSON 2.0 times faster, goant parses it 1.8 times
+  faster.
+- **Far behind.** Nothing is at twice the median of the other pure Go
+  engines. The farthest are the empty loop (1.58), strings to integers
+  (1.52) and number arithmetic (1.43 to 1.50): see
+  [Where slowjs is far behind](#where-slowjs-is-far-behind).
 - **Where slowjs leads.** The tifa pages, little memory per VM
-  (1.2 MiB, modernc 1.1 MiB, moejs 1.4 MiB, go-quickjs 2.1 MiB), and a
+  (1.3 MiB RSS, modernc 1.1 MiB, moejs 1.4 MiB, go-quickjs 2.0 MiB), and a
   memory limit that counts live memory and stops a script exactly at it,
-  which only modernc shares. It is about twice as fast as
-  modernc.org/quickjs, the C-to-Go translation it started from.
+  which only modernc shares. It is 3.3 times as fast as modernc.org/quickjs,
+  the C-to-Go translation it started from, on the React page.
+  A new VM costs more than in the others: 0.36 ms against 0.20 ms for
+  go-quickjs, and 2.5 ms to load a compiled program against 1.1 ms.
 
 ## Engines
 
 | Engine | Version | What it is | How the comparison uses it |
 |---|---|---|---|
-| slowjs | v0.27.2 | Bellard's QuickJS 2026-06-04 translated from C to Go (ccgo), with hand-written fast paths | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
-| slowjs-tifa | main (c17092a) | the same engine set up as tifa sets up a VM, for the tifa pages only | packages `intl` and `temporal`, tifa's Go functions, tifa's limits and GC rules, a shared compiled bundle (see [slowjs as tifa runs it](#slowjs-as-tifa-runs-it)) |
-| modernc-quickjs | v0.25.0 | the same translation, upstream of the fork | as above |
+| slowjs | v0.29.0 (main `0cc6d332`) | Bellard's QuickJS (pinned commit) in C, compiled by LLVM to Go assembly, with the changes of the fork | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
+| slowjs-tifa | v0.29.0 (main `0cc6d332`) | the same engine set up as tifa sets up a VM, for the tifa pages only | packages `intl` and `temporal`, tifa's Go functions, tifa's limits and GC rules, a shared compiled bundle (see [slowjs as tifa runs it](#slowjs-as-tifa-runs-it)) |
+| modernc-quickjs | v0.25.0 | QuickJS translated from C to Go by ccgo, the engine slowjs started from | as above |
 | go-quickjs-interp | v0.28.0 | QuickJS-NG rewritten in Go | `quickjs.Compile` once, `RunProgram`, JIT off, the default |
 | go-quickjs-jit | v0.28.0 | the same with `-tags quickjs_jit` and `WithJIT()` | as above, the JIT is marked experimental |
 | goant-interp | v0.2.1 | a JavaScript engine written in Go | `Runtime.Compile` and `RunProgram` per runtime, JIT off, the default |
 | goant-jit | v0.2.1 | the same with `WithJIT(true)` | as above |
-| moejs | v0.1.0-alpha.9 | a register bytecode engine written in Go, for plugin sandboxes | `moejs.CompileScript` once, `RunScript` on each runtime, runtimes with their own mutable builtins (`MutableIntrinsics`), since test262, the polyfills and the tifa bundles write to them |
+| moejs | v0.1.0-alpha.11 | a register bytecode engine written in Go, for plugin sandboxes | `moejs.CompileScript` once, `RunScript` on each runtime, runtimes with their own mutable builtins (`MutableIntrinsics`), since test262, the polyfills and the tifa bundles write to them |
+
 
 goja, sobek and otto are left out: they lack async generators, WeakRef,
 newer regular expression flags and more (otto implements ES5 only). jsc2go
@@ -95,36 +99,42 @@ longer run. Their raw results were not kept (`compare/engines/CHANGELOG.md`).
 |---|---|---|---|---|---|---|---|---|
 | goant-interp, goant-jit | 99.3% | 99.3% | 98.7% | 99.9% | 99.6% | yes | 73 | 10 |
 | go-quickjs-interp, go-quickjs-jit | 99.3% | 99.3% | 98.6% | 99.8% | 100.0% | yes | 77 | 13 |
-| slowjs | 83.1% | 99.2% | 97.3% | 76.5% | 36.3% | not registered | 75 | 13 |
+| slowjs | 83.1% | 99.2% | 97.3% | 76.5% | 36.3% | not registered | 73 | 13 |
+| moejs | 81.3% | 99.1% | 97.3% | 74.4% | 24.5% | no | 68 | 9 |
 | modernc-quickjs | 81.1% | 99.2% | 97.4% | 76.4% | 8.3% | no | 64 | 3 |
-| moejs | 79.6% | 99.1% | 97.3% | 74.4% | 0.7% | no | 61 | 2 |
 
 test262 at `d53ebc8b`, 96540 runs per engine (sloppy and strict), module
 tests and tests that need host hooks left out for every engine. "built-ins"
 counts Temporal, which is 13268 of the runs. Feature probes and Intl probes:
 small scripts with a known answer, Intl compared with Node 24. Between two
 runs of the same code a few tests change (modernc-quickjs 4 fewer,
-goant-interp 9 fewer in the v0.26.17 run).
+goant-interp 9 fewer in the v0.26.17 run). slowjs passes the same 80215 runs
+as before the C engine replaced the translated one, and its 58 known errors
+are the same ones.
 
 slowjs has had Temporal since v0.27.0, in package `temporal`, but
 the comparison registers only package `intl`, so Temporal and the intl402
 tests of Temporal (4058 of the 6742 intl402 runs) fail. Apart from them,
-intl402 passes 2448 of 2684 (91.2%). Since v0.27.0 its Intl has every constructor,
+intl402 passes 2448 of 2684 (91.2%). Its Intl has every constructor,
 Collator (and so a locale-aware `localeCompare`), Locale, DurationFormat,
 ListFormat, RelativeTimeFormat, Segmenter and DisplayNames included, and
 it passes all 13 Intl probes. What it still lacks, by test262 feature tag:
 explicit resource management (`using`, 128 of 820 pass), `Array.fromAsync`,
 import attributes for JSON modules, ShadowRealm, `Atomics.waitAsync` and the
 newest proposals (`import defer`, iterator chunking and joining, immutable
-ArrayBuffer). moejs fails the probes for Intl, `FinalizationRegistry`,
-iterator helpers, `RegExp.escape`, JSON modules and proper tail calls.
+ArrayBuffer). The C engine has no module loader: the probes for `import()`
+and static `import` fail, as do those for JSON modules and proper tail
+calls. moejs fails the probes for `Intl.Collator`, `Intl.RelativeTimeFormat`,
+`Intl.ListFormat`, `Intl.DisplayNames`, `FinalizationRegistry`, iterator
+helpers, `RegExp.escape`, JSON modules and proper tail calls.
 
 Code highlighting is where engines split most. shiki 4.5.0 turns the
 TextMate grammars of bash, css, go, html, json, typescript and yaml into 552
 regexps, many with the `v` flag, lookbehind and named groups (they are in
 `engine/test/compare/recorded/shiki`, and were checked against Node). On every fifth of them, 111 regexps run over the code they were
-made for, both slowjs engines, go-quickjs v0.28.0 and moejs
-v0.1.0-alpha.9 give what Node gives for all 111. The others throw on or
+made for, slowjs, go-quickjs v0.28.0 and moejs
+v0.1.0-alpha.9 give what Node gives for all 111 (this was not run again for
+this page, and moejs is at alpha.11 now). The others throw on or
 match differently for some of them: QuickJS at `19d6bd86` 31, QuickJS at
 `3d5e064e` (the commit slowjs's C engine comes from) 37, quickjs-ng at
 `7a23d8e3` 14, modernc.org/quickjs v0.25.0 37 and goant v0.2.1 31. On
@@ -139,30 +149,30 @@ against slowjs.
 
 | Engine | React SSR render | V8 suite score | JSON.parse | JSON.stringify | String building | RegExp | QuickJS micro benchmarks (geomean time) |
 |---|---|---|---|---|---|---|---|
-| slowjs | 15.1 | 835 | 3.75 | 5.08 | 6.37 | 47.3 | 1.00 |
-| modernc-quickjs | 31.6 (2.09) | 376 (0.45) | 6.31 (1.68) | 9.31 (1.83) | 12.6 (1.98) | 84.4 (1.78) | 2.07 |
-| go-quickjs-interp | 15.8 (1.05) | 1522 (1.82) | 2.09 (0.56) | 3.15 (0.62) | 8.04 (1.26) | 13.7 (0.29) | 0.61 |
-| go-quickjs-jit | 18.6 (1.23) | 3718 (4.45) | 2.20 (0.59) | 3.30 (0.65) | 7.64 (1.20) | 13.4 (0.28) | 0.32 |
-| goant-interp | 34.5 (2.28) | 347 (0.42) | 1.42 (0.38) | 2.68 (0.53) | 12.5 (1.96) | 60.6 (1.28) | 3.29 |
-| goant-jit | 27.9 (1.85) | 1144 (1.37) | 1.42 (0.38) | 2.71 (0.53) | 10.3 (1.62) | 61.4 (1.30) | 1.13 |
-| moejs | 14.0 (0.93) | 703 (0.84) | 1.90 (0.51) | 1.39 (0.27) | 4.82 (0.76) | 39.6 (0.84) | 0.84 |
+| slowjs | 9.76 | 1246 | 2.64 | 2.66 | 3.14 | 31.9 | 1.00 |
+| modernc-quickjs | 32.0 (3.28) | 374 (0.30) | 6.38 (2.42) | 9.43 (3.55) | 12.8 (4.08) | 84.3 (2.64) | 3.72 |
+| go-quickjs-interp | 15.3 (1.57) | 1523 (1.22) | 2.13 (0.81) | 3.14 (1.18) | 7.96 (2.54) | 13.5 (0.42) | 1.09 |
+| go-quickjs-jit | 18.5 (1.90) | 3749 (3.01) | 2.17 (0.82) | 3.27 (1.23) | 7.63 (2.43) | 13.4 (0.42) | 0.58 |
+| goant-interp | 33.9 (3.47) | 349 (0.28) | 1.43 (0.54) | 2.67 (1.00) | 12.5 (3.98) | 61.2 (1.92) | 5.84 |
+| goant-jit | 27.4 (2.81) | 1133 (0.91) | 1.42 (0.54) | 2.69 (1.01) | 10.2 (3.25) | 61.8 (1.94) | 1.99 |
+| moejs | 13.6 (1.39) | 816 (0.65) | 1.87 (0.71) | 1.31 (0.49) | 4.85 (1.54) | 39.8 (1.25) | 1.48 |
 
 Wall time tells the same story with one difference: go-quickjs's median
 render takes less wall time than its CPU time, because its garbage
 collector also works between operations. On the React page its median is
-13.9 ms against 15.0 ms for slowjs. CPU time is what a busy server pays.
+13.7 ms against 9.70 ms for slowjs. CPU time is what a busy server pays.
 
 Cold start and memory, with the React bundle (117 KB):
 
 | Engine | New VM, ms | New VM + load from source | New VM + load compiled program | First render | RSS per VM, MiB | Go heap per VM, MiB |
 |---|---|---|---|---|---|---|
-| slowjs | 0.209 | 13.9 | 1.68 | 15.5 | 1.2 | 0 |
-| modernc-quickjs | 0.279 | 17.5 | 2.28 | 31.7 | 1.1 | 0 |
-| go-quickjs-interp | 0.231 | 13.0 | 1.23 | 22.3 | 2.1 | 5.5 |
-| go-quickjs-jit | 0.274 | 13.2 | 1.30 | 82.9 | 18.9 | 17.8 |
-| goant-interp | 0.629 | 17.3 | n/a | 39.9 | 7.6 | 6.9 |
-| goant-jit | 0.580 | 16.2 | n/a | 42.2 | 8.9 | 7.2 |
-| moejs | 0.104 | 15.3 | 0.565 | 12.1 | 1.4 | 1.1 |
+| slowjs | 0.362 | 13.8 | 2.48 | 9.97 | 1.3 | 0 |
+| modernc-quickjs | 0.256 | 17.6 | 2.28 | 32.2 | 1.1 | 0 |
+| go-quickjs-interp | 0.201 | 12.6 | 1.14 | 21.8 | 2.0 | 5.5 |
+| go-quickjs-jit | 0.266 | 13.1 | 1.28 | 82.1 | 18.7 | 17.8 |
+| goant-interp | 0.582 | 17.1 | n/a | 39.8 | 8.3 | 7.1 |
+| goant-jit | 0.551 | 16.0 | n/a | 41.7 | 9.1 | 7.2 |
+| moejs | 0.090 | 17.0 | 0.605 | 13.4 | 1.4 | 1.0 |
 
 Memory: what the process grows by per VM with 100 VMs alive, each with the
 bundle loaded and one page rendered. goant's Program serves only the runtime
@@ -173,35 +183,65 @@ runtime.
 
 ## tifa pages
 
-For v0.26.16 and v0.26.17, HTML equality was checked at run time, but the
-normalized digests were not archived. Their Markdown keeps the verdicts.
-From the v0.27.1 run on, `pages.py --output` archives per-page SHA256
-digests after masking timestamps and the verdict of whether each page is the same as slowjs's (`same_as_liustack` in the JSON), including
-the separate polyfill and deployed comparisons. A missing HTML file has a
-null verdict, not a match. The JSON also keeps raw process results, rest
+HTML equality is checked at run time and archived: `cmd/pages --output`
+writes per-page SHA256 digests after masking timestamps and the verdict of
+whether each page is the same as slowjs's (`same_as_liustack` in the JSON),
+including the separate polyfill and deployed comparisons. A missing HTML file
+has a null verdict, not a match. The JSON also keeps raw process results, rest
 runs, single-page probes and every try from the metadata files.
 
 Server bundles of three tifa apps (`tifa/bundles`), rendered the way tifa
 renders them, with the data each app's server sends for each page. Times
 are CPU per render (the mean of 200 timed renders after 50 warm ones for
-the bench pages, 100 after 20 for the shop, page by page in one process),
-as a ratio to slowjs: geometric mean over the pages, range in
+the bench pages, 100 after 20 for the shop and MUI, page by page in one
+process), as a ratio to slowjs: geometric mean over the pages, range in
 brackets. The C QuickJS and Node rows are references, not pure Go engines.
 C QuickJS (`qjs`, built with its own Makefile) is timed in the script with
-wall time on a CPU of its own. Every page's HTML is compared with
+wall time on a CPU of its own. Node is timed in the script as well, after the
+same warm renders, with its JIT (the engine has compiled the hot code by
+then) and with `--jitless`. Every page's HTML is compared with
 slowjs's, with the router's render timestamps (`u:` and 13
 digits) masked. Every page per engine:
-[`compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md`](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md).
+[`compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md`](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md).
 
 On these pages slowjs is the fastest pure Go JS engine for SSR:
 every other pure Go engine needs more CPU per page, or does not render it.
 
-- Pages without Intl: go-quickjs-interp needs 24% more, moejs 26% more,
-  go-quickjs-jit 34% more, the others 2.3 to 3.1 times as much.
-- The shop, as each engine would deploy it: go-quickjs-interp needs 28%
-  more on the 18 pages it renders, go-quickjs-jit 51% more on the same 18,
-  the others 2.4 to 3.7 times as much. moejs cannot load the shop bundle
+- Pages without Intl: moejs needs 88% more, go-quickjs-interp 91% more,
+  go-quickjs-jit 96% more, the others 3.6 to 4.5 times as much.
+- The shop, as each engine would deploy it: go-quickjs-interp needs 66%
+  more on the 18 pages it renders, go-quickjs-jit 91% more on the same 18,
+  the others 3.3 to 5.0 times as much. moejs cannot load the shop bundle
   (its functions are limited to 256 registers).
+- The MUI pages as deployed: go-quickjs-interp needs 66% more, go-quickjs-jit
+  79% more, moejs 2.3 times and the others 6.0 to 6.6 times as much.
+
+Against the references, below 1 is faster than C QuickJS 2026-06-04 on the
+same pages (geometric mean over the pages of a bundle, range in brackets).
+Bench has no Intl, MUI and the shop need it, so every row but the
+slowjs-tifa row and the "own Intl only" row runs them on the polyfill.
+
+| Row | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
+|---|---|---|---|
+| slowjs, same JavaScript (polyfill) | 0.98 (0.93–1.04) | 0.81 (0.74–0.94) | 1.06 (0.98–1.15) |
+| slowjs, own Intl only (no Temporal, no Go functions, no tifa GC rules) | 0.98 (0.93–1.04) | 0.52 (0.39–0.85) | 0.82 (0.71–1.07) |
+| **slowjs-tifa, as tifa runs it** | **0.98 (0.93–1.04)** | **0.38 (0.29–0.62)** | **0.79 (0.68–0.98)** |
+| C QuickJS 2026-06-04 | 1.00 | 1.00 | 1.00 |
+| Node v24.11.1 | 0.16 (0.12–0.21) | 0.16 (0.13–0.20) | 0.22 (0.18–0.29) |
+| Node v24.11.1 `--jitless` | 0.52 (0.49–0.56) | 0.48 (0.43–0.57) | 0.58 (0.53–0.62) |
+
+- **Against C.** On the same JavaScript slowjs takes the time of C QuickJS
+  on the bench pages (0.98), is 19% faster on MUI and 6% slower on the shop.
+  The difference to native code is small.
+- **Against Node.** On the same JavaScript, Node with its JIT is 6.1 times as
+  fast as slowjs on the bench pages, 5.1 times on MUI and 4.8 times on the
+  shop. Node with `--jitless` is 1.9, 1.7 and 1.8 times as fast. With each on
+  its own Intl, Node takes 0.21 of the time of slowjs on the shop and MUI
+  pages with the JIT and 0.55 and 0.64 without it (the "as deployed" tables
+  below).
+- C QuickJS master at `7d1c13c5d8` takes 1.02 times the time of slowjs on the
+  bench pages, as the 2026-06-04 release does. QuickJS-NG v0.17.0 takes 1.36
+  times.
 
 ### Which pages need Intl
 
@@ -222,49 +262,55 @@ engine would deploy it.
 
 ### Pages without Intl
 
+
 | Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |
 |---|---|---|---|---|
-| slowjs | 65 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
-| modernc-quickjs | 79 | 2 of 2 | 2 of 2 | 2.33 (2.32–2.34) |
-| go-quickjs-interp | 71 | 2 of 2 | 2 of 2 | 1.24 (1.23–1.25) |
-| go-quickjs-jit | 73 | 2 of 2 | 2 of 2 | 1.34 (1.32–1.36) |
-| goant-interp | 83 | 2 of 2 | 2 of 2 | 3.13 (2.91–3.38) |
-| goant-jit | 73 | 2 of 2 | 2 of 2 | 2.67 (2.36–3.01) |
-| moejs | 90 | 2 of 2 | 2 of 2 | 1.26 (1.23–1.29) |
-| C QuickJS 2026-06-04 (reference) | 47 | 2 of 2 | 2 of 2 | 0.68 (0.64–0.71) |
-| C QuickJS master 7d1c13c5d8 (reference) | 39 | 2 of 2 | 2 of 2 | 0.66 (0.63–0.70) |
-| QuickJS-NG v0.17.0 (reference) | 36 | 2 of 2 | 2 of 2 | 0.89 (0.85–0.94) |
-| Node v24.11.1 (reference) | 44 | 2 of 2 | 2 of 2 | 0.11 (0.09–0.13) |
-| Node v24.11.1 --jitless (reference) | 73 | 2 of 2 | 2 of 2 | 0.36 (0.36–0.36) |
+| slowjs | 71 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
+| slowjs-tifa | 62 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
+| modernc-quickjs | 76 | 2 of 2 | 2 of 2 | 3.57 (3.54–3.60) |
+| go-quickjs-interp | 72 | 2 of 2 | 2 of 2 | 1.91 (1.90–1.92) |
+| go-quickjs-jit | 71 | 2 of 2 | 2 of 2 | 1.96 (1.96–1.96) |
+| goant-interp | 76 | 2 of 2 | 2 of 2 | 4.53 (4.17–4.92) |
+| goant-jit | 80 | 2 of 2 | 2 of 2 | 4.00 (3.63–4.42) |
+| moejs | 93 | 2 of 2 | 2 of 2 | 1.88 (1.80–1.96) |
+| C QuickJS 2026-06-04 (reference) | 39 | 2 of 2 | 2 of 2 | 1.02 (0.97–1.08) |
+| C QuickJS master 7d1c13c5d8 (reference) | 40 | 2 of 2 | 2 of 2 | 1.02 (0.97–1.07) |
+| QuickJS-NG v0.17.0 (reference) | 34 | 2 of 2 | 2 of 2 | 1.36 (1.30–1.43) |
+| Node v24.11.1 (reference) | 17 | 2 of 2 | 2 of 2 | 0.16 (0.13–0.20) |
+| Node v24.11.1 --jitless (reference) | 16 | 2 of 2 | 2 of 2 | 0.53 (0.53–0.54) |
 
-| Page | slowjs | modernc-quickjs | go-quickjs-interp | go-quickjs-jit | goant-interp | goant-jit | moejs | quickjs-2026-06-04 | quickjs-master | quickjs-ng | node-jit | node-jitless |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| spiral | 31.2 (1.00) | 72.3 (2.32) | 38.9 (1.25) | 41.3 (1.32) | 105 (3.38) | 94 (3.01) | 40.3 (1.29) | 20.1 (0.64) | 19.6 (0.63) | 26.7 (0.85) | 4.04 (0.13) | 11.2 (0.36) |
-| table | 27.7 (1.00) | 65 (2.34) | 34.2 (1.23) | 37.7 (1.36) | 80.7 (2.91) | 65.5 (2.36) | 34 (1.23) | 19.8 (0.71) | 19.5 (0.70) | 26 (0.94) | 2.38 (0.09) | 9.88 (0.36) |
+| Page | slowjs | slowjs-tifa | modernc-quickjs | go-quickjs-interp | go-quickjs-jit | goant-interp | goant-jit | moejs | quickjs-2026-06-04 | quickjs-master | quickjs-ng | node-jit | node-jitless |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| spiral | 20.5 (1.00) | 20.5 (1.00) | 72.8 (3.54) | 39.4 (1.92) | 40.2 (1.96) | 101 (4.92) | 90.8 (4.42) | 40.3 (1.96) | 19.8 (0.97) | 20 (0.97) | 26.7 (1.30) | 4.07 (0.20) | 11.1 (0.54) |
+| table | 18.4 (1.00) | 18.4 (1.00) | 66.1 (3.60) | 35 (1.90) | 36 (1.96) | 76.6 (4.17) | 66.7 (3.63) | 33 (1.80) | 19.8 (1.08) | 19.6 (1.07) | 26.3 (1.43) | 2.42 (0.13) | 9.69 (0.53) |
 
-The C QuickJS rows show what the translation from C to Go costs: on these
-pages slowjs takes 1.5 times the time of the C it is translated
-from, on the polyfilled shop 1.4 times.
+
+The C QuickJS rows show how close the generated Go assembly is to native
+code: on these pages slowjs takes 0.98 times the time of the C it is
+compiled from, on the polyfilled shop 1.06 times.
 
 ### Shop on the FormatJS polyfill, every engine
 
 Native `Intl` deleted first in every engine, including the three that have
 one, so all run the same JavaScript. Load ms: the polyfill, then the bundle.
 
+
 | Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |
 |---|---|---|---|---|
-| slowjs | 655 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
-| modernc-quickjs | 938 | 20 of 20 | 20 of 20 | 1.85 (1.75–2.00) |
-| go-quickjs-interp | 793 | 18 of 20 | 18 of 18 | 1.23 (1.14–1.33). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| go-quickjs-jit | 796 | 2 of 20 | 2 of 2 | 1.30 (1.27–1.33). every page but store-en-US-products, store-zh-CN-products fails, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| goant-interp | 1085 | 20 of 20 | 20 of 20 | 2.85 (2.62–3.21) |
-| goant-jit | 1119 | 20 of 20 | 20 of 20 | 2.70 (2.16–3.04) |
-| moejs | load: SyntaxError: function needs more than 256 registers is not supported yet (see TODO.md) | 0 of 20 | | |
-| C QuickJS 2026-06-04 (reference) | 386 | 20 of 20 | 20 of 20 | 0.70 (0.65–0.79) |
-| C QuickJS master 7d1c13c5d8 (reference) | 379 | 20 of 20 | 20 of 20 | 0.69 (0.63–0.78) |
-| QuickJS-NG v0.17.0 (reference) | 368 | 20 of 20 | 18 of 20 | 0.87 (0.83–0.94) |
-| Node v24.11.1 (reference) | 260 | 20 of 20 | 20 of 20 | 0.16 (0.13–0.21) |
-| Node v24.11.1 --jitless (reference) | 273 | 20 of 20 | 20 of 20 | 0.41 (0.37–0.44) |
+| slowjs | 572 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
+| slowjs-tifa | not run: this row has no polyfill | | | |
+| modernc-quickjs | 956 | 20 of 20 | 20 of 20 | 2.54 (2.41–2.84) |
+| go-quickjs-interp | 811 | 18 of 20 | 18 of 18 | 1.67 (1.50–1.84). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| go-quickjs-jit | 822 | 2 of 20 | 2 of 2 | 1.76 (1.75–1.77). every page but store-en-US-products, store-zh-CN-products fails, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| goant-interp | 1020 | 20 of 20 | 20 of 20 | 3.85 (3.47–4.27) |
+| goant-jit | 1044 | 20 of 20 | 20 of 20 | 3.69 (3.05–4.12) |
+| moejs | load: SyntaxError: function needs more than 256 registers is not supported yet | 0 of 20 | | |
+| C QuickJS 2026-06-04 (reference) | 380 | 20 of 20 | 20 of 20 | 0.95 (0.87–1.02) |
+| C QuickJS master 7d1c13c5d8 (reference) | 383 | 20 of 20 | 20 of 20 | 0.95 (0.85–1.07) |
+| QuickJS-NG v0.17.0 (reference) | 356 | 20 of 20 | 18 of 20 | 1.17 (1.10–1.24) |
+| Node v24.11.1 (reference) | 210 | 20 of 20 | 20 of 20 | 0.21 (0.17–0.28) |
+| Node v24.11.1 --jitless (reference) | 198 | 20 of 20 | 20 of 20 | 0.55 (0.50–0.59) |
+
 
 QuickJS-NG's two different pages (`wb-order-studio`, `wb-order-weekend`)
 have one more React text separator (`<!-- -->`) after "选择快递公司" in the
@@ -276,21 +322,48 @@ stops at the shop bundle's outer function, at line 1, column 2.
 Each engine with its own Intl if it has one, else with the polyfill.
 Against slowjs with its own Intl.
 
+
 | Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |
 |---|---|---|---|---|
-| slowjs (own Intl) | 302 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
-| modernc-quickjs (polyfill) | 938 | 20 of 20 | 20 of 20 | 2.43 (1.98–2.78) |
-| go-quickjs-interp (own Intl) | 542 | 18 of 20 | 18 of 18 | 1.28 (1.18–1.39). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| go-quickjs-jit (own Intl) | 556 | 18 of 20 | 18 of 18 | 1.51 (1.35–1.81). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
-| goant-interp (polyfill) | 1085 | 20 of 20 | 20 of 20 | 3.74 (2.70–4.39) |
-| goant-jit (polyfill) | 1119 | 20 of 20 | 20 of 20 | 3.55 (2.30–4.20) |
-| moejs (polyfill) | load: SyntaxError: function needs more than 256 registers is not supported yet (see TODO.md) | 0 of 20 | | |
-| C QuickJS 2026-06-04 (reference) (polyfill) | 386 | 20 of 20 | 20 of 20 | 0.92 (0.68–1.06) |
-| C QuickJS master 7d1c13c5d8 (reference) (polyfill) | 379 | 20 of 20 | 20 of 20 | 0.91 (0.65–1.06) |
-| QuickJS-NG v0.17.0 (reference) (polyfill) | 368 | 20 of 20 | 18 of 20 | 1.14 (0.88–1.32) |
-| Node v24.11.1 (reference) (own Intl) | 127 | 20 of 20 | 20 of 20 | 0.16 (0.13–0.24) |
-| Node v24.11.1 --jitless (reference) (own Intl) | 150 | 20 of 20 | 20 of 20 | 0.41 (0.36–0.44) |
+| slowjs (own Intl) | 283 | 20 of 20 | 20 of 20 | 1.00 (1.00–1.00) |
+| slowjs-tifa (own Intl) | 306 | 20 of 20 | 20 of 20 | 0.97 (0.87–1.03) |
+| modernc-quickjs (polyfill) | 956 | 20 of 20 | 20 of 20 | 3.29 (2.77–3.77) |
+| go-quickjs-interp (own Intl) | 533 | 18 of 20 | 18 of 18 | 1.66 (1.53–1.81). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| go-quickjs-jit (own Intl) | 547 | 18 of 20 | 18 of 18 | 1.91 (1.73–2.17). store-en-US-post, store-zh-CN-post fail, a failure leaves the runtime closed, the other pages measured in a run without the failing ones |
+| goant-interp (polyfill) | 1020 | 20 of 20 | 20 of 20 | 4.98 (3.68–5.84) |
+| goant-jit (polyfill) | 1044 | 20 of 20 | 20 of 20 | 4.77 (3.15–5.66) |
+| moejs (polyfill) | load: SyntaxError: function needs more than 256 registers is not supported yet | 0 of 20 | | |
+| C QuickJS 2026-06-04 (reference) (polyfill) | 380 | 20 of 20 | 20 of 20 | 1.23 (0.93–1.41) |
+| C QuickJS master 7d1c13c5d8 (reference) (polyfill) | 383 | 20 of 20 | 20 of 20 | 1.23 (0.91–1.41) |
+| QuickJS-NG v0.17.0 (reference) (polyfill) | 356 | 20 of 20 | 18 of 20 | 1.52 (1.19–1.75) |
+| Node v24.11.1 (reference) (own Intl) | 151 | 20 of 20 | 20 of 20 | 0.21 (0.17–0.30) |
+| Node v24.11.1 --jitless (reference) (own Intl) | 90 | 20 of 20 | 20 of 20 | 0.55 (0.50–0.58) |
 
+
+### MUI pages as deployed
+
+The three MUI pages the same way. The pages of the engines with the polyfill
+differ from slowjs's in one character: the FormatJS polyfill writes the
+narrow no-break space U+202F before `AM` and `PM`, where Go's `Intl` and Node
+write a plain space (see below), so only the engines with an `Intl` of their
+own give the same page as slowjs.
+
+
+| Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |
+|---|---|---|---|---|
+| slowjs (own Intl) | 143 | 3 of 3 | 3 of 3 | 1.00 (1.00–1.00) |
+| slowjs-tifa (own Intl) | 149 | 3 of 3 | 3 of 3 | 0.73 (0.73–0.74) |
+| modernc-quickjs (polyfill) | 742 | 3 of 3 | 0 of 3 | 6.34 (3.63–8.92) |
+| go-quickjs-interp (own Intl) | 211 | 3 of 3 | 3 of 3 | 1.66 (1.61–1.70) |
+| go-quickjs-jit (own Intl) | 217 | 3 of 3 | 3 of 3 | 1.79 (1.74–1.84) |
+| goant-interp (polyfill) | 728 | 3 of 3 | 0 of 3 | 6.64 (4.72–8.10) |
+| goant-jit (polyfill) | 712 | 3 of 3 | 0 of 3 | 6.02 (4.21–7.45) |
+| moejs (polyfill) | 446 | 3 of 3 | 0 of 3 | 2.27 (1.64–2.74) |
+| C QuickJS 2026-06-04 (reference) (polyfill) | 291 | 3 of 3 | 0 of 3 | 1.91 (1.18–2.56) |
+| C QuickJS master 7d1c13c5d8 (reference) (polyfill) | 285 | 3 of 3 | 0 of 3 | 1.92 (1.19–2.57) |
+| QuickJS-NG v0.17.0 (reference) (polyfill) | 296 | 3 of 3 | 0 of 3 | 2.00 (1.46–2.38) |
+| Node v24.11.1 (reference) (own Intl) | 57 | 3 of 3 | 3 of 3 | 0.21 (0.18–0.22) |
+| Node v24.11.1 --jitless (reference) (own Intl) | 55 | 3 of 3 | 3 of 3 | 0.64 (0.64–0.65) |
 ### slowjs as tifa runs it
 
 Two rows of slowjs run the tifa pages, and they measure different things.
@@ -340,52 +413,32 @@ but not tifa's functions or rules. So those rows stay references for the same
 JavaScript, and the second slowjs row shows what the Go side adds on top.
 
 Run of 2026-10-24 on the GCP machine, CPU 1 and its sibling idle, Go 1.27.2,
-`-pgo=off`, five rows (slowjs twice, C QuickJS 2026-06-04, Node with and
-without its JIT), engine code of main at `c17092a`
-([results](../compare/engines/results/2026-10-24-main-tifa-row-gcp-pages.md)).
-Each cell: geometric mean over the pages of a bundle of the time per render as
-a ratio to C QuickJS 2026-06-04 (below 1 is faster than C), the range in
-brackets. Bench has no Intl, MUI and the shop need it, so they run on the
-polyfill in every row but the second and the third.
 
-| Row | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
-|---|---|---|---|
-| slowjs, same JavaScript (polyfill) | 1.49 (1.44–1.55) | 1.18 (1.08–1.30) | 1.44 (1.29–1.59) |
-| slowjs, own Intl only (no Temporal, no Go functions, no tifa GC rules) | 1.49 (1.44–1.55) | 0.73 (0.54–1.17) | 1.08 (0.94–1.44) |
-| **slowjs-tifa, as tifa runs it** | **1.48 (1.44–1.52)** | **0.52 (0.39–0.84)** | **1.07 (0.93–1.39)** |
-| C QuickJS 2026-06-04 | 1.00 | 1.00 | 1.00 |
-| Node v24.11.1 | 0.16 (0.12–0.20) | 0.17 (0.14–0.21) | 0.23 (0.18–0.30) |
-| Node v24.11.1 `--jitless` | 0.52 (0.49–0.54) | 0.48 (0.43–0.57) | 0.57 (0.53–0.61) |
+Run of 2026-10-29, as above ([results](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)):
 
-Reading it:
-
-- On the bench pages nothing changes: they use neither Intl nor the Go
-  functions, and the young GCs after each render cost about what the engine
-  saves elsewhere (0.99 of the plain row).
-- On the shop the polyfill is the cost: own Intl takes 0.75 of the time of the
-  same JavaScript on the polyfill (1.08 against 1.44), and the tifa row, with
-  Temporal registered, the GC rules and the shared bytecode, ends within 1%
-  of the plain own-Intl row (0.99, 0.95 to 1.02 by page).
-- On MUI, the row takes 0.44 of the time of the same JavaScript on the
-  polyfill, and 0.72 of the time of the plain own-Intl row. That second step
-  is the hash in Go (279754 calls in the run) together with the rest of the
-  tifa setup. The two were not measured apart.
-- The Node rows used the polyfill too, as the C row did. With its own Intl
-  Node takes 0.17 (shop) and 0.16 (MUI) of the time of the plain own-Intl
-  slowjs row, as in the "Shop as deployed" table.
-
-The GC rules ran as in tifa: in the three runs, 500 young GCs and 2 full GCs
-(bench), 2411 and 9 (shop), 362 and 1 (MUI), and the engine itself collected
-during a render once, on bench.
+- On the bench pages the tifa row takes the time of the plain row (1.00): they
+  use neither Intl nor the Go functions, and the young GCs after each render
+  cost about what the engine saves elsewhere.
+- On the shop it takes 0.97 of the time of the plain own-Intl row (0.87 to
+  1.03 by page). The two blog post pages are 0.87 to 0.92, where the young GC
+  after each render pays most.
+- On MUI it takes 0.73 of the time of the plain own-Intl row. That is the hash
+  in Go (`__tifa_murmur2__`) together with the rest of the tifa setup. The two
+  were not measured apart.
+- Against the same JavaScript on the polyfill, the plain own-Intl rows take 0.77
+  (shop) and 0.64 (MUI) of the time. The polyfill costs more than the engine
+  does: see [What the polyfill costs](#what-the-polyfill-costs).
 
 HTML of the tifa row against the polyfill row, page by page, with the
 render timestamps masked:
 
-| Bundle | Pages | Same | Same but for U+202F | Other difference |
-|---|---|---|---|---|
-| bench | 2 | 2 | 0 | 0 |
-| shop | 20 | 20 | 0 | 0 |
-| MUI | 3 | 0 | 3 | 0 |
+
+| Bundle | Pages | Same HTML | Same but for U+202F | Other difference | Not compared |
+|---|---|---|---|---|---|
+| bench | 2 | 2 | 0 | 0 | 0 |
+| mui | 3 | 0 | 3 | 0 | 0 |
+| shop | 20 | 20 | 0 | 0 | 0 |
+
 
 The three MUI pages differ in one character. The FormatJS polyfill writes the
 narrow no-break space U+202F between a time and `AM` or `PM` (`08:00 AM`),
@@ -394,120 +447,19 @@ Node own-Intl rows have the same MUI pages as the tifa row, 3 of 3), so the
 polyfill is the one that differs. With U+202F
 changed to a space the pages are byte for byte the same.
 
-### tifa's current bundles
-
-The bundles in `tifa/bundles` are pinned, so the runs above stay comparable
-with each other, but tifa has changed them since: its SSR bundle is an ES
-module now, i18next and lucide-react are cached, and the MUI bundle hashes
-with `__tifa_murmur2__` itself. This run uses the bundles tifa builds today.
-
-Runs of 2026-10-24 on the GCP machine, CPU 3 and its sibling CPU 7 idle,
-Go 1.27.2, slowjs v0.28.6, whose default interpreter on linux/amd64 is the
-one in Go assembly. The first run builds every engine with `-pgo=off`
-([results](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md)).
-Two more runs build the slowjs rows both ways, alternating, with
-`-pgo=off` and with `-pgo=` the profile tifa c729ad2 ships
-(`internal/codegen/engine.pgo`, SHA256
-`9754c5be7b019eb8236400a795f614e145329aa7b1c8f1a011155dcd8eb14a1f`), as
-`tifa build` builds an app
-([round 1](../compare/engines/results/2026-10-24-v0.28.6-pgo-gcp-pages-r1.md),
-[round 2](../compare/engines/results/2026-10-24-v0.28.6-pgo-gcp-pages-r2.md)).
-`go version -m` shows `-pgo=engine.pgo` on the binaries built with it.
-
-- **Bundles.** tifa c729ad2 built `examples/shop`, `test/apps/mui` and
-  `test/apps/bench` with `go tool tifa build`, and the inputs are the data
-  each built server sends for the same pages as before (20 shop pages, 3 MUI
-  pages, 2 bench pages). The `slowjs-tifa` rows compile each `ssr.js` as a
-  module, as tifa does. The other rows run a strict script that
-  `tifa/module-script.py` made from it. SHA256:
-
-  | File | SHA256 |
-  |---|---|
-  | `shop.mjs` | `096fd9fb5ad90471d5dcdfa42f29ae6f8c95be25473227286210697a3e8d7dab` |
-  | `shop.js` | `a17eb95a1fee16e4970e7c4769597197f10b59b9676447df5931bc34600b4287` |
-  | `mui.mjs` | `da8756f5f2adb3f6ea650b3c02962d094905711e4da0aa1225338e3ea898f00a` |
-  | `mui.js` | `6af6699d1dc48c388c86612d31fd92ea399c5243b440f4702c7e94c573d218ce` |
-  | `bench.mjs` | `083647ec762ac9589db3b7e6e08b16131e7224d20aeeae84a02af02dcc65fe5e` |
-  | `bench.js` | `7d8199f45774d61857a51c90338c6e5c0cfb126141f904ed53c891a472feabb9` |
-
-- **Rows.** slowjs three times: the same JavaScript on the polyfill, as tifa
-  runs it, and as tifa runs it built with `slowjs_nogoasm`
-  (`slowjs-tifa-nogoasm`, what an app built with tifa's `build.goasm: false`
-  gets). Then C QuickJS 2026-06-04 and master, QuickJS-NG v0.17.0 and Node
-  v24.11.1 with and without its JIT. The other pure Go engines were not run.
-- **Polyfill.** Built again from `tifa/polyfill/package-lock.json` with
-  esbuild 0.28.2 (SHA256 `e336e59d658a8196cebbc9c26361d54e7e96f1ad6748981d823b0d5ea288e21a`).
-
-Each cell: geometric mean over the pages of a bundle of the time per render as
-a ratio to C QuickJS 2026-06-04 (below 1 is faster than C), the range in
-brackets. The rows with PGO give the two rounds, the others the first run,
-without PGO, where the rows without PGO of the later rounds landed within
-0.02.
-
-| Row | bench (2 pages) | MUI (3 pages) | shop (20 pages) |
-|---|---|---|---|
-| slowjs, same JavaScript (polyfill), with tifa's PGO profile | 1.17–1.18 (1.11–1.26) | 0.95–0.97 (0.88–1.08) | 1.25–1.26 (1.17–1.32) |
-| slowjs, same JavaScript (polyfill), without PGO | 1.25 (1.17–1.34) | 0.99 (0.90–1.10) | 1.29 (1.22–1.40) |
-| slowjs, own Intl only | 1.25 (1.17–1.34) | 0.60 (0.44–0.98) | 1.01 (0.83–1.44) |
-| **slowjs-tifa, as tifa runs it, with tifa's PGO profile** | **1.14–1.15 (1.07–1.22)** | **0.43 (0.32–0.71)** | **0.91–0.93 (0.78–1.16)** |
-| slowjs-tifa, as tifa runs it, without PGO | 1.22 (1.14–1.31) | 0.45 (0.33–0.74) | 0.97 (0.83–1.23) |
-| slowjs-tifa-nogoasm, the interpreter in Go | 1.46 (1.39–1.53) | 0.48 (0.36–0.78) | 1.04 (0.87–1.37) |
-| C QuickJS 2026-06-04 | 1.00 | 1.00 | 1.00 |
-| C QuickJS master 7d1c13c5d8 | 1.01 (1.00–1.02) | 1.00 (0.99–1.00) | 1.00 (0.95–1.01) |
-| QuickJS-NG v0.17.0 | 1.33 (1.32–1.34) | 0.96 (0.93–0.99), 2 pages | 1.25 (1.20–1.31) |
-| Node v24.11.1 | 0.16 (0.12–0.21) | 0.16 (0.13–0.21) | 0.24 (0.19–0.31) |
-| Node v24.11.1 `--jitless` | 0.53 (0.50–0.56) | 0.48 (0.42–0.57) | 0.59 (0.55–0.62) |
-
-Reading it:
-
-- **The Go assembly interpreter.** As tifa runs it, the page takes 0.84 of
-  the time of the interpreter in Go on the bench pages (0.83 to 0.85), 0.93
-  on the shop (0.89 to 0.95) and 0.93 on MUI. The `slowjs-tifa-nogoasm` row
-  lands about where slowjs was in the run on the pinned bundles (1.46 against
-  1.48 on bench).
-- **Against C.** As tifa builds and runs it, slowjs is faster than C QuickJS
-  on the polyfill on the shop (0.91 to 0.93) and on MUI (0.43), and takes
-  1.14 to 1.15 times the time of C on the bench pages, which need no Intl.
-  Running the same JavaScript, it takes 1.17 to 1.26 times the time of C on
-  bench and the shop, and about the same time as C on MUI.
-- **PGO.** tifa's profile takes 4% to 5% off the tifa row and 1% to 4% off
-  the row on the same JavaScript. The profile is collected from tifa's own
-  pages with its own Intl, so it covers the polyfill less.
-- **The tifa setup against plain slowjs with its own Intl.** 0.98 on bench,
-  0.96 on the shop (0.66 to 1.01: the English journal page takes 0.66) and
-  0.76 on MUI, where the hash in Go makes 279754 calls in the run.
-- **QuickJS-NG.** The MUI order page leaves no `renderResult`, so NG renders 2
-  of the 3 MUI pages. On the shop it renders all 20, and the two order pages
-  differ as before (one more `<!-- -->`).
-- GC as tifa runs it, in the three runs of the tifa row: 500 young and 2 full
-  GCs (bench), 2411 and 9 (shop), 362 and 1 (MUI). The engine collected
-  during a render once, on bench.
-
-The tifa row's HTML against the polyfill row's: bench and the shop the same
-on every page, MUI the same but for U+202F on all 3 pages, as above.
-
-The new bundles needed three changes to the harness, listed in
-[the comparison's CHANGELOG](../compare/engines/CHANGELOG.md): the module
-form for the tifa rows with tifa's `__tifa_async_context__`, the script form
-for the others, and two shims in the Node rows (plain values in place of the
-getters on `globalThis`, and `Iterator.concat`, which TanStack Router calls
-and Node v24.11.1 lacks).
-
 ### What the polyfill costs
 
 On slowjs, from the same runs:
 
-- Loading it: 371 ms per VM before the bundle. The bundle then loads in
-  284 ms, 302 ms without the polyfill. In the v0.27.1 run it took 411 ms
-  after the polyfill, and 294 ms in the v0.26.17 run: why that run was
-  slower was not looked into.
+- Loading it: 291 ms per VM before the bundle. The bundle then loads in
+  281 ms, 283 ms without the polyfill.
 - Memory per VM (20 VMs, each with the bundle loaded, the polyfill too
   where named, and the zh-CN cart page rendered):
-  34.7 MiB RSS with the polyfill against 12.8 MiB with its own Intl.
-  go-quickjs-interp: 116.1 MiB against 48.0 MiB (Go heap 82.6 against
-  40.4 MiB).
-- Share of a render: summed over the 20 pages, 217 of 939 ms of a render is
-  spent inside the polyfill (23%, 1354 calls), against 5.6 of 710 ms inside
+  38.6 MiB RSS with the polyfill against 17.4 MiB with its own Intl.
+  go-quickjs-interp: 111.5 MiB against 48.5 MiB (Go heap 80.4 against
+  39.9 MiB).
+- Share of a render: summed over the 20 pages, 149 of 674 ms of a render is
+  spent inside the polyfill (22%, 1354 calls), against 4.8 of 520 ms inside
   its own Intl (1%) for the same calls.
 
 go-quickjs-interp fails on the two blog post pages, with its own Intl and on
@@ -519,117 +471,83 @@ and on 18 of the 20 pages on the polyfill (see
 
 Every QuickJS micro benchmark, V8 suite benchmark and workload of the speed
 table where slowjs needs at least twice the time of the median of
-the six other pure Go builds (for the V8 suite: half the score). The
-suspected causes come from CPU profiles of slowjs, and are what to look at first.
+the six other pure Go builds (for the V8 suite: half the score). In this run
+there is none. The closest, at 1.2 times the median or more:
 
-| Item | slowjs vs the median | Fastest | Suspected cause |
-|---|---|---|---|
-| `empty_loop` | 2.9 | go-quickjs-jit | dispatching each bytecode through the translated interpreter loop, with the operand stack in C memory |
-| `int_arith` | 2.6 | go-quickjs-jit | the same dispatch, and a tag check and a 16-byte value per operand where others keep int32 or NaN-boxed numbers |
-| `empty_down_loop` | 2.6 | go-quickjs-jit | as `empty_loop` |
-| `empty_down_loop2` | 2.4 | go-quickjs-jit | as `empty_loop` |
-| `float_arith` | 2.4 | go-quickjs-jit | as `int_arith` |
-| `array_for` | 2.3 | go-quickjs-jit | each element read goes through the generic `get_array_el` path |
-| `prop_read` | 2.1 | go-quickjs-jit | every property read hashes into the object's shape (`find_own_property`), with no cache at the access site |
-| V8 Crypto | 2.1 (score) | go-quickjs-jit | integer arithmetic in loops and array element reads, as above |
-| `string_to_int` | 2.1 | go-quickjs-jit | `js_atod` and its multiprecision code for every conversion, where go-quickjs has a path for plain integers |
-| `array_read` | 2.0 | go-quickjs-jit | as `array_for` |
-| `empty_do_loop` | 2.0 | go-quickjs-jit | as `empty_loop` |
+| Item | slowjs vs the median | Fastest |
+|---|---|---|
+| `empty_loop` | 1.58 | go-quickjs-jit |
+| `string_to_int` | 1.52 | go-quickjs-jit |
+| `float_arith` | 1.50 | go-quickjs-jit |
+| `int_arith` | 1.43 | go-quickjs-jit |
+| `string_to_float` | 1.42 | moejs |
+| `array_for` | 1.34 | go-quickjs-jit |
+| JSON.parse | 1.32 | goant-jit |
+| V8 Crypto | 1.30 (score) | go-quickjs-jit |
+| `empty_down_loop` | 1.27 | go-quickjs-jit |
+| `empty_down_loop2` | 1.26 | go-quickjs-jit |
 
 The medians are of modernc-quickjs, go-quickjs-interp, go-quickjs-jit,
-goant-interp, goant-jit and moejs. `python3 behind.py
-results/<run>.json` in `compare/engines` makes the list again.
-
-Just under the line: `string_to_float` (1.99, fastest moejs), JSON.parse
-(1.88), V8 NavierStokes (1.75), JSON.stringify (1.74) and
-`typed_array_read` (1.71). `string_to_int` and `array_read` were at 1.92
-and 1.86 in the v0.27.1 run: they took 11% and 10% more time in this run,
-which was not looked into (see the note on single tests below).
-`date_now` was on the list at 6.9 in the v0.26.17
-run and is 1.07 now: since v0.27.0 the engine reads Go's clocks instead of
-calling libc's `gettimeofday`, which modernc.org/libc made as a real
-system call. Single micro benchmarks of tiny loops move
+goant-interp, goant-jit and moejs. `go run ./cmd/behind
+results/<run>.json [limit]` in `compare/engines` makes the list again, for
+the limit you give (2.0 by default). In the last run before the C engine
+(v0.27.2) eleven items were at 2.0 to 2.9, the empty loops and number
+arithmetic first. Single micro benchmarks of tiny loops move
 between two builds of the same code, as the code lands at other addresses:
-modernc-quickjs, the same code in both runs of History, took 0.8 to 2.5
-times its earlier time on single tests (2.5 on `global_read`), though 1.05
-times on their geometric mean. Read one test's ratio as rough.
+modernc-quickjs, the same code in two earlier runs, took 0.8 to 2.5
+times its earlier time on single tests, though 1.05 times on their
+geometric mean. Read one test's ratio as rough.
 
-## Where the others are faster, and why
+## Where the others are faster
 
-CPU profiles on the same machine (`JSBENCH_CPUPROFILE`, `-pgo=off`) of each
-case where an engine needs at least 1.3 times less CPU than
-slowjs. The profiles are from the v0.26.16 run (go-quickjs
-v0.27.0), the ratios from the v0.26.17 run, and the go-quickjs file and line
-numbers from v0.28.0. moejs was not profiled: its mechanisms below are from its
-guide (`docs/guide.md`, "Implementation"). No text summaries of those
-profiles are archived, so the descriptions below are qualitative observations
-from that run, not measured CPU shares for v0.26.17.
+In this run, with the ratios to slowjs from the speed table (below 1 is
+faster than slowjs):
 
-- **Property reads and writes, and calls** (V8 Richards and DeltaBlue,
-  micro benchmarks `prop_read`, `prop_update`, `func_call`). In our
-  Richards and DeltaBlue profiles, property lookup, field operations and
-  setting up JS call frames were prominent. Every property access hashes
-  into the object's shape. go-quickjs caches the shape and slot at each access site
-  (`internal/vm/vm_shape.go` 807 and 1019, read in `tree_build.go` 2214),
-  runs hot functions as a tree of Go closures with no operand stack
-  (`internal/vm/vm_tree.go`, `zcall_tree.go` 86), updates a property in
-  place in one node (`ztree_update.go` 601) and calls small pure functions
-  without a frame (`vm_leaf_pure.go` 179). moejs has an inline cache per
-  instruction.
-- **Numbers in loops** (V8 Crypto and NavierStokes, `empty_loop`,
-  `int_arith`, `float_arith`). Ours is bytecode dispatch and the arithmetic
-  opcodes, with `get_array_el` also prominent in NavierStokes. go-quickjs keeps
+- **Numbers in loops and the V8 suite.** go-quickjs-interp scores 1.22 times as
+  high on the V8 suite (Crypto 1.7, NavierStokes 1.6, RegExp 2.8 times), and
+  go-quickjs-jit 3.0 times (NavierStokes 7.2, Crypto 6.9). go-quickjs keeps
   numbers as NaN-boxed floats (`internal/vm/value.go` 81), has nodes for
   int32 arithmetic (`tree_build.go` 1639, `tree_operand.go` 9), for array
   element reads (`vm_tree.go` 267) and for a whole loop (`ztree_flow.go`
-  1140). In the go-quickjs-jit and goant-jit profiles, generated machine
-  code dominated.
-- **`Date.now()`** (`date_now`, 3.7 to 9 times faster in the engines written
-  in Go, modernc has the same cost).
-  The v0.26.16 profile was dominated by `clock_gettime`: `date_now` calls libc
-  `gettimeofday`, which modernc.org/libc v1.77.1 makes as a real system
-  call instead of going through the vDSO. go-quickjs calls `time.Now`
-  (`internal/vm/builtins_date.go` 116), which uses the vDSO. Fixed in
-  v0.27.0, where the engine reads Go's clocks: in the v0.27.2 run
-  `date_now` takes 1.07 times the median of the others.
-- **Copying arrays** (`array_slice`, go-quickjs 2.9 times faster, moejs 12.6
-  times). Ours
-  defines each element as a property (`JS_DefineProperty`), with
-  `TLS.Alloc` also prominent in that profile. go-quickjs reads the dense
-  elements of the source and appends them to the new array's storage (`internal/vm/builtins.go` 1228).
-- **Destructuring arrays** (`local_destruct`, go-quickjs 1.9 times faster, moejs
-  3.3 times).
-  Ours runs the iterator protocol. go-quickjs skips it for arrays that still
-  iterate the way `Array.prototype` does (`internal/vm/iterate.go` 608).
-- **Strings to numbers** (`string_to_int`, `string_to_float`). Ours goes
-  through `js_atod` and its multiprecision code. go-quickjs has a path for
-  plain integers (`internal/jsnum`), goant calls Go's `strconv`.
-- **JSON** (goant: parse 2.8 times, stringify 2.1 times faster, moejs:
-  parse 2.1 times, stringify 4.1 times). goant parses and writes with code
-  of its own over the string (`internal/engine/builtin_json.go` 571, 870,
-  190) and caches the shape changes of the objects it builds (`shapes.go`
-  404). moejs's JSON is native Go and builds objects on known shapes. Ours
-  showed time in `TLS.Alloc`, `json_next_token` and
-  `string_buffer_putc` in that profile. go-quickjs's JSON is profiled separately.
-- **String building** (moejs 1.4 times faster). Not profiled on moejs.
-- **Regular expressions** (go-quickjs 3.6 times faster, moejs 1.2 times).
-  Our profile showed the backtracking matcher and its timeout check.
-  moejs runs the patterns it can translate exactly on Go's RE2. go-quickjs's regular
-  expressions are profiled separately.
-- **Loading a compiled program** (go-quickjs 1.40 times faster, moejs 3.0
-  times). We read the bytecode into every new VM, then run the bundle's
-  top level. go-quickjs shares one compiled program between runtimes and only prepares it
-  (`internal/vm/eval.go` 18) before running the top level. A moejs `Script`
-  is immutable and runs on any runtime.
-- **Across the board**, `TLS.Alloc` (the C stack frames the C-to-Go
-  translation keeps on a stack of its own) appeared across the v0.26.16
-  profiles.
+  1140). In the go-quickjs-jit and goant-jit profiles of the earlier run,
+  generated machine code dominated.
+- **Property reads and calls.** go-quickjs caches the shape and slot at each
+  access site (`internal/vm/vm_shape.go` 807 and 1019, read in
+  `tree_build.go` 2214), runs hot functions as a tree of Go closures with no
+  operand stack (`internal/vm/vm_tree.go`, `zcall_tree.go` 86), updates a
+  property in place in one node (`ztree_update.go` 601) and calls small pure
+  functions without a frame (`vm_leaf_pure.go` 179). moejs has an inline
+  cache per instruction (its guide, `docs/guide.md`, "Implementation").
+- **JSON** (JSON.parse: goant 0.54, moejs 0.71, go-quickjs 0.81 times the
+  CPU time of slowjs. JSON.stringify: moejs 0.49). goant parses and writes with
+  code of its own over the string (`internal/engine/builtin_json.go` 571,
+  870, 190) and caches the shape changes of the objects it builds
+  (`shapes.go` 404). moejs's JSON is native Go and builds objects on known
+  shapes.
+- **Regular expressions** (go-quickjs 0.42). go-quickjs's regular expressions
+  are profiled separately. moejs runs the patterns it can translate exactly
+  on Go's RE2 (1.25 times the time of slowjs on this workload).
+- **Strings to numbers** (`string_to_int`, `string_to_float`). go-quickjs has
+  a path for plain integers (`internal/jsnum`), goant calls Go's `strconv`.
+- **Copying arrays, destructuring arrays** (`array_slice`, `local_destruct`).
+  go-quickjs reads the dense elements of the source and appends them to the
+  new array's storage (`internal/vm/builtins.go` 1228), and skips the
+  iterator protocol for arrays that still iterate the way `Array.prototype`
+  does (`internal/vm/iterate.go` 608).
+- **Loading a compiled program** (go-quickjs 0.46 times the time of slowjs,
+  moejs 0.24). go-quickjs shares one compiled program between runtimes and
+  only prepares it (`internal/vm/eval.go` 18) before running the top level. A
+  moejs `Script` is immutable and runs on any runtime. slowjs reads the
+  bytecode into every new VM, then runs the bundle's top level.
+
+The file and line numbers are for go-quickjs v0.28.0. No profile of the C
+engine against these engines was taken for this page.
 
 ## Limits
 
 | Engine | Memory limit per VM | Stopping a script | Recursion depth (probe) | JIT platforms | Other |
 |---|---|---|---|---|---|
-| slowjs | exact: the allocator refuses past the limit and the script gets an uncatchable out of memory (`VM.SetMemoryLimit`, `quickjs.go`) | `Interrupt`, uncatchable | 9993 | no JIT | one VM per goroutine at a time, VMs independent |
+| slowjs | exact: the allocator refuses past the limit and the script gets an uncatchable out of memory (`VM.SetMemoryLimit`) | `Interrupt`, uncatchable | 4996: the default is 5000 calls, `SetMaxStackSize` raises it to 10000 at most | no JIT | one VM per goroutine at a time, VMs independent. linux/amd64 and darwin/arm64 only |
 | modernc-quickjs | exact, same allocator | interrupt handler | crashes the process (Go stack overflow) instead of a RangeError | no JIT | `tail-call` probe also crashes the process |
 | go-quickjs | approximate: the heap is walked once the process has allocated a quarter of the limit since the last walk (`docs/known-issues.md` KI-02) | context or abort | 8189 | `quickjs_jit` tag, experimental, linux/amd64, windows/amd64, darwin/arm64 (`internal/jit` build tags) | without a deadline, a regular expression stops after a step budget with `SyntaxError: regular expression is too complex` (KI-17) |
 | goant | partial: arrays went past it, a string grew past it without an error, objects stopped (probe). Compiled code is outside it (`goant.go` 576 to 585) | `Interrupt` | 8189 (12044 with JIT) | amd64, arm64 (`internal/jitasm`) | the inline cache counter is process-wide, so a collection or a prototype change in one runtime makes every runtime's caches refill (`internal/engine/shapes.go` 28 to 48). `setTimeout`, `setImmediate`, `structuredClone` and `process` are present by default |
@@ -642,7 +560,7 @@ File and line numbers are for the versions in the Engines table.
 - **slowjs:** server-side rendering, many small VMs in one process
   with hard memory limits, a fresh VM per request, and pages that need
   Intl or Temporal (package `temporal`, which this comparison does not
-  measure).
+  measure), on linux/amd64 and darwin/arm64.
 - **go-quickjs-interp:** the best all-round choice when CPU-heavy scripts
   matter and full Intl or Temporal is needed. Its memory limit is
   approximate, and two of the tifa shop pages make it fail (below).
@@ -654,10 +572,10 @@ File and line numbers are for the versions in the Engines table.
   go-quickjs, and fast JSON. Slow elsewhere without the JIT.
 - **moejs:** small plugin scripts: the cheapest new runtime and compiled
   program, fast JSON and strings, little memory. Its fixed call depth, its
-  register limit and the lack of Intl rule out large bundles like the tifa
+  register limit and its partial Intl rule out large bundles like the tifa
   shop.
-- **modernc-quickjs:** the upstream of slowjs. Slower on every
-  workload.
+- **modernc-quickjs:** the C-to-Go translation slowjs started from.
+  Slower on every workload.
 
 ## Problems found in other engines
 
@@ -686,7 +604,7 @@ on the versions above.
 - **goant: `string_build_large2` exceeds the 4 GiB cap.** The QuickJS micro
   benchmark that prepends to a string in a loop goes over the 4 GiB cap
   in all five rounds of the [archived v0.26.17 run](../compare/engines/results/2026-10-21-v0.26.17-gcp.json),
-  and again in the v0.27.1 and v0.27.2 runs. Those runs do not
+  and again in the v0.27.1, v0.27.2 and v0.29.0 runs. Those runs do not
   measure its uncapped peak memory or successful call time. goant keeps
   strings flat, so each prepend copies. Reproduce: `./bin/goant upstream -dir ../testdata -only string_build_large2`.
 
@@ -780,7 +698,7 @@ native/build.sh "$HOME/jsnative"            # C QuickJS, QuickJS-NG and Node
 run="<date>-<version>-<host>"
 page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
 tifa/run.sh "$page_dir" bin-linux-amd64 "$HOME/jsnative"
-python3 tifa/pages.py "$page_dir" --output "results/$run-pages"
+go run ./cmd/pages "$page_dir" --output "results/$run-pages"
 ```
 
 `tifa/run.sh` runs the bench, MUI and shop bundles. `TIFA_ONLY=<engine>,...`
@@ -793,12 +711,12 @@ memory runs belong to `slowjs`.
 `tifa/` (`bundles/<app>.js`, `in/<app>/*.json`), in place of the pinned ones.
 tifa builds its SSR bundle as an ES module: put it there as
 `bundles/<app>.mjs`, which the `slowjs-tifa` rows compile as a module, and
-as `bundles/<app>.js` made by `tifa/module-script.py <app>.mjs <app>.js`,
+as `bundles/<app>.js` made by `go run ./cmd/modulescript <app>.mjs <app>.js`,
 which every other row runs as a script.
 
 When a page leaves an engine unusable (go-quickjs closes its runtime after
 a page fails), run the shop again without the failing pages into
-`<engine>-<kind>-rest.json` in the same directory: `pages.py` takes the
+`<engine>-<kind>-rest.json` in the same directory: `cmd/pages` takes the
 missing pages from there. To find the failing pages when most fail, render
 each page alone (`-inputs <one page> -warm 0 -n 1`) first.
 
@@ -861,6 +779,7 @@ At each release, follow "Engine comparison" in
 
 | Run | slowjs | Machine | Notes |
 |---|---|---|---|
+| [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0 (main `0cc6d332`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again, the first run of the C engine ([pages](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)). Timed workloads, then the tifa pages, then test262 on both cores, one after the other. go-quickjs failed pages were measured in rest runs. The row `slowjs-tifa-nogoasm` is gone. The version column of the Engines table in the results file reads `v0.26.16 => ../../`, as `go.mod` of the comparison was not moved: the engine is the checkout |
 | [2026-10-24-v0.28.6-gcp-pages](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md) | v0.28.6 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 3 | tifa pages only, on the bundles tifa c729ad2 builds rather than the pinned ones: slowjs three times (same JavaScript, as tifa runs it, and as tifa runs it without the Go assembly interpreter), C QuickJS 2026-06-04 and master, QuickJS-NG and Node with and without its JIT. Core pair 3-7 under a lock. The other engines were not run again |
 | [2026-10-24-main-tifa-row-gcp-pages](../compare/engines/results/2026-10-24-main-tifa-row-gcp-pages.md) | main (c17092a) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | tifa pages only: slowjs twice (same JavaScript, and as tifa runs it), C QuickJS 2026-06-04 and Node with and without its JIT, with the MUI pages timed for the first time. Core pair 1-5 under a lock. The other engines were not run again |
 | [2026-10-23-v0.27.2-gcp](../compare/engines/results/2026-10-23-v0.27.2-gcp.md) | v0.27.2 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 1 | every engine again at the same versions ([pages](../compare/engines/results/2026-10-23-v0.27.2-gcp-pages.md)). test262 run on CPU 0 at low priority and merged in, the same 80215 runs pass. React page 15.1 ms of CPU rather than 14.9, V8 score 835 rather than 854, JSON and regexps 1% to 3% faster. `string_to_int` and `array_read` cross the far-behind line, `string_to_float` drops under it |
