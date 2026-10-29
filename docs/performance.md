@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -299,6 +299,25 @@ A string appended to a variable is [copied with room](changes/c-engine.md#string
 The other 29 scripts run within 0.08% of the instructions (`c_string_methods` +0.076%, the rest within 0.01%), and no time passes the rule. `c_json_stringify` took 0.972 at all 8 positions with the same instructions, which is the layout, not the change. A string `+` pays about 2 instructions for the checks (`v8_splay`, `c_escape_html`).
 
 Memory of `r_react_ssr`: the most bytes in use at once went from 2.39 MB to 2.46 MB (+2.9%, the room of the page string). That made the heap grow by one more chunk, a quarter of what it had: the footprint went from 3.01 MB to 3.80 MB, and the most memory the process held from 8.05 to 8.31 MB to 8.38 to 8.50 MB. `c_string_concat` uses 35% less at its most.
+
+### What a new VM and loading a bundle cost
+
+On linux/amd64 (AMD EPYC 7B13, one core, its sibling idle), a new VM takes 242 µs. 15 µs of it is the host: the 32 MiB shadow stack, reserved by `mmap`. The rest is `JS_NewRuntime` and `JS_NewContext` (224 µs), which build the built-in objects of a VM. Closing a VM runs a full collection (`JS_FreeRuntime`), which is 30% of the instructions of a new VM and its close together.
+
+Instructions of the engine in a new VM (callgrind, 764 K, with 30 K more in Go), by what it does:
+
+| What | Instructions |
+| --- | ---: |
+| `JS_NewContext` (every built-in object and function) | 671 K |
+| of which `JS_SetPropertyFunctionList`, defining the functions and properties of the built-ins | 486 K |
+| `JS_NewAtomLen`, atoms made from C strings (357 calls a VM) | 274 K |
+| `JS_NewRuntime` (the atom table, the classes) | 110 K |
+| `snprintf`, for the names of getters and setters (43 calls) | 24 K |
+| `JS_SetShapeCache` | 25 K |
+
+The built-ins are 164 objects and 515 atoms, 174 KB, and make up 2% of a shop VM. Loading a bundle is the rest. For a new VM and `EvalSharedBytecode` of the React bundle (11.05 M instructions with the close), reading the bytecode is 4.7 M, of which the scan of the polls was 2.5 M (see [shared bytecode](changes/memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only)), running the top level 3.5 M and the close 2.0 M.
+
+A VM of tifa's shop holds 8.47 MB after loading (`TestShopVMMemory`): 1.48 MB the functions (7,149 of them), 0.72 MB of that their bytecode, 0.82 MB atoms, 0.80 MB objects, 0.73 MB properties, 0.65 MB shapes, 0.31 MB strings and the rest the 8-byte headers and rounding of 2,600 blocks. The RSS of a VM in tifa's pool is 8.6 MiB after loading, 12.8 after rendering and 9.6 once the pool has given its free memory back, close to what the engine counts. The 174 KB of built-ins is the only part that every VM has whatever it loads.
 
 ### Upstream commits and the scripts where the C engine was slower than C
 

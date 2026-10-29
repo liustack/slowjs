@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 性能
+
+- `EvalSharedBytecode` 加载同一个 `SharedBytecode` 时，第一次之后只花原来的 0.79（React 页面的包）到 0.86（tifa 商店的包）：引擎对字节码代码的检查（是否遵守轮询规则）每个 `SharedBytecode` 只做一次，不再每个 VM 做一次（见 [Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)）。`EvalBytecode` 仍然每次都检查。
+
 ### 变更
 
 - `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
