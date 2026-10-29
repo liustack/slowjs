@@ -450,7 +450,7 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		a64env = &gen.ARM64Env{Plan: plan, Funcs: funcs, Facts: facts, Probes: probes, Variadic: variadic}
+		a64env = &gen.ARM64Env{Plan: plan, Funcs: funcs, Facts: facts, Probes: probes, Variadic: variadic, Align64: align64}
 	}
 	failed := map[string]bool{}
 	for _, r := range rejections {
@@ -500,10 +500,13 @@ func main() {
 		if a64 {
 			lowered.WriteString(text)
 		} else {
-			lowered.WriteString(".p2align 4\n.globl " + name + "\n.type " + name + ",@function\n" + text +
+			lowered.WriteString(gen.FuncPlace(align64, name) + ".globl " + name + "\n.type " + name + ",@function\n" + text +
 				".size " + name + ", .-" + name + "\n")
 		}
 		metas = append(metas, meta)
+	}
+	if err := gen.CheckBodyDataAlign(plan, metas, align64); err != nil {
+		die(err)
 	}
 	tLower := time.Since(t0)
 	// The functions without Go's stack check (gen.PickNoSplit), with what

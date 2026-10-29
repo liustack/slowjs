@@ -1963,6 +1963,14 @@ func (m *matcher) bodyData() error {
 			return fmt.Errorf("body data %s lies outside the function's data area", o.Label)
 		}
 		at := m.body + (ls.Value - m.lowSym.Value)
+		// The code reads the object as llc aligned it: an SSE instruction with a
+		// memory operand faults on a constant pool that is not on its 16 bytes.
+		// So the alignment has to hold where the object sits in the binary, and
+		// not only from the start of the body, which Go puts at its own place
+		// (Align64 puts it at an offset past a multiple of 64).
+		if a := uint64(1) << o.Align; at%a != 0 {
+			return fmt.Errorf("body data %s sits at %#x, which is not a multiple of its alignment %d", o.Label, at, a)
+		}
 		got, err := k.bin.read(at, n)
 		if err != nil {
 			return err

@@ -79,8 +79,12 @@ runs its own checks and lowering in Go (`debug/elf`,
    (keep the registers the mode asks for, move the arguments to the outgoing
    area, call, read the result, restore),
    move LLVM's locals onto the Go frame, keep constant pools inside the
-   function, and turn every return into a jump to one Go RET. Any shape it
-   does not know fails: unknown call forms, calls through memory, tail jumps,
+   function, and turn every return into a jump to one Go RET. A function
+   starts in the lowered object where its body will sit in the binary
+   (`FuncPlace`: on 16 bytes, or at its `-align64` place in a line of 64),
+   so that the `.p2align` of each pool and table holds where the code runs.
+   Any shape it does not know fails: unknown call forms, calls through memory,
+   tail jumps,
    SP writes, escaping stack addresses, aligned or folded packed stack
    operands (the Go stack is only 8-byte aligned), read-only symbols other
    than constant pools, forbidden instructions. A leaf that uses RBP fails
@@ -333,7 +337,9 @@ must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the
 one the lowering marshalled; a symbol anywhere else fails. It compares engine_rodata and the data each function
-carries byte by byte, pointers by what they point to. `-verify-all` also
+carries byte by byte, pointers by what they point to. It also holds
+each pool and table to its alignment at the address where it sits in the
+binary. `-verify-all` also
 fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the
 lowered text before it is assembled, for the check's own tests
 (`TestPostLinkCheck`, from C through the driver, and `TestCheckCases`, from
