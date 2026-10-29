@@ -1235,15 +1235,18 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     if (dbuf_claim(dbuf, sizeof(int) * src_len))
         goto fail;
 
-    /* common case: latin1 is unaffected by NFC */
+    /* common case: latin1 is unaffected by NFC. The copy is made as the
+       input is checked, which reads the flag, rather than by a memcpy
+       after it, which would not. */
     if (n_type == UNICODE_NFC) {
+        buf = (int *)dbuf->buf;
         for(i = 0; i < src_len; i++) {
+            if ((i & NORMALIZE_POLL_MASK) == 0 && poll_flag(stop))
+                goto stopped;
             if (src[i] >= 0x100)
                 goto not_latin1;
+            buf[i] = src[i];
         }
-        buf = (int *)dbuf->buf;
-        if (src_len != 0)
-            memcpy(buf, src, src_len * sizeof(int));
         *pdst = (uint32_t *)buf;
         return src_len;
     not_latin1: ;
