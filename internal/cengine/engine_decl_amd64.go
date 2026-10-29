@@ -409,7 +409,7 @@ func cbrt(a0 uintptr, a1 float64) float64
 func ceil(a0 uintptr, a1 float64) float64
 func check_define_prop_flags(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func check_exception_free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func check_polls(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
+func check_polls(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func check_regexp_g_flag(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func check_regexp_getter(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 ### Performance
 
 - An ordinary object (an object literal, `{}`, the props of a React element) takes 48 bytes of memory, not 72. The highest `MemorySize` of a render of a long Markdown page is 3.8% lower on average, and the 20 pages of the example shop hold 1.8% less at the end of a render. No page renders faster or slower ([Performance](docs/performance.md#ordinary-objects-of-48-bytes) has the numbers).
+- `EvalSharedBytecode` loads a bundle in 0.79 (the React page bundle) to 0.86 (a tifa shop bundle) of the time after the first load of the same `SharedBytecode`: the engine checks the code of the bytecode against its rule of the polls once for each `SharedBytecode`, not once for each VM ([Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)). `EvalBytecode` scans every time, as before.
 
 ### Changed
 
