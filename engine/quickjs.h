@@ -1346,10 +1346,6 @@ void JS_PrintValue(JSContext *ctx, JSPrintValueWrite *write_func, void *write_op
                    JSValueConst val, const JSPrintValueOptions *options);
 #endif /* CONFIG_PRINT_VALUE */
 
-#ifdef __CCGO__
-void init();
-#endif
-
 #undef js_unlikely
 #undef js_force_inline
 
