@@ -10,6 +10,8 @@ read_when:
 
 # Pure Go JavaScript engines compared
 
+This page records the run of 2026-10-23 with slowjs v0.27.2, whose engine was QuickJS translated to Go by ccgo. The C engine replaced that engine after v0.28. [performance.md](performance.md#acceptance-before-the-switch) has what the C engine measured against it on tifa's pages (0.83 to 0.86 of the time). Run the comparison again on the first release of the C engine, as [releasing.md](releasing.md) says, before this page says anything new about how slowjs ranks.
+
 Run of 2026-10-23: slowjs v0.27.2 against four other engines that
 build with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
 GCP c2d-standard-8 (AMD EPYC 7B13), Linux 7.3, Go 1.27.2, every engine
@@ -120,8 +122,7 @@ iterator helpers, `RegExp.escape`, JSON modules and proper tail calls.
 Code highlighting is where engines split most. shiki 4.5.0 turns the
 TextMate grammars of bash, css, go, html, json, typescript and yaml into 552
 regexps, many with the `v` flag, lookbehind and named groups (they are in
-`lib/testdata/shiki`, and `TestRegexpShiki` checks all of them against
-Node). On every fifth of them, 111 regexps run over the code they were
+`engine/test/compare/recorded/shiki`, and were checked against Node). On every fifth of them, 111 regexps run over the code they were
 made for, both slowjs engines, go-quickjs v0.28.0 and moejs
 v0.1.0-alpha.9 give what Node gives for all 111. The others throw on or
 match differently for some of them: QuickJS at `19d6bd86` 31, QuickJS at
@@ -700,7 +701,7 @@ go run ./cmd/compare                        # every workload, 5 rounds
 go run ./cmd/compare -cpu 1 -sibling 5      # Linux: pin to CPU 1, rerun when CPU 5 was busy
 go run ./cmd/compare -phases react,v8       # some workloads
 go run ./cmd/compare -engines slowjs,go-quickjs-interp
-go run ./cmd/compare -engines slowjs -extra-tags slowjs_cengine -phases t262   # the slowjs row on the C engine
+go run ./cmd/compare -engines slowjs -phases t262   # one engine, one workload
 go run ./cmd/compare -report results/<run>.json   # Markdown again from the JSON
 ```
 
