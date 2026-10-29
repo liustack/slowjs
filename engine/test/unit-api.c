@@ -664,8 +664,67 @@ static void test_throw_error_kind(void)
     vm_free(&v);
 }
 
+/* ---- ordinary objects ---- */
+
+/* The engine allocates only the part of an ordinary object that comes before
+   the union of the data of the classes. Anything that touches that union of
+   an ordinary object reads or writes past its block, which a build on the
+   system malloc under AddressSanitizer reports (build.sh asan). So this runs
+   an ordinary object through what the engine does to objects. */
+#define CLASS_OBJECT 1 /* JS_CLASS_OBJECT, which quickjs.h does not name */
+
+static void test_plain_objects(void)
+{
+    VM v = vm_new();
+    JSMemoryUsage u;
+    JSClassID id = 99;
+    JSValue o, e;
+
+    eval_ok(v.ctx,
+            "var keep = [];\n"
+            "for (var i = 0; i < 300; i++) {\n"
+            "  var o = {};\n"
+            "  for (var k = 0; k < 70; k++) o['k' + k] = k;\n"       /* grows the property array and the shape */
+            "  for (var k = 0; k < 70; k += 3) delete o['k' + k];\n" /* a hashed shape, with holes */
+            "  keep.push(o);\n"
+            "}\n"
+            "Object.freeze(keep[0]); Object.seal(keep[1]); Object.preventExtensions(keep[2]);\n"
+            "Object.defineProperty(keep[3], 'g', { get() { return 1 }, set(x) {}, enumerable: true });\n"
+            "var child = Object.create(keep[4]); child.x = 1;\n"        /* as a prototype */
+            "Object.setPrototypeOf(keep[5], keep[6]);\n"
+            "function F() {} F.prototype = keep[7]; var inst = new F();\n"
+            "var wm = new WeakMap(), ws = new WeakSet(), refs = [];\n"  /* as a weak key */
+            "var fr = new FinalizationRegistry(function () {});\n"
+            "for (var o of keep) { wm.set(o, 1); ws.add(o); refs.push(new WeakRef(o)); fr.register(o, 1); }\n"
+            "var cyc = {}; cyc.self = cyc; cyc.list = [cyc, {up: cyc}];\n" /* a cycle for the collector */
+            "JSON.stringify(keep[8]); Object.entries(keep[9]); Object.assign({}, keep[10]);\n"
+            "void 0\n");
+    JS_RunGC(v.rt);
+    JS_ComputeMemoryUsage(v.rt, &u);
+    CHECK(u.obj_count > 300, "%lld objects", (long long)u.obj_count);
+    CHECK(u.obj_size < u.obj_count * 64, "%lld objects take %lld bytes in all, 64 each or more", (long long)u.obj_count,
+          (long long)u.obj_size);
+    CHECK(eval_is(v.ctx, "[Object.isFrozen(keep[0]), Object.isSealed(keep[1]), child.x, child.k1, inst.k2, wm.has(keep[9])].join()",
+                  "true,true,1,1,2,true"), "the objects changed");
+    eval_ok(v.ctx, "keep = null; child = null; inst = null; cyc = null; void 0");
+    JS_RunGC(v.rt);
+    JS_ComputeMemoryUsage(v.rt, &u);
+
+    /* what a host asks of an ordinary object: it has no opaque pointer */
+    o = JS_NewObject(v.ctx);
+    CHECK(JS_GetOpaque(o, CLASS_OBJECT) == NULL, "JS_GetOpaque of an ordinary object");
+    CHECK(JS_GetOpaque(o, CLASS_OBJECT + 1) == NULL, "JS_GetOpaque of another class");
+    CHECK(JS_GetAnyOpaque(o, &id) == NULL && id == CLASS_OBJECT, "JS_GetAnyOpaque of an ordinary object: class %d", (int)id);
+    CHECK(JS_GetOpaque2(v.ctx, o, CLASS_OBJECT) == NULL && JS_HasException(v.ctx), "JS_GetOpaque2 of an ordinary object");
+    e = JS_GetException(v.ctx);
+    JS_FreeValue(v.ctx, e);
+    JS_FreeValue(v.ctx, o);
+    vm_free(&v);
+}
+
 int main(void)
 {
+    test_plain_objects();
     test_backtrace_shares_shape();
     test_backtrace_old_prototype();
     test_backtrace_native_read_caches();

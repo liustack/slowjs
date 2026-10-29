@@ -6,7 +6,7 @@
  */
 /*
  * Tests of the API the C tree changes, on real runtimes: JS_DumpMemoryUsage,
- * JS_NewClassID, the seed of Math.random, Atomics, abort, and snprintf given a format it does not do.
+ * JS_NewClassID, the seed of Math.random, Atomics, abort, JS_SetOpaque of an ordinary object, and snprintf given a format it does not do.
  * api-test.sh builds and runs it.
  */
 #include <stdio.h>
@@ -521,12 +521,25 @@ static void call_snprintf(void)
     snprintf(buf, sizeof buf, bad_format);
 }
 
+/* JS_SetOpaque of an ordinary object, whose block ends before the opaque
+   pointer, must stop the engine and not write past the block. */
+static void call_set_opaque_plain(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = new_context(rt);
+    JSValue o = JS_NewObject(ctx);
+    static char data[8];
+
+    JS_SetOpaque(o, data);
+}
+
 static void test_abort(void)
 {
     static const char *bad[] = { "%f", "%ls", "%n", "%1$d", "%", "%99999999999d" };
     size_t i;
 
     check_abort("abort", call_abort);
+    check_abort("JS_SetOpaque of an ordinary object", call_set_opaque_plain);
     for (i = 0; i < sizeof bad / sizeof *bad; i++) {
         bad_format = bad[i];
         check_abort(bad[i], call_snprintf);

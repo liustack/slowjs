@@ -58,6 +58,7 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
+size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 
 /* ---- texts of every kind of character ---- */
 
@@ -509,6 +510,30 @@ static void test_backtrace_memory_usage(void)
           (long long)(held.memory_used_size - base.memory_used_size), (long long)frames);
     CHECK(freed.memory_used_size == base.memory_used_size, "memory_used_size %lld after freeing, want %lld",
           (long long)freed.memory_used_size, (long long)base.memory_used_size);
+    vm_free(&v);
+}
+
+/* ---- the block of an object ---- */
+
+/* An ordinary object has no room for the union of the data of the classes
+   (the engine allocates the bytes in front of it), and every other object has. */
+static void test_object_block(void)
+{
+    VM v = vm_new();
+    JSValue plain = JS_NewObject(v.ctx), arr = JS_NewArray(v.ctx), lit;
+    const char *src = "({a: 1, b: \"x\"})";
+    size_t full = 0, a, p, f;
+
+    p = white_object_block(v.ctx, plain, &full);
+    a = white_object_block(v.ctx, arr, &f);
+    CHECK(p > 0 && p < full, "an ordinary object has room for %zu bytes, a JSObject is %zu", p, full);
+    CHECK(a >= full, "an array has room for %zu bytes, a JSObject is %zu", a, full);
+    JS_FreeValue(v.ctx, plain);
+    JS_FreeValue(v.ctx, arr);
+    lit = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    p = white_object_block(v.ctx, lit, &full);
+    CHECK(p > 0 && p < full, "an object literal has room for %zu bytes, a JSObject is %zu", p, full);
+    JS_FreeValue(v.ctx, lit);
     vm_free(&v);
 }
 
@@ -1856,6 +1881,7 @@ int main(void)
     test_backtrace_class();
     test_backtrace_needs_data_property();
     test_backtrace_memory_usage();
+    test_object_block();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
