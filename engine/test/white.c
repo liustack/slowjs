@@ -816,3 +816,15 @@ int white_every_block_is_a_request(void)
 {
     return JS_MALLOC_LARGE_BLOCKS_ONLY;
 }
+
+/* ---- the block of an object ---- */
+
+/* The bytes the block of the object obj has room for, and sizeof(JSObject)
+   in *full, or 0 when obj is no object. */
+size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full)
+{
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return 0;
+    *full = sizeof(JSObject);
+    return js_malloc_usable_size(ctx, JS_VALUE_GET_OBJ(obj));
+}

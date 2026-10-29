@@ -985,6 +985,8 @@ int JS_DefinePropertyValueStr(JSContext *ctx, JSValueConst this_obj,
 int JS_DefinePropertyGetSet(JSContext *ctx, JSValueConst this_obj,
                             JSAtom prop, JSValue getter, JSValue setter,
                             int flags);
+/* An ordinary object (class Object) has no opaque pointer: its block ends
+   before it. JS_SetOpaque aborts on one, and the getters answer NULL. */
 void JS_SetOpaque(JSValue obj, void *opaque);
 void *JS_GetOpaque(JSValueConst obj, JSClassID class_id);
 void *JS_GetOpaque2(JSContext *ctx, JSValueConst obj, JSClassID class_id);

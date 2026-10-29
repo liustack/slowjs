@@ -6555,7 +6555,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     int i;
     
     js_trigger_gc(ctx->rt, sizeof(JSObject));
-    p = js_malloc(ctx, sizeof(JSObject));
+    p = js_malloc(ctx, class_id == JS_CLASS_OBJECT ? offsetof(JSObject, u) : sizeof(JSObject));
     if (unlikely(!p))
         goto fail;
     p->class_id = class_id;
@@ -6569,7 +6569,8 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
     p->weakref_count = 0;
-    p->u.opaque = NULL;
+    if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
+        p->u.opaque = NULL;
     p->shape = sh;
     p->prop = js_malloc(ctx, sizeof(JSProperty) * sh->prop_size);
     if (unlikely(!p->prop)) {
@@ -7526,11 +7527,13 @@ static void free_object(JSRuntime *rt, JSObject *p)
     if (finalizer)
         (*finalizer)(rt, JS_MKPTR(JS_TAG_OBJECT, p));
 
-    /* fail safe */
+    /* fail safe. The block of an ordinary object ends before u. */
+    if (p->class_id != JS_CLASS_OBJECT) {
+        p->u.opaque = NULL;
+        p->u.func.var_refs = NULL;
+        p->u.func.home_object = NULL;
+    }
     p->class_id = 0;
-    p->u.opaque = NULL;
-    p->u.func.var_refs = NULL;
-    p->u.func.home_object = NULL;
 
     remove_gc_object(&p->header);
     if (rt->gc_phase == JS_GC_PHASE_REMOVE_CYCLES) {
@@ -8614,6 +8617,10 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         }
 
         switch(p->class_id) {
+        case JS_CLASS_OBJECT:
+            /* the block of an ordinary object ends before u */
+            s->obj_size -= (int64_t)(sizeof(JSObject) - offsetof(JSObject, u));
+            break;
         case JS_CLASS_ARRAY:             /* u.array | length */
         case JS_CLASS_ARGUMENTS:         /* u.array | length */
             s->array_count++;
@@ -13715,6 +13722,11 @@ void JS_SetOpaque(JSValue obj, void *opaque)
    JSObject *p;
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) {
         p = JS_VALUE_GET_OBJ(obj);
+        /* the block of an ordinary object ends before u: a host that gives
+           its data to an ordinary object has a bug, and writing it would
+           write past the block */
+        if (unlikely(p->class_id == JS_CLASS_OBJECT))
+            abort();
         p->u.opaque = opaque;
     }
 }
@@ -13727,6 +13739,9 @@ void *JS_GetOpaque(JSValueConst obj, JSClassID class_id)
         return NULL;
     p = JS_VALUE_GET_OBJ(obj);
     if (p->class_id != class_id)
+        return NULL;
+    /* an ordinary object has no u, and so no opaque pointer */
+    if (unlikely(class_id == JS_CLASS_OBJECT))
         return NULL;
     return p->u.opaque;
 }
@@ -13749,6 +13764,8 @@ void *JS_GetAnyOpaque(JSValueConst obj, JSClassID *class_id)
     }
     p = JS_VALUE_GET_OBJ(obj);
     *class_id = p->class_id;
+    if (unlikely(p->class_id == JS_CLASS_OBJECT))
+        return NULL;
     return p->u.opaque;
 }
 
