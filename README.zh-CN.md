@@ -64,9 +64,9 @@ func main() {
 
 一个 VM 不能同时给多个 goroutine 用：每个 goroutine 各用一个，或者建一个池。Intl 和 Temporal 共用内嵌的 tz 2026e，不依赖主机的 zoneinfo。
 
-## slowjs 在 API 上加了什么
+## 除了 Eval 和 Call，还有什么
 
-API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)，另外加了这些：
+API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。除了每个程序都从它开始的 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value`，还有这些：
 
 - **`NewBuiltin(name, length, fn)` 和 `VM.NewBuiltinFunction(b)`**：JavaScript 像调用 `Math.max` 那样调用的 Go 函数，不走反射。`fn` 从 `Args`（`Number`、`String`、`Bool`、`Value`、`This`、`VM`，还有按引擎存放样子给出字符串字符的 `Latin1` 或 `UTF16`）里取参数，不做任何转换，返回一个 `Value`。在 Apple M4 上一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。Builtin 每个进程只建一次：多个 goroutine 上的 VM 会同时调用它。它返回的 `*Error` 按 `Name` 抛成对应的构造器（`Error`、`TypeError`、`RangeError`、`SyntaxError`、`ReferenceError` 或 `InternalError`），其他错误抛成 `TypeError`。[详情](docs/changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
 - **`VM.NewArray(vals...)`**：用 Go 里建的值做一个数组，做法和数组字面量一样，页面在 `Array.prototype` 上放的 setter 不会被触发。[详情](docs/changes/go-api.md#newarray)
@@ -102,7 +102,11 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 
 ## 来自哪里
 
-引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。Jan Mercl 用 ccgo 把它转译成 Go，就是 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)，slowjs 到 v0.28 用的就是它，后来被 slowjs 自己的 C 引擎取代。quickjs-go 的作者们写了 Go API，就是 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs)（这里用 v0.25.0，在根目录）。slowjs 保留这套 API，在下面换上自己的引擎。确切版本、slowjs 保留和改动了什么、从 modernc.org/quickjs 换过来会遇到什么，见 [docs/upstream.zh-CN.md](docs/upstream.zh-CN.md)。
+引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。确切版本、怎么合入 QuickJS 的新提交，以及从 modernc.org/quickjs 换过来会遇到什么，见 [docs/upstream.zh-CN.md](docs/upstream.zh-CN.md)。
+
+## 致谢
+
+感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 slowjs。
 
 ## 文档
 
@@ -110,12 +114,12 @@ API 沿用 modernc.org/quickjs，文档在 [pkg.go.dev](https://pkg.go.dev/githu
 
 | 文档 | 什么时候读 |
 | :-- | :-- |
-| [Fork changes](docs/changes/README.md) | 想知道 slowjs 和 modernc.org/quickjs 有什么不同，为什么 |
+| [Changes](docs/changes/README.md) | 想知道引擎的每处改动为什么安全、代价多少、换来什么 |
 | [Performance](docs/performance.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
 | [Benchmarks](docs/benchmarks.md) | 想知道这个引擎和其他纯 Go JavaScript 引擎比起来怎样 |
 | [更新记录](CHANGELOG.zh-CN.md) | 升级前想知道改了什么 |
 | [Architecture](docs/architecture.md) | 准备改代码 |
-| [Testing](docs/testing.md) | 准备提交，或者想拿 slowjs 和上游对照 |
+| [Testing](docs/testing.md) | 准备提交，或者想核对引擎 |
 | [Upgrading](docs/upgrading.md) | 要合入上游新版本，或者更新语言数据 |
 | [Releasing](docs/releasing.md)、[Commits](docs/commit.md) | 要发版或提交 |
 | [上游](docs/upstream.zh-CN.md) | 要从 modernc.org/quickjs 换过来，或者想知道代码从哪来 |
@@ -124,6 +128,6 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
 
 ## 许可证
 
-slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。来自上游的部分保留各自的许可证：Go API 用 BSD-3-Clause（[LICENSE](LICENSE)、[LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)），引擎的 C 代码用 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)），分配器用 TLSF 的 BSD-3-Clause（[LICENSE-TLSF](LICENSE-TLSF)），小 libc 用 musl 的 MIT 许可证和 [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT) 里的声明。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
+slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。来自其他项目的代码保留各自的许可证：modernc.org/quickjs 和 modernc.org/libquickjs 留下的部分用 BSD-3-Clause（[LICENSE](LICENSE)、[LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)），引擎的 C 代码用 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)），分配器用 TLSF 的 BSD-3-Clause（[LICENSE-TLSF](LICENSE-TLSF)），小 libc 用 musl 的 MIT 许可证和 [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT) 里的声明。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
 
 用这个模块构建并分发二进制的程序，要附上这些许可证的声明。哪个路径用哪个许可证、要附哪些文本，见 [NOTICE.md](NOTICE.md)。
