@@ -564,6 +564,32 @@ func TestPollKill(t *testing.T) {
 	g.Leave()
 }
 
+// TestPollStallNoKill: a script whose thread does not run for longer than the
+// grace after Interrupt, because the OS or the Go scheduler runs something
+// else, has done no work in that time. The poll after the stall must not kill
+// it: the engine is about to read the flag and stop by itself.
+func TestPollStallNoKill(t *testing.T) {
+	v := newVM(t, small)
+	base, _ := v.Stack()
+	v.SetKillGrace(30 * time.Millisecond)
+	v.EnterScript(0)
+	v.Interrupt()
+	Poll(base + 64) // sets the flag
+	time.Sleep(40 * time.Millisecond)
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				t.Fatalf("the poll after a stall panicked with %v", p)
+			}
+		}()
+		Poll(base + 64)
+	}()
+	if v.Broken() || v.Killed() {
+		t.Fatalf("after a stall: broken %v, killed %v", v.Broken(), v.Killed())
+	}
+	v.Leave()
+}
+
 // TestPollDeadline: the outermost EnterScript with a timeout sets a deadline,
 // and the first poll past it interrupts as Interrupt at the deadline would
 // have: the flag is set, and the grace counts from the deadline. Inner
