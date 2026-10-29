@@ -20883,6 +20883,87 @@ static force_inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
 #define POLL_RUN 128
 #define POLL_WEIGHT 32
 
+static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_object_hasOwnProperty(JSContext *ctx, JSValueConst this_val,
+                                        int argc, JSValueConst *argv);
+
+/* TRUE when val is the built-in function of func, in any realm: a function
+   replaced by script or bound is another object and is not it. */
+static inline BOOL js_is_cfunction(JSValueConst val, JSCFunction *func)
+{
+    JSObject *p;
+    if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(val);
+    return p->class_id == JS_CLASS_C_FUNCTION &&
+        p->u.cfunc.cproto == JS_CFUNC_generic &&
+        p->u.cfunc.c_function.generic == func;
+}
+
+/* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
+   one of Function.prototype.call and the one of hasOwnProperty: call_argv[-1]
+   is Function.prototype.call and call_argv[-2] what it calls. React and the
+   libraries around it test each key of a for in loop this way. Only what
+   cannot run script or throw takes this path: hasOwnProperty itself, an
+   ordinary object (not exotic, so no proxy or class method answers), and a
+   key that is its own atom already, a string atom as JS_ValueToAtom finds it
+   or an integer of an index atom, so that no atom is made. Where the two
+   calls would have thrown on their way in (the call depth, the stack, an
+   interrupt or an uncatchable exception pending) and for a variable binding,
+   which can throw before it is initialized, the calls are made as before.
+   Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make the calls. */
+static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst *call_argv,
+                                         int call_argc)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValueConst obj, key;
+    JSObject *p;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSAtom atom;
+    uint32_t tag;
+
+    if (call_argc < 2 ||
+        !js_is_cfunction(call_argv[-2], js_object_hasOwnProperty))
+        return JS_UNINITIALIZED;
+    obj = call_argv[0];
+    key = call_argv[1];
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return JS_UNINITIALIZED;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (p->is_exotic)
+        return JS_UNINITIALIZED;
+    tag = JS_VALUE_GET_TAG(key);
+    if (tag == JS_TAG_STRING) {
+        JSString *s = JS_VALUE_GET_STRING(key);
+        /* the string JS_ValueToAtom takes as its own atom */
+        if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
+            is_digit(string_get(s, 0)))
+            return JS_UNINITIALIZED;
+        atom = js_get_atom_index(rt, s);
+    } else if (tag == JS_TAG_INT &&
+               (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
+        atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
+    } else {
+        return JS_UNINITIALIZED;
+    }
+    /* what JS_CallInternal checks first, for the two levels the calls
+       count. Their frames come before their checks and take much less than
+       a margin, so with less than two margins of stack left the calls are
+       made, and they throw where they always did (TestHasOwnCallDepth). */
+    if (rt->call_depth + 1 >= rt->max_call_depth ||
+        js_stack_short(JS_STACK_MARGIN) ||
+        poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt))
+        return JS_UNINITIALIZED;
+    prs = find_own_property(&pr, p, atom);
+    if (!prs)
+        return JS_FALSE;
+    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
+        return JS_UNINITIALIZED;
+    return JS_TRUE;
+}
+
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags)
@@ -21425,10 +21506,14 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 pc += 2;
                 call_argv = sp - call_argc;
                 sf->cur_pc = pc;
+                if (unlikely(js_is_cfunction(call_argv[-1], js_function_call)) &&
+                    !JS_IsUninitialized(ret_val = js_has_own_call(ctx, call_argv, call_argc)))
+                    goto call_method_done;
                 ret_val = JS_CallInternal(ctx, call_argv[-1], call_argv[-2],
                                           JS_UNDEFINED, call_argc, call_argv, 0);
                 if (unlikely(JS_IsException(ret_val)))
                     goto exception;
+            call_method_done:
                 if (opcode == OP_tail_call_method)
                     goto done;
                 /* this and the function, then the arguments */
