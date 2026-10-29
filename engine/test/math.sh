@@ -20,7 +20,7 @@
 # The files hold, for each function, the line of the inputs and the line of the
 # results as "KIND NAME N SHA-256", the SHA-256 being that of the hex digits of
 # the line. They were made on linux/amd64 from the musl that
-# modernc.org/libc translated (the libm of the Go engine before it was removed)
+# modernc.org/libc translated (the libm of the ccgo engine)
 # and the C tree gave the same bits on that machine, so they are what musl gives
 # and what Math.* gives with it. A NaN is written as the one NaN of JavaScript in
 # the first, so that file holds on every machine. In the second it is written

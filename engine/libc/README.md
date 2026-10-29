@@ -45,7 +45,7 @@ The engine files and these are built with the flags of `engine/test/flags.sh`, w
 
 On arm64 `-mno-outline-atomics` comes with them, so that an atomic stays an instruction and does not become a call of `__aarch64_*`, a function nobody defines.
 
-`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as they are in the Go engine. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
+`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as they were in the ccgo engine. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
 
 ## Checks
 
