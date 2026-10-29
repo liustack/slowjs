@@ -1,7 +1,7 @@
 // Edge cases of defining new properties: object literals, spread, class
-// fields, JSON.parse, built-ins that make objects. objlit_test.go compares
-// the transcript this script returns with objlit.txt, the output of the
-// engine before the fast path of lib/objlit.go.
+// fields, JSON.parse, built-ins that make objects. engine/test/compare.sh
+// compares the transcript this script returns with objlit.txt, the output of
+// the engine before the fast path.
 var out = [];
 function d(o) {
   var r = [];

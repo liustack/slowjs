@@ -7,9 +7,9 @@
 
 /* unit-api checks through the public API what scripts cannot see: what the
    runtime holds after errors and their stacks, what JS_ParseJSON does with
-   bytes that are not UTF-8, and a property a host puts on a proxy. They are
-   the tests of the Go packages (lib/backtrace*, lib/jsonstr, errorstack,
-   lib/shareddebug in unit-white) that did this on the old engine.
+   bytes that are not UTF-8, and a property a host puts on a proxy. They took
+   over the tests that did this on the engine before it (backtraces, JSON,
+   error stacks, shared debug information).
 
      unit-api */
 #include "cutils.h"
