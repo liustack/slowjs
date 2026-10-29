@@ -45,11 +45,11 @@ work:
 	if [ -d ../../libquickjs ]; then go work use ../../libquickjs; fi
 
 cpu: clean
-	go test -run @ -bench BenchmarkArewefastyet/ccgo -cpuprofile cpu.out
+	go test -run @ -bench BenchmarkSLOWJS -cpuprofile cpu.out
 	go tool pprof -web *.test cpu.out
 
 mem: clean
-	go test -run @ -bench BenchmarkArewefastyet/ccgo -memprofile mem.out -memprofilerate 1 -timeout 24h
+	go test -run @ -bench BenchmarkSLOWJS -memprofile mem.out -memprofilerate 1 -timeout 24h
 	go tool pprof -lines -web -alloc_space *.test mem.out
 
 cover:
