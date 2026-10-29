@@ -32,6 +32,7 @@ go test -count=1 -p 1 .                # about a minute
 - A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` also makes the generated engine again, in the same commit (`make gen`, `make gen ARCH=arm64`), and runs `make check-fast`. At the end of a batch it runs `make check-full` (see [Generate and check](#generate-and-check)).
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
+- A change to `compare/engines` also runs `go test ./cmd/... ./internal/... ./tifa` there. It is a module of its own, so the commands above do not reach it and CI does not run it. The tests cover the helper tools (the far-behind list, the page tables and archive, the module-to-script tool, the notices generator) and the shell scripts of `tifa/` with stand-ins.
 - A change to `temporal/` also runs `go test ./temporal` without `-short` (the Chromium comparison and the link test are part of it), and the Temporal lines of the focused checks and the race detector section.
 - A change to the engine also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
 - `-p 1` runs one package at a time: the tests of the root package start many VMs, and each VM maps its own memory.
