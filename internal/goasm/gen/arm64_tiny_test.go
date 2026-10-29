@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,5 +117,22 @@ func TestCheckObjectFunctionSections(t *testing.T) {
 	}
 	if err := CheckObject(obj, map[string]bool{"f": true, "ext": true}); err != nil {
 		t.Errorf("a call to a name on the list: %v", err)
+	}
+}
+
+// TestPlanDataARM64RefusesPages: the page forms of the small code model stop
+// the plan, whose references would otherwise miss the data they reach.
+func TestPlanDataARM64RefusesPages(t *testing.T) {
+	for _, l := range []string{"adrp\tx8, tbl", "add\tx8, x8, :lo12:tbl", "ldr\tx0, [x8, :lo12:tbl]"} {
+		asm := ".text\n.globl f\nf:\n\t" + l + "\n\tret\n.Lfunc_end0:\n" +
+			".section\t.rodata,\"a\",@progbits\n\t.p2align\t3, 0x0\ntbl:\n\t.xword\t3\n"
+		u, err := SplitAsm(asm, "//")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := PlanDataARM64(u, map[string]bool{"f": true})
+		if !strings.Contains(fmt.Sprint(p.Errors), "tiny code model") {
+			t.Errorf("%q: %v", l, p.Errors)
+		}
 	}
 }

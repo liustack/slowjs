@@ -95,9 +95,9 @@ func isTextLabel(s string) bool {
 // functions of the module (defined or external).
 func PlanData(u *AsmUnit, funcs map[string]bool) *DataPlan { return planData(u, funcs, "amd64") }
 
-// PlanDataARM64 does the same for an aarch64 unit, whose code takes the
-// address of data with adrp and an add (or a load) of :lo12:, and whose
-// .word is 4 bytes.
+// PlanDataARM64 does the same for an aarch64 unit of the tiny code model,
+// whose code takes the address of data with an adr and reads it with a load
+// of a label, and whose .word is 4 bytes.
 func PlanDataARM64(u *AsmUnit, funcs map[string]bool) *DataPlan { return planData(u, funcs, "arm64") }
 
 func planData(u *AsmUnit, funcs map[string]bool, arch string) *DataPlan {

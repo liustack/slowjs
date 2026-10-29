@@ -19,30 +19,19 @@
 // prologue and epilogues is dropped, and every access [sp, #k] is rebased on
 // the Go frame.
 //
-// Data. aarch64 code takes an address in two instructions: adrp puts the
-// address of the 4 KiB page of sym in a register, and an add or a load of
-// :lo12:sym adds the offset in the page. Go assembly cannot attach a
-// relocation to the bytes of an instruction, so the lowering puts the whole
-// address in the register at the adrp (MOVD $sym(SB) in Go, which is an adrp
-// and an add, or an adr of data placed in the function), and each :lo12: use
-// takes the offset from sym the page form would have reached. That is the
-// same address only where the register still holds the page of that adrp, so
-// the lowering accepts an :lo12: use of other data only in the block of its
-// adrp, with no other instruction in between that reads the register, and
-// refuses an adrp whose register is read by anything but those uses before it
-// is written again. A page address is only ever the base of an :lo12: use in
-// llc's code, so a use in a later block (whose block has no adrp of it) is
-// refused rather than followed.
-//
-// The function's own data (constant pools, jump tables) is read relative to
-// the PC instead, and llc may keep its page in a register across blocks. So
-// for that data the lowering follows the register through the blocks of the
-// function (arm64_pages.go): a use is accepted where every way in has the
-// register holding the page of that data from an adrp with an offset the use
-// shares a page with. Any other read of a register that holds a page, or may
-// on some way in, is refused, for every adrp and not only those of the
-// function's own data. A page with an offset added to it, which the
-// PC-relative form would read without the offset, never gets through.
+// Data. llc writes the engine in the tiny code model, where every reference
+// to data is one instruction that names the whole address: an adr of data or
+// of a function, or a load of a label. Go assembly cannot attach a
+// relocation to the bytes of an instruction, so the lowering writes each one
+// on its own as an instruction that reaches the same address: an adr of
+// other data or of a function becomes MOVD $sym(SB) in Go (an adrp and an
+// add of the whole address), an adr of the function's own data (constant
+// pools, jump tables, the table of the computed goto) stays an adr of it in
+// the body, and a load of a label loads the data the plan put in the body,
+// the function's own or a copy. No rewrite depends on any other instruction,
+// so there is nothing to follow through the blocks. The page forms of the
+// small code model (adrp and :lo12:), where the second instruction is right
+// only while the register still holds the page of the first, are refused.
 package gen
 
 import (
@@ -71,12 +60,8 @@ type ARM64Env struct {
 }
 
 var (
-	reA64Adrp   = regexp.MustCompile(`^adrp (x\d+), ([.\w$]+)([+-]\d+)?$`)
 	reA64Lo12   = regexp.MustCompile(`:lo12:([.\w$]+)([+-]\d+)?`)
-	reA64AddLo  = regexp.MustCompile(`^add (x\d+), (x\d+), :lo12:([.\w$]+)([+-]\d+)?$`)
-	reA64LdLo   = regexp.MustCompile(`^(ldr[bhsw]*|ldur[bhsw]*) ([xwbhsdq]\d+), \[(x\d+), :lo12:([.\w$]+)([+-]\d+)?\]$`)
 	reA64BR     = regexp.MustCompile(`^br (x\d+)$`)
-	reA64Adr    = regexp.MustCompile(`^adr (x\d+), (\.L\w+)$`)
 	reA64AdrSym = regexp.MustCompile(`^adr (x\d+), ([.\w$]+)([+-]\d+)?$`)
 	reA64LdLit  = regexp.MustCompile(`^(ldr|ldrsw) ([xwsdq]\d+), ([.\w$]+)([+-]\d+)?$`)
 	reA64LastOp = regexp.MustCompile(`, ([.\w$]+)([+-]\d+)?$`)
@@ -153,15 +138,6 @@ func a64Reads(l string, r int) (reads, writesOnly bool) {
 		return false, true
 	}
 	return first || rest, false
-}
-
-// a64DataRef is the address a register holds after a lowered adrp: data
-// symbol sym plus add.
-type a64DataRef struct {
-	sym  string
-	add  int64
-	line int // index of the adrp in the body
-	uses int
 }
 
 // LowerARM64EngineFunc lowers one function of the whole engine from the body
@@ -277,21 +253,11 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			return fail("%v", err)
 		}
 	}
-	// The registers that hold the page of an adrp of the function's own data.
-	data := env.Plan.BodyData(fn.Name)
-	pages := a64FollowPages(body, a64IndirectLabels(body, data), a64LabelTables(data))
 	var out []string
 	D := 0 // bytes of the LLVM frame allocated at this point
 	goOff := func(k int) int { return L + (F - D) + k }
 	callIdx := 0
 	pending := "" // signature of the indirect call on the next line
-	refs := map[int]*a64DataRef{}
-	closeRef := func(r int) error {
-		if d := refs[r]; d != nil {
-			delete(refs, r)
-		}
-		return nil
-	}
 	// materialize puts the whole address of sym+add in register x<r>.
 	materialize := func(reg, sym string, add int64) ([]string, error) {
 		if env.Funcs[sym] {
@@ -365,10 +331,6 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if isA64Label(l) && D != F {
 				return fail("label %s while the frame is half built", l)
 			}
-			// A page address does not live past its block.
-			for r := range refs {
-				closeRef(r)
-			}
 			out = append(out, l)
 			continue
 		}
@@ -398,141 +360,14 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			out = append(out, fmt.Sprintf("%s %s, %s%s", m[1], m[2], lbl, m[4]))
 			continue
 		}
-		// Data: adrp and its :lo12: uses.
-		if m := reA64Adrp.FindStringSubmatch(l); m != nil {
-			r, _ := strconv.Atoi(m[1][1:])
-			add := int64(0)
-			if m[3] != "" {
-				add, _ = strconv.ParseInt(m[3], 10, 64)
-			}
-			mat, err := materialize(m[1], m[2], add)
-			if err != nil {
-				return fail("%v: %q", err, l)
-			}
-			// A use of the function's own data reads it relative to the PC
-			// (below), so the register need not hold its address until then.
-			if _, own := env.Plan.Rename[fn.Name][m[2]]; !own {
-				refs[r] = &a64DataRef{sym: m[2], add: add, line: li}
-			} else {
-				delete(refs, r)
-			}
-			out = append(out, mat...)
-			continue
-		}
-		if m := reA64Lo12.FindStringSubmatch(l); m != nil {
-			k := int64(0)
-			if m[2] != "" {
-				k, _ = strconv.ParseInt(m[2], 10, 64)
-			}
-			// The function's own data (a constant pool, a jump table, the table
-			// of the computed goto) sits after its code: llc may keep its page
-			// in a register across blocks, so its uses read it relative to the
-			// PC instead, whatever the register holds.
-			if lbl, own := env.Plan.Rename[fn.Name][m[1]]; own {
-				// The register must hold the page of this data and nothing
-				// more: the PC-relative form drops whatever else was added.
-				var base string
-				if a := reA64AddLo.FindStringSubmatch(l); a != nil {
-					base = a[2]
-					out = append(out, fmt.Sprintf("adr %s, %s%s", a[1], lbl, a64Add(k)))
-				} else if a := reA64LdLo.FindStringSubmatch(l); a != nil && (a[1] == "ldr" || a[1] == "ldrsw") {
-					base = a[3]
-					out = append(out, fmt.Sprintf("%s %s, %s%s", a[1], a[2], lbl, a64Add(k)))
-				} else {
-					return fail("unreviewed use of the function's own data %q", l)
-				}
-				sym, add, def, _ := pages.Page(li, a64RegNumber(base))
-				if !def || sym != m[1] {
-					return fail("%q is not in the block of an adrp of %s in %s", l, m[1], base)
-				}
-				// The PC-relative form reads sym+k whatever the adrp added,
-				// which is what the pair reads where both are in one page.
-				if k-add < 0 || k-add > 4095 {
-					return fail("offset %d from the adrp of %s%+d in %q", k-add, sym, add, l)
-				}
-				for r := range a64Uses(l) {
-					if _, w := a64Reads(l, r); w {
-						closeRef(r)
-					}
-				}
-				continue
-			}
-			var base, rewritten string
-			if a := reA64AddLo.FindStringSubmatch(l); a != nil {
-				base = a[2]
-				d, ok := refs[a64RegNumber(base)]
-				if !ok || d.sym != a[3] {
-					return fail("%q is not in the block of an adrp of %s in %s", l, a[3], base)
-				}
-				off := k - d.add
-				switch {
-				case off == 0 && a[1] == a[2]:
-					rewritten = ""
-				case off == 0:
-					rewritten = "mov " + a[1] + ", " + a[2]
-				case off > 0 && off < 4096:
-					rewritten = fmt.Sprintf("add %s, %s, #%d", a[1], a[2], off)
-				default:
-					return fail("offset %d from the adrp in %q", off, l)
-				}
-				d.uses++
-				if a[1] == a[2] {
-					delete(refs, a64RegNumber(base))
-				}
-			} else if a := reA64LdLo.FindStringSubmatch(l); a != nil {
-				base = a[3]
-				d, ok := refs[a64RegNumber(base)]
-				if !ok || d.sym != a[4] {
-					return fail("%q is not in the block of an adrp of %s in %s", l, a[4], base)
-				}
-				off := k - d.add
-				if off < 0 || off > 4095 {
-					return fail("offset %d from the adrp in %q", off, l)
-				}
-				rewritten = fmt.Sprintf("%s %s, [%s, #%d]", a[1], a[2], a[3], off)
-				d.uses++
-				if a64RegNumber(a[2]) == a64RegNumber(base) && (a[2][0] == 'x' || a[2][0] == 'w') {
-					delete(refs, a64RegNumber(base))
-				}
-			} else {
-				return fail("unreviewed page-offset use %q", l)
-			}
-			// The other registers of the instruction end their pages too.
-			for r := range a64Uses(l) {
-				if r != a64RegNumber(base) {
-					if _, w := a64Reads(l, r); w {
-						closeRef(r)
-					}
-				}
-			}
-			if rewritten != "" {
-				out = append(out, rewritten)
-			}
-			continue
+		// The page forms of the small code model: the :lo12: instruction
+		// holds only where the register still has the page of its adrp,
+		// which no instruction shows on its own.
+		if strings.HasPrefix(l, "adrp ") || reA64Lo12.MatchString(l) {
+			return fail("page-relative reference %q: the engine is built with the tiny code model", l)
 		}
 		if m := reA64LastOp.FindStringSubmatch(l); m != nil && a64NamesData(env, fn.Name, m[1]) {
 			return fail("unreviewed reference to data %q", l)
-		}
-		// Any other instruction: a register holding a page may be written
-		// over, never read.
-		for r := 0; r < 31; r++ {
-			if sym, _, def, held := pages.Page(li, r); held {
-				if reads, _ := a64Reads(l, r); reads {
-					if def {
-						return fail("%q reads x%d, which holds the page of an adrp of %s", l, r, sym)
-					}
-					return fail("%q reads x%d, which may hold the page of an adrp", l, r)
-				}
-			}
-		}
-		for r := range refs {
-			reads, writes := a64Reads(l, r)
-			if reads {
-				return fail("%q reads x%d, which holds the page of an adrp of %s", l, r, refs[r].sym)
-			}
-			if writes {
-				closeRef(r)
-			}
 		}
 		if m := reA64Pre.FindStringSubmatch(l); m != nil {
 			D += a64Imm(m[3], "")
@@ -997,11 +832,11 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 	return files, nil
 }
 
-// arm64TextRefs lists the data and functions whose address aarch64 code
-// takes: the symbol of each adrp. The lowering puts the whole address in the
-// register at the adrp, so a load of :lo12: reads through it as an add does,
-// and every reference counts as one that takes the address. The lowering
-// holds each :lo12: use to the adrp before it.
+// arm64TextRefs lists the data and functions aarch64 code reaches. llc
+// writes the engine in the tiny code model: an adr takes the address of data
+// or of a function, and a load of a label reads data (which the plan copies
+// into the function's body, as for a load through the PC on amd64). The
+// page forms of the small code model (adrp, :lo12:) are refused.
 func arm64TextRefs(u *AsmUnit, fail func(fn, f string, a ...any)) []textRef {
 	var refs []textRef
 	for _, fn := range u.FuncOrder {
@@ -1011,19 +846,10 @@ func arm64TextRefs(u *AsmUnit, fail func(fn, f string, a ...any)) []textRef {
 				fail(fn, "unreviewed relocation form %q", l)
 				continue
 			}
-			if m := reA64Adrp.FindStringSubmatch(l); m != nil {
-				if isTextLabel(m[2]) {
-					fail(fn, "page address of code %q", l)
-					continue
-				}
-				refs = append(refs, textRef{fn: fn, sym: m[2], lea: true})
+			if strings.HasPrefix(l, "adrp ") || reA64Lo12.MatchString(l) {
+				fail(fn, "page-relative reference %q: the engine is built with the tiny code model", l)
 				continue
 			}
-			if strings.HasPrefix(l, "adrp ") {
-				fail(fn, "unreviewed adrp %q", l)
-			}
-			// The tiny code model: an adr takes the address of data or of a
-			// function, a load of a label reads data.
 			if m := reA64AdrSym.FindStringSubmatch(l); m != nil && !isTextLabel(m[2]) {
 				refs = append(refs, textRef{fn: fn, sym: m[2], lea: true})
 				continue
