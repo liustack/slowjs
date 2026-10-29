@@ -20970,8 +20970,27 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     sf->var_buf = var_buf;
     sf->arg_buf = arg_buf;
 
-    for(i = 0; i < b->var_count; i++)
-        var_buf[i] = JS_UNDEFINED;
+    /* the locals start as undefined, four to a turn, then the two and the
+       one left over. The count is read once into n: in the loop the compiler
+       read b->var_count again after each store of a JSValue, which might
+       have changed it (docs/changes/c-engine.md) */
+    {
+        JSValue *v = var_buf;
+        int n = b->var_count;
+        for(; n >= 4; n -= 4, v += 4) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v[2] = JS_UNDEFINED;
+            v[3] = JS_UNDEFINED;
+        }
+        if (n & 2) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v += 2;
+        }
+        if (n & 1)
+            v[0] = JS_UNDEFINED;
+    }
 
     stack_buf = var_buf + b->var_count;
     sf->var_refs = (JSVarRef **)(stack_buf + b->stack_size);
@@ -21319,7 +21338,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     goto exception;
                 if (opcode == OP_tail_call)
                     goto done;
-                for(i = -1; i < call_argc; i++)
+                /* the function, then the arguments */
+                JS_FreeValue(ctx, call_argv[-1]);
+                for(i = 0; i < call_argc; i++)
                     JS_FreeValue(ctx, call_argv[i]);
                 sp -= call_argc + 1;
                 *sp++ = ret_val;
@@ -21355,7 +21376,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     goto exception;
                 if (opcode == OP_tail_call_method)
                     goto done;
-                for(i = -2; i < call_argc; i++)
+                /* this and the function, then the arguments */
+                JS_FreeValue(ctx, call_argv[-2]);
+                JS_FreeValue(ctx, call_argv[-1]);
+                for(i = 0; i < call_argc; i++)
                     JS_FreeValue(ctx, call_argv[i]);
                 sp -= call_argc + 2;
                 *sp++ = ret_val;
@@ -23740,10 +23764,13 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             /* variable references reference the stack: must close them */
             close_var_refs(rt, b, sf);
         }
-        /* free the local variables and stack */
-        for(pval = local_buf; pval < sp; pval++) {
-            JS_FreeValue(ctx, *pval);
+        /* free the local variables and stack, two to a turn */
+        for(pval = local_buf; pval + 1 < sp; pval += 2) {
+            JS_FreeValue(ctx, pval[0]);
+            JS_FreeValue(ctx, pval[1]);
         }
+        if (pval < sp)
+            JS_FreeValue(ctx, *pval);
     }
     rt->current_stack_frame = sf->prev_frame;
     js_call_leave(rt);
