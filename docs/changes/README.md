@@ -17,6 +17,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | The C tree of the new engine: a small libc, host callbacks, no blocking Atomics, class IDs per runtime, recursion bounded by counted depths | Unreleased | [c-engine.md](c-engine.md) |
+| A call sets and frees its values in fewer loop turns | Unreleased | [c-engine.md](c-engine.md#how-a-call-sets-and-frees-its-values) |
 
 ## Commits of upstream QuickJS
 
@@ -138,6 +139,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Own keys listed from the shape | v0.28.5 | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
 | Ordinary objects take 48 bytes, not 72 | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72) |
 | Object literals made at their final shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
+| A for in loop holds the shape of its object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
+| hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 
 ## Memory
 

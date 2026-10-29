@@ -198,3 +198,27 @@ func firstLine(err error) string {
 	s, _, _ := strings.Cut(err.Error(), "\n")
 	return s
 }
+
+// TestHasOwnCallDepth: the interpreter answers hasOwnProperty.call(obj, key)
+// without the two calls when it can. A recursion that makes it must end where
+// the two calls would end it, at the depth limit and at the end of the stack:
+// a call made on an array, which the interpreter always calls, must reach as
+// deep, with frames of every size.
+func TestHasOwnCallDepth(t *testing.T) {
+	for _, limit := range []uintptr{5000, 10000} {
+		for _, locals := range []int{0, 50, 100, 150, 200, 250} {
+			run := func(args string) (int, bool) {
+				r := recursion{"has_own_call", `const has = Object.prototype.hasOwnProperty, o = { a: 1 }, arr = [1];
+					function f() { ` + frameOf(locals) + ` if (!has.call(` + args + `)) throw 0; reached++; return f() + 1 }`, `f()`}
+				reached, _, rangeErr := shadowRun(t, r, limit)
+				return reached, rangeErr
+			}
+			answered, answeredErr := run(`o, 'a'`)
+			called, calledErr := run(`arr, 0`)
+			if answered != called || !answeredErr || !calledErr {
+				t.Errorf("limit %d, %d locals: answered reached %d (RangeError %v), called reached %d (RangeError %v)",
+					limit, locals, answered, answeredErr, called, calledErr)
+			}
+		}
+	}
+}
