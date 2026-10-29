@@ -347,6 +347,11 @@ func (v *VM) Counts() Counts {
 	return c
 }
 
+// Polls is how many polls the VM had so far. Unlike Counts, any goroutine
+// may call it while the engine runs: a test waits on it to know that a
+// script it started has entered the engine and how far it got.
+func (v *VM) Polls() int64 { return v.polls.Load() }
+
 // LastError is the last error of the OS a callback met: the engine sees only
 // a failure.
 func (v *VM) LastError() error { return v.lastErr }

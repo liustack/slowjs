@@ -25,14 +25,21 @@ const (
 	builtinCallPolls = 40 * builtinStopPolls
 )
 
+// builtinTrials is how many places of a call TestInterruptStopsLongBuiltins
+// interrupts, spread evenly over it: a part of a call that does not read the
+// flag and is longer than 1/builtinTrials of it is hit every time.
+const builtinTrials = 6
+
 // TestInterruptStopsLongBuiltins runs one call of a built-in over and over and
-// interrupts it, at a different place each time. The stop is measured in the
-// engine's polls, not on the clock, so a machine that does not run the
-// thread for a while does not fail it. The input is cheap to mark and to
-// free, made before the loop and kept alive, and the loop makes nothing that
-// the engine would collect, so that the stop is the built-in reading the
-// flag: what a large heap costs when a script stops is TestKill's and the
-// kill's business.
+// interrupts it, at places spread over the second call of the loop. Both the
+// place and the stop are measured in the engine's polls, not on the clock:
+// the polls of a call are the same on any machine, and one that does not run
+// the thread for a while does not fail it. The Interrupt comes only once the
+// loop has polled, so the script has entered and the Interrupt is not
+// cleared by the entry. The input is cheap to mark and to free, made before
+// the loop and kept alive, and the loop makes nothing that the engine would
+// collect, so that the stop is the built-in reading the flag: what a large
+// heap costs when a script stops is TestKill's and the kill's business.
 func TestInterruptStopsLongBuiltins(t *testing.T) {
 	cases := []struct{ name, setup, call string }{
 		// The first replace of a VM takes the generic path, which calls exec and so reads the flag. The
@@ -51,40 +58,50 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			for trial := range 3 {
-				m := newTestVM(t)
-				if _, err := m.Eval(c.setup, EvalGlobal); err != nil {
-					t.Fatal(err)
-				}
-				before := m.h.Counts().Polls
-				if _, err := m.Eval(c.call, EvalGlobal); err != nil {
-					t.Fatal(err)
-				}
-				if n := m.h.Counts().Polls - before; n < builtinCallPolls {
-					t.Fatalf("one call took %d polls, want at least %d", n, builtinCallPolls)
-				} else if trial == 0 {
-					t.Logf("one call took %d polls", n)
-				}
+			m := newTestVM(t)
+			if _, err := m.Eval(c.setup, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			before := m.h.Polls()
+			if _, err := m.Eval(c.call, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			call := m.h.Polls() - before
+			if call < builtinCallPolls {
+				t.Fatalf("one call took %d polls, want at least %d", call, builtinCallPolls)
+			}
+			t.Logf("one call took %d polls", call)
+			for trial := range builtinTrials {
 				m.RunGC()
+				// The second call of the loop, at (trial+1/2)/builtinTrials
+				// of it.
+				at := call + (2*int64(trial)+1)*call/(2*builtinTrials)
+				begin := m.h.Polls()
 				done := make(chan error, 1)
 				go func() {
 					_, err := m.Eval(`for (;;) { `+c.call+` }`, EvalGlobal)
 					done <- err
 				}()
-				// A different place of the call each time.
-				time.Sleep(50*time.Millisecond + time.Duration(trial)*37*time.Millisecond)
+				for m.h.Polls()-begin < at {
+					select {
+					case err := <-done:
+						t.Fatalf("trial %d: the loop ended before the Interrupt: %v", trial, err)
+					default:
+						time.Sleep(20 * time.Microsecond)
+					}
+				}
 				m.Interrupt()
 				err := <-done
 				var e *Error
 				switch polls := m.h.StopPolls(); {
 				case errors.Is(err, ErrKilled):
-					t.Errorf("trial %d: the script did not stop and was killed, %d polls after Interrupt", trial, polls)
+					t.Fatalf("trial %d: the script did not stop and was killed, %d polls after Interrupt", trial, polls)
 				case !errors.As(err, &e) || !e.Interrupted:
-					t.Errorf("trial %d: %v", trial, err)
+					t.Fatalf("trial %d: %v", trial, err)
 				case polls > builtinStopPolls:
-					t.Errorf("trial %d: stopped %d polls after Interrupt, want at most %d", trial, polls, builtinStopPolls)
+					t.Errorf("trial %d: stopped %d polls after Interrupt at poll %d of the loop, want at most %d", trial, polls, at, builtinStopPolls)
 				default:
-					t.Logf("trial %d: stopped %d polls after Interrupt", trial, polls)
+					t.Logf("trial %d: stopped %d polls after Interrupt at poll %d of the loop", trial, polls, at)
 				}
 			}
 		})
