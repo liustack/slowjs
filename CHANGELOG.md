@@ -4,6 +4,32 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the engine is the C engine, the only one. It is QuickJS in C (`engine/`) compiled by LLVM to Go assembly that the module ships, so building needs no C compiler and no cgo. Until v0.28 the engine was QuickJS translated to Go by ccgo, and that engine is gone. Results, error stacks and HTML stay the same, with the differences below.
+- **Breaking:** the module builds for linux/amd64 and darwin/arm64 only. A build for any other target, windows/amd64, darwin/amd64 and linux/arm64 included, stops with an error that names these two.
+- **Breaking:** a script nests calls by a count, not by the stack. `SetMaxStackSize` takes calls: 5000 by default and 10000 at most, where the Go engine counted 10000 slots of stack. A script that recursed past about 5000 calls gets its `RangeError` sooner. JSON and parentheses nest 2000 and 665 levels at most (tifa's `/json/2001` page answers 500). Chains that crashed the engine, such as 300000 bound functions, now throw a `RangeError`.
+- A script that runs on 50 ms past its eval timeout or an `Interrupt`, in a Go function it called for example, is killed. The call returns an interrupted `*Error` that also matches `ErrKilled`, and the VM is good only for `Close`.
+- `MemorySize` and the memory limit count what the engine's own allocator holds, 13% to 15% less than the ccgo engine counted for the same heap. A VM takes its memory from the system in chunks, and `MemoryUsage` fills `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate`, which were 0. `ReleaseMemory` gives free memory back and returns how many bytes.
+- `Math.*` gives the same bits as before on both targets (`engine/test/math.sh` checks 100000 inputs for each of 33 operations).
+- A compile or a lazy property that runs out of memory ends the call with the out of memory error, where the ccgo engine could leave the error pending or read the wrong value. `\p{Script=...}` that runs out of memory no longer crashes the process.
+- A template literal converts each substitution to a string at once, as the specification says, and `-0.5 < -1n` is false. Both come from upstream QuickJS commits ([upstream-commits.md](docs/fork-changes/upstream-commits.md)).
+
+### Removed
+
+- The build tags `slowjs_nogoasm`, `goasm`, `slowjs_cengine` and `libc.memgrind`. The first three do nothing now, and the last one tracked the allocations of the ccgo engine.
+- The package `github.com/liustack/slowjs/lib`, the ccgo engine and its API. The root package, `intl`, `temporal` and `fmt` keep every exported name they had in the last release: `SetModuleLoader` and `SetDefaultModuleLoader` were removed in v0.27.0 and stay removed.
+- The requirements `modernc.org/libc`, `modernc.org/ccgo/v4` and their dependencies. `go.mod` asks for `golang.org/x/sys` and `golang.org/x/arch` only, and a program that imports the module links `golang.org/x/sys` and nothing from modernc.org.
+
+### Performance
+
+Against the last release with its PGO profile, the C engine without PGO, on linux/amd64 (AMD EPYC 7B13, one core, 8 code positions each).
+
+- The pages of tifa's example shop, MUI test app and bench app render in 0.834 to 0.860 of the time (11 pages, every position faster), with the same HTML except the page of the 2001 level JSON.
+- The pause of the Go garbage collector stays as short: the P99 of a stop is 131 to 164 µs with 1 VM (164 before) and 197 µs with 3 VMs (197 before), the longest 3.1 ms (4.2 before) and 0.9 ms (2.1 before).
+- A VM of the shop holds 8.3 to 8.6 MiB after loading, 12.8 to 12.9 MiB after 300 renders and 9.7 MiB once the pool gives its free memory back. The shop program is 0.5% larger, and its table of frames 152 KB smaller.
+- A soak of 150 minutes, 211,076 renders, ended with no error and no VM replaced, and the memory of the VMs did not move. [Performance](docs/performance.md#acceptance-before-the-switch) has the method and the rest.
+
 ### Fixed
 
 - `Close` of a VM that is already closed does nothing and returns nil. It used to panic on a nil pointer, so a deferred `Close` after an explicit one crashed. The functions of `OnClose` still run once.

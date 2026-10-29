@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### 变更
+
+- **不兼容：** 引擎换成 C 引擎，而且只有它。它是 C 写的 QuickJS（`engine/`），由 LLVM 编译成 Go 汇编，随模块一起发布，所以构建不需要 C 编译器，也不用 cgo。到 v0.28 为止，引擎是 ccgo 翻译成 Go 的 QuickJS，那个引擎已经删掉。结果、错误堆栈和 HTML 不变，下面几条除外。
+- **不兼容：** 模块只为 linux/amd64 和 darwin/arm64 构建。在其他平台上构建，包括 windows/amd64、darwin/amd64 和 linux/arm64，会报错并写明这两个平台。
+- **不兼容：** 脚本的嵌套调用按次数限制，不再按栈。`SetMaxStackSize` 的单位是调用次数：默认 5000，最多 10000，而 Go 引擎数的是 10000 个栈槽。递归超过约 5000 次调用的脚本会更早得到 `RangeError`。JSON 和括号最多嵌套 2000 层和 665 层（tifa 的 `/json/2001` 页面返回 500）。以前会让引擎崩溃的链，比如 300000 个绑定函数，现在抛 `RangeError`。
+- 脚本在执行时限或 `Interrupt` 之后又跑了 50 毫秒还没停下（比如卡在它调用的 Go 函数里），就被杀掉。这次调用返回一个 interrupted 的 `*Error`，它也匹配 `ErrKilled`，这个 VM 之后只能 `Close`。
+- `MemorySize` 和内存限额数的是引擎自己的分配器占着的内存，同一堆对象比 ccgo 引擎数的少 13% 到 15%。VM 按块向系统要内存，`MemoryUsage` 会填上 `Footprint`、`FootprintLimit`、`Chunks` 和 `ReleaseCandidate`，以前这四项是 0。`ReleaseMemory` 还回空闲内存，并返回还了多少字节。
+- `Math.*` 在两个平台上给出和以前相同的位（`engine/test/math.sh` 对 33 个运算各检查 100000 个输入）。
+- 编译或惰性属性在内存耗尽时，调用以内存不足错误结束，ccgo 引擎可能留下挂起的错误或读到错的值。编译 `\p{Script=...}` 时内存耗尽不再让进程崩溃。
+- 模板字符串按规范马上把每个替换项转成字符串，`-0.5 < -1n` 是 false。两处都来自上游 QuickJS 的提交（[upstream-commits.md](docs/fork-changes/upstream-commits.md)）。
+
+### 移除
+
+- 构建标签 `slowjs_nogoasm`、`goasm`、`slowjs_cengine` 和 `libc.memgrind`。前三个现在什么都不做，最后一个以前用来跟踪 ccgo 引擎的分配。
+- 包 `github.com/liustack/slowjs/lib`，也就是 ccgo 引擎和它的 API。根包、`intl`、`temporal` 和 `fmt` 保留上一个版本里所有导出的名字：`SetModuleLoader` 和 `SetDefaultModuleLoader` 在 v0.27.0 就已删除，仍然没有。
+- 依赖 `modernc.org/libc`、`modernc.org/ccgo/v4` 以及它们的依赖。`go.mod` 现在只要 `golang.org/x/sys` 和 `golang.org/x/arch`，import 这个模块的程序链接 `golang.org/x/sys`，不再链接 modernc.org 的任何包。
+
+### 性能
+
+对比上一个版本（带它的 PGO 采样），C 引擎不开 PGO，linux/amd64（AMD EPYC 7B13，单核，各 8 个代码位置）。
+
+- tifa 示例商店、MUI 测试应用和 bench 应用的 11 个页面，渲染耗时是原来的 0.834 到 0.860（每个位置都更快），HTML 相同，只有 2001 层 JSON 的页面除外。
+- Go 垃圾回收的停顿保持一样短：1 个 VM 时一次停顿的 P99 是 131 到 164 µs（以前 164），3 个 VM 是 197 µs（以前 197），最长 3.1 ms（以前 4.2）和 0.9 ms（以前 2.1）。
+- 商店的一个 VM 加载后占 8.3 到 8.6 MiB，渲染 300 次后 12.8 到 12.9 MiB，池把空闲内存还给系统后 9.7 MiB。商店程序大 0.5%，帧信息表小 152 KB。
+- 150 分钟、211,076 次渲染的 soak 没有错误，没有 VM 被换掉，VM 的内存没有变化。方法和其余数字见 [Performance](docs/performance.md#acceptance-before-the-switch)。
+
 ### 修复
 
 - 对已经关闭的 VM 再调 `Close`，什么都不做并返回 nil。以前它会空指针 panic，所以 `defer vm.Close()` 加一次显式 `Close` 会崩。`OnClose` 的函数仍然只跑一次。
