@@ -78,7 +78,7 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 3. After any rest runs or single-page probes, write and commit both page files with one command:
 
    ```sh
-   python3 tifa/pages.py "$page_dir" --output "results/$run-pages" &&
+   go run ./cmd/pages "$page_dir" --output "results/$run-pages" &&
      git add "results/$run-pages.md" "results/$run-pages.json" &&
      git commit -m "docs(bench): record $run pages" -m "Archive page times and normalized HTML digests so equality can be checked from the saved results."
    ```
