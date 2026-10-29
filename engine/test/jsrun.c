@@ -36,10 +36,12 @@
    before the file runs, N entries and BYTES bytes, 0,0 for none.
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
-   GetAsyncContext and SetAsyncContext of the Go API, as globals, and four
+   GetAsyncContext and SetAsyncContext of the Go API, as globals, and six
    functions for the scripts that look at the collector: gc() and youngGC()
-   run JS_RunGC and JS_RunYoungGC, memorySize() gives JS_GetMemorySize, and
-   setGCThreshold(n) sets JS_SetGCThreshold, to its largest value when n is
+   run JS_RunGC and JS_RunYoungGC, memorySize() gives JS_GetMemorySize,
+   memoryBlocks() the blocks of the heap in use, heapChange(bytes, blocks)
+   tells whether the heap holds the same blocks as when those two were read,
+   and setGCThreshold(n) sets JS_SetGCThreshold, to its largest value when n is
    negative (the engine then never collects by itself). Like a VM of the Go
    API, the context keeps SHAPE_CACHE shapes (see JS_SetShapeCache). */
 #include <stdio.h>
@@ -131,6 +133,64 @@ static JSValue js_memory_size(JSContext *ctx, JSValueConst this_val,
     return JS_NewFloat64(ctx, (double)JS_GetMemorySize(JS_GetRuntime(ctx)));
 }
 
+/* The blocks of the heap in use (malloc_count of JS_ComputeMemoryUsage, less
+   the runtime): with the system malloc (JS_HEAP_SYSTEM_MALLOC) every block of
+   the engine, with TLSF the arenas of small blocks and the large blocks. */
+static size_t memory_blocks(JSRuntime *rt)
+{
+    JSMemoryUsage s;
+
+    JS_ComputeMemoryUsage(rt, &s);
+    return (size_t)s.malloc_count - 1;
+}
+
+static JSValue js_memory_blocks(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    return JS_NewFloat64(ctx, (double)memory_blocks(JS_GetRuntime(ctx)));
+}
+
+/* How many bytes the same block can count more or less from one time to the
+   next, for the same request. With the system malloc, none: the count is the
+   usable size, which AddressSanitizer (the builds that use it) gives as the
+   size asked for. With TLSF a block counts its TLSF size. TLSF splits a free
+   block only when sizeof(block_header_t), 32 bytes, would be left over
+   (block_can_split in tlsf.c), so it can give up to 24 bytes more than asked
+   (block_size_min, sizes being multiples of 8). A large block of 505 to 4096
+   bytes can also come from the cache of large blocks, which files a block by
+   its usable size in steps of JS_LARGE_CACHE_STEP, 64 bytes, while a block
+   made for the same request gets the size of its class: up to 56 bytes more
+   (multiples of 8). The larger of the two is the bound. */
+#ifdef JS_HEAP_SYSTEM_MALLOC
+#define BLOCK_SLACK 0
+#else
+#define BLOCK_SLACK 56
+#endif
+
+/* heapChange(bytes, blocks): 0 when the heap holds the same blocks as when
+   memorySize() gave bytes and memoryBlocks() gave blocks, the bytes differing
+   by no more than BLOCK_SLACK for each block, or else a string with the
+   difference in blocks and in bytes. */
+static JSValue js_heap_change(JSContext *ctx, JSValueConst this_val,
+                              int argc, JSValueConst *argv)
+{
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    double bytes0, blocks0, bytes, blocks;
+    char buf[96];
+
+    if (argc < 2 || JS_ToFloat64(ctx, &bytes0, argv[0]) < 0 ||
+        JS_ToFloat64(ctx, &blocks0, argv[1]) < 0)
+        return JS_ThrowTypeError(ctx, "heapChange(bytes, blocks)");
+    blocks = (double)memory_blocks(rt);
+    bytes = (double)JS_GetMemorySize(rt);
+    if (blocks == blocks0 &&
+        bytes - bytes0 <= BLOCK_SLACK * blocks0 && bytes0 - bytes <= BLOCK_SLACK * blocks0)
+        return JS_NewInt32(ctx, 0);
+    /* the engine's snprintf, which jsrun links, has no floating point */
+    snprintf(buf, sizeof(buf), "%+lld blocks, %+lld bytes", (long long)(blocks - blocks0), (long long)(bytes - bytes0));
+    return JS_NewString(ctx, buf);
+}
+
 static JSValue js_set_gc_threshold(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
@@ -169,6 +229,8 @@ static int define_globals(JSContext *ctx)
         JS_SetPropertyStr(ctx, global, "gc", JS_NewCFunction(ctx, js_gc, "gc", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "youngGC", JS_NewCFunction(ctx, js_young_gc, "youngGC", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "memorySize", JS_NewCFunction(ctx, js_memory_size, "memorySize", 0)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "memoryBlocks", JS_NewCFunction(ctx, js_memory_blocks, "memoryBlocks", 0)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "heapChange", JS_NewCFunction(ctx, js_heap_change, "heapChange", 2)) < 0 ||
         JS_SetPropertyStr(ctx, global, "setGCThreshold", JS_NewCFunction(ctx, js_set_gc_threshold, "setGCThreshold", 1)) < 0)
         ret = -1;
     JS_FreeValue(ctx, global);

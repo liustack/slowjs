@@ -8,12 +8,14 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 - An ordinary object (an object literal, `{}`, the props of a React element) takes 48 bytes of memory, not 72. The highest `MemorySize` of a render of a long Markdown page is 3.8% lower on average, and the 20 pages of the example shop hold 1.8% less at the end of a render. No page renders faster or slower ([Performance](docs/performance.md#ordinary-objects-of-48-bytes) has the numbers).
 - `EvalSharedBytecode` loads a bundle in 0.79 (the React page bundle) to 0.86 (a tifa shop bundle) of the time after the first load of the same `SharedBytecode`: the engine checks the code of the bytecode against its rule of the polls once for each `SharedBytecode`, not once for each VM ([Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)). `EvalBytecode` scans every time, as before.
+- An object literal of plain keys gets all its keys at once, with the shape its function keeps for it and a property array of its exact size. Without PGO on linux/amd64, at 8 code positions with the same HTML, the workbench pages of tifa's example shop render in 0.956 of the time, the MUI pages of tifa's test app in 0.969 and the table page of its bench app in 0.942, and a React server render does not change (0.991). A VM of the shop holds about 0.17 MiB more, and a long Markdown page takes 1.6% less at its peak. [objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-made-at-their-final-shape) has the details.
 
 ### Changed
 
 - The symbols `intl.Register` and `temporal.Register` put on the global object to mark a VM as set up are `Symbol.for("github.com/liustack/slowjs/intl")` and `Symbol.for("github.com/liustack/slowjs/temporal")`, where they were named after modernc.org/quickjs.
 - A script is killed only when it has also kept the engine at work after its eval timeout or an `Interrupt`: 1000 polls of the engine since it was asked to stop, besides the 50 ms. Time in which the engine does no work, in a Go function the script called or while the OS or the Go scheduler runs other threads or goroutines, no longer gets a script killed that would have stopped by itself: the call returns the interrupted error and the VM goes on. On a loaded machine a script that stopped in under a millisecond of work could be killed before.
 - `String.prototype.normalize`, `localeCompare`, `toUpperCase` and `toLowerCase` stop within a few thousand characters of an `Interrupt` or the eval timeout. On a long string they ran on until they had turned the whole string into code points, compared it or changed its case.
+- Bytecode is version 6, which holds the keys of object literals: bytecode written by an earlier release no longer loads (`SyntaxError: invalid version`), and has to be compiled again.
 
 ## [v0.29.0] - 2026-10-29
 

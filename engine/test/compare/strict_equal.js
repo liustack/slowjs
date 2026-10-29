@@ -122,13 +122,18 @@ const { rope1, rope2, obj, sym } = makeVals()
   const sneaky2 = { valueOf() { b.length = 0; return 0 } }
   out.push('from index empties array: ' + b.includes(1, sneaky2) + ' ' + b.length)
 }
-// memory: after a warm-up, more runs of the same checks leave the heap as it was
+// memory: after a warm-up, more runs of the same checks leave the heap as it
+// was: the same blocks in use, which may count a few bytes apart, as TLSF and
+// the cache of large blocks can give the same request blocks of other sizes
+// (heapChange of engine/test/jsrun.c has the bound). Each reading follows two
+// collections, as one alone can leave blocks that the next frees, depending on
+// the code around it.
 if (typeof memorySize === 'function') {
   matrix(); matrix(); gc()
-  matrix(); matrix(); matrix(); gc()
-  const m1 = memorySize()
-  matrix(); matrix(); matrix(); gc()
-  out.push('memory after: ' + (memorySize() - m1))
+  matrix(); matrix(); matrix(); gc(); gc()
+  const m1 = memorySize(), k1 = memoryBlocks()
+  matrix(); matrix(); matrix(); gc(); gc()
+  out.push('memory after: ' + heapChange(m1, k1))
 } else {
   out.push('memory after: 0')
 }

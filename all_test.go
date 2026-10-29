@@ -733,8 +733,13 @@ func TestBytecode(t *testing.T) {
 	// scope_level. Opcodes were renumbered, so the code of this script,
 	// push_i8 42; push_i16 314; mul; set_loc0; return, is now encoded as
 	// bb 2a bc 3a 01 98 cb 28, previously bd 2a be 3a 01 9a cd 28.
+	//
+	// 2026-10-29, version 6: object literals that start with static keys are
+	// made by OP_object_lit, whose keys follow the closure variables (the zero
+	// byte before the code, with none), and the opcodes after OP_object moved
+	// by one: bc 2a bd 3a 01 99 cc 29.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "05000c000600a801000100020000000801aa01000000bb2abc3a0198cb28a8010400001b0600"; g != e {
+	if g, e := hex, "06000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 
