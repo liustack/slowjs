@@ -15,10 +15,11 @@
 # run.log, and test262_errors.txt, the errors this run found. ARCHIVE is a copy
 # of the pinned test262 archive, which is downloaded when it is not given.
 #
-# The errors found are compared, line by line, with the 58 known errors of the
-# engine in lib/ (lib/test262_errors.txt) and the script exits 0 only when they
-# are the same lines and the runner exited with its own status, 0 or 1. Wrap the script in taskset, flock or systemd-run to keep
-# it to the CPUs and the memory you give it.
+# The errors found are compared, line by line, with the 58 known errors in
+# engine/test/test262_errors.txt and the script exits 0 only when they are the
+# same lines and the runner exited with its own status, 0 or 1. Wrap the script
+# in taskset, flock or systemd-run to keep it to the CPUs and the memory you
+# give it.
 set -eu
 LC_ALL=C
 export LC_ALL
@@ -42,11 +43,9 @@ done
 bin=$here/out/$mode/run-test262
 [ -x "$bin" ] || { echo "test262.sh: $bin is missing: run engine/test/build.sh $mode" >&2; exit 2; }
 
-# The pinned test262 commit is the one lib/Makefile names.
-zipname=$(sed -n 's/^TEST262_ZIP = //p' "$root/lib/Makefile")
+# The pinned test262 commit and the SHA-256 of its archive.
+zipname=5c8206929d81b2d3d727ca6aac56c18358c8d790.zip
 sha256=c34bd60057f1c5128ad5d4e496dc69d712da9a2260eb3308e6f225ba7d3a3096
-[ "$zipname" = 5c8206929d81b2d3d727ca6aac56c18358c8d790.zip ] || {
-	echo "test262.sh: lib/Makefile pins $zipname: check it and update the SHA-256 here" >&2; exit 2; }
 
 if command -v sha256sum >/dev/null 2>&1; then sum() { sha256sum "$1" | cut -d' ' -f1; }
 else sum() { shasum -a 256 "$1" | cut -d' ' -f1; }; fi
@@ -65,7 +64,7 @@ if [ ! -d "$run/test262" ]; then
 	mkdir -p "$run"
 	unzip -q "$archive" -d "$run"
 	mv "$run/test262-${zipname%.zip}" "$run/test262"
-	patch -s -p1 -d "$run/test262" < "$root/lib/internal/patch/test262.diff"
+	patch -s -p1 -d "$run/test262" < "$here/test262.diff"
 fi
 cp "$here/test262.conf" "$run/test262.conf"
 : > "$run/test262_errors.txt"
@@ -94,12 +93,12 @@ case $status in
 0|1) ;;
 *) echo "test262.sh: the runner exited with status $status, see $work/run.log" >&2; exit 1 ;;
 esac
-sort "$root/lib/test262_errors.txt" > "$work/known.sorted"
+sort "$here/test262_errors.txt" > "$work/known.sorted"
 sort "$work/test262_errors.txt" > "$work/found.sorted"
 if diff "$work/known.sorted" "$work/found.sorted" > "$work/errors.diff"; then
-	echo "errors: the $(wc -l < "$work/found.sorted" | tr -d ' ') errors found are the known errors of lib/test262_errors.txt"
+	echo "errors: the $(wc -l < "$work/found.sorted" | tr -d ' ') errors found are the known errors of engine/test/test262_errors.txt"
 else
-	echo "errors: differ from lib/test262_errors.txt, see $work/errors.diff" >&2
+	echo "errors: differ from engine/test/test262_errors.txt, see $work/errors.diff" >&2
 	cat "$work/errors.diff" >&2
 	exit 1
 fi
