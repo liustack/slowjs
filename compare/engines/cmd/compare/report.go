@@ -398,7 +398,7 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 
 	if _, ok := res.Timed["cold"]; ok {
 		var n notes
-		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (the QuickJS ports built by ccgo allocate there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
+		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (slowjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
 		p("| Engine | New VM | New VM + load source | New VM + load program | First render | RSS per VM (MiB) | Go heap per VM (MiB) |\n|---|---|---|---|---|---|---|\n")
 		for _, e := range names {
 			raws := res.Timed["cold"][e]

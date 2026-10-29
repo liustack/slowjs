@@ -19,7 +19,7 @@ import (
 )
 
 // Every engine process runs under a hard memory cap. GOMEMLIMIT is not
-// enough: the QuickJS ports built by ccgo allocate outside the Go heap. On Linux the cap is a cgroup
+// enough: slowjs and modernc-quickjs keep the memory of a VM outside the Go heap. On Linux the cap is a cgroup
 // (systemd-run --user --scope -p MemoryMax), which counts all of it. On top
 // of that, and as the only cap elsewhere, the driver reads the resident size
 // of the process and kills it when it goes over.
