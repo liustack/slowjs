@@ -237,6 +237,19 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	if c, ok := k.o.addr[m.Name+".const"]; ok {
 		dataAt = c[0]
 	}
+	// The function's data is aligned as llc aligned it, where it sits in the
+	// binary and not only from the start of the body, which Go puts at its own
+	// place (Align64 puts it at an offset past a multiple of 64).
+	for _, o := range k.c.Plan.InBody[m.Name] {
+		label := k.c.Plan.Rename[m.Name][o.Label]
+		off, ok := k.o.label[label]
+		if !ok {
+			return fmt.Errorf("body data %s absent from the re-assembled object", label)
+		}
+		if at, a := base+uint64(4*i)+uint64(off-r[0]), uint64(1)<<o.Align; at%a != 0 {
+			return fmt.Errorf("body data %s sits at %#x, which is not a multiple of its alignment %d", o.Label, at, a)
+		}
+	}
 	icalls := 0
 	for _, c := range m.Rec.Calls {
 		if c.Kind == CallReg {
