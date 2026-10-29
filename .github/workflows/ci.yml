@@ -1,5 +1,6 @@
 # What runs on every push and pull request. See "CI" in docs/testing.md for what
-# it covers and what it leaves out (no LLVM, no timing).
+# it covers and what it leaves out (no timing). The LLVM steps are in
+# llvm-steps.yml.
 name: ci
 
 on:
@@ -57,9 +58,7 @@ jobs:
       - name: Test, default build
         run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/internal/fixlib$')
       - name: Test, C engine, internal packages
-        # TestTimeout is left out: it fails on runners with a fast CPU, see
-        # "CI" in docs/testing.md. Take -skip out when the test is fixed.
-        run: go test -count=1 -tags slowjs_cengine,testhooks -skip '^TestTimeout$' ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+        run: go test -count=1 -tags slowjs_cengine,testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, C engine, root package
         run: CHECK_ONLY="root" scripts/check.sh full
 
