@@ -136,3 +136,56 @@ func TestPlanDataARM64RefusesPages(t *testing.T) {
 		}
 	}
 }
+
+// TestLowerARM64EngineAddressOfLoadedData: an object that f both loads and
+// takes the address of keeps one address. f's load reads the copy in its
+// body, but its adr, like the adr in callee, takes the object in
+// engine_rodata, so the two addresses compare equal as they do in C.
+func TestLowerARM64EngineAddressOfLoadedData(t *testing.T) {
+	asm := ".text\n.globl f\nf:\n\tldr\td0, tbl+8\n\tadr\tx0, tbl\n\tret\n.Lfunc_end0:\n" +
+		".globl callee\ncallee:\n\tadr\tx0, tbl\n\tret\n.Lfunc_end1:\n" +
+		".section\t.rodata,\"a\",@progbits\n\t.p2align\t3, 0x0\ntbl:\n\t.xword\t3\n\t.xword\t4\n"
+	u, err := SplitAsm(asm, "//")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := PlanDataARM64(u, map[string]bool{"f": true, "callee": true})
+	if len(p.Errors) != 0 {
+		t.Fatalf("errors: %v", p.Errors)
+	}
+	off, ok := p.BlobOff["tbl"]
+	if !ok {
+		t.Fatalf("tbl, whose address is taken, is not in engine_rodata: %v", p.BlobOff)
+	}
+	if got := p.Rename["f"]["tbl"]; got != ".Ldup.f.tbl" {
+		t.Fatalf("tbl in f's body as %q", got)
+	}
+	_, env := a64TestEnv()
+	env.Plan = p
+	wrap := func(mid ...string) []string {
+		out := []string{"str x30, [sp, #-16]!"}
+		out = append(out, mid...)
+		return append(out, "ldr x30, [sp], #16", "ret")
+	}
+	addr := fmt.Sprintf("adrp x0, __goasm_rodata+%d\n\tadd x0, x0, :lo12:__goasm_rodata+%d\n", off, off)
+	for _, c := range []struct {
+		fn    FuncSpec
+		lines []string
+		want  []string
+	}{
+		{FuncSpec{Name: "f", Sig: Sig{Params: []Type{I64, I64}, Ret: I64}, Kind: Unified},
+			wrap("ldr d0, tbl+8", "adr x0, tbl"), []string{"ldr d0, .Ldup.f.tbl+8\n", addr}},
+		{FuncSpec{Name: "callee", Sig: Sig{Params: []Type{I64}, Ret: I64}, Kind: Unified},
+			wrap("adr x0, tbl"), []string{addr}},
+	} {
+		text, _, err := LowerARM64EngineFunc(c.lines, c.fn, env)
+		if err != nil {
+			t.Fatalf("%s: %v", c.fn.Name, err)
+		}
+		for _, want := range c.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: no %q in\n%s", c.fn.Name, want, text)
+			}
+		}
+	}
+}
