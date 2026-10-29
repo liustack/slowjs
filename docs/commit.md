@@ -45,6 +45,5 @@ build!: rename the module to github.com/liustack/quickjs
 ## Branches and merges
 
 - Do not develop directly on `main`. Run `git switch -c <branch>` first.
-- `master` and a few other old branches mirror gitlab.com/cznic/quickjs, where the Go API started, and get no commits of their own.
 - A branch goes into `main` with a merge commit (`git merge --no-ff`), whose message is `merge: <what the branch does>`, such as `merge: count interrupts down inline, cache small blocks and keep shapes`. `git log --first-parent main` then reads as the list of changes, and releases are tagged on these merge commits (see [releasing.md](releasing.md)).
 - Before committing, run the checks in [testing.md](testing.md#before-committing).
