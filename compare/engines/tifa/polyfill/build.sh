@@ -7,7 +7,7 @@
 # forced in (polyfill-force), with en and zh data and the golden time zone
 # set, as one IIFE script to run before a tifa bundle.
 # Package versions and license texts are kept in ../THIRD_PARTY_NOTICES.md.
-# When changing the lockfile, regenerate it with ../notices.py.
+# When changing the lockfile, regenerate the notices with `go run ./cmd/notices` (see ../THIRD_PARTY_NOTICES.md).
 set -e
 cd "$(dirname "$0")"
 npm ci --no-audit --no-fund

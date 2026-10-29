@@ -30,6 +30,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/liustack/slowjs/compare/engines/internal/pytext"
 	"io/fs"
 	"math"
 	"os"
@@ -38,7 +39,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"unicode"
 )
 
 var (
@@ -273,8 +273,8 @@ func (r *run) meta(name string) []any {
 		return []any{}
 	}
 	out := []any{}
-	for _, l := range pySplitLines(string(data)) {
-		if strings.TrimFunc(l, pyIsSpace) == "" {
+	for _, l := range pytext.SplitLines(string(data)) {
+		if strings.TrimFunc(l, pytext.IsSpace) == "" {
 			continue
 		}
 		v, err := parseJSON(l)
@@ -925,41 +925,11 @@ func (r *run) markdown() string {
 	r.tifaRowCheck(w)
 	r.vsC(w)
 	r.polyfillCost(w)
-	lines := pySplitLines(w.String())
+	lines := pytext.SplitLines(w.String())
 	for i, l := range lines {
-		lines[i] = strings.TrimRightFunc(l, pyIsSpace)
+		lines[i] = strings.TrimRightFunc(l, pytext.IsSpace)
 	}
-	return strings.TrimRightFunc(strings.Join(lines, "\n"), pyIsSpace) + "\n"
-}
-
-// pyIsSpace is Python's str.isspace for one character.
-func pyIsSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) }
-
-// pySplitLines is Python's str.splitlines().
-func pySplitLines(s string) []string {
-	var out []string
-	rs := []rune(s)
-	start := 0
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
-		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\x85', ' ', ' ':
-		case '\r':
-			out = append(out, string(rs[start:i]))
-			if i+1 < len(rs) && rs[i+1] == '\n' {
-				i++
-			}
-			start = i + 1
-			continue
-		default:
-			continue
-		}
-		out = append(out, string(rs[start:i]))
-		start = i + 1
-	}
-	if start < len(rs) {
-		out = append(out, string(rs[start:]))
-	}
-	return out
+	return strings.TrimRightFunc(strings.Join(lines, "\n"), pytext.IsSpace) + "\n"
 }
 
 func main() {
