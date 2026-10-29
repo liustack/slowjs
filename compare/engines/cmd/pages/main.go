@@ -19,10 +19,9 @@
 // page, as a geometric mean over the pages with the range in brackets.
 //
 // slowjs-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
-// tifa's Go functions, no polyfill), so it has no pf runs, and so is
-// slowjs-tifa-nogoasm, built with slowjs_nogoasm. Its pages are compared with
-// the pages of slowjs on the polyfill, where the Intl output of the two may
-// differ in U+202F (see tifaRowCheck).
+// tifa's Go functions, no polyfill), so it has no pf runs. Its pages are
+// compared with the pages of slowjs on the polyfill, where the Intl output of
+// the two may differ in U+202F (see tifaRowCheck).
 package main
 
 import (
@@ -42,9 +41,9 @@ import (
 )
 
 var (
-	goEngines = []string{"slowjs", "slowjs-tifa", "slowjs-tifa-nogoasm", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"}
+	goEngines = []string{"slowjs", "slowjs-tifa", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"}
 	refEngine = []string{"quickjs-2026-06-04", "quickjs-master", "quickjs-ng", "node-jit", "node-jitless"}
-	ownIntl   = []string{"slowjs", "slowjs-tifa", "slowjs-tifa-nogoasm", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
+	ownIntl   = []string{"slowjs", "slowjs-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 	label     = map[string]string{
 		"quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
 		"quickjs-master":     "C QuickJS master 7d1c13c5d8 (reference)",
@@ -57,7 +56,7 @@ var (
 
 // notRun says why a run is missing, for the runs left out of run.sh.
 func notRun(engine, kind string) string {
-	if (engine == "slowjs-tifa" || engine == "slowjs-tifa-nogoasm") && (kind == "pf" || kind == "mui-pf") {
+	if engine == "slowjs-tifa" && (kind == "pf" || kind == "mui-pf") {
 		return "not run: this row has no polyfill"
 	}
 	return "not run"
@@ -835,7 +834,6 @@ func (r *run) vsC(w *report) {
 		{"slowjs, same JavaScript (polyfill)", "slowjs", pf},
 		{"slowjs, own Intl only", "slowjs", own},
 		{"slowjs-tifa, as tifa runs it", "slowjs-tifa", own},
-		{"slowjs-tifa-nogoasm, as tifa runs it with build.goasm off", "slowjs-tifa-nogoasm", own},
 		{"C QuickJS 2026-06-04", "quickjs-2026-06-04", pf},
 		{"Node v24.11.1", "node-jit", pf},
 		{"Node v24.11.1 --jitless", "node-jitless", pf},

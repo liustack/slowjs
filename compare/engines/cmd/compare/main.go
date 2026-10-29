@@ -61,7 +61,6 @@ var variants = []variant{
 // way.
 var pagesOnly = []variant{
 	{"slowjs-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
-	{"slowjs-tifa-nogoasm", "liustacktifanogoasm", "eng_liustacktifa slowjs_nogoasm", nil, false},
 }
 
 var (
