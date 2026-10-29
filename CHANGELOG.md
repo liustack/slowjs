@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Performance
+
+- An ordinary object (an object literal, `{}`, the props of a React element) takes 48 bytes of memory, not 72. The highest `MemorySize` of a render of a long Markdown page is 3.8% lower on average, and the 20 pages of the example shop hold 1.8% less at the end of a render. No page renders faster or slower ([Performance](docs/performance.md#ordinary-objects-of-48-bytes) has the numbers).
+
 ### Changed
 
 - The symbols `intl.Register` and `temporal.Register` put on the global object to mark a VM as set up are `Symbol.for("github.com/liustack/slowjs/intl")` and `Symbol.for("github.com/liustack/slowjs/temporal")`, where they were named after modernc.org/quickjs.

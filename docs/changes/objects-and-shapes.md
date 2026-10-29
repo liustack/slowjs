@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, new functions put onto their shape at once, methods of strings, numbers and arrays found in the interpreter, and own keys listed from the shape, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe'
+summary: 'Changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, new functions put onto their shape at once, methods of strings, numbers and arrays found in the interpreter, own keys listed from the shape, and ordinary objects that take 48 bytes rather than 72, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe'
 read_when:
   - A VM runs close to its memory limit and you wonder whether to give it a smaller shape cache
   - Calling VM.SetShapeCache, or asking what DefaultShapeCache costs
@@ -90,3 +90,23 @@ Tests: `own_keys_test.go`, whose `testdata/own_keys.js` lists objects of every k
 
 The change is in C (`engine/quickjs.c`): `JS_GetOwnPropertyNamesInternal`, `JS_CopyDataProperties` and `JS_GetOwnPropertyNames2` call `js_own_keys`, `js_copy_data` and `js_own_keys_array` first, the key cache is the field `own_key_cache` of `JSRuntime`, and `js_shape_hash_unlink` drops a shape from it. The keys of a listing are walked with `js_own_keys_next` rather than a callback. A key that is left out of a rest is looked up with `js_get_own_property_flags`, as the engine does. `engine/test/compare.sh` runs `testdata/own_keys.js`, and `engine/test/compare/ownkeys.js`, which lists objects of many shapes, made and dropped so that new shapes take the memory of freed ones, through every path, and checks each listing against the order it works out from the keys it added. It also lists one object after the key cache has its shape, as keys are added, deleted and made not enumerable, a key becomes a getter and the prototype changes. `engine/test/unit.c` checks listings of new objects whose shapes take the memory of shapes the cycle collector freed.
 
+
+## Ordinary objects take 48 bytes, not 72
+
+Release: Unreleased.
+
+An ordinary object, one of class `Object` (an object literal, `{}`, `Object.create(p)`, the instance of a plain class, a React element or its props), takes a block of 48 bytes where every object took 72. A `JSObject` is a header of 40 bytes (the links of the collector, the flags, the shape and the property array) and a union of 24 bytes for the data of the class: the elements of an array, the closure of a function, the state of a `Map`. An ordinary object has no such data, so the union was dead weight. `JS_NewObjectFromShape` now allocates the header alone for class `Object` and does not write the union, and `free_object` leaves its fail-safe stores to the other classes.
+
+Why this is safe: the union is read and written by class. The one switch that looked at every object, `JS_ComputeMemoryUsage`, now has a case for class `Object` that reads nothing. The public getters `JS_GetOpaque`, `JS_GetOpaque2` and `JS_GetAnyOpaque` answer NULL for an ordinary object, which is what they gave before, as nothing set its opaque pointer. `JS_SetOpaque` on an ordinary object aborts, as the engine does for a call its callers must not make, rather than write past the block. The engine never calls it on one, and the Go API does not call it at all. `JS_ComputeMemoryUsage` counts the smaller block in `obj_size`.
+
+Memory, on the C tree natively (Apple M4, the same allocator and flags as the generated engine), against v0.29.0 with the same HTML:
+
+- The highest `MemorySize` of the renders of 11 Markdown pages of 300 to 500 KB (react-markdown with remark-gfm and rehype-highlight) is 3.8% lower on average (11.8% lower to 2.7% higher: the peak sits at the threshold of the collector, 1.5 times the size after the last collection, so one page can land just before or after a collection). The page of 400 KB peaks at 180.8 MB, then 181.1 MB.
+- With the collector turned off, so that no collection moves the end, the same page ends its render holding 394.3 MB, then 379.9 MB (3.7% less, 14.4 MB).
+- The 20 pages of tifa's example shop peak at 253.5 MB in all, then 240.9 MB (5.0% less), and end at 244.3 MB, then 240.0 MB with the collector off (1.8% less).
+
+Speed on linux/amd64 (AMD EPYC 7B13, one core, 8 code positions): no change. The React page, the bench, MUI and shop pages take 0.993 to 1.004 of the time, and the engine runs 0.01% to 0.27% more instructions for the extra test when it makes and frees an object ([performance.md](../performance.md#ordinary-objects-of-48-bytes) has the table).
+
+Tests: `engine/test/unit-api.c` runs 300 ordinary objects of 70 properties with holes, frozen, sealed and with accessors, as prototypes, as keys of a `WeakMap` and a `WeakSet`, under `WeakRef` and a `FinalizationRegistry`, and in a cycle, then `JS_ComputeMemoryUsage`, and the getters. On the system malloc build (`build.sh asan`) every block stands alone with red zones, so a read or write past the 40 bytes is reported: the first try, with the smaller block only, was caught in `JS_NewObjectFromShape`, then `free_object`, `JS_ComputeMemoryUsage` and `JS_GetOpaque`. `engine/test/unit-white.c` checks the block of an ordinary object has room for less than a `JSObject` and that of an array for all of it. `engine/test/api-test.c` checks that `JS_SetOpaque` of an ordinary object ends the process with `SIGABRT` after the host has heard it.
+
+The change is in C (`engine/quickjs.c`): `JS_NewObjectFromShape`, `free_object`, `JS_ComputeMemoryUsage`, `JS_SetOpaque`, `JS_GetOpaque` and `JS_GetAnyOpaque`, and a comment at `JS_SetOpaque` in `quickjs.h`.

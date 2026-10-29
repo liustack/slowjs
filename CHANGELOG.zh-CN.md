@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 性能
+
+- 普通对象（对象字面量、`{}`、React 元素的 props）占 48 字节内存，不再是 72 字节。长 Markdown 页面渲染时 `MemorySize` 的最高值平均低 3.8%，示例商店的 20 个页面渲染结束时占用少 1.8%。没有页面渲染变快或变慢（数字见 [Performance](docs/performance.md#ordinary-objects-of-48-bytes)）。
+
 ### 变更
 
 - `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
