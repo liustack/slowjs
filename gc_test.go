@@ -15,11 +15,11 @@ func mallocSize(m *VM) uintptr {
 }
 
 // TestRunGC pins that RunGC frees objects in reference cycles, that
-// MemorySize follows what the runtime takes, and that RunGC leaves the GC
-// threshold alone.
+// MemorySize follows what the runtime takes, and that RunGC leaves alone a
+// threshold that turns the GC of the engine off.
 func TestRunGC(t *testing.T) {
 	m := newGCVM(t)
-	off := ^uintptr(0) // no GC but the one RunGC runs
+	off := ^uintptr(0) // no GC but the one RunGC runs, and RunGC keeps it so
 	m.SetGCThreshold(off)
 	m.RunGC()
 	live := m.MemorySize()
@@ -43,7 +43,22 @@ func TestRunGC(t *testing.T) {
 		t.Fatalf("after RunGC the runtime takes %d bytes, %d before the cycles", got, live)
 	}
 	if got := m.GCThreshold(); got != off {
-		t.Fatalf("RunGC set the GC threshold to %d, expected %d", got, off)
+		t.Fatalf("RunGC set the GC threshold to %d, expected %d that turns the GC off", got, off)
+	}
+}
+
+// TestRunGCSetsTheThreshold pins that RunGC sets the GC threshold to 1.5 times
+// what it left, as the GC the engine runs by itself does, whatever the
+// threshold was.
+func TestRunGCSetsTheThreshold(t *testing.T) {
+	m := newGCVM(t)
+	for _, before := range []uintptr{1, 1 << 20, 1 << 40} {
+		m.SetGCThreshold(before)
+		m.RunGC()
+		live := m.MemorySize()
+		if got, want := m.GCThreshold(), live+live/2; got != want {
+			t.Fatalf("after RunGC with the threshold at %d: GCThreshold %d, want %d, 1.5 times the %d bytes left", before, got, want, live)
+		}
 	}
 }
 

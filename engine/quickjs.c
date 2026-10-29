@@ -2342,8 +2342,6 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
                (uint64_t)rt->malloc_ctx.heap.count);
 #endif
         JS_RunGC(rt);
-        rt->malloc_gc_threshold = rt->malloc_ctx.heap.count +
-            (rt->malloc_ctx.heap.count >> 1);
     }
 }
 
@@ -8393,10 +8391,17 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
     gc_free_cycles(rt);
 }
 
+/* A full collection. It sets the threshold of the next one to 1.5 times what
+   it left, whoever starts it: the host, or js_trigger_gc when the heap passes
+   the threshold. A host that asked for no collection of the runtime
+   (JS_SetGCThreshold with -1) keeps it so. */
 void JS_RunGC(JSRuntime *rt)
 {
     JS_RunGCInternal(rt, TRUE);
     js_front_drain(&rt->malloc_ctx);
+    if (rt->malloc_gc_threshold != (size_t)-1)
+        rt->malloc_gc_threshold = rt->malloc_ctx.heap.count +
+            (rt->malloc_ctx.heap.count >> 1);
 }
 
 /* Young collection: the trial deletion of JS_RunGC over the GC objects made

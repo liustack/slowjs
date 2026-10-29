@@ -20,15 +20,13 @@ import (
 )
 
 // endlessAt is the poll, counted from the start of Eval, at which
-// stopsSoftly interrupts an endless script, on top of the polls of a full
-// collection: JS_RunGC leaves the threshold of the next collection where it
-// was, so the first allocation of the Eval may start one more before the
-// script runs.
+// stopsSoftly interrupts an endless script. It comes after a RunGC, which
+// sets the threshold of the next collection, so the Eval starts none before
+// the script runs.
 const endlessAt = 200
 
-// stopsSoftly runs the endless script c, has the poll endlessAt (plus a
-// collection) into it ask to stop, and checks the stop (stoppedSoftly),
-// with the kill grace given.
+// stopsSoftly runs the endless script c, has the poll endlessAt into it ask
+// to stop, and checks the stop (stoppedSoftly), with the kill grace given.
 func stopsSoftly(t *testing.T, c endlessScript, grace time.Duration) {
 	t.Helper()
 	v := newVM(t, Options{Seed: 1})
@@ -39,7 +37,8 @@ func stopsSoftly(t *testing.T, c endlessScript, grace time.Duration) {
 			t.Fatalf("%s: setup: %v", c.name, err)
 		}
 	}
-	v.Host().InterruptAtPoll(v.Host().Polls() + runGC(v) + endlessAt)
+	v.RunGC()
+	v.Host().InterruptAtPoll(v.Host().Polls() + endlessAt)
 	_, err := v.Eval(c.src, "stop.js")
 	stoppedSoftly(t, v, c, err)
 }
