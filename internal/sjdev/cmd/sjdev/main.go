@@ -103,7 +103,7 @@ func benchBuild(ctx context.Context, args []string) error {
 	fs.StringVar(&o.App, "app", "", "build in this module (tifa) against the tree through a go.work")
 	fs.StringVar(&o.Pkg, "pkg", "", "package to build, relative to -app (or -tree)")
 	fs.BoolVar(&o.Test, "test", false, "build the test binary of the package (go test -c)")
-	fs.StringVar(&o.Tags, "tags", "slowjs_cengine", "build tags")
+	fs.StringVar(&o.Tags, "tags", "", "build tags, if any")
 	fs.StringVar(&o.PGO, "pgo", "off", "the -pgo flag")
 	fs.StringVar(&o.Front, "front", "JS_CallInternal", "the function whose body moves")
 	fs.StringVar(&o.Out, "out", "", "folder of the binaries (side@shift.front)")

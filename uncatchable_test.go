@@ -59,7 +59,7 @@ func TestOutOfMemoryUncatchable(t *testing.T) {
 }
 
 // The engine throws null, uncatchable, when it runs out of memory building
-// an error (lib/outofmemory_test.go), and the VM reports it as the out of
+// an error, and the VM reports it as the out of
 // memory error.
 func TestUncatchableNullIsOutOfMemory(t *testing.T) {
 	m := newTestVM(t)

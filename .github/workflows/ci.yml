@@ -51,15 +51,15 @@ jobs:
       - name: Build
         run: go build ./...
       - name: Vet
-        run: go vet ./internal/fixlib ./intl/... ./fmt
+        run: go vet -asmdecl=false ./...
       - name: Format and docs
         run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
 
-      - name: Test, default build
-        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/internal/fixlib$')
-      - name: Test, C engine, internal packages
-        run: go test -count=1 -tags slowjs_cengine,testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
-      - name: Test, C engine, root package
+      - name: Test, packages other than the root
+        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/slowjs$')
+      - name: Test, internal packages with the test hooks
+        run: go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+      - name: Test, root package
         run: CHECK_ONLY="root" scripts/check.sh full
 
       - name: Native C engine against the recorded outputs

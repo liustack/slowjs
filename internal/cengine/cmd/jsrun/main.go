@@ -4,12 +4,9 @@
 // root of this repository.
 
 // Command jsrun evaluates a JavaScript file and prints its result, how long
-// the evaluation took and what memory the VM held. Built with -tags slowjs_cengine
-// it runs the C engine generated into internal/cengine. Built without, it
-// runs the engine of package slowjs, so that one file gives the same
-// measurement on both:
+// the evaluation took and what memory the VM held. It runs the C engine generated
+// into internal/cengine:
 //
-//	go run -tags slowjs_cengine ./internal/cengine/cmd/jsrun -n 20 fib.js
 //	go run ./internal/cengine/cmd/jsrun -n 20 fib.js
 //
 // Each run makes a new VM, evaluates the file in it (the global script and

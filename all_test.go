@@ -5,7 +5,6 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
-	"context"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -14,17 +13,12 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
-	"time"
-
-	_ "golang.org/x/mod/modfile" // generator.go
-	util "modernc.org/fileutil/ccgo"
 )
 
 var (
-	goarch   = goruntime.GOARCH
-	goos     = goruntime.GOOS
-	memgrind bool
-	target   = fmt.Sprintf("%s/%s", goos, goarch)
+	goarch = goruntime.GOARCH
+	goos   = goruntime.GOOS
+	target = fmt.Sprintf("%s/%s", goos, goarch)
 )
 
 //lint:ignore U1000 debug helper
@@ -353,23 +347,6 @@ func newBigInt(t *testing.T, s string) *big.Int {
 	}
 
 	return n
-}
-
-func TestMem(t *testing.T) {
-	if testing.Short() {
-		t.Skip("-short")
-	}
-
-	if !memgrind {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
-
-		defer cancel()
-
-		t.Log(time.Now().Format(time.DateTime))
-		if _, err := util.Shell(ctx, "go", "test", fmt.Sprintf("-short=%v", testing.Short()), "-v", "-tags", "libc.memgrind", "-timeout", "12h", "-run", "TestMemgrind"); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 func TestRegisterGoFunc(t *testing.T) {

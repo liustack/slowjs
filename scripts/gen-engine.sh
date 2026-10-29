@@ -61,7 +61,7 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
-	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -build-tag slowjs_cengine \
+	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" \
 	-j "${GEN_JOBS:-2}" $release
 
 if [ -n "${GEN_KEEP:-}" ]; then

@@ -3,14 +3,10 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
-
 package slowjs // import "github.com/liustack/slowjs"
 
-// The Go functions javascript calls on the C engine are held by the host of
-// their VM, each under a handle, until the engine frees the function object
-// that calls it: on the engine of lib, those of RegisterFunc stay until the VM
-// closes.
+// The Go functions javascript calls are held by the host of their VM, each
+// under a handle, until the engine frees the function object that calls it.
 
 import (
 	"strings"
