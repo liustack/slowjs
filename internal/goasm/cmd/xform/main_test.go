@@ -99,8 +99,8 @@ func TestEightBytesAreOneMultiByteNOP(t *testing.T) {
 	}
 }
 
-// lib/goasm_run_linux_amd64.s has no tab before NO_LOCAL_POINTERS and PCALIGN.
-func TestFrontOnTheUnindentedFormOfLib(t *testing.T) {
+// A body may have no tab before NO_LOCAL_POINTERS and PCALIGN.
+func TestFrontOnTheUnindentedForm(t *testing.T) {
 	d := setup(t)
 	write(t, d, "run_amd64.s", "TEXT ·goasmRun(SB), $352-24\nNO_LOCAL_POINTERS\nPCALIGN $16\nRET\n")
 	run(t, d, "front:goasmRun:8")
