@@ -70,7 +70,7 @@ a `slowjs-tifa-nogoasm` row that the C engine does not need.
   (1.3 MiB RSS, modernc 1.1 MiB, moejs 1.4 MiB, go-quickjs 2.0 MiB), and a
   memory limit that counts live memory and stops a script exactly at it,
   which only modernc shares. It is 3.3 times as fast as modernc.org/quickjs,
-  the C-to-Go translation it started from, on the React page.
+  the C-to-Go translation of QuickJS, on the React page.
   A new VM costs more than in the others: 0.36 ms against 0.20 ms for
   go-quickjs, and 2.5 ms to load a compiled program against 1.1 ms.
 
@@ -78,9 +78,9 @@ a `slowjs-tifa-nogoasm` row that the C engine does not need.
 
 | Engine | Version | What it is | How the comparison uses it |
 |---|---|---|---|
-| slowjs | v0.29.0 (main `0cc6d332`) | Bellard's QuickJS (pinned commit) in C, compiled by LLVM to Go assembly, with the changes of the fork | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
+| slowjs | v0.29.0 (main `0cc6d332`) | Bellard's QuickJS (pinned commit) in C, compiled by LLVM to Go assembly, with the changes of slowjs | bytecode compiled once (`VM.Compile`), run with `EvalBytecode`, Intl from package `intl` |
 | slowjs-tifa | v0.29.0 (main `0cc6d332`) | the same engine set up as tifa sets up a VM, for the tifa pages only | packages `intl` and `temporal`, tifa's Go functions, tifa's limits and GC rules, a shared compiled bundle (see [slowjs as tifa runs it](#slowjs-as-tifa-runs-it)) |
-| modernc-quickjs | v0.25.0 | QuickJS translated from C to Go by ccgo, the engine slowjs started from | as above |
+| modernc-quickjs | v0.25.0 | QuickJS translated from C to Go by ccgo | as above |
 | go-quickjs-interp | v0.28.0 | QuickJS-NG rewritten in Go | `quickjs.Compile` once, `RunProgram`, JIT off, the default |
 | go-quickjs-jit | v0.28.0 | the same with `-tags quickjs_jit` and `WithJIT()` | as above, the JIT is marked experimental |
 | goant-interp | v0.2.1 | a JavaScript engine written in Go | `Runtime.Compile` and `RunProgram` per runtime, JIT off, the default |
@@ -574,7 +574,7 @@ File and line numbers are for the versions in the Engines table.
   program, fast JSON and strings, little memory. Its fixed call depth, its
   register limit and its partial Intl rule out large bundles like the tifa
   shop.
-- **modernc-quickjs:** the C-to-Go translation slowjs started from.
+- **modernc-quickjs:** the C-to-Go translation of QuickJS.
   Slower on every workload.
 
 ## Problems found in other engines

@@ -1,8 +1,8 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
-  - Measuring a branch of the fork on tifa's pages before a release
+  - Measuring a branch of slowjs on tifa's pages before a release
   - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
@@ -13,7 +13,7 @@ read_when:
 
 # Performance
 
-The fork is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
+slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
 ## How the numbers were measured
 
@@ -75,13 +75,13 @@ Whole releases, measured in tifa:
 
 What it costs in memory: v0.26.16 makes one VM of the shop hold 722 KiB more after a GC (8.03 MiB rather than 7.33), 647 KiB of it the kept shapes. Outside linux each VM keeps up to 1 MiB of TLS stack since v0.26.15.
 
-### Against the QuickJS the fork started from
+### Against the engine slowjs started from
 
 Measured in tifa on 2026-10-20 against `modernc.org/quickjs` v0.25.0 with libquickjs v0.13.1, on the same SSR bundle and host program (tifa's [docs/studies/moejs.md](https://github.com/liustack/tifa/blob/main/docs/studies/moejs.md)): the engine changes up to v0.26.15 alone make renders 1.63 to 1.66 times as fast. With the rewrites of tifa's Vite plugin and PGO, pages render 2.07 times as fast as on the original engine with neither.
 
 ## Measuring in tifa
 
-To measure a branch of the fork before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
+To measure a branch of slowjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
 
 ```sh
 # in tifa
@@ -214,7 +214,7 @@ The page ratios range from 0.9998 to 1.0081. The call-level gain does not establ
 
 This section measured the patch of the ccgo engine (`quickjs.diff`, now deleted) on native C builds. It stays as the record of why computed goto stayed on in the C tree.
 
-Measured on 2026-10-22, using the pinned Bellard source `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` and the fork at `620658c`. The old C patch unconditionally set `DIRECT_DISPATCH` to zero. That translation setting predates the fork's exception changes. Native C therefore used a central switch instead of upstream's computed goto dispatch.
+Measured on 2026-10-22, using the pinned Bellard source `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` and slowjs at `620658c`. The old C patch unconditionally set `DIRECT_DISPATCH` to zero. That translation setting predates slowjs's exception changes. Native C therefore used a central switch instead of upstream's computed goto dispatch.
 
 The machine was the AMD EPYC 7B13 VM described above. Both compilers used the upstream Makefile at `-O2`, gcc 15.3 and clang 22.1.8. The V8-v7 harness was `tests/bench-v8/combined.js` from Bellard's 2026-06-04 extras, retaining strict mode, as in [goc's comparison](https://github.com/LoyieKing/goc/blob/8482979acbc8f10f76d9715d88c1beed55df230b/docs/benchmark/README.md). Native invocations passed `--stack-size 16M` in every variant.
 
@@ -314,7 +314,7 @@ Where the C engine was slower than the C QuickJS builds, the same C of `engine/`
 | `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
 | `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
 
-The fork's C changes cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
+slowjs's C changes cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
 
 - `c_array_methods`: `js_array_includes` 6020 samples against 1826, `js_array_indexOf` 3915 against 957, `JS_CallInternal` 10743 against 8749, the rest alike (`js_strict_eq2` 13630 against 13231). The loops called `js_strict_eq2` for each element, and a loop with a call that may poll keeps its poll counter in memory, which is a read, decrement and write of one word per turn: 36% of the samples of `js_array_includes` sit on that decrement. Fixed by [deciding most elements without a call](changes/upstream-commits.md#indexof-and-includes-decide-most-elements-without-a-call): the script took 0.583 of the time.
 - `c_string_methods`: 38900 samples against 30440, spread over many small functions: `JS_CallInternal` +940, `js_call_c_function` 1964 against 1210, `JS_ToStringInternal` 1726 against 1122, `JS_ConcatString` 1182 against 658, `js_string_includes` 967 against 523. No loop with one hot instruction. It is the cost of each call of the generated code (arguments and results through memory, a stack check, the poll counter).
@@ -506,7 +506,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Moving rarely used opcodes out of the interpreter loop**: at most 8% alone on amd64, an upper bound measured by replacing the 56 handlers of opcodes the shop never runs with empty stubs, but only 1.4% on top of the rewrite that keeps 15 values in their stack slots, and 0.5% on arm64. It would need the loop's locals moved into a struct.
 - **Moving small blocks in realloc without going through malloc and free**: 0.23% fewer instructions on the studio list on top of js_malloc taking cached blocks, too small for one more fixlib rule.
 - **Keeping 1024 blocks a size in the front cache instead of 256**: misses on the studio list go from 19.7k to 18.6k a render. They come from the heap growing during a render, not from full lists.
-- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the fork's rule of making only mechanical changes. Not tried.
+- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of slowjs to make only mechanical changes. Not tried.
 - **A fast path for `===` in the interpreter loop**: 1.0% to 1.3% slower, measured with v0.26.14 and PGO. The interpreter function is so large that Go inlines only the smallest functions into it, so a new helper there is one more real call.
 - **The interrupt countdown in a small function of its own**: no change (0.998 to 1.001 of the time) with v0.26.14, for the same reason. v0.26.16 writes the countdown inline instead, through `pollDue`, which Go does inline, for 0.6% with PGO.
 - **Writing out `JS_FreeAtom` and `is_strict_mode` in the interpreter**, as v0.26.16 does for `set_value`: nothing that could be told from noise, so they stay calls.

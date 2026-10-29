@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
-// The javascript half of modernc.org/quickjs/intl. It owns the ECMA-402
+// The javascript half of package intl. It owns the ECMA-402
 // surface - the constructors, their prototypes and the option plumbing the
 // spec makes observable - and leaves every formatting decision to the Go
 // Builtins it is called with (see bridge.go). It evaluates to a function of
