@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against lib and what tifa's wiring gained, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of the fork renders pages, how much faster the fork is than the QuickJS it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against lib and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of the fork on tifa's pages before a release
@@ -8,6 +8,7 @@ read_when:
   - Planning the next round of work on render speed
   - Quoting how fast a release is
   - Checking that the C engine stays flat, scales over VMs, stops soon after Interrupt and holds the GC up for no longer than the old engine
+  - Checking what the C engine had to pass before it replaced the engine of lib/, and what it measured then
 ---
 
 # Performance
@@ -435,6 +436,61 @@ Measured and left (shares of a render on the C engine, from callgrind):
 - **Joining ropes in Go** instead of `JS_ToString`: the join takes 0.33% of a shop render and 0.23% of MUI. Walking the pieces in Go still reads every character, so it would save part of that.
 - **AsyncContext as C**: its Builtins are under 0.05% of a render.
 - **The polls**: `host_poll` is 0.06% to 0.16% of a render.
+
+### Acceptance before the switch
+
+Run on 2026-10-29 at slowjs `75052b72` and tifa `41dcf45` (branch `phase5/accept`: tifa upgraded to that slowjs, with its engine profile collected again), on the Google Cloud VM above. The C engine is built without PGO. Where it is compared with the engine of `lib/`, that one is built with the tifa engine profile.
+
+| Gate | Result |
+| --- | --- |
+| test262 as before | Native C tree: the same 58 known errors, line for line (58 of 83,426). Go host: 80,215 of 96,540 runs, the number of the v0.27.2 row of [benchmarks.md](benchmarks.md), the same in every area, in ES2023 and older, and under every feature tag. 0 crashes, timeouts and out of memory |
+| tifa's test pages, same HTML | shop 160 pages, pages 33, tailwind 2, mui 60, bench 4, extreme 30: all the same, except `/json/2001` of extreme, which the C engine answers with a 500 (its JSON nests at most 2,000 levels, as tifa's docs say). `api` has no pages. tifa's `go test ./...` passes on the default build, and on the C engine all but one test of `internal/ssr` (below). The end-to-end tests pass on both |
+| No page slower than on `lib/` with PGO | All 11 pages faster at all 8 code positions: 0.834 to 0.860 of the time |
+| GC pause P99 | Not above the stored `lib/` numbers: 1 VM 131 to 164 µs against 164, 3 VMs 197 µs against 197 |
+| Soak | 150 minutes, 211,076 renders, 0 errors, no VM replaced. The memory of the VMs and what they took from the system did not move. The process grew 3.8 MB between minutes 30 to 60 and minutes 120 to 150 |
+
+**Same HTML.** Every page of a crawl of the built program, the default build against the C engine, byte for byte after masking the times the loaders write into a page (RFC 3339 text and the `u:` milliseconds of the router's state). The default build against itself, crawled twice, masks exactly as many (shop 5,169), so the masked bytes are not the engine's. Extreme was crawled with `--ssr-timeout 60s`, as tifa's end-to-end test does, because `/console/100` takes 1.4 to 3.5 s on `lib/` and a default 3 s timeout turned it into a 500 in one crawl, depending on the load. The shop uses `TestShopCrawl` of tifa, the other apps a small crawler of the same kind.
+
+**One failing test on the C engine.** `TestFullGCGivesBackWhatTheThresholdNoLongerNeeds` in tifa's `internal/ssr` fails the same way each time and on darwin/arm64 too: after 1,000 renders full GCs gave back 68,688 bytes where it wants at least half the live size, 112,008. The VM there has a live size of 224,016 bytes and a footprint of one 262,144-byte chunk. It skips on `lib/`, which takes its memory from libc, and the pin tifa had before had no engine to run it on. The test next to it passes.
+
+**Speed.** Median over 4 rounds of the paired ratio C engine / `lib/` with PGO, at the 8 [code positions](#code-positions), `GOMAXPROCS=1` on one core with its sibling idle. The `range` column of the tool (the positions of `lib/` against each other) is 1.4% to 4.2% on the pages. No process had to be run again. Another test was running on the two cores next to it the whole time.
+
+| Page | `lib/` with PGO (ms) | C engine (ms) | C / lib |
+| --- | ---: | ---: | ---: |
+| shop: studio | 70.17 | 58.53 | 0.834 |
+| shop: studio orders | 29.22 | 24.66 | 0.843 |
+| shop: studio stats | 32.48 | 27.10 | 0.834 |
+| shop: weekend | 41.46 | 34.67 | 0.838 |
+| shop: weekend orders | 25.77 | 21.73 | 0.843 |
+| shop: weekend stats | 25.15 | 21.01 | 0.835 |
+| MUI: `/` | 42.22 | 36.21 | 0.856 |
+| MUI: `/orders` | 90.84 | 78.19 | 0.860 |
+| MUI: `/orders/ORD-1240` | 40.00 | 34.13 | 0.853 |
+| bench: `/spiral` | 24.15 | 20.37 | 0.844 |
+| bench: `/table` | 21.18 | 17.84 | 0.849 |
+
+The shop's order and stats pages are two to three times what they were in the table above, because the shop got bigger pages after that measurement.
+
+**GC pauses.** The method of the [stability batch](#stability-under-load): a goroutine allocates 512 MB a second, so the Go GC runs 65 to 86 times a second, while the pool renders the 18 pages for 60 seconds after 10 of warm-up. 1 VM on cores 1,2 (two physical cores) and 3 VMs on cores 1,5,2,6, 5 rounds each. The `lib/` numbers are the single runs of the stability batch.
+
+| Pause of the whole stop | C engine P50 | P99 | largest | `lib/` P99 | largest |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 VM | 32.8 µs | 131.1 (3 rounds), 163.8 (2) | 2,097 to 3,146 µs | 163.8 | 4,194 |
+| 3 VMs | 57.3 µs | 196.6 (5) | 459 to 917 µs | 196.6 | 2,097 |
+
+The histogram of the runtime has bucket edges 131.1 and 163.8 next to each other, so the 1 VM P99 moves by a bucket between rounds. The 6 pages of `TestShopGCPause` give 114.7 to 131.1 µs for 1 VM and 196.6 for 3 VMs (3 rounds each). The pages of the shop are heavier than in the batch, so the renders a second are lower (18 against 45 for 1 VM).
+
+**Soak.** 2 VMs, 2 callers, the 18 pages in turn with no pause, and every 5 minutes 3 seconds in which no one renders, so that the pool gives the free memory of its VMs back (60 times, 30 for each VM). Memory read every minute.
+
+- Renders: 211,076, 0 errors, 2 VMs created, none closed or replaced. Render P50 91.3 ms, P99 165.0, P99.9 167.6, largest 246.6. Each 30 minutes the same to within 2 ms.
+- Per VM: the allocations stayed between 12.18 and 12.36 MB, the footprint at 20,905,984 bytes in 21 chunks the whole time.
+- Process: VmRSS 75.0 MB at the start, 77.3 MB on average over minutes 30 to 60 and 81.2 MB over minutes 120 to 150 (+2.5 MB an hour by a fit over minutes 30 to 150, +1.9 over the last hour). Part of it is Go's: the memory the Go runtime holds (`Sys` less what it released) went from 22.2 MB to 26.4 MB while `Sys` stayed at 30.5 MB from minute 15. What is left (the chunks of the VMs, the shadow stacks, the binary) was 41.5 MB from minute 60 to the end.
+- The shadow stacks are 3 mappings of 32 MiB, resident 2,156 KB together.
+
+**Only reported.**
+
+- Per VM, from 8 VMs against 1 as tifa's `TestShopVMResident` does, 300 renders each, 3 runs: after loading 8.3 to 8.6 MiB, after rendering 12.8 to 12.9, and after the pool let it wait idle for 1.5 s (so with `ReleaseMemory`) 9.7. Without it the VM keeps 3 MiB more.
+- Binary of the shop program (tifa with pages): 37,433,922 bytes on `lib/`, 37,615,732 with the C engine (+0.5%). `.text` 7.92 MB to 8.37 MB, `.rodata` 20.80 to 20.87, `.gopclntab` 5.59 MB to 5.44 MB (smaller by 152 KB). The MUI program is 29,193,071 and 29,374,881 bytes, `.gopclntab` 5.40 and 5.24 MB.
 
 ## What was tried and not done
 
