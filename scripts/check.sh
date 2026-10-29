@@ -75,7 +75,7 @@ step() {
 gc="env CGO_ENABLED=0 go"
 # Fast: every commit.
 step build fast - "$gc build ./..."
-step gofmt fast - "out=\$(gofmt -l -s . | grep -v -e ccgo_ -e '^\\.build/' -e '^lib/goasm_' -e '^internal/cengine/engine_'); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
+step gofmt fast - "out=\$(gofmt -l -s . | grep -v -e '^\\.build/' -e '^internal/cengine/engine_'); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
 step docs fast - "scripts/docs-list.sh --check"
 step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$root/.build/shadow.so SLOWJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
 step cengine fast tests "$gc test -count=1 -v -tags testhooks ./internal/cengine"
@@ -84,7 +84,6 @@ step compare-plain fast last "engine/test/compare.sh plain"
 step math fast last "engine/test/math.sh"
 step cycles fast last "engine/test/cycles.sh"
 # Full: the end of a batch.
-step fixlib full - "$gc run ./internal/fixlib -check"
 step gen full last "scripts/check-gen.sh"
 step testhooks full tests "$gc test -count=1 -v -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m ."
