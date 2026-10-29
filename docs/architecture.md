@@ -3,20 +3,20 @@ summary: 'How the module is built: the layers from the Go API down to the C engi
 read_when:
   - Starting work in this repository for the first time
   - Changing the Go API in the root package, calling the engine from it, or adding a method that runs javascript
-  - Looking for where a piece of the engine, a fork change or a tool lives
+  - Looking for where a piece of the engine, a change to it or a tool lives
   - Touching how a value is encoded, or reading a JSValue by hand
   - Changing the intl, temporal, fmt or compare packages, or internal/gointl or internal/intlhook
 ---
 
 # Architecture
 
-`github.com/liustack/slowjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/quickjs` until v0.27.x. The Go API at the root comes from `modernc.org/quickjs` (https://gitlab.com/cznic/quickjs). The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. The fork starts from quickjs v0.25.0 and QuickJS release 2026-06-04 (commit `3d5e064`). Until v0.28 the engine was QuickJS translated to Go by ccgo (`modernc.org/libquickjs`), which the C engine replaced. [changes](changes/README.md) lists what the fork changed.
+`github.com/liustack/slowjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/quickjs` until v0.27.x. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
 
 There is no cgo and no shared library: the module cross-compiles as ordinary Go, for the two targets the engine runs on. `grep -rn 'import "C"'` finds nothing. Do not bring cgo in.
 
 ## The layers
 
-1. **`engine/`**: the C of QuickJS with the fork's changes, built with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc. It asks its host only for the callbacks of `engine/host.h`: memory, clocks, the interrupt poll and a few requests (`host_call`). It has no global, no lock and no system call. `engine/test/` is a native host that runs it, for the tests that need no Go.
+1. **`engine/`**: the C of QuickJS with slowjs's changes, built with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc. It asks its host only for the callbacks of `engine/host.h`: memory, clocks, the interrupt poll and a few requests (`host_call`). It has no global, no lock and no system call. `engine/test/` is a native host that runs it, for the tests that need no Go.
 2. **`internal/cengine/`**: the engine as Go assembly, generated from `engine/` by `internal/goasm/gen` and checked in (`make gen`, `make check-gen`). The Go files next to it are the host of the callbacks and a VM with the calls the root package needs.
 3. **The Go host**: `internal/gohost` answers the callbacks of a VM, `internal/hostmem` maps its memory outside Go's heap (chunks, a shadow stack with a guard page), and `internal/idtable` holds the ids that the engine passes back to Go.
 4. **The Go API** (`quickjs.go` and the files next to it): what users import.
@@ -33,14 +33,14 @@ The Go API calls the engine only through the files below. The rest of the packag
 | `enginememory.go` | `MemoryUsage`, `ReleaseMemory` and the memory of `SharedBytecode`, which is mapped read-only outside every VM |
 | `engine_unsupported.go` | On any other target, imports `internal/unsupported`, whose error, naming the two targets, is the only one the build reports |
 
-The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links `internal/cengine` and no libc translated to Go.
+The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links `internal/cengine` and its Go host.
 
 ## Folders
 
 | Path | What it holds |
 | --- | --- |
 | `quickjs.go` and the other `.go` files of the root | The Go API, on the engine layer (see [The engine layer](#the-engine-layer)) |
-| `engine/` | The C tree of the engine: QuickJS at the pinned commit with the fork's C changes. No Go file, and no Go package may hold a C file (`layout_test.go`) |
+| `engine/` | The C tree of the engine: QuickJS at the pinned commit with slowjs's C changes. No Go file, and no Go package may hold a C file (`layout_test.go`) |
 | `engine/libc/` | The small libc of the C tree: musl's memory, string and math functions, a `snprintf` and the headers, so that the engine builds with `-ffreestanding -nostdinc` (see its [README](../engine/libc/README.md)) |
 | `engine/host.h` | The callbacks the engine asks of its host. The native test host and the Go host implement them |
 | `engine/test/` | The native test host: the C tree built by plain clang with its small libc, and test262, the recorded outputs and the checks in C run on it, also under AddressSanitizer and UndefinedBehaviorSanitizer (see [testing.md](testing.md#the-c-tree-and-its-native-test-host)). Never part of a Go build |

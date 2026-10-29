@@ -51,7 +51,7 @@ read_when:
 
 The whole engine is built with `-ffp-contract=off` too, and the generator refuses an `llvm.fmuladd` or `llvm.fma` and any fast-math flag (`reassoc`, `nnan`, `ninf`, `nsz`, `arcp`, `contract`, `afn`, or the `unsafe-fp-math` attributes) in the IR, and on arm64 a fused instruction (`fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fmla`, `fmls`) in llc's text. What is tested, and what is not:
 
-- linux/amd64: `engine/test/math.sh` checks, bit for bit, 100000 inputs for each of 33 functions of libc and for 33 `Math` operations as JavaScript sees them, against hashes kept in `engine/test/math`. They were made from the previous engine (the musl that `modernc.org/libc` translated), and the C engine gave the same bits on every result. The JavaScript check writes a NaN as the one NaN of JavaScript, so it does not check the sign and payload of a NaN. The libc check does, so it runs on x86-64 only.
+- linux/amd64: `engine/test/math.sh` checks, bit for bit, 100000 inputs for each of 33 functions of libc and for 33 `Math` operations as JavaScript sees them, against hashes kept in `engine/test/math`. They were first recorded from the previous engine, and the C engine gave the same bits on every result. The JavaScript check writes a NaN as the one NaN of JavaScript, so it does not check the sign and payload of a NaN. The libc check does, so it runs on x86-64 only.
 - macOS arm64: `math.sh` checks the JavaScript hashes there. The libc results are the same except for the sign of a NaN, which the processor chooses (positive on arm64, negative on amd64), so that part is not checked on arm64.
 - The engine runs on those two targets only, so the same last digit on both is shown.
 

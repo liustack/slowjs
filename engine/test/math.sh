@@ -19,10 +19,9 @@
 #
 # The files hold, for each function, the line of the inputs and the line of the
 # results as "KIND NAME N SHA-256", the SHA-256 being that of the hex digits of
-# the line. They were made on linux/amd64 from the musl that
-# modernc.org/libc translated (the libm of the ccgo engine)
-# and the C tree gave the same bits on that machine, so they are what musl gives
-# and what Math.* gives with it. A NaN is written as the one NaN of JavaScript in
+# the line. They were first recorded on linux/amd64 from the previous engine,
+# and the C tree gives the same bits on that machine, so they are what musl
+# gives and what Math.* gives with it. A NaN is written as the one NaN of JavaScript in
 # the first, so that file holds on every machine. In the second it is written
 # with its bits, and the sign of the NaN that an operation makes is the
 # machine's (x86-64 makes a negative one, arm64 a positive one), so that file is
