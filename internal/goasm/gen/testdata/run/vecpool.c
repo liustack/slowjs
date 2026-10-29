@@ -6,9 +6,10 @@
 // Functions that read a vector constant of their own with an instruction that
 // needs it on 16 bytes (TestSampleRuns, with -align64: see the entries of its
 // table). LLVM folds each constant into a paddd or a pxor with a memory
-// operand, and the generator keeps the constant in the body of the function.
-// A body that starts 8 bytes past a multiple of 16 (mixa and mixb) must still
-// have the constant on 16 bytes where it runs, or the load faults.
+// operand, or loads it with a movaps, and the generator keeps the constant in
+// the body of the function. A body that starts 8 bytes past a multiple of 16
+// (mixa, mixb and mixd) must still have the constant on 16 bytes where it
+// runs, or the load faults.
 typedef unsigned v4i __attribute__((vector_size(16)));
 typedef unsigned long ul;
 
@@ -39,6 +40,13 @@ __attribute__((noinline)) long mixc(ul *p, ul k)
     return (long)(p[0] + p[1] * 7 + k);
 }
 
+__attribute__((noinline)) long mixd(ul *p, ul k)
+{
+    v4i x = {0x11111111u, 0x22222222u, 0x33333333u, 0x44444444u};
+    __builtin_memcpy(p, &x, 16);
+    return (long)(p[0] ^ p[1] ^ k);
+}
+
 long run(long *r, int one)
 {
     ul buf[2];
@@ -53,6 +61,8 @@ long run(long *r, int one)
         buf[0] = 0x4142434445464748UL * (i + (ul)one);
         buf[1] = 0x5152535455565758UL ^ (i * 0x0101010101010101UL);
         r[n++] = mixc(buf, i);
+        long m = mixd(buf, i);
+        r[n++] = (long)((ul)m + buf[0]);
     }
     return n;
 }

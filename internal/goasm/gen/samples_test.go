@@ -92,7 +92,7 @@ func TestSampleRuns(t *testing.T) {
 		{"alias.c", nil, 24, false},
 		{"icalls.c", nil, 56, true},
 		{"nosplit.c", nil, 4, false},
-		{"vecpool.c", []string{"-align64", "mixa:40,mixb:8,mixc:16"}, 9, false},
+		{"vecpool.c", []string{"-align64", "mixa:40,mixb:8,mixc:16,mixd:24"}, 12, false},
 		{"trap.c", nil, 2, false},
 		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {
