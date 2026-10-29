@@ -81,10 +81,10 @@ step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 SLOWJS_LL
 step cengine fast tests "$gc test -count=1 -v -tags testhooks ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain"
-step math fast last "engine/test/math.sh"
 step cycles fast last "engine/test/cycles.sh"
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"
+step math full last "engine/test/math.sh"
 step testhooks full tests "$gc test -count=1 -v -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m ."
 step race full tests "env CGO_ENABLED=1 go test -count=1 -v -race -short -timeout 60m -p 1 . ./internal/gohost ./internal/hostmem ./internal/idtable"

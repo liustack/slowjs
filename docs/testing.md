@@ -290,6 +290,7 @@ The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_d
 | `cengine` | fast | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`, `compare-plain`, `cycles` | fast | `engine/test/build.sh plain`, `compare.sh plain`, `cycles.sh` |
 | `gen` | full | `scripts/check-gen.sh` (`make check-gen`): generates both architectures into `.build/check-gen/` and requires every file of `internal/cengine` to be the same bytes, with none missing, none left over and none outside git. What is checked in is what the git index holds (an ignored file is not, and `git add` the files after `make gen`), the folder has to be the same bytes, the generated files are found by their `Code generated` header anywhere in them, and the names of an older generator (`engine_decl.go`, `engine_keep.go`, `engine_negative.go`) count as left over with or without it |
+| `math` | full | `engine/test/math.sh` (about 4 minutes, most of it hashing in the shell) |
 | `testhooks` | full | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | full | `go test -p 1 .` |
 | `race` | full | `go test -race -short -p 1` of the root package and the three above |
