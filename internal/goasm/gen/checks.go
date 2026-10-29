@@ -75,9 +75,10 @@ func CheckObject(objPath string, allow map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	text := f.Section(".text")
+	// The relocations of every section of code: .text, or one section per
+	// function (arm64, see cmd/engine).
 	for _, rs := range f.Sections {
-		if rs.Type != elf.SHT_RELA || int(rs.Info) >= len(f.Sections) || f.Sections[rs.Info] != text {
+		if rs.Type != elf.SHT_RELA || int(rs.Info) >= len(f.Sections) || f.Sections[rs.Info].Flags&elf.SHF_EXECINSTR == 0 {
 			continue
 		}
 		data, _ := rs.Data()

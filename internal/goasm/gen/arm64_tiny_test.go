@@ -6,6 +6,9 @@
 package gen
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -87,5 +90,31 @@ func TestPlanDataARM64Tiny(t *testing.T) {
 	}
 	if got := p.Rename["f"][".LCPI0_0"]; got != ".LCPI0_0" {
 		t.Errorf(".LCPI0_0 in f's body as %q", got)
+	}
+}
+
+// TestCheckObjectFunctionSections: llc writes the arm64 object with a
+// section for each function (an adr between two functions of the tiny code
+// model may be too far to resolve in one section), so the check of the
+// object reads the relocations of every section of code, not only .text. It
+// needs clang (SLOWJS_LLVM).
+func TestCheckObjectFunctionSections(t *testing.T) {
+	llvm := os.Getenv("SLOWJS_LLVM")
+	if llvm == "" {
+		t.Skip("set SLOWJS_LLVM")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "f.c")
+	os.WriteFile(src, []byte("extern int ext(int);\nint f(int x) { return ext(x) + 1; }\n"), 0o644)
+	obj := filepath.Join(dir, "f.o")
+	if out, err := exec.Command(filepath.Join(llvm, "clang"), "--target=aarch64-linux-gnu", "-O2", "-fPIC",
+		"-fno-optimize-sibling-calls", "-ffunction-sections", "-c", "-o", obj, src).CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if err := CheckObject(obj, map[string]bool{"f": true}); err == nil || !strings.Contains(err.Error(), "outside the allow list") {
+		t.Errorf("a call in .text.f to a name off the list: %v", err)
+	}
+	if err := CheckObject(obj, map[string]bool{"f": true, "ext": true}); err != nil {
+		t.Errorf("a call to a name on the list: %v", err)
 	}
 }

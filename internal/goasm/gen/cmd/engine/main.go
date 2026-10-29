@@ -327,12 +327,27 @@ func main() {
 	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
+	if *arch == "arm64" {
+		// The tiny code model reaches data with one instruction that names
+		// the whole address (adr, a load of a label), which the lowering
+		// takes on its own, and never with adrp and :lo12:, whose second
+		// instruction holds only where the register still has the page.
+		llcArgs = append(llcArgs, "-code-model=tiny")
+	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")
 	os.Remove(factsPath)
 	os.Remove(probeFacts)
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-o", asmPath, shadowLL)...))
-	must1(capture(llc, append(append([]string{}, llcArgs...), "-filetype=obj", "--save-temp-labels",
+	objArgs := []string{"-filetype=obj", "--save-temp-labels"}
+	if *arch == "arm64" {
+		// An adr from one function to another may be more than the 1 MiB it
+		// reaches. In one .text the assembler has to resolve it and stops,
+		// with a section per function it writes a relocation (the lowering
+		// replaces that adr anyway). The code and llc's facts are the same.
+		objArgs = append(objArgs, "-function-sections")
+	}
+	must1(capture(llc, append(append(append([]string{}, llcArgs...), objArgs...),
 		"-goasm-facts="+factsPath, "-o", objPath, shadowLL)...))
 	must1(capture(llc, append(append([]string{}, llcArgs...), "-goasm-facts="+probeFacts, "-o", os.DevNull, probesLL)...))
 	tLLVM := time.Since(t0)
