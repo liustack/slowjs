@@ -1,16 +1,14 @@
 ---
-summary: 'The young collection, JS_RunYoungGC and VM.RunYoungGC: a cycle collection over the GC objects made since the last collection only, what it keeps that a full collection frees, how it treats weak maps, what it gains on tifa pages and what to do when fixlib stops on it'
+summary: 'The young collection, JS_RunYoungGC and VM.RunYoungGC: a cycle collection over the GC objects made since the last collection only, what it keeps that a full collection frees, how it treats weak maps, what it gains on tifa pages'
 read_when:
-  - Changing lib/younggc.go, fixYoungGC in internal/fixlib, or the young hunks of the C patch
   - Using VM.RunYoungGC, or deciding when to run a full GC next to it
-  - fixlib reports a young GC fingerprint mismatch or a new reader of gc_obj_list
 ---
 
 # Young collection
 
 Release: v0.27.3.
 
-`JS_RunYoungGC` in `lib/` and `VM.RunYoungGC` collect the reference cycles among the GC objects made since the last collection, young or full, and make the objects they keep old. They visit only those objects. A full collection, `JS_RunGC`, visits every object twice, and on a VM of tifa's example shop that is about 30,000 objects of the bundle before any garbage. An embedder that runs one unit of work at a time, such as a page render, can run a young collection after each and a full one now and then, and spend on each collection about as long as the garbage of that unit.
+They visit only those objects. A full collection, `JS_RunGC`, visits every object twice, and on a VM of tifa's example shop that is about 30,000 objects of the bundle before any garbage. An embedder that runs one unit of work at a time, such as a page render, can run a young collection after each and a full one now and then, and spend on each collection about as long as the garbage of that unit.
 
 ## How it works
 
@@ -18,7 +16,7 @@ Release: v0.27.3.
 
 `JS_RunGC`, the GC the engine runs by itself at its threshold, `JS_FreeRuntime`, `JS_ComputeMemoryUsage` and `JS_DumpMemoryUsage` first move the young list to the end of `gc_obj_list`, so they see every object in the order it was made, as before. A program that never calls `JS_RunYoungGC` collects exactly as before.
 
-Young objects are told from old ones by the mark bit of their header (`ephemeronMarkMask`), which is 0 on every GC object outside a collection. The young collection sets it on the young list, clears it on the survivors before it frees anything, and the garbage keeps it, as in `JS_RunGC`. The masks are in `lib/ephemeronbits.go`, and `TestEphemeronHeaderBits` checks them against each generated collector.
+Young objects are told from old ones by the mark bit of their header (`ephemeronMarkMask`), which is 0 on every GC object outside a collection. The young collection sets it on the young list, clears it on the survivors before it frees anything, and the garbage keeps it, as in `JS_RunGC`.
 
 An old object that only the garbage held reaches a count of 0 while the garbage is freed. `JS_RunGC` leaves such an object where it is, since every such object is garbage there. In a young collection it may be an old object outside the garbage: left on `gc_obj_list` with a count of 0, `js_weakref_free` would free it while it is still listed, when the weak pass removes a weak map entry whose key it is. `__JS_FreeValueRT` and `async_func_free` therefore call `youngDefer` in that case, which moves the object to a list of its own, and the young collection frees it after the garbage, as the engine frees an object outside a collection.
 
@@ -28,7 +26,7 @@ The young collection runs with the ephemeron phase of the [full collection](weak
 
 So what a full collection frees, it still frees after any number of young collections, and a young collection frees nothing a full one would keep. What young collections keep that a full one would free: a cycle that runs through an old object, and weak map values with what they hold. An embedder runs a full collection from time to time for those, such as when `MemorySize` after a young collection has grown well past what it was after the last full one.
 
-The study prototype ran the weak pass before the trial deletion, as `JS_RunGC` did before the ephemeron fix, and left old objects with a count of 0 on `gc_obj_list`. With an old object as the key of a weak map entry whose map the young garbage held, `js_weakref_free` freed that object while it was still listed, and a later full collection read freed memory. Of the tests below, `TestYoungGCLeavesNoZeroCount` and `TestYoungGCWeakObservers` in `lib/`, and `TestYoungGCFreesWhatOnlyGarbageHeld` and the key cycle of `TestYoungGCEphemeron` in the root package, fail on that form.
+The study prototype ran the weak pass before the trial deletion, as `JS_RunGC` did before the ephemeron fix, and left old objects with a count of 0 on `gc_obj_list`. With an old object as the key of a weak map entry whose map the young garbage held, `js_weakref_free` freed that object while it was still listed, and a later full collection read freed memory.
 
 ## What it gains and costs
 
@@ -49,26 +47,11 @@ A VM of the shop holds 14.2 MB after a collection against 15.5, and the MUI page
 
 ## Tests
 
-`lib/younggc_test.go` checks the C API: the young list and when it moves (`TestYoungGCLists`), that no listed object is left with a count of 0 or a mark after a young collection with weak maps, WeakRefs, registries, async functions and generators around (`TestYoungGCLeavesNoZeroCount`), every case of the ephemeron tests with young collections in between (`TestYoungGCEphemeron`), random graphs against an independent reachability oracle (`TestYoungGCMixedGraph`), and WeakRef, FinalizationRegistry and a key whose value points back to it, kept until the full collection (`TestYoungGCWeakObservers`). `younggc_test.go` in the root package checks the Go API: 400 rounds of random graphs with closures, Maps, Sets, arrays, old objects, an old closure variable and an old WeakMap keep what the roots reach after each young and each seventh full collection, and in the end a full collection frees as much as without young collections (`TestYoungGCKeepsReachable`). A young collection frees young cycles as the full one does and keeps a suspended generator whose frame holds a cycle (`TestYoungGCFreesCycles`), frees an old object that only young garbage held, with its weak map entry, WeakRef or registration (`TestYoungGCFreesWhatOnlyGarbageHeld`), and leaves every case of the ephemeron tests to the next full collection unless the key is garbage on its own (`TestYoungGCEphemeron`). The `TestMemgrind2YoungGC` tests of both packages run them with `-tags=libc.memgrind`.
+`younggc_test.go` in the root package checks the Go API: 400 rounds of random graphs with closures, Maps, Sets, arrays, old objects, an old closure variable and an old WeakMap keep what the roots reach after each young and each seventh full collection, and in the end a full collection frees as much as without young collections (`TestYoungGCKeepsReachable`). A young collection frees young cycles as the full one does and keeps a suspended generator whose frame holds a cycle (`TestYoungGCFreesCycles`), frees an old object that only young garbage held, with its weak map entry, WeakRef or registration (`TestYoungGCFreesWhatOnlyGarbageHeld`), and leaves every case of the ephemeron tests to the next full collection unless the key is garbage on its own (`TestYoungGCEphemeron`).
 
 `TestYoungGCDefersSuspendedAsyncFrame` creates an async call suspended on an unreachable promise and exports a factory for closures over its local payload. A full GC makes the frame and its attached var-ref old. A new closure, held only by a young self-cycle, becomes the var-ref's only owner. Freeing that closure releases the old var-ref during the young sweep, so `async_func_free` must defer the old frame. The test first checks that the old frame is suspended with one reference, then checks that it leaves the GC lists and its payload's WeakRef clears. On darwin/arm64, removing only the `youngDefer` call in `async_func_free` through a Go overlay makes this test fail with a zero-count object left on the old list. Removing only the call in `__JS_FreeValueRT` makes all six cases of the existing `TestYoungGCLeavesNoZeroCount` fail with the same invariant violation. The generated files themselves are unchanged by these mutation checks.
 
-`internal/fixlib/younggc_test.go` checks on every target that the rewrite gives the committed file from what `restoreYoungGC` gives, that it is idempotent and exactly undone, and that it stops on a changed collector, a partial rewrite, an edited hook and a new function that reads `gc_obj_list`. It tests runtime parameter names `rt`, `rt2` and `runtime` on all 5 generated files.
+## In C
 
-The reader audit parses offset additions and `unsafe.Add`, and also checks `Fgc_obj_list` selectors. It does not depend on the name of the base. Unknown `uintptr` origins require review. It excludes a TLS allocation only when every assignment of the base comes from TLS storage and its address does not escape. A pointer parameter to a struct declared without `Fgc_obj_list`, including its unchanged aliases, also proves a different origin. Addresses of global arrays of those structs are excluded too, including the class table initialized at the same offset. Each `init` declaration is checked separately. Merely casting a `uintptr` to another struct at a read does not prove that it is not a runtime. `TestYoungReadersOrigins` checks these exclusions, aliases, reassignment and address escape. This keeps the interpreter's TLS slots at the same numeric offset out of the reader list without exempting the interpreter function itself.
+The C tree passes the same random graphs, cycles, old objects freed through the young garbage and ephemeron cases natively and with AddressSanitizer.
 
-```sh
-go test -p 2 -vet=off -run 'YoungGC|Ephemeron' . ./lib
-go test -p 2 -vet=off -tags=libc.memgrind -run 'YoungGC|Ephemeron' . ./lib
-go test -p 2 -timeout 120m -run 'YoungGC|Ephemeron' ./internal/fixlib
-```
-
-## C form
-
-`lib/internal/patch/quickjs.diff` has the same change in C: `young_obj_list`, `young_dead_list` and `young_sweep` in `JSRuntime`, `add_gc_object` on the young list, `young_splice` at the start of `JS_RunGCInternal`, `JS_ComputeMemoryUsage` and `JS_DumpMemoryUsage`, `young_defer` in `__JS_FreeValueRT` and `async_func_free`, and `JS_RunYoungGC` with its callbacks, declared in `quickjs.h`. The patched C passes the same random graphs, cycles, old objects freed through the young garbage and ephemeron cases natively and with AddressSanitizer.
-
-## When upstream changes it
-
-`internal/fixlib/younggcsites.go` fingerprints, on each target and after the earlier final changes, the functions `lib/younggc.go` repeats or relies on: the collector and its callbacks, `mark_children`, the weak pass, and the functions that free an object at a count of 0. `youngListReaders` lists every function that uses `gc_obj_list`: each belongs to the collector, sees the young list moved in first, or is never called. When `fixlib` stops on either, read the changed functions against `lib/younggc.go` before updating the list with `go run ./internal/fixlib -young`. A new reader of `gc_obj_list` that runs outside a full collection needs the young list moved in first, as `JS_ComputeMemoryUsage` has.
-
-`fixYoungGC` is made after `fixEphemeron` and undone before it, and only `fixSharedDebug` comes after it. After a regeneration from a C source with the young hunks of the patch, drop `lib/younggc.go` and `fixYoungGC` only once the tests above pass on the generated code.

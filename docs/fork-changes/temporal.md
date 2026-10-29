@@ -10,7 +10,7 @@ read_when:
 
 # Temporal
 
-QuickJS has no Temporal. Package `temporal` adds it for a VM that calls `temporal.Register(vm)`, the way package `intl` adds `Intl`. Nothing of upstream's code changes: `fixlib` does not touch it.
+QuickJS has no Temporal. Package `temporal` adds it for a VM that calls `temporal.Register(vm)`, the way package `intl` adds `Intl`.
 
 ## Temporal on go-intl
 
