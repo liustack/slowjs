@@ -310,8 +310,11 @@ func TestTimeout(t *testing.T) {
 }
 
 // TestNoKillOutsideScripts: an Interrupt while the VM collects, which runs
-// no script, sets the flag and kills nothing, even with a grace of 0 and a
-// poll on every cycle. The next Eval starts afresh.
+// no script, sets the flag and kills nothing, even with a grace of 0, a poll
+// on every cycle and more than gohost.KillPolls polls that saw the request.
+// The next Eval starts afresh. Another goroutine calls Interrupt over and
+// over, and the collections go on until one has had the polls: when that
+// goroutine runs is up to the scheduler.
 func TestNoKillOutsideScripts(t *testing.T) {
 	needPolls(t)
 	v := newVM(t, Options{Seed: 1})
@@ -334,20 +337,18 @@ func TestNoKillOutsideScripts(t *testing.T) {
 			}
 		}
 	}()
-	before := v.Host().Counts().Polls
-	for range 3 {
+	collections := 0
+	for v.Host().StopPolls() <= gohost.KillPolls {
+		if collections == 1000 {
+			t.Fatalf("no collection of 1000 had %d polls that saw an Interrupt", gohost.KillPolls+1)
+		}
 		v.RunGC()
+		collections++
 	}
-	interrupted := v.Host().Interrupted()
 	v.Usage()
 	close(stop)
 	<-done
-	if polls := v.Host().Counts().Polls - before; polls == 0 {
-		t.Fatal("the collections did not poll")
-	}
-	if !interrupted {
-		t.Fatal("no Interrupt came during the collections")
-	}
+	t.Logf("%d polls saw the request in collection %d", v.Host().StopPolls(), collections)
 	if v.Host().Broken() || v.Host().Killed() {
 		t.Fatalf("a collection was killed: broken %v, killed %v", v.Host().Broken(), v.Host().Killed())
 	}
