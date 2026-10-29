@@ -152,5 +152,5 @@
 
 	// How the host recognizes a VM it has registered, without installing
 	// anything: keyed by the import path, invisible to enumeration and JSON.
-	defineProperty(g, Symbol.for('modernc.org/quickjs/intl'), {__proto__: null, value: true});
+	defineProperty(g, Symbol.for('github.com/liustack/slowjs/intl'), {__proto__: null, value: true});
 })

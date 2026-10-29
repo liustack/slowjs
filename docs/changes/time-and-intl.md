@@ -176,7 +176,7 @@ All 74,868 existing golden expressions pass their exact comparisons or existing 
 
 On GCP linux/amd64, test262 `2e0a5676` runs every Intl402 file in both modes with the same fresh-VM runner, registering Intl and Temporal. Against main `641e996`, passes rise from 6276 to 6618 of 6764 runs. There are 366 new passes and 24 new failures. Chromium 156 fails all 24 of those assertions too: Islamic-calendar fallback, the legacy ACT zone alias, and Temporal era and hour-cycle rules. The 146 remaining failures include NumberFormat ranges, second-realm tests the runner cannot host, and existing V8 differences. No new failure passes in Chromium. The engine's separate 58-error suite was not rerun.
 
-The number pack records that its ICU resources are already resolved. Raw go-intl sources keep their separate number and currency alias rules. `qjs-sync.sh test` checks raw full data against upstream corpora, while `test-chromium` checks the shipped packs against the fork's browser corpora.
+The number pack records that its ICU resources are already resolved. Raw go-intl sources keep their separate number and currency alias rules. `qjs-sync.sh test` checks raw full data against upstream corpora, while `test-chromium` checks the shipped packs against slowjs's browser corpora.
 
 The six linked data packs total 9,352,287 bytes. The host-zone guessing pack remains unlinked. On GCP linux/amd64 with Go 1.27.2, tifa shop `fb31f616` built by `go tool tifa build` with `-ldflags=-w` and the same application PGO profile is 31,967,614 bytes, against 32,078,049 on main `641e996`. This is 110,435 bytes smaller, about 0.34%. The profile SHA256 is `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`.
 

@@ -1,5 +1,5 @@
 ---
-summary: 'The fork change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results'
+summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results'
 read_when:
   - String.prototype.includes, indexOf or lastIndexOf gives another result than before, or is slow on a long string
 ---

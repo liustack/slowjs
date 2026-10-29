@@ -289,7 +289,7 @@ var installBuiltin = slowjs.NewBuiltin("install", 2, func(a slowjs.Args) (slowjs
 
 // marker is the well known symbol stub.js stamps on the global object of a
 // VM it registers.
-const marker = "modernc.org/quickjs/temporal"
+const marker = "github.com/liustack/slowjs/temporal"
 
 func registered(vm *slowjs.VM) (bool, error) {
 	v, err := vm.Eval("globalThis[Symbol.for("+strconv.Quote(marker)+")] === true", slowjs.EvalGlobal)

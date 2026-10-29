@@ -13,7 +13,7 @@
 // it names, and an indirect call reaches every function whose address is taken
 // and whose kcfi type is that of the call, as the generator joins them. A
 // function that calls one of counts (js_call_enter, js_internal_enter,
-// js_json_enter and the like, see docs/fork-changes/c-engine.md) is a cut: a
+// js_json_enter and the like, see docs/changes/c-engine.md) is a cut: a
 // cycle through it is bounded by its count. It prints each strongly connected
 // component left once the cuts are taken out, with more than one function or a
 // function that calls itself: its size and its functions, sorted, one per

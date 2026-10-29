@@ -1,5 +1,5 @@
 ---
-summary: 'The commits of upstream QuickJS taken into engine/ one at a time after the pinned 3d5e064 (Array slice and splice, borrowed operands in js_strict_eq2, template literals, unicode_script), the faster indexOf and includes that perf found, the ones tried and taken back, the BigInt comparison fixed in the fork, and the rest that are left out, with tests and speed'
+summary: 'The commits of upstream QuickJS taken into engine/ one at a time after the pinned 3d5e064 (Array slice and splice, borrowed operands in js_strict_eq2, template literals, unicode_script), the faster indexOf and includes that perf found, the ones tried and taken back, the BigInt comparison fixed in slowjs, and the rest that are left out, with tests and speed'
 read_when:
   - Asking which upstream QuickJS commits after 2026-06-04 the C tree has, and which it does not
   - Changing js_array_slice, js_array_splice, js_strict_eq2, js_array_indexOf, js_array_includes, js_parse_template or unicode_script in engine/
@@ -11,12 +11,12 @@ read_when:
 
 `engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). Upstream has added 81 commits since (to `19d6bd8`, 2026-10-26). This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit is taken when it makes tifa's renders faster, or removes a crash or a wrong answer that a page can reach, and every one comes with a test that prints what Node 24 prints (or, for the crash, a sweep of the memory left).
 
-Where an upstream commit meets a change of the fork, the fork's change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
+Where an upstream commit meets a change of slowjs, slowjs's change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
 
 | Upstream commit | What it does | How it was taken | Test |
 | --- | --- | --- | --- |
 | `42d08be` optimized Array.prototype.slice and splice | slice and splice of a dense Array copy or move the elements directly | all of it, with `js_call_constructor` (which counts the call depth) where upstream calls `JS_CallConstructor` | `compare/array_slice_splice.js` |
-| `8f0c037` use JSValueConst arguments for js_strict_eq2 | `indexOf`, `lastIndexOf`, `includes`, `Map` and `Set` stop duplicating and freeing the values they compare | all but its last hunk, which edits macros the fork does not have | `compare/strict_equal.js` |
+| `8f0c037` use JSValueConst arguments for js_strict_eq2 | `indexOf`, `lastIndexOf`, `includes`, `Map` and `Set` stop duplicating and freeing the values they compare | all but its last hunk, which edits macros slowjs does not have | `compare/strict_equal.js` |
 | `f8199dc` Fix template literal substitution | a template converts each substitution to a string at once, as the specification orders, and no longer calls `String.prototype.concat` | all of it | `compare/template_literal.js` |
 | `817509a` removed infinite loop in unicode_script() | the out of memory path of `\p{Script=...}` returns instead of jumping to itself | all of it | `unit-oom`, `test_regexp_script_oom` |
 
@@ -74,12 +74,12 @@ Three more commits were taken and then reverted, each by a commit of its own, be
 
 ## Left out
 
-Judged by reading each diff against the fork's tree. None is a speed change tifa can use.
+Judged by reading each diff against slowjs's tree. None is a speed change tifa can use.
 
 - Fixes of the specification that a page compiled by Vite does not reach: `abf571a`, `8ac9d9b`, `5b6356a`, `4984249`, `cfc9464`, `df8de73`, `13876a2`, `55c5f0b`, `fce112d`, `efc48a3`, `ce0dbb7`, `535a7c2`, `1aa7429`, `8e68fcf`, `1134912`, `1ec58aa`, `0808cbc`, `19d6bd8`, `c17f7fc`, `d88b1ed`, `21cbd86` (which also changes the message of `repeat`), `9a0197f` (sort writes back every element, which costs writes), `a479eff` (the v flag).
 - Two leaks on paths a page does not take: `c8ef889` (`Atomics.store` out of bounds) and `79f58c1` (a BigInt in truncated bytecode).
-- Already fixed in the fork: `cd97c2b` (the stack of a syntax error out of memory, upstream #529).
+- Already fixed in slowjs: `cd97c2b` (the stack of a syntax error out of memory, upstream #529).
 - `4b0addb` (`JS_IteratorNext` without two unused arguments) is a cleanup of a signature. It was not tried.
 - New features, which Vite compiles away: the iterator helpers, `Promise.allKeyed`, `Array.fromAsync`, explicit resource management, `Atomics.waitAsync`.
-- API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (the fork has go-intl) and upstream's test tools.
+- API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (slowjs has go-intl) and upstream's test tools.
 

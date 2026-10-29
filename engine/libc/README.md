@@ -20,7 +20,7 @@ There is no `errno`, no `pthread`, no time and no standard stream. The wall cloc
 
 ## musl
 
-The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02), the one `modernc.org/libc` v1.77.1 translates. So the `Math.*` results are the ones recorded for that musl (see `engine/test/math.sh`). `COPYRIGHT` is musl's license file, MIT.
+The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02). So the `Math.*` results are the ones recorded for that musl (see `engine/test/math.sh`). `COPYRIGHT` is musl's license file, MIT.
 
 `MUSL.sha256` lists the SHA-256 of each file in musl and here. `vendor.sh --verify` checks the files here against it. `vendor.sh MUSL_DIR` copies them out of a musl checkout at that commit, applies `patches/` and writes the list again.
 
@@ -45,7 +45,7 @@ The engine files and these are built with the flags of `engine/test/flags.sh`, w
 
 On arm64 `-mno-outline-atomics` comes with them, so that an atomic stays an instruction and does not become a call of `__aarch64_*`, a function nobody defines.
 
-`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as they were in the ccgo engine. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
+`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as they were in the previous engine. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
 
 ## Checks
 

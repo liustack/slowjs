@@ -1,5 +1,5 @@
 ---
-summary: "The fork changes to how VMs share memory: one copy of the function source text and line tables for every VM that loads the same bytecode, with what it gains and costs in memory and why it is safe"
+summary: "Changes to how VMs share memory: one copy of the function source text and line tables for every VM that loads the same bytecode, with what it gains and costs in memory and why it is safe"
 read_when:
   - Asking how much memory a VM holds after a GC, or what a VM keeps outside JS_ComputeMemoryUsage
   - Loading one bundle into many VMs (SharedBytecode, EvalSharedBytecode)
@@ -7,7 +7,7 @@ read_when:
 
 # Memory and allocation
 
-The engine has an allocator of its own, with a front cache of freed small blocks, which [allocator.md](../allocator.md) describes. This page has what the fork changes about how the VMs of one program share memory.
+The engine has an allocator of its own, with a front cache of freed small blocks, which [allocator.md](../allocator.md) describes. This page has what slowjs changes about how the VMs of one program share memory.
 
 ## One copy of source text and line tables for every VM
 

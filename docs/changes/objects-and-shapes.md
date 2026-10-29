@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, new functions put onto their shape at once, methods of strings, numbers and arrays found in the interpreter, and own keys listed from the shape, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe'
+summary: 'Changes to objects and their shapes: a fast path for new properties of plain objects, shapes kept once their objects are gone, for in loops that skip prototypes with no enumerable property, string keys that are already atoms, new functions put onto their shape at once, methods of strings, numbers and arrays found in the interpreter, and own keys listed from the shape, with what each gains and costs in memory, how to size or turn off the shape cache, why it is safe'
 read_when:
   - A VM runs close to its memory limit and you wonder whether to give it a smaller shape cache
   - Calling VM.SetShapeCache, or asking what DefaultShapeCache costs
