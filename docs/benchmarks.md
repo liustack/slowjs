@@ -175,7 +175,7 @@ runtime.
 
 For v0.26.16 and v0.26.17, HTML equality was checked at run time, but the
 normalized digests were not archived. Their Markdown keeps the verdicts.
-From the v0.27.1 run on, `pages.py --output` archives per-page SHA256
+From the v0.27.1 run on, `cmd/pages --output` archives per-page SHA256
 digests after masking timestamps and the verdict of whether each page is the same as slowjs's (`same_as_liustack` in the JSON), including
 the separate polyfill and deployed comparisons. A missing HTML file has a
 null verdict, not a match. The JSON also keeps raw process results, rest
@@ -780,7 +780,7 @@ native/build.sh "$HOME/jsnative"            # C QuickJS, QuickJS-NG and Node
 run="<date>-<version>-<host>"
 page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
 tifa/run.sh "$page_dir" bin-linux-amd64 "$HOME/jsnative"
-python3 tifa/pages.py "$page_dir" --output "results/$run-pages"
+go run ./cmd/pages "$page_dir" --output "results/$run-pages"
 ```
 
 `tifa/run.sh` runs the bench, MUI and shop bundles. `TIFA_ONLY=<engine>,...`
@@ -798,7 +798,7 @@ which every other row runs as a script.
 
 When a page leaves an engine unusable (go-quickjs closes its runtime after
 a page fails), run the shop again without the failing pages into
-`<engine>-<kind>-rest.json` in the same directory: `pages.py` takes the
+`<engine>-<kind>-rest.json` in the same directory: `cmd/pages` takes the
 missing pages from there. To find the failing pages when most fail, render
 each page alone (`-inputs <one page> -warm 0 -n 1`) first.
 
