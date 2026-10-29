@@ -45,10 +45,11 @@ type EngineEmit struct {
 // a line of 64. The lowered text aligns each constant pool and jump table of
 // a function with a .p2align, counted from the start of the function in the
 // object, and the bytes are copied as they are. So the function has to start
-// in the object at the place its body takes in the binary: then every
-// alignment up to 64 bytes holds where the code runs, and not only from the
-// start of the body. An SSE instruction with a pool for its memory operand
-// faults when the pool is not on 16 bytes.
+// in the object at the place its body takes in the binary: then the alignment
+// of an object holds where the code runs, and not only from the start of the
+// body, up to 16 bytes for a plain body and up to 64 for an Align64 one (the
+// post-link check refuses an object that asks for more). An SSE instruction
+// with a pool for its memory operand faults when the pool is not on 16 bytes.
 func FuncPlace(align64 map[string]int, name string) string {
 	off, ok := align64[name]
 	switch {
