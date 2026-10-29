@@ -123,6 +123,8 @@ Reading the result:
 - A change is real only when the median passes both 2% and half of that range, and most positions agree on the sign.
 - Under 3%, do not argue from timings. Count instructions with callgrind, which hardly move with the position.
 
+The 8 and 24 bytes of `front` move the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions.
+
 ### The C engine's hot loops on fixed places
 
 The generator puts the body of the C engine's interpreter at 40 bytes into a line of 64 bytes (0 until a JSValue was copied in two moves of 8 bytes, see [below](#the-c-engine-copies-a-jsvalue-in-two-moves-of-8-bytes)) and the body of its regexp matcher at 16 (`-align64`, see [c-engine.md](changes/c-engine.md#where-the-interpreter-and-the-regexp-matcher-sit)). Before, each body sat after a `PCALIGN $16` and moved within its lines with any change to code linked before it.

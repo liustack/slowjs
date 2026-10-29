@@ -39,6 +39,27 @@ type EngineEmit struct {
 	Align64 map[string]int
 }
 
+// FuncPlace is the assembly that puts function name in the lowered object
+// where its body will sit in the binary, and ends with the line before its
+// label. A body goes on a multiple of 16 bytes, or at its Align64 offset in
+// a line of 64. The lowered text aligns each constant pool and jump table of
+// a function with a .p2align, counted from the start of the function in the
+// object, and the bytes are copied as they are. So the function has to start
+// in the object at the place its body takes in the binary: then every
+// alignment up to 64 bytes holds where the code runs, and not only from the
+// start of the body. An SSE instruction with a pool for its memory operand
+// faults when the pool is not on 16 bytes.
+func FuncPlace(align64 map[string]int, name string) string {
+	off, ok := align64[name]
+	switch {
+	case !ok:
+		return ".p2align 4\n"
+	case off == 0:
+		return ".p2align 6\n"
+	}
+	return fmt.Sprintf(".p2align 6\n.skip %d\n", off)
+}
+
 // BuildExpr is the constraint of a generated file for arch: the architecture,
 // and with a tag set, the tag as well.
 func BuildExpr(tag, arch string) string {

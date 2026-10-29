@@ -79,3 +79,23 @@ func TestBuildExpr(t *testing.T) {
 		}
 	}
 }
+
+// TestFuncPlace: a function starts in the lowered object where its body will
+// sit in the binary, on 16 bytes or at its -align64 place in a line of 64, so
+// that the alignment of its constant pool holds where the code runs.
+func TestFuncPlace(t *testing.T) {
+	a64 := map[string]int{"interp": 40, "matcher": 16, "zero": 0}
+	for name, want := range map[string]string{
+		"plain":   ".p2align 4\n",
+		"interp":  ".p2align 6\n.skip 40\n",
+		"matcher": ".p2align 6\n.skip 16\n",
+		"zero":    ".p2align 6\n",
+	} {
+		if got := FuncPlace(a64, name); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+	if got := FuncPlace(nil, "interp"); got != ".p2align 4\n" {
+		t.Errorf("no -align64: %q", got)
+	}
+}

@@ -44,6 +44,9 @@ import (
 //     gives. TestICallSymbols holds each call's id to the type in its source
 //     line, but only the run shows that the arguments moved the way that id
 //     says: a call that carries another call's signature moves them wrongly.
+//   - vecpool.c: constants read with instructions that need them on 16 bytes,
+//     in functions whose bodies start 8 bytes past a multiple of 16 (-align64):
+//     the constants must still sit on 16 bytes where they run.
 //   - nosplit.c: the shapes the NOSPLIT choice (PickNoSplit) tells apart run
 //     as native code does. The post-link check holds each function's stack
 //     check to the choice, and nosplit_fault below holds the choice itself,
@@ -89,6 +92,7 @@ func TestSampleRuns(t *testing.T) {
 		{"alias.c", nil, 24, false},
 		{"icalls.c", nil, 56, true},
 		{"nosplit.c", nil, 4, false},
+		{"vecpool.c", []string{"-align64", "mixa:40,mixb:8,mixc:16"}, 9, false},
 		{"trap.c", nil, 2, false},
 		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
 	} {

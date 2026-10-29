@@ -229,8 +229,8 @@ func TestPostLinkCheck(t *testing.T) {
 	// PCALIGN $16 and that many bytes of no-ops, and the check finds it there:
 	// fib, which recursion keeps on Go's stack check, and two leaves without
 	// one.
-	align := []string{"fib", "add3", "leafmix"}
-	alignArgs := []string{"-align64", "fib:0,add3:16,leafmix:40"}
+	align := []string{"fib", "add3", "leafmix", "vecpool"}
+	alignArgs := []string{"-align64", "fib:0,add3:16,leafmix:40,vecpool:40"}
 	if out, err := gen("pn", nil, "-align64", "fib:0,nosuch:8", "-out", filepath.Join(work, "nosuch")); err == nil ||
 		!strings.Contains(out, "2 functions to put on 64 bytes, but only 1 of them are lowered") {
 		t.Fatalf("-align64 with a function that is not there: %v\n%s", err, out)
@@ -272,6 +272,39 @@ func TestPostLinkCheck(t *testing.T) {
 		}
 		if err := os.WriteFile(path, orig, 0o644); err != nil {
 			t.Fatal(err)
+		}
+	}
+
+	// The constant pool of vecpool is read by paddd and pxor, which fault on
+	// a pool that is not on 16 bytes. Its body starts 8 bytes past a multiple
+	// of 16, so the lowered text puts the function at that place in the
+	// object (FuncPlace, a .skip after a .p2align 6) and llc's alignment of
+	// the pool holds where it runs. A lowered text that starts the function
+	// on a plain 16 bytes, as it did before, leaves the pool 8 bytes off, and
+	// the check refuses it.
+	if b, err := os.ReadFile(filepath.Join(work, "w-pn", "lowered.s")); err != nil {
+		t.Fatal(err)
+	} else {
+		ls := strings.Split(string(b), "\n")
+		skip := -1
+		for i := 1; i < len(ls); i++ {
+			if ls[i] == ".globl vecpool" && ls[i-1] == ".skip 40" && ls[i-2] == ".p2align 6" {
+				skip = i - 1
+			}
+		}
+		if skip < 0 {
+			t.Fatal("-align64: vecpool is not put on 40 bytes of a line of 64 in the lowered text")
+		}
+		env := []string{"GEN_EDIT_LOWERED=" + strconv.Itoa(skip+1) + "\x1e" + strconv.Itoa(skip) + "\x1f.p2align 4"}
+		if out, err := gen("pn", env, append(alignArgs, "-out", pkgDir)...); err != nil {
+			t.Fatalf("generate with vecpool on a plain 16 bytes: %v\n%s", err, out)
+		}
+		run(mod, "go", "build", "-tags", "goasmkeep", "-o", bin, ".")
+		out, err := gen("pn", env, append(alignArgs, "-verify-bin", bin, "-verify-pkg", "checkmini/mini", "-verify-all")...)
+		if err == nil || !strings.Contains(out, "vecpool: body data .LCPI") || !strings.Contains(out, "is not a multiple of its alignment 16") {
+			t.Errorf("-align64: a pool 8 bytes off 16 is not refused: %v\n%s", err, out)
+		} else {
+			t.Logf("-align64, vecpool on a plain 16 bytes: %s", lastLine(out))
 		}
 	}
 
