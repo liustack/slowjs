@@ -13,7 +13,7 @@
 
 ## Current state of the repository
 
-- `main` is the branch of slowjs. `master` and a few other old branches mirror gitlab.com/cznic/quickjs, where the Go API started, and get no commits of their own. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`.
+- `main` is the branch of slowjs. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`.
 - Root: the Go API, package `slowjs` (`quickjs.go` and the files next to it), and its tests. It calls the engine only through `engine.go`, `entry.go`, `hostcall.go` and `enginememory.go` (see [docs/architecture.md](docs/architecture.md#the-engine-layer)).
 - `engine/`: the C tree of the engine, QuickJS at the pinned commit with slowjs's C changes. It has no Go file, and no Go package directory may hold a C file (`layout_test.go` checks it). It builds with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc (musl's string and math functions, see [engine/libc/README.md](engine/libc/README.md)), and asks its host only for the callbacks of `engine/host.h`. `engine/test/` is the native test host that runs test262 and the recorded outputs on it, also under the sanitizers (see [docs/testing.md](docs/testing.md#the-c-tree-and-its-native-test-host)).
 - `internal/cengine/`: the generated engine and the Go host files next to it. `internal/goasm/gen/`: the generator that compiles `engine/` to Go assembly (see its README), and `internal/goasm/cmd/xform` that moves the code for timing. `internal/gohost/`, `internal/hostmem/`, `internal/idtable/`: the Go side of the host callbacks, the memory of a VM and the table of handles. `internal/sjdev/`: the tool that times builds, `go tool sjdev`.
