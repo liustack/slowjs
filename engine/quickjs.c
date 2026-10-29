@@ -38392,16 +38392,20 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
    instruction after an OP_gosub as the start of one, so OP_ret may go only
    there: *ret_bits gets a bit for each byte of the code, set for those
    places (NULL when there is none), which OP_ret checks its number
-   against. */
+   against. With scan FALSE the rule is not checked, only the places OP_ret
+   may go are made: code that JS_ReadObject read before with the check
+   (JS_READ_OBJ_POLLS_CHECKED). */
 static int check_polls(JSContext *ctx, const uint8_t *bc_buf, uint32_t bc_len,
-                       BOOL compiled, uint32_t **ret_bits)
+                       BOOL compiled, uint32_t **ret_bits, BOOL scan)
 {
     uint8_t *run;
     const char *why;
     int pos;
 
     *ret_bits = NULL;
-    if (bc_len > INT32_MAX) {
+    if (!scan) {
+        why = NULL;
+    } else if (bc_len > INT32_MAX) {
         why = "code too long";
     } else {
         run = js_malloc(ctx, max_int(bc_len, 1));
@@ -39939,7 +39943,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
         goto fail;
 
     if (check_polls(ctx, fd->byte_code.buf, fd->byte_code.size, TRUE,
-                    &ret_bits))
+                    &ret_bits, TRUE))
         goto fail;
 
     if (compute_stack_size(ctx, fd, &stack_size) < 0)
@@ -42276,6 +42280,7 @@ typedef struct BCReaderState {
     BOOL is_rom_data : 8;
     BOOL allow_reference : 8;
     BOOL shared_debug : 8;
+    BOOL polls_checked : 8;
     /* object references */
     JSObject **objects;
     int objects_count;
@@ -42546,7 +42551,8 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
 
     /* code read from outside keeps to the rule of the polls as the
        compiler's does: none of its atoms is the runtime's yet */
-    if (check_polls(s->ctx, bc_buf, bc_len, FALSE, &b->ret_bits)) {
+    if (check_polls(s->ctx, bc_buf, bc_len, FALSE, &b->ret_bits,
+                    !s->polls_checked)) {
         b->byte_code_len = 0;
         return -1;
     }
@@ -43430,6 +43436,7 @@ JSValue JS_ReadObject(JSContext *ctx, const uint8_t *buf, size_t buf_len,
     s->allow_sab = ((flags & JS_READ_OBJ_SAB) != 0);
     s->allow_reference = ((flags & JS_READ_OBJ_REFERENCE) != 0);
     s->shared_debug = ((flags & JS_READ_OBJ_SHARED_DEBUG) != 0);
+    s->polls_checked = ((flags & JS_READ_OBJ_POLLS_CHECKED) != 0);
     if (s->allow_bytecode)
         s->first_atom = JS_ATOM_END;
     else

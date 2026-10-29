@@ -1039,13 +1039,16 @@ static int code_of(JSContext *ctx, const char *src, JSValue *top, const uint8_t 
 
 /* run_read: read buf back with JS_ReadObject, run the script and call the
    function it gives. "ok" with the number it returned, or the exception. */
+/* read_extra_flags: flags added to the ones run_read reads with. */
+static int read_extra_flags;
+
 static void run_read(JSContext *ctx, const uint8_t *buf, size_t size, char *out, size_t cap)
 {
     JSValue top, fun, r;
     char *t;
     int32_t n = -1;
 
-    top = JS_ReadObject(ctx, buf, size, JS_READ_OBJ_BYTECODE);
+    top = JS_ReadObject(ctx, buf, size, JS_READ_OBJ_BYTECODE | read_extra_flags);
     if (JS_IsException(top))
         goto exception;
     fun = JS_EvalFunction(ctx, top);
@@ -1244,6 +1247,80 @@ static void test_poll_ret(void)
     if (buf)
         run_read(v.ctx, buf, size, got, sizeof(got));
     CHECK(buf && strcmp(got, "ok 33") == 0, "a finally block read back: %s", buf ? got : "(none)");
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+    vm_free(&v);
+}
+
+/* A read with JS_READ_OBJ_POLLS_CHECKED does not run poll_scan again: the
+   bytes were read once without the flag, which holds every function to the
+   rule of the polls. So code that breaks the rule is read, where without the
+   flag it is a SyntaxError (nothing runs it here). The rest of what
+   check_polls makes stays: the places OP_ret may go, so OP_ret to a place
+   that follows no OP_gosub is still an InternalError, and a finally block
+   still runs. */
+#define POLLS_CHECKED (1 << 5) /* JS_READ_OBJ_POLLS_CHECKED */
+
+static void test_poll_checked_read(void)
+{
+    VM v = vm_new();
+    char *src = long_func(400, 0), got[256];
+    const char *fin;
+    const uint8_t *code;
+    uint8_t *buf, *copy;
+    JSValue top, r;
+    size_t size;
+    int len, places[64], n, i;
+    const uint8_t *at;
+
+    CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile a long function");
+    n = white_nops(code, len, places, countof(places));
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    at = buf ? memmem(buf, size, code, len) : NULL;
+    CHECK(at != NULL, "the code of the long function in what JS_WriteObject wrote");
+    if (at) {
+        copy = malloc(size);
+        memcpy(copy, buf, size);
+        for (i = 0; i < n && i < (int)countof(places); i++)
+            copy[at - buf + places[i]] = white_op(W_PUSH_0);
+        r = JS_ReadObject(v.ctx, copy, size, JS_READ_OBJ_BYTECODE);
+        CHECK(JS_IsException(r), "code without its polls is read without the flag");
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        r = JS_ReadObject(v.ctx, copy, size, JS_READ_OBJ_BYTECODE | POLLS_CHECKED);
+        CHECK(!JS_IsException(r), "code without its polls is read with the flag");
+        JS_FreeValue(v.ctx, r);
+        free(copy);
+    }
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+    free(src);
+
+    read_extra_flags = POLLS_CHECKED;
+    {
+        Code c = {{0}, 0};
+
+        push_i32(&c, 7);
+        op_n(&c, W_RET, 1);
+        push_i32(&c, 0);
+        c.b[7] = white_op(W_RETURN_UNDEF);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        read_code(v.ctx, &c, got, sizeof(got));
+        CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret into an instruction with the flag: %s", got);
+        c = (Code){{0}, 0};
+        push_i32(&c, 6);
+        op_n(&c, W_RET, 1);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        read_code(v.ctx, &c, got, sizeof(got));
+        CHECK(strstr(got, "InternalError: invalid ret value"), "OP_ret to no OP_gosub with the flag: %s", got);
+    }
+    fin = "(function () { var t = 0; for (var i = 0; i < 3; i++) { try { t += i } finally { t += 10 } } return t })";
+    top = JS_Eval(v.ctx, fin, strlen(fin), "<poll>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    if (buf)
+        run_read(v.ctx, buf, size, got, sizeof(got));
+    CHECK(buf && strcmp(got, "ok 33") == 0, "a finally block read back with the flag: %s", buf ? got : "(none)");
+    read_extra_flags = 0;
     js_free(v.ctx, buf);
     JS_FreeValue(v.ctx, top);
     vm_free(&v);
@@ -1890,6 +1967,7 @@ int main(void)
     test_poll_insert();
     test_poll_compile();
     test_poll_ret();
+    test_poll_checked_read();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();

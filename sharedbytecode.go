@@ -8,6 +8,7 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // SharedBytecode is bytecode of [VM.Compile] that several VMs load with
@@ -33,6 +34,10 @@ type SharedBytecode struct {
 	// Close, and one for each VM that loaded it until that VM is closed.
 	refs   int
 	closed bool
+	// checked is set once a VM read the bytes: that read held the code of every
+	// function to the rule of the polls, and the bytes do not change, so the
+	// loads after it do not scan the code again.
+	checked atomic.Bool
 }
 
 // errSharedClosed is the error of loading a SharedBytecode after its Close.
@@ -119,5 +124,14 @@ func (m *VM) EvalSharedBytecodeValue(b *SharedBytecode) (r Value, err error) {
 	// The functions read from b point into it until the runtime is freed, also
 	// when the read fails half way, so m keeps its hold until Close.
 	m.shared = append(m.shared, b)
-	return m.evalBytecode(m.jsReadShared(b, readObjBytecode|readObjSharedDebug))
+	flags := int32(readObjBytecode | readObjSharedDebug)
+	checked := b.checked.Load()
+	if checked {
+		flags |= readObjPollsChecked
+	}
+	v := m.jsReadShared(b, flags)
+	if !checked && !isException(v) {
+		b.checked.Store(true)
+	}
+	return m.evalBytecode(v)
 }

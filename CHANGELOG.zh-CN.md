@@ -7,6 +7,7 @@
 ### 性能
 
 - 普通对象（对象字面量、`{}`、React 元素的 props）占 48 字节内存，不再是 72 字节。长 Markdown 页面渲染时 `MemorySize` 的最高值平均低 3.8%，示例商店的 20 个页面渲染结束时占用少 1.8%。没有页面渲染变快或变慢（数字见 [Performance](docs/performance.md#ordinary-objects-of-48-bytes)）。
+- `EvalSharedBytecode` 加载同一个 `SharedBytecode` 时，第一次之后只花原来的 0.79（React 页面的包）到 0.86（tifa 商店的包）：引擎对字节码代码的检查（是否遵守轮询规则）每个 `SharedBytecode` 只做一次，不再每个 VM 做一次（见 [Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)）。`EvalBytecode` 仍然每次都检查。
 
 ### 变更
 

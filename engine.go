@@ -69,6 +69,7 @@ const (
 	evalFlagCompileOnly = 1 << 5
 	readObjBytecode     = 1 << 0
 	readObjSharedDebug  = 1 << 4
+	readObjPollsChecked = 1 << 5
 	writeObjBytecode    = 1 << 0
 	propConfigurable    = 1 << 0
 	propWritable        = 1 << 1
