@@ -374,7 +374,7 @@ var goasmKeep = []any{
 	ceil,
 	check_define_prop_flags,
 	check_exception_free,
-	check_polls,
+	check_polls_block,
 	check_regexp_g_flag,
 	check_regexp_getter,
 	close_scopes,

@@ -1150,6 +1150,10 @@ uint8_t *JS_WriteObject2(JSContext *ctx, size_t *psize, JSValueConst obj,
 /* the source text and line table of each function point into 'buf',
    which must stay unchanged until the runtime is freed */
 #define JS_READ_OBJ_SHARED_DEBUG (1 << 4)
+/* the same bytes were read before without this flag, which held the code of
+   every function to the rule of the polls: do not scan the code for it
+   again. The bytes must not have changed since. */
+#define JS_READ_OBJ_POLLS_CHECKED (1 << 5)
 JSValue JS_ReadObject(JSContext *ctx, const uint8_t *buf, size_t buf_len,
                       int flags);
 /* instantiate and evaluate a bytecode function. Only used when
