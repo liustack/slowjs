@@ -99,3 +99,40 @@ func TestFuncPlace(t *testing.T) {
 		t.Errorf("no -align64: %q", got)
 	}
 }
+
+// TestCheckBodyDataAlign: the generator stops at data in the body of a
+// function that asks for more alignment than FuncPlace keeps (16 bytes, 64 for
+// a body put on 64 bytes), also when the post-link check would find it on its
+// alignment by luck.
+func TestCheckBodyDataAlign(t *testing.T) {
+	plan := &DataPlan{InBody: map[string][]*DataObj{
+		"plain":   {{Label: ".LCPI0_0", Align: 4}, {Label: ".LJTI0_0", Align: 3}},
+		"wide":    {{Label: ".LCPI1_0", Align: 5}},
+		"placed":  {{Label: ".LCPI2_0", Align: 6}},
+		"toowide": {{Label: ".LCPI3_0", Align: 7}},
+		"other":   {{Label: ".LCPI4_0", Align: 6}}, // not lowered: not looked at
+	}}
+	a64 := map[string]int{"placed": 40, "toowide": 8}
+	metas := func(names ...string) []Meta {
+		var ms []Meta
+		for _, n := range names {
+			ms = append(ms, Meta{Name: n})
+		}
+		return ms
+	}
+	if err := CheckBodyDataAlign(plan, metas("plain", "placed"), a64); err != nil {
+		t.Errorf("data within what is kept: %v", err)
+	}
+	for name, want := range map[string]string{
+		"wide":    "wide: .LCPI1_0 in its body asks for 32 bytes of alignment, and the body keeps 16",
+		"toowide": "toowide: .LCPI3_0 in its body asks for 128 bytes of alignment, and the body keeps 64",
+	} {
+		if err := CheckBodyDataAlign(plan, metas("plain", name), a64); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", name, err, want)
+		}
+	}
+	// A body put on 64 bytes keeps 64, a plain one 16.
+	if got := [2]int{BodyDataAlign(a64, "placed"), BodyDataAlign(a64, "plain")}; got != [2]int{6, 4} {
+		t.Errorf("kept alignments %v, want [6 4]", got)
+	}
+}
