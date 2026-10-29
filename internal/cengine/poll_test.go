@@ -106,23 +106,46 @@ func TestGCInTightLoops(t *testing.T) {
 	}
 }
 
-// interruptAfter runs src in v and calls Interrupt from another goroutine
-// after d. It returns what Eval returned and how long after Interrupt.
-func interruptAfter(v *VM, src string, d time.Duration) (string, error, time.Duration) {
-	at := make(chan time.Time, 1)
-	timer := time.AfterFunc(d, func() {
-		at <- time.Now()
-		v.Interrupt()
-	})
-	defer timer.Stop()
-	got, err := v.Eval(src, "stop.js")
-	end := time.Now()
-	select {
-	case t := <-at:
-		return got, err, end.Sub(t)
-	default:
-		return got, err, -1
+// interruptRunning runs src in v and calls Interrupt from another goroutine
+// once the engine has polled 10 times in it on top of the polls of a full
+// collection (gc), the polls of the RunGC the caller ran after its setup.
+// JS_RunGC leaves the threshold of the next collection where it was, so the
+// first allocation of the Eval may start one more, which takes about as many
+// polls, before src runs; an Interrupt in it stops the script before it
+// starts. A poll comes every 10000 ticks and src compiles in far fewer, so by
+// then src runs, and the entry into the engine, which clears an Interrupt
+// that came before it, is behind. It returns what Eval returned and how long
+// after Interrupt, or -1 when Eval returned first.
+func interruptRunning(v *VM, src string, gc int64) (string, error, time.Duration) {
+	type result struct {
+		got string
+		err error
 	}
+	done := make(chan result, 1)
+	before := v.Host().Polls()
+	go func() {
+		got, err := v.Eval(src, "stop.js")
+		done <- result{got, err}
+	}()
+	for v.Host().Polls()-before < gc+10 {
+		select {
+		case r := <-done:
+			return r.got, r.err, -1
+		default:
+			time.Sleep(20 * time.Microsecond)
+		}
+	}
+	at := time.Now()
+	v.Interrupt()
+	r := <-done
+	return r.got, r.err, time.Since(at)
+}
+
+// runGC runs a full collection in v and returns its polls.
+func runGC(v *VM) int64 {
+	before := v.Host().Polls()
+	v.RunGC()
+	return v.Host().Polls() - before
 }
 
 // The scripts Interrupt stops where the engine reads its interrupt flag.
@@ -141,7 +164,8 @@ var endless = []struct{ name, setup, src string }{
 }
 
 // stopsSoftly checks that Interrupt stopped src with the error "interrupted"
-// soon after it, with the kill grace given, and that the VM runs code again.
+// soon after it, before gohost.KillPolls polls saw the request, with the kill
+// grace given, and that the VM runs code again.
 func stopsSoftly(t *testing.T, name, setup, src string, grace time.Duration) {
 	t.Helper()
 	v := newVM(t, Options{Seed: 1})
@@ -152,14 +176,14 @@ func stopsSoftly(t *testing.T, name, setup, src string, grace time.Duration) {
 			t.Fatalf("%s: setup: %v", name, err)
 		}
 	}
-	_, err, after := interruptAfter(v, src, 20*time.Millisecond)
+	_, err, _ := interruptRunning(v, src, runGC(v))
 	var je *JSError
 	if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable || !strings.Contains(je.Stack, "stop.js") {
 		t.Errorf("%s: Eval gave %#v, want the error interrupted", name, err)
 		return
 	}
-	if after < 0 || after > 200*time.Millisecond {
-		t.Errorf("%s: stopped %v after Interrupt", name, after)
+	if n := v.Host().StopPolls(); n > gohost.KillPolls {
+		t.Errorf("%s: stopped %d polls after Interrupt, want at most %d", name, n, gohost.KillPolls)
 	}
 	// The next call runs, and its exceptions are caught again.
 	if got, err := v.Eval(`[1, 2, 3].map(x => x * 2).join() + (() => { try { null.x } catch (e) { return " caught" } })()`, "after.js"); err != nil || got != "2,4,6 caught" {
@@ -192,26 +216,26 @@ func TestInterruptOneProc(t *testing.T) {
 // and gohost.KillPolls polls after the one that set the flag, is killed at
 // the poll. Eval returns ErrKilled, the VM takes only Close, the goroutine has
 // its setting of SetPanicOnFault back, and a new VM runs. A grace of 0 kills
-// once the polls have come.
+// once the polls have come, and only then.
 // Array.prototype.lastIndexOf never reads the flag, so it runs until the
-// kill: the collection after the setup keeps one from starting while Eval
-// compiles, and Interrupt comes once the call runs, since the interpreter
-// reads the flag when it calls the script. The call must outlast the
-// Interrupt and the grace on any machine, so it goes over an array-like
-// object of 2^31-1 indices with none of them set: the generic steps of the
-// specification, one index at a time, take a minute or more, where a dense
-// Array of 8 Mi elements took 200 ms on the Linux machine of the first
-// measurements and ended before the kill on a Mac.
+// kill. Interrupt comes once the call runs (see interruptRunning), since the
+// interpreter would read a flag set before it calls lastIndexOf and stop the
+// script there. The call must outlast the Interrupt and the grace on any
+// machine, so it goes over an array-like object of 2^31-1 indices with none
+// of them set: the generic steps of the specification, one index at a time,
+// take a minute or more, where a dense Array of 8 Mi elements took 200 ms on
+// the Linux machine of the first measurements and ended before the kill on a
+// Mac.
 // (slice, which this test used before, copies a dense Array in one go and
 // ends in 25 ms.)
 func TestKill(t *testing.T) {
 	needPolls(t)
 	for _, c := range []struct {
 		name, setup, src string
-		at, grace        time.Duration
+		grace            time.Duration
 	}{
-		{"lastIndexOf", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 100 * time.Millisecond, 30 * time.Millisecond},
-		{"lastIndexOf, a grace of 0", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 100 * time.Millisecond, 0},
+		{"lastIndexOf", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 30 * time.Millisecond},
+		{"lastIndexOf, a grace of 0", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 0},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)
@@ -219,14 +243,16 @@ func TestKill(t *testing.T) {
 			if _, err := v.Eval(c.setup, "setup.js"); err != nil {
 				t.Fatalf("%s: setup: %v", c.name, err)
 			}
-			v.RunGC()
 		}
-		_, err, after := interruptAfter(v, c.src, c.at)
+		_, err, after := interruptRunning(v, c.src, runGC(v))
 		if !errors.Is(err, ErrKilled) {
 			t.Errorf("%s: Eval gave %v, want ErrKilled", c.name, err)
 		}
-		if after < c.grace || after > c.grace+200*time.Millisecond {
-			t.Errorf("%s: killed %v after Interrupt, with a grace of %v", c.name, after, c.grace)
+		if after < c.grace {
+			t.Errorf("%s: killed %v after Interrupt, before the grace of %v was over", c.name, after, c.grace)
+		}
+		if n := v.Host().StopPolls(); n < gohost.KillPolls+1 || c.grace == 0 && n != gohost.KillPolls+1 {
+			t.Errorf("%s: killed at poll %d after Interrupt, with a grace of %v", c.name, n, c.grace)
 		}
 		if !v.Host().Killed() {
 			t.Errorf("%s: the host does not say killed", c.name)
