@@ -57,12 +57,17 @@ type Error struct {
 
 // ErrKilled is what [errors.Is] finds in the error of a call whose script
 // was killed, and in the error of each method called on its VM after that.
-// A script that runs on 50 ms past its eval timeout or an [VM.Interrupt] is
-// killed, as can happen in a Go function it called or in a long collection: the call returns an *Error with
-// Uncatchable and Interrupted set, and the VM is good only for Close. Its
-// methods that return an error return one that matches ErrKilled, the others
-// panic, and [Value.Free] does nothing. The exceptions are [VM.MemorySize] and
-// [VM.GCThreshold], which only read a counter and answer as they do on any VM.
+// A script that runs on 50 ms past its eval timeout or an [VM.Interrupt], and
+// has kept the engine at work for 1000 of its polls since (6 to 30 ms of a
+// loop on a fast core), is killed, as happens in a loop of the engine that
+// does not look for the interrupt or in a long collection. Time in which the
+// engine does no work, in a Go function the script called or while the OS or
+// the Go scheduler runs something else, counts toward the 50 ms but not the
+// polls. The call returns an *Error with Uncatchable and Interrupted set, and
+// the VM is good only for Close. Its methods that return an error return one
+// that matches ErrKilled, the others panic, and [Value.Free] does nothing.
+// The exceptions are [VM.MemorySize] and [VM.GCThreshold], which only read a
+// counter and answer as they do on any VM.
 var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
 
 // errKilledVM is the error of a method called after a kill.
