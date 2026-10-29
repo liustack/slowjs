@@ -537,7 +537,7 @@ suspected causes come from CPU profiles of slowjs, and are what to look at first
 | `empty_do_loop` | 2.0 | go-quickjs-jit | as `empty_loop` |
 
 The medians are of modernc-quickjs, go-quickjs-interp, go-quickjs-jit,
-goant-interp, goant-jit and moejs. `python3 behind.py
+goant-interp, goant-jit and moejs. `go run ./cmd/behind
 results/<run>.json` in `compare/engines` makes the list again.
 
 Just under the line: `string_to_float` (1.99, fastest moejs), JSON.parse

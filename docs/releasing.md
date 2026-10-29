@@ -70,7 +70,7 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
    tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
    page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
    tifa/run.sh "$page_dir" bin "$HOME/jsnative"    # TIFA_ONLY=a,b runs only some engines
-   python3 behind.py "results/$run.json"
+   go run ./cmd/behind "results/$run.json"
    ```
 
    With `-cpu 1 -sibling 5` the driver pins timed processes to CPU 1 with GOMAXPROCS=1. `tifa/run.sh` pins both functional checks (normal, stub and proxy) and timed processes to CPU 1, with GOMAXPROCS=1 and TZ=UTC. Both stages use the same 4 GiB capped entry and allow at most three tries for CPU disturbance. The binaries are built with `-pgo=off`. On a shared machine, cut the run into pieces with `-add` and run test262 on another CPU at low priority, as [benchmarks.md](benchmarks.md#rerun) shows. When an engine fails shop pages and closes its runtime, measure the other pages in a run of their own, as the same section says.
