@@ -13,6 +13,7 @@
 
 - `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
 - 脚本在执行时限或 `Interrupt` 之后，除了过了 50 毫秒，还要让引擎又干了 1000 次轮询的活，才会被杀。引擎没在干活的时间（在脚本调用的 Go 函数里，或者 OS、Go 调度器在跑别的线程或 goroutine）不再让一个本来会自己停下的脚本被杀：调用返回 interrupted 错误，VM 照常可用。以前在负载高的机器上，一个不到 1 毫秒的活就能停下的脚本也可能被杀。
+- `String.prototype.normalize`、`localeCompare`、`toUpperCase` 和 `toLowerCase` 在 `Interrupt` 或执行时限之后，几千个字符之内就停下。以前遇到长字符串，它们要把整个字符串转成码点、比较完或改完大小写才停。
 
 ## [v0.29.0] - 2026-10-29
 

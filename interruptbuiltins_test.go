@@ -34,25 +34,23 @@ const (
 // flag: what a large heap costs when a script stops is TestKill's and the
 // kill's business.
 func TestInterruptStopsLongBuiltins(t *testing.T) {
-	cases := []struct{ name, setup, call, gap string }{
+	cases := []struct{ name, setup, call string }{
 		// The first replace of a VM takes the generic path, which calls exec and so reads the flag. The
 		// rest, after one has run, take the one that matches in a loop of its own.
-		{"replace", `'a'.replace(/a/g, 'b'); var s = 'ab'.repeat(1 << 22)`, `s.replace(/a/g, 'cc')`, ""},
-		{"fill", `var a = new Array(1 << 22).fill(1)`, `a.fill(0)`, ""},
+		{"replace", `'a'.replace(/a/g, 'b'); var s = 'ab'.repeat(1 << 22)`, `s.replace(/a/g, 'cc')`},
+		{"fill", `var a = new Array(1 << 22).fill(1)`, `a.fill(0)`},
 		// An array-like object: join reads each index as it would an
 		// Array's, and there are no elements to mark.
-		{"join", `var a = { length: 1 << 23 }`, `Array.prototype.join.call(a, ',')`, ""},
-		// normalize reads the flag in its three passes and as it builds the
-		// result, but JS_ToUTF32String (engine/quickjs.c), which turns the
-		// input into code points first, reads none: an Interrupt there runs on
-		// for up to half the call, 650 polls of 1300 here.
-		{"normalize", `var s = 'éå'.repeat(1 << 21)`, `s.normalize('NFC')`, "JS_ToUTF32String reads no flag"},
+		{"join", `var a = { length: 1 << 23 }`, `Array.prototype.join.call(a, ',')`},
+		{"normalize", `var s = 'éå'.repeat(1 << 21)`, `s.normalize('NFC')`},
+		// localeCompare normalizes both strings, as normalize does, then
+		// compares them.
+		{"localeCompare", `var s = 'éå'.repeat(1 << 20), t = s + 'x'`, `s.localeCompare(t)`},
+		{"toUpperCase", `var s = 'aé'.repeat(1 << 21)`, `s.toUpperCase()`},
+		{"toLowerCase", `var s = 'AÉ'.repeat(1 << 21)`, `s.toLowerCase()`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if c.gap != "" {
-				t.Skip("the engine does not stop it in time yet: " + c.gap)
-			}
 			for trial := range 3 {
 				m := newTestVM(t)
 				if _, err := m.Eval(c.setup, EvalGlobal); err != nil {
