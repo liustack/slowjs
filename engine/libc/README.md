@@ -20,7 +20,7 @@ There is no `errno`, no `pthread`, no time and no standard stream. The wall cloc
 
 ## musl
 
-The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02), the one `modernc.org/libc` v1.77.1 translates. So the `Math.*` results of linux/amd64 stay what they are in the Go engine. `COPYRIGHT` is musl's license file, MIT.
+The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and `internal/libm.h` come from musl commit `7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0` (2024-03-02), the one `modernc.org/libc` v1.77.1 translates. So the `Math.*` results are the ones recorded for that musl (see `engine/test/math.sh`). `COPYRIGHT` is musl's license file, MIT.
 
 `MUSL.sha256` lists the SHA-256 of each file in musl and here. `vendor.sh --verify` checks the files here against it. `vendor.sh MUSL_DIR` copies them out of a musl checkout at that commit, applies `patches/` and writes the list again.
 
@@ -52,7 +52,7 @@ On arm64 `-mno-outline-atomics` comes with them, so that an atomic stays an inst
 - `engine/test/check-symbols.sh` lists the symbols the built engine uses and does not define, and fails for any that `symbols.txt` does not allow. The compiler turns struct copies and compares into calls of `memcpy`, `memmove`, `memset` and `bcmp`, which is why they are always on the list.
 - `engine/test/libc-test.sh` compares the string functions and `snprintf` with the system's, and checks that the formats `snprintf` does not do stop the program.
 - `engine/test/api-test.sh` tests `abort` and the API the C tree changed, on real runtimes.
-- `engine/test/math.sh` compares the `Math.*` results, and the libc math functions themselves, with the Go engine's.
+- `engine/test/math.sh` checks the `Math.*` results, and the libc math functions themselves, against recorded hashes.
 - `engine/libc/vendor.sh --verify` checks the files taken from musl.
 
 See [docs/testing.md](../../docs/testing.md#the-c-tree-and-its-native-test-host).

@@ -16,8 +16,7 @@
 // This tests the 33 operations below as the engine reaches them. Math.round
 // is the engine's own code and not libc's round, and clamp and pause test
 // lrint and modf only for the conversions and the whole number test they are
-// used for. The functions of libc are compared directly by libmath and
-// libmdump (see math.sh).
+// used for. The functions of libc are called directly by libmath (see math.sh).
 "use strict";
 
 const N = 100000;

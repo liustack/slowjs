@@ -5,9 +5,8 @@
  * root of this repository.
  */
 
-/* jsrun runs scripts on the C tree as internal/jsrun runs them on the Go
-   engine, so that compare.sh can compare what they print with the files kept
-   in the repository (and with the Go engine, while it is there).
+/* jsrun runs scripts on the C tree, so that compare.sh can compare what they
+   print with the files kept in the repository.
 
      jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] FILE...
 
