@@ -24,7 +24,7 @@ import (
 // and grows up, so the highest word that is not zero marks the deepest frame.
 func shadowStackUsed(m *VM) uintptr {
 	base, size := m.h.Stack()
-	words := unsafe.Slice((*uint64)(unsafe.Pointer(base)), size/8)
+	words := unsafe.Slice((*uint64)(addr(base)), size/8)
 	for i := len(words) - 1; i >= 0; i-- {
 		if words[i] != 0 {
 			return uintptr(i+1) * 8

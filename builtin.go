@@ -206,7 +206,7 @@ func (a Args) Latin1(i int) (b []byte, ok bool) {
 	if !ok || wide {
 		return nil, false
 	}
-	return unsafe.Slice((*byte)(unsafe.Pointer(p)), n), true
+	return unsafe.Slice((*byte)(addr(p)), n), true
 }
 
 // UTF16 returns the 16-bit units of argument i when it is a string the
@@ -220,7 +220,7 @@ func (a Args) UTF16(i int) (u []uint16, ok bool) {
 	if !ok || !wide {
 		return nil, false
 	}
-	return unsafe.Slice((*uint16)(unsafe.Pointer(p)), n), true
+	return unsafe.Slice((*uint16)(addr(p)), n), true
 }
 
 // builtinFailed is the result of a call of b that returned v with the error
