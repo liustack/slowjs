@@ -722,8 +722,42 @@ static void test_plain_objects(void)
     vm_free(&v);
 }
 
+/* A for in over an ordinary object whose keys are all strings, and not array
+   indexes, keeps no list of its keys: it holds the shape of the object. 1000
+   generators stopped in such a loop take as much memory with an object of 40
+   keys as with an object of 1 key. */
+static int64_t for_in_held(int keys)
+{
+    VM v = vm_new();
+    JSMemoryUsage before, after;
+    char src[256];
+
+    snprintf(src, sizeof src,
+             "function* walk(o) { for (const k in o) yield k }\n"
+             "var o = {}; for (var j = 0; j < %d; j++) o['k' + j] = j\n"
+             "var held = []\n"
+             "function hold() { for (var i = 0; i < 1000; i++) { var g = walk(o); g.next(); held.push(g) } }\n",
+             keys);
+    eval_ok(v.ctx, src);
+    before = usage(&v);
+    JS_FreeValue(v.ctx, call_global(v.ctx, "hold"));
+    after = usage(&v);
+    CHECK(eval_is(v.ctx, "held[999].next().value", keys > 1 ? "k1" : "undefined"), "the loop of %d keys went wrong", keys);
+    vm_free(&v);
+    return (after.malloc_size - before.malloc_size) / 1000;
+}
+
+static void test_for_in_keeps_shape(void)
+{
+    int64_t one = for_in_held(1), forty = for_in_held(40);
+
+    CHECK(forty - one < 16, "a for in over 40 keys holds %lld bytes more than over 1 key",
+          (long long)(forty - one));
+}
+
 int main(void)
 {
+    test_for_in_keeps_shape();
     test_plain_objects();
     test_backtrace_shares_shape();
     test_backtrace_old_prototype();
