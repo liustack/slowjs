@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
-
 package slowjs // import "github.com/liustack/slowjs"
 
 // Helpers of the tests that read the C engine, with the names and the
@@ -16,16 +14,14 @@ import (
 	"github.com/liustack/slowjs/internal/cengine"
 )
 
-// engineMemoryUsage holds the fields of JSMemoryUsage the tests read, under
-// the names of lib.TJSMemoryUsage.
+// engineMemoryUsage holds the fields of JSMemoryUsage the tests read,.
 type engineMemoryUsage struct {
 	Fmalloc_size, Fatom_count, Fshape_count, Fobj_count      int64
 	Fjs_func_size, Fjs_func_code_size, Fjs_func_pc2line_size int64
 }
 
 // deepRecursion is how deep a recursion that ends goes in a test of the
-// default limits: below the default call depth of the C engine, 5000 calls,
-// where the engine of lib goes to 10000.
+// default limits: below the default call depth, 5000 calls.
 const deepRecursion = 4900
 
 // vmMemory runs the GC and returns the memory usage of the runtime of m.
@@ -89,6 +85,5 @@ func heldFuncs(m *VM) int {
 }
 
 // jsonTooDeep is the error of JSON.parse and JSON.stringify of data nested
-// past the internal depth, which names the JSON (the engine of lib runs out
-// of stack there, enginehelp_lib_test.go).
+// past the internal depth, which names the JSON.
 const jsonTooDeep = "RangeError: JSON nesting too deep"

@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
-
 package slowjs // import "github.com/liustack/slowjs"
 
 import (

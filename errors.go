@@ -57,14 +57,12 @@ type Error struct {
 
 // ErrKilled is what [errors.Is] finds in the error of a call whose script
 // was killed, and in the error of each method called on its VM after that.
-// The C engine (-tags slowjs_cengine) kills a script that runs on 50 ms past
-// its eval timeout or an [VM.Interrupt], as can happen in a Go function it
-// called or in a long collection: the call returns an *Error with
+// A script that runs on 50 ms past its eval timeout or an [VM.Interrupt] is
+// killed, as can happen in a Go function it called or in a long collection: the call returns an *Error with
 // Uncatchable and Interrupted set, and the VM is good only for Close. Its
 // methods that return an error return one that matches ErrKilled, the others
 // panic, and [Value.Free] does nothing. The exceptions are [VM.MemorySize] and
 // [VM.GCThreshold], which only read a counter and answer as they do on any VM.
-// The engine of lib never kills.
 var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
 
 // errKilledVM is the error of a method called after a kill.

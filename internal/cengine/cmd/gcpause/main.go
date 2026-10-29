@@ -4,12 +4,8 @@
 // root of this repository.
 
 // Command gcpause measures how long the Go garbage collector waits to stop
-// the world while VMs run a script that stays in the engine. Built with
-// -tags slowjs_cengine it runs the C engine, which Go can stop only where it
-// polls. Built without, it runs the engine of lib, which Go stops by signal
-// anywhere, so that one run gives both:
+// the world while VMs run a script that stays in the engine. The engine is C, which Go can stop only where it polls:
 //
-//	go run -tags slowjs_cengine ./internal/cengine/cmd/gcpause -secs 10
 //	go run ./internal/cengine/cmd/gcpause -secs 10
 //
 // For each scenario it starts -vms VMs (default GOMAXPROCS-1, so that every

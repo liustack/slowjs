@@ -5,10 +5,8 @@
 
 // Command interrupt times how long a script takes to stop after Interrupt,
 // for the scripts of package scenarios, each of which stays inside one long
-// operation of the engine. Built with -tags slowjs_cengine it runs the C
-// engine, built without it runs the engine of lib:
+// operation of the engine.
 //
-//	go run -tags slowjs_cengine ./internal/cengine/cmd/interrupt -n 20
 //	go run ./internal/cengine/cmd/interrupt -n 20
 //
 // For each scenario it makes -n VMs one after the other. The script runs for

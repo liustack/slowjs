@@ -3,23 +3,19 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
-
 package slowjs // import "github.com/liustack/slowjs"
 
-// What the C engine does otherwise than the engine of lib, by design: how
-// deep calls nest and what MemorySize counts. A kill is in killed_c_test.go.
+// How deep calls nest and what MemorySize counts. A kill is in
+// killed_test.go.
 
 import (
 	"testing"
 )
 
-// SetMaxStackSize counts calls on the C engine, where lib counts TLS stack
-// slots: each call into javascript takes one level, a getter or a Proxy trap
+// SetMaxStackSize counts calls: each call into javascript takes one level, a getter or a Proxy trap
 // as a plain call, and a call through a built-in such as Array.prototype.map
 // takes two. The default is 5000 levels, at most 10000, and 0 is the
-// default again. lib gives 9994 plain calls, 3331 getters and 2498 calls
-// through map by default.
+// default again.
 func TestCallDepthInLevels(t *testing.T) {
 	cases := []struct{ name, js string }{
 		{"call", `function f() { n++; f() } f()`},
@@ -55,14 +51,13 @@ func TestCallDepthInLevels(t *testing.T) {
 	}
 }
 
-// MemorySize counts what the allocator of the C engine holds for the blocks
-// in use, where lib counts what libc's malloc gives for them: the C engine
-// counts less for the same objects. The sizes of lib are those of
-// linux/amd64 after a full collection.
-func TestMemorySizeBelowLib(t *testing.T) {
+// MemorySize counts what the allocator holds for the blocks in use. It counts
+// less than the ccgo engine did (libc's malloc) for the same objects.
+// The sizes of that engine are those of linux/amd64 after a full collection.
+func TestMemorySizeBelowPrevious(t *testing.T) {
 	for _, c := range []struct {
-		js  string
-		lib uintptr
+		js       string
+		previous uintptr
 	}{
 		{``, 244064},
 		{`globalThis.a = Array.from({length: 1e4}, (_, i) => ({i, s: 'x' + i}))`, 1967208},
@@ -74,8 +69,8 @@ func TestMemorySizeBelowLib(t *testing.T) {
 			t.Fatal(err)
 		}
 		m.RunGC()
-		if got := m.MemorySize(); got > c.lib*95/100 {
-			t.Errorf("%q: MemorySize %d, want below 0.95 of the %d of lib", c.js, got, c.lib)
+		if got := m.MemorySize(); got > c.previous*95/100 {
+			t.Errorf("%q: MemorySize %d, want below 0.95 of the %d of the previous engine", c.js, got, c.previous)
 		}
 	}
 }

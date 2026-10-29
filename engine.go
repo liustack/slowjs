@@ -3,15 +3,15 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && amd64) || (darwin && arm64))
+//go:build (linux && amd64) || (darwin && arm64)
 
 package slowjs // import "github.com/liustack/slowjs"
 
 // The C engine of internal/cengine, as the rest of the package sees it: the
-// same names engine_lib.go gives, over the engine's generated functions. A
+// engine's generated functions, with the names the rest of the package uses. A
 // call into the engine takes the shadow pointer, the first free byte of the
 // VM's shadow stack: m.sp, which a Go function that javascript called moves
-// above the frames of the call (hostcall_c.go). What a call needs passed by
+// above the frames of the call (hostcall.go). What a call needs passed by
 // address goes on the shadow stack at m.sp, and the call takes the pointer
 // past it (tmp). Outside a call into javascript, a function first enters the
 // engine (outer in entry_c.go).
@@ -951,7 +951,7 @@ func (m *VM) jsWriteObject(v jsValue) (b []byte, ok bool) {
 }
 
 // freeTopLevel frees the function of the module mod, which has run to its
-// end (see engine_lib.go), with JS_FreeModuleTopLevel.
+// end with JS_FreeModuleTopLevel.
 func (m *VM) freeTopLevel(mod jsValue) {
 	if m.entered == 0 {
 		m.outer(func() { m.freeTopLevel(mod) })
@@ -1013,8 +1013,7 @@ func (m *VM) jsNewStringLen(s string) (r jsValue, err error) {
 	return r, nil
 }
 
-// toGoString converts the JS value v to a Go string, by JS_ToCStringLen2 as
-// the engine of lib does (see engine_lib.go). ok is false, and the exception
+// toGoString converts the JS value v to a Go string, by JS_ToCStringLen2. ok is false, and the exception
 // pending, when the conversion threw.
 func (m *VM) toGoString(v jsValue, wtf8 bool) (s string, ok bool) {
 	if m.entered == 0 {

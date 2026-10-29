@@ -3,8 +3,6 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build slowjs_cengine && ((linux && (amd64 || arm64)) || (darwin && arm64))
-
 package slowjs // import "github.com/liustack/slowjs"
 
 // On the C engine a script that runs on 50 ms past its deadline or an
@@ -175,7 +173,7 @@ func panicked(f func()) (r any) {
 
 // MemorySize and GCThreshold read one counter of the runtime and change
 // nothing, so they answer on a killed VM as they do on one that an Interrupt
-// stopped (the engine of lib never kills). The methods that collect, which
+// stopped. The methods that collect, which
 // need the engine in a state a kill does not leave, still panic.
 func TestKilledVMReportsItsMemory(t *testing.T) {
 	m := newTestVM(t)

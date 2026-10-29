@@ -13,10 +13,8 @@ import (
 	"testing"
 )
 
-// The package builds on one engine, and a program links only that one: the
-// engine of lib, made by ccgo and running on modernc.org/libc, or with the tag
-// slowjs_cengine the C engine of internal/cengine, which runs on linux/amd64
-// and darwin/arm64 only.
+// The package runs on the C engine of internal/cengine and on nothing else: a
+// program that links it links no libc translated to Go.
 func TestEngineDeps(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -36,9 +34,8 @@ func TestEngineDeps(t *testing.T) {
 		env       []string
 		want, not []string
 	}{
-		{"default", nil, nil, []string{lib, libc}, []string{cengine, gohost, hostmem}},
-		{"slowjs_cengine", []string{"-tags", "slowjs_cengine"}, []string{"GOOS=linux", "GOARCH=amd64"},
-			[]string{cengine, gohost, hostmem}, []string{lib, libc}},
+		{"linux/amd64", nil, []string{"GOOS=linux", "GOARCH=amd64"}, []string{cengine, gohost, hostmem}, []string{lib, libc}},
+		{"darwin/arm64", nil, []string{"GOOS=darwin", "GOARCH=arm64"}, []string{cengine, gohost, hostmem}, []string{lib, libc}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(gobin, append(append([]string{"list", "-deps"}, c.args...), ".")...)
@@ -64,8 +61,8 @@ func TestEngineDeps(t *testing.T) {
 	}
 }
 
-// A build with the tag on a target the C engine does not run on fails with
-// the reason as its only error, not under errors of the files that need the
+// A build on a target the C engine does not run on fails with the reason as
+// its only error, not under errors of the files that need the
 // engine. The engine runs on linux/amd64 and darwin/arm64 only: linux/arm64 is
 // generated but was never run on a machine of its own, so it is refused too.
 func TestEngineUnsupportedTarget(t *testing.T) {
@@ -76,7 +73,7 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 	for _, target := range []string{"windows/amd64", "darwin/amd64", "linux/arm64", "linux/386"} {
 		t.Run(target, func(t *testing.T) {
 			goos, goarch, _ := strings.Cut(target, "/")
-			cmd := exec.Command(gobin, "build", "-tags", "slowjs_cengine", "-o", os.DevNull, ".")
+			cmd := exec.Command(gobin, "build", "-o", os.DevNull, ".")
 			cmd.Env = append(os.Environ(), "GOFLAGS=", "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
 			out, err := cmd.CombinedOutput()
 			if err == nil {
