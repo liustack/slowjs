@@ -142,6 +142,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
+| Shared bytecode is scanned for the polls on its first load only | Unreleased | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
 
 ## Young collection
 
