@@ -123,7 +123,7 @@ Reading the result:
 - A change is real only when the median passes both 2% and half of that range, and most positions agree on the sign.
 - Under 3%, do not argue from timings. Count instructions with callgrind, which hardly move with the position.
 
-The 8 and 24 bytes of `front` move the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions.
+The 8 and 24 bytes of `front` move the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions. Make those two places with the generator instead: `-align64 JS_CallInternal:48` and `-align64 JS_CallInternal:0` put the body there with its pool on 16 bytes.
 
 ### The C engine's hot loops on fixed places
 
