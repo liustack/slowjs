@@ -21,7 +21,7 @@ read_when:
 On the branch, before it is merged:
 
 1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass.
-2. Each change is in the doc of its area under [fork-changes](fork-changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
+2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release v0.26.17`), so that the merge commit you tag carries it.
 
 Then merge it into `main` with a merge commit, `merge: <what the branch does>` (see [commit.md](commit.md#branches-and-merges)).
@@ -88,7 +88,7 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 
 ### Upgrade tifa
 
-The fork exists for tifa, so every release goes into tifa next:
+slowjs exists for tifa, so every release goes into tifa next:
 
 1. In tifa, `go get github.com/liustack/slowjs@v0.26.17` and `go mod tidy`.
 2. Collect tifa's engine profile again, as tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#the-engine-profile) says under "The engine profile": PGO finds call sites by line, so a profile of the old engine matches fewer of them. `TestEngineProfileMatchesTheDependencies` in tifa's `internal/codegen` fails until it is collected again.

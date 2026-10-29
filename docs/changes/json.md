@@ -1,5 +1,5 @@
 ---
-summary: 'The fork change to JSON: JSON.stringify and JSON.parse copy runs of plain characters, with what it gains, why it gives the same strings and errors'
+summary: 'The change to JSON: JSON.stringify and JSON.parse copy runs of plain characters, with what it gains, why it gives the same strings and errors'
 read_when:
   - JSON.stringify or JSON.parse gives another string or error than before
 ---

@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to regular expressions: skipping to where a regexp can start to match, not pushing the alternatives that cannot match at a position, keeping the bytecode of compiled regexps per VM, and parsing the classes of regexps with the v flag as the specification does, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, why a regexp still holds at most 254 capture groups'
+summary: 'Changes to regular expressions: skipping to where a regexp can start to match, not pushing the alternatives that cannot match at a position, keeping the bytecode of compiled regexps per VM, and parsing the classes of regexps with the v flag as the specification does, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, why a regexp still holds at most 254 capture groups'
 read_when:
   - Changing the parser of classes in libregexp.c, or a regexp with the v flag throws a SyntaxError that Node does not
   - A regexp throws "too many captures"

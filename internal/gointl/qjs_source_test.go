@@ -343,7 +343,7 @@ func TestQJSLazyKeepsPanic(t *testing.T) {
 }
 
 // The time zones are those of the tz release qjstz names, which the docs
-// give: docs/fork-changes/temporal.md, and the temporal package's.
+// give: docs/changes/temporal.md, and the temporal package's.
 func TestQJSTZVersion(t *testing.T) {
 	b, err := EmbeddedTemporalSource{}.Open("tzversion", DataLocale{})
 	if err != nil {

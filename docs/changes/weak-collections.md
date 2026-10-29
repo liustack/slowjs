@@ -16,7 +16,7 @@ Previously, `gc_remove_weak_objects` ran before trial deletion and tested the ke
 
 Bellard's latest release on 2026-10-22 is [2026-06-04](https://bellard.org/quickjs/Changelog). Its GitHub master at `7d1c13c5d8f8c6b32893786ed35cdcebd88194d2` still marks weak map values from their map.
 
-QuickJS-NG fixed the back-reference case in [a57877c, Retain WeakMap values only when key is reachable](https://github.com/quickjs-ng/quickjs/commit/a57877cef88c3d80aadf69153209b9f0dfc6324f). Release v0.17.0 and master at `270b8c974a4427726e7b580349ae061af08f53a5` mark those values from their object key instead. This fork follows that conditional-edge approach. It uses a temporary key index because Bellard's current weak-reference layout has a runtime list rather than per-target records. It also accounts for symbol keys and checks map reachability.
+QuickJS-NG fixed the back-reference case in [a57877c, Retain WeakMap values only when key is reachable](https://github.com/quickjs-ng/quickjs/commit/a57877cef88c3d80aadf69153209b9f0dfc6324f). Release v0.17.0 and master at `270b8c974a4427726e7b580349ae061af08f53a5` mark those values from their object key instead. slowjs follows that conditional-edge approach. It uses a temporary key index because Bellard's current weak-reference layout has a runtime list rather than per-target records. It also accounts for symbol keys and checks map reachability.
 
 ## Collector
 

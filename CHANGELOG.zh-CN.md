@@ -1,8 +1,12 @@
 # 更新记录
 
-记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/fork-changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
+记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
 ## [Unreleased]
+
+### 变更
+
+- `intl.Register` 和 `temporal.Register` 在全局对象上标记 VM 已装好的符号改名为 `Symbol.for("github.com/liustack/slowjs/intl")` 和 `Symbol.for("github.com/liustack/slowjs/temporal")`，原来用的是 modernc.org/quickjs 的名字。
 
 ## [v0.29.0] - 2026-10-29
 
@@ -15,7 +19,7 @@
 - `MemorySize` 和内存限额数的是引擎自己的分配器占着的内存，同一堆对象比 ccgo 引擎数的少 13% 到 15%。VM 按块向系统要内存，`MemoryUsage` 会填上 `Footprint`、`FootprintLimit`、`Chunks` 和 `ReleaseCandidate`，以前这四项是 0。`ReleaseMemory` 还回空闲内存，并返回还了多少字节。
 - `Math.*` 在两个平台上给出和以前相同的位（`engine/test/math.sh` 对 33 个运算各检查 100000 个输入）。
 - 编译或惰性属性在内存耗尽时，调用以内存不足错误结束，ccgo 引擎可能留下挂起的错误或读到错的值。编译 `\p{Script=...}` 时内存耗尽不再让进程崩溃。
-- 模板字符串按规范马上把每个替换项转成字符串，`-0.5 < -1n` 是 false。两处都来自上游 QuickJS 的提交（[upstream-commits.md](docs/fork-changes/upstream-commits.md)）。
+- 模板字符串按规范马上把每个替换项转成字符串，`-0.5 < -1n` 是 false。两处都来自上游 QuickJS 的提交（[upstream-commits.md](docs/changes/upstream-commits.md)）。
 
 ### 移除
 
@@ -43,13 +47,13 @@
 
 ### 变更
 
-- 在 linux/amd64 上，引擎默认用 goasm 解释器执行 JavaScript，也就是 v0.28.5 的 `goasm` 标签打开的那个 Go 汇编解释器。加 `-tags slowjs_nogoasm` 构建，程序就改用 Go 解释器，其他平台一直用的就是它。`goasm` 标签仍然可以写，但不再有任何作用。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO、一个 VM 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。tifa 的 VM 池在 4 个核上跑 4 个 VM 时，每秒渲染的商店页面是原来的 1.046 倍，MUI 页面是 1.171 倍，在 8 个超线程上跑 8 个 VM 时是 1.085 倍和 1.211 倍。8 个 VM 跑十分钟后，进程的 RSS 在商店页面上是原来的 0.93，在 MUI 页面上是 0.88。GC 让所有 goroutine 停下来的时间和用 Go 解释器时一样快。见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+- 在 linux/amd64 上，引擎默认用 goasm 解释器执行 JavaScript，也就是 v0.28.5 的 `goasm` 标签打开的那个 Go 汇编解释器。加 `-tags slowjs_nogoasm` 构建，程序就改用 Go 解释器，其他平台一直用的就是它。`goasm` 标签仍然可以写，但不再有任何作用。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO、一个 VM 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。tifa 的 VM 池在 4 个核上跑 4 个 VM 时，每秒渲染的商店页面是原来的 1.046 倍，MUI 页面是 1.171 倍，在 8 个超线程上跑 8 个 VM 时是 1.085 倍和 1.211 倍。8 个 VM 跑十分钟后，进程的 RSS 在商店页面上是原来的 0.93，在 MUI 页面上是 0.88。GC 让所有 goroutine 停下来的时间和用 Go 解释器时一样快。见 [The goasm interpreter](docs/changes/go-assembly.md)。
 
 ## [v0.28.5] - 2026-10-24
 
 ### 新增
 
-- `goasm` 构建标签（`go build -tags goasm`）：在 linux/amd64 上，引擎改用一个解释器执行 JavaScript，它由 LLVM 从 QuickJS 的 C 源码编译而来，以 Go 汇编的形式随包发布，替换 ccgo 从同一份 C 生成的 Go 解释器。默认不开，在其他平台上加这个标签什么都不变。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。它怎么生成、默认打开前还要满足哪些条件，见 [The goasm interpreter](docs/fork-changes/go-assembly.md)。
+- `goasm` 构建标签（`go build -tags goasm`）：在 linux/amd64 上，引擎改用一个解释器执行 JavaScript，它由 LLVM 从 QuickJS 的 C 源码编译而来，以 Go 汇编的形式随包发布，替换 ccgo 从同一份 C 生成的 Go 解释器。默认不开，在其他平台上加这个标签什么都不变。运行结果、错误栈和 HTML 都不变，构建仍不需要 C 工具链。不开 PGO 时，tifa 示例商店的页面渲染耗时是原来的 0.940，tifa 测试应用的 MUI 页面是 0.850。它怎么生成、默认打开前还要满足哪些条件，见 [The goasm interpreter](docs/changes/go-assembly.md)。
 - `GetAsyncContext` 和 `SetAsyncContext`，两个 Builtin，读写 VM 的异步上下文：一个 promise 反应会带着走的对象。`then`、`catch`、`finally` 或 `await` 运行时用的是注册那一刻 VM 的上下文，thenable 的 `then` 用的是拿它去 resolve 一个 promise 的那段代码的上下文，和 Node 一样。用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store。从不设置上下文的 VM 跑 promise 和以前一样。
 
 ### 性能
@@ -138,7 +142,7 @@
 ### 新增
 
 - `Intl.DateTimeFormat` 的四个格式化方法支持 Temporal 值，按类型补默认字段并检查日历。`formatRange` 和 `formatRangeToParts` 也支持 Date 和数字。Temporal 日期的本地化使用同一套格式，通过共用的 go-intl 数据包支持 Chromium 的全部 18 种日历，包括 ISO。
-- `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们和其他构造器共用 go-intl 数据。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 可以省去显示名称及中文、日文词典。用了 `intl` 的程序需要附上 `NOTICE.md` 所列声明。当前体积和内存测量见 `docs/fork-changes/time-and-intl.md`。
+- `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，覆盖 Chromium 有的所有语言，在 14,269 个表达式上和 Chromium 156 对过结果。`localeCompare` 按语言的排序规则比较，`toLocaleUpperCase` 和 `toLocaleLowerCase` 遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则。它们和其他构造器共用 go-intl 数据。构建标签 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 可以省去显示名称及中文、日文词典。用了 `intl` 的程序需要附上 `NOTICE.md` 所列声明。当前体积和内存测量见 `docs/changes/time-and-intl.md`。
 - `Args.WTF8`：读 Builtin 的字符串参数时，孤立代理项保持引擎里的样子，`Args.String` 则把每个换成 U+FFFD。
 - `VM.SetRegExpCache`、`DefaultRegExpCache` 和 `DefaultRegExpCacheBytes`：一个 VM 最多留多少个编译好的正则，占多少字节（默认 256 个、1 MiB）。缓存算进内存上限，贴着上限跑的 VM 可以把缓存调小或关掉。
 - `VM.OnClose`：VM 关闭时运行一个函数，自己用表按 VM 存东西的包可以在这时删掉对应的项。
@@ -147,7 +151,7 @@
 ### 变更
 
 - `StdAddHelpers` 的 `performance.now()` 改为从进程启动开始计时。以前在 Linux 和 macOS 上从系统启动开始，在 Windows 和 FreeBSD 上从 1970 年开始，还会随系统时钟的调整而跳动。在 macOS 上不再计入系统睡眠的时间。`Date.now()` 和 `new Date()` 的值和原来一样。
-- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.11 MB。通过预编译格式方案和直接生成字符串，指定用例中预热后的数字格式化比 main 耗时减少 41% 至 42%，日期格式化耗时减少 28% 至 37%。本次提速保持全部已记录答案不变。见[测量结果](docs/fork-changes/time-and-intl.md#focused-timing-and-memory-costs)。
+- 全部 Intl 构造器统一使用 go-intl，包括 NumberFormat、DateTimeFormat 和 PluralRules。Number、Date 的本地化方法共用这些数据，支持舍入增量、舍入优先级及全部日期日历。删除独立的 `intl/cldr.bin` 及其生成器。与 main `641e996` 比，使用应用 PGO profile 构建的商店程序小 0.11 MB。通过预编译格式方案和直接生成字符串，指定用例中预热后的数字格式化比 main 耗时减少 41% 至 42%，日期格式化耗时减少 28% 至 37%。本次提速保持全部已记录答案不变。见[测量结果](docs/changes/time-and-intl.md#focused-timing-and-memory-costs)。
 - Intl 的时区名、偏移和夏令时标记统一来自与 Temporal 共用的内嵌 tz 2026e，不再读取主机 zoneinfo，也不需要夏令时修正表。Winnipeg 按较新的 tz 2026e 保持永久夏令时，与 Chromium 156 的旧数据有已记录的差异。
 - 完整 Intl402 test262 通过 6764 次中的 6618 次，main `641e996` 为 6276 次。新增的 24 次失败断言在 Chromium 156 中也失败。已有 golden 集没有新增未解释的差异。
 

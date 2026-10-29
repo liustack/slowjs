@@ -435,7 +435,7 @@ struct JSRuntime {
     struct list_head string_list; /* list of JSString.link */
 #endif
     /* the calls running now, and how many may run at once (see
-       js_call_enter and docs/fork-changes/c-engine.md) */
+       js_call_enter and docs/changes/c-engine.md) */
     int call_depth;
     int max_call_depth;
     /* the recursions of C that are no call running now (see
@@ -2581,7 +2581,7 @@ static int init_class_range(JSRuntime *rt, JSClassShortDef const *tab,
 /* The bytes of stack left. The generator turns this into the room left on the
    VM's shadow stack, which holds the locals whose address is taken and every
    alloca, and the native test host gives the room left on its thread's stack.
-   The engine never reads a stack address itself (docs/fork-changes/c-engine.md). */
+   The engine never reads a stack address itself (docs/changes/c-engine.md). */
 extern long __shadow_remaining(void);
 
 static JSValue JS_ThrowStackOverflow(JSContext *ctx);

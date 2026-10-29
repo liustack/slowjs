@@ -402,7 +402,7 @@ int JS_GetMaxCallDepth(JSRuntime *rt);
    call depth: at most this many levels at once. Past it a script gets a
    RangeError (a SyntaxError from a regexp). Unlike the call depth it is a
    constant of the build, not a setting: the proof of the bound on the stack the
-   engine may use (docs/fork-changes/c-engine.md) multiplies it by the stack
+   engine may use (docs/changes/c-engine.md) multiplies it by the stack
    of the deepest recursion, so it needs one fixed biggest value. The parser
    counts 3 levels for each nested parenthesis, call or array. Of 79525 files
    of real code (npm packages, compiled JSX, the output of code generators)

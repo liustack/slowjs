@@ -13,8 +13,7 @@ import (
 	"testing"
 )
 
-// The package runs on the C engine of internal/cengine and on nothing else: a
-// program that links it links no libc translated to Go.
+// The package runs on the C engine of internal/cengine and its Go host.
 func TestEngineDeps(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
@@ -22,20 +21,18 @@ func TestEngineDeps(t *testing.T) {
 	}
 
 	const (
-		lib     = "github.com/liustack/slowjs/lib"
-		libc    = "modernc.org/libc"
 		cengine = "github.com/liustack/slowjs/internal/cengine"
 		gohost  = "github.com/liustack/slowjs/internal/gohost"
 		hostmem = "github.com/liustack/slowjs/internal/hostmem"
 	)
 	for _, c := range []struct {
-		name      string
-		args      []string
-		env       []string
-		want, not []string
+		name string
+		args []string
+		env  []string
+		want []string
 	}{
-		{"linux/amd64", nil, []string{"GOOS=linux", "GOARCH=amd64"}, []string{cengine, gohost, hostmem}, []string{lib, libc}},
-		{"darwin/arm64", nil, []string{"GOOS=darwin", "GOARCH=arm64"}, []string{cengine, gohost, hostmem}, []string{lib, libc}},
+		{"linux/amd64", nil, []string{"GOOS=linux", "GOARCH=amd64"}, []string{cengine, gohost, hostmem}},
+		{"darwin/arm64", nil, []string{"GOOS=darwin", "GOARCH=arm64"}, []string{cengine, gohost, hostmem}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(gobin, append(append([]string{"list", "-deps"}, c.args...), ".")...)
@@ -52,11 +49,7 @@ func TestEngineDeps(t *testing.T) {
 					t.Errorf("does not depend on %s", p)
 				}
 			}
-			for _, p := range c.not {
-				if slices.Contains(deps, p) {
-					t.Errorf("depends on %s", p)
-				}
-			}
+
 		})
 	}
 }

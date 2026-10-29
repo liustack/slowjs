@@ -141,7 +141,7 @@
 // result. Date keys include the actual pattern because distinct patterns
 // can report identical public resolved options.
 //
-// See docs/fork-changes/time-and-intl.md for measured binary size, VM memory
+// See docs/changes/time-and-intl.md for measured binary size, VM memory
 // and constructor and formatting times.
 //
 // # License of the data
@@ -395,7 +395,7 @@ var installBuiltin = slowjs.NewBuiltin("install", 3, func(a slowjs.Args) (slowjs
 
 // marker is the well known symbol stub.js stamps on the global object of a VM
 // it registers, keyed by this package's import path.
-const marker = "modernc.org/quickjs/intl"
+const marker = "github.com/liustack/slowjs/intl"
 
 // registered reports whether this package has already installed Intl on vm.
 func registered(vm *slowjs.VM) (bool, error) {

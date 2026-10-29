@@ -1,5 +1,5 @@
 ---
-summary: 'The fork changes to operators: bitwise operators on two numbers and the usual pairs of ===, !==, == and != answered without the slow paths, with what each gains, why it is safe'
+summary: 'Changes to operators: bitwise operators on two numbers and the usual pairs of ===, !==, == and != answered without the slow paths, with what each gains, why it is safe'
 read_when:
   - A bitwise operator or a comparison gives another result than before, or a compared value is freed twice
 ---
