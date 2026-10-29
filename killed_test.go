@@ -5,9 +5,9 @@
 
 package slowjs // import "github.com/liustack/slowjs"
 
-// On the C engine a script that runs on 50 ms past its deadline or an
-// Interrupt is killed: the call returns an interrupted error that matches
-// ErrKilled, and the VM is good only for Close. On lib it runs on.
+// A script that runs on 50 ms past its deadline or an Interrupt, and has
+// polled 1000 times since, is killed: the call returns an interrupted error
+// that matches ErrKilled, and the VM is good only for Close.
 
 import (
 	"errors"
@@ -15,12 +15,11 @@ import (
 	"time"
 )
 
-// killGrace is how long the C engine lets a script run on.
-const killGrace = 50 * time.Millisecond
-
 // killedVM returns a VM a kill left good only for Close, with the error of
-// the call that was killed: a host function sleeps past the deadline and the
-// grace, and the first poll of the javascript it runs then kills.
+// the call that was killed: a host function runs javascript that never reads
+// the interrupt flag, lastIndexOf over an array-like object of 2^31-1 indices,
+// which takes a minute or more, and a poll kills it past the deadline of the
+// outer call and the grace.
 func killedVM(t *testing.T, nested func(m *VM) error) (*VM, error) {
 	t.Helper()
 	return killedVMWith(t, newTestVM(t), nested)
@@ -34,12 +33,11 @@ func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 	}
 	returned := false
 	mustHost(t, m, "nested", func([]any) (any, error) {
-		time.Sleep(timeout + killGrace + pastDeadline)
 		nested(m)
 		returned = true
 		return nil, nil
 	})
-	if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+	if _, err := m.Eval(`globalThis.a = { length: 2 ** 31 - 1 }; globalThis.loop = function() { Array.prototype.lastIndexOf.call(a, -1) }`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
@@ -50,9 +48,9 @@ func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 }
 
 // TestNestedEvalPastGrace runs javascript from a host function past the
-// deadline of the outer call and the grace after it: the kill goes up
-// through the nested call and the host function, and the outer call returns
-// it.
+// deadline of the outer call and the grace after it, without stopping: the
+// kill goes up through the nested call and the host function, and the outer
+// call returns it.
 func TestNestedEvalPastGrace(t *testing.T) {
 	for name, nested := range nestedEntries {
 		t.Run(name, func(t *testing.T) {
@@ -63,6 +61,38 @@ func TestNestedEvalPastGrace(t *testing.T) {
 			}
 			if err.Error() != "InternalError: interrupted" {
 				t.Fatalf("the outer call got %q, want the text of an interrupted error", err)
+			}
+		})
+	}
+}
+
+// TestNoKillAfterLongHostCall: a host function that takes longer than the
+// deadline and the grace and then runs javascript gets the script
+// interrupted, not killed. The time in Go is no work of the engine, which
+// reads the flag as soon as it runs again, and the VM goes on.
+func TestNoKillAfterLongHostCall(t *testing.T) {
+	for name, nested := range nestedEntries {
+		t.Run(name, func(t *testing.T) {
+			m := newTestVM(t)
+			const timeout = 20 * time.Millisecond
+			if err := m.SetEvalTimeout(timeout); err != nil {
+				t.Fatal(err)
+			}
+			mustHost(t, m, "nested", func([]any) (any, error) {
+				time.Sleep(timeout + 50*time.Millisecond + pastDeadline)
+				nested(m)
+				return nil, nil
+			})
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
+			var e *Error
+			if !errors.As(err, &e) || !e.Interrupted || errors.Is(err, ErrKilled) {
+				t.Fatalf("the outer call got %v, want an interrupted error that does not match ErrKilled", err)
+			}
+			if _, err := m.Eval(`loop(); 'done'`, EvalGlobal); err != nil {
+				t.Fatalf("the next call: %v", err)
 			}
 		})
 	}

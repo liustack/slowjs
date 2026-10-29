@@ -50992,14 +50992,19 @@ static int string_prevc(JSString *p, int *pidx)
     return c;
 }
 
-static BOOL test_final_sigma(JSString *p, int sigma_pos)
+/* Return TRUE when the sigma at sigma_pos ends a word, FALSE when it does
+   not, or -1 when interrupted: the runs of case ignorable characters around
+   it can be as long as the string. */
+static int test_final_sigma(JSContext *ctx, JSString *p, int sigma_pos)
 {
-    int k, c1;
+    int k, c1, n;
 
     /* before C: skip case ignorable chars and check there is
        a cased letter */
     k = sigma_pos;
-    for(;;) {
+    for(n = 1;; n++) {
+        if ((n & 4095) == 0 && js_poll_interrupts(ctx))
+            return -1;
         c1 = string_prevc(p, &k);
         if (!lre_is_case_ignorable(c1))
             break;
@@ -51010,9 +51015,11 @@ static BOOL test_final_sigma(JSString *p, int sigma_pos)
     /* after C: skip case ignorable chars and check there is
        no cased letter */
     k = sigma_pos + 1;
-    for(;;) {
+    for(n = 1;; n++) {
         if (k >= p->len)
             return TRUE;
+        if ((n & 4095) == 0 && js_poll_interrupts(ctx))
+            return -1;
         c1 = string_getc(p, &k);
         if (!lre_is_case_ignorable(c1))
             break;
@@ -51026,7 +51033,7 @@ static JSValue js_string_toLowerCase(JSContext *ctx, JSValueConst this_val,
     JSValue val;
     StringBuffer b_s, *b = &b_s;
     JSString *p;
-    int i, c, j, l;
+    int i, c, j, l, n;
     uint32_t res[LRE_CC_RES_LEN_MAX];
 
     val = JS_ToStringCheckObject(ctx, this_val);
@@ -51037,14 +51044,19 @@ static JSValue js_string_toLowerCase(JSContext *ctx, JSValueConst this_val,
         return val;
     if (string_buffer_init(ctx, b, p->len))
         goto fail;
-    for(i = 0; i < p->len;) {
+    for(i = n = 0; i < p->len; n++) {
+        if ((n & 4095) == 4095 && js_poll_interrupts(ctx))
+            goto fail;
         c = string_getc(p, &i);
-        if (c == 0x3a3 && to_lower && test_final_sigma(p, i - 1)) {
-            res[0] = 0x3c2; /* final sigma */
-            l = 1;
-        } else {
-            l = lre_case_conv(res, c, to_lower);
+        l = 0;
+        if (c == 0x3a3 && to_lower) {
+            l = test_final_sigma(ctx, p, i - 1);
+            if (l < 0)
+                goto fail;
+            res[0] = 0x3c2; /* final sigma, when l is 1 */
         }
+        if (l == 0)
+            l = lre_case_conv(res, c, to_lower);
         for(j = 0; j < l; j++) {
             if (string_buffer_putc(b, res[j]))
                 goto fail;
@@ -51079,8 +51091,14 @@ static int JS_ToUTF32String(JSContext *ctx, uint32_t **pbuf, JSValueConst val1)
         JS_FreeValue(ctx, val);
         goto fail;
     }
-    for(i = j = 0; i < len;)
+    for(i = j = 0; i < len;) {
         buf[j++] = string_getc(p, &i);
+        if ((j & 4095) == 0 && js_poll_interrupts(ctx)) {
+            js_free(ctx, buf);
+            JS_FreeValue(ctx, val);
+            goto fail;
+        }
+    }
     JS_FreeValue(ctx, val);
     *pbuf = buf;
     return j;
@@ -51182,8 +51200,9 @@ static JSValue js_string_normalize(JSContext *ctx, JSValueConst this_val,
     return val;
 }
 
-/* return < 0, 0 or > 0 */
-static int js_UTF32_compare(const uint32_t *buf1, int buf1_len,
+/* set *pres to < 0, 0 or > 0 and return 0, or return -1 (exception) */
+static int js_UTF32_compare(JSContext *ctx, int *pres,
+                            const uint32_t *buf1, int buf1_len,
                             const uint32_t *buf2, int buf2_len)
 {
     int i, len, c, res;
@@ -51191,8 +51210,12 @@ static int js_UTF32_compare(const uint32_t *buf1, int buf1_len,
     for(i = 0; i < len; i++) {
         /* Note: range is limited so a subtraction is valid */
         c = buf1[i] - buf2[i];
-        if (c != 0)
-            return c;
+        if (c != 0) {
+            *pres = c;
+            return 0;
+        }
+        if ((i & 4095) == 4095 && js_poll_interrupts(ctx))
+            return -1;
     }
     if (buf1_len == buf2_len)
         res = 0;
@@ -51200,14 +51223,15 @@ static int js_UTF32_compare(const uint32_t *buf1, int buf1_len,
         res = -1;
     else
         res = 1;
-    return res;
+    *pres = res;
+    return 0;
 }
 
 static JSValue js_string_localeCompare(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv)
 {
     JSValue a, b;
-    int cmp, a_len, b_len;
+    int cmp, a_len, b_len, ret;
     uint32_t *a_buf, *b_buf;
 
     a = JS_ToStringCheckObject(ctx, this_val);
@@ -51231,9 +51255,11 @@ static JSValue js_string_localeCompare(JSContext *ctx, JSValueConst this_val,
         js_free(ctx, a_buf);
         return JS_EXCEPTION;
     }
-    cmp = js_UTF32_compare(a_buf, a_len, b_buf, b_len);
+    ret = js_UTF32_compare(ctx, &cmp, a_buf, a_len, b_buf, b_len);
     js_free(ctx, a_buf);
     js_free(ctx, b_buf);
+    if (ret < 0)
+        return JS_EXCEPTION;
     return JS_NewInt32(ctx, cmp);
 }
 #else /* CONFIG_ALL_UNICODE */

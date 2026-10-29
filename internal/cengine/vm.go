@@ -108,7 +108,8 @@ type Options struct {
 var ErrBroken = errors.New("cengine: VM unusable after a panic in the engine, only Close works")
 
 // ErrKilled is what Eval returns when the script did not stop by the grace
-// after Interrupt (gohost.VM.SetKillGrace) and a poll killed it. The VM is
+// after Interrupt and gohost.KillPolls polls (gohost.VM.SetKillGrace) and a
+// poll killed it. The VM is
 // broken then: only Close works. The other calls into the engine panic with
 // it, as they do with ErrBroken.
 var ErrKilled = gohost.ErrKilled
@@ -528,8 +529,9 @@ func (v *VM) SetWallClock(t time.Time, moving bool) { v.h.SetWallClock(t, moving
 // next poll of the engine sets its interrupt flag, and the engine throws the
 // error "interrupted", which no try catches, where it next reads the flag:
 // Eval returns it as a *JSError and the VM goes on. A script still running
-// when the grace is over (gohost.VM.SetKillGrace) is killed at the poll
-// after: Eval returns ErrKilled and the VM takes only Close.
+// when the grace is over and gohost.KillPolls polls have come since the flag
+// was set (gohost.VM.SetKillGrace) is killed at that poll: Eval returns
+// ErrKilled and the VM takes only Close.
 func (v *VM) Interrupt() { v.h.Interrupt() }
 
 // Close frees the context and the runtime and gives all the memory of the VM

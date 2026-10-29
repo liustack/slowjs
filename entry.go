@@ -27,9 +27,9 @@ type interrupter struct {
 // into javascript returns, so javascript a host function evaluates on m
 // meanwhile does not clear it. Interrupt is also safe while m closes and after
 // Close, where it does nothing, so a watchdog need not know whether the
-// script it guards has finished. A script that runs on past the grace of the
-// host after it is killed: the call returns an interrupted error, and the VM
-// is good only for Close.
+// script it guards has finished. A script that keeps the engine working past
+// the grace of the host after it is killed (see [ErrKilled]): the call
+// returns an interrupted error, and the VM is good only for Close.
 func (m *VM) Interrupt() {
 	m.intr.h.Interrupt()
 }
