@@ -419,7 +419,7 @@ Two more runs build the slowjs rows both ways, alternating, with
   each built server sends for the same pages as before (20 shop pages, 3 MUI
   pages, 2 bench pages). The `slowjs-tifa` rows compile each `ssr.js` as a
   module, as tifa does. The other rows run a strict script that
-  `tifa/module-script.py` made from it. SHA256:
+  `go run ./cmd/modulescript` made from it. SHA256:
 
   | File | SHA256 |
   |---|---|
@@ -793,7 +793,7 @@ memory runs belong to `slowjs`.
 `tifa/` (`bundles/<app>.js`, `in/<app>/*.json`), in place of the pinned ones.
 tifa builds its SSR bundle as an ES module: put it there as
 `bundles/<app>.mjs`, which the `slowjs-tifa` rows compile as a module, and
-as `bundles/<app>.js` made by `tifa/module-script.py <app>.mjs <app>.js`,
+as `bundles/<app>.js` made by `go run ./cmd/modulescript <app>.mjs <app>.js`,
 which every other row runs as a script.
 
 When a page leaves an engine unusable (go-quickjs closes its runtime after

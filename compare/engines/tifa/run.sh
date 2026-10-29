@@ -37,7 +37,7 @@
 # laid out as this folder: bundles/<app>.js and in/<app>/*.json) in place of
 # the pinned ones. A bundle that tifa built as an ES module goes there twice:
 # as bundles/<app>.mjs, which the slowjs-tifa rows compile as a module as
-# tifa does, and as bundles/<app>.js made by module-script.py, which every
+# tifa does, and as bundles/<app>.js made by `go run ./cmd/modulescript` (run in compare/engines), which every
 # other row runs as a script.
 #
 # Results: <out dir>/<engine>-<kind>.json and .meta, HTML in <out dir>/html.
