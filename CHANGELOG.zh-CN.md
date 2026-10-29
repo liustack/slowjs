@@ -9,6 +9,8 @@
 - 普通对象（对象字面量、`{}`、React 元素的 props）占 48 字节内存，不再是 72 字节。长 Markdown 页面渲染时 `MemorySize` 的最高值平均低 3.8%，示例商店的 20 个页面渲染结束时占用少 1.8%。没有页面渲染变快或变慢（数字见 [Performance](docs/performance.md#ordinary-objects-of-48-bytes)）。
 - `EvalSharedBytecode` 加载同一个 `SharedBytecode` 时，第一次之后只花原来的 0.79（React 页面的包）到 0.86（tifa 商店的包）：引擎对字节码代码的检查（是否遵守轮询规则）每个 `SharedBytecode` 只做一次，不再每个 VM 做一次（见 [Performance](docs/performance.md#what-a-new-vm-and-loading-a-bundle-cost)）。`EvalBytecode` 仍然每次都检查。
 - 只有普通键的对象字面量一次拿到全部键，用所在函数为它留着的 shape，属性数组正好那么大。不开 PGO，linux/amd64，8 个代码位置，HTML 不变：tifa 示例商店的工作台页面耗时为原来的 0.956，tifa 测试应用的 MUI 页面为 0.969，bench 应用的表格页面为 0.942，React 服务端渲染没有变化（0.991）。商店的一个 VM 多占约 0.17 MiB，长 Markdown 页面的峰值少 1.6%。细节见 [objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)。
+- 字节码函数的调用把局部变量设成 `undefined` 时一次设四个，结束时一次释放两个值。不开 PGO，linux/amd64，8 个代码位置，HTML 不变：tifa bench 应用的表格和螺旋页面耗时为原来的 0.958 和 0.967。tifa 示例商店的工作台页面（0.996，指令少 2.5%）、tifa 测试应用的 MUI 页面（0.999）和 React 服务端渲染（0.984，指令少 3.1%）按规则不算变化。反复调用一个没有局部变量的函数，指令多 3%。细节见 [c-engine.md](docs/changes/c-engine.md#how-a-call-sets-and-frees-its-values)。
+- 普通对象上的 `for in` 循环拿住对象的 shape，不再列一份键的清单，`Object.prototype.hasOwnProperty.call(obj, key)` 在解释器里直接给出答案，不再调用 `call` 和 `hasOwnProperty`。在上一项之上，商店耗时为原来的 0.984（指令少 2.5%），MUI 页面 0.981，bench 应用的螺旋页面 0.977，React 0.988：商店和 MUI 页面每个位置都更快，但幅度没到规则的要求。两项合起来，商店耗时为改动前的 0.982，MUI 页面 0.976，bench 页面 0.952，React 0.969，每个位置都更快。内存不变。细节见 [objects-and-shapes.md](docs/changes/objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object)。
 
 ### 变更
 
