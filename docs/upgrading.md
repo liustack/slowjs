@@ -1,9 +1,8 @@
 ---
-summary: 'How to take upstream changes: the remotes, taking a commit of upstream QuickJS into engine/ one at a time with its test and the generated files, test262 and its pin, moving to a newer Go, a new release of the Go API, new CLDR, tzdb or Chromium data for intl, a new release of go-intl in internal/gointl, and a new tz update for its packs'
+summary: 'How to take upstream changes: the remote, taking a commit of upstream QuickJS into engine/ one at a time with its test and the generated files, test262 and its pin, moving to a newer Go, new CLDR, tzdb or Chromium data for intl, a new release of go-intl in internal/gointl, and a new tz update for its packs'
 read_when:
-  - Setting up a fresh clone that will follow upstream
+  - Setting up a fresh clone that will follow upstream QuickJS
   - Taking a commit or a release of upstream QuickJS into engine/
-  - Taking a new release of modernc.org/quickjs (the Go API)
   - Moving intl to a new CLDR, tzdb or Chromium release
   - Moving internal/gointl to a new go-intl release, or changing qjs.patch, qjs-sync.sh or the packs in qjsdata/
   - Moving Temporal's time zones to a new tz release (internal/gointl/qjstz)
@@ -14,14 +13,12 @@ read_when:
 
 ## Branches and remotes
 
-`main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs (the Go API) and get no commits of their own.
+`main` is the branch of slowjs. `master` and a few other old branches mirror gitlab.com/cznic/quickjs, where the Go API started, and get no commits of their own.
 
-Set up the remotes once in a fresh clone. The QuickJS remote is Fabrice Bellard's repository, where the C comes from:
+Set up the remote once in a fresh clone. It is Fabrice Bellard's repository, where the C comes from:
 
 ```sh
-git remote add upstream https://gitlab.com/cznic/quickjs.git
 git remote add quickjs https://github.com/bellard/quickjs.git
-git fetch upstream
 git fetch quickjs
 ```
 
@@ -29,12 +26,12 @@ Do the upgrade on a branch (`git switch -c upgrade-quickjs-<date>`) and merge it
 
 ## Taking upstream QuickJS into engine/
 
-`engine/` is QuickJS at `3d5e064` (2026-06-04) with the fork's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream is taken when it makes tifa's renders faster, or removes a crash or a wrong answer that a page can reach, and each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
+`engine/` is QuickJS at `3d5e064` (2026-06-04) with slowjs's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream is taken when it makes tifa's renders faster, or removes a crash or a wrong answer that a page can reach, and each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
 
 For each commit:
 
 1. `git fetch quickjs`, then see what is new: `git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`.
-2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of the fork ([changes](changes/README.md) names the functions), the fork's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
+2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of slowjs ([changes](changes/README.md) names the functions), slowjs's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
 5. At the end of a batch, run `make check-full`. The 58 known test262 errors must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
@@ -57,15 +54,6 @@ When Go changes any of these, a check of the generator or a test fails. A progra
 3. Read the source of `runtime.sigpanic` and the stack check of the new release if the fault tests fail, and update `FaultRoom` only for what you read there.
 4. When all pass, write the new version here and in the README, in both languages.
 
-## Taking a new release of the Go API
-
-```sh
-git merge <upstream tag>
-```
-
-Upstream commits import `modernc.org/libquickjs` and `modernc.org/quickjs`, and call the engine of `modernc.org/libquickjs` (ccgo Go). That engine is not here, so a merge conflicts wherever the Go API reaches into it: bring over what the change does to the API and write the engine side against `engine.go`, `entry.go`, `hostcall.go` and `enginememory.go`. After the merge, run `grep -rn 'modernc.org/quickjs\|modernc.org/libquickjs' --include='*.go' .` and switch what it finds to `github.com/liustack/slowjs`. The only expected leftover is the Symbol key `"modernc.org/quickjs/intl"` in `intl/stub.js`, which is a runtime marker, not an import path.
-
-`intl/` has been rewritten here, so an upstream change to it conflicts. Keep this fork's version and bring over only what the upstream change fixes, checked with the golden test below.
 
 ## Updating the intl locale data
 
@@ -134,7 +122,7 @@ internal/gointl/qjs-sync.sh update         # copies its runtime sources here and
 internal/gointl/qjs-sync.sh chromium       # records what Chromium resolves the new tags to
 internal/gointl/qjs-sync.sh pack           # writes qjsdata/ again
 internal/gointl/qjs-sync.sh test -p 2      # go-intl's own tests, on packs of every language
-internal/gointl/qjs-sync.sh test-chromium -p 2  # the fork's Chromium corpora on the shipped packs
+internal/gointl/qjs-sync.sh test-chromium -p 2  # slowjs's Chromium corpora on the shipped packs
 go test ./internal/gointl/... && make gointl
 ```
 
