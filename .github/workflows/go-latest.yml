@@ -37,7 +37,6 @@ jobs:
           cache: true
       - run: go version
       - name: Test, C engine, internal packages
-        # TestTimeout is left out: it fails on runners with a fast CPU, see "CI" in docs/testing.md.
-        run: go test -count=1 -tags slowjs_cengine,testhooks -skip '^TestTimeout$' ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+        run: go test -count=1 -tags slowjs_cengine,testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, C engine, root package
         run: go test -count=1 -p 1 -timeout 60m -tags slowjs_cengine .

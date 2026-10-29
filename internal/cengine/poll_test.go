@@ -239,7 +239,11 @@ func TestKill(t *testing.T) {
 // TestTimeout: a script that runs past the timeout of the VM stops with the
 // error "interrupted", as after Interrupt, and each Eval has the whole
 // timeout. One that never reads the flag is killed once the grace after the
-// deadline is over.
+// deadline is over. The call that never reads it must outlast the timeout and
+// the grace on any machine, so it is the one TestKill uses: lastIndexOf over
+// an array-like object of 2^31-1 indices, which takes a minute or more. A
+// dense Array of 8 Mi elements took 77 ms on an AMD EPYC 9V45 and ended before
+// the kill.
 func TestTimeout(t *testing.T) {
 	needPolls(t)
 	v := newVM(t, Options{Seed: 1})
@@ -263,13 +267,13 @@ func TestTimeout(t *testing.T) {
 
 	w := newVM(t, Options{Seed: 1})
 	w.Host().SetKillGrace(30 * time.Millisecond)
-	if _, err := w.Eval("var a = Array(1 << 23).fill(1.5)", "setup.js"); err != nil {
+	if _, err := w.Eval("var a = { length: 2 ** 31 - 1 }", "setup.js"); err != nil {
 		t.Fatal(err)
 	}
 	w.RunGC()
 	w.SetTimeout(50 * time.Millisecond)
 	t0 := time.Now()
-	if _, err := w.Eval("for (;;) a.lastIndexOf(-1)", "lastindexof.js"); !errors.Is(err, ErrKilled) {
+	if _, err := w.Eval("Array.prototype.lastIndexOf.call(a, -1)", "lastindexof.js"); !errors.Is(err, ErrKilled) {
 		t.Errorf("an endless lastIndexOf: Eval gave %v, want ErrKilled", err)
 	}
 	if d := time.Since(t0); d < 80*time.Millisecond || d > 2*time.Second {
