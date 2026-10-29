@@ -108,11 +108,13 @@ if (typeof memorySize === 'function') {
     }
     return n
   }
+  // the same blocks in use, a few bytes apart at most, after two collections
+  // (see strict_equal.js)
   mk(); mk(); gc()
-  mk(); mk(); mk(); gc()
-  const m1 = memorySize()
-  mk(); mk(); mk(); gc()
-  out.push('memory after: ' + (memorySize() - m1))
+  mk(); mk(); mk(); gc(); gc()
+  const m1 = memorySize(), k1 = memoryBlocks()
+  mk(); mk(); mk(); gc(); gc()
+  out.push('memory after: ' + heapChange(m1, k1))
 } else {
   out.push('memory after: 0')
 }
