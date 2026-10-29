@@ -64,9 +64,9 @@ func main() {
 
 A VM is not safe for several goroutines at once: give each goroutine its own, or keep a pool. Intl and Temporal use embedded tz 2026e, so they need no host zoneinfo.
 
-## What slowjs adds to the API
+## More API than Eval and Call
 
-The API is that of modernc.org/quickjs, documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs), with these additions:
+The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs). Besides `NewVM`, `VM.Eval`, `VM.Call` and `Value`, which every program starts with, it has:
 
 - **`NewBuiltin(name, length, fn)` and `VM.NewBuiltinFunction(b)`**: a Go function javascript calls as it calls `Math.max`, with no reflection. `fn` reads its arguments from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`, and `Latin1` or `UTF16` for the characters of a string as the engine holds them), which convert nothing, and returns a `Value`. A call that adds two numbers takes about 55 ns on an Apple M4, against about 470 ns through `RegisterHostFunc`. Make a Builtin once per process: VMs on several goroutines call it at once. An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`), any other error as a `TypeError`. [More](docs/changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
 - **`VM.NewArray(vals...)`**: an array of values made in Go, made as an array literal makes one, so a setter a page put on `Array.prototype` never runs. [More](docs/changes/go-api.md#newarray)
@@ -102,13 +102,17 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 
 ## Where it comes from
 
-The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. Jan Mercl translated it to Go with ccgo as [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), which slowjs ran up to v0.28 and which its C engine replaced. The quickjs-go authors wrote the Go API, [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) (v0.25.0 here, at the root). slowjs keeps that API and puts its own engine under it. [docs/upstream.md](docs/upstream.md) has the exact versions, what the fork kept and changed, and what changes when you switch from modernc.org/quickjs.
+The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/upstream.md](docs/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
+
+## Thanks
+
+Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired slowjs.
 
 ## Documentation
 
 | Doc | Read it when |
 | :-- | :-- |
-| [Fork changes](docs/changes/README.md) | You want to know what slowjs does differently from modernc.org/quickjs, and why |
+| [Changes](docs/changes/README.md) | You want to know why each change to the engine is safe, what it costs and what it gains |
 | [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
 | [Benchmarks](docs/benchmarks.md) | You want to know how this engine compares with the other pure Go JavaScript engines |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
@@ -116,12 +120,12 @@ The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Char
 | [Testing](docs/testing.md) | You are about to commit, or want to check the engine |
 | [Upgrading](docs/upgrading.md) | You are taking a commit of upstream QuickJS, or new locale data |
 | [Releasing](docs/releasing.md), [Commits](docs/commit.md) | You are making a release or a commit |
-| [Upstream](docs/upstream.md) | You are switching from modernc.org/quickjs, or want to know where the code comes from |
+| [Upstream](docs/upstream.md) | You are moving from modernc.org/quickjs, or want to know where the code comes from |
 
 The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs).
 
 ## License
 
-The files slowjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. Everything that came from upstream keeps its own license: the Go API is under BSD-3-Clause ([LICENSE](LICENSE), [LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)), the C of the engine under QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)), the allocator under TLSF's BSD-3-Clause ([LICENSE-TLSF](LICENSE-TLSF)), and the small libc under musl's MIT license and the notices in [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT). slowjs's changes to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
+The files slowjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. Code that came from other projects keeps its own license: what remains from modernc.org/quickjs and modernc.org/libquickjs is under BSD-3-Clause ([LICENSE](LICENSE), [LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)), the C of the engine under QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)), the allocator under TLSF's BSD-3-Clause ([LICENSE-TLSF](LICENSE-TLSF)), and the small libc under musl's MIT license and the notices in [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT). slowjs's changes to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
 
 A program that ships a binary built with this module has to carry the notices of these licenses. [NOTICE.md](NOTICE.md) says which license covers which path, and which texts to include.
