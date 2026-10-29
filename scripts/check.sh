@@ -82,6 +82,7 @@ step goasm fast tests "env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$r
 step cengine fast tests "$gc test -count=1 -v -tags $tags,testhooks ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain"
+step math fast last "engine/test/math.sh"
 step cycles fast last "engine/test/cycles.sh"
 # Full: the end of a batch.
 step fixlib full - "$gc run ./internal/fixlib -check"
