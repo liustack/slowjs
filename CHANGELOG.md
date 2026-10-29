@@ -12,6 +12,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 ### Changed
 
 - The symbols `intl.Register` and `temporal.Register` put on the global object to mark a VM as set up are `Symbol.for("github.com/liustack/slowjs/intl")` and `Symbol.for("github.com/liustack/slowjs/temporal")`, where they were named after modernc.org/quickjs.
+- A script is killed only when it has also kept the engine at work after its eval timeout or an `Interrupt`: 1000 polls of the engine since it was asked to stop, besides the 50 ms. Time in which the engine does no work, in a Go function the script called or while the OS or the Go scheduler runs other threads or goroutines, no longer gets a script killed that would have stopped by itself: the call returns the interrupted error and the VM goes on. On a loaded machine a script that stopped in under a millisecond of work could be killed before.
 
 ## [v0.29.0] - 2026-10-29
 

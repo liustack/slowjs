@@ -104,11 +104,27 @@ const StackHeader = 8
 const DefaultPollInterval = 10000
 
 // DefaultKillGrace is how long a new VM gives a script to stop after
-// Interrupt before a poll kills it.
+// Interrupt before a poll kills it, once the script has also run KillPolls
+// polls past the request.
 const DefaultKillGrace = 50 * time.Millisecond
 
+// KillPolls is how many polls a script must reach after the one that sets the
+// interrupt flag before a poll may kill it, besides the grace being over. The
+// grace is time on the clock, and a thread the OS or the Go scheduler does
+// not run passes it with no work done: the polls are the work. On an Apple M
+// performance core a script that reads the flag stops within 1 to 13 polls,
+// and one that has to free or collect what it made first within about 600
+// (the default sort of a copy of 500,000 numbers, 10 ms, a fill of 4 Mi
+// elements, 4 ms),
+// while a loop that never reads the flag polls 33 to 163 times a millisecond
+// (lastIndexOf over an array-like object, slice, TypedArray.set, BigInt
+// products). 1000 polls leave those stops room and come within 6 to 30 ms
+// of such a loop, inside the grace of 50 ms. On a core 4 times slower they
+// come within 25 to 120 ms.
+const KillPolls = 1000
+
 // ErrKilled is what Poll panics with when a script has not stopped by the
-// grace after Interrupt: the panic leaves through the engine's frames, and
+// grace after Interrupt and KillPolls polls: the panic leaves through the engine's frames, and
 // the VM is broken.
 var ErrKilled = errors.New("gohost: the script did not stop after Interrupt and was killed")
 
@@ -140,9 +156,11 @@ type VM struct {
 	grace     time.Duration
 	// script: the outermost entry runs a script (EnterScript), which a
 	// poll may kill. deadline is when it is interrupted, on the monotonic
-	// clock of Now, or 0.
+	// clock of Now, or 0. seen counts the polls that saw the request to stop
+	// since the outermost entry began.
 	script   bool
 	deadline int64
+	seen     int64
 	killed   bool
 	counts   Counts
 	lastErr  error
@@ -400,11 +418,11 @@ func (v *VM) Enter() { v.enter(false, 0) }
 
 // EnterScript is Enter for a call that runs a script: an evaluation, a call
 // of a function, the jobs. When it is the outermost entry, a poll kills the
-// script that runs on past the grace after Interrupt, and a timeout above 0
-// sets a deadline: the first poll past it acts as if Interrupt had been
-// called at the deadline. One too far to count has no deadline. An inner
-// entry keeps what the outermost one set: a script that a callback runs
-// has the time that is left.
+// script that runs on past the grace after Interrupt (see SetKillGrace), and
+// a timeout above 0 sets a deadline: the first poll past it acts as if
+// Interrupt had been called at the deadline. One too far to count has no
+// deadline. An inner entry keeps what the outermost one set: a script that a
+// callback runs has the time that is left.
 func (v *VM) EnterScript(timeout time.Duration) { v.enter(true, timeout) }
 
 func (v *VM) enter(script bool, timeout time.Duration) {
@@ -416,6 +434,7 @@ func (v *VM) enter(script bool, timeout time.Duration) {
 	}
 	if v.depth == 0 {
 		v.interrupt.Store(0)
+		v.seen = 0
 		if v.flag != 0 {
 			*(*int32)(addr(v.flag)) = 0
 		}
@@ -476,10 +495,13 @@ func (v *VM) SetPollInterval(n int64) {
 }
 
 // SetKillGrace sets how long a script may run on after Interrupt, or after
-// its deadline, before the next poll kills it: the poll panics with ErrKilled
-// through the engine's frames, and the VM takes only Close from then on. A
-// negative grace never kills, and neither does an entry that runs no script
-// (Enter).
+// its deadline, before a poll kills it: the first poll that comes once the
+// grace is over and KillPolls polls have come after the one that set the
+// flag panics with ErrKilled through the engine's frames, and the VM takes
+// only Close from then on. A stall of the thread, when the OS or the Go
+// scheduler runs something else, passes the grace but adds no polls, so it
+// does not get a script that would stop killed. A negative
+// grace never kills, and neither does an entry that runs no script (Enter).
 func (v *VM) SetKillGrace(d time.Duration) { v.grace = d }
 
 // KillGrace is the grace SetKillGrace set.
@@ -588,7 +610,8 @@ func (v *VM) readClock() int64 {
 // interrupts as Interrupt would have at the deadline. Once Interrupt asked to
 // stop, it sets the engine's interrupt flag, which the engine throws
 // "interrupted" on where it can, and kills a script still running longer
-// than the grace after the Interrupt or the deadline, whichever came first.
+// than the grace after the Interrupt or the deadline, whichever came first,
+// and KillPolls polls after the one that set the flag.
 // It does not call into the engine.
 func Poll(sp uintptr) {
 	v := ByStack(sp)
@@ -612,7 +635,8 @@ func Poll(sp uintptr) {
 	if v.flag != 0 {
 		*(*int32)(addr(v.flag)) = 1
 	}
-	if v.script && v.grace >= 0 && time.Since(start)-time.Duration(t-1) >= v.grace {
+	v.seen++
+	if v.script && v.grace >= 0 && v.seen > KillPolls && time.Since(start)-time.Duration(t-1) >= v.grace {
 		v.killed = true
 		v.MarkBroken()
 		panic(ErrKilled)

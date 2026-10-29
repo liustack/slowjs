@@ -158,10 +158,11 @@ func TestValueCallRearmsEvalTimeout(t *testing.T) {
 }
 
 // nestedEntries are the ways a host function can run more javascript on the
-// VM that called it.
+// VM that called it. Each runs the global function loop, which the test
+// defines.
 var nestedEntries = map[string]func(m *VM) error{
 	"Eval": func(m *VM) error {
-		_, err := m.Eval(`for (let i = 0; i < 1e5; i++) {}`, EvalGlobal)
+		_, err := m.Eval(`loop()`, EvalGlobal)
 		return err
 	},
 	"Call": func(m *VM) error {
@@ -169,7 +170,7 @@ var nestedEntries = map[string]func(m *VM) error{
 		return err
 	},
 	"EvalBytecode": func(m *VM) error {
-		code, err := m.Compile(`for (let i = 0; i < 1e5; i++) {}`, EvalGlobal)
+		code, err := m.Compile(`loop()`, EvalGlobal)
 		if err != nil {
 			return err
 		}
@@ -211,10 +212,7 @@ var nestedEntries = map[string]func(m *VM) error{
 }
 
 // pastDeadline is how long after the deadline of the outer call
-// TestNestedEvalKeepsTimeout starts the nested one: well within the grace of
-// 50 ms the C engine gives a script after its deadline before it kills it
-// (see TestNestedEvalPastGrace), as the time the host function sleeps
-// counts.
+// TestNestedEvalKeepsTimeout starts the nested one.
 const pastDeadline = 10 * time.Millisecond
 
 // TestNestedEvalKeepsTimeout runs javascript from a host function after the
