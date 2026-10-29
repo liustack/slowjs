@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.29.0] - 2026-10-29
+
 ### 变更
 
 - **不兼容：** 引擎换成 C 引擎，而且只有它。它是 C 写的 QuickJS（`engine/`），由 LLVM 编译成 Go 汇编，随模块一起发布，所以构建不需要 C 编译器，也不用 cgo。到 v0.28 为止，引擎是 ccgo 翻译成 Go 的 QuickJS，那个引擎已经删掉。结果、错误堆栈和 HTML 不变，下面几条除外。
@@ -29,6 +31,7 @@
 - Go 垃圾回收的停顿保持一样短：1 个 VM 时一次停顿的 P99 是 131 到 164 µs（以前 164），3 个 VM 是 197 µs（以前 197），最长 3.1 ms（以前 4.2）和 0.9 ms（以前 2.1）。
 - 商店的一个 VM 加载后占 8.3 到 8.6 MiB，渲染 300 次后 12.8 到 12.9 MiB，池把空闲内存还给系统后 9.7 MiB。商店程序大 0.5%，帧信息表小 152 KB。
 - 150 分钟、211,076 次渲染的 soak 没有错误，没有 VM 被换掉，VM 的内存没有变化。方法和其余数字见 [Performance](docs/performance.md#acceptance-before-the-switch)。
+- 跑同一份 JavaScript，tifa 示例商店、MUI 测试应用和 bench 应用的页面耗时是 C QuickJS 2026-06-04 的 0.98 到 1.06 倍，MUI 页面是 0.81。用自带的 `Intl`（C 得靠 polyfill）时，商店是 0.82，MUI 是 0.52。能渲染这些页面的其他纯 Go 引擎耗时是 slowjs 的 1.6 到 6.6 倍（[Benchmarks](docs/benchmarks.md#tifa-pages)）。
 
 ### 修复
 
@@ -384,7 +387,12 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.28.2...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.0...main
+[v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
+[v0.28.6]: https://github.com/liustack/slowjs/compare/v0.28.5...v0.28.6
+[v0.28.5]: https://github.com/liustack/slowjs/compare/v0.28.4...v0.28.5
+[v0.28.4]: https://github.com/liustack/slowjs/compare/v0.28.3...v0.28.4
+[v0.28.3]: https://github.com/liustack/slowjs/compare/v0.28.2...v0.28.3
 [v0.28.2]: https://github.com/liustack/slowjs/compare/v0.28.1...v0.28.2
 [v0.28.1]: https://github.com/liustack/slowjs/compare/v0.28.0...v0.28.1
 [v0.28.0]: https://github.com/liustack/slowjs/compare/v0.27.3...v0.28.0
