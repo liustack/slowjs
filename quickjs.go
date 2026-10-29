@@ -2,8 +2,6 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:generate go run generator.go
-
 // Package slowjs is a pure Go embeddable Javascript engine. It supports the
 // ECMA script 14 ([ES2023]) specification including modules, asynchronous
 // generators, proxies and BigInt.
@@ -23,25 +21,6 @@
 // no timeZone option the zone is UTC. Both use the time zone data built into
 // the module and never read the host's zoneinfo.
 //
-// # Performance
-//
-// Geomeans of time/op over a set of benchmarks, relative to CCGO, lower number
-// is better. Detailed results available in the testdata/benchmarks directory.
-//
-//	 CCGO: github.com/liustack/slowjs/lib
-//	 GOJA: github.com/dop251/goja@v0.0.0-20260723142020-b4aef50fa347
-//	  QJS: github.com/fastschema/qjs@v0.0.6
-//
-//		                        CCGO     GOJA     QJS
-//		-----------------------------------------------
-//		        darwin/amd64    1.000    1.575    1.300
-//		        darwin/arm64    1.000    1.069    1.080
-//		         linux/amd64    1.000    1.419    1.213
-//		         linux/arm64    1.000    1.611    1.267
-//		       windows/amd64    1.000    2.254    1.438
-//		-----------------------------------------------
-//		                        CCGO     GOJA     QJS
-//
 // # Notes
 //
 // Parts of the documentation were copied from the quickjs documentation, see
@@ -49,19 +28,14 @@
 //
 // # Supported platforms and architectures
 //
-// These combinations of GOOS and GOARCH are currently supported
+// The engine is C compiled to Go assembly, checked in, so building needs no
+// C compiler. It runs on these combinations of GOOS and GOARCH, and a build
+// for any other stops with an error that names them
 //
 //	OS      Arch
 //	-------------
-//	darwin  amd64
 //	darwin  arm64
 //	linux   amd64
-//	linux   arm64
-//	windows amd64
-//
-// On linux/amd64 the bytecode interpreter is Go assembly compiled from the C.
-// Build with -tags slowjs_nogoasm to use the Go interpreter that the other
-// targets run.
 //
 // # Change Log
 //
