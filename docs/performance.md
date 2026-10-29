@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -377,6 +377,34 @@ Memory, on the C tree natively (Apple M4), against main with the same HTML:
 
 A VM of the shop holds about 0.17 MiB more after its first render, for the keys of its 5088 literals and their shapes, which now live as long as their functions. A long Markdown page takes less, as its objects no longer have spare slots. The highest memory of a process of `r_react_ssr` goes from 8.0 to 8.3 MiB (median of 32 processes).
 
+### Calls, for in and hasOwnProperty.call
+
+Two changes, measured one on top of the other: [a call sets and frees its values in fewer loop turns](changes/c-engine.md#how-a-call-sets-and-frees-its-values), then [a for in loop holds the shape of its object](changes/objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) together with [hasOwnProperty.call answered in the interpreter](changes/objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter). Against main (9fd4bdb0, with object literals made at their final shape), without PGO, over 4 rounds at 8 positions on one core of an EPYC 7B13 with its sibling idle, with the same HTML. Time is the median over positions of the paired ratios, and positions gives the lowest and the highest of them. Instructions per render are from callgrind at position 0.0: the difference of 12 and 4 renders of each page for the shop, of 3 and 1 for the MUI pages and the scripts. The bench pages are counted on `r_bench_table` and `r_bench_spiral`, which render the same pages.
+
+The calls, against main:
+
+| Pages | Time | Positions | Base range | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.996, no change by the rule | 0.991 to 1.001 | 2.0% | -2.5% |
+| tifa's MUI test app, three pages (sum) | 0.999, no change by the rule | 0.991 to 1.003 | 1.7% | -1.8% |
+| tifa's bench app, table | 0.958 | 0.939 to 0.989 | 2.5% | -4.8% |
+| tifa's bench app, spiral | 0.967 | 0.958 to 0.997 | 2.4% | -3.2% |
+| `r_react_ssr` | 0.984, no change by the rule | 0.975 to 1.005 | 2.7% | -3.1% |
+
+The for in loops and hasOwnProperty.call, against the calls:
+
+| Pages | Time | Positions | Base range | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.984, no change by the rule | 0.975 to 0.996 | 2.0% | -2.5% |
+| tifa's MUI test app, three pages (sum) | 0.981, no change by the rule | 0.971 to 0.995 | 1.9% | -3.4% |
+| tifa's bench app, table | 0.996, no change by the rule | 0.968 to 1.011 | 2.4% | -1.1% |
+| tifa's bench app, spiral | 0.977, no change by the rule | 0.951 to 0.987 | 2.0% | -2.8% |
+| `r_react_ssr` | 0.988, no change by the rule | 0.956 to 1.012 | 3.9% | -1.8% |
+
+Every position of the shop and the MUI pages was faster with the second change. Both changes against main: the shop 0.982 (0.967 to 0.983, 5.0% fewer instructions), the MUI pages 0.976 (0.966 to 0.995), the bench table 0.955 (0.948 to 0.966), the bench spiral 0.950 (0.938 to 0.956) and `r_react_ssr` 0.969 (0.956 to 0.991), each at every position. No page is slower. The one script found slower is `q_func_call`, a loop of calls to a function with no locals: 3.0% more instructions with the first change, for the tests of the two and the one locals left over.
+
+The memory of a VM does not change: `MemorySize` and the footprint at the end of `r_react_ssr` and `r_bench_table` are the same bytes before and after (Apple M4). On linux/amd64 the heap of the engine grows the same 13 times to the same 12 chunks. The most memory of a `jsrun` process of `r_react_ssr`, which the Go runtime and the code pages add to, is 8.3 MiB at the median of 32 processes before the changes and 8.4 MiB after.
+
 ### Upstream commits and the scripts where the C engine was slower than C
 
 [upstream-commits.md](changes/upstream-commits.md) lists the commits of upstream QuickJS taken into the C tree and the ones tried and taken back, with their speed. Against main (`c4dcea91`) before the batch, all 37 scripts at 8 positions, 2 rounds: geometric mean 0.917, with `q_array_slice` at 0.085 and `c_array_methods` at 0.530 and the other 35 scripts together at 0.997. `r_react_ssr` took 0.977, within its noise.
@@ -591,6 +619,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Taking the TLS frame of `JS_CallInternal` without a call**: Go does not inline the fast path into the interpreter, and the frees inlined at its returns made renders of tifa's bench pages take 1.6% more time. TLS frames taken without a call on linux leaves it out.
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005). It is done since together with the listing of keys, which it shares with `for in` and `Object.keys` (see [Own keys listed from the shape](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)).
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
+- **Reading the count of locals once, alone**: at the start of a call the interpreter read `b->var_count` again after each local it set. Reading it once gave React 1.0% fewer instructions but a loop of arithmetic 3.9% more, from a register spilled in one handler, and the time did not change. It is done since together with setting four locals a turn and freeing two values a turn (see [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall)).
 - **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules.
 - **Keeping the in-between shapes of every object literal**, before v0.26.16: about 2% more on top of the new property fast path, but the two list pages ran out of VM memory, because the kept shapes held their prototypes and everything those reach. v0.26.16 keeps only shapes whose prototype is `Object.prototype`, at most 32 keys and no unregistered symbol key, in a ring of 2048 (see [Kept shapes](changes/objects-and-shapes.md#kept-shapes)).
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.

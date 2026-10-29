@@ -881,7 +881,10 @@ typedef struct JSForInIterator {
     uint32_t atom_count;
     uint8_t in_prototype_chain;
     uint8_t is_array;
-    JSPropertyEnum *tab_atom; /* is_array = FALSE */
+    JSPropertyEnum *tab_atom; /* is_array = FALSE and sh = NULL */
+    /* when not NULL, the shape of obj when the loop started, held: the keys
+       are its string keys, in its order (see build_for_in_iterator) */
+    JSShape *sh;
 } JSForInIterator;
 
 typedef struct JSRegExp {
@@ -7561,7 +7564,9 @@ static void js_for_in_iterator_finalizer(JSRuntime *rt, JSValue val)
     int i;
 
     JS_FreeValueRT(rt, it->obj);
-    if (!it->is_array) {
+    if (it->sh) {
+        js_free_shape(rt, it->sh);
+    } else if (!it->is_array) {
         for(i = 0; i < it->atom_count; i++) {
             JS_FreeAtomRT(rt, it->tab_atom[i].atom);
         }
@@ -7576,6 +7581,8 @@ static void js_for_in_iterator_mark(JSRuntime *rt, JSValueConst val,
     JSObject *p = JS_VALUE_GET_OBJ(val);
     JSForInIterator *it = p->u.for_in_iterator;
     JS_MarkValue(rt, it->obj, mark_func);
+    if (it->sh)
+        mark_func(rt, &it->sh->header);
 }
 
 static void free_object(JSRuntime *rt, JSObject *p)
@@ -19032,6 +19039,15 @@ static JSValue js_build_mapped_arguments(JSContext *ctx, int argc,
     return JS_EXCEPTION;
 }
 
+/* whether the shape property prs is a key build_for_in_iterator lists from
+   a shape: a string, as its shape has no array index (deleted keys and
+   symbols are left out) */
+static inline BOOL js_for_in_shape_key(JSRuntime *rt, const JSShapeProperty *prs)
+{
+    return prs->atom != JS_ATOM_NULL && !__JS_AtomIsTaggedInt(prs->atom) &&
+        rt->atom_array[prs->atom]->atom_type == JS_ATOM_TYPE_STRING;
+}
+
 static JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
 {
     JSObject *p, *p1;
@@ -19061,6 +19077,7 @@ static JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
     it->obj = obj;
     it->idx = 0;
     it->tab_atom = NULL;
+    it->sh = NULL;
     it->atom_count = 0;
     it->in_prototype_chain = FALSE;
     p1 = JS_VALUE_GET_OBJ(enum_obj);
@@ -19083,7 +19100,23 @@ static JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
         it->is_array = TRUE;
         it->atom_count = p->u.array.count;
     } else {
+        JSOwnKeyList l;
     normal_case:
+        /* An ordinary object whose shape is in the hash table and has no
+           array index or binding among its string keys lists them in the
+           order of the shape, as JS_GetOwnPropertyNamesInternal would, with
+           their enumerable flags. Holding the shape keeps them: a shape in
+           the table leaves it before it changes, and with a second
+           reference the object gets a copy to change instead
+           (add_property, js_shape_prepare_update). So no list is made, and
+           while the object still has that shape no key was deleted. */
+        if (p->shape->is_hashed &&
+            js_own_keys_scan(ctx, &l, p, JS_GPN_STRING_MASK | JS_GPN_SET_ENUM) &&
+            l.nums == 0) {
+            it->sh = js_dup_shape(p->shape);
+            it->atom_count = it->sh->prop_count;
+            return enum_obj;
+        }
         if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
                                            JS_GPN_STRING_MASK | JS_GPN_SET_ENUM)) {
             JS_FreeValue(ctx, enum_obj);
@@ -19188,6 +19221,18 @@ static __exception int js_for_in_prepare_prototype_chain_enum(JSContext *ctx,
         it->tab_atom = tab_atom;
         it->atom_count = tab_atom_count;
     }
+    if (it->sh) {
+        JSShapeProperty *prs = get_shape_prop(it->sh);
+        for(i = 0; i < it->sh->prop_count; i++) {
+            if (js_for_in_shape_key(ctx->rt, &prs[i]) &&
+                JS_DefinePropertyValue(ctx, enum_obj, prs[i].atom, JS_NULL,
+                                       JS_PROP_ENUMERABLE) < 0)
+                goto fail;
+        }
+        js_free_shape(ctx->rt, it->sh);
+        it->sh = NULL;
+        it->atom_count = 0;
+    }
 
     for(i = 0; i < it->atom_count; i++) {
         if (JS_DefinePropertyValue(ctx, enum_obj, it->tab_atom[i].atom, JS_NULL, JS_PROP_ENUMERABLE) < 0)
@@ -19251,7 +19296,17 @@ static __exception int js_for_in_next(JSContext *ctx, JSValue *sp)
             it->atom_count = tab_atom_count;
             it->idx = 0;
         } else {
-            if (it->is_array) {
+            if (it->sh) {
+                /* the keys of the shape: see build_for_in_iterator */
+                JSShapeProperty *prs = &get_shape_prop(it->sh)[it->idx++];
+                if (!js_for_in_shape_key(ctx->rt, prs) ||
+                    !(prs->flags & JS_PROP_ENUMERABLE))
+                    continue;
+                prop = prs->atom;
+                /* with the shape it had, the object has every key of it */
+                if (JS_VALUE_GET_OBJ(it->obj)->shape == it->sh)
+                    break;
+            } else if (it->is_array) {
                 prop = __JS_AtomFromUInt32(it->idx);
                 it->idx++;
             } else {
@@ -20828,6 +20883,87 @@ static force_inline JSValue goasm_atom_to_value(JSContext *ctx, JSAtom atom)
 #define POLL_RUN 128
 #define POLL_WEIGHT 32
 
+static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_object_hasOwnProperty(JSContext *ctx, JSValueConst this_val,
+                                        int argc, JSValueConst *argv);
+
+/* TRUE when val is the built-in function of func, in any realm: a function
+   replaced by script or bound is another object and is not it. */
+static inline BOOL js_is_cfunction(JSValueConst val, JSCFunction *func)
+{
+    JSObject *p;
+    if (JS_VALUE_GET_TAG(val) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(val);
+    return p->class_id == JS_CLASS_C_FUNCTION &&
+        p->u.cfunc.cproto == JS_CFUNC_generic &&
+        p->u.cfunc.c_function.generic == func;
+}
+
+/* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
+   one of Function.prototype.call and the one of hasOwnProperty: call_argv[-1]
+   is Function.prototype.call and call_argv[-2] what it calls. React and the
+   libraries around it test each key of a for in loop this way. Only what
+   cannot run script or throw takes this path: hasOwnProperty itself, an
+   ordinary object (not exotic, so no proxy or class method answers), and a
+   key that is its own atom already, a string atom as JS_ValueToAtom finds it
+   or an integer of an index atom, so that no atom is made. Where the two
+   calls would have thrown on their way in (the call depth, the stack, an
+   interrupt or an uncatchable exception pending) and for a variable binding,
+   which can throw before it is initialized, the calls are made as before.
+   Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make the calls. */
+static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst *call_argv,
+                                         int call_argc)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValueConst obj, key;
+    JSObject *p;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSAtom atom;
+    uint32_t tag;
+
+    if (call_argc < 2 ||
+        !js_is_cfunction(call_argv[-2], js_object_hasOwnProperty))
+        return JS_UNINITIALIZED;
+    obj = call_argv[0];
+    key = call_argv[1];
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return JS_UNINITIALIZED;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (p->is_exotic)
+        return JS_UNINITIALIZED;
+    tag = JS_VALUE_GET_TAG(key);
+    if (tag == JS_TAG_STRING) {
+        JSString *s = JS_VALUE_GET_STRING(key);
+        /* the string JS_ValueToAtom takes as its own atom */
+        if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
+            is_digit(string_get(s, 0)))
+            return JS_UNINITIALIZED;
+        atom = js_get_atom_index(rt, s);
+    } else if (tag == JS_TAG_INT &&
+               (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
+        atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
+    } else {
+        return JS_UNINITIALIZED;
+    }
+    /* what JS_CallInternal checks first, for the two levels the calls
+       count. Their frames come before their checks and take much less than
+       a margin, so with less than two margins of stack left the calls are
+       made, and they throw where they always did (TestHasOwnCallDepth). */
+    if (rt->call_depth + 1 >= rt->max_call_depth ||
+        js_stack_short(JS_STACK_MARGIN) ||
+        poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt))
+        return JS_UNINITIALIZED;
+    prs = find_own_property(&pr, p, atom);
+    if (!prs)
+        return JS_FALSE;
+    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
+        return JS_UNINITIALIZED;
+    return JS_TRUE;
+}
+
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags)
@@ -20970,8 +21106,27 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     sf->var_buf = var_buf;
     sf->arg_buf = arg_buf;
 
-    for(i = 0; i < b->var_count; i++)
-        var_buf[i] = JS_UNDEFINED;
+    /* the locals start as undefined, four to a turn, then the two and the
+       one left over. The count is read once into n: in the loop the compiler
+       read b->var_count again after each store of a JSValue, which might
+       have changed it (docs/changes/c-engine.md) */
+    {
+        JSValue *v = var_buf;
+        int n = b->var_count;
+        for(; n >= 4; n -= 4, v += 4) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v[2] = JS_UNDEFINED;
+            v[3] = JS_UNDEFINED;
+        }
+        if (n & 2) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v += 2;
+        }
+        if (n & 1)
+            v[0] = JS_UNDEFINED;
+    }
 
     stack_buf = var_buf + b->var_count;
     sf->var_refs = (JSVarRef **)(stack_buf + b->stack_size);
@@ -21319,7 +21474,9 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     goto exception;
                 if (opcode == OP_tail_call)
                     goto done;
-                for(i = -1; i < call_argc; i++)
+                /* the function, then the arguments */
+                JS_FreeValue(ctx, call_argv[-1]);
+                for(i = 0; i < call_argc; i++)
                     JS_FreeValue(ctx, call_argv[i]);
                 sp -= call_argc + 1;
                 *sp++ = ret_val;
@@ -21349,13 +21506,20 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 pc += 2;
                 call_argv = sp - call_argc;
                 sf->cur_pc = pc;
+                if (unlikely(js_is_cfunction(call_argv[-1], js_function_call)) &&
+                    !JS_IsUninitialized(ret_val = js_has_own_call(ctx, call_argv, call_argc)))
+                    goto call_method_done;
                 ret_val = JS_CallInternal(ctx, call_argv[-1], call_argv[-2],
                                           JS_UNDEFINED, call_argc, call_argv, 0);
                 if (unlikely(JS_IsException(ret_val)))
                     goto exception;
+            call_method_done:
                 if (opcode == OP_tail_call_method)
                     goto done;
-                for(i = -2; i < call_argc; i++)
+                /* this and the function, then the arguments */
+                JS_FreeValue(ctx, call_argv[-2]);
+                JS_FreeValue(ctx, call_argv[-1]);
+                for(i = 0; i < call_argc; i++)
                     JS_FreeValue(ctx, call_argv[i]);
                 sp -= call_argc + 2;
                 *sp++ = ret_val;
@@ -23740,10 +23904,15 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             /* variable references reference the stack: must close them */
             close_var_refs(rt, b, sf);
         }
-        /* free the local variables and stack */
-        for(pval = local_buf; pval < sp; pval++) {
-            JS_FreeValue(ctx, *pval);
+        /* free the local variables and stack, two to a turn. The test counts
+           what is left: when the stack is full, sp is the end of the frame,
+           and pval + 1 would point past it, which C does not allow */
+        for(pval = local_buf; sp - pval >= 2; pval += 2) {
+            JS_FreeValue(ctx, pval[0]);
+            JS_FreeValue(ctx, pval[1]);
         }
+        if (pval < sp)
+            JS_FreeValue(ctx, *pval);
     }
     rt->current_stack_frame = sf->prev_frame;
     js_call_leave(rt);

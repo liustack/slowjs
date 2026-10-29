@@ -1,0 +1,79 @@
+plain: a,b,c
+literal again: a,b,c
+empty: 
+null proto: x,y
+indexes first: 1,2,10,4294967294,b,a,-1,01,4294967295
+symbols left out: a,b
+not enumerable: a,b,c
+getter: a,g,b
+frozen: a,b
+sealed: a,b
+40 keys: k0,k1,k2,k3,k4,k5,k6,k7,k8,k9,k10,k11,k12,k13,k14,k15,k16,k17,k18,k19,k20,k21,k22,k23,k24,k25,k26,k27,k28,k29,k30,k31,k32,k33,k34,k35,k36,k37,k38,k39
+add during: a,b,c,d
+after add: a,b,c,d,e
+delete later key: a,b,d
+delete and add back: a,b,c,d
+delete current: a,b,c left {}
+made not enumerable: a,b,c
+made enumerable: a,b,c
+prototype keys: a,b,p^
+prototype not enumerable: a,b,p^
+prototype set during: a,b,p^
+prototype gets a key during: a,b,late^
+Object.prototype enumerable: a,inherited^
+hasOwnProperty.call inherited: false
+Object.prototype again: a
+array: 0,1,2,x
+array holes: 0,2
+array has: true,true,true,false,true,true,true
+string object: 0,1
+arguments: 0,1
+proxy: a,b traps ownKeys;gopd a;gopd b;gopd a;gopd a;gopd b;gopd b
+proto ownKeys
+proto ownKeys
+proxy prototype: a,p^
+instance: x
+function: k
+primitive: |0,1||
+keys: true,false,true,true,true,false,false,false,true,true,true,true,true,false,false,false,false,true
+toString ran
+key object: true
+key throws: Error: boom
+no key: true,false
+extra arguments: true
+this undefined: TypeError
+this null: TypeError
+this primitives: true,true,false,false,false,false
+this function: true,true,false
+this array: true,false,true
+this getter: true
+this deleted: false,true
+this proxy: true,false traps a;b
+this global: true,false,false
+Object.hasOwn: true,false
+method form: true,false
+Reflect.apply: true
+bound: true,true
+apply: true,true
+call replaced a
+call replaced: mine
+call back: true
+hasOwnProperty replaced a
+hasOwnProperty replaced a
+hasOwnProperty replaced: mine,mine,true
+call of another object: TypeError
+call of another function: other a true
+strict this: true
+React loop: a,c of 3
+shapes in turn: ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a
+isObjectEmpty: true,false,false,true,true,false
+nested: aa,ab,ba,bb,bc
+thrown out: a,stop
+frozen during: a,b,c,d left {"a":1,"b":2,"c":3,"d":4} true
+sealed during: a,b,c,d left {"a":1,"b":2,"c":3,"d":8}
+many deleted during: k0,k36,k37,k38,k39 left k0,k36,k37,k38,k39,k5
+every other deleted during: k0,k2,k4,k6,k8,k10,k12,k14,k16,k18
+break: a,b,a,bb,bc,cb,cc,db
+generator suspended: a,b,d,p^
+generator holds the object: x,y,z
+generator ended: {"value":"r","done":true} Error: boom {"done":true}
