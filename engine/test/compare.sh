@@ -43,14 +43,17 @@ bin=$here/out/$mode/jsrun
 mkdir -p "$out"
 
 # shikire.js runs on the regexps and the text that its test sets first.
-python3 - "$here/compare/recorded" "$out/shikire.js" <<'PY'
-import json, sys
-d, dst = sys.argv[1], sys.argv[2]
-regexps = open(d + '/shiki/regexps.json', encoding='utf-8').read()
-text = open(d + '/shiki/input.md', encoding='utf-8').read()
-src = open(d + '/shikire.js', encoding='utf-8').read()
-open(dst, 'w', encoding='utf-8').write('var shikiRegexps = ' + regexps + ';\nvar shikiInput = ' + json.dumps(text) + ';\n' + src)
-PY
+r="$here/compare/recorded"
+{
+	printf 'var shikiRegexps = '
+	cat "$r/shiki/regexps.json"
+	printf ';\nvar shikiInput = "'
+	# The text as one JavaScript string: it is ASCII, with no control character
+	# but tab and newline.
+	sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/	/\\t/g' "$r/shiki/input.md" | awk '{ printf "%s\\n", $0 }'
+	printf '";\n'
+	cat "$r/shikire.js"
+} > "$out/shikire.js"
 
 # test_builtin.js calls std.gc and os.setTimeout of qjs, which the C tree has
 # no module for: gc() is the global of jsrun, and a timer is a callback that
