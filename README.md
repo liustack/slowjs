@@ -90,7 +90,7 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 75,000 expressions.
 - **Strings arrive whole.** A Go string from javascript is always valid UTF-8, and a Go string with invalid bytes reads in javascript as Go itself decodes it.
-- **Faster pages.** On the React pages of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, a page takes 0.83 to 0.86 of the time it took on the engine of v0.28 and before, which was QuickJS translated to Go (see [the acceptance run](docs/performance.md#acceptance-before-the-switch)). Several VMs on several cores do not wait on one lock.
+- **C speed, without C.** A React page of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, takes 0.98 to 1.06 times as long as in Bellard's C QuickJS on the same JavaScript (0.81 on the MUI pages), and the other pure Go engines that render these pages need 1.6 to 6.6 times as long (see [the comparison](docs/benchmarks.md#tifa-pages)). Several VMs on several cores do not wait on one lock.
 
 ## Why you can trust it
 
