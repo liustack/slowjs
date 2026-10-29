@@ -47,9 +47,10 @@ type EngineEmit struct {
 // object, and the bytes are copied as they are. So the function has to start
 // in the object at the place its body takes in the binary: then the alignment
 // of an object holds where the code runs, and not only from the start of the
-// body, up to 16 bytes for a plain body and up to 64 for an Align64 one (the
-// post-link check refuses an object that asks for more). An SSE instruction
-// with a pool for its memory operand faults when the pool is not on 16 bytes.
+// body, up to 16 bytes for a plain body and up to 64 for an Align64 one. An
+// object that asks for more is refused by CheckBodyDataAlign when the engine is
+// generated. An SSE instruction with a pool for its memory operand faults when
+// the pool is not on 16 bytes.
 func FuncPlace(align64 map[string]int, name string) string {
 	off, ok := align64[name]
 	switch {
@@ -59,6 +60,32 @@ func FuncPlace(align64 map[string]int, name string) string {
 		return ".p2align 6\n"
 	}
 	return fmt.Sprintf(".p2align 6\n.skip %d\n", off)
+}
+
+// BodyDataAlign is the alignment, as a power of 2, that FuncPlace keeps for the
+// data in the body of function name: 16 bytes for a plain body, 64 for one put
+// at its Align64 place.
+func BodyDataAlign(align64 map[string]int, name string) int {
+	if _, ok := align64[name]; ok {
+		return 6
+	}
+	return 4
+}
+
+// CheckBodyDataAlign fails when an object in the body of a lowered function
+// asks for more alignment than BodyDataAlign keeps. Such an object would sit
+// on its alignment in one link and off it in another, and only the post-link
+// check of a build would see it, so the generator stops here.
+func CheckBodyDataAlign(plan *DataPlan, metas []Meta, align64 map[string]int) error {
+	for _, m := range metas {
+		keep := BodyDataAlign(align64, m.Name)
+		for _, o := range plan.InBody[m.Name] {
+			if o.Align > keep {
+				return fmt.Errorf("%s: %s in its body asks for %d bytes of alignment, and the body keeps %d (FuncPlace, -align64)", m.Name, o.Label, 1<<o.Align, 1<<keep)
+			}
+		}
+	}
+	return nil
 }
 
 // BuildExpr is the constraint of a generated file for arch: the architecture,

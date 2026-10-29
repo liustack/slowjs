@@ -505,6 +505,9 @@ func main() {
 		}
 		metas = append(metas, meta)
 	}
+	if err := gen.CheckBodyDataAlign(plan, metas, align64); err != nil {
+		die(err)
+	}
 	tLower := time.Since(t0)
 	// The functions without Go's stack check (gen.PickNoSplit), with what
 	// the lowering found of each: its frame, its arguments and its calls.
