@@ -55,6 +55,10 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		{"localeCompare", `var s = 'éå'.repeat(1 << 20), t = s + 'x'`, `s.localeCompare(t)`},
 		{"toUpperCase", `var s = 'aé'.repeat(1 << 21)`, `s.toUpperCase()`},
 		{"toLowerCase", `var s = 'AÉ'.repeat(1 << 21)`, `s.toLowerCase()`},
+		// Whether a capital sigma ends a word looks past the characters
+		// that case ignores (U+0301 is one) after it and before it.
+		{"toLowerCase, a sigma before a long run", `var s = 'AΣ' + '\u0301'.repeat(1 << 22)`, `s.toLowerCase()`},
+		{"toLowerCase, a sigma after a long run", `var s = 'A' + '\u0301'.repeat(1 << 22) + 'Σ'`, `s.toLowerCase()`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
