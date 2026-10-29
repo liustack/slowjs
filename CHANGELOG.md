@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- `VM.RunGC` sets the GC threshold to 1.5 times what it left, as the GC the engine starts by itself does. It used to leave the threshold where it was, so when a script had grown the heap past it with no object made (array elements do), the first object of the next call started another full GC as long as the first one. A threshold of `^uintptr(0)`, which turns the engine's own GC off, stays. A program that sets the threshold itself after `RunGC`, as tifa does, sees no change.
+
 ## [v0.29.1] - 2026-10-30
 
 ### Performance

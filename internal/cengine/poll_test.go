@@ -111,16 +111,14 @@ func TestGCInTightLoops(t *testing.T) {
 }
 
 // interruptRunning runs src in v and calls Interrupt from another goroutine
-// once the engine has polled 10 times in it on top of the polls of a full
-// collection (gc), the polls of the RunGC the caller ran after its setup.
-// JS_RunGC leaves the threshold of the next collection where it was, so the
-// first allocation of the Eval may start one more, which takes about as many
-// polls, before src runs; an Interrupt in it stops the script before it
-// starts. A poll comes every 10000 ticks and src compiles in far fewer, so by
+// once the engine has polled 10 times in it. The caller ran RunGC after its
+// setup, which set the threshold of the next collection, so the Eval starts
+// none before src runs (an Interrupt in one would stop the script before it
+// starts). A poll comes every 10000 ticks and src compiles in far fewer, so by
 // then src runs, and the entry into the engine, which clears an Interrupt
 // that came before it, is behind. It returns what Eval returned and how long
 // after Interrupt, or -1 when Eval returned first.
-func interruptRunning(v *VM, src string, gc int64) (string, error, time.Duration) {
+func interruptRunning(v *VM, src string) (string, error, time.Duration) {
 	type result struct {
 		got string
 		err error
@@ -131,7 +129,7 @@ func interruptRunning(v *VM, src string, gc int64) (string, error, time.Duration
 		got, err := v.Eval(src, "stop.js")
 		done <- result{got, err}
 	}()
-	for v.Host().Polls()-before < gc+10 {
+	for v.Host().Polls()-before < 10 {
 		select {
 		case r := <-done:
 			return r.got, r.err, -1
@@ -208,7 +206,8 @@ func TestInterruptOneProc(t *testing.T) {
 	for _, c := range endless[:3] {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(-1)
-		_, err, _ := interruptRunning(v, c.src, runGC(v))
+		v.RunGC()
+		_, err, _ := interruptRunning(v, c.src)
 		stoppedSoftly(t, v, c, err)
 		closeVM(t, v)
 	}
@@ -246,7 +245,8 @@ func TestKill(t *testing.T) {
 				t.Fatalf("%s: setup: %v", c.name, err)
 			}
 		}
-		_, err, after := interruptRunning(v, c.src, runGC(v))
+		v.RunGC()
+		_, err, after := interruptRunning(v, c.src)
 		if !errors.Is(err, ErrKilled) {
 			t.Errorf("%s: Eval gave %v, want ErrKilled", c.name, err)
 		}
@@ -355,5 +355,31 @@ func TestNoKillOutsideScripts(t *testing.T) {
 	v.Host().SetKillGrace(gohost.DefaultKillGrace)
 	if got, err := v.Eval("a.length", "after.js"); err != nil || got != "300000" {
 		t.Fatalf("after the collections: %q, %v", got, err)
+	}
+}
+
+// TestRunGCSetsTheThreshold: after RunGC the next collection waits for the
+// heap to grow by half, as after a collection the engine starts by itself,
+// so the first object a script makes does not start a second one. The array
+// grows the heap by 2 MiB without making an object, so the heap is past the
+// threshold of the last collection when RunGC runs; the script after it makes
+// objects at once and must not collect.
+func TestRunGCSetsTheThreshold(t *testing.T) {
+	needPolls(t)
+	v := newVM(t, Options{Seed: 1})
+	defer closeVM(t, v)
+	if _, err := v.Eval("var a = new Array(1 << 18).fill(1)", "setup.js"); err != nil {
+		t.Fatal(err)
+	}
+	gc := runGC(v)
+	if gc < 40 {
+		t.Fatalf("a full collection took %d polls, want at least 40 for the check to see one", gc)
+	}
+	before := v.Host().Polls()
+	if got, err := v.Eval("var o = {}; for (var i = 0; i < 100; i++) o = {o}; typeof o", "next.js"); err != nil || got != "object" {
+		t.Fatalf("next.js: %q, %v", got, err)
+	}
+	if n := v.Host().Polls() - before; n >= gc/2 {
+		t.Errorf("the script after RunGC took %d polls, a full collection %d: the first object started another collection", n, gc)
 	}
 }

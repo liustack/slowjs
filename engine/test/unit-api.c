@@ -755,10 +755,43 @@ static void test_for_in_keeps_shape(void)
           (long long)(forty - one));
 }
 
+/* JS_RunGC sets the threshold of the next collection to 1.5 times what it left,
+   as the collection the runtime starts by itself does, so the first object
+   after it does not start another. A threshold of -1 turns the collections of
+   the runtime off, and JS_RunGC leaves it so. */
+static void test_run_gc_threshold(void)
+{
+    size_t i, before[] = { 1, 1 << 20, (size_t)1 << 40 };
+    VM v = vm_new();
+    size_t live;
+
+    for (i = 0; i < countof(before); i++) {
+        JS_SetGCThreshold(v.rt, before[i]);
+        JS_RunGC(v.rt);
+        live = JS_GetMemorySize(v.rt);
+        CHECK(JS_GetGCThreshold(v.rt) == live + (live >> 1), "after JS_RunGC with the threshold at %zu: %zu, want 1.5 times the %zu bytes left",
+              before[i], JS_GetGCThreshold(v.rt), live);
+    }
+
+    /* the first object after it starts no collection */
+    JS_SetGCThreshold(v.rt, 1);
+    JS_RunGC(v.rt);
+    live = JS_GetGCThreshold(v.rt);
+    eval_ok(v.ctx, "var o = {}; for (var i = 0; i < 100; i++) o = {o}; void 0");
+    CHECK(JS_GetGCThreshold(v.rt) == live, "the script after JS_RunGC started a collection: the threshold went from %zu to %zu", live,
+          JS_GetGCThreshold(v.rt));
+
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    JS_RunGC(v.rt);
+    CHECK(JS_GetGCThreshold(v.rt) == (size_t)-1, "JS_RunGC changed a threshold of -1 to %zu", JS_GetGCThreshold(v.rt));
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_for_in_keeps_shape();
     test_plain_objects();
+    test_run_gc_threshold();
     test_backtrace_shares_shape();
     test_backtrace_old_prototype();
     test_backtrace_native_read_caches();
