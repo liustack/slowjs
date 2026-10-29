@@ -491,26 +491,52 @@ func TestPollCounter(t *testing.T) {
 	}
 }
 
-// TestPollKill: when the script has not stopped by the grace after Interrupt,
-// the next poll panics with ErrKilled and the VM is broken. A negative grace
-// never kills, and a poll before the grace is over goes on. An entry that
-// runs no script is never killed.
+// pollUntilKilled polls as an engine that never reads the flag does, with no
+// pause, until a poll kills the script, and returns how many polls that took.
+// It fails if no poll kills within 5 seconds.
+func pollUntilKilled(t *testing.T, sp uintptr) int {
+	t.Helper()
+	begin := time.Now()
+	for n := 1; time.Since(begin) < 5*time.Second; n++ {
+		var got any
+		func() {
+			defer func() { got = recover() }()
+			Poll(sp)
+		}()
+		if got != nil {
+			if got != ErrKilled {
+				t.Fatalf("poll %d panicked with %v, want ErrKilled", n, got)
+			}
+			return n
+		}
+	}
+	t.Fatal("no poll killed the script in 5 seconds")
+	return 0
+}
+
+// TestPollKill: a script that goes on polling without stopping after
+// Interrupt is killed once the grace is over and KillPolls polls have come
+// after the one that set the flag: the poll panics with ErrKilled and the VM
+// is broken. A negative grace never kills, and a grace of 0 kills at the
+// first poll that has the polls. An entry that runs no script is never
+// killed.
 func TestPollKill(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
 	if v.KillGrace() != DefaultKillGrace {
 		t.Fatalf("the grace of a new VM is %v, want %v", v.KillGrace(), DefaultKillGrace)
 	}
-	v.SetKillGrace(30 * time.Millisecond)
+	const grace = 30 * time.Millisecond
+	v.SetKillGrace(grace)
 	v.EnterScript(0)
+	begin := time.Now()
 	v.Interrupt()
-	Poll(base + 64)
-	if v.Broken() {
-		t.Fatal("killed before the grace was over")
+	n := pollUntilKilled(t, base+64)
+	if d := time.Since(begin); d < grace {
+		t.Fatalf("killed %v after Interrupt, before the grace of %v was over", d, grace)
 	}
-	time.Sleep(40 * time.Millisecond)
-	if got := mustPanic(t, "a poll after the grace", func() { Poll(base + 64) }); got != ErrKilled {
-		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	if n <= KillPolls+1 {
+		t.Fatalf("killed at poll %d after Interrupt, want more than %d", n, KillPolls+1)
 	}
 	if !v.Broken() || !v.Killed() {
 		t.Fatalf("after the kill: broken %v, killed %v", v.Broken(), v.Killed())
@@ -523,20 +549,25 @@ func TestPollKill(t *testing.T) {
 	w.EnterScript(0)
 	w.Interrupt()
 	time.Sleep(5 * time.Millisecond)
-	Poll(wb + 64)
+	for range 4 * KillPolls {
+		Poll(wb + 64)
+	}
 	if w.Broken() || w.Killed() {
 		t.Fatal("a negative grace killed")
 	}
 	w.Leave()
 
-	// A grace of 0 kills at the first poll after Interrupt, and only then.
+	// A grace of 0 kills at the poll that comes KillPolls after the one
+	// that set the flag, and only then.
 	x := newVM(t, small)
 	xb, _ := x.Stack()
 	x.SetKillGrace(0)
 	x.EnterScript(0)
 	Poll(xb + 64)
 	x.Interrupt()
-	mustPanic(t, "a poll with a grace of 0", func() { Poll(xb + 64) })
+	if n := pollUntilKilled(t, xb+64); n != KillPolls+1 {
+		t.Fatalf("a grace of 0 killed at poll %d after Interrupt, want %d", n, KillPolls+1)
+	}
 	x.Leave()
 
 	// An outermost entry that runs no script, as a collection is, only
@@ -549,25 +580,33 @@ func TestPollKill(t *testing.T) {
 	g.Enter()
 	g.Interrupt()
 	time.Sleep(time.Millisecond)
-	Poll(gb + 64)
+	for range 4 * KillPolls {
+		Poll(gb + 64)
+	}
 	g.EnterScript(0)
-	Poll(gb + 64)
+	for range 4 * KillPolls {
+		Poll(gb + 64)
+	}
 	g.Leave()
 	if g.Broken() || g.Killed() || testFlag != 1 {
 		t.Fatalf("an entry that runs no script: broken %v, killed %v, flag %d", g.Broken(), g.Killed(), testFlag)
 	}
 	g.Leave()
-	// The next outermost entry decides again.
+	// The next outermost entry decides again, and counts its polls anew.
 	g.EnterScript(0)
 	g.Interrupt()
-	mustPanic(t, "a script entry after one that runs none", func() { Poll(gb + 64) })
+	if n := pollUntilKilled(t, gb+64); n != KillPolls+1 {
+		t.Fatalf("a script entry after one that runs none was killed at poll %d, want %d", n, KillPolls+1)
+	}
 	g.Leave()
 }
 
 // TestPollStallNoKill: a script whose thread does not run for longer than the
 // grace after Interrupt, because the OS or the Go scheduler runs something
 // else, has done no work in that time. The poll after the stall must not kill
-// it: the engine is about to read the flag and stop by itself.
+// it: the engine is about to read the flag and stop by itself. One that goes
+// on polling without stopping is still killed, at the poll that has the
+// polls.
 func TestPollStallNoKill(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
@@ -586,6 +625,9 @@ func TestPollStallNoKill(t *testing.T) {
 	}()
 	if v.Broken() || v.Killed() {
 		t.Fatalf("after a stall: broken %v, killed %v", v.Broken(), v.Killed())
+	}
+	if n := pollUntilKilled(t, base+64); n != KillPolls-1 {
+		t.Fatalf("killed %d polls after the stall, want %d", n, KillPolls-1)
 	}
 	v.Leave()
 }
@@ -640,29 +682,31 @@ func TestPollDeadline(t *testing.T) {
 	w := newVM(t, small)
 	wb, _ := w.Stack()
 	w.SetKillGrace(200 * time.Millisecond)
+	begin := time.Now()
 	w.EnterScript(5 * time.Millisecond)
 	time.Sleep(15 * time.Millisecond)
 	Poll(wb + 64)
 	if !w.Interrupted() || w.Broken() {
 		t.Fatalf("10 ms past the deadline: interrupted %v, broken %v", w.Interrupted(), w.Broken())
 	}
-	time.Sleep(200 * time.Millisecond)
-	if got := mustPanic(t, "a poll past the deadline and the grace", func() { Poll(wb + 64) }); got != ErrKilled {
-		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	pollUntilKilled(t, wb+64)
+	if d := time.Since(begin); d < 205*time.Millisecond {
+		t.Fatalf("killed %v after the call began, before the deadline of 5 ms and the grace of 200 ms were over", d)
 	}
 	w.Leave()
 
 	// An Interrupt later than the deadline, before any poll saw the
 	// deadline, does not move the grace on: it counts from the earlier of
-	// the two.
+	// the two, so it is over and the kill comes as soon as the polls have
+	// come.
 	x := newVM(t, small)
 	xb, _ := x.Stack()
 	x.SetKillGrace(50 * time.Millisecond)
 	x.EnterScript(10 * time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 	x.Interrupt()
-	if got := mustPanic(t, "a poll past the deadline and the grace, after a later Interrupt", func() { Poll(xb + 64) }); got != ErrKilled {
-		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	if n := pollUntilKilled(t, xb+64); n != KillPolls+1 {
+		t.Fatalf("past the deadline and the grace, after a later Interrupt: killed at poll %d, want %d", n, KillPolls+1)
 	}
 	x.Leave()
 
@@ -673,8 +717,8 @@ func TestPollDeadline(t *testing.T) {
 	y.EnterScript(time.Hour)
 	y.Interrupt()
 	time.Sleep(40 * time.Millisecond)
-	if got := mustPanic(t, "a poll past the grace of an Interrupt before the deadline", func() { Poll(yb + 64) }); got != ErrKilled {
-		t.Fatalf("the poll panicked with %v, want ErrKilled", got)
+	if n := pollUntilKilled(t, yb+64); n != KillPolls+1 {
+		t.Fatalf("past the grace of an Interrupt before the deadline: killed at poll %d, want %d", n, KillPolls+1)
 	}
 	y.Leave()
 }

@@ -141,12 +141,12 @@ var endless = []struct{ name, setup, src string }{
 }
 
 // stopsSoftly checks that Interrupt stopped src with the error "interrupted"
-// soon after it, and that the VM runs code again.
-func stopsSoftly(t *testing.T, name, setup, src string) {
+// soon after it, with the kill grace given, and that the VM runs code again.
+func stopsSoftly(t *testing.T, name, setup, src string, grace time.Duration) {
 	t.Helper()
 	v := newVM(t, Options{Seed: 1})
 	defer closeVM(t, v)
-	v.Host().SetKillGrace(-1)
+	v.Host().SetKillGrace(grace)
 	if setup != "" {
 		if _, err := v.Eval(setup, "setup.js"); err != nil {
 			t.Fatalf("%s: setup: %v", name, err)
@@ -173,7 +173,7 @@ func stopsSoftly(t *testing.T, name, setup, src string) {
 func TestInterrupt(t *testing.T) {
 	needPolls(t)
 	for _, c := range endless {
-		stopsSoftly(t, c.name, c.setup, c.src)
+		stopsSoftly(t, c.name, c.setup, c.src, -1)
 	}
 }
 
@@ -184,14 +184,15 @@ func TestInterruptOneProc(t *testing.T) {
 	needPolls(t)
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	for _, c := range endless[:3] {
-		stopsSoftly(t, c.name, c.setup, c.src)
+		stopsSoftly(t, c.name, c.setup, c.src, -1)
 	}
 }
 
-// TestKill: a script still running when the grace after Interrupt is over is
-// killed at the next poll. Eval returns ErrKilled, the VM takes only Close,
-// the goroutine has its setting of SetPanicOnFault back, and a new VM runs.
-// A grace of 0 kills at the first poll, before the loop reads the flag.
+// TestKill: a script still running when the grace after Interrupt is over,
+// and gohost.KillPolls polls after the one that set the flag, is killed at
+// the poll. Eval returns ErrKilled, the VM takes only Close, the goroutine has
+// its setting of SetPanicOnFault back, and a new VM runs. A grace of 0 kills
+// once the polls have come.
 // Array.prototype.lastIndexOf never reads the flag, so it runs until the
 // kill: the collection after the setup keeps one from starting while Eval
 // compiles, and Interrupt comes once the call runs, since the interpreter
@@ -209,8 +210,8 @@ func TestKill(t *testing.T) {
 		name, setup, src string
 		at, grace        time.Duration
 	}{
-		{"loop", "", "for (;;) {}", 20 * time.Millisecond, 0},
 		{"lastIndexOf", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 100 * time.Millisecond, 30 * time.Millisecond},
+		{"lastIndexOf, a grace of 0", "var a = { length: 2 ** 31 - 1 }", "Array.prototype.lastIndexOf.call(a, -1)", 100 * time.Millisecond, 0},
 	} {
 		v := newVM(t, Options{Seed: 1})
 		v.Host().SetKillGrace(c.grace)
@@ -231,6 +232,17 @@ func TestKill(t *testing.T) {
 			t.Errorf("%s: the host does not say killed", c.name)
 		}
 		brokenAfter(t, v, c.name+" killed")
+	}
+}
+
+// TestNoKillBeforeThePolls: with a grace of 0, Interrupt still stops each
+// endless script with the error "interrupted" and kills none: each reads the
+// flag, or frees what it made, well within gohost.KillPolls polls of it being
+// set.
+func TestNoKillBeforeThePolls(t *testing.T) {
+	needPolls(t)
+	for _, c := range endless {
+		stopsSoftly(t, c.name, c.setup, c.src, 0)
 	}
 }
 
