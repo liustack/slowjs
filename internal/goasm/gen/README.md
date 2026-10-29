@@ -172,19 +172,24 @@ and `pn` about 1.1 ns, and `pn` has no saves at any call site. arm64 has no
 in `LowerARM64EngineFunc` (`arm64_engine.go`) and holds every entry, call and
 return to the registers llc's facts and probes name, as the amd64 post-link
 check does: a narrow integer in another register, a result read from
-another, or a call llc's facts do not have stops the build. llc reaches its
-data through `adrp` and `:lo12:`: the lowering writes the whole address in
-its Go symbol (`engine_rodata`, or a function), takes a
-`:lo12:` use only in the block of its `adrp`, and reads a function's own
-constant pool and jump tables PC-relative, after following the register of
-its `adrp` through the blocks (`arm64_pages.go`) to see that it still holds
-exactly that page: an offset added to it, which the PC-relative form would
-drop, stops the build. So does a read of a register that holds a page of any
-`adrp` on some way in. It refuses `svc`, system
+another, or a call llc's facts do not have stops the build. llc writes arm64
+in the tiny code model (`-code-model=tiny`), so each reference to data is one
+instruction that names the whole address, and the lowering rewrites each on
+its own to the same address: an `adr` of `engine_rodata` or of a function
+becomes Go's `MOVD $sym(SB)`, an `adr` of the function's own constant pool or
+jump table stays PC-relative, and a load of a label reads the data in the
+function's body (the plan copies an object there when a function loads it
+that way, as amd64 does for a load through the PC). The page forms of the
+small code model, `adrp` and `:lo12:`, stop the build: their second
+instruction is right only while the register still holds the page of the
+first, which no single instruction shows. llc writes its object for the checks
+with a section per function, since an `adr` from one function to another may
+be further than the 1 MiB it reaches. It refuses `svc`, system
 registers, X18, X26 to X29 as values, LR outside a save, tail jumps, a frame
 that grows after the prologue, a stack address that escapes and fused
 multiply-adds (`fmadd`, `fmla` and the rest), with a test for each
-(`TestLowerARM64EngineRejects`, `TestLowerARM64EngineFacts`).
+(`TestLowerARM64EngineRejects`, `TestLowerARM64EngineFacts`,
+`TestLowerARM64EngineTiny`).
 
 A function whose arguments need more integer registers than a unified entry
 has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
