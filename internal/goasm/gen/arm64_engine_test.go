@@ -111,7 +111,7 @@ func TestLowerARM64EngineRejects(t *testing.T) {
 		"indirect without label": {replace("bl callee", "blr x8"), "without LLVM's signature label"},
 		"return with frame":      {replace("ldr x30, [sp], #16"), "ret with 16 bytes"},
 		"frame grows later":      {replace("mov x20, x21", ".LBB0_1:", "sub sp, sp, #16"), "frame grows past its prologue"},
-		"adr of data":            {replace("mov x20, x21", "adr x0, data"), "unreviewed adr"},
+		"adr past a label":       {replace("mov x20, x21", ".LBB0_1:", "adr x0, .LBB0_1+4"), "unreviewed adr"},
 		"LR as a value":          {replace("mov x20, x21", "mov x0, x30"), "LR used outside a stack save"},
 		"fused multiply-add":     {replace("mov x20, x21", "fmadd d0, d1, d2, d0"), "fused multiply-add"},
 		"fused vector multiply":  {replace("mov x20, x21", "fmla v0.2d, v1.2d, v2.2d"), "fused multiply-add"},

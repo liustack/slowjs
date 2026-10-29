@@ -77,6 +77,9 @@ var (
 	reA64LdLo   = regexp.MustCompile(`^(ldr[bhsw]*|ldur[bhsw]*) ([xwbhsdq]\d+), \[(x\d+), :lo12:([.\w$]+)([+-]\d+)?\]$`)
 	reA64BR     = regexp.MustCompile(`^br (x\d+)$`)
 	reA64Adr    = regexp.MustCompile(`^adr (x\d+), (\.L\w+)$`)
+	reA64AdrSym = regexp.MustCompile(`^adr (x\d+), ([.\w$]+)([+-]\d+)?$`)
+	reA64LdLit  = regexp.MustCompile(`^(ldr|ldrsw) ([xwsdq]\d+), ([.\w$]+)([+-]\d+)?$`)
+	reA64LastOp = regexp.MustCompile(`, ([.\w$]+)([+-]\d+)?$`)
 	reA64RegTok = regexp.MustCompile(`\b([xw])(\d+)\b`)
 	reA64Mod    = regexp.MustCompile(`:(got|abs_|tprel|dtprel|tlsdesc|gottprel)`)
 )
@@ -372,6 +375,29 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		if reA64Mod.MatchString(l) {
 			return fail("unreviewed relocation form %q", l)
 		}
+		// Data in the tiny code model: an adr holds the whole address of
+		// data or of a function, and a load of a label reads the data there,
+		// which the plan has put in the function's body.
+		if m := reA64AdrSym.FindStringSubmatch(l); m != nil && !isTextLabel(m[2]) {
+			add := int64(0)
+			if m[3] != "" {
+				add, _ = strconv.ParseInt(m[3], 10, 64)
+			}
+			mat, err := materialize(m[1], m[2], add)
+			if err != nil {
+				return fail("%v: %q", err, l)
+			}
+			out = append(out, mat...)
+			continue
+		}
+		if m := reA64LdLit.FindStringSubmatch(l); m != nil {
+			lbl, ok := env.Plan.Rename[fn.Name][m[3]]
+			if !ok {
+				return fail("load of %s, which is not in the body of the function: %q", m[3], l)
+			}
+			out = append(out, fmt.Sprintf("%s %s, %s%s", m[1], m[2], lbl, m[4]))
+			continue
+		}
 		// Data: adrp and its :lo12: uses.
 		if m := reA64Adrp.FindStringSubmatch(l); m != nil {
 			r, _ := strconv.Atoi(m[1][1:])
@@ -484,6 +510,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			}
 			continue
 		}
+		if m := reA64LastOp.FindStringSubmatch(l); m != nil && a64NamesData(env, fn.Name, m[1]) {
+			return fail("unreviewed reference to data %q", l)
+		}
 		// Any other instruction: a register holding a page may be written
 		// over, never read.
 		for r := 0; r < 31; r++ {
@@ -570,7 +599,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		case "ret", "eret", "adrp":
 			return fail("forbidden instruction %q", l)
 		case "adr":
-			if m := reA64Adr.FindStringSubmatch(l); m == nil || !isTextLabel(m[2]) {
+			if m := reA64AdrSym.FindStringSubmatch(l); m == nil || !isTextLabel(m[2]) || m[3] != "" {
 				return fail("unreviewed adr %q", l)
 			}
 		case "br":
@@ -691,6 +720,16 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	}
 	fmt.Fprintf(&b, ".p2align 2\n%s:\n.size %s, %s-%s\n", goret, fn.Name, goret, fn.Name)
 	return b.String(), meta, nil
+}
+
+// a64NamesData says whether sym is data the plan placed, in engine_rodata or
+// in the body of function fn.
+func a64NamesData(env *ARM64Env, fn, sym string) bool {
+	if _, ok := env.Plan.BlobOff[sym]; ok {
+		return true
+	}
+	_, ok := env.Plan.Rename[fn][sym]
+	return ok
 }
 
 func a64Add(k int64) string {
@@ -983,8 +1022,18 @@ func arm64TextRefs(u *AsmUnit, fail func(fn, f string, a ...any)) []textRef {
 			if strings.HasPrefix(l, "adrp ") {
 				fail(fn, "unreviewed adrp %q", l)
 			}
-			if m := reA64Adr.FindStringSubmatch(l); m != nil && !isTextLabel(m[2]) {
-				fail(fn, "adr of data %q", l)
+			// The tiny code model: an adr takes the address of data or of a
+			// function, a load of a label reads data.
+			if m := reA64AdrSym.FindStringSubmatch(l); m != nil && !isTextLabel(m[2]) {
+				refs = append(refs, textRef{fn: fn, sym: m[2], lea: true})
+				continue
+			}
+			if m := reA64LdLit.FindStringSubmatch(l); m != nil {
+				refs = append(refs, textRef{fn: fn, sym: m[3]})
+				continue
+			}
+			if m := reA64LastOp.FindStringSubmatch(l); m != nil && u.Data[m[1]] != nil {
+				fail(fn, "unreviewed reference to data %q", l)
 			}
 		}
 	}
