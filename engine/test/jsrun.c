@@ -18,7 +18,7 @@
    exception. A lone surrogate is printed as \u{...}, as Go would turn it into
    U+FFFD, unless -raw is given: then the string is written as the engine
    converts it (three bytes for a lone surrogate), which is how the files in
-   lib/testdata hold it.
+   engine/test/compare/recorded and testdata hold it.
 
    A file whose name ends in .mjs runs as a module instead. It has no
    completion value: what it gives is the string of globalThis.result once the
