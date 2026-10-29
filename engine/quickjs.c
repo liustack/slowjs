@@ -793,6 +793,17 @@ typedef enum JSFunctionKindEnum {
     JS_FUNC_ASYNC_GENERATOR = (JS_FUNC_GENERATOR | JS_FUNC_ASYNC),
 } JSFunctionKindEnum;
 
+/* An object literal that starts with static keys, built by OP_object_lit
+   from the values of those keys on the stack: its keys, and the shape of an
+   object with exactly those keys, made the first time it runs
+   (js_object_lit_shape). The literal holds a reference to the shape, so the
+   shape is never changed in place. */
+typedef struct JSObjectLit {
+    JSShape *shape; /* NULL until the literal first runs */
+    uint32_t first; /* its first key in the keys after the entries */
+    uint32_t count;
+} JSObjectLit;
+
 typedef struct JSFunctionBytecode {
     JSGCObjectHeader header; /* must come first */
     uint8_t js_mode;
@@ -823,6 +834,7 @@ typedef struct JSFunctionBytecode {
     uint16_t defined_arg_count; /* for length function property */
     uint16_t stack_size; /* maximum stack size */
     uint16_t var_ref_count; /* number of local variable references */
+    uint16_t object_lit_count; /* the entries of object_lits */
     JSContext *realm; /* function realm */
     JSValue *cpool; /* constant pool (self pointer) */
     int cpool_count;
@@ -830,6 +842,9 @@ typedef struct JSFunctionBytecode {
     /* where OP_ret may go, one bit for each byte of the code: the
        instruction after each OP_gosub (check_polls). NULL with no OP_gosub. */
     uint32_t *ret_bits;
+    /* the object literals of OP_object_lit, by its second operand, in one
+       block with their keys. NULL with no OP_object_lit. */
+    JSObjectLit *object_lits;
     struct {
         /* debug info, move to separate structure to save memory? */
         JSAtom filename;
@@ -839,6 +854,13 @@ typedef struct JSFunctionBytecode {
         char *source;
     } debug;
 } JSFunctionBytecode;
+
+/* the keys of the object literal lit of b */
+static inline JSAtom *js_object_lit_atoms(const JSFunctionBytecode *b,
+                                          const JSObjectLit *lit)
+{
+    return (JSAtom *)(b->object_lits + b->object_lit_count) + lit->first;
+}
 
 typedef struct JSBoundFunction {
     JSValue func_obj;
@@ -6199,11 +6221,6 @@ static BOOL js_shape_keepable(JSContext *ctx, JSShape *sh)
         sh->prop_count >= JS_SHAPE_MAX_PROPS)
         return FALSE;
     sc->credit--;
-    /* add_property links the copy into the shape hash table, which only
-       js_new_shape2 grows: grow it as js_new_shape2 does, as sh stays in
-       it */
-    if (2 * (rt->shape_hash_count + 1) > rt->shape_hash_size)
-        resize_shape_hash(rt, rt->shape_hash_bits + 1);
     return TRUE;
 }
 
@@ -6668,6 +6685,69 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
             p->prop[i] = props[i];
     }
     return JS_MKPTR(JS_TAG_OBJECT, p);
+}
+
+/* Make the shape of the objects of the object literal lit of ctx, at its
+   first run, and keep it in lit: the shape in the shape hash table with
+   exactly the keys of lit, in their order, as properties made by
+   OP_define_field, and the Object.prototype of ctx, or else a new one that
+   has room for exactly those keys. Return NULL when there is no memory. */
+static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
+                                               const JSAtom *atoms)
+{
+    JSRuntime *rt = ctx->rt;
+    JSObject *proto = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
+    JSShape *sh;
+    uint32_t i, hash_size;
+
+    sh = find_hashed_shape_proto(rt, proto);
+    for(i = 0; sh && i < lit->count; i++)
+        sh = find_hashed_shape_prop(rt, sh, atoms[i], JS_PROP_C_W_E);
+    if (sh) {
+        sh = js_dup_shape(sh);
+    } else {
+        hash_size = JS_PROP_INITIAL_HASH_SIZE;
+        while (hash_size < lit->count)
+            hash_size *= 2;
+        sh = js_new_shape2(ctx, proto, hash_size, lit->count);
+        if (!sh)
+            return NULL;
+        for(i = 0; i < lit->count; i++) {
+            /* cannot fail: the shape has room for every key */
+            add_shape_property(ctx, &sh, NULL, atoms[i], JS_PROP_C_W_E);
+        }
+    }
+    lit->shape = sh;
+    return sh;
+}
+
+/* the object of the object literal k of b, run in ctx, whose properties
+   take the values of tab, as many as the literal has keys, which it takes */
+static JSValue js_new_object_lit(JSContext *ctx, JSFunctionBytecode *b, int k,
+                                 JSValue *tab)
+{
+    JSObjectLit *lit = &b->object_lits[k];
+    JSShape *sh = lit->shape;
+    JSValue obj;
+    JSObject *p;
+    uint32_t i;
+
+    if (unlikely(!sh)) {
+        sh = js_object_lit_shape(ctx, lit, js_object_lit_atoms(b, lit));
+        if (!sh)
+            goto fail;
+    }
+    obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), JS_CLASS_OBJECT, NULL);
+    if (unlikely(JS_IsException(obj)))
+        goto fail;
+    p = JS_VALUE_GET_OBJ(obj);
+    for(i = 0; i < lit->count; i++)
+        p->prop[i].u.value = tab[i];
+    return obj;
+ fail:
+    for(i = 0; i < lit->count; i++)
+        JS_FreeValue(ctx, tab[i]);
+    return JS_EXCEPTION;
 }
 
 static JSObject *get_proto_obj(JSValueConst proto_val)
@@ -7844,6 +7924,11 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             for(i = 0; i < b->cpool_count; i++) {
                 JS_MarkValue(rt, b->cpool[i], mark_func);
             }
+            /* the shapes of the object literals hold Object.prototype */
+            for(i = 0; i < b->object_lit_count; i++) {
+                if (b->object_lits[i].shape)
+                    mark_func(rt, &b->object_lits[i].shape->header);
+            }
             if (b->realm)
                 mark_func(rt, &b->realm->header);
         }
@@ -8479,6 +8564,12 @@ static void compute_bytecode_size(JSFunctionBytecode *b, JSMemoryUsage_helper *h
     if (b->ret_bits) {
         memory_used_count++;
         js_func_size += sizeof(uint32_t) * ((b->byte_code_len + 31) / 32);
+    }
+    if (b->object_lits) {
+        memory_used_count++;
+        js_func_size += sizeof(*b->object_lits) * b->object_lit_count;
+        for (i = 0; i < b->object_lit_count; i++)
+            js_func_size += sizeof(JSAtom) * b->object_lits[i].count;
     }
     if (!b->read_only_bytecode && b->byte_code_buf) {
         hp->js_func_code_size += b->byte_code_len;
@@ -11860,7 +11951,13 @@ static JSProperty *add_property(JSContext *ctx,
             new_sh = js_clone_shape(ctx, sh);
             if (!new_sh)
                 return NULL;
-            /* hash the cloned shape */
+            /* hash the cloned shape, growing the shape hash table as
+               js_new_shape2 does: sh stays in it too, and a shape held by
+               more than one object, such as the shape of an object literal
+               (OP_object_lit), is copied each time an object of it gets a
+               new key */
+            if (2 * (ctx->rt->shape_hash_count + 1) > ctx->rt->shape_hash_size)
+                resize_shape_hash(ctx->rt, ctx->rt->shape_hash_bits + 1);
             new_sh->is_hashed = TRUE;
             js_shape_hash_link(ctx->rt, new_sh);
             js_free_shape(ctx->rt, p->shape);
@@ -20979,6 +21076,18 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             if (unlikely(JS_IsException(sp[-1])))
                 goto exception;
             BREAK;
+        CASE(OP_object_lit):
+            {
+                int n = get_u16(pc);
+                int k = get_u16(pc + 2);
+                pc += 4;
+                ret_val = js_new_object_lit(ctx, b, k, sp - n);
+                sp -= n;
+                if (unlikely(JS_IsException(ret_val)))
+                    goto exception;
+                *sp++ = ret_val;
+            }
+            BREAK;
         CASE(OP_special_object):
             {
                 int arg = *pc++;
@@ -25079,6 +25188,14 @@ typedef struct JSFunctionDef {
     int cpool_count;
     int cpool_size;
 
+    /* the object literals of OP_object_lit: for each, its count of keys,
+       then its keys, as uint32_t */
+    DynBuf object_lits;
+    int object_lit_count;
+    /* the literals being parsed that may still take an index: the one
+       around a literal in its values takes its index after it */
+    int object_lit_open;
+
     /* list of variables in the closure */
     int closure_var_count;
     int closure_var_size;
@@ -28032,27 +28149,111 @@ static void set_object_name_computed(JSParseState *s)
     }
 }
 
+/* the most keys an object literal takes on the stack for OP_object_lit */
+#define JS_OBJECT_LIT_MAX 32
+
+/* Report whether the property of an object literal that starts at the
+   current token has a key that runs no code: anything but a computed key
+   (`[k]`, `get [k]()`, `async *[k]()`) and a spread. A method or an
+   accessor may answer no: it does not go on the stack anyway. */
+static BOOL js_object_lit_key_is_static(JSParseState *s)
+{
+    int c;
+
+    switch(s->token.val) {
+    case '[':
+    case '*':
+    case TOK_ELLIPSIS:
+        return FALSE;
+    default:
+        if (token_is_pseudo_keyword(s, JS_ATOM_get) ||
+            token_is_pseudo_keyword(s, JS_ATOM_set) ||
+            token_is_pseudo_keyword(s, JS_ATOM_async)) {
+            /* only `get: v`, `get, ` and `get }` are a key: the others are
+               an accessor or a method, maybe with a computed key */
+            c = peek_token(s, FALSE);
+            return c == ':' || c == ',' || c == '}';
+        }
+        return TRUE;
+    }
+}
+
+/* Emit the start of an object literal whose first count fields, of the keys
+   atoms, have their values on the stack: OP_object with none, else
+   OP_object_lit with the keys recorded in the function. */
+static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
+{
+    JSFunctionDef *fd = s->cur_func;
+    int i;
+
+    fd->object_lit_open--;
+    if (count == 0) {
+        emit_op(s, OP_object);
+        return 0;
+    }
+    /* room for the whole record first: it is never written in part */
+    if (dbuf_claim(&fd->object_lits, sizeof(uint32_t) * (count + 1))) {
+        JS_ThrowOutOfMemory(s->ctx);
+        return -1;
+    }
+    dbuf_put_u32(&fd->object_lits, count);
+    for(i = 0; i < count; i++)
+        dbuf_put_u32(&fd->object_lits, JS_DupAtom(s->ctx, atoms[i]));
+    emit_op(s, OP_object_lit);
+    emit_u16(s, count);
+    assert(fd->object_lit_count < 0xffff);
+    emit_u16(s, fd->object_lit_count++);
+    return 0;
+}
+
+/* Fields with a static key that is not an index or __proto__ and that no
+   field before has, and a value (not a method or an accessor), push their
+   values, up to JS_OBJECT_LIT_MAX of them. The first field that is not such
+   a field, or the end of the literal, makes the object of those values
+   (OP_object_lit, whose shape has exactly those keys), and the fields from
+   there on are defined on the object one by one, as before. No code can see
+   the object before it has all its properties, so the result is the same:
+   the values are computed in the same order, the keys are in the same
+   order, and each is a data property that is writable, enumerable and
+   configurable, as OP_define_field makes it. */
 static __exception int js_parse_object_literal(JSParseState *s)
 {
     JSAtom name = JS_ATOM_NULL;
     const uint8_t *start_ptr;
     int prop_type;
     BOOL has_proto;
+    JSAtom lit_atoms[JS_OBJECT_LIT_MAX];
+    int lit_count, i;
+    BOOL on_stack;
 
+    lit_count = 0;
+    /* the operand that names the literal has 16 bits, and the literals in
+       its values come first */
+    on_stack = (s->cur_func->object_lit_count +
+                s->cur_func->object_lit_open < 0xffff);
+    if (on_stack)
+        s->cur_func->object_lit_open++;
+    else
+        emit_op(s, OP_object);
     if (next_token(s))
         goto fail;
-    /* XXX: add an initial length that will be patched back */
-    emit_op(s, OP_object);
     has_proto = FALSE;
     while (s->token.val != '}') {
         /* specific case for getter/setter */
         start_ptr = s->token.ptr;
 
+        if (on_stack && !js_object_lit_key_is_static(s)) {
+            /* the object comes before the code of the key */
+            on_stack = FALSE;
+            if (emit_object_lit(s, lit_atoms, lit_count))
+                goto fail;
+        }
+
         if (s->token.val == TOK_ELLIPSIS) {
             if (next_token(s))
-                return -1;
+                goto fail;
             if (js_parse_assign_expr(s))
-                return -1;
+                goto fail;
             emit_op(s, OP_null);  /* dummy excludeList */
             emit_op(s, OP_copy_data_properties);
             emit_u8(s, 2 | (1 << 2) | (0 << 5));
@@ -28064,6 +28265,38 @@ static __exception int js_parse_object_literal(JSParseState *s)
         prop_type = js_parse_property_name(s, &name, TRUE, TRUE, FALSE);
         if (prop_type < 0)
             goto fail;
+
+        if (on_stack) {
+            BOOL ok;
+            /* js_object_lit_key_is_static said there was no code */
+            assert(name != JS_ATOM_NULL);
+            ok = lit_count < JS_OBJECT_LIT_MAX &&
+                !__JS_AtomIsTaggedInt(name) &&
+                name != JS_ATOM___proto__ &&
+                (prop_type == PROP_TYPE_VAR ||
+                 (prop_type == PROP_TYPE_IDENT && s->token.val == ':'));
+            for(i = 0; ok && i < lit_count; i++)
+                ok = (lit_atoms[i] != name);
+            if (ok) {
+                if (prop_type == PROP_TYPE_VAR) {
+                    /* shortcut for x: x */
+                    emit_op(s, OP_scope_get_var);
+                    emit_atom(s, name);
+                    emit_u16(s, s->cur_func->scope_level);
+                } else {
+                    if (js_parse_expect(s, ':'))
+                        goto fail;
+                    if (js_parse_assign_expr(s))
+                        goto fail;
+                    set_object_name(s, name);
+                }
+                lit_atoms[lit_count++] = name;
+                goto next;
+            }
+            on_stack = FALSE;
+            if (emit_object_lit(s, lit_atoms, lit_count))
+                goto fail;
+        }
 
         if (prop_type == PROP_TYPE_VAR) {
             /* shortcut for x: x */
@@ -28141,10 +28374,21 @@ static __exception int js_parse_object_literal(JSParseState *s)
         if (next_token(s))
             goto fail;
     }
+    if (on_stack) {
+        on_stack = FALSE;
+        if (emit_object_lit(s, lit_atoms, lit_count))
+            goto fail;
+    }
     if (js_parse_expect(s, '}'))
         goto fail;
+    for(i = 0; i < lit_count; i++)
+        JS_FreeAtom(s->ctx, lit_atoms[i]);
     return 0;
  fail:
+    if (on_stack)
+        s->cur_func->object_lit_open--;
+    for(i = 0; i < lit_count; i++)
+        JS_FreeAtom(s->ctx, lit_atoms[i]);
     JS_FreeAtom(s->ctx, name);
     return -1;
 }
@@ -35471,6 +35715,7 @@ static JSFunctionDef *js_new_function_def(JSContext *ctx,
     fd->is_eval = is_eval;
     fd->is_func_expr = is_func_expr;
     js_dbuf_bytecode_init(ctx, &fd->byte_code);
+    js_dbuf_init(ctx, &fd->object_lits);
     fd->last_opcode_pos = -1;
     fd->func_name = JS_ATOM_NULL;
     fd->var_object_idx = -1;
@@ -35544,6 +35789,21 @@ static void free_bytecode_atoms(JSRuntime *rt,
     }
 }
 
+/* free the keys of the object literals a function being compiled recorded
+   (JSFunctionDef.object_lits) and the buffer */
+static void js_free_object_lit_def(JSRuntime *rt, DynBuf *d)
+{
+    size_t pos;
+    uint32_t i, count;
+
+    for(pos = 0; pos < d->size; pos += sizeof(uint32_t) * (count + 1)) {
+        count = get_u32(d->buf + pos);
+        for(i = 0; i < count; i++)
+            JS_FreeAtomRT(rt, get_u32(d->buf + pos + sizeof(uint32_t) * (i + 1)));
+    }
+    dbuf_free(d);
+}
+
 /* free fd alone: its child functions are freed */
 static void js_free_function_def1(JSContext *ctx, JSFunctionDef *fd)
 {
@@ -35560,6 +35820,7 @@ static void js_free_function_def1(JSContext *ctx, JSFunctionDef *fd)
         JS_FreeValue(ctx, fd->cpool[i]);
     }
     js_free(ctx, fd->cpool);
+    js_free_object_lit_def(ctx->rt, &fd->object_lits);
 
     JS_FreeAtom(ctx, fd->func_name);
 
@@ -39839,10 +40100,43 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd);
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
+/* the object literals fd recorded, as the block of
+   JSFunctionBytecode.object_lits, which takes their keys from fd only when
+   the function is made: NULL when there is no memory */
+static JSObjectLit *js_object_lits_from_def(JSContext *ctx, JSFunctionDef *fd)
+{
+    const DynBuf *d = &fd->object_lits;
+    JSObjectLit *lits;
+    JSAtom *atoms;
+    size_t pos;
+    uint32_t i, count;
+    int k;
+
+    lits = js_mallocz(ctx, sizeof(lits[0]) * fd->object_lit_count +
+                      (d->size - sizeof(uint32_t) * fd->object_lit_count));
+    if (!lits)
+        return NULL;
+    atoms = (JSAtom *)(lits + fd->object_lit_count);
+    pos = 0;
+    for(k = 0; k < fd->object_lit_count; k++) {
+        count = get_u32(d->buf + pos);
+        pos += sizeof(uint32_t);
+        lits[k].first = atoms - (JSAtom *)(lits + fd->object_lit_count);
+        lits[k].count = count;
+        for(i = 0; i < count; i++) {
+            *atoms++ = get_u32(d->buf + pos);
+            pos += sizeof(uint32_t);
+        }
+    }
+    assert(pos == d->size);
+    return lits;
+}
+
 static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
     JSFunctionBytecode *b;
+    JSObjectLit *object_lits = NULL;
     struct list_head *el, *el1;
     int stack_size, scope, idx;
     int function_size, byte_code_offset, cpool_offset;
@@ -39963,12 +40257,24 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     byte_code_offset = function_size;
     function_size += fd->byte_code.size;
 
+    if (fd->object_lit_count != 0) {
+        object_lits = js_object_lits_from_def(ctx, fd);
+        if (!object_lits)
+            goto fail;
+    }
+
     b = js_mallocz(ctx, function_size);
     if (!b)
         goto fail;
     js_rc(b)->ref_count = 1;
     b->ret_bits = ret_bits;
     ret_bits = NULL;
+    /* the keys are now the function's */
+    b->object_lits = object_lits;
+    b->object_lit_count = fd->object_lit_count;
+    object_lits = NULL;
+    dbuf_free(&fd->object_lits);
+    fd->object_lit_count = 0;
 
     b->byte_code_buf = (void *)((uint8_t*)b + byte_code_offset);
     b->byte_code_len = fd->byte_code.size;
@@ -40112,6 +40418,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     return JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b);
  fail:
     js_free(ctx, ret_bits);
+    js_free(ctx, object_lits);
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
@@ -40151,6 +40458,17 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
     }
     for(i = 0; i < b->cpool_count; i++)
         JS_FreeValueRT(rt, b->cpool[i]);
+    if (b->object_lits) {
+        for(i = 0; i < b->object_lit_count; i++) {
+            JSObjectLit *lit = &b->object_lits[i];
+            JSAtom *atoms = js_object_lit_atoms(b, lit);
+            uint32_t j;
+            for(j = 0; j < lit->count; j++)
+                JS_FreeAtomRT(rt, atoms[j]);
+            js_free_shape_null(rt, lit->shape);
+        }
+        js_free_rt(rt, b->object_lits);
+    }
 
     for(i = 0; i < b->closure_var_count; i++) {
         JSClosureVar *cv = &b->closure_var[i];
@@ -41397,7 +41715,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 5
+#define BC_VERSION 6
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -41784,6 +42102,23 @@ static int JS_WriteFunctionTag(BCWriterState *s, JSValueConst obj)
         bc_set_flags(&flags, &idx, cv->var_kind, 4);
         assert(idx <= 16);
         bc_put_u16(s, flags);
+    }
+
+    /* the object literals: their count, the count of all their keys, the
+       count of the keys of each, then the keys */
+    bc_put_leb128(s, b->object_lit_count);
+    if (b->object_lit_count != 0) {
+        uint32_t j, n = 0;
+        for(i = 0; i < b->object_lit_count; i++)
+            n += b->object_lits[i].count;
+        bc_put_leb128(s, n);
+        for(i = 0; i < b->object_lit_count; i++)
+            bc_put_leb128(s, b->object_lits[i].count);
+        for(i = 0; i < b->object_lit_count; i++) {
+            JSAtom *atoms = js_object_lit_atoms(b, &b->object_lits[i]);
+            for(j = 0; j < b->object_lits[i].count; j++)
+                bc_put_atom(s, atoms[j]);
+        }
     }
 
     if (JS_WriteFunctionBytecode(s, b->byte_code_buf, b->byte_code_len))
@@ -42583,6 +42918,19 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
 #endif
             }
             break;
+        case OP_FMT_npop_u16:
+            /* OP_object_lit names one of the object literals of b, and
+               takes the values of its keys */
+            if (op == OP_object_lit &&
+                (get_u16(bc_buf + pos + 3) >= b->object_lit_count ||
+                 get_u16(bc_buf + pos + 1) !=
+                 b->object_lits[get_u16(bc_buf + pos + 3)].count)) {
+                /* the atoms after pos are not the runtime's */
+                b->byte_code_len = pos;
+                JS_ThrowSyntaxError(s->ctx, "invalid object literal (pc=%d)", pos);
+                return -1;
+            }
+            break;
         default:
             break;
         }
@@ -42679,6 +43027,64 @@ static int bc_get_debug_buf(BCReaderState *s, JSFunctionBytecode *b,
     if (!*pbuf)
         return -1;
     return bc_get_buf(s, *pbuf, len);
+}
+
+static int bc_read_error_object_lit(BCReaderState *s)
+{
+    JS_ThrowSyntaxError(s->ctx, "invalid object literal (pos=%u)",
+                        (unsigned int)(s->ptr - s->buf_start));
+    return s->error_state = -1;
+}
+
+/* read the object literals of b, as JS_WriteFunctionTag writes them: each
+   has 1 to JS_OBJECT_LIT_MAX keys, none twice */
+static int bc_read_object_lits(BCReaderState *s, JSFunctionBytecode *b)
+{
+    JSObjectLit *lits;
+    JSAtom *atoms;
+    uint32_t count, natoms, n, i, j, k;
+
+    if (bc_get_leb128(s, &count))
+        return -1;
+    if (count == 0)
+        return 0;
+    if (bc_get_leb128(s, &natoms))
+        return -1;
+    if (count > 0xffff || natoms < count ||
+        natoms > count * JS_OBJECT_LIT_MAX)
+        return bc_read_error_object_lit(s);
+    lits = js_mallocz(s->ctx, sizeof(lits[0]) * count +
+                      sizeof(atoms[0]) * natoms);
+    if (!lits)
+        return -1;
+    /* the keys not read yet are JS_ATOM_NULL, which freeing leaves */
+    b->object_lits = lits;
+    b->object_lit_count = count;
+    atoms = (JSAtom *)(lits + count);
+    k = 0;
+    for(i = 0; i < count; i++) {
+        if (bc_get_leb128(s, &n))
+            return -1;
+        if (n < 1 || n > JS_OBJECT_LIT_MAX || n > natoms - k)
+            return bc_read_error_object_lit(s);
+        lits[i].first = k;
+        lits[i].count = n;
+        k += n;
+    }
+    if (k != natoms)
+        return bc_read_error_object_lit(s);
+    for(i = 0; i < count; i++) {
+        for(j = 0; j < lits[i].count; j++) {
+            JSAtom *keys = atoms + lits[i].first;
+            if (bc_get_atom(s, &keys[j]))
+                return -1;
+            for(k = 0; k < j; k++) {
+                if (keys[k] == keys[j])
+                    return bc_read_error_object_lit(s);
+            }
+        }
+    }
+    return 0;
 }
 
 static JSValue JS_ReadFunctionTag(BCReaderState *s)
@@ -42830,6 +43236,8 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
         }
         bc_read_trace(s, "}\n");
     }
+    if (bc_read_object_lits(s, b))
+        goto fail;
     {
         bc_read_trace(s, "bytecode {\n");
         if (JS_ReadFunctionBytecode(s, b, byte_code_offset, b->byte_code_len))

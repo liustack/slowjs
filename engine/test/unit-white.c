@@ -712,7 +712,7 @@ static void test_function_properties_oom(void)
 enum {
     W_INVALID, W_NOP, W_PUSH_0, W_DROP, W_GOTO, W_GOTO16, W_GOTO8,
     W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
-    W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16,
+    W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16, W_OBJECT_LIT,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1321,6 +1321,50 @@ static void test_poll_checked_read(void)
         run_read(v.ctx, buf, size, got, sizeof(got));
     CHECK(buf && strcmp(got, "ok 33") == 0, "a finally block read back with the flag: %s", buf ? got : "(none)");
     read_extra_flags = 0;
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, top);
+    vm_free(&v);
+}
+
+/* An object literal of plain keys is one OP_object_lit, whose operands are
+   the number of its values and the index of its keys and shape in the
+   function. Its bytecode reads back and runs, but not with either operand
+   changed so that they no longer match the keys the function holds
+   (SyntaxError: invalid object literal). The function holds no atom in its
+   code, so that the code is in what JS_WriteObject writes as it is in
+   memory. */
+static void test_object_lit_read(void)
+{
+    VM v = vm_new();
+    const char *src = "(function () { var n = 0; for (var k in { a: 1, b: 2 }) n++; return n })";
+    const uint8_t op[5] = { white_op(W_OBJECT_LIT), 2, 0, 0, 0 };
+    const uint8_t *code, *at, *lit;
+    uint8_t *buf, *copy;
+    size_t size;
+    JSValue top;
+    char got[256];
+    int len;
+
+    CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile an object literal");
+    lit = memmem(code, len, op, sizeof(op));
+    CHECK(lit != NULL, "OP_object_lit 2 0 in the code of an object literal");
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    at = buf ? memmem(buf, size, code, len) : NULL;
+    CHECK(at != NULL, "the code of the object literal in what JS_WriteObject wrote");
+    run_read(v.ctx, buf, size, got, sizeof(got));
+    CHECK(strcmp(got, "ok 2") == 0, "read back: %s", got);
+    if (at && lit) {
+        copy = malloc(size);
+        memcpy(copy, buf, size);
+        copy[at - buf + (lit - code) + 1] = 1;
+        run_read(v.ctx, copy, size, got, sizeof(got));
+        CHECK(strstr(got, "SyntaxError: invalid object literal"), "one value for two keys: %s", got);
+        memcpy(copy, buf, size);
+        copy[at - buf + (lit - code) + 3] = 1;
+        run_read(v.ctx, copy, size, got, sizeof(got));
+        CHECK(strstr(got, "SyntaxError: invalid object literal"), "the keys of a second literal: %s", got);
+        free(copy);
+    }
     js_free(v.ctx, buf);
     JS_FreeValue(v.ctx, top);
     vm_free(&v);
@@ -1968,6 +2012,7 @@ int main(void)
     test_poll_compile();
     test_poll_ret();
     test_poll_checked_read();
+    test_object_lit_read();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
