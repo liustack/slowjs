@@ -2,27 +2,21 @@
 
 ## Goal
 
-`github.com/liustack/slowjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. Until v0.27.x it was named `github.com/liustack/quickjs`, and those versions stay at the old path. It is a fork of `modernc.org/quickjs` (the Go API, at the root) and `modernc.org/libquickjs` (QuickJS translated to Go by ccgo, under `lib/`), merged into one module. slowjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine, while staying close enough to upstream to take its releases.
+`github.com/liustack/slowjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. Until v0.27.x it was named `github.com/liustack/quickjs`, and those versions stay at the old path. The Go API at the root comes from `modernc.org/quickjs`. The engine is QuickJS in C (`engine/`), compiled by LLVM to Go assembly that is checked in, so building needs no C compiler. Until v0.28 the engine was QuickJS translated to Go by ccgo (`modernc.org/libquickjs`), and that engine is gone. slowjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine.
 
 ## Hard constraints
 
-- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library, on all 5 supported targets (darwin and linux on amd64 and arm64, windows on amd64). Do not bring in a cgo engine.
-- The generated engine (`lib/ccgo_*.go`, `lib/internal/run-test262/ccgo_*.go`) is never edited by hand. A change to the engine is one of two kinds:
-  - a mechanical rewrite of the generated Go by `internal/fixlib`, which runs again after every upstream release
-  - a change in C, kept in `lib/internal/patch/quickjs.diff` so that a regeneration of `lib/` keeps it, with its Go form put in by `fixlib`, and also made by hand in `engine/` when it applies there
-- Every change of `fixlib` checks the code it touches against a fingerprint or a count, and stops with an error when upstream changes that code, so that it never rewrites code it has not seen. A change that `fixlib` undoes before the other changes and makes again after them must check that undoing it gives back the text it was given, byte for byte.
-- The committed generated files must be exactly what `fixlib` makes from the upstream files, byte for byte (see [docs/testing.md](docs/testing.md#same-as-upstream-after-fixlib)).
+- Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library for the user of the module. The module runs on linux/amd64 and darwin/arm64 only, and a build for another target stops with the error of `internal/unsupported`. Do not bring in a cgo engine.
 - The generated C engine in `internal/cengine` (the `.s`, `engine_decl_*.go` and `engine_keep_*.go` files of amd64 and arm64) is checked in, never edited by hand, and always what `make gen` and `make gen ARCH=arm64` make from `engine/` now. A commit that changes the C of `engine/`, the generator under `internal/goasm/gen`, the pass, or the flags of `scripts/gen-engine.sh` carries the files made again, in that same commit. `make check-gen` (part of `make check-full`) fails when they differ. Generate on a machine with LLVM 22.1.8 (`make remote` runs it on another machine, see [docs/testing.md](docs/testing.md#on-another-machine)).
-- A change for speed leaves what the engine gives the same: the same HTML of tifa's pages, the same 58 known test262 errors, and the same TLS stack slots at every stack check, so a script recurses exactly as deep as before.
+- The C is not edited to look like upstream. It is QuickJS at the pinned commit with the fork's changes ([docs/fork-changes](docs/fork-changes/README.md)), and a commit of upstream QuickJS is taken into it one at a time, by hand, as [docs/upgrading.md](docs/upgrading.md) says.
+- A change for speed leaves what the engine gives the same: the same HTML of tifa's pages, the same 58 known test262 errors (`engine/test/test262_errors.txt`), and the same call depth, so a script recurses exactly as deep as before.
 
 ## Current state of the repository
 
 - `main` carries the fork. `master` and the other upstream branches mirror gitlab.com/cznic/quickjs and get no commits of their own. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`.
-- Root: the Go API, package `slowjs` (`quickjs.go` and the files next to it), and its tests. It calls the engine only through `engine_lib.go`, `entry_lib.go`, `hostcall_lib.go`, `memory_lib.go` and `tlsstack_*.go` (see [docs/architecture.md](docs/architecture.md#the-engine-layer)).
-- `lib/`: the engine, merged from upstream libquickjs with `git subtree`, plus the fork's hand-written Go next to the generated files. `lib/README.md`, `lib/CLAUDE.md`, `lib/Makefile` and `lib/generator.go` are upstream's and kept as they are so that subtree merges stay clean: they describe libquickjs as a module of its own. Where they disagree with this file, this file wins. This fork does not regenerate `lib/` with `make generate`.
-- `internal/fixlib/`: the command that puts the fork's changes into the generated Go.
-- `engine/`: the C tree of the engine to come, the pinned QuickJS with the fork's C changes. It has no Go file, and no Go package directory may hold a C file. It builds with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc (musl's string and math functions, see [engine/libc/README.md](engine/libc/README.md)), and asks its host only for the callbacks of `engine/host.h`. `engine/test/` is the native test host that runs test262 on it, also under the sanitizers (see [docs/testing.md](docs/testing.md#the-c-tree-and-its-native-test-host)). It started as the pinned archive with `quickjs.diff` and `cpatch.py` applied and now changes on its own. Until the switch the old engine stays frozen: only a fix that blocks tifa goes into it (`quickjs.diff` and `fixlib`), and the same fix is made by hand in `engine/` when it applies there. Nothing compares the two.
-- `internal/goasm/`: the maintainer tool that compiles the C interpreter of the old engine (the pinned archive with `quickjs.diff` and `cpatch.py` applied, never `engine/`) into the Go assembly of `lib/goasm_*`, which linux/amd64 runs by default (`-tags slowjs_nogoasm` turns it off). Its output is committed and checked like the generated Go (see [docs/fork-changes/go-assembly.md](docs/fork-changes/go-assembly.md)).
+- Root: the Go API, package `slowjs` (`quickjs.go` and the files next to it), and its tests. It calls the engine only through `engine.go`, `entry.go`, `hostcall.go` and `enginememory.go` (see [docs/architecture.md](docs/architecture.md#the-engine-layer)).
+- `engine/`: the C tree of the engine, QuickJS at the pinned commit with the fork's C changes. It has no Go file, and no Go package directory may hold a C file (`layout_test.go` checks it). It builds with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc (musl's string and math functions, see [engine/libc/README.md](engine/libc/README.md)), and asks its host only for the callbacks of `engine/host.h`. `engine/test/` is the native test host that runs test262 and the recorded outputs on it, also under the sanitizers (see [docs/testing.md](docs/testing.md#the-c-tree-and-its-native-test-host)).
+- `internal/cengine/`: the generated engine and the Go host files next to it. `internal/goasm/gen/`: the generator that compiles `engine/` to Go assembly (see its README), and `internal/goasm/cmd/xform` that moves the code for timing. `internal/gohost/`, `internal/hostmem/`, `internal/idtable/`: the Go side of the host callbacks, the memory of a VM and the table of handles. `internal/sjdev/`: the tool that times builds, `go tool sjdev`.
 - `intl/`: `Intl` for a VM, in every locale Chromium has. `temporal/`: `Temporal` for a VM, computed by go-intl. `internal/gointl/`: a copy of go-intl, which `intl/` and `temporal/` use. `internal/intlhook/`: what `temporal/` takes from `intl/`. `fmt/`: Go's fmt for a VM. `compare/`: a module of its own, kept from upstream, with QuickJS's micro benchmarks. `compare/engines/`: another module, the comparison with the other pure Go engines that docs/benchmarks.md reports.
 - [docs/architecture.md](docs/architecture.md) has the full map, the core types and the rules of the Go API.
 
@@ -40,9 +34,9 @@
    - docs/benchmarks.md: the comparison with the other pure Go JavaScript engines, with its history, run again at every release. It leaves out goja, sobek and otto. Its results are kept under `compare/engines/results/` and its changes in `compare/engines/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
    - [docs/upstream.md](docs/upstream.md): where the code comes from, and what changes when switching from modernc.org/quickjs
-4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests, and what to do when `fixlib` stops on it. A change for speed also goes into [docs/performance.md](docs/performance.md).
+4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests. A change for speed also goes into [docs/performance.md](docs/performance.md).
    - New fork changes are written into [docs/fork-changes](docs/fork-changes/README.md), never into README.md. The README is a landing page: it only links to the docs, and it lists new Go API in its section on what the fork adds to the API, in both languages.
-   - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/fork-changes with a row in the index ("Unreleased" until it ships), what to do when `fixlib` stops on it into its "When upstream changes it" and the tables of [docs/upgrading.md](docs/upgrading.md), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
+   - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/fork-changes with a row in the index ("Unreleased" until it ships), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
 
    A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first.
 5. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
@@ -61,19 +55,7 @@
   // root of this repository.
   ```
 
-- A new file whose code repeats parts of the engine as ccgo translated it, such as a Go form of an engine function that `internal/fixlib` calls instead, takes this header and a row in [NOTICE.md](NOTICE.md):
-
-  ```go
-  // Copyright (c) 2026 The slowjs Authors.
-  // SPDX-License-Identifier: MIT AND BSD-3-Clause
-  // The fork's code here is under the MIT license in LICENSE-MIT at the root of
-  // this repository. Parts follow QuickJS (Copyright (c) 2017-2021 Fabrice
-  // Bellard and Charlie Gordon, MIT, see LICENSE-LIBQUICKJS) as translated by
-  // modernc.org/libquickjs (The libquickjs-go Authors, BSD-3-Clause, see
-  // lib/LICENSE).
-  ```
-
-- A file that came from upstream (modernc.org/quickjs, modernc.org/libquickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much the fork changes them.
+- A file that came from upstream (QuickJS, modernc.org/quickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much the fork changes them.
 - Add a new author of the fork to `AUTHORS-FORK`. `AUTHORS` lists upstream's authors and stays as upstream has it.
 - New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
 
@@ -83,10 +65,11 @@ Plans, design drafts, experiment notes and raw measurement data go in the reposi
 
 ## Verification and commits
 
-- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet ./internal/fixlib`, `go run ./internal/fixlib -check` and `scripts/docs-list.sh --check`, and the branch passes `go test -short -p 2 -timeout 30m . ./lib ./internal/fixlib` before it is merged (the tests of `internal/fixlib` take about 16 minutes).
+- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet -asmdecl=false ./...` and `scripts/docs-list.sh --check`, and `go test -count=1 -p 1 .` (about a minute). The branch passes `make check-full` before it is merged. The `-asmdecl=false` leaves out the check of the declarations of the generated assembly, which the generator and the tests of `internal/cengine` make instead.
 - The generated files are large. Build and test a few packages at a time (`-p 2`), and run heavy jobs such as test262, `make build_all_targets` or the race detector one after another, not in parallel.
 - For new behavior, write a failing test first, then implement. For a bug, find the root cause before changing code, and do not hide it with fallback values.
-- After an upstream release, follow [docs/upgrading.md](docs/upgrading.md). When `fixlib` stops, read the code it names before updating any list.
+- After an upstream release, follow [docs/upgrading.md](docs/upgrading.md).
+- Tools are Go programs or short shell scripts. Do not add Python.
 - When merging a branch that changes what programs using the module can see, add it to both CHANGELOG.md and CHANGELOG.zh-CN.md.
 
 ## Releases
