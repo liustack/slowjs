@@ -8,7 +8,9 @@
 // on the prototype chain and on Object.prototype, symbols, array indexes in
 // their order, proxies, getters, Function.prototype.call and
 // Object.prototype.hasOwnProperty replaced, keys of every type, this values
-// that are not objects, and the global object.
+// that are not objects, and the global object. Loops are also frozen, sealed
+// and emptied of most of their keys on the way, left by break, and stopped in
+// a generator across gc().
 const out = []
 const log = s => out.push(s)
 const has = Object.prototype.hasOwnProperty
@@ -221,5 +223,80 @@ log('strict this: ' + (function () { 'use strict'; return has.call(this === unde
     }
   } catch (e) { r.push(e.message) }
   log('thrown out: ' + r.join(','))
+}
+{
+  const o = { a: 1, b: 2, c: 3, d: 4 }
+  log('frozen during: ' + keys(o, (k, o) => {
+    if (k === 'b') { Object.freeze(o); o.e = 5; delete o.c; o.d = 9 }
+  }) + ' left ' + JSON.stringify(o) + ' ' + Object.isFrozen(o))
+}
+{
+  const o = { a: 1, b: 2, c: 3, d: 4 }
+  log('sealed during: ' + keys(o, (k, o) => { if (k === 'a') { Object.seal(o); delete o.b; o.d = 8 } }) + ' left ' + JSON.stringify(o))
+}
+{
+  // deleting most of the keys makes the object compact its shape
+  const o = {}
+  for (let i = 0; i < 40; i++) o['k' + i] = i
+  log('many deleted during: ' + keys(o, (k, o) => {
+    if (k === 'k0') for (let i = 1; i < 36; i++) delete o['k' + i]
+    if (k === 'k37') o.k5 = 'back'
+  }) + ' left ' + Object.keys(o).join(','))
+}
+{
+  const o = {}
+  for (let i = 0; i < 20; i++) o['k' + i] = i
+  log('every other deleted during: ' + keys(o, (k, o) => {
+    const i = +k.slice(1)
+    if (i % 2 === 0 && i + 1 < 20) delete o['k' + (i + 1)]
+  }))
+}
+{
+  const o = { a: 1, b: 2, c: 3, d: 4 }
+  const r = []
+  for (const k in o) { r.push(k); if (k === 'b') break }
+  o.e = 5
+  for (const k in o) { r.push(k); if (k === 'a') break }
+  delete o.a
+  outer: for (const k in o) {
+    for (const j in o) { r.push(k + j); if (j === 'c') continue outer; if (k === 'd') break outer }
+  }
+  log('break: ' + r.join(','))
+}
+{
+  function* walk(o) { for (const k in o) yield k + (has.call(o, k) ? '' : '^') }
+  const r = []
+  const o = { a: 1, b: 2, c: 3, d: 4 }
+  const g = walk(o)
+  r.push(g.next().value)
+  gc()
+  delete o.c
+  o.e = 5
+  Object.setPrototypeOf(o, { p: 1 })
+  gc()
+  for (let n = g.next(); !n.done; n = g.next()) { r.push(n.value); gc() }
+  log('generator suspended: ' + r.join(','))
+  // the generator alone holds the object
+  const lone = walk({ x: 1, y: 2, z: 3 })
+  r.length = 0
+  r.push(lone.next().value)
+  gc()
+  r.push(...lone)
+  log('generator holds the object: ' + r.join(','))
+  // the object holds the generator that walks it, and both are dropped
+  let cyc = { a: 1, b: 2 }
+  cyc.g = walk(cyc)
+  cyc.g.next()
+  cyc = null
+  gc()
+  // a generator left in the loop, returned and thrown out of
+  const left = walk({ a: 1, b: 2, c: 3 })
+  left.next()
+  const ret = walk({ a: 1, b: 2 })
+  ret.next()
+  const thrown = walk({ a: 1, b: 2 })
+  thrown.next()
+  log('generator ended: ' + JSON.stringify(ret.return('r')) + ' ' + err(() => thrown.throw(new Error('boom'))) + ' ' + JSON.stringify(ret.next()))
+  gc()
 }
 out.join('\n')
