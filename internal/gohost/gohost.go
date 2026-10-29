@@ -179,6 +179,7 @@ type VM struct {
 	// nothing may enter the engine again.
 	releasing bool
 	unmapping sync.Mutex // held while Close or CloseLeftovers unmaps mem
+	hooks     hookState  // what the hooks of a test keep (hooks.go)
 }
 
 // vms are the VMs alive, by id. sizes counts the VMs of each stack size, and
@@ -628,6 +629,7 @@ func (v *VM) readClock() int64 {
 func Poll(sp uintptr) {
 	v := ByStack(sp)
 	v.polls.Add(1)
+	pollHook(v)
 	if v.counter != 0 {
 		*(*int64)(addr(v.counter)) = v.interval
 	}
