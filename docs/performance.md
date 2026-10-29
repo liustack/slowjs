@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -299,6 +299,35 @@ A string appended to a variable is [copied with room](changes/c-engine.md#string
 The other 29 scripts run within 0.08% of the instructions (`c_string_methods` +0.076%, the rest within 0.01%), and no time passes the rule. `c_json_stringify` took 0.972 at all 8 positions with the same instructions, which is the layout, not the change. A string `+` pays about 2 instructions for the checks (`v8_splay`, `c_escape_html`).
 
 Memory of `r_react_ssr`: the most bytes in use at once went from 2.39 MB to 2.46 MB (+2.9%, the room of the page string). That made the heap grow by one more chunk, a quarter of what it had: the footprint went from 3.01 MB to 3.80 MB, and the most memory the process held from 8.05 to 8.31 MB to 8.38 to 8.50 MB. `c_string_concat` uses 35% less at its most.
+
+### Ordinary objects of 48 bytes
+
+An ordinary object takes a [block of 48 bytes, not 72](changes/objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72). It makes no page faster or slower: the engine runs between 0.07% fewer and 0.27% more instructions on the pages below, and no time passes the rule. Against main (01c3da62) at 8 positions, 5 rounds (the shop 3), one core of an EPYC 7B13 with its sibling idle. Time is the median over positions of the paired ratios, range the base's own range over positions, and instructions per render are from callgrind at position 0.0 (the difference of a run of 12 renders and one of 2).
+
+| Script or page | Time | Range | Instructions |
+| --- | ---: | ---: | ---: |
+| `r_react_ssr` | 1.001 | 1.1% | +0.01% |
+| bench app, spiral | 0.993 | 6.0% | +0.15% |
+| bench app, table | 1.000 | 6.3% | +0.20% |
+| MUI app, home | 1.003 | 2.6% | +0.22% |
+| MUI app, order | 1.004 | 2.7% | not counted |
+| MUI app, orders | 1.002 | 2.5% | +0.27% |
+| shop, six workbench pages (sum) | 0.998 | 2.4% | studio list +0.04% |
+| shop, store products page | not timed | | -0.07% |
+
+No page passes the rule for faster or slower. The shop was timed with 3 rounds of 60 renders a page (every page 0.997 to 0.999). The instruction counts of the shop and MUI pages come from a build with the render time limit raised, since valgrind runs about 50 times slower than the limit allows.
+
+Memory, on the C tree natively (Apple M4), against main with the same HTML:
+
+| What | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Highest `MemorySize`, 11 Markdown pages of 300 to 500 KB, mean of the ratios | | | -3.8% (-11.8% to +2.7%) |
+| Highest `MemorySize`, the page of 400 KB | 180.8 MB | 181.1 MB | +0.2% |
+| End of that render, collector turned off | 394.3 MB | 379.9 MB | -3.7% |
+| Highest `MemorySize`, the 20 pages of tifa's shop, sum | 253.5 MB | 240.9 MB | -5.0% |
+| End of the render of the 20 pages, collector turned off, sum | 244.3 MB | 240.0 MB | -1.8% |
+
+The highest count follows the threshold of the collector (1.5 times the count after the last collection), so one page can peak just before or after a collection: the average of a run of sizes, or a render with the collector off, shows what the objects saved. The count at the end of a render with the collector on moves with the same threshold (the page of 400 KB ends at 174.8 MB, then 177.2 MB, with the collector at another point of its cycle).
 
 ### Upstream commits and the scripts where the C engine was slower than C
 
