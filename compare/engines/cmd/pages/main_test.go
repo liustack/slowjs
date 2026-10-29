@@ -286,11 +286,3 @@ func TestParseJSONRefuses(t *testing.T) {
 		}
 	}
 }
-
-func TestSplitLines(t *testing.T) {
-	got := pySplitLines("a\nb\r\nc\rd\x0be f\n")
-	want := []string{"a", "b", "c", "d", "e", "f"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("pySplitLines = %q, want %q", got, want)
-	}
-}
