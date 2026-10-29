@@ -36,7 +36,7 @@ var (
 	work      = flag.String("work", "_engine_work", "work dir")
 	out       = flag.String("out", "", "Go package dir to write (empty: no output)")
 	pkg       = flag.String("pkg", "cengine", "Go package name")
-	buildTag  = flag.String("build-tag", "", "a build tag that every generated file requires besides its architecture (the checked-in engine is generated with slowjs_cengine, so that no build without the tag sees it)")
+	buildTag  = flag.String("build-tag", "", "a build tag that every generated file requires besides its architecture (the checked-in engine is generated with none)")
 	reportOut = flag.String("report", "", "write the rejections as JSON here")
 	maxFile   = flag.Int("max-file", 512<<10, "most bytes in one .s file")
 	leaves    = flag.String("leaves", "memcpy,memmove,memset", "register-entry leaves (llc calls them by itself)")
