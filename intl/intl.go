@@ -141,7 +141,7 @@
 // result. Date keys include the actual pattern because distinct patterns
 // can report identical public resolved options.
 //
-// See docs/fork-changes/time-and-intl.md for measured binary size, VM memory
+// See docs/changes/time-and-intl.md for measured binary size, VM memory
 // and constructor and formatting times.
 //
 // # License of the data

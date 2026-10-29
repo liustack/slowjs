@@ -8,7 +8,7 @@ package cengine
 import "testing"
 
 // The cost of going into the engine and out again, which gohost.Enter and
-// Leave add to, SetPanicOnFault included (see docs/fork-changes/c-engine.md).
+// Leave add to, SetPanicOnFault included (see docs/changes/c-engine.md).
 
 func benchVM(b *testing.B) *VM {
 	b.Helper()

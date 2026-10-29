@@ -24,7 +24,7 @@ runs its own checks and lowering in Go (`debug/elf`,
    target feature `slow-unaligned-mem-16` (`EngineValueFlags`), so that LLVM
    copies a JSValue (16 bytes) as two 8-byte moves and not one SSE move: the
    interpreter writes the two halves one at a time, and Zen 3 cannot forward a
-   16-byte load from them (see [c-engine.md](../../../docs/fork-changes/c-engine.md#how-a-jsvalue-is-copied)).
+   16-byte load from them (see [c-engine.md](../../../docs/changes/c-engine.md#how-a-jsvalue-is-copied)).
    The small libc is left out, since its `memcpy` moves 16 bytes at a time on
    purpose. CheckIR rejects variadics, byval, sret and long double.
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
@@ -205,7 +205,7 @@ compile jobs (`-j`) and the order the compiles finish in, and no file holds the
 path of the work folder (`TestOutputReproducible`).
 
 The engine polls (`pass/poll.cpp`, see
-[c-engine.md](../../../docs/fork-changes/c-engine.md#polls-and-interrupts)):
+[c-engine.md](../../../docs/changes/c-engine.md#polls-and-interrupts)):
 every cycle of the code counts down a counter at `-poll-offset` bytes from
 the base of the shadow-stack region (`gen.PollCounterOffset`, 384, which
 `engine_decl_<arch>.go` records as `pollCounterOffset`), and calls `host_poll`

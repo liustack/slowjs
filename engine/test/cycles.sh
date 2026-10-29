@@ -11,7 +11,7 @@
 # indirect calls, links them into one module and lists the cycles of its call
 # graph that no count cuts (internal/goasm/cmd/cycles). The list must be the
 # one in cycles.txt, line for line, which is empty: every recursion goes through a
-# count (see docs/fork-changes/c-engine.md). A cycle that appears is a
+# count (see docs/changes/c-engine.md). A cycle that appears is a
 # recursion with no bound the generator can prove: cut it, or count it.
 #
 #   engine/test/cycles.sh [LLVM_BIN]

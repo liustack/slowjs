@@ -29,16 +29,16 @@ Do the upgrade on a branch (`git switch -c upgrade-quickjs-<date>`) and merge it
 
 ## Taking upstream QuickJS into engine/
 
-`engine/` is QuickJS at `3d5e064` (2026-06-04) with the fork's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream is taken when it makes tifa's renders faster, or removes a crash or a wrong answer that a page can reach, and each one is a commit of its own. [fork-changes/upstream-commits.md](fork-changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
+`engine/` is QuickJS at `3d5e064` (2026-06-04) with the fork's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream is taken when it makes tifa's renders faster, or removes a crash or a wrong answer that a page can reach, and each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
 
 For each commit:
 
 1. `git fetch quickjs`, then see what is new: `git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`.
-2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of the fork ([fork-changes](fork-changes/README.md) names the functions), the fork's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
+2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of the fork ([changes](changes/README.md) names the functions), the fork's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
 5. At the end of a batch, run `make check-full`. The 58 known test262 errors must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
-6. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [fork-changes/upstream-commits.md](fork-changes/upstream-commits.md), and a line to both changelogs when users can see it.
+6. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [changes/upstream-commits.md](changes/upstream-commits.md), and a line to both changelogs when users can see it.
 
 To move test262 to a newer revision, change the commit and the SHA-256 at the top of `engine/test/test262.sh`, check that `engine/test/test262.diff` (upstream QuickJS's patch to test262) still applies, run `engine/test/test262.sh`, and replace `engine/test/test262_errors.txt` with the errors it reports after reading each new one.
 
@@ -121,7 +121,7 @@ To move to a newer update, once ICU has published it:
 
 1. Set `TZ_VERSION` in `qjstz`, and the four checksums, from `sha256sum` of the four files under `tzdata/icunew/<version>/44`.
 2. Run `qjs-sync.sh checkout`, then `qjs-sync.sh pack`.
-3. Change the version in `TestQJSTZVersion`, in [temporal.md](fork-changes/temporal.md#zone-data) and in the package doc of `temporal`, and add a case to `TestZoneData` in `temporal/all_test.go` for a zone the update changed.
+3. Change the version in `TestQJSTZVersion`, in [temporal.md](changes/temporal.md#zone-data) and in the package doc of `temporal`, and add a case to `TestZoneData` in `temporal/all_test.go` for a zone the update changed.
 4. Run `qjs-sync.sh test -p 2`, `qjs-sync.sh test-chromium -p 2`, `go test ./internal/gointl/... ./temporal` and `make gointl`.
 
 When go-intl itself moves to that update or a later one, `checkout` still writes the zones of `qjstz`. Set `qjstz` to go-intl's release then, or later, never earlier.

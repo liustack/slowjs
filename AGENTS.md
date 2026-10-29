@@ -8,7 +8,7 @@
 
 - Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library for the user of the module. The module runs on linux/amd64 and darwin/arm64 only, and a build for another target stops with the error of `internal/unsupported`. Do not bring in a cgo engine.
 - The generated C engine in `internal/cengine` (the `.s`, `engine_decl_*.go` and `engine_keep_*.go` files of amd64 and arm64) is checked in, never edited by hand, and always what `make gen` and `make gen ARCH=arm64` make from `engine/` now. A commit that changes the C of `engine/`, the generator under `internal/goasm/gen`, the pass, or the flags of `scripts/gen-engine.sh` carries the files made again, in that same commit. `make check-gen` (part of `make check-full`) fails when they differ. Generate on a machine with LLVM 22.1.8 (`make remote` runs it on another machine, see [docs/testing.md](docs/testing.md#on-another-machine)).
-- The C is not edited to look like upstream. It is QuickJS at the pinned commit with the fork's changes ([docs/fork-changes](docs/fork-changes/README.md)), and a commit of upstream QuickJS is taken into it one at a time, by hand, as [docs/upgrading.md](docs/upgrading.md) says.
+- The C is not edited to look like upstream. It is QuickJS at the pinned commit with the fork's changes ([docs/changes](docs/changes/README.md)), and a commit of upstream QuickJS is taken into it one at a time, by hand, as [docs/upgrading.md](docs/upgrading.md) says.
 - A change for speed leaves what the engine gives the same: the same HTML of tifa's pages, the same 58 known test262 errors (`engine/test/test262_errors.txt`), and the same call depth, so a script recurses exactly as deep as before.
 
 ## Current state of the repository
@@ -26,7 +26,7 @@
 2. Before starting work and before creating a doc, run `scripts/docs-list.sh` to see the index, and read the docs whose Read when applies. Before committing, run `scripts/docs-list.sh --check`. It fails if a doc has no summary.
 3. What each doc is for:
    - [docs/architecture.md](docs/architecture.md): the layers, folders, core types and rules of the Go API
-   - [docs/fork-changes/](docs/fork-changes/README.md): every change the fork makes to upstream, by area
+   - [docs/changes/](docs/changes/README.md): every change the fork makes to upstream, by area
    - [docs/testing.md](docs/testing.md), [docs/commit.md](docs/commit.md): checks and commit rules
    - [docs/allocator.md](docs/allocator.md): the memory allocator of the C engine in `engine/`
    - [docs/upgrading.md](docs/upgrading.md): taking upstream releases and new intl data
@@ -34,9 +34,9 @@
    - docs/benchmarks.md: the comparison with the other pure Go JavaScript engines, with its history, run again at every release. It leaves out goja, sobek and otto. Its results are kept under `compare/engines/results/` and its changes in `compare/engines/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
    - [docs/upstream.md](docs/upstream.md): where the code comes from, and what changes when switching from modernc.org/quickjs
-4. Each change the fork makes to upstream is written up in the doc of its area under [docs/fork-changes](docs/fork-changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests. A change for speed also goes into [docs/performance.md](docs/performance.md).
-   - New fork changes are written into [docs/fork-changes](docs/fork-changes/README.md), never into README.md. The README is a landing page: it only links to the docs, and it lists new Go API in its section on what the fork adds to the API, in both languages.
-   - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/fork-changes with a row in the index ("Unreleased" until it ships), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
+4. Each change the fork makes to upstream is written up in the doc of its area under [docs/changes](docs/changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests. A change for speed also goes into [docs/performance.md](docs/performance.md).
+   - New fork changes are written into [docs/changes](docs/changes/README.md), never into README.md. The README is a landing page: it only links to the docs, and it lists new Go API in its section on what the fork adds to the API, in both languages.
+   - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/changes with a row in the index ("Unreleased" until it ships), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
 
    A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first.
 5. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
