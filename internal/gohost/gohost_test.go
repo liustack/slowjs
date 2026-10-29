@@ -517,26 +517,37 @@ func pollUntilKilled(t *testing.T, sp uintptr) int {
 // TestPollKill: a script that goes on polling without stopping after
 // Interrupt is killed once the grace is over and KillPolls polls have come
 // after the one that set the flag: the poll panics with ErrKilled and the VM
-// is broken. A negative grace never kills, and a grace of 0 kills at the
-// first poll that has the polls. An entry that runs no script is never
-// killed.
+// is broken. Polls past KillPolls do not kill before the grace is over, and
+// once it is, the next poll kills. A negative grace never kills, and a grace
+// of 0 kills at the first poll that has the polls. An entry that runs no
+// script is never killed. The grace is an hour or 0, so that the clock
+// decides nothing however fast the polls come.
 func TestPollKill(t *testing.T) {
 	v := newVM(t, small)
 	base, _ := v.Stack()
 	if v.KillGrace() != DefaultKillGrace {
 		t.Fatalf("the grace of a new VM is %v, want %v", v.KillGrace(), DefaultKillGrace)
 	}
-	const grace = 30 * time.Millisecond
-	v.SetKillGrace(grace)
+	v.SetKillGrace(time.Hour)
 	v.EnterScript(0)
-	begin := time.Now()
 	v.Interrupt()
-	n := pollUntilKilled(t, base+64)
-	if d := time.Since(begin); d < grace {
-		t.Fatalf("killed %v after Interrupt, before the grace of %v was over", d, grace)
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				t.Fatalf("a poll within the grace panicked with %v", p)
+			}
+		}()
+		for range 3 * KillPolls {
+			Poll(base + 64)
+		}
+	}()
+	if v.Broken() || v.Killed() || v.StopPolls() != 3*KillPolls {
+		t.Fatalf("polls within the grace: broken %v, killed %v, %d polls saw the request, want %d", v.Broken(), v.Killed(), v.StopPolls(), 3*KillPolls)
 	}
-	if n <= KillPolls+1 {
-		t.Fatalf("killed at poll %d after Interrupt, want more than %d", n, KillPolls+1)
+	// The grace is over: the poll that sees it kills.
+	v.SetKillGrace(0)
+	if n := pollUntilKilled(t, base+64); n != 1 {
+		t.Fatalf("killed at poll %d once the grace was over, want the first", n)
 	}
 	if !v.Broken() || !v.Killed() {
 		t.Fatalf("after the kill: broken %v, killed %v", v.Broken(), v.Killed())
