@@ -617,6 +617,46 @@ static void test_func_shapes_kept(void)
     JS_FreeRuntime(rt);
 }
 
+/* The bytes the property arrays of the objects that src makes take. */
+static int64_t lit_prop_bytes(JSRuntime *rt, JSContext *ctx, const char *src)
+{
+    JSMemoryUsage before, after;
+
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &before);
+    CHECK(eval(ctx, src), "the script threw");
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &after);
+    return after.prop_size - before.prop_size;
+}
+
+/* An object literal with only plain keys gets a property array of exactly
+   its size: a thousand objects of five keys take five fourths of the bytes
+   of a thousand of four keys, give or take the few bytes of the other
+   objects a run makes, where growing the array one key at a time gives eight
+   slots to five keys. */
+static void test_object_lit_size(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    int64_t four, five;
+
+    CHECK(eval(ctx, "var a4 = [], a5 = []"), "the script threw");
+    four = lit_prop_bytes(rt, ctx, "for (let i = 0; i < 1000; i++) "
+                          "a4.push({ a: i, b: i, c: i, d: i })");
+    five = lit_prop_bytes(rt, ctx, "for (let i = 0; i < 1000; i++) "
+                          "a5.push({ a: i, b: i, c: i, d: i, e: i })");
+    CHECK(four > 0 && llabs(4 * five - 5 * four) < four / 100,
+          "%lld bytes for five keys, %lld for four", (long long)five,
+          (long long)four);
+    CHECK(eval_is(ctx, "JSON.stringify([a4[999], a5[7]])",
+                  "[{\"a\":999,\"b\":999,\"c\":999,\"d\":999},"
+                  "{\"a\":7,\"b\":7,\"c\":7,\"d\":7,\"e\":7}]"),
+          "the objects");
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* A string key that is already an atom takes the reference JS_DupAtom
    gives: an atom made from a string at run time and used as a key many
    times is freed with the last string and object that hold it. */
@@ -2643,6 +2683,7 @@ int main(void)
     test_shape_cache_lifetime();
     test_func_shapes();
     test_func_shapes_kept();
+    test_object_lit_size();
     test_atom_keys();
     test_own_keys_collected();
     test_interrupt_points();
