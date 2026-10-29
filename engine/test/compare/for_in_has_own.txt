@@ -69,3 +69,11 @@ shapes in turn: ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a
 isObjectEmpty: true,false,false,true,true,false
 nested: aa,ab,ba,bb,bc
 thrown out: a,stop
+frozen during: a,b,c,d left {"a":1,"b":2,"c":3,"d":4} true
+sealed during: a,b,c,d left {"a":1,"b":2,"c":3,"d":8}
+many deleted during: k0,k36,k37,k38,k39 left k0,k36,k37,k38,k39,k5
+every other deleted during: k0,k2,k4,k6,k8,k10,k12,k14,k16,k18
+break: a,b,a,bb,bc,cb,cc,db
+generator suspended: a,b,d,p^
+generator holds the object: x,y,z
+generator ended: {"value":"r","done":true} Error: boom {"done":true}
