@@ -188,3 +188,59 @@ func TestSharedBytecodeConcurrent(t *testing.T) {
 		t.Fatal("the bytes stayed after the last VM and Close")
 	}
 }
+
+// The rule of the polls is checked on the first load of a SharedBytecode that
+// reads, and not again on the loads after it: the bytes are the same.
+// Bytes that do not read are not marked, and keep failing.
+func TestSharedBytecodeChecksOnce(t *testing.T) {
+	b, err := NewSharedBytecode(compileShared(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if b.checked.Load() {
+		t.Fatal("a new SharedBytecode is marked checked")
+	}
+	var want string
+	for i := range 3 {
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.EvalSharedBytecode(b); err != nil {
+			t.Fatalf("load %d: %v", i, err)
+		}
+		if !b.checked.Load() {
+			t.Fatalf("not marked checked after load %d", i)
+		}
+		got, err := m.Eval(sharedProbe, EvalGlobal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s, _ := got.(string); i == 0 {
+			want = s
+		} else if s != want {
+			t.Fatalf("load %d shows %q, the first showed %q", i, s, want)
+		}
+		m.Close()
+	}
+
+	bad, err := NewSharedBytecode([]byte("not bytecode at all"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bad.Close()
+	for i := range 2 {
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.EvalSharedBytecode(bad); err == nil {
+			t.Fatalf("load %d of bytes that are no bytecode worked", i)
+		}
+		if bad.checked.Load() {
+			t.Fatalf("bytes that do not read are marked checked after load %d", i)
+		}
+		m.Close()
+	}
+}
