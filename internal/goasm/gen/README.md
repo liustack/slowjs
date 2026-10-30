@@ -114,6 +114,21 @@ code and morestack clobber:
   X20 to X25. A seventh arm64 argument would land in X26, which the scan
   rejects, so the pass moves larger argument lists into a block.
 
+What a call costs in each mode, from a loop that calls a unified entry (the
+least of 5 runs of 300 million calls, in ns a call). On amd64 (EPYC 7B13)
+`body` takes 2.59 for an int and 2.88 for a JSValue, `all` 0.29 more, and `pn`
+0.3 to 0.6 less. On arm64 (Apple Silicon) `stub` takes 4.9 and `all` 4.6, since
+saving all 15 registers costs 2.6 to 2.7 more than `body` (1.9). There `pn`
+takes the same as `body` for an int, 0.16 more for a JSValue and 0.5 to 0.6
+more for a double, where LLVM stores and reloads the accumulator around the
+call instead of keeping it in d8. The 48 unified call sites of the test unit (arm64)
+save 720 registers in `all` and `stub`, 233 in `body` and none in `pn`, and the
+lowered code of the unit is 3% smaller on amd64 and 8% on arm64 with `pn` than
+with `body`. `pn` is the mode of the engine: as fast as `body` or faster, and
+the call site saves nothing, which keeps the lowering simplest. The code
+position moves such a loop by about 0.3 ns, so only the numbers of one build
+compare.
+
 `GEN_NO_SAVES=1` with `body` and `GEN_NO_PACK=1` with `pn` are negative builds
 that must fail the tests and the register scan.
 
