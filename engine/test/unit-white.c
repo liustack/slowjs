@@ -70,6 +70,8 @@ unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
+void white_front_drain(JSContext *ctx);
+size_t white_heap_limit(JSContext *ctx);
 
 /* ---- texts of every kind of character ---- */
 
@@ -732,7 +734,7 @@ static void test_object_inline_oom(void)
             cases++;
             if (JS_IsException(r)) {
                 failed_calls++;
-                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
             } else if (JS_HasException(v.ctx)) {
                 /* the call worked and an error is still pending: a delete packs the properties, which
                    is optional, and a failed packing must leave nothing behind */
@@ -810,6 +812,8 @@ static void test_buffer_limit(void)
         CHECK(b != NULL, "the buffer");
         if (!b)
             break;
+        /* what the caches hold would be given back when the first request fails, and the count with it */
+        white_front_drain(v.ctx);
         used = JS_GetMemorySize(v.rt);
         usable = white_sb_block_usable(b);
         request = hdr + 2250000 + 1;
@@ -818,9 +822,11 @@ static void test_buffer_limit(void)
         if (pass == 0) {
             CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the buffer did not grow with the room of the old block in the limit");
             CHECK(!white_sb_error(b), "the buffer is in error");
+            CHECK(white_heap_limit(v.ctx) == limit, "the limit is %lu after the growth, want %lu", (unsigned long)white_heap_limit(v.ctx), (unsigned long)limit);
         } else {
             CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) != 0, "the buffer grew past the limit");
             CHECK(white_sb_error(b), "the buffer is not in error");
+            CHECK(white_heap_limit(v.ctx) == limit, "the limit is %lu after the failure, want %lu", (unsigned long)white_heap_limit(v.ctx), (unsigned long)limit);
             JS_FreeValue(v.ctx, JS_GetException(v.ctx));
         }
         JS_SetMemoryLimit(v.rt, (size_t)-1);
@@ -912,6 +918,9 @@ static void test_poll_work_gaps(void)
         "var s1a = ['x'.repeat(65534), 'a'].join(''), s1b = ['x'.repeat(65534), 'b'].join('')\n"
         "var s2a = ['x'.repeat(65535), 'a'].join(''), s2b = ['x'.repeat(65535), 'b'].join('')\n"
         "var ar1 = Array(40).fill(s1a), ar2 = Array(40).fill(s2a)\n"
+        /* two flat strings of 32768 characters use up the budget exactly, and a rope of the same length follows */
+        "var q3 = ['x'.repeat(32767), 'b'].join(''), f3 = ['x'.repeat(32767), 'a'].join(''), r3 = 'x'.repeat(32767) + 'a'\n"
+        "var ar3 = [f3, f3, r3], ar3r = [r3, f3, f3]\n"
         "function tail7(i) { var r = []; for (var j = 0; j < 7; j++) r.push((i >> j & 1) ? A : B); return r.join('') }\n"
         "var D2 = 'x'.repeat(65520), dm2 = new Map(), do2 = {}; for (var i = 0; i < 32; i++) { var k = [D2, B, tail7(i)].join(''); dm2.set(k, i); do2[k] = i }\n"
         "var dq2 = [D2, A, tail7(0)].join('')\n"
@@ -999,6 +1008,10 @@ static void test_poll_work_gaps(void)
         { "ar2.indexOf(s2b)", ROPE_STEP, 40 * 65536 + 80 },
         { "ar2.includes(s2b)", ROPE_STEP, 40 * 65536 + 80 },
         { "ar1.lastIndexOf(s1b)", ROPE_STEP, 40 * 65535 },
+        /* 32768 + 32768 for the two flat ones, 32768 for the first leaf of the rope and its one character, and 2 for the leaf and the step that ends at the difference */
+        { "ar3.indexOf(q3)", ROPE_STEP, 32768 + 32768 + 32768 + 2 },
+        { "ar3.includes(q3)", ROPE_STEP, 32768 + 32768 + 32768 + 2 },
+        { "ar3r.lastIndexOf(q3)", ROPE_STEP, 32768 + 32768 + 32768 + 2 },
         /* JSON.parse: the C string (once for each character of an 8-bit string without escapes, and once more for a string that has to be converted), then the bytes of the string, escapes with their bytes, and the characters before a wide one when the buffer is widened */
         { "JSON.parse(ja)", ROPE_STEP + 5, 65539 + 65537 },
         { "JSON.parse(je)", ROPE_STEP + 5, 80002 + 80000 },
