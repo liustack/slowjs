@@ -158,7 +158,9 @@ int white_string_len_max(void)
 
 const uint8_t *white_json_string_run(StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep)
 {
-    return json_string_run(b, p, end, sep);
+    uint32_t work = 0;
+
+    return json_string_run(b, p, end, sep, &work);
 }
 
 /* json_run_limit over addresses that need not be memory: the run is not read. */
@@ -170,7 +172,9 @@ uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end)
 /* json_quote_run over the string value s from *pi. */
 int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
 {
-    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi);
+    uint32_t work = 0;
+
+    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi, &work);
 }
 
 /* ---- strings built by appending ---- */
@@ -907,4 +911,24 @@ uintptr_t white_shape_of(JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return 0;
     return (uintptr_t)JS_VALUE_GET_OBJ(obj)->shape;
+}
+
+/* ---- the copy of a string buffer that grows ---- */
+
+/* The bytes of the header of a string, which the block of a string buffer
+   holds in front of its characters. */
+int white_jsstring_header(void)
+{
+    return sizeof(JSString);
+}
+
+/* string_buffer_write8 of len bytes of p, and string_buffer_putc16 of c. */
+int white_sb_write8(StringBuffer *b, const uint8_t *p, int len)
+{
+    return string_buffer_write8(b, p, len);
+}
+
+int white_sb_putc16(StringBuffer *b, uint32_t c)
+{
+    return string_buffer_putc16(b, c);
 }

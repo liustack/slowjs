@@ -1451,7 +1451,8 @@ static BOOL js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static int js_strict_eq_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uint32_t *pwork);
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
-                                 JSValueConst op2, BOOL eq_only, BOOL poll);
+                                 JSValueConst op2, BOOL eq_only, BOOL poll,
+                                 uint32_t *pwork);
 static JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p);
 static BOOL js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static BOOL js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
@@ -1572,7 +1573,7 @@ typedef struct JSBacktrace JSBacktrace;
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags);
 static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
-                                        JSValue val, BOOL cesu8);
+                                        JSValue val, BOOL cesu8, BOOL poll);
 static int js_backtrace_settle(JSContext *ctx, JSObject *p,
                                JSShapeProperty *prs, JSProperty *pr);
 static BOOL js_backtrace_pending(JSShapeProperty *prs, JSProperty *pr);
@@ -4127,12 +4128,17 @@ static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p)
        a step */
     if (js_poll_interrupts(ctx) || hash_string_poll(ctx, p, &h, &work))
         goto stop;
+    /* what is left of the last step of the hash is not added to the first of
+       the compares, which share a budget along the chain */
+    if (js_poll_interrupts(ctx))
+        goto stop;
+    work = 0;
     hm = h & JS_ATOM_HASH_MASK;
     for (i = rt->atom_hash[hm & (rt->atom_hash_size - 1)]; i != 0; i = q->hash_next) {
         q = rt->atom_array[i];
         if (q->hash == hm && q->atom_type == JS_ATOM_TYPE_STRING && q->len == p->len) {
             if (js_string_rope_compare(ctx, &res, JS_MKPTR(JS_TAG_STRING, q),
-                                       JS_MKPTR(JS_TAG_STRING, p), TRUE, TRUE))
+                                       JS_MKPTR(JS_TAG_STRING, p), TRUE, TRUE, &work))
                 goto stop;
             if (res == 0) {
                 if (!__JS_AtomIsConst(i))
@@ -4519,7 +4525,7 @@ const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
         return NULL;
     }
     /* the string of an atom is a string, which needs no conversion */
-    return js_string_to_cstring(ctx, plen, str, FALSE);
+    return js_string_to_cstring(ctx, plen, str, FALSE, FALSE);
 }
 
 /* return a string atom containing name concatenated with str1 */
@@ -4856,25 +4862,81 @@ static int string_buffer_set_error(StringBuffer *s)
     return s->error_status = -1;
 }
 
+/* The most bytes of a string buffer that are copied between two reads of the
+   interrupt flag when its block is made larger. */
+#define JS_COPY_STEP (1 << 20)
+
+/* js_realloc2 of the block of a string buffer to new_bytes. When the part of
+   it that is in use is of more than JS_COPY_STEP bytes the copy is made here
+   and not by the allocator, JS_COPY_STEP bytes at a time with the flag read
+   after each, as the doubling of a buffer that holds tens of millions of
+   characters takes as long as the characters it holds. NULL with an
+   exception thrown (out of memory, or "interrupted"), and the old block is
+   then still s->str. */
+static void *string_buffer_realloc2(StringBuffer *s, size_t used_bytes,
+                                    size_t new_bytes, size_t *pslack)
+{
+    JSContext *ctx = s->ctx;
+    uint8_t *q;
+    size_t off, m, usable;
+
+    if (likely(used_bytes < JS_COPY_STEP))
+        return js_realloc2(ctx, s->str, new_bytes, pslack);
+    q = js_malloc(ctx, new_bytes);
+    if (!q)
+        return NULL;
+    for (off = 0; off < used_bytes; off += m) {
+        m = used_bytes - off < JS_COPY_STEP ? used_bytes - off : JS_COPY_STEP;
+        memcpy(q + off, (const uint8_t *)s->str + off, m);
+        JS_WORK(m);
+        if (js_poll_interrupts(ctx)) {
+            js_free(ctx, q);
+            return NULL;
+        }
+    }
+    /* the count of references is in the header of the block, before the data */
+    js_rc(q)->ref_count = js_rc(s->str)->ref_count;
+    js_free(ctx, s->str);
+    usable = js_malloc_usable_size(ctx, q);
+    *pslack = usable > new_bytes ? usable - new_bytes : 0;
+    return q;
+}
+
 static no_inline int string_buffer_widen(StringBuffer *s, int size)
 {
     JSString *str;
     size_t slack;
-    int i;
+    int i, j;
 
     if (s->error_status)
         return -1;
 
-    str = js_realloc2(s->ctx, s->str, sizeof(JSString) + (size << 1), &slack);
+    /* what the text did before is not added to the first step of the copy */
+    if (s->len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    str = string_buffer_realloc2(s, sizeof(JSString) + s->len,
+                                 sizeof(JSString) + (size << 1), &slack);
     if (!str)
         return string_buffer_set_error(s);
     size += slack >> 1;
-    for(i = s->len; i-- > 0;) {
-        str->u.str16[i] = str->u.str8[i];
+    s->str = str;
+    /* The characters are widened from the end, JS_ROPE_STEP at a time when
+       there are more than that, with the flag read after each step: the
+       buffer holds the whole text of a long string so far. A stop frees the
+       buffer, which is of 8 bits until the end. */
+    for(i = s->len; i > 0;) {
+        int m = min_int(i, JS_ROPE_STEP);
+
+        for(j = 0; j < m; j++) {
+            i--;
+            str->u.str16[i] = str->u.str8[i];
+        }
+        JS_WORK(m);
+        if (s->len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+            return string_buffer_set_error(s);
     }
     s->is_wide_char = 1;
     s->size = size;
-    s->str = str;
     return 0;
 }
 
@@ -4896,7 +4958,8 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
         return string_buffer_widen(s, new_size);
     }
     new_size_bytes = sizeof(JSString) + (new_size << s->is_wide_char) + 1 - s->is_wide_char;
-    new_str = js_realloc2(s->ctx, s->str, new_size_bytes, &slack);
+    new_str = string_buffer_realloc2(s, sizeof(JSString) + (s->len << s->is_wide_char),
+                                     new_size_bytes, &slack);
     if (!new_str)
         return string_buffer_set_error(s);
     new_size = min_int(new_size + (slack >> s->is_wide_char), JS_STRING_LEN_MAX);
@@ -5005,23 +5068,39 @@ static int string_getc(const JSString *p, int *pidx)
     return c;
 }
 
+/* string_buffer_write8 into a buffer of 16 bits: the room is made. It copies
+   JS_ROPE_STEP characters at a time with the flag read after each step, when
+   there are more than that to copy (a long string written after a character
+   above 0xff). */
+static no_inline int string_buffer_write8_wide(StringBuffer *s, const uint8_t *p, int len)
+{
+    int i = 0, j, m;
+
+    if (len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    while (i < len) {
+        m = min_int(len - i, JS_ROPE_STEP);
+        for (j = 0; j < m; j++)
+            s->str->u.str16[s->len + i + j] = p[i + j];
+        JS_WORK(m);
+        i += m;
+        if (len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+            return string_buffer_set_error(s);
+    }
+    s->len += len;
+    return 0;
+}
+
 static int string_buffer_write8(StringBuffer *s, const uint8_t *p, int len)
 {
-    int i;
-
     if (s->len + len > s->size) {
         if (string_buffer_realloc(s, s->len + len, 0))
             return -1;
     }
-    if (s->is_wide_char) {
-        for (i = 0; i < len; i++) {
-            s->str->u.str16[s->len + i] = p[i];
-        }
-        s->len += len;
-    } else {
-        memcpy(&s->str->u.str8[s->len], p, len);
-        s->len += len;
-    }
+    if (s->is_wide_char)
+        return string_buffer_write8_wide(s, p, len);
+    memcpy(&s->str->u.str8[s->len], p, len);
+    s->len += len;
     return 0;
 }
 
@@ -5319,14 +5398,18 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
 /* JS_ToCStringLen2() of val, a string whose reference it takes. It
    converts nothing, so it runs no JavaScript. */
 static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
-                                        JSValue val, BOOL cesu8)
+                                        JSValue val, BOOL cesu8, BOOL poll)
 {
     JSString *str, *str_new;
-    int pos, len, c, c1;
+    int pos, len, c, c1, mark;
     uint8_t *q;
 
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
+    /* with poll, the flag is read each time JS_ROPE_STEP characters have gone
+       by, in the count of the 8-bit characters and in each of the loops that
+       write the bytes: a short string has no read */
+    poll = poll && len >= JS_ROPE_STEP;
     if (!str->is_wide_char) {
         const uint8_t *src = str->u.str8;
         int count;
@@ -5340,6 +5423,20 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
         count = 0;
         for (pos = 0; pos < len; pos++) {
             count += src[pos] >> 7;
+            if (unlikely(poll) && (pos & (JS_ROPE_STEP - 1)) == JS_ROPE_STEP - 1) {
+                JS_WORK(JS_ROPE_STEP);
+                if (js_poll_interrupts(ctx)) {
+                    JS_FreeValue(ctx, val);
+                    goto fail;
+                }
+            }
+        }
+        if (unlikely(poll)) {
+            JS_WORK(len & (JS_ROPE_STEP - 1));
+            if (js_poll_interrupts(ctx)) {
+                JS_FreeValue(ctx, val);
+                goto fail;
+            }
         }
         if (count == 0) {
             if (plen)
@@ -5360,6 +5457,22 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
                 *q++ = (c >> 6) | 0xc0;
                 *q++ = (c & 0x3f) | 0x80;
             }
+            if (unlikely(poll) && (pos & (JS_ROPE_STEP - 1)) == JS_ROPE_STEP - 1) {
+                JS_WORK(JS_ROPE_STEP);
+                if (js_poll_interrupts(ctx)) {
+                    js_free_string(ctx->rt, str_new);
+                    JS_FreeValue(ctx, val);
+                    goto fail;
+                }
+            }
+        }
+        if (unlikely(poll)) {
+            JS_WORK(len & (JS_ROPE_STEP - 1));
+            if (js_poll_interrupts(ctx)) {
+                js_free_string(ctx->rt, str_new);
+                JS_FreeValue(ctx, val);
+                goto fail;
+            }
         }
     } else {
         const uint16_t *src = str->u.str16;
@@ -5372,8 +5485,17 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
             goto fail;
         }
         q = str_new->u.str8;
-        pos = 0;
+        pos = mark = 0;
         while (pos < len) {
+            if (unlikely(poll) && pos - mark >= JS_ROPE_STEP) {
+                JS_WORK(pos - mark);
+                mark = pos;
+                if (js_poll_interrupts(ctx)) {
+                    js_free_string(ctx->rt, str_new);
+                    JS_FreeValue(ctx, val);
+                    goto fail;
+                }
+            }
             c = src[pos++];
             if (c < 0x80) {
                 *q++ = c;
@@ -5396,6 +5518,14 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
                 q += unicode_to_utf8(q, c);
             }
         }
+        if (unlikely(poll)) {
+            JS_WORK(pos - mark);
+            if (js_poll_interrupts(ctx)) {
+                js_free_string(ctx->rt, str_new);
+                JS_FreeValue(ctx, val);
+                goto fail;
+            }
+        }
     }
 
     *q = '\0';
@@ -5408,6 +5538,27 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
     if (plen)
         *plen = 0;
     return NULL;
+}
+
+/* A string as the C string JSON.parse reads, with the flag read each time
+   JS_ROPE_STEP characters have been looked at since the last reading (JSON
+   text of tens of millions of characters), or NULL with "interrupted" thrown.
+   JS_ToCStringLen2 is the same without the reads. */
+static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSValueConst val1)
+{
+    JSValue val;
+
+    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
+        val = JS_ToString(ctx, val1);
+        if (JS_IsException(val)) {
+            if (plen)
+                *plen = 0;
+            return NULL;
+        }
+    } else {
+        val = JS_DupValue(ctx, val1);
+    }
+    return js_string_to_cstring(ctx, plen, val, FALSE, TRUE);
 }
 
 /* return (NULL, 0) if exception. */
@@ -5427,7 +5578,7 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
     } else {
         val = JS_DupValue(ctx, val1);
     }
-    return js_string_to_cstring(ctx, plen, val, cesu8);
+    return js_string_to_cstring(ctx, plen, val, cesu8, FALSE);
 }
 
 void JS_FreeCString(JSContext *ctx, const char *ptr)
@@ -5786,11 +5937,16 @@ static uint32_t string_rope_get_len(JSValueConst val)
    the lengths differ. It reads the interrupt flag, and so can fail, when poll
    is set. js_strict_eq2 and the callers that cannot report an exception do
    not set it, and the test of two strings that are not ropes does not read
-   the flag either. */
+   the flag either. *pwork, when it is not NULL, is the work since the last
+   reading, in and out: the compares of the candidates of a chain of a hash
+   table share it, so that a chain of keys that differ late in the string is
+   not a run of compares each with a budget of its own. A compare that stops
+   at a difference counts the step it made. */
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
-                                  JSValueConst op2, BOOL eq_only, BOOL poll)
+                                  JSValueConst op2, BOOL eq_only, BOOL poll,
+                                  uint32_t *pwork)
 {
-    uint32_t len1, len2, len, pos1, pos2, l, work = 0;
+    uint32_t len1, len2, len, pos1, pos2, l, work = pwork ? *pwork : 0;
     int res;
     JSStringRopeIter it1, it2;
     JSString *p1, *p2;
@@ -5822,18 +5978,23 @@ static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
         if (poll)
             l = min_uint32(l, JS_ROPE_STEP - work - 1);
         res = js_string_memcmp(p1, pos1, p2, pos2, l);
-        if (res != 0) {
-            *pres = res;
-            return 0;
-        }
         if (poll) {
             JS_WORK(l + 1);
             work += l + 1;
             if (work >= JS_ROPE_STEP) {
                 work = 0;
-                if (js_poll_interrupts(ctx))
+                if (js_poll_interrupts(ctx)) {
+                    if (pwork)
+                        *pwork = work;
                     return -1;
+                }
             }
+        }
+        if (res != 0) {
+            *pres = res;
+            if (pwork)
+                *pwork = work;
+            return 0;
         }
         len -= l;
         pos1 += l;
@@ -5855,6 +6016,8 @@ static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
     else
         res = 1;
     *pres = res;
+    if (pwork)
+        *pwork = work;
     return 0;
 }
 
@@ -9876,7 +10039,7 @@ static BOOL js_backtrace_put_frame(JSContext *ctx, DynBuf *dbuf,
     } else {
         str = js_string_to_cstring(ctx, NULL,
                                    JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name)),
-                                   FALSE);
+                                   FALSE, FALSE);
         if (!str)
             return FALSE;
         dbuf_putstr(dbuf, str[0] == '\0' ? "<anonymous>" : str);
@@ -16135,7 +16298,7 @@ static JSValue js_string_to_number(JSContext *ctx, JSValue val)
         if (JS_IsException(val))
             return val;
     }
-    str = js_string_to_cstring(ctx, &len, val, FALSE);
+    str = js_string_to_cstring(ctx, &len, val, FALSE, FALSE);
     if (!str)
         return JS_EXCEPTION;
     p = str;
@@ -18622,7 +18785,7 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
             res = js_string_compare(ctx, JS_VALUE_GET_STRING(op1),
                                     JS_VALUE_GET_STRING(op2));
         } else {
-            if (js_string_rope_compare(ctx, &res, op1, op2, FALSE, TRUE)) {
+            if (js_string_rope_compare(ctx, &res, op1, op2, FALSE, TRUE, NULL)) {
                 JS_FreeValue(ctx, op1);
                 JS_FreeValue(ctx, op2);
                 goto exception;
@@ -18937,7 +19100,7 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                                    JS_VALUE_GET_STRING(op2));
             } else {
                 /* this equality test does not read the flag: see js_strict_eq_poll */
-                js_string_rope_compare(ctx, &res, op1, op2, TRUE, FALSE);
+                js_string_rope_compare(ctx, &res, op1, op2, TRUE, FALSE, NULL);
                 res = (res == 0);
             }
         }
@@ -19053,11 +19216,29 @@ static int js_strict_eq_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2)
     int res;
 
     if (unlikely(js_string_eq_polls(op1, op2))) {
-        if (js_string_rope_compare(ctx, &res, op1, op2, TRUE, TRUE))
+        if (js_string_rope_compare(ctx, &res, op1, op2, TRUE, TRUE, NULL))
             return -1;
         return res == 0;
     }
     return js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
+}
+
+/* js_strict_eq2 for the loops of Array.prototype.indexOf, includes and
+   lastIndexOf, and Object.is: 1 or 0, or -1 with "interrupted" thrown when
+   the flag was set while two strings, one a rope or both longer than a step,
+   were compared. *pwork is the work since the last reading, kept by the loop
+   so that the compares of its elements share a budget. */
+static int js_strict_eq2_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2,
+                              JSStrictEqModeEnum eq_mode, uint32_t *pwork)
+{
+    int res;
+
+    if (unlikely(js_string_eq_polls(op1, op2))) {
+        if (js_string_rope_compare(ctx, &res, op1, op2, TRUE, TRUE, pwork))
+            return -1;
+        return res == 0;
+    }
+    return js_strict_eq2(ctx, op1, op2, eq_mode);
 }
 
 static BOOL js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2)
@@ -27126,20 +27307,24 @@ static inline const uint8_t *json_run_limit(const uint8_t *p, const uint8_t *end
    that byte: end the string, read an escape, or throw the same error at the
    same place. Return NULL when b could not grow, or when the interrupt flag
    was set (the exception is thrown then): it is read each time
-   JS_ROPE_STEP bytes have been taken since the start or the last reading. */
+   JS_ROPE_STEP bytes have been taken since the last reading. *pwork is the
+   bytes since then, which json_parse_string keeps for the whole string: the
+   escapes it handles count too, so that a string of short runs and escapes
+   is not a run of budgets that start from 0. */
 static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
-                                      const uint8_t *end, int sep)
+                                      const uint8_t *end, int sep,
+                                      uint32_t *pwork)
 {
-    const uint8_t *q, *lim, *p_next, *mark = p;
+    const uint8_t *q, *lim, *p0, *p_next;
     uint16_t units[64];
     uint32_t c;
     int n;
 
     for(;;) {
-        /* ASCII, up to json_run_limit, and to JS_ROPE_STEP bytes from mark */
+        /* ASCII, up to json_run_limit, and to what is left of the step */
         lim = json_run_limit(p, end);
-        if (lim - mark > JS_ROPE_STEP)
-            lim = mark + JS_ROPE_STEP;
+        if ((size_t)(lim - p) > JS_ROPE_STEP - *pwork)
+            lim = p + (JS_ROPE_STEP - *pwork);
         for(q = p; q < lim; q++) {
             c = *q;
             if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
@@ -27149,10 +27334,11 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
         if (q > p) {
             if (string_buffer_write8(b, p, q - p))
                 return NULL;
+            *pwork += q - p;
             p = q;
         }
-        if (p - mark >= JS_ROPE_STEP) {
-            mark = p;
+        if (*pwork >= JS_ROPE_STEP) {
+            *pwork = 0;
             if (js_poll_interrupts(b->ctx))
                 return NULL;
         }
@@ -27161,8 +27347,9 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
         /* characters of 2, 3 or 4 bytes and the ASCII between them, as the
            loop decodes them, 64 code units at a time */
         n = 0;
-        q = p;
-        while (q < end && n <= countof(units) - 2 && q - mark < JS_ROPE_STEP) {
+        q = p0 = p;
+        while (q < end && n <= countof(units) - 2 &&
+               *pwork + (q - p0) < JS_ROPE_STEP) {
             c = *q;
             if (c < 0x80) {
                 if (c < 0x20 || c == sep || c == '\\')
@@ -27187,9 +27374,10 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
         if (q == p)
             return p;
         JS_WORK(q - p);
+        *pwork += q - p;
         p = q;
-        if (p - mark >= JS_ROPE_STEP) {
-            mark = p;
+        if (*pwork >= JS_ROPE_STEP) {
+            *pwork = 0;
             if (js_poll_interrupts(b->ctx))
                 return NULL;
         }
@@ -27198,10 +27386,23 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
 
 static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
 {
-    const uint8_t *p, *p_next;
+    const uint8_t *p, *p0, *p_next;
     int i;
-    uint32_t c;
+    uint32_t c, work = 0;
     StringBuffer b_s, *b = &b_s;
+
+    /* the bytes of the source taken since the last reading of the flag are
+       added up for the whole string (json_string_run, and here the characters
+       it left: an escape, a character of more than one byte) */
+#define JSON_COUNT() do { \
+        JS_WORK(p - p0); \
+        work += p - p0; \
+        if (work >= JS_ROPE_STEP) { \
+            work = 0; \
+            if (js_poll_interrupts(s->ctx)) \
+                goto fail; \
+        } \
+    } while (0)
 
     if (string_buffer_init(s->ctx, b, 32))
         goto fail;
@@ -27209,12 +27410,13 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
     p = *pp;
     for(;;) {
         /* the characters taken as they are, in one run */
-        p = json_string_run(b, p, s->buf_end, sep);
+        p = json_string_run(b, p, s->buf_end, sep, &work);
         if (!p)
             goto fail;
         if (p >= s->buf_end) {
             goto end_of_input;
         }
+        p0 = p;
         c = *p++;
         if (c == sep)
             break;
@@ -27244,8 +27446,10 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
                 }
                 break;
             case '\n':
-                if (s->ext_json)
+                if (s->ext_json) {
+                    JSON_COUNT();
                     continue;
+                }
                 goto bad_escape;
             case 'v':
                 if (s->ext_json) {
@@ -27271,9 +27475,11 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
             }
             p = p_next;
         }
+        JSON_COUNT();
         if (string_buffer_putc(b, c))
             goto fail;
     }
+#undef JSON_COUNT
     s->token.val = TOK_STRING;
     s->token.u.str.sep = sep;
     s->token.u.str.str = string_buffer_end(b);
@@ -46021,7 +46227,11 @@ static JSValue js_object_fromEntries(JSContext *ctx, JSValueConst this_val,
 static JSValue js_object_is(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
-    return JS_NewBool(ctx, js_same_value(ctx, argv[0], argv[1]));
+    int e = js_strict_eq2_poll(ctx, argv[0], argv[1], JS_EQ_SAME_VALUE, NULL);
+
+    if (e < 0)
+        return JS_EXCEPTION;
+    return JS_NewBool(ctx, e);
 }
 
 static JSValue JS_SpeciesConstructor(JSContext *ctx, JSValueConst obj,
@@ -47651,15 +47861,17 @@ static force_inline int js_quick_strict_eq(JSValueConst a, JSValueConst b,
 }
 
 /* The index of the first element of arrp[from, count) equal to v, or -1.
+   -2 when the flag was set while two long strings were compared (the
+   exception is thrown).
    js_strict_eq2 is called only for the pairs js_quick_strict_eq cannot tell,
    so a run of ints or of strings that are atoms loops with no call. */
 static int64_t js_fast_array_find(JSContext *ctx, JSValue *arrp,
                                   uint32_t from, uint32_t count,
                                   JSValueConst v, JSStrictEqModeEnum mode)
 {
-    uint32_t n = from;
+    uint32_t n = from, work = 0;
     BOOL svz = (mode == JS_EQ_SAME_VALUE_ZERO);
-    int r = 0;
+    int r = 0, e;
 
     for (;;) {
         for (; n < count; n++) {
@@ -47669,7 +47881,12 @@ static int64_t js_fast_array_find(JSContext *ctx, JSValue *arrp,
         }
         if (n >= count)
             return -1;
-        if (r > 0 || js_strict_eq2(ctx, v, arrp[n], mode))
+        if (r > 0)
+            return n;
+        e = js_strict_eq2_poll(ctx, v, arrp[n], mode, &work);
+        if (e < 0)
+            return -2;
+        if (e)
             return n;
         n++;
     }
@@ -47682,7 +47899,8 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
     int64_t len, n;
     JSValue *arrp;
     uint32_t count;
-    int res;
+    int res, e;
+    uint32_t work = 0;
 
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &len, obj))
@@ -47701,8 +47919,11 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
             if (count > len)
                 count = len;
             if (n < count) {
-                if (js_fast_array_find(ctx, arrp, n, count, argv[0],
-                                       JS_EQ_SAME_VALUE_ZERO) >= 0) {
+                int64_t r = js_fast_array_find(ctx, arrp, n, count, argv[0],
+                                               JS_EQ_SAME_VALUE_ZERO);
+                if (r == -2)
+                    goto exception;
+                if (r >= 0) {
                     res = TRUE;
                     goto done;
                 }
@@ -47713,8 +47934,12 @@ static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
             val = JS_GetPropertyInt64(ctx, obj, n);
             if (JS_IsException(val))
                 goto exception;
-            if (js_strict_eq2(ctx, argv[0], val,
-                              JS_EQ_SAME_VALUE_ZERO)) {
+            e = js_strict_eq2_poll(ctx, argv[0], val, JS_EQ_SAME_VALUE_ZERO, &work);
+            if (e < 0) {
+                JS_FreeValue(ctx, val);
+                goto exception;
+            }
+            if (e) {
                 JS_FreeValue(ctx, val);
                 res = TRUE;
                 break;
@@ -47738,6 +47963,8 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
     int64_t len, n, res;
     JSValue *arrp;
     uint32_t count;
+    uint32_t work = 0;
+    int e;
 
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &len, obj))
@@ -47758,6 +47985,8 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
             if (n < count) {
                 res = js_fast_array_find(ctx, arrp, n, count, argv[0],
                                          JS_EQ_STRICT);
+                if (res == -2)
+                    goto exception;
                 if (res >= 0)
                     goto done;
                 n = count;
@@ -47768,7 +47997,12 @@ static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
             if (present < 0)
                 goto exception;
             if (present) {
-                if (js_strict_eq2(ctx, argv[0], val, JS_EQ_STRICT)) {
+                e = js_strict_eq2_poll(ctx, argv[0], val, JS_EQ_STRICT, &work);
+                if (e < 0) {
+                    JS_FreeValue(ctx, val);
+                    goto exception;
+                }
+                if (e) {
                     JS_FreeValue(ctx, val);
                     res = n;
                     break;
@@ -47792,6 +48026,8 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
     JSValue obj, val;
     int64_t len, n, res;
     int present;
+    uint32_t work = 0;
+    int e;
 
     obj = JS_ToObject(ctx, this_val);
     if (js_get_length64(ctx, &len, obj))
@@ -47810,7 +48046,12 @@ static JSValue js_array_lastIndexOf(JSContext *ctx, JSValueConst this_val,
             if (present < 0)
                 goto exception;
             if (present) {
-                if (js_strict_eq2(ctx, argv[0], val, JS_EQ_STRICT)) {
+                e = js_strict_eq2_poll(ctx, argv[0], val, JS_EQ_STRICT, &work);
+                if (e < 0) {
+                    JS_FreeValue(ctx, val);
+                    goto exception;
+                }
+                if (e) {
                     JS_FreeValue(ctx, val);
                     res = n;
                     break;
@@ -51376,6 +51617,25 @@ static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
     return k;
 }
 
+/* js_string_find where one index is left, for a p2 of at least JS_ROPE_STEP
+   characters: the compare goes JS_ROPE_STEP characters at a time with the
+   flag read after each step. It gives i, -1, or -2 when it was stopped. */
+static no_inline int js_string_find_at(JSContext *ctx, JSString *p1, JSString *p2,
+                                       int i)
+{
+    int len = p2->len, off, m;
+
+    for (off = 0; off < len; off += m) {
+        m = min_int(len - off, JS_ROPE_STEP);
+        JS_WORK(m);
+        if (string_cmp(p1, p2, i + off, off, m))
+            return -1;
+        if (js_poll_interrupts(ctx))
+            return -2;
+    }
+    return i;
+}
+
 /* String.prototype.includes, startsWith, endsWith, indexOf and lastIndexOf
    look for the string p2 in the string p1 with js_string_find: from the
    index i toward stop, both included, by step inc (1 or -1), it returns the
@@ -51383,9 +51643,9 @@ static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
    -2 when the interrupt handler asked to stop, with the exception thrown.
    The searches of js_string_find_range only return an index where they
    compared all of p2, so the index is taken as it is. When i is stop, one
-   index is left and string_cmp compares p2 there: that is linear in the
-   length of p2 and does not check the interrupt counter, as === and the
-   other operations linear in the length of a string do not. The characters
+   index is left and string_cmp compares p2 there, in steps of JS_ROPE_STEP
+   characters with the flag read between them when p2 is longer than a step
+   (js_string_find_at). The characters
    of p1 from the lower of i and stop to the higher plus the length of p2
    must be in p1, as the callers make sure. A string of 16-bit characters
    may hold only characters below 0x100, so p2 may be found in p1 whatever
@@ -51393,8 +51653,11 @@ static int js_string_find_range(JSContext *ctx, JSString *p1, JSString *p2,
 static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
                                  int i, int stop, int inc)
 {
-    if (i == stop)
+    if (i == stop) {
+        if (unlikely(p2->len >= JS_ROPE_STEP))
+            return js_string_find_at(ctx, p1, p2, i);
         return string_cmp(p1, p2, i, 0, p2->len) ? -1 : i;
+    }
     return js_string_find_range(ctx, p1, p2, i, stop, inc);
 }
 
@@ -56367,7 +56630,7 @@ static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
     const char *str;
     size_t len;
     
-    str = JS_ToCStringLen(ctx, &len, argv[0]);
+    str = js_string_to_cstring_poll(ctx, &len, argv[0]);
     if (!str)
         return JS_EXCEPTION;
     if (argc > 1 && JS_IsFunction(ctx, argv[1])) {
@@ -56485,10 +56748,15 @@ typedef struct JSONStringifyContext {
    string of 16-bit units, no surrogate: a surrogate pair goes as it is and a
    lone surrogate as \uXXXX, which JS_ToQuotedString decides. Return -1 when
    b could not grow. */
-static int json_quote_run(StringBuffer *b, const JSString *p, int *pi)
+static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
+                          uint32_t *pwork)
 {
     int i = *pi, j = i, n = p->len;
     uint32_t c;
+
+    /* no more than what is left of the step of JS_ROPE_STEP characters */
+    if ((uint32_t)(n - i) > JS_ROPE_STEP - *pwork)
+        n = i + (JS_ROPE_STEP - *pwork);
 
     if (!p->is_wide_char) {
         const uint8_t *str = p->u.str8;
@@ -56509,7 +56777,14 @@ static int json_quote_run(StringBuffer *b, const JSString *p, int *pi)
         if (j > i && string_buffer_write16(b, str + i, j - i))
             return -1;
     }
+    JS_WORK(j - i);
+    *pwork += j - i;
     *pi = j;
+    if (*pwork >= JS_ROPE_STEP) {
+        *pwork = 0;
+        if (js_poll_interrupts(b->ctx))
+            return -1;
+    }
     return 0;
 }
 
@@ -56518,7 +56793,7 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
     JSValue val;
     JSString *p;
     int i;
-    uint32_t c;
+    uint32_t c, work = 0;
     char buf[16];
 
     val = JS_ToStringCheckObject(ctx, val1);
@@ -56531,11 +56806,18 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
     i = 0;
     for(;;) {
         /* the characters kept as they are, in one run */
-        if (json_quote_run(b, p, &i))
+        if (json_quote_run(b, p, &i, &work))
             goto fail;
         if (i >= p->len)
             break;
         c = string_getc(p, &i);
+        /* the character that ended the run, with its escape: one more unit */
+        JS_WORK(1);
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                goto fail;
+        }
         switch(c) {
         case '\t':
             c = 't';
@@ -58746,6 +59028,10 @@ static no_inline int map_hash_long_key_poll(JSContext *ctx, JSValueConst key,
         if (hash_string_rope_poll(ctx, key, &h))
             return -1;
     }
+    /* what is left of the last step of the hash is not added to the first of
+       the compares */
+    if (js_poll_interrupts(ctx))
+        return -1;
     *ph = map_hash32(h ^ JS_TAG_STRING, hash_bits);
     return 1;
 }
@@ -58770,13 +59056,15 @@ static force_inline int map_hash_key_poll(JSContext *ctx, JSValueConst key,
 
 /* Whether the key of a record is the key looked for: 1 or 0, or -1 when the
    flag was set while two strings were compared, one a rope or both longer
-   than a step (js_string_eq_polls). */
-static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key)
+   than a step (js_string_eq_polls). *pwork is the work since the last reading
+   that the candidates of a chain share (js_string_rope_compare). */
+static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key,
+                      uint32_t *pwork)
 {
     int res;
 
     if (unlikely(js_string_eq_polls(rec_key, key))) {
-        if (js_string_rope_compare(ctx, &res, rec_key, key, TRUE, TRUE))
+        if (js_string_rope_compare(ctx, &res, rec_key, key, TRUE, TRUE, pwork))
             return -1;
         return res == 0;
     }
@@ -58794,12 +59082,13 @@ static no_inline JSMapRecord *map_find_record_long(JSContext *ctx, JSMapState *s
                                                    JSValueConst key, uint32_t h)
 {
     JSMapRecord *mr;
+    uint32_t work = 0;
 
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
         } else {
-            int eq = map_key_eq(ctx, mr->key, key);
+            int eq = map_key_eq(ctx, mr->key, key, &work);
 
             if (eq < 0)
                 return MAP_STOPPED;
@@ -59035,7 +59324,7 @@ static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
 static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key)
 {
     JSMapRecord *mr, **pmr;
-    uint32_t h;
+    uint32_t h, work = 0;
     int polls;
 
     key = map_normalize_key_const(ctx, key);
@@ -59051,7 +59340,7 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* not valid */
         } else {
-            int eq = polls ? map_key_eq(ctx, mr->key, key) :
+            int eq = polls ? map_key_eq(ctx, mr->key, key, &work) :
                 js_same_value_zero(ctx, mr->key, key);
 
             if (eq < 0)

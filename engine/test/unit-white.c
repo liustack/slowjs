@@ -63,6 +63,9 @@ int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 void white_work_reset(void);
+int white_jsstring_header(void);
+int white_sb_write8(struct StringBuffer *b, const uint8_t *p, int len);
+int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
 
@@ -772,6 +775,39 @@ static void test_object_inline_oom(void)
 }
 
 
+/* A string buffer that holds more than JS_COPY_STEP bytes and has to grow is
+   copied by hand, JS_COPY_STEP bytes at a time with the flag read after each
+   step, and not by the allocator in one call. Growing it by one character
+   copies the header and the 1500000 characters it holds. Widening it (a
+   character above 0xff) copies them the same way and then widens the 1500000
+   characters, and no stretch of work is longer than a step of the copy. */
+static void test_buffer_copy_work(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b;
+    unsigned long hdr = white_jsstring_header();
+
+    b = white_sb_new(v.ctx, 1500000, 0, 1500000);
+    CHECK(b != NULL, "the buffer");
+    if (b) {
+        white_work_reset();
+        CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the write failed");
+        CHECK(white_work_sum() == hdr + 1500000, "grown: %lu units of work, want %lu", white_work_sum(), hdr + 1500000);
+        CHECK(white_work_longest() <= (1 << 20), "grown: %lu units of work between two readings of the flag", white_work_longest());
+        white_sb_free(v.ctx, b);
+    }
+    b = white_sb_new(v.ctx, 2000000, 0, 1500000);
+    CHECK(b != NULL, "the buffer");
+    if (b) {
+        white_work_reset();
+        CHECK(white_sb_putc16(b, 0x4e2d) == 0, "the putc failed");
+        CHECK(white_work_sum() == hdr + 1500000 + 1500000, "widened: %lu units of work, want %lu", white_work_sum(), hdr + 3000000);
+        CHECK(white_work_longest() <= (1 << 20), "widened: %lu units of work between two readings of the flag", white_work_longest());
+        white_sb_free(v.ctx, b);
+    }
+    vm_free(&v);
+}
+
 /* The loops that read the interrupt flag after so many units of work say how
    much they did (JS_WORK in quickjs.c), and white.c adds it up between two
    readings of the flag. A call below does a known amount of work in all (the
@@ -791,12 +827,28 @@ static void test_poll_work_gaps(void)
         "var nar = '\\u00e9'.repeat((3 << 20) + 5)\n"
         "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535), l4 = 'w'.repeat(65533)\n"
         "var flat = 'ab'.repeat(1 << 20)\n"
-        "var dbl = 'ab'; for (var i = 0; i < 18; i++) dbl = dbl + dbl\n"
+        "var ra = l1 + l2 + l3, rb = l1 + l2 + l3\n"
         "var fl = 'ab'.repeat(1 << 19), fl2 = 'ab'.repeat(1 << 19), mp = new Map([[fl, 1]])\n"
-        "var r1 = 'ab', r2 = 'ab'; for (var i = 0; i < 19; i++) { r1 = r1 + r1; r2 = r2 + r2 }\n"
         "var kx = 'x'.repeat(1 << 21), ky = 'y'.repeat(1 << 21), ky2 = 'y'.repeat(1 << 21), ko = {}; ko[ky] = 1\n"
-        "var jk = '{\"' + 'z'.repeat(1 << 21) + '\":1}', jv = '{\"a\":\"' + 'z'.repeat(1 << 21) + '\"}'\n"
-        "var jc = '{\"a\":\"' + '\\u4e2d'.repeat(1 << 20) + '\"}'\n"
+        "var h1 = 'x'.repeat(131071), h2 = 'x'.repeat(131071), hm = new Map([[h1, 1]]), ho = {}; ho[h1] = 1\n"
+        "var g1 = 'x'.repeat(65537), g2 = 'x'.repeat(65537), gm = new Map([[g1, 1]]), go = {}; go[g1] = 1\n"
+        /* 64 keys of the same hash and length that differ from cq at the first character of the pair A or B: (256*263+519 == 257*263+256) */
+        "var A = '\\u0100\\u0207', B = '\\u0101\\u0100', P = 'x'.repeat(65532)\n"
+        "function tail(i) { var r = []; for (var j = 0; j < 6; j++) r.push((i >> j & 1) ? A : B); return r.join('') }\n"
+        "var ck = [], cm = new Map(), co = {}; for (var i = 0; i < 64; i++) { var k = [P, B, tail(i)].join(''); ck.push(k); cm.set(k, i); co[k] = i }\n"
+        "var cq = [P, A, tail(0)].join('')\n"
+        /* JSON text: strings of one run, of escapes, of runs and escapes, a long ASCII run and then a character of 3 bytes */
+        "var ja = '\"' + 'a'.repeat(65537) + '\"'\n"
+        "var je = '\"' + '\\\\n'.repeat(40000) + '\"'\n"
+        "var jm = '\"' + ('a'.repeat(32768) + '\\\\n').repeat(3) + '\"'\n"
+        "var ju = '\"' + '\\\\u0061'.repeat(20000) + '\"'\n"
+        "var jw = ['\"', 'a'.repeat(70000), '\\u4e2d\"'].join(''), jwr = '\"' + 'a'.repeat(70000) + '\\u4e2d\"'\n"
+        "var jx = '\"' + 'a'.repeat(70000) + '\\\\u4e2d\"'\n"
+        "var jk = '{\"' + 'z'.repeat(200000) + '\":1}'\n"
+        "var pn = 'a'.repeat(70000)\n"
+        "var qa = 'a'.repeat(200000), qe = '\\n'.repeat(70000), qm = ('a'.repeat(32768) + '\\n').repeat(3), qw = '\\u4e2d'.repeat(70000)\n"
+        "var e1 = 'x'.repeat(200000), e2 = 'x'.repeat(200000), e3 = 'x'.repeat(199999) + 'y'\n"
+        "var x1 = '\\u4e2d'.repeat(200000), x2 = '\\u4e2d'.repeat(200000)\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -809,6 +861,9 @@ static void test_poll_work_gaps(void)
         { "'x'.padStart(400000, f3)", PAD_STEP, 399999 },
         { "'x'.padEnd(400000, 'abc')", PAD_STEP, 399999 },
         { "'x'.padEnd(400000, ' ')", PAD_STEP, 399999 },
+        /* a wide character before or after a long narrow string: the buffer is widened (the characters before it), or the narrow string is written into a wide buffer */
+        { "pn.padStart(70001, '\\u4e2d')", ROPE_STEP, 70001 },
+        { "pn.padEnd(70001, '\\u4e2d')", ROPE_STEP, 70001 },
         /* a scan of 2097152 characters and a copy of as many, and a scan that stops at the first wide one */
         { "wide.slice(1)", SUB_STEP, 4194304 },
         /* the scan ends in the middle of a step, and the copy goes on from there */
@@ -825,20 +880,57 @@ static void test_poll_work_gaps(void)
         { "s0.has(l1 + l1 + l1 + l1 + l1)", ROPE_STEP, 5 * 65534 + 5 },
         { "s0.has(l4 + l1 + l3 + l2)", ROPE_STEP, 65533 + 65534 + 65535 + 65536 + 4 },
         { "s0.has(flat)", ROPE_STEP, 1 << 21 },
-        { "s0.has(dbl)", ROPE_STEP, 0 },
         /* equality: leaf by leaf, and a flat string in steps (each step counts one more than its characters, and a step is 65535) */
         { "fl === fl2", ROPE_STEP, (1 << 20) + 17 },
-        { "r1 === r2", ROPE_STEP, 0 },
-        { "r1 < r2", ROPE_STEP, 0 },
+        /* ropes of 65534, 65536 and 65535 characters: 6 steps */
+        { "ra === rb", ROPE_STEP, 196605 + 6 },
+        { "ra < rb", ROPE_STEP, 196605 + 6 },
         { "mp.get(fl2)", ROPE_STEP, (1 << 21) + 17 },
         /* a key of a property: the hash, and the comparison with the atom of an equal string */
         { "ko[kx] = 1", ROPE_STEP, 1 << 21 },
         { "ko[ky2] = 2", ROPE_STEP, (1 << 22) + 33 },
-        /* the runs of a JSON text, and the hash of a key */
-        /* the key and the value are runs of their own: a few bytes of one can come before the step of the next, and the bytes between the steps are not counted */
-        { "JSON.parse(jk)", ROPE_STEP + 256, 0 },
-        { "JSON.parse(jv)", ROPE_STEP + 256, 0 },
-        { "JSON.parse(jc)", ROPE_STEP + 256, 0 },
+        /* the tail of the hash and the head of the compare do not share a step: 131071 is 2 steps and 1 character, 65537 is 1 and 2 */
+        { "hm.get(h2)", ROPE_STEP, 131071 + 131071 + 3 },
+        { "ho[h2] = 2", ROPE_STEP, 131071 + 131071 + 3 },
+        { "gm.get(g2)", ROPE_STEP, 65537 + 65537 + 2 },
+        { "go[g2] = 2", ROPE_STEP, 65537 + 65537 + 2 },
+        /* 64 keys of the hash of cq, each different from it in the first step: the compares of the chain share the budget and a compare that ends at a difference counts what it did */
+        { "cm.get(cq)", ROPE_STEP, 65546 + 64 * 65536 },
+        { "cm.has(cq)", ROPE_STEP, 65546 + 64 * 65536 },
+        { "cm.delete(cq)", ROPE_STEP, 65546 + 64 * 65536 },
+        { "co[cq] = 1", ROPE_STEP, 65546 + 64 * 65536 },
+        /* a search for a string of the length of the one searched: the compare goes in steps */
+        { "e1.indexOf(e2)", ROPE_STEP, 200000 },
+        { "e1.indexOf(e3)", ROPE_STEP, 200000 },
+        { "e1.lastIndexOf(e2)", ROPE_STEP, 200000 },
+        { "e1.includes(e2)", ROPE_STEP, 200000 },
+        { "e1.startsWith(e2)", ROPE_STEP, 200000 },
+        { "e1.endsWith(e2)", ROPE_STEP, 200000 },
+        { "e1.replace(e2, 'y').length", ROPE_STEP, 200000 },
+        { "e1.split(e2).length", ROPE_STEP, 200000 },
+        { "x1.indexOf(x2)", ROPE_STEP, 200000 },
+        /* Array.prototype.indexOf, lastIndexOf and includes, and Object.is: equal strings of 200000 characters are 4 steps of 65535 */
+        { "[1, e1].indexOf(e2)", ROPE_STEP, 200000 + 4 },
+        { "[e1, 1].lastIndexOf(e2)", ROPE_STEP, 200000 + 4 },
+        { "[1, e1].includes(e2)", ROPE_STEP, 200000 + 4 },
+        { "Object.is(e1, e2)", ROPE_STEP, 200000 + 4 },
+        /* JSON.parse: the C string (once for each character of an 8-bit string without escapes, and once more for a string that has to be converted), then the bytes of the string, escapes with their bytes, and the characters before a wide one when the buffer is widened */
+        { "JSON.parse(ja)", ROPE_STEP + 5, 65539 + 65537 },
+        { "JSON.parse(je)", ROPE_STEP + 5, 80002 + 80000 },
+        { "JSON.parse(jm)", ROPE_STEP + 5, 98312 + 98310 },
+        { "JSON.parse(ju)", ROPE_STEP + 5, 120002 + 120000 },
+        { "JSON.parse(jw)", ROPE_STEP + 5, 70003 + 70003 + 70000 },
+        /* a rope is made flat first, which widens the characters before the wide one too (1 for the quote) */
+        { "JSON.parse(jwr)", ROPE_STEP + 5, 70003 + 70003 + 70000 + 70001 },
+        { "JSON.parse(jx)", ROPE_STEP + 5, 70008 + 70006 + 70000 },
+        /* the same for a key: and the hash of it */
+        { "JSON.parse(jk)", ROPE_STEP + 5, 200006 + 200000 + 200000 },
+        /* JSON.stringify: runs, escapes and runs of wide characters */
+        { "JSON.stringify(qa).length", ROPE_STEP, 200000 },
+        { "JSON.stringify(qe).length", ROPE_STEP, 70000 },
+        { "JSON.stringify(qm).length", ROPE_STEP, 3 * (32768 + 1) },
+        /* the quote that opens the string is widened by the first run: 1 more */
+        { "JSON.stringify(qw).length", ROPE_STEP + 1, 70000 + 1 },
     };
     VM v = vm_new();
     size_t i;
@@ -853,10 +945,7 @@ static void test_poll_work_gaps(void)
         total = white_work_sum();
         CHECK(longest <= cases[i].step, "%s: %lu units of work between two readings of the flag, at most %lu", cases[i].call,
               longest, cases[i].step);
-        if (cases[i].total)
-            CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
-        else
-            CHECK(total > 2 * cases[i].step, "%s: only %lu units of work", cases[i].call, total);
+        CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
     }
     vm_free(&v);
 }
@@ -2385,6 +2474,7 @@ int main(void)
     test_object_inline_props();
     test_object_inline_oom();
     test_poll_work_gaps();
+    test_buffer_copy_work();
     test_object_inline_limit();
     test_young_lists();
     test_young_leaves_no_zero_count();
