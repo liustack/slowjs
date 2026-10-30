@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.29.3] - 2026-10-30
+
 ### 新增
 
 - `VM.RegisterCopyProps(name)` 在全局对象上定义名为 `name` 的函数，做 React 的 `createElement` 和 `cloneElement` 把 config 的键拷进元素 props 的那个循环所做的事，在引擎里用 C 写成。它只拷结果和循环不可能不同的 config（页面看不出区别的那种：键不超过 32 个、值都是普通值的普通 config，同一种 props，没改过的 `Object.prototype` 和 `Function.prototype.call`），其余的 config 它回答 `false` 且什么都没改，脚本再把 config 交给循环。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这个函数。在 tifa 里，React 用了它，渲染一次少跑 2.1% 到 4.1% 的指令，示例商店的页面渲染只花原来的 0.988 和 0.989，MUI 页面是 0.980。（[性能](docs/performance.md#the-copy-of-the-props-of-a-react-element-in-c)，[Go API](docs/changes/go-api.md#registercopyprops)）
@@ -426,7 +428,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.2...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.3...main
+[v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
