@@ -36,7 +36,7 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `13876a2` fix anonymous function name inference in for-in loop initializers | `for (var f = function () {} in o)` names the function `f` | all of it | `compare/for_in_initializer.js` |
 | `efc48a3` fixed Function.prototype.bind prototype inheritance | a bound function has the prototype of the function it binds | all of it | `compare/bind_prototype.js` |
 | `ce0dbb7` fix Proxy getOwnPropertyDescriptor invariant check | the trap cannot report another value or other accessors for a property that is not configurable, and the descriptor of the target no longer leaks | all of it | `compare/proxy_own_descriptor.js` (with the heap after it) |
-| `535a7c2` respect the spec operation order in Object.defineProperties | every key, descriptor and value is read before the first definition | all of it | `compare/define_properties_order.js` |
+| `535a7c2` respect the spec operation order in Object.defineProperties | every key, descriptor and value is read, and each descriptor converted, before the first definition | all of it, and a change of ours (see below) | `compare/define_properties_order.js` |
 | `55c5f0b` fixed class elements parsing after a line terminator | `get`, `set` and `static` before a line break | all of it | `compare/class_element_names.js` |
 | `79f58c1` Fix leak in JS_ReadBigInt on truncated input | the limbs a read of cut-short bytecode had made are freed | all of it | `unit-api`, `test_read_truncated_bigint` |
 | `9a0197f` Write back every element in Array.prototype.sort | an element that did not move is written too | all of it | `compare/sort_write_back.js`, `test_builtin.js` of upstream |
@@ -94,7 +94,7 @@ The 23 fixes of 2026-10-31 together, against main (`4d2cdd77`), without PGO and 
 | tifa's example shop | 902,036,110 | 902,049,510 | +0.0015% |
 | tifa's MUI app | 706,587,440 | 706,682,625 | +0.013% |
 
-The HTML of the 16 pages of the shop, the store, the MUI app and the bench app is the same bytes (the time of the render in each match masked). The memory of a VM after 120 renders is within 0.1% for the shop (9,959,296 and 9,963,400 bytes), the bench app (the same) and the store (-0.7%), and 0.4% more for the MUI app (5,847,560 and 5,872,256).
+The HTML of the 16 pages of the shop, the store, the MUI app and the bench app is the same bytes (the time of the render in each match masked). The memory of a VM after 120 renders is within 0.1% for the shop (9,959,296 and 9,963,400 bytes) and the bench app (the same), 0.7% less for the store (13,085,392 and 12,987,992), and 0.4% more for the MUI app (5,847,560 and 5,872,256).
 
 ## A negative BigInt and a negative float
 
@@ -110,7 +110,7 @@ Each file under `engine/test/compare` is what Node 24 prints, except for the lin
 - `8e68fcf`, `d88b1ed`: the current specification, which Node 24 does not follow yet. `Promise.try(() => p)` is `p` for a promise made by the same constructor. A finite limit above 2**53-1 in `take` and `drop` throws a RangeError, where Node accepts it.
 - `df8de73`: code in strict mode with `f() = 1` is a syntax error, as in the specification. V8 compiles it and throws a ReferenceError when it runs. `super() = 1` is a syntax error too.
 - `1aa7429`: one namespace object that two paths export under one name is not ambiguous in the specification, and is in V8.
-- `535a7c2`: a descriptor that is not an object is found when its definition is made, so the definitions before it stay, where the specification finds it with the first reads and defines nothing.
+- `535a7c2`: upstream kept the descriptor objects until the second pass, so a getter of a later key could change an earlier descriptor, the fields of the descriptors were read after all the keys, and a descriptor that was not an object or had a field that threw was found after the definitions before it were made. The C tree converts each descriptor when its key is read and defines from the converted ones, as the specification orders, and prints what Node 24 prints.
 - `9a0197f`: the specification writes an array of one element back and throws for a frozen one, as the C tree does. V8 returns it as it is.
 - `21cbd86` and `d88b1ed` read the limit of `take` and `drop` as a saturated integer, which upstream calls not strictly compliant for a limit such as 2**31-1 + 0.5.
 
@@ -122,7 +122,7 @@ Each file under `engine/test/compare` is what Node 24 prints, except for the lin
 - `BigInt.asUintN` of a negative BigInt wraps it at every width. `BigInt.asUintN(64, -1n)` is `2n ** 64n - 1n`.
 - `''.repeat(2 ** 31)` is an empty string. `Iterator.prototype.take` and `drop` throw a RangeError for a finite limit above 2**53-1 and close the iterator.
 - A failing `Atomics.store` and a read of cut-short bytecode leak nothing. `ArrayBuffer.prototype.resize` reads its length as an index. `TypedArray.prototype.at` counts from the length it read first.
-- An iterator helper closes the iterator under it with `return()`. A for await loop that leaves early waits for `return()`, and one that runs to its end does not call it.
+- An iterator helper closes the iterator under it with `return()`. A for await loop that leaves by `break`, by `continue` to an outer loop or by `return` waits for `return()`, and one that runs to its end does not call it. A loop whose body throws still closes the iterator without waiting for `return()` (a known difference from Node 24).
 - `yield` and `await` are names or keywords as the context of the function says, `f() = 1` compiles in sloppy code and throws when it runs, a class element after `get`, `set` or `static` and a line break is read as the specification reads it, and `export { x as "a-b" }` is accepted.
 - `Promise.try` gives back a promise its callback returns. `Function.prototype.bind` keeps the prototype of the function it binds. `Object.defineProperties` reads everything before it defines. A proxy cannot report another value or other accessors for a property that is not configurable, nor a primitive from `ownKeys`. `Array.prototype.sort` writes every element back. `super.x = v` sets a property that a non-extensible receiver has.
 - A sealed or frozen array keeps its length when an index past its end is set or defined, which `Reflect.defineProperty` did not.
