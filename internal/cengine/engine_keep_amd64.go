@@ -1281,7 +1281,7 @@ var goasmKeep = []any{
 	string_buffer_widen,
 	string_buffer_write16,
 	string_buffer_write8,
-	string_buffer_write8_wide,
+	string_buffer_write8_wide_long,
 	string_get_milliseconds,
 	string_indexof_char,
 	string_rope_get,
