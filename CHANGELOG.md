@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 ### Changed
 
 - Loops of the engine that walk the items of a string, an array, a Map or a Set and call nothing else for each one stop within a few polls of an `Interrupt` or the eval timeout: `Object.fromEntries`, the spread of an iterable (`[...set]`), `Iterator.prototype.toArray` and `drop`, `Math.sumPrecise`, `Set.prototype.union`, `symmetricDifference` and `isSupersetOf`, and `Array.from`, the typed array constructors and `from`. The engine read the stop when a call started, and the `next` of these iterators is called without one, so a script that spread a Set of two million items, or took the union of two large Sets, ran on until it was killed. The copy of a Set that its methods make before they add to it stops too.
+- `replace` and `replaceAll` with a string for the pattern look for it as `indexOf` does, and read the stop every 1024 matches. They used to compare the needle at each index where its first character was, so a needle that almost matches at every index (a hundred `a` and a `b` in a string of a million `a`) took the product of the two lengths, and a `replaceAll` with millions of matches ran on until it was killed. `trim`, `slice`, `substring`, `substr` and the pieces `split` makes stop within a million characters when the piece they cut out is longer than that, and so do `padStart` and `padEnd` with a filler of tens of millions of characters.
 
 ## [v0.29.2] - 2026-10-30
 

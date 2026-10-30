@@ -171,6 +171,8 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// is freed when the call stops.
 		{"Uint8Array.from, a string", `var s = '1'.repeat(1 << 21)`, `Uint8Array.from(s)`, "from", `Array.from(s)`},
 		{"new Uint8Array, an Array", `var a = new Array(1 << 22).fill(1)`, `new Uint8Array(a)`, "Uint8Array", `Array.from(a)`},
+		// A replacement that is a string calls nothing for each match, and the result grows by doubling.
+		{"replaceAll, a string for the pattern", `var s = 'ab'.repeat(1 << 23)`, `s.replaceAll('a', 'cc')`, "replaceAll", ""},
 		{"Array.from, a Set", setOfNumbers, `Array.from(s)`, "from", ""},
 		{"Object.fromEntries, a Map", mapOfNumbers, `Object.fromEntries(m)`, "fromEntries", ""},
 		{"Iterator toArray, a Set", setOfNumbers, `s.values().toArray()`, "toArray", ""},

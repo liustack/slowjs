@@ -1120,6 +1120,7 @@ func js_string_to_number(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1
 func js_string_trim(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_sub_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
+func js_sub_string_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_symbol_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_symbol_for(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_symbol_get_description(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)

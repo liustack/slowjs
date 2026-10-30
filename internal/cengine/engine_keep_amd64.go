@@ -1083,6 +1083,7 @@ var goasmKeep = []any{
 	js_string_trim,
 	js_strndup,
 	js_sub_string,
+	js_sub_string_long,
 	js_symbol_constructor,
 	js_symbol_for,
 	js_symbol_get_description,
