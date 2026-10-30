@@ -8,6 +8,7 @@
 
 - 只有普通键的对象字面量把属性放在对象自己的块里，不再单独分一块。tifa 页面的一个 VM 渲染并回收后少占 1.0% 到 2.4% 内存，一次渲染少跑 0.1% 到 0.8% 的指令，按规则看没有页面变快或变慢（shop 为 0.991，MUI 页面 0.998，bench 应用 0.985，React 0.995）。关掉回收器时，一次渲染新增的内存平均多 0.7%（数字见 [Performance](docs/performance.md#object-literals-with-their-properties-in-the-block-of-the-object)）。
 - 解释器调用 C 写的内置函数时直接调，不再先进一层跑字节码的函数（这种调用里它什么也不做）。tifa 示例商店的六个工作台页面每次渲染少跑 0.74% 的指令，bench 页面少 2.3%，用时是原来的 0.98 到 0.99，在代码位置带来的波动之内。脚本递归的深度和以前完全一样，经过 `call`、`map`、`sort` 这类内置函数的递归也一样（[性能](docs/performance.md#c-functions-called-from-the-interpreter)）。
+- 字节码函数的调用结束时，没有引用计数的值八个八个地跳过，原来是两个两个地看。tifa 示例应用的页面少跑 0.7% 到 2.1% 的指令，渲染脚本少 1.3% 到 2.0%，HTML 不变。一个函数有 200 个局部变量、一个都没赋值，这些局部变量在一次调用里少花 37% 的指令。找到的唯一变慢的情形是每四个局部变量里有一个放着对象的函数：200 个局部变量时多 2.4% 的指令（数字见 [Performance](docs/performance.md#the-end-of-a-call-and-the-start-of-one)）。
 
 ## [v0.29.3] - 2026-10-30
 
