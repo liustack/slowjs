@@ -60,6 +60,7 @@ int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
+uintptr_t white_shape_of(JSValueConst obj);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 
 /* ---- texts of every kind of character ---- */
@@ -631,9 +632,26 @@ static void test_object_inline_props(void)
     vm_free(&v);
 }
 
+/* Whether chk(arg) ran and returned true: a check that throws is a failed
+   check, not a passed one (JS_ToBool says -1 for an exception). */
+static int check_true(JSContext *ctx, JSValueConst chk, JSValueConst arg)
+{
+    JSValue r = JS_Call(ctx, chk, JS_UNDEFINED, 1, &arg);
+    int ok;
+
+    if (JS_IsException(r)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return 0;
+    }
+    ok = JS_ToBool(ctx, r) == 1;
+    JS_FreeValue(ctx, r);
+    return ok;
+}
+
 /* A call of the allocator that fails while an object grows or packs its
-   properties leaves the object as it was, and the heap whole (vm_free finds
-   a leak). Every call is failed in turn. */
+   properties, or while the first object of a literal is made, leaves the
+   object as it was (or no object), and the heap whole (vm_free finds a
+   leak). Every call is failed in turn. */
 static void test_object_inline_oom(void)
 {
     static const char setup[] =
@@ -642,42 +660,98 @@ static void test_object_inline_oom(void)
         "                          k8: 8, k9: 9, k10: 10, k11: 11, k12: 12, k13: 13, k14: 14, k15: 15 } }\n"
         "function grow(o) { for (var i = 0; i < 8; i++) o['n' + i] = i; return o }\n"
         "function shrink(o) { for (var i = 0; i < 12; i++) delete o['k' + i]; return o }\n"
+        /* the shapes {a}, {a,b}, {a,b,c} and {a,b,c,d} are in the shape hash table, with room for 2, 3, 3 and 4 */
+        "var keep = [{}, {}]; for (var o of keep) o.a = 1; for (var o of keep) o.b = [2]; for (var o of keep) o.c = 'three'; for (var o of keep) o.d = 4;\n"
+        "function mk3() { return { a: 1, b: [2], c: 'three' } }\n"
+        "function addd(o) { o.d = 4; return o }\n"
+        /* the first run of this literal makes its shape */
+        "function mkfirst() { return { fa: 1, fb: [2], fc: 'three' } }\n"
+        "function checkf(o) { return Object.keys(o).join() == 'fa,fb,fc' && o.fa === 1 && o.fb[0] === 2 && o.fc === 'three' }\n"
         "function check3(o) { return Object.keys(o).slice(0, 3).join() == 'a,b,c' && o.a === 1 && o.b[0] === 2 && o.c === 'three' }\n"
         "function check16(o) { var ks = Object.keys(o); for (var i = 12; i < 16; i++) if (o['k' + i] !== i) return false; return ks.length >= 4 }\n"
+        "function checkbad(o) { throw new Error('check failed') }\n"
         "void 0";
-    static const char *const kinds[] = { "grow", "shrink" };
+    static const struct {
+        const char *name, *mk, *op, *chk;
+        int factory; /* op makes the object, there is none before it */
+        int moves;   /* the object leaves its block when op succeeds */
+    } kinds[] = {
+        { "grow", "mk", "grow", "check3", 0, 1 },
+        { "shrink", "mk16", "shrink", "check16", 0, 0 },
+        { "found shape", "mk3", "addd", "check3", 0, 1 },
+        { "first run", NULL, "mkfirst", "checkf", 1, 0 },
+    };
+    long cases = 0, failed_calls = 0, stale = 0;
     int kind;
-    long cases = 0, failed_calls = 0;
 
-    for (kind = 0; kind < 2; kind++) {
+    /* the check must see a check that throws as a failure */
+    {
+        VM v = vm_new();
+        JSValue global, chk;
+
+        CHECK(eval_ok(v.ctx, setup), "the script threw");
+        global = JS_GetGlobalObject(v.ctx);
+        chk = JS_GetPropertyStr(v.ctx, global, "checkbad");
+        CHECK(!check_true(v.ctx, chk, JS_UNDEFINED), "a check that throws passed");
+        JS_FreeValue(v.ctx, chk);
+        JS_FreeValue(v.ctx, global);
+        vm_free(&v);
+    }
+    for (kind = 0; kind < (int)countof(kinds); kind++) {
         int n = 0, fail;
 
         for (fail = 0; fail <= 1 || fail <= n; fail++) {
             VM v = vm_new();
-            JSValue g, mk, chk, obj, r, args[1], global;
-            int made, ok;
+            JSValue g, mk = JS_UNDEFINED, chk, obj = JS_UNDEFINED, r, global;
+            int made, room;
 
             CHECK(eval_ok(v.ctx, setup), "the script threw");
             global = JS_GetGlobalObject(v.ctx);
-            mk = JS_GetPropertyStr(v.ctx, global, kind ? "mk16" : "mk");
-            g = JS_GetPropertyStr(v.ctx, global, kinds[kind]);
-            chk = JS_GetPropertyStr(v.ctx, global, kind ? "check16" : "check3");
-            obj = JS_Call(v.ctx, mk, JS_UNDEFINED, 0, NULL);
-            args[0] = obj;
-            r = white_call_failing(v.ctx, g, JS_UNDEFINED, 1, args, fail, &made);
+            if (kinds[kind].mk)
+                mk = JS_GetPropertyStr(v.ctx, global, kinds[kind].mk);
+            g = JS_GetPropertyStr(v.ctx, global, kinds[kind].op);
+            chk = JS_GetPropertyStr(v.ctx, global, kinds[kind].chk);
+            if (!kinds[kind].factory) {
+                obj = JS_Call(v.ctx, mk, JS_UNDEFINED, 0, NULL);
+                CHECK(white_props_inline(obj, &room) == 1, "%s: the object starts in its block", kinds[kind].name);
+            }
+            r = white_call_failing(v.ctx, g, JS_UNDEFINED, !kinds[kind].factory, &obj, fail, &made);
             if (fail == 0)
                 n = made;
             cases++;
             if (JS_IsException(r)) {
                 failed_calls++;
                 JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            } else if (JS_HasException(v.ctx)) {
+                /* delete_property ignores a compact_properties that ran out of memory (as in QuickJS
+                   upstream): the delete worked, and the error stays pending */
+                stale++;
+                JS_FreeValue(v.ctx, r);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            } else if (kinds[kind].factory) {
+                CHECK(check_true(v.ctx, chk, r), "%s with call %d failing: the new object is wrong", kinds[kind].name, fail);
+                JS_FreeValue(v.ctx, r);
             } else {
                 JS_FreeValue(v.ctx, r);
             }
-            r = JS_Call(v.ctx, chk, JS_UNDEFINED, 1, args);
-            ok = JS_ToBool(v.ctx, r);
-            CHECK(ok, "%s with call %d failing: the object lost a property", kinds[kind], fail);
-            JS_FreeValue(v.ctx, r);
+            if (kinds[kind].factory) {
+                /* the shape the failed run may have made or left must serve the next run */
+                r = JS_Call(v.ctx, g, JS_UNDEFINED, 0, NULL);
+                CHECK(!JS_IsException(r) && check_true(v.ctx, chk, r), "%s with call %d failing: the next object is wrong", kinds[kind].name, fail);
+                JS_FreeValue(v.ctx, r);
+            } else {
+                CHECK(check_true(v.ctx, chk, obj), "%s with call %d failing: the object lost a property", kinds[kind].name, fail);
+                if (fail == 0 && kinds[kind].moves)
+                    CHECK(white_props_inline(obj, &room) == 0, "%s: the properties left the block", kinds[kind].name);
+                if (fail == 0 && !kinds[kind].moves)
+                    CHECK(white_props_inline(obj, &room) == 1, "%s: the properties stay in the block", kinds[kind].name);
+                if (fail == 0 && !strcmp(kinds[kind].name, "found shape")) {
+                    JSValue k = JS_Eval(v.ctx, "keep[0]", 7, "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+                    CHECK(white_shape_of(obj) == white_shape_of(k), "found shape: the object took the shape that was in the shape hash table");
+                    JS_FreeValue(v.ctx, k);
+                }
+            }
             JS_FreeValue(v.ctx, obj);
             JS_FreeValue(v.ctx, chk);
             JS_FreeValue(v.ctx, g);
@@ -685,10 +759,37 @@ static void test_object_inline_oom(void)
             JS_FreeValue(v.ctx, global);
             vm_free(&v);
         }
-        CHECK(n > 0, "%s makes no call of the allocator", kinds[kind]);
+        CHECK(n > 0, "%s makes no call of the allocator", kinds[kind].name);
     }
     CHECK(failed_calls > 0, "no call of %ld failed", cases);
-    printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls\n", cases, failed_calls);
+    printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls, %ld with an error left pending\n", cases, failed_calls, stale);
+}
+
+
+/* A literal of 28 or 29 plain keys keeps its properties in its block (the
+   header of 40 bytes and 29 properties of 16 are 504 bytes, the most a small
+   block of the allocator holds), one of 30 does not. */
+static void test_object_inline_limit(void)
+{
+    int n;
+
+    for (n = 27; n <= 31; n++) {
+        VM v = vm_new();
+        char src[2048] = "var o = { ";
+        int room = 0, k, inline_;
+        char want[32];
+
+        for (k = 0; k < n; k++)
+            snprintf(src + strlen(src), sizeof(src) - strlen(src), "q%d: %d, ", k, k);
+        strcat(src, "}; void 0");
+        CHECK(eval_ok(v.ctx, src), "the script threw");
+        inline_ = props_inline(&v, "o", &room);
+        CHECK(inline_ == (n <= 29), "%d keys: in the block %d, room for %d", n, inline_, room);
+        CHECK(room == n, "%d keys: room for %d", n, room);
+        snprintf(want, sizeof(want), "%d:26", n);
+        CHECK(eval_is(v.ctx, "Object.keys(o).length + ':' + o.q26", want), "values");
+        vm_free(&v);
+    }
 }
 
 /* ---- the lists of the collector ---- */
@@ -2159,6 +2260,7 @@ int main(void)
     test_object_block();
     test_object_inline_props();
     test_object_inline_oom();
+    test_object_inline_limit();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
