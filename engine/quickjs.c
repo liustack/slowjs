@@ -5107,6 +5107,7 @@ static int string_buffer_write8(StringBuffer *s, const uint8_t *p, int len)
         dst = s->str->u.str16 + s->len;
         for (i = 0; i < len; i++)
             dst[i] = p[i];
+        JS_WORK(len);
         s->len += len;
         return 0;
     }
