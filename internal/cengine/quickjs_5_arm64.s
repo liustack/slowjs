@@ -465,11 +465,11 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	BL ·JS_ThrowTypeError(SB)
 	WORD $0xf94017e0
 	WORD $0xf9401be1
-	WORD $0x14000845
+	WORD $0x1400084c
 	WORD $0xf94146a0
 	WORD $0x910a02a8
 	WORD $0xeb08001f
-	WORD $0x5400e5a0
+	WORD $0x5400e680
 	WORD $0x79404c09
 	WORD $0x52800308
 	WORD $0x7940440a
@@ -481,7 +481,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x78428d0c
 	WORD $0x79000109
 	WORD $0x79004c0c
-	WORD $0x5400e740
+	WORD $0x5400e820
 	WORD $0xf940aff5
 	WORD $0x91002108
 	WORD $0x52800029
@@ -489,7 +489,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xb81fc109
 	WORD $0xb900091f
 	WORD $0xf9008688
-	WORD $0x10017488
+	WORD $0x10017588
 	WORD $0x9104c289
 	WORD $0xb9017a9f
 	WORD $0xfd400100
@@ -591,8 +591,8 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940b7f8
 	WORD $0xf90087e8
 	WORD $0xf940870d
-	WORD $0xb500e02d
-	WORD $0x1400073a
+	WORD $0xb500e10d
+	WORD $0x14000741
 	WORD $0xf9409bf5
 	WORD $0xf940b7ed
 	WORD $0x794026a8
@@ -618,7 +618,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xb9400149
 	WORD $0xf2406529
 	WORD $0xa914bfe9
-	WORD $0x5400d1a0
+	WORD $0x5400d280
 	WORD $0xa95533ef
 	WORD $0xf1000508
 	WORD $0xf940b7ed
@@ -730,7 +730,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xeb0a013f
 	WORD $0x54000061
 	WORD $0x79407508
-	WORD $0x3400bc88
+	WORD $0x3400bd68
 	WORD $0x52800028
 	WORD $0xb900b7e8
 	WORD $0xa90055ac
@@ -763,8 +763,8 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xa914a3ff
 	WORD $0xf90087e1
 	WORD $0xf940870d
-	WORD $0xb500ca8d
-	WORD $0x1400068d
+	WORD $0xb500cb6d
+	WORD $0x14000694
 	WORD $0xf940b7e8
 	WORD $0xf940aff5
 	WORD $0xaa0003f6
@@ -815,8 +815,8 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xa90dffff
 	WORD $0xa914a3ff
 	WORD $0xf940870d
-	WORD $0xb500c40d
-	WORD $0x14000659
+	WORD $0xb500c4ed
+	WORD $0x14000660
 	WORD $0xf840c409
 	WORD $0xf940b7f8
 	WORD $0x92407928
@@ -891,7 +891,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940aff5
 	WORD $0x17fffff6
 	WORD $0x3100055f
-	WORD $0x54009c01
+	WORD $0x54009ce1
 	WORD $0x52800028
 	WORD $0xb900a3ff
 	WORD $0xb900dbe8
@@ -905,7 +905,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940aff5
 	WORD $0xf940b7f8
 	WORD $0x7100183f
-	WORD $0x5400a020
+	WORD $0x5400a100
 	WORD $0x92679b08
 	WORD $0xf940c109
 	WORD $0xd1000529
@@ -930,10 +930,10 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x7100183f
 	WORD $0x2a0103e8
 	WORD $0xf9009fe8
-	WORD $0x54009680
+	WORD $0x54009760
 	WORD $0xf940b7f8
 	WORD $0xb9417b08
-	WORD $0x350095c8
+	WORD $0x350096a8
 	WORD $0xb9417308
 	WORD $0xb9417709
 	WORD $0x6b09011f
@@ -964,10 +964,10 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf94063f4
 	WORD $0xaa0003f6
 	WORD $0x34000054
-	WORD $0xb400ab76
+	WORD $0xb400ac56
 	WORD $0xf940b7f8
 	WORD $0xf9405fea
-	WORD $0xb400ac36
+	WORD $0xb400ad16
 	WORD $0xaa1603f5
 	WORD $0x78df8ea8
 	WORD $0x3100051f
@@ -1011,7 +1011,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf90017f8
 	BL ·JS_ToLengthFree(SB)
 	WORD $0xf9401be0
-	WORD $0x37f897e0
+	WORD $0x37f898c0
 	WORD $0xf940b7e8
 	WORD $0xf94093f5
 	WORD $0xb940a3f7
@@ -1051,7 +1051,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940aff5
 	WORD $0xf940b7f8
 	WORD $0x36ffede0
-	WORD $0x14000437
+	WORD $0x1400043e
 	WORD $0xd107e5a8
 	WORD $0xb107e11f
 	WORD $0x54000442
@@ -1067,11 +1067,11 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xaa0003f6
 	WORD $0xf94063f4
 	WORD $0x34000054
-	WORD $0xb4009e76
+	WORD $0xb4009f56
 	WORD $0xf940b7f8
 	WORD $0xf9405fed
 	WORD $0xb5000956
-	WORD $0x140004f8
+	WORD $0x140004ff
 	WORD $0xf94057e8
 	WORD $0xf9400908
 	WORD $0x91118108
@@ -1294,7 +1294,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940b7f5
 	WORD $0xb94172a8
 	WORD $0x7100051f
-	WORD $0x54006acb
+	WORD $0x54006bab
 	WORD $0x52800068
 	WORD $0xd2f87c09
 	WORD $0xaa1f03eb
@@ -1302,7 +1302,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x528000c8
 	WORD $0x5280064c
 	WORD $0xf9009fe8
-	WORD $0x10010ec8
+	WORD $0x10010fc8
 	WORD $0x3dc00100
 	WORD $0xd2e87c08
 	WORD $0xf9007bff
@@ -1333,14 +1333,14 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9400fe0
 	WORD $0xf94013e1
 	WORD $0x7100183f
-	WORD $0x54007860
+	WORD $0x54007940
 	WORD $0xf940aff5
 	WORD $0xf940b7e9
 	WORD $0xf940abf7
 	WORD $0x7100103f
 	WORD $0x54000483
 	WORD $0x7100203f
-	WORD $0x54001620
+	WORD $0x540016a0
 	WORD $0x9106c134
 	WORD $0xaa0003f6
 	WORD $0xaa0103f7
@@ -1354,7 +1354,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9401be0
 	WORD $0xf9401fe1
 	WORD $0x7100183f
-	WORD $0x540075c0
+	WORD $0x540076a0
 	WORD $0xf940b7ea
 	WORD $0xf940aff5
 	WORD $0x92679948
@@ -1445,7 +1445,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf940abe1
 	WORD $0x7100183f
-	WORD $0x54006a60
+	WORD $0x54006b40
 	WORD $0xf940afe8
 	WORD $0xf940b7f5
 	WORD $0xf9405fe9
@@ -1472,12 +1472,17 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940aff5
 	WORD $0xf940b7f8
 	WORD $0xf90063e0
-	WORD $0x7100103f
-	WORD $0x540004a3
+	WORD $0x7100083f
+	WORD $0x5400008c
+	WORD $0x71000c3f
+	WORD $0x54000102
+	WORD $0x14000027
+	WORD $0x71000c3f
+	WORD $0x54000640
 	WORD $0x7100183f
-	WORD $0x54000800
+	WORD $0x54000840
 	WORD $0x7100203f
-	WORD $0x540005e0
+	WORD $0x54000620
 	WORD $0x9106c314
 	WORD $0xaa0003f6
 	WORD $0xaa0103f7
@@ -1491,7 +1496,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9401be0
 	WORD $0xf9401fe1
 	WORD $0x7100183f
-	WORD $0x540005c0
+	WORD $0x54000600
 	WORD $0xf940b7f8
 	WORD $0xf940aff5
 	WORD $0x92679b08
@@ -1499,7 +1504,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xd1000529
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54fffcac
+	WORD $0x54fffc0c
 	WORD $0xaa1803f4
 	WORD $0xf90053e0
 	WORD $0xf9004be1
@@ -1509,21 +1514,23 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf94053e0
 	WORD $0xf940b7f8
 	WORD $0xf940aff5
-	WORD $0x17ffffdb
+	WORD $0x17ffffd6
 	WORD $0x93407c08
 	WORD $0x8aa8fd08
 	WORD $0x92fffc09
-	WORD $0x5280002b
 	WORD $0xeb09011f
 	WORD $0x9a89b10a
-	WORD $0x14000019
+	WORD $0x14000009
 	WORD $0xd374f808
 	WORD $0x7110751f
-	WORD $0x54004928
+	WORD $0x54004988
 	WORD $0x9e670000
 	WORD $0x1e780008
 	WORD $0xf9004fe8
-	WORD $0x17ffff6c
+	WORD $0x17ffff68
+	WORD $0xaa1f03ea
+	WORD $0x5280002b
+	WORD $0x14000012
 	WORD $0x9e670000
 	WORD $0xaa1f03ea
 	WORD $0x5280002b
@@ -1536,7 +1543,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x1e612000
 	WORD $0x5400470a
 	WORD $0x9e780008
-	WORD $0x17ffffe7
+	WORD $0x17ffffe5
 	WORD $0xf940aff5
 	WORD $0xf940b7f8
 	WORD $0xaa1f03ea
@@ -2100,7 +2107,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xd1000529
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54ff9dec
+	WORD $0x54ff9d0c
 	WORD $0x14000012
 	WORD $0x92fffc0a
 	WORD $0x17fffdce
@@ -2118,7 +2125,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9004fff
 	WORD $0xa95557f7
 	WORD $0xf940b7e9
-	WORD $0x17fffd19
+	WORD $0x17fffd12
 	WORD $0xaa1503f4
 	WORD $0xf90047eb
 	WORD $0xf90007f4
@@ -2126,7 +2133,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf94047eb
 	WORD $0xf940b7f5
 	WORD $0x5280064c
-	WORD $0x17fffcd4
+	WORD $0x17fffccd
 	WORD $0xa90f7fff
 	WORD $0xa90dffff
 	WORD $0x140000f2
@@ -2218,11 +2225,11 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9000bf5
 	BL ·JS_SetPropertyInternal_block(SB)
 	WORD $0xf9400fe0
-	WORD $0x37ff4e60
+	WORD $0x37ff4d80
 	WORD $0xf940aff5
 	WORD $0xf940b7f8
 	WORD $0xb900dbff
-	WORD $0x17fffacd
+	WORD $0x17fffac6
 	WORD $0x528000c8
 	WORD $0xa90f7fff
 	WORD $0xa90dffff
@@ -2291,7 +2298,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xb900b7e8
 	WORD $0xf940afec
 	WORD $0xf940b7ed
-	WORD $0x17fff928
+	WORD $0x17fff921
 	WORD $0xf9008fe1
 	WORD $0xf940b7f8
 	WORD $0xf9007fff
@@ -2308,7 +2315,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf94013e0
 	WORD $0xf940abf9
 	WORD $0xf940b7f4
-	WORD $0xb5ff1940
+	WORD $0xb5ff1860
 	WORD $0xf940aff5
 	WORD $0x9106c294
 	WORD $0xf90007f4
@@ -2322,12 +2329,12 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf900869f
 	WORD $0xb901169f
 	WORD $0xb9011e88
-	WORD $0x17fff8cf
+	WORD $0x17fff8c8
 	WORD $0xa9402809
 	WORD $0xf900052a
 	WORD $0xf9000149
 	WORD $0xa9007c1f
-	WORD $0x17fff8c3
+	WORD $0x17fff8bc
 	WORD $0xf940b7e8
 	WORD $0xf94057f5
 	WORD $0x9106c114
@@ -2574,7 +2581,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9409fe1
 	WORD $0xf9407fe0
 	WORD $0xf940b3fe
-	WORD $0x1400037e
+	WORD $0x1400037f
 	WORD $0xf94067e8
 	WORD $0x91118108
 	WORD $0xeb0802df
@@ -3101,7 +3108,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf940b7e8
 	WORD $0xf9404508
 	WORD $0xf900abe8
-	WORD $0xb4fec288
+	WORD $0xb4fec1a8
 	WORD $0xf940b7e8
 	WORD $0xf940abea
 	WORD $0xf9404108
@@ -3122,7 +3129,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf90013f7
 	BL ·js_large_give(SB)
 	WORD $0xf94017e0
-	WORD $0x35febfe0
+	WORD $0x35febf00
 	WORD $0xf9409be8
 	WORD $0x79400109
 	WORD $0x529fffe8
@@ -3157,7 +3164,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xa91123ff
 	WORD $0xf9409be8
 	WORD $0xf9023528
-	WORD $0x17fff5e6
+	WORD $0x17fff5df
 	MOVD $·engine_rodata+2060(SB), R10
 	WORD $0xf9409bec
 	WORD $0x7868794a
@@ -3173,7 +3180,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x51000588
 	WORD $0x72003d1f
 	WORD $0x781fa148
-	WORD $0x54feb961
+	WORD $0x54feb881
 	WORD $0xa97ea548
 	WORD $0x6f00e400
 	WORD $0xf9009beb
@@ -3230,7 +3237,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf900a7ff
 	WORD $0xf9008bff
 	WORD $0xf90097e8
-	WORD $0x17fff59a
+	WORD $0x17fff593
 	WORD $0x3100081f
 	WORD $0x54000261
 	WORD $0xf940b7e8
@@ -3322,7 +3329,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xa95323e9
 	WORD $0x91118108
 	WORD $0xeb08013f
-	WORD $0x54fea6a0
+	WORD $0x54fea5c0
 	WORD $0xf940b7e8
 	WORD $0xa95357f6
 	WORD $0x9106c114
@@ -3344,7 +3351,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xa914a3ff
 	WORD $0x52800068
 	WORD $0xa90dffff
-	WORD $0x17fff52f
+	WORD $0x17fff528
 	WORD $0x3100271f
 	WORD $0x54000083
 	WORD $0xb85fc2e8
@@ -3454,6 +3461,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17fffd60
+	WORD $0xd503201f
 	WORD $0xd503201f
 	WORD $0x00000000
 	WORD $0x00000004
