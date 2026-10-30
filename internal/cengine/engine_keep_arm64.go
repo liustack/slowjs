@@ -462,6 +462,7 @@ var goasmKeep = []any{
 	free_zero_refcount,
 	from_base64_block,
 	fulfill_or_reject_promise_block,
+	fuse_code,
 	gather_available_ancestors,
 	gc_decref_child,
 	gc_ephemeron_activate,

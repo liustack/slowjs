@@ -23069,9 +23069,9 @@ TEXT ·js_proxy_get_prototype(SB), $120-48
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x3607f489
-	MOVD $·engine_rodata+43544(SB), R9
+	MOVD $·engine_rodata+43808(SB), R9
 	WORD $0xf9404d8a
-	MOVD $·engine_rodata+43400(SB), R11
+	MOVD $·engine_rodata+43664(SB), R11
 	WORD $0xf8685929
 	WORD $0xf8685968
 	WORD $0xf8696941
