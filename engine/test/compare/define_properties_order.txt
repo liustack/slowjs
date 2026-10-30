@@ -2,7 +2,14 @@ order of the traps: ownKeys,gopd a,get a,gopd b,get b,gopd c,get c,define a,defi
 order with Object.create: ownKeys,gopd a,get a,gopd b,get b
 not enumerable is skipped: ownKeys,gopd a,get a,gopd h a
 symbols: ownKeys,gopd a,get a,gopd S,get S 2
-a later descriptor is not an object: TypeError
+a later descriptor is not an object: TypeError []
+a later getter changes an earlier descriptor: 1,3
+order of the fields of descriptors and of the keys: a.value,b,b.value
+a field of a descriptor throws, nothing is defined: RangeError []
+a field of the first descriptor throws, the next is not read: a.enumerable,RangeError []
+invalid getter in a later descriptor, nothing is defined: TypeError []
+getter and value in a later descriptor, nothing is defined: TypeError []
+accessor descriptors are kept as read: 7
 a later getter throws: RangeError []
 a later definition throws: TypeError b,a
 getter changes a later key: a

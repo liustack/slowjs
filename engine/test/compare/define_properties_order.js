@@ -6,10 +6,12 @@
 // of the specification: all the keys of the properties object first, then for
 // each key its own descriptor and its value, and only after all of them the
 // definitions, so that no definition is made when a later key throws
-// (upstream QuickJS 535a7c2). A descriptor that is not an object is still found
-// when its definition is made, so a definition made before it stays, where the
-// specification finds it with the others and defines nothing. The file is what
-// Node 24 prints, so it is not looked at which one is defined.
+// (upstream QuickJS 535a7c2). Each descriptor is also converted when its key is
+// read, so a getter of a later key cannot change an earlier descriptor, a
+// descriptor that is not an object or has a field that throws defines nothing,
+// and the fields of the descriptors are read in the order of the keys (the
+// conversion is ours: upstream kept the descriptor objects). The file is what
+// Node 24 prints.
 const out = []
 function run(name, f) {
   let r
@@ -48,7 +50,44 @@ run('symbols', () => {
 })
 run('a later descriptor is not an object', () => {
   const o = {}
-  try { Object.defineProperties(o, { a: { value: 1 }, b: 5 }) } catch (e) { return e.name }
+  try { Object.defineProperties(o, { a: { value: 1 }, b: 5 }) } catch (e) { return e.name + ' [' + Reflect.ownKeys(o) + ']' }
+})
+run('a later getter changes an earlier descriptor', () => {
+  const d = { value: 1 }
+  const o = Object.defineProperties({}, { a: d, get b() { d.value = 2; return { value: 3 } } })
+  return o.a + ',' + o.b
+})
+run('order of the fields of descriptors and of the keys', () => {
+  const log = []
+  Object.defineProperties({}, {
+    a: { get value() { log.push('a.value'); return 1 } },
+    get b() { log.push('b'); return { get value() { log.push('b.value'); return 2 } } },
+  })
+  return log.join()
+})
+run('a field of a descriptor throws, nothing is defined', () => {
+  const o = {}
+  try { Object.defineProperties(o, { a: { value: 1 }, b: { get value() { throw new RangeError('f') } } }) } catch (e) { return e.name + ' [' + Reflect.ownKeys(o) + ']' }
+})
+run('a field of the first descriptor throws, the next is not read', () => {
+  const log = []
+  const o = {}
+  try { Object.defineProperties(o, { a: { get enumerable() { log.push('a.enumerable'); throw new RangeError('f') } }, get b() { log.push('b'); return {} } }) } catch (e) { log.push(e.name) }
+  return log.join() + ' [' + Reflect.ownKeys(o) + ']'
+})
+run('invalid getter in a later descriptor, nothing is defined', () => {
+  const o = {}
+  try { Object.defineProperties(o, { a: { value: 1 }, b: { get: 5 } }) } catch (e) { return e.name + ' [' + Reflect.ownKeys(o) + ']' }
+})
+run('getter and value in a later descriptor, nothing is defined', () => {
+  const o = {}
+  try { Object.defineProperties(o, { a: { value: 1 }, b: { get() { }, value: 2 } }) } catch (e) { return e.name + ' [' + Reflect.ownKeys(o) + ']' }
+})
+run('accessor descriptors are kept as read', () => {
+  const g = function () { return 7 }
+  const d = { get: g, enumerable: true, configurable: true }
+  const o = Object.defineProperties({}, { a: d, get b() { d.get = function () { return 8 }; return { value: 0 } } })
+  return o.a
 })
 run('a later getter throws', () => {
   const o = {}
@@ -100,6 +139,8 @@ if (typeof memorySize === 'function') {
       try { Object.defineProperties({}, { a: { value: 1 }, get b() { throw 1 }, c: { value: 3 } }) } catch (e) { }
       try { Object.defineProperties({}, { a: { value: 1 }, b: { value: 2 }, c: 5 }) } catch (e) { }
       try { Object.defineProperties(Object.freeze({}), { a: { value: 1 }, b: { value: 2 } }) } catch (e) { }
+      try { Object.defineProperties({}, { a: { value: 'x'.repeat(i), get: undefined }, b: { get value() { throw 1 } } }) } catch (e) { }
+      try { Object.defineProperties({}, { a: { get() { return {} }, set: undefined }, b: { get: 5 } }) } catch (e) { }
       Object.defineProperties({}, { a: { value: 'x'.repeat(i) }, b: { value: {} }, [Symbol()]: { value: [] } })
     }
   }
