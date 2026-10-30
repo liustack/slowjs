@@ -83,6 +83,7 @@ go test -run 'TestErrorStack' .                          # stack text and memory
 go test -run 'CallDepth|ShadowStack|StackGrowth|CallAllocs' .  # depth limits, shadow stack use, deep recursion while Go moves the stack, no Go allocation per call
 go test -run 'HostPanic|Handover|Clock' .                # a panic or Goexit in a Go function or a clock, a VM handed to another goroutine
 go test -run 'Interrupt|Killed' .                        # Interrupt, and the kill of a script that does not stop
+go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within 50ms
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
