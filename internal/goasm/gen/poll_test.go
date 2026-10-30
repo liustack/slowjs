@@ -389,7 +389,8 @@ func syncedAround(f, call string) bool {
 // interpreterJumps lists what breaks, in src (engine/quickjs.c), the rule of
 // JS_CallInternal that the poll pass relies on when it leaves the edges into
 // the interpreter's dispatch without a tick: the function counts at its
-// entry (poll_count_entry before it calls anything or sets pc), and pc moves
+// entry (poll_count_entry before it calls anything or sets pc, the checks
+// of js_call_checks included), and pc moves
 // only by a constant step forward (pc += N, *pc++), through JUMP_TO, which
 // counts a move that does not go forward, or through JUMP_COUNTED, which
 // always counts. pc is set from elsewhere only at the entry, to the start of
@@ -419,7 +420,7 @@ func interpreterJumps(src string) []string {
 	macro("JUMP_TO", "do { const uint8_t *to_ = (to); if (unlikely(to_ <= pc)) poll_count(POLL_WEIGHT); pc = to_; } while (0)")
 	macro("JUMP_COUNTED", "do { pc = (to); poll_count(POLL_WEIGHT); } while (0)")
 	entry := strings.Index(body, "\n    poll_count_entry(POLL_WEIGHT);\n")
-	for _, after := range []string{"js_poll_interrupts(", "js_call_enter(", "pc = b->byte_code_buf;", "pc = sf->cur_pc;"} {
+	for _, after := range []string{"js_call_checks(", "pc = b->byte_code_buf;", "pc = sf->cur_pc;"} {
 		if i := strings.Index(body, after); entry < 0 || i < 0 || i < entry {
 			bad = append(bad, "poll_count_entry does not come before "+after)
 		}
