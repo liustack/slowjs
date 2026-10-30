@@ -62,6 +62,9 @@ size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
+void white_work_reset(void);
+unsigned long white_work_longest(void);
+unsigned long white_work_sum(void);
 
 /* ---- texts of every kind of character ---- */
 
@@ -768,6 +771,77 @@ static void test_object_inline_oom(void)
     printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls\n", cases, failed_calls);
 }
 
+
+/* The loops that read the interrupt flag after so many units of work say how
+   much they did (JS_WORK in quickjs.c), and white.c adds it up between two
+   readings of the flag. A call below does a known amount of work in all (the
+   characters a pad writes, a slice scans and copies, a key's hash walks, and
+   a leaf of a rope counts one), and no stretch between two readings, nor the
+   one before the first or the one after the last, is longer than the step.
+   The count of readings alone cannot show that: a loop that read the flag
+   twice as often in one place and not at all in another reads as often. */
+static void test_poll_work_gaps(void)
+{
+    enum { ROPE_STEP = 1 << 16, PAD_STEP = 1 << 16, SUB_STEP = 1 << 20 };
+    static const char setup[] =
+        "var f1 = 'ab'.repeat(65535) + 'c', f2 = 'ab'.repeat(32768), f3 = 'ab'.repeat(32769) + 'c'\n"
+        "var wide = ['\\u4e00', '\\u00e9'.repeat(2 << 20)].join('')\n"
+        "var wlast = ['\\u00e9'.repeat(3 << 20), '\\u4e00'].join('')\n"
+        "var w15 = ['\\u4e00', '\\u00e9'.repeat(3 << 19)].join('')\n"
+        "var nar = '\\u00e9'.repeat((3 << 20) + 5)\n"
+        "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535), l4 = 'w'.repeat(65533)\n"
+        "var flat = 'ab'.repeat(1 << 20)\n"
+        "var dbl = 'ab'; for (var i = 0; i < 18; i++) dbl = dbl + dbl\n"
+        "var s0 = new Set(), c0; 0";
+    static const struct {
+        const char *call;
+        unsigned long step, total;
+    } cases[] = {
+        /* a filler that ends in the middle of a step, or that is longer than one */
+        { "'x'.padEnd(400000, f1)", PAD_STEP, 399999 },
+        { "'x'.padStart(400000, f1)", PAD_STEP, 399999 },
+        { "'x'.padEnd(400000, f2)", PAD_STEP, 399999 },
+        { "'x'.padStart(400000, f3)", PAD_STEP, 399999 },
+        { "'x'.padEnd(400000, 'abc')", PAD_STEP, 399999 },
+        { "'x'.padEnd(400000, ' ')", PAD_STEP, 399999 },
+        /* a scan of 2097152 characters and a copy of as many, and a scan that stops at the first wide one */
+        { "wide.slice(1)", SUB_STEP, 4194304 },
+        /* the scan ends in the middle of a step, and the copy goes on from there */
+        { "w15.slice(1)", SUB_STEP, 3 << 20 },
+        { "wlast.slice(0, 3 << 20)", SUB_STEP, 6291456 },
+        { "wlast.slice(1)", SUB_STEP, 6291456 },
+        /* a string of 8 bits is copied, not scanned */
+        { "nar.slice(3)", SUB_STEP, (3 << 20) + 2 },
+        { "(' ' + nar).trim()", SUB_STEP, (3 << 20) + 5 },
+        /* the hash of a key: leaves of 65534, 65536 and 65535 characters, and one for each leaf */
+        { "s0.has(l1 + l2)", ROPE_STEP, 65534 + 65536 + 2 },
+        { "s0.has(l3 + l2 + l1)", ROPE_STEP, 65535 + 65536 + 65534 + 3 },
+        { "s0.has(l2 + l1 + l2 + l1)", ROPE_STEP, 2 * 65536 + 2 * 65534 + 4 },
+        { "s0.has(l1 + l1 + l1 + l1 + l1)", ROPE_STEP, 5 * 65534 + 5 },
+        { "s0.has(l4 + l1 + l3 + l2)", ROPE_STEP, 65533 + 65534 + 65535 + 65536 + 4 },
+        { "s0.has(flat)", ROPE_STEP, 1 << 21 },
+        { "s0.has(dbl)", ROPE_STEP, 0 },
+    };
+    VM v = vm_new();
+    size_t i;
+
+    CHECK(eval_ok(v.ctx, setup), "the script threw");
+    for (i = 0; i < countof(cases); i++) {
+        unsigned long longest, total;
+
+        white_work_reset();
+        CHECK(eval_ok(v.ctx, cases[i].call), "%s: the script threw", cases[i].call);
+        longest = white_work_longest();
+        total = white_work_sum();
+        CHECK(longest <= cases[i].step, "%s: %lu units of work between two readings of the flag, at most %lu", cases[i].call,
+              longest, cases[i].step);
+        if (cases[i].total)
+            CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
+        else
+            CHECK(total > 2 * cases[i].step, "%s: only %lu units of work", cases[i].call, total);
+    }
+    vm_free(&v);
+}
 
 /* A literal of 28 or 29 plain keys keeps its properties in its block (the
    header of 40 bytes and 29 properties of 16 are 504 bytes, the most a small
@@ -2263,6 +2337,7 @@ int main(void)
     test_object_block();
     test_object_inline_props();
     test_object_inline_oom();
+    test_poll_work_gaps();
     test_object_inline_limit();
     test_young_lists();
     test_young_leaves_no_zero_count();
