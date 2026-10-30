@@ -12270,9 +12270,9 @@ TEXT ·JS_GetPrototype(SB), $72-48
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x360001e9
-	MOVD $·engine_rodata+43120(SB), R9
+	MOVD $·engine_rodata+43400(SB), R9
 	WORD $0xf9404eaa
-	MOVD $·engine_rodata+42976(SB), R11
+	MOVD $·engine_rodata+43256(SB), R11
 	WORD $0xf8685929
 	WORD $0xf8685968
 	WORD $0xf8696941
@@ -12394,7 +12394,7 @@ TEXT ·JS_StringToBigInt(SB), $152-48
 	WORD $0x7103fc1f
 	WORD $0xf940c10a
 	WORD $0x540000e8
-	MOVD $·engine_rodata+57792(SB), R8
+	MOVD $·engine_rodata+58072(SB), R8
 	WORD $0x38604908
 	WORD $0x12000100
 	WORD $0x35000180
@@ -12486,7 +12486,7 @@ TEXT ·JS_StringToBigInt(SB), $152-48
 	WORD $0x7103fc1f
 	WORD $0xf940c10a
 	WORD $0x540000e8
-	MOVD $·engine_rodata+57792(SB), R8
+	MOVD $·engine_rodata+58072(SB), R8
 	WORD $0x38604908
 	WORD $0x12000100
 	WORD $0x35000180
@@ -15654,7 +15654,7 @@ TEXT ·js_string_to_number(SB), $152-48
 	WORD $0x7103fc1f
 	WORD $0xf940c10a
 	WORD $0x540000e8
-	MOVD $·engine_rodata+57792(SB), R8
+	MOVD $·engine_rodata+58072(SB), R8
 	WORD $0x38604908
 	WORD $0x12000100
 	WORD $0x35000180
@@ -15750,7 +15750,7 @@ TEXT ·js_string_to_number(SB), $152-48
 	WORD $0x7103fc1f
 	WORD $0xf940c10a
 	WORD $0x540000e8
-	MOVD $·engine_rodata+57792(SB), R8
+	MOVD $·engine_rodata+58072(SB), R8
 	WORD $0x38604908
 	WORD $0x12000100
 	WORD $0x35000180

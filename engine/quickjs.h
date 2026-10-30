@@ -1226,6 +1226,15 @@ JSValue JS_NewHostFunction(JSContext *ctx, const char *name, size_t name_len,
    calls nothing: the handle stays the host's. */
 JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_len,
                                   int length, int32_t id);
+/* Returns a function named by the name_len bytes at name that escapes text as
+   React DOM's escapeTextForBrowser does: its argument becomes a string as in
+   "" + text, and each of & < > " and ' becomes &amp; &lt; &gt; &quot; or
+   &#x27;. The string itself comes back when it has none of them. Its length is
+   1, it has no prototype property, cannot be called with new, and toString
+   shows [native code]. It throws what "" + text throws (a symbol, a toString
+   that throws), a RangeError when the escaped string would be too long, and
+   the interrupt when the host asks for one while it works on a long string. */
+JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_len);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func, const char *name,
                                       int length)

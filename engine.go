@@ -650,6 +650,21 @@ func (m *VM) jsNewAtom(s string) (r uint32, err error) {
 	return r, nil
 }
 
+// jsNewEscapeTextFunction is JS_NewEscapeTextFunction of name.
+func (m *VM) jsNewEscapeTextFunction(name string) (r jsValue, err error) {
+	if m.entered == 0 {
+		m.outer(func() { r, err = m.jsNewEscapeTextFunction(name) })
+		return r, err
+	}
+	p, sp, heap := m.tmpString(name, false)
+	if p == 0 {
+		return jsValue{}, m.tmpError()
+	}
+	r = val(cengine.JS_NewEscapeTextFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.tmpFree(p, heap)
+	return r, nil
+}
+
 func (m *VM) jsFreeAtom(a uint32) {
 	if m.entered == 0 {
 		if !m.h.Broken() {
