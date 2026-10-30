@@ -533,6 +533,38 @@ React's loop takes about 200 ns for each key in these runs ((2,545 - 580) / 10 f
 
 A check in JavaScript in front of one spread was measured first, as the step before this one (see [What was tried and not done](#what-was-tried-and-not-done)).
 
+### Object literals that share their shape
+
+[Object literals of the same keys share one shape](changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape). Against v0.29.4 (c2e07b7d), with the same HTML on the 16 pages. Memory is the engine's `MallocSize` of one VM made by `ssr.Load`, after one render of each page of the app and after 120, with a full collection. Instructions per render of every page of an app are from callgrind at position 0.0 (the difference of 3 renders and 1).
+
+| Pages | Shapes | Memory after 1 render | After 120 | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages | 4203 to 3615 | -0.66% | -0.54% | -0.13% |
+| the shop's store pages | 5210 to 4403 | -1.67% | -2.10% | -0.03% |
+| tifa's MUI test app, three pages | 3896 to 3425 | -0.69% | +0.70% | +0.01% |
+| tifa's bench app, two pages | 940 to 928 | 0 | 0 | +0.02% |
+| `r_react_ssr` | | | | +0.03% |
+
+The MUI pages after 120 renders hold 41 KB more, where after one render they hold 41 KB less: the shapes are as many as after one render, and the difference is in what the collector and the allocator keep at that moment. The instructions do not change, so the time was not taken.
+
+### Opcodes that do a few instructions at once
+
+[A read of a local and its get_field, the case of a switch on a string](changes/c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) and [typeof tests](changes/c-engine.md#typeof-as-one-opcode) take one opcode. Each change against the one before it, starting from the shapes above, with the same HTML on the 16 pages. Instructions per render of every page of an app are from callgrind at position 0.0 (the difference of 3 renders and 1, of 3 and 1 runs for `r_react_ssr`).
+
+| Pages | Fused reads and cases | typeof | A table for the compiler | All three |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages | -1.85% | -0.63% | | -2.81% |
+| the shop's store pages | -1.59% | -0.83% | | -2.41% |
+| tifa's MUI test app, three pages | -1.66% | -0.75% | | -2.28% |
+| tifa's bench app, two pages | -3.41% | -1.42% | -0.03% | -4.82% |
+| `r_react_ssr` | +2.07% | -0.08% | -0.47% | +1.46% |
+
+A run of `r_react_ssr` compiles its bundle and then renders once, and the compile is most of its instructions. The compiler pays for the search of the runs: `fuse_code` took 1.45 M instructions of a run in its first form, and 0.98 M once it looks the opcodes up in a table (the third column). Each VM of tifa reads bytecode compiled once, so its renders do not pay for it. The pages render with fewer instructions on every app. Timed at 8 code positions, 3 rounds, the fused reads and cases with the shapes above against v0.29.4: the bench pages, the one app over 2% at a step, take 0.966 of the time (16.49 ms to 15.97 ms for the spiral page, 15.25 ms to 14.76 ms for the table page), and `r_react_ssr` 1.018 with the first form of `fuse_code`, which is under 3%, so callgrind decides. All three against v0.29.4, timed the same way: the bench pages take 0.943 of the time, the six workbench pages 0.976 and the store pages 0.980. Those two are under 3%, so callgrind decides for them, and the MUI pages were not timed.
+
+The memory of a VM does not change: the fused opcodes take the place of the first instruction of their run, and a `typeof` test takes as many bytes as before or fewer.
+
+On main after it took the reads of the interrupt flag in long string loops (bcd2eb1a), against that main, callgrind as above with the collector of Go off (`GOGC=off`): all three take 3.03% of the instructions off a render of the six workbench pages and 2.53% off the MUI pages, with the same HTML on the shop, store and MUI pages.
+
 ### Upstream commits and the scripts where the C engine was slower than C
 
 [upstream-commits.md](changes/upstream-commits.md) lists the commits of upstream QuickJS taken into the C tree and the ones tried and taken back, with their speed. Against main (`c4dcea91`) before the batch, all 37 scripts at 8 positions, 2 rounds: geometric mean 0.917, with `q_array_slice` at 0.085 and `c_array_methods` at 0.530 and the other 35 scripts together at 0.997. `r_react_ssr` took 0.977, within its noise.
@@ -809,7 +841,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.
 - **Literal templates in the bytecode**, as V8 copies a prebuilt object: needs compiler and bytecode format changes, and quickjs-ng saw no clear difference when it tried. It is done since, as one opcode for each run of plain keys whose final shape the function keeps (see [Object literals made at their final shape](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)).
 - **Allocating the property array of a literal at its final size**: the opcode that makes the object does not know the count, and growing arrays differently costs memory for every small object. It pays only together with kept shapes. Done since with that opcode, which knows the count of its keys.
-- **Inline caches for property reads**: quickjs-ng added and then removed them. Across 17 real tools they ranged from 11% slower to 54% faster, 4% faster on average, and used more memory. Tried after v0.27.0 as a table of 4096 entries keyed by the bytecode position, each holding a shape and the index of an own data property, checked against the shape itself (the index under its count, the same key, plain flags), so it needs no invalidation. Most reads on tifa's pages are own properties of the object, which `find_own_property` already finds in one hash step, and a hit on a prototype cannot skip the check of the shapes on the way. 0.3% fewer instructions, but the shop took 1.006 of the time and the MUI pages 1.007 (6 rounds, 3 layouts), for 96 KiB more per VM.
+- **Inline caches for property reads**: quickjs-ng added and then removed them. Across 17 real tools they ranged from 11% slower to 54% faster, 4% faster on average, and used more memory. Tried after v0.27.0 as a table of 4096 entries keyed by the bytecode position, each holding a shape and the index of an own data property, checked against the shape itself (the index under its count, the same key, plain flags), so it needs no invalidation. Most reads on tifa's pages are own properties of the object, which `find_own_property` already finds in one hash step, and a hit on a prototype cannot skip the check of the shapes on the way. 0.3% fewer instructions, but the shop took 1.006 of the time and the MUI pages 1.007 (6 rounds, 3 layouts), for 96 KiB more per VM. Tried again on 2026-10-30 on the C engine as a table per function, one entry of 16 bytes for each byte of its bytecode, holding a reference to the shape: 71% to 98% of the places that read a property by name see one shape only, but a hit costs about as many instructions as the hash lookup it skips. Against the engine of v0.29.4, callgrind gave -0.29% to +0.93% of the instructions and, with the cache misses weighed in, 1.2% to 2.7% more cycles: the misses of the three reads it serves fell by 70% to 90%, but they were only 0.52% to 0.64% of the cycles, and the reads of the table missed more. A compact table, one entry for each place that reads, could win back at most about 0.4% less its own misses, for a new bytecode format and a shape held by the cache that its only object could no longer change in place. Not done.
 - **A table of shape steps for new keys**: `add_property` looks for the shape an object goes to in the shape hash table, and that lookup misses the cache often (2.4% of the instructions of a render of the shop, 7.7% of its cache misses). A table of 1024 steps per runtime, from a shape and a key to the next shape, holding both, cut 0.8% of the instructions on the shop and the MUI pages, but the shop took 1.008 of the time and the MUI pages 1.019 (6 rounds, 3 layouts): the shapes it holds alive (2718 to 3504 on an MUI page) add 28 KB to 142 KB per VM and change when the cycle collector runs.
 - **Fast arrays in `every`, `some`, `forEach`, `map` and `filter`**, without asking `JS_TryGetPropertyInt64` for each element: `js_array_every`, which runs all five, spends 0.67 s of its own outside the callbacks in a profile of 85.6 s of the ten store pages of tifa's example shop, `JS_TryGetPropertyInt64` 0.19 s of it. A fast path would save at most about 0.5% of a store render, which the layout of the code hides. `find`, `findIndex` and `includes` already read fast arrays directly.
 - **One libc allocator per VM**, to avoid its global lock: with 8 VMs on Linux the lock costs 0.4% to 0.9% of the CPU, and since v0.26.15 10 VMs on an Apple M4 wait on locks for about 0.7% of their time.

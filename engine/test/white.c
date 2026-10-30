@@ -357,6 +357,10 @@ static const uint8_t white_ops[] = {
     OP_if_false, OP_if_true, OP_if_true8, OP_if_false8, OP_return_undef,
     OP_catch, OP_gosub, OP_ret, OP_with_get_var, OP_push_i32, OP_push_i16,
     OP_object_lit, OP_tail_call, OP_tail_call_method,
+    OP_get_field, OP_get_field2, OP_push_atom_value, OP_strict_eq,
+    OP_get_arg0_get_field, OP_get_arg1_get_field, OP_get_loc0_get_field,
+    OP_get_loc8_get_field, OP_dup_case_atom,
+    OP_typeof, OP_typeof_is_undefined, OP_typeof_is_function, OP_typeof_is, OP_lnot,
 };
 
 int white_op(int i)
@@ -911,6 +915,79 @@ uintptr_t white_shape_of(JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return 0;
     return (uintptr_t)JS_VALUE_GET_OBJ(obj)->shape;
+}
+
+/* ---- the pairs of instructions that one opcode does ---- */
+
+/* The number of instructions of code that are each fused opcode, in the
+   order of fused_runs, into count (as many as fused_runs has), and in all. */
+int white_fused_ops(const uint8_t *code, int len, int *count)
+{
+    int pos, op, n = 0;
+    size_t i;
+
+    for (i = 0; i < countof(fused_runs); i++)
+        count[i] = 0;
+    for (pos = 0; pos < len; pos += short_opcode_info(op).size) {
+        op = code[pos];
+        for (i = 0; i < countof(fused_runs); i++) {
+            if (fused_runs[i][4] == op) {
+                count[i]++;
+                n++;
+            }
+        }
+    }
+    return n;
+}
+
+/* The names of the opcodes, by their number in the bytecode. */
+static const char *const white_opcode_names[OP_COUNT] = {
+#define FMT(f)
+#define DEF(id, size, n_pop, n_push, f) #id,
+#define def(id, size, n_pop, n_push, f)
+#include "quickjs-opcode.h"
+#undef def
+#undef DEF
+#undef FMT
+};
+
+/* Whether the text at p starts with s. */
+static int white_starts(const char *p, const char *s)
+{
+    while (*s && *p == *s) {
+        p++;
+        s++;
+    }
+    return !*s;
+}
+
+/* Check short_opcode_index, the index the disassembler prints for an opcode
+   of the format none_loc, none_arg or none_var_ref, against its name: the
+   digit after the first "loc", "arg" or "var_ref" in it. The count of opcodes
+   checked, or -1 with the name of the first one that is wrong in bad. */
+int white_short_index_check(char *bad, size_t cap)
+{
+    int op, fmt, want, n = 0;
+    const char *p;
+    size_t k;
+
+    for (op = 0; op < OP_COUNT; op++) {
+        fmt = short_opcode_info(op).fmt;
+        if (fmt != OP_FMT_none_loc && fmt != OP_FMT_none_arg && fmt != OP_FMT_none_var_ref)
+            continue;
+        want = -1;
+        for (p = white_opcode_names[op]; *p && want < 0; p++) {
+            k = white_starts(p, "var_ref") ? 7 : white_starts(p, "loc") || white_starts(p, "arg") ? 3 : 0;
+            if (k && p[k] >= '0' && p[k] <= '9')
+                want = p[k] - '0';
+        }
+        if (want < 0 || short_opcode_index(op) != want) {
+            snprintf(bad, cap, "%s gives %d", white_opcode_names[op], short_opcode_index(op));
+            return -1;
+        }
+        n++;
+    }
+    return n;
 }
 
 /* ---- the copy of a string buffer that grows ---- */

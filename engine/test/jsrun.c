@@ -8,7 +8,7 @@
 /* jsrun runs scripts on the C tree, so that compare.sh can compare what they
    print with the files kept in the repository.
 
-     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] FILE...
+     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] FILE...
 
    Each file runs as a global script in a runtime and a context of its own,
    then the jobs it queued run. jsrun prints "== " and the name of the file,
@@ -34,6 +34,9 @@
 
    -regexp-cache=N,BYTES sets the cache of compiled regexps (JS_SetRegExpCache)
    before the file runs, N entries and BYTES bytes, 0,0 for none.
+
+   -no-fused-ops compiles the file with the instructions that the compiler
+   joins into one opcode left apart (JS_SetFusedOps).
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
    GetAsyncContext and SetAsyncContext of the Go API, as globals, and six
@@ -244,6 +247,7 @@ static int opt_raw;
 static int opt_result;
 static int opt_call;
 static int opt_regexp_cache = -1;   /* -1 keeps the default of the runtime */
+static int opt_no_fused_ops;
 static size_t opt_regexp_cache_bytes;
 
 /* The folder of the module that runs: imports are read from it. */
@@ -304,6 +308,8 @@ static int run(const char *path)
     }
     if (opt_regexp_cache >= 0)
         JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
+    if (opt_no_fused_ops)
+        JS_SetFusedOps(ctx, 0);
     if (module) {
         /* The file is the module "NAME", read from its folder, and a module
            of "<eval>" imports it, as a host does with its main module. So
@@ -457,6 +463,8 @@ int main(int argc, char **argv)
             opt_result = 1;
         } else if (strcmp(argv[i], "-call") == 0) {
             opt_call = 1;
+        } else if (strcmp(argv[i], "-no-fused-ops") == 0) {
+            opt_no_fused_ops = 1;
         } else if (strncmp(argv[i], "-regexp-cache=", 14) == 0) {
             char *end;
             long n = strtol(argv[i] + 14, &end, 10);
