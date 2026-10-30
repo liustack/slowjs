@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.29.2] - 2026-10-30
+
 ### Added
 
 - `VM.RegisterEscapeText(name)` defines a function named `name` on the global object that escapes text for HTML as `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. Its argument becomes a string as in `"" + text` (an object goes through `valueOf` and `toString`, a symbol throws), and each of `&`, `<`, `>`, `"` and `'` becomes `&amp;`, `&lt;`, `&gt;`, `&quot;` or `&#x27;`. A string with none of them comes back as the same string. The engine puts nothing on the global object by itself: the function is in a VM only when its host registers it. In tifa, which uses it for React's escape, a render runs 0.7% to 4.5% fewer instructions, and the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. ([Performance](docs/performance.md#react-doms-text-escape-in-c), [Go API](docs/changes/go-api.md#registerescapetext))
@@ -414,7 +416,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.1...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.2...main
+[v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
 [v0.28.6]: https://github.com/liustack/slowjs/compare/v0.28.5...v0.28.6
