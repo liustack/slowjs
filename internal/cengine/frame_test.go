@@ -121,9 +121,9 @@ func TestLocalsFreedInFewTurns(t *testing.T) {
 	}
 	turns := float64(run(decl.String())-run("")) / 1000
 	t.Logf("%.1f turns for each call of a function with 200 locals", turns)
-	// Setting four to a turn takes 50, looking at eight to a turn 25. Freeing
-	// two to a turn took 100 with it.
-	if turns > 90 {
-		t.Errorf("a call of a function with 200 locals takes %.1f turns, want 90 or fewer", turns)
+	// Setting eight to a turn takes 25, looking at eight to a turn 25. Setting
+	// four to a turn and freeing two to a turn took 150.
+	if turns > 60 {
+		t.Errorf("a call of a function with 200 locals takes %.1f turns, want 60 or fewer", turns)
 	}
 }

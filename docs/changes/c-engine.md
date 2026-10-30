@@ -228,6 +228,24 @@ A function with 200 locals, none set, now takes 1,466 instructions more than a f
 
 The time is in [performance.md](../performance.md#the-end-of-a-call-and-the-start-of-one). The tests are `TestFrameValuesFreed` (`internal/cengine`: functions with every number of locals up to 70 and a few more, one local holding each kind of value at each place, tail calls, a `return` in a loop over an iterator, closures, an exception, a generator and an async function, and the host's check that no block is left) and `frame_values.js` in `engine/test/compare` (the same calls, which also run under the sanitizers), and `TestLocalsFreedInFewTurns`, which counts the turns of the two loops through the polls (an interval of 1 polls at each turn): a call of a function with 200 locals took 153 turns, and takes 78.
 
+## A call sets its locals eight to a turn
+
+The start of a call set its locals four to a turn (see [above](#how-a-call-sets-and-frees-its-values)): a turn of 15 instructions, 8 stores of the two halves of four JSValues and 7 for the turn itself (the test of what is left, the poll count, the two adds and the jump), so 3.75 for each local. The locals are now set eight to a turn, which takes 22 instructions, 2.75 for each local, and then four, two and one by the bits of what is left. A call of a function with 3 locals or fewer takes 1 to 4 instructions more for the extra test of the count, a call of a function with 4 or more takes fewer: a function with 8 locals 6, one with 200 locals 200.
+
+Against the commit before it, with the same counts as above:
+
+| Pages | Before | After | |
+| --- | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 924.3 M | 921.1 M | -0.35% |
+| tifa's shop, five storefront pages (sum) | 1,752.5 M | 1,749.6 M | -0.16% |
+| tifa's MUI test app, three pages (sum) | 713.7 M | 712.4 M | -0.18% |
+| tifa's bench app, table and spiral (sum) | 291.3 M | 289.7 M | -0.54% |
+| `r_react_ssr` | 2,479.9 M | 2,472.1 M | -0.32% |
+| `r_bench_table` | 3,278.4 M | 3,261.4 M | -0.52% |
+| `r_bench_spiral` | 3,178.4 M | 3,168.6 M | -0.31% |
+
+None is over the 2% for which the rule of code positions asks for a timing. `TestLocalsFreedInFewTurns` now holds a call of a function with 200 locals to 60 turns of the two loops, 53 at this commit.
+
 ## How a JSValue is copied
 
 A JSValue is 16 bytes, a value and a tag. The interpreter writes one to the value stack as two stores of 8 bytes, since the value is in a register and the tag is a constant. LLVM copies one with a single 16-byte SSE move. It makes that move in two ways: the SLP vectorizer joins two moves of neighbouring 8 bytes, and a struct copy becomes a `memcpy` of 16 bytes that LLVM expands. On Zen 3 a load of 16 bytes cannot be served from two stores of 8 bytes that are still in flight: it waits until both reach the cache (24 cycles in a loop that does nothing else, against 1 for a load of 8 bytes of a store of 8). A load of 8 bytes of a store of 16 is slow too, 11 to 13 cycles.

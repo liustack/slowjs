@@ -20,6 +20,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A call sets and frees its values in fewer loop turns | Unreleased | [c-engine.md](c-engine.md#how-a-call-sets-and-frees-its-values) |
 | The interpreter calls a C function without JS_CallInternal | Unreleased | [c-engine.md](c-engine.md#how-the-interpreter-calls-a-c-function) |
 | The end of a call skips the values with no reference count | Unreleased | [c-engine.md](c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count) |
+| A call sets its locals eight to a turn | Unreleased | [c-engine.md](c-engine.md#a-call-sets-its-locals-eight-to-a-turn) |
 
 ## Commits of upstream QuickJS
 

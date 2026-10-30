@@ -21502,18 +21502,29 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     sf->var_buf = var_buf;
     sf->arg_buf = arg_buf;
 
-    /* the locals start as undefined, four to a turn, then the two and the
-       one left over. The count is read once into n: in the loop the compiler
-       read b->var_count again after each store of a JSValue, which might
-       have changed it (docs/changes/c-engine.md) */
+    /* the locals start as undefined, eight to a turn, then the four, the two
+       and the one left over. The count is read once into n: in the loop the
+       compiler read b->var_count again after each store of a JSValue, which
+       might have changed it (docs/changes/c-engine.md) */
     {
         JSValue *v = var_buf;
         int n = b->var_count;
-        for(; n >= 4; n -= 4, v += 4) {
+        for(; n >= 8; n -= 8, v += 8) {
             v[0] = JS_UNDEFINED;
             v[1] = JS_UNDEFINED;
             v[2] = JS_UNDEFINED;
             v[3] = JS_UNDEFINED;
+            v[4] = JS_UNDEFINED;
+            v[5] = JS_UNDEFINED;
+            v[6] = JS_UNDEFINED;
+            v[7] = JS_UNDEFINED;
+        }
+        if (n & 4) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v[2] = JS_UNDEFINED;
+            v[3] = JS_UNDEFINED;
+            v += 4;
         }
         if (n & 2) {
             v[0] = JS_UNDEFINED;
