@@ -59,6 +59,7 @@ int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
 int white_fused_ops(const uint8_t *code, int len, int *count);
+int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
@@ -2080,6 +2081,17 @@ static void test_typeof_is(void)
     vm_free(&v);
 }
 
+/* The index the disassembler prints for an opcode that has it in the opcode,
+   the fused reads included (they are apart from the groups of four of
+   upstream), against the name of the opcode. */
+static void test_short_opcode_index(void)
+{
+    char bad[96] = "";
+    int n = white_short_index_check(bad, sizeof(bad));
+
+    CHECK(n >= 3 * 4 + 3, "the index of %s", bad);
+}
+
 static void test_object_lit_read(void)
 {
     VM v = vm_new();
@@ -2769,6 +2781,7 @@ int main(void)
     test_tail_c_calls();
     test_fused_ops();
     test_typeof_is();
+    test_short_opcode_index();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
