@@ -151,7 +151,7 @@ TEXT ·JS_RegExpExec(SB), NOSPLIT, $120-64
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf94037e8
 	WORD $0xf9403ff5
-	MOVD $·engine_rodata+11613(SB), R22
+	MOVD $·engine_rodata+11717(SB), R22
 	WORD $0x9101c114
 	WORD $0x91014117
 	WORD $0xf90007f4
@@ -420,7 +420,7 @@ TEXT ·js_regexp_exec(SB), $264-64
 	WORD $0xf94017e0
 	WORD $0xf94087e8
 	WORD $0xf9407ff5
-	MOVD $·engine_rodata+8868(SB), R22
+	MOVD $·engine_rodata+8892(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91038114
 	WORD $0xf8050ee0
@@ -1607,7 +1607,7 @@ TEXT ·js_regexp_get_flags(SB), $120-48
 	WORD $0xf9003ff5
 	WORD $0xf9002fe8
 	WORD $0xf90037ea
-	MOVD $·engine_rodata+11544(SB), R8
+	MOVD $·engine_rodata+11648(SB), R8
 	WORD $0xf90033eb
 	WORD $0x91014154
 	WORD $0xb86b7908
@@ -1637,7 +1637,7 @@ TEXT ·js_regexp_get_flags(SB), $120-48
 	WORD $0x37f80560
 	WORD $0x34000180
 	WORD $0xa945afe9
-	MOVD $·engine_rodata+11576(SB), R8
+	MOVD $·engine_rodata+11680(SB), R8
 	WORD $0xf9403ff5
 	WORD $0xf94037ea
 	WORD $0x386b6908
@@ -1724,7 +1724,7 @@ TEXT ·js_regexp_get_source(SB), $136-48
 	WORD $0xf94047f5
 	WORD $0xf9403feb
 	WORD $0x34000300
-	MOVD $·engine_rodata+11584(SB), R22
+	MOVD $·engine_rodata+11688(SB), R22
 	WORD $0x91028174
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -1960,7 +1960,7 @@ TEXT ·js_regexp_get_source(SB), $136-48
 	WORD $0xf94017e0
 	WORD $0xf9403fe8
 	WORD $0xf94047f5
-	MOVD $·engine_rodata+8868(SB), R22
+	MOVD $·engine_rodata+8892(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8030ee0
@@ -2062,7 +2062,7 @@ TEXT ·js_regexp_get_flag(SB), $88-56
 	WORD $0xf94017e0
 	WORD $0xf94027e8
 	WORD $0xf9402ff5
-	MOVD $·engine_rodata+8868(SB), R22
+	MOVD $·engine_rodata+8892(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91020114
 	WORD $0xf8030ee0
@@ -2125,7 +2125,7 @@ TEXT ·js_regexp_compile(SB), $152-64
 	WORD $0xf94017e0
 	WORD $0xf9404fe8
 	WORD $0xf94047f5
-	MOVD $·engine_rodata+8868(SB), R22
+	MOVD $·engine_rodata+8892(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8050ee0
@@ -2270,7 +2270,7 @@ TEXT ·js_regexp_compile(SB), $152-64
 	WORD $0x54001400
 	WORD $0x385fa149
 	WORD $0x14000027
-	MOVD $·engine_rodata+11589(SB), R22
+	MOVD $·engine_rodata+11693(SB), R22
 	WORD $0x910281d4
 	WORD $0x910141d7
 	WORD $0xf90007f4
@@ -8062,7 +8062,7 @@ TEXT ·js_regexp_Symbol_split(SB), $296-64
 	WORD $0xf94097e8
 	WORD $0xf9408ff5
 	MOVD $·engine_rodata+1212(SB), R22
-	MOVD $·engine_rodata+11662(SB), R25
+	MOVD $·engine_rodata+11766(SB), R25
 	WORD $0xaa1303f7
 	WORD $0x91024114
 	WORD $0xf90007f4
@@ -9177,7 +9177,7 @@ TEXT ·js_regexp_escape(SB), $184-64
 	WORD $0x31000d1f
 	WORD $0xaa1403e8
 	WORD $0x540001a8
-	MOVD $·engine_rodata+10688(SB), R22
+	MOVD $·engine_rodata+10792(SB), R22
 	WORD $0x91010114
 	WORD $0xaa0803f7
 	WORD $0xf90007f4
@@ -9297,7 +9297,7 @@ TEXT ·js_regexp_escape(SB), $184-64
 	WORD $0x7100653f
 	WORD $0x54001489
 	WORD $0x91010274
-	MOVD $·engine_rodata+10707(SB), R21
+	MOVD $·engine_rodata+10811(SB), R21
 	WORD $0x2a1703f6
 	WORD $0xb90083f7
 	WORD $0xf90007f4
@@ -9354,7 +9354,7 @@ TEXT ·js_regexp_escape(SB), $184-64
 	WORD $0x9100a275
 	WORD $0x52800216
 	WORD $0xb8040697
-	MOVD $·engine_rodata+10731(SB), R23
+	MOVD $·engine_rodata+10835(SB), R23
 	WORD $0xaa1303f8
 	WORD $0xf90043f4
 	WORD $0xf90007f4
@@ -9465,7 +9465,7 @@ TEXT ·js_regexp_escape(SB), $184-64
 	WORD $0x91010274
 	WORD $0x9100a275
 	WORD $0x52800216
-	MOVD $·engine_rodata+10724(SB), R23
+	MOVD $·engine_rodata+10828(SB), R23
 	WORD $0xb90093eb
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -9585,7 +9585,7 @@ TEXT ·js_regexp_escape(SB), $184-64
 	WORD $0x14000116
 	WORD $0x52800b8a
 	WORD $0x382bc92a
-	MOVD $·engine_rodata+10701(SB), R9
+	MOVD $·engine_rodata+10805(SB), R9
 	WORD $0xb9401e6a
 	WORD $0x8b374129
 	WORD $0x6b0a011f
@@ -10632,7 +10632,7 @@ TEXT ·js_string_normalize(SB), $136-64
 	WORD $0x72003d1f
 	WORD $0x781fa148
 	WORD $0x54001540
-	MOVD $·engine_rodata+10256(SB), R22
+	MOVD $·engine_rodata+10360(SB), R22
 	WORD $0x910102f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -12500,7 +12500,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0x2a0003f8
 	WORD $0x7103fc1f
 	WORD $0x54000ae8
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58600(SB), R8
 	WORD $0x38784908
 	WORD $0x12000100
 	WORD $0x35fff520
@@ -12732,7 +12732,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0xb9000128
 	WORD $0x1400022b
 	WORD $0x92679969
-	MOVD $·engine_rodata+11784(SB), R22
+	MOVD $·engine_rodata+11888(SB), R22
 	WORD $0xf900c128
 	WORD $0x14000160
 	WORD $0x91000ac8
@@ -12865,7 +12865,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0xf9403548
 	WORD $0x39420908
 	WORD $0x36001208
-	MOVD $·engine_rodata+19365(SB), R22
+	MOVD $·engine_rodata+19469(SB), R22
 	WORD $0x140000db
 	WORD $0x91018174
 	WORD $0x910006d6
@@ -12911,7 +12911,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0x2a0003f8
 	WORD $0x7101fc1f
 	WORD $0x54002b68
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58600(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x1400015f
@@ -13070,7 +13070,7 @@ TEXT ·next_token(SB), $136-24
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf9403fea
 	WORD $0xf94047eb
-	MOVD $·engine_rodata+19410(SB), R22
+	MOVD $·engine_rodata+19514(SB), R22
 	WORD $0x1400000c
 	WORD $0xf9403fea
 	WORD $0x12800fe8
@@ -13081,7 +13081,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0x140000cb
 	WORD $0xf94047eb
 	WORD $0xf9403fea
-	MOVD $·engine_rodata+19410(SB), R22
+	MOVD $·engine_rodata+19514(SB), R22
 	WORD $0x91018174
 	WORD $0x9100c177
 	WORD $0xaa0a03f5
@@ -13107,7 +13107,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0x140000ba
 	WORD $0x7101ff1f
 	WORD $0x54000988
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58600(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x14000050
@@ -13173,7 +13173,7 @@ TEXT ·next_token(SB), $136-24
 	WORD $0x528007f8
 	WORD $0x14000062
 	WORD $0x52800b98
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58600(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x1400001b
@@ -13227,10 +13227,10 @@ TEXT ·next_token(SB), $136-24
 	WORD $0xb9001148
 	WORD $0x14000035
 	WORD $0xf9403fea
-	MOVD $·engine_rodata+19325(SB), R22
+	MOVD $·engine_rodata+19429(SB), R22
 	WORD $0x17ffff6b
 	WORD $0xf9403fea
-	MOVD $·engine_rodata+11810(SB), R22
+	MOVD $·engine_rodata+11914(SB), R22
 	WORD $0x17ffff67
 	WORD $0xf9001d68
 	WORD $0x12800c48
@@ -13375,7 +13375,7 @@ TEXT ·js_parse_directives(SB), $104-24
 	WORD $0x9100c314
 	WORD $0x91004315
 	WORD $0x52800296
-	MOVD $·engine_rodata+19579(SB), R23
+	MOVD $·engine_rodata+19683(SB), R23
 	WORD $0x4b090108
 	WORD $0x91000529
 	WORD $0x51000908
@@ -13409,7 +13409,7 @@ TEXT ·js_parse_directives(SB), $104-24
 	WORD $0xb94042a8
 	WORD $0x340005e8
 	WORD $0xf9402fe8
-	MOVD $·engine_rodata+19584(SB), R22
+	MOVD $·engine_rodata+19688(SB), R22
 	WORD $0x9100c114
 	WORD $0x91004115
 	WORD $0xf90007f4
@@ -13570,7 +13570,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x54000401
 	WORD $0xf94001b5
 	WORD $0xf9400aa8
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x711f3d3f
 	WORD $0x54000f4c
 	WORD $0x11028189
@@ -13581,12 +13581,12 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xcb0a0129
 	WORD $0xf140413f
 	WORD $0x54000e4b
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x91028194
 	WORD $0xaa0c03f5
 	WORD $0xf9004fed
 	WORD $0x11000529
-	WORD $0xb9096109
+	WORD $0xb9096509
 	WORD $0xf9400da8
 	WORD $0xf900018d
 	WORD $0xb900099f
@@ -13662,7 +13662,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x54000601
 	WORD $0xf94001b5
 	WORD $0xf9400aa8
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x711f3d3f
 	WORD $0x540003cc
 	WORD $0x11028189
@@ -13673,13 +13673,13 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xcb0a0129
 	WORD $0xf140413f
 	WORD $0x540002cb
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x91028194
 	WORD $0xaa0d03f5
 	WORD $0x528000f6
 	WORD $0xf9004fed
 	WORD $0x11000529
-	WORD $0xb9096109
+	WORD $0xb9096509
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
@@ -13688,9 +13688,9 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xf9404fe8
 	WORD $0xf9400108
 	WORD $0xf9400908
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x51000529
-	WORD $0xb9096109
+	WORD $0xb9096509
 	WORD $0x34002e80
 	WORD $0x12800000
 	WORD $0x14000173
@@ -13831,7 +13831,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf94017e0
 	WORD $0xf94047e8
-	MOVD $·engine_rodata+19816(SB), R22
+	MOVD $·engine_rodata+19920(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8030ee0
@@ -13848,7 +13848,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xf9403fe8
 	WORD $0xb9005bff
 	WORD $0xb980410b
-	MOVD $·engine_rodata+21890(SB), R8
+	MOVD $·engine_rodata+21994(SB), R8
 	WORD $0xa904a3eb
 	WORD $0xb94012a8
 	WORD $0x3101fd1f
@@ -14159,7 +14159,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xf94043e8
 	WORD $0x35ffc580
 	WORD $0x14000221
-	MOVD $·engine_rodata+21999(SB), R22
+	MOVD $·engine_rodata+22103(SB), R22
 	WORD $0x91028154
 	WORD $0x9100c157
 	WORD $0x140003e2
@@ -14429,7 +14429,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xb94026a8
 	WORD $0x340032a8
 	WORD $0xf94047e8
-	MOVD $·engine_rodata+22183(SB), R22
+	MOVD $·engine_rodata+22287(SB), R22
 	WORD $0x91028114
 	WORD $0x9100c117
 	WORD $0x140002d3
@@ -14779,7 +14779,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x34000f48
 	WORD $0xb9405be8
 	WORD $0x34ffb888
-	MOVD $·engine_rodata+21948(SB), R22
+	MOVD $·engine_rodata+22052(SB), R22
 	WORD $0x14000017
 	WORD $0x91028154
 	WORD $0xf90007f4
@@ -14801,19 +14801,19 @@ TEXT ·js_parse_source_element(SB), $152-24
 	BL ·js_string_find_invalid_codepoint(SB)
 	WORD $0xf9400fe0
 	WORD $0x37f81820
-	MOVD $·engine_rodata+21890(SB), R22
+	MOVD $·engine_rodata+21994(SB), R22
 	WORD $0xf94047e8
 	WORD $0x91028114
 	WORD $0x9100c117
 	WORD $0x17fffc31
-	MOVD $·engine_rodata+21918(SB), R22
+	MOVD $·engine_rodata+22022(SB), R22
 	WORD $0x17fffd75
 	WORD $0xf94047e9
 	WORD $0xf9403fe8
 	WORD $0xb94063ea
 	WORD $0x17fffdba
 	WORD $0xf94047e8
-	MOVD $·engine_rodata+22183(SB), R22
+	MOVD $·engine_rodata+22287(SB), R22
 	WORD $0x91028154
 	WORD $0x9100c117
 	WORD $0xf90007f4
@@ -14841,9 +14841,9 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x11009d08
 	WORD $0x3100bd1f
 	WORD $0x54000228
-	MOVD $·engine_rodata+22042(SB), R22
+	MOVD $·engine_rodata+22146(SB), R22
 	WORD $0x17ffffd5
-	MOVD $·engine_rodata+22042(SB), R22
+	MOVD $·engine_rodata+22146(SB), R22
 	WORD $0x91028174
 	WORD $0x9100c177
 	WORD $0x1400012f
@@ -14852,7 +14852,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x11009d08
 	WORD $0x3100bd1f
 	WORD $0x54000368
-	MOVD $·engine_rodata+21918(SB), R22
+	MOVD $·engine_rodata+22022(SB), R22
 	WORD $0x17ffffc8
 	WORD $0xf9404fe8
 	WORD $0xb9402108
@@ -14946,9 +14946,9 @@ TEXT ·js_parse_source_element(SB), $152-24
 	BL ·host_poll(SB)
 	WORD $0x52800248
 	WORD $0x17ffffec
-	MOVD $·engine_rodata+21890(SB), R22
+	MOVD $·engine_rodata+21994(SB), R22
 	WORD $0x17ffff97
-	MOVD $·engine_rodata+21918(SB), R8
+	MOVD $·engine_rodata+22022(SB), R8
 	WORD $0xf9002be8
 	WORD $0xf94047e8
 	WORD $0xf9404ff5
@@ -14981,7 +14981,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0x12800000
 	WORD $0x17fffc5f
 	WORD $0xf94047e8
-	MOVD $·engine_rodata+22042(SB), R22
+	MOVD $·engine_rodata+22146(SB), R22
 	WORD $0x91028114
 	WORD $0x17ffff52
 	WORD $0xf9404fe8
@@ -15141,7 +15141,7 @@ TEXT ·js_parse_source_element(SB), $152-24
 	WORD $0xb94042a8
 	WORD $0x35ff77a8
 	WORD $0x52800768
-	MOVD $·engine_rodata+12140(SB), R22
+	MOVD $·engine_rodata+12244(SB), R22
 	WORD $0xb8030ee8
 	WORD $0x9101c2f4
 	WORD $0xf90007f4
@@ -17177,7 +17177,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0xaa1403f3
 	WORD $0xa90e53fe
 	WORD $0xa90d5bf5
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x711f3d3f
 	WORD $0x5400056c
 	WORD $0x11048269
@@ -17188,11 +17188,11 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0xcb0a0129
 	WORD $0xf140413f
 	WORD $0x5400046b
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0xb9414aca
 	WORD $0xf9008e7f
 	WORD $0x11000529
-	WORD $0xb9096109
+	WORD $0xb9096509
 	WORD $0x3400064a
 	WORD $0xf9400aa9
 	WORD $0x79530128
@@ -17448,7 +17448,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0x529fffc8
 	WORD $0x6b08019f
 	WORD $0x5400026b
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x91048274
 	WORD $0x91014277
 	WORD $0xf90007f4
@@ -17491,7 +17491,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0x529fffc9
 	WORD $0x6b09011f
 	WORD $0x5400022b
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x91048274
 	WORD $0x91014277
 	WORD $0xf90007f4
@@ -18437,7 +18437,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0xf94077f3
 	WORD $0x17ffff95
 	WORD $0x92679a69
-	MOVD $·engine_rodata+22246(SB), R22
+	MOVD $·engine_rodata+22350(SB), R22
 	WORD $0xf900c128
 	WORD $0x140000e9
 	WORD $0x92679a69
@@ -18650,7 +18650,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0xf94017e0
 	WORD $0xf94077e8
 	WORD $0xf94077f7
-	MOVD $·engine_rodata+23054(SB), R22
+	MOVD $·engine_rodata+23158(SB), R22
 	WORD $0xf9406bf5
 	WORD $0x91048114
 	WORD $0xf8050ee0
@@ -18669,7 +18669,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0x529fffc9
 	WORD $0x6b09011f
 	WORD $0x5400026b
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x91048274
 	WORD $0x91014277
 	WORD $0xf90007f4
@@ -19180,7 +19180,7 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0x910481d4
 	WORD $0xf900c110
 	WORD $0x926799c8
-	MOVD $·engine_rodata+21063(SB), R23
+	MOVD $·engine_rodata+21167(SB), R23
 	WORD $0xf90053e8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -22654,9 +22654,9 @@ TEXT ·js_create_function(SB), $232-40
 	WORD $0x528000c1
 	WORD $0xf9406be8
 	WORD $0xf9400908
-	WORD $0xb9496109
+	WORD $0xb9496509
 	WORD $0x51000529
-	WORD $0xb9096109
+	WORD $0xb9096509
 	WORD $0xf94073fe
 	WORD $0x140003a8
 	WORD $0xf94077ee
@@ -23624,7 +23624,7 @@ TEXT ·add_eval_this_vars(SB), NOSPLIT, $104-32
 	WORD $0x6b09011f
 	WORD $0x540001eb
 	WORD $0xf90037f6
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -23672,7 +23672,7 @@ TEXT ·add_eval_this_vars(SB), NOSPLIT, $104-32
 	WORD $0x6b09011f
 	WORD $0x5400026b
 	WORD $0xf90037f6
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -23715,7 +23715,7 @@ TEXT ·add_eval_this_vars(SB), NOSPLIT, $104-32
 	WORD $0x6b09011f
 	WORD $0x5400046b
 	WORD $0xf90037f6
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -23733,7 +23733,7 @@ TEXT ·add_eval_this_vars(SB), NOSPLIT, $104-32
 	WORD $0x6b09011f
 	WORD $0x540004cb
 	WORD $0xf90037f6
-	MOVD $·engine_rodata+19595(SB), R22
+	MOVD $·engine_rodata+19699(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5

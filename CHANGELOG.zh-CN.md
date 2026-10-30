@@ -6,6 +6,7 @@
 
 ### 变更
 
+- 字节码升到版本 7，多了几个操作码：读局部变量后紧跟按名字读属性、字符串 `switch` 的 case、`typeof` 判断。旧版本写出的字节码不再能加载（`SyntaxError: invalid version`），要重新编译。`JS_ReadObject` 遇到后面没跟着原指令的合并操作码会拒绝。
 - 对两个相等且长于 65536 个字符的字符串、或对 rope 做 `===`、`!==`、`==`、`!=` 和 `switch`，以及在 `Map` 或 `Set` 里用长字符串或 rope 作键查找一个相等的键，现在每 65536 个字符读一次中断标志，`Interrupt` 或 eval 超时后几次轮询内就会停下。原来一次调用比完整个字符串，两个 3200 万字符的字符串要约 3300 次轮询（10 ms），字符串再长脚本就会被杀。同一个字符串或 rope 与自己比较现在直接判相等。
 - 超过 65536 个字符的字符串用作属性键（`o[s] = 1`、`s in o`、`o[s]`、`JSON.parse` 的键），在算哈希和与相等字符串的原子比较时，每 65536 个字符读一次停止标志。`JSON.parse` 扫描文本里的字符串（键或值）时，每 65536 个字节读一次。原来这几处都是对整个字符串一口气走完，3200 万个字符的哈希约 800 次轮询，与相等的原子比较再约 3300 次，扫描 JSON 字符串约 4000 次，中途都不停。
 - 对超过 65536 个字符的相等字符串做 `indexOf`、`lastIndexOf`、`includes`、`startsWith`、`endsWith`、`replace`、`replaceAll`、`split`（模式和字符串剩下的部分一样长），做 `Array.prototype.indexOf`、`lastIndexOf`、`includes` 和 `Object.is`，以及 `JSON.stringify` 一个长字符串，现在每 65536 个字符读一次停止标志。原来它们一次调用就把整个字符串比完或拷完，3200 万字符约 3400 次轮询。
@@ -22,6 +23,9 @@
 
 - 字节码函数的调用结束时，没有引用计数的值八个八个地跳过，原来是两个两个地看。tifa 示例应用的页面少跑 0.7% 到 2.1% 的指令，渲染脚本少 1.3% 到 2.0%，HTML 不变。一个函数有 200 个局部变量、一个都没赋值，这些局部变量在一次调用里少花 37% 的指令。找到的唯一变慢的情形是每四个局部变量里有一个放着对象的函数：200 个局部变量时多 2.4% 的指令（数字见 [Performance](docs/performance.md#the-end-of-a-call-and-the-start-of-one)）。
 - 字节码函数的调用开始时，把局部变量设成 `undefined` 改为八个八个地设，原来是四个四个。tifa 示例应用的页面和渲染脚本少跑 0.2% 到 0.5% 的指令，HTML 不变。有 200 个局部变量的函数，设置和释放这些局部变量比上一条的改动之后又少花 14% 的指令，只有 3 个及以下局部变量的函数，一次调用多 1 到 4 条指令。
+- 写在不同地方、键相同的对象字面量共用一个形状，和逐个加键建出来的对象一样。字面量的第一个对象原来从 `Object.prototype` 的空形状开始找自己的形状，而这个空形状通常已被第一个加键的对象原地改掉，于是每处字面量各建一个形状。tifa 页面的一个 VM 渲染后形状少 12% 到 15%，内存少 0.7%（shop 和 MUI 页面）到 1.7%（店面页面）。渲染跑的指令不变（[objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape)）。
+- 读第一个或第二个参数、第一个局部变量或第四个之后的局部变量，再紧跟按名字读属性（`o.x`），以及字符串 `switch` 的 case，解释器一轮做完。tifa 示例商店的六个工作台页面每次渲染少跑 1.85% 的指令，店面页面少 1.59%，MUI 页面少 1.66%，bench 页面少 3.41%。bench 页面渲染时间少 3.4%（8 个代码位置，3 轮，[c-engine.md](docs/changes/c-engine.md#opcodes-that-do-a-few-instructions-at-once)，[性能](docs/performance.md#opcodes-that-do-a-few-instructions-at-once)）。
+- `typeof x == "string"` 这类判断（`==`、`===`、`!=`、`!==` 配任意类型名），以及压缩工具写出的 `typeof x < "u"` 和 `typeof x > "u"`，解释器一轮做完。tifa 页面每次渲染少跑 0.63%（shop）到 1.42%（bench 页面）的指令。
 
 ## [v0.29.4] - 2026-10-30
 
@@ -454,7 +458,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
