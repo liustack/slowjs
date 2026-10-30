@@ -15,7 +15,7 @@
 # run.log, and test262_errors.txt, the errors this run found. ARCHIVE is a copy
 # of the pinned test262 archive, which is downloaded when it is not given.
 #
-# The errors found are compared, line by line, with the 58 known errors in
+# The errors found are compared, line by line, with the 33 known errors in
 # engine/test/test262_errors.txt and the script exits 0 only when they are the
 # same lines and the runner exited with its own status, 0 or 1. Wrap the script
 # in taskset, flock or systemd-run to keep it to the CPUs and the memory you
