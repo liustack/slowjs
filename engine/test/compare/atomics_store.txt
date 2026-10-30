@@ -1,0 +1,13 @@
+resized to 0 false: throws
+detached false: throws
+shrunk false: throws
+ok false: 7 7
+resized to 0 true: throws
+detached true: throws
+shrunk true: throws
+ok true: 1267650600228229401496703205381 5
+index too large: throws
+index too large int: throws
+bad value: throws
+wide result: 1267650600228229401496703205379
+memory after: 0
