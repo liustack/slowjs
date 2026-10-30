@@ -1,0 +1,40 @@
+getter deletes a later key: spread {"a":1,"c":3} ["a","c"] | assign {"a":1,"c":3} ["a","c"] | rest {"c":3} ["c"] a=1
+getter deletes the next key and adds it again: spread {"a":1,"b":"again","c":3} ["a","b","c"] | assign {"a":1,"b":"again","c":3} ["a","b","c"] | rest {"c":3,"b":"again"} ["c","b"] a=1
+getter makes a later key not enumerable: spread {"a":1,"c":3} ["a","c"] | assign {"a":1,"c":3} ["a","c"] | rest {"c":3} ["c"] a=1
+getter makes a later key an accessor: spread {"a":1,"b":"got","c":3} ["a","b","c"] | assign {"a":1,"b":"got","c":3} ["a","b","c"] | rest {"b":"got","c":3} ["b","c"] a=1
+getter adds a key: spread {"a":1,"b":2} ["a","b"] | assign {"a":1,"b":2} ["a","b"] | rest {"b":2,"z":"added"} ["b","z"] a=1
+getter deletes an earlier key: spread {"b":2,"a":1,"c":3} ["b","a","c"] | assign {"b":2,"a":1,"c":3} ["b","a","c"] | rest {"c":3} ["c"] a=1
+getter deletes a symbol key: spread {"a":1,"c":3} ["a","c"] | assign {"a":1,"c":3} ["a","c"] | rest {"c":3} ["c"] a=1
+getter deletes an index key: spread {"7":"seven","a":1,"c":3} ["7","a","c"] | assign {"7":"seven","a":1,"c":3} ["7","a","c"] | rest {"c":3} ["c"] a=1
+the second getter deletes the third key: spread {"a":1,"b":2,"d":4} ["a","b","d"] | assign {"a":1,"b":2,"d":4} ["a","b","d"] | rest {"b":2,"d":4} ["b","d"] a=1
+the prototype has the deleted key: spread {"a":1,"c":3} ["a","c"] | assign {"a":1,"c":3} ["a","c"] | rest {"c":3} ["c"] a=1
+the prototype has the deleted key, an accessor: spread {"a":1} ["a"] | assign {"a":1} ["a"] | rest {} [] a=1
+getter throws before the last key: spread threw boom | assign threw boom | rest threw boom
+array whose element 0 deletes element 1: spread {"0":"z","2":3} ["0","2"] | assign {"0":"z","2":3} ["0","2"] | rest {"0":"z","2":3} ["0","2"] a="<undefined>"
+array whose element 0 makes element 2 not enumerable: spread {"0":"z","1":2} ["0","1"] | assign {"0":"z","1":2} ["0","1"] | rest {"0":"z","1":2} ["0","1"] a="<undefined>"
+array whose named getter deletes an index: spread {"0":1,"1":2,"2":3,"x":"x"} ["0","1","2","x"] | assign {"0":1,"1":2,"2":3,"x":"x"} ["0","1","2","x"] | rest {"0":1,"1":2,"2":3,"x":"x"} ["0","1","2","x"] a="<undefined>"
+array with a hole and a named key: spread {"0":1,"2":3,"k":"k"} ["0","2","k"] | assign {"0":1,"2":3,"k":"k"} ["0","2","k"] | rest {"0":1,"2":3,"k":"k"} ["0","2","k"] a="<undefined>"
+String object: spread {"0":"a","1":"b"} ["0","1"] | assign {"0":"a","1":"b"} ["0","1"] | rest {"0":"a","1":"b"} ["0","1"] a="<undefined>"
+arguments object: spread {"0":1,"1":2} ["0","1"] | assign {"0":1,"1":2} ["0","1"] | rest {"0":1,"1":2} ["0","1"] a="<undefined>"
+typed array: spread {"0":4,"1":5} ["0","1"] | assign {"0":4,"1":5} ["0","1"] | rest {"0":4,"1":5} ["0","1"] a="<undefined>"
+function with own enumerable keys: spread {"p":1,"q":2} ["p","q"] | assign {"p":1,"q":2} ["p","q"] | rest {"p":1,"q":2} ["p","q"] a="<undefined>"
+class instance with an accessor of its own: spread {"x":1,"y":"y"} ["x","y"] | assign {"x":1,"y":"y"} ["x","y"] | rest {"x":1,"y":"y"} ["x","y"] a="<undefined>"
+many keys, the first getter deletes the last: spread {"first":"first","k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5,"k6":6,"k7":7,"k8":8,"k9":9,"k10":10,"k11":11,"k12":12,"k13":13,"k14":14,"k15":15,"k16":16,"k17":17,"k18":18,"k19":19,"k20":20,"k21":21,"k22":22,"k23":23,"k24":24,"k25":25,"k26":26,"k27":27,"k28":28} ["first","k0","k1","k2","k3","k4","k5","k6","k7","k8","k9","k10","k11","k12","k13","k14","k15","k16","k17","k18","k19","k20","k21","k22","k23","k24","k25","k26","k27","k28"] | assign {"first":"first","k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5,"k6":6,"k7":7,"k8":8,"k9":9,"k10":10,"k11":11,"k12":12,"k13":13,"k14":14,"k15":15,"k16":16,"k17":17,"k18":18,"k19":19,"k20":20,"k21":21,"k22":22,"k23":23,"k24":24,"k25":25,"k26":26,"k27":27,"k28":28} ["first","k0","k1","k2","k3","k4","k5","k6","k7","k8","k9","k10","k11","k12","k13","k14","k15","k16","k17","k18","k19","k20","k21","k22","k23","k24","k25","k26","k27","k28"] | rest {"first":"first","k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5,"k6":6,"k7":7,"k8":8,"k9":9,"k10":10,"k11":11,"k12":12,"k13":13,"k14":14,"k15":15,"k16":16,"k17":17,"k18":18,"k19":19,"k20":20,"k21":21,"k22":22,"k23":23,"k24":24,"k25":25,"k26":26,"k27":27,"k28":28} ["first","k0","k1","k2","k3","k4","k5","k6","k7","k8","k9","k10","k11","k12","k13","k14","k15","k16","k17","k18","k19","k20","k21","k22","k23","k24","k25","k26","k27","k28"] a="<undefined>"
+plain data: spread {"5":"five","a":1,"b":2} ["5","a","b","Symbol(s)"] | assign {"5":"five","a":1,"b":2} ["5","a","b","Symbol(s)"] | rest {"5":"five","b":2} ["5","b","Symbol(s)"] a=1
+non enumerable data: spread {"a":1} ["a"] | assign {"a":1} ["a"] | rest {} [] a=1
+getter makes a later key enumerable: spread {"a":1,"b":2} ["a","b"] | assign {"a":1,"b":2} ["a","b"] | rest {"b":2} ["b"] a=1
+getter makes a later symbol enumerable: spread {"a":1} ["a","Symbol(s2)"] | assign {"a":1} ["a","Symbol(s2)"] | rest {} ["Symbol(s2)"] a=1
+getter makes a later index enumerable: spread {"1":"one","2":"two"} ["1","2"] | assign {"1":"one","2":"two"} ["1","2"] | rest {"1":"one","2":"two"} ["1","2"] a="<undefined>"
+getter makes a later key enumerable, and another not: spread {"a":1,"b":2} ["a","b"] | assign {"a":1,"b":2} ["a","b"] | rest {"b":2} ["b"] a=1
+getter makes a later key enumerable and deletes it: spread {"a":1} ["a"] | assign {"a":1} ["a"] | rest {} [] a=1
+array whose element 0 makes a named key enumerable: spread {"0":"z","1":2,"2":3,"x":"x"} ["0","1","2","x"] | assign {"0":"z","1":2,"2":3,"x":"x"} ["0","1","2","x"] | rest {"0":"z","1":2,"2":3,"x":"x"} ["0","1","2","x"] a="<undefined>"
+a symbol deleted and a symbol made enumerable: spread {"a":1} ["a","Symbol(s2)"] | assign {"a":1} ["a","Symbol(s2)"] | rest {} ["Symbol(s2)"] a=1
+error object: spread {} [] | assign {} [] | rest {} [] a="<undefined>"
+function: spread {} [] | assign {} [] | rest {} [] a="<undefined>"
+excluded: a=1 rest {"b":2,"c":3} ["b","c"] log []
+not excluded: {"b":2,"a":"new","c":3} ["b","a","c"] log [a read]
+excluded after: c=3 rest {"b":2,"a":"new"} ["b","a"] log [a read]
+order: ["a","b","c"]
+proxy: {"a":1} ["a"] ownKeys,gopd a,get a,gopd b
+proxy rest: {"a":1,"c":3} ["a","c"] b=2 get b,ownKeys,gopd a,get a,gopd c,get c
+loop: 100

@@ -18,8 +18,7 @@ import (
 // same but for what the engine did differently before: functions have no
 // own arguments and caller, the stack of an error comes after its message
 // as a data property, for in over a proxy asks the traps in another order,
-// a spread whose getter deletes a key it has not copied yet still copies
-// that key, and the spread of a string primitive copies nothing.
+// and the spread of a string primitive copies nothing.
 func TestOwnKeys(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("testdata", "own_keys.js"))
 	if err != nil {
@@ -86,4 +85,45 @@ func TestOwnKeysModuleNamespace(t *testing.T) {
 			t.Errorf("%s:\ngot  %s\nwant %s", c.name, got, c.want)
 		}
 	}
+}
+
+// checkCompareFile runs engine/test/compare/NAME.js on the engine and checks
+// every line of what it gives against engine/test/compare/NAME.txt, which is
+// what Node 24 prints for it.
+func checkCompareFile(t *testing.T, name string) {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("engine", "test", "compare", name+".js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("engine", "test", "compare", name+".txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newTestVM(t)
+	got, err := m.Eval(string(src), EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gl, wl := strings.Split(fmt.Sprint(got), "\n"), strings.Split(strings.TrimSuffix(string(want), "\n"), "\n")
+	for i := range max(len(gl), len(wl)) {
+		var g, w string
+		if i < len(gl) {
+			g = gl[i]
+		}
+		if i < len(wl) {
+			w = wl[i]
+		}
+		if g != w {
+			t.Errorf("line %d:\ngot  %s\nwant %s", i+1, g, w)
+		}
+	}
+}
+
+// The spread, the rest and Object.assign look each key of the source up when
+// its turn comes: a getter that deletes a later key, or makes it not
+// enumerable, leaves it out, and one that makes a key enumerable has it
+// copied.
+func TestCopyDataLooksEachKeyUp(t *testing.T) {
+	checkCompareFile(t, "copy_data")
 }

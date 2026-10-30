@@ -623,9 +623,9 @@ proxy traps assign: [{"a"/ecw:1,"b"/ecw:2,"c"/ecw:3,Symbol(s1)/ecw:4},["ownKeys"
 proxy traps json: ["{\"a\":1,\"b\":2,\"c\":3}",["get toJSON","ownKeys","gopd a","gopd b","gopd c","gopd h","get a","get b","get c"]]
 proxy traps names: [["a","b","c","h"],["ownKeys"]]
 proxy in chain for in: [["a","b","c"],["ownKeys","gopd a","gopd b","gopd c","gopd h","ownKeys","gopd a","gopd b","gopd c","gopd h","gopd a","gopd b","gopd c","proto"]]
-changing spread: {"a"/ecw:1,"b"/ecw:2,"c"/ecw:undefined,"d"/ecw:4,"e"/ecw:5}
-changing rest: {"b"/ecw:2,"c"/ecw:undefined,"d"/ecw:4,"e"/ecw:5}
-changing assign: {"a"/ecw:1,"b"/ecw:2,"c"/ecw:undefined,"d"/ecw:4,"e"/ecw:5}
+changing spread: {"a"/ecw:1,"b"/ecw:2,"e"/ecw:5}
+changing rest: {"b"/ecw:2,"e"/ecw:5}
+changing assign: {"a"/ecw:1,"b"/ecw:2,"e"/ecw:5}
 changing values: [1,2,5]
 changing entries: [["a",1],["b",2],["e",5]]
 changing json: "{\"a\":1,\"b\":2,\"d\":4,\"e\":5}"
