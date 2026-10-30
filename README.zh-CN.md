@@ -82,8 +82,9 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 - **`VM.SetClock(now)` 和 `VM.Now()`**：设置和读取一个 VM 的墙上时钟，Date、Intl 和 Temporal 都读它。传 nil 恢复实时时钟。[详情](docs/changes/time-and-intl.md#one-wall-clock-per-vm)
 - **`VM.SetShapeCache(n)` 和 `DefaultShapeCache`**：一个 VM 留多少个普通对象的 shape（引擎记录一个对象有哪些键、按什么顺序的结构），给下一个键相同的对象用。[详情](docs/changes/go-api.md#setshapecache-and-defaultshapecache)
 - **`GetAsyncContext` 和 `SetAsyncContext`**：两个 Builtin，读写一个跟着 promise 任务走的对象：`then` 或 `await` 运行时拿到的是注册时设的那个，所以用它们写的 `AsyncLocalStorage` 在 `await` 之后照样找得到自己的 store，和 Node 一样。从不设置它的 VM 跑 promise 和以前一样。[详情](docs/changes/go-api.md#the-async-context-of-promise-jobs)
+- **`VM.RegisterEscapeText(name)`**：在全局对象上定义名为 `name` 的函数，像 React DOM 的字符串渲染器那样给 HTML 转义文本（`&`、`<`、`>`、`"` 和 `'` 换成实体，参数先变成字符串，同 `"" + text`），在引擎里用 C 写成。宿主不调用它，全局对象上就什么都没有。在 tifa 里用了它，示例商店的页面渲染只花原来的 0.974，bench 页面是 0.938。[详情](docs/changes/go-api.md#registerescapetext)
 
-前五项是 v0.26.17 加的。其余的：`*Error` 的字段在 v0.26.7，shape 缓存在 v0.26.16，`VM.OnClose` 和 `temporal` 包在 v0.27.0，`VM.RunYoungGC` 在 v0.27.3，`SharedBytecode` 在 v0.28.1，`VM.SetClock` 和 `VM.Now` 在 v0.28.2，异步上下文在 v0.28.5。
+前五项是 v0.26.17 加的。其余的：`*Error` 的字段在 v0.26.7，shape 缓存在 v0.26.16，`VM.OnClose` 和 `temporal` 包在 v0.27.0，`VM.RunYoungGC` 在 v0.27.3，`SharedBytecode` 在 v0.28.1，`VM.SetClock` 和 `VM.Now` 在 v0.28.2，异步上下文在 v0.28.5，`VM.RegisterEscapeText` 还没有发布。
 
 ## 用了以后有什么不同
 
