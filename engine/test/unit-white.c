@@ -59,6 +59,8 @@ int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
+int white_props_inline(JSValueConst obj, int *room);
+JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 
 /* ---- texts of every kind of character ---- */
 
@@ -516,15 +518,17 @@ static void test_backtrace_memory_usage(void)
 /* ---- the block of an object ---- */
 
 /* An ordinary object has no room for the union of the data of the classes
-   (the engine allocates the bytes in front of it), and every other object has. */
+   (the engine allocates the bytes in front of it), and every other object has.
+   The block of an object literal also has the room of its properties. */
 static void test_object_block(void)
 {
     VM v = vm_new();
     JSValue plain = JS_NewObject(v.ctx), arr = JS_NewArray(v.ctx), lit;
     const char *src = "({a: 1, b: \"x\"})";
-    size_t full = 0, a, p, f;
+    size_t full = 0, a, p, f, plain_room;
 
     p = white_object_block(v.ctx, plain, &full);
+    plain_room = p;
     a = white_object_block(v.ctx, arr, &f);
     CHECK(p > 0 && p < full, "an ordinary object has room for %zu bytes, a JSObject is %zu", p, full);
     CHECK(a >= full, "an array has room for %zu bytes, a JSObject is %zu", a, full);
@@ -532,9 +536,159 @@ static void test_object_block(void)
     JS_FreeValue(v.ctx, arr);
     lit = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
     p = white_object_block(v.ctx, lit, &full);
-    CHECK(p > 0 && p < full, "an object literal has room for %zu bytes, a JSObject is %zu", p, full);
+    /* the block of an object literal of two keys also holds their two properties of 16 bytes */
+    CHECK(p >= plain_room + 2 * 16 && p < plain_room + 2 * 16 + 8, "an object literal of 2 keys has room for %zu bytes, an ordinary object %zu", p, plain_room);
     JS_FreeValue(v.ctx, lit);
     vm_free(&v);
+}
+
+/* ---- the properties of an object ---- */
+
+static int props_inline(VM *v, const char *expr, int *room)
+{
+    JSValue o = JS_Eval(v->ctx, expr, strlen(expr), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int r = white_props_inline(o, room);
+
+    JS_FreeValue(v->ctx, o);
+    return r;
+}
+
+/* The properties of an object literal sit in the block of the object, with
+   room for the properties of its shape. Adding a key past that room moves
+   them to a block of their own, and everything else that changes an object
+   (flags, prototype, deleting keys, even until the properties are packed)
+   leaves them where they are. */
+static void test_object_inline_props(void)
+{
+    VM v = vm_new();
+    int room = -1;
+
+    CHECK(eval_ok(v.ctx, "var lit = { a: 1, b: [2], c: 'three' }; var open = {}; var arr = [1];\n"
+                         "var big = { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5, k6: 6, k7: 7,\n"
+                         "            k8: 8, k9: 9, k10: 10, k11: 11, k12: 12, k13: 13, k14: 14, k15: 15 };\n"
+                         "var made = []; for (var i = 0; i < 4; i++) made.push({ a: i, b: i });\n"
+                         "void 0"), "the script threw");
+    CHECK(props_inline(&v, "lit", &room) == 1 && room >= 3, "a literal of 3 keys: room %d", room);
+    CHECK(props_inline(&v, "made[3]", &room) == 1 && room >= 2, "a literal of 2 keys: room %d", room);
+    CHECK(props_inline(&v, "big", &room) == 1 && room >= 16, "a literal of 16 keys: room %d", room);
+    CHECK(props_inline(&v, "open", &room) == 0, "{} has its properties apart");
+    CHECK(props_inline(&v, "arr", &room) == 0, "an array has its properties apart");
+    CHECK(props_inline(&v, "Object.create(null)", &room) == 0, "Object.create has its properties apart");
+    /* changes that keep the room */
+    CHECK(eval_ok(v.ctx, "Object.setPrototypeOf(lit, { p: 1 }); Object.defineProperty(lit, 'a', { writable: false });\n"
+                         "Object.defineProperty(lit, 'c', { get() { return 5 }, enumerable: true, configurable: true }); void 0"),
+          "the script threw");
+    CHECK(props_inline(&v, "lit", &room) == 1, "after a prototype, a flag and an accessor");
+    CHECK(eval_is(v.ctx, "lit.p + ',' + lit.a + ',' + lit.b + ',' + lit.c + ',' + Object.keys(lit)", "1,1,2,5,a,b,c"),
+          "values after the changes");
+    CHECK(eval_ok(v.ctx, "Object.freeze(made[1]); Object.seal(made[2]); Object.preventExtensions(made[3]); void 0"), "the script threw");
+    CHECK(props_inline(&v, "made[1]", &room) == 1 && props_inline(&v, "made[2]", &room) == 1 &&
+          props_inline(&v, "made[3]", &room) == 1, "frozen, sealed, not extensible");
+    /* deleting keys, until the shape packs what is left */
+    CHECK(eval_ok(v.ctx, "for (var i = 0; i < 12; i++) delete big['k' + i]; void 0"), "the script threw");
+    CHECK(props_inline(&v, "big", &room) == 1, "after deleting 12 of 16 keys: room %d", room);
+    CHECK(eval_is(v.ctx, "Object.keys(big) + ' ' + JSON.stringify(big)", "k12,k13,k14,k15 {\"k12\":12,\"k13\":13,\"k14\":14,\"k15\":15}"),
+          "keys after deleting");
+    /* one key more than the room moves them out */
+    CHECK(eval_ok(v.ctx, "big.x = 1; big.y = 2; void 0"), "the script threw");
+    CHECK(eval_is(v.ctx, "Object.keys(big) + ' ' + big.k12 + big.k15 + big.x + big.y", "k12,k13,k14,k15,x,y 121512"),
+          "keys after adding");
+    CHECK(eval_ok(v.ctx, "var o2 = { a: 1, b: 2 }; for (var i = 0; i < 20; i++) o2['n' + i] = i; void 0"), "the script threw");
+    CHECK(props_inline(&v, "o2", &room) == 0, "20 more keys: they moved out");
+    CHECK(eval_is(v.ctx, "o2.a + o2.b + o2.n19 + Object.keys(o2).length", "44"), "values after growing");
+    /* once an object of a literal got a key, the next objects of that literal have
+       their properties apart, and the objects of other literals do not */
+    CHECK(eval_ok(v.ctx, "function mk() { return { q1: 1, q2: 2, q3: 3 } }\n"
+                         "function other() { return { r1: 1, r2: 2, r3: 3 } }\n"
+                         "var m1 = mk(), m2 = mk(); void 0"), "the script threw");
+    CHECK(props_inline(&v, "m1", &room) == 1 && props_inline(&v, "m2", &room) == 1, "two objects of a literal");
+    CHECK(eval_ok(v.ctx, "m1.q4 = 4; var m3 = mk(), o1 = other(); o1.r4 = 4; void 0"), "the script threw");
+    CHECK(props_inline(&v, "m1", &room) == 0, "the object that got a key");
+    CHECK(props_inline(&v, "m2", &room) == 1, "the object made before it");
+    CHECK(props_inline(&v, "m3", &room) == 0, "an object made after it: room %d", room);
+    CHECK(props_inline(&v, "other()", &room) == 0, "an object of a literal with the same number of keys that got a key");
+    CHECK(props_inline(&v, "({ s1: 1, s2: 2, s3: 3 })", &room) == 1, "an object of a literal with other keys");
+    CHECK(eval_is(v.ctx, "[m1, m2, m3].map(o => o.q1 + o.q2 + o.q3).join() + Object.keys(m1) + Object.keys(m3)", "6,6,6q1,q2,q3,q4q1,q2,q3"),
+          "values of the objects");
+    /* objects in a cycle, under a WeakRef and as the key of a WeakMap are freed by the
+       collectors, and the block of one a weak reference still needs stays until it goes */
+    CHECK(eval_ok(v.ctx, "var wm = new WeakMap(), wr = [], keep = [];\n"
+                         "for (var i = 0; i < 60; i++) {\n"
+                         "  var c = { self: null, n: i, w: 'x' + i }; c.self = c;\n"
+                         "  var d = { a: i, b: { c } };\n"
+                         "  wr.push(new WeakRef(c)); wm.set(c, i); wm.set(d, i);\n"
+                         "  if (i % 10 == 0) { keep.push(c); c.z = 1; c.y = 2; c.x = 3 }\n"
+                         "}\n"
+                         "void 0"), "the script threw");
+    JS_RunYoungGC(v.rt);
+    JS_RunGC(v.rt);
+    CHECK(eval_is(v.ctx, "keep.length + ' ' + keep[3].n + keep[3].self.w + keep[5].x", "6 30x303"), "the objects the script kept");
+    CHECK(eval_ok(v.ctx, "keep = null; wr = null; wm = null; c = d = null; void 0"), "the script threw");
+    JS_RunGC(v.rt);
+    JS_RunGC(v.rt);
+    CHECK(eval_ok(v.ctx, "lit = big = o2 = made = null; void 0"), "the script threw");
+    JS_RunGC(v.rt);
+    vm_free(&v);
+}
+
+/* A call of the allocator that fails while an object grows or packs its
+   properties leaves the object as it was, and the heap whole (vm_free finds
+   a leak). Every call is failed in turn. */
+static void test_object_inline_oom(void)
+{
+    static const char setup[] =
+        "function mk() { return { a: 1, b: [2], c: 'three' } }\n"
+        "function mk16() { return { k0: 0, k1: 1, k2: 2, k3: 3, k4: 4, k5: 5, k6: 6, k7: 7,\n"
+        "                          k8: 8, k9: 9, k10: 10, k11: 11, k12: 12, k13: 13, k14: 14, k15: 15 } }\n"
+        "function grow(o) { for (var i = 0; i < 8; i++) o['n' + i] = i; return o }\n"
+        "function shrink(o) { for (var i = 0; i < 12; i++) delete o['k' + i]; return o }\n"
+        "function check3(o) { return Object.keys(o).slice(0, 3).join() == 'a,b,c' && o.a === 1 && o.b[0] === 2 && o.c === 'three' }\n"
+        "function check16(o) { var ks = Object.keys(o); for (var i = 12; i < 16; i++) if (o['k' + i] !== i) return false; return ks.length >= 4 }\n"
+        "void 0";
+    static const char *const kinds[] = { "grow", "shrink" };
+    int kind;
+    long cases = 0, failed_calls = 0;
+
+    for (kind = 0; kind < 2; kind++) {
+        int n = 0, fail;
+
+        for (fail = 0; fail <= 1 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, mk, chk, obj, r, args[1], global;
+            int made, ok;
+
+            CHECK(eval_ok(v.ctx, setup), "the script threw");
+            global = JS_GetGlobalObject(v.ctx);
+            mk = JS_GetPropertyStr(v.ctx, global, kind ? "mk16" : "mk");
+            g = JS_GetPropertyStr(v.ctx, global, kinds[kind]);
+            chk = JS_GetPropertyStr(v.ctx, global, kind ? "check16" : "check3");
+            obj = JS_Call(v.ctx, mk, JS_UNDEFINED, 0, NULL);
+            args[0] = obj;
+            r = white_call_failing(v.ctx, g, JS_UNDEFINED, 1, args, fail, &made);
+            if (fail == 0)
+                n = made;
+            cases++;
+            if (JS_IsException(r)) {
+                failed_calls++;
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            } else {
+                JS_FreeValue(v.ctx, r);
+            }
+            r = JS_Call(v.ctx, chk, JS_UNDEFINED, 1, args);
+            ok = JS_ToBool(v.ctx, r);
+            CHECK(ok, "%s with call %d failing: the object lost a property", kinds[kind], fail);
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, obj);
+            JS_FreeValue(v.ctx, chk);
+            JS_FreeValue(v.ctx, g);
+            JS_FreeValue(v.ctx, mk);
+            JS_FreeValue(v.ctx, global);
+            vm_free(&v);
+        }
+        CHECK(n > 0, "%s makes no call of the allocator", kinds[kind]);
+    }
+    CHECK(failed_calls > 0, "no call of %ld failed", cases);
+    printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls\n", cases, failed_calls);
 }
 
 /* ---- the lists of the collector ---- */
@@ -2003,6 +2157,8 @@ int main(void)
     test_backtrace_needs_data_property();
     test_backtrace_memory_usage();
     test_object_block();
+    test_object_inline_props();
+    test_object_inline_oom();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
