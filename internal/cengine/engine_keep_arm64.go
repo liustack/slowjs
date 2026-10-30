@@ -1179,6 +1179,7 @@ var goasmKeep = []any{
 	map_delete_record_internal,
 	map_hash_key,
 	map_hash_key_poll,
+	map_key_eq,
 	mark_children,
 	memchr,
 	memcmp,

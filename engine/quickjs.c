@@ -50699,6 +50699,28 @@ static int string_indexof_char(JSString *p, int c, int from)
     return -1;
 }
 
+/* The least index from from where p1 has the characters of p2, or -1: the
+   loop of replace and replaceAll for a string of at most JS_REPLACE_SHORT
+   characters, where it compares at most JS_REPLACE_SHORT times as many in
+   all, a work of no more than a step. It reads no flag. */
+#define JS_REPLACE_SHORT 256
+
+static int string_indexof(JSString *p1, JSString *p2, int from)
+{
+    /* assuming 0 <= from <= p1->len */
+    int c, i, j, len1 = p1->len, len2 = p2->len;
+    if (len2 == 0)
+        return from;
+    for (i = from, c = string_get(p2, 0); i + len2 <= len1; i = j + 1) {
+        j = string_indexof_char(p1, c, i);
+        if (j < 0 || j + len2 > len1)
+            break;
+        if (!string_cmp(p1, p2, j + 1, 1, len2 - 1))
+            return j;
+    }
+    return -1;
+}
+
 static int64_t string_advance_index(JSString *p, int64_t index, BOOL unicode)
 {
     if (!unicode || index >= p->len || !p->is_wide_char) {
@@ -51590,13 +51612,18 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             else
                 pos = endOfLastMatch + 1;
         } else {
-            /* the search reads the interrupt flag as indexOf does */
-            pos = -1;
-            stop = sp->len - searchp->len;
-            if (endOfLastMatch <= stop) {
-                pos = js_string_find(ctx, sp, searchp, endOfLastMatch, stop, 1);
-                if (pos == -2)
-                    goto exception;
+            if (sp->len <= JS_REPLACE_SHORT) {
+                /* little to search: nothing to stop */
+                pos = string_indexof(sp, searchp, endOfLastMatch);
+            } else {
+                /* the search reads the interrupt flag as indexOf does */
+                pos = -1;
+                stop = sp->len - searchp->len;
+                if (endOfLastMatch <= stop) {
+                    pos = js_string_find(ctx, sp, searchp, endOfLastMatch, stop, 1);
+                    if (pos == -2)
+                        goto exception;
+                }
             }
         }
         if (pos < 0) {
@@ -58566,40 +58593,49 @@ static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key)
     return js_same_value_zero(ctx, rec_key, key);
 }
 
-/* Look for the key: 0 with the record in *pmr (NULL when there is none), or
-   -1 when hashing it (map_hash_key_poll) or comparing it was stopped. */
-static int map_find_record(JSContext *ctx, JSMapState *s,
-                           JSValueConst key, JSMapRecord **pmr)
+/* What map_find_record gives when hashing the key (map_hash_key_poll) or
+   comparing it was stopped, with "interrupted" thrown. */
+#define MAP_STOPPED ((JSMapRecord *)(intptr_t)-1)
+
+/* Look for the key: the record, NULL when there is none, or MAP_STOPPED. */
+static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
+                                    JSValueConst key)
 {
     JSMapRecord *mr;
     uint32_t h;
+    BOOL polls;
 
     if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
-        return -1;
+        return MAP_STOPPED;
+    /* A key that is a rope or a string of more than a step is compared in
+       steps. The compare of any other key is at once: a record of another
+       length is known to differ. */
+    polls = JS_VALUE_GET_TAG(key) == JS_TAG_STRING_ROPE ||
+        (JS_VALUE_GET_TAG(key) == JS_TAG_STRING &&
+         JS_VALUE_GET_STRING(key)->len > JS_ROPE_STEP);
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
-        } else {
+        } else if (unlikely(polls)) {
             int eq = map_key_eq(ctx, mr->key, key);
 
             if (eq < 0)
-                return -1;
-            if (eq) {
-                *pmr = mr;
-                return 0;
-            }
+                return MAP_STOPPED;
+            if (eq)
+                return mr;
+        } else if (js_same_value_zero(ctx, mr->key, key)) {
+            return mr;
         }
     }
-    *pmr = NULL;
-    return 0;
+    return NULL;
 }
 
 /* 1 when the key is there, 0 when it is not, -1 when hashing or comparing it was stopped */
 static int map_has_record(JSContext *ctx, JSMapState *s, JSValueConst key)
 {
-    JSMapRecord *mr;
+    JSMapRecord *mr = map_find_record(ctx, s, key);
 
-    if (map_find_record(ctx, s, key, &mr))
+    if (mr == MAP_STOPPED)
         return -1;
     return mr != NULL;
 }
@@ -58757,7 +58793,8 @@ static JSValue js_map_set(JSContext *ctx, JSValueConst this_val,
         value = JS_UNDEFINED;
     else
         value = argv[1];
-    if (map_find_record(ctx, s, key, &mr) < 0)
+    mr = map_find_record(ctx, s, key);
+    if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
     if (mr) {
         JS_FreeValue(ctx, mr->value);
@@ -58780,7 +58817,8 @@ static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
     if (!s)
         return JS_EXCEPTION;
     key = map_normalize_key_const(ctx, argv[0]);
-    if (map_find_record(ctx, s, key, &mr) < 0)
+    mr = map_find_record(ctx, s, key);
+    if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
     if (!mr)
         return JS_UNDEFINED;
@@ -58840,7 +58878,8 @@ static JSValue js_map_getOrInsert(JSContext *ctx, JSValueConst this_val,
     key = map_normalize_key_const(ctx, argv[0]);
     if (s->is_weak && !js_weakref_is_target(key))
         return JS_ThrowTypeError(ctx, "invalid value used as WeakMap key");
-    if (map_find_record(ctx, s, key, &mr) < 0)
+    mr = map_find_record(ctx, s, key);
+    if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
     if (!mr) {
         if (computed) {
@@ -58875,7 +58914,8 @@ static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
     if (!s)
         return JS_EXCEPTION;
     key = map_normalize_key_const(ctx, argv[0]);
-    if (map_find_record(ctx, s, key, &mr) < 0)
+    mr = map_find_record(ctx, s, key);
+    if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
     return JS_NewBool(ctx, mr != NULL);
 }
@@ -59766,7 +59806,7 @@ static JSValue js_set_symmetricDifference(JSContext *ctx, JSValueConst this_val,
         //   mutating iterator erased it
         item = map_normalize_key(ctx, item);
         ok = map_has_record(ctx, s, item);
-        if (ok >= 0 && map_find_record(ctx, t, item, &mr) < 0)
+        if (ok >= 0 && (mr = map_find_record(ctx, t, item)) == MAP_STOPPED)
             ok = -1;
         if (ok < 0) {
             JS_FreeValue(ctx, item);

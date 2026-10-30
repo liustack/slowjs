@@ -2908,6 +2908,13 @@ static void test_string_loop_polls(void)
                   "true,true,true,true"), "the pieces");
     CHECK(eval_is(ctx, "var pa = 'x'.padStart(100003, 'abc'); [pa.length, pa.slice(0, 7), pa.slice(-7), 'x'.padEnd(10, 'abc')].join()",
                   "100003,abcabca,abcabcx,xabcabcabc"), "the pad");
+    /* replace and replaceAll search a string of up to 256 characters with a loop of their own and a longer one with the search of indexOf: both give what indexOf and split give */
+    CHECK(eval_is(ctx, "var bad = 0; for (var L of [3, 100, 255, 256, 257, 258, 300, 1000]) { var s = 'xaby'.repeat(300).slice(0, L); "
+                  "for (var p of ['a', 'ab', 'y', 'xab', 'zz', 'aby', s.slice(-3), s.slice(1), s]) { var i = s.indexOf(p); "
+                  "var r1 = i < 0 ? s : s.slice(0, i) + 'R' + s.slice(i + p.length); if (s.replace(p, 'R') !== r1) bad++; "
+                  "if (s.replaceAll(p, 'R') !== s.split(p).join('R')) bad++; "
+                  "if (s.replace(p, (m, at) => m.length + ':' + at) !== (i < 0 ? s : s.slice(0, i) + p.length + ':' + i + s.slice(i + p.length))) bad++ } } bad",
+                  "0"), "replace of short and long strings");
     CHECK(eval_is(ctx, "var f2 = 'ab'.repeat(1 << 16) + 'c', p2 = 'x'.padStart((1 << 17) + 5, f2); [p2.length, p2.slice(0, 3), p2.slice(131069, 131072), p2.slice(131072, 131076)].join()",
                   "131077,aba,bab,caba"), "the pad with a filler longer than a step");
     CHECK(eval_is(ctx, "var p3 = 'xy'.padEnd((1 << 17) + 5, f2); [p3.length, p3.slice(0, 3), p3.slice(2, 5), p3.slice(131073, 131077), p3.slice(-4)].join()",
