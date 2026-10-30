@@ -427,6 +427,13 @@ int JS_GetCallDepth(JSRuntime *rt);
 int JS_SetCallDepth(JSRuntime *rt, int depth);
 int JS_GetInternalDepth(JSRuntime *rt);
 int JS_SetInternalDepth(JSRuntime *rt, int depth);
+/* For tests. The interpreter calls a plain C function itself, without the
+   frame of JS_CallInternal, and counts that frame as taken, so that each
+   recursion ends where it did when every call went through JS_CallInternal.
+   With on 0 the runtime of ctx makes every call through JS_CallInternal
+   again, and with 1 it calls C functions itself. It returns 0, or -1 and
+   changes nothing while code runs. */
+int JS_SetDirectCCalls(JSContext *ctx, int on);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. An
    object a reference is still held to, such as one the host never freed,

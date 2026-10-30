@@ -333,6 +333,12 @@ func main() {
 		// takes on its own, and never with adrp and :lo12:, whose second
 		// instruction holds only where the register still has the page.
 		llcArgs = append(llcArgs, "-code-model=tiny")
+		// tbz and tbnz reach 32 KiB, and llc makes a farther one a tbz over
+		// a b by the code it writes. The lowering then adds code (the calls,
+		// the polls), so a tbz llc left near its reach can end past it, which
+		// the assembler refuses. Half the reach leaves the lowering room to
+		// double a function.
+		llcArgs = append(llcArgs, "-aarch64-tbz-offset-bits=13")
 	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")
