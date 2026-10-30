@@ -1573,7 +1573,7 @@ typedef struct JSBacktrace JSBacktrace;
 static void js_backtrace_build(JSContext *ctx, JSValueConst error_obj,
                                int backtrace_flags);
 static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
-                                        JSValue val, BOOL cesu8, BOOL poll);
+                                        JSValue val, BOOL cesu8);
 static int js_backtrace_settle(JSContext *ctx, JSObject *p,
                                JSShapeProperty *prs, JSProperty *pr);
 static BOOL js_backtrace_pending(JSShapeProperty *prs, JSProperty *pr);
@@ -4525,7 +4525,7 @@ const char *JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
         return NULL;
     }
     /* the string of an atom is a string, which needs no conversion */
-    return js_string_to_cstring(ctx, plen, str, FALSE, FALSE);
+    return js_string_to_cstring(ctx, plen, str, FALSE);
 }
 
 /* return a string atom containing name concatenated with str1 */
@@ -5072,19 +5072,20 @@ static int string_getc(const JSString *p, int *pidx)
    JS_ROPE_STEP characters at a time with the flag read after each step, when
    there are more than that to copy (a long string written after a character
    above 0xff). */
-static no_inline int string_buffer_write8_wide(StringBuffer *s, const uint8_t *p, int len)
+static no_inline int string_buffer_write8_wide_long(StringBuffer *s, const uint8_t *p, int len)
 {
     int i = 0, j, m;
+    uint16_t *dst = s->str->u.str16 + s->len;
 
-    if (len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+    if (js_poll_interrupts(s->ctx))
         return string_buffer_set_error(s);
     while (i < len) {
         m = min_int(len - i, JS_ROPE_STEP);
         for (j = 0; j < m; j++)
-            s->str->u.str16[s->len + i + j] = p[i + j];
+            dst[i + j] = p[i + j];
         JS_WORK(m);
         i += m;
-        if (len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
+        if (js_poll_interrupts(s->ctx))
             return string_buffer_set_error(s);
     }
     s->len += len;
@@ -5097,8 +5098,18 @@ static int string_buffer_write8(StringBuffer *s, const uint8_t *p, int len)
         if (string_buffer_realloc(s, s->len + len, 0))
             return -1;
     }
-    if (s->is_wide_char)
-        return string_buffer_write8_wide(s, p, len);
+    if (s->is_wide_char) {
+        int i;
+        uint16_t *dst;
+
+        if (unlikely(len >= JS_ROPE_STEP))
+            return string_buffer_write8_wide_long(s, p, len);
+        dst = s->str->u.str16 + s->len;
+        for (i = 0; i < len; i++)
+            dst[i] = p[i];
+        s->len += len;
+        return 0;
+    }
     memcpy(&s->str->u.str8[s->len], p, len);
     s->len += len;
     return 0;
@@ -5297,11 +5308,97 @@ __attribute__((used)) const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT] = {
 };
 
 /* create a string from a UTF-8 buffer */
+/* The 16-bit units of the UTF-8 text from p to p_end, which JS_NewStringLen
+   makes a string of: the units go to out16, or as bytes to out8 (when all are
+   below 0x100), or nowhere when both are NULL and the units are only counted.
+   *pmax is the or of them. A sequence that is none gives 0xfffd for it and
+   the continuation bytes that follow. */
+static size_t js_utf8_to_units(const uint8_t *p, const uint8_t *p_end,
+                               uint16_t *out16, uint8_t *out8, uint32_t *pmax)
+{
+    const uint8_t *p_next;
+    uint32_t c, hi, max = *pmax;
+    size_t n = 0;
+
+    while (p < p_end) {
+        hi = 0;
+        if (*p < 128) {
+            c = *p++;
+        } else {
+            /* parse utf-8 sequence, return 0xFFFFFFFF for error */
+            c = unicode_from_utf8(p, p_end - p, &p_next);
+            if (c < 0x10000) {
+                p = p_next;
+            } else if (c <= 0x10FFFF) {
+                p = p_next;
+                /* surrogate pair */
+                hi = get_hi_surrogate(c);
+                c = get_lo_surrogate(c);
+            } else {
+                /* invalid char */
+                c = 0xfffd;
+                /* skip the invalid chars */
+                /* XXX: seems incorrect. Why not just use c = *p++; ? */
+                while (p < p_end && (*p >= 0x80 && *p < 0xc0))
+                    p++;
+                if (p < p_end) {
+                    p++;
+                    while (p < p_end && (*p >= 0x80 && *p < 0xc0))
+                        p++;
+                }
+            }
+        }
+        if (hi) {
+            if (out16)
+                out16[n] = hi;
+            n++;
+            max |= hi;
+        }
+        if (out16)
+            out16[n] = c;
+        else if (out8)
+            out8[n] = c;
+        n++;
+        max |= c;
+    }
+    *pmax = max;
+    return n;
+}
+
+/* The string of a UTF-8 text with a character above 127: len1 ASCII bytes,
+   then the rest. It does not use a string buffer, which reads the interrupt
+   flag when it grows past a step: JS_NewStringLen makes the messages and the
+   stack of an error, and making an error reads no flag (see JS_ThrowError2
+   and internal/goasm/cmd/cycles). The text is decoded twice, to count the
+   units and then to write them into a string of the exact size. */
+static JSValue js_new_string_utf8(JSContext *ctx, const uint8_t *p_start,
+                                  size_t len1, const uint8_t *p_end)
+{
+    uint32_t max = 0;
+    size_t n, i;
+    JSString *str;
+
+    n = len1 + js_utf8_to_units(p_start + len1, p_end, NULL, NULL, &max);
+    if (n > JS_STRING_LEN_MAX)
+        return JS_ThrowInternalError(ctx, "string too long");
+    str = js_alloc_string(ctx, n, max >= 0x100);
+    if (!str)
+        return JS_EXCEPTION;
+    if (max >= 0x100) {
+        for (i = 0; i < len1; i++)
+            str->u.str16[i] = p_start[i];
+        js_utf8_to_units(p_start + len1, p_end, str->u.str16 + len1, NULL, &max);
+    } else {
+        memcpy(str->u.str8, p_start, len1);
+        js_utf8_to_units(p_start + len1, p_end, NULL, str->u.str8 + len1, &max);
+        str->u.str8[n] = '\0';
+    }
+    return JS_MKPTR(JS_TAG_STRING, str);
+}
+
 JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
 {
-    const uint8_t *p, *p_end, *p_start, *p_next;
-    uint32_t c;
-    StringBuffer b_s, *b = &b_s;
+    const uint8_t *p, *p_end, *p_start;
     size_t len1;
 
     p_start = (const uint8_t *)buf;
@@ -5313,45 +5410,8 @@ JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
     if (p == p_end) {
         /* ASCII string */
         return js_new_string8_len(ctx, buf, buf_len);
-    } else {
-        if (string_buffer_init(ctx, b, buf_len))
-            goto fail;
-        string_buffer_write8(b, p_start, len1);
-        while (p < p_end) {
-            if (*p < 128) {
-                string_buffer_putc8(b, *p++);
-            } else {
-                /* parse utf-8 sequence, return 0xFFFFFFFF for error */
-                c = unicode_from_utf8(p, p_end - p, &p_next);
-                if (c < 0x10000) {
-                    p = p_next;
-                } else if (c <= 0x10FFFF) {
-                    p = p_next;
-                    /* surrogate pair */
-                    string_buffer_putc16(b, get_hi_surrogate(c));
-                    c = get_lo_surrogate(c);
-                } else {
-                    /* invalid char */
-                    c = 0xfffd;
-                    /* skip the invalid chars */
-                    /* XXX: seems incorrect. Why not just use c = *p++; ? */
-                    while (p < p_end && (*p >= 0x80 && *p < 0xc0))
-                        p++;
-                    if (p < p_end) {
-                        p++;
-                        while (p < p_end && (*p >= 0x80 && *p < 0xc0))
-                            p++;
-                    }
-                }
-                string_buffer_putc16(b, c);
-            }
-        }
     }
-    return string_buffer_end(b);
-
- fail:
-    string_buffer_free(b);
-    return JS_EXCEPTION;
+    return js_new_string_utf8(ctx, p_start, len1, p_end);
 }
 
 static JSValue JS_ConcatString3(JSContext *ctx, const char *str1,
@@ -5398,18 +5458,118 @@ JSValue JS_NewAtomString(JSContext *ctx, const char *str)
 /* JS_ToCStringLen2() of val, a string whose reference it takes. It
    converts nothing, so it runs no JavaScript. */
 static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
-                                        JSValue val, BOOL cesu8, BOOL poll)
+                                        JSValue val, BOOL cesu8)
 {
     JSString *str, *str_new;
-    int pos, len, c, c1, mark;
+    int pos, len, c, c1;
     uint8_t *q;
 
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
-    /* with poll, the flag is read each time JS_ROPE_STEP characters have gone
+    if (!str->is_wide_char) {
+        const uint8_t *src = str->u.str8;
+        int count;
+
+        /* count the number of non-ASCII characters */
+        /* Scanning the whole string is required for ASCII strings,
+           and computing the number of non-ASCII bytes is less expensive
+           than testing each byte, hence this method is faster for ASCII
+           strings, which is the most common case.
+         */
+        count = 0;
+        for (pos = 0; pos < len; pos++) {
+            count += src[pos] >> 7;
+        }
+        if (count == 0) {
+            if (plen)
+                *plen = len;
+            return (const char *)src;
+        }
+        str_new = js_alloc_string(ctx, len + count, 0);
+        if (!str_new) {
+            JS_FreeValue(ctx, val);
+            goto fail;
+        }
+        q = str_new->u.str8;
+        for (pos = 0; pos < len; pos++) {
+            c = src[pos];
+            if (c < 0x80) {
+                *q++ = c;
+            } else {
+                *q++ = (c >> 6) | 0xc0;
+                *q++ = (c & 0x3f) | 0x80;
+            }
+        }
+    } else {
+        const uint16_t *src = str->u.str16;
+        /* Allocate 3 bytes per 16 bit code point. Surrogate pairs may
+           produce 4 bytes but use 2 code points.
+         */
+        str_new = js_alloc_string(ctx, len * 3, 0);
+        if (!str_new) {
+            JS_FreeValue(ctx, val);
+            goto fail;
+        }
+        q = str_new->u.str8;
+        pos = 0;
+        while (pos < len) {
+            c = src[pos++];
+            if (c < 0x80) {
+                *q++ = c;
+            } else {
+                if (is_hi_surrogate(c)) {
+                    if (pos < len && !cesu8) {
+                        c1 = src[pos];
+                        if (is_lo_surrogate(c1)) {
+                            pos++;
+                            c = from_surrogate(c, c1);
+                        } else {
+                            /* Keep unmatched surrogate code points */
+                            /* c = 0xfffd; */ /* error */
+                        }
+                    } else {
+                        /* Keep unmatched surrogate code points */
+                        /* c = 0xfffd; */ /* error */
+                    }
+                }
+                q += unicode_to_utf8(q, c);
+            }
+        }
+    }
+
+    *q = '\0';
+    str_new->len = q - str_new->u.str8;
+    JS_FreeValue(ctx, val);
+    if (plen)
+        *plen = str_new->len;
+    return (const char *)str_new->u.str8;
+ fail:
+    if (plen)
+        *plen = 0;
+    return NULL;
+}
+
+/* js_string_to_cstring for the text of JSON.parse, which reads the interrupt
+   flag each time JS_ROPE_STEP characters have been looked at since the last
+   reading, in the count of the 8-bit characters and in each of the loops that
+   write the bytes (a string of fewer characters has no read). It is a copy of
+   js_string_to_cstring and not a flag of it: the function that makes the
+   message of an error reaches js_string_to_cstring, and making an error reads
+   no flag (see JS_ThrowError2 and internal/goasm/cmd/cycles). */
+static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
+                                             JSValue val)
+{
+    JSString *str, *str_new;
+    int pos, len, c, c1, mark;
+    uint8_t *q;
+    BOOL cesu8 = FALSE;
+
+    str = JS_VALUE_GET_STRING(val);
+    len = str->len;
+    /* the flag is read each time JS_ROPE_STEP characters have gone
        by, in the count of the 8-bit characters and in each of the loops that
        write the bytes: a short string has no read */
-    poll = poll && len >= JS_ROPE_STEP;
+    BOOL poll = len >= JS_ROPE_STEP;
     if (!str->is_wide_char) {
         const uint8_t *src = str->u.str8;
         int count;
@@ -5558,7 +5718,7 @@ static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSVal
     } else {
         val = JS_DupValue(ctx, val1);
     }
-    return js_string_to_cstring(ctx, plen, val, FALSE, TRUE);
+    return js_string_to_cstring_json(ctx, plen, val);
 }
 
 /* return (NULL, 0) if exception. */
@@ -5578,7 +5738,7 @@ const char *JS_ToCStringLen2(JSContext *ctx, size_t *plen, JSValueConst val1, BO
     } else {
         val = JS_DupValue(ctx, val1);
     }
-    return js_string_to_cstring(ctx, plen, val, cesu8, FALSE);
+    return js_string_to_cstring(ctx, plen, val, cesu8);
 }
 
 void JS_FreeCString(JSContext *ctx, const char *ptr)
@@ -10039,7 +10199,7 @@ static BOOL js_backtrace_put_frame(JSContext *ctx, DynBuf *dbuf,
     } else {
         str = js_string_to_cstring(ctx, NULL,
                                    JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, f->func_name)),
-                                   FALSE, FALSE);
+                                   FALSE);
         if (!str)
             return FALSE;
         dbuf_putstr(dbuf, str[0] == '\0' ? "<anonymous>" : str);
@@ -16298,7 +16458,7 @@ static JSValue js_string_to_number(JSContext *ctx, JSValue val)
         if (JS_IsException(val))
             return val;
     }
-    str = js_string_to_cstring(ctx, &len, val, FALSE, FALSE);
+    str = js_string_to_cstring(ctx, &len, val, FALSE);
     if (!str)
         return JS_EXCEPTION;
     p = str;

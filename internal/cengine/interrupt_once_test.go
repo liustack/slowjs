@@ -48,8 +48,12 @@ func TestInterruptStopsLongKeys(t *testing.T) {
 		// a wide character after tens of MiB of ASCII widens them all, in steps
 		{"JSON.parse, a wide character last", `var j = ['"', 'a'.repeat(1 << 26), '中"'].join('')`, `JSON.parse(j)`, "parse", 0},
 		{"JSON.parse, a wide escape last", `var j = '"' + 'a'.repeat(1 << 26) + '\\u4e2d"'`, `JSON.parse(j)`, "parse", 0},
-		{"padEnd, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padEnd((1 << 26) + 1, '中')`, "padEnd", 0},
-		{"padStart, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padStart((1 << 26) + 1, '中')`, "padStart", 0},
+		// padEnd writes the 64 MiB of s first with one memcpy that reads no flag (150 to 450 polls), and then
+		// widens them in steps. padStart writes 32M characters of the filler first, since the widening of s alone
+		// is under 640 polls. The first trial lands in the allocation of the buffers (96 MiB, then 192 MiB), which takes
+		// up to 100 polls and reads no flag
+		{"padEnd, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padEnd((1 << 26) + 1, '中')`, "padEnd", 500},
+		{"padStart, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padStart((1 << 26) + (1 << 25), '中')`, "padStart", 100},
 		// 256 keys of one hash and one length, each different from the key asked for at the first step: the
 		// compares of the chain share one budget, and one that ends at a difference counts what it did
 		{"Map.get, a chain of keys of one hash", chainSetup + `; var cm = new Map(); for (var i = 0; i < 256; i++) cm.set(ckey(i), i)`, `cm.get(cquery())`, "get", 0},
