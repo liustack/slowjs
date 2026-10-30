@@ -6,6 +6,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ### Changed
 
+- Bytecode is version 7, which has opcodes for a read of a local and the property read after it, for the case of a `switch` on a string and for a `typeof` test: bytecode written by an earlier release no longer loads (`SyntaxError: invalid version`), and has to be compiled again. `JS_ReadObject` rejects a fused opcode that is not followed by the instructions it stands for.
 - `===`, `!==`, `==`, `!=` and `switch` on two equal strings longer than 65536 characters, or on a rope, and the lookup of a long string or rope key in a `Map` or `Set` that holds an equal one, read the stop every 65536 characters, so they stop within a few polls of an `Interrupt` or the eval timeout. They compared the whole strings in one call, about 3,300 polls (10 ms) for two strings of 32 million characters, and the script was killed when the strings were long enough. The same string or rope is now equal to itself at once.
 - A string of more than 65536 characters used as a property key (`o[s] = 1`, `s in o`, `o[s]`, a key of `JSON.parse`) reads the stop every 65536 characters while its hash is made and while it is compared with the atom of an equal string. `JSON.parse` reads it every 65536 bytes of a string of the text, in the key or in a value. Each of them took one pass over the whole string, about 800 polls for 32 million characters (the hash), 3,300 more for the comparison with an equal atom, and 4,000 for the scan of a JSON string, with no stop in them.
 - `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`, `replace`, `replaceAll` and `split` with a pattern as long as what is left of the string, `Array.prototype.indexOf`, `lastIndexOf` and `includes` and `Object.is` on two equal strings of more than 65536 characters, and `JSON.stringify` of a long string read the stop every 65536 characters. They compared or copied the whole string in one call, about 3,400 polls for 32 million characters.
@@ -22,6 +23,9 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 - The end of a call of a bytecode function skips the values with no reference count, eight at a time, where it looked at them two at a time. A render runs 0.7% to 2.1% fewer instructions on the pages of tifa's example apps and 1.3% to 2.0% fewer on the render scripts, with the same HTML. The 200 locals of a function, none set, cost 37% fewer instructions to call. The one case found slower is a function where every fourth local holds an object: 2.4% more instructions with 200 locals ([Performance](docs/performance.md#the-end-of-a-call-and-the-start-of-one) has the numbers).
 - A call of a bytecode function sets its locals to `undefined` eight at a time, where it set four. A render runs 0.2% to 0.5% fewer instructions on the pages of tifa's example apps and on the render scripts, with the same HTML. The locals of a function with 200 locals cost 14% fewer instructions to set and free than with the change above, and a call of a function with 3 locals or fewer takes 1 to 4 instructions more.
+- Object literals of the same keys, written in different places, share one shape, as objects built key by key do. The first object of a literal looked for its shape from the empty shape of `Object.prototype`, which the first object that got a key had usually changed in place, so each place made a shape of its own. A VM of tifa's pages holds 12% to 15% fewer shapes, and 0.7% (the shop and the MUI pages) to 1.7% (the store pages) less memory after a render. Renders run the same instructions ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape)).
+- A read of the first or second argument, of the first local or of a local past the fourth, followed by a read of a property by name (`o.x`), and the case of a `switch` on a string, take one turn of the interpreter. A render of the six workbench pages of tifa's example shop runs 1.85% fewer instructions, the store pages 1.59%, the MUI pages 1.66% and the bench pages 3.41%. The bench pages take 3.4% less time to render (8 code positions, 3 rounds, [c-engine.md](docs/changes/c-engine.md#opcodes-that-do-a-few-instructions-at-once), [Performance](docs/performance.md#opcodes-that-do-a-few-instructions-at-once)).
+- `typeof x == "string"` and the like, with `==`, `===`, `!=` or `!==` and any type name, and `typeof x < "u"` and `typeof x > "u"` as minifiers write them, take one turn of the interpreter. A render of tifa's pages runs 0.63% (the shop) to 1.42% (the bench pages) fewer instructions.
 
 ## [v0.29.4] - 2026-10-30
 
@@ -454,7 +458,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1

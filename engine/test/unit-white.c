@@ -58,6 +58,8 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
+int white_fused_ops(const uint8_t *code, int len, int *count);
+int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
@@ -976,6 +978,91 @@ static void test_object_inline_limit(void)
     }
 }
 
+static uintptr_t shape_of(VM *v, const char *expr)
+{
+    JSValue o = JS_Eval(v->ctx, expr, strlen(expr), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    uintptr_t r = white_shape_of(o);
+
+    JS_FreeValue(v->ctx, o);
+    return r;
+}
+
+/* Object literals of the same keys in the same order share one shape, made
+   at whichever ran first, wherever they are written and whether or not the
+   empty shape of Object.prototype and the shapes in between exist: with the
+   shape cache on and off. A shape an object got key by key is taken too, also
+   when it has room for more properties than the literal has keys. Keys in
+   another order or with other flags are another shape. */
+static void test_object_lit_shared_shape(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        int room = -1;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f1() { return { zz1: 1 } }\n"
+                             "function f2() { return { zz1: 2 } }\n"
+                             "var a = f1(), b = f2(), c = f1(); void 0"), "the script threw");
+        CHECK(shape_of(&v, "a") != 0 && shape_of(&v, "a") == shape_of(&v, "b"),
+              "cache %d: {zz1} in two functions has two shapes", cache);
+        CHECK(shape_of(&v, "a") == shape_of(&v, "c"), "cache %d: one literal, two shapes", cache);
+        CHECK(eval_is(v.ctx, "a.zz1 + ',' + b.zz1 + ',' + Object.keys(b)", "1,2,zz1"), "values of {zz1}");
+
+        /* three keys, two places, and a literal written by eval */
+        CHECK(eval_ok(v.ctx, "function g1(x) { return { yy1: x, yy2: 2, yy3: 3 } }\n"
+                             "function g2(x) { return { yy1: x, yy2: 'b', yy3: [3] } }\n"
+                             "var d = g1(1), e = g2(2), f = eval('({ yy1: 0, yy2: 0, yy3: 0 })'); void 0"),
+              "the script threw");
+        CHECK(shape_of(&v, "d") == shape_of(&v, "e") && shape_of(&v, "d") == shape_of(&v, "f"),
+              "cache %d: {yy1, yy2, yy3} in three places", cache);
+
+        /* the order of the keys and their flags are part of the shape */
+        CHECK(eval_ok(v.ctx, "var p = (() => ({ pp1: 1, pp2: 2 }))(), q = (() => ({ pp2: 1, pp1: 2 }))();\n"
+                             "var fl = {}; Object.defineProperty(fl, 'vv1', { value: 1, enumerable: true });\n"
+                             "var lit = (() => ({ vv1: 2 }))(); void 0"), "the script threw");
+        CHECK(shape_of(&v, "p") != shape_of(&v, "q"), "cache %d: keys in another order share a shape", cache);
+        CHECK(shape_of(&v, "fl") != shape_of(&v, "lit"), "cache %d: a key with other flags shares a shape", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify(Object.getOwnPropertyDescriptor(lit, 'vv1'))",
+                      "{\"value\":2,\"writable\":true,\"enumerable\":true,\"configurable\":true}"),
+              "the key of the literal");
+        CHECK(eval_is(v.ctx, "lit.vv1 = 5; delete lit.vv1; JSON.stringify(lit) + JSON.stringify(fl)", "{}{\"vv1\":1}"),
+              "the literal after a write and a delete");
+
+        /* a shape built key by key, with room for 6 properties, kept by its
+           object: the literal of 5 keys takes it, room and all, and keeps it
+           when the object grows on */
+        CHECK(eval_ok(v.ctx, "var kk = {}; kk.kk1 = 1; kk.kk2 = 2; kk.kk3 = 3; kk.kk4 = 4; kk.kk5 = 5;\n"
+                             "function lit5() { return { kk1: 'a', kk2: 'b', kk3: 'c', kk4: 'd', kk5: 'e' } }\n"
+                             "var l1 = lit5(); kk.kk6 = 6; kk.kk7 = 7; var l2 = lit5(); void 0"),
+              "the script threw");
+        CHECK(props_inline(&v, "kk", &room) == 0 && room > 6, "cache %d: kk grown: room %d", cache, room);
+        CHECK(props_inline(&v, "l1", &room) == 1 && room == 6,
+              "cache %d: the literal of the shape of kk: room %d", cache, room);
+        CHECK(shape_of(&v, "l1") == shape_of(&v, "l2") && shape_of(&v, "l1") != shape_of(&v, "kk"),
+              "cache %d: the literal kept its shape when kk grew", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([l1, l2, kk])",
+                      "[{\"kk1\":\"a\",\"kk2\":\"b\",\"kk3\":\"c\",\"kk4\":\"d\",\"kk5\":\"e\"},"
+                      "{\"kk1\":\"a\",\"kk2\":\"b\",\"kk3\":\"c\",\"kk4\":\"d\",\"kk5\":\"e\"},"
+                      "{\"kk1\":1,\"kk2\":2,\"kk3\":3,\"kk4\":4,\"kk5\":5,\"kk6\":6,\"kk7\":7}]"),
+              "values of the objects");
+        CHECK(eval_is(v.ctx, "l1.kk6 = 'f'; l1.kk7 = 'g'; Object.keys(l1) + ' ' + Object.keys(l2) + ' ' + l1.kk7",
+                      "kk1,kk2,kk3,kk4,kk5,kk6,kk7 kk1,kk2,kk3,kk4,kk5 g"), "the literal grows on its own");
+
+        /* an object of one literal that got a key turns off the room in the
+           block for the next objects of every literal of its shape */
+        CHECK(eval_ok(v.ctx, "function h1() { return { ww1: 1, ww2: 2 } }\n"
+                             "function h2() { return { ww1: 3, ww2: 4 } }\n"
+                             "var x1 = h1(), x2 = h2(); x1.ww3 = 3; var x3 = h2(); void 0"), "the script threw");
+        CHECK(props_inline(&v, "x2", &room) == 1, "cache %d: an object made before the key", cache);
+        CHECK(props_inline(&v, "x3", &room) == 0, "cache %d: an object of the other literal made after the key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([x1, x2, x3])",
+                      "[{\"ww1\":1,\"ww2\":2,\"ww3\":3},{\"ww1\":3,\"ww2\":4},{\"ww1\":3,\"ww2\":4}]"), "values of the objects");
+        vm_free(&v);
+    }
+}
+
 /* ---- the lists of the collector ---- */
 
 static void lists(VM *v, int *old, int *young, const char *when)
@@ -1153,6 +1240,10 @@ enum {
     W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
     W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16, W_OBJECT_LIT,
     W_TAIL_CALL, W_TAIL_CALL_METHOD,
+    W_GET_FIELD, W_GET_FIELD2, W_PUSH_ATOM_VALUE, W_STRICT_EQ,
+    W_GET_ARG0_GET_FIELD, W_GET_ARG1_GET_FIELD, W_GET_LOC0_GET_FIELD,
+    W_GET_LOC8_GET_FIELD, W_DUP_CASE_ATOM,
+    W_TYPEOF, W_TYPEOF_IS_UNDEFINED, W_TYPEOF_IS_FUNCTION, W_TYPEOF_IS, W_LNOT,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1798,6 +1889,337 @@ static void test_tail_c_calls(void)
         CHECK(found, "%s: no tail call in %d instructions", cases[i].src, n);
         JS_FreeValue(v.ctx, top);
     }
+    vm_free(&v);
+}
+
+
+/* The compiler joins each pair of fused_runs into one opcode, unless a jump
+   lands inside the pair or JS_SetFusedOps turned it off. poll_scan holds
+   code read by JS_ReadObject to the rest of each run, and code written with
+   the opcodes reads back and runs. */
+static void test_fused_ops(void)
+{
+    static const char five[] =
+        "(function () { function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
+        "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }\n"
+        "  return f({ k1: { k4: 'a' } }, { k2: 0, k3: 'a' }) + 10 * f({ k1: { k4: 'b' } }, { k3: 'b' }) +\n"
+        "    100 * f({ k1: {} }, { k3: 'x' }) })";
+    static const char *names[5] = { "get_arg0 get_field", "get_arg1 get_field", "get_loc0 get_field",
+                                    "get_loc8 get_field", "dup push_atom_value strict_eq if_false8" };
+    VM v = vm_new();
+    JSValue top;
+    const uint8_t *code;
+    uint8_t *buf, *at;
+    size_t size;
+    int len, count[5], n, on, k;
+    char got[256];
+    Code c;
+
+    /* the inner function f, compiled alone, has each of the five; with the
+       pairs off, none */
+    for (on = 1; on >= 0; on--) {
+        static const char inner[] =
+            "function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
+            "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }";
+        /* a case for each of the two strings */
+        JS_SetFusedOps(v.ctx, on);
+        CHECK(code_of(v.ctx, inner, &top, &code, &len) == 0, "compile f");
+        n = code ? white_fused_ops(code, len, count) : -1;
+        for (k = 0; k < 5; k++)
+            CHECK(count[k] == (on ? (k == 4 ? 2 : 1) : 0), "on %d: %s: %d", on, names[k], count[k]);
+        JS_FreeValue(v.ctx, top);
+    }
+    JS_SetFusedOps(v.ctx, 1);
+
+    /* a jump to the get_field of a pair: the pair stays apart */
+    CHECK(code_of(v.ctx, "function f(o, c) { return (c ? o : o).x }", &top, &code, &len) == 0, "compile");
+    n = code ? white_fused_ops(code, len, count) : -1;
+    CHECK(n == 0, "a jump into the pair: %d fused opcodes", n);
+    JS_FreeValue(v.ctx, top);
+    CHECK(code_of(v.ctx, "function f(o, c) { return o.x }", &top, &code, &len) == 0, "compile");
+    n = code ? white_fused_ops(code, len, count) : -1;
+    CHECK(n == 1 && count[0] == 1, "no jump: %d fused opcodes", n);
+    JS_FreeValue(v.ctx, top);
+    CHECK(eval_is(v.ctx, "(function f(o, c) { return (c ? o : o).x })({ x: 'jumped' }, 1)", "jumped"), "a jump into the pair runs");
+
+    /* written and read back, it runs, and not with the rest of a run changed */
+    top = JS_Eval(v.ctx, five, strlen(five), "<fused>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, top);
+    CHECK(buf != NULL, "write");
+    if (buf) {
+        run_read(v.ctx, buf, size, got, sizeof(got));
+        CHECK(strcmp(got, "ok 321") == 0, "read back: %s", got);
+        for (at = buf; at + 1 < buf + size; at++) {
+            if (at[0] == white_op(W_GET_ARG1_GET_FIELD) && at[1] == white_op(W_GET_FIELD))
+                break;
+        }
+        CHECK(at + 1 < buf + size, "no get_arg1 get_field in the bytecode written");
+        if (at + 1 < buf + size) {
+            at[1] = white_op(W_GET_FIELD2);
+            run_read(v.ctx, buf, size, got, sizeof(got));
+            CHECK(strstr(got, "invalid bytecode: a fused opcode without the instructions it reads") != NULL,
+                  "read with the get_field changed: %s", got);
+        }
+        js_free(v.ctx, buf);
+    }
+
+    /* poll_scan: each fused opcode followed by the rest of its run */
+    c = (Code){{0}, 0};
+    op_n(&c, W_GET_ARG0_GET_FIELD, 1);
+    jump(&c, W_GOTO); /* 5 bytes of nothing, to be the get_field */
+    c.b[c.n - 5] = white_op(W_GET_FIELD);
+    op_n(&c, W_DROP, 1);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "get_arg0 get_field");
+    c.b[1] = white_op(W_GET_FIELD2);
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_arg0 then get_field2");
+    c.n = 1;
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_arg0 get_field at the end");
+    c = (Code){{0}, 0};
+    op_n(&c, W_GET_LOC8_GET_FIELD, 2); /* the index is a second byte of the opcode */
+    c.b[1] = 0;
+    jump(&c, W_GOTO);
+    c.b[c.n - 5] = white_op(W_GET_FIELD);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "get_loc8 get_field");
+    c.b[2] = white_op(W_DROP);
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_loc8 then something else");
+    for (k = 0; k < 3; k++) {
+        int iff;
+        c = (Code){{0}, 0};
+        op_n(&c, W_PUSH_0, 1);
+        op_n(&c, W_DUP_CASE_ATOM, 1);
+        jump(&c, W_GOTO);
+        c.b[c.n - 5] = white_op(W_PUSH_ATOM_VALUE);
+        op_n(&c, W_STRICT_EQ, 1);
+        iff = jump(&c, W_IF_FALSE8);
+        op_n(&c, W_DROP, 1);
+        set_target(&c, iff, c.n);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        if (k == 0) {
+            CHECK(scan_ok(&c), "dup push_atom_value strict_eq if_false8");
+        } else {
+            c.b[k == 1 ? 7 : 8] = white_op(k == 1 ? W_DROP : W_GOTO8);
+            CHECK(scan_fails(&c, "a fused opcode without"), "the case with instruction %d changed", k + 1);
+        }
+    }
+    vm_free(&v);
+}
+/* typeof x compared with a string is one opcode: typeof_is with the string,
+   typeof_is_undefined and typeof_is_function for those two, a negated test
+   takes the other branch or lnot, and typeof x < "u" or > "u" is
+   typeof_is_undefined. With JS_SetFusedOps off, only the forms of before
+   typeof_is are joined. Written and read back, the string comes along. */
+static void test_typeof_is(void)
+{
+    static const struct {
+        const char *body;
+        int op, lnot; /* with the opcodes on */
+        int off_op;   /* off: the opcode, or W_TYPEOF when none */
+    } cases[] = {
+        { "return typeof x == 'string'", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x === `number`", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x !== 'object'", W_TYPEOF_IS, 1, W_TYPEOF },
+        { "if (typeof x != 'symbol') return 1", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "if (typeof x == 'bigint') return 1", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x < 'u'", W_TYPEOF_IS_UNDEFINED, 1, W_TYPEOF },
+        { "return typeof x > `u`", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF },
+        { "if (typeof x < 'u') return 1", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF },
+        { "return typeof x === 'undefined'", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF_IS_UNDEFINED },
+        { "return typeof x != 'function'", W_TYPEOF_IS_FUNCTION, 1, W_TYPEOF },
+        { "if (typeof x !== 'function') return 1", W_TYPEOF_IS_FUNCTION, 0, W_TYPEOF_IS_FUNCTION },
+        { "return typeof x <= 'u'", W_TYPEOF, 0, W_TYPEOF },
+        { "return typeof x < 'v'", W_TYPEOF, 0, W_TYPEOF },
+        { "return typeof x == 1", W_TYPEOF, 0, W_TYPEOF },
+    };
+    static const char script[] =
+        "(function () { function f(x) { return typeof x == 'string' ? 1 : 0 }\n"
+        "  function g(x) { return typeof x !== 'object' && typeof x < 'u' ? 1 : 0 }\n"
+        "  return f('a') * 100 + f(1) * 10 + g(1) + g(null) * 2 + g(undefined) * 4 })";
+    VM v = vm_new();
+    int shape[2 * 64];
+    char src[256], got[256];
+    uint8_t *buf;
+    size_t size;
+
+    for (int on = 1; on >= 0; on--) {
+        JS_SetFusedOps(v.ctx, on);
+        for (size_t i = 0; i < countof(cases); i++) {
+            const uint8_t *code;
+            JSValue top;
+            int len, n, ops = 0, lnot = 0, left = 0;
+            int want = on ? cases[i].op : cases[i].off_op;
+
+            snprintf(src, sizeof(src), "function f(x) { %s }", cases[i].body);
+            CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile %s", src);
+            n = code ? white_code_shape(code, len, shape, 64) : -1;
+            for (int k = 0; k < n; k++) {
+                ops += shape[2 * k] == white_op(want);
+                lnot += shape[2 * k] == white_op(W_LNOT);
+                left += shape[2 * k] == white_op(W_TYPEOF);
+            }
+            CHECK(ops == 1, "on %d: %s: %d of the opcode", on, cases[i].body, ops);
+            CHECK(want == W_TYPEOF || left == 0, "on %d: %s: typeof left", on, cases[i].body);
+            CHECK(lnot == (on && cases[i].lnot), "on %d: %s: %d lnot", on, cases[i].body, lnot);
+            JS_FreeValue(v.ctx, top);
+        }
+    }
+    JS_SetFusedOps(v.ctx, 1);
+
+    {
+        JSValue top = JS_Eval(v.ctx, script, strlen(script), "<typeof>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(v.ctx, top);
+    }
+    CHECK(buf != NULL, "write");
+    if (buf) {
+        run_read(v.ctx, buf, size, got, sizeof(got));
+        CHECK(strcmp(got, "ok 101") == 0, "read back: %s", got);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
+/* The index the disassembler prints for an opcode that has it in the opcode,
+   the fused reads included (they are apart from the groups of four of
+   upstream), against the name of the opcode. */
+static void test_short_opcode_index(void)
+{
+    char bad[96] = "";
+    int n = white_short_index_check(bad, sizeof(bad));
+
+    CHECK(n >= 3 * 4 + 3, "the index of %s", bad);
+}
+
+/* count_ops: how many of the opcode w the code of the first function of src
+   has, or -1 when it does not compile. */
+static int count_ops(JSContext *ctx, const char *src, int w)
+{
+    int shape[2 * 128], n, k, c = 0;
+    const uint8_t *code;
+    JSValue top;
+    int len;
+
+    if (code_of(ctx, src, &top, &code, &len) != 0)
+        return -1;
+    n = white_code_shape(code, len, shape, 128);
+    for (k = 0; k < n; k++)
+        c += shape[2 * k] == white_op(w);
+    JS_FreeValue(ctx, top);
+    return n < 0 ? -1 : c;
+}
+
+/* fused_count: the fused opcodes of the first function of src, by kind
+   into count, and in all; -1 when it does not compile. */
+static int fused_count(JSContext *ctx, const char *src, int *count)
+{
+    const uint8_t *code;
+    JSValue top;
+    int len, n;
+
+    if (code_of(ctx, src, &top, &code, &len) != 0)
+        return -1;
+    n = white_fused_ops(code, len, count);
+    JS_FreeValue(ctx, top);
+    return n;
+}
+
+/* The places where the fused opcodes meet what is not a plain object or a
+   plain binding: an object with [[IsHTMLDDA]] in every typeof test, a module
+   namespace, whose exports are references to the variables of the module,
+   and an argument or a local that a direct eval or a with block sets just
+   before the fused read. Each runs with the opcodes on and off, and on, the
+   code must have the opcodes, so that the test does not pass on the path of
+   before alone. */
+static void test_fused_edges(void)
+{
+    static const char dda_tests[] =
+        "function f(x) { return [typeof x == 'undefined', typeof x === 'object', typeof x != 'undefined',"
+        " typeof x !== 'function', typeof x < 'u', typeof x > 'u', typeof x == 'function',"
+        " typeof x === 'string', typeof x == 'object', typeof x !== 'undefined'].join() }";
+    static const char dda_branches[] =
+        "function f(x) { var r = ''; if (typeof x < 'u') r += 'a'; if (typeof x > 'u') r += 'b';"
+        " if (typeof x === 'undefined') r += 'c'; if (typeof x !== 'object') r += 'd';"
+        " if (typeof x != 'function') r += 'e'; return r }";
+    static const char ns_read[] =
+        "function f(o) { var r = o.x; o.bump(); return [r, o.x, o.y, typeof o.nope].join() }";
+    static const struct {
+        const char *src, *call, *want;
+        int kind, n; /* the kind of fused read after the eval or the with (in the order of white_fused_ops), and the fused reads in all */
+    } bound[] = {
+        { "function f(a) { eval('a = { x: 2 }'); return a.x }", "({ x: 1 })", "2", 0, 1 },
+        { "function f(a) { eval('var a = { x: 5 }'); return a.x }", "({ x: 1 })", "5", 0, 1 },
+        { "function f(a, b) { eval('b = { y: 6 }'); return a.x + b.y }", "({ x: 1 }, { y: 2 })", "7", 1, 2 },
+        { "function f() { var o = { x: 1 }; eval('o = { x: 4 }'); return o.x }", "()", "4", 2, 1 },
+        { "function f(s) { var a = 0, b = 1, c = 2, d = 3, e = { x: 1 }; eval('e = { x: 8 }'); return e.x }",
+          "()", "8", 3, 1 },
+        { "function f(a, s) { with (s) { a = { x: 3 } } return a.x }", "({ x: 1 }, {})", "3", 0, 1 },
+        { "function f(a, s) { with (s) { a = { x: 3 } } return a.x }", "({ x: 1 }, { a: 0 })", "1", 0, 1 },
+        { "function f(a, s) { with (s) { eval('a = { x: 9 }') } return a.x }", "({ x: 1 }, {})", "9", 0, 1 },
+    };
+    VM v = vm_new();
+    JSValue g, dda, mod, ns, r;
+    JSModuleDef *m;
+    int on, count[5], n;
+    size_t i;
+    char src[512];
+
+    dda = JS_NewObject(v.ctx);
+    JS_SetIsHTMLDDA(v.ctx, dda);
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "dda", dda);
+
+    /* a module of its own, whose namespace the reads get */
+    {
+        static const char dep[] = "export let x = 7; export const y = 'y'; export function bump() { x++ }";
+        mod = JS_Eval(v.ctx, dep, strlen(dep), "dep", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(mod), "compile the module");
+        m = JS_VALUE_GET_PTR(mod);
+        r = JS_EvalFunction(v.ctx, mod);
+        CHECK(!JS_IsException(r), "run the module");
+        JS_FreeValue(v.ctx, r);
+        ns = JS_GetModuleNamespace(v.ctx, m);
+        CHECK(JS_IsObject(ns), "the namespace");
+        JS_SetPropertyStr(v.ctx, g, "ns", ns);
+    }
+    JS_FreeValue(v.ctx, g);
+
+    for (on = 1; on >= 0; on--) {
+        JS_SetFusedOps(v.ctx, on);
+
+        /* typeof of an object with [[IsHTMLDDA]] is "undefined" */
+        n = count_ops(v.ctx, dda_tests, W_TYPEOF);
+        CHECK(on ? n == 0 : n == 8, "on %d: %d typeof left in the tests of dda", on, n);
+        n = count_ops(v.ctx, dda_tests, W_TYPEOF_IS) + count_ops(v.ctx, dda_tests, W_TYPEOF_IS_UNDEFINED) +
+            count_ops(v.ctx, dda_tests, W_TYPEOF_IS_FUNCTION);
+        CHECK(on ? n == 10 : n == 2, "on %d: %d typeof opcodes in the tests of dda", on, n);
+        snprintf(src, sizeof(src), "(%s)(dda)", dda_tests);
+        CHECK(eval_is(v.ctx, src, "true,false,false,true,false,true,false,false,false,false"), "on %d: dda", on);
+        n = count_ops(v.ctx, dda_branches, W_TYPEOF);
+        CHECK(on ? n == 0 : n == 3, "on %d: %d typeof left in the branches of dda", on, n);
+        snprintf(src, sizeof(src), "(%s)(dda)", dda_branches);
+        CHECK(eval_is(v.ctx, src, "bcde"), "on %d: the branches of dda", on);
+        CHECK(eval_is(v.ctx, "typeof dda + (dda == undefined) + (dda === undefined)", "undefinedtruefalse"),
+              "on %d: dda itself", on);
+
+        /* the exports of a namespace are read through their references:
+           the read after bump() sees the new value */
+        n = fused_count(v.ctx, ns_read, count);
+        CHECK(on ? n == 4 && count[0] == 4 : n == 0, "on %d: %d fused reads of the namespace", on, n);
+        snprintf(src, sizeof(src), "(%s)(ns)", ns_read);
+        CHECK(eval_is(v.ctx, src, on ? "7,8,y,undefined" : "8,9,y,undefined"), "on %d: the namespace", on);
+
+        /* a direct eval or a with block sets the binding, then the fused read */
+        for (i = 0; i < countof(bound); i++) {
+            n = fused_count(v.ctx, bound[i].src, count);
+            CHECK(on ? n == bound[i].n && count[bound[i].kind] == 1 : n == 0,
+                  "on %d: %s: %d fused", on, bound[i].src, n);
+            snprintf(src, sizeof(src), "(%s)%s", bound[i].src, bound[i].call);
+            CHECK(eval_is(v.ctx, src, bound[i].want), "on %d: %s", on, src);
+        }
+    }
+    JS_SetFusedOps(v.ctx, 1);
     vm_free(&v);
 }
 
@@ -2476,6 +2898,7 @@ int main(void)
     test_poll_work_gaps();
     test_buffer_copy_work();
     test_object_inline_limit();
+    test_object_lit_shared_shape();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
@@ -2487,6 +2910,10 @@ int main(void)
     test_poll_checked_read();
     test_object_lit_read();
     test_tail_c_calls();
+    test_fused_ops();
+    test_typeof_is();
+    test_short_opcode_index();
+    test_fused_edges();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
