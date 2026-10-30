@@ -222,3 +222,106 @@ func TestHasOwnCallDepth(t *testing.T) {
 		}
 	}
 }
+
+// cCallKinds are recursions that go through a C function, with what f does
+// after its locals. The interpreter calls a plain C function itself
+// (js_call_c_direct), without the frame of JS_CallInternal, and counts that
+// frame as taken, so each must end at the depth, and with the RangeError,
+// it gave when every call of a C function went through JS_CallInternal
+// (docs/changes/c-engine.md). The tail ones return the call of the C
+// function, a tail call (test_tail_c_calls of engine/test/unit-white.c),
+// and abs calls one with no receiver on each level before going down.
+var cCallKinds = map[string]string{
+	"call":       "return f.call(null) + v0",
+	"apply":      "return f.apply(null, []) + v0",
+	"map":        "return [1].map(f)[0] + v0",
+	"sort":       "[2, 1].sort(f); return v0",
+	"max":        "return Math.max(f(), v0)",
+	"abs":        "v0 = abs(-v0); return f() + v0",
+	"tail_map":   "return [1].map(f)",
+	"tail_apply": "return apply(f, null, [])",
+}
+
+// cCallRun runs the recursion of kind with locals in m, at its depth limit,
+// and gives the depth it reached and the stack of the RangeError.
+func cCallRun(t *testing.T, m *VM, kind string, locals int) string {
+	t.Helper()
+	out, err := m.Eval(`(() => { const abs = Math.abs, apply = Reflect.apply; let reached = 0;
+		function f() { `+frameOf(locals+1)+` reached++; `+cCallKinds[kind]+` }
+		let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError ' + e.stack : String(e) }
+		return reached + ' ' + at })()`, EvalGlobal)
+	if err != nil {
+		t.Fatalf("%s_%d: %v", kind, locals, err)
+	}
+	return out.(string)
+}
+
+// directCCalls turns the direct calls of C functions of m on or off.
+func directCCalls(t *testing.T, m *VM, on bool) {
+	t.Helper()
+	var r uintptr
+	m.outer(func() { r = cengine.JS_SetDirectCCalls(m.sp, m.ctx, uintptr(map[bool]int{false: 0, true: 1}[on])) })
+	if int32(r) != 0 {
+		t.Fatal("JS_SetDirectCCalls refused")
+	}
+}
+
+// TestCCallDepth runs each recursion of cCallKinds at the depth limits of 5000
+// and 10000, with frames from none to 300 locals, which end at the limit or
+// on the shadow stack, with the direct calls of C functions on and off, and
+// requires both to reach the same depth and give the same stack.
+func TestCCallDepth(t *testing.T) {
+	for _, limit := range []uintptr{5000, 10000} {
+		for kind := range cCallKinds {
+			for _, locals := range []int{0, 100, 200, 250, 300} {
+				var got [2]string
+				for i, on := range []bool{true, false} {
+					m, err := NewVM()
+					if err != nil {
+						t.Fatal(err)
+					}
+					m.SetMaxStackSize(limit)
+					directCCalls(t, m, on)
+					got[i] = cCallRun(t, m, kind, locals)
+					m.Close()
+				}
+				if got[0] != got[1] {
+					t.Errorf("limit %d, %s_%d: direct %.200q, through JS_CallInternal %.200q", limit, kind, locals, got[0], got[1])
+				}
+			}
+		}
+	}
+}
+
+// TestCCallDepthAfterExits leaves nested direct calls of C functions by a
+// RangeError, an Error that a catch takes, and an interrupt, in the same VM,
+// and requires the next recursion to end as the first did: each way out gives
+// back the depth and the stack it counted.
+func TestCCallDepthAfterExits(t *testing.T) {
+	m := newTestVM(t)
+	m.SetMaxStackSize(10000)
+	if err := m.RegisterFunc("stop", func() { m.Interrupt() }, false); err != nil {
+		t.Fatal(err)
+	}
+	first := cCallRun(t, m, "map", 250)
+	if !strings.Contains(first, "RangeError") {
+		t.Fatalf("no RangeError: %.200q", first)
+	}
+	if got := cCallRun(t, m, "map", 250); got != first {
+		t.Fatalf("after a RangeError: %.200q, want %.200q", got, first)
+	}
+	if got := evalString(t, m, `try { [1].map(() => [1].map(() => [2, 1].sort(() => { throw new Error('x') }))); 'no' } catch (e) { e.message }`); got != "x" {
+		t.Fatalf("the Error: %s", got)
+	}
+	if got := cCallRun(t, m, "map", 250); got != first {
+		t.Fatalf("after an Error: %.200q, want %.200q", got, first)
+	}
+	_, err := m.Eval(`[1].map(() => [1].map(() => [2, 1].sort(() => { stop(); for (;;); })))`, EvalGlobal)
+	wantKind(t, err, interrupted)
+	if got := cCallRun(t, m, "map", 250); got != first {
+		t.Fatalf("after an interrupt: %.200q, want %.200q", got, first)
+	}
+	if engineFramesLeft(m) {
+		t.Fatal("a call is still counted")
+	}
+}

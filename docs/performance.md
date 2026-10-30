@@ -439,6 +439,19 @@ Every position of the shop and the MUI pages was faster with the second change. 
 
 The memory of a VM does not change: `MemorySize` and the footprint at the end of `r_react_ssr` and `r_bench_table` are the same bytes before and after (Apple M4). On linux/amd64 the heap of the engine grows the same 13 times to the same 12 chunks. The most memory of a `jsrun` process of `r_react_ssr`, which the Go runtime and the code pages add to, is 8.3 MiB at the median of 32 processes before the changes and 8.4 MiB after.
 
+### C functions called from the interpreter
+
+[The interpreter calls a plain C function itself](changes/c-engine.md#how-the-interpreter-calls-a-c-function), without the entry of `JS_CallInternal`, and counts the frame it skips as taken on the stack. Against main (a9d61185), without PGO, over 4 rounds at 8 positions on one core of an EPYC 7B13 with its sibling idle, with the same HTML on the 16 pages of the shop, the MUI app, the bench app and the store. Time is the median over positions of the paired ratios, and positions gives the lowest and the highest of them. Instructions per render are from callgrind at position 0.0: the difference of 5 and 2 renders of each page for the tifa pages, of 3 and 1 runs for `r_react_ssr`.
+
+| Pages | Time | Positions | Base range | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.984, no change by the rule | 0.971 to 1.003 | 2.0% | -0.74% |
+| tifa's MUI test app, three pages (sum) | 0.983, no change by the rule | 0.965 to 0.988 | 2.7% | -0.34% |
+| tifa's bench app, two pages (sum) | 0.987, no change by the rule | 0.961 to 1.010 | 2.9% | -2.32% |
+| `r_react_ssr` | 0.980, no change by the rule | 0.950 to 1.015 | 3.2% | -0.87% |
+
+No page is slower. Every position of the MUI pages was faster. The memory of a `jsrun` process of `r_react_ssr` is 8.4 MiB at the median of 32 processes before and 8.2 MiB after. Without counting the skipped frame as taken the change ran fewer instructions (-0.84%, -0.60%, -2.66% and -1.11%), but let a recursion with big frames through a C function go deeper than before.
+
 ### React DOM's text escape in C
 
 [`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is slowjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
