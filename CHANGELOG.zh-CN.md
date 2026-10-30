@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `VM.RegisterEscapeText(name)` 在全局对象上定义名为 `name` 的函数，像 React DOM 字符串渲染器的 `escapeTextForBrowser` 那样给 HTML 转义文本，在引擎里用 C 写成。参数先变成字符串，同 `"" + text`（对象走 `valueOf` 和 `toString`，symbol 会抛错），再把 `&`、`<`、`>`、`"` 和 `'` 换成 `&amp;`、`&lt;`、`&gt;`、`&quot;` 或 `&#x27;`。里面没有这五个字符的字符串原样（同一个字符串）返回。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这个函数。在 tifa 里，React 的转义用了它，渲染一次少跑 0.7% 到 4.5% 的指令，示例商店的页面渲染只花原来的 0.974，bench 页面是 0.938。（[性能](docs/performance.md#react-doms-text-escape-in-c)，[Go API](docs/changes/go-api.md#registerescapetext)）
+
 ### 变更
 
 - `VM.RunGC` 跑完后把 GC 阈值设成它留下的内存的 1.5 倍，和引擎自己启动的 GC 一样。以前它不动阈值：脚本把堆撑过阈值但没有新建对象（数组元素就这样）时，`RunGC` 之后下一次调用的第一个对象会再启动一次同样长的完整 GC。阈值是 `^uintptr(0)`（关掉引擎自己的 GC）时保持不变。自己在 `RunGC` 之后设阈值的程序（比如 tifa）看不到变化。

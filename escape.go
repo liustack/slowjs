@@ -13,8 +13,8 @@ import (
 // RegisterEscapeText defines a function named name on the global object that
 // escapes text for HTML the way React DOM's string renderer does
 // (escapeTextForBrowser in react-dom-server-legacy.browser.production.js).
-// It is written in C inside the engine, so a call costs a little more than a
-// call of a built-in such as Math.abs, and it does the work of the whole
+// It is written in C inside the engine, so a call costs about what a call of
+// an empty JavaScript function costs, and it does the work of the whole
 // function of React: a script that calls it in place of the function of React
 // gets the same text.
 //

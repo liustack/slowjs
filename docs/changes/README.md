@@ -50,6 +50,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | v0.27.2 | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 | A module frees its top level once it has run | v0.28.4 | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
 | The async context of promise jobs, for AsyncLocalStorage | v0.28.5 | [go-api.md](go-api.md#the-async-context-of-promise-jobs) |
+| RegisterEscapeText, React DOM's HTML escape written in C | Unreleased | [go-api.md](go-api.md#registerescapetext) |
 
 ## Limits that hold
 
