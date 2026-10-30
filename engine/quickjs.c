@@ -445,6 +445,9 @@ struct JSRuntime {
        stack ends where it did */
     long call_frame;
     long stack_debt;
+    /* TRUE: the compiler leaves the pairs of fuse_code apart (JS_SetFusedOps,
+       for tests) */
+    BOOL no_fused_ops;
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
     int internal_depth;
@@ -3286,6 +3289,11 @@ int JS_SetDirectCCalls(JSContext *ctx, int on)
     else
         rt->call_frame = (long)1 << 60; /* never room for it */
     return 0;
+}
+
+void JS_SetFusedOps(JSContext *ctx, int on)
+{
+    ctx->rt->no_fused_ops = !on;
 }
 
 JSContext *JS_NewContextRaw(JSRuntime *rt)
@@ -21114,6 +21122,45 @@ static inline BOOL goasm_field_goes_on(JSObject *p, JSAtom atom)
         (p->class_id < JS_CLASS_UINT8C_ARRAY || p->class_id > JS_CLASS_FLOAT64_ARRAY);
 }
 
+/* v === the string of atom, as 1 or 0, when it is told without comparing
+   characters, or -1. atom is a string atom of push_atom_value: the atom
+   table holds its text once, so a string value that is an atom of the type
+   string is equal only when it is that atom, and a value of a type that is
+   not a string never is. A rope, a string that is not an atom of the same
+   length, and anything but a string atom or a plain value are left to
+   strict_eq. */
+static force_inline int goasm_case_atom(JSRuntime *rt, JSValueConst v, JSAtom atom)
+{
+    JSString *pa, *ap;
+
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING:
+        if (__JS_AtomIsTaggedInt(atom))
+            return -1;
+        ap = rt->atom_array[atom];
+        if (ap->atom_type != JS_ATOM_TYPE_STRING)
+            return -1;
+        pa = JS_VALUE_GET_STRING(v);
+        if (pa == ap)
+            return 1;
+        if (pa->len != ap->len || pa->atom_type == JS_ATOM_TYPE_STRING)
+            return 0;
+        return -1;
+    case JS_TAG_OBJECT:
+    case JS_TAG_INT:
+    case JS_TAG_BOOL:
+    case JS_TAG_NULL:
+    case JS_TAG_UNDEFINED:
+    case JS_TAG_FLOAT64:
+    case JS_TAG_SYMBOL:
+    case JS_TAG_BIG_INT:
+    case JS_TAG_SHORT_BIG_INT:
+        return 0;
+    default:
+        return -1;
+    }
+}
+
 static inline BOOL goasm_eq_simple_tag(int tag)
 {
     return tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED || tag == JS_TAG_BOOL ||
@@ -22920,6 +22967,97 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
 #if SHORT_OPCODES
         CASE(OP_get_length):
             GET_FIELD_INLINE(get_length, 0, 1, 0);
+            BREAK;
+
+            /* A local or an argument, then the OP_get_field after it, which
+               pc points to after the index the first one has (skip bytes).
+               The value is read without a reference: only a data property
+               found with nothing run (no getter, proxy, exotic object or
+               primitive the path of get_field leaves) takes the fast path,
+               which pushes the property and steps over the OP_get_field. In
+               every other case it pushes the value as the read alone does,
+               and the OP_get_field runs as it would have. */
+#define GET_LOCAL_FIELD(name, objexpr, skip)                            \
+            {                                                           \
+                JSValueConst obj = (objexpr);                           \
+                JSAtom atom = get_u32(pc + (skip) + 1);                 \
+                JSValue val;                                            \
+                JSObject *p;                                            \
+                JSProperty *pr;                                         \
+                JSShapeProperty *prs;                                   \
+                                                                        \
+                if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT))     \
+                    p = JS_VALUE_GET_OBJ(obj);                          \
+                else                                                    \
+                    p = goasm_field_proto(ctx, obj, atom);              \
+                if (likely(p)) {                                        \
+                    for(;;) {                                           \
+                        prs = find_own_property(&pr, p, atom);          \
+                        if (prs) {                                      \
+                            if (unlikely(prs->flags & JS_PROP_TMASK))   \
+                                goto name ## _apart;                    \
+                            if (atom == JS_ATOM_stack &&                \
+                                JS_VALUE_GET_TAG(pr->u.value) ==        \
+                                JS_TAG_OBJECT)                          \
+                                goto name ## _apart;                    \
+                            val = JS_DupValue(ctx, pr->u.value);        \
+                            break;                                      \
+                        }                                               \
+                        if (unlikely(p->is_exotic) &&                   \
+                            !goasm_field_goes_on(p, atom))              \
+                            goto name ## _apart;                        \
+                        p = p->shape->proto;                            \
+                        if (!p) {                                       \
+                            val = JS_UNDEFINED;                         \
+                            break;                                      \
+                        }                                               \
+                    }                                                   \
+                    *sp++ = val;                                        \
+                    if (skip)                                           \
+                        pc += 1;                                        \
+                    pc += 5;                                            \
+                    BREAK;                                              \
+                }                                                       \
+            name ## _apart:                                             \
+                *sp++ = JS_DupValue(ctx, obj);                          \
+                if (skip)                                               \
+                    pc += 1;                                            \
+            }
+
+        CASE(OP_get_arg0_get_field):
+            GET_LOCAL_FIELD(get_arg0_get_field, arg_buf[0], 0);
+            BREAK;
+        CASE(OP_get_arg1_get_field):
+            GET_LOCAL_FIELD(get_arg1_get_field, arg_buf[1], 0);
+            BREAK;
+        CASE(OP_get_loc0_get_field):
+            GET_LOCAL_FIELD(get_loc0_get_field, var_buf[0], 0);
+            BREAK;
+        CASE(OP_get_loc8_get_field):
+            GET_LOCAL_FIELD(get_loc8_get_field, var_buf[pc[0]], 1);
+            BREAK;
+
+        CASE(OP_dup_case_atom):
+            /* dup, push_atom_value, strict_eq, if_false8: a case of a switch
+               on strings. pc points to the push_atom_value. When the value
+               is told apart from the string without its characters, the
+               comparison and the branch are done here as if_false8 does
+               them, else the dup is, and the rest runs as it would have. */
+            {
+                int eq = goasm_case_atom(rt, sp[-1], get_u32(pc + 1));
+
+                if (likely(eq >= 0)) {
+                    pc += 8;
+                    if (!eq) {
+                        JUMP_TO(pc + (int8_t)pc[-1] - 1);
+                    }
+                    if (unlikely(js_poll_interrupts(ctx)))
+                        goto exception;
+                    BREAK;
+                }
+                sp[0] = JS_DupValue(ctx, sp[-1]);
+                sp++;
+            }
             BREAK;
 #endif
             
@@ -39191,6 +39329,53 @@ static void put_short_code(DynBuf *bc_out, int op, int idx)
     dbuf_put_u16(bc_out, idx);
 }
 
+/* The runs of instructions that one opcode does at once, its first
+   instruction made that opcode (fuse_code): the opcodes of the run, the
+   fused opcode last. poll_scan holds code read by JS_ReadObject to them. */
+static const uint8_t fused_runs[][5] = {
+    { OP_get_arg0, OP_get_field, 0, 0, OP_get_arg0_get_field },
+    { OP_get_arg1, OP_get_field, 0, 0, OP_get_arg1_get_field },
+    { OP_get_loc0, OP_get_field, 0, 0, OP_get_loc0_get_field },
+    { OP_get_loc8, OP_get_field, 0, 0, OP_get_loc8_get_field },
+    { OP_dup, OP_push_atom_value, OP_strict_eq, OP_if_false8, OP_dup_case_atom },
+};
+
+/* The run of the fused opcode op, or NULL when op is none. The fused
+   opcodes are the last ones of quickjs-opcode.h but typeof_is, from
+   get_arg0_get_field to dup_case_atom. */
+static const uint8_t *fused_run(int op)
+{
+    size_t i;
+
+    if (op < OP_get_arg0_get_field || op > OP_dup_case_atom)
+        return NULL;
+    for (i = 0; i < countof(fused_runs); i++) {
+        if (fused_runs[i][4] == op)
+            return fused_runs[i];
+    }
+    return NULL;
+}
+
+/* Whether the instructions at pos spell out run, op0 being the plain
+   opcode of the first one. Instructions are whole: pos is the start of one. */
+static BOOL fused_run_at(const uint8_t *bc_buf, int bc_len, int pos,
+                         const uint8_t *run, int op0)
+{
+    int k, op;
+
+    for (k = 0; k < 4 && run[k]; k++) {
+        if (pos >= bc_len)
+            return FALSE;
+        op = k == 0 ? op0 : bc_buf[pos];
+        if (op != run[k])
+            return FALSE;
+        pos += short_opcode_info(run[k]).size;
+        if (pos > bc_len)
+            return FALSE;
+    }
+    return TRUE;
+}
+
 /* The rule of the polls on the final code of a function, which check_polls
    and insert_polls share. The interpreter counts at the entry of each call,
    at each jump that does not go forward, at each return from a finally
@@ -39206,8 +39391,9 @@ static void put_short_code(DynBuf *bc_out, int op, int idx)
    which an OP_nop goes: those a path reaches with POLL_RUN - 1 instructions,
    unless they end it, so that the OP_nop too fits. It also checks what the
    walk relies on: each opcode is one the interpreter has, each instruction
-   is inside the code, each jump lands at the start of an instruction, and
-   the last instruction does not run off the end. It returns NULL, or what is
+   is inside the code, each fused opcode is followed by the rest of its run
+   (fused_runs), each jump lands at the start of an instruction, and the
+   last instruction does not run off the end. It returns NULL, or what is
    wrong. run has bc_len bytes, and POLL_NONE marks those where no
    instruction starts. */
 #define POLL_NONE 0xff
@@ -39218,6 +39404,7 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
     int pos, len, op, r, in, falls, next, jumps;
     int64_t target;
     const JSOpCode *oi;
+    const uint8_t *fused;
 
     memset(run, POLL_NONE, bc_len);
     for (pos = 0; pos < bc_len; pos += len) {
@@ -39228,6 +39415,9 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         if (len > bc_len - pos)
             return "an instruction past the end of the code";
         run[pos] = 0;
+        fused = fused_run(op);
+        if (fused && !fused_run_at(bc_buf, bc_len, pos, fused, fused[0]))
+            return "a fused opcode without the instructions it reads";
     }
     /* the entry counts */
     r = 0;
@@ -39498,6 +39688,100 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
     js_free(ctx, npos);
     js_free(ctx, run);
     return -1;
+}
+
+/* fuse_code makes the first instruction of each run of fused_runs in the
+   final code bc of a function the opcode that does the whole run, when no
+   jump lands inside the run, after its first instruction. Only that one byte
+   changes: the opcode has the size, stack effect and format of the
+   instruction it replaces, and the rest of the run stays, which the fused
+   opcode reads and goes on to whenever its fast path does not apply. So the
+   positions, the jumps, the line numbers and the polls of the code stay as
+   they are, and so do the errors, which only the rest of the run can
+   throw. */
+/* The run of fused_runs that the instruction op starts, if any. */
+static const uint8_t *fused_run_from(int op)
+{
+    size_t i;
+
+    switch (op) {
+    case OP_get_arg0:
+    case OP_get_arg1:
+    case OP_get_loc0:
+    case OP_get_loc8:
+    case OP_dup:
+        for (i = 0; i < countof(fused_runs); i++) {
+            if (fused_runs[i][0] == op)
+                return fused_runs[i];
+        }
+        break;
+    }
+    return NULL;
+}
+
+static int fuse_code(JSContext *ctx, DynBuf *bc)
+{
+    /* mark: 1 at the target of a jump, 2 at the start of a run */
+    uint8_t *buf = bc->buf, *mark;
+    const uint8_t *run;
+    int len = bc->size, pos, k, op, end, runs = 0;
+    int64_t to;
+    const JSOpCode *oi;
+
+    if (ctx->rt->no_fused_ops || len == 0)
+        return 0;
+    mark = js_mallocz(ctx, len + 1);
+    if (!mark)
+        return -1;
+    for (pos = 0; pos < len; pos += oi->size) {
+        op = buf[pos];
+        oi = &short_opcode_info(op);
+        switch (oi->fmt) {
+        case OP_FMT_label:
+            to = pos + 1 + (int64_t)(int32_t)get_u32(buf + pos + 1);
+            break;
+        case OP_FMT_label16:
+            to = pos + 1 + (int64_t)(int16_t)get_u16(buf + pos + 1);
+            break;
+        case OP_FMT_label8:
+            to = pos + 1 + (int64_t)(int8_t)buf[pos + 1];
+            break;
+        case OP_FMT_atom_label_u8:
+            to = pos + 5 + (int64_t)(int32_t)get_u32(buf + pos + 5);
+            break;
+        default:
+            to = -1;
+            /* none of the runs starts with a jump */
+            run = fused_run_from(op);
+            if (run && fused_run_at(buf, len, pos, run, op)) {
+                mark[pos] |= 2;
+                runs++;
+            }
+            break;
+        }
+        if (to >= 0 && to <= len)
+            mark[to] |= 1;
+        /* OP_ret goes back to the instruction after an OP_gosub */
+        if (op == OP_gosub && pos + oi->size <= len)
+            mark[pos + oi->size] |= 1;
+    }
+    for (pos = 0; runs > 0; pos++) {
+        if (!(mark[pos] & 2))
+            continue;
+        runs--;
+        run = fused_run_from(buf[pos]);
+        end = pos;
+        for (k = 0; k < 4 && run[k]; k++)
+            end += short_opcode_info(run[k]).size;
+        for (k = pos + 1; k < end; k++) {
+            if (mark[k] & 1)
+                break;
+        }
+        if (k == end)
+            buf[pos] = run[4];
+    }
+    js_free(ctx, mark);
+    return 0;
 }
 
 /* peephole optimizations and resolve goto/labels */
@@ -40391,6 +40675,9 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 #endif
     /* a count in every long run of the code (JS_CallInternal) */
     if (insert_polls(ctx, s, &bc_out))
+        goto fail;
+    /* the runs one opcode does at once (JS_CallInternal) */
+    if (fuse_code(ctx, &bc_out))
         goto fail;
     js_free(ctx, s->label_slots);
     s->label_slots = NULL;
@@ -42371,7 +42658,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 6
+#define BC_VERSION 7
 
 typedef struct BCWriterState {
     JSContext *ctx;

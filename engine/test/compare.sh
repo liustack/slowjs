@@ -68,7 +68,8 @@ r="$here/compare/recorded"
 t=$here/compare/recorded
 # The scripts that have a file in the repository: SCRIPT FILE [OPTIONS of jsrun]
 # regexcache.js runs with the cache at its default, at a few entries and off,
-# and prints the same each time.
+# and prints the same each time. fused_ops.js runs again with the pairs the
+# compiler joins into one opcode left apart, and prints the same.
 cases="
 $t/bitwise.js $t/bitwise.txt -raw
 $t/coldpath.js $t/coldpath.txt -raw
@@ -94,6 +95,7 @@ $here/compare/upstream/test_bigint.js $here/compare/upstream/test_bigint.txt -ra
 $here/compare/upstream/test_closure.js $here/compare/upstream/test_closure.txt -raw
 $here/compare/upstream/test_language.js $here/compare/upstream/test_language.txt -raw
 $here/compare/upstream/test_loop.js $here/compare/upstream/test_loop.txt -raw
+$here/compare/fused_ops.js $here/compare/fused_ops.txt -no-fused-ops
 $out/test_builtin.js $here/compare/upstream/test_builtin.txt -raw
 "
 # A script of engine/test/compare names the options it needs in a line
@@ -114,6 +116,7 @@ while read -r script want opts; do
 	name=$(basename "${want%%#*}")
 	tag=${name%.*}
 	case $opts in *regexp-cache=4*) tag=$tag-few ;; *regexp-cache=0*) tag=$tag-off ;; esac
+	case $opts in *no-fused-ops*) tag=$tag-apart ;; esac
 	total=$((total + 1))
 	# "== NAME" is the line jsrun puts before each script.
 	# shellcheck disable=SC2086
