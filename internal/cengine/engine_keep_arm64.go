@@ -842,6 +842,7 @@ var goasmKeep = []any{
 	js_math_round,
 	js_math_sign,
 	js_math_sumPrecise,
+	js_measure_call_frame,
 	js_module_ns_autoinit,
 	js_module_ns_has,
 	js_new_function_def_block,

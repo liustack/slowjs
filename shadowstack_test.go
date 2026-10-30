@@ -12,6 +12,7 @@ package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"unsafe"
@@ -219,6 +220,64 @@ func TestHasOwnCallDepth(t *testing.T) {
 				t.Errorf("limit %d, %d locals: answered reached %d (RangeError %v), called reached %d (RangeError %v)",
 					limit, locals, answered, answeredErr, called, calledErr)
 			}
+		}
+	}
+}
+
+// cCallEnds is where recursions with big frames that go through a C function
+// end on the shadow stack at the depth limit of 10000, with the place of the
+// RangeError: what the engine gave when every call of a C function went
+// through JS_CallInternal. The interpreter now calls a C function itself
+// (js_call_c_direct), without the frame of JS_CallInternal, and must end each
+// of them at the same depth and place (docs/changes/c-engine.md).
+var cCallEnds = map[string]map[string]string{
+	"amd64": {
+		"call_250":  "4629 at f (<eval>:1:2841)",
+		"call_300":  "4168 at f (<eval>:1:3441)",
+		"apply_300": "4151 at f (<eval>:1:3442)",
+		"map_300":   "4119 at f (<eval>:1:3442)",
+		"sort_200":  "4262 at sort (native)",
+		"sort_300":  "3540 at f (<eval>:1:3439)",
+		"max_250":   "6047 at f (<eval>:1:2845)",
+	},
+	"arm64": {
+		"call_300":  "4650 at call (native)",
+		"apply_300": "4629 at f (<eval>:1:3442)",
+		"map_300":   "4588 at f (<eval>:1:3442)",
+		"sort_200":  "4767 at sort (native)",
+		"sort_300":  "3882 at f (<eval>:1:3439)",
+		"max_250":   "6559 at f (<eval>:1:2845)",
+	},
+}
+
+// TestCCallDepth runs the recursions of cCallEnds at the depth limit of
+// 10000 and checks the depth each reaches and where it throws.
+func TestCCallDepth(t *testing.T) {
+	kinds := map[string]string{
+		"call":  "return f.call(null) + v0",
+		"apply": "return f.apply(null, []) + v0",
+		"map":   "return [1].map(f)[0] + v0",
+		"sort":  "[2, 1].sort(f); return v0",
+		"max":   "return Math.max(f(), v0)",
+	}
+	for name, end := range cCallEnds[runtime.GOARCH] {
+		kind, locals, _ := strings.Cut(name, "_")
+		var n int
+		fmt.Sscan(locals, &n)
+		m, err := NewVM()
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.SetMaxStackSize(10000)
+		out, err := m.Eval(`var reached = 0; function f() { `+frameOf(n)+` reached++; `+kinds[kind]+` }
+			var at = ''; try { f() } catch (e) { at = e instanceof RangeError ? e.stack.split('\n')[1].trim() : String(e) }
+			reached + ' ' + at`, EvalGlobal)
+		m.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if out != end {
+			t.Errorf("%s: %v, want %s", name, out, end)
 		}
 	}
 }
