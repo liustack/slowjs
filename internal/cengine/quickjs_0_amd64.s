@@ -18740,12 +18740,12 @@ TEXT ·js_proxy_get_prototype(SB), $144-48
 	QUAD $0xfa80c220ead30003
 	QUAD $0x8900000124850f01
 	BYTE $0xc8
-	LEAQ ·engine_rodata+43824(SB), CX
+	LEAQ ·engine_rodata+44112(SB), CX
 	BYTE $0x48
 	BYTE $0x8b
 	BYTE $0x0c
 	BYTE $0xc1
-	LEAQ ·engine_rodata+43968(SB), DX
+	LEAQ ·engine_rodata+44256(SB), DX
 	QUAD $0x98968b48c2048b48
 	QUAD $0x480a3c8b48000000
 	QUAD $0x820ff7fa8302148b

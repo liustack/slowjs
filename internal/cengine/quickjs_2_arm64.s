@@ -888,7 +888,7 @@ TEXT ·JS_AtomIsNumericIndex1(SB), NOSPLIT, $120-40
 	WORD $0x510246c9
 	WORD $0x7100113f
 	WORD $0x54000122
-	MOVD $·engine_rodata+43352(SB), R8
+	MOVD $·engine_rodata+43616(SB), R8
 	WORD $0x52800101
 	WORD $0xf8695900
 	WORD $0x14000013
@@ -2286,7 +2286,7 @@ TEXT ·JS_GetPrototypePrimitive(SB), NOSPLIT, $0-40
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x360000c9
-	MOVD $·engine_rodata+43400(SB), R9
+	MOVD $·engine_rodata+43664(SB), R9
 	WORD $0xf8685928
 	WORD $0xf9404ea9
 	WORD $0xf8686920
@@ -21881,7 +21881,7 @@ TEXT ·JS_NewContextRaw(SB), $168-24
 	WORD $0xa91d0580
 	WORD $0x54000480
 	WORD $0xf94057f5
-	MOVD $·engine_rodata+23350(SB), R9
+	MOVD $·engine_rodata+23620(SB), R9
 	MOVD $·js_error_constructor_block(SB), R10
 	WORD $0x52800068
 	WORD $0xa9012aa9
@@ -21891,9 +21891,9 @@ TEXT ·JS_NewContextRaw(SB), $168-24
 	WORD $0x12800009
 	WORD $0x9102c2b4
 	WORD $0xb90032a9
-	MOVD $·engine_rodata+23376(SB), R9
+	MOVD $·engine_rodata+23640(SB), R9
 	WORD $0xf90026a9
-	MOVD $·engine_rodata+23424(SB), R9
+	MOVD $·engine_rodata+23688(SB), R9
 	WORD $0xf90002ac
 	WORD $0xb9000aa8
 	WORD $0xb90022aa
@@ -21924,7 +21924,7 @@ TEXT ·JS_NewContextRaw(SB), $168-24
 	WORD $0xf94057ea
 	WORD $0xaa1f03eb
 	WORD $0xf9003be8
-	MOVD $·engine_rodata+23528(SB), R8
+	MOVD $·engine_rodata+23792(SB), R8
 	WORD $0xf90043e8
 	WORD $0xf9400995
 	WORD $0x9102c154
@@ -22077,7 +22077,7 @@ TEXT ·JS_NewContextRaw(SB), $168-24
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf9404fec
 	WORD $0xf94057f5
-	MOVD $·engine_rodata+23356(SB), R9
+	MOVD $·engine_rodata+23626(SB), R9
 	MOVD $·js_array_constructor(SB), R10
 	WORD $0x52800048
 	WORD $0xa9012aa9
@@ -22088,9 +22088,9 @@ TEXT ·JS_NewContextRaw(SB), $168-24
 	WORD $0x9102c2b4
 	WORD $0xb9002aa9
 	WORD $0xb90052a9
-	MOVD $·engine_rodata+24448(SB), R9
+	MOVD $·engine_rodata+24712(SB), R9
 	WORD $0xa903aabf
-	MOVD $·engine_rodata+24056(SB), R10
+	MOVD $·engine_rodata+24320(SB), R10
 	WORD $0xf9002ea9
 	WORD $0x52800509
 	WORD $0xf90002ac
@@ -23618,7 +23618,7 @@ TEXT ·js_array_with(SB), $216-64
 	WORD $0x92f00009
 	WORD $0xf94067f5
 	WORD $0xf8040d49
-	MOVD $·engine_rodata+25728(SB), R22
+	MOVD $·engine_rodata+25992(SB), R22
 	WORD $0x91004154
 	WORD $0xaa0a03f7
 	WORD $0xf90007f4

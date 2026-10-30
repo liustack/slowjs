@@ -9931,7 +9931,7 @@ TEXT ·next_token(SB), $120-24
 	WORD $0x2a0003f8
 	WORD $0x7103fc1f
 	WORD $0x54000ae8
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58480(SB), R8
 	WORD $0x38784908
 	WORD $0x12000100
 	WORD $0x35fff520
@@ -10322,7 +10322,7 @@ TEXT ·next_token(SB), $120-24
 	WORD $0x2a0003f8
 	WORD $0x7101fc1f
 	WORD $0x54002aa8
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58480(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x14000159
@@ -10499,7 +10499,7 @@ TEXT ·next_token(SB), $120-24
 	WORD $0x17fffe9f
 	WORD $0x7101ff1f
 	WORD $0x540009a8
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58480(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x14000051
@@ -10566,7 +10566,7 @@ TEXT ·next_token(SB), $120-24
 	WORD $0x528007f8
 	WORD $0x1400006d
 	WORD $0x52800b98
-	MOVD $·engine_rodata+58216(SB), R8
+	MOVD $·engine_rodata+58480(SB), R8
 	WORD $0x38784908
 	WORD $0x121e0d00
 	WORD $0x1400001b

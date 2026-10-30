@@ -39743,56 +39743,108 @@ static const uint8_t *fused_run_from(int op)
     return NULL;
 }
 
-static int fuse_code(JSContext *ctx, DynBuf *bc)
+/* What fuse_code looks at in an instruction, by opcode, in the order of
+   opcode_info: a jump and the format of its offset, OP_gosub, or the first
+   instruction of a run of fused_runs. */
+enum {
+    FUSE_NONE,
+    FUSE_LABEL,
+    FUSE_LABEL16,
+    FUSE_LABEL8,
+    FUSE_ATOM_LABEL_U8,
+    FUSE_GOSUB,
+    FUSE_RUN,
+};
+
+#define FUSE_KIND(op, fmt)                                              \
+    ((op) == OP_gosub ? FUSE_GOSUB :                                    \
+     (fmt) == OP_FMT_label ? FUSE_LABEL :                               \
+     (fmt) == OP_FMT_label16 ? FUSE_LABEL16 :                           \
+     (fmt) == OP_FMT_label8 ? FUSE_LABEL8 :                             \
+     (fmt) == OP_FMT_atom_label_u8 ? FUSE_ATOM_LABEL_U8 :               \
+     (op) == OP_get_arg0 || (op) == OP_get_arg1 || (op) == OP_get_loc0 || \
+     (op) == OP_get_loc8 || (op) == OP_dup ? FUSE_RUN : FUSE_NONE)
+
+static const uint8_t fuse_kind[OP_COUNT + (OP_TEMP_END - OP_TEMP_START)] = {
+#define FMT(f)
+#define DEF(id, size, n_pop, n_push, f) FUSE_KIND(OP_ ## id, OP_FMT_ ## f),
+#include "quickjs-opcode.h"
+#undef DEF
+#undef FMT
+};
+
+#define short_fuse_kind(op)                                             \
+    fuse_kind[(op) >= OP_TEMP_START ? (op) + (OP_TEMP_END - OP_TEMP_START) : (op)]
+
+/* no_inline: the buffers of a small function are on the stack only while it
+   runs, not in the frames of the compiler that recurse into nested
+   functions */
+static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
 {
-    /* mark: 1 at the target of a jump, 2 at the start of a run */
-    uint8_t *buf = bc->buf, *mark;
+    /* mark: 1 at the target of a jump, 2 at the start of a run, with the
+       first runs also in at. Most functions are short, and their marks need
+       no malloc. */
+    uint8_t small[256], *buf = bc->buf, *mark;
+    int at[32];
     const uint8_t *run;
-    int len = bc->size, pos, k, op, end, runs = 0;
+    int len = bc->size, pos, k, op, end, size, runs = 0, i;
     int64_t to;
-    const JSOpCode *oi;
 
     if (ctx->rt->no_fused_ops || len == 0)
         return 0;
-    mark = js_mallocz(ctx, len + 1);
-    if (!mark)
-        return -1;
-    for (pos = 0; pos < len; pos += oi->size) {
+    if (len < (int)sizeof(small)) {
+        mark = small;
+        memset(mark, 0, len + 1);
+    } else {
+        mark = js_mallocz(ctx, len + 1);
+        if (!mark)
+            return -1;
+    }
+    for (pos = 0; pos < len; pos += size) {
         op = buf[pos];
-        oi = &short_opcode_info(op);
-        switch (oi->fmt) {
-        case OP_FMT_label:
+        size = short_opcode_info(op).size;
+        switch (short_fuse_kind(op)) {
+        case FUSE_NONE:
+            continue;
+        case FUSE_LABEL:
             to = pos + 1 + (int64_t)(int32_t)get_u32(buf + pos + 1);
             break;
-        case OP_FMT_label16:
+        case FUSE_LABEL16:
             to = pos + 1 + (int64_t)(int16_t)get_u16(buf + pos + 1);
             break;
-        case OP_FMT_label8:
+        case FUSE_LABEL8:
             to = pos + 1 + (int64_t)(int8_t)buf[pos + 1];
             break;
-        case OP_FMT_atom_label_u8:
+        case FUSE_ATOM_LABEL_U8:
             to = pos + 5 + (int64_t)(int32_t)get_u32(buf + pos + 5);
             break;
-        default:
-            to = -1;
-            /* none of the runs starts with a jump */
+        case FUSE_GOSUB:
+            to = pos + 1 + (int64_t)(int32_t)get_u32(buf + pos + 1);
+            /* OP_ret goes back to the instruction after it */
+            if (pos + size <= len)
+                mark[pos + size] |= 1;
+            break;
+        default: /* FUSE_RUN */
             run = fused_run_from(op);
             if (run && fused_run_at(buf, len, pos, run, op)) {
                 mark[pos] |= 2;
+                if (runs < countof(at))
+                    at[runs] = pos;
                 runs++;
             }
-            break;
+            continue;
         }
         if (to >= 0 && to <= len)
             mark[to] |= 1;
-        /* OP_ret goes back to the instruction after an OP_gosub */
-        if (op == OP_gosub && pos + oi->size <= len)
-            mark[pos + oi->size] |= 1;
     }
-    for (pos = 0; runs > 0; pos++) {
-        if (!(mark[pos] & 2))
-            continue;
-        runs--;
+    /* each run, unless a jump lands inside it */
+    for (i = 0, pos = 0; i < runs; i++, pos++) {
+        if (i < countof(at)) {
+            pos = at[i];
+        } else {
+            while (!(mark[pos] & 2))
+                pos++;
+        }
         run = fused_run_from(buf[pos]);
         end = pos;
         for (k = 0; k < 4 && run[k]; k++)
@@ -39804,7 +39856,8 @@ static int fuse_code(JSContext *ctx, DynBuf *bc)
         if (k == end)
             buf[pos] = run[4];
     }
-    js_free(ctx, mark);
+    if (mark != small)
+        js_free(ctx, mark);
     return 0;
 }
 
