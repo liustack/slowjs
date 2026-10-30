@@ -449,6 +449,15 @@ func (v *VM) cstring(s string) uintptr {
 	return v.base + scratchStr
 }
 
+// SetGCThreshold sets the size at which the engine starts a collection by
+// itself (JS_SetGCThreshold), ^uintptr(0) for never.
+func (v *VM) SetGCThreshold(n uintptr) {
+	if err := v.usable(); err != nil {
+		panic(err)
+	}
+	v.enter(func() { JS_SetGCThreshold(v.sp, v.rt, n) })
+}
+
 // RunGC runs the engine's full garbage collection. It has no error to
 // return: after Close began it panics with ErrClosed, and after a panic in the
 // engine with ErrBroken.
