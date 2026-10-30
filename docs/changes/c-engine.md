@@ -208,6 +208,26 @@ The arm64 build of `JS_CallInternal` grew with these calls until a `tbnz` that l
 
 The checks: `TestCCallDepth`, `TestCCallDepthAfterExits`, `TestShadowStackAtDepth`, `TestHasOwnCallDepth`, the tests of `Interrupt` and of error stacks, `compare.sh` with `unit` and `unit-white`, and test262 with its 58 known errors.
 
+## The end of a call skips the values with no reference count
+
+The end of a call of a bytecode function frees its local variables and the operands left on the stack (see [above](#how-a-call-sets-and-frees-its-values)). Most of them have no reference count to give back: a local that no code set is `undefined`, and the rest are numbers, booleans and `null` as often as strings and objects. The loop still looked at them one pair at a time, 15 instructions a pair. It calls a function in its body, so LLVM kept the pointer, the count and the poll counter on the stack around the call and read them back at the head of each turn, also in the turns where nothing was freed. A function with 200 locals, none set, took 2,314 instructions more to call than a function with none: 11.6 for each local, of which about 7.5 were the free.
+
+The tag of a value that has a reference count is negative, and every other tag is not (`JS_TAG_FIRST` is -9 and a `_Static_assert` holds the tags of the other values at 0 or more). So the tags of eight values or'd together are negative only when one of the eight needs a free. The end of a call counts its values (`i = sp - local_buf`) and goes over them eight at a time with a loop that has no call in it, so the generated code keeps its variables in registers. A group of eight with a count in it is looked at as two groups of four, and the four of a group that has one are freed one by one with `JS_FreeValue`, from the first to the last, as the loop before did, so what is freed, how often and in which order has not changed. At most seven values are left over, freed in a group of four, two and one by the bits of `i`. Nothing points past the frame: the loop tests the count of what is left, not a pointer (when the stack is full, `sp` is the end of the frame).
+
+A function with 200 locals, none set, now takes 1,466 instructions more than a function with none (7.3 for each local). The slowest case found is a function with every fourth local holding an object, where each group of four has a value to free: with 200 locals it takes 2.4% more instructions than before (5,530 against 5,403 a call), with 32 locals 1.5% more. Per render, callgrind counts these instructions at position 0.0 (the difference of 4 renders and 1 of the pages of an app, of 3 and 1 of the scripts):
+
+| Pages | Before | After | |
+| --- | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 934.3 M | 924.3 M | -1.07% |
+| tifa's shop, five storefront pages (sum) | 1,765.0 M | 1,752.5 M | -0.71% |
+| tifa's MUI test app, three pages (sum) | 719.1 M | 713.7 M | -0.76% |
+| tifa's bench app, table and spiral (sum) | 297.5 M | 291.3 M | -2.10% |
+| `r_react_ssr` | 2,512.4 M | 2,479.9 M | -1.29% |
+| `r_bench_table` | 3,346.7 M | 3,278.4 M | -2.04% |
+| `r_bench_spiral` | 3,220.0 M | 3,178.4 M | -1.29% |
+
+The time is in [performance.md](../performance.md#the-end-of-a-call-and-the-start-of-one). The tests are `TestFrameValuesFreed` (`internal/cengine`: functions with every number of locals up to 70 and a few more, one local holding each kind of value at each place, tail calls, a `return` in a loop over an iterator, closures, an exception, a generator and an async function, and the host's check that no block is left) and `frame_values.js` in `engine/test/compare` (the same calls, which also run under the sanitizers), and `TestLocalsFreedInFewTurns`, which counts the turns of the two loops through the polls (an interval of 1 polls at each turn): a call of a function with 200 locals took 153 turns, and takes 78.
+
 ## How a JSValue is copied
 
 A JSValue is 16 bytes, a value and a tag. The interpreter writes one to the value stack as two stores of 8 bytes, since the value is in a register and the tag is a constant. LLVM copies one with a single 16-byte SSE move. It makes that move in two ways: the SLP vectorizer joins two moves of neighbouring 8 bytes, and a struct copy becomes a `memcpy` of 16 bytes that LLVM expands. On Zen 3 a load of 16 bytes cannot be served from two stores of 8 bytes that are still in flight: it waits until both reach the cache (24 cycles in a loop that does nothing else, against 1 for a load of 8 bytes of a store of 8). A load of 8 bytes of a store of 16 is slow too, 11 to 13 cycles.

@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count gained, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -451,6 +451,18 @@ The memory of a VM does not change: `MemorySize` and the footprint at the end of
 | `r_react_ssr` | 0.980, no change by the rule | 0.950 to 1.015 | 3.2% | -0.87% |
 
 No page is slower. Every position of the MUI pages was faster. The memory of a `jsrun` process of `r_react_ssr` is 8.4 MiB at the median of 32 processes before and 8.2 MiB after. Without counting the skipped frame as taken the change ran fewer instructions (-0.84%, -0.60%, -2.66% and -1.11%), but let a recursion with big frames through a C function go deeper than before.
+
+### The end of a call and the start of one
+
+The first change is [the end of a call skipping the values with no reference count](changes/c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count). Against main (14271f3f, v0.29.3), without PGO, over 5 rounds at the 8 positions on one core of an EPYC 7B13 with its sibling idle, with the same HTML. Time is the median over positions of the paired ratios of the P50 of a page (100 renders after 16 warm ones), and positions gives the lowest and the highest of them. Instructions are from callgrind at position 0.0: the difference of 4 rounds and 1 of the pages of an app in one VM, of 3 runs and 1 of the scripts. The pages are those of tifa's bench app, the only ones whose instructions fall by 2% or more.
+
+| Pages | Time | Positions | Base range | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's bench app, table | 0.962 | 0.939 to 0.983 | 3.9% | -2.04% (`r_bench_table`) |
+| tifa's bench app, spiral | 0.973, under 3% so see callgrind | 0.960 to 0.999 | 4.8% | -1.29% (`r_bench_spiral`) |
+| tifa's bench app, both (sum) | 0.968 | 0.948 to 0.992 | 3.5% | -2.10% |
+
+Every page was faster at all 8 positions. The other pages fall by less than 2% and are not timed: the six workbench pages of the shop -1.07%, its five storefront pages -0.71%, the three MUI pages -0.76% and `r_react_ssr` -1.29%. Memory does not change: the end of a call frees the same values.
 
 ### React DOM's text escape in C
 
