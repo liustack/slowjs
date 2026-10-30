@@ -2961,6 +2961,84 @@ static void test_string_loop_gaps(void)
     JS_FreeRuntime(rt);
 }
 
+/* A property key that is a string of millions of characters is hashed, and
+   compared with the atom of an equal string if there is one, and a JSON text
+   with such a key or string value is scanned in runs. Each of them reads the
+   interrupt flag every 65536 characters or bytes. Each call below reads it
+   at least as often as it says, and is stopped by a flag set at the 20th
+   reading (or at the reading after the hash, for the comparison with an
+   atom): it throws "interrupted", the string is a key as before, and the
+   context goes on. Each string is used once, as the first use makes it an
+   atom. */
+static void test_long_key_polls(void)
+{
+    static const char setup[] =
+        "var o = {}, f1 = 'x'.repeat(1 << 23), f2 = 'x'.repeat(1 << 23), f3 = 'x'.repeat(1 << 23)\n"
+        "var g1 = 'y'.repeat(1 << 23), g2 = 'y'.repeat(1 << 23), g3 = 'y'.repeat(1 << 23)\n"
+        "var j1 = '{\"' + 'z'.repeat(1 << 23) + '\":1}', j2 = '{\"a\":\"' + 'z'.repeat(1 << 23) + '\"}'\n"
+        "var j3 = '{\"a\":\"' + '\\u4e2d'.repeat(1 << 22) + '\"}'; 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "o[f1] = 1", 100 },
+        { "f2 in o", 100 },
+        { "o[f3]", 100 },
+        { "JSON.parse(j1)", 200 },
+        { "JSON.parse(j2)", 100 },
+        { "JSON.parse(j3)", 150 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+    long before, hash, all;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long reads;
+
+        /* the reads of the call: the string is new, and the stop comes in the middle of them */
+        before = host_poll_reads;
+        host_poll_stop_after(1 << 30);
+        CHECK(eval(ctx, cases[i].call), "%s: the script threw", cases[i].call);
+        reads = host_poll_reads - before;
+        host_poll_stop_after(0);
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", cases[i].call, reads, cases[i].reads);
+    }
+    /* the same calls on strings that are new, stopped at the 20th reading */
+    CHECK(eval(ctx, "var h1 = 'x'.repeat(1 << 23), h2 = 'x'.repeat(1 << 23), h3 = 'x'.repeat(1 << 23)\n"
+                    "var k1 = '{\"' + 'w'.repeat(1 << 23) + '\":1}', k2 = '{\"a\":\"' + 'w'.repeat(1 << 23) + '\"}'\n"
+                    "var k3 = '{\"a\":\"' + '\\u4e2d'.repeat(1 << 22) + '\"}'; 0"), "the script threw");
+    {
+        static const char *const stopped[] = { "o[h1] = 1", "h2 in o", "o[h3]", "JSON.parse(k1)", "JSON.parse(k2)", "JSON.parse(k3)" };
+
+        for(i = 0; i < sizeof(stopped) / sizeof(stopped[0]); i++) {
+            host_poll_stop_after(20);
+            CHECK(interrupted(ctx, stopped[i]), "%s was not stopped in the middle", stopped[i]);
+            host_poll_stop_after(0);
+            CHECK(eval_is(ctx, "[JSON.parse('{\"a\":1}').a, ({ b: 2 }).b, Object.keys(o).length].join()", "1,2,1"),
+                  "the context after %s", stopped[i]);
+        }
+    }
+    /* the atom of a string equal to the key is compared with it: stop after the hash */
+    CHECK(eval(ctx, "o[g1] = 1; 0"), "the script threw");
+    before = host_poll_reads;
+    CHECK(eval(ctx, "o[g2] = 2"), "the script threw");
+    all = host_poll_reads - before;
+    CHECK(eval(ctx, "var hh = 'y'.repeat(1 << 23); 0"), "the script threw");
+    before = host_poll_reads;
+    CHECK(eval(ctx, "new Set().has(hh)"), "the script threw");
+    hash = host_poll_reads - before;
+    CHECK(all - hash >= 100, "the comparison with an atom: %ld readings of the flag, want at least 100", all - hash);
+    CHECK(eval(ctx, "var g4 = 'y'.repeat(1 << 23); 0"), "the script threw");
+    host_poll_stop_after(hash + (all - hash) / 2);
+    CHECK(interrupted(ctx, "o[g4] = 3"), "the comparison with an atom was not stopped in the middle");
+    host_poll_stop_after(0);
+    CHECK(eval_is(ctx, "[o[g1], o[g3], o[g4]].join()", "2,2,2"), "the key after the stop");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -3195,6 +3273,7 @@ int main(void)
     test_string_loop_polls();
     test_string_loop_gaps();
     test_map_key_polls();
+    test_long_key_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

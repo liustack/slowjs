@@ -1442,6 +1442,10 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                           JSStrictEqModeEnum eq_mode);
 static BOOL js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static int js_strict_eq_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2);
+static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uint32_t *pwork);
+static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
+                                 JSValueConst op2, BOOL eq_only, BOOL poll);
+static JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p);
 static BOOL js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static BOOL js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
@@ -1890,6 +1894,11 @@ static BOOL js_front_drain(JSMallocContext *s)
 #ifndef JS_WORK
 #define JS_WORK(n) ((void)0)
 #endif
+
+/* the most characters a loop over the strings of a rope, or over one long
+   string, copies, hashes or compares between two reads of the interrupt
+   flag, each string of a rope counted as one more than its length */
+#define JS_ROPE_STEP (1 << 16)
 
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
@@ -3800,8 +3809,11 @@ static JSAtom js_get_atom_index(JSRuntime *rt, JSAtomStruct *p)
 }
 
 /* string case (internal). Return JS_ATOM_NULL if error. 'str' is
-   freed. */
-static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type)
+   freed. When pre_hash is not NULL, *pre_hash is the hash of str as
+   hash_string gives it, and the caller has looked for an atom of the same
+   characters and found none. */
+static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
+                           const uint32_t *pre_hash)
 {
     uint32_t h, h1, i;
     JSAtomStruct *p;
@@ -3822,10 +3834,10 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type)
         }
         /* try and locate an already registered atom */
         len = str->len;
-        h = hash_string(str, atom_type);
+        h = pre_hash ? *pre_hash : hash_string(str, atom_type);
         h &= JS_ATOM_HASH_MASK;
         h1 = h & (rt->atom_hash_size - 1);
-        i = rt->atom_hash[h1];
+        i = pre_hash ? 0 : rt->atom_hash[h1];
         while (i != 0) {
             p = rt->atom_array[i];
             if (p->hash == h &&
@@ -3966,7 +3978,7 @@ static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
         return JS_ATOM_NULL;
     memcpy(p->u.str8, str, len);
     p->u.str8[len] = '\0';
-    return __JS_NewAtom(rt, p, atom_type);
+    return __JS_NewAtom(rt, p, atom_type, NULL);
 }
 
 /* Warning: str must be ASCII only */
@@ -4055,12 +4067,56 @@ static void __JS_FreeAtom(JSRuntime *rt, uint32_t i)
     JS_FreeAtomStruct(rt, p);
 }
 
+/* js_new_string_atom for a string of more than JS_ROPE_STEP characters, with
+   the flag read every JS_ROPE_STEP characters of the hash and of the
+   comparison with an atom of the same hash and length. Returns JS_ATOM_NULL
+   with "interrupted" thrown when it was stopped ('p' is freed then too). */
+static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p)
+{
+    JSRuntime *rt = ctx->rt;
+    uint32_t h = JS_ATOM_TYPE_STRING, work = 0, hm, i;
+    JSAtomStruct *q;
+    JSAtom atom;
+    int res;
+
+    /* the scan of a JSON text before this and the hash must not add up past
+       a step */
+    if (js_poll_interrupts(ctx) || hash_string_poll(ctx, p, &h, &work))
+        goto stop;
+    hm = h & JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[hm & (rt->atom_hash_size - 1)]; i != 0; i = q->hash_next) {
+        q = rt->atom_array[i];
+        if (q->hash == hm && q->atom_type == JS_ATOM_TYPE_STRING && q->len == p->len) {
+            if (js_string_rope_compare(ctx, &res, JS_MKPTR(JS_TAG_STRING, q),
+                                       JS_MKPTR(JS_TAG_STRING, p), TRUE, TRUE))
+                goto stop;
+            if (res == 0) {
+                if (!__JS_AtomIsConst(i))
+                    js_rc(q)->ref_count++;
+                js_free_string(rt, p);
+                return i;
+            }
+        }
+    }
+    atom = __JS_NewAtom(rt, p, JS_ATOM_TYPE_STRING, &h);
+    if (atom == JS_ATOM_NULL)
+        JS_ThrowOutOfMemory(ctx);
+    return atom;
+ stop:
+    js_free_string(rt, p);
+    return JS_ATOM_NULL;
+}
+
 /* The string atom of p for ctx, or JS_ATOM_NULL with the out of memory error
    pending: __JS_NewAtom throws nothing when the atom table cannot grow or
    the copy of the string cannot be made. 'p' is freed */
 static JSAtom js_new_string_atom(JSContext *ctx, JSString *p)
 {
-    JSAtom atom = __JS_NewAtom(ctx->rt, p, JS_ATOM_TYPE_STRING);
+    JSAtom atom;
+
+    if (unlikely(p->len > JS_ROPE_STEP) && p->atom_type != JS_ATOM_TYPE_STRING)
+        return js_new_long_string_atom(ctx, p);
+    atom = __JS_NewAtom(ctx->rt, p, JS_ATOM_TYPE_STRING, NULL);
     if (atom == JS_ATOM_NULL)
         JS_ThrowOutOfMemory(ctx);
     return atom;
@@ -4097,7 +4153,7 @@ JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
     JSValue val;
 
     if (len == 0 ||
-        (!is_digit(*str) &&
+        (len <= JS_ROPE_STEP && !is_digit(*str) &&
          count_ascii((const uint8_t *)str, len) == len)) {
         JSAtom atom = __JS_FindAtom(ctx->rt, str, len, JS_ATOM_TYPE_STRING);
         if (atom)
@@ -4151,7 +4207,7 @@ static JSValue JS_NewSymbol(JSContext *ctx, JSString *p, int atom_type)
 {
     JSRuntime *rt = ctx->rt;
     JSAtom atom;
-    atom = __JS_NewAtom(rt, p, atom_type);
+    atom = __JS_NewAtom(rt, p, atom_type, NULL);
     if (atom == JS_ATOM_NULL)
         return JS_ThrowOutOfMemory(ctx);
     return JS_MKPTR(JS_TAG_SYMBOL, rt->atom_array[atom]);
@@ -5577,11 +5633,6 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
-/* the most characters a loop over the strings of a rope copies or compares
-   between two reads of the interrupt flag, each string counted as one more
-   than its length */
-#define JS_ROPE_STEP (1 << 16)
-
 /* append the strings of a rope in order, reading the interrupt flag now and
    then: a rope can hold as many strings as it has characters */
 static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
@@ -5723,15 +5774,16 @@ static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
     while (len != 0) {
         l = min_uint32(p1->len - pos1, p2->len - pos2);
         l = min_uint32(l, len);
-        /* a leaf longer than a step is compared in steps */
+        /* what is left of the step is compared, one more for the leaf */
         if (poll)
-            l = min_uint32(l, JS_ROPE_STEP);
+            l = min_uint32(l, JS_ROPE_STEP - work - 1);
         res = js_string_memcmp(p1, pos1, p2, pos2, l);
         if (res != 0) {
             *pres = res;
             return 0;
         }
         if (poll) {
+            JS_WORK(l + 1);
             work += l + 1;
             if (work >= JS_ROPE_STEP) {
                 work = 0;
@@ -26898,27 +26950,37 @@ static inline const uint8_t *json_run_limit(const uint8_t *p, const uint8_t *end
    below 0x20, end, or a byte that does not start a character of 2, 3 or 4
    bytes of at most U+10FFFF. json_parse_string then does what it does for
    that byte: end the string, read an escape, or throw the same error at the
-   same place. Return NULL when b could not grow. */
+   same place. Return NULL when b could not grow, or when the interrupt flag
+   was set (the exception is thrown then): it is read each time
+   JS_ROPE_STEP bytes have been taken since the start or the last reading. */
 static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
                                       const uint8_t *end, int sep)
 {
-    const uint8_t *q, *lim, *p_next;
+    const uint8_t *q, *lim, *p_next, *mark = p;
     uint16_t units[64];
     uint32_t c;
     int n;
 
     for(;;) {
-        /* ASCII, up to json_run_limit */
+        /* ASCII, up to json_run_limit, and to JS_ROPE_STEP bytes from mark */
         lim = json_run_limit(p, end);
+        if (lim - mark > JS_ROPE_STEP)
+            lim = mark + JS_ROPE_STEP;
         for(q = p; q < lim; q++) {
             c = *q;
             if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
                 break;
         }
+        JS_WORK(q - p);
         if (q > p) {
             if (string_buffer_write8(b, p, q - p))
                 return NULL;
             p = q;
+        }
+        if (p - mark >= JS_ROPE_STEP) {
+            mark = p;
+            if (js_poll_interrupts(b->ctx))
+                return NULL;
         }
         if (p == end || *p < 0x80)
             return p;
@@ -26926,7 +26988,7 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
            loop decodes them, 64 code units at a time */
         n = 0;
         q = p;
-        while (q < end && n <= countof(units) - 2) {
+        while (q < end && n <= countof(units) - 2 && q - mark < JS_ROPE_STEP) {
             c = *q;
             if (c < 0x80) {
                 if (c < 0x20 || c == sep || c == '\\')
@@ -26950,7 +27012,13 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
             return NULL;
         if (q == p)
             return p;
+        JS_WORK(q - p);
         p = q;
+        if (p - mark >= JS_ROPE_STEP) {
+            mark = p;
+            if (js_poll_interrupts(b->ctx))
+                return NULL;
+        }
     }
 }
 

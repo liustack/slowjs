@@ -792,6 +792,11 @@ static void test_poll_work_gaps(void)
         "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535), l4 = 'w'.repeat(65533)\n"
         "var flat = 'ab'.repeat(1 << 20)\n"
         "var dbl = 'ab'; for (var i = 0; i < 18; i++) dbl = dbl + dbl\n"
+        "var fl = 'ab'.repeat(1 << 19), fl2 = 'ab'.repeat(1 << 19), mp = new Map([[fl, 1]])\n"
+        "var r1 = 'ab', r2 = 'ab'; for (var i = 0; i < 19; i++) { r1 = r1 + r1; r2 = r2 + r2 }\n"
+        "var kx = 'x'.repeat(1 << 21), ky = 'y'.repeat(1 << 21), ky2 = 'y'.repeat(1 << 21), ko = {}; ko[ky] = 1\n"
+        "var jk = '{\"' + 'z'.repeat(1 << 21) + '\":1}', jv = '{\"a\":\"' + 'z'.repeat(1 << 21) + '\"}'\n"
+        "var jc = '{\"a\":\"' + '\\u4e2d'.repeat(1 << 20) + '\"}'\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -821,6 +826,19 @@ static void test_poll_work_gaps(void)
         { "s0.has(l4 + l1 + l3 + l2)", ROPE_STEP, 65533 + 65534 + 65535 + 65536 + 4 },
         { "s0.has(flat)", ROPE_STEP, 1 << 21 },
         { "s0.has(dbl)", ROPE_STEP, 0 },
+        /* equality: leaf by leaf, and a flat string in steps (each step counts one more than its characters, and a step is 65535) */
+        { "fl === fl2", ROPE_STEP, (1 << 20) + 17 },
+        { "r1 === r2", ROPE_STEP, 0 },
+        { "r1 < r2", ROPE_STEP, 0 },
+        { "mp.get(fl2)", ROPE_STEP, (1 << 21) + 17 },
+        /* a key of a property: the hash, and the comparison with the atom of an equal string */
+        { "ko[kx] = 1", ROPE_STEP, 1 << 21 },
+        { "ko[ky2] = 2", ROPE_STEP, (1 << 22) + 33 },
+        /* the runs of a JSON text, and the hash of a key */
+        /* the key and the value are runs of their own: a few bytes of one can come before the step of the next, and the bytes between the steps are not counted */
+        { "JSON.parse(jk)", ROPE_STEP + 256, 0 },
+        { "JSON.parse(jv)", ROPE_STEP + 256, 0 },
+        { "JSON.parse(jc)", ROPE_STEP + 256, 0 },
     };
     VM v = vm_new();
     size_t i;

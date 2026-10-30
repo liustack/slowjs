@@ -15396,7 +15396,7 @@ TEXT ·build_backtrace_block(SB), NOSPLIT, $184-16
 	WORD $0x3100051f
 	WORD $0x540001e0
 	WORD $0xf9405ff7
-	MOVD $·engine_rodata+6899(SB), R22
+	MOVD $·engine_rodata+6911(SB), R22
 	WORD $0xb8060ee8
 	WORD $0xf94043e8
 	WORD $0x910182f4
@@ -20407,7 +20407,7 @@ TEXT ·check_polls_block(SB), NOSPLIT, $152-24
 	WORD $0x2a1f03e9
 	WORD $0x53037d08
 	WORD $0x52800030
-	MOVD $·engine_rodata+5783(SB), R17
+	MOVD $·engine_rodata+5795(SB), R17
 	WORD $0x92679a8f
 	WORD $0x121e6908
 	WORD $0xa90523ef
@@ -20445,7 +20445,7 @@ TEXT ·check_polls_block(SB), NOSPLIT, $152-24
 	WORD $0x52800030
 	WORD $0xf9402bef
 	WORD $0xf94037f3
-	MOVD $·engine_rodata+5783(SB), R17
+	MOVD $·engine_rodata+5795(SB), R17
 	WORD $0xb94067ea
 	WORD $0x13057d49
 	WORD $0x1aca220a
@@ -20472,7 +20472,7 @@ TEXT ·check_polls_block(SB), NOSPLIT, $152-24
 	BL ·host_poll(SB)
 	WORD $0xf94037e9
 	WORD $0xf9402bef
-	MOVD $·engine_rodata+5783(SB), R17
+	MOVD $·engine_rodata+5795(SB), R17
 	WORD $0xf9403fee
 	WORD $0xf94047f4
 	WORD $0x52800030
