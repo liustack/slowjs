@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -7,6 +7,7 @@ read_when:
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
   - Asking what RegisterEscapeText gains in tifa's pages, or what a cache in front of it would give
+  - Asking what RegisterCopyProps gains in tifa's pages, or whether a check in JavaScript in front of a spread would do
   - Quoting how fast a release is
   - Checking that the C engine stays flat, scales over VMs, stops soon after Interrupt and holds the GC up for no longer than the ccgo engine
   - Checking what the C engine had to pass before it replaced the ccgo engine, and what it measured then
@@ -439,6 +440,40 @@ The call of the C function costs about what a call of an empty JavaScript functi
 
 Memory does not change that can be told from the heap's own spread: the live heap after 768 renders (Apple M4, after a full GC) is 0.6% lower on the shop's pages, 0.4% on the storefront, 0.5% on the MUI pages and 0.2% higher on the bench pages. The footprint moves by a chunk with the moment of the collection in both builds.
 
+### The copy of the props of a React element in C
+
+[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) gives a host the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, as a C function of the engine. tifa registers it as `__tifa_copy_props`, and its Vite plugin makes both functions ask it before their loop. The step before is slowjs main (a5feface) with tifa main (4b511fc). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+
+How often it is asked, from one render of each page in tifa with a wrapper that counted its answers: the six workbench pages make 980 elements with `createElement` and 518 with `cloneElement`, the five storefront pages 2,507 and 328, the three MUI pages 3,266 and 114, and each bench page 1. The function copies all of them but one config of 39 keys (MUI's input, on the order list and on an order page), which is over the 32 keys it takes and goes through the loop.
+
+On linux/amd64 (one core of an EPYC 7B13, its sibling idle), without PGO, 3 rounds at the 8 code positions. Time is the sum of the p50 of the pages of an app, as the median over positions of the paired ratios. Instructions are callgrind's, per render of every page, at position 0.0 (the difference of a run of 5 renders and one of 2). "Same engine, old bundle" is a control: the engine of this branch with the bundle tifa main builds, which never asks for the function:
+
+| Pages | Time | Positions | Base range | Same engine, old bundle | Instructions |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.988 | 0.971 to 1.010 | 2.9% | 1.004 | -2.85% (948.0 M to 921.0 M) |
+| tifa's shop, five storefront pages (sum) | 0.989 | 0.982 to 1.003 | 3.9% | 1.011 | -2.06% (1,897.8 M to 1,858.7 M) |
+| tifa's MUI test app, three pages (sum) | 0.980 | 0.966 to 0.993 | 2.7% | 1.007 | -4.13% (746.4 M to 715.6 M) |
+| tifa's bench app, table and spiral (sum) | 1.014 | 0.999 to 1.035 | 2.1% | 1.022 | +0.04% (293.39 M to 293.50 M) |
+| `r_react_ssr`, which does not register the function | 1.003 | 0.994 to 1.007 | 2.5% | | not counted |
+
+By the rule for code positions none of the four times changes: each is under 2% or inside half the spread of the base's own positions (the MUI pages, at 2.0%, are on the line). The instruction counts do not depend on where the code lands, and they say the shop, the storefront and the MUI pages run 2.1% to 4.1% less, and the bench pages, which make one element each and cannot gain, the same. The control shows why the times gain less than the instructions: the engine of the branch with the old bundle takes 0.4% to 2.2% more time than main on the same instructions, which is where the code of the engine landed once it has one more function (the positions of the rule move the program and the interpreter, not the functions between). It also is why the bench pages show +1.4%. `r_react_ssr`, a React render that never asks for the function, was timed on the first build of the branch (the field of the context that holds the atoms of the function was in the middle of `JSContext` then, and is last now).
+
+One call, from `BenchmarkCopyProps` (ns for one `createElement` or `cloneElement` with a new config each call, as JSX makes it, the literal of the config and the loop included, 5 counts of 300,000 calls). No config is slower with the function than with React's loop, and the empty one takes 4% to 5% less. The code tifa's plugin writes for a VM that has no function runs within 4% of React's own:
+
+| Config | createElement React | with the function | cloneElement React | with the function |
+| --- | ---: | ---: | ---: | ---: |
+| none | 580 | 556 | 803 | 760 |
+| 1 key | 869 | 608 | 1,085 | 822 |
+| `key` and 1 key | 1,044 | 717 | 1,298 | 972 |
+| `key` and 2 keys | 1,226 | 745 | 1,505 | 1,007 |
+| 3 keys | 1,249 | 639 | 1,524 | 898 |
+| 5 keys | 1,638 | 663 | 1,934 | 953 |
+| 10 keys | 2,545 | 716 | 2,967 | 1,108 |
+
+React's loop takes about 200 ns for each key in these runs ((2,545 - 580) / 10 for `createElement`), and the function about 16 ns for each key it adds ((716 - 556) / 10). The call with its checks of the config, `Object.prototype`, `hasOwnProperty` and `call` costs less than the setup of the empty `for in` it replaces. On the Apple M4 the ratios are the same: 0.96 for no keys, 0.75 for one key, 0.50 for 3 keys and 0.24 for 10 keys, against React's `createElement`.
+
+A check in JavaScript in front of one spread was measured first, as the step before this one (see [What was tried and not done](#what-was-tried-and-not-done)).
+
 ### Upstream commits and the scripts where the C engine was slower than C
 
 [upstream-commits.md](changes/upstream-commits.md) lists the commits of upstream QuickJS taken into the C tree and the ones tried and taken back, with their speed. Against main (`c4dcea91`) before the batch, all 37 scripts at 8 positions, 2 rounds: geometric mean 0.917, with `q_array_slice` at 0.085 and `c_array_methods` at 0.530 and the other 35 scripts together at 0.997. `r_react_ssr` took 0.977, within its noise.
@@ -647,6 +682,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Moving small blocks in realloc without going through malloc and free**: 0.23% fewer instructions on the studio list on top of js_malloc taking cached blocks, too small for one more fixlib rule.
 - **Keeping 1024 blocks a size in the front cache instead of 256**: misses on the studio list go from 19.7k to 18.6k a render. They come from the heap growing during a render, not from full lists.
 - **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of slowjs to make only mechanical changes. Not tried.
+- **A check in JavaScript in front of one spread for the props of `createElement` and `cloneElement`**, measured on v0.29.1 before `RegisterCopyProps`: the plugin tested the config (the prototype, the symbols, `__proto__`, `__self` and `__source`, a getter behind `key`) and then copied it with the rest of a destructuring. The test took 310 to 380 ns a call, more than the loop takes for a config of none, one or two keys, so `createElement` took 1.57 times as long for no keys, 1.07 for one key and 1.13 to 1.40 for a `key` and one or two more. The shop took 0.99 of the time (1.6% to 2.5% fewer instructions) and no page passed the rule. It also could not rule out a proxy, a getter that deletes a later key and a setter added to `Object.prototype` after React loaded. The same checks in C cost less than the empty loop, and the function gives 2.1% to 4.1% fewer instructions.
 - **A fast path for `===` in the interpreter loop**: 1.0% to 1.3% slower, measured with v0.26.14 and PGO. The interpreter function is so large that Go inlines only the smallest functions into it, so a new helper there is one more real call.
 - **The interrupt countdown in a small function of its own**: no change (0.998 to 1.001 of the time) with v0.26.14, for the same reason. v0.26.16 writes the countdown inline instead, through `pollDue`, which Go does inline, for 0.6% with PGO.
 - **Writing out `JS_FreeAtom` and `is_strict_mode` in the interpreter**, as v0.26.16 does for `set_value`: nothing that could be told from noise, so they stay calls.
