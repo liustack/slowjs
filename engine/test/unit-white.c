@@ -2092,6 +2092,137 @@ static void test_short_opcode_index(void)
     CHECK(n >= 3 * 4 + 3, "the index of %s", bad);
 }
 
+/* count_ops: how many of the opcode w the code of the first function of src
+   has, or -1 when it does not compile. */
+static int count_ops(JSContext *ctx, const char *src, int w)
+{
+    int shape[2 * 128], n, k, c = 0;
+    const uint8_t *code;
+    JSValue top;
+    int len;
+
+    if (code_of(ctx, src, &top, &code, &len) != 0)
+        return -1;
+    n = white_code_shape(code, len, shape, 128);
+    for (k = 0; k < n; k++)
+        c += shape[2 * k] == white_op(w);
+    JS_FreeValue(ctx, top);
+    return n < 0 ? -1 : c;
+}
+
+/* fused_count: the fused opcodes of the first function of src, by kind
+   into count, and in all; -1 when it does not compile. */
+static int fused_count(JSContext *ctx, const char *src, int *count)
+{
+    const uint8_t *code;
+    JSValue top;
+    int len, n;
+
+    if (code_of(ctx, src, &top, &code, &len) != 0)
+        return -1;
+    n = white_fused_ops(code, len, count);
+    JS_FreeValue(ctx, top);
+    return n;
+}
+
+/* The places where the fused opcodes meet what is not a plain object or a
+   plain binding: an object with [[IsHTMLDDA]] in every typeof test, a module
+   namespace, whose exports are references to the variables of the module,
+   and an argument or a local that a direct eval or a with block sets just
+   before the fused read. Each runs with the opcodes on and off, and on, the
+   code must have the opcodes, so that the test does not pass on the path of
+   before alone. */
+static void test_fused_edges(void)
+{
+    static const char dda_tests[] =
+        "function f(x) { return [typeof x == 'undefined', typeof x === 'object', typeof x != 'undefined',"
+        " typeof x !== 'function', typeof x < 'u', typeof x > 'u', typeof x == 'function',"
+        " typeof x === 'string', typeof x == 'object', typeof x !== 'undefined'].join() }";
+    static const char dda_branches[] =
+        "function f(x) { var r = ''; if (typeof x < 'u') r += 'a'; if (typeof x > 'u') r += 'b';"
+        " if (typeof x === 'undefined') r += 'c'; if (typeof x !== 'object') r += 'd';"
+        " if (typeof x != 'function') r += 'e'; return r }";
+    static const char ns_read[] =
+        "function f(o) { var r = o.x; o.bump(); return [r, o.x, o.y, typeof o.nope].join() }";
+    static const struct {
+        const char *src, *call, *want;
+        int kind, n; /* the kind of fused read after the eval or the with (in the order of white_fused_ops), and the fused reads in all */
+    } bound[] = {
+        { "function f(a) { eval('a = { x: 2 }'); return a.x }", "({ x: 1 })", "2", 0, 1 },
+        { "function f(a) { eval('var a = { x: 5 }'); return a.x }", "({ x: 1 })", "5", 0, 1 },
+        { "function f(a, b) { eval('b = { y: 6 }'); return a.x + b.y }", "({ x: 1 }, { y: 2 })", "7", 1, 2 },
+        { "function f() { var o = { x: 1 }; eval('o = { x: 4 }'); return o.x }", "()", "4", 2, 1 },
+        { "function f(s) { var a = 0, b = 1, c = 2, d = 3, e = { x: 1 }; eval('e = { x: 8 }'); return e.x }",
+          "()", "8", 3, 1 },
+        { "function f(a, s) { with (s) { a = { x: 3 } } return a.x }", "({ x: 1 }, {})", "3", 0, 1 },
+        { "function f(a, s) { with (s) { a = { x: 3 } } return a.x }", "({ x: 1 }, { a: 0 })", "1", 0, 1 },
+        { "function f(a, s) { with (s) { eval('a = { x: 9 }') } return a.x }", "({ x: 1 }, {})", "9", 0, 1 },
+    };
+    VM v = vm_new();
+    JSValue g, dda, mod, ns, r;
+    JSModuleDef *m;
+    int on, count[5], n;
+    size_t i;
+    char src[512];
+
+    dda = JS_NewObject(v.ctx);
+    JS_SetIsHTMLDDA(v.ctx, dda);
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "dda", dda);
+
+    /* a module of its own, whose namespace the reads get */
+    {
+        static const char dep[] = "export let x = 7; export const y = 'y'; export function bump() { x++ }";
+        mod = JS_Eval(v.ctx, dep, strlen(dep), "dep", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(mod), "compile the module");
+        m = JS_VALUE_GET_PTR(mod);
+        r = JS_EvalFunction(v.ctx, mod);
+        CHECK(!JS_IsException(r), "run the module");
+        JS_FreeValue(v.ctx, r);
+        ns = JS_GetModuleNamespace(v.ctx, m);
+        CHECK(JS_IsObject(ns), "the namespace");
+        JS_SetPropertyStr(v.ctx, g, "ns", ns);
+    }
+    JS_FreeValue(v.ctx, g);
+
+    for (on = 1; on >= 0; on--) {
+        JS_SetFusedOps(v.ctx, on);
+
+        /* typeof of an object with [[IsHTMLDDA]] is "undefined" */
+        n = count_ops(v.ctx, dda_tests, W_TYPEOF);
+        CHECK(on ? n == 0 : n == 8, "on %d: %d typeof left in the tests of dda", on, n);
+        n = count_ops(v.ctx, dda_tests, W_TYPEOF_IS) + count_ops(v.ctx, dda_tests, W_TYPEOF_IS_UNDEFINED) +
+            count_ops(v.ctx, dda_tests, W_TYPEOF_IS_FUNCTION);
+        CHECK(on ? n == 10 : n == 2, "on %d: %d typeof opcodes in the tests of dda", on, n);
+        snprintf(src, sizeof(src), "(%s)(dda)", dda_tests);
+        CHECK(eval_is(v.ctx, src, "true,false,false,true,false,true,false,false,false,false"), "on %d: dda", on);
+        n = count_ops(v.ctx, dda_branches, W_TYPEOF);
+        CHECK(on ? n == 0 : n == 3, "on %d: %d typeof left in the branches of dda", on, n);
+        snprintf(src, sizeof(src), "(%s)(dda)", dda_branches);
+        CHECK(eval_is(v.ctx, src, "bcde"), "on %d: the branches of dda", on);
+        CHECK(eval_is(v.ctx, "typeof dda + (dda == undefined) + (dda === undefined)", "undefinedtruefalse"),
+              "on %d: dda itself", on);
+
+        /* the exports of a namespace are read through their references:
+           the read after bump() sees the new value */
+        n = fused_count(v.ctx, ns_read, count);
+        CHECK(on ? n == 4 && count[0] == 4 : n == 0, "on %d: %d fused reads of the namespace", on, n);
+        snprintf(src, sizeof(src), "(%s)(ns)", ns_read);
+        CHECK(eval_is(v.ctx, src, on ? "7,8,y,undefined" : "8,9,y,undefined"), "on %d: the namespace", on);
+
+        /* a direct eval or a with block sets the binding, then the fused read */
+        for (i = 0; i < countof(bound); i++) {
+            n = fused_count(v.ctx, bound[i].src, count);
+            CHECK(on ? n == bound[i].n && count[bound[i].kind] == 1 : n == 0,
+                  "on %d: %s: %d fused", on, bound[i].src, n);
+            snprintf(src, sizeof(src), "(%s)%s", bound[i].src, bound[i].call);
+            CHECK(eval_is(v.ctx, src, bound[i].want), "on %d: %s", on, src);
+        }
+    }
+    JS_SetFusedOps(v.ctx, 1);
+    vm_free(&v);
+}
+
 static void test_object_lit_read(void)
 {
     VM v = vm_new();
@@ -2782,6 +2913,7 @@ int main(void)
     test_fused_ops();
     test_typeof_is();
     test_short_opcode_index();
+    test_fused_edges();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
