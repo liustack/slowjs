@@ -1,5 +1,5 @@
 ---
-summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, and regexp compiles, parsing and string building counted toward the interrupt check'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, and the eval timeout on property reads and writes, JSON and error reads'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
@@ -90,3 +90,15 @@ A loop of built-in calls that parse source or build long strings stops within a 
 
 Neither change slows a render. Without PGO, on linux/amd64 (AMD EPYC), against v0.27.1, in 6 rounds over 3 code layouts with the order of the two builds flipped each round, the sums of the P50 render times take 0.993 of the time on the pages of tifa's example shop (0.978 to 1.002) and 0.997 on the MUI pages of its test app (0.989 to 1.007), with the same HTML and the same memory. Compiling one regexp of 900 KB takes 23 ms where it took 21 ms, and a compile of 100000 alternatives no longer than before. A script that ran past its deadline inside one long compile used to finish when nothing polled after it: `eval` of 50000 functions under a 10 ms timeout returned after 1.1 s, and now throws the interrupt right after the compile.
 
+
+## Every method that can run javascript has the eval timeout
+
+Release: Unreleased.
+
+`GetProperty`, `GetPropertyValue`, `SetProperty`, `SetPropertyValue` (and the `Value` methods that call them), `Value.MarshalJSON`, `Value.Any` and `ErrorFromValue` ran with no eval timeout. They entered the engine as a call that runs no script (`outer`), so a getter, a setter, a proxy trap, `toJSON`, a replaced `BigInt.prototype.toString` or a `toString` that `ErrorFromValue` calls on an error could run as long as it liked. With a 10 ms timeout, a getter and a setter of 200 ms ran to the end and returned 42 and no error, where `Eval` of the same loop returned the interrupted error after 10 ms.
+
+Now each of them enters as `Eval` and `Call` do (`enter` and `leave`), so the outermost one arms the deadline, a pending `Interrupt` stops it, and a script that keeps running past the grace is killed. The conversion of the result to a Go value and the reading of an error are inside the same call and share its time. `ErrorFromValue` leaves a field empty that the timeout cut off, and panics on a VM a kill left good only for Close, as it did. Reading the error of any other call that comes back to Go outside a script (`RegisterFunc` on a name that cannot be defined, `RegisterCopyProps`, `RegisterEscapeText`) is bounded by `ErrorFromValue` too, which `takeException` calls.
+
+`SetPropertyValue` and `SetProperty` return the exception the setter threw as their error. They used to return `failed to set property` and leave the exception pending in the context, for the next call that took one to find.
+
+Test: `apitimeout_test.go` (`TestAPIEntriesHaveTheEvalTimeout`) runs each method with a 10 ms timeout on loops of 300 ms and requires the interrupted error within 150 ms, `killed_test.go` (`ErrorFromValue` after a kill).

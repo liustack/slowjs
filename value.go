@@ -35,24 +35,34 @@ func (m *VM) NewAtom(s string) (r Atom, err error) {
 	return r, err
 }
 
-// SetPropertyValue sets this.prop = val.
+// SetPropertyValue sets this.prop = val. A setter, or the set trap of a proxy,
+// runs javascript: it runs inside the eval timeout like [VM.Eval], and its
+// exception is the error.
 func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return err
 	}
+	defer m.leave(&err)
+	return m.setPropertyValue(this, prop, val)
+}
+
+// setPropertyValue is SetPropertyValue inside a call into javascript.
+func (m *VM) setPropertyValue(this Value, prop Atom, val Value) error {
 	dup := val.Dup()
 	if m.jsSetProperty(this.v, prop, dup.v) < 0 {
-		return fmt.Errorf("failed to set property")
+		return m.errFromException()
 	}
 
 	return nil
 }
 
-// SetProperty sets this.prop = val.
+// SetProperty sets this.prop = val. It runs javascript as [VM.SetPropertyValue]
+// does, inside the eval timeout.
 func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return err
 	}
+	defer m.leave(&err)
 	jsArgs, free, err := m.convertArgs(val)
 	if err != nil {
 		return err
@@ -66,17 +76,20 @@ func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
 		}()
 	}
 
-	return m.SetPropertyValue(this, prop, Value{vm: m, v: jsArgs[0]})
+	return m.setPropertyValue(this, prop, Value{vm: m, v: jsArgs[0]})
 }
 
-// GetPropertyValue returns this.prop.
+// GetPropertyValue returns this.prop. A getter, or the get trap of a proxy,
+// runs javascript: it runs inside the eval timeout like [VM.Eval], and its
+// exception is the error.
 //
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return r, err
 	}
+	defer m.leave(&err)
 	v := m.jsGetProperty(this.v, prop)
 	if isException(v) {
 		err = m.errFromException()
@@ -84,11 +97,15 @@ func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 	return Value{vm: m, v: v}, err
 }
 
-// GetProperty returns this.prop.
+// GetProperty returns this.prop. It runs javascript as [VM.GetPropertyValue]
+// does, and so does the conversion of the result to a Go value (a BigInt
+// through its toString, an object through toJSON and its getters), inside the
+// same eval timeout.
 func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return nil, err
 	}
+	defer m.leave(&err)
 	return m.value(m.jsGetProperty(this.v, prop), true)
 }
 
@@ -183,12 +200,14 @@ func (v Value) Property(prop Atom) (r any, err error) {
 	return v.vm.GetProperty(v, prop)
 }
 
-// MarshalJSON implements encoding/json.Marshaler.
+// MarshalJSON implements encoding/json.Marshaler. A toJSON method, a getter or
+// a proxy trap runs javascript inside the eval timeout, like [VM.Eval].
 func (v Value) MarshalJSON() (r []byte, err error) {
 	m := v.vm
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return nil, err
 	}
+	defer m.leave(&err)
 	json := m.jsJSONStringify(v.v)
 
 	defer m.jsFreeValue(json)
@@ -223,13 +242,16 @@ func (v *Value) Free() {
 }
 
 // Any attemtps to convert 'v' to any using the same rules as there are for
-// the return value of VM.Eval.
+// the return value of VM.Eval. An object becomes JSON, which runs toJSON and
+// getters, and a BigInt goes through its toString: that javascript runs inside
+// the eval timeout, like [VM.Eval].
 func (v Value) Any() (r any, err error) {
 	// A Value of no VM, such as UndefinedValue, converts without one.
 	if v.vm != nil {
-		if err := v.vm.usable(); err != nil {
+		if err = v.vm.enter(); err != nil {
 			return nil, err
 		}
+		defer v.vm.leave(&err)
 	}
 	return v.vm.value(v.v, false)
 }

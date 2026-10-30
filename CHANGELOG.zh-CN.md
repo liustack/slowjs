@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 修复
+
+- `GetProperty`、`GetPropertyValue`、`SetProperty`、`SetPropertyValue`（以及调用它们的 `Value` 方法）、`Value.MarshalJSON`、`Value.Any` 和 `ErrorFromValue` 现在和 `Eval`、`Call` 一样受求值超时管。以前这些方法不启动计时，getter、setter、代理拦截器、`toJSON`、被改过的 `BigInt.prototype.toString`，或读取错误时调用的 `toString` 想跑多久就跑多久。超时设为 10 毫秒时，一个跑 200 毫秒的 getter 照样返回 42，没有错误。`SetProperty` 和 `SetPropertyValue` 现在返回 setter 抛出的异常，以前返回 `failed to set property`，还把异常留在上下文里没取走（[细节](docs/changes/uncatchable.md#every-method-that-can-run-javascript-has-the-eval-timeout)）。
+
 ## [v0.29.4] - 2026-10-30
 
 ### 性能
