@@ -4366,7 +4366,7 @@ TEXT ·js_parse_from_clause(SB), NOSPLIT, $112-32
 	BYTE $0xfe
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+4183(SB), R14
+	LEAQ ·engine_rodata+4171(SB), R14
 	QUAD $0xe9c5894910678d4d
 	QUAD $0x247c8b48fffffece
 	QUAD $0x24448b4c2f8b4c58
@@ -6383,7 +6383,7 @@ TEXT ·js_parse_with_clause(SB), $144-32
 	BYTE $0xfe
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+4183(SB), R15
+	LEAQ ·engine_rodata+4171(SB), R15
 	QUAD $0x0000008824bc8b48
 	QUAD $0x24748b4c10678d4c
 	QUAD $0x6c894c2424894c50

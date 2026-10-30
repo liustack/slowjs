@@ -3235,7 +3235,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $360-64
 	WORD $0x54000261
 	WORD $0xf940b7e8
 	WORD $0xf940aff5
-	MOVD $·engine_rodata+3845(SB), R22
+	MOVD $·engine_rodata+4318(SB), R22
 	WORD $0x9106c114
 	WORD $0x9101c117
 	WORD $0xf90007f4

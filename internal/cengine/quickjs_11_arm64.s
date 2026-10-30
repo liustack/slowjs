@@ -16030,7 +16030,7 @@ TEXT ·build_backtrace_block(SB), NOSPLIT, $184-16
 	WORD $0x3100051f
 	WORD $0x540001e0
 	WORD $0xf9405ff7
-	MOVD $·engine_rodata+4003(SB), R22
+	MOVD $·engine_rodata+3991(SB), R22
 	WORD $0xb8060ee8
 	WORD $0xf94043e8
 	WORD $0x910182f4
