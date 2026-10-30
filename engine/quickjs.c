@@ -52214,7 +52214,7 @@ static const uint8_t js_escape_extra[256] = {
    string of a billion units can still be stopped */
 #define JS_ESCAPE_STEP 4096
 
-/* writes the entity of c, one of the five, at d and returns the units written */
+/* writes the entity of c, one of the five, at d[j] and moves j past it */
 #define JS_ESCAPE_PUT(d, j, c)                                          \
     do {                                                                \
         const char *r_;                                                 \
