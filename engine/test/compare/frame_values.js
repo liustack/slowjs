@@ -13,6 +13,9 @@ const kinds = [
   () => 'ab'.repeat(3),
   () => [1, 2, 3],
   () => 10n ** 30n,
+  () => 1n,
+  () => -5n,
+  () => 'x'.repeat(300) + 'y'.repeat(300),
   () => Symbol.for('s'),
   () => 1.5,
   () => 7,
@@ -44,7 +47,9 @@ for (const k of counts) {
   calls++
 }
 // Operands left on the stack by a tail call, a return in a loop over an
-// iterator, and a return in a try with a finally block.
+// iterator, and a return in a try with a finally block. The frame of a
+// generator is freed by its own end, not by the loop at the end of a call, and
+// is here to see that the calls around it do not change.
 function tail(n, o) { return n == 0 ? o.v : tail(n - 1, { v: o.v + 1 }) }
 function forOf(a) { for (var x of a) { var u = { x }; return u.x } }
 function inFinally() { var a = {}, b = 'x'.repeat(5); try { return a } finally { b = {} } }
@@ -55,5 +60,5 @@ function captured() {
 function throws() { var a = {}, b = [1], c = 'z'.repeat(3); null.x }
 let caught = 0
 for (let i = 0; i < 10; i++) { try { throws() } catch (e) { caught += e instanceof TypeError } }
-function* gen() { var a = {}, b = [1], c = 'z'.repeat(3), d = 1; yield a; yield b; return c }
-`${calls} ${sum} ${tail(50, { v: 0 })} ${typeof forOf([{}, {}])} ${typeof inFinally()} ${captured().map((f) => f()).join()} ${caught} ${[...gen()].length}`
+function* gen() { var a = { n: 1 }, b = [2], c = 'z'.repeat(3), d = 1; yield a; yield b; return c }
+`${calls} ${sum} ${tail(50, { v: 0 })} ${typeof forOf([{}, {}])} ${typeof inFinally()} ${captured().map((f) => f()).join()} ${caught} ${(() => { const g = gen(), g1 = g.next(), g2 = g.next(), g3 = g.next(); return [g1.value.n, g1.done, g2.value[0], g2.done, g3.value, g3.done].join() })()}`

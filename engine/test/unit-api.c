@@ -484,6 +484,117 @@ static void test_host_release(void)
     host_release_call = NULL;
 }
 
+
+/* Release order at the end of a call. The end of a call frees its locals
+   from the first to the last, and skips the ones with no reference count
+   (see "The end of a call skips the values with no reference count" in
+   docs/changes/c-engine.md). A function of JS_NewHostFunctionRelease calls
+   host_release when it is freed, so the handles seen by the time the call has
+   returned say which values the end of the call freed, how many times and in
+   which order. */
+
+/* order_run makes the globals h1 to h16, functions that release their number,
+   runs src, which defines f, and calls f. take(name) in src hands a global
+   over to a local: nothing else holds the function then. */
+static void order_run(const char *src, const char *what, int want_n, const uint32_t *want, int gc)
+{
+    VM v = vm_new();
+    JSValue g;
+    char name[8];
+    int i;
+
+    host_ctx = v.ctx;
+    host_function_call = test_host_call;
+    host_release_call = test_release_call;
+    memset(&released, 0, sizeof(released));
+    g = JS_GetGlobalObject(v.ctx);
+    for (i = 1; i <= 16; i++) {
+        snprintf(name, sizeof(name), "h%d", i);
+        JS_SetPropertyStr(v.ctx, g, name, new_release(v.ctx, name, i));
+    }
+    eval_ok(v.ctx, "function take(n) { var v = globalThis[n]; delete globalThis[n]; return v }");
+    eval_ok(v.ctx, src);
+    CHECK(released.n == 0, "%s: %d released before the call", what, released.n);
+    eval_ok(v.ctx, "f()");
+    if (gc) {
+        CHECK(released.n == 0, "%s: %d released by the call, a cycle waits for the collection", what, released.n);
+        JS_RunGC(v.rt);
+    }
+    CHECK(released.n == want_n, "%s: %d released, want %d", what, released.n, want_n);
+    for (i = 0; i < want_n && i < (int)countof(released.handles); i++)
+        CHECK(released.handles[i] == want[i], "%s: release %d is handle %u, want %u", what, i, released.handles[i], want[i]);
+    JS_FreeValue(v.ctx, g);
+    vm_free(&v);
+    host_function_call = NULL;
+    host_release_call = NULL;
+}
+
+/* A function of n locals, in which the local at slots[i] takes the global
+   h(i+1), for k slots. */
+static void order_slots(int n, const int *slots, int k, const char *what)
+{
+    char src[4096], *p = src;
+    uint32_t want[16];
+    int i;
+
+    p += sprintf(p, "function f() {");
+    for (i = 0; i < n; i++)
+        p += sprintf(p, "var s%d;", i);
+    for (i = 0; i < k; i++) {
+        p += sprintf(p, "s%d = take('h%d');", slots[i], i + 1);
+        want[i] = i + 1;
+    }
+    sprintf(p, "}");
+    order_run(src, what, k, want, 0);
+}
+
+static void test_release_order(void)
+{
+    static const int five[] = { 0, 3, 4, 7, 8 };
+    int slots[16], n, i;
+    char what[64];
+    static const uint32_t a_then_b[] = { 1, 2 };
+
+    /* values with host release in slots 0, 3, 4, 7 and 8, among undefined ones */
+    order_slots(9, five, 5, "slots 0 3 4 7 8 of 9");
+    order_slots(16, five, 5, "slots 0 3 4 7 8 of 16");
+    order_slots(12, five, 5, "slots 0 3 4 7 8 of 12");
+
+    /* every slot of 0 to 15, and the last one alone */
+    for (n = 0; n <= 15; n++) {
+        for (i = 0; i < n; i++)
+            slots[i] = i;
+        snprintf(what, sizeof(what), "all %d slots", n);
+        order_slots(n, slots, n, what);
+        if (n > 0) {
+            slots[0] = n - 1;
+            snprintf(what, sizeof(what), "the last of %d slots", n);
+            order_slots(n, slots, 1, what);
+        }
+    }
+
+    /* the same function in slots 0, 3 and 8 is released once, at the end */
+    {
+        static const uint32_t one[] = { 1 };
+        order_run("function f() { var s0, s1, s2, s3, s4, s5, s6, s7, s8; s0 = take('h1'); s3 = s0; s8 = s0 }",
+                  "one function in slots 0 3 8", 1, one, 0);
+    }
+
+    /* a function that holds another, the first in slot 0 and the second in
+       slot 3: the first is released when slot 0 is freed, the second when
+       slot 3 is, after the first let go of its hold */
+    order_run("function f() { var s0, s1, s2, s3, s4; s0 = take('h1'); s3 = take('h2'); s0.child = s3 }",
+              "a holds b, a in slot 0 and b in slot 3", 2, a_then_b, 0);
+    /* the holder in the later slot: b is freed from slot 0 first, but a still holds it */
+    order_run("function f() { var s0, s1, s2, s3, s4; s0 = take('h2'); s3 = take('h1'); s3.child = s0 }",
+              "a holds b, b in slot 0 and a in slot 3", 2, a_then_b, 0);
+    /* two that hold each other wait for the collection */
+    {
+        static const uint32_t both[] = { 1, 2 };
+        order_run("function f() { var s0, s1, s2, s3; s0 = take('h1'); s3 = take('h2'); s0.other = s3; s3.other = s0 }",
+                  "a cycle of two", 2, both, 1);
+    }
+}
 /* JS_FreeModuleTopLevel frees the top-level function of a module that has
    run, and with it a variable of the top level that no function of the module
    uses, while the variables its functions and exports use stay. It does
@@ -1082,6 +1193,7 @@ int main(void)
     test_json_bytes();
     test_host_function();
     test_host_release();
+    test_release_order();
     test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();
