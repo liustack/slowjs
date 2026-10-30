@@ -790,6 +790,14 @@ static void test_object_inline_oom(void)
    of memory, the buffer freed. */
 static void test_buffer_limit(void)
 {
+    /* Where every block is a request to the system malloc (asan) the heap counts
+       a block by the size the system gives, with 8 bytes more for each, and the
+       numbers below are those of the heap of the engine. */
+    if (white_every_block_is_a_request()) {
+        printf("unit-white: test_buffer_limit skipped, every block is a request in this build\n");
+        return;
+    }
+
     VM v = vm_new();
     struct StringBuffer *b;
     unsigned long hdr = white_jsstring_header();
