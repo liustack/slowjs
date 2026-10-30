@@ -19,6 +19,9 @@ var frameValues = []struct{ make, show string }{
 	{"[1, 2, 3]", "1,2,3"},
 	{"(() => 1)", "() => 1"},
 	{"10n ** 30n", "1000000000000000000000000000000"},
+	{"1n", "1"},
+	{"-5n", "-5"},
+	{"'x'.repeat(300) + 'y'.repeat(300)", strings.Repeat("x", 300) + strings.Repeat("y", 300)},
 	{"Symbol('s')", "Symbol(s)"},
 	{"1.5", "1.5"},
 	{"7", "7"},
@@ -80,10 +83,17 @@ function withStack(a, b) { return a + (b ? {valueOf() { return 1 }} : 2) + [3].l
 check('stack', withStack(1, true) + withStack(1, false), 7);
 function throws() { var a = {}, b = [1], c = 'z'.repeat(3); null.x }
 for (var i = 0; i < 10; i++) { try { throws() } catch (e) { check('throws', e instanceof TypeError, true) } }
-function* gen() { var a = {}, b = [1], c = 'z'.repeat(3), d = 1; yield a; yield b; return c }
-check('gen', [...gen()].length, 2);
-async function asy() { var a = {}, b = [1], c = 'z'.repeat(3), d = 1; await 0; return b[0] }
-var asyResult; asy().then((r) => { asyResult = r });
+// The frames of a generator and of an async function are not freed by the loop
+// at the end of a call: they have their own end. They are here to see that the
+// calls around them do not change.
+function* gen() { var a = {n: 1}, b = [2], c = 'z'.repeat(3), d = 1; yield a; yield b; return c }
+var g = gen(), g1 = g.next(), g2 = g.next(), g3 = g.next();
+check('gen', [g1.value.n, g1.done, g2.value[0], g2.done, g3.value, g3.done].join(), '1,false,2,false,zzz,true');
+async function asy() { var a = {}, b = [7], c = 'z'.repeat(3), d = 1; await 0; return b[0] + c }
+async function rej() { var a = {}, b = [7], c = 'z'.repeat(3), d = 1; await 0; throw new RangeError('r' + b[0]) }
+var asyResult = 'pending', rejResult = 'pending';
+asy().then((r) => { asyResult = r }, (e) => { asyResult = 'rejected ' + e });
+rej().then((r) => { rejResult = 'resolved ' + r }, (e) => { rejResult = e.name + ':' + e.message });
 `)
 	src.WriteString("failures.join('\\n') + '|' + failures.length")
 	got, err := v.Eval(src.String(), "frame.js")
@@ -92,6 +102,14 @@ var asyResult; asy().then((r) => { asyResult = r });
 	}
 	if got != "|0" {
 		t.Errorf("failures:\n%s", got)
+	}
+	// The jobs of the async functions have run when Eval returns.
+	got, err = v.Eval("asyResult + '|' + rejResult", "frame-async.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "7zzz|RangeError:r7"; got != want {
+		t.Errorf("async results %q, want %q", got, want)
 	}
 	closeVM(t, v)
 }
