@@ -309,7 +309,6 @@ func JS_ToBigInt64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) u
 func JS_ToBigInt64Free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToBool(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func JS_ToBoolFree(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func JS_ToCStringLen(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToCStringLen2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func JS_ToFloat64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToFloat64Free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -880,7 +879,7 @@ func js_math_random(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, 
 func js_math_round(a0 uintptr, a1 float64) float64
 func js_math_sign(a0 uintptr, a1 float64) float64
 func js_math_sumPrecise(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
-func js_measure_call_frame(a0 uintptr, a1 uintptr) uintptr
+func js_measure_call_frame(a0 uintptr, a1 uintptr)
 func js_module_ns_autoinit(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_module_ns_has(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_new_function_def(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr

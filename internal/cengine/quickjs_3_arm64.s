@@ -21722,7 +21722,7 @@ TEXT ·js_uint8array_to_base64(SB), $152-64
 	WORD $0x540002e0
 	WORD $0x71000d5f
 	WORD $0x540002a0
-	MOVD $·engine_rodata+4199(SB), R22
+	MOVD $·engine_rodata+4187(SB), R22
 	WORD $0x14000003
 	MOVD $·engine_rodata+40857(SB), R22
 	WORD $0x91014134
@@ -22471,7 +22471,7 @@ TEXT ·js_uint8array_set_from_base64(SB), $120-64
 	WORD $0x54000140
 	WORD $0x71000d5f
 	WORD $0x54000100
-	MOVD $·engine_rodata+4199(SB), R22
+	MOVD $·engine_rodata+4187(SB), R22
 	WORD $0x14000031
 	WORD $0xf94037e8
 	WORD $0xf9403ff5
@@ -23981,7 +23981,7 @@ TEXT ·js_uint8array_from_base64(SB), $136-64
 	WORD $0x54000280
 	WORD $0x71000d7f
 	WORD $0x54000240
-	MOVD $·engine_rodata+4199(SB), R22
+	MOVD $·engine_rodata+4187(SB), R22
 	WORD $0x91018114
 	WORD $0x91010117
 	WORD $0xaa0903f5

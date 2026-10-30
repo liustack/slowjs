@@ -1182,6 +1182,46 @@ static int test_call_depth(void *unused)
     return 0;
 }
 
+/* The first context of a runtime measures the frame of JS_CallInternal for
+   the direct calls of C functions. Making it runs no code, so it works with
+   the call depth at the limit and with an interrupt asked, and leaves both as
+   they were. */
+static int test_first_context_any_state(void *unused)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx;
+    int d;
+
+    CHECK(JS_SetMaxCallDepth(rt, 100) == 0, "lower");
+    CHECK(JS_SetCallDepth(rt, 100) == 0, "depth at the limit");
+    ctx = JS_NewContext(rt);
+    CHECK(ctx != NULL, "a context at the depth limit");
+    if (!ctx) {
+        host_free_runtime(rt);
+        return 0;
+    }
+    CHECK(JS_GetCallDepth(rt) == 100, "depth kept %d", JS_GetCallDepth(rt));
+    CHECK(JS_SetCallDepth(rt, 0) == 0, "depth back");
+    d = depth_reached(ctx);
+    CHECK(d == 98, "depth %d", d);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+
+    rt = host_new_runtime();
+    host_interrupt(rt);
+    ctx = JS_NewContext(rt);
+    CHECK(ctx != NULL, "a context with an interrupt asked");
+    if (!ctx) {
+        host_free_runtime(rt);
+        return 0;
+    }
+    CHECK(interrupted(ctx, "1 + 1"), "the interrupt still asked");
+    CHECK(eval_is(ctx, "1 + 1", "2"), "runs after it");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 static JSValue js_reenter(JSContext *ctx, JSValueConst this_val,
                           int argc, JSValueConst *argv)
 {
@@ -3058,6 +3098,7 @@ int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
     host_run_thread(test_call_depth, NULL);
+    host_run_thread(test_first_context_any_state, NULL);
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_access, NULL);
     host_run_thread(test_internal_depth_access, NULL);

@@ -13863,7 +13863,7 @@ TEXT ·js_json_parse(SB), $152-64
 	BL ·memset(SB)
 	WORD $0x52800408
 	WORD $0xaa1803ea
-	MOVD $·engine_rodata+4108(SB), R9
+	MOVD $·engine_rodata+4096(SB), R9
 	WORD $0xb80f0d48
 	WORD $0x91034154
 	WORD $0xf81f8149
@@ -13969,7 +13969,7 @@ TEXT ·js_json_parse(SB), $152-64
 	WORD $0x52800408
 	WORD $0xaa1703ea
 	WORD $0xf90026f5
-	MOVD $·engine_rodata+4108(SB), R9
+	MOVD $·engine_rodata+4096(SB), R9
 	WORD $0xb8058d48
 	WORD $0xa9045154
 	WORD $0x8b130288
@@ -23881,7 +23881,7 @@ TEXT ·js_compile_regexp(SB), $216-64
 	WORD $0xf94013e0
 	WORD $0x34000640
 	WORD $0xf9406fe8
-	MOVD $·engine_rodata+3845(SB), R22
+	MOVD $·engine_rodata+4318(SB), R22
 	WORD $0x91028114
 	WORD $0x91015115
 	WORD $0xf90007f4
@@ -23961,7 +23961,7 @@ TEXT ·js_compile_regexp(SB), $216-64
 	WORD $0x14000393
 	WORD $0xf9406fe8
 	WORD $0xf94067f5
-	MOVD $·engine_rodata+3845(SB), R22
+	MOVD $·engine_rodata+4318(SB), R22
 	WORD $0x91028114
 	WORD $0x91010117
 	WORD $0xf90007f4
@@ -25459,7 +25459,7 @@ TEXT ·js_regexp_constructor(SB), $184-64
 	WORD $0xf94037e1
 	WORD $0x17ffff70
 	WORD $0xf9404fe8
-	MOVD $·engine_rodata+4183(SB), R22
+	MOVD $·engine_rodata+4171(SB), R22
 	WORD $0xaa0b03f5
 	WORD $0xf9004bec
 	WORD $0x9101c114
@@ -26281,7 +26281,7 @@ TEXT ·js_regexp_exec(SB), $264-64
 	WORD $0x3100081f
 	WORD $0x54000821
 	WORD $0xf9407ff5
-	MOVD $·engine_rodata+3845(SB), R22
+	MOVD $·engine_rodata+4318(SB), R22
 	WORD $0x91038114
 	WORD $0x91014117
 	WORD $0xf90007f4

@@ -14484,7 +14484,7 @@ TEXT ·js_parse_from_clause(SB), $120-32
 	BL ·JS_FreeAtomStruct(SB)
 	WORD $0x17ffffc8
 	WORD $0xf94037f7
-	MOVD $·engine_rodata+4183(SB), R22
+	MOVD $·engine_rodata+4171(SB), R22
 	WORD $0xaa0803f5
 	WORD $0x17ffffbd
 	WORD $0xf94033ec
@@ -17120,7 +17120,7 @@ TEXT ·js_parse_with_clause(SB), $152-32
 	WORD $0x17ffffea
 	WORD $0xf9404fe8
 	WORD $0xf94037f6
-	MOVD $·engine_rodata+4183(SB), R23
+	MOVD $·engine_rodata+4171(SB), R23
 	WORD $0x9101c114
 	WORD $0x91018118
 	WORD $0xf90007f4

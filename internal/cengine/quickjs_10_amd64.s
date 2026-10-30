@@ -10238,7 +10238,7 @@ TEXT ·js_global_eval(SB), $144-64
 	BYTE $0x8b
 	BYTE $0x72
 	BYTE $0x08
-	LEAQ ·engine_rodata+4108(SB), DX
+	LEAQ ·engine_rodata+4096(SB), DX
 	QUAD $0xcd89497824648b4c
 	QUAD $0x0000008024b48b4c
 	QUAD $0xc7894860247c8b4c

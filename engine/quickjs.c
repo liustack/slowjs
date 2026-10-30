@@ -3255,25 +3255,24 @@ size_t JS_FreeRuntime(JSRuntime *rt)
     return leaked;
 }
 
-/* JS_CallInternal with JS_UNDEFINED as the function only writes the stack
-   left into rt->call_frame (js_measure_call_frame) */
+/* JS_CallInternal with this flag only writes the stack left into
+   rt->call_frame (js_measure_call_frame), and runs nothing */
 #define JS_CALL_FLAG_FRAME       (1 << 3)
 
 /* rt->call_frame: the stack left here less what JS_CallInternal finds left
    at its check, called from here. Never inlined, so that the call starts
-   from a frame of its own. */
-static no_inline int js_measure_call_frame(JSContext *ctx)
+   from a frame of its own. It cannot fail. The flags are read from memory,
+   so that the compiler cannot see that the call only measures and inline
+   JS_CallInternal here, which would measure nothing. */
+static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     long left = __shadow_remaining();
-    JSValue ret;
+    volatile int flags = JS_CALL_FLAG_FRAME;
 
-    ret = JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
-                          0, NULL, JS_CALL_FLAG_FRAME);
-    if (JS_IsException(ret))
-        return -1;
+    JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
+                    0, NULL, flags);
     rt->call_frame = left - rt->call_frame;
-    return 0;
 }
 
 JSContext *JS_NewContextRaw(JSRuntime *rt)
@@ -3307,10 +3306,8 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
         JS_FreeContext(ctx);
         return NULL;
     }
-    if (!rt->call_frame && js_measure_call_frame(ctx)) {
-        JS_FreeContext(ctx);
-        return NULL;
-    }
+    if (!rt->call_frame)
+        js_measure_call_frame(ctx);
     return ctx;
 }
 
@@ -21323,6 +21320,19 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst *call_argv
     return JS_TRUE;
 }
 
+/* The checks of the entry of JS_CallInternal, after the count of its poll:
+   the interrupt flag, then nothing runs while an uncatchable exception is
+   pending, then every call counts a level, C functions included (each
+   return of JS_CallInternal leaves it). */
+static force_inline int js_call_checks(JSContext *caller_ctx)
+{
+    if (js_poll_interrupts(caller_ctx))
+        return -1;
+    if (unlikely(js_uncatchable_pending(caller_ctx->rt)))
+        return -1;
+    return js_call_enter(caller_ctx);
+}
+
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags)
@@ -21380,16 +21390,18 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     } while (0)
 
     poll_count_entry(POLL_WEIGHT);
-    if (js_poll_interrupts(caller_ctx))
-        return JS_EXCEPTION;
-    /* nothing runs while an uncatchable exception is pending */
-    if (unlikely(js_uncatchable_pending(rt)))
-        return JS_EXCEPTION;
-    /* every call counts a level, C functions included: each return below
-       leaves it */
-    if (js_call_enter(caller_ctx))
-        return JS_EXCEPTION;
     if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
+        /* js_measure_call_frame: before the checks, so that it measures
+           whatever the depth, the stack left, an interrupt or an exception
+           pending, and in this branch, which a call of a function never
+           takes (the entry still counts its poll first, the rule of the
+           poll pass) */
+        if (flags & JS_CALL_FLAG_FRAME) {
+            rt->call_frame = __shadow_remaining();
+            return JS_UNDEFINED;
+        }
+        if (js_call_checks(caller_ctx))
+            return JS_EXCEPTION;
         if (flags & JS_CALL_FLAG_GENERATOR) {
             JSAsyncFunctionState *s = JS_VALUE_GET_PTR(func_obj);
             /* func_obj get contains a pointer to JSFuncAsyncState */
@@ -21411,14 +21423,12 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 goto exception;
             else
                 goto restart;
-        } else if (flags & JS_CALL_FLAG_FRAME) {
-            rt->call_frame = __shadow_remaining();
-            js_call_leave(rt);
-            return JS_UNDEFINED;
         } else {
             goto not_a_function;
         }
     }
+    if (js_call_checks(caller_ctx))
+        return JS_EXCEPTION;
     p = JS_VALUE_GET_OBJ(func_obj);
     if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION)) {
         JSClassCall *call_func;
