@@ -106,7 +106,9 @@ func killedError() *Error {
 
 // outer runs f, which calls into the engine and runs no script, inside an
 // entry of the host: a poll in it never kills, and a memory fault in it is a
-// panic. A panic or a Goexit that leaves f went through the engine's frames,
+// panic. A call that can run a script (a getter, a setter, a proxy trap,
+// toString or toJSON) is not for outer: its method uses enter and leave, so
+// that the eval timeout applies. A panic or a Goexit that leaves f went through the engine's frames,
 // and the VM is broken.
 func (m *VM) outer(f func()) {
 	if m.h.Broken() {

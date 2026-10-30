@@ -1,0 +1,16 @@
+function: a
+arrow: b
+class: c
+generator: d
+async arrow: e
+named function: g
+class with a static name: N
+a paren: j
+a comma: 
+loop variable: k,j
+not a function: 5
+not a function with keys: z
+function name with keys: z
+var in a function: function
+initializer throws: throws RangeError
+the initializer runs once: 1

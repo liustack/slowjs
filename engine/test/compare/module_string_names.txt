@@ -1,0 +1,10 @@
+values: 1,2,3,1,1
+a keys: a-b|default|normal|plain|with space|😀
+b keys: a-b|c-d|default|plain2|the namespace
+b values: 1,2,1,1,true,1
+has: true,true,true,false
+descriptor: {"value":1,"writable":true,"enumerable":true,"configurable":false}
+str_bad1 SyntaxError
+str_bad2 SyntaxError
+str_bad3 SyntaxError
+str_bad4 SyntaxError

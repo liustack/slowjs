@@ -1,0 +1,42 @@
+resize(0): 0
+resize(1): 1
+resize(8): 8
+resize(15): 15
+resize(16): 16
+resize(17): throws RangeError
+resize(2.9): 2
+resize(0): 0
+resize(-0.5): 0
+resize(-1): throws RangeError
+resize(NaN): 0
+resize(Infinity): throws RangeError
+resize(-Infinity): throws RangeError
+resize(2147483648): throws RangeError
+resize(4294967296): throws RangeError
+resize(4294967304): throws RangeError
+resize(9007199254740991): throws RangeError
+resize(9007199254740992): throws RangeError
+resize(9223372036854776000): throws RangeError
+resize(18446744073709552000): throws RangeError
+resize(18446744073709556000): throws RangeError
+resize(36893488147419103000): throws RangeError
+resize(1.1805916207174113e+21): throws RangeError
+resize(1e+300): throws RangeError
+resize("8"): 8
+resize(""): 0
+resize("x"): 0
+resize(null): 0
+resize(undefined): 0
+resize(true): 1
+resize([]): 0
+resize([4]): 4
+resize(object): 12
+resize(3n): throws TypeError
+resize(Symbol): throws TypeError
+resize(): 0
+max bigger: throws RangeError
+max equal: 1048576
+not resizable: throws TypeError
+detached: throws TypeError
+length tracking: 12
+order: valueOf,TypeError

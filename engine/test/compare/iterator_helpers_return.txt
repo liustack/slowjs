@@ -1,0 +1,66 @@
+map return before start: {"done":true} get next,get return,return
+map return twice: {"done":true} get next,get return,return
+map return after one: {"value":0,"done":false}{"done":true} get next,next,get return,return
+map return when done: {"done":true} get next,next,next
+map next after return: {"done":true} get next,get return,return
+map no return method: {"done":true} get next,get return
+map return throws: throws RangeError
+map return result is a primitive: throws TypeError
+map next throws: throws RangeError
+map return after next threw: {"done":true} get next,next,next,caught
+map return while running: get next,next,TypeError
+filter return before start: {"done":true} get next,get return,return
+filter return twice: {"done":true} get next,get return,return
+filter return after one: {"value":0,"done":false}{"done":true} get next,next,get return,return
+filter return when done: {"done":true} get next,next,next
+filter next after return: {"done":true} get next,get return,return
+filter no return method: {"done":true} get next,get return
+filter return throws: throws RangeError
+filter return result is a primitive: throws TypeError
+filter next throws: throws RangeError
+filter return after next threw: {"done":true} get next,next,next,caught
+filter return while running: get next,next,TypeError
+take return before start: {"done":true} get next,get return,return
+take return twice: {"done":true} get next,get return,return
+take return after one: {"value":0,"done":false}{"done":true} get next,next,get return,return
+take return when done: {"done":true} get next,next,next
+take next after return: {"done":true} get next,get return,return
+take no return method: {"done":true} get next,get return
+take return throws: throws RangeError
+take return result is a primitive: throws TypeError
+take next throws: get next,next,next,get return,return
+take return after next threw: {"done":true} get next,next,next,caught
+take return while running: get next,next
+drop return before start: {"done":true} get next,get return,return
+drop return twice: {"done":true} get next,get return,return
+drop return after one: {"value":1,"done":false}{"done":true} get next,next,next,get return,return
+drop return when done: {"done":true} get next,next,next
+drop next after return: {"done":true} get next,get return,return
+drop no return method: {"done":true} get next,get return
+drop return throws: throws RangeError
+drop return result is a primitive: throws TypeError
+drop next throws: throws RangeError
+drop return after next threw: {"done":true} get next,next,next,caught
+drop return while running: get next,next,next
+flatMap return before start: {"done":true} get next,get return,return
+flatMap return twice: {"done":true} get next,get return,return
+flatMap return after one: {"value":0,"done":false}{"done":true} get next,next,get return,return
+flatMap return when done: {"done":true} get next,next,next
+flatMap next after return: {"done":true} get next,get return,return
+flatMap no return method: {"done":true} get next,get return
+flatMap return throws: throws RangeError
+flatMap return result is a primitive: throws TypeError
+flatMap next throws: get next,next,next
+flatMap return after next threw: {"done":true} get next,next,get return,return
+flatMap return while running: get next,next,TypeError
+flatMap reads next of an inner iterator once: i00,i01,i02,i10,i11,i12 get next,next,iterator i0,get next i0,next i0,next i0,next i0,next i0,next,iterator i1,get next i1,next i1,next i1,next i1,next i1,next
+flatMap return while inside an inner iterator: {"done":true} get next,next,iterator i0,get next i0,next i0,next i0,get return i0,return i0,get return,return
+flatMap return, inner return throws: get next,next,iterator i0,get next i0,next i0,get return i0,return i0,get return,return,caught RangeError
+flatMap return, both throw: get next,next,iterator i0,get next i0,next i0,get return i0,return i0,get return,return,caught RangeError inner
+flatMap inner done moves on: i00,i10,true get next,next,iterator i0,get next i0,next i0,next i0,next,iterator i1,get next i1,next i1,next i1,next
+flatMap mapper throws: get next,next,get return,return,caught RangeError
+flatMap mapper returns a non-iterable: get next,next,get return,return,caught TypeError
+flatMap inner is a string: throws TypeError
+flatMap inner next getter throws: get next,next,get return,return,caught RangeError
+take return after the limit: 0,true get next,next,get return,return
+drop return: get next,next,next,next,get return,return

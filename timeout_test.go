@@ -5,6 +5,7 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -157,10 +158,98 @@ func TestValueCallRearmsEvalTimeout(t *testing.T) {
 	}
 }
 
+// hookJS defines the objects the entries that go through a getter, a setter,
+// toJSON, toString and the reading of an error use: each runs the global
+// function loop. A test that uses nestedEntries runs it after it defines loop.
+const hookJS = `;
+globalThis.hook = { get x() { loop(); return 1 }, set x(v) { loop() }, toJSON() { loop(); return 1 } };
+globalThis.hookErr = new Error("e");
+Object.defineProperty(hookErr, "name", { get() { loop(); return "N" } });
+globalThis.hookBig = 12345678901234567890n;
+BigInt.prototype.toString = function () { loop(); return "1" };`
+
+// hookValue returns the global hook, hookErr or hookBig. Reading a global runs
+// no javascript, so it works after the deadline.
+func hookValue(m *VM, name string) (Value, error) {
+	g := m.GlobalObject()
+	defer g.Free()
+	a, err := m.NewAtom(name)
+	if err != nil {
+		return Value{}, err
+	}
+	return m.GetPropertyValue(g, a)
+}
+
 // nestedEntries are the ways a host function can run more javascript on the
 // VM that called it. Each runs the global function loop, which the test
 // defines.
 var nestedEntries = map[string]func(m *VM) error{
+	"GetProperty": func(m *VM) error {
+		h, err := hookValue(m, "hook")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		x, err := m.NewAtom("x")
+		if err != nil {
+			return err
+		}
+		_, err = m.GetProperty(h, x)
+		return err
+	},
+	"SetProperty": func(m *VM) error {
+		h, err := hookValue(m, "hook")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		x, err := m.NewAtom("x")
+		if err != nil {
+			return err
+		}
+		return m.SetProperty(h, x, 1)
+	},
+	"Value.Any of an object": func(m *VM) error {
+		h, err := hookValue(m, "hook")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		_, err = h.Any()
+		return err
+	},
+	"Value.Any of a BigInt": func(m *VM) error {
+		h, err := hookValue(m, "hookBig")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		_, err = h.Any()
+		return err
+	},
+	"MarshalJSON": func(m *VM) error {
+		h, err := hookValue(m, "hook")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		_, err = h.MarshalJSON()
+		return err
+	},
+	"ErrorFromValue": func(m *VM) error {
+		// The name getter runs loop, which the timeout, the interrupt or the
+		// kill stops. ErrorFromValue has no error: a field it could not read
+		// stays empty, and that is what is reported here.
+		h, err := hookValue(m, "hookErr")
+		if err != nil {
+			return err
+		}
+		defer h.Free()
+		if e := ErrorFromValue(h); e.Name == "" {
+			return errors.New("the name was left empty")
+		}
+		return nil
+	},
 	"Eval": func(m *VM) error {
 		_, err := m.Eval(`loop()`, EvalGlobal)
 		return err
@@ -240,7 +329,7 @@ func TestNestedEvalKeepsTimeout(t *testing.T) {
 				nestedErr = nested(m)
 				return nil, nil
 			})
-			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 
@@ -275,7 +364,7 @@ func TestNestedEvalKeepsInterrupt(t *testing.T) {
 				nested(m)
 				return nil, nil
 			})
-			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 
