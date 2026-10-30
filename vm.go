@@ -165,12 +165,19 @@ func (m *VM) SetRegExpCache(n, bytes int) error {
 	return nil
 }
 
-// SetEvalTimeout sets the timeout for the various eval functions. Passing
-// zero 'd' disables timeouts. The timeout starts with the outermost call into
-// javascript: a host function that evaluates more javascript on m runs inside
-// the time left to the call that got it there. The timeout runs on the
-// monotonic clock, so setting the system clock does not move it. A timeout
-// too long for that clock (about 292 years) never fires.
+// SetEvalTimeout sets the timeout for every method that can run javascript:
+// the eval and call functions, [VM.ExecutePendingJobs], [Value.Then], and the
+// methods that run a getter, a setter, a proxy trap, toJSON or toString
+// ([VM.GetProperty], [VM.GetPropertyValue], [VM.SetProperty],
+// [VM.SetPropertyValue] and the [Value] methods that call them,
+// [Value.MarshalJSON], [Value.Any] and [ErrorFromValue]). A method that runs
+// no javascript, as [VM.NewAtom] and [VM.NewObjectValue] do not, has no
+// timeout. Passing zero 'd' disables timeouts. The timeout starts with the
+// outermost call into javascript: a host function that evaluates more
+// javascript on m runs inside the time left to the call that got it there.
+// The timeout runs on the monotonic clock, so setting the system clock does
+// not move it. A timeout too long for that clock (about 292 years) never
+// fires.
 func (m *VM) SetEvalTimeout(d time.Duration) error {
 	if err := m.usable(); err != nil {
 		return err

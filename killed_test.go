@@ -171,8 +171,9 @@ func TestKilledVM(t *testing.T) {
 		}
 	}
 	for name, call := range map[string]func(){
-		"RunGC":      func() { m.RunGC() },
-		"RunYoungGC": func() { m.RunYoungGC() },
+		"RunGC":          func() { m.RunGC() },
+		"RunYoungGC":     func() { m.RunYoungGC() },
+		"ErrorFromValue": func() { ErrorFromValue(v) },
 	} {
 		if p := panicked(call); p != brokenPanic {
 			t.Errorf("%s after a kill panicked with %v, want %q", name, p, brokenPanic)

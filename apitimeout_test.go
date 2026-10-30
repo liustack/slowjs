@@ -1,0 +1,239 @@
+// Copyright (c) 2026 The slowjs Authors.
+// SPDX-License-Identifier: MIT
+// Use of this source code is governed by the MIT license in LICENSE-MIT at the
+// root of this repository.
+
+package slowjs // import "github.com/liustack/slowjs"
+
+import (
+	"errors"
+	"testing"
+	"time"
+)
+
+// spin is a busy loop of 300 ms in javascript. A VM with a 10 ms eval timeout
+// has to stop it after about 10 ms, whichever method of the Go API ran it.
+const spin = `function spin() { const t = Date.now(); while (Date.now() - t < 300) {} }`
+
+// TestAPIEntriesHaveTheEvalTimeout runs javascript from every method of the Go
+// API that can: a getter, a setter, a proxy trap, toJSON, a replaced
+// BigInt.prototype.toString, and the toString or the getter that reads the
+// error an engine call threw. Each must end with the interrupted error at the
+// eval timeout, as Eval and Call do, and not run to the end of the loop.
+func TestAPIEntriesHaveTheEvalTimeout(t *testing.T) {
+	const timeout = 10 * time.Millisecond
+	const limit = 150 * time.Millisecond
+
+	setup := spin + `
+globalThis.hostile = {
+  get x() { spin(); return 42 },
+  set x(v) { spin() },
+  toJSON() { spin(); return 1 },
+};
+globalThis.getterObj = { get g() { spin(); return 1 }, y: 2 };
+globalThis.proxy = new Proxy({}, {
+  get() { spin(); return 7 },
+  set() { spin(); return true },
+  getPrototypeOf() { spin(); return null },
+  ownKeys() { spin(); return [] },
+});
+globalThis.frozen = Object.freeze({ a: 1 });
+globalThis.makeBigInt = () => 12345678901234567890n;
+globalThis.errorWithGetter = new TypeError("x");
+Object.defineProperty(globalThis.errorWithGetter, "name", { get() { spin(); return "N" } });
+globalThis.errorWithToString = new Error("y");
+globalThis.errorWithToString.toString = function () { spin(); return "T" };
+globalThis.fixed = 1;
+Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
+`
+
+	// readsError names the cases where the loop runs while the error of a call is
+	// read. A field the timeout cut off is left empty (see ErrorFromValue), so
+	// the call ends with that error and not with the interrupted one.
+	readsError := map[string]bool{
+		"SetProperty of a frozen object, error read": true,
+		"RegisterFunc error read":                    true,
+		"RegisterCopyProps error read":               true,
+		"RegisterEscapeText error read":              true,
+	}
+	// ErrorFromValue has no error result.
+	noResult := map[string]bool{
+		"ErrorFromValue name getter": true,
+		"ErrorFromValue toString":    true,
+	}
+
+	cases := []struct {
+		name string
+		// patch runs in the page before the timeout is set, and may be empty.
+		patch string
+		run   func(t *testing.T, m *VM) error
+	}{
+		{"GetProperty", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			_, err := m.GetProperty(obj, atomOrFatal(t, m, "x"))
+			return err
+		}},
+		{"GetPropertyValue", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			v, err := m.GetPropertyValue(obj, atomOrFatal(t, m, "x"))
+			if err == nil {
+				v.Free()
+			}
+			return err
+		}},
+		{"Value.Property", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			_, err := obj.Property(atomOrFatal(t, m, "x"))
+			return err
+		}},
+		{"Value.GetPropertyValue", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			v, err := obj.GetPropertyValue(atomOrFatal(t, m, "x"))
+			if err == nil {
+				v.Free()
+			}
+			return err
+		}},
+		{"SetProperty", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			return m.SetProperty(obj, atomOrFatal(t, m, "x"), 1)
+		}},
+		{"SetPropertyValue", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			return m.SetPropertyValue(obj, atomOrFatal(t, m, "x"), m.NewInt(1))
+		}},
+		{"Value.SetProperty", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			return obj.SetProperty(atomOrFatal(t, m, "x"), 1)
+		}},
+		{"Value.SetPropertyValue", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			return obj.SetPropertyValue(atomOrFatal(t, m, "x"), m.NewInt(1))
+		}},
+		{"GetProperty of a proxy", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "proxy")
+			defer obj.Free()
+			_, err := m.GetProperty(obj, atomOrFatal(t, m, "z"))
+			return err
+		}},
+		{"SetProperty of a proxy", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "proxy")
+			defer obj.Free()
+			return m.SetProperty(obj, atomOrFatal(t, m, "z"), 1)
+		}},
+		{"SetProperty of a frozen object, error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "frozen")
+			defer obj.Free()
+			return m.SetProperty(obj, atomOrFatal(t, m, "b"), 1)
+		}},
+		{"Value.MarshalJSON", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "hostile")
+			defer obj.Free()
+			_, err := obj.MarshalJSON()
+			return err
+		}},
+		{"Value.Any of an object", "", func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "getterObj")
+			defer obj.Free()
+			_, err := obj.Any()
+			return err
+		}},
+		{"Value.Any of a BigInt", `BigInt.prototype.toString = function () { spin(); return "1" }`, func(t *testing.T, m *VM) error {
+			v := evalValueOrFatal(t, m, "makeBigInt()")
+			defer v.Free()
+			_, err := v.Any()
+			return err
+		}},
+		{"GetProperty of a BigInt", `BigInt.prototype.toString = function () { spin(); return "1" }`, func(t *testing.T, m *VM) error {
+			obj := evalValueOrFatal(t, m, "({ b: 12345678901234567890n })")
+			defer obj.Free()
+			_, err := m.GetProperty(obj, atomOrFatal(t, m, "b"))
+			return err
+		}},
+		{"ErrorFromValue name getter", "", func(t *testing.T, m *VM) error {
+			e := evalValueOrFatal(t, m, "errorWithGetter")
+			defer e.Free()
+			return ErrorFromValue(e)
+		}},
+		{"ErrorFromValue toString", "", func(t *testing.T, m *VM) error {
+			e := evalValueOrFatal(t, m, "errorWithToString")
+			defer e.Free()
+			return ErrorFromValue(e)
+		}},
+		{"RegisterFunc error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			return m.RegisterFunc("fixed", func() int { return 1 }, false)
+		}},
+		{"RegisterCopyProps error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			return m.RegisterCopyProps("fixed")
+		}},
+		{"RegisterEscapeText error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			return m.RegisterEscapeText("fixed")
+		}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := NewVM()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+
+			if _, err := m.Eval(setup, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			if c.patch != "" {
+				if _, err := m.Eval(c.patch, EvalGlobal); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := m.SetEvalTimeout(timeout); err != nil {
+				t.Fatal(err)
+			}
+
+			start := time.Now()
+			err = c.run(t, m)
+			elapsed := time.Since(start)
+
+			var e *Error
+			switch {
+			case noResult[c.name]:
+			case readsError[c.name]:
+				if err == nil {
+					t.Errorf("the call returned no error")
+				}
+			case !errors.As(err, &e) || !e.Interrupted:
+				t.Errorf("the error is %v, want the interrupted error", err)
+			}
+			if elapsed > limit {
+				t.Errorf("took %v, the eval timeout is %v", elapsed, timeout)
+			}
+		})
+	}
+}
+
+func evalValueOrFatal(t *testing.T, m *VM, src string) Value {
+	t.Helper()
+	v, err := m.EvalValue(src, EvalGlobal)
+	if err != nil {
+		t.Fatalf("%s: %v", src, err)
+	}
+	return v
+}
+
+func atomOrFatal(t *testing.T, m *VM, s string) Atom {
+	t.Helper()
+	a, err := m.NewAtom(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
