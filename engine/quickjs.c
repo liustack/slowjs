@@ -21346,6 +21346,16 @@ static force_inline int js_call_checks(JSContext *caller_ctx)
     return js_call_enter(caller_ctx);
 }
 
+/* The end of a call frees its values by their tags: a value has a reference
+   count only if its tag is negative, so a tag that is not negative says there
+   is nothing to free. */
+_Static_assert(JS_TAG_FIRST < 0 && JS_TAG_OBJECT < 0 && JS_TAG_INT >= 0 &&
+               JS_TAG_BOOL >= 0 && JS_TAG_NULL >= 0 &&
+               JS_TAG_UNDEFINED >= 0 && JS_TAG_UNINITIALIZED >= 0 &&
+               JS_TAG_CATCH_OFFSET >= 0 && JS_TAG_EXCEPTION >= 0 &&
+               JS_TAG_SHORT_BIG_INT >= 0 && JS_TAG_FLOAT64 >= 0,
+               "only the tags from JS_TAG_FIRST to -1 have a reference count");
+
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                                JSValueConst this_obj, JSValueConst new_target,
                                int argc, JSValue *argv, int flags)
@@ -21492,18 +21502,29 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     sf->var_buf = var_buf;
     sf->arg_buf = arg_buf;
 
-    /* the locals start as undefined, four to a turn, then the two and the
-       one left over. The count is read once into n: in the loop the compiler
-       read b->var_count again after each store of a JSValue, which might
-       have changed it (docs/changes/c-engine.md) */
+    /* the locals start as undefined, eight to a turn, then the four, the two
+       and the one left over. The count is read once into n: in the loop the
+       compiler read b->var_count again after each store of a JSValue, which
+       might have changed it (docs/changes/c-engine.md) */
     {
         JSValue *v = var_buf;
         int n = b->var_count;
-        for(; n >= 4; n -= 4, v += 4) {
+        for(; n >= 8; n -= 8, v += 8) {
             v[0] = JS_UNDEFINED;
             v[1] = JS_UNDEFINED;
             v[2] = JS_UNDEFINED;
             v[3] = JS_UNDEFINED;
+            v[4] = JS_UNDEFINED;
+            v[5] = JS_UNDEFINED;
+            v[6] = JS_UNDEFINED;
+            v[7] = JS_UNDEFINED;
+        }
+        if (n & 4) {
+            v[0] = JS_UNDEFINED;
+            v[1] = JS_UNDEFINED;
+            v[2] = JS_UNDEFINED;
+            v[3] = JS_UNDEFINED;
+            v += 4;
         }
         if (n & 2) {
             v[0] = JS_UNDEFINED;
@@ -24298,15 +24319,57 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             /* variable references reference the stack: must close them */
             close_var_refs(rt, b, sf);
         }
-        /* free the local variables and stack, two to a turn. The test counts
-           what is left: when the stack is full, sp is the end of the frame,
-           and pval + 1 would point past it, which C does not allow */
-        for(pval = local_buf; sp - pval >= 2; pval += 2) {
+        /* free the local variables and stack. Most of them hold no reference
+           count, and the tag of a value that has one is negative where every
+           other tag is not (JS_TAG_FIRST), so the tags of eight values or'd
+           together say at once that none of them needs a free. The scan has
+           no call in it, so the generated code keeps its registers in it. i
+           counts the values left, so that nothing points past the frame when
+           the stack is full (sp is then the end of the frame) */
+        pval = local_buf;
+        i = sp - local_buf;
+        for(;;) {
+            while (i >= 8 &&
+                   (JS_VALUE_GET_TAG(pval[0]) | JS_VALUE_GET_TAG(pval[1]) |
+                    JS_VALUE_GET_TAG(pval[2]) | JS_VALUE_GET_TAG(pval[3]) |
+                    JS_VALUE_GET_TAG(pval[4]) | JS_VALUE_GET_TAG(pval[5]) |
+                    JS_VALUE_GET_TAG(pval[6]) | JS_VALUE_GET_TAG(pval[7])) >= 0) {
+                pval += 8;
+                i -= 8;
+            }
+            if (i < 8)
+                break;
+            if ((JS_VALUE_GET_TAG(pval[0]) | JS_VALUE_GET_TAG(pval[1]) |
+                 JS_VALUE_GET_TAG(pval[2]) | JS_VALUE_GET_TAG(pval[3])) < 0) {
+                JS_FreeValue(ctx, pval[0]);
+                JS_FreeValue(ctx, pval[1]);
+                JS_FreeValue(ctx, pval[2]);
+                JS_FreeValue(ctx, pval[3]);
+            }
+            if ((JS_VALUE_GET_TAG(pval[4]) | JS_VALUE_GET_TAG(pval[5]) |
+                 JS_VALUE_GET_TAG(pval[6]) | JS_VALUE_GET_TAG(pval[7])) < 0) {
+                JS_FreeValue(ctx, pval[4]);
+                JS_FreeValue(ctx, pval[5]);
+                JS_FreeValue(ctx, pval[6]);
+                JS_FreeValue(ctx, pval[7]);
+            }
+            pval += 8;
+            i -= 8;
+        }
+        if (i & 4) {
             JS_FreeValue(ctx, pval[0]);
             JS_FreeValue(ctx, pval[1]);
+            JS_FreeValue(ctx, pval[2]);
+            JS_FreeValue(ctx, pval[3]);
+            pval += 4;
         }
-        if (pval < sp)
-            JS_FreeValue(ctx, *pval);
+        if (i & 2) {
+            JS_FreeValue(ctx, pval[0]);
+            JS_FreeValue(ctx, pval[1]);
+            pval += 2;
+        }
+        if (i & 1)
+            JS_FreeValue(ctx, pval[0]);
     }
     rt->current_stack_frame = sf->prev_frame;
     js_call_leave(rt);
