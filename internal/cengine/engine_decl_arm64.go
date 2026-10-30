@@ -1077,7 +1077,7 @@ func js_shared_array_buffer_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, 
 func js_shr_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_strdup(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_strict_eq2_block(a0 uintptr, a1 uintptr) uintptr
-func js_strict_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func js_strict_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_string_CreateHTML_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_string_GetSubstitution_block(a0 uintptr, a1 uintptr) uintptr
 func js_string_charAt_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -1210,7 +1210,7 @@ func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
 func map_add_record(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) uintptr
 func map_decref_record(a0 uintptr, a1 uintptr, a2 uintptr)
-func map_delete_record(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) uintptr
+func map_delete_record(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) (r0, r1 uintptr)
 func map_delete_record_internal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func map_hash_key(a0 uintptr, a1, a2 uintptr, a3 uintptr) uintptr
 func map_hash_key_poll(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
@@ -4300,7 +4300,7 @@ func js_string_replace(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 ui
 
 // js_string_rope_compare stores its arguments in a block at the shadow pointer for
 // js_string_rope_compare_block (gen.PackedGo).
-func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, a5, a6 uintptr, a7 uintptr) uintptr {
+func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, a5, a6 uintptr, a7 uintptr, a8 uintptr) uintptr {
 	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
 		panic("cengine: the block of js_string_rope_compare ends past the shadow-stack region")
 	}
@@ -4311,6 +4311,7 @@ func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, 
 	*(*uintptr)(packedSlot(a0 + 32)) = a5
 	*(*uintptr)(packedSlot(a0 + 40)) = a6
 	*(*uintptr)(packedSlot(a0 + 48)) = a7
+	*(*uintptr)(packedSlot(a0 + 56)) = a8
 	return js_string_rope_compare_block(a0+64, a0)
 }
 

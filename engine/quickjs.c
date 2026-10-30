@@ -1441,6 +1441,7 @@ typedef enum JSStrictEqModeEnum {
 static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                           JSStrictEqModeEnum eq_mode);
 static BOOL js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2);
+static int js_strict_eq_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static BOOL js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static BOOL js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
@@ -5686,17 +5687,24 @@ static uint32_t string_rope_get_len(JSValueConst val)
 
 /* Set *pres to < 0, 0 or > 0 as the comparison of two strings or ropes
    gives and return 0, or return -1 with the exception "interrupted" thrown.
-   An equality test (eq_only) never reads the interrupt flag and never fails:
-   js_strict_eq2 has no way to report an exception, and the test of two
-   strings that are not ropes does not read the flag either. */
+   An equality test (eq_only) stops at the first difference, and at once when
+   the lengths differ. It reads the interrupt flag, and so can fail, when poll
+   is set. js_strict_eq2 and the callers that cannot report an exception do
+   not set it, and the test of two strings that are not ropes does not read
+   the flag either. */
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
-                                  JSValueConst op2, BOOL eq_only)
+                                  JSValueConst op2, BOOL eq_only, BOOL poll)
 {
     uint32_t len1, len2, len, pos1, pos2, l, work = 0;
     int res;
     JSStringRopeIter it1, it2;
     JSString *p1, *p2;
 
+    /* the same string or rope */
+    if (JS_VALUE_GET_PTR(op1) == JS_VALUE_GET_PTR(op2)) {
+        *pres = 0;
+        return 0;
+    }
     len1 = string_rope_get_len(op1);
     len2 = string_rope_get_len(op2);
     /* no need to go further for equality test if
@@ -5715,12 +5723,15 @@ static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
     while (len != 0) {
         l = min_uint32(p1->len - pos1, p2->len - pos2);
         l = min_uint32(l, len);
+        /* a leaf longer than a step is compared in steps */
+        if (poll)
+            l = min_uint32(l, JS_ROPE_STEP);
         res = js_string_memcmp(p1, pos1, p2, pos2, l);
         if (res != 0) {
             *pres = res;
             return 0;
         }
-        if (!eq_only) {
+        if (poll) {
             work += l + 1;
             if (work >= JS_ROPE_STEP) {
                 work = 0;
@@ -18515,7 +18526,7 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
             res = js_string_compare(ctx, JS_VALUE_GET_STRING(op1),
                                     JS_VALUE_GET_STRING(op2));
         } else {
-            if (js_string_rope_compare(ctx, &res, op1, op2, FALSE)) {
+            if (js_string_rope_compare(ctx, &res, op1, op2, FALSE, TRUE)) {
                 JS_FreeValue(ctx, op1);
                 JS_FreeValue(ctx, op2);
                 goto exception;
@@ -18666,17 +18677,21 @@ static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
             res = js_compare_bigint(ctx, OP_eq, op1, op2);
         }
     } else if (tag1 == tag2) {
-        res = js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
+        res = js_strict_eq_poll(ctx, op1, op2);
         JS_FreeValue(ctx, op1);
         JS_FreeValue(ctx, op2);
+        if (unlikely(res < 0))
+            goto exception;
     } else if ((tag1 == JS_TAG_NULL && tag2 == JS_TAG_UNDEFINED) ||
                (tag2 == JS_TAG_NULL && tag1 == JS_TAG_UNDEFINED)) {
         res = TRUE;
     } else if (tag_is_string(tag1) && tag_is_string(tag2)) {
         /* needed when comparing strings and ropes */
-        res = js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
+        res = js_strict_eq_poll(ctx, op1, op2);
         JS_FreeValue(ctx, op1);
         JS_FreeValue(ctx, op2);
+        if (unlikely(res < 0))
+            goto exception;
     } else if ((tag_is_string(tag1) && tag_is_number(tag2)) ||
                (tag_is_string(tag2) && tag_is_number(tag1))) {
 
@@ -18825,8 +18840,8 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                 res = js_string_eq(ctx, JS_VALUE_GET_STRING(op1),
                                    JS_VALUE_GET_STRING(op2));
             } else {
-                /* an equality test does not fail */
-                js_string_rope_compare(ctx, &res, op1, op2, TRUE);
+                /* this equality test does not read the flag: see js_strict_eq_poll */
+                js_string_rope_compare(ctx, &res, op1, op2, TRUE, FALSE);
                 res = (res == 0);
             }
         }
@@ -18918,6 +18933,37 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
     return res;
 }
 
+/* Whether comparing two values for equality takes a read of the interrupt flag
+   every JS_ROPE_STEP characters: both are strings, one of them is a rope or
+   they are not the same string and longer than a step (a short string is
+   compared at once, and a string of another length is known to differ). */
+static force_inline BOOL js_string_eq_polls(JSValueConst op1, JSValueConst op2)
+{
+    int tag1 = JS_VALUE_GET_TAG(op1), tag2 = JS_VALUE_GET_TAG(op2);
+
+    if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING)
+        return JS_VALUE_GET_STRING(op1) != JS_VALUE_GET_STRING(op2) &&
+            JS_VALUE_GET_STRING(op1)->len > JS_ROPE_STEP;
+    return (tag1 == JS_TAG_STRING_ROPE || tag2 == JS_TAG_STRING_ROPE) &&
+        tag_is_string(JS_VALUE_GET_NORM_TAG(op1)) && tag_is_string(JS_VALUE_GET_NORM_TAG(op2));
+}
+
+/* === for the operators of the interpreter: 1 or 0, or -1 with the exception
+   "interrupted" thrown when the flag was set while two strings, one of them a
+   rope or both longer than a step, were compared. Equal ropes are compared
+   leaf by leaf, and a leaf in steps, which takes as long as they are. */
+static int js_strict_eq_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2)
+{
+    int res;
+
+    if (unlikely(js_string_eq_polls(op1, op2))) {
+        if (js_string_rope_compare(ctx, &res, op1, op2, TRUE, TRUE))
+            return -1;
+        return res == 0;
+    }
+    return js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
+}
+
 static BOOL js_strict_eq(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 {
     return js_strict_eq2(ctx, op1, op2, JS_EQ_STRICT);
@@ -18951,8 +18997,10 @@ BOOL JS_SameValueZero(JSContext *ctx, JSValueConst op1, JSValueConst op2)
 static no_inline int js_strict_eq_slow(JSContext *ctx, JSValue *sp,
                                        BOOL is_neq)
 {
-    BOOL res;
-    res = js_strict_eq2(ctx, sp[-2], sp[-1], JS_EQ_STRICT);
+    int res;
+    res = js_strict_eq_poll(ctx, sp[-2], sp[-1]);
+    if (unlikely(res < 0))
+        return -1;
     JS_FreeValue(ctx, sp[-2]);
     JS_FreeValue(ctx, sp[-1]);
     sp[-2] = JS_NewBool(ctx, res ^ is_neq);
@@ -58435,8 +58483,23 @@ static int map_hash_key_poll(JSContext *ctx, JSValueConst key, int hash_bits, ui
     return 0;
 }
 
+/* Whether the key of a record is the key looked for: 1 or 0, or -1 when the
+   flag was set while two strings were compared, one a rope or both longer
+   than a step (js_string_eq_polls). */
+static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key)
+{
+    int res;
+
+    if (unlikely(js_string_eq_polls(rec_key, key))) {
+        if (js_string_rope_compare(ctx, &res, rec_key, key, TRUE, TRUE))
+            return -1;
+        return res == 0;
+    }
+    return js_same_value_zero(ctx, rec_key, key);
+}
+
 /* Look for the key: 0 with the record in *pmr (NULL when there is none), or
-   -1 when hashing it was stopped (map_hash_key_poll). */
+   -1 when hashing it (map_hash_key_poll) or comparing it was stopped. */
 static int map_find_record(JSContext *ctx, JSMapState *s,
                            JSValueConst key, JSMapRecord **pmr)
 {
@@ -58449,7 +58512,11 @@ static int map_find_record(JSContext *ctx, JSMapState *s,
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
         } else {
-            if (js_same_value_zero(ctx, mr->key, key)) {
+            int eq = map_key_eq(ctx, mr->key, key);
+
+            if (eq < 0)
+                return -1;
+            if (eq) {
                 *pmr = mr;
                 return 0;
             }
@@ -58459,7 +58526,7 @@ static int map_find_record(JSContext *ctx, JSMapState *s,
     return 0;
 }
 
-/* 1 when the key is there, 0 when it is not, -1 when hashing it was stopped */
+/* 1 when the key is there, 0 when it is not, -1 when hashing or comparing it was stopped */
 static int map_has_record(JSContext *ctx, JSMapState *s, JSValueConst key)
 {
     JSMapRecord *mr;
@@ -58671,7 +58738,11 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* not valid */
         } else {
-            if (js_same_value_zero(ctx, mr->key, key))
+            int eq = map_key_eq(ctx, mr->key, key);
+
+            if (eq < 0)
+                return JS_EXCEPTION;
+            if (eq)
                 break;
         }
         pmr = &mr->hash_next;

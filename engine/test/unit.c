@@ -2678,6 +2678,17 @@ static void test_rope_polls(void)
     } cases[] = {
         { "made flat", "(r1 + 'x').charCodeAt(0)", 1000 },
         { "compared", "r1 < r2", 1000 },
+        /* equal ropes are compared leaf by leaf by every form of equality the interpreter has */
+        { "compared by ===", "r1 === r2", 1000 },
+        { "compared by !==", "r1 !== r2", 1000 },
+        { "compared by ==", "r1 == r2", 1000 },
+        { "compared by !=", "r1 != r2", 1000 },
+        { "compared with a flat string", "r3 === fl", 200 },
+        { "a flat string compared with a rope", "fl !== r3", 200 },
+        /* two flat strings of more than a step */
+        { "flat strings compared by ===", "fl === fl2", 200 },
+        { "flat strings compared by !==", "fl !== fl2", 200 },
+        { "flat strings compared by ==", "fl == fl2", 200 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -2685,6 +2696,7 @@ static void test_rope_polls(void)
 
     CHECK(eval(ctx, "var f = function () { var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; return r }; var r1 = f(), r2 = f(); 0"),
           "the script threw");
+    CHECK(eval(ctx, "var r3 = 'ab'; for (var i = 0; i < 23; i++) r3 = r3 + r3; var fl = 'ab'.repeat(1 << 23), fl2 = 'ab'.repeat(1 << 23); 0"), "the script threw");
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         long before = host_poll_reads;
 
@@ -2698,6 +2710,82 @@ static void test_rope_polls(void)
     }
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
+}
+
+/* A Map or Set that holds a long string or a rope finds an equal one after
+   hashing it and comparing the two, rope leaf by leaf and flat string in
+   steps. Both read the flag. The reading of the hash is measured with an
+   empty Set, the rest is the comparison, and a flag set in the middle of
+   the comparison stops the call and leaves the collection as it was. */
+static void test_rope_key_compare_polls(void)
+{
+    static const struct {
+        const char *call, *make;
+    } cases[] = {
+        { "c.get(K2)", "c = new Map([[K1, 7], ['x', 8]])" },
+        { "c.has(K2)", "c = new Set([K1, 'x'])" },
+        { "c.delete(K2)", "c = new Set([K1, 'x'])" },
+        { "c.set(K2, 9)", "c = new Map([[K1, 7], ['x', 8]])" },
+        { "c.add(K2)", "c = new Set([K1, 'x'])" },
+        { "c.getOrInsert(K2, 5)", "c = new Map([[K1, 7], ['x', 8]])" },
+    };
+    /* the key made twice, as two ropes and as two flat strings, and a rope with a flat string */
+    static const char *const keys[][2] = { { "r1", "r2" }, { "s1", "s2" }, { "r1", "s2" }, { "s1", "r2" } };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i, k;
+
+    CHECK(eval(ctx, "var r1 = 'ab'; for (var i = 0; i < 23; i++) r1 = r1 + r1; var r2 = 'ab'; for (var i = 0; i < 23; i++) r2 = r2 + r2; "
+                    "var s1 = 'ab'.repeat(1 << 23), s2 = 'ab'.repeat(1 << 23), c, e = new Set(); 0"),
+          "the script threw");
+    for (k = 0; k < sizeof(keys) / sizeof(keys[0]); k++) {
+        long before, hash, all;
+        char probe[64];
+
+        snprintf(probe, sizeof(probe), "e.has(%s)", keys[k][1]);
+        CHECK(eval(ctx, probe), "the script threw");
+        before = host_poll_reads;
+        CHECK(eval(ctx, probe), "the script threw");
+        hash = host_poll_reads - before;
+        CHECK(hash >= 200, "%s: %ld readings of the flag in the hash, want at least 200", probe, hash);
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            char call[96], make[96];
+            const char *p;
+            size_t o = 0, m = 0;
+
+            for (p = cases[i].call; *p && o < sizeof(call) - 4; p++) {
+                if (p[0] == 'K' && (p[1] == '1' || p[1] == '2')) {
+                    o += snprintf(call + o, sizeof(call) - o, "%s", keys[k][p[1] - '1']);
+                    p++;
+                } else {
+                    call[o++] = *p;
+                }
+            }
+            call[o] = 0;
+            for (p = cases[i].make; *p && m < sizeof(make) - 4; p++) {
+                if (p[0] == 'K' && (p[1] == '1' || p[1] == '2')) {
+                    m += snprintf(make + m, sizeof(make) - m, "%s", keys[k][p[1] - '1']);
+                    p++;
+                } else {
+                    make[m++] = *p;
+                }
+            }
+            make[m] = 0;
+            CHECK(eval(ctx, make) && eval(ctx, call), "%s: the script threw", call);
+            CHECK(eval(ctx, make), "%s: the script threw", make);
+            before = host_poll_reads;
+            CHECK(eval(ctx, call), "%s: the script threw", call);
+            all = host_poll_reads - before;
+            CHECK(all - hash >= 200, "%s: %ld readings of the flag in the comparison, want at least 200", call, all - hash);
+            CHECK(eval(ctx, make), "%s: the script threw", make);
+            host_poll_stop_after(hash + (all - hash) / 2);
+            CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+            host_poll_stop_after(0);
+            CHECK(eval_is(ctx, "[c.size, c.has('x'), [...c.keys()].length].join()", "2,true,2"), "the collection after %s", call);
+        }
+    }
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
 }
 
 /* The next of the iterator of a string, an array, a Map or a Set (and of an
@@ -3098,6 +3186,7 @@ int main(void)
     test_regexp_stops();
     test_regexp_skip_polls();
     test_rope_polls();
+    test_rope_key_compare_polls();
     test_iterator_polls();
     test_string_loop_polls();
     test_string_loop_gaps();

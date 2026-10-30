@@ -1176,6 +1176,7 @@ var goasmKeep = []any{
 	map_decref_record,
 	map_delete_record,
 	map_delete_record_internal,
+	map_find_record,
 	map_hash_key,
 	map_hash_key_poll,
 	mark_children,

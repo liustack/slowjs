@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- `===`, `!==`, `==`, `!=` and `switch` on two equal strings longer than 65536 characters, or on a rope, and the lookup of a long string or rope key in a `Map` or `Set` that holds an equal one, read the stop every 65536 characters, so they stop within a few polls of an `Interrupt` or the eval timeout. They compared the whole strings in one call, about 3,300 polls (10 ms) for two strings of 32 million characters, and the script was killed when the strings were long enough. The same string or rope is now equal to itself at once.
+
 ### Fixed
 
 - A `delete` that packs the properties of an object (after 8 or more keys are deleted, at least half of them) no longer leaves an "out of memory" error pending when the VM has no memory for the smaller property list. The delete had worked, but the uncatchable error stayed in the VM and took the place of the next error a script threw. Packing is optional now: the delete works, and the object is packed by a later delete.

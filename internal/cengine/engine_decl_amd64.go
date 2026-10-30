@@ -1078,7 +1078,7 @@ func js_shared_array_buffer_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 u
 func js_shr_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_strdup(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_strict_eq2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
-func js_strict_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func js_strict_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_string_CreateHTML(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_string_GetSubstitution_block(a0 uintptr, a1 uintptr) uintptr
 func js_string_charAt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
@@ -1113,7 +1113,7 @@ func js_string_pad(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a
 func js_string_raw(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_repeat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_replace(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
-func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
+func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr) uintptr
 func js_string_slice(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_split(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_substr(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1211,8 +1211,9 @@ func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
 func map_add_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func map_decref_record(a0 uintptr, a1 uintptr, a2 uintptr)
-func map_delete_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func map_delete_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func map_delete_record_internal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func map_find_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func map_hash_key(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func map_hash_key_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func mark_children(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
