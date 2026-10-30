@@ -379,6 +379,29 @@ Memory, on the C tree natively (Apple M4), against main with the same HTML:
 
 A VM of the shop holds about 0.17 MiB more after its first render, for the keys of its 5088 literals and their shapes, which now live as long as their functions. A long Markdown page takes less, as its objects no longer have spare slots. The highest memory of a process of `r_react_ssr` goes from 8.0 to 8.3 MiB (median of 32 processes).
 
+### Object literals with their properties in the block of the object
+
+An object literal [keeps its properties in the block of the object](changes/objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object). It saves 0.1% to 0.8% of the instructions of a render and leaves the time of every page inside what the rule counts as no change. Against main (a9d61185), without PGO, over 2 rounds at 8 positions on one core of an EPYC 7B13 with its sibling idle, with the same HTML. Time is the median over positions of the paired ratios and range the base's own range over positions. Instructions per render are from callgrind at position 0.0 (the difference of two runs with different numbers of renders).
+
+| Pages | Time | Range | Instructions |
+| --- | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.991 | 2.4% | -0.14% |
+| tifa's MUI test app, three pages (sum) | 0.998 | 2.2% | -0.19% |
+| tifa's bench app, table and spiral (sum) | 0.985 | 2.6% | -0.82% |
+| `r_react_ssr` | 0.995 | 4.0% | -0.43% |
+
+No group of pages is slower. The bench app and React render 1.5% and 0.5% faster, under the 2% the rule asks. The version before the flag `inline_grew` (the first version of this change) ran 0.26%, 0.21%, 0.83% and 0.44% fewer instructions, and took 0.997 (a range of 12%, as other work shared the machine), 0.981, 0.989 and 0.978 of the time.
+
+Memory of one VM of tifa's pages (the engine's `MallocSize`, from a VM made by `ssr.Load`), against main, with the same HTML:
+
+| What | shop | MUI | bench | store pages |
+| --- | ---: | ---: | ---: | ---: |
+| After loading | -0.2% | -0.2% | -0.3% | -0.2% |
+| After 96 renders and a full collection | -1.5% | -2.4% | -2.0% | -1.0% |
+| Mean at the end of a render, collector on | -0.7% | -0.8% | -0.7% | -1.8% |
+
+With the collector off, so that nothing the pages leave is collected, the memory one render adds goes from -2.8% to +4.5% from page to page (mean +0.7%). A reason that fits, not shown: objects of 48 to 130 bytes now fall in as many size classes as there are numbers of properties, and a free block of the front cache that one class leaves is not used by another. The memory the process holds at the most for `r_react_ssr` is 8.5 MiB, then 8.4.
+
 ### Calls, for in and hasOwnProperty.call
 
 Two changes, measured one on top of the other: [a call sets and frees its values in fewer loop turns](changes/c-engine.md#how-a-call-sets-and-frees-its-values), then [a for in loop holds the shape of its object](changes/objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) together with [hasOwnProperty.call answered in the interpreter](changes/objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter). Against main (9fd4bdb0, with object literals made at their final shape), without PGO, over 4 rounds at 8 positions on one core of an EPYC 7B13 with its sibling idle, with the same HTML. Time is the median over positions of the paired ratios, and positions gives the lowest and the highest of them. Instructions per render are from callgrind at position 0.0: the difference of 12 and 4 renders of each page for the shop, of 3 and 1 for the MUI pages and the scripts. The bench pages are counted on `r_bench_table` and `r_bench_spiral`, which render the same pages.
@@ -717,7 +740,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 With v0.26.15 the interpreter function alone took about 36% of a render. In rough order of what it may give:
 
 1. **Property access.** On v0.27.0 the code that reads, writes and adds properties runs about 17% of the instructions of a render of the shop and has about 25% of its cache misses: `find_own_property` 2.1% of the instructions and 9.7% of the misses, `find_hashed_shape_prop` (the next shape of a new key) 2.4% and 7.7%. Most reads are own properties of monomorphic objects that the interpreter already finds in one hash step, and writes to existing properties already take a fast path. [Methods of strings, numbers and arrays](changes/objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) took the largest slow path out. Inline caches and a table of shape steps were tried and are slower (see above). What is left is mostly memory latency of the shapes themselves.
-2. **Making and freeing objects.** On v0.27.0 about 22% of the instructions of a render of the studio list touch allocation: the engine's malloc, free and realloc 8.4%, freeing objects 4.6%, making them 4.3%, reference counts at least 2.9% and growing property arrays and shapes 1.5%. With js_malloc taking cached blocks itself the allocator is down to 6.3%. What is left is spread thin: inlining `free_property`, `js_free_shape` or `js_trigger_gc` would give at most 0.4% each.
+2. **Making and freeing objects.** On v0.27.0 about 22% of the instructions of a render of the studio list touch allocation: the engine's malloc, free and realloc 8.4%, freeing objects 4.6%, making them 4.3%, reference counts at least 2.9% and growing property arrays and shapes 1.5%. With js_malloc taking cached blocks itself the allocator is down to 6.3%. What is left is spread thin: inlining `free_property`, `js_free_shape` or `js_trigger_gc` would give at most 0.4% each. Object literals now make their object and its properties as one block (see [above](#object-literals-with-their-properties-in-the-block-of-the-object)): 0.1% to 0.8% fewer instructions, and no page fast enough to pass the rule.
 3. **TLS frames.** About 1.5% of a render is frames the stack check counts, in `JS_CallInternal`, `js_call_c_function` and the like, which must stay. v0.26.16 takes the frames of 8 more functions per statement, and v0.26.17 takes out about a fifth of the frames of a render. tifa's engine study puts what is left to win there at most 1% to 1.2%, with a general transform in fixlib for every function whose frame address stays inside it. After v0.26.17 frames on linux are taken without a call, except in `JS_CallInternal`, which still makes about 132000 calls of `TLS.Alloc` in a render of tifa's bench pages.
 4. **Regular expressions.** Testing the first character of each alternative before trying it, for react-spring's test of 148 color names, is done in v0.26.17 (see [Alternatives that cannot match are not pushed](changes/regexp.md#alternatives-that-cannot-match-are-not-pushed)).
 5. **Spreading a plain array without the iterator**: about 1.2% of the order list (TanStack Table calls through `fn(this, ...args)`).

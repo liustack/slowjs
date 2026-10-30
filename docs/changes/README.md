@@ -142,6 +142,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Ordinary objects take 48 bytes, not 72 | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72) |
 | Spread, rest and Object.assign look each key up when its turn comes | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
 | Object literals made at their final shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
+| Object literals keep their properties in the block of the object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
 | A for in loop holds the shape of its object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
 | hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 

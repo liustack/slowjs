@@ -1136,6 +1136,11 @@ struct JSShape {
     /* true if the shape is inserted in the shape hash table. If not,
        JSShape.hash is not valid */
     uint8_t is_hashed;
+    /* true once an object of this shape that held its properties in its own
+       block (js_props_inline) got a key: the objects of an object literal with
+       this shape then get a block of their own for the properties, so that the
+       room in the block of the object is not wasted. Fits in the padding. */
+    uint8_t inline_grew;
     uint32_t hash; /* current hash value */
     uint32_t prop_hash_mask; /* >= 2 */
     int prop_size; /* allocated properties */
@@ -6221,6 +6226,7 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     sh->prop_count = 0;
     sh->deleted_prop_count = 0;
     sh->is_hashed = FALSE;
+    sh->inline_grew = FALSE;
     return sh;
 }
 
@@ -6493,6 +6499,39 @@ static void js_free_shape_null(JSRuntime *rt, JSShape *sh)
         js_free_shape(rt, sh);
 }
 
+/* The properties of an ordinary object made by OP_object_lit sit at the end
+   of its block (js_new_object_inline), where the data of the other classes
+   would be. The room is the one the shape had when the object was made, and
+   p->prop points into the block. A block of its own can never hold that
+   address, since it lies inside the block of p. The shape of such an object
+   never has more properties than the block has room for: whatever needs more
+   moves the properties to a block of their own (js_resize_prop), and the room
+   in the block of p is not used again. */
+#define JS_OBJ_INLINE_PROPS(p) ((JSProperty *)((uint8_t *)(p) + offsetof(JSObject, u)))
+
+static inline BOOL js_props_inline(const JSObject *p)
+{
+    return p->prop == JS_OBJ_INLINE_PROPS(p);
+}
+
+/* Return an array of new_size properties for p that starts with the first
+   count properties of p, or NULL when there is no memory, with p as it was.
+   The array of p is not changed or freed: one in the block of p is copied to
+   a new block (its room is not used again), any other is resized. */
+static JSProperty *js_resize_prop(JSContext *ctx, JSObject *p, uint32_t count,
+                                  uint32_t new_size)
+{
+    JSProperty *new_prop;
+
+    if (unlikely(js_props_inline(p))) {
+        new_prop = js_malloc(ctx, sizeof(new_prop[0]) * new_size);
+        if (likely(new_prop))
+            memcpy(new_prop, p->prop, sizeof(new_prop[0]) * count);
+        return new_prop;
+    }
+    return js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
+}
+
 /* make space to hold at least 'count' properties */
 static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
                                        JSObject *p, uint32_t count)
@@ -6509,7 +6548,7 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
        in case of memory allocation failure */
     if (p) {
         JSProperty *new_prop;
-        new_prop = js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
+        new_prop = js_resize_prop(ctx, p, sh->prop_count, new_size);
         if (unlikely(!new_prop))
             return -1;
         p->prop = new_prop;
@@ -6622,10 +6661,13 @@ static int compact_properties(JSContext *ctx, JSObject *p)
     p->shape = sh;
     js_free(ctx, old_sh);
 
-    /* reduce the size of the object properties */
-    new_prop = js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
-    if (new_prop)
-        p->prop = new_prop;
+    /* reduce the size of the object properties. The block of p stays as it
+       is: its room is not given back. */
+    if (!js_props_inline(p)) {
+        new_prop = js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
+        if (new_prop)
+            p->prop = new_prop;
+    }
     return 0;
 }
 
@@ -6850,6 +6892,46 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     return JS_MKPTR(JS_TAG_OBJECT, p);
 }
 
+/* The size of the block of an ordinary object whose properties sit in it (see
+   JS_OBJ_INLINE_PROPS) is at most this, so that it is a small block of the
+   allocator. */
+#define JS_OBJ_INLINE_MAX_SIZE (JS_MALLOC_MAX_SMALL_SIZE - sizeof(JSMallocBlockHeader))
+
+/* An ordinary object of the shape sh, which it takes, whose properties have
+   room at the end of its block, as many as sh->prop_size (see
+   JS_OBJ_INLINE_MAX_SIZE for how many that can be). They are not set. Returns
+   JS_EXCEPTION when there is no memory, with sh freed as JS_NewObjectFromShape
+   frees it. */
+static JSValue js_new_object_inline(JSContext *ctx, JSShape *sh)
+{
+    JSObject *p;
+    size_t size;
+
+    size = offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size;
+    js_trigger_gc(ctx->rt, sizeof(JSObject));
+    p = js_malloc(ctx, size);
+    if (unlikely(!p)) {
+        js_free_shape(ctx->rt, sh);
+        return JS_EXCEPTION;
+    }
+    p->class_id = JS_CLASS_OBJECT;
+    p->is_std_array_prototype = 0;
+    p->extensible = TRUE;
+    p->free_mark = 0;
+    p->is_exotic = 0;
+    p->fast_array = 0;
+    p->is_constructor = 0;
+    p->has_immutable_prototype = 0;
+    p->tmp_mark = 0;
+    p->is_HTMLDDA = 0;
+    p->weakref_count = 0;
+    p->shape = sh;
+    p->prop = JS_OBJ_INLINE_PROPS(p);
+    js_rc(p)->ref_count = 1;
+    add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
+    return JS_MKPTR(JS_TAG_OBJECT, p);
+}
+
 /* Make the shape of the objects of the object literal lit of ctx, at its
    first run, and keep it in lit: the shape in the shape hash table with
    exactly the keys of lit, in their order, as properties made by
@@ -6900,7 +6982,12 @@ static JSValue js_new_object_lit(JSContext *ctx, JSFunctionBytecode *b, int k,
         if (!sh)
             goto fail;
     }
-    obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), JS_CLASS_OBJECT, NULL);
+    if (likely(!sh->inline_grew &&
+               offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size <=
+               JS_OBJ_INLINE_MAX_SIZE))
+        obj = js_new_object_inline(ctx, js_dup_shape(sh));
+    else
+        obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), JS_CLASS_OBJECT, NULL);
     if (unlikely(JS_IsException(obj)))
         goto fail;
     p = JS_VALUE_GET_OBJ(obj);
@@ -7761,7 +7848,8 @@ static void free_object(JSRuntime *rt, JSObject *p)
         free_property(rt, &p->prop[i], pr->flags);
         pr++;
     }
-    js_free_rt(rt, p->prop);
+    if (!js_props_inline(p))
+        js_free_rt(rt, p->prop);
     /* as an optimization we destroy the shape immediately without
        putting it in gc_zero_ref_count_list */
     js_free_shape(rt, sh);
@@ -8861,7 +8949,9 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
         sh = p->shape;
         s->obj_count++;
         if (p->prop) {
-            s->memory_used_count++;
+            /* the properties of an object that holds them have no block */
+            if (!js_props_inline(p))
+                s->memory_used_count++;
             s->prop_size += sh->prop_size * sizeof(*p->prop);
             s->prop_count += sh->prop_count;
             prs = get_shape_prop(sh);
@@ -12101,6 +12191,9 @@ static JSProperty *add_property(JSContext *ctx,
         }
     }
     sh = p->shape;
+    /* the properties of p leave the block of p when they outgrow it */
+    if (unlikely(js_props_inline(p)))
+        sh->inline_grew = TRUE;
     if (sh->is_hashed) {
         /* try to find an existing shape */
         new_sh = find_hashed_shape_prop(ctx->rt, sh, prop, prop_flags);
@@ -12109,8 +12202,8 @@ static JSProperty *add_property(JSContext *ctx,
             /*  the property array may need to be resized */
             if (new_sh->prop_size != sh->prop_size) {
                 JSProperty *new_prop;
-                new_prop = js_realloc(ctx, p->prop, sizeof(p->prop[0]) *
-                                      new_sh->prop_size);
+                new_prop = js_resize_prop(ctx, p, sh->prop_count,
+                                          new_sh->prop_size);
                 if (!new_prop)
                     return NULL;
                 p->prop = new_prop;
@@ -19975,7 +20068,7 @@ static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
     /* what add_property does when it finds the next shape */
     if (ssh->prop_size != tsh->prop_size) {
         JSProperty *new_prop;
-        new_prop = js_realloc(ctx, pt->prop, sizeof(pt->prop[0]) * ssh->prop_size);
+        new_prop = js_resize_prop(ctx, pt, tsh->prop_count, ssh->prop_size);
         if (!new_prop) {
             *pret = -1;
             return TRUE;
