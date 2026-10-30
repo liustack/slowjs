@@ -58,6 +58,7 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
+int white_fused_ops(const uint8_t *code, int len, int *count);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
@@ -1054,6 +1055,9 @@ enum {
     W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
     W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16, W_OBJECT_LIT,
     W_TAIL_CALL, W_TAIL_CALL_METHOD,
+    W_GET_FIELD, W_GET_FIELD2, W_PUSH_ATOM_VALUE, W_STRICT_EQ,
+    W_GET_ARG0_GET_FIELD, W_GET_ARG1_GET_FIELD, W_GET_LOC0_GET_FIELD,
+    W_GET_LOC8_GET_FIELD, W_DUP_CASE_ATOM,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1702,6 +1706,120 @@ static void test_tail_c_calls(void)
     vm_free(&v);
 }
 
+
+/* The compiler joins each pair of fused_runs into one opcode, unless a jump
+   lands inside the pair or JS_SetFusedOps turned it off. poll_scan holds
+   code read by JS_ReadObject to the rest of each run, and code written with
+   the opcodes reads back and runs. */
+static void test_fused_ops(void)
+{
+    static const char five[] =
+        "(function () { function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
+        "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }\n"
+        "  return f({ k1: { k4: 'a' } }, { k2: 0, k3: 'a' }) + 10 * f({ k1: { k4: 'b' } }, { k3: 'b' }) +\n"
+        "    100 * f({ k1: {} }, { k3: 'x' }) })";
+    static const char *names[5] = { "get_arg0 get_field", "get_arg1 get_field", "get_loc0 get_field",
+                                    "get_loc8 get_field", "dup push_atom_value strict_eq if_false8" };
+    VM v = vm_new();
+    JSValue top;
+    const uint8_t *code;
+    uint8_t *buf, *at;
+    size_t size;
+    int len, count[5], n, on, k;
+    char got[256];
+    Code c;
+
+    /* the inner function f, compiled alone, has each of the five; with the
+       pairs off, none */
+    for (on = 1; on >= 0; on--) {
+        static const char inner[] =
+            "function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
+            "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }";
+        /* a case for each of the two strings */
+        JS_SetFusedOps(v.ctx, on);
+        CHECK(code_of(v.ctx, inner, &top, &code, &len) == 0, "compile f");
+        n = code ? white_fused_ops(code, len, count) : -1;
+        for (k = 0; k < 5; k++)
+            CHECK(count[k] == (on ? (k == 4 ? 2 : 1) : 0), "on %d: %s: %d", on, names[k], count[k]);
+        JS_FreeValue(v.ctx, top);
+    }
+    JS_SetFusedOps(v.ctx, 1);
+
+    /* a jump to the get_field of a pair: the pair stays apart */
+    CHECK(code_of(v.ctx, "function f(o, c) { return (c ? o : o).x }", &top, &code, &len) == 0, "compile");
+    n = code ? white_fused_ops(code, len, count) : -1;
+    CHECK(n == 0, "a jump into the pair: %d fused opcodes", n);
+    JS_FreeValue(v.ctx, top);
+    CHECK(code_of(v.ctx, "function f(o, c) { return o.x }", &top, &code, &len) == 0, "compile");
+    n = code ? white_fused_ops(code, len, count) : -1;
+    CHECK(n == 1 && count[0] == 1, "no jump: %d fused opcodes", n);
+    JS_FreeValue(v.ctx, top);
+    CHECK(eval_is(v.ctx, "(function f(o, c) { return (c ? o : o).x })({ x: 'jumped' }, 1)", "jumped"), "a jump into the pair runs");
+
+    /* written and read back, it runs, and not with the rest of a run changed */
+    top = JS_Eval(v.ctx, five, strlen(five), "<fused>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, top);
+    CHECK(buf != NULL, "write");
+    if (buf) {
+        run_read(v.ctx, buf, size, got, sizeof(got));
+        CHECK(strcmp(got, "ok 321") == 0, "read back: %s", got);
+        for (at = buf; at + 1 < buf + size; at++) {
+            if (at[0] == white_op(W_GET_ARG1_GET_FIELD) && at[1] == white_op(W_GET_FIELD))
+                break;
+        }
+        CHECK(at + 1 < buf + size, "no get_arg1 get_field in the bytecode written");
+        if (at + 1 < buf + size) {
+            at[1] = white_op(W_GET_FIELD2);
+            run_read(v.ctx, buf, size, got, sizeof(got));
+            CHECK(strstr(got, "invalid bytecode: a fused opcode without the instructions it reads") != NULL,
+                  "read with the get_field changed: %s", got);
+        }
+        js_free(v.ctx, buf);
+    }
+
+    /* poll_scan: each fused opcode followed by the rest of its run */
+    c = (Code){{0}, 0};
+    op_n(&c, W_GET_ARG0_GET_FIELD, 1);
+    jump(&c, W_GOTO); /* 5 bytes of nothing, to be the get_field */
+    c.b[c.n - 5] = white_op(W_GET_FIELD);
+    op_n(&c, W_DROP, 1);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "get_arg0 get_field");
+    c.b[1] = white_op(W_GET_FIELD2);
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_arg0 then get_field2");
+    c.n = 1;
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_arg0 get_field at the end");
+    c = (Code){{0}, 0};
+    op_n(&c, W_GET_LOC8_GET_FIELD, 2); /* the index is a second byte of the opcode */
+    c.b[1] = 0;
+    jump(&c, W_GOTO);
+    c.b[c.n - 5] = white_op(W_GET_FIELD);
+    op_n(&c, W_RETURN_UNDEF, 1);
+    CHECK(scan_ok(&c), "get_loc8 get_field");
+    c.b[2] = white_op(W_DROP);
+    CHECK(scan_fails(&c, "a fused opcode without"), "get_loc8 then something else");
+    for (k = 0; k < 3; k++) {
+        int iff;
+        c = (Code){{0}, 0};
+        op_n(&c, W_PUSH_0, 1);
+        op_n(&c, W_DUP_CASE_ATOM, 1);
+        jump(&c, W_GOTO);
+        c.b[c.n - 5] = white_op(W_PUSH_ATOM_VALUE);
+        op_n(&c, W_STRICT_EQ, 1);
+        iff = jump(&c, W_IF_FALSE8);
+        op_n(&c, W_DROP, 1);
+        set_target(&c, iff, c.n);
+        op_n(&c, W_RETURN_UNDEF, 1);
+        if (k == 0) {
+            CHECK(scan_ok(&c), "dup push_atom_value strict_eq if_false8");
+        } else {
+            c.b[k == 1 ? 7 : 8] = white_op(k == 1 ? W_DROP : W_GOTO8);
+            CHECK(scan_fails(&c, "a fused opcode without"), "the case with instruction %d changed", k + 1);
+        }
+    }
+    vm_free(&v);
+}
 static void test_object_lit_read(void)
 {
     VM v = vm_new();
@@ -2387,6 +2505,7 @@ int main(void)
     test_poll_checked_read();
     test_object_lit_read();
     test_tail_c_calls();
+    test_fused_ops();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();

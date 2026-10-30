@@ -738,8 +738,13 @@ func TestBytecode(t *testing.T) {
 	// made by OP_object_lit, whose keys follow the closure variables (the zero
 	// byte before the code, with none), and the opcodes after OP_object moved
 	// by one: bc 2a bd 3a 01 99 cc 29.
+	//
+	// 2026-10-30, version 7: the compiler joins a read of an argument or a
+	// local and the get_field after it, and the case of a switch on a string,
+	// into opcodes added at the end of the table. The code of this script is
+	// the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "06000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "07000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

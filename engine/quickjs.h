@@ -434,6 +434,12 @@ int JS_SetInternalDepth(JSRuntime *rt, int depth);
    again, and with 1 it calls C functions itself. It returns 0, or -1 and
    changes nothing while code runs. */
 int JS_SetDirectCCalls(JSContext *ctx, int on);
+/* For tests. The compiler joins a few pairs of instructions into one opcode
+   that does both (fuse_code in quickjs.c, docs/changes/c-engine.md). With
+   on 0 the runtime of ctx compiles every pair apart from then on, and with 1
+   it joins them again. Code compiled before, or read by JS_ReadObject, stays
+   as it is. */
+void JS_SetFusedOps(JSContext *ctx, int on);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. An
    object a reference is still held to, such as one the host never freed,

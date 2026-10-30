@@ -317,6 +317,9 @@ static const uint8_t white_ops[] = {
     OP_if_false, OP_if_true, OP_if_true8, OP_if_false8, OP_return_undef,
     OP_catch, OP_gosub, OP_ret, OP_with_get_var, OP_push_i32, OP_push_i16,
     OP_object_lit, OP_tail_call, OP_tail_call_method,
+    OP_get_field, OP_get_field2, OP_push_atom_value, OP_strict_eq,
+    OP_get_arg0_get_field, OP_get_arg1_get_field, OP_get_loc0_get_field,
+    OP_get_loc8_get_field, OP_dup_case_atom,
 };
 
 int white_op(int i)
@@ -871,4 +874,27 @@ uintptr_t white_shape_of(JSValueConst obj)
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return 0;
     return (uintptr_t)JS_VALUE_GET_OBJ(obj)->shape;
+}
+
+/* ---- the pairs of instructions that one opcode does ---- */
+
+/* The number of instructions of code that are each fused opcode, in the
+   order of fused_runs, into count (as many as fused_runs has), and in all. */
+int white_fused_ops(const uint8_t *code, int len, int *count)
+{
+    int pos, op, n = 0;
+    size_t i;
+
+    for (i = 0; i < countof(fused_runs); i++)
+        count[i] = 0;
+    for (pos = 0; pos < len; pos += short_opcode_info(op).size) {
+        op = code[pos];
+        for (i = 0; i < countof(fused_runs); i++) {
+            if (fused_runs[i][4] == op) {
+                count[i]++;
+                n++;
+            }
+        }
+    }
+    return n;
 }
