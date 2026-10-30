@@ -58560,22 +58560,38 @@ static uint32_t map_hash_key(JSValueConst key, int hash_bits)
 /* The hash of the key of an operation of a Map or Set, in *ph: map_hash_key,
    but a long string or rope reads the interrupt flag now and then. 0, or -1
    with the exception "interrupted" thrown when the flag was set. */
-static int map_hash_key_poll(JSContext *ctx, JSValueConst key, int hash_bits, uint32_t *ph)
+static no_inline int map_hash_long_key_poll(JSContext *ctx, JSValueConst key,
+                                             int hash_bits, uint32_t *ph)
 {
     uint32_t tag = JS_VALUE_GET_NORM_TAG(key), h = 0, work = 0;
 
     if (tag == JS_TAG_STRING) {
         if (hash_string_poll(ctx, JS_VALUE_GET_STRING(key), &h, &work))
             return -1;
-    } else if (tag == JS_TAG_STRING_ROPE) {
+    } else {
         if (hash_string_rope_poll(ctx, key, &h))
             return -1;
-    } else {
+    }
+    *ph = map_hash32(h ^ JS_TAG_STRING, hash_bits);
+    return 1;
+}
+
+/* The hash of the key for an operation of a Map or Set, in *ph, reading the
+   interrupt flag while a rope or a string of at least JS_ROPE_STEP characters
+   is hashed. It gives 0, 1 when the key is such a rope or string (comparing
+   it takes reads of the flag too: map_key_eq), or -1 with "interrupted"
+   thrown when the flag was set. Any other key is hashed as map_hash_key does. */
+static force_inline int map_hash_key_poll(JSContext *ctx, JSValueConst key,
+                                          int hash_bits, uint32_t *ph)
+{
+    uint32_t tag = JS_VALUE_GET_NORM_TAG(key);
+
+    if (likely(tag != JS_TAG_STRING_ROPE &&
+               (tag != JS_TAG_STRING || JS_VALUE_GET_STRING(key)->len < JS_ROPE_STEP))) {
         *ph = map_hash_key(key, hash_bits);
         return 0;
     }
-    *ph = map_hash32(h ^ JS_TAG_STRING, hash_bits);
-    return 0;
+    return map_hash_long_key_poll(ctx, key, hash_bits, ph);
 }
 
 /* Whether the key of a record is the key looked for: 1 or 0, or -1 when the
@@ -58597,32 +58613,47 @@ static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key)
    comparing it was stopped, with "interrupted" thrown. */
 #define MAP_STOPPED ((JSMapRecord *)(intptr_t)-1)
 
-/* Look for the key: the record, NULL when there is none, or MAP_STOPPED. */
-static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
-                                    JSValueConst key)
+/* map_find_record for a key that is a rope or a string of at least
+   JS_ROPE_STEP characters, h its hash: it compares in steps with the flag
+   read between them. */
+static no_inline JSMapRecord *map_find_record_long(JSContext *ctx, JSMapState *s,
+                                                   JSValueConst key, uint32_t h)
 {
     JSMapRecord *mr;
-    uint32_t h;
-    BOOL polls;
 
-    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
-        return MAP_STOPPED;
-    /* A key that is a rope or a string of more than a step is compared in
-       steps. The compare of any other key is at once: a record of another
-       length is known to differ. */
-    polls = JS_VALUE_GET_TAG(key) == JS_TAG_STRING_ROPE ||
-        (JS_VALUE_GET_TAG(key) == JS_TAG_STRING &&
-         JS_VALUE_GET_STRING(key)->len > JS_ROPE_STEP);
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
-        } else if (unlikely(polls)) {
+        } else {
             int eq = map_key_eq(ctx, mr->key, key);
 
             if (eq < 0)
                 return MAP_STOPPED;
             if (eq)
                 return mr;
+        }
+    }
+    return NULL;
+}
+
+/* Look for the key: the record, NULL when there is none, or MAP_STOPPED. The
+   compare of a key other than a rope or a long string is at once: a record of
+   another length is known to differ. */
+static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
+                                    JSValueConst key)
+{
+    JSMapRecord *mr;
+    uint32_t h;
+    int polls = map_hash_key_poll(ctx, key, s->hash_bits, &h);
+
+    if (unlikely(polls)) {
+        if (polls < 0)
+            return MAP_STOPPED;
+        return map_find_record_long(ctx, s, key, h);
+    }
+    for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+        if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
+            /* cannot match */
         } else if (js_same_value_zero(ctx, mr->key, key)) {
             return mr;
         }
@@ -58678,7 +58709,7 @@ static JSMapRecord *map_add_record(JSContext *ctx, JSMapState *s,
     uint32_t h;
     JSMapRecord *mr;
 
-    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
+    if (map_hash_key_poll(ctx, key, s->hash_bits, &h) < 0)
         return NULL;
     mr = js_malloc(ctx, sizeof(*mr));
     if (!mr)
@@ -58831,10 +58862,12 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
 {
     JSMapRecord *mr, **pmr;
     uint32_t h;
+    int polls;
 
     key = map_normalize_key_const(ctx, key);
 
-    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
+    polls = map_hash_key_poll(ctx, key, s->hash_bits, &h);
+    if (polls < 0)
         return JS_EXCEPTION;
     pmr = &s->hash_table[h];
     for(;;) {
@@ -58844,7 +58877,8 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* not valid */
         } else {
-            int eq = map_key_eq(ctx, mr->key, key);
+            int eq = polls ? map_key_eq(ctx, mr->key, key) :
+                js_same_value_zero(ctx, mr->key, key);
 
             if (eq < 0)
                 return JS_EXCEPTION;
