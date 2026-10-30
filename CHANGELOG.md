@@ -4,6 +4,12 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- `VM.RunGC` sets the GC threshold to 1.5 times what it left, as the GC the engine starts by itself does. It used to leave the threshold where it was, so when a script had grown the heap past it with no object made (array elements do), the first object of the next call started another full GC as long as the first one. A threshold of `^uintptr(0)`, which turns the engine's own GC off, stays. A program that sets the threshold itself after `RunGC`, as tifa does, sees no change.
+- The spread of an object (`{...o}`), the rest of a destructuring and `Object.assign` look up each key of the source when its turn comes, as the specification says. A getter that deletes a later key, or makes it not enumerable, now leaves it out of the copy. One that makes a not enumerable key enumerable now has it copied. Before, such a key was left out. Before, the key was copied: as `undefined`, or with the value the prototype has under that name. `Object.keys({ ...{ get a() { delete this.b; return 1 }, b: 2, c: 3 } })` is `["a", "c"]`, as in Node.
+- `isWellFormed`, `toWellFormed`, `split`, `padStart`, `padEnd`, `trim`, `trimStart`, `trimEnd`, `anchor`, `fontcolor`, `fontsize`, `link`, `escape`, `unescape`, `encodeURI`, `encodeURIComponent`, `decodeURI`, `decodeURIComponent`, `Array.from`, the typed array constructors and `from`, making a rope (a long string joined from parts without copying them) into one string and `<` on two ropes stop within a few thousand characters or elements of an `Interrupt` or the eval timeout. On a string of tens of millions of characters, or as many elements, they ran on to the end, long enough to get the script killed. `===` on two ropes still reads no flag, as on two other strings.
+
 ## [v0.29.1] - 2026-10-30
 
 ### Performance

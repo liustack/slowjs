@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### 变更
+
+- `VM.RunGC` 跑完后把 GC 阈值设成它留下的内存的 1.5 倍，和引擎自己启动的 GC 一样。以前它不动阈值：脚本把堆撑过阈值但没有新建对象（数组元素就这样）时，`RunGC` 之后下一次调用的第一个对象会再启动一次同样长的完整 GC。阈值是 `^uintptr(0)`（关掉引擎自己的 GC）时保持不变。自己在 `RunGC` 之后设阈值的程序（比如 tifa）看不到变化。
+- 对象展开（`{...o}`）、解构的剩余部分和 `Object.assign` 按规范，轮到每个键时再查一次源对象。前面的 getter 删掉后面的键，或把它改成不可枚举，这个键现在不会被复制，把不可枚举的键改成可枚举，这个键现在会被复制。以前它照样被复制：值是 `undefined`，或者是原型上同名属性的值。`Object.keys({ ...{ get a() { delete this.b; return 1 }, b: 2, c: 3 } })` 现在是 `["a", "c"]`，和 Node 一致。
+- `isWellFormed`、`toWellFormed`、`split`、`padStart`、`padEnd`、`trim`、`trimStart`、`trimEnd`、`anchor`、`fontcolor`、`fontsize`、`link`、`escape`、`unescape`、`encodeURI`、`encodeURIComponent`、`decodeURI`、`decodeURIComponent`、`Array.from`、类型化数组的构造函数和 `from`、把 rope（不复制各部分、只把它们连起来的长字符串）变成普通字符串、两个 rope 用 `<` 比较，在 `Interrupt` 或执行时限之后，几千个字符或元素之内就停下。字符串有几千万个字符（或同样多的元素）时，它们以前要跑到结束，长到足以让脚本被杀。两个 rope 用 `===` 比较仍然不读标志，和别的字符串一样。
+
 ## [v0.29.1] - 2026-10-30
 
 ### 性能

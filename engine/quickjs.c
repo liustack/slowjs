@@ -1566,6 +1566,7 @@ static void young_defer(JSRuntime *rt, JSGCObjectHeader *p);
 static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
+static inline __exception int js_poll_interrupts(JSContext *ctx);
 static JSValue js_string_to_number(JSContext *ctx, JSValue val);
 static JSValue js_dtoa2(JSContext *ctx,
                         double d, int radix, int n_digits, int flags);
@@ -2342,8 +2343,6 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
                (uint64_t)rt->malloc_ctx.heap.count);
 #endif
         JS_RunGC(rt);
-        rt->malloc_gc_threshold = rt->malloc_ctx.heap.count +
-            (rt->malloc_ctx.heap.count >> 1);
     }
 }
 
@@ -5488,16 +5487,29 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
-/* append the strings of a rope in order */
+/* the most characters a loop over the strings of a rope copies or compares
+   between two reads of the interrupt flag, each string counted as one more
+   than its length */
+#define JS_ROPE_STEP (1 << 16)
+
+/* append the strings of a rope in order, reading the interrupt flag now and
+   then: a rope can hold as many strings as it has characters */
 static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
 {
     JSStringRopeIter it;
     JSString *p;
+    int work = 0;
 
     string_rope_iter_init(&it, rope);
     while ((p = string_rope_iter_next(&it)) != NULL) {
         if (string_buffer_concat(s, p, 0, p->len))
             return -1;
+        work += p->len + 1;
+        if (work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(s->ctx))
+                return string_buffer_set_error(s);
+        }
     }
     return 0;
 }
@@ -5523,20 +5535,27 @@ static uint32_t string_rope_get_len(JSValueConst val)
         return JS_VALUE_GET_STRING_ROPE(val)->len;
 }
 
-static int js_string_rope_compare(JSContext *ctx, JSValueConst op1,
+/* Set *pres to < 0, 0 or > 0 as the comparison of two strings or ropes
+   gives and return 0, or return -1 with the exception "interrupted" thrown.
+   An equality test (eq_only) never reads the interrupt flag and never fails:
+   js_strict_eq2 has no way to report an exception, and the test of two
+   strings that are not ropes does not read the flag either. */
+static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
                                   JSValueConst op2, BOOL eq_only)
 {
-    uint32_t len1, len2, len, pos1, pos2, l;
+    uint32_t len1, len2, len, pos1, pos2, l, work = 0;
     int res;
     JSStringRopeIter it1, it2;
     JSString *p1, *p2;
-    
+
     len1 = string_rope_get_len(op1);
     len2 = string_rope_get_len(op2);
     /* no need to go further for equality test if
        different length */
-    if (eq_only && len1 != len2)
-        return 1; 
+    if (eq_only && len1 != len2) {
+        *pres = 1;
+        return 0;
+    }
     len = min_uint32(len1, len2);
     string_rope_iter_init(&it1, op1);
     string_rope_iter_init(&it2, op2);
@@ -5548,8 +5567,18 @@ static int js_string_rope_compare(JSContext *ctx, JSValueConst op1,
         l = min_uint32(p1->len - pos1, p2->len - pos2);
         l = min_uint32(l, len);
         res = js_string_memcmp(p1, pos1, p2, pos2, l);
-        if (res != 0)
-            return res;
+        if (res != 0) {
+            *pres = res;
+            return 0;
+        }
+        if (!eq_only) {
+            work += l + 1;
+            if (work >= JS_ROPE_STEP) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return -1;
+            }
+        }
         len -= l;
         pos1 += l;
         if (pos1 >= p1->len) {
@@ -5569,7 +5598,8 @@ static int js_string_rope_compare(JSContext *ctx, JSValueConst op1,
         res = -1;
     else
         res = 1;
-    return res;
+    *pres = res;
+    return 0;
 }
 
 /* 'rope' must be a rope. return a string and modify the rope so that
@@ -8393,10 +8423,17 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
     gc_free_cycles(rt);
 }
 
+/* A full collection. It sets the threshold of the next one to 1.5 times what
+   it left, whoever starts it: the host, or js_trigger_gc when the heap passes
+   the threshold. A host that asked for no collection of the runtime
+   (JS_SetGCThreshold with -1) keeps it so. */
 void JS_RunGC(JSRuntime *rt)
 {
     JS_RunGCInternal(rt, TRUE);
     js_front_drain(&rt->malloc_ctx);
+    if (rt->malloc_gc_threshold != (size_t)-1)
+        rt->malloc_gc_threshold = rt->malloc_ctx.heap.count +
+            (rt->malloc_ctx.heap.count >> 1);
 }
 
 /* Young collection: the trial deletion of JS_RunGC over the GC objects made
@@ -18238,7 +18275,11 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
             res = js_string_compare(ctx, JS_VALUE_GET_STRING(op1),
                                     JS_VALUE_GET_STRING(op2));
         } else {
-            res = js_string_rope_compare(ctx, op1, op2, FALSE);
+            if (js_string_rope_compare(ctx, &res, op1, op2, FALSE)) {
+                JS_FreeValue(ctx, op1);
+                JS_FreeValue(ctx, op2);
+                goto exception;
+            }
         }
         switch(op) {
         case OP_lt:
@@ -18544,7 +18585,9 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
                 res = js_string_eq(ctx, JS_VALUE_GET_STRING(op1),
                                    JS_VALUE_GET_STRING(op2));
             } else {
-                res = (js_string_rope_compare(ctx, op1, op2, TRUE) == 0);
+                /* an equality test does not fail */
+                js_string_rope_compare(ctx, &res, op1, op2, TRUE);
+                res = (res == 0);
             }
         }
         break;
@@ -19883,6 +19926,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     int ret, gpn_flags;
     JSPropertyDescriptor desc;
     BOOL is_enumerable;
+    JSProperty *pr;
+    JSShapeProperty *prs;
 
     if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
         return ret;
@@ -19894,15 +19939,17 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
 
     p = JS_VALUE_GET_OBJ(source);
 
-    gpn_flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY;
-    if (p->is_exotic) {
-        const JSClassExoticMethods *em = ctx->rt->class_array[p->class_id].exotic;
-        /* cannot use JS_GPN_ENUM_ONLY with e.g. proxies because it
-           introduces a visible change */
-        if (em && em->get_own_property_names) {
-            gpn_flags &= ~JS_GPN_ENUM_ONLY;
-        }
-    }
+    /* All the own keys are listed, enumerable or not, as the specification
+       has it: a getter that runs for an earlier key may make a later key
+       enumerable, and then it is copied. JS_GPN_ENUM_ONLY would leave it out
+       (and cannot be used with e.g. proxies, because it introduces a visible
+       change). A module namespace stays as it was, listed with
+       JS_GPN_ENUM_ONLY, which is where it throws for a binding that is not
+       initialized yet: it has no getter, so no key of it changes while it is
+       copied. */
+    gpn_flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
+    if (p->class_id == JS_CLASS_MODULE_NS)
+        gpn_flags |= JS_GPN_ENUM_ONLY;
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
                                        gpn_flags))
         return -1;
@@ -19916,17 +19963,28 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
                 continue;
             }
         }
-        if (!(gpn_flags & JS_GPN_ENUM_ONLY)) {
-            /* test if the property is enumerable */
-            ret = js_get_own_property_flags(ctx, &desc, p, tab_atom[i].atom);
-            if (ret < 0)
-                goto exception;
-            if (!ret)
-                continue;
-            is_enumerable = (desc.flags & JS_PROP_ENUMERABLE) != 0;
-            js_free_desc(ctx, &desc);
-            if (!is_enumerable)
-                continue;
+        /* The specification looks up each key when its turn comes: a
+           getter that ran for an earlier key may have deleted it, or made
+           it not enumerable, and then it is left out. Only a key listed
+           with JS_GPN_ENUM_ONLY (a module namespace) is known enumerable
+           before any value is read, so the first one needs no look up. */
+        if (!(gpn_flags & JS_GPN_ENUM_ONLY) || i > 0) {
+            if (!p->is_exotic) {
+                prs = find_own_property(&pr, p, tab_atom[i].atom);
+                if (!prs || !(prs->flags & JS_PROP_ENUMERABLE))
+                    continue;
+            } else {
+                /* test if the property is still there and enumerable */
+                ret = js_get_own_property_flags(ctx, &desc, p, tab_atom[i].atom);
+                if (ret < 0)
+                    goto exception;
+                if (!ret)
+                    continue;
+                is_enumerable = (desc.flags & JS_PROP_ENUMERABLE) != 0;
+                js_free_desc(ctx, &desc);
+                if (!is_enumerable)
+                    continue;
+            }
         }
         val = JS_GetProperty(ctx, source, tab_atom[i].atom);
         if (JS_IsException(val))
@@ -46345,6 +46403,10 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         if (JS_IsException(next_method))
             goto exception;
         for (k = 0;; k++) {
+            /* the iterator of a string, an array, a Map or a Set is called
+               without JS_CallInternal, which would read the interrupt flag */
+            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto exception;
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -46380,6 +46442,8 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         if (JS_IsException(r))
             goto exception;
         for(k = 0; k < len; k++) {
+            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+                goto exception;
             v = JS_GetPropertyInt64(ctx, arrayLike, k);
             if (JS_IsException(v))
                 goto exception;
@@ -50310,10 +50374,11 @@ static int64_t string_advance_index(JSString *p, int64_t index, BOOL unicode)
 }
 
 /* return the position of the first invalid character in the string or
-   -1 if none */
-static int js_string_find_invalid_codepoint(JSString *p)
+   -1 if none. With a context, it reads the interrupt flag every 4096
+   characters, and returns -2 with the exception thrown when it is set. */
+static force_inline int js_string_find_invalid(JSContext *ctx, JSString *p)
 {
-    int i;
+    int i, n = 0;
     if (!p->is_wide_char)
         return -1;
     for(i = 0; i < p->len; i++) {
@@ -50326,8 +50391,16 @@ static int js_string_find_invalid_codepoint(JSString *p)
                 return i;
             }
         }
+        if (ctx && (++n & 4095) == 0 && js_poll_interrupts(ctx))
+            return -2;
     }
     return -1;
+}
+
+/* for the parser, which has read the string as long as it is */
+static int js_string_find_invalid_codepoint(JSString *p)
+{
+    return js_string_find_invalid(NULL, p);
 }
 
 static JSValue js_string_isWellFormed(JSContext *ctx, JSValueConst this_val,
@@ -50335,23 +50408,25 @@ static JSValue js_string_isWellFormed(JSContext *ctx, JSValueConst this_val,
 {
     JSValue str;
     JSString *p;
-    BOOL ret;
+    int pos;
 
     str = JS_ToStringCheckObject(ctx, this_val);
     if (JS_IsException(str))
         return JS_EXCEPTION;
     p = JS_VALUE_GET_STRING(str);
-    ret = (js_string_find_invalid_codepoint(p) < 0);
+    pos = js_string_find_invalid(ctx, p);
     JS_FreeValue(ctx, str);
-    return JS_NewBool(ctx, ret);
+    if (pos == -2)
+        return JS_EXCEPTION;
+    return JS_NewBool(ctx, pos < 0);
 }
 
 static JSValue js_string_toWellFormed(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv)
 {
-    JSValue str, ret;
-    JSString *p;
-    int i;
+    JSValue str;
+    JSString *p, *q;
+    int i, j, n;
 
     str = JS_ToStringCheckObject(ctx, this_val);
     if (JS_IsException(str))
@@ -50359,28 +50434,50 @@ static JSValue js_string_toWellFormed(JSContext *ctx, JSValueConst this_val,
 
     p = JS_VALUE_GET_STRING(str);
     /* avoid reallocating the string if it is well-formed */
-    i = js_string_find_invalid_codepoint(p);
+    i = js_string_find_invalid(ctx, p);
+    if (i == -2) {
+        JS_FreeValue(ctx, str);
+        return JS_EXCEPTION;
+    }
     if (i < 0)
         return str;
 
-    ret = js_new_string16_len(ctx, p->u.str16, p->len);
-    JS_FreeValue(ctx, str);
-    if (JS_IsException(ret))
+    q = js_alloc_string(ctx, p->len, 1);
+    if (!q) {
+        JS_FreeValue(ctx, str);
         return JS_EXCEPTION;
-
-    p = JS_VALUE_GET_STRING(ret);
-    for (; i < p->len; i++) {
-        uint32_t c = p->u.str16[i];
+    }
+    /* copy what is well-formed in chunks of 4096 characters, then repair the
+       rest as it is copied, and read the interrupt flag between the chunks
+       and every 4096 turns of the loop. The turns are counted apart from j,
+       which a pair moves by two. */
+    for (j = 0; j < i; j += n) {
+        n = min_int(i - j, 4096);
+        memcpy(q->u.str16 + j, p->u.str16 + j, n * 2);
+        if (js_poll_interrupts(ctx))
+            goto fail;
+    }
+    for (j = i, n = 0; j < p->len; j++) {
+        uint32_t c = p->u.str16[j];
         if (is_surrogate(c)) {
-            if (is_hi_surrogate(c) && (i + 1) < p->len
-            &&  is_lo_surrogate(p->u.str16[i + 1])) {
-                i++;
+            if (is_hi_surrogate(c) && (j + 1) < p->len
+            &&  is_lo_surrogate(p->u.str16[j + 1])) {
+                q->u.str16[j++] = c;
+                c = p->u.str16[j];
             } else {
-                p->u.str16[i] = 0xFFFD;
+                c = 0xFFFD;
             }
         }
+        q->u.str16[j] = c;
+        if ((++n & 4095) == 0 && js_poll_interrupts(ctx))
+            goto fail;
     }
-    return ret;
+    JS_FreeValue(ctx, str);
+    return JS_MKPTR(JS_TAG_STRING, q);
+ fail:
+    js_free_string(ctx->rt, q);
+    JS_FreeValue(ctx, str);
+    return JS_EXCEPTION;
 }
 
 /* the longest string js_string_find widens or narrows into an array on the
@@ -51264,7 +51361,15 @@ static JSValue js_string_split(JSContext *ctx, JSValueConst this_val,
         goto done;
     }
     for (q = p; (q += !r) <= s - r - !r; q = p = e + r) {
-        e = string_indexof(sp, rp, q);
+        /* the search reads the interrupt flag as indexOf does, and so does
+           the loop every 1024 pieces */
+        if (r == 0) {
+            e = q;
+        } else {
+            e = js_string_find(ctx, sp, rp, q, s - r, 1);
+            if (e == -2)
+                goto exception;
+        }
         if (e < 0)
             break;
         T = js_sub_string(ctx, sp, p, e);
@@ -51274,6 +51379,8 @@ static JSValue js_string_split(JSContext *ctx, JSValueConst this_val,
             goto exception;
         if (lengthA == lim)
             goto done;
+        if ((lengthA & 1023) == 0 && js_poll_interrupts(ctx))
+            goto exception;
     }
 add_tail:
     T = js_sub_string(ctx, sp, p, s);
@@ -51383,6 +51490,10 @@ static JSValue js_string_slice(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
+/* the most characters padStart and padEnd write between two reads of the
+   interrupt flag */
+#define JS_PAD_STEP (1 << 16)
+
 static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv, int padEnd)
 {
@@ -51425,16 +51536,31 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
         if (string_buffer_concat(b, p, 0, len))
             goto fail;
     }
+    /* the pad is written in steps of JS_PAD_STEP characters at most,
+       between which the interrupt flag is read */
     if (p1) {
+        int run = 0;
         while (n > 0) {
             int chunk = min_int(n, p1->len);
             if (string_buffer_concat(b, p1, 0, chunk))
                 goto fail;
             n -= chunk;
+            run += chunk;
+            if (run >= JS_PAD_STEP && n > 0) {
+                run = 0;
+                if (js_poll_interrupts(ctx))
+                    goto fail;
+            }
         }
     } else {
-        if (string_buffer_fill(b, c, n))
-            goto fail;
+        while (n > 0) {
+            int chunk = min_int(n, JS_PAD_STEP);
+            if (string_buffer_fill(b, c, chunk))
+                goto fail;
+            n -= chunk;
+            if (n > 0 && js_poll_interrupts(ctx))
+                goto fail;
+        }
     }
     if (!padEnd) {
         if (string_buffer_concat(b, p, 0, len))
@@ -51531,17 +51657,28 @@ static JSValue js_string_trim(JSContext *ctx, JSValueConst this_val,
     p = JS_VALUE_GET_STRING(str);
     a = 0;
     b = len = p->len;
+    /* a string of white space is skipped whole: the interrupt flag is read
+       every 4096 characters */
     if (magic & 1) {
-        while (a < len && lre_is_space(string_get(p, a)))
+        while (a < len && lre_is_space(string_get(p, a))) {
             a++;
+            if ((a & 4095) == 0 && js_poll_interrupts(ctx))
+                goto fail;
+        }
     }
     if (magic & 2) {
-        while (b > a && lre_is_space(string_get(p, b - 1)))
+        while (b > a && lre_is_space(string_get(p, b - 1))) {
             b--;
+            if ((b & 4095) == 0 && js_poll_interrupts(ctx))
+                goto fail;
+        }
     }
     ret = js_sub_string(ctx, p, a, b);
     JS_FreeValue(ctx, str);
     return ret;
+ fail:
+    JS_FreeValue(ctx, str);
+    return JS_EXCEPTION;
 }
 
 /* return 0 if before the first char */
@@ -51963,6 +52100,12 @@ static JSValue js_string_CreateHTML(JSContext *ctx, JSValueConst this_val,
                 string_buffer_puts8(b, "&quot;");
             } else {
                 string_buffer_putc16(b, c);
+            }
+            if ((i & 1023) == 1023 && js_poll_interrupts(ctx)) {
+                JS_FreeValue(ctx, value);
+                JS_FreeValue(ctx, str);
+                string_buffer_free(b);
+                return JS_EXCEPTION;
             }
         }
         JS_FreeValue(ctx, value);
@@ -60489,7 +60632,7 @@ static JSValue js_global_decodeURI(JSContext *ctx, JSValueConst this_val,
     JSValue str;
     StringBuffer b_s, *b = &b_s;
     JSString *p;
-    int k, c, c1, n, c_min;
+    int k, c, c1, n, c_min, steps = 0;
 
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
@@ -60499,6 +60642,9 @@ static JSValue js_global_decodeURI(JSContext *ctx, JSValueConst this_val,
 
     p = JS_VALUE_GET_STRING(str);
     for (k = 0; k < p->len;) {
+        /* the interrupt flag is read every 1024 characters or escapes */
+        if ((++steps & 1023) == 0 && js_poll_interrupts(ctx))
+            goto fail;
         c = string_get(p, k);
         if (c == '%') {
             c = hex_decode(ctx, p, k);
@@ -60601,7 +60747,7 @@ static JSValue js_global_encodeURI(JSContext *ctx, JSValueConst this_val,
     JSValue str;
     StringBuffer b_s, *b = &b_s;
     JSString *p;
-    int k, c, c1;
+    int k, c, c1, steps = 0;
 
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
@@ -60610,6 +60756,9 @@ static JSValue js_global_encodeURI(JSContext *ctx, JSValueConst this_val,
     p = JS_VALUE_GET_STRING(str);
     string_buffer_init(ctx, b, p->len);
     for (k = 0; k < p->len;) {
+        /* the interrupt flag is read every 1024 characters */
+        if ((++steps & 1023) == 0 && js_poll_interrupts(ctx))
+            goto fail;
         c = string_get(p, k);
         k++;
         if (isURIUnescaped(c, isComponent)) {
@@ -60680,6 +60829,12 @@ static JSValue js_global_escape(JSContext *ctx, JSValueConst this_val,
         } else {
             encodeURI_hex(b, c);
         }
+        /* the interrupt flag is read every 1024 characters */
+        if ((i & 1023) == 1023 && js_poll_interrupts(ctx)) {
+            JS_FreeValue(ctx, str);
+            string_buffer_free(b);
+            return JS_EXCEPTION;
+        }
     }
     JS_FreeValue(ctx, str);
     return string_buffer_end(b);
@@ -60691,7 +60846,7 @@ static JSValue js_global_unescape(JSContext *ctx, JSValueConst this_val,
     JSValue str;
     StringBuffer b_s, *b = &b_s;
     JSString *p;
-    int i, len, c, n;
+    int i, len, c, n, steps = 0;
 
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
@@ -60715,6 +60870,12 @@ static JSValue js_global_unescape(JSContext *ctx, JSValueConst this_val,
             }
         }
         string_buffer_putc16(b, c);
+        /* the interrupt flag is read every 1024 characters or escapes */
+        if ((++steps & 1023) == 0 && js_poll_interrupts(ctx)) {
+            JS_FreeValue(ctx, str);
+            string_buffer_free(b);
+            return JS_EXCEPTION;
+        }
     }
     JS_FreeValue(ctx, str);
     return string_buffer_end(b);
@@ -63555,6 +63716,8 @@ static JSValue js_typed_array_from(JSContext *ctx, JSValueConst this_val,
     if (JS_IsException(r))
         goto exception;
     for(k = 0; k < len; k++) {
+        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto exception;
         v = JS_GetPropertyInt64(ctx, arr, k);
         if (JS_IsException(v))
             goto exception;
@@ -65616,6 +65779,10 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
         goto fail;
     k = 0;
     for(;;) {
+        /* the iterator of a string, an array, a Map or a Set is called
+           without JS_CallInternal, which would read the interrupt flag */
+        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto fail;
         val = JS_IteratorNext(ctx, iter, next_method, 0, NULL, &done);
         if (JS_IsException(val))
             goto fail;
@@ -65676,6 +65843,8 @@ static JSValue js_typed_array_constructor_obj(JSContext *ctx,
         goto fail;
 
     for(i = 0; i < len; i++) {
+        if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto fail;
         val = JS_GetPropertyUint32(ctx, arr, i);
         if (JS_IsException(val))
             goto fail;
