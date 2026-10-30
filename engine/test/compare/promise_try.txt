@@ -1,0 +1,37 @@
+value: pending
+no args: pending
+args: pending
+this is undefined: pending
+throw: pending
+throw error: pending
+returns a thenable: pending
+returns a rejected promise: pending
+callback is not a function: pending
+callback is missing: pending
+callback runs now: true
+result is a promise: true
+this is not an object: throws TypeError
+this is a number: throws TypeError
+this is not a constructor: throws TypeError
+this is a function that is not a constructor: throws TypeError
+ES2026 the callback runs before this is checked as a constructor: true
+subclass: true
+subclass of a throw: false
+subclass constructor: Q
+subclass constructor on a throw: Q,Q
+ES2026 a promise comes back as it is: true
+ES2026 a rejected promise comes back as it is: true
+ES2026 constructor read once: 1
+not a promise but thenable: pending
+capability executor: C,res 3,C,rej 4
+args fulfilled 1|x|
+missing rejected [object Error]
+no args fulfilled 0
+not function rejected [object Error]
+plain object fulfilled [object Object]
+rejected promise rejected no
+thenable fulfilled t
+this fulfilled false
+throw error fulfilled RangeError
+throw rejected boom
+value fulfilled 5
