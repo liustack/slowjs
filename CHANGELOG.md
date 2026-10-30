@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.29.3] - 2026-10-30
+
 ### Added
 
 - `VM.RegisterCopyProps(name)` defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. It copies where its result and the loop's cannot differ in anything a script can see (an ordinary config of at most 32 keys with plain values, props of the same kind, an unchanged `Object.prototype` and `Function.prototype.call`) and answers `false`, having changed nothing, for any other config, which the script then gives to the loop. The engine puts nothing on the global object by itself: the function is in a VM only when its host registers it. In tifa, which uses it for React, a render runs 2.1% to 4.1% fewer instructions, and the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. ([Performance](docs/performance.md#the-copy-of-the-props-of-a-react-element-in-c), [Go API](docs/changes/go-api.md#registercopyprops))
@@ -426,7 +428,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.2...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.3...main
+[v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
