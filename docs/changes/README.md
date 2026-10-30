@@ -21,6 +21,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The interpreter calls a C function without JS_CallInternal | Unreleased | [c-engine.md](c-engine.md#how-the-interpreter-calls-a-c-function) |
 | The end of a call skips the values with no reference count | Unreleased | [c-engine.md](c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count) |
 | A call sets its locals eight to a turn | Unreleased | [c-engine.md](c-engine.md#a-call-sets-its-locals-eight-to-a-turn) |
+| Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | Unreleased | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
 
 ## Commits of upstream QuickJS
 
@@ -146,6 +147,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Spread, rest and Object.assign look each key up when its turn comes | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
 | Object literals made at their final shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
 | Object literals keep their properties in the block of the object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
+| Object literals of the same keys share one shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape) |
 | A for in loop holds the shape of its object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
 | hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 

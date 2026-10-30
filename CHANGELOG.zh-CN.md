@@ -2,6 +2,18 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 变更
+
+- 字节码升到版本 7，多了几个操作码：读局部变量后紧跟按名字读属性、字符串 `switch` 的 case、`typeof` 判断。旧版本写出的字节码不再能加载（`SyntaxError: invalid version`），要重新编译。`JS_ReadObject` 遇到后面没跟着原指令的合并操作码会拒绝。
+
+### 性能
+
+- 写在不同地方、键相同的对象字面量共用一个形状，和逐个加键建出来的对象一样。字面量的第一个对象原来从 `Object.prototype` 的空形状开始找自己的形状，而这个空形状通常已被第一个加键的对象原地改掉，于是每处字面量各建一个形状。tifa 页面的一个 VM 渲染后形状少 12% 到 15%，内存少 0.7%（shop 和 MUI 页面）到 1.7%（店面页面）。渲染跑的指令不变（[objects-and-shapes.md](docs/changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape)）。
+- 读第一个或第二个参数、第一个局部变量或第四个之后的局部变量，再紧跟按名字读属性（`o.x`），以及字符串 `switch` 的 case，解释器一轮做完。tifa 示例商店的六个工作台页面每次渲染少跑 1.85% 的指令，店面页面少 1.59%，MUI 页面少 1.66%，bench 页面少 3.41%。bench 页面渲染时间少 3.4%（8 个代码位置，3 轮，[c-engine.md](docs/changes/c-engine.md#opcodes-that-do-a-few-instructions-at-once)，[性能](docs/performance.md#opcodes-that-do-a-few-instructions-at-once)）。
+- `typeof x == "string"` 这类判断（`==`、`===`、`!=`、`!==` 配任意类型名），以及压缩工具写出的 `typeof x < "u"` 和 `typeof x > "u"`，解释器一轮做完。tifa 页面每次渲染少跑 0.63%（shop）到 1.42%（bench 页面）的指令。
+
 ## [v0.29.4] - 2026-10-30
 
 ### 性能
@@ -435,7 +447,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.3...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
