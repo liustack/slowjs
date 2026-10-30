@@ -71,7 +71,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Interrupt is safe during and after Close | v0.26.10 | [uncatchable.md](uncatchable.md#interrupt-is-safe-during-and-after-close) |
 | Compiling a regexp counts toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#compiling-a-regexp-counts-toward-the-interrupt-check) |
 | Parsing and building strings count toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#parsing-and-building-strings-count-toward-the-interrupt-check) |
-| Long loops and compares read the interrupt flag within a bounded amount of work | Unreleased | [uncatchable.md](uncatchable.md#long-loops-and-compares-read-the-interrupt-flag-within-a-bounded-amount-of-work) |
+| Loops over a long string read the interrupt flag in steps | Unreleased | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
 
 ## Errors and stacks
 
