@@ -4121,7 +4121,7 @@ static void __JS_FreeAtom(JSRuntime *rt, uint32_t i)
     JS_FreeAtomStruct(rt, p);
 }
 
-/* js_new_string_atom for a string of more than JS_ROPE_STEP characters, with
+/* js_new_string_atom for a string of JS_ROPE_STEP characters or more, with
    the flag read every JS_ROPE_STEP characters of the hash and of the
    comparison with an atom of the same hash and length. Returns JS_ATOM_NULL
    with "interrupted" thrown when it was stopped ('p' is freed then too). */
@@ -4173,7 +4173,7 @@ static JSAtom js_new_string_atom(JSContext *ctx, JSString *p)
 {
     JSAtom atom;
 
-    if (unlikely(p->len > JS_ROPE_STEP) && p->atom_type != JS_ATOM_TYPE_STRING)
+    if (unlikely(p->len >= JS_ROPE_STEP) && p->atom_type != JS_ATOM_TYPE_STRING)
         return js_new_long_string_atom(ctx, p);
     atom = __JS_NewAtom(ctx->rt, p, JS_ATOM_TYPE_STRING, NULL);
     if (atom == JS_ATOM_NULL)
@@ -4212,7 +4212,7 @@ JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
     JSValue val;
 
     if (len == 0 ||
-        (len <= JS_ROPE_STEP && !is_digit(*str) &&
+        (len < JS_ROPE_STEP && !is_digit(*str) &&
          count_ascii((const uint8_t *)str, len) == len)) {
         JSAtom atom = __JS_FindAtom(ctx->rt, str, len, JS_ATOM_TYPE_STRING);
         if (atom)
@@ -4875,11 +4875,47 @@ static int string_buffer_set_error(StringBuffer *s)
    interrupt flag when its block is made larger. */
 #define JS_COPY_STEP (1 << 20)
 
+/* js_malloc for the new block of a large block that moves: the limit of the
+   memory is raised by what the heap counts for the old block (its size and
+   its header) while the new block is asked for, as heap_realloc checks the
+   request against the count less the old block. That is the check of the
+   heap on the count and the limit. The footprint limit and the host, which
+   may refuse another mapping while the old block is there, are not changed. */
+static void *js_malloc_moving(JSContext *ctx, size_t size, void *old)
+{
+    JSHeap *h = &ctx->rt->malloc_ctx.heap;
+    size_t limit = h->limit, room;
+    void *q;
+
+    /* the old block is a large block (it holds 1 MiB or more): the heap counts
+       it with its header, and the request for the new one with its header */
+    room = js_malloc_usable_size(ctx, old) + sizeof(JSMallocLargeBlockHeader);
+    h->limit = room > SIZE_MAX - limit ? SIZE_MAX : limit + room;
+    q = js_malloc_rt(ctx->rt, size);
+    h->limit = limit;
+    /* the error is made with the limit back, not with the room of the old block */
+    if (!q)
+        JS_ThrowOutOfMemory(ctx);
+    return q;
+}
+
 /* js_realloc2 of the block of a string buffer to new_bytes. When the part of
    it that is in use is of more than JS_COPY_STEP bytes the copy is made here
    and not by the allocator, JS_COPY_STEP bytes at a time with the flag read
    after each, as the doubling of a buffer that holds tens of millions of
-   characters takes as long as the characters it holds. NULL with an
+   characters takes as long as the characters it holds. The flag is read
+   before the first step too, so that the work of what came before (the scan
+   of a JSON string that filled the buffer) and the first step are not one
+   stretch.
+
+   The new block is asked for with the room of the old one in the limit of
+   the memory: the limit is for the blocks left once the old one is freed, as
+   js_realloc_rt takes it, and a buffer that would have grown does not fail
+   because the copy needs both blocks for a moment. The count of the heap is
+   over the limit until the old block is freed, and nothing else is asked for
+   in between.
+
+   NULL with an
    exception thrown (out of memory, or "interrupted"), and the old block is
    then still s->str. */
 static void *string_buffer_realloc2(StringBuffer *s, size_t used_bytes,
@@ -4891,7 +4927,9 @@ static void *string_buffer_realloc2(StringBuffer *s, size_t used_bytes,
 
     if (likely(used_bytes < JS_COPY_STEP))
         return js_realloc2(ctx, s->str, new_bytes, pslack);
-    q = js_malloc(ctx, new_bytes);
+    if (js_poll_interrupts(ctx))
+        return NULL;
+    q = js_malloc_moving(ctx, new_bytes, s->str);
     if (!q)
         return NULL;
     for (off = 0; off < used_bytes; off += m) {
@@ -6108,9 +6146,11 @@ static uint32_t string_rope_get_len(JSValueConst val)
    is set. js_strict_eq2 and the callers that cannot report an exception do
    not set it, and the test of two strings that are not ropes does not read
    the flag either. *pwork, when it is not NULL, is the work since the last
-   reading, in and out: the compares of the candidates of a chain of a hash
-   table share it, so that a chain of keys that differ late in the string is
-   not a run of compares each with a budget of its own. A compare that stops
+   reading, in and out, and less than a step when it is given (the callers
+   keep it so: js_short_eq_budget reads the flag when it would reach a step).
+   The compares of the candidates of a chain of a hash table share it, so
+   that a chain of keys that differ late in the string is not a run of
+   compares each with a budget of its own. A compare that stops
    at a difference counts the step it made. */
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
                                   JSValueConst op2, BOOL eq_only, BOOL poll,
@@ -19429,17 +19469,48 @@ static BOOL js_strict_eq2(JSContext *ctx, JSValueConst op1, JSValueConst op2,
 
 /* Whether comparing two values for equality takes a read of the interrupt flag
    every JS_ROPE_STEP characters: both are strings, one of them is a rope or
-   they are not the same string and longer than a step (a short string is
-   compared at once, and a string of another length is known to differ). */
+   they are not the same string and of JS_ROPE_STEP characters or more (a
+   string of another length is known to differ, and a shorter one is compared
+   at once: js_short_eq_budget keeps the compares of a loop together). The
+   limit is the one of map_hash_key_poll and js_string_find. */
 static force_inline BOOL js_string_eq_polls(JSValueConst op1, JSValueConst op2)
 {
     int tag1 = JS_VALUE_GET_TAG(op1), tag2 = JS_VALUE_GET_TAG(op2);
 
     if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING)
         return JS_VALUE_GET_STRING(op1) != JS_VALUE_GET_STRING(op2) &&
-            JS_VALUE_GET_STRING(op1)->len > JS_ROPE_STEP;
+            JS_VALUE_GET_STRING(op1)->len >= JS_ROPE_STEP;
     return (tag1 == JS_TAG_STRING_ROPE || tag2 == JS_TAG_STRING_ROPE) &&
         tag_is_string(JS_VALUE_GET_NORM_TAG(op1)) && tag_is_string(JS_VALUE_GET_NORM_TAG(op2));
+}
+
+/* The compare of two strings of fewer than JS_ROPE_STEP characters is one
+   call of memcmp, but a loop that makes it for each of 16384 elements of an
+   array or each of the records of a chain does as much as the sum. This is
+   called by such a loop before it compares: when the two are strings that are
+   not the same one and are of one length (any other pair is known to differ
+   at once) it adds their length to *pwork, the work since the last reading of
+   the flag that the loop keeps, and reads the flag first when that would
+   take the work to a step or past it, so that *pwork is always less than a
+   step: js_string_rope_compare, which a loop may call next with the same
+   *pwork, needs that. 0, or -1 with "interrupted" thrown. */
+static force_inline int js_short_eq_budget(JSContext *ctx, JSValueConst op1,
+                                           JSValueConst op2, uint32_t *pwork)
+{
+    if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING && JS_VALUE_GET_TAG(op2) == JS_TAG_STRING) {
+        const JSString *p1 = JS_VALUE_GET_STRING(op1), *p2 = JS_VALUE_GET_STRING(op2);
+
+        if (p1 != p2 && p1->len == p2->len) {
+            if (unlikely(*pwork + p1->len >= JS_ROPE_STEP)) {
+                *pwork = 0;
+                if (js_poll_interrupts(ctx))
+                    return -1;
+            }
+            JS_WORK(p1->len);
+            *pwork += p1->len;
+        }
+    }
+    return 0;
 }
 
 /* === for the operators of the interpreter: 1 or 0, or -1 with the exception
@@ -19473,6 +19544,8 @@ static int js_strict_eq2_poll(JSContext *ctx, JSValueConst op1, JSValueConst op2
             return -1;
         return res == 0;
     }
+    if (js_short_eq_budget(ctx, op1, op2, pwork) < 0)
+        return -1;
     return js_strict_eq2(ctx, op1, op2, eq_mode);
 }
 
@@ -27732,14 +27805,18 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
 {
     const uint8_t *q, *lim, *p0, *p_next;
     uint16_t units[64];
-    uint32_t c;
+    uint32_t c, w, left;
     int n;
 
     for(;;) {
-        /* ASCII, up to json_run_limit, and to what is left of the step */
+        /* ASCII, up to json_run_limit, and to what is left of the step. A
+           character costs two when the buffer is of 16 bits: it is looked at
+           here and widened by the copy. */
         lim = json_run_limit(p, end);
-        if ((size_t)(lim - p) > JS_ROPE_STEP - *pwork)
-            lim = p + (JS_ROPE_STEP - *pwork);
+        w = 1 + b->is_wide_char;
+        left = (JS_ROPE_STEP - *pwork + w - 1) / w;
+        if ((size_t)(lim - p) > left)
+            lim = p + left;
         for(q = p; q < lim; q++) {
             c = *q;
             if (c < 0x20 || c >= 0x80 || c == sep || c == '\\')
@@ -27749,7 +27826,7 @@ static const uint8_t *json_string_run(StringBuffer *b, const uint8_t *p,
         if (q > p) {
             if (string_buffer_write8(b, p, q - p))
                 return NULL;
-            *pwork += q - p;
+            *pwork += w * (q - p);
             p = q;
         }
         if (*pwork >= JS_ROPE_STEP) {
@@ -47057,7 +47134,8 @@ static JSValue js_object_fromEntries(JSContext *ctx, JSValueConst this_val,
 static JSValue js_object_is(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
-    int e = js_strict_eq2_poll(ctx, argv[0], argv[1], JS_EQ_SAME_VALUE, NULL);
+    uint32_t work = 0;
+    int e = js_strict_eq2_poll(ctx, argv[0], argv[1], JS_EQ_SAME_VALUE, &work);
 
     if (e < 0)
         return JS_EXCEPTION;
@@ -57532,11 +57610,15 @@ static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
                           uint32_t *pwork)
 {
     int i = *pi, j = i, n = p->len;
-    uint32_t c;
+    uint32_t c, w, left;
 
-    /* no more than what is left of the step of JS_ROPE_STEP characters */
-    if ((uint32_t)(n - i) > JS_ROPE_STEP - *pwork)
-        n = i + (JS_ROPE_STEP - *pwork);
+    /* no more than what is left of the step of JS_ROPE_STEP characters, of
+       which a character of 8 bits costs two when it is copied into a buffer
+       of 16 bits (it is looked at here and widened by the copy) */
+    w = 1 + (!p->is_wide_char && b->is_wide_char);
+    left = (JS_ROPE_STEP - *pwork + w - 1) / w;
+    if ((uint32_t)(n - i) > left)
+        n = i + left;
 
     if (!p->is_wide_char) {
         const uint8_t *str = p->u.str8;
@@ -57558,7 +57640,7 @@ static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
             return -1;
     }
     JS_WORK(j - i);
-    *pwork += j - i;
+    *pwork += w * (j - i);
     *pi = j;
     if (*pwork >= JS_ROPE_STEP) {
         *pwork = 0;
@@ -59875,6 +59957,8 @@ static int map_key_eq(JSContext *ctx, JSValueConst rec_key, JSValueConst key,
             return -1;
         return res == 0;
     }
+    if (js_short_eq_budget(ctx, rec_key, key, pwork) < 0)
+        return -1;
     return js_same_value_zero(ctx, rec_key, key);
 }
 
@@ -59906,9 +59990,55 @@ static no_inline JSMapRecord *map_find_record_long(JSContext *ctx, JSMapState *s
     return NULL;
 }
 
+/* map_find_record for a key that is a string shorter than a step, h its hash.
+   A record whose key is a string of another length differs, and one of the
+   same length takes a compare that is added to the work that the records of
+   the chain share (js_short_eq_budget). The key of a record that is a rope is
+   compared as map_key_eq does, and any other kind of key differs. */
+static no_inline JSMapRecord *map_find_record_short(JSContext *ctx, JSMapState *s,
+                                                    JSValueConst key, uint32_t h)
+{
+    const JSString *p = JS_VALUE_GET_STRING(key), *q;
+    JSMapRecord *mr;
+    uint32_t work = 0;
+
+    for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+        int tag;
+
+        if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key)))
+            continue;
+        tag = JS_VALUE_GET_TAG(mr->key);
+        if (likely(tag == JS_TAG_STRING)) {
+            q = JS_VALUE_GET_STRING(mr->key);
+            if (q == p)
+                return mr;
+            if (q->len != p->len)
+                continue;
+            if (unlikely(work + p->len >= JS_ROPE_STEP)) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return MAP_STOPPED;
+            }
+            JS_WORK(p->len);
+            work += p->len;
+            if (js_string_eq(ctx, q, p))
+                return mr;
+        } else if (tag == JS_TAG_STRING_ROPE) {
+            int eq = map_key_eq(ctx, mr->key, key, &work);
+
+            if (eq < 0)
+                return MAP_STOPPED;
+            if (eq)
+                return mr;
+        }
+    }
+    return NULL;
+}
+
 /* Look for the key: the record, NULL when there is none, or MAP_STOPPED. The
-   compare of a key other than a rope or a long string is at once: a record of
-   another length is known to differ. */
+   compare of a key that is not a string is at once. That of a string shorter
+   than a step is one memcmp of the records of its length, which the chain
+   adds up (js_short_eq_budget). */
 static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
                                     JSValueConst key)
 {
@@ -59921,6 +60051,8 @@ static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
             return MAP_STOPPED;
         return map_find_record_long(ctx, s, key, h);
     }
+    if (JS_VALUE_GET_TAG(key) == JS_TAG_STRING)
+        return map_find_record_short(ctx, s, key, h);
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
@@ -60133,12 +60265,15 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
     JSMapRecord *mr, **pmr;
     uint32_t h, work = 0;
     int polls;
+    BOOL budget;
 
     key = map_normalize_key_const(ctx, key);
 
     polls = map_hash_key_poll(ctx, key, s->hash_bits, &h);
     if (polls < 0)
         return JS_EXCEPTION;
+    /* a key that is a string takes the compares that keep a budget */
+    budget = polls || JS_VALUE_GET_TAG(key) == JS_TAG_STRING;
     pmr = &s->hash_table[h];
     for(;;) {
         mr = *pmr;
@@ -60147,7 +60282,7 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* not valid */
         } else {
-            int eq = polls ? map_key_eq(ctx, mr->key, key, &work) :
+            int eq = budget ? map_key_eq(ctx, mr->key, key, &work) :
                 js_same_value_zero(ctx, mr->key, key);
 
             if (eq < 0)
