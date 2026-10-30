@@ -230,6 +230,10 @@ function test_array()
         err = true;
     }
     assert(err && a.toString() === "1,2,3,4");
+
+    /* sort writes back every element, even those already in place */
+    assert_throws(TypeError, () => Array.prototype.sort.call("aa"));
+    assert_throws(TypeError, () => Object.freeze([1, 2]).sort());
 }
 
 function test_string()
@@ -805,6 +809,9 @@ function test_regexp()
     a = a.exec("\u{10000}_\u{10000}");
     assert(a.indices[0][0], 0);
     assert(a.indices[0][1], 2);
+
+    /* syntax check */
+    assert(/-&&/v.test("-&&"), true);
 }
 
 function test_symbol()
