@@ -19888,6 +19888,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     int ret, gpn_flags;
     JSPropertyDescriptor desc;
     BOOL is_enumerable;
+    JSProperty *pr;
+    JSShapeProperty *prs;
 
     if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
         return ret;
@@ -19899,15 +19901,17 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
 
     p = JS_VALUE_GET_OBJ(source);
 
-    gpn_flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY;
-    if (p->is_exotic) {
-        const JSClassExoticMethods *em = ctx->rt->class_array[p->class_id].exotic;
-        /* cannot use JS_GPN_ENUM_ONLY with e.g. proxies because it
-           introduces a visible change */
-        if (em && em->get_own_property_names) {
-            gpn_flags &= ~JS_GPN_ENUM_ONLY;
-        }
-    }
+    /* All the own keys are listed, enumerable or not, as the specification
+       has it: a getter that runs for an earlier key may make a later key
+       enumerable, and then it is copied. JS_GPN_ENUM_ONLY would leave it out
+       (and cannot be used with e.g. proxies, because it introduces a visible
+       change). A module namespace stays as it was, listed with
+       JS_GPN_ENUM_ONLY, which is where it throws for a binding that is not
+       initialized yet: it has no getter, so no key of it changes while it is
+       copied. */
+    gpn_flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
+    if (p->class_id == JS_CLASS_MODULE_NS)
+        gpn_flags |= JS_GPN_ENUM_ONLY;
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
                                        gpn_flags))
         return -1;
@@ -19921,17 +19925,28 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
                 continue;
             }
         }
-        if (!(gpn_flags & JS_GPN_ENUM_ONLY)) {
-            /* test if the property is enumerable */
-            ret = js_get_own_property_flags(ctx, &desc, p, tab_atom[i].atom);
-            if (ret < 0)
-                goto exception;
-            if (!ret)
-                continue;
-            is_enumerable = (desc.flags & JS_PROP_ENUMERABLE) != 0;
-            js_free_desc(ctx, &desc);
-            if (!is_enumerable)
-                continue;
+        /* The specification looks up each key when its turn comes: a
+           getter that ran for an earlier key may have deleted it, or made
+           it not enumerable, and then it is left out. Only a key listed
+           with JS_GPN_ENUM_ONLY (a module namespace) is known enumerable
+           before any value is read, so the first one needs no look up. */
+        if (!(gpn_flags & JS_GPN_ENUM_ONLY) || i > 0) {
+            if (!p->is_exotic) {
+                prs = find_own_property(&pr, p, tab_atom[i].atom);
+                if (!prs || !(prs->flags & JS_PROP_ENUMERABLE))
+                    continue;
+            } else {
+                /* test if the property is still there and enumerable */
+                ret = js_get_own_property_flags(ctx, &desc, p, tab_atom[i].atom);
+                if (ret < 0)
+                    goto exception;
+                if (!ret)
+                    continue;
+                is_enumerable = (desc.flags & JS_PROP_ENUMERABLE) != 0;
+                js_free_desc(ctx, &desc);
+                if (!is_enumerable)
+                    continue;
+            }
         }
         val = JS_GetProperty(ctx, source, tab_atom[i].atom);
         if (JS_IsException(val))
