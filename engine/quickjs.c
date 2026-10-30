@@ -3275,6 +3275,19 @@ static no_inline void js_measure_call_frame(JSContext *ctx)
     rt->call_frame = left - rt->call_frame;
 }
 
+int JS_SetDirectCCalls(JSContext *ctx, int on)
+{
+    JSRuntime *rt = ctx->rt;
+
+    if (rt->call_depth || rt->stack_debt)
+        return -1;
+    if (on)
+        js_measure_call_frame(ctx);
+    else
+        rt->call_frame = (long)1 << 60; /* never room for it */
+    return 0;
+}
+
 JSContext *JS_NewContextRaw(JSRuntime *rt)
 {
     JSContext *ctx;

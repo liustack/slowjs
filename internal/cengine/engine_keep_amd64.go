@@ -216,6 +216,7 @@ var goasmKeep = []any{
 	JS_SetConstructor2,
 	JS_SetConstructorBit,
 	JS_SetContextOpaque,
+	JS_SetDirectCCalls,
 	JS_SetFootprintLimit,
 	JS_SetFrontCache,
 	JS_SetGCThreshold,
