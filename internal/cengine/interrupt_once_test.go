@@ -20,6 +20,13 @@ import (
 // of its own, with the string as new as in the first run.
 func TestInterruptStopsLongKeys(t *testing.T) {
 	needPolls(t)
+	// Strings of one hash: the pairs A and B add the same to a hash made as h * 263 + c
+	// (256*263+519 == 257*263+256), so keys that differ in which of them they hold, in any order,
+	// have one hash, and the key asked for differs from every one of them at the first pair.
+	const chainSetup = `var A = 'Āȇ', B = 'āĀ', P = 'x'.repeat(65532);
+		function tail(i) { var r = []; for (var j = 0; j < 8; j++) r.push((i >> j & 1) ? A : B); return r.join('') }
+		function ckey(i) { return [P, B, tail(i)].join('') }
+		function cquery() { return [P, A, tail(0)].join('') }`
 	// slack is how many polls more than builtinStopPolls a stop may take
 	cases := []struct {
 		name, setup, call, top string
@@ -31,12 +38,23 @@ func TestInterruptStopsLongKeys(t *testing.T) {
 		{"o[f] read", `var f = 'x'.repeat(1 << 26), o = {}`, `o[f]`, "<eval>", 0},
 		// the key is the atom of an equal string, which is compared with it
 		{"o[g] = 1, an atom equal to g", `var f = 'x'.repeat(1 << 25), g = 'x'.repeat(1 << 25), o = {}; o[f] = 1`, `o[g] = 2`, "<eval>", 0},
-		// The characters of a long string of the text are taken in runs. Two copies of tens of MiB are
-		// memcpy calls, which the generated code polls (up to about 440 polls) and in which the engine
-		// reads no flag: the text as a C string, before the parse, and the last doubling of the buffer
-		// that holds the string.
-		{"JSON.parse, a long key", `var j = '{"' + 'x'.repeat(1 << 26) + '":1}'`, `JSON.parse(j)`, "parse", 500},
-		{"JSON.parse, a long string", `var j = '{"a":"' + 'x'.repeat(1 << 26) + '"}'`, `JSON.parse(j)`, "parse", 500},
+		// The characters of a long string of the text are taken in runs, the text is made a C string in
+		// steps, and a buffer that holds tens of MiB is copied in steps when it grows.
+		{"JSON.parse, a long key", `var j = '{"' + 'x'.repeat(1 << 26) + '":1}'`, `JSON.parse(j)`, "parse", 0},
+		{"JSON.parse, a long string", `var j = '{"a":"' + 'x'.repeat(1 << 26) + '"}'`, `JSON.parse(j)`, "parse", 0},
+		// the escapes count toward the step as the characters do, so a string of nothing else is a run of steps
+		{"JSON.parse, escapes", `var j = '"' + '\\n'.repeat(1 << 24) + '"'`, `JSON.parse(j)`, "parse", 0},
+		{"JSON.parse, runs and escapes", `var j = '"' + ('a'.repeat(30000) + '\\n').repeat(1 << 10) + '"'`, `JSON.parse(j)`, "parse", 0},
+		// a wide character after tens of MiB of ASCII widens them all, in steps
+		{"JSON.parse, a wide character last", `var j = ['"', 'a'.repeat(1 << 26), '中"'].join('')`, `JSON.parse(j)`, "parse", 0},
+		{"JSON.parse, a wide escape last", `var j = '"' + 'a'.repeat(1 << 26) + '\\u4e2d"'`, `JSON.parse(j)`, "parse", 0},
+		{"padEnd, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padEnd((1 << 26) + 1, '中')`, "padEnd", 0},
+		{"padStart, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padStart((1 << 26) + 1, '中')`, "padStart", 0},
+		// 256 keys of one hash and one length, each different from the key asked for at the first step: the
+		// compares of the chain share one budget, and one that ends at a difference counts what it did
+		{"Map.get, a chain of keys of one hash", chainSetup + `; var cm = new Map(); for (var i = 0; i < 256; i++) cm.set(ckey(i), i)`, `cm.get(cquery())`, "get", 0},
+		{"Map.delete, a chain of keys of one hash", chainSetup + `; var cm = new Map(); for (var i = 0; i < 256; i++) cm.set(ckey(i), i)`, `cm.delete(cquery())`, "delete", 0},
+		{"o[k] = 1, a chain of keys of one hash", chainSetup + `; var co = {}; for (var i = 0; i < 256; i++) co[ckey(i)] = i`, `co[cquery()] = 1`, "<eval>", 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

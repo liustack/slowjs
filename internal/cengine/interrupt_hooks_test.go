@@ -165,6 +165,18 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// A set-like object that lends the iterator of an array: isSupersetOf asks this Set
 		// about each item, in C.
 		{"Set isSupersetOf", bigArray + `; var s = new Set([1]), like = { size: 1, has: () => true, keys: () => a.values() }`, `s.isSupersetOf(like)`, "isSupersetOf"},
+		// A search for a string of the length of the one searched, Array.prototype.indexOf, includes and
+		// lastIndexOf and Object.is on equal strings, and JSON.stringify of a long string: the compare and
+		// the loop go a step at a time with the flag read between the steps.
+		{"indexOf, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.indexOf(b)`, "indexOf"},
+		{"startsWith, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.startsWith(b)`, "startsWith"},
+		{"replace, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.replace(b, 'x')`, "replace"},
+		{"Array indexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.indexOf(b)`, "indexOf"},
+		{"Array includes, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.includes(b)`, "includes"},
+		{"Array lastIndexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [a, 1]`, `arr.lastIndexOf(b)`, "lastIndexOf"},
+		{"Object.is, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `Object.is(a, b)`, "is"},
+		{"JSON.stringify, a long string", `var s = 'a'.repeat(1 << 26)`, `JSON.stringify(s)`, "stringify"},
+		{"JSON.stringify, escapes", `var s = '\n'.repeat(1 << 24)`, `JSON.stringify(s)`, "stringify"},
 	}
 	// These make a result of as many pieces as the input has. Freeing it takes
 	// polls, up to a third of the polls of the call or more, and so many

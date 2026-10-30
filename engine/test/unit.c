@@ -904,10 +904,10 @@ static void test_search_linear(void)
    each width and in one of each: with the flag set as the needle becomes a
    string, it ends with the error "interrupted", which try and catch do not
    catch, and the context then runs scripts and searches again. Comparing
-   the needle at the one index a search has, as startsWith does, is linear
-   in its length and reads no flag, as === does not. A needle of that kind is
-   made flat with join: one made by + is a rope, and making a rope flat reads
-   the flag (test_rope_polls). */
+   the needle at the one index a search has, as startsWith does, goes
+   JS_ROPE_STEP characters at a time with the flag read after each. A needle
+   of that kind is made flat with join: one made by + is a rope, and making a
+   rope flat reads the flag too (test_rope_polls). */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
@@ -937,10 +937,10 @@ static void test_search_interrupt(void)
         { "awm", "indexOf", "'aab'", "8389607", 1 },
         { "ab", "indexOf", "a", "0", 1 },
         { "aw", "includes", "a", "true", 1 },
-        { "a", "startsWith", "a2", "true", 0 },
-        { "aw", "endsWith", "[a.slice(1), '\\u4e00'].join('')", "true", 0 },
-        { "a", "indexOf", "a2", "0", 0 },
-        { "a", "startsWith", "[a.slice(1), 'b'].join('')", "false", 0 },
+        { "a", "startsWith", "a2", "true", 1 },
+        { "aw", "endsWith", "[a.slice(1), '\\u4e00'].join('')", "true", 1 },
+        { "a", "indexOf", "a2", "0", 1 },
+        { "a", "startsWith", "[a.slice(1), 'b'].join('')", "false", 1 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -2907,7 +2907,7 @@ static void test_string_loop_polls(void)
         "var h = 'a'.repeat(1 << 20), nd = 'a'.repeat(100) + 'b', ab = 'ab'.repeat(1 << 17)\n"
         "var sp = ' ' + 'x'.repeat(1 << 24) + ' '\n"
         "var wsp = ' ' + '\\u4e00'.repeat(1 << 23) + ' '\n"
-        "var nsp = '\\u4e00' + ' ' + '\\u00e9'.repeat(1 << 23) + ' '\n"
+        "var nsp = ['\\u4e00', ' ', '\\u00e9'.repeat(1 << 23), ' '].join('')\n"
         "var fill = 'ab'.repeat(1 << 22); 0\n";
     static const struct {
         const char *call;
@@ -3082,6 +3082,79 @@ static void test_long_key_polls(void)
     CHECK(interrupted(ctx, "o[g4] = 3"), "the comparison with an atom was not stopped in the middle");
     host_poll_stop_after(0);
     CHECK(eval_is(ctx, "[o[g1], o[g3], o[g4]].join()", "2,2,2"), "the key after the stop");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* More loops that took a whole long string in one pass, and now read the
+   interrupt flag at least every 65536 characters or 1048576 bytes: a search
+   for a string of the length of the one searched, Array.prototype.indexOf,
+   includes and lastIndexOf and Object.is on equal strings, JSON.parse of a
+   string of escapes, of short runs and escapes, with a wide character after
+   a long ASCII run, and of 3 MiB, JSON.stringify, and a Map or an object
+   asked for a key that has 64 keys of its hash and length (a chain of
+   compares that differ late). Each call reads the flag at least as often as
+   it says, and is stopped by a flag set at the 20th reading: it throws
+   "interrupted", and the context goes on. */
+static void test_long_ops_polls(void)
+{
+    static const char setup[] =
+        "var e1 = 'x'.repeat(1 << 21), e2 = 'x'.repeat(1 << 21), x1 = '\\u4e2d'.repeat(1 << 21), x2 = '\\u4e2d'.repeat(1 << 21)\n"
+        "var jesc = '\"' + '\\\\n'.repeat(1 << 20) + '\"'\n"
+        "var jmix = '\"' + ('a'.repeat(30000) + '\\\\n').repeat(70) + '\"'\n"
+        "var jwid = ['\"', 'a'.repeat(1 << 21), '\\u4e2d\"'].join('')\n"
+        "var jbig = '\"' + 'a'.repeat(3 << 20) + '\"'\n"
+        "var qesc = '\\n'.repeat(1 << 20), qbig = 'a'.repeat(3 << 20)\n"
+        "var A = '\\u0100\\u0207', B = '\\u0101\\u0100', P = 'x'.repeat(65532)\n"
+        "function tail(i) { var r = []; for (var j = 0; j < 6; j++) r.push((i >> j & 1) ? A : B); return r.join('') }\n"
+        "function mkq() { return [P, A, tail(0)].join('') }\n"
+        "var cm = new Map(), co = {}; for (var i = 0; i < 64; i++) { var k = [P, B, tail(i)].join(''); cm.set(k, i); co[k] = i } 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "e1.indexOf(e2)", 30 },
+        { "e1.includes(e2)", 30 },
+        { "e1.startsWith(e2)", 30 },
+        { "x1.endsWith(x2)", 30 },
+        { "e1.replace(e2, 'y')", 30 },
+        { "[1, e1].indexOf(e2)", 30 },
+        { "[1, e1].includes(e2)", 30 },
+        { "[e1, 1].lastIndexOf(e2)", 30 },
+        { "Object.is(e1, e2)", 30 },
+        { "JSON.parse(jesc)", 50 },
+        { "JSON.parse(jmix)", 30 },
+        { "JSON.parse(jwid)", 60 },
+        { "JSON.parse(jbig)", 90 },
+        { "JSON.stringify(qesc)", 20 },
+        { "JSON.stringify(qbig)", 45 },
+        { "cm.get(mkq())", 64 },
+        { "cm.delete(mkq())", 64 },
+        { "co[mkq()] = 1", 64 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before, reads;
+
+        before = host_poll_reads;
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, cases[i].reads);
+        host_poll_stop_after(20);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* what they make is what they made */
+    CHECK(eval_is(ctx, "[JSON.parse(jesc).length, JSON.parse(jmix).length, JSON.parse(jwid).length, JSON.parse(jwid).slice(-2), JSON.parse(jbig).length].join()",
+                  "1048576,2100070,2097153,a\xe4\xb8\xad,3145728"), "the strings JSON.parse made");
+    CHECK(eval_is(ctx, "[JSON.stringify(qesc).length, JSON.stringify(qbig).length, e1.indexOf(e2), [1, e1].indexOf(e2), Object.is(e1, e2), cm.get(mkq()), cm.has(cm.keys().next().value)].join()",
+                  "2097154,3145730,0,1,true,,true"), "the results");
     JS_FreeContext(ctx);
     host_free_runtime(rt);
 }
@@ -3322,6 +3395,7 @@ int main(void)
     test_string_loop_gaps();
     test_map_key_polls();
     test_long_key_polls();
+    test_long_ops_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
