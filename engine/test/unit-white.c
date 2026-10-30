@@ -734,7 +734,7 @@ static void test_object_inline_oom(void)
             cases++;
             if (JS_IsException(r)) {
                 failed_calls++;
-            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
             } else if (JS_HasException(v.ctx)) {
                 /* the call worked and an error is still pending: a delete packs the properties, which
                    is optional, and a failed packing must leave nothing behind */

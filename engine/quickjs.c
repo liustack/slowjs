@@ -6139,8 +6139,9 @@ static uint32_t string_rope_get_len(JSValueConst val)
    the flag either. *pwork, when it is not NULL, is the work since the last
    reading, in and out, and less than a step when it is given (the callers
    keep it so: js_short_eq_budget reads the flag when it would reach a step).
-   The compares of the candidates of a chain of a hash table share it, so that a chain of keys that differ late in the string is
-   not a run of compares each with a budget of its own. A compare that stops
+   The compares of the candidates of a chain of a hash table share it, so
+   that a chain of keys that differ late in the string is not a run of
+   compares each with a budget of its own. A compare that stops
    at a difference counts the step it made. */
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
                                   JSValueConst op2, BOOL eq_only, BOOL poll,
