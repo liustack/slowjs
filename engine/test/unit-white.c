@@ -660,6 +660,8 @@ static void test_object_inline_oom(void)
         "                          k8: 8, k9: 9, k10: 10, k11: 11, k12: 12, k13: 13, k14: 14, k15: 15 } }\n"
         "function grow(o) { for (var i = 0; i < 8; i++) o['n' + i] = i; return o }\n"
         "function shrink(o) { for (var i = 0; i < 12; i++) delete o['k' + i]; return o }\n"
+        /* the properties leave the block, then a delete packs them in a block of their own */
+        "function growshrink(o) { grow(o); return shrink(o) }\n"
         /* the shapes {a}, {a,b}, {a,b,c} and {a,b,c,d} are in the shape hash table, with room for 2, 3, 3 and 4 */
         "var keep = [{}, {}]; for (var o of keep) o.a = 1; for (var o of keep) o.b = [2]; for (var o of keep) o.c = 'three'; for (var o of keep) o.d = 4;\n"
         "function mk3() { return { a: 1, b: [2], c: 'three' } }\n"
@@ -678,10 +680,11 @@ static void test_object_inline_oom(void)
     } kinds[] = {
         { "grow", "mk", "grow", "check3", 0, 1 },
         { "shrink", "mk16", "shrink", "check16", 0, 0 },
+        { "grow then shrink", "mk16", "growshrink", "check16", 0, 1 },
         { "found shape", "mk3", "addd", "check3", 0, 1 },
         { "first run", NULL, "mkfirst", "checkf", 1, 0 },
     };
-    long cases = 0, failed_calls = 0, stale = 0;
+    long cases = 0, failed_calls = 0;
     int kind;
 
     /* the check must see a check that throws as a failure */
@@ -723,9 +726,9 @@ static void test_object_inline_oom(void)
                 failed_calls++;
                 JS_FreeValue(v.ctx, JS_GetException(v.ctx));
             } else if (JS_HasException(v.ctx)) {
-                /* delete_property ignores a compact_properties that ran out of memory (as in QuickJS
-                   upstream): the delete worked, and the error stays pending */
-                stale++;
+                /* the call worked and an error is still pending: a delete packs the properties, which
+                   is optional, and a failed packing must leave nothing behind */
+                CHECK(0, "%s with call %d failing: the call worked and left an error pending", kinds[kind].name, fail);
                 JS_FreeValue(v.ctx, r);
                 JS_FreeValue(v.ctx, JS_GetException(v.ctx));
             } else if (kinds[kind].factory) {
@@ -762,7 +765,7 @@ static void test_object_inline_oom(void)
         CHECK(n > 0, "%s makes no call of the allocator", kinds[kind].name);
     }
     CHECK(failed_calls > 0, "no call of %ld failed", cases);
-    printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls, %ld with an error left pending\n", cases, failed_calls, stale);
+    printf("unit-white: test_object_inline_oom: %ld cases, %ld failed calls\n", cases, failed_calls);
 }
 
 
