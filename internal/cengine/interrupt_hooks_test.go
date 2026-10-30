@@ -146,6 +146,11 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// memcpy of big strings: test_rope_polls of engine/test/unit.c counts
 		// the readings of the flag in it.)
 		{"two ropes compared", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 < r2`, "<eval>"},
+		// The hash of the key of a Map or Set walks all its characters.
+		{"Set.has, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var s = new Set()`, `s.has(r)`, "has"},
+		{"Map.get, a long string for the key", `var f = 'ab'.repeat(1 << 25); var m = new Map()`, `m.get(f)`, "get"},
+		// the key is taken out again: comparing a key with an equal rope, as a Set that holds it does, reads no flag
+		{"Map.set, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var m = new Map()`, `m.set(r, 1), m.clear()`, "set"},
 		{"Math.sumPrecise, an Array", bigArray, `Math.sumPrecise(a)`, "sumPrecise"},
 		{"Iterator drop, an Array", bigArray, `a.values().drop(1 << 24).next()`, "next"},
 		// A set-like object that lends the iterator of an array: isSupersetOf asks this Set
