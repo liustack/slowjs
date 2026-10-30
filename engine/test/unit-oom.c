@@ -1223,6 +1223,10 @@ static void test_thrown_is_not_uncatchable(void)
    src must fail uncatchable, as running out of memory does. Then, with the
    memory back, src must give want[0] in the same runtime, and the runtime
    must free with no block left. Some room must fail and some must work. */
+/* sweep_register, when set, runs on the context of each runtime sweep makes,
+   before the setup: it gives the scripts a function of the host. */
+static void (*sweep_register)(JSContext *ctx);
+
 static void sweep(const char *what, const char *file, const char *setup,
                   const char *src, const char *const *want, size_t max)
 {
@@ -1236,6 +1240,8 @@ static void sweep(const char *what, const char *file, const char *setup,
         char *t;
         int unc, i, fail;
 
+        if (sweep_register)
+            sweep_register(v.ctx);
         if (setup && !eval_ok(v.ctx, setup)) {
             CHECK(0, "%s: the setup failed", what);
             vm_free(&v);
@@ -1279,6 +1285,44 @@ static void sweep(const char *what, const char *file, const char *setup,
     }
     CHECK(failed > 0, "%s: no room made it fail", what);
     CHECK(worked > 0, "%s: no room let it work", what);
+}
+
+/* copyProps (JS_NewCopyPropsFunction) adds keys to props one at a time, or
+   takes the shape of a config and its values, and sets the keys props has:
+   with too little memory it fails with the out of memory error, leaves
+   props with the keys it had or a part of those it was given, and loses
+   nothing. */
+static void register_copy_props(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue f = JS_NewCopyPropsFunction(ctx, "copyProps", 9);
+
+    CHECK(!JS_IsException(f), "no function");
+    JS_SetPropertyStr(ctx, g, "copyProps", f);
+    JS_FreeValue(ctx, g);
+}
+
+static void test_copy_props_oom(void)
+{
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty;\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var c = [{ a: 1, b: 2, key: 'k', c: 3 }, { a: 1, b: 2 }, Object.freeze({ x: 1, y: 2, z: 3 })][i % 3];\n"
+        "    var p = {}, q = Object.assign({}, { a: 0, m: 9 });\n"
+        "    if (!copyProps(c, p, hop, false) || !copyProps(c, q, hop, true)) return 'not copied';\n"
+        "    out.push(Object.keys(p).join('+'), Object.keys(q).join('+'));\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n";
+    static const char *const want[] = {
+        "a+b+c a+m+b+c a+b a+m+b x+y+z a+m+x+y+z a+b+c a+m+b+c a+b a+m+b x+y+z a+m+x+y+z", NULL
+    };
+
+    sweep_register = register_copy_props;
+    sweep("copyProps", "copyprops.js", setup, "run()", want, 16384);
+    sweep_register = NULL;
 }
 
 /* A script name in a regexp (\p{Script=...}, \p{Script_Extensions=...}) is
@@ -1545,6 +1589,7 @@ int main(void)
     test_compile_names_oom();
     test_key_names_oom();
     test_string_append_oom();
+    test_copy_props_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
