@@ -4584,12 +4584,69 @@ static JSValue js_new_string_char(JSContext *ctx, uint16_t c)
     }
 }
 
+/* the most characters js_sub_string scans or copies between two reads of the
+   interrupt flag */
+#define JS_SUB_STEP (1 << 20)
+
+/* js_sub_string for a piece of more than JS_SUB_STEP characters: it makes the
+   same string, scanning a 16-bit string for a character past 0xff and then
+   copying, with the flag read each time JS_SUB_STEP characters have been
+   scanned or copied since the last reading, the two phases counted together. */
+static no_inline JSValue js_sub_string_long(JSContext *ctx, JSString *p, int start, int end)
+{
+    int len = end - start, i, j, n, work = 0, wide = p->is_wide_char;
+    JSString *str;
+
+    if (wide) {
+        uint16_t c = 0;
+        for (i = start; i < end && c <= 0xFF; i += n) {
+            n = min_int(end - i, JS_SUB_STEP - work);
+            for (j = 0; j < n; j++)
+                c |= p->u.str16[i + j];
+            work += n;
+            if (work >= JS_SUB_STEP) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return JS_EXCEPTION;
+            }
+        }
+        wide = c > 0xFF;
+    }
+    str = js_alloc_string(ctx, len, wide);
+    if (!str)
+        return JS_EXCEPTION;
+    for (i = 0; i < len; i += n) {
+        n = min_int(len - i, JS_SUB_STEP - work);
+        if (wide) {
+            memcpy(str->u.str16 + i, p->u.str16 + start + i, n * 2);
+        } else if (p->is_wide_char) {
+            for (j = 0; j < n; j++)
+                str->u.str8[i + j] = p->u.str16[start + i + j];
+        } else {
+            memcpy(str->u.str8 + i, p->u.str8 + start + i, n);
+        }
+        work += n;
+        if (work >= JS_SUB_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx)) {
+                js_free_string(ctx->rt, str);
+                return JS_EXCEPTION;
+            }
+        }
+    }
+    if (!wide)
+        str->u.str8[len] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, str);
+}
+
 static JSValue js_sub_string(JSContext *ctx, JSString *p, int start, int end)
 {
     int len = end - start;
     if (start == 0 && end == p->len) {
         return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
     }
+    if (unlikely(len > JS_SUB_STEP))
+        return js_sub_string_long(ctx, p, start, end);
     if (p->is_wide_char && len > 0) {
         JSString *str;
         int i;
@@ -50343,22 +50400,6 @@ static int string_indexof_char(JSString *p, int c, int from)
     return -1;
 }
 
-static int string_indexof(JSString *p1, JSString *p2, int from)
-{
-    /* assuming 0 <= from <= p1->len */
-    int c, i, j, len1 = p1->len, len2 = p2->len;
-    if (len2 == 0)
-        return from;
-    for (i = from, c = string_get(p2, 0); i + len2 <= len1; i = j + 1) {
-        j = string_indexof_char(p1, c, i);
-        if (j < 0 || j + len2 > len1)
-            break;
-        if (!string_cmp(p1, p2, j + 1, 1, len2 - 1))
-            return j;
-    }
-    return -1;
-}
-
 static int64_t string_advance_index(JSString *p, int64_t index, BOOL unicode)
 {
     if (!unicode || index >= p->len || !p->is_wide_char) {
@@ -51196,7 +51237,8 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
     JSValue str, search_str, replaceValue_str, repl_str;
     JSString *sp, *searchp;
     StringBuffer b_s, *b = &b_s;
-    int pos, functionalReplace, endOfLastMatch;
+    int pos, functionalReplace, endOfLastMatch, stop;
+    uint32_t matches = 0;
     BOOL is_first;
 
     if (JS_IsUndefined(O) || JS_IsNull(O))
@@ -51249,7 +51291,14 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             else
                 pos = endOfLastMatch + 1;
         } else {
-            pos = string_indexof(sp, searchp, endOfLastMatch);
+            /* the search reads the interrupt flag as indexOf does */
+            pos = -1;
+            stop = sp->len - searchp->len;
+            if (endOfLastMatch <= stop) {
+                pos = js_string_find(ctx, sp, searchp, endOfLastMatch, stop, 1);
+                if (pos == -2)
+                    goto exception;
+            }
         }
         if (pos < 0) {
             if (is_first) {
@@ -51284,6 +51333,10 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
         is_first = FALSE;
         if (!is_replaceAll)
             break;
+        /* a replacement that is not a function calls nothing: read the
+           interrupt flag every 1024 matches */
+        if ((++matches & 1023) == 0 && js_poll_interrupts(ctx))
+            goto exception;
     }
     string_buffer_concat(b, sp, endOfLastMatch, sp->len);
     JS_FreeValue(ctx, search_str);
@@ -51537,13 +51590,18 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
     /* the pad is written in steps of JS_PAD_STEP characters at most,
        between which the interrupt flag is read */
     if (p1) {
-        int run = 0;
+        /* off is where in the filler the next step starts: a filler longer
+           than a step is written in steps too */
+        int run = 0, off = 0;
         while (n > 0) {
-            int chunk = min_int(n, p1->len);
-            if (string_buffer_concat(b, p1, 0, chunk))
+            int chunk = min_int(min_int(n, p1->len - off), JS_PAD_STEP - run);
+            if (string_buffer_concat(b, p1, off, off + chunk))
                 goto fail;
             n -= chunk;
             run += chunk;
+            off += chunk;
+            if (off == p1->len)
+                off = 0;
             if (run >= JS_PAD_STEP && n > 0) {
                 run = 0;
                 if (js_poll_interrupts(ctx))

@@ -2694,6 +2694,116 @@ static void test_iterator_polls(void)
     JS_FreeRuntime(rt);
 }
 
+/* The loops of the string methods that run for as long as the string is and
+   call nothing read the interrupt flag: the search of replace and replaceAll
+   for a string (as indexOf does, so a needle that almost matches at each
+   index does not take the product of the lengths without a read), the
+   matches of replaceAll (every 1024), the copy of a long piece of a string
+   (trim, slice and substring, every 1048576 characters, after the scan of a
+   16-bit string for a character past 0xff) and the filler of padStart and
+   padEnd, which is written in steps of 65536 characters whatever its length.
+   Each call reads the flag at least as often as it says, and a flag set in the
+   middle stops it with the error "interrupted". */
+static void test_string_loop_polls(void)
+{
+    static const char setup[] =
+        "var h = 'a'.repeat(1 << 20), nd = 'a'.repeat(100) + 'b', ab = 'ab'.repeat(1 << 17)\n"
+        "var sp = ' ' + 'x'.repeat(1 << 24) + ' '\n"
+        "var wsp = ' ' + '\\u4e00'.repeat(1 << 23) + ' '\n"
+        "var nsp = '\\u4e00' + ' ' + '\\u00e9'.repeat(1 << 23) + ' '\n"
+        "var fill = 'ab'.repeat(1 << 22); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "h.replace(nd, 'c')", 15 },
+        { "h.replaceAll(nd, 'c')", 15 },
+        { "ab.replaceAll('a', 'cc')", 128 },
+        { "sp.trim()", 15 },
+        { "wsp.trim()", 7 },
+        { "sp.slice(1)", 15 },
+        { "wsp.substring(1)", 7 },
+        { "nsp.slice(1)", 7 },
+        { "'x'.padStart(1 << 24, fill)", 255 },
+        { "'x'.padEnd(1 << 24, fill)", 255 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, cases[i].reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* what they make is what they made */
+    CHECK(eval_is(ctx, "[sp.trim().length, wsp.trim().length, nsp.slice(1).trim().length, sp.slice(1, -1).length, wsp.substring(1).length].join()",
+                  "16777216,8388608,8388608,16777216,8388609"), "the length of the pieces");
+    CHECK(eval_is(ctx, "[/^x+$/.test(sp.trim()), wsp.trim() === '\\u4e00'.repeat(1 << 23), nsp.slice(1).trim() === '\\u00e9'.repeat(1 << 23), nsp.slice(1) === ' ' + '\\u00e9'.repeat(1 << 23) + ' '].join()",
+                  "true,true,true,true"), "the pieces");
+    CHECK(eval_is(ctx, "var pa = 'x'.padStart(100003, 'abc'); [pa.length, pa.slice(0, 7), pa.slice(-7), 'x'.padEnd(10, 'abc')].join()",
+                  "100003,abcabca,abcabcx,xabcabcabc"), "the pad");
+    CHECK(eval_is(ctx, "var f2 = 'ab'.repeat(1 << 16) + 'c', p2 = 'x'.padStart((1 << 17) + 5, f2); [p2.length, p2.slice(0, 3), p2.slice(131069, 131072), p2.slice(131072, 131076)].join()",
+                  "131077,aba,bab,caba"), "the pad with a filler longer than a step");
+    CHECK(eval_is(ctx, "var p3 = 'xy'.padEnd((1 << 17) + 5, f2); [p3.length, p3.slice(0, 3), p3.slice(2, 5), p3.slice(131073, 131077), p3.slice(-4)].join()",
+                  "131077,xya,aba,bcab,bcab"), "padEnd with a filler longer than a step");
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* The loops of padStart, padEnd and the long piece of a string read the
+   flag whenever the work since the last reading reaches the step (65536
+   characters written by a pad, 1048576 characters scanned or copied by
+   js_sub_string_long, the two phases counted together), also where the
+   filler ends or the scan turns into the copy. A call that has done T units
+   of work has read the flag at least T / step times, less those of the same
+   call on a short input (the reads of the call and the evaluation). */
+static void test_string_loop_gaps(void)
+{
+    static const char setup[] =
+        "var f1 = 'ab'.repeat(65535) + 'c'\n"
+        "var wide = ['\\u4e00', '\\u00e9'.repeat(2 << 20)].join(''); 0\n";
+    static const struct {
+        const char *call, *base;
+        long reads;
+    } cases[] = {
+        /* 399999 characters written in steps of 65536: a filler of 131071 ends in the middle of a step */
+        { "'x'.padEnd(400000, f1)", "'x'.padEnd(2, f1)", 6 },
+        { "'x'.padStart(400000, f1)", "'x'.padStart(2, f1)", 6 },
+        /* 2097152 characters scanned, then as many copied */
+        { "wide.slice(1)", "wide.slice(1, 3)", 4 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long before, base, reads;
+
+        /* the first call of a method makes it, which may read the flag: the second is the one measured */
+        CHECK(eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        before = host_poll_reads;
+        CHECK(eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        base = host_poll_reads - before;
+        before = host_poll_reads;
+        CHECK(eval(ctx, cases[i].call), "%s: the script threw", cases[i].call);
+        reads = host_poll_reads - before - base;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", cases[i].call, reads,
+              cases[i].reads);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
@@ -2800,6 +2910,8 @@ int main(void)
     test_regexp_skip_polls();
     test_rope_polls();
     test_iterator_polls();
+    test_string_loop_polls();
+    test_string_loop_gaps();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

@@ -7,6 +7,7 @@
 ### 变更
 
 - 引擎里逐个遍历字符串、数组、Map 或 Set 的元素、每个元素除此之外不调用别的东西的循环，在 `Interrupt` 或执行时限之后，几次轮询之内就停下：`Object.fromEntries`、可迭代对象的展开（`[...set]`）、`Iterator.prototype.toArray` 和 `drop`、`Math.sumPrecise`、`Set.prototype.union`、`symmetricDifference` 和 `isSupersetOf`，以及 `Array.from`、类型化数组的构造函数和 `from`。引擎原来只在一次调用开始时读停止标志，而这些迭代器的 `next` 不经过这样的调用，所以展开一个有两百万项的 Set，或求两个大 Set 的并集，会一直跑到脚本被杀。Set 的方法在添加之前对 Set 做的那份拷贝也会停下。
+- 模式是字符串时，`replace` 和 `replaceAll` 像 `indexOf` 一样查找，并且每 1024 次匹配读一次停止标志。原来它们在每个首字符相同的位置逐个比较针串，所以一根几乎处处匹配的针（一百个 `a` 加一个 `b`，放在一百万个 `a` 的字符串里）要花两个长度的乘积，匹配几百万次的 `replaceAll` 会一直跑到被杀。`trim`、`slice`、`substring`、`substr` 和 `split` 切出的片段超过一百万个字符时，在一百万个字符之内就停下，`padStart` 和 `padEnd` 的填充串有几千万个字符时也一样。
 
 ## [v0.29.2] - 2026-10-30
 
