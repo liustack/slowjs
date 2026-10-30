@@ -6599,7 +6599,9 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
     return 0;
 }
 
-/* remove the deleted properties. */
+/* remove the deleted properties. It is optional: when memory runs out it
+   returns -1 with the object as it was and no exception pending, so it takes
+   its memory with the _rt functions, which do not throw. */
 static int compact_properties(JSContext *ctx, JSObject *p)
 {
     JSShape *sh, *old_sh;
@@ -6622,7 +6624,7 @@ static int compact_properties(JSContext *ctx, JSObject *p)
 
     /* resize the hash table and the properties */
     old_sh = sh;
-    sh = js_malloc(ctx, get_shape_size(new_hash_size, new_size));
+    sh = js_malloc_rt(ctx->rt, get_shape_size(new_hash_size, new_size));
     if (!sh)
         return -1;
     remove_gc_object(&old_sh->header);
@@ -6664,7 +6666,7 @@ static int compact_properties(JSContext *ctx, JSObject *p)
     /* reduce the size of the object properties. The block of p stays as it
        is: its room is not given back. */
     if (!js_props_inline(p)) {
-        new_prop = js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
+        new_prop = js_realloc_rt(ctx->rt, p->prop, sizeof(new_prop[0]) * new_size);
         if (new_prop)
             p->prop = new_prop;
     }
@@ -12359,7 +12361,8 @@ static int delete_property(JSContext *ctx, JSObject *p, JSAtom atom)
             /* compact the properties if too many deleted properties */
             if (sh->deleted_prop_count >= 8 &&
                 sh->deleted_prop_count >= ((unsigned)sh->prop_count / 2)) {
-                compact_properties(ctx, p);
+                /* packing is optional: when it fails the object is as it was */
+                (void)compact_properties(ctx, p);
             }
             return TRUE;
         }

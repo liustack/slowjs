@@ -144,6 +144,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Object literals made at their final shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
 | Object literals keep their properties in the block of the object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
 | A for in loop holds the shape of its object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
+| A delete that cannot pack the properties for lack of memory leaves no error pending | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
 | hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 
 ## Memory
