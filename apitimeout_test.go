@@ -306,18 +306,54 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 	// The script is stopped by the same deadline, so the host function reads
 	// what it can of the name before it.
 	start := time.Now()
-	m.Eval(`readNested(); spin(); "done"`, EvalGlobal)
+	r, err := m.Eval(`readNested(); spin(); "done"`, EvalGlobal)
 	if d := time.Since(start); d > 700*time.Millisecond {
 		t.Errorf("the call took %v", d)
 	}
+	wantInterrupted(t, r, err)
 	if inner == nil || inner.Message != "m1" {
 		t.Errorf("the nested read gave %#v", inner)
 	}
+	wantNoPendingException(t, m)
+	// A read that returns before the deadline leaves the deadline of the call
+	// around it running: the script after it is interrupted, not finished.
+	var quick *Error
+	mustHost(t, m, "readQuick", func([]any) (any, error) {
+		v := evalValueOrFatal(t, m, "plain")
+		defer v.Free()
+		quick = ErrorFromValue(v)
+		return nil, nil
+	})
+	if err := m.SetEvalTimeout(200 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	start = time.Now()
+	r, err = m.Eval(`readQuick(); spin(); "done"`, EvalGlobal)
+	if d := time.Since(start); d > 290*time.Millisecond {
+		t.Errorf("the call took %v, the timeout is 200 ms and spin runs 300 ms", d)
+	}
+	if quick == nil || quick.Name != "SyntaxError" || quick.Message != "m3" {
+		t.Errorf("the quick read gave %#v", quick)
+	}
+	wantInterrupted(t, r, err)
 	wantNoPendingException(t, m)
 	if err := m.SetEvalTimeout(0); err != nil {
 		t.Fatal(err)
 	}
 	if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
 		t.Errorf("the next call gave %v, %v", r, err)
+	}
+}
+
+// wantInterrupted requires that an Eval ended with the interrupted error and
+// no result.
+func wantInterrupted(t *testing.T, r any, err error) {
+	t.Helper()
+	var e *Error
+	if !errors.As(err, &e) || !e.Interrupted {
+		t.Errorf("the call gave %v, %v, want the interrupted error", r, err)
+	}
+	if r != nil {
+		t.Errorf("the call gave the result %v", r)
 	}
 }
