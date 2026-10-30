@@ -2631,6 +2631,69 @@ static void test_rope_polls(void)
     JS_FreeRuntime(rt);
 }
 
+/* The next of the iterator of a string, an array, a Map or a Set (and of an
+   iterator helper) is called by JS_IteratorNext2 without JS_CallInternal,
+   which reads the interrupt flag when a call starts, so JS_IteratorNext2
+   reads it for them. A loop of C that walks such an iterator and calls
+   nothing else for each item (Object.fromEntries, a spread, toArray,
+   Set.prototype.union) is stopped by it. So is the copy of a Set that the
+   methods of Set make, which reads the flag every 1024 records. Each call
+   below reads the flag at least as often as it says over a Set or a Map of
+   65536 items, and is stopped by a flag set at the 20th reading: it throws
+   "interrupted", and the context goes on. */
+static void test_iterator_polls(void)
+{
+    static const char setup[] =
+        "var s = new Set(), t = new Set(), u = new Set(), m = new Map(), a = [], x, rest\n"
+        "for (var i = 0; i < 1 << 16; i++) { s.add(i); t.add(i); u.add(-i - 1); m.set(i, i); a.push(i) }\n"
+        "var str = 'ab'.repeat(1 << 15); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "[...s]", 1 << 16 },
+        { "[...m]", 1 << 16 },
+        { "[...str]", 1 << 16 },
+        { "[x, ...rest] = s", 1 << 16 },
+        { "Object.fromEntries(m)", 1 << 16 },
+        { "Math.sumPrecise(s)", 1 << 16 },
+        { "s.values().drop(1 << 16).next()", 1 << 16 },
+        { "s.values().toArray()", 1 << 16 },
+        { "s.union(t)", 1 << 16 },
+        { "s.union(new Set())", 1 << 6 },
+        { "s.symmetricDifference(t)", 1 << 16 },
+        { "s.isSupersetOf(t)", 1 << 16 },
+        { "s.isSubsetOf(t)", 1 << 16 },
+        { "s.isDisjointFrom(u)", 1 << 16 },
+        { "Array.from(s)", 1 << 16 },
+        { "Array.from(a.values())", 1 << 16 },
+        { "Array.from(m)", 1 << 16 },
+        { "new Set(a.values())", 1 << 16 },
+        { "new Map(m)", 1 << 16 },
+        { "new Uint8Array(s)", 1 << 16 },
+        { "Uint8Array.from(s)", 1 << 16 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        CHECK(host_poll_reads - before >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call,
+              host_poll_reads - before, cases[i].reads);
+        host_poll_stop_after(20);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
@@ -2736,6 +2799,7 @@ int main(void)
     test_regexp_stops();
     test_regexp_skip_polls();
     test_rope_polls();
+    test_iterator_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 引擎里逐个遍历字符串、数组、Map 或 Set 的元素、每个元素除此之外不调用别的东西的循环，在 `Interrupt` 或执行时限之后，几次轮询之内就停下：`Object.fromEntries`、可迭代对象的展开（`[...set]`）、`Iterator.prototype.toArray` 和 `drop`、`Math.sumPrecise`、`Set.prototype.union`、`symmetricDifference` 和 `isSupersetOf`，以及 `Array.from`、类型化数组的构造函数和 `from`。引擎原来只在一次调用开始时读停止标志，而这些迭代器的 `next` 不经过这样的调用，所以展开一个有两百万项的 Set，或求两个大 Set 的并集，会一直跑到脚本被杀。Set 的方法在添加之前对 Set 做的那份拷贝也会停下。
+
 ## [v0.29.2] - 2026-10-30
 
 ### 新增

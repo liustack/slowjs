@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- Loops of the engine that walk the items of a string, an array, a Map or a Set and call nothing else for each one stop within a few polls of an `Interrupt` or the eval timeout: `Object.fromEntries`, the spread of an iterable (`[...set]`), `Iterator.prototype.toArray` and `drop`, `Math.sumPrecise`, `Set.prototype.union`, `symmetricDifference` and `isSupersetOf`, and `Array.from`, the typed array constructors and `from`. The engine read the stop when a call started, and the `next` of these iterators is called without one, so a script that spread a Set of two million items, or took the union of two large Sets, ran on until it was killed. The copy of a Set that its methods make before they add to it stops too.
+
 ## [v0.29.2] - 2026-10-30
 
 ### Added

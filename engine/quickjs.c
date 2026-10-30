@@ -19462,9 +19462,11 @@ static JSValue JS_IteratorNext2(JSContext *ctx, JSValueConst enum_obj,
                 argv = args;
             }
             /* a call of the C function that skips JS_CallInternal: it
-               counts a level, or a chain of iterator helpers recurses
-               without bound */
-            if (js_call_enter(ctx))
+               reads the interrupt flag and counts a level there, and
+               here too, or a loop of C that walks a built-in iterator
+               and calls nothing else would never stop, and a chain of
+               iterator helpers would recurse without bound */
+            if (js_poll_interrupts(ctx) || js_call_enter(ctx))
                 goto fail;
             func = p->u.cfunc.c_function;
             obj = func.iterator_next(ctx, enum_obj, argc, argv,
@@ -46403,10 +46405,6 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         if (JS_IsException(next_method))
             goto exception;
         for (k = 0;; k++) {
-            /* the iterator of a string, an array, a Map or a Set is called
-               without JS_CallInternal, which would read the interrupt flag */
-            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
-                goto exception;
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -58648,6 +58646,7 @@ static JSValue js_copy_set(JSContext *ctx, JSValueConst this_val)
     JSMapState *s, *t;
     struct list_head *el;
     JSMapRecord *mr;
+    uint32_t n = 0;
    
     s = JS_GetOpaque2(ctx, this_val, JS_CLASS_SET);
     if (!s)
@@ -58661,6 +58660,9 @@ static JSValue js_copy_set(JSContext *ctx, JSValueConst this_val)
     // can't clone this_val using js_map_constructor(),
     // test262 mandates we don't call the .add method
     list_for_each(el, &s->records) {
+        /* the copy calls nothing: read the interrupt flag every 1024 records */
+        if ((++n & 1023) == 0 && js_poll_interrupts(ctx))
+            goto exception;
         mr = list_entry(el, JSMapRecord, link);
         if (mr->empty)
             continue;
@@ -65918,10 +65920,6 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
         goto fail;
     k = 0;
     for(;;) {
-        /* the iterator of a string, an array, a Map or a Set is called
-           without JS_CallInternal, which would read the interrupt flag */
-        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
-            goto fail;
         val = JS_IteratorNext(ctx, iter, next_method, 0, NULL, &done);
         if (JS_IsException(val))
             goto fail;
