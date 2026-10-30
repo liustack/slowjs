@@ -374,7 +374,7 @@ var goasmKeep = []any{
 	call_setter_block,
 	cbrt,
 	ceil,
-	check_define_prop_flags,
+	check_define_prop_desc_block,
 	check_exception_free,
 	check_polls_block,
 	check_regexp_g_flag,
