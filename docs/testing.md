@@ -88,6 +88,7 @@ go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
 go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and the regexp cache give what Node gives and keep to their limits
 go test -run 'YoungGC|Ephemeron' .                       # the young collection and WeakMap ephemerons
+go test -run 'CopyProps' .                                # RegisterCopyProps: the loop that copies the props of a React element in C against React's loops (147 configs, 6,000 random ones), the property it defines
 go test -run 'EscapeText' .                               # RegisterEscapeText: React DOM's escape in C against React's own text, the property it defines, the timeout on a long string, a string too long
 go test -run 'SharedBytecode' .                          # one copy of source text and line tables for every VM, polls scanned on the first load only
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
@@ -106,6 +107,7 @@ go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zone
 internal/gointl/qjs-sync.sh pack -check                  # shared Intl data is what the generator makes
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
+go test -run '^$' -bench CopyProps .                    # the cost of createElement and cloneElement with React's loop and with the function of RegisterCopyProps, on configs of a page
 go test -run '^$' -bench EscapeText .                    # the cost of React DOM's escape in C against React's own and tifa's cache, on the texts of a page
 go test -run '^$' -bench Clock .                         # the cost of Date.now and new Date()
 ```

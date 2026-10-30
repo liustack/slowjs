@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Added
+
+- `VM.RegisterCopyProps(name)` defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. It copies where its result and the loop's cannot differ in anything a script can see (an ordinary config of at most 32 keys with plain values, props of the same kind, an unchanged `Object.prototype` and `Function.prototype.call`) and answers `false`, having changed nothing, for any other config, which the script then gives to the loop. The engine puts nothing on the global object by itself: the function is in a VM only when its host registers it. In tifa, which uses it for React, a render runs 2.1% to 4.1% fewer instructions, and the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. ([Performance](docs/performance.md#the-copy-of-the-props-of-a-react-element-in-c), [Go API](docs/changes/go-api.md#registercopyprops))
+
 ### Changed
 
 - Loops of the engine that walk the items of a string, an array, a Map or a Set and call nothing else for each one stop within a few polls of an `Interrupt` or the eval timeout: `Object.fromEntries`, the spread of an iterable (`[...set]`), `Iterator.prototype.toArray` and `drop`, `Math.sumPrecise`, `Set.prototype.union`, `symmetricDifference` and `isSupersetOf`, and `Array.from`, the typed array constructors and `from`. The engine read the stop when a call started, and the `next` of these iterators is called without one, so a script that spread a Set of two million items, or took the union of two large Sets, ran on until it was killed. The copy of a Set that its methods make before they add to it stops too.

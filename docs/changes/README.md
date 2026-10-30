@@ -51,6 +51,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A module frees its top level once it has run | v0.28.4 | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
 | The async context of promise jobs, for AsyncLocalStorage | v0.28.5 | [go-api.md](go-api.md#the-async-context-of-promise-jobs) |
 | RegisterEscapeText, React DOM's HTML escape written in C | Unreleased | [go-api.md](go-api.md#registerescapetext) |
+| RegisterCopyProps, the loop that copies the props of a React element written in C | Unreleased | [go-api.md](go-api.md#registercopyprops) |
 
 ## Limits that hold
 
