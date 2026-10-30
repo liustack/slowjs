@@ -1,0 +1,30 @@
+break: next 0 | body 0 | return called | return resolved | after
+break after two: next 0 | body 0 | next 1 | body 1 | return called | return resolved | after
+no break: next 0 | body 0 | next 1 | body 1 | next 2 | after
+no return method: next 0 | after
+return is null: next 0 | after
+return is undefined: next 0 | after
+return is not a function: next 0 | threw TypeError
+return returns null: next 0 | return called | threw TypeError
+return returns a primitive: next 0 | return called | threw TypeError
+return returns a promise of a primitive: next 0 | return called | threw TypeError
+return throws: next 0 | return called | threw RangeError
+return rejects: next 0 | return called | return rejects | threw RangeError
+body throws, return rejects: next 0 | return called | return rejects | threw TypeError
+body throws, return throws: next 0 | return called | threw TypeError
+return statement: next 0 | return called | return resolved | r0 | after
+return statement in an async generator: next 0 | return called | return resolved | {"value":"r0","done":true} | after
+return statement in try finally: next 0 | return called | return resolved | finally | r0
+labelled break: next 0 | body 10 | return called | return resolved | after
+continue outer: next 0 | body 10 | return called | return resolved | next 0 | body 20 | return called | return resolved | after
+nested for await, break inner: next 0 | next 0 | body 00 | return called | return resolved | mid | next 1 | next 0 | body 10 | return called | return resolved | mid | next 2 | after
+nested for await, break both: next 0 | next 0 | body 00 | return called | return resolved | return called | return resolved | after
+sync iterable: sync next | body | sync return | after
+sync iterable no return: after
+array: body 1 | after
+async generator: body 1 | generator finally | generator finally done | after
+async generator runs to the end: body 1 | generator finally | after
+destructuring throws: next 0 | return called | return resolved | after
+for await with let and closure: next 0 | next 1 | return called | return resolved | 0,1
+for of is not awaited: sync return | after
+order of microtasks: next 0 | body 0 at 2 | return called | return resolved | after at 7

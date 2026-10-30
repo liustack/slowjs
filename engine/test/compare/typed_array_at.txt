@@ -1,0 +1,47 @@
+plain at(0): 1
+plain at(1): 2
+plain at(3): 4
+plain at(4): undefined
+plain at(-1): 4
+plain at(-2): 3
+plain at(-4): 1
+plain at(-5): undefined
+plain at(1.9): 2
+plain at(-1.9): 4
+plain at(NaN): 1
+plain at(Infinity): undefined
+plain at(-Infinity): undefined
+plain at(2): 3
+plain at(null): 1
+plain at(undefined): 1
+resize 4 to 2 at(0): 1
+resize 4 to 2 at(1): 2
+resize 4 to 2 at(3): undefined
+resize 4 to 2 at(-1): undefined
+resize 4 to 2 at(-2): undefined
+resize 4 to 2 at(-4): 1
+resize 4 to 0 at(0): undefined
+resize 4 to 0 at(1): undefined
+resize 4 to 0 at(3): undefined
+resize 4 to 0 at(-1): undefined
+resize 4 to 0 at(-2): undefined
+resize 4 to 0 at(-4): undefined
+resize 4 to 8 at(0): 1
+resize 4 to 8 at(1): 2
+resize 4 to 8 at(3): 4
+resize 4 to 8 at(-1): 4
+resize 4 to 8 at(-2): 3
+resize 4 to 8 at(-4): 1
+resize 2 to 8 at(0): 1
+resize 2 to 8 at(1): 2
+resize 2 to 8 at(3): undefined
+resize 2 to 8 at(-1): 2
+resize 2 to 8 at(-2): 1
+resize 2 to 8 at(-4): undefined
+fixed length shrunk: undefined
+detached by the argument: undefined
+detached before: throws TypeError
+Uint8Array resized: undefined
+Int16Array resized: undefined
+Float64Array resized: undefined
+Float32Array resized: undefined

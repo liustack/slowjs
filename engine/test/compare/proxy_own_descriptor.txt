@@ -1,0 +1,194 @@
+data nc ro 1 | undefined => throws TypeError | define true
+data nc ro 1 | data nc ro 1 => value=1 writable=false configurable=false enumerable=true | define true
+data nc ro 1 | data nc ro 2 => throws TypeError | define throws TypeError
+data nc ro 1 | data nc ro NaN => throws TypeError | define throws TypeError
+data nc ro 1 | data nc rw 1 => throws TypeError | define throws TypeError
+data nc ro 1 | data nc rw 2 => throws TypeError | define throws TypeError
+data nc ro 1 | data c ro 1 => throws TypeError | define throws TypeError
+data nc ro 1 | data c rw 2 => throws TypeError | define throws TypeError
+data nc ro 1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g1 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc g2 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc s1 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor nc s2 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor c g1 s1 => throws TypeError | define throws TypeError
+data nc ro 1 | accessor c g2 s2 => throws TypeError | define throws TypeError
+data nc rw 1 | undefined => throws TypeError | define true
+data nc rw 1 | data nc ro 1 => throws TypeError | define throws TypeError
+data nc rw 1 | data nc ro 2 => throws TypeError | define throws TypeError
+data nc rw 1 | data nc ro NaN => throws TypeError | define throws TypeError
+data nc rw 1 | data nc rw 1 => value=1 writable=true configurable=false enumerable=true | define true
+data nc rw 1 | data nc rw 2 => value=2 writable=true configurable=false enumerable=true | define true
+data nc rw 1 | data c ro 1 => throws TypeError | define throws TypeError
+data nc rw 1 | data c rw 2 => throws TypeError | define throws TypeError
+data nc rw 1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g1 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc g2 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc s1 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor nc s2 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor c g1 s1 => throws TypeError | define throws TypeError
+data nc rw 1 | accessor c g2 s2 => throws TypeError | define throws TypeError
+data c ro 1 | undefined => undefined | define true
+data c ro 1 | data nc ro 1 => throws TypeError | define throws TypeError
+data c ro 1 | data nc ro 2 => throws TypeError | define throws TypeError
+data c ro 1 | data nc ro NaN => throws TypeError | define throws TypeError
+data c ro 1 | data nc rw 1 => throws TypeError | define throws TypeError
+data c ro 1 | data nc rw 2 => throws TypeError | define throws TypeError
+data c ro 1 | data c ro 1 => value=1 writable=false configurable=true enumerable=true | define true
+data c ro 1 | data c rw 2 => value=2 writable=true configurable=true enumerable=true | define true
+data c ro 1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g1 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc g2 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc s1 => throws TypeError | define throws TypeError
+data c ro 1 | accessor nc s2 => throws TypeError | define throws TypeError
+data c ro 1 | accessor c g1 s1 => get=g1 set=s1 configurable=true enumerable=true | define true
+data c ro 1 | accessor c g2 s2 => get=g2 set=s2 configurable=true enumerable=true | define true
+data c rw 1 | undefined => undefined | define true
+data c rw 1 | data nc ro 1 => throws TypeError | define throws TypeError
+data c rw 1 | data nc ro 2 => throws TypeError | define throws TypeError
+data c rw 1 | data nc ro NaN => throws TypeError | define throws TypeError
+data c rw 1 | data nc rw 1 => throws TypeError | define throws TypeError
+data c rw 1 | data nc rw 2 => throws TypeError | define throws TypeError
+data c rw 1 | data c ro 1 => value=1 writable=false configurable=true enumerable=true | define true
+data c rw 1 | data c rw 2 => value=2 writable=true configurable=true enumerable=true | define true
+data c rw 1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g1 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc g2 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc s1 => throws TypeError | define throws TypeError
+data c rw 1 | accessor nc s2 => throws TypeError | define throws TypeError
+data c rw 1 | accessor c g1 s1 => get=g1 set=s1 configurable=true enumerable=true | define true
+data c rw 1 | accessor c g2 s2 => get=g2 set=s2 configurable=true enumerable=true | define true
+accessor nc g1 s1 | undefined => throws TypeError | define true
+accessor nc g1 s1 | data nc ro 1 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data nc ro 2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data nc ro NaN => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data nc rw 1 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data nc rw 2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data c ro 1 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data c rw 2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor nc g1 s1 => get=g1 set=s1 configurable=false enumerable=true | define true
+accessor nc g1 s1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor nc g1 => throws TypeError | define true
+accessor nc g1 s1 | accessor nc g2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor nc s1 => throws TypeError | define true
+accessor nc g1 s1 | accessor nc s2 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor c g1 s1 => throws TypeError | define throws TypeError
+accessor nc g1 s1 | accessor c g2 s2 => throws TypeError | define throws TypeError
+accessor nc g1 | undefined => throws TypeError | define true
+accessor nc g1 | data nc ro 1 => throws TypeError | define throws TypeError
+accessor nc g1 | data nc ro 2 => throws TypeError | define throws TypeError
+accessor nc g1 | data nc ro NaN => throws TypeError | define throws TypeError
+accessor nc g1 | data nc rw 1 => throws TypeError | define throws TypeError
+accessor nc g1 | data nc rw 2 => throws TypeError | define throws TypeError
+accessor nc g1 | data c ro 1 => throws TypeError | define throws TypeError
+accessor nc g1 | data c rw 2 => throws TypeError | define throws TypeError
+accessor nc g1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc g1 => get=g1 set=undefined configurable=false enumerable=true | define true
+accessor nc g1 | accessor nc g2 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc s1 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor nc s2 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor c g1 s1 => throws TypeError | define throws TypeError
+accessor nc g1 | accessor c g2 s2 => throws TypeError | define throws TypeError
+accessor nc s1 | undefined => throws TypeError | define true
+accessor nc s1 | data nc ro 1 => throws TypeError | define throws TypeError
+accessor nc s1 | data nc ro 2 => throws TypeError | define throws TypeError
+accessor nc s1 | data nc ro NaN => throws TypeError | define throws TypeError
+accessor nc s1 | data nc rw 1 => throws TypeError | define throws TypeError
+accessor nc s1 | data nc rw 2 => throws TypeError | define throws TypeError
+accessor nc s1 | data c ro 1 => throws TypeError | define throws TypeError
+accessor nc s1 | data c rw 2 => throws TypeError | define throws TypeError
+accessor nc s1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g1 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc g2 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor nc s1 => get=undefined set=s1 configurable=false enumerable=true | define true
+accessor nc s1 | accessor nc s2 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor c g1 s1 => throws TypeError | define throws TypeError
+accessor nc s1 | accessor c g2 s2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | undefined => undefined | define true
+accessor c g1 s1 | data nc ro 1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | data nc ro 2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | data nc ro NaN => throws TypeError | define throws TypeError
+accessor c g1 s1 | data nc rw 1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | data nc rw 2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | data c ro 1 => value=1 writable=false configurable=true enumerable=true | define true
+accessor c g1 s1 | data c rw 2 => value=2 writable=true configurable=true enumerable=true | define true
+accessor c g1 s1 | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g1 s1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g2 s1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g1 s2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g2 s2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc g2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc s1 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor nc s2 => throws TypeError | define throws TypeError
+accessor c g1 s1 | accessor c g1 s1 => get=g1 set=s1 configurable=true enumerable=true | define true
+accessor c g1 s1 | accessor c g2 s2 => get=g2 set=s2 configurable=true enumerable=true | define true
+missing | undefined => undefined | define true
+missing | data nc ro 1 => throws TypeError | define throws TypeError
+missing | data nc ro 2 => throws TypeError | define throws TypeError
+missing | data nc ro NaN => throws TypeError | define throws TypeError
+missing | data nc rw 1 => throws TypeError | define throws TypeError
+missing | data nc rw 2 => throws TypeError | define throws TypeError
+missing | data c ro 1 => value=1 writable=false configurable=true enumerable=true | define true
+missing | data c rw 2 => value=2 writable=true configurable=true enumerable=true | define true
+missing | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+missing | accessor nc g1 s1 => throws TypeError | define throws TypeError
+missing | accessor nc g2 s1 => throws TypeError | define throws TypeError
+missing | accessor nc g1 s2 => throws TypeError | define throws TypeError
+missing | accessor nc g2 s2 => throws TypeError | define throws TypeError
+missing | accessor nc g1 => throws TypeError | define throws TypeError
+missing | accessor nc g2 => throws TypeError | define throws TypeError
+missing | accessor nc s1 => throws TypeError | define throws TypeError
+missing | accessor nc s2 => throws TypeError | define throws TypeError
+missing | accessor c g1 s1 => get=g1 set=s1 configurable=true enumerable=true | define true
+missing | accessor c g2 s2 => get=g2 set=s2 configurable=true enumerable=true | define true
+missing prevented | undefined => undefined | define throws TypeError
+missing prevented | data nc ro 1 => throws TypeError | define throws TypeError
+missing prevented | data nc ro 2 => throws TypeError | define throws TypeError
+missing prevented | data nc ro NaN => throws TypeError | define throws TypeError
+missing prevented | data nc rw 1 => throws TypeError | define throws TypeError
+missing prevented | data nc rw 2 => throws TypeError | define throws TypeError
+missing prevented | data c ro 1 => throws TypeError | define throws TypeError
+missing prevented | data c rw 2 => throws TypeError | define throws TypeError
+missing prevented | data nc ro 1 not enumerable => throws TypeError | define throws TypeError
+missing prevented | accessor nc g1 s1 => throws TypeError | define throws TypeError
+missing prevented | accessor nc g2 s1 => throws TypeError | define throws TypeError
+missing prevented | accessor nc g1 s2 => throws TypeError | define throws TypeError
+missing prevented | accessor nc g2 s2 => throws TypeError | define throws TypeError
+missing prevented | accessor nc g1 => throws TypeError | define throws TypeError
+missing prevented | accessor nc g2 => throws TypeError | define throws TypeError
+missing prevented | accessor nc s1 => throws TypeError | define throws TypeError
+missing prevented | accessor nc s2 => throws TypeError | define throws TypeError
+missing prevented | accessor c g1 s1 => throws TypeError | define throws TypeError
+missing prevented | accessor c g2 s2 => throws TypeError | define throws TypeError
+nested: throws TypeError
+keys: throws TypeError
+has own: throws TypeError
+memory after: 0

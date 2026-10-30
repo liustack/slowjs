@@ -153,8 +153,23 @@ func (m *VM) errIntProp(v jsValue, name uint32) (r int) {
 // and any string field when there is no memory for its UTF-8 copy. The
 // exception that reading throws is dropped, so ErrorFromValue leaves no
 // exception pending.
-func ErrorFromValue(v Value) *Error {
+//
+// Reading runs javascript (a getter, or a toString that a script replaced), so
+// it runs inside the eval timeout like [VM.Eval]: a field the timeout cut off
+// is left empty. On a VM a kill left good only for Close, it panics.
+func ErrorFromValue(v Value) (e *Error) {
 	m := v.vm
+	var err error
+	if err = m.enter(); err != nil {
+		panic(brokenPanic)
+	}
+	defer func() {
+		if err != nil {
+			// A poll killed the script that read the error.
+			e = killedError()
+		}
+	}()
+	defer m.leave(&err)
 
 	return &Error{
 		engine:       true,

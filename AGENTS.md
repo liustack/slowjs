@@ -9,7 +9,7 @@
 - Pure Go, `CGO_ENABLED=0`. No cgo, no C compiler, no shared library for the user of the module. The module runs on linux/amd64 and darwin/arm64 only, and a build for another target stops with the error of `internal/unsupported`. Do not bring in a cgo engine.
 - The generated C engine in `internal/cengine` (the `.s`, `engine_decl_*.go` and `engine_keep_*.go` files of amd64 and arm64) is checked in, never edited by hand, and always what `make gen` and `make gen ARCH=arm64` make from `engine/` now. A commit that changes the C of `engine/`, the generator under `internal/goasm/gen`, the pass, or the flags of `scripts/gen-engine.sh` carries the files made again, in that same commit. `make check-gen` (part of `make check-full`) fails when they differ. Generate on a machine with LLVM 22.1.8 (`make remote` runs it on another machine, see [docs/testing.md](docs/testing.md#on-another-machine)).
 - The C is not edited to look like upstream. It is QuickJS at the pinned commit with slowjs's changes ([docs/changes](docs/changes/README.md)), and a commit of upstream QuickJS is taken into it one at a time, by hand, as [docs/upgrading.md](docs/upgrading.md) says.
-- A change for speed leaves what the engine gives the same: the same HTML of tifa's pages, the same 58 known test262 errors (`engine/test/test262_errors.txt`), and the same call depth, so a script recurses exactly as deep as before.
+- A change for speed leaves what the engine gives the same: the same HTML of tifa's pages, the same known test262 errors (33) (`engine/test/test262_errors.txt`), and the same call depth, so a script recurses exactly as deep as before.
 
 ## Current state of the repository
 

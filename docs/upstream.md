@@ -20,7 +20,7 @@ The authors of slowjs are in [AUTHORS-SLOWJS](../AUTHORS-SLOWJS). The `AUTHORS` 
 
 ## Taking QuickJS commits
 
-The C tree in `engine/` does not follow upstream release by release. A commit of upstream QuickJS made after the pinned one is taken into it on its own, with a test, when it makes renders faster or removes a crash or a wrong answer a page can reach, and left out otherwise. Those commits, and the ones tried and taken back, are in [upstream-commits.md](changes/upstream-commits.md). [upgrading.md](upgrading.md) says how to take one in.
+The C tree in `engine/` does not follow upstream release by release. A commit of upstream QuickJS made after the pinned one is taken into it on its own, with a test, when it fixes a wrong answer, a leak or a crash (whether or not a page can reach it) or makes renders faster, and a new feature or a change for speed when tifa has a use for it. Those commits, and the ones tried and taken back, are in [upstream-commits.md](changes/upstream-commits.md). [upgrading.md](upgrading.md) says how to take one in.
 
 The changes of slowjs to the C are listed one at a time in [changes](changes/README.md): limits that no script can catch, the same output on every machine, `Intl` in every locale Chromium has, and faster renders.
 

@@ -1,0 +1,11 @@
+same binding: bar,foo,inc 1
+same binding, two names: foo,other 11
+spec: same namespace: ns true
+two foo: bar,inc
+two foo, one imported: 
+own export wins: ns 1
+two namespaces: 
+live binding: 222
+amb_import_bad SyntaxError
+amb_two_foo loads bar,inc
+amb_same_binding loads bar,foo,inc
