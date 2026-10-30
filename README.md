@@ -82,8 +82,9 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slo
 - **`VM.SetClock(now)` and `VM.Now()`**: set and read the wall clock of a VM, which Date, Intl and Temporal all read. nil restores the live clock. [More](docs/changes/time-and-intl.md#one-wall-clock-per-vm)
 - **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/changes/go-api.md#setshapecache-and-defaultshapecache)
 - **`GetAsyncContext` and `SetAsyncContext`**: two Builtins that read and set an object promise jobs carry: a `then` or an `await` runs with the one set when it was registered, so an `AsyncLocalStorage` written on them finds its store after `await` as in Node. A VM that never sets one runs promises as before. [More](docs/changes/go-api.md#the-async-context-of-promise-jobs)
+- **`VM.RegisterEscapeText(name)`**: defines a function named `name` on the global object that escapes text for HTML as React DOM's string renderer does (`&`, `<`, `>`, `"` and `'` become entities, and the argument becomes a string as in `"" + text`), written in C inside the engine. Nothing is on the global object until a host calls it. With it in tifa, the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. [More](docs/changes/go-api.md#registerescapetext)
 
-The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.7, the shape cache in v0.26.16, `VM.OnClose` and package `temporal` in v0.27.0, `VM.RunYoungGC` in v0.27.3, `SharedBytecode` in v0.28.1, `VM.SetClock` and `VM.Now` in v0.28.2, and the async context in v0.28.5.
+The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.7, the shape cache in v0.26.16, `VM.OnClose` and package `temporal` in v0.27.0, `VM.RunYoungGC` in v0.27.3, `SharedBytecode` in v0.28.1, `VM.SetClock` and `VM.Now` in v0.28.2, and the async context in v0.28.5. `VM.RegisterEscapeText` is not released yet.
 
 ## What changes for you
 

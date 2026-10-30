@@ -1,11 +1,12 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what calls that set and free their values in fewer turns, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
   - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
+  - Asking what RegisterEscapeText gains in tifa's pages, or what a cache in front of it would give
   - Quoting how fast a release is
   - Checking that the C engine stays flat, scales over VMs, stops soon after Interrupt and holds the GC up for no longer than the ccgo engine
   - Checking what the C engine had to pass before it replaced the ccgo engine, and what it measured then
@@ -404,6 +405,39 @@ The for in loops and hasOwnProperty.call, against the calls:
 Every position of the shop and the MUI pages was faster with the second change. Both changes against main: the shop 0.982 (0.967 to 0.983, 5.0% fewer instructions), the MUI pages 0.976 (0.966 to 0.995), the bench table 0.955 (0.948 to 0.966), the bench spiral 0.950 (0.938 to 0.956) and `r_react_ssr` 0.969 (0.956 to 0.991), each at every position. No page is slower. The one script found slower is `q_func_call`, a loop of calls to a function with no locals: 3.0% more instructions with the first change, for the tests of the two and the one locals left over.
 
 The memory of a VM does not change: `MemorySize` and the footprint at the end of `r_react_ssr` and `r_bench_table` are the same bytes before and after (Apple M4). On linux/amd64 the heap of the engine grows the same 13 times to the same 12 chunks. The most memory of a `jsrun` process of `r_react_ssr`, which the Go runtime and the code pages add to, is 8.3 MiB at the median of 32 processes before the changes and 8.4 MiB after.
+
+### React DOM's text escape in C
+
+[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is slowjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+
+On linux/amd64 (one core of an EPYC 7B13, its sibling idle), without PGO, 3 rounds at the 8 code positions. Time is the sum of the p50 of the pages of an app, as the median over positions of the paired ratios. Instructions are callgrind's, per render of every page, at position 0.0 (the difference of a run of 5 renders and one of 2):
+
+| Pages | Time | Positions | Base range | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages (sum) | 0.974 | 0.970 to 0.981 | 2.5% | -2.47% |
+| tifa's shop, five storefront pages (sum) | 0.975 | 0.957 to 0.979 | 2.5% | -2.41% |
+| tifa's MUI test app, three pages (sum) | not timed | | | -0.71% |
+| tifa's bench app, table and spiral (sum) | 0.938 | 0.932 to 0.947 | 1.8% | -4.50% |
+| `r_react_ssr`, which does not register the function | 1.000 | 0.991 to 1.006 | 4.1% | not counted |
+
+`r_react_ssr` took 360.2 ms on main and 361.4 ms on the branch (5 rounds of 15 runs), and 14 of its 80 processes ran with other work on the machine after all their tries. After the branch was rebased on main at 767d3fd4 (the fixes of the GC threshold, of spread copies and of long loops), the instructions of the shop's six workbench pages were counted again, with both tifa changes (this one and the attribute rewrite) against tifa main on 767d3fd4: 979.8 M to 948.5 M, 3.19% fewer, where the same pair on 4cdd3a27 gave 3.25% fewer. The shop, store and bench pages were faster at all 8 positions. Under 3%, the shop and store timings are read with the instruction counts beside them, and both agree. The MUI pages use few characters that need escaping, and their saving is under the 2% that is worth timing. On the Apple M4 (darwin/arm64, one binary, 5 rounds in turn) the shop's workbench pages take 0.967 of the time, the storefront pages 0.969, the MUI pages 0.993 and the bench pages 0.950.
+
+One call, from `BenchmarkEscapeText` (ns a call on the same machine, net of a loop that calls the empty function, which takes 38 ns). The first column is React's own function, the second tifa's cache and `replaceAll` for a text the cache holds (the best case for it), the third the C function:
+
+| Text | React | tifa cache | C |
+| --- | ---: | ---: | ---: |
+| 9 characters, nothing to escape | 192 | 119 | 4 |
+| 30 characters, a class name with 2 to escape | 3,590 | 340 | 70 |
+| 56 characters, nothing to escape | 263 | 195 | 22 |
+| 60 characters, 6 to escape | 5,267 | 402 | 141 |
+| the number 1234.5 | 259 | 309 | 179 |
+| 512 characters, nothing to escape | 957 | 850 | 217 |
+| 512 characters, 171 to escape | 70,101 | 899 | 2,061 |
+| 4096 characters, nothing to escape | 6,323 | 6,028 | 1,673 |
+
+The call of the C function costs about what a call of an empty JavaScript function costs (4 ns more for a text of 9 characters), which is why a short text is a gain at once. For the texts a page escapes most, short ones, a lookup in the cache takes longer than escaping the text in C, so tifa goes without a cache in front of the function. A long text with many characters to escape that the cache holds is the one row where the cache wins, and the C loop for such a text costs about 4 ns a character. A Go `Builtin` could not do this: a call costs 22 ns more than a C function, and the copies of the string in and out cost more than the search and the cache saved in tifa (1.3% to 2.0% slower on the shop).
+
+Memory does not change that can be told from the heap's own spread: the live heap after 768 renders (Apple M4, after a full GC) is 0.6% lower on the shop's pages, 0.4% on the storefront, 0.5% on the MUI pages and 0.2% higher on the bench pages. The footprint moves by a chunk with the moment of the collection in both builds.
 
 ### Upstream commits and the scripts where the C engine was slower than C
 

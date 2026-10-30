@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -15,6 +15,7 @@ read_when:
   - Loading the same bytecode into many VMs (SharedBytecode, EvalSharedBytecode)
   - Evaluating the bytecode of a module (EvalBytecode), or a module whose top-level await is still pending when it returns
   - Writing an AsyncLocalStorage, or a value that has to follow an async function across await (GetAsyncContext, SetAsyncContext)
+  - Giving a VM React DOM's HTML escape as a function written in C (RegisterEscapeText)
   - Reading what a VM holds by kind, or giving the memory it keeps free back to the system (MemoryUsage, ReleaseMemory)
   - Moving code that called SetModuleLoader, SetDefaultModuleLoader, StdAddHelpers or SetCanBlock
 ---
@@ -266,6 +267,21 @@ What follows the context and what does not, checked against Node 24 with `AsyncL
 It is the last final change. It fingerprints those two functions and the two jobs, `promise_reaction_job` and `js_promise_resolve_thenable_job`, in `asyncContextSites`, and stops when a release adds another store into the handler of a reaction or another place that queues the thenable job.
 
 The change is in C (`engine/quickjs.c`): `JS_GetAsyncContext` and `JS_SetAsyncContext` in `quickjs.h`, the context in the field `async_context` of `JSRuntime`, and `js_async_context_wrap` called at the same two places. `JS_FreeRuntime` frees a context still set.
+
+## RegisterEscapeText
+
+Release: Unreleased.
+
+`VM.RegisterEscapeText(name)` defines a function named `name` on the global object that does what `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. React calls that function for every text and every attribute value it writes, about 15,000 times when each of the six workbench pages of tifa's example shop renders once, and in JavaScript each call costs a search of a regular expression, a loop over the characters of a string that has any of the five to escape, and the call itself.
+
+- **What it gives.** The argument becomes a string as in `"" + text`: a string stays as it is, a number, boolean or bigint becomes its text, an object goes through `valueOf` and `toString` (or `Symbol.toPrimitive`) with the hint `"default"`, and a symbol, or a `toString` that throws, throws what `"" + text` throws. Then each of `&`, `<`, `>`, `"` and `'` becomes `&amp;`, `&lt;`, `&gt;`, `&quot;` or `&#x27;`, one UTF-16 code unit at a time, so a lone surrogate passes as it is. A string with none of the five comes back as the same string, with no copy. With no argument it gives `"undefined"`. A result of more than 1,073,741,823 units throws the `RangeError` that building such a string throws.
+- **Opt in.** The engine puts nothing on the global object by itself. The function exists in a VM only when the host calls `RegisterEscapeText`, under the name the host chooses. The property is writable, configurable and not enumerable, and replaces a configurable property of that name, as `RegisterFunc` does. A name the global object cannot give up (`undefined`, `NaN`, a `var` of a script) is an error. The function is shaped as a built-in: `name` is the name given, `length` is 1, there is no `prototype`, it cannot be called with `new`, and `toString` shows `[native code]`.
+- **Limits hold.** It reads the interrupt flag at the start of each block of 4096 units of a long string, in the count and again in the write, so an `Interrupt` or the eval timeout stops it there, and no more than 4096 units pass between two reads. A render that runs out of memory while it builds the result ends with the out of memory error, as any string does.
+- **Why C and not Go.** A Go `Builtin` costs about 22 ns more a call than a C function of the engine (48 to 55 ns against 26 to 38 ns), and on a short text that is most of what an escape costs. In tifa a Go version made the shop render slower, and this one makes it render faster ([Performance](../performance.md#react-doms-text-escape-in-c)).
+
+The C is `js_escape_text` and `JS_NewEscapeTextFunction(ctx, name, name_len)` in `engine/quickjs.c` and `quickjs.h`, which the Go method calls.
+
+Tests: `escape_test.go` runs the function against React's own text for all strings of up to 4 units over an alphabet of 13 (both widths, lone surrogates, a pair, NUL), strings of 1 to 100,003 units with one or all five characters at the first, last and chunk-edge places, ropes, 34 values that are not strings, objects that count the calls made on them, errors, and a call with no argument or with more. It checks the property, the shape of the function, a second registration, a name that cannot be taken, that the timeout stops it, and the `RangeError` of a string too long. `engine/test/unit-api.c` runs the same comparison on the C tree under AddressSanitizer and UndefinedBehaviorSanitizer, and checks that a clean string comes back as the same pointer, that an interrupt before and in the middle of the work stops it, that the flag is read within 4096 units at every step (counted), that an interrupt while a long rope that nothing flattened yet is flattened by the first call stops the call there and keeps no flat copy, that running out of memory leaves nothing behind, and a name with a NUL byte.
 
 ## No module loader, shell helpers or SetCanBlock
 

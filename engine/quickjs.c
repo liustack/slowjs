@@ -52198,6 +52198,145 @@ int JS_AddIntrinsicStringNormalize(JSContext *ctx)
                                       countof(js_string_proto_normalize));
 }
 
+/* The text escape of React DOM's string renderer, escapeTextForBrowser, for
+   a host that asks for it (JS_NewEscapeTextFunction). It gives what React's
+   function gives for the same argument: "" + text, and then & < > " and '
+   written as &amp; &lt; &gt; &quot; and &#x27;, one code unit at a time, so
+   that a lone surrogate or any other unit passes as it is. The string itself
+   comes back when nothing in it needs escaping. */
+
+/* how many more units the entity of each of the five characters takes */
+static const uint8_t js_escape_extra[256] = {
+    ['&'] = 4, ['<'] = 3, ['>'] = 3, ['"'] = 5, ['\''] = 5,
+};
+
+/* units between two reads of the interrupt flag: a script that escapes a
+   string of a billion units can still be stopped */
+#define JS_ESCAPE_STEP 4096
+
+/* writes the entity of c, one of the five, at d[j] and moves j past it */
+#define JS_ESCAPE_PUT(d, j, c)                                          \
+    do {                                                                \
+        const char *r_;                                                 \
+        switch (c) {                                                    \
+        case '&': r_ = "&amp;"; break;                                  \
+        case '<': r_ = "&lt;"; break;                                   \
+        case '>': r_ = "&gt;"; break;                                   \
+        case '"': r_ = "&quot;"; break;                                 \
+        default: r_ = "&#x27;"; break;                                  \
+        }                                                               \
+        while (*r_)                                                     \
+            (d)[(j)++] = *r_++;                                         \
+    } while (0)
+
+static JSValue js_escape_text(JSContext *ctx, JSValueConst this_val,
+                              int argc, JSValueConst *argv)
+{
+    JSValue str = JS_UNDEFINED; /* the argument as a string, when it is not one */
+    JSValueConst v = argv[0];
+    JSString *p, *q;
+    size_t extra = 0;
+    int n, i, j, start, end, c;
+
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING) {
+        /* "" + text: an object goes through ToPrimitive with no hint, and
+           then everything through ToString, which throws for a symbol */
+        str = JS_ToStringFree(ctx, JS_ToPrimitiveFree(ctx, JS_DupValue(ctx, v), HINT_NONE));
+        if (JS_IsException(str))
+            return str;
+        v = str;
+    }
+    p = JS_VALUE_GET_STRING(v);
+    n = p->len;
+    for (start = 0; start < n; start = end) {
+        end = min_int(n, start + JS_ESCAPE_STEP);
+        if (start > 0 && js_poll_interrupts(ctx))
+            goto fail;
+        if (p->is_wide_char) {
+            for (i = start; i < end; i++) {
+                c = p->u.str16[i];
+                extra += c < 256 ? js_escape_extra[c] : 0;
+            }
+        } else {
+            for (i = start; i < end; i++)
+                extra += js_escape_extra[p->u.str8[i]];
+        }
+    }
+    if (extra == 0)
+        return JS_IsUndefined(str) ? JS_DupValue(ctx, v) : str;
+    if ((size_t)n + extra > JS_STRING_LEN_MAX) {
+        JS_ThrowRangeError(ctx, "invalid string length");
+        goto fail;
+    }
+    q = js_alloc_string(ctx, n + extra, p->is_wide_char);
+    if (!q)
+        goto fail;
+    j = 0;
+    for (start = 0; start < n; start = end) {
+        end = min_int(n, start + JS_ESCAPE_STEP);
+        /* also before the first block when there are more, so that the
+           flag is read within 4096 units of the last read of the count */
+        if ((start > 0 || n > JS_ESCAPE_STEP) && js_poll_interrupts(ctx)) {
+            js_free_string(ctx->rt, q);
+            goto fail;
+        }
+        if (p->is_wide_char) {
+            for (i = start; i < end; i++) {
+                c = p->u.str16[i];
+                if (c < 256 && js_escape_extra[c])
+                    JS_ESCAPE_PUT(q->u.str16, j, c);
+                else
+                    q->u.str16[j++] = c;
+            }
+        } else {
+            for (i = start; i < end; i++) {
+                c = p->u.str8[i];
+                if (js_escape_extra[c])
+                    JS_ESCAPE_PUT(q->u.str8, j, c);
+                else
+                    q->u.str8[j++] = c;
+            }
+        }
+    }
+    if (!p->is_wide_char)
+        q->u.str8[j] = 0;
+    JS_FreeValue(ctx, str);
+    return JS_MKPTR(JS_TAG_STRING, q);
+ fail:
+    JS_FreeValue(ctx, str);
+    return JS_EXCEPTION;
+}
+
+JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_len)
+{
+    JSValue func_obj;
+    JSObject *p;
+    JSAtom name_atom;
+
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto, JS_CLASS_C_FUNCTION);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = js_escape_text;
+    p->u.cfunc.length = 1;
+    p->u.cfunc.cproto = JS_CFUNC_generic;
+    p->u.cfunc.magic = 0;
+    p->is_constructor = FALSE;
+    name_atom = JS_NewAtomLen(ctx, name, name_len);
+    if (name_atom == JS_ATOM_NULL) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    if (js_function_set_properties(ctx, func_obj, name_atom, 1) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
+}
+
 /* Math */
 
 /* precondition: a and b are not NaN */

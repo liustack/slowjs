@@ -208,16 +208,27 @@ func (m *VM) defineGoFunc(name string, id, length int32) error {
 		return err
 	}
 
+	if err := m.defineGlobalFunc(name, f); err != nil {
+		m.goFuncFreed(id)
+		return err
+	}
+
+	return nil
+}
+
+// defineGlobalFunc defines the global property name, a valid UTF-8 string
+// without NUL bytes, as the function f, writable, configurable and not
+// enumerable, replacing a configurable property of that name. It takes f
+// whether it succeeds or not.
+func (m *VM) defineGlobalFunc(name string, f jsValue) error {
 	atom, err := m.jsNewAtom(name)
 	if err != nil {
 		m.jsFreeValue(f)
-		m.goFuncFreed(id)
 		return err
 	}
 
 	if atom == atomNull {
 		m.jsFreeValue(f)
-		m.goFuncFreed(id)
 		return m.errFromException()
 	}
 
@@ -229,7 +240,6 @@ func (m *VM) defineGoFunc(name string, id, length int32) error {
 
 	// JS_DefinePropertyValue takes f, also when it fails.
 	if m.jsDefinePropertyValue(g, atom, f, propWritable|propConfigurable|propThrow) < 0 {
-		m.goFuncFreed(id)
 		return m.errFromException()
 	}
 
