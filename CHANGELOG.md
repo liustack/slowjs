@@ -2,6 +2,20 @@
 
 What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
+## [Unreleased]
+
+### Changed
+
+- `===`, `!==`, `==`, `!=` and `switch` on two equal strings longer than 65536 characters, or on a rope, and the lookup of a long string or rope key in a `Map` or `Set` that holds an equal one, read the stop every 65536 characters, so they stop within a few polls of an `Interrupt` or the eval timeout. They compared the whole strings in one call, about 3,300 polls (10 ms) for two strings of 32 million characters, and the script was killed when the strings were long enough. The same string or rope is now equal to itself at once.
+- A string of more than 65536 characters used as a property key (`o[s] = 1`, `s in o`, `o[s]`, a key of `JSON.parse`) reads the stop every 65536 characters while its hash is made and while it is compared with the atom of an equal string. `JSON.parse` reads it every 65536 bytes of a string of the text, in the key or in a value. Each of them took one pass over the whole string, about 800 polls for 32 million characters (the hash), 3,300 more for the comparison with an equal atom, and 4,000 for the scan of a JSON string, with no stop in them.
+- `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`, `replace`, `replaceAll` and `split` with a pattern as long as what is left of the string, `Array.prototype.indexOf`, `lastIndexOf` and `includes` and `Object.is` on two equal strings of more than 65536 characters, and `JSON.stringify` of a long string read the stop every 65536 characters. They compared or copied the whole string in one call, about 3,400 polls for 32 million characters.
+- `JSON.parse` of a long string reads the stop every 65536 bytes of the whole string, escapes included: a string of nothing but escapes, or of runs of 32768 characters between escapes, was read to the end before. The text is made a C string in steps, a character above 0xff after a long run of ASCII widens the characters before it in steps (so do `padStart` and `padEnd` with such a filler), and a string that holds more than 1 MiB is copied in steps of 1 MiB when it grows.
+- The hash of a long key and the compares with the keys of a Map, a Set or an object that have its hash and its length share one budget, and a compare that ends at a difference counts what it did. 131071 characters of hash and compare read the stop after 65536 each time, not 131071, and a chain of keys that differ from the key asked for late in the string is read as often as one of keys that are equal.
+
+### Fixed
+
+- A `delete` that packs the properties of an object (after 8 or more keys are deleted, at least half of them) no longer leaves an "out of memory" error pending when the VM has no memory for the smaller property list. The delete had worked, but the uncatchable error stayed in the VM and took the place of the next error a script threw. Packing is optional now: the delete works, and the object is packed by a later delete.
+
 ## [v0.29.4] - 2026-10-30
 
 ### Performance
