@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Added
+
+- `VM.RegisterEscapeText(name)` defines a function named `name` on the global object that escapes text for HTML as `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. Its argument becomes a string as in `"" + text` (an object goes through `valueOf` and `toString`, a symbol throws), and each of `&`, `<`, `>`, `"` and `'` becomes `&amp;`, `&lt;`, `&gt;`, `&quot;` or `&#x27;`. A string with none of them comes back as the same string. The engine puts nothing on the global object by itself: the function is in a VM only when its host registers it. In tifa, which uses it for React's escape, a render runs 0.7% to 4.5% fewer instructions, and the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. ([Performance](docs/performance.md#react-doms-text-escape-in-c), [Go API](docs/changes/go-api.md#registerescapetext))
+
 ### Changed
 
 - `VM.RunGC` sets the GC threshold to 1.5 times what it left, as the GC the engine starts by itself does. It used to leave the threshold where it was, so when a script had grown the heap past it with no object made (array elements do), the first object of the next call started another full GC as long as the first one. A threshold of `^uintptr(0)`, which turns the engine's own GC off, stays. A program that sets the threshold itself after `RunGC`, as tifa does, sees no change.
