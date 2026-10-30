@@ -1,0 +1,549 @@
+set plain 0: [true,3,3]
+define plain 0: [true,3,3]
+assign plain 0: [3,3]
+strict assign plain 0: [3,3]
+Object.defineProperty plain 0: [3,3]
+set plain 2: [true,3,3]
+define plain 2: [true,3,3]
+assign plain 2: [3,3]
+strict assign plain 2: [3,3]
+Object.defineProperty plain 2: [3,3]
+set plain 3: [true,4,4]
+define plain 3: [true,4,4]
+assign plain 3: [4,4]
+strict assign plain 3: [4,4]
+Object.defineProperty plain 3: [4,3]
+set plain 4: [true,5,4]
+define plain 4: [true,5,4]
+assign plain 4: [5,4]
+strict assign plain 4: [5,4]
+Object.defineProperty plain 4: [5,3]
+set plain 7: [true,8,4]
+define plain 7: [true,8,4]
+assign plain 7: [8,4]
+strict assign plain 7: [8,4]
+Object.defineProperty plain 7: [8,3]
+set plain 100: [true,101,4]
+define plain 100: [true,101,4]
+assign plain 100: [101,4]
+strict assign plain 100: [101,4]
+Object.defineProperty plain 100: [101,3]
+set plain 4294967294: [true,4294967295,4]
+define plain 4294967294: [true,4294967295,4]
+assign plain 4294967294: [4294967295,4]
+strict assign plain 4294967294: [4294967295,4]
+Object.defineProperty plain 4294967294: [4294967295,3]
+set plain 4294967295: [true,3,4]
+define plain 4294967295: [true,3,4]
+assign plain 4294967295: [3,4]
+strict assign plain 4294967295: [3,4]
+Object.defineProperty plain 4294967295: [3,3]
+set plain 5: [true,6,4]
+define plain 5: [true,6,4]
+assign plain 5: [6,4]
+strict assign plain 5: [6,4]
+Object.defineProperty plain 5: [6,3]
+set plain 1.5: [true,3,4]
+define plain 1.5: [true,3,4]
+assign plain 1.5: [3,4]
+strict assign plain 1.5: [3,4]
+Object.defineProperty plain 1.5: [3,3]
+set plain -1: [true,3,4]
+define plain -1: [true,3,4]
+assign plain -1: [3,4]
+strict assign plain -1: [3,4]
+Object.defineProperty plain -1: [3,3]
+push plain: [4]
+unshift plain: [4]
+length set plain: [10]
+splice grow plain: [4]
+fill plain: [3,0]
+copyWithin plain: [3,2]
+set prevented 0: [true,3,3]
+define prevented 0: [true,3,3]
+assign prevented 0: [3,3]
+strict assign prevented 0: [3,3]
+Object.defineProperty prevented 0: [3,3]
+set prevented 2: [true,3,3]
+define prevented 2: [true,3,3]
+assign prevented 2: [3,3]
+strict assign prevented 2: [3,3]
+Object.defineProperty prevented 2: [3,3]
+set prevented 3: [false,3,3]
+define prevented 3: [false,3,3]
+assign prevented 3: [3,3]
+strict assign prevented 3: throws TypeError
+Object.defineProperty prevented 3: throws TypeError
+set prevented 4: [false,3,3]
+define prevented 4: [false,3,3]
+assign prevented 4: [3,3]
+strict assign prevented 4: throws TypeError
+Object.defineProperty prevented 4: throws TypeError
+set prevented 7: [false,3,3]
+define prevented 7: [false,3,3]
+assign prevented 7: [3,3]
+strict assign prevented 7: throws TypeError
+Object.defineProperty prevented 7: throws TypeError
+set prevented 100: [false,3,3]
+define prevented 100: [false,3,3]
+assign prevented 100: [3,3]
+strict assign prevented 100: throws TypeError
+Object.defineProperty prevented 100: throws TypeError
+set prevented 4294967294: [false,3,3]
+define prevented 4294967294: [false,3,3]
+assign prevented 4294967294: [3,3]
+strict assign prevented 4294967294: throws TypeError
+Object.defineProperty prevented 4294967294: throws TypeError
+set prevented 4294967295: [false,3,3]
+define prevented 4294967295: [false,3,3]
+assign prevented 4294967295: [3,3]
+strict assign prevented 4294967295: throws TypeError
+Object.defineProperty prevented 4294967295: throws TypeError
+set prevented 5: [false,3,3]
+define prevented 5: [false,3,3]
+assign prevented 5: [3,3]
+strict assign prevented 5: throws TypeError
+Object.defineProperty prevented 5: throws TypeError
+set prevented 1.5: [false,3,3]
+define prevented 1.5: [false,3,3]
+assign prevented 1.5: [3,3]
+strict assign prevented 1.5: throws TypeError
+Object.defineProperty prevented 1.5: throws TypeError
+set prevented -1: [false,3,3]
+define prevented -1: [false,3,3]
+assign prevented -1: [3,3]
+strict assign prevented -1: throws TypeError
+Object.defineProperty prevented -1: throws TypeError
+push prevented: ["TypeError",3]
+unshift prevented: ["TypeError",3]
+length set prevented: [10]
+splice grow prevented: ["TypeError",3]
+fill prevented: [3,0]
+copyWithin prevented: [3,2]
+set sealed 0: [true,3,3]
+define sealed 0: [false,3,3]
+assign sealed 0: [3,3]
+strict assign sealed 0: [3,3]
+Object.defineProperty sealed 0: [3,3]
+set sealed 2: [true,3,3]
+define sealed 2: [false,3,3]
+assign sealed 2: [3,3]
+strict assign sealed 2: [3,3]
+Object.defineProperty sealed 2: [3,3]
+set sealed 3: [false,3,3]
+define sealed 3: [false,3,3]
+assign sealed 3: [3,3]
+strict assign sealed 3: throws TypeError
+Object.defineProperty sealed 3: throws TypeError
+set sealed 4: [false,3,3]
+define sealed 4: [false,3,3]
+assign sealed 4: [3,3]
+strict assign sealed 4: throws TypeError
+Object.defineProperty sealed 4: throws TypeError
+set sealed 7: [false,3,3]
+define sealed 7: [false,3,3]
+assign sealed 7: [3,3]
+strict assign sealed 7: throws TypeError
+Object.defineProperty sealed 7: throws TypeError
+set sealed 100: [false,3,3]
+define sealed 100: [false,3,3]
+assign sealed 100: [3,3]
+strict assign sealed 100: throws TypeError
+Object.defineProperty sealed 100: throws TypeError
+set sealed 4294967294: [false,3,3]
+define sealed 4294967294: [false,3,3]
+assign sealed 4294967294: [3,3]
+strict assign sealed 4294967294: throws TypeError
+Object.defineProperty sealed 4294967294: throws TypeError
+set sealed 4294967295: [false,3,3]
+define sealed 4294967295: [false,3,3]
+assign sealed 4294967295: [3,3]
+strict assign sealed 4294967295: throws TypeError
+Object.defineProperty sealed 4294967295: throws TypeError
+set sealed 5: [false,3,3]
+define sealed 5: [false,3,3]
+assign sealed 5: [3,3]
+strict assign sealed 5: throws TypeError
+Object.defineProperty sealed 5: throws TypeError
+set sealed 1.5: [false,3,3]
+define sealed 1.5: [false,3,3]
+assign sealed 1.5: [3,3]
+strict assign sealed 1.5: throws TypeError
+Object.defineProperty sealed 1.5: throws TypeError
+set sealed -1: [false,3,3]
+define sealed -1: [false,3,3]
+assign sealed -1: [3,3]
+strict assign sealed -1: throws TypeError
+Object.defineProperty sealed -1: throws TypeError
+push sealed: ["TypeError",3]
+unshift sealed: ["TypeError",3]
+length set sealed: [10]
+splice grow sealed: ["TypeError",3]
+fill sealed: [3,0]
+copyWithin sealed: [3,2]
+set frozen 0: [false,3,3]
+define frozen 0: [false,3,3]
+assign frozen 0: [3,3]
+strict assign frozen 0: throws TypeError
+Object.defineProperty frozen 0: throws TypeError
+set frozen 2: [false,3,3]
+define frozen 2: [false,3,3]
+assign frozen 2: [3,3]
+strict assign frozen 2: throws TypeError
+Object.defineProperty frozen 2: throws TypeError
+set frozen 3: [false,3,3]
+define frozen 3: [false,3,3]
+assign frozen 3: [3,3]
+strict assign frozen 3: throws TypeError
+Object.defineProperty frozen 3: throws TypeError
+set frozen 4: [false,3,3]
+define frozen 4: [false,3,3]
+assign frozen 4: [3,3]
+strict assign frozen 4: throws TypeError
+Object.defineProperty frozen 4: throws TypeError
+set frozen 7: [false,3,3]
+define frozen 7: [false,3,3]
+assign frozen 7: [3,3]
+strict assign frozen 7: throws TypeError
+Object.defineProperty frozen 7: throws TypeError
+set frozen 100: [false,3,3]
+define frozen 100: [false,3,3]
+assign frozen 100: [3,3]
+strict assign frozen 100: throws TypeError
+Object.defineProperty frozen 100: throws TypeError
+set frozen 4294967294: [false,3,3]
+define frozen 4294967294: [false,3,3]
+assign frozen 4294967294: [3,3]
+strict assign frozen 4294967294: throws TypeError
+Object.defineProperty frozen 4294967294: throws TypeError
+set frozen 4294967295: [false,3,3]
+define frozen 4294967295: [false,3,3]
+assign frozen 4294967295: [3,3]
+strict assign frozen 4294967295: throws TypeError
+Object.defineProperty frozen 4294967295: throws TypeError
+set frozen 5: [false,3,3]
+define frozen 5: [false,3,3]
+assign frozen 5: [3,3]
+strict assign frozen 5: throws TypeError
+Object.defineProperty frozen 5: throws TypeError
+set frozen 1.5: [false,3,3]
+define frozen 1.5: [false,3,3]
+assign frozen 1.5: [3,3]
+strict assign frozen 1.5: throws TypeError
+Object.defineProperty frozen 1.5: throws TypeError
+set frozen -1: [false,3,3]
+define frozen -1: [false,3,3]
+assign frozen -1: [3,3]
+strict assign frozen -1: throws TypeError
+Object.defineProperty frozen -1: throws TypeError
+push frozen: ["TypeError",3]
+unshift frozen: ["TypeError",3]
+length set frozen: [3]
+splice grow frozen: ["TypeError",3]
+fill frozen: ["TypeError",3]
+copyWithin frozen: ["TypeError",3]
+set holes 0: [true,3,2]
+define holes 0: [true,3,2]
+assign holes 0: [3,2]
+strict assign holes 0: [3,2]
+Object.defineProperty holes 0: [3,2]
+set holes 2: [true,3,2]
+define holes 2: [true,3,2]
+assign holes 2: [3,2]
+strict assign holes 2: [3,2]
+Object.defineProperty holes 2: [3,2]
+set holes 3: [false,3,2]
+define holes 3: [false,3,2]
+assign holes 3: [3,2]
+strict assign holes 3: throws TypeError
+Object.defineProperty holes 3: throws TypeError
+set holes 4: [false,3,2]
+define holes 4: [false,3,2]
+assign holes 4: [3,2]
+strict assign holes 4: throws TypeError
+Object.defineProperty holes 4: throws TypeError
+set holes 7: [false,3,2]
+define holes 7: [false,3,2]
+assign holes 7: [3,2]
+strict assign holes 7: throws TypeError
+Object.defineProperty holes 7: throws TypeError
+set holes 100: [false,3,2]
+define holes 100: [false,3,2]
+assign holes 100: [3,2]
+strict assign holes 100: throws TypeError
+Object.defineProperty holes 100: throws TypeError
+set holes 4294967294: [false,3,2]
+define holes 4294967294: [false,3,2]
+assign holes 4294967294: [3,2]
+strict assign holes 4294967294: throws TypeError
+Object.defineProperty holes 4294967294: throws TypeError
+set holes 4294967295: [false,3,2]
+define holes 4294967295: [false,3,2]
+assign holes 4294967295: [3,2]
+strict assign holes 4294967295: throws TypeError
+Object.defineProperty holes 4294967295: throws TypeError
+set holes 5: [false,3,2]
+define holes 5: [false,3,2]
+assign holes 5: [3,2]
+strict assign holes 5: throws TypeError
+Object.defineProperty holes 5: throws TypeError
+set holes 1.5: [false,3,2]
+define holes 1.5: [false,3,2]
+assign holes 1.5: [3,2]
+strict assign holes 1.5: throws TypeError
+Object.defineProperty holes 1.5: throws TypeError
+set holes -1: [false,3,2]
+define holes -1: [false,3,2]
+assign holes -1: [3,2]
+strict assign holes -1: throws TypeError
+Object.defineProperty holes -1: throws TypeError
+push holes: ["TypeError",3]
+unshift holes: ["TypeError",3]
+length set holes: [10]
+splice grow holes: ["TypeError",3]
+fill holes: ["TypeError",3]
+copyWithin holes: ["TypeError",3]
+set empty 0: [false,0,0]
+define empty 0: [false,0,0]
+assign empty 0: [0,0]
+strict assign empty 0: throws TypeError
+Object.defineProperty empty 0: throws TypeError
+set empty 2: [false,0,0]
+define empty 2: [false,0,0]
+assign empty 2: [0,0]
+strict assign empty 2: throws TypeError
+Object.defineProperty empty 2: throws TypeError
+set empty 3: [false,0,0]
+define empty 3: [false,0,0]
+assign empty 3: [0,0]
+strict assign empty 3: throws TypeError
+Object.defineProperty empty 3: throws TypeError
+set empty 4: [false,0,0]
+define empty 4: [false,0,0]
+assign empty 4: [0,0]
+strict assign empty 4: throws TypeError
+Object.defineProperty empty 4: throws TypeError
+set empty 7: [false,0,0]
+define empty 7: [false,0,0]
+assign empty 7: [0,0]
+strict assign empty 7: throws TypeError
+Object.defineProperty empty 7: throws TypeError
+set empty 100: [false,0,0]
+define empty 100: [false,0,0]
+assign empty 100: [0,0]
+strict assign empty 100: throws TypeError
+Object.defineProperty empty 100: throws TypeError
+set empty 4294967294: [false,0,0]
+define empty 4294967294: [false,0,0]
+assign empty 4294967294: [0,0]
+strict assign empty 4294967294: throws TypeError
+Object.defineProperty empty 4294967294: throws TypeError
+set empty 4294967295: [false,0,0]
+define empty 4294967295: [false,0,0]
+assign empty 4294967295: [0,0]
+strict assign empty 4294967295: throws TypeError
+Object.defineProperty empty 4294967295: throws TypeError
+set empty 5: [false,0,0]
+define empty 5: [false,0,0]
+assign empty 5: [0,0]
+strict assign empty 5: throws TypeError
+Object.defineProperty empty 5: throws TypeError
+set empty 1.5: [false,0,0]
+define empty 1.5: [false,0,0]
+assign empty 1.5: [0,0]
+strict assign empty 1.5: throws TypeError
+Object.defineProperty empty 1.5: throws TypeError
+set empty -1: [false,0,0]
+define empty -1: [false,0,0]
+assign empty -1: [0,0]
+strict assign empty -1: throws TypeError
+Object.defineProperty empty -1: throws TypeError
+push empty: ["TypeError",0]
+unshift empty: ["TypeError",0]
+length set empty: [10]
+splice grow empty: ["TypeError",0]
+fill empty: [0,null]
+copyWithin empty: [0,null]
+set sparse 0: [true,101,4]
+define sparse 0: [true,101,4]
+assign sparse 0: [101,4]
+strict assign sparse 0: [101,4]
+Object.defineProperty sparse 0: [101,4]
+set sparse 2: [true,101,4]
+define sparse 2: [true,101,4]
+assign sparse 2: [101,4]
+strict assign sparse 2: [101,4]
+Object.defineProperty sparse 2: [101,4]
+set sparse 3: [false,101,4]
+define sparse 3: [false,101,4]
+assign sparse 3: [101,4]
+strict assign sparse 3: throws TypeError
+Object.defineProperty sparse 3: throws TypeError
+set sparse 4: [false,101,4]
+define sparse 4: [false,101,4]
+assign sparse 4: [101,4]
+strict assign sparse 4: throws TypeError
+Object.defineProperty sparse 4: throws TypeError
+set sparse 7: [false,101,4]
+define sparse 7: [false,101,4]
+assign sparse 7: [101,4]
+strict assign sparse 7: throws TypeError
+Object.defineProperty sparse 7: throws TypeError
+set sparse 100: [true,101,4]
+define sparse 100: [true,101,4]
+assign sparse 100: [101,4]
+strict assign sparse 100: [101,4]
+Object.defineProperty sparse 100: [101,4]
+set sparse 4294967294: [false,101,4]
+define sparse 4294967294: [false,101,4]
+assign sparse 4294967294: [101,4]
+strict assign sparse 4294967294: throws TypeError
+Object.defineProperty sparse 4294967294: throws TypeError
+set sparse 4294967295: [false,101,4]
+define sparse 4294967295: [false,101,4]
+assign sparse 4294967295: [101,4]
+strict assign sparse 4294967295: throws TypeError
+Object.defineProperty sparse 4294967295: throws TypeError
+set sparse 5: [false,101,4]
+define sparse 5: [false,101,4]
+assign sparse 5: [101,4]
+strict assign sparse 5: throws TypeError
+Object.defineProperty sparse 5: throws TypeError
+set sparse 1.5: [false,101,4]
+define sparse 1.5: [false,101,4]
+assign sparse 1.5: [101,4]
+strict assign sparse 1.5: throws TypeError
+Object.defineProperty sparse 1.5: throws TypeError
+set sparse -1: [false,101,4]
+define sparse -1: [false,101,4]
+assign sparse -1: [101,4]
+strict assign sparse -1: throws TypeError
+Object.defineProperty sparse -1: throws TypeError
+push sparse: ["TypeError",101]
+unshift sparse: ["TypeError",101]
+length set sparse: [10]
+splice grow sparse: ["TypeError",101]
+fill sparse: ["TypeError",101]
+copyWithin sparse: ["TypeError",101]
+set fixedLength 0: [true,3,3]
+define fixedLength 0: [true,3,3]
+assign fixedLength 0: [3,3]
+strict assign fixedLength 0: [3,3]
+Object.defineProperty fixedLength 0: [3,3]
+set fixedLength 2: [true,3,3]
+define fixedLength 2: [true,3,3]
+assign fixedLength 2: [3,3]
+strict assign fixedLength 2: [3,3]
+Object.defineProperty fixedLength 2: [3,3]
+set fixedLength 3: [false,3,3]
+define fixedLength 3: [false,3,3]
+assign fixedLength 3: [3,3]
+strict assign fixedLength 3: throws TypeError
+Object.defineProperty fixedLength 3: throws TypeError
+set fixedLength 4: [false,3,3]
+define fixedLength 4: [false,3,3]
+assign fixedLength 4: [3,3]
+strict assign fixedLength 4: throws TypeError
+Object.defineProperty fixedLength 4: throws TypeError
+set fixedLength 7: [false,3,3]
+define fixedLength 7: [false,3,3]
+assign fixedLength 7: [3,3]
+strict assign fixedLength 7: throws TypeError
+Object.defineProperty fixedLength 7: throws TypeError
+set fixedLength 100: [false,3,3]
+define fixedLength 100: [false,3,3]
+assign fixedLength 100: [3,3]
+strict assign fixedLength 100: throws TypeError
+Object.defineProperty fixedLength 100: throws TypeError
+set fixedLength 4294967294: [false,3,3]
+define fixedLength 4294967294: [false,3,3]
+assign fixedLength 4294967294: [3,3]
+strict assign fixedLength 4294967294: throws TypeError
+Object.defineProperty fixedLength 4294967294: throws TypeError
+set fixedLength 4294967295: [true,3,4]
+define fixedLength 4294967295: [true,3,4]
+assign fixedLength 4294967295: [3,4]
+strict assign fixedLength 4294967295: [3,4]
+Object.defineProperty fixedLength 4294967295: [3,3]
+set fixedLength 5: [false,3,3]
+define fixedLength 5: [false,3,3]
+assign fixedLength 5: [3,3]
+strict assign fixedLength 5: throws TypeError
+Object.defineProperty fixedLength 5: throws TypeError
+set fixedLength 1.5: [true,3,4]
+define fixedLength 1.5: [true,3,4]
+assign fixedLength 1.5: [3,4]
+strict assign fixedLength 1.5: [3,4]
+Object.defineProperty fixedLength 1.5: [3,3]
+set fixedLength -1: [true,3,4]
+define fixedLength -1: [true,3,4]
+assign fixedLength -1: [3,4]
+strict assign fixedLength -1: [3,4]
+Object.defineProperty fixedLength -1: [3,3]
+push fixedLength: ["TypeError",3]
+unshift fixedLength: ["TypeError",3]
+length set fixedLength: [3]
+splice grow fixedLength: ["TypeError",3]
+fill fixedLength: [3,0]
+copyWithin fixedLength: [3,2]
+set preventedFixedLength 0: [true,3,3]
+define preventedFixedLength 0: [true,3,3]
+assign preventedFixedLength 0: [3,3]
+strict assign preventedFixedLength 0: [3,3]
+Object.defineProperty preventedFixedLength 0: [3,3]
+set preventedFixedLength 2: [true,3,3]
+define preventedFixedLength 2: [true,3,3]
+assign preventedFixedLength 2: [3,3]
+strict assign preventedFixedLength 2: [3,3]
+Object.defineProperty preventedFixedLength 2: [3,3]
+set preventedFixedLength 3: [false,3,3]
+define preventedFixedLength 3: [false,3,3]
+assign preventedFixedLength 3: [3,3]
+strict assign preventedFixedLength 3: throws TypeError
+Object.defineProperty preventedFixedLength 3: throws TypeError
+set preventedFixedLength 4: [false,3,3]
+define preventedFixedLength 4: [false,3,3]
+assign preventedFixedLength 4: [3,3]
+strict assign preventedFixedLength 4: throws TypeError
+Object.defineProperty preventedFixedLength 4: throws TypeError
+set preventedFixedLength 7: [false,3,3]
+define preventedFixedLength 7: [false,3,3]
+assign preventedFixedLength 7: [3,3]
+strict assign preventedFixedLength 7: throws TypeError
+Object.defineProperty preventedFixedLength 7: throws TypeError
+set preventedFixedLength 100: [false,3,3]
+define preventedFixedLength 100: [false,3,3]
+assign preventedFixedLength 100: [3,3]
+strict assign preventedFixedLength 100: throws TypeError
+Object.defineProperty preventedFixedLength 100: throws TypeError
+set preventedFixedLength 4294967294: [false,3,3]
+define preventedFixedLength 4294967294: [false,3,3]
+assign preventedFixedLength 4294967294: [3,3]
+strict assign preventedFixedLength 4294967294: throws TypeError
+Object.defineProperty preventedFixedLength 4294967294: throws TypeError
+set preventedFixedLength 4294967295: [false,3,3]
+define preventedFixedLength 4294967295: [false,3,3]
+assign preventedFixedLength 4294967295: [3,3]
+strict assign preventedFixedLength 4294967295: throws TypeError
+Object.defineProperty preventedFixedLength 4294967295: throws TypeError
+set preventedFixedLength 5: [false,3,3]
+define preventedFixedLength 5: [false,3,3]
+assign preventedFixedLength 5: [3,3]
+strict assign preventedFixedLength 5: throws TypeError
+Object.defineProperty preventedFixedLength 5: throws TypeError
+set preventedFixedLength 1.5: [false,3,3]
+define preventedFixedLength 1.5: [false,3,3]
+assign preventedFixedLength 1.5: [3,3]
+strict assign preventedFixedLength 1.5: throws TypeError
+Object.defineProperty preventedFixedLength 1.5: throws TypeError
+set preventedFixedLength -1: [false,3,3]
+define preventedFixedLength -1: [false,3,3]
+assign preventedFixedLength -1: [3,3]
+strict assign preventedFixedLength -1: throws TypeError
+Object.defineProperty preventedFixedLength -1: throws TypeError
+push preventedFixedLength: ["TypeError",3]
+unshift preventedFixedLength: ["TypeError",3]
+length set preventedFixedLength: [3]
+splice grow preventedFixedLength: ["TypeError",3]
+fill preventedFixedLength: [3,0]
+copyWithin preventedFixedLength: [3,2]

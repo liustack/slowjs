@@ -1,0 +1,71 @@
+take(0): 
+drop(0): 1,2,3,4
+take(1): 1
+drop(1): 2,3,4
+take(2): 1,2
+drop(2): 3,4
+take(5): 1,2,3,4
+drop(5): 
+take(2.5): 1,2
+drop(2.5): 3,4
+take(0): 
+drop(0): 1,2,3,4
+take(-0.5): 
+drop(-0.5): 1,2,3,4
+take(0.9): 
+drop(0.9): 1,2,3,4
+take(-1): throws RangeError
+drop(-1): throws RangeError
+take(-1.5): throws RangeError
+drop(-1.5): throws RangeError
+take(NaN): throws RangeError
+drop(NaN): throws RangeError
+take(Infinity): 1,2,3,4
+drop(Infinity): 
+take(-Infinity): throws RangeError
+drop(-Infinity): throws RangeError
+take(2147483648): 1,2,3,4
+drop(2147483648): 
+take(4294967296): 1,2,3,4
+drop(4294967296): 
+take(9007199254740991): 1,2,3,4
+drop(9007199254740991): 
+take("3"): 1,2,3
+drop("3"): 4
+take(" 2 "): 1,2
+drop(" 2 "): 3,4
+take(""): 
+drop(""): 1,2,3,4
+take("x"): throws RangeError
+drop("x"): throws RangeError
+take(null): 
+drop(null): 1,2,3,4
+take(undefined): throws RangeError
+drop(undefined): throws RangeError
+take(true): 1
+drop(true): 2,3,4
+take(false): 
+drop(false): 1,2,3,4
+take(10n): throws TypeError
+drop(10n): throws TypeError
+take(object): throws RangeError
+drop(object): throws RangeError
+take([]): 
+drop([]): 1,2,3,4
+take([2]): 1,2
+drop([2]): 3,4
+take(object): 1,2
+drop(object): 3,4
+take(Symbol): throws TypeError
+drop(Symbol): throws TypeError
+take closes on a bad limit: 2
+ES2026 closes for a limit past 2**53-1: 66
+ES2026 take(9007199254740992): throws RangeError
+ES2026 drop(9007199254740992): throws RangeError
+ES2026 take(9007199254740994): throws RangeError
+ES2026 drop(9007199254740994): throws RangeError
+ES2026 take(100000000000000000000): throws RangeError
+ES2026 drop(100000000000000000000): throws RangeError
+ES2026 take(1.1805916207174113e+21): throws RangeError
+ES2026 drop(1.1805916207174113e+21): throws RangeError
+limit conversion order: valueOf,return,RangeError

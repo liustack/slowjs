@@ -1179,6 +1179,54 @@ static void test_escape_text(void)
     vm_free(&v);
 }
 
+/* ---- bytecode cut short ---- */
+
+/* A BigInt written by JS_WriteObject and read back cut short at every length:
+   the read fails with an exception, and the BigInt it had allocated before the
+   bytes ran out is freed (upstream QuickJS 79f58c1). vm_free finds a block
+   left in use. Reading is for trusted bytes, so this checks only the memory,
+   not that a cut buffer is always refused. */
+static void test_read_truncated_bigint(void)
+{
+    static const char *const srcs[] = {
+        "(1n << 200n) + 12345n", "-((1n << 200n) + 12345n)", "(1n << 64n) - 1n", "-(1n << 128n)",
+        "(1n << 1000n) * 3n + 7n", "1n << 63n", "-(1n << 63n)",
+    };
+    int i;
+
+    for (i = 0; i < (int)countof(srcs); i++) {
+        VM v = vm_new();
+        JSValue big = JS_Eval(v.ctx, srcs[i], strlen(srcs[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        size_t size, n;
+        uint8_t *buf;
+        int refused = 0;
+
+        CHECK(!JS_IsException(big), "%s", srcs[i]);
+        buf = JS_WriteObject(v.ctx, &size, big, 0);
+        CHECK(buf != NULL && size > 8, "%s written in %d bytes", srcs[i], (int)size);
+        for (n = 0; buf && n < size; n++) {
+            JSValue r = JS_ReadObject(v.ctx, buf, n, 0);
+
+            if (JS_IsException(r)) {
+                refused++;
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            } else {
+                JS_FreeValue(v.ctx, r);
+            }
+        }
+        CHECK(refused > 0, "%s: no cut length was refused", srcs[i]);
+        if (buf) {
+            JSValue r = JS_ReadObject(v.ctx, buf, size, 0);
+
+            CHECK(!JS_IsException(r), "%s: the whole buffer is read", srcs[i]);
+            JS_FreeValue(v.ctx, r);
+            js_free(v.ctx, buf);
+        }
+        JS_FreeValue(v.ctx, big);
+        vm_free(&v);
+    }
+}
+
 int main(void)
 {
     test_for_in_keeps_shape();
@@ -1198,6 +1246,7 @@ int main(void)
     test_new_string_chars();
     test_throw_error_kind();
     test_escape_text();
+    test_read_truncated_bigint();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;
