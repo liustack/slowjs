@@ -1063,6 +1063,7 @@ enum {
     W_INVALID, W_NOP, W_PUSH_0, W_DROP, W_GOTO, W_GOTO16, W_GOTO8,
     W_IF_FALSE, W_IF_TRUE, W_IF_TRUE8, W_IF_FALSE8, W_RETURN_UNDEF, W_CATCH,
     W_GOSUB, W_RET, W_WITH_GET_VAR, W_PUSH_I32, W_PUSH_I16, W_OBJECT_LIT,
+    W_TAIL_CALL, W_TAIL_CALL_METHOD,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1683,6 +1684,34 @@ static void test_poll_checked_read(void)
    (SyntaxError: invalid object literal). The function holds no atom in its
    code, so that the code is in what JS_WriteObject writes as it is in
    memory. */
+/* A call of a C function in the place of a return compiles to a tail call,
+   which the interpreter makes without JS_CallInternal too (the recursions of
+   TestCCallDepth that end with these return are made of them). */
+static void test_tail_c_calls(void)
+{
+    static const struct { const char *src; int op; } cases[] = {
+        { "function f() { return [1].map(f) }", W_TAIL_CALL_METHOD },
+        { "const apply = Reflect.apply; function f() { return apply(f, null, []) }", W_TAIL_CALL },
+        { "const abs = Math.abs; function f(x) { return abs(x) }", W_TAIL_CALL },
+    };
+    VM v = vm_new();
+    int shape[2 * 64];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        const uint8_t *code;
+        JSValue top;
+        int len, n, found = 0;
+
+        CHECK(code_of(v.ctx, cases[i].src, &top, &code, &len) == 0, "compile %s", cases[i].src);
+        n = code ? white_code_shape(code, len, shape, 64) : -1;
+        for (int k = 0; k < n; k++)
+            found |= shape[2 * k] == white_op(cases[i].op);
+        CHECK(found, "%s: no tail call in %d instructions", cases[i].src, n);
+        JS_FreeValue(v.ctx, top);
+    }
+    vm_free(&v);
+}
+
 static void test_object_lit_read(void)
 {
     VM v = vm_new();
@@ -2367,6 +2396,7 @@ int main(void)
     test_poll_ret();
     test_poll_checked_read();
     test_object_lit_read();
+    test_tail_c_calls();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();

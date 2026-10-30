@@ -18,6 +18,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | The C tree of the new engine: a small libc, host callbacks, no blocking Atomics, class IDs per runtime, recursion bounded by counted depths | Unreleased | [c-engine.md](c-engine.md) |
 | A call sets and frees its values in fewer loop turns | Unreleased | [c-engine.md](c-engine.md#how-a-call-sets-and-frees-its-values) |
+| The interpreter calls a C function without JS_CallInternal | Unreleased | [c-engine.md](c-engine.md#how-the-interpreter-calls-a-c-function) |
 
 ## Commits of upstream QuickJS
 

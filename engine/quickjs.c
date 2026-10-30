@@ -438,6 +438,13 @@ struct JSRuntime {
        js_call_enter and docs/changes/c-engine.md) */
     int call_depth;
     int max_call_depth;
+    /* the bytes of stack a frame of JS_CallInternal takes before its check
+       (js_measure_call_frame), and the sum of them over the calls of C
+       functions running now that the interpreter made without that frame
+       (js_call_c_direct): js_stack_short counts these as taken, so that the
+       stack ends where it did */
+    long call_frame;
+    long stack_debt;
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
     int internal_depth;
@@ -1314,9 +1321,9 @@ static JSAtom __JS_NewAtomInit(JSRuntime *rt, const char *str, int len,
                                int atom_type);
 static void JS_FreeAtomStruct(JSRuntime *rt, JSAtomStruct *p);
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b);
-static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
-                                  JSValueConst this_obj,
-                                  int argc, JSValueConst *argv, int flags);
+static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
+                                            JSValueConst this_obj,
+                                            int argc, JSValueConst *argv, int flags);
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst this_obj,
                                       int argc, JSValueConst *argv, int flags);
@@ -2652,10 +2659,12 @@ static JSValue JS_ThrowStackOverflow(JSContext *ctx);
    asks for. */
 #define JS_STACK_MARGIN (64 * 1024)
 
-/* TRUE when fewer than bytes plus the margin are left. */
-static inline BOOL js_stack_short(size_t bytes)
+/* TRUE when fewer than bytes plus the margin are left, the frames that the
+   direct calls of C functions skipped counted as taken (stack_debt). */
+static inline BOOL js_stack_short(JSRuntime *rt, size_t bytes)
 {
-    return unlikely(__shadow_remaining() < (long)(bytes + JS_STACK_MARGIN));
+    return unlikely(__shadow_remaining() - rt->stack_debt <
+                    (long)(bytes + JS_STACK_MARGIN));
 }
 
 /* The depth of calls bounds the recursion of JavaScript and of the built-in
@@ -2670,7 +2679,7 @@ static int js_call_enter(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
 
-    if (unlikely(rt->call_depth >= rt->max_call_depth) || js_stack_short(0)) {
+    if (unlikely(rt->call_depth >= rt->max_call_depth) || js_stack_short(rt, 0)) {
         JS_ThrowStackOverflow(ctx);
         return -1;
     }
@@ -2695,7 +2704,7 @@ static inline void js_call_leave(JSRuntime *rt)
 
 static int js_internal_enter_rt(JSRuntime *rt)
 {
-    if (unlikely(rt->internal_depth >= JS_MAX_INTERNAL_DEPTH) || js_stack_short(0))
+    if (unlikely(rt->internal_depth >= JS_MAX_INTERNAL_DEPTH) || js_stack_short(rt, 0))
         return -1;
     rt->internal_depth++;
     return 0;
@@ -3265,6 +3274,39 @@ size_t JS_FreeRuntime(JSRuntime *rt)
     return leaked;
 }
 
+/* JS_CallInternal with this flag only writes the stack left into
+   rt->call_frame (js_measure_call_frame), and runs nothing */
+#define JS_CALL_FLAG_FRAME       (1 << 3)
+
+/* rt->call_frame: the stack left here less what JS_CallInternal finds left
+   at its check, called from here. Never inlined, so that the call starts
+   from a frame of its own. It cannot fail. The flags are read from memory,
+   so that the compiler cannot see that the call only measures and inline
+   JS_CallInternal here, which would measure nothing. */
+static no_inline void js_measure_call_frame(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+    long left = __shadow_remaining();
+    volatile int flags = JS_CALL_FLAG_FRAME;
+
+    JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
+                    0, NULL, flags);
+    rt->call_frame = left - rt->call_frame;
+}
+
+int JS_SetDirectCCalls(JSContext *ctx, int on)
+{
+    JSRuntime *rt = ctx->rt;
+
+    if (rt->call_depth || rt->stack_debt)
+        return -1;
+    if (on)
+        js_measure_call_frame(ctx);
+    else
+        rt->call_frame = (long)1 << 60; /* never room for it */
+    return 0;
+}
+
 JSContext *JS_NewContextRaw(JSRuntime *rt)
 {
     JSContext *ctx;
@@ -3296,6 +3338,8 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
         JS_FreeContext(ctx);
         return NULL;
     }
+    if (!rt->call_frame)
+        js_measure_call_frame(ctx);
     return ctx;
 }
 
@@ -20937,9 +20981,11 @@ static void close_lexical_var(JSContext *ctx, JSFunctionBytecode *b,
 #define JS_CALL_FLAG_COPY_ARGV   (1 << 1)
 #define JS_CALL_FLAG_GENERATOR   (1 << 2)
 
-static JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
-                                  JSValueConst this_obj,
-                                  int argc, JSValueConst *argv, int flags)
+/* never inlined: the interpreter calls it directly (js_call_c_direct), and
+   its frame inlined there would make every frame of the interpreter larger */
+static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
+                                            JSValueConst this_obj,
+                                            int argc, JSValueConst *argv, int flags)
 {
     JSRuntime *rt = ctx->rt;
     JSCFunctionType func;
@@ -21082,7 +21128,7 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
     p = JS_VALUE_GET_OBJ(func_obj);
     bf = p->u.bound_function;
     arg_count = bf->argc + argc;
-    if (js_stack_short(sizeof(JSValue) * arg_count))
+    if (js_stack_short(ctx->rt, sizeof(JSValue) * arg_count))
         return JS_ThrowStackOverflow(ctx);
     arg_buf = alloca(sizeof(JSValue) * arg_count);
     for(i = 0; i < bf->argc; i++) {
@@ -21301,6 +21347,46 @@ static inline BOOL js_is_cfunction(JSValueConst val, JSCFunction *func)
         p->u.cfunc.c_function.generic == func;
 }
 
+/* TRUE when the interpreter may call func with js_call_c_direct: a plain C
+   function (JS_CLASS_C_FUNCTION, not bound, not one with data), with a level
+   of call depth left and the stack JS_CallInternal would check for it, after
+   its own frame. Otherwise the call goes through JS_CallInternal, which
+   throws. */
+static inline BOOL js_call_c_direct_ok(JSRuntime *rt, JSValueConst func)
+{
+    return JS_VALUE_GET_TAG(func) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_OBJ(func)->class_id == JS_CLASS_C_FUNCTION &&
+        rt->call_depth < rt->max_call_depth &&
+        !js_stack_short(rt, rt->call_frame);
+}
+
+/* What JS_CallInternal does for a C function, without its entry: count and
+   read the interrupt flag, nothing while an uncatchable exception is pending,
+   a level of call depth (js_call_c_direct_ok checked the limit and the
+   stack), then js_call_c_function. The C function sets its own frame and
+   realm. The frame of JS_CallInternal it skips counts as taken while it runs
+   (stack_debt), so that a recursion through C functions ends on the stack
+   at the same depth as through JS_CallInternal. */
+static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
+                                             JSValueConst this_obj, int argc,
+                                             JSValue *argv)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue ret;
+
+    poll_count(POLL_WEIGHT);
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    if (unlikely(js_uncatchable_pending(rt)))
+        return JS_EXCEPTION;
+    rt->call_depth++;
+    rt->stack_debt += rt->call_frame;
+    ret = js_call_c_function(ctx, func, this_obj, argc, (JSValueConst *)argv, 0);
+    rt->stack_debt -= rt->call_frame;
+    js_call_leave(rt);
+    return ret;
+}
+
 /* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
    one of Function.prototype.call and the one of hasOwnProperty: call_argv[-1]
    is Function.prototype.call and call_argv[-2] what it calls. React and the
@@ -21353,7 +21439,7 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst *call_argv
        a margin, so with less than two margins of stack left the calls are
        made, and they throw where they always did (TestHasOwnCallDepth). */
     if (rt->call_depth + 1 >= rt->max_call_depth ||
-        js_stack_short(JS_STACK_MARGIN) ||
+        js_stack_short(rt, JS_STACK_MARGIN) ||
         poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt))
         return JS_UNINITIALIZED;
     prs = find_own_property(&pr, p, atom);
@@ -21362,6 +21448,19 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst *call_argv
     if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
         return JS_UNINITIALIZED;
     return JS_TRUE;
+}
+
+/* The checks of the entry of JS_CallInternal, after the count of its poll:
+   the interrupt flag, then nothing runs while an uncatchable exception is
+   pending, then every call counts a level, C functions included (each
+   return of JS_CallInternal leaves it). */
+static force_inline int js_call_checks(JSContext *caller_ctx)
+{
+    if (js_poll_interrupts(caller_ctx))
+        return -1;
+    if (unlikely(js_uncatchable_pending(caller_ctx->rt)))
+        return -1;
+    return js_call_enter(caller_ctx);
 }
 
 static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
@@ -21421,16 +21520,18 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     } while (0)
 
     poll_count_entry(POLL_WEIGHT);
-    if (js_poll_interrupts(caller_ctx))
-        return JS_EXCEPTION;
-    /* nothing runs while an uncatchable exception is pending */
-    if (unlikely(js_uncatchable_pending(rt)))
-        return JS_EXCEPTION;
-    /* every call counts a level, C functions included: each return below
-       leaves it */
-    if (js_call_enter(caller_ctx))
-        return JS_EXCEPTION;
     if (unlikely(JS_VALUE_GET_TAG(func_obj) != JS_TAG_OBJECT)) {
+        /* js_measure_call_frame: before the checks, so that it measures
+           whatever the depth, the stack left, an interrupt or an exception
+           pending, and in this branch, which a call of a function never
+           takes (the entry still counts its poll first, the rule of the
+           poll pass) */
+        if (flags & JS_CALL_FLAG_FRAME) {
+            rt->call_frame = __shadow_remaining();
+            return JS_UNDEFINED;
+        }
+        if (js_call_checks(caller_ctx))
+            return JS_EXCEPTION;
         if (flags & JS_CALL_FLAG_GENERATOR) {
             JSAsyncFunctionState *s = JS_VALUE_GET_PTR(func_obj);
             /* func_obj get contains a pointer to JSFuncAsyncState */
@@ -21456,6 +21557,8 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             goto not_a_function;
         }
     }
+    if (js_call_checks(caller_ctx))
+        return JS_EXCEPTION;
     p = JS_VALUE_GET_OBJ(func_obj);
     if (unlikely(p->class_id != JS_CLASS_BYTECODE_FUNCTION)) {
         JSClassCall *call_func;
@@ -21481,7 +21584,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
     alloca_size = sizeof(JSValue) * (arg_allocated_size + b->var_count +
                                      b->stack_size) +
         sizeof(JSVarRef *) * b->var_ref_count;
-    if (js_stack_short(alloca_size)) {
+    if (js_stack_short(rt, alloca_size)) {
         js_call_leave(rt);
         return JS_ThrowStackOverflow(caller_ctx);
     }
@@ -21868,8 +21971,12 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             has_call_argc:
                 call_argv = sp - call_argc;
                 sf->cur_pc = pc;
-                ret_val = JS_CallInternal(ctx, call_argv[-1], JS_UNDEFINED,
-                                          JS_UNDEFINED, call_argc, call_argv, 0);
+                if (js_call_c_direct_ok(rt, call_argv[-1]))
+                    ret_val = js_call_c_direct(ctx, call_argv[-1], JS_UNDEFINED,
+                                               call_argc, call_argv);
+                else
+                    ret_val = JS_CallInternal(ctx, call_argv[-1], JS_UNDEFINED,
+                                              JS_UNDEFINED, call_argc, call_argv, 0);
                 if (unlikely(JS_IsException(ret_val)))
                     goto exception;
                 if (opcode == OP_tail_call)
@@ -21909,8 +22016,12 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 if (unlikely(js_is_cfunction(call_argv[-1], js_function_call)) &&
                     !JS_IsUninitialized(ret_val = js_has_own_call(ctx, call_argv, call_argc)))
                     goto call_method_done;
-                ret_val = JS_CallInternal(ctx, call_argv[-1], call_argv[-2],
-                                          JS_UNDEFINED, call_argc, call_argv, 0);
+                if (js_call_c_direct_ok(rt, call_argv[-1]))
+                    ret_val = js_call_c_direct(ctx, call_argv[-1], call_argv[-2],
+                                               call_argc, call_argv);
+                else
+                    ret_val = JS_CallInternal(ctx, call_argv[-1], call_argv[-2],
+                                              JS_UNDEFINED, call_argc, call_argv, 0);
                 if (unlikely(JS_IsException(ret_val)))
                     goto exception;
             call_method_done:
