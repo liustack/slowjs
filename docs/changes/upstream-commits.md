@@ -87,14 +87,14 @@ Three more commits were taken and then reverted, each by a commit of its own, be
 - `445624b` (the number cases of `==` and `===`, merged into `goasm_eq_fast`, which already has its other cases): nothing moved. `r_react_ssr` 0.995, `q_float_arith` 1.004, `v8_navier_stokes` 1.004, `v8_raytrace` 0.986 (range 2.0%). Upstream's follow-up `762e6fc` fixes a typo in the macros it adds, which the fork never had.
 - `888481d` (`String.prototype.concat` in one buffer): `c_string_methods` 0.997, `c_escape_html` 0.995, `c_string_concat` 1.019 (range 5.8%), `r_react_ssr` 1.002. tifa's pages do not call `concat`.
 
-The 23 fixes of 2026-10-31 together, against main (`4d2cdd77`), without PGO and with the GC of Go off (`GOGC=off`), at position 0.0 on one core of an EPYC 7B13 with its sibling idle. Instructions are callgrind's, per render of every page of an app on one VM that rendered each page once before (the difference of a run of 3 renders and one of 1). Time was not measured. The fixes that could cost speed are `9a0197f` (every element of a sort is written back), `fce112d` (a test of extensibility moved down), `abf571a` and `1ec58aa`.
+The 23 fixes of 2026-10-31 together, against main (`bcd2eb1a`, with the stability 5 batch), without PGO and with the GC of Go off (`GOGC=off`), at position 0.0 on one core of an EPYC 7B13 with its sibling idle. Instructions are callgrind's, per render of every page of an app on one VM that rendered each page once before (the difference of a run of 3 renders and one of 1). Time was not measured. The fixes that could cost speed are `9a0197f` (every element of a sort is written back), `fce112d` (a test of extensibility moved down), `abf571a` and `1ec58aa`.
 
 | App | Main | This branch | Change |
 | --- | ---: | ---: | ---: |
-| tifa's example shop | 902,036,110 | 902,049,510 | +0.0015% |
-| tifa's MUI app | 706,587,440 | 706,682,625 | +0.013% |
+| tifa's example shop | 870,152,415 | 870,432,574 | +0.032% |
+| tifa's MUI app | 694,737,147 | 691,694,215 | -0.44% |
 
-The HTML of the 16 pages of the shop, the store, the MUI app and the bench app is the same bytes (the time of the render in each match masked). The memory of a VM after 120 renders is within 0.1% for the shop (9,959,296 and 9,963,400 bytes) and the bench app (the same), 0.7% less for the store (13,085,392 and 12,987,992), and 0.4% more for the MUI app (5,847,560 and 5,872,256).
+The HTML of the 16 pages of the shop, the store, the MUI app and the bench app is the same bytes (the time of the render in each match masked). A first measure against main before the stability 5 batch (`4d2cdd77`) gave +0.0015% for the shop (902,036,110 and 902,049,510) and +0.013% for the MUI app (706,587,440 and 706,682,625), with another harness. In that measure the memory of a VM after 120 renders was within 0.1% for the shop (9,959,296 and 9,963,400 bytes) and the bench app (the same), 0.7% less for the store (13,085,392 and 12,987,992), and 0.4% more for the MUI app (5,847,560 and 5,872,256).
 
 ## A negative BigInt and a negative float
 
