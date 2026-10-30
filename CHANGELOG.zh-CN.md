@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 性能
+
+- 只有普通键的对象字面量把属性放在对象自己的块里，不再单独分一块。tifa 页面的一个 VM 渲染并回收后少占 1.0% 到 2.4% 内存，一次渲染少跑 0.1% 到 0.8% 的指令，按规则看没有页面变快或变慢（shop 为 0.991，MUI 页面 0.998，bench 应用 0.985，React 0.995）。关掉回收器时，一次渲染新增的内存平均多 0.7%（数字见 [Performance](docs/performance.md#object-literals-with-their-properties-in-the-block-of-the-object)）。
+
 ## [v0.29.3] - 2026-10-30
 
 ### 新增

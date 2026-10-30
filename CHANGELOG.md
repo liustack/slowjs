@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Performance
+
+- An object literal of plain keys keeps its properties in the block of the object, not in a block of its own. A VM of tifa's pages holds 1.0% to 2.4% less after a render, a render runs 0.1% to 0.8% fewer instructions, and no page renders faster or slower by the rule (the shop 0.991 of the time, the MUI pages 0.998, the bench app 0.985, React 0.995). The memory one render adds with the collector off is 0.7% more on average ([Performance](docs/performance.md#object-literals-with-their-properties-in-the-block-of-the-object) has the numbers).
+
 ## [v0.29.3] - 2026-10-30
 
 ### Added
