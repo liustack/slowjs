@@ -246,6 +246,53 @@ Against the commit before it, with the same counts as above:
 
 None is over the 2% for which the rule of code positions asks for a timing. `TestLocalsFreedInFewTurns` now holds a call of a function with 200 locals to 60 turns of the two loops, 53 at this commit.
 
+## Opcodes that do a few instructions at once
+
+Two kinds of instruction sequence that tifa's pages run often now take one dispatch of the interpreter: a read of an argument or a local and the property read by name after it, and a `typeof` test.
+
+### A read of a local and its get_field, and the case of a switch on a string
+
+After the compiler has done its own rewrites (`resolve_labels`) and put in the polls (`insert_polls`), `fuse_code` turns the first instruction of each of these runs into one opcode:
+
+| Run | Opcode |
+| --- | --- |
+| `get_arg0` `get_field` | `get_arg0_get_field` |
+| `get_arg1` `get_field` | `get_arg1_get_field` |
+| `get_loc0` `get_field` | `get_loc0_get_field` |
+| `get_loc8 n` `get_field` | `get_loc8_get_field n` |
+| `dup` `push_atom_value` `strict_eq` `if_false8`, the case of a `switch` on a string | `dup_case_atom` |
+
+Only that one byte changes. The new opcode has the size, stack effect and format of the instruction it replaces, and the rest of the run stays in the code as it was. So every instruction keeps its place: the jumps, the line and column table, the polls and the stack size of the function are the same as before. A run is left alone when a jump lands inside it, after its first instruction (the targets of every jump, and the instruction after a `gosub`, are marked first).
+
+What the opcodes do:
+
+- The four reads look at the value of the local without taking a reference to it, and follow the path of `get_field` for a property found with nothing run: an own data property, or one on the prototype chain past objects that are not exotic, or the prototype of a string or a number, or the end of the chain. Then they push the property and step over the `get_field`. In every other case, a getter, a setter, a proxy, an exotic object, `undefined` or `null`, the `stack` of an error, they push the local as the read alone does, and the `get_field` after it runs as it always did, with its own errors and line and column.
+- `dup_case_atom` compares the value of the `switch` with the string of the case when the answer needs no characters: atoms are unique in a runtime, so a string that is an atom is equal only when it is the same atom, a string of another length is not equal, and a value that is not a string never is. Then it branches as `if_false8` does, poll included. Otherwise (a string that is not an atom, a rope) it does the `dup` and the rest runs.
+
+Why borrowing is safe: on the fast path nothing runs between the read of the local and the push of the property, so nothing can change or free the local in between. Whatever can run (a getter, a proxy trap, a collection inside them) runs on the slow path, which takes the reference first, as the two instructions did. `fuse_code` runs on finished code, so the `arguments` object, closure variables and the checks of `let` and `const` before their declaration compile as before: a local in its temporal dead zone is read with `get_loc_check`, which is not fused.
+
+The bytecode version goes from 6 to 7. `JS_ReadObject` checks code it reads with `poll_scan`, which now also rejects a fused opcode not followed by the rest of its run (`invalid bytecode: a fused opcode without the instructions it reads`), so bytecode written by a host cannot make the interpreter step over an instruction it did not check.
+
+`JS_SetFusedOps(ctx, 0)` makes a runtime compile the runs apart again, for tests.
+
+### typeof as one opcode
+
+`typeof x == "<name>"`, with `==`, `===`, `!=` or `!==`, is one opcode for any string: `typeof_is_undefined` and `typeof_is_function` as before, and the new `typeof_is`, which holds the atom of the string, for the others. A negated test takes the other branch after it, or is followed by `lnot`. Before, only `"undefined"` and `"function"` were joined, and a negated test only when `if_false` came after it. `typeof x < "u"` and `typeof x > "u"` are `typeof_is_undefined`, negated for `<`, since `"undefined"` is the only result of `typeof` that does not sort before `"u"`. Minifiers write these forms: the bundles of tifa's shop hold 189 tests for `"string"`, 165 for `"function"`, 112 for `"object"`, 65 for `"number"`, 35 of `< "u"` and 11 of `> "u"`, among others. The string first (`"string" == typeof x`) is rare in them and stays as it was.
+
+`typeof` never throws and a comparison of two strings runs nothing, so the opcode gives what the instructions gave, the result of `typeof` for an object marked as `document.all` included. `JS_SetFusedOps(ctx, 0)` also leaves the new forms as they were before.
+
+### What it gains
+
+Instructions per render of every page of an app, callgrind on linux/amd64, each change against the one before it: the fused reads and cases run 1.85% fewer on the six workbench pages of tifa's shop, 1.59% on its store pages, 1.66% on the MUI pages of tifa's test app and 3.41% on its bench pages, and the `typeof` opcodes 0.63%, 0.83%, 0.75% and 1.42% fewer on top. The HTML of the 16 pages is the same. Timed at 8 code positions, 3 rounds, the fused reads and cases with the shapes above against v0.29.4: the bench pages take 0.966 of the time, and `r_react_ssr` 1.018, which is under the 3% where callgrind decides.
+
+The compiler pays for the search of the runs: `fuse_code` walks the code of each function once more, with a table that says which opcodes are jumps or the start of a run (`fuse_kind`), and keeps its marks on the stack for a function of under 256 bytes. It takes about 0.98 M instructions to compile the bundle of `r_react_ssr`, which compiles and renders in each run, so a run there takes 1.46% more instructions in all three changes. Each VM of tifa reads bytecode compiled once, so a render does not pay it. [performance.md](../performance.md#opcodes-that-do-a-few-instructions-at-once) has the numbers.
+
+The opcodes take 6 of the 11 free numbers below 256 (`OP_COUNT` was 245), so 5 are left.
+
+### Tests
+
+`engine/test/compare.sh` runs `engine/test/compare/fused_ops.js` and `engine/test/compare/typeof_is.js` with the opcodes on and off, and both print the files, which are what the engine printed before the change. `fused_ops.js` reads 32 kinds of values with each of the four reads (own and inherited data properties, getters, setters, proxies and a proxy as prototype, frozen and deleted keys, arrays, typed arrays, `String` objects, `arguments`, functions, classes, errors, every primitive, `undefined` and `null`), has getters and proxy traps that change or drop the local and run a collection, mapped and unmapped `arguments`, a local in its dead zone, a closure that writes the local, loops, a generator and an async function, the errors of a read of `undefined` and `null` with their line and column, and `switch` on strings that are atoms or not, ropes, wide strings, numbers, objects, symbols and a case with a getter. `typeof_is.js` tests a value of every type against each form, as values and as branches. `TestFusedOps` (root package) runs both files on the generated engine, with the opcodes on and off. `test_fused_ops` and `test_typeof_is` of `engine/test/unit-white.c` check which opcodes the compiler makes, on and off, that a jump into a pair keeps it apart, that the bytecode reads back and runs, and that `poll_scan` rejects a fused opcode whose run was changed.
+
 ## How a JSValue is copied
 
 A JSValue is 16 bytes, a value and a tag. The interpreter writes one to the value stack as two stores of 8 bytes, since the value is in a register and the tag is a constant. LLVM copies one with a single 16-byte SSE move. It makes that move in two ways: the SLP vectorizer joins two moves of neighbouring 8 bytes, and a struct copy becomes a `memcpy` of 16 bytes that LLVM expands. On Zen 3 a load of 16 bytes cannot be served from two stores of 8 bytes that are still in flight: it waits until both reach the cache (24 cycles in a loop that does nothing else, against 1 for a load of 8 bytes of a store of 8). A load of 8 bytes of a store of 16 is slow too, 11 to 13 cycles.
