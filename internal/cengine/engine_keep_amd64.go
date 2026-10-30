@@ -920,7 +920,6 @@ var goasmKeep = []any{
 	js_parse_directives,
 	js_parse_error,
 	js_parse_error_pos,
-	js_parse_error_reserved_identifier,
 	js_parse_expect,
 	js_parse_expect_semi,
 	js_parse_expr,
