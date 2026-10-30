@@ -863,3 +863,12 @@ JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_
     white_alloc_calls = 0;
     return v;
 }
+
+/* The shape of obj as a number, 0 when obj is no object: two objects with
+   the same number share a shape. */
+uintptr_t white_shape_of(JSValueConst obj)
+{
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return 0;
+    return (uintptr_t)JS_VALUE_GET_OBJ(obj)->shape;
+}
