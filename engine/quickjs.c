@@ -37197,6 +37197,34 @@ static void js_free_function_def(JSContext *ctx, JSFunctionDef *fd)
     }
 }
 
+/* The index of the local, argument or closure variable that op reads or
+   writes, for an opcode of the format none_loc, none_arg or none_var_ref,
+   which has it in the opcode. Those of upstream come in groups of four from
+   OP_get_loc0, OP_get_arg0 and OP_get_var_ref0, but the fused reads are
+   apart from them and say their index here. */
+static __maybe_unused int short_opcode_index(int op)
+{
+    switch (op) {
+#if SHORT_OPCODES
+    case OP_get_arg0_get_field:
+    case OP_get_loc0_get_field:
+        return 0;
+    case OP_get_arg1_get_field:
+        return 1;
+#endif
+    default:
+        break;
+    }
+    switch (short_opcode_info(op).fmt) {
+    case OP_FMT_none_loc:
+        return (op - OP_get_loc0) % 4;
+    case OP_FMT_none_arg:
+        return (op - OP_get_arg0) % 4;
+    default:
+        return (op - OP_get_var_ref0) % 4;
+    }
+}
+
 #ifdef DUMP_BYTECODE
 static const char *skip_lines(const char *p, int n) {
     while (n-- > 0 && *p) {
@@ -37456,7 +37484,7 @@ static void dump_byte_code(JSContext *ctx, int pass,
                 printf(",%u", get_u16(tab + pos + 8));
             break;
         case OP_FMT_none_loc:
-            idx = (op - OP_get_loc0) % 4;
+            idx = short_opcode_index(op);
             goto has_loc;
         case OP_FMT_loc8:
             idx = get_u8(tab + pos);
@@ -37470,7 +37498,7 @@ static void dump_byte_code(JSContext *ctx, int pass,
             }
             break;
         case OP_FMT_none_arg:
-            idx = (op - OP_get_arg0) % 4;
+            idx = short_opcode_index(op);
             goto has_arg;
         case OP_FMT_arg:
             idx = get_u16(tab + pos);
@@ -37481,7 +37509,7 @@ static void dump_byte_code(JSContext *ctx, int pass,
             }
             break;
         case OP_FMT_none_var_ref:
-            idx = (op - OP_get_var_ref0) % 4;
+            idx = short_opcode_index(op);
             goto has_var_ref;
         case OP_FMT_var_ref:
             idx = get_u16(tab + pos);
