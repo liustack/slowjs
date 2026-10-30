@@ -1,0 +1,61 @@
+"f() = 1" => compiles
+"f() += 1" => compiles
+"f() -= 1" => compiles
+"f() **= 2" => compiles
+"f() <<= 1" => compiles
+"f() &&= 1" => SyntaxError
+"f() ||= 1" => SyntaxError
+"f() ??= 1" => SyntaxError
+"f()++" => compiles
+"f()--" => compiles
+"++f()" => compiles
+"--f()" => compiles
+"f(1, 2) = 3" => compiles
+"o.m() = 1" => compiles
+"o.m()++" => compiles
+"o[0]() = 1" => compiles
+"f()() = 1" => compiles
+"new f() = 1" => SyntaxError
+"new f = 1" => SyntaxError
+"(f()) = 1" => compiles
+"((f())) = 1" => compiles
+"(f())++" => compiles
+"f`x` = 1" => SyntaxError
+"f`x`++" => SyntaxError
+"o.m`x` = 1" => SyntaxError
+"for (f() in o) ;" => compiles
+"for (f() of [1]) ;" => compiles
+"for (o.m() in o) ;" => compiles
+"for (o.m() of [1]) ;" => compiles
+"[f()] = [1]" => SyntaxError
+"({ a: f() } = { a: 1 })" => SyntaxError
+"[...f()] = [1]" => SyntaxError
+"({ ...f() } = {})" => SyntaxError
+"[(f())] = [1]" => SyntaxError
+"async () => {}; f() = 1" => compiles
+"x = f() = 1" => compiles
+"f() = g() = 1" => compiles
+"import.meta = 1" => SyntaxError
+"super() = 1" => SyntaxError
+"f?.() = 1" => SyntaxError
+"f?.x = 1" => SyntaxError
+"o?.m() = 1" => SyntaxError
+"(a, f()) = 1" => SyntaxError
+"delete f()" => compiles
+"typeof f() = 1" => SyntaxError
+"f() = 1 + 2" => compiles
+"f() = g()" => f,ReferenceError
+"f() += g()" => f,ReferenceError
+"f()++" => f,ReferenceError
+"++f()" => f,ReferenceError
+"o.m() = g()" => m,ReferenceError
+"o.m().x = g()" => m,g
+"f(g()) = 1" => g,f,ReferenceError
+"for (f() in { a: 1 }) log.push(\"body\")" => f,ReferenceError
+"for (f() of [1]) log.push(\"body\")" => f,ReferenceError
+"for (f() of []) log.push(\"body\")" => 
+"try { f() = 1 } catch (e) { log.push(\"caught \" + e.name) }" => f,caught ReferenceError
+"var r = function () { f() = 1 }; r()" => f,ReferenceError
+"if (false) f() = 1; log.push(\"skipped\")" => skipped
+"f() = 1; log.push(\"after\")" => f,ReferenceError
+"x = () => { f() = 1 }; log.push(\"defined\")" => defined
