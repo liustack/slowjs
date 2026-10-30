@@ -1253,7 +1253,7 @@ var goasmKeep = []any{
 	slice_memcpy,
 	snprintf,
 	specialcase,
-	specialcase_360,
+	specialcase_361,
 	sqrt,
 	stack_realloc,
 	strchr,
