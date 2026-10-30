@@ -46669,7 +46669,8 @@ static JSValue js_object_fromEntries(JSContext *ctx, JSValueConst this_val,
 static JSValue js_object_is(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
-    int e = js_strict_eq2_poll(ctx, argv[0], argv[1], JS_EQ_SAME_VALUE, NULL);
+    uint32_t work = 0;
+    int e = js_strict_eq2_poll(ctx, argv[0], argv[1], JS_EQ_SAME_VALUE, &work);
 
     if (e < 0)
         return JS_EXCEPTION;
