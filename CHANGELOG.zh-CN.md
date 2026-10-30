@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.29.2] - 2026-10-30
+
 ### 新增
 
 - `VM.RegisterEscapeText(name)` 在全局对象上定义名为 `name` 的函数，像 React DOM 字符串渲染器的 `escapeTextForBrowser` 那样给 HTML 转义文本，在引擎里用 C 写成。参数先变成字符串，同 `"" + text`（对象走 `valueOf` 和 `toString`，symbol 会抛错），再把 `&`、`<`、`>`、`"` 和 `'` 换成 `&amp;`、`&lt;`、`&gt;`、`&quot;` 或 `&#x27;`。里面没有这五个字符的字符串原样（同一个字符串）返回。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这个函数。在 tifa 里，React 的转义用了它，渲染一次少跑 0.7% 到 4.5% 的指令，示例商店的页面渲染只花原来的 0.974，bench 页面是 0.938。（[性能](docs/performance.md#react-doms-text-escape-in-c)，[Go API](docs/changes/go-api.md#registerescapetext)）
@@ -414,7 +416,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.1...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.2...main
+[v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
 [v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
 [v0.28.6]: https://github.com/liustack/slowjs/compare/v0.28.5...v0.28.6
