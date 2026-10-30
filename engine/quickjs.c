@@ -1881,6 +1881,15 @@ static BOOL js_front_drain(JSMallocContext *s)
 #define JS_ALLOC_FAILS(rt, ptr, size) 0
 #endif
 
+/* JS_WORK(n) says that a loop that reads the interrupt flag after so many
+   units of work has just done n of them (characters hashed, copied or
+   scanned, strings of a rope walked). It is nothing in the engine. white.c
+   counts the units between two readings of the flag, so that a test sees the
+   most work between two readings, and not only how many readings there were. */
+#ifndef JS_WORK
+#define JS_WORK(n) ((void)0)
+#endif
+
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
    would pass. */
@@ -4624,6 +4633,7 @@ static no_inline JSValue js_sub_string_long(JSContext *ctx, JSString *p, int sta
             n = min_int(end - i, JS_SUB_STEP - work);
             for (j = 0; j < n; j++)
                 c |= p->u.str16[i + j];
+            JS_WORK(n);
             work += n;
             if (work >= JS_SUB_STEP) {
                 work = 0;
@@ -4646,6 +4656,7 @@ static no_inline JSValue js_sub_string_long(JSContext *ctx, JSString *p, int sta
         } else {
             memcpy(str->u.str8 + i, p->u.str8 + start + i, n);
         }
+        JS_WORK(n);
         work += n;
         if (work >= JS_SUB_STEP) {
             work = 0;
@@ -5604,6 +5615,7 @@ static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uin
     uint32_t h = *ph, work = *pwork, off, n;
 
     if (p->len < JS_ROPE_STEP - work) {
+        JS_WORK(p->len);
         *ph = hash_string(p, h);
         *pwork = work + p->len;
         return 0;
@@ -5614,6 +5626,7 @@ static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uin
             h = hash_string16(p->u.str16 + off, n, h);
         else
             h = hash_string8(p->u.str8 + off, n, h);
+        JS_WORK(n);
         work += n;
         if (work >= JS_ROPE_STEP) {
             work = 0;
@@ -5652,6 +5665,7 @@ static int hash_string_rope_poll(JSContext *ctx, JSValueConst val, uint32_t *ph)
     while ((p = string_rope_iter_next(&it)) != NULL) {
         if (hash_string_poll(ctx, p, &h, &work))
             return -1;
+        JS_WORK(1);
         if (++work >= JS_ROPE_STEP) {
             work = 0;
             if (js_poll_interrupts(ctx))
@@ -51766,6 +51780,7 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
             int chunk = min_int(min_int(n, p1->len - off), JS_PAD_STEP - run);
             if (string_buffer_concat(b, p1, off, off + chunk))
                 goto fail;
+            JS_WORK(chunk);
             n -= chunk;
             run += chunk;
             off += chunk;
@@ -51782,6 +51797,7 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
             int chunk = min_int(n, JS_PAD_STEP);
             if (string_buffer_fill(b, c, chunk))
                 goto fail;
+            JS_WORK(chunk);
             n -= chunk;
             if (n > 0 && js_poll_interrupts(ctx))
                 goto fail;

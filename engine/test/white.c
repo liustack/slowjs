@@ -55,7 +55,43 @@ static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 }
 #define JS_ALLOC_FAILS(rt, ptr, size) white_call_fails(rt, ptr, size)
 
+/* JS_WORK counts the units of work of the loops that read the interrupt flag
+   (white_work), and each reading of the flag (cutils.h calls host_poll) closes
+   a stretch: white_work_max is the longest stretch since white_work_reset,
+   white_work_total the work in all of them. */
+static unsigned long white_work, white_work_max, white_work_total;
+#define JS_WORK(n) (white_work += (n), white_work_total += (n))
+int host_poll(const volatile int *flag);
+#define host_poll white_host_poll
+
 #include "../quickjs.c"
+
+#undef host_poll
+int white_host_poll(const volatile int *flag)
+{
+    if (white_work > white_work_max)
+        white_work_max = white_work;
+    white_work = 0;
+    return host_poll(flag);
+}
+
+void white_work_reset(void)
+{
+    white_work = white_work_max = white_work_total = 0;
+}
+
+/* the longest stretch of work between two readings of the flag since
+   white_work_reset, the one before the first reading and the one after the
+   last included */
+unsigned long white_work_longest(void)
+{
+    return white_work > white_work_max ? white_work : white_work_max;
+}
+
+unsigned long white_work_sum(void)
+{
+    return white_work_total;
+}
 
 /* ---- string buffers and the runs of JSON ---- */
 
