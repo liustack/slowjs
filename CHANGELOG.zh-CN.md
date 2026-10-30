@@ -15,6 +15,8 @@
 
 ### 修复
 
+- `GetProperty`、`GetPropertyValue`、`SetProperty`、`SetPropertyValue`（以及调用它们的 `Value` 方法）、`Value.MarshalJSON`、`Value.Any` 和 `ErrorFromValue` 现在和 `Eval`、`Call` 一样受求值超时管。以前这些方法不启动计时，getter、setter、代理拦截器、`toJSON`、被改过的 `BigInt.prototype.toString`，或读取错误时调用的 `toString` 想跑多久就跑多久。超时设为 10 毫秒时，一个跑 200 毫秒的 getter 照样返回 42，没有错误。`SetProperty` 和 `SetPropertyValue` 现在返回 setter 抛出的异常，以前返回 `failed to set property`，还把异常留在上下文里没取走（[细节](docs/changes/uncatchable.md#every-method-that-can-run-javascript-has-the-eval-timeout)）。
+- 引擎里搬进了 23 个上游 QuickJS 的修正，每个都带测试，测试输出和 Node 24 一样（照现行规范、Node 24 还没跟上的几行有标注）：负数 BigInt 的 `BigInt.asUintN`、`Iterator.prototype.take` 和 `drop` 的上限、`''.repeat(2 ** 31)`、转换时改了缓冲区大小的 `ArrayBuffer.prototype.resize` 和 `TypedArray.prototype.at`、`try` 的完成值、迭代器辅助方法的 `return()`、`yield` 和 `await` 当名字用、宽松模式下的 `f() = 1`、`Promise.try`、导入后又导出的绑定在 `export *` 里不再算歧义、非扩展接收者上的 `super.x = v`、for-in 头里函数的名字、绑定函数的原型、代理的 getOwnPropertyDescriptor 和 ownKeys 拦截器、`Object.defineProperties` 的顺序、`get`、`set`、`static` 后面的类成员、`Array.prototype.sort` 把每个元素写回、`for await` 提前离开时等 `return()`，以及导出里的字符串名字。两处泄漏也修了：失败的 `Atomics.store`，和读取被截断、带 BigInt 的字节码。密封或冻结的数组，在越过末尾的下标上赋值或定义时，长度不再变。test262 的已知失败少了 25 个，剩 33 个。清单，以及 C 树和上游、Node 24 不同的地方，见 [upstream-commits.md](docs/changes/upstream-commits.md)。
 - 删除对象的键时，已删的键攒到 8 个以上且占一半以上，引擎会把属性列表压紧。压紧时 VM 没有内存放更小的属性列表，原来会留下一个「内存不足」错误挂在 VM 上，尽管这次删除已经成功。这个不可捕获的错误会顶替脚本接下来抛的下一个错误。现在压紧是可选的：内存不足时删除照样成功，对象留到之后的删除再压紧，不留错误。
 
 ### 性能

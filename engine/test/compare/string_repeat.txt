@@ -1,0 +1,53 @@
+repeat(0): 
+repeat(1): ab
+repeat(2): abab
+repeat(3): ababab
+repeat(2.7): abab
+repeat(0): 
+repeat(-0.9): 
+repeat(NaN): 
+repeat("x"): 
+repeat("2"): abab
+repeat(object): 
+repeat(undefined): 
+repeat(true): ab
+repeat(false): 
+repeat(object): 
+repeat(object): ababab
+repeat(object): abab
+repeat(-1): throws RangeError
+empty repeat(-1): throws RangeError
+one char repeat(-1): throws RangeError
+repeat(-Infinity): throws RangeError
+empty repeat(-Infinity): throws RangeError
+one char repeat(-Infinity): throws RangeError
+repeat(Infinity): throws RangeError
+empty repeat(Infinity): throws RangeError
+one char repeat(Infinity): throws RangeError
+repeat(2147483647): throws RangeError
+empty repeat(2147483647): 0
+one char repeat(2147483647): throws RangeError
+repeat(2147483648): throws RangeError
+empty repeat(2147483648): 0
+one char repeat(2147483648): throws RangeError
+repeat(4294967296): throws RangeError
+empty repeat(4294967296): 0
+one char repeat(4294967296): throws RangeError
+repeat(9007199254740992): throws RangeError
+empty repeat(9007199254740992): 0
+one char repeat(9007199254740992): throws RangeError
+repeat(1e+300): throws RangeError
+empty repeat(1e+300): 0
+one char repeat(1e+300): throws RangeError
+repeat(-1e+300): throws RangeError
+empty repeat(-1e+300): throws RangeError
+one char repeat(-1e+300): throws RangeError
+too long: throws RangeError
+too long wide: throws RangeError
+just fits: 1048576
+one: true
+symbol count: throws TypeError
+bigint count: throws TypeError
+symbol this: throws TypeError
+null this: throws TypeError
+order: this,count,RangeError

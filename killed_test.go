@@ -37,7 +37,7 @@ func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 		returned = true
 		return nil, nil
 	})
-	if _, err := m.Eval(`globalThis.a = { length: 2 ** 31 - 1 }; globalThis.loop = function() { Array.prototype.lastIndexOf.call(a, -1) }`, EvalGlobal); err != nil {
+	if _, err := m.Eval(`globalThis.a = { length: 2 ** 31 - 1 }; globalThis.loop = function() { Array.prototype.lastIndexOf.call(a, -1) }`+hookJS, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
@@ -54,13 +54,17 @@ func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 func TestNestedEvalPastGrace(t *testing.T) {
 	for name, nested := range nestedEntries {
 		t.Run(name, func(t *testing.T) {
-			_, err := killedVM(t, nested)
+			m, err := killedVM(t, nested)
 			var e *Error
 			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || !errors.Is(err, ErrKilled) {
 				t.Fatalf("the outer call got %#v, want an interrupted error that matches ErrKilled", err)
 			}
 			if err.Error() != "InternalError: interrupted" {
 				t.Fatalf("the outer call got %q, want the text of an interrupted error", err)
+			}
+			// The VM is good only for Close: a call returns the error of the kill.
+			if _, err := m.Eval(`1`, EvalGlobal); !errors.Is(err, ErrKilled) {
+				t.Fatalf("the next call got %v, want an error that matches ErrKilled", err)
 			}
 		})
 	}
@@ -83,7 +87,7 @@ func TestNoKillAfterLongHostCall(t *testing.T) {
 				nested(m)
 				return nil, nil
 			})
-			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`, EvalGlobal); err != nil {
+			if _, err := m.Eval(`globalThis.loop = function() { for (let i = 0; i < 1e5; i++) {} }`+hookJS, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
@@ -171,8 +175,9 @@ func TestKilledVM(t *testing.T) {
 		}
 	}
 	for name, call := range map[string]func(){
-		"RunGC":      func() { m.RunGC() },
-		"RunYoungGC": func() { m.RunYoungGC() },
+		"RunGC":          func() { m.RunGC() },
+		"RunYoungGC":     func() { m.RunYoungGC() },
+		"ErrorFromValue": func() { ErrorFromValue(v) },
 	} {
 		if p := panicked(call); p != brokenPanic {
 			t.Errorf("%s after a kill panicked with %v, want %q", name, p, brokenPanic)
