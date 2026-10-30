@@ -43686,14 +43686,13 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
 
 static JSValue JS_ReadBigInt(BCReaderState *s)
 {
-    JSValue obj = JS_UNDEFINED;
     uint32_t len, i, n;
     JSBigInt *p;
     js_limb_t v;
     uint8_t v8;
     
     if (bc_get_leb128(s, &len))
-        goto fail;
+        return JS_EXCEPTION;
     bc_read_trace(s, "len=%" PRId64 "\n", (int64_t)len);
     if (len == 0) {
         /* zero case */
@@ -43702,7 +43701,7 @@ static JSValue JS_ReadBigInt(BCReaderState *s)
     }
     p = js_bigint_new(s->ctx, (len - 1) / (JS_LIMB_BITS / 8) + 1);
     if (!p)
-        goto fail;
+        return JS_EXCEPTION;
     for(i = 0; i < len / (JS_LIMB_BITS / 8); i++) {
 #if JS_LIMB_BITS == 32
         if (bc_get_u32(s, &v))
@@ -43732,7 +43731,7 @@ static JSValue JS_ReadBigInt(BCReaderState *s)
     bc_read_trace(s, "}\n");
     return JS_CompactBigInt(s->ctx, p);
  fail:
-    JS_FreeValue(s->ctx, obj);
+    js_free(s->ctx, p);
     return JS_EXCEPTION;
 }
 
