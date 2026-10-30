@@ -192,13 +192,14 @@ t('more literals than 16 bits', () => {
 })
 
 // memory: literals of functions that are made and dropped leave nothing
-// behind once collected, the shapes of the literals included (the keys of
-// each run have the same lengths, so the shapes kept for later take the
-// same bytes)
+// behind once collected, the shapes of the literals included. Each run has
+// keys of its own, of the same lengths as those of the other runs: a literal
+// of a run before would share its shape, and which shapes the ring keeps
+// would then change from run to run, and the bytes they take with it
 if (typeof memorySize === 'function') {
   const run = r => {
     for (let i = 0; i < 200; i++) {
-      const f = new Function('x', 'return { u' + i + ': x, v' + (i % 7) + ': x + 1, w: [x], [\'c\' + (x + 100)]: 1 }')
+      const f = new Function('x', 'return { u' + (1000 + r * 200 + i) + ': x, v' + (i % 7) + ': x + 1, w: [x], [\'c\' + (x + 100)]: 1 }')
       f(r); f(r + 1)
     }
   }
