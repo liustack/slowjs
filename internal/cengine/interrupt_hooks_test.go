@@ -93,6 +93,16 @@ const builtinTrials = 6
 // result besides (bigResults).
 func TestInterruptStopsLongBuiltins(t *testing.T) {
 	needPolls(t)
+	// What the iterators below walk: the iterator of an array, a Set or a
+	// Map is a built-in one, which JS_IteratorNext2 calls without
+	// JS_CallInternal, and these built-ins call nothing else for each item.
+	const (
+		bigArray     = `var a = new Array(1 << 24).fill(1)`
+		setOfNumbers = `var s = new Set(); for (var i = 0; i < 1 << 21; i++) s.add(i)`
+		mapOfNumbers = `var m = new Map(); for (var i = 0; i < 1 << 20; i++) m.set(i, i)`
+		// a little under a power of two, so that no add of the result starts the rehash of a table that holds 1M records
+		twoSets = `var s = new Set(), t = new Set(); for (var i = 0; i < (1 << 20) - 1024; i++) { s.add(i); t.add(-i - 1) }`
+	)
 	cases := []struct{ name, setup, call, top string }{
 		// The first replace of a VM takes the generic path, which calls exec and so reads the flag. The
 		// rest, after one has run, take the one that matches in a loop of its own, inside
@@ -136,6 +146,16 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// memcpy of big strings: test_rope_polls of engine/test/unit.c counts
 		// the readings of the flag in it.)
 		{"two ropes compared", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 < r2`, "<eval>"},
+		// The hash of the key of a Map or Set walks all its characters.
+		{"Set.has, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var s = new Set()`, `s.has(r)`, "has"},
+		{"Map.get, a long string for the key", `var f = 'ab'.repeat(1 << 25); var m = new Map()`, `m.get(f)`, "get"},
+		// the key is taken out again: comparing a key with an equal rope, as a Set that holds it does, reads no flag
+		{"Map.set, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var m = new Map()`, `m.set(r, 1), m.clear()`, "set"},
+		{"Math.sumPrecise, an Array", bigArray, `Math.sumPrecise(a)`, "sumPrecise"},
+		{"Iterator drop, an Array", bigArray, `a.values().drop(1 << 24).next()`, "next"},
+		// A set-like object that lends the iterator of an array: isSupersetOf asks this Set
+		// about each item, in C.
+		{"Set isSupersetOf", bigArray + `; var s = new Set([1]), like = { size: 1, has: () => true, keys: () => a.values() }`, `s.isSupersetOf(like)`, "isSupersetOf"},
 	}
 	// These make a result of as many pieces as the input has. Freeing it takes
 	// polls, up to a third of the polls of the call or more, and so many
@@ -156,6 +176,16 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// is freed when the call stops.
 		{"Uint8Array.from, a string", `var s = '1'.repeat(1 << 21)`, `Uint8Array.from(s)`, "from", `Array.from(s)`},
 		{"new Uint8Array, an Array", `var a = new Array(1 << 22).fill(1)`, `new Uint8Array(a)`, "Uint8Array", `Array.from(a)`},
+		// A replacement that is a string calls nothing for each match, and the result grows by doubling.
+		{"replaceAll, a string for the pattern", `var s = 'ab'.repeat(1 << 23)`, `s.replaceAll('a', 'cc')`, "replaceAll", ""},
+		{"Array.from, a Set", setOfNumbers, `Array.from(s)`, "from", ""},
+		{"Object.fromEntries, a Map", mapOfNumbers, `Object.fromEntries(m)`, "fromEntries", ""},
+		{"Iterator toArray, a Set", setOfNumbers, `s.values().toArray()`, "toArray", ""},
+		// Two Sets with no item in common, so that the result is as large as what the call holds when it stops.
+		{"Set union", twoSets, `s.union(t)`, "union", ""},
+		{"Set symmetricDifference", twoSets, `s.symmetricDifference(t)`, "symmetricDifference", ""},
+		// A spread is an operator of the interpreter, which stops in the frame that runs it.
+		{"spread of a Set", setOfNumbers, `[...s]`, "<eval>", ""},
 	}
 	run := func(t *testing.T, name, setup, callSrc, top, also string, big bool) {
 		t.Run(name, func(t *testing.T) {

@@ -2631,6 +2631,298 @@ static void test_rope_polls(void)
     JS_FreeRuntime(rt);
 }
 
+/* The next of the iterator of a string, an array, a Map or a Set (and of an
+   iterator helper) is called by JS_IteratorNext2 without JS_CallInternal,
+   which reads the interrupt flag when a call starts, so JS_IteratorNext2
+   reads it for them. A loop of C that walks such an iterator and calls
+   nothing else for each item (Object.fromEntries, a spread, toArray,
+   Set.prototype.union) is stopped by it. So is the copy of a Set that the
+   methods of Set make, which reads the flag every 1024 records. Each call
+   below reads the flag at least as often as it says over a Set or a Map of
+   65536 items, and is stopped by a flag set at the 20th reading: it throws
+   "interrupted", and the context goes on. */
+static void test_iterator_polls(void)
+{
+    static const char setup[] =
+        "var s = new Set(), t = new Set(), u = new Set(), m = new Map(), a = [], x, rest\n"
+        "for (var i = 0; i < 1 << 16; i++) { s.add(i); t.add(i); u.add(-i - 1); m.set(i, i); a.push(i) }\n"
+        "var str = 'ab'.repeat(1 << 15); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "[...s]", 1 << 16 },
+        { "[...m]", 1 << 16 },
+        { "[...str]", 1 << 16 },
+        { "[x, ...rest] = s", 1 << 16 },
+        { "Object.fromEntries(m)", 1 << 16 },
+        { "Math.sumPrecise(s)", 1 << 16 },
+        { "s.values().drop(1 << 16).next()", 1 << 16 },
+        { "s.values().toArray()", 1 << 16 },
+        { "s.union(t)", 1 << 16 },
+        { "s.union(new Set())", 1 << 6 },
+        { "s.symmetricDifference(t)", 1 << 16 },
+        { "s.isSupersetOf(t)", 1 << 16 },
+        { "s.isSubsetOf(t)", 1 << 16 },
+        { "s.isDisjointFrom(u)", 1 << 16 },
+        { "Array.from(s)", 1 << 16 },
+        { "Array.from(a.values())", 1 << 16 },
+        { "Array.from(m)", 1 << 16 },
+        { "new Set(a.values())", 1 << 16 },
+        { "new Map(m)", 1 << 16 },
+        { "new Uint8Array(s)", 1 << 16 },
+        { "Uint8Array.from(s)", 1 << 16 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        CHECK(host_poll_reads - before >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call,
+              host_poll_reads - before, cases[i].reads);
+        host_poll_stop_after(20);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* The loops of the string methods that run for as long as the string is and
+   call nothing read the interrupt flag: the search of replace and replaceAll
+   for a string (as indexOf does, so a needle that almost matches at each
+   index does not take the product of the lengths without a read), the
+   matches of replaceAll (every 1024), the copy of a long piece of a string
+   (trim, slice and substring, every 1048576 characters, after the scan of a
+   16-bit string for a character past 0xff) and the filler of padStart and
+   padEnd, which is written in steps of 65536 characters whatever its length.
+   Each call reads the flag at least as often as it says, and a flag set in the
+   middle stops it with the error "interrupted". */
+static void test_string_loop_polls(void)
+{
+    static const char setup[] =
+        "var h = 'a'.repeat(1 << 20), nd = 'a'.repeat(100) + 'b', ab = 'ab'.repeat(1 << 17)\n"
+        "var sp = ' ' + 'x'.repeat(1 << 24) + ' '\n"
+        "var wsp = ' ' + '\\u4e00'.repeat(1 << 23) + ' '\n"
+        "var nsp = '\\u4e00' + ' ' + '\\u00e9'.repeat(1 << 23) + ' '\n"
+        "var fill = 'ab'.repeat(1 << 22); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "h.replace(nd, 'c')", 15 },
+        { "h.replaceAll(nd, 'c')", 15 },
+        { "ab.replaceAll('a', 'cc')", 128 },
+        { "sp.trim()", 15 },
+        { "wsp.trim()", 7 },
+        { "sp.slice(1)", 15 },
+        { "wsp.substring(1)", 7 },
+        { "nsp.slice(1)", 7 },
+        { "'x'.padStart(1 << 24, fill)", 255 },
+        { "'x'.padEnd(1 << 24, fill)", 255 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, cases[i].reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* what they make is what they made */
+    CHECK(eval_is(ctx, "[sp.trim().length, wsp.trim().length, nsp.slice(1).trim().length, sp.slice(1, -1).length, wsp.substring(1).length].join()",
+                  "16777216,8388608,8388608,16777216,8388609"), "the length of the pieces");
+    CHECK(eval_is(ctx, "[/^x+$/.test(sp.trim()), wsp.trim() === '\\u4e00'.repeat(1 << 23), nsp.slice(1).trim() === '\\u00e9'.repeat(1 << 23), nsp.slice(1) === ' ' + '\\u00e9'.repeat(1 << 23) + ' '].join()",
+                  "true,true,true,true"), "the pieces");
+    CHECK(eval_is(ctx, "var pa = 'x'.padStart(100003, 'abc'); [pa.length, pa.slice(0, 7), pa.slice(-7), 'x'.padEnd(10, 'abc')].join()",
+                  "100003,abcabca,abcabcx,xabcabcabc"), "the pad");
+    CHECK(eval_is(ctx, "var f2 = 'ab'.repeat(1 << 16) + 'c', p2 = 'x'.padStart((1 << 17) + 5, f2); [p2.length, p2.slice(0, 3), p2.slice(131069, 131072), p2.slice(131072, 131076)].join()",
+                  "131077,aba,bab,caba"), "the pad with a filler longer than a step");
+    CHECK(eval_is(ctx, "var p3 = 'xy'.padEnd((1 << 17) + 5, f2); [p3.length, p3.slice(0, 3), p3.slice(2, 5), p3.slice(131073, 131077), p3.slice(-4)].join()",
+                  "131077,xya,aba,bcab,bcab"), "padEnd with a filler longer than a step");
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* The loops of padStart, padEnd and the long piece of a string read the
+   flag whenever the work since the last reading reaches the step (65536
+   characters written by a pad, 1048576 characters scanned or copied by
+   js_sub_string_long, the two phases counted together), also where the
+   filler ends or the scan turns into the copy. A call that has done T units
+   of work has read the flag at least T / step times, less those of the same
+   call on a short input (the reads of the call and the evaluation). */
+static void test_string_loop_gaps(void)
+{
+    static const char setup[] =
+        "var f1 = 'ab'.repeat(65535) + 'c'\n"
+        "var wide = ['\\u4e00', '\\u00e9'.repeat(2 << 20)].join(''); 0\n";
+    static const struct {
+        const char *call, *base;
+        long reads;
+    } cases[] = {
+        /* 399999 characters written in steps of 65536: a filler of 131071 ends in the middle of a step */
+        { "'x'.padEnd(400000, f1)", "'x'.padEnd(2, f1)", 6 },
+        { "'x'.padStart(400000, f1)", "'x'.padStart(2, f1)", 6 },
+        /* 2097152 characters scanned, then as many copied */
+        { "wide.slice(1)", "wide.slice(1, 3)", 4 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long before, base, reads;
+
+        /* the first call of a method makes it, which may read the flag: the second is the one measured */
+        CHECK(eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        before = host_poll_reads;
+        CHECK(eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        base = host_poll_reads - before;
+        before = host_poll_reads;
+        CHECK(eval(ctx, cases[i].call), "%s: the script threw", cases[i].call);
+        reads = host_poll_reads - before - base;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", cases[i].call, reads,
+              cases[i].reads);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+/* Hashing the key of a Map or Set walks every character of a string or rope,
+   and reads the interrupt flag each time 65536 of them have been hashed since
+   the last reading (a string of a rope counts one more than its length, and
+   the strings of a rope share the count). A Map or Set operation with such a
+   key (has, get, set, add, delete, getOrInsert, getOrInsertComputed, and the
+   methods of Set that look keys up or copy the set) stops with "interrupted"
+   when the flag is set in the middle, whether the key is flat or a rope. The
+   keys of a table being rebuilt are hashed without reading it.
+
+   Each call is measured and stopped on a collection made again, with a key
+   that is not in it, so that every one adds, deletes or calls back as it
+   does the first time. The flag is set in the hash that comes after the
+   callback of getOrInsertComputed, which has made the value to put in, and
+   afterwards the collection holds what it held, an iterator made before
+   goes on, and no block is left (a value that the failing call made is
+   freed). */
+static void test_map_key_polls(void)
+{
+    static const char setup[] =
+        "var r = 'ab'; for (var i = 0; i < 23; i++) r = r + r\n"
+        "var f = 'ac'.repeat(1 << 23), o1 = new Set([r]), o2 = new Set(['k'])\n"
+        "function mk() { var m = new Map([['one', {v: 1}], ['two', {v: 2}], ['three', {v: 3}]]); m.it = m.keys(); return m }\n"
+        "function mks() { var s = new Set(['one', 'two', 'three']); s.it = s.values(); return s }\n"
+        "var c; 0\n";
+    /* where the flag is set: num/den of the reads of the hashes of the long key, after the reads the call makes with a short one */
+    static const struct {
+        const char *make, *call, *base;
+        int num, den;
+    } cases[] = {
+        { "mk", "c.set(r, 1)", "c.set('k', 1)", 3, 4 },
+        { "mk", "c.get(f)", "c.get('k')", 1, 2 },
+        { "mk", "c.has(r)", "c.has('k')", 1, 2 },
+        { "mk", "c.delete(f)", "c.delete('k')", 1, 2 },
+        { "mk", "c.getOrInsert(r, {v: 7})", "c.getOrInsert('k', {v: 7})", 3, 4 },
+        { "mk", "c.getOrInsertComputed(f, () => ({v: 9}))", "c.getOrInsertComputed('k', () => ({v: 9}))", 1, 2 },
+        { "mks", "c.add(r)", "c.add('k')", 3, 4 },
+        { "mks", "c.has(f)", "c.has('k')", 1, 2 },
+        { "mks", "c.delete(r)", "c.delete('k')", 1, 2 },
+        { "mks", "c.union(o1)", "c.union(o2)", 3, 4 },
+        { "mks", "c.isSupersetOf(o1)", "c.isSupersetOf(o2)", 1, 2 },
+        { "mks", "c.symmetricDifference(o1)", "c.symmetricDifference(o2)", 3, 4 },
+        { "mks", "c.intersection(o1)", "c.intersection(o2)", 1, 2 },
+        { "mks", "c.difference(o1)", "c.difference(o2)", 1, 2 },
+        { "mks", "c.isDisjointFrom(o1)", "c.isDisjointFrom(o2)", 1, 2 },
+    };
+    /* ropes of long strings, 65534 and 65536 characters and the like: the flag is read at every 65536 of the characters (and leaves) of the whole key */
+    static const struct {
+        const char *key;
+        long reads;
+    } ropes[] = {
+        { "l1 + l2", 2 },
+        { "l3 + l2 + l1", 3 },
+        { "l2 + l1 + l2 + l1", 4 },
+        { "l1 + l1 + l1 + l1 + l1", 4 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char make[64];
+        const char *call = cases[i].call;
+        long before, base, all, hashes;
+
+        snprintf(make, sizeof(make), "c = %s()", cases[i].make);
+        /* the first call of a method makes it, which may read the flag: the second is the one measured */
+        CHECK(eval(ctx, make) && eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        CHECK(eval(ctx, make), "%s: the script threw", make);
+        before = host_poll_reads;
+        CHECK(eval(ctx, cases[i].base), "%s: the script threw", cases[i].base);
+        base = host_poll_reads - before;
+        CHECK(eval(ctx, make), "%s: the script threw", make);
+        before = host_poll_reads;
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        all = host_poll_reads - before;
+        hashes = all - base;
+        CHECK(hashes >= 255, "%s: %ld readings of the flag in the hashes, want at least 255", call, hashes);
+        CHECK(eval(ctx, make), "%s: the script threw", make);
+        host_poll_stop_after(base + hashes * cases[i].num / cases[i].den);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, cases[i].make[2] == 's' ?
+                      "[c.size, [...c.keys()].join('|'), c.it.next().value].join()" :
+                      "[c.size, [...c.keys()].join('|'), c.get('one').v, c.get('two').v, c.get('three').v, c.it.next().value].join()",
+                      cases[i].make[2] == 's' ? "3,one|two|three,one" : "3,one|two|three,1,2,3,one"),
+              "the collection after %s", call);
+    }
+    CHECK(eval(ctx, "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535)"), "the leaves");
+    for(i = 0; i < sizeof(ropes) / sizeof(ropes[0]); i++) {
+        char call[96];
+        long before, base, reads;
+
+        CHECK(eval(ctx, "new Set().has('k')"), "the script threw");
+        before = host_poll_reads;
+        CHECK(eval(ctx, "new Set().has('k')"), "the script threw");
+        base = host_poll_reads - before;
+        snprintf(call, sizeof(call), "new Set().has(%s)", ropes[i].key);
+        before = host_poll_reads;
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before - base;
+        CHECK(reads >= ropes[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, ropes[i].reads);
+    }
+    /* what they do is what they did: the same keys, found and not found */
+    CHECK(eval_is(ctx, "var q = new Set(), k = ['a', 'b'.repeat(70000), 'a' + 'c'.repeat(100000), 'ab'.repeat(40000) + 'x']; "
+                  "for (var x of k) q.add(x); q.add(k[1] + ''); q.add('a' + 'c'.repeat(100000)); "
+                  "[q.size, q.has('b'.repeat(70000)), q.has('b'.repeat(70001)), q.has('ab'.repeat(40000) + 'x'), q.delete(k[2]), q.size].join()",
+                  "4,true,false,true,true,3"), "the keys");
+    CHECK(eval_is(ctx, "var w = new Map(); for (var j = 0; j < 100; j++) w.set('k' + j, j); w.set('big'.repeat(30000), 1); "
+                  "[w.size, w.get('k42'), w.get('big'.repeat(30000)), w.get('big'.repeat(30001)), w.getOrInsert('k7', 0), w.getOrInsert('new', 5), w.size].join()",
+                  "101,42,1,,7,5,102"), "the map");
+    CHECK(eval_is(ctx, "var a1 = new Set(['x'.repeat(70000), 'y', 'z']), b1 = new Set(['x'.repeat(70000), 'w']); "
+                  "[[...a1.union(b1)].length, [...a1.intersection(b1)].length, [...a1.difference(b1)].length, [...a1.symmetricDifference(b1)].length, "
+                  "a1.isSupersetOf(new Set(['y'])), b1.isSubsetOf(a1), a1.isDisjointFrom(new Set(['q']))].join()",
+                  "4,1,2,3,true,false,true"), "the Set methods");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
@@ -2736,6 +3028,10 @@ int main(void)
     test_regexp_stops();
     test_regexp_skip_polls();
     test_rope_polls();
+    test_iterator_polls();
+    test_string_loop_polls();
+    test_string_loop_gaps();
+    test_map_key_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
