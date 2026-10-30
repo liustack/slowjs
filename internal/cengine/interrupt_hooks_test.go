@@ -146,16 +146,37 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		// memcpy of big strings: test_rope_polls of engine/test/unit.c counts
 		// the readings of the flag in it.)
 		{"two ropes compared", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 < r2`, "<eval>"},
+		// Equality is an operator of the interpreter, which stops in the frame that runs it. Two equal ropes are
+		// compared leaf by leaf, and two equal flat strings in steps.
+		{"two ropes ===", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 === r2`, "<eval>"},
+		{"two ropes ==", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `r1 == r2`, "<eval>"},
+		{"switch on a rope", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f()`, `switch (r1) { case 1: break; case r2: break }`, "<eval>"},
+		{"two flat strings ===", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a === b`, "<eval>"},
 		// The hash of the key of a Map or Set walks all its characters.
 		{"Set.has, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var s = new Set()`, `s.has(r)`, "has"},
 		{"Map.get, a long string for the key", `var f = 'ab'.repeat(1 << 25); var m = new Map()`, `m.get(f)`, "get"},
 		// the key is taken out again: comparing a key with an equal rope, as a Set that holds it does, reads no flag
 		{"Map.set, a rope for the key", `var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; var m = new Map()`, `m.set(r, 1), m.clear()`, "set"},
+		// a key equal to the one the Map holds is compared with it after it is hashed
+		{"Map.get, an equal rope for the key", `var f = function () { var r = 'ab'; for (var i = 0; i < 25; i++) r = r + r; return r }; var r1 = f(), r2 = f(), m = new Map([[r1, 1]])`, `m.get(r2)`, "get"},
+		{"Set.has, an equal flat string for the key", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), s = new Set([a])`, `s.has(b)`, "has"},
 		{"Math.sumPrecise, an Array", bigArray, `Math.sumPrecise(a)`, "sumPrecise"},
 		{"Iterator drop, an Array", bigArray, `a.values().drop(1 << 24).next()`, "next"},
 		// A set-like object that lends the iterator of an array: isSupersetOf asks this Set
 		// about each item, in C.
 		{"Set isSupersetOf", bigArray + `; var s = new Set([1]), like = { size: 1, has: () => true, keys: () => a.values() }`, `s.isSupersetOf(like)`, "isSupersetOf"},
+		// A search for a string of the length of the one searched, Array.prototype.indexOf, includes and
+		// lastIndexOf and Object.is on equal strings, and JSON.stringify of a long string: the compare and
+		// the loop go a step at a time with the flag read between the steps.
+		{"indexOf, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.indexOf(b)`, "indexOf"},
+		{"startsWith, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.startsWith(b)`, "startsWith"},
+		{"replace, an equal string", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `a.replace(b, 'x')`, "replace"},
+		{"Array indexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.indexOf(b)`, "indexOf"},
+		{"Array includes, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [1, a]`, `arr.includes(b)`, "includes"},
+		{"Array lastIndexOf, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24), arr = [a, 1]`, `arr.lastIndexOf(b)`, "lastIndexOf"},
+		{"Object.is, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `Object.is(a, b)`, "is"},
+		{"JSON.stringify, a long string", `var s = 'a'.repeat(1 << 26)`, `JSON.stringify(s)`, "stringify"},
+		{"JSON.stringify, escapes", `var s = '\n'.repeat(1 << 24)`, `JSON.stringify(s)`, "stringify"},
 	}
 	// These make a result of as many pieces as the input has. Freeing it takes
 	// polls, up to a third of the polls of the call or more, and so many

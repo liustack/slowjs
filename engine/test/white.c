@@ -55,7 +55,43 @@ static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 }
 #define JS_ALLOC_FAILS(rt, ptr, size) white_call_fails(rt, ptr, size)
 
+/* JS_WORK counts the units of work of the loops that read the interrupt flag
+   (white_work), and each reading of the flag (cutils.h calls host_poll) closes
+   a stretch: white_work_max is the longest stretch since white_work_reset,
+   white_work_total the work in all of them. */
+static unsigned long white_work, white_work_max, white_work_total;
+#define JS_WORK(n) (white_work += (n), white_work_total += (n))
+int host_poll(const volatile int *flag);
+#define host_poll white_host_poll
+
 #include "../quickjs.c"
+
+#undef host_poll
+int white_host_poll(const volatile int *flag)
+{
+    if (white_work > white_work_max)
+        white_work_max = white_work;
+    white_work = 0;
+    return host_poll(flag);
+}
+
+void white_work_reset(void)
+{
+    white_work = white_work_max = white_work_total = 0;
+}
+
+/* the longest stretch of work between two readings of the flag since
+   white_work_reset, the one before the first reading and the one after the
+   last included */
+unsigned long white_work_longest(void)
+{
+    return white_work > white_work_max ? white_work : white_work_max;
+}
+
+unsigned long white_work_sum(void)
+{
+    return white_work_total;
+}
 
 /* ---- string buffers and the runs of JSON ---- */
 
@@ -122,7 +158,9 @@ int white_string_len_max(void)
 
 const uint8_t *white_json_string_run(StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep)
 {
-    return json_string_run(b, p, end, sep);
+    uint32_t work = 0;
+
+    return json_string_run(b, p, end, sep, &work);
 }
 
 /* json_run_limit over addresses that need not be memory: the run is not read. */
@@ -134,7 +172,9 @@ uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end)
 /* json_quote_run over the string value s from *pi. */
 int white_json_quote_run(StringBuffer *b, JSValueConst s, int *pi)
 {
-    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi);
+    uint32_t work = 0;
+
+    return json_quote_run(b, JS_VALUE_GET_STRING(s), pi, &work);
 }
 
 /* ---- strings built by appending ---- */
@@ -898,4 +938,24 @@ int white_fused_ops(const uint8_t *code, int len, int *count)
         }
     }
     return n;
+}
+
+/* ---- the copy of a string buffer that grows ---- */
+
+/* The bytes of the header of a string, which the block of a string buffer
+   holds in front of its characters. */
+int white_jsstring_header(void)
+{
+    return sizeof(JSString);
+}
+
+/* string_buffer_write8 of len bytes of p, and string_buffer_putc16 of c. */
+int white_sb_write8(StringBuffer *b, const uint8_t *p, int len)
+{
+    return string_buffer_write8(b, p, len);
+}
+
+int white_sb_putc16(StringBuffer *b, uint32_t c)
+{
+    return string_buffer_putc16(b, c);
 }
