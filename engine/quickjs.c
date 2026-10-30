@@ -33463,7 +33463,6 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
             JSAtom name;
             BlockEnv block_env;
 
-            set_eval_ret_undefined(s);
             if (next_token(s))
                 goto fail;
             label_catch = new_label(s);
@@ -33477,6 +33476,7 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
                              JS_ATOM_NULL, -1, -1, 1);
             block_env.label_finally = label_finally;
 
+            set_eval_ret_undefined(s);
             if (js_parse_block(s))
                 goto fail;
 
@@ -33538,6 +33538,7 @@ static __exception int js_parse_statement_or_decl1(JSParseState *s,
                                  -1, -1, 1);
                 block_env.label_finally = label_finally;
 
+                set_eval_ret_undefined(s);
                 if (js_parse_block(s))
                     goto fail;
 

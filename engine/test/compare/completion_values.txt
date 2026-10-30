@@ -1,0 +1,39 @@
+1; try { } catch (e) { } => undefined
+1; try { 2 } catch (e) { 3 } => 2
+1; try { 2; throw 0 } catch (e) { } => undefined
+1; try { throw 0 } catch (e) { } => undefined
+1; try { throw 0 } catch (e) { 4 } => 4
+1; try { throw 0 } catch (e) { 4; } => 4
+1; try { } finally { } => undefined
+1; try { 2 } finally { 3 } => 2
+1; try { 2 } finally { } => 2
+1; try { } finally { 3 } => undefined
+1; try { throw 0 } catch (e) { } finally { 5 } => undefined
+1; try { throw 0 } catch (e) { 4 } finally { } => 4
+1; try { throw 0 } catch (e) { } finally { } => undefined
+1; try { 2 } catch (e) { 3 } finally { 5 } => 2
+1; try { 2 } catch { 3 } => 2
+1; try { throw 0 } catch { } => undefined
+1; try { throw 0 } catch { 6 } => 6
+1; do { try { 2; break } catch (e) { } } while (false) => 2
+1; do { try { throw 0 } catch (e) { break } } while (false) => undefined
+1; do { try { throw 0 } catch (e) { 7; break } } while (false) => 7
+1; do { try { 8; continue } finally { } } while (false) => 8
+1; for (var i = 0; i < 2; i++) { try { throw 0 } catch (e) { } } => undefined
+1; for (var i = 0; i < 2; i++) { try { throw 0 } catch (e) { i } } => 1
+1; for (var i = 0; i < 2; i++) { try { i } catch (e) { } } => 1
+1; if (true) { try { } catch (e) { } } => undefined
+1; { try { throw 0 } catch (e) { } } => undefined
+1; l: try { 2; break l } catch (e) { } => 2
+1; try { try { throw 0 } catch (e) { } } catch (e) { 9 } => undefined
+1; try { try { throw 0 } finally { } } catch (e) { } => undefined
+1; try { throw 0 } catch (e) { try { } catch (e2) { } } => undefined
+1; switch (0) { case 0: try { throw 0 } catch (e) { } } => undefined
+1; switch (0) { case 0: 2; try { throw 0 } catch (e) { } } => undefined
+1; try { throw 0 } catch ({ a }) { } => undefined
+1; try { throw {} } catch ({ a }) { a } => undefined
+1; try { throw 0 } catch (e) { var x = 1 } => undefined
+1; try { throw 0 } catch (e) { ; } => undefined
+1; try { throw 0 } catch (e) { function f() {} } => undefined
+1; try { throw 0 } catch (e) { let y = 1 } => undefined
+1; with ({}) { try { throw 0 } catch (e) { } } => undefined
