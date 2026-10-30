@@ -6976,11 +6976,43 @@ static JSValue js_new_object_inline(JSContext *ctx, JSShape *sh)
     return JS_MKPTR(JS_TAG_OBJECT, p);
 }
 
+/* The shape in the shape hash table with the prototype proto and exactly
+   the n keys of atoms, in their order, each with the flags JS_PROP_C_W_E,
+   or NULL. It is looked up by its final hash, which add_shape_property
+   builds key by key from shape_initial_hash(proto): the shapes in between
+   need not exist (the empty one of proto is often gone, grown in place by
+   the object that had it). */
+static JSShape *find_hashed_shape_keys(JSRuntime *rt, JSObject *proto,
+                                       const JSAtom *atoms, uint32_t n)
+{
+    JSShape *sh;
+    JSShapeProperty *prop;
+    uint32_t h, i;
+
+    h = shape_initial_hash(proto);
+    for(i = 0; i < n; i++)
+        h = shape_hash(shape_hash(h, atoms[i]), JS_PROP_C_W_E);
+    for(sh = rt->shape_hash[get_shape_hash(h, rt->shape_hash_bits)]; sh != NULL;
+        sh = sh->shape_hash_next) {
+        if (sh->hash != h || sh->proto != proto || sh->prop_count != n)
+            continue;
+        prop = get_shape_prop(sh);
+        for(i = 0; i < n; i++) {
+            if (prop[i].atom != atoms[i] || prop[i].flags != JS_PROP_C_W_E)
+                break;
+        }
+        if (i == n)
+            return sh;
+    }
+    return NULL;
+}
+
 /* Make the shape of the objects of the object literal lit of ctx, at its
    first run, and keep it in lit: the shape in the shape hash table with
    exactly the keys of lit, in their order, as properties made by
    OP_define_field, and the Object.prototype of ctx, or else a new one that
-   has room for exactly those keys. Return NULL when there is no memory. */
+   has room for exactly those keys. A shape found may have room for more
+   properties than lit has keys. Return NULL when there is no memory. */
 static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
                                                const JSAtom *atoms)
 {
@@ -6989,9 +7021,7 @@ static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
     JSShape *sh;
     uint32_t i, hash_size;
 
-    sh = find_hashed_shape_proto(rt, proto);
-    for(i = 0; sh && i < lit->count; i++)
-        sh = find_hashed_shape_prop(rt, sh, atoms[i], JS_PROP_C_W_E);
+    sh = find_hashed_shape_keys(rt, proto, atoms, lit->count);
     if (sh) {
         sh = js_dup_shape(sh);
     } else {
