@@ -932,3 +932,16 @@ int white_sb_putc16(StringBuffer *b, uint32_t c)
 {
     return string_buffer_putc16(b, c);
 }
+
+/* JS_WORK(n) for a test that stands for the loop that came before a call. */
+void white_work_add(unsigned long n)
+{
+    JS_WORK(n);
+}
+
+/* The size the allocator gives the block of b, which the limit of the memory
+   counts when the block is made larger. */
+size_t white_sb_block_usable(const StringBuffer *b)
+{
+    return js_malloc_usable_size(b->ctx, b->str);
+}

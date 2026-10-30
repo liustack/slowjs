@@ -68,6 +68,8 @@ int white_sb_write8(struct StringBuffer *b, const uint8_t *p, int len);
 int white_sb_putc16(struct StringBuffer *b, uint32_t c);
 unsigned long white_work_longest(void);
 unsigned long white_work_sum(void);
+void white_work_add(unsigned long n);
+size_t white_sb_block_usable(const struct StringBuffer *b);
 
 /* ---- texts of every kind of character ---- */
 
@@ -781,6 +783,44 @@ static void test_object_inline_oom(void)
    copies the header and the 1500000 characters it holds. Widening it (a
    character above 0xff) copies them the same way and then widens the 1500000
    characters, and no stretch of work is longer than a step of the copy. */
+/* The limit of the memory for a buffer that grows by the copy of its block
+   (string_buffer_realloc2): the new block is asked for as heap_realloc does,
+   against the count less the old block. A limit that has room for the new
+   block and not for both makes the growth, and one byte less fails with out
+   of memory, the buffer freed. */
+static void test_buffer_limit(void)
+{
+    VM v = vm_new();
+    struct StringBuffer *b;
+    unsigned long hdr = white_jsstring_header();
+    size_t used, usable, request, limit;
+    int pass;
+
+    for (pass = 0; pass < 2; pass++) {
+        /* a buffer of 1500000 characters, full: the next one makes it 2250000 */
+        b = white_sb_new(v.ctx, 1500000, 0, 1500000);
+        CHECK(b != NULL, "the buffer");
+        if (!b)
+            break;
+        used = JS_GetMemorySize(v.rt);
+        usable = white_sb_block_usable(b);
+        request = hdr + 2250000 + 1;
+        limit = used - usable + request - (pass == 0 ? 0 : 1);
+        JS_SetMemoryLimit(v.rt, limit);
+        if (pass == 0) {
+            CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the buffer did not grow with the room of the old block in the limit");
+            CHECK(!white_sb_error(b), "the buffer is in error");
+        } else {
+            CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) != 0, "the buffer grew past the limit");
+            CHECK(white_sb_error(b), "the buffer is not in error");
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        }
+        JS_SetMemoryLimit(v.rt, (size_t)-1);
+        white_sb_free(v.ctx, b);
+    }
+    vm_free(&v);
+}
+
 static void test_buffer_copy_work(void)
 {
     VM v = vm_new();
@@ -803,6 +843,17 @@ static void test_buffer_copy_work(void)
         CHECK(white_sb_putc16(b, 0x4e2d) == 0, "the putc failed");
         CHECK(white_work_sum() == hdr + 1500000 + 1500000, "widened: %lu units of work, want %lu", white_work_sum(), hdr + 3000000);
         CHECK(white_work_longest() <= (1 << 20), "widened: %lu units of work between two readings of the flag", white_work_longest());
+        white_sb_free(v.ctx, b);
+    }
+    /* the work that came before the call is not added to the first step of the copy: 60000 units, then 1500000 bytes of the buffer, in steps of 1 MiB */
+    b = white_sb_new(v.ctx, 1500000, 0, 1500000);
+    CHECK(b != NULL, "the buffer");
+    if (b) {
+        white_work_reset();
+        white_work_add(60000);
+        CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the write failed");
+        CHECK(white_work_sum() == 60000 + hdr + 1500000, "after a scan: %lu units of work, want %lu", white_work_sum(), 60000 + hdr + 1500000);
+        CHECK(white_work_longest() <= (1 << 20), "after a scan: %lu units of work between two readings of the flag", white_work_longest());
         white_sb_free(v.ctx, b);
     }
     vm_free(&v);
@@ -849,6 +900,18 @@ static void test_poll_work_gaps(void)
         "var qa = 'a'.repeat(200000), qe = '\\n'.repeat(70000), qm = ('a'.repeat(32768) + '\\n').repeat(3), qw = '\\u4e2d'.repeat(70000)\n"
         "var e1 = 'x'.repeat(200000), e2 = 'x'.repeat(200000), e3 = 'x'.repeat(199999) + 'y'\n"
         "var x1 = '\\u4e2d'.repeat(200000), x2 = '\\u4e2d'.repeat(200000)\n"
+        /* strings of 65535 and 65536 characters that differ at the last one, 40 of the same string in an array, and 32 keys of the hash of dq for each length (7 blocks of A or B after the prefix: 65536 characters, 8 blocks: 65538 is not used here) */
+        "var s1a = ['x'.repeat(65534), 'a'].join(''), s1b = ['x'.repeat(65534), 'b'].join('')\n"
+        "var s2a = ['x'.repeat(65535), 'a'].join(''), s2b = ['x'.repeat(65535), 'b'].join('')\n"
+        "var ar1 = Array(40).fill(s1a), ar2 = Array(40).fill(s2a)\n"
+        "function tail7(i) { var r = []; for (var j = 0; j < 7; j++) r.push((i >> j & 1) ? A : B); return r.join('') }\n"
+        "var D2 = 'x'.repeat(65520), dm2 = new Map(), do2 = {}; for (var i = 0; i < 32; i++) { var k = [D2, B, tail7(i)].join(''); dm2.set(k, i); do2[k] = i }\n"
+        "var dq2 = [D2, A, tail7(0)].join('')\n"
+        "var D1 = 'x'.repeat(65519), dm1 = new Map(); for (var i = 0; i < 32; i++) { var k = [D1, B, tail7(i)].join(''); dm1.set(k, i) }\n"
+        "var dq1 = [D1, A, tail7(0)].join('')\n"
+        /* a JSON string whose buffer is wide before runs of 32768 characters and an escape each */
+        "var jn = '\"\\\\u4e2d' + ('a'.repeat(32768) + '\\\\n').repeat(8) + '\"'\n"
+        "var qn = ['\\u4e2d', ('a'.repeat(32768) + '\\n').repeat(8)]\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -899,6 +962,14 @@ static void test_poll_work_gaps(void)
         { "cm.has(cq)", ROPE_STEP, 65546 + 64 * 65536 },
         { "cm.delete(cq)", ROPE_STEP, 65546 + 64 * 65536 },
         { "co[cq] = 1", ROPE_STEP, 65546 + 64 * 65536 },
+        /* 32 keys of 65536 characters (a step: compared in steps) and of 65535 (compared at once, the compares add up) */
+        { "dm2.get(dq2)", ROPE_STEP, 33 * 65536 },
+        { "dm2.has(dq2)", ROPE_STEP, 33 * 65536 },
+        { "dm2.delete(dq2)", ROPE_STEP, 33 * 65536 },
+        { "do2[dq2] = 1", ROPE_STEP, 33 * 65536 },
+        { "dm1.get(dq1)", ROPE_STEP, 32 * 65535 },
+        { "dm1.has(dq1)", ROPE_STEP, 32 * 65535 },
+        { "dm1.delete(dq1)", ROPE_STEP, 32 * 65535 },
         /* a search for a string of the length of the one searched: the compare goes in steps */
         { "e1.indexOf(e2)", ROPE_STEP, 200000 },
         { "e1.indexOf(e3)", ROPE_STEP, 200000 },
@@ -914,6 +985,12 @@ static void test_poll_work_gaps(void)
         { "[e1, 1].lastIndexOf(e2)", ROPE_STEP, 200000 + 4 },
         { "[1, e1].includes(e2)", ROPE_STEP, 200000 + 4 },
         { "Object.is(e1, e2)", ROPE_STEP, 200000 + 4 },
+        /* the same string in 40 elements: strings of 65535 characters are compared at once, and the 40 compares add up; those of 65536 are compared in steps */
+        { "ar1.indexOf(s1b)", ROPE_STEP, 40 * 65535 },
+        { "ar1.includes(s1b)", ROPE_STEP, 40 * 65535 },
+        { "ar2.indexOf(s2b)", ROPE_STEP, 40 * 65536 + 80 },
+        { "ar2.includes(s2b)", ROPE_STEP, 40 * 65536 + 80 },
+        { "ar1.lastIndexOf(s1b)", ROPE_STEP, 40 * 65535 },
         /* JSON.parse: the C string (once for each character of an 8-bit string without escapes, and once more for a string that has to be converted), then the bytes of the string, escapes with their bytes, and the characters before a wide one when the buffer is widened */
         { "JSON.parse(ja)", ROPE_STEP + 5, 65539 + 65537 },
         { "JSON.parse(je)", ROPE_STEP + 5, 80002 + 80000 },
@@ -931,6 +1008,9 @@ static void test_poll_work_gaps(void)
         { "JSON.stringify(qm).length", ROPE_STEP, 3 * (32768 + 1) },
         /* the quote that opens the string is widened by the first run: 1 more */
         { "JSON.stringify(qw).length", ROPE_STEP + 1, 70000 + 1 },
+        /* runs of narrow characters into a buffer that is wide already: each counts twice, once for the scan and once for the copy */
+        { "JSON.parse(jn)", ROPE_STEP + 5, 262160 + 8 * 2 * 32768 + 6 + 16 },
+        { "JSON.stringify(qn).length", ROPE_STEP + 1, 2 + 1 + 8 * 2 * 32768 + 8 },
     };
     VM v = vm_new();
     size_t i;
@@ -2475,6 +2555,7 @@ int main(void)
     test_object_inline_oom();
     test_poll_work_gaps();
     test_buffer_copy_work();
+    test_buffer_limit();
     test_object_inline_limit();
     test_young_lists();
     test_young_leaves_no_zero_count();
