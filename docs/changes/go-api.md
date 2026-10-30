@@ -174,11 +174,13 @@ Test: `strip_test.go`.
 
 Release: v0.26.17.
 
-`VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC now, `MemorySize` returns the memory the VM takes, as the memory limit and the GC threshold count it, and `GCThreshold` returns the threshold. The engine runs a GC when it makes an object and the memory would pass the threshold, then sets the threshold to 1.5 times what the GC left, so a threshold other than the one set last means the engine ran a GC since. `RunGC` leaves the threshold as it is.
+`VM` has three GC methods next to `SetGCThreshold`. `RunGC` runs a GC now, `MemorySize` returns the memory the VM takes, as the memory limit and the GC threshold count it, and `GCThreshold` returns the threshold. The engine runs a GC when it makes an object and the memory would pass the threshold. After every full GC, the engine's own and `RunGC`, the threshold is 1.5 times what the GC left, so a threshold other than the one set last means a full GC ran since. A threshold of the largest value, which turns the GC of the engine off, stays as it is.
+
+Up to v0.29.1 `RunGC` left the threshold where it was. When a script had grown the heap past it with no object made (array elements do), the first object of the next call started another full GC after the `RunGC`: about 53 polls on an array of 2^18 elements. The threshold is now set in `JS_RunGC`, which `js_trigger_gc` calls too. An embedder that sets the threshold after `RunGC`, as tifa does, sees no change.
 
 With these an embedder can collect between two calls into javascript, where the GC holds up no call, and set the threshold for the next one, as tifa does between two renders, without reading the runtime through `reflect`. As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and a call after `Close` panics.
 
-Test: `gc_test.go`.
+Test: `gc_test.go` (`TestRunGC`, `TestRunGCSetsTheThreshold`), `internal/cengine/poll_test.go` (`TestRunGCSetsTheThreshold` counts the polls of the call after `RunGC`) and `engine/test/unit-api.c` (`test_run_gc_threshold`).
 
 ## MemoryUsage and ReleaseMemory
 

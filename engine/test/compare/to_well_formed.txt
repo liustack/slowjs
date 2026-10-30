@@ -1,0 +1,25 @@
+well formed pairs: length 18000 true -> 18000 true true 0 at  sum 807644127 of 807644127
+a lone high first, 3000 pairs: length 6001 false -> 6001 true false 1 at 0 sum 720924809 of 932451872
+a lone high first, 5000 pairs: length 10001 false -> 10001 true false 1 at 0 sum 939511681 of 783925386
+a lone high first, 20000 pairs: length 40001 false -> 40001 true false 1 at 0 sum 735006955 of 116636726
+a lone low first, 5000 pairs: length 10001 false -> 10001 true false 1 at 0 sum 939511681 of 365279331
+a lone high, 5000 pairs, a lone low, 5000 pairs: length 20002 false -> 20002 true false 2 at 0,10001 sum 973849511 of 610451030
+5000 pairs, a lone high last: length 10001 false -> 10001 true false 1 at 10000 sum 115243494 of 115233318
+a lone low then a lone high then pairs: length 10002 false -> 10002 true false 2 at 0,1 sum 949195628 of 992406609
+two highs and a pair: length 3 false -> 3 true false 1 at 0 sum 64750112 of 54970976
+9000 lone highs: length 9000 false -> 9000 true false 9000 at 0,1,2,3,4,5 sum 967507403 of 610933259
+9000 lone lows: length 9000 false -> 9000 true false 9000 at 0,1,2,3,4,5 sum 967507403 of 825950543
+a pair across the place: length 4107 true -> 4107 true true 0 at  sum 195551233 of 195551233
+a pair ending at the place: length 4106 true -> 4106 true true 0 at  sum 524180143 of 524180143
+a pair starting after the place: length 4108 true -> 4108 true true 0 at  sum 8055093 of 8055093
+a lone high before the place: length 4105 false -> 4105 true false 1 at 4094 sum 132214701 of 199345455
+a lone high at the place: length 4106 false -> 4106 true false 1 at 4095 sum 799033128 of 866163882
+a lone high after the place: length 4107 false -> 4107 true false 1 at 4096 sum 470404218 of 537534972
+a lone low at the place: length 4106 false -> 4106 true false 1 at 4095 sum 799033128 of 700183352
+a lone low after the place: length 4107 false -> 4107 true false 1 at 4096 sum 470404218 of 371554442
+a lone high first, then a pair across the place: length 4107 false -> 4107 true false 1 at 0 sum 420693459 of 659601998
+a lone high first, pairs and a lone low across the place: length 4102 false -> 4102 true false 2 at 0,4095 sum 157574140 of 973661887
+a lone high first, 8192 characters of a, pairs: length 16393 false -> 16393 true false 1 at 0 sum 349373249 of 999098227
+2 places of lone ones among pairs: length 8212 false -> 8212 true false 2 at 4094,8191 sum 483038645 of 213956653
+wide, no surrogate: length 10000 true -> 10000 true true 0 at  sum 606855996 of 606855996
+wide, a lone high at the end: length 10001 false -> 10001 true false 1 at 10000 sum 812601283 of 812591107

@@ -836,14 +836,16 @@ static void test_search_linear(void)
    string, it ends with the error "interrupted", which try and catch do not
    catch, and the context then runs scripts and searches again. Comparing
    the needle at the one index a search has, as startsWith does, is linear
-   in its length and reads no flag, as === does not. */
+   in its length and reads no flag, as === does not. A needle of that kind is
+   made flat with join: one made by + is a rope, and making a rope flat reads
+   the flag (test_rope_polls). */
 static void test_search_interrupt(void)
 {
     static const char setup[] =
         "var a = 'a'.repeat(1 << 23), m = 'a'.repeat(1000) + 'b'\n"
         "var w = '\\u4e00'.repeat(1 << 22), wm = '\\u4e00'.repeat(1000) + 'b'\n"
         "var aw = a + '\\u4e00', ab = a + 'b', ba = 'b' + a\n"
-        "var awm = aw + m, wwm = w + wm, a2 = a.slice(1) + 'a'\n";
+        "var awm = aw + m, wwm = w + wm, a2 = [a.slice(1), 'a'].join('')\n";
     static const struct {
         const char *hay, *call, *needle, *want;
         int stops;
@@ -867,9 +869,9 @@ static void test_search_interrupt(void)
         { "ab", "indexOf", "a", "0", 1 },
         { "aw", "includes", "a", "true", 1 },
         { "a", "startsWith", "a2", "true", 0 },
-        { "aw", "endsWith", "a.slice(1) + '\\u4e00'", "true", 0 },
+        { "aw", "endsWith", "[a.slice(1), '\\u4e00'].join('')", "true", 0 },
         { "a", "indexOf", "a2", "0", 0 },
-        { "a", "startsWith", "a.slice(1) + 'b'", "false", 0 },
+        { "a", "startsWith", "[a.slice(1), 'b'].join('')", "false", 0 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -2591,6 +2593,44 @@ static void test_regexp_skip_polls(void)
     JS_FreeRuntime(rt);
 }
 
+/* The strings of a rope are copied and compared in loops that read the
+   interrupt flag after every JS_ROPE_STEP (65536) characters. A rope of 2^27
+   characters made by doubling, with a copy of no string in it, is made flat
+   by (r1 + 'x').charCodeAt(0) and compared with another by r1 < r2 (an
+   equality test cannot report an exception, and reads nothing). The host
+   counts the readings of the flag (host_poll_reads), and a flag set at the
+   20th reading stops each: a loop that read the flag once or twice would not
+   get there. */
+static void test_rope_polls(void)
+{
+    static const struct {
+        const char *name, *call;
+        long reads;
+    } cases[] = {
+        { "made flat", "(r1 + 'x').charCodeAt(0)", 1000 },
+        { "compared", "r1 < r2", 1000 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, "var f = function () { var r = 'ab'; for (var i = 0; i < 26; i++) r = r + r; return r }; var r1 = f(), r2 = f(); 0"),
+          "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long before = host_poll_reads;
+
+        CHECK(eval(ctx, cases[i].call), "%s: the script threw", cases[i].name);
+        CHECK(host_poll_reads - before >= cases[i].reads, "%s: %ld readings of the flag, want %ld", cases[i].name,
+              host_poll_reads - before, cases[i].reads);
+        host_poll_stop_after(20);
+        CHECK(interrupted(ctx, cases[i].call), "%s was not stopped in the middle", cases[i].name);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", cases[i].name);
+    }
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* Outside unicode mode, lre_canonicalize gives the upper case of an ASCII
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
@@ -2695,6 +2735,7 @@ int main(void)
     test_canonicalize_ascii();
     test_regexp_stops();
     test_regexp_skip_polls();
+    test_rope_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
