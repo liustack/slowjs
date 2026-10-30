@@ -217,7 +217,7 @@ TEXT ·JS_JSONStringify_block(SB), $224-32
 	BYTE $0x8d
 	BYTE $0x7b
 	BYTE $0x40
-	LEAQ ·engine_rodata+12229(SB), R14
+	LEAQ ·engine_rodata+12533(SB), R14
 	QUAD $0x000000d024a48b4c
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
@@ -1466,7 +1466,7 @@ TEXT ·js_json_to_str_block(SB), $272-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+11877(SB), R14
+	LEAQ ·engine_rodata+12181(SB), R14
 	QUAD $0x0000010824ac8b4c
 	QUAD $0x0000010024948948
 	QUAD $0x246c894c2424894c
@@ -1909,7 +1909,7 @@ TEXT ·js_json_to_str_block(SB), $272-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+11875(SB), R14
+	LEAQ ·engine_rodata+12179(SB), R14
 	QUAD $0x000000f824a48b4c
 	QUAD $0x0000010824ac8b4c
 	QUAD $0x246c894c2424894c
@@ -1956,7 +1956,7 @@ TEXT ·js_json_to_str_block(SB), $272-24
 	QUAD $0x7c8d4d0000010024
 	QUAD $0x000080c481494024
 	BYTE $0x00
-	LEAQ ·engine_rodata+11789(SB), R14
+	LEAQ ·engine_rodata+12093(SB), R14
 	QUAD $0x848948fffff267e9
 	QUAD $0x8c8948000000b024
 	QUAD $0xac8b4c000000a824
@@ -3370,7 +3370,7 @@ TEXT ·js_string_GetSubstitution_block(SB), $288-24
 	QUAD $0x8349e7894dfffffd
 	BYTE $0xc4
 	BYTE $0x10
-	LEAQ ·engine_rodata+10400(SB), R14
+	LEAQ ·engine_rodata+10704(SB), R14
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	BYTE $0x7c

@@ -787,6 +787,287 @@ static void test_run_gc_threshold(void)
     vm_free(&v);
 }
 
+/* The function of JS_NewEscapeTextFunction gives what React DOM's
+   escapeTextForBrowser gives, for the strings of every width, length and
+   place of the characters it escapes, and for everything that is not a
+   string: the same text, or the same error with the same calls made on the
+   object. The reference is React 19's function, as its production build has
+   it. */
+#define ESCAPE_REFERENCE \
+    "var matchHtmlRegExp = /[\"'&<>]/;\n" \
+    "function reactEscape(text) {\n" \
+    "  if (\"boolean\" === typeof text || \"number\" === typeof text || \"bigint\" === typeof text)\n" \
+    "    return \"\" + text;\n" \
+    "  text = \"\" + text;\n" \
+    "  var match = matchHtmlRegExp.exec(text);\n" \
+    "  if (match) {\n" \
+    "    var html = \"\", index, lastIndex = 0;\n" \
+    "    for (index = match.index; index < text.length; index++) {\n" \
+    "      switch (text.charCodeAt(index)) {\n" \
+    "        case 34: match = \"&quot;\"; break;\n" \
+    "        case 38: match = \"&amp;\"; break;\n" \
+    "        case 39: match = \"&#x27;\"; break;\n" \
+    "        case 60: match = \"&lt;\"; break;\n" \
+    "        case 62: match = \"&gt;\"; break;\n" \
+    "        default: continue;\n" \
+    "      }\n" \
+    "      lastIndex !== index && (html += text.slice(lastIndex, index));\n" \
+    "      lastIndex = index + 1;\n" \
+    "      html += match;\n" \
+    "    }\n" \
+    "    text = lastIndex !== index ? html + text.slice(lastIndex, index) : html;\n" \
+    "  }\n" \
+    "  return text;\n" \
+    "}\n"
+
+/* same(make) runs reactEscape and esc on fresh values of make() and reports
+   whether they agree on the text or the error, and on the calls the values
+   saw. */
+#define ESCAPE_DRIVER \
+    "var bad = 0, count = 0, first = '';\n" \
+    "function run1(f, make) {\n" \
+    "  var log = [], r;\n" \
+    "  try { r = { v: f(make(log)) } } catch (e) { r = { e: e instanceof Error ? e.name + ': ' + e.message : 'thrown ' + String(e) } }\n" \
+    "  r.log = log.join();\n" \
+    "  return r;\n" \
+    "}\n" \
+    "function same(make) {\n" \
+    "  count++;\n" \
+    "  var a = run1(esc, make), b = run1(reactEscape, make);\n" \
+    "  var ok = a.log === b.log && a.e === b.e && (a.e !== undefined || (typeof a.v === 'string' && a.v === b.v));\n" \
+    "  if (!ok) { bad++; if (!first) first = JSON.stringify(a) + ' against ' + JSON.stringify(b); }\n" \
+    "}\n" \
+    "function str(s) { same(function () { return s }) }\n" \
+    "var alphabet = ['a', '&', '<', '>', '\"', \"'\", '\\u00e9', '\\u0100', '\\ud800', '\\udc00', '\\ud83d\\ude00', ';', '\\u0000'];\n" \
+    "function gen(prefix, depth) {\n" \
+    "  str(prefix);\n" \
+    "  if (depth) for (var c of alphabet) gen(prefix + c, depth - 1);\n" \
+    "}\n" \
+    "gen('', 4);\n" \
+    "var sizes = [1, 7, 4095, 4096, 4097, 8191, 8192, 8193, 12288, 100003];\n" \
+    "var marks = ['&', '<', '>', '\"', \"'\"];\n" \
+    "for (var size of sizes) {\n" \
+    "  for (var wide of ['', '\\u0100']) {\n" \
+    "    var filler = 'x'.repeat(size - 1) + wide;\n" \
+    "    str(filler);\n" \
+    "    for (var at of [0, 1, 4095, 4096, 4097, 8192, size - 2, size - 1]) {\n" \
+    "      if (at < 0 || at >= size) continue;\n" \
+    "      for (var m of marks) str(filler.slice(0, at) + m + filler.slice(at + 1));\n" \
+    "    }\n" \
+    "    str(marks.join('').repeat(Math.ceil(size / 5)).slice(0, size) + wide);\n" \
+    "    str('&'.repeat(size) + wide);\n" \
+    "  }\n" \
+    "}\n" \
+    "var piece = 'ab<cd' + 'e'.repeat(3000), rope = piece;\n" \
+    "for (var i = 0; i < 12; i++) rope = rope + rope + i;\n" \
+    "str(rope);\n" \
+    "str(rope + '\\u0100');\n" \
+    "var o1 = { toString() { return 'x<' } };\n" \
+    "var others = [0, -0, 1, -1, 1.5, 1e21, 1e-7, NaN, Infinity, -Infinity, 2 ** 31, 123456789012345680000, 0.1 + 0.2,\n" \
+    "  true, false, null, undefined, 10n, -(2n ** 70n), {}, [], [1, 2], ['<', '&'], new Date(0), /a<b/g, function () {},\n" \
+    "  new String('a<b'), new Number(4), Object.create(null), Symbol('x'), Symbol.iterator, new Boolean(false), [undefined, null], new Error('<e>')];\n" \
+    "for (var x of others) same(function () { return x });\n" \
+    "same(function (log) { return { toString() { log.push('t'); return '<b>' } } });\n" \
+    "same(function (log) { return { valueOf() { log.push('v'); return '&' } } });\n" \
+    "same(function (log) { return { valueOf() { log.push('v'); return 7 }, toString() { log.push('t'); return 'x&y' } } });\n" \
+    "same(function (log) { return { valueOf() { log.push('v'); return {} }, toString() { log.push('t'); return 'x\"y' } } });\n" \
+    "same(function (log) { return { valueOf() { log.push('v'); return {} }, toString() { log.push('t'); return {} } } });\n" \
+    "same(function (log) { return { [Symbol.toPrimitive](hint) { log.push(hint); return hint + '<' } } });\n" \
+    "same(function (log) { return { [Symbol.toPrimitive](hint) { log.push(hint); return Symbol('s') } } });\n" \
+    "same(function (log) { return { [Symbol.toPrimitive](hint) { log.push(hint); return {} } } });\n" \
+    "same(function (log) { return { toString() { log.push('t'); throw new RangeError('boom') } } });\n" \
+    "same(function (log) { return { toString() { log.push('t'); throw 'plain' } } });\n" \
+    "same(function (log) { return { toString() { log.push('t'); return rope } } });\n" \
+    "same(function (log) { return { toString() { log.push('t'); return 'a'.repeat(5000) + '&' } } });\n" \
+    "same(function (log) { return { get [Symbol.toPrimitive]() { log.push('g'); return undefined }, toString() { log.push('t'); return \"'\" } } });\n" \
+    "same(function (log) { return new Proxy({}, { get(t, k) { log.push(String(k)); return k === 'toString' ? function () { return '>' } : undefined } }) });\n" \
+    "var noArgs = [esc(), reactEscape()];\n" \
+    "if (noArgs[0] !== noArgs[1] || noArgs[0] !== 'undefined') { bad++; first = first || 'no argument: ' + noArgs; }\n" \
+    "var more = [esc('<', 'ignored', '&'), esc.call({ toString() { return 'this' } }, '<'), new Function('esc', 'return esc(\"a&b\")')(esc)];\n" \
+    "if (more.join() !== '&lt;,&lt;,a&amp;b') { bad++; first = first || 'arguments and this: ' + more; }\n" \
+    "bad === 0 ? 'ok ' + (count > 20000) : bad + ' of ' + count + ' differ, the first: ' + first"
+
+/* define_escape makes the function under the name esc (the bytes given as
+   the name stay in name_len). */
+static JSValue define_escape(JSContext *ctx, const char *name, size_t name_len)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue f = JS_NewEscapeTextFunction(ctx, name, name_len);
+
+    if (!JS_IsException(f))
+        JS_SetPropertyStr(ctx, g, name, JS_DupValue(ctx, f));
+    JS_FreeValue(ctx, g);
+    return f;
+}
+
+static JSValue global_prop(JSContext *ctx, const char *name)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue r = JS_GetPropertyStr(ctx, g, name);
+
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+/* escape_reads returns how many times one call of f on the global name reads the flag that stops the engine. */
+static long escape_reads(JSContext *ctx, JSValueConst f, const char *name)
+{
+    JSValue s = global_prop(ctx, name), r;
+    long before = host_poll_reads;
+
+    r = JS_Call(ctx, f, JS_UNDEFINED, 1, &s);
+    before = host_poll_reads - before;
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, s);
+    return before;
+}
+
+static void test_escape_text(void)
+{
+    VM v = vm_new();
+    JSValue f, s, r, rope;
+    char *t;
+
+    f = define_escape(v.ctx, "esc", 3);
+    CHECK(!JS_IsException(f), "no function");
+    CHECK(eval_ok(v.ctx, ESCAPE_REFERENCE), "the reference of React");
+    CHECK(eval_is(v.ctx, ESCAPE_DRIVER, "ok true"), "esc against the function of React");
+
+    /* the shape of a built-in */
+    CHECK(eval_is(v.ctx,
+                  "JSON.stringify([esc.name, esc.length, Object.hasOwn(esc, 'prototype'),\n"
+                  "  String(esc), Object.getPrototypeOf(esc) === Function.prototype,\n"
+                  "  (() => { try { new esc('a'); return 'made' } catch (e) { return e.name } })()])",
+                  "[\"esc\",1,false,\"function esc() {\\n    [native code]\\n}\",true,\"TypeError\"]"),
+          "the shape of esc");
+    JS_FreeValue(v.ctx, f);
+
+    /* a string with nothing to escape comes back as it is, not a copy */
+    eval_ok(v.ctx, "var clean = 'a plain text, \\u00e9 and more'.repeat(3), dirty = 'a<b'");
+    s = global_prop(v.ctx, "clean");
+    f = global_prop(v.ctx, "esc");
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_STRING && JS_VALUE_GET_PTR(r) == JS_VALUE_GET_PTR(s),
+          "a clean string came back as another string");
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, s);
+    /* a rope is linearized and comes back as its string once it has nothing to escape */
+    eval_ok(v.ctx, "var cleanRope = ('x'.repeat(9000) + 'y'.repeat(9000)) + ('z'.repeat(9000))");
+    rope = global_prop(v.ctx, "cleanRope");
+    CHECK(JS_VALUE_GET_TAG(rope) == JS_TAG_STRING_ROPE || JS_VALUE_GET_TAG(rope) == JS_TAG_STRING, "the rope");
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &rope);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_STRING, "a rope came back as tag %d", (int)JS_VALUE_GET_TAG(r));
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, rope);
+    CHECK(eval_is(v.ctx, "esc(cleanRope).length + ' ' + (esc(cleanRope) === cleanRope)", "27000 true"), "the rope escaped");
+
+    /* A rope that concatenation built and nothing flattened yet is flattened by the first call. An interrupt set
+       while it is flattened stops the call there, with the error, and the flat copy is not kept: the rope holds
+       what it held before. (Reading 1 is the call's own, 2 and 3 are in the flattening, one at each leaf.) */
+    eval_ok(v.ctx, "var ropeLeaf = 'x'.repeat(70000), bigRope = ropeLeaf; "
+            "for (var ri = 0; ri < 100; ri++) bigRope = bigRope + ropeLeaf");
+    rope = global_prop(v.ctx, "bigRope");
+    CHECK(JS_VALUE_GET_TAG(rope) == JS_TAG_STRING_ROPE, "bigRope is tag %d, want a rope", (int)JS_VALUE_GET_TAG(rope));
+    JS_RunGC(v.rt);
+    {
+        size_t held = JS_GetMemorySize(v.rt);
+
+        host_poll_stop_after(3);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &rope);
+        host_poll_stop_after(0);
+        *JS_GetInterruptFlag(v.rt) = 0;
+        CHECK(JS_IsException(r), "an interrupt in the flattening of a rope did not stop the call");
+        t = exception_text(v.ctx);
+        CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the error of an interrupt in a rope: %s", t ? t : "?");
+        free(t);
+        JS_SetUncatchableException(v.ctx, FALSE);
+        JS_RunGC(v.rt);
+        CHECK(JS_GetMemorySize(v.rt) < held + (1 << 20), "the call kept a flat copy of the rope: %zu bytes more",
+              JS_GetMemorySize(v.rt) - held);
+    }
+    JS_FreeValue(v.ctx, rope);
+    CHECK(eval_is(v.ctx, "esc(bigRope).length", "7070000"), "the rope escaped after the interrupt");
+
+    /* the interrupt stops it on a long string, before and in the middle of the work */
+    eval_ok(v.ctx, "var long = '<'.repeat(200000), longClean = 'a'.repeat(200000)");
+    s = global_prop(v.ctx, "long");
+    *JS_GetInterruptFlag(v.rt) = 1;
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+    *JS_GetInterruptFlag(v.rt) = 0;
+    CHECK(JS_IsException(r), "an interrupt did not stop it");
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "InternalError: interrupted") == 0, "the error of an interrupt: %s", t ? t : "?");
+    free(t);
+    JS_SetUncatchableException(v.ctx, FALSE);
+    JS_FreeValue(v.ctx, s);
+    s = global_prop(v.ctx, "longClean");
+    *JS_GetInterruptFlag(v.rt) = 1;
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+    *JS_GetInterruptFlag(v.rt) = 0;
+    CHECK(JS_IsException(r), "an interrupt did not stop the count");
+    free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, s);
+    s = global_prop(v.ctx, "long");
+    host_poll_stop_after(3);
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+    host_poll_stop_after(0);
+    *JS_GetInterruptFlag(v.rt) = 0;
+    CHECK(JS_IsException(r), "an interrupt in the middle did not stop it");
+    free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, s);
+    CHECK(eval_is(v.ctx, "esc('a<b') + esc(dirty)", "a&lt;ba&lt;b"), "esc after the interrupts");
+
+    /* The flag is read at the start of each block of 4096 units but the first of the count, and before the first
+       block of the write when the string has more than one block, so no more than 4096 units pass between two
+       readings, also where the count ends and the write begins. The reads of the call itself are taken off. */
+    eval_ok(v.ctx, "var none = '', one = '<'.repeat(4096), twoClean = 'a'.repeat(8192), two = '<'.repeat(8192), "
+            "three = '<'.repeat(12288)");
+    {
+        long base = escape_reads(v.ctx, f, "none");
+
+        CHECK(escape_reads(v.ctx, f, "one") - base == 0, "4096 units read the flag %ld times", escape_reads(v.ctx, f, "one") - base);
+        CHECK(escape_reads(v.ctx, f, "twoClean") - base == 1, "8192 units with nothing to escape read the flag %ld times",
+              escape_reads(v.ctx, f, "twoClean") - base);
+        CHECK(escape_reads(v.ctx, f, "two") - base == 3, "8192 units to escape read the flag %ld times, want 3",
+              escape_reads(v.ctx, f, "two") - base);
+        CHECK(escape_reads(v.ctx, f, "three") - base == 5, "12288 units to escape read the flag %ld times, want 5",
+              escape_reads(v.ctx, f, "three") - base);
+    }
+
+    /* a string too long once escaped: the RangeError of a string that cannot be built */
+    CHECK(eval_ok(v.ctx, "var huge = '&'.repeat(1 << 28)"), "a string of 2**28 units");
+    CHECK(eval_is(v.ctx, "try { esc(huge); 'made' } catch (e) { e.name + ': ' + e.message }", "RangeError: invalid string length"),
+          "the length of 2**28 ampersands escaped");
+    eval_ok(v.ctx, "huge = null");
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+
+    /* no memory for the escaped string: the error of the engine, nothing left behind */
+    v = vm_new();
+    f = define_escape(v.ctx, "esc", 3);
+    eval_ok(v.ctx, "var big = '&'.repeat(1 << 20)");
+    room(&v, 1 << 20);
+    s = global_prop(v.ctx, "big");
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+    CHECK(JS_IsException(r), "the escape of a string with no memory for it");
+    t = exception_text(v.ctx);
+    CHECK(t && strcmp(t, "InternalError: out of memory") == 0, "the error with no memory: %s", t ? t : "?");
+    free(t);
+    JS_SetUncatchableException(v.ctx, FALSE);
+    JS_FreeValue(v.ctx, s);
+    unlimit(&v);
+    CHECK(eval_is(v.ctx, "esc('<')", "&lt;"), "esc after running out of memory");
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+
+    /* a name with bytes the engine reads as it is, and a name of more than one atom */
+    v = vm_new();
+    f = define_escape(v.ctx, "__tifa_escape\0ignored", 13);
+    CHECK(eval_is(v.ctx, "__tifa_escape.name + ' ' + __tifa_escape('\\'')", "__tifa_escape &#x27;"), "the name");
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_for_in_keeps_shape();
@@ -804,6 +1085,7 @@ int main(void)
     test_module_top_level();
     test_new_string_chars();
     test_throw_error_kind();
+    test_escape_text();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

@@ -202,6 +202,7 @@ func JS_NewContext(a0 uintptr, a1 uintptr) uintptr
 func JS_NewContextRaw(a0 uintptr, a1 uintptr) uintptr
 func JS_NewDate(a0 uintptr, a1 uintptr, a2 float64) (r0, r1 uintptr)
 func JS_NewError(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func JS_NewEscapeTextFunction(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func JS_NewHostFunction(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_NewHostFunctionRelease(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_NewObject(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -742,6 +743,7 @@ func js_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_error_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_error_isError(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_error_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_escape_text(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_execute_async_module(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_execute_sync_module(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_fast_array_find(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
