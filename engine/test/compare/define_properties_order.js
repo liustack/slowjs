@@ -139,7 +139,10 @@ if (typeof memorySize === 'function') {
       try { Object.defineProperties({}, { a: { value: 1 }, get b() { throw 1 }, c: { value: 3 } }) } catch (e) { }
       try { Object.defineProperties({}, { a: { value: 1 }, b: { value: 2 }, c: 5 }) } catch (e) { }
       try { Object.defineProperties(Object.freeze({}), { a: { value: 1 }, b: { value: 2 } }) } catch (e) { }
+      try { Object.defineProperties({}, { a: { value: 'x'.repeat(i) }, b: { get value() { throw 1 } } }) } catch (e) { }
       try { Object.defineProperties({}, { a: { value: 'x'.repeat(i), get: undefined }, b: { get value() { throw 1 } } }) } catch (e) { }
+      try { Object.defineProperties({}, { a: { set(v) { return i } }, b: { get value() { throw 1 } } }) } catch (e) { }
+      try { Object.defineProperties({}, { a: { get() { return i }, set(v) { return 'x'.repeat(i) } }, b: { get value() { throw 1 } } }) } catch (e) { }
       try { Object.defineProperties({}, { a: { get() { return {} }, set: undefined }, b: { get: 5 } }) } catch (e) { }
       Object.defineProperties({}, { a: { value: 'x'.repeat(i) }, b: { value: {} }, [Symbol()]: { value: [] } })
     }
