@@ -4866,18 +4866,27 @@ static int string_buffer_set_error(StringBuffer *s)
    interrupt flag when its block is made larger. */
 #define JS_COPY_STEP (1 << 20)
 
-/* js_malloc for the new block of a block that moves: the limit of the memory
-   is raised by the size of the old block while it is asked for, as
-   heap_realloc checks the request against the count less the old block. */
+/* js_malloc for the new block of a large block that moves: the limit of the
+   memory is raised by what the heap counts for the old block (its size and
+   its header) while the new block is asked for, as heap_realloc checks the
+   request against the count less the old block. That is the check of the
+   heap on the count and the limit. The footprint limit and the host, which
+   may refuse another mapping while the old block is there, are not changed. */
 static void *js_malloc_moving(JSContext *ctx, size_t size, void *old)
 {
     JSHeap *h = &ctx->rt->malloc_ctx.heap;
-    size_t limit = h->limit, room = js_malloc_usable_size(ctx, old);
+    size_t limit = h->limit, room;
     void *q;
 
+    /* the old block is a large block (it holds 1 MiB or more): the heap counts
+       it with its header, and the request for the new one with its header */
+    room = js_malloc_usable_size(ctx, old) + sizeof(JSMallocLargeBlockHeader);
     h->limit = room > SIZE_MAX - limit ? SIZE_MAX : limit + room;
-    q = js_malloc(ctx, size);
+    q = js_malloc_rt(ctx->rt, size);
     h->limit = limit;
+    /* the error is made with the limit back, not with the room of the old block */
+    if (!q)
+        JS_ThrowOutOfMemory(ctx);
     return q;
 }
 
@@ -6128,8 +6137,9 @@ static uint32_t string_rope_get_len(JSValueConst val)
    is set. js_strict_eq2 and the callers that cannot report an exception do
    not set it, and the test of two strings that are not ropes does not read
    the flag either. *pwork, when it is not NULL, is the work since the last
-   reading, in and out: the compares of the candidates of a chain of a hash
-   table share it, so that a chain of keys that differ late in the string is
+   reading, in and out, and less than a step when it is given (the callers
+   keep it so: js_short_eq_budget reads the flag when it would reach a step).
+   The compares of the candidates of a chain of a hash table share it, so that a chain of keys that differ late in the string is
    not a run of compares each with a budget of its own. A compare that stops
    at a difference counts the step it made. */
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
@@ -19441,7 +19451,9 @@ static force_inline BOOL js_string_eq_polls(JSValueConst op1, JSValueConst op2)
    not the same one and are of one length (any other pair is known to differ
    at once) it adds their length to *pwork, the work since the last reading of
    the flag that the loop keeps, and reads the flag first when that would
-   take the work past a step. 0, or -1 with "interrupted" thrown. */
+   take the work to a step or past it, so that *pwork is always less than a
+   step: js_string_rope_compare, which a loop may call next with the same
+   *pwork, needs that. 0, or -1 with "interrupted" thrown. */
 static force_inline int js_short_eq_budget(JSContext *ctx, JSValueConst op1,
                                            JSValueConst op2, uint32_t *pwork)
 {
@@ -19449,7 +19461,7 @@ static force_inline int js_short_eq_budget(JSContext *ctx, JSValueConst op1,
         const JSString *p1 = JS_VALUE_GET_STRING(op1), *p2 = JS_VALUE_GET_STRING(op2);
 
         if (p1 != p2 && p1->len == p2->len) {
-            if (unlikely(*pwork + p1->len > JS_ROPE_STEP)) {
+            if (unlikely(*pwork + p1->len >= JS_ROPE_STEP)) {
                 *pwork = 0;
                 if (js_poll_interrupts(ctx))
                     return -1;
@@ -59549,7 +59561,7 @@ static no_inline JSMapRecord *map_find_record_short(JSContext *ctx, JSMapState *
                 return mr;
             if (q->len != p->len)
                 continue;
-            if (unlikely(work + p->len > JS_ROPE_STEP)) {
+            if (unlikely(work + p->len >= JS_ROPE_STEP)) {
                 work = 0;
                 if (js_poll_interrupts(ctx))
                     return MAP_STOPPED;
