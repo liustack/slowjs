@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.29.1] - 2026-10-30
+
 ### 性能
 
 - 普通对象（对象字面量、`{}`、React 元素的 props）占 48 字节内存，不再是 72 字节。长 Markdown 页面渲染时 `MemorySize` 的最高值平均低 3.8%，示例商店的 20 个页面渲染结束时占用少 1.8%。没有页面渲染变快或变慢（数字见 [Performance](docs/performance.md#ordinary-objects-of-48-bytes)）。
@@ -402,7 +404,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.1...main
+[v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
 [v0.28.6]: https://github.com/liustack/slowjs/compare/v0.28.5...v0.28.6
 [v0.28.5]: https://github.com/liustack/slowjs/compare/v0.28.4...v0.28.5

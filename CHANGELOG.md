@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.29.1] - 2026-10-30
+
 ### Performance
 
 - An ordinary object (an object literal, `{}`, the props of a React element) takes 48 bytes of memory, not 72. The highest `MemorySize` of a render of a long Markdown page is 3.8% lower on average, and the 20 pages of the example shop hold 1.8% less at the end of a render. No page renders faster or slower ([Performance](docs/performance.md#ordinary-objects-of-48-bytes) has the numbers).
@@ -402,7 +404,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.1...main
+[v0.29.1]: https://github.com/liustack/slowjs/compare/v0.29.0...v0.29.1
 [v0.29.0]: https://github.com/liustack/slowjs/compare/v0.28.6...v0.29.0
 [v0.28.6]: https://github.com/liustack/slowjs/compare/v0.28.5...v0.28.6
 [v0.28.5]: https://github.com/liustack/slowjs/compare/v0.28.4...v0.28.5
