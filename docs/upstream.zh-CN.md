@@ -12,7 +12,7 @@ slowjs 的作者列在 [AUTHORS-SLOWJS](../AUTHORS-SLOWJS)。modernc.org/quickjs
 
 ## 合入 QuickJS 的提交
 
-`engine/` 里的 C 树不跟着上游的每个版本走。钉住的提交之后上游的提交，要让渲染更快，或者去掉页面碰得到的崩溃和错误结果，才单独搬进来，带测试，其余不搬。搬进来的、试过又撤回的提交都在 [upstream-commits.md](changes/upstream-commits.md)。怎么合入一个提交，见 [upgrading.md](upgrading.md)。
+`engine/` 里的 C 树不跟着上游的每个版本走。钉住的提交之后上游的提交，凡是修正确性、内存泄漏、崩溃的（不管页面碰不碰得到），或者让渲染更快的，单独搬进来，带测试。新功能和只为速度的改动，tifa 用得上才搬。搬进来的、试过又撤回的提交都在 [upstream-commits.md](changes/upstream-commits.md)。怎么合入一个提交，见 [upgrading.md](upgrading.md)。
 
 slowjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本捕获不了的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。
 

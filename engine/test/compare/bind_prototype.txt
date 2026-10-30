@@ -1,0 +1,23 @@
+plain function: true
+arrow function: true
+async function: true
+generator function: true
+async generator: true
+builtin: true
+class: true
+derived class: true,S
+derived class of a derived class: S
+null prototype: null
+set prototype: true,1
+prototype set after bind: false,
+bound of a bound: true
+proxy trap: true,trap
+proxy trap throws: throws RangeError
+proxy trap returns a bad value: throws TypeError
+proxy of a class: S
+name and length: bound foo2
+instanceof: true
+call and construct: 3
+not callable: throws TypeError
+prototype of Function.prototype bind: false
+hasOwn prototype: false

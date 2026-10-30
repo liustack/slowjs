@@ -1,0 +1,114 @@
+"get" => static [] proto [constructor] inst [get]
+"set" => static [] proto [constructor] inst [set]
+"static" => static [] proto [constructor] inst [static]
+"get;" => static [] proto [constructor] inst [get]
+"set;" => static [] proto [constructor] inst [set]
+"static;" => static [] proto [constructor] inst [static]
+"get = 1" => static [] proto [constructor] inst [get]
+"set = 2" => static [] proto [constructor] inst [set]
+"static = 3" => static [] proto [constructor] inst [static]
+"static static" => static [static] proto [constructor] inst []
+"static get" => static [get] proto [constructor] inst []
+"static set" => static [set] proto [constructor] inst []
+"get\nx" => SyntaxError
+"get\nx() {}" => static [] proto [constructor,x] inst []
+"get\nx;" => SyntaxError
+"set\nx" => SyntaxError
+"set\nx(v) {}" => static [] proto [constructor,x] inst []
+"static\nx" => static [x] proto [constructor] inst []
+"static\nx() {}" => static [x] proto [constructor] inst []
+"static\nx = 1" => static [x] proto [constructor] inst []
+"static\nget" => static [get] proto [constructor] inst []
+"static\nstatic" => static [static] proto [constructor] inst []
+"static\n*g() {}" => static [g] proto [constructor] inst []
+"get x() { return 1 }" => static [] proto [constructor,x] inst []
+"set x(v) {}" => static [] proto [constructor,x] inst []
+"get x() { return 1 } set x(v) {}" => static [] proto [constructor,x] inst []
+"static get x() { return 1 }" => static [x] proto [constructor] inst []
+"static set x(v) {}" => static [x] proto [constructor] inst []
+"static get\nx() { return 1 }" => static [x] proto [constructor] inst []
+"get *g() {}" => SyntaxError
+"set *g() {}" => SyntaxError
+"get\n*g() {}" => static [] proto [constructor,g] inst [get]
+"set\n*g() {}" => static [] proto [constructor,g] inst [set]
+"get;*g() {}" => static [] proto [constructor,g] inst [get]
+"set;*g() {}" => static [] proto [constructor,g] inst [set]
+"get *\ng() {}" => SyntaxError
+"static *g() {}" => static [g] proto [constructor] inst []
+"static\n*g() {}" => static [g] proto [constructor] inst []
+"get() {}" => static [] proto [constructor,get] inst []
+"set() {}" => static [] proto [constructor,set] inst []
+"static() {}" => static [] proto [constructor,static] inst []
+"get(a) { return a }" => static [] proto [constructor,get] inst []
+"static get() {}" => static [get] proto [constructor] inst []
+"static set() {}" => static [set] proto [constructor] inst []
+"static static() {}" => static [static] proto [constructor] inst []
+"static static = 1" => static [static] proto [constructor] inst []
+"get = 1; set = 2" => static [] proto [constructor] inst [get,set]
+"get = 1\nset = 2" => static [] proto [constructor] inst [get,set]
+"get\nset" => SyntaxError
+"get\nset\nstatic" => SyntaxError
+"static\nget\nset" => SyntaxError
+"static get\nset" => SyntaxError
+"static get;set" => static [get] proto [constructor] inst [set]
+"get\n;set" => static [] proto [constructor] inst [get,set]
+"get\n\"x\"() {}" => static [] proto [constructor,x] inst []
+"get\n[k]() {}" => static [] proto [constructor,k] inst []
+"get\n1() {}" => static [] proto [1,constructor] inst []
+"get\n#p() {}" => static [] proto [constructor] inst []
+"static\n#p() {}" => static [] proto [constructor] inst []
+"static\n#p = 1" => static [] proto [constructor] inst []
+"set\n#p(v) {}" => static [] proto [constructor] inst []
+"get #p() { return 1 }" => static [] proto [constructor] inst []
+"get\nasync x() {}" => SyntaxError
+"async\nx() {}" => static [] proto [constructor,x] inst [async]
+"async x() {}" => static [] proto [constructor,x] inst []
+"async *g() {}" => static [] proto [constructor,g] inst []
+"async\n*g() {}" => static [] proto [constructor,g] inst [async]
+"async" => static [] proto [constructor] inst [async]
+"async = 1" => static [] proto [constructor] inst [async]
+"async\nasync" => static [] proto [constructor] inst [async]
+"static async x() {}" => static [x] proto [constructor] inst []
+"static async *g() {}" => static [g] proto [constructor] inst []
+"static\nasync x() {}" => static [x] proto [constructor] inst []
+"static async\nx() {}" => static [async] proto [constructor,x] inst []
+"accessor" => static [] proto [constructor] inst [accessor]
+"accessor x" => SyntaxError
+"accessor\nx" => static [] proto [constructor] inst [accessor,x]
+"static { }" => static [] proto [constructor] inst []
+"static\n{ }" => static [] proto [constructor] inst []
+"static;{ }" => SyntaxError
+"static {\n}\nget" => static [] proto [constructor] inst [get]
+"get\nstatic { }" => SyntaxError
+"static static { }" => SyntaxError
+"get x" => SyntaxError
+"set x" => SyntaxError
+"static get x" => SyntaxError
+"get x = 1" => SyntaxError
+"static x" => static [x] proto [constructor] inst []
+"static x;" => static [x] proto [constructor] inst []
+"static\nx;" => static [x] proto [constructor] inst []
+"get static" => SyntaxError
+"get\nstatic" => SyntaxError
+"set static" => SyntaxError
+"set\nstatic\n" => SyntaxError
+"get\n}" => SyntaxError
+"static\n}" => SyntaxError
+"constructor() {}" => static [] proto [constructor] inst []
+"get constructor() {}" => SyntaxError
+"static constructor() {}" => static [constructor] proto [constructor] inst []
+"static\nconstructor() {}" => static [constructor] proto [constructor] inst []
+"get\nconstructor() {}" => SyntaxError
+"constructor\n() {}" => static [] proto [constructor] inst []
+"static prototype() {}" => SyntaxError
+"static\nprototype() {}" => SyntaxError
+"static name = 1" => static [] proto [constructor] inst []
+"static\nname = 1" => static [] proto [constructor] inst []
+"static length() {}" => static [] proto [constructor] inst []
+"\"get\" = 1" => static [] proto [constructor] inst [get]
+"\"get\"\nx" => static [] proto [constructor] inst [get,x]
+"'static'\n*g() {}" => static [] proto [constructor,g] inst [static]
+"0\nget" => static [] proto [constructor] inst [0,get]
+"get 1" => SyntaxError
+"get \"x\"() { return 1 }" => static [] proto [constructor,x] inst []
+"get [k]() { return 1 }" => static [] proto [constructor,k] inst []

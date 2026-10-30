@@ -99,7 +99,7 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 - **The engine is upstream QuickJS.** `engine/` is Bellard's C at one pinned commit, with the changes of slowjs on top, each written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
 - **The generator refuses what it has not checked.** It stops on an instruction, a call or a stack frame it has no rule for, and checks the linked code of a test binary, so a change of the C or of Go itself that breaks the engine shows up as a failed build or test, not as a wrong answer.
 - **Every change is written down.** [docs/changes](docs/changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
-- **The tests are upstream's and more.** test262 gives the same 58 known failures as before, line for line. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
+- **The tests are upstream's and more.** test262 gives 33 known failures, 25 fewer since the fixes taken from upstream QuickJS, and the same ones from run to run. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
 
 ## Where it comes from
