@@ -26451,25 +26451,37 @@ static __exception int ident_realloc(JSContext *ctx, char **pbuf, size_t *psize,
     return 0;
 }
 
+/* Walk up through arrow parameter contexts to find an ancestor with
+   the given func_kind flags (JS_FUNC_ASYNC or JS_FUNC_GENERATOR) */
+static BOOL func_has_ancestor_kind(JSFunctionDef *fd, int forced_func_kind, int kind_flags)
+{
+    if (forced_func_kind >= 0)
+        return (forced_func_kind & kind_flags) != 0;
+    for(;;) {
+        if (fd->func_kind & kind_flags)
+            return TRUE;
+        if (fd->func_type == JS_PARSE_FUNC_CLASS_STATIC_INIT && kind_flags == JS_FUNC_ASYNC)
+            return TRUE;
+        /* Arrow function parameters inherit binding from parent context */
+        if (fd->func_type == JS_PARSE_FUNC_ARROW && !fd->in_function_body && fd->parent) 
+            fd = fd->parent;
+        else
+            break;
+    }
+    return FALSE;
+}
+
 /* convert a TOK_IDENT to a keyword when needed */
-static void update_token_ident(JSParseState *s)
+static void update_token_ident(JSParseState *s, int forced_func_kind)
 {
     if (s->token.u.ident.atom <= JS_ATOM_LAST_KEYWORD ||
         (s->token.u.ident.atom <= JS_ATOM_LAST_STRICT_KEYWORD &&
          (s->cur_func->js_mode & JS_MODE_STRICT)) ||
         (s->token.u.ident.atom == JS_ATOM_yield &&
-         ((s->cur_func->func_kind & JS_FUNC_GENERATOR) ||
-          (s->cur_func->func_type == JS_PARSE_FUNC_ARROW &&
-           !s->cur_func->in_function_body && s->cur_func->parent &&
-           (s->cur_func->parent->func_kind & JS_FUNC_GENERATOR)))) ||
+         (func_has_ancestor_kind(s->cur_func, forced_func_kind, JS_FUNC_GENERATOR))) ||
         (s->token.u.ident.atom == JS_ATOM_await &&
          (s->is_module ||
-          (s->cur_func->func_kind & JS_FUNC_ASYNC) ||
-          s->cur_func->func_type == JS_PARSE_FUNC_CLASS_STATIC_INIT ||
-          (s->cur_func->func_type == JS_PARSE_FUNC_ARROW &&
-           !s->cur_func->in_function_body && s->cur_func->parent &&
-           ((s->cur_func->parent->func_kind & JS_FUNC_ASYNC) ||
-            s->cur_func->parent->func_type == JS_PARSE_FUNC_CLASS_STATIC_INIT))))) {
+          func_has_ancestor_kind(s->cur_func, forced_func_kind, JS_FUNC_ASYNC)))) {
         if (s->token.u.ident.has_escape) {
             s->token.u.ident.is_reserved = TRUE;
             s->token.val = TOK_IDENT;
@@ -26482,14 +26494,14 @@ static void update_token_ident(JSParseState *s)
 
 /* if the current token is an identifier or keyword, reparse it
    according to the current function type */
-static void reparse_ident_token(JSParseState *s)
+static void reparse_ident_token(JSParseState *s, int forced_func_kind)
 {
     if (s->token.val == TOK_IDENT ||
         (s->token.val >= TOK_FIRST_KEYWORD &&
          s->token.val <= TOK_LAST_KEYWORD)) {
         s->token.val = TOK_IDENT;
         s->token.u.ident.is_reserved = FALSE;
-        update_token_ident(s);
+        update_token_ident(s, forced_func_kind);
     }
 }
 
@@ -26695,7 +26707,7 @@ static __exception int next_token(JSParseState *s)
         s->token.u.ident.has_escape = ident_has_escape;
         s->token.u.ident.is_reserved = FALSE;
         s->token.val = TOK_IDENT;
-        update_token_ident(s);
+        update_token_ident(s, -1);
         break;
     case '#':
         /* private name */
@@ -41365,22 +41377,15 @@ static __exception int js_parse_function_decl21(JSParseState *s,
             func_kind |= JS_FUNC_GENERATOR;
         }
 
-        if (s->token.val == TOK_IDENT) {
-            if (s->token.u.ident.is_reserved ||
-                (s->token.u.ident.atom == JS_ATOM_yield &&
-                 func_type == JS_PARSE_FUNC_EXPR &&
-                 (func_kind & JS_FUNC_GENERATOR)) ||
-                (s->token.u.ident.atom == JS_ATOM_await &&
-                 ((func_type == JS_PARSE_FUNC_EXPR &&
-                   (func_kind & JS_FUNC_ASYNC)) ||
-                  func_type == JS_PARSE_FUNC_CLASS_STATIC_INIT))) {
-                return js_parse_error_reserved_identifier(s);
-            }
+        if (func_type == JS_PARSE_FUNC_EXPR) {
+            /* in function expressions, the function name must be
+               parsed in the function context */
+            reparse_ident_token(s, func_kind);
         }
-        if (s->token.val == TOK_IDENT ||
-            (((s->token.val == TOK_YIELD && !(fd->js_mode & JS_MODE_STRICT)) ||
-             (s->token.val == TOK_AWAIT && !s->is_module)) &&
-             func_type == JS_PARSE_FUNC_EXPR)) {
+        
+        if (s->token.val == TOK_IDENT) {
+            if (s->token.u.ident.is_reserved)
+                return js_parse_error_reserved_identifier(s);
             func_name = JS_DupAtom(ctx, s->token.u.ident.atom);
             if (next_token(s)) {
                 JS_FreeAtom(ctx, func_name);
@@ -41509,6 +41514,12 @@ static __exception int js_parse_function_decl21(JSParseState *s,
     fd->has_simple_parameter_list = TRUE;
     fd->has_parameter_expressions = FALSE;
     has_opt_arg = FALSE;
+
+    if (func_type == JS_PARSE_FUNC_ARROW) {
+        /* reparse the potential arrow first parameter in the function context */
+        reparse_ident_token(s, -1);
+    }
+    
     if (func_type == JS_PARSE_FUNC_ARROW && s->token.val == TOK_IDENT) {
         JSAtom name;
         if (s->token.u.ident.is_reserved) {
@@ -41580,10 +41591,6 @@ static __exception int js_parse_function_decl21(JSParseState *s,
                     goto fail;
                 }
                 name = s->token.u.ident.atom;
-                if (name == JS_ATOM_yield && fd->func_kind == JS_FUNC_GENERATOR) {
-                    js_parse_error_reserved_identifier(s);
-                    goto fail;
-                }
                 if (fd->has_parameter_expressions) {
                     if (js_parse_check_duplicate_parameter(s, name))
                         goto fail;
@@ -41788,7 +41795,7 @@ static __exception int js_parse_function_decl21(JSParseState *s,
        the token is parsed in the englobing function. It could be done
        by just using next_token() here for normal functions, but it is
        necessary for arrow functions with an expression body. */
-    reparse_ident_token(s);
+    reparse_ident_token(s, -1);
 
     /* create the function object */
     {
