@@ -1,0 +1,190 @@
+arg0 own data: 1
+arg1 own data: 1
+loc0 own data: 1
+loc8 own data: 1
+arg0 own undefined: undefined
+arg1 own undefined: undefined
+loc0 own undefined: undefined
+loc8 own undefined: NaN
+arg0 missing: undefined
+arg1 missing: undefined
+loc0 missing: undefined
+loc8 missing: NaN
+arg0 null prototype: undefined
+arg1 null prototype: undefined
+loc0 null prototype: undefined
+loc8 null prototype: NaN
+arg0 inherited: from the prototype
+arg1 inherited: from the prototype
+loc0 inherited: from the prototype
+loc8 inherited: from the prototype0
+arg0 inherited twice: from the prototype
+arg1 inherited twice: from the prototype
+loc0 inherited twice: from the prototype
+loc8 inherited twice: from the prototype0
+arg0 getter: getter
+arg1 getter: getter
+loc0 getter: getter
+loc8 getter: getter0
+arg0 inherited getter: getter
+arg1 inherited getter: getter
+loc0 inherited getter: getter
+loc8 inherited getter: getter0
+arg0 setter only: undefined
+arg1 setter only: undefined
+loc0 setter only: undefined
+loc8 setter only: NaN
+arg0 proxy: trap x
+arg1 proxy: trap x
+loc0 proxy: trap x
+loc8 proxy: trap x0
+arg0 proxy as prototype: proto trap x
+arg1 proxy as prototype: proto trap x
+loc0 proxy as prototype: proto trap x
+loc8 proxy as prototype: proto trap x0
+arg0 frozen: frozen
+arg1 frozen: frozen
+loc0 frozen: frozen
+loc8 frozen: frozen0
+arg0 deleted: undefined
+arg1 deleted: undefined
+loc0 deleted: undefined
+loc8 deleted: NaN
+arg0 array: array key
+arg1 array: array key
+loc0 array: array key
+loc8 array: array key0
+arg0 array without key: undefined
+arg1 array without key: undefined
+loc0 array without key: undefined
+loc8 array without key: NaN
+arg0 typed array: undefined
+arg1 typed array: undefined
+loc0 typed array: undefined
+loc8 typed array: NaN
+arg0 String object: undefined
+arg1 String object: undefined
+loc0 String object: undefined
+loc8 String object: NaN
+arg0 arguments: undefined
+arg1 arguments: undefined
+loc0 arguments: undefined
+loc8 arguments: NaN
+arg0 function: undefined
+arg1 function: undefined
+loc0 function: undefined
+loc8 function: NaN
+arg0 class instance: field
+arg1 class instance: field
+loc0 class instance: field
+loc8 class instance: field0
+arg0 private field class: 1
+arg1 private field class: 1
+loc0 private field class: 1
+loc8 private field class: 1
+arg0 Error stack: undefined
+arg1 Error stack: undefined
+loc0 Error stack: undefined
+loc8 Error stack: NaN
+arg0 string: undefined
+arg1 string: undefined
+loc0 string: undefined
+loc8 string: NaN
+arg0 empty string: undefined
+arg1 empty string: undefined
+loc0 empty string: undefined
+loc8 empty string: NaN
+arg0 string with x on String.prototype: on String.prototype
+arg1 string with x on String.prototype: on String.prototype
+loc0 string with x on String.prototype: on String.prototype
+loc8 string with x on String.prototype: on String.prototype0
+arg0 number: undefined
+arg1 number: undefined
+loc0 number: undefined
+loc8 number: NaN
+arg0 float: undefined
+arg1 float: undefined
+loc0 float: undefined
+loc8 float: NaN
+arg0 boolean: undefined
+arg1 boolean: undefined
+loc0 boolean: undefined
+loc8 boolean: NaN
+arg0 symbol: undefined
+arg1 symbol: undefined
+loc0 symbol: undefined
+loc8 symbol: NaN
+arg0 bigint: undefined
+arg1 bigint: undefined
+loc0 bigint: undefined
+loc8 bigint: NaN
+arg0 undefined: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+arg1 undefined: TypeError: cannot read property 'x' of undefined @ at arg1 (<eval>:24:31) / at arg1 (<eval>:27:38) / at <anonymous> (<eval>:74:36)
+loc0 undefined: TypeError: cannot read property 'x' of undefined @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+loc8 undefined: TypeError: cannot read property 'x' of undefined @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+arg0 null: TypeError: cannot read property 'x' of null @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+arg1 null: TypeError: cannot read property 'x' of null @ at arg1 (<eval>:24:31) / at arg1 (<eval>:27:38) / at <anonymous> (<eval>:74:36)
+loc0 null: TypeError: cannot read property 'x' of null @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+loc8 null: TypeError: cannot read property 'x' of null @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+length of a string: 4
+length of an array: 2
+toUpperCase of a string: true
+toFixed of a number: true
+toFixed of a float: true
+name of a function: named
+name of a class: K
+stack of an error: string
+index of an array: zero
+description of a symbol: d
+getter that sets the local to null: rewritten null
+getter that drops the argument: dropped undefined undefined
+getter that frees the object of the argument: still here
+proxy trap that rewrites the local: proxy x 0 v
+mapped arguments: through arguments
+unmapped arguments: first
+mapped back: parameter parameter
+missing argument: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:133:33) / at t (<eval>:18:19)
+closure before let: ReferenceError: o is not initialized @ at f (<eval>:136:34) / at tdz (<eval>:136:53) / at <anonymous> (<eval>:138:34)
+read before let: ReferenceError: o is not initialized @ at tdzDirect (<eval>:137:31) / at <anonymous> (<eval>:139:37) / at t (<eval>:18:19)
+closure writes the local: first second
+loop: abcundefined
+generator: [1,2]
+error arg0: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:162:27) / at t (<eval>:18:19)
+error arg1: TypeError: cannot read property 'x' of null @ at arg1 (<eval>:24:31) / at <anonymous> (<eval>:163:27) / at t (<eval>:18:19)
+error loc0: TypeError: cannot read property 'x' of undefined @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:164:27) / at t (<eval>:18:19)
+error loc8: TypeError: cannot read property 'x' of null @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:165:27) / at t (<eval>:18:19)
+error in a nested call: TypeError: cannot read property 'x' of null @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:166:53) / at map (native)
+switch alpha string: A
+switch beta string: B
+switch  string: empty
+switch 1 string: one as a string
+switch 1 number: none
+switch üñí string: wide
+switch __proto__ string: proto
+switch gamma string: G or D
+switch delta string: G or D
+switch epsilon string: none
+switch alph string: none
+switch alphaa string: none
+switch alpha string: A
+switch beta string: B
+switch alpha string: A
+switch alpha string: A
+switch object object: none
+switch object object: none
+switch null object: none
+switch undefined undefined: none
+switch true boolean: none
+switch 1.5 number: none
+switch 0 number: none
+switch -0 number: none
+switch 10n bigint: none
+switch Symbol(alpha) symbol: none
+switch Symbol(alpha) symbol: none
+switch on a rope: other
+switch on a rope equal: ab
+switch on a long string: other
+switch in a loop: 2
+switch on a symbol description: A
+switch with a getter case: k after 1
+async: async
