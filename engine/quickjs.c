@@ -12914,17 +12914,16 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
         return JS_ThrowTypeErrorOrFalse(ctx, flags, "not an object");
     }
 
-    if (unlikely(!p->extensible)) {
-        JS_FreeValue(ctx, val);
-        return JS_ThrowTypeErrorOrFalse(ctx, flags, "object is not extensible");
-    }
-
     if (likely(p == JS_VALUE_GET_OBJ(obj))) {
         if (p->is_exotic) {
             if (p->class_id == JS_CLASS_ARRAY && p->fast_array &&
                 __JS_AtomIsTaggedInt(prop)) {
                 uint32_t idx = __JS_AtomToUInt32(prop);
                 if (idx == p->u.array.count) {
+                    if (unlikely(!p->extensible)) {
+                        JS_FreeValue(ctx, val);
+                        return JS_ThrowTypeErrorOrFalse(ctx, flags, "object is not extensible");
+                    }
                     /* fast case */
                     return add_fast_array_element(ctx, p, val, flags);
                 } else {
@@ -12936,6 +12935,10 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
         } else {
             if (unlikely(p->class_id == JS_CLASS_GLOBAL_OBJECT))
                 goto generic_create_prop;
+            if (unlikely(!p->extensible)) {
+                JS_FreeValue(ctx, val);
+                return JS_ThrowTypeErrorOrFalse(ctx, flags, "object is not extensible");
+            }
             pr = add_property(ctx, p, prop, JS_PROP_C_W_E);
             if (unlikely(!pr)) {
                 JS_FreeValue(ctx, val);
@@ -12973,6 +12976,7 @@ int JS_SetPropertyInternal(JSContext *ctx, JSValueConst obj,
             return ret;
         } else {
         generic_create_prop:
+            /* the extensibility test is included in JS_CreateProperty() */
             ret = JS_CreateProperty(ctx, p, prop, val, JS_UNDEFINED, JS_UNDEFINED,
                                     flags |
                                     JS_PROP_HAS_VALUE |
@@ -13240,6 +13244,10 @@ static int JS_CreateProperty(JSContext *ctx, JSObject *p,
                 JSProperty *plen;
                 JSShapeProperty *pslen;
             generic_array:
+                /* adding the element fails when the array is not extensible,
+                   and the length then stays as it is */
+                if (!p->extensible)
+                    goto not_extensible;
                 /* update the length field */
                 plen = &p->prop[0];
                 JS_ToUint32(ctx, &len, plen->u.value);
