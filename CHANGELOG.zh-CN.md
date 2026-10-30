@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `VM.RegisterCopyProps(name)` 在全局对象上定义名为 `name` 的函数，做 React 的 `createElement` 和 `cloneElement` 把 config 的键拷进元素 props 的那个循环所做的事，在引擎里用 C 写成。它只拷结果和循环不可能不同的 config（页面看不出区别的那种：键不超过 32 个、值都是普通值的普通 config，同一种 props，没改过的 `Object.prototype` 和 `Function.prototype.call`），其余的 config 它回答 `false` 且什么都没改，脚本再把 config 交给循环。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这个函数。在 tifa 里，React 用了它，渲染一次少跑 2.1% 到 4.1% 的指令，示例商店的页面渲染只花原来的 0.988 和 0.989，MUI 页面是 0.980。（[性能](docs/performance.md#the-copy-of-the-props-of-a-react-element-in-c)，[Go API](docs/changes/go-api.md#registercopyprops)）
+
 ### 变更
 
 - 引擎里逐个遍历字符串、数组、Map 或 Set 的元素、每个元素除此之外不调用别的东西的循环，在 `Interrupt` 或执行时限之后，几次轮询之内就停下：`Object.fromEntries`、可迭代对象的展开（`[...set]`）、`Iterator.prototype.toArray` 和 `drop`、`Math.sumPrecise`、`Set.prototype.union`、`symmetricDifference` 和 `isSupersetOf`，以及 `Array.from`、类型化数组的构造函数和 `from`。引擎原来只在一次调用开始时读停止标志，而这些迭代器的 `next` 不经过这样的调用，所以展开一个有两百万项的 Set，或求两个大 Set 的并集，会一直跑到脚本被杀。Set 的方法在添加之前对 Set 做的那份拷贝也会停下。

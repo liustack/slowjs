@@ -615,6 +615,17 @@ typedef enum {
     JS_AUTOINIT_ID_PROP,
 } JSAutoInitIDEnum;
 
+/* the atoms js_copy_props compares keys with, in JSContext.copy_atoms: the
+   keys React's loop leaves out, ref (cloneElement) and call */
+enum {
+    JS_COPY_ATOM_KEY,
+    JS_COPY_ATOM_REF,
+    JS_COPY_ATOM_SELF,
+    JS_COPY_ATOM_SOURCE,
+    JS_COPY_ATOM_CALL,
+    JS_COPY_ATOM_COUNT
+};
+
 struct JSContext {
     JSGCObjectHeader header; /* must come first */
     JSRuntime *rt;
@@ -667,6 +678,9 @@ struct JSContext {
                              const char *input, size_t input_len,
                              const char *filename, int flags, int scope_idx);
     void *user_opaque;
+    /* the atoms of JS_NewCopyPropsFunction, or JS_ATOM_NULL until it ran: last, so
+       that no field of a context moves */
+    JSAtom copy_atoms[JS_COPY_ATOM_COUNT];
 };
 
 typedef union JSFloat64Union {
@@ -3474,6 +3488,8 @@ void JS_FreeContext(JSContext *ctx)
         js_free_shape_null(ctx->rt, empty);
         js_free_shape_null(ctx->rt, both);
     }
+    for(i = 0; i < JS_COPY_ATOM_COUNT; i++)
+        JS_FreeAtom(ctx, ctx->copy_atoms[i]);
     js_free_shape_null(ctx->rt, ctx->array_shape);
     js_free_shape_null(ctx->rt, ctx->arguments_shape);
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
@@ -52449,6 +52465,273 @@ JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_l
     JS_FreeAtom(ctx, name_atom);
     return func_obj;
 }
+
+/* ---- the copy of the props of an element in React ---- */
+
+/* React's createElement and cloneElement copy the keys of their config into
+   the props of the element with a loop:
+
+       for (propName in config)
+         hasOwnProperty.call(config, propName) && "key" !== propName &&
+           "__self" !== propName && "__source" !== propName &&
+           (props[propName] = config[propName])
+
+   (cloneElement also leaves out "ref" when config.ref is undefined). In
+   QuickJS each key takes a pass of the loop, a call and a set. For a
+   host that asks for it (JS_NewCopyPropsFunction), js_copy_props does the
+   copy of all keys in one call, for a config where the loop can only do
+   what the copy does, and answers false, having changed nothing, for any
+   other: the script then runs the loop it has. What the loop does is a
+   function of the config, the props and the places it reads and sets, and
+   the copy answers true only where it knows all of them:
+
+   - config is an ordinary object (not a proxy, an array, a function, a
+     class instance, a String object or any exotic object) whose prototype
+     is the Object.prototype of the realm, so the loop lists the keys of its
+     shape and then of Object.prototype, which has none that it does not
+     skip (hasOwnProperty.call is false for them);
+   - every key the loop reads is a plain data property, so that no getter
+     runs and nothing can change while it copies. The loop reads only the
+     enumerable string keys other than key, __self and __source, and
+     config.ref (cloneElement). A getter on one of the skipped keys stays
+     where it is: the loop never calls it;
+   - no key is an array index (for in lists those first, sorted), none is
+     __proto__ (setting it sets the prototype of props) or stack (the
+     marker of a stack not formatted yet), and there are at most
+     JS_COPY_PROPS_MAX own keys, so that the copy takes a bounded time;
+   - props is an ordinary object with the same prototype, which can be
+     extended, with at most JS_COPY_PROPS_SLOTS_MAX slots in its shape, and
+     every property it has is a plain writable data property, so that the
+     set of a key makes or changes a data property and runs nothing;
+   - the set of a key on props finds no setter and no read-only property on
+     Object.prototype, which it meets when props has no such key
+     (js_copy_props_proto_plain, which reads at most
+     JS_COPY_PROPS_SLOTS_MAX slots);
+   - hasOwnProperty is the built-in function and hasOwnProperty.call is the
+     built-in Function.prototype.call, as nobody has replaced them
+     (js_copy_props_call_plain), or the loop would call what replaced them.
+
+   With these the loop is a function of the shape of config alone: it sets,
+   in the order of the shape, a data property with the value of each key it
+   reads, enumerable, writable and configurable. A props with no property
+   that is to get every key of a config with a shape of its own and nothing
+   to leave out takes that shape (js_copy_shape, which spread uses too).
+   Otherwise the keys are added to props one by one, or set where props has
+   them. engine/test/compare/copy_props.js checks all of this against the
+   loops of React. */
+
+#define JS_COPY_PROPS_MAX 32
+/* the most slots, deleted ones included, that the copy reads in the shape of
+   props and in the shape of Object.prototype, before it writes: a shape with
+   more goes to the loop. A new Object.prototype has 12, and the props of an
+   element in tifa's pages 24 at most. */
+#define JS_COPY_PROPS_SLOTS_MAX 64
+
+/* Whether a set of a string key other than __proto__ on a new ordinary
+   object finds, on Object.prototype op, no setter and no property that is
+   not writable: it creates the property on the object. The __proto__
+   accessor is the only one a new Object.prototype has, and a config with
+   that key is not copied. A property whose value the engine makes at its
+   first use (a method of Object.prototype nothing has used yet) is a
+   writable data property. */
+static BOOL js_copy_props_proto_plain(JSObject *op)
+{
+    JSShape *sh = op->shape;
+    JSShapeProperty *prs = get_shape_prop(sh);
+    int i;
+
+    if (sh->proto || sh->prop_count > JS_COPY_PROPS_SLOTS_MAX)
+        return FALSE;
+    for(i = 0; i < sh->prop_count; i++, prs++) {
+        if (prs->atom == JS_ATOM_NULL || prs->atom == JS_ATOM___proto__)
+            continue;
+        if ((prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET ||
+            (prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF ||
+            !(prs->flags & JS_PROP_WRITABLE))
+            return FALSE;
+    }
+    return TRUE;
+}
+
+/* Whether hasOwnProperty.call(config, key), as React's loop makes it, is the
+   built-in hasOwnProperty called by the built-in call: hop is the built-in
+   (any realm's, it does the same), it has no property of its own but length
+   and name and Function.prototype of ctx is its prototype (the shape the
+   context keeps for built-in functions, or the same by looking), and
+   Function.prototype.call is a data property that holds the built-in. */
+static BOOL js_copy_props_call_plain(JSContext *ctx, JSValueConst hop)
+{
+    JSObject *p, *fp;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSAtom call = ctx->copy_atoms[JS_COPY_ATOM_CALL];
+
+    if (!js_is_cfunction(hop, js_object_hasOwnProperty))
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(hop);
+    fp = JS_VALUE_GET_OBJ(ctx->function_proto);
+    if (p->shape != ctx->func_shapes[0][1] &&
+        (p->shape->proto != fp || find_own_property1(p, call)))
+        return FALSE;
+    prs = find_own_property(&pr, fp, call);
+    return prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_NORMAL &&
+        js_is_cfunction(pr->u.value, js_function_call);
+}
+
+/* copyProps(config, props, hasOwnProperty, isClone) */
+static JSValue js_copy_props(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv)
+{
+    JSRuntime *rt = ctx->rt;
+    JSObject *pc, *pp, *op;
+    JSShape *csh, *psh;
+    JSShapeProperty *prs, *prp;
+    JSProperty *pr;
+    const JSAtom *atoms = ctx->copy_atoms;
+    uint8_t kinds[JS_COPY_PROPS_MAX], kept[JS_COPY_PROPS_MAX];
+    uint32_t v;
+    BOOL clone, adopt = TRUE;
+    int i, k, n, nkept = 0, ret;
+
+    /* argv has the four values: that is the length of the function */
+    if (JS_VALUE_GET_TAG(argv[0]) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(argv[1]) != JS_TAG_OBJECT)
+        return JS_FALSE;
+    pc = JS_VALUE_GET_OBJ(argv[0]);
+    pp = JS_VALUE_GET_OBJ(argv[1]);
+    op = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
+    csh = pc->shape;
+    psh = pp->shape;
+    n = csh->prop_count;
+    if (pc->class_id != JS_CLASS_OBJECT || pp->class_id != JS_CLASS_OBJECT ||
+        !pp->extensible || csh->proto != op || psh->proto != op ||
+        n > JS_COPY_PROPS_MAX || psh->prop_count > JS_COPY_PROPS_SLOTS_MAX)
+        return JS_FALSE;
+    clone = JS_VALUE_GET_TAG(argv[3]) == JS_TAG_BOOL && JS_VALUE_GET_BOOL(argv[3]);
+
+    /* the keys the loop reads and sets */
+    if (!js_own_key_kinds(rt, csh, kinds)) {
+        prs = get_shape_prop(csh);
+        for(i = 0; i < n; i++)
+            kinds[i] = js_own_key_kind(rt, prs[i].atom, &v);
+    }
+    prs = get_shape_prop(csh);
+    for(i = 0; i < n; i++) {
+        JSAtom atom = prs[i].atom;
+        int flags = prs[i].flags;
+
+        if (kinds[i] == JS_OWN_KIND_INDEX)
+            return JS_FALSE;
+        if (kinds[i] != JS_OWN_KIND_STRING || !(flags & JS_PROP_ENUMERABLE)) {
+            /* a symbol, a deleted key or one for in does not list */
+            adopt = FALSE;
+            continue;
+        }
+        if (atom == atoms[JS_COPY_ATOM_KEY] || atom == atoms[JS_COPY_ATOM_SELF] ||
+            atom == atoms[JS_COPY_ATOM_SOURCE]) {
+            adopt = FALSE;
+            continue;
+        }
+        if ((flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+            atom == JS_ATOM___proto__ || atom == JS_ATOM_stack)
+            return JS_FALSE;
+        if (clone && atom == atoms[JS_COPY_ATOM_REF] &&
+            JS_IsUndefined(pc->prop[i].u.value)) {
+            adopt = FALSE;
+            continue;
+        }
+        if (flags != JS_PROP_C_W_E)
+            adopt = FALSE;
+        kept[nkept++] = i;
+    }
+    /* the places it reads and sets */
+    if (!js_copy_props_call_plain(ctx, argv[2]) || !js_copy_props_proto_plain(op))
+        return JS_FALSE;
+    if (nkept == 0)
+        return JS_TRUE;
+    prp = get_shape_prop(psh);
+    if (psh->prop_count == 0) {
+        if (adopt && js_copy_shape(ctx, pp, pc, &ret))
+            return ret < 0 ? JS_EXCEPTION : JS_TRUE;
+        for(k = 0; k < nkept; k++) {
+            i = kept[k];
+            pr = add_property(ctx, pp, prs[i].atom, JS_PROP_C_W_E);
+            if (!pr)
+                return JS_EXCEPTION;
+            pr->u.value = JS_DupValue(ctx, pc->prop[i].u.value);
+        }
+        return JS_TRUE;
+    }
+    /* props has properties: each must take a set without running anything */
+    for(i = 0; i < psh->prop_count; i++) {
+        if (prp[i].atom != JS_ATOM_NULL &&
+            (prp[i].flags & (JS_PROP_TMASK | JS_PROP_WRITABLE)) != JS_PROP_WRITABLE)
+            return JS_FALSE;
+    }
+    for(k = 0; k < nkept; k++) {
+        i = kept[k];
+        if (find_own_property(&pr, pp, prs[i].atom)) {
+            JSValue old = pr->u.value;
+
+            pr->u.value = JS_DupValue(ctx, pc->prop[i].u.value);
+            JS_FreeValue(ctx, old);
+        } else {
+            pr = add_property(ctx, pp, prs[i].atom, JS_PROP_C_W_E);
+            if (!pr)
+                return JS_EXCEPTION;
+            pr->u.value = JS_DupValue(ctx, pc->prop[i].u.value);
+        }
+    }
+    return JS_TRUE;
+}
+
+JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_len)
+{
+    static const char *const keys[JS_COPY_ATOM_COUNT] = {
+        "key", "ref", "__self", "__source", "call",
+    };
+    JSValue func_obj, call;
+    JSObject *p;
+    JSAtom name_atom;
+    int i;
+
+    for(i = 0; i < JS_COPY_ATOM_COUNT; i++) {
+        if (ctx->copy_atoms[i] != JS_ATOM_NULL)
+            continue;
+        ctx->copy_atoms[i] = JS_NewAtom(ctx, keys[i]);
+        if (ctx->copy_atoms[i] == JS_ATOM_NULL)
+            return JS_EXCEPTION;
+    }
+    /* the method of Function.prototype that nothing has used yet is made at
+       its first use: js_copy_props_call_plain finds the function in place */
+    call = JS_GetProperty(ctx, ctx->function_proto, ctx->copy_atoms[JS_COPY_ATOM_CALL]);
+    if (JS_IsException(call))
+        return call;
+    JS_FreeValue(ctx, call);
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto, JS_CLASS_C_FUNCTION);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = js_copy_props;
+    p->u.cfunc.length = 4;
+    p->u.cfunc.cproto = JS_CFUNC_generic;
+    p->u.cfunc.magic = 0;
+    p->is_constructor = FALSE;
+    name_atom = JS_NewAtomLen(ctx, name, name_len);
+    if (name_atom == JS_ATOM_NULL) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    if (js_function_set_properties(ctx, func_obj, name_atom, 4) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
+}
+
 
 /* Math */
 

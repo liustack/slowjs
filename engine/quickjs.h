@@ -1235,6 +1235,25 @@ JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_
    that throws), a RangeError when the escaped string would be too long, and
    the interrupt when the host asks for one while it works on a long string. */
 JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_len);
+/* Returns a function named by the name_len bytes at name that does the work of
+   the loop with which React's createElement and cloneElement copy the keys of
+   their config into the props of the element:
+
+       for (propName in config)
+         hasOwnProperty.call(config, propName) && "key" !== propName &&
+           "__self" !== propName && "__source" !== propName &&
+           (props[propName] = config[propName])
+
+   (and for cloneElement also "ref" when config.ref is undefined). Its four
+   arguments are config, props, React's hasOwnProperty and whether it is
+   cloneElement. It answers true when it copied, and false when it changed
+   nothing: the caller then runs the loop. It copies only where the loop and it
+   cannot differ in anything a script can see (getters, setters, proxies,
+   array indexes, a prototype other than Object.prototype, a changed
+   Object.prototype or Function.prototype.call, more than 32 keys), and it
+   throws only when the engine has no memory. Its length is 4, it has no
+   prototype property and cannot be called with new. */
+JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_len);
 
 static inline JSValue JS_NewCFunction(JSContext *ctx, JSCFunction *func, const char *name,
                                       int length)

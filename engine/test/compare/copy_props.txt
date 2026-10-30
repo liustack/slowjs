@@ -1,0 +1,2 @@
+8550 runs: all as React; copyProps took 911 of the listed ones and 2014 of the random ones
+ok
