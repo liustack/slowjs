@@ -417,6 +417,7 @@ var goasmKeep = []any{
 	emit_class_init_end,
 	emit_class_init_start,
 	emit_goto,
+	emit_iterator_close,
 	emit_label,
 	emit_object_lit,
 	emit_op,
