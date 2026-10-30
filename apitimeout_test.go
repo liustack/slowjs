@@ -237,3 +237,87 @@ func atomOrFatal(t *testing.T, m *VM, s string) Atom {
 	}
 	return a
 }
+
+// TestErrorFromValueTimeout reads an error whose name getter and toString run
+// for 300 ms, in a VM with a 10 ms eval timeout. The fields it could not read
+// are left empty, the others are read, no exception stays pending, and the
+// next call, also another ErrorFromValue, works. The same inside a Go
+// function called from a script, where the outer call's time runs.
+func TestErrorFromValueTimeout(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, err := m.Eval(spin+`
+globalThis.slowName = new TypeError("m1");
+Object.defineProperty(slowName, "name", { get() { spin(); return "N" } });
+globalThis.slowString = new RangeError("m2");
+slowString.toString = function () { spin(); return "T" };
+globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetEvalTimeout(10 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(name string) *Error {
+		t.Helper()
+		v := evalValueOrFatal(t, m, name)
+		defer v.Free()
+		start := time.Now()
+		e := ErrorFromValue(v)
+		if d := time.Since(start); d > 150*time.Millisecond {
+			t.Errorf("reading %s took %v", name, d)
+		}
+		return e
+	}
+	check := func(e *Error, name, message, raw string) {
+		t.Helper()
+		if e.Name != name || e.Message != message || e.Error() != raw {
+			t.Errorf("got name %q, message %q, string %q, want %q, %q, %q", e.Name, e.Message, e.Error(), name, message, raw)
+		}
+		wantNoPendingException(t, m)
+		got := read("plain")
+		if got.Name != "SyntaxError" || got.Message != "m3" || got.Error() != "SyntaxError: m3" {
+			t.Errorf("the next read gave %q, %q, %q", got.Name, got.Message, got.Error())
+		}
+		if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
+			t.Errorf("the next call gave %v, %v", r, err)
+		}
+	}
+	check(read("slowName"), "", "m1", "")
+	check(read("slowString"), "RangeError", "m2", "")
+	if e := read("plain"); e.Error() != "SyntaxError: m3" {
+		t.Errorf("a plain error reads as %q", e.Error())
+	}
+
+	// Inside a Go function the call around it keeps the time.
+	var inner *Error
+	mustHost(t, m, "readNested", func([]any) (any, error) {
+		v := evalValueOrFatal(t, m, "slowName")
+		defer v.Free()
+		inner = ErrorFromValue(v)
+		return nil, nil
+	})
+	if err := m.SetEvalTimeout(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	// The script is stopped by the same deadline, so the host function reads
+	// what it can of the name before it.
+	start := time.Now()
+	m.Eval(`readNested(); spin(); "done"`, EvalGlobal)
+	if d := time.Since(start); d > 700*time.Millisecond {
+		t.Errorf("the call took %v", d)
+	}
+	if inner == nil || inner.Message != "m1" {
+		t.Errorf("the nested read gave %#v", inner)
+	}
+	wantNoPendingException(t, m)
+	if err := m.SetEvalTimeout(0); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
+		t.Errorf("the next call gave %v, %v", r, err)
+	}
+}
