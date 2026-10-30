@@ -641,7 +641,6 @@ var goasmKeep = []any{
 	js_bigint_new,
 	js_bigint_new_di,
 	js_bigint_new_si64,
-	js_bigint_normalize,
 	js_bigint_not,
 	js_bigint_shl,
 	js_bigint_toString,

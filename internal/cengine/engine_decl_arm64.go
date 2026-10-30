@@ -678,7 +678,6 @@ func js_bigint_neg(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new_di(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new_si64(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
-func js_bigint_normalize(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_not(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_shl(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_toString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
