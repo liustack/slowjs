@@ -657,6 +657,75 @@ static void test_object_lit_size(void)
     JS_FreeRuntime(rt);
 }
 
+
+/* The blocks the heap holds, and in *bytes the bytes they take, after a full
+   collection. */
+static int64_t blocks_now(JSRuntime *rt, int64_t *bytes)
+{
+    JSMemoryUsage u;
+
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &u);
+    if (bytes)
+        *bytes = u.malloc_size;
+    return u.malloc_count;
+}
+
+/* The properties of an object literal sit in the block of the object: a
+   thousand objects of four keys take 112 bytes each, not 120. When they get
+   more keys than the block has room for, lose keys, are frozen or given
+   another prototype, they keep their properties and all the memory is given
+   back once they are dropped. */
+static void test_object_lit_one_block(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    int64_t base, blocks, base_bytes, bytes, json_bytes;
+
+    JS_SetShapeCache(ctx, 0);
+    CHECK(eval(ctx, "var a4 = new Array(1000).fill(0), a5 = new Array(1000).fill(0), m = [];\n"
+               "function fill() { for (let i = 0; i < 1000; i++) a4[i] = { a: i, b: i, c: i, d: i } }\n"
+               "function fill_json() { for (let i = 0; i < 1000; i++) a5[i] = JSON.parse('{\"a\":1,\"b\":2,\"c\":3,\"d\":4}') }"),
+          "the script threw");
+    base = blocks_now(rt, &base_bytes);
+    CHECK(eval(ctx, "fill()"), "the script threw");
+    blocks_now(rt, &bytes);
+    bytes -= base_bytes;
+    CHECK(eval_is(ctx, "JSON.stringify(a4[999])", "{\"a\":999,\"b\":999,\"c\":999,\"d\":999}"),
+          "the object");
+    /* objects of the same four keys made one key at a time keep their
+       properties in a block of their own, which has a header of its own */
+    CHECK(eval(ctx, "a4.fill(0); fill_json()"), "the script threw");
+    blocks_now(rt, &json_bytes);
+    json_bytes -= base_bytes;
+    CHECK(bytes + 1000 * 4 < json_bytes, "%lld bytes for 1000 objects of 4 keys in a block, %lld in two",
+          (long long)bytes, (long long)json_bytes);
+    /* the same kind of objects, then grown, trimmed, frozen and moved on */
+    CHECK(eval(ctx,
+               "for (let i = 0; i < 300; i++) {\n"
+               "  let o = { a: i, b: [i], c: 'x' + i };\n"
+               "  if (i % 6 == 0) { o.d = i; o.e = i; o.f = i; o.g = i; o.h = i }\n"
+               "  if (i % 6 == 1) { delete o.a; o.z = i }\n"
+               "  if (i % 6 == 2) Object.freeze(o);\n"
+               "  if (i % 6 == 3) Object.setPrototypeOf(o, { p: 1 });\n"
+               "  if (i % 6 == 4) { for (let k = 0; k < 40; k++) o['k' + k] = k;\n"
+               "    for (let k = 0; k < 40; k += 2) delete o['k' + k] }\n"
+               "  if (i % 6 == 5) Object.defineProperty(o, 'b', { get() { return 7 } });\n"
+               "  m.push(o)\n"
+               "}"), "the script threw");
+    CHECK(eval_is(ctx,
+                  "[m[0], m[1], m[2], m[3], m[5], m[4]].map(o => Object.keys(o).length + ':' + o.c + ':' + o.b).join()",
+                  "8:x0:0,3:x1:1,3:x2:2,3:x3:3,3:x5:7,23:x4:4"),
+          "the objects after their changes");
+    CHECK(eval_is(ctx, "m[3].p + ' ' + Object.isFrozen(m[2]) + ' ' + Object.isFrozen(m[8]) + ' ' + ('a' in m[1])",
+                  "1 true true false"), "prototype and frozen");
+    CHECK(eval(ctx, "a4 = a5 = m = null"), "the script threw");
+    blocks = blocks_now(rt, NULL) - base;
+    CHECK(blocks < 40, "%lld blocks left after dropping the objects", (long long)blocks);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* A string key that is already an atom takes the reference JS_DupAtom
    gives: an atom made from a string at run time and used as a key many
    times is freed with the last string and object that hold it. */
@@ -3016,6 +3085,7 @@ int main(void)
     test_func_shapes();
     test_func_shapes_kept();
     test_object_lit_size();
+    test_object_lit_one_block();
     test_atom_keys();
     test_own_keys_collected();
     test_interrupt_points();

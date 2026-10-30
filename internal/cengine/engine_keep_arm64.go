@@ -1021,6 +1021,7 @@ var goasmKeep = []any{
 	js_regexp_test,
 	js_regexp_toString,
 	js_relational_slow,
+	js_resize_prop,
 	js_resolve_export,
 	js_resolve_export1_block,
 	js_resolve_module,

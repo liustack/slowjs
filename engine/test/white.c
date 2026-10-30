@@ -829,3 +829,37 @@ size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full)
     *full = sizeof(JSObject);
     return js_malloc_usable_size(ctx, JS_VALUE_GET_OBJ(obj));
 }
+
+/* ---- the properties of an object ---- */
+
+/* Whether the properties of obj sit in its block (1) or in a block of their
+   own (0), or -1 when obj is no object. *room is the number of properties
+   the shape of obj has room for. */
+int white_props_inline(JSValueConst obj, int *room)
+{
+    JSObject *p;
+
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return -1;
+    p = JS_VALUE_GET_OBJ(obj);
+    *room = p->shape->prop_size;
+    return p->prop == (JSProperty *)((uint8_t *)p + offsetof(JSObject, u));
+}
+
+/* Call func with this and the arguments, with call number fail of
+   js_malloc_rt and js_realloc_rt failing (0 for none), the others working.
+   *nallocs is how many calls it made. Returns what JS_Call returns. */
+JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val,
+                           int argc, JSValueConst *argv, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_Call(ctx, func, this_val, argc, argv);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return v;
+}
