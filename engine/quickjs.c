@@ -4584,12 +4584,69 @@ static JSValue js_new_string_char(JSContext *ctx, uint16_t c)
     }
 }
 
+/* the most characters js_sub_string scans or copies between two reads of the
+   interrupt flag */
+#define JS_SUB_STEP (1 << 20)
+
+/* js_sub_string for a piece of more than JS_SUB_STEP characters: it makes the
+   same string, scanning a 16-bit string for a character past 0xff and then
+   copying, with the flag read each time JS_SUB_STEP characters have been
+   scanned or copied since the last reading, the two phases counted together. */
+static no_inline JSValue js_sub_string_long(JSContext *ctx, JSString *p, int start, int end)
+{
+    int len = end - start, i, j, n, work = 0, wide = p->is_wide_char;
+    JSString *str;
+
+    if (wide) {
+        uint16_t c = 0;
+        for (i = start; i < end && c <= 0xFF; i += n) {
+            n = min_int(end - i, JS_SUB_STEP - work);
+            for (j = 0; j < n; j++)
+                c |= p->u.str16[i + j];
+            work += n;
+            if (work >= JS_SUB_STEP) {
+                work = 0;
+                if (js_poll_interrupts(ctx))
+                    return JS_EXCEPTION;
+            }
+        }
+        wide = c > 0xFF;
+    }
+    str = js_alloc_string(ctx, len, wide);
+    if (!str)
+        return JS_EXCEPTION;
+    for (i = 0; i < len; i += n) {
+        n = min_int(len - i, JS_SUB_STEP - work);
+        if (wide) {
+            memcpy(str->u.str16 + i, p->u.str16 + start + i, n * 2);
+        } else if (p->is_wide_char) {
+            for (j = 0; j < n; j++)
+                str->u.str8[i + j] = p->u.str16[start + i + j];
+        } else {
+            memcpy(str->u.str8 + i, p->u.str8 + start + i, n);
+        }
+        work += n;
+        if (work >= JS_SUB_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx)) {
+                js_free_string(ctx->rt, str);
+                return JS_EXCEPTION;
+            }
+        }
+    }
+    if (!wide)
+        str->u.str8[len] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, str);
+}
+
 static JSValue js_sub_string(JSContext *ctx, JSString *p, int start, int end)
 {
     int len = end - start;
     if (start == 0 && end == p->len) {
         return JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, p));
     }
+    if (unlikely(len > JS_SUB_STEP))
+        return js_sub_string_long(ctx, p, start, end);
     if (p->is_wide_char && len > 0) {
         JSString *str;
         int i;
@@ -5514,6 +5571,40 @@ static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
     return 0;
 }
 
+/* The hash of the characters of a string from *ph, in *ph, reading the
+   interrupt flag each time JS_ROPE_STEP characters have been hashed since the
+   last reading: 0, or -1 with the exception "interrupted" thrown when the
+   flag is set. *pwork (less than JS_ROPE_STEP) is the characters since the
+   last reading, which the strings of a rope share. The hash of the keys
+   already in the table of a Map or Set, which a resize and the collector
+   take, is hash_string and hash_string_rope, which never stop. */
+static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uint32_t *pwork)
+{
+    uint32_t h = *ph, work = *pwork, off, n;
+
+    if (p->len < JS_ROPE_STEP - work) {
+        *ph = hash_string(p, h);
+        *pwork = work + p->len;
+        return 0;
+    }
+    for (off = 0; off < p->len; off += n) {
+        n = min_uint32(p->len - off, JS_ROPE_STEP - work);
+        if (p->is_wide_char)
+            h = hash_string16(p->u.str16 + off, n, h);
+        else
+            h = hash_string8(p->u.str8 + off, n, h);
+        work += n;
+        if (work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    *ph = h;
+    *pwork = work;
+    return 0;
+}
+
 /* The hash of the characters of a string or rope, from h: the strings of
    the rope in order, as if it were one string. */
 static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
@@ -5525,6 +5616,29 @@ static uint32_t hash_string_rope(JSValueConst val, uint32_t h)
     while ((p = string_rope_iter_next(&it)) != NULL)
         h = hash_string(p, h);
     return h;
+}
+
+/* hash_string_rope for an operation of a Map or Set: it reads the flag as
+   hash_string_poll does, the strings of the rope sharing the characters since
+   the last reading, and each string counting one more than its length. */
+static int hash_string_rope_poll(JSContext *ctx, JSValueConst val, uint32_t *ph)
+{
+    JSStringRopeIter it;
+    JSString *p;
+    uint32_t h = *ph, work = 0;
+
+    string_rope_iter_init(&it, val);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        if (hash_string_poll(ctx, p, &h, &work))
+            return -1;
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    *ph = h;
+    return 0;
 }
 
 static uint32_t string_rope_get_len(JSValueConst val)
@@ -19462,9 +19576,11 @@ static JSValue JS_IteratorNext2(JSContext *ctx, JSValueConst enum_obj,
                 argv = args;
             }
             /* a call of the C function that skips JS_CallInternal: it
-               counts a level, or a chain of iterator helpers recurses
-               without bound */
-            if (js_call_enter(ctx))
+               reads the interrupt flag and counts a level there, and
+               here too, or a loop of C that walks a built-in iterator
+               and calls nothing else would never stop, and a chain of
+               iterator helpers would recurse without bound */
+            if (js_poll_interrupts(ctx) || js_call_enter(ctx))
                 goto fail;
             func = p->u.cfunc.c_function;
             obj = func.iterator_next(ctx, enum_obj, argc, argv,
@@ -46403,10 +46519,6 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         if (JS_IsException(next_method))
             goto exception;
         for (k = 0;; k++) {
-            /* the iterator of a string, an array, a Map or a Set is called
-               without JS_CallInternal, which would read the interrupt flag */
-            if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
-                goto exception;
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -50345,22 +50457,6 @@ static int string_indexof_char(JSString *p, int c, int from)
     return -1;
 }
 
-static int string_indexof(JSString *p1, JSString *p2, int from)
-{
-    /* assuming 0 <= from <= p1->len */
-    int c, i, j, len1 = p1->len, len2 = p2->len;
-    if (len2 == 0)
-        return from;
-    for (i = from, c = string_get(p2, 0); i + len2 <= len1; i = j + 1) {
-        j = string_indexof_char(p1, c, i);
-        if (j < 0 || j + len2 > len1)
-            break;
-        if (!string_cmp(p1, p2, j + 1, 1, len2 - 1))
-            return j;
-    }
-    return -1;
-}
-
 static int64_t string_advance_index(JSString *p, int64_t index, BOOL unicode)
 {
     if (!unicode || index >= p->len || !p->is_wide_char) {
@@ -51198,7 +51294,8 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
     JSValue str, search_str, replaceValue_str, repl_str;
     JSString *sp, *searchp;
     StringBuffer b_s, *b = &b_s;
-    int pos, functionalReplace, endOfLastMatch;
+    int pos, functionalReplace, endOfLastMatch, stop;
+    uint32_t matches = 0;
     BOOL is_first;
 
     if (JS_IsUndefined(O) || JS_IsNull(O))
@@ -51251,7 +51348,14 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             else
                 pos = endOfLastMatch + 1;
         } else {
-            pos = string_indexof(sp, searchp, endOfLastMatch);
+            /* the search reads the interrupt flag as indexOf does */
+            pos = -1;
+            stop = sp->len - searchp->len;
+            if (endOfLastMatch <= stop) {
+                pos = js_string_find(ctx, sp, searchp, endOfLastMatch, stop, 1);
+                if (pos == -2)
+                    goto exception;
+            }
         }
         if (pos < 0) {
             if (is_first) {
@@ -51286,6 +51390,10 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
         is_first = FALSE;
         if (!is_replaceAll)
             break;
+        /* a replacement that is not a function calls nothing: read the
+           interrupt flag every 1024 matches */
+        if ((++matches & 1023) == 0 && js_poll_interrupts(ctx))
+            goto exception;
     }
     string_buffer_concat(b, sp, endOfLastMatch, sp->len);
     JS_FreeValue(ctx, search_str);
@@ -51539,13 +51647,18 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
     /* the pad is written in steps of JS_PAD_STEP characters at most,
        between which the interrupt flag is read */
     if (p1) {
-        int run = 0;
+        /* off is where in the filler the next step starts: a filler longer
+           than a step is written in steps too */
+        int run = 0, off = 0;
         while (n > 0) {
-            int chunk = min_int(n, p1->len);
-            if (string_buffer_concat(b, p1, 0, chunk))
+            int chunk = min_int(min_int(n, p1->len - off), JS_PAD_STEP - run);
+            if (string_buffer_concat(b, p1, off, off + chunk))
                 goto fail;
             n -= chunk;
             run += chunk;
+            off += chunk;
+            if (off == p1->len)
+                off = 0;
             if (run >= JS_PAD_STEP && n > 0) {
                 run = 0;
                 if (js_poll_interrupts(ctx))
@@ -57846,7 +57959,9 @@ static uint32_t map_hash_pointer(uintptr_t a, int hash_bits)
 }
 
 /* XXX: better hash ? */
-/* precondition: 1 <= hash_bits <= 32 */
+/* precondition: 1 <= hash_bits <= 32. This is the hash of the keys already in a
+   table (a resize, the collector), which never stops: map_hash_key_poll is
+   the one that reads the interrupt flag. */
 static uint32_t map_hash_key(JSValueConst key, int hash_bits)
 {
     uint32_t tag = JS_VALUE_GET_NORM_TAG(key);
@@ -57904,21 +58019,59 @@ static uint32_t map_hash_key(JSValueConst key, int hash_bits)
     return h;
 }
 
-static JSMapRecord *map_find_record(JSContext *ctx, JSMapState *s,
-                                    JSValueConst key)
+/* The hash of the key of an operation of a Map or Set, in *ph: map_hash_key,
+   but a long string or rope reads the interrupt flag now and then. 0, or -1
+   with the exception "interrupted" thrown when the flag was set. */
+static int map_hash_key_poll(JSContext *ctx, JSValueConst key, int hash_bits, uint32_t *ph)
+{
+    uint32_t tag = JS_VALUE_GET_NORM_TAG(key), h = 0, work = 0;
+
+    if (tag == JS_TAG_STRING) {
+        if (hash_string_poll(ctx, JS_VALUE_GET_STRING(key), &h, &work))
+            return -1;
+    } else if (tag == JS_TAG_STRING_ROPE) {
+        if (hash_string_rope_poll(ctx, key, &h))
+            return -1;
+    } else {
+        *ph = map_hash_key(key, hash_bits);
+        return 0;
+    }
+    *ph = map_hash32(h ^ JS_TAG_STRING, hash_bits);
+    return 0;
+}
+
+/* Look for the key: 0 with the record in *pmr (NULL when there is none), or
+   -1 when hashing it was stopped (map_hash_key_poll). */
+static int map_find_record(JSContext *ctx, JSMapState *s,
+                           JSValueConst key, JSMapRecord **pmr)
 {
     JSMapRecord *mr;
     uint32_t h;
-    h = map_hash_key(key, s->hash_bits);
+
+    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
+        return -1;
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
         if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key))) {
             /* cannot match */
         } else {
-            if (js_same_value_zero(ctx, mr->key, key))
-                return mr;
+            if (js_same_value_zero(ctx, mr->key, key)) {
+                *pmr = mr;
+                return 0;
+            }
         }
     }
-    return NULL;
+    *pmr = NULL;
+    return 0;
+}
+
+/* 1 when the key is there, 0 when it is not, -1 when hashing it was stopped */
+static int map_has_record(JSContext *ctx, JSMapState *s, JSValueConst key)
+{
+    JSMapRecord *mr;
+
+    if (map_find_record(ctx, s, key, &mr))
+        return -1;
+    return mr != NULL;
 }
 
 static void map_hash_resize(JSContext *ctx, JSMapState *s)
@@ -57959,6 +58112,8 @@ static JSMapRecord *map_add_record(JSContext *ctx, JSMapState *s,
     uint32_t h;
     JSMapRecord *mr;
 
+    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
+        return NULL;
     mr = js_malloc(ctx, sizeof(*mr));
     if (!mr)
         return NULL;
@@ -57969,7 +58124,6 @@ static JSMapRecord *map_add_record(JSContext *ctx, JSMapState *s,
     } else {
         mr->key = JS_DupValue(ctx, key);
     }
-    h = map_hash_key(key, s->hash_bits);
     mr->hash_next = s->hash_table[h];
     s->hash_table[h] = mr;
     list_add_tail(&mr->link, &s->records);
@@ -58073,7 +58227,8 @@ static JSValue js_map_set(JSContext *ctx, JSValueConst this_val,
         value = JS_UNDEFINED;
     else
         value = argv[1];
-    mr = map_find_record(ctx, s, key);
+    if (map_find_record(ctx, s, key, &mr) < 0)
+        return JS_EXCEPTION;
     if (mr) {
         JS_FreeValue(ctx, mr->value);
     } else {
@@ -58095,7 +58250,8 @@ static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
     if (!s)
         return JS_EXCEPTION;
     key = map_normalize_key_const(ctx, argv[0]);
-    mr = map_find_record(ctx, s, key);
+    if (map_find_record(ctx, s, key, &mr) < 0)
+        return JS_EXCEPTION;
     if (!mr)
         return JS_UNDEFINED;
     else
@@ -58109,8 +58265,9 @@ static JSValue map_delete_record(JSContext *ctx, JSMapState *s, JSValueConst key
     uint32_t h;
 
     key = map_normalize_key_const(ctx, key);
-    
-    h = map_hash_key(key, s->hash_bits);
+
+    if (map_hash_key_poll(ctx, key, s->hash_bits, &h))
+        return JS_EXCEPTION;
     pmr = &s->hash_table[h];
     for(;;) {
         mr = *pmr;
@@ -58140,7 +58297,7 @@ static JSValue js_map_getOrInsert(JSContext *ctx, JSValueConst this_val,
     JSMapState *s = JS_GetOpaque2(ctx, this_val, class_id);
     JSMapRecord *mr;
     JSValueConst key;
-    JSValue value;
+    JSValue value, deleted;
 
     if (!s)
         return JS_EXCEPTION;
@@ -58149,13 +58306,18 @@ static JSValue js_map_getOrInsert(JSContext *ctx, JSValueConst this_val,
     key = map_normalize_key_const(ctx, argv[0]);
     if (s->is_weak && !js_weakref_is_target(key))
         return JS_ThrowTypeError(ctx, "invalid value used as WeakMap key");
-    mr = map_find_record(ctx, s, key);
+    if (map_find_record(ctx, s, key, &mr) < 0)
+        return JS_EXCEPTION;
     if (!mr) {
         if (computed) {
             value = js_call(ctx, argv[1], JS_UNDEFINED, 1, &key);
             if (JS_IsException(value))
                 return JS_EXCEPTION;
-            map_delete_record(ctx, s, key);
+            deleted = map_delete_record(ctx, s, key);
+            if (JS_IsException(deleted)) {
+                JS_FreeValue(ctx, value);
+                return JS_EXCEPTION;
+            }
         } else {
             value = JS_DupValue(ctx, argv[1]);
         }
@@ -58179,7 +58341,8 @@ static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
     if (!s)
         return JS_EXCEPTION;
     key = map_normalize_key_const(ctx, argv[0]);
-    mr = map_find_record(ctx, s, key);
+    if (map_find_record(ctx, s, key, &mr) < 0)
+        return JS_EXCEPTION;
     return JS_NewBool(ctx, mr != NULL);
 }
 
@@ -58648,6 +58811,7 @@ static JSValue js_copy_set(JSContext *ctx, JSValueConst this_val)
     JSMapState *s, *t;
     struct list_head *el;
     JSMapRecord *mr;
+    uint32_t n = 0;
    
     s = JS_GetOpaque2(ctx, this_val, JS_CLASS_SET);
     if (!s)
@@ -58661,6 +58825,9 @@ static JSValue js_copy_set(JSContext *ctx, JSValueConst this_val)
     // can't clone this_val using js_map_constructor(),
     // test262 mandates we don't call the .add method
     list_for_each(el, &s->records) {
+        /* the copy calls nothing: read the interrupt flag every 1024 records */
+        if ((++n & 1023) == 0 && js_poll_interrupts(ctx))
+            goto exception;
         mr = list_entry(el, JSMapRecord, link);
         if (mr->empty)
             continue;
@@ -58724,8 +58891,11 @@ static JSValue js_set_isDisjointFrom(JSContext *ctx, JSValueConst this_val,
             if (done) // item is JS_UNDEFINED
                 break;
             item = map_normalize_key(ctx, item);
-            found = (NULL != map_find_record(ctx, s, item));
+            ok = map_has_record(ctx, s, item);
             JS_FreeValue(ctx, item);
+            if (ok < 0)
+                goto exception;
+            found = ok;
             if (found) {
                 JS_IteratorClose(ctx, iter, FALSE);
                 break;
@@ -58792,7 +58962,7 @@ static JSValue js_set_isSupersetOf(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
     JSValue item, iter, keys, has, next, rval;
-    int done;
+    int done, ok;
     BOOL found;
     JSMapState *s;
     int64_t size;
@@ -58822,8 +58992,11 @@ static JSValue js_set_isSupersetOf(JSContext *ctx, JSValueConst this_val,
         if (done) // item is JS_UNDEFINED
             break;
         item = map_normalize_key(ctx, item);
-        found = (NULL != map_find_record(ctx, s, item));
+        ok = map_has_record(ctx, s, item);
         JS_FreeValue(ctx, item);
+        if (ok < 0)
+            goto exception;
+        found = ok;
         if (!found) {
             JS_IteratorClose(ctx, iter, FALSE);
             break;
@@ -58874,14 +59047,16 @@ static JSValue js_set_intersection(JSContext *ctx, JSValueConst this_val,
             if (done) // item is JS_UNDEFINED
                 break;
             item = map_normalize_key(ctx, item);
-            if (!map_find_record(ctx, s, item)) {
-                JS_FreeValue(ctx, item);
-            } else if (map_find_record(ctx, t, item)) {
-                JS_FreeValue(ctx, item); // no duplicates
-            } else {
+            ok = map_has_record(ctx, s, item);
+            if (ok > 0 && (ok = map_has_record(ctx, t, item)) == 0) {
                 mr = set_add_record(ctx, t, item);
                 JS_FreeValue(ctx, item);
                 if (!mr)
+                    goto exception;
+            } else {
+                /* not in this set, or already in the new one (no duplicates) */
+                JS_FreeValue(ctx, item);
+                if (ok < 0)
                     goto exception;
             }
         }
@@ -58903,12 +59078,15 @@ static JSValue js_set_intersection(JSContext *ctx, JSValueConst this_val,
             ok = JS_ToBoolFree(ctx, rv); // returns -1 if rv is JS_EXCEPTION
             if (ok > 0) {
                 item = map_normalize_key(ctx, item);
-                if (map_find_record(ctx, t, item)) {
-                    JS_FreeValue(ctx, item); // no duplicates
-                } else {
+                ok = map_has_record(ctx, t, item);
+                if (ok == 0) {
                     mr = set_add_record(ctx, t, item);
                     JS_FreeValue(ctx, item);
                     if (!mr)
+                        goto exception;
+                } else {
+                    JS_FreeValue(ctx, item); // no duplicates
+                    if (ok < 0)
                         goto exception;
                 }
             } else {
@@ -58970,7 +59148,11 @@ static JSValue js_set_difference(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             }
             if (ok) {
-                map_delete_record(ctx, t, item);
+                rv = map_delete_record(ctx, t, item);
+                if (JS_IsException(rv)) {
+                    JS_FreeValue(ctx, item);
+                    goto exception;
+                }
             }
             JS_FreeValue(ctx, item);
         }
@@ -58987,8 +59169,10 @@ static JSValue js_set_difference(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (done) // item is JS_UNDEFINED
                 break;
-            map_delete_record(ctx, t, item);
+            rv = map_delete_record(ctx, t, item);
             JS_FreeValue(ctx, item);
+            if (JS_IsException(rv))
+                goto exception;
         }
     }
     goto fini;
@@ -59006,11 +59190,11 @@ fini:
 static JSValue js_set_symmetricDifference(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv)
 {
-    JSValue newset, item, iter, next, has, keys;
+    JSValue newset, item, iter, next, has, keys, rv;
     JSMapState *s, *t;
     JSMapRecord *mr;
     int64_t size;
-    int done;
+    int done, ok;
     BOOL present;
 
     s = JS_GetOpaque2(ctx, this_val, JS_CLASS_SET);
@@ -59047,11 +59231,19 @@ static JSValue js_set_symmetricDifference(JSContext *ctx, JSValueConst this_val,
         // - if item exists in |new| but misses in |this|, *don't* add it,
         //   mutating iterator erased it
         item = map_normalize_key(ctx, item);
-        present = (NULL != map_find_record(ctx, s, item));
-        mr = map_find_record(ctx, t, item);
-        if (present) {
-            map_delete_record(ctx, t, item);
+        ok = map_has_record(ctx, s, item);
+        if (ok >= 0 && map_find_record(ctx, t, item, &mr) < 0)
+            ok = -1;
+        if (ok < 0) {
             JS_FreeValue(ctx, item);
+            goto exception;
+        }
+        present = ok;
+        if (present) {
+            rv = map_delete_record(ctx, t, item);
+            JS_FreeValue(ctx, item);
+            if (JS_IsException(rv))
+                goto exception;
         } else if (mr) {
             JS_FreeValue(ctx, item);
         } else {
@@ -65918,10 +66110,6 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
         goto fail;
     k = 0;
     for(;;) {
-        /* the iterator of a string, an array, a Map or a Set is called
-           without JS_CallInternal, which would read the interrupt flag */
-        if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
-            goto fail;
         val = JS_IteratorNext(ctx, iter, next_method, 0, NULL, &done);
         if (JS_IsException(val))
             goto fail;
