@@ -2984,7 +2984,7 @@ static void test_map_key_polls(void)
         "var f = 'ac'.repeat(1 << 23), o1 = new Set([r]), o2 = new Set(['k'])\n"
         "function mk() { var m = new Map([['one', {v: 1}], ['two', {v: 2}], ['three', {v: 3}]]); m.it = m.keys(); return m }\n"
         "function mks() { var s = new Set(['one', 'two', 'three']); s.it = s.values(); return s }\n"
-        "var c; 0\n";
+        "var c, cb = 0; 0\n";
     /* where the flag is set: num/den of the reads of the hashes of the long key, after the reads the call makes with a short one */
     static const struct {
         const char *make, *call, *base;
@@ -2995,7 +2995,9 @@ static void test_map_key_polls(void)
         { "mk", "c.has(r)", "c.has('k')", 1, 2 },
         { "mk", "c.delete(f)", "c.delete('k')", 1, 2 },
         { "mk", "c.getOrInsert(r, {v: 7})", "c.getOrInsert('k', {v: 7})", 3, 4 },
-        { "mk", "c.getOrInsertComputed(f, () => ({v: 9}))", "c.getOrInsertComputed('k', () => ({v: 9}))", 1, 2 },
+        /* the key is hashed three times: to find it, to take it out again after the callback, and to add it. The flag is set in the second and in the third */
+        { "mk", "c.getOrInsertComputed(f, () => (cb++, {v: 9}))", "c.getOrInsertComputed('k', () => (cb++, {v: 9}))", 1, 2 },
+        { "mk", "c.getOrInsertComputed(f, () => (cb++, {v: 9}))", "c.getOrInsertComputed('k', () => (cb++, {v: 9}))", 5, 6 },
         { "mks", "c.add(r)", "c.add('k')", 3, 4 },
         { "mks", "c.has(f)", "c.has('k')", 1, 2 },
         { "mks", "c.delete(r)", "c.delete('k')", 1, 2 },
@@ -3039,10 +3041,12 @@ static void test_map_key_polls(void)
         all = host_poll_reads - before;
         hashes = all - base;
         CHECK(hashes >= 255, "%s: %ld readings of the flag in the hashes, want at least 255", call, hashes);
-        CHECK(eval(ctx, make), "%s: the script threw", make);
+        CHECK(eval(ctx, make) && eval(ctx, "cb = 0"), "%s: the script threw", make);
         host_poll_stop_after(base + hashes * cases[i].num / cases[i].den);
         CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
         host_poll_stop_after(0);
+        /* the callback of getOrInsertComputed had run when the stop came, so that the value it made was freed with the failed call */
+        CHECK(eval_is(ctx, "cb", strstr(call, "getOrInsertComputed") ? "1" : "0"), "%s: the callback ran the wrong number of times", call);
         CHECK(eval_is(ctx, cases[i].make[2] == 's' ?
                       "[c.size, [...c.keys()].join('|'), c.it.next().value].join()" :
                       "[c.size, [...c.keys()].join('|'), c.get('one').v, c.get('two').v, c.get('three').v, c.it.next().value].join()",
