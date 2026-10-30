@@ -35,8 +35,8 @@
    -regexp-cache=N,BYTES sets the cache of compiled regexps (JS_SetRegExpCache)
    before the file runs, N entries and BYTES bytes, 0,0 for none.
 
-   -no-fused-ops compiles the file with the pairs of instructions that the
-   compiler joins into one opcode left apart (JS_SetFusedOps).
+   -no-fused-ops compiles the file with the instructions that the compiler
+   joins into one opcode left apart (JS_SetFusedOps).
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
    GetAsyncContext and SetAsyncContext of the Go API, as globals, and six

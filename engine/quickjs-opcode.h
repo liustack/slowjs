@@ -368,6 +368,7 @@ DEF(get_arg1_get_field, 1, 0, 1, none_arg) /* get_arg1 get_field */
 DEF(get_loc0_get_field, 1, 0, 1, none_loc) /* get_loc0 get_field */
 DEF(get_loc8_get_field, 2, 0, 1, loc8) /* get_loc8 get_field */
 DEF(dup_case_atom, 1, 1, 2, none) /* dup push_atom_value strict_eq if_false8 */
+DEF(      typeof_is, 5, 1, 1, atom) /* typeof push_atom_value strict_eq */
 #endif
 
 #undef DEF
