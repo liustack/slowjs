@@ -1058,6 +1058,7 @@ enum {
     W_GET_FIELD, W_GET_FIELD2, W_PUSH_ATOM_VALUE, W_STRICT_EQ,
     W_GET_ARG0_GET_FIELD, W_GET_ARG1_GET_FIELD, W_GET_LOC0_GET_FIELD,
     W_GET_LOC8_GET_FIELD, W_DUP_CASE_ATOM,
+    W_TYPEOF, W_TYPEOF_IS_UNDEFINED, W_TYPEOF_IS_FUNCTION, W_TYPEOF_IS, W_LNOT,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -1820,6 +1821,81 @@ static void test_fused_ops(void)
     }
     vm_free(&v);
 }
+/* typeof x compared with a string is one opcode: typeof_is with the string,
+   typeof_is_undefined and typeof_is_function for those two, a negated test
+   takes the other branch or lnot, and typeof x < "u" or > "u" is
+   typeof_is_undefined. With JS_SetFusedOps off, only the forms of before
+   typeof_is are joined. Written and read back, the string comes along. */
+static void test_typeof_is(void)
+{
+    static const struct {
+        const char *body;
+        int op, lnot; /* with the opcodes on */
+        int off_op;   /* off: the opcode, or W_TYPEOF when none */
+    } cases[] = {
+        { "return typeof x == 'string'", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x === `number`", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x !== 'object'", W_TYPEOF_IS, 1, W_TYPEOF },
+        { "if (typeof x != 'symbol') return 1", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "if (typeof x == 'bigint') return 1", W_TYPEOF_IS, 0, W_TYPEOF },
+        { "return typeof x < 'u'", W_TYPEOF_IS_UNDEFINED, 1, W_TYPEOF },
+        { "return typeof x > `u`", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF },
+        { "if (typeof x < 'u') return 1", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF },
+        { "return typeof x === 'undefined'", W_TYPEOF_IS_UNDEFINED, 0, W_TYPEOF_IS_UNDEFINED },
+        { "return typeof x != 'function'", W_TYPEOF_IS_FUNCTION, 1, W_TYPEOF },
+        { "if (typeof x !== 'function') return 1", W_TYPEOF_IS_FUNCTION, 0, W_TYPEOF_IS_FUNCTION },
+        { "return typeof x <= 'u'", W_TYPEOF, 0, W_TYPEOF },
+        { "return typeof x < 'v'", W_TYPEOF, 0, W_TYPEOF },
+        { "return typeof x == 1", W_TYPEOF, 0, W_TYPEOF },
+    };
+    static const char script[] =
+        "(function () { function f(x) { return typeof x == 'string' ? 1 : 0 }\n"
+        "  function g(x) { return typeof x !== 'object' && typeof x < 'u' ? 1 : 0 }\n"
+        "  return f('a') * 100 + f(1) * 10 + g(1) + g(null) * 2 + g(undefined) * 4 })";
+    VM v = vm_new();
+    int shape[2 * 64];
+    char src[256], got[256];
+    uint8_t *buf;
+    size_t size;
+
+    for (int on = 1; on >= 0; on--) {
+        JS_SetFusedOps(v.ctx, on);
+        for (size_t i = 0; i < countof(cases); i++) {
+            const uint8_t *code;
+            JSValue top;
+            int len, n, ops = 0, lnot = 0, left = 0;
+            int want = on ? cases[i].op : cases[i].off_op;
+
+            snprintf(src, sizeof(src), "function f(x) { %s }", cases[i].body);
+            CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile %s", src);
+            n = code ? white_code_shape(code, len, shape, 64) : -1;
+            for (int k = 0; k < n; k++) {
+                ops += shape[2 * k] == white_op(want);
+                lnot += shape[2 * k] == white_op(W_LNOT);
+                left += shape[2 * k] == white_op(W_TYPEOF);
+            }
+            CHECK(ops == 1, "on %d: %s: %d of the opcode", on, cases[i].body, ops);
+            CHECK(want == W_TYPEOF || left == 0, "on %d: %s: typeof left", on, cases[i].body);
+            CHECK(lnot == (on && cases[i].lnot), "on %d: %s: %d lnot", on, cases[i].body, lnot);
+            JS_FreeValue(v.ctx, top);
+        }
+    }
+    JS_SetFusedOps(v.ctx, 1);
+
+    {
+        JSValue top = JS_Eval(v.ctx, script, strlen(script), "<typeof>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(v.ctx, top);
+    }
+    CHECK(buf != NULL, "write");
+    if (buf) {
+        run_read(v.ctx, buf, size, got, sizeof(got));
+        CHECK(strcmp(got, "ok 101") == 0, "read back: %s", got);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
 static void test_object_lit_read(void)
 {
     VM v = vm_new();
@@ -2506,6 +2582,7 @@ int main(void)
     test_object_lit_read();
     test_tail_c_calls();
     test_fused_ops();
+    test_typeof_is();
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();

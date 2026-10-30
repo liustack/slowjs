@@ -19937,7 +19937,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized(SB), NOSPLIT, $64-24
 	QUAD $0x6c8b4c2024448b48
 	QUAD $0xeb30244c8b483824
 	BYTE $0x07
-	LEAQ ·engine_rodata+8512(SB), AX
+	LEAQ ·engine_rodata+8516(SB), AX
 	BYTE $0x48
 	BYTE $0x89
 	BYTE $0x01
@@ -19945,7 +19945,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized(SB), NOSPLIT, $64-24
 	BYTE $0x8d
 	BYTE $0x61
 	BYTE $0x50
-	LEAQ ·engine_rodata+8490(SB), R14
+	LEAQ ·engine_rodata+8494(SB), R14
 	QUAD $0x4c2424894ccf8949
 	QUAD $0x2474894c08246c89
 	BYTE $0x10

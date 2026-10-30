@@ -445,8 +445,9 @@ struct JSRuntime {
        stack ends where it did */
     long call_frame;
     long stack_debt;
-    /* TRUE: the compiler leaves the pairs of fuse_code apart (JS_SetFusedOps,
-       for tests) */
+    /* TRUE: the compiler leaves the pairs of fuse_code apart, and joins a
+       typeof test only as it did before typeof_is (JS_SetFusedOps, for
+       tests) */
     BOOL no_fused_ops;
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
@@ -19121,6 +19122,18 @@ static __exception int js_operator_instanceof(JSContext *ctx, JSValue *sp)
     return 0;
 }
 
+/* the atom is the string "u" */
+static BOOL js_atom_is_u(JSRuntime *rt, JSAtom atom)
+{
+    JSAtomStruct *p;
+
+    if (__JS_AtomIsTaggedInt(atom))
+        return FALSE;
+    p = rt->atom_array[atom];
+    return p->atom_type == JS_ATOM_TYPE_STRING && p->len == 1 &&
+        !p->is_wide_char && p->u.str8[0] == 'u';
+}
+
 static __exception int js_operator_typeof(JSContext *ctx, JSValueConst op1)
 {
     JSAtom atom;
@@ -24425,6 +24438,17 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                 goto free_and_set_true;
             } else {
                 goto free_and_set_false;
+            }
+        CASE(OP_typeof_is):
+            {
+                /* typeof x === "<name>": the atom is the name */
+                JSAtom atom = get_u32(pc);
+                pc += 4;
+                if (js_operator_typeof(ctx, sp[-1]) == atom) {
+                    goto free_and_set_true;
+                } else {
+                    goto free_and_set_false;
+                }
             }
         free_and_set_true:
             JS_FreeValue(ctx, sp[-1]);
@@ -40540,11 +40564,22 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 #if SHORT_OPCODES
         case OP_typeof:
             if (OPTIMIZE) {
-                /* simplify typeof tests */
+                /* typeof x == "<name>" (==, ===, != or !==) as one opcode:
+                   typeof_is_undefined and typeof_is_function for those
+                   two names, typeof_is with the string for any other.
+                   typeof x < "u" is typeof x !== "undefined" and
+                   typeof x > "u" is typeof x === "undefined", as minifiers
+                   write them: "undefined" is the only result of typeof
+                   that does not sort before "u". A negated test takes the
+                   other branch after it, or is followed by lnot. With
+                   JS_SetFusedOps off, only the forms of before typeof_is
+                   are joined: "undefined" or "function", and a negated test
+                   only when if_false follows. */
+                BOOL fuse = !ctx->rt->no_fused_ops;
+                int op2 = -1, neg = 0, pos_end = 0, ln = -1;
+                JSAtom atom = JS_ATOM_NULL;
                 if (code_match(&cc, pos_next, OP_push_atom_value, M4(OP_strict_eq, OP_strict_neq, OP_eq, OP_neq), -1)) {
-                    if (cc.line_num >= 0) line_num = cc.line_num;
-                    int op1 = (cc.op == OP_strict_eq || cc.op == OP_eq) ? OP_strict_eq : OP_strict_neq;
-                    int op2 = -1;
+                    neg = cc.op == OP_strict_neq || cc.op == OP_neq;
                     switch (cc.atom) {
                     case JS_ATOM_undefined:
                         op2 = OP_typeof_is_undefined;
@@ -40552,28 +40587,47 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                     case JS_ATOM_function:
                         op2 = OP_typeof_is_function;
                         break;
+                    default:
+                        if (fuse)
+                            op2 = OP_typeof_is;
+                        break;
                     }
-                    if (op2 >= 0) {
-                        /* transform typeof(s) == "<type>" into is_<type> */
-                        if (op1 == OP_strict_eq) {
-                            add_pc2line_info(s, bc_out.size, line_num);
-                            dbuf_putc(&bc_out, op2);
-                            JS_FreeAtom(ctx, cc.atom);
-                            pos_next = cc.pos;
-                            break;
-                        }
-                        if (op1 == OP_strict_neq && code_match(&cc, cc.pos, OP_if_false, -1)) {
-                            /* transform typeof(s) != "<type>" if_false into is_<type> if_true */
+                } else if (fuse && code_match(&cc, pos_next, OP_push_atom_value, M2(OP_lt, OP_gt), -1) &&
+                           js_atom_is_u(ctx->rt, cc.atom)) {
+                    neg = cc.op == OP_lt;
+                    op2 = OP_typeof_is_undefined;
+                }
+                if (op2 >= 0) {
+                    atom = cc.atom;
+                    pos_end = cc.pos;
+                    ln = cc.line_num;
+                    /* a negated test: is a branch next? */
+                    if (neg && !code_match(&cc, pos_end, M2(OP_if_false, OP_if_true), -1))
+                        cc.op = -1;
+                    if (neg && !fuse && cc.op != OP_if_false)
+                        op2 = -1;
+                }
+                if (op2 >= 0) {
+                    if (ln >= 0) line_num = ln;
+                    add_pc2line_info(s, bc_out.size, line_num);
+                    dbuf_putc(&bc_out, op2);
+                    if (op2 == OP_typeof_is)
+                        dbuf_put_u32(&bc_out, atom); /* the opcode keeps the atom */
+                    else
+                        JS_FreeAtom(ctx, atom);
+                    pos_next = pos_end;
+                    if (neg) {
+                        if (cc.op >= 0) {
+                            /* is_<name> and the other branch */
                             if (cc.line_num >= 0) line_num = cc.line_num;
-                            add_pc2line_info(s, bc_out.size, line_num);
-                            dbuf_putc(&bc_out, op2);
-                            JS_FreeAtom(ctx, cc.atom);
                             pos_next = cc.pos;
                             label = cc.label;
-                            op = OP_if_true;
+                            op = cc.op == OP_if_false ? OP_if_true : OP_if_false;
                             goto has_label;
                         }
+                        dbuf_putc(&bc_out, OP_lnot);
                     }
+                    break;
                 }
             }
             goto no_change;
