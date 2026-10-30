@@ -792,6 +792,91 @@ static void test_object_inline_limit(void)
     }
 }
 
+static uintptr_t shape_of(VM *v, const char *expr)
+{
+    JSValue o = JS_Eval(v->ctx, expr, strlen(expr), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    uintptr_t r = white_shape_of(o);
+
+    JS_FreeValue(v->ctx, o);
+    return r;
+}
+
+/* Object literals of the same keys in the same order share one shape, made
+   at whichever ran first, wherever they are written and whether or not the
+   empty shape of Object.prototype and the shapes in between exist: with the
+   shape cache on and off. A shape an object got key by key is taken too, also
+   when it has room for more properties than the literal has keys. Keys in
+   another order or with other flags are another shape. */
+static void test_object_lit_shared_shape(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        int room = -1;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f1() { return { zz1: 1 } }\n"
+                             "function f2() { return { zz1: 2 } }\n"
+                             "var a = f1(), b = f2(), c = f1(); void 0"), "the script threw");
+        CHECK(shape_of(&v, "a") != 0 && shape_of(&v, "a") == shape_of(&v, "b"),
+              "cache %d: {zz1} in two functions has two shapes", cache);
+        CHECK(shape_of(&v, "a") == shape_of(&v, "c"), "cache %d: one literal, two shapes", cache);
+        CHECK(eval_is(v.ctx, "a.zz1 + ',' + b.zz1 + ',' + Object.keys(b)", "1,2,zz1"), "values of {zz1}");
+
+        /* three keys, two places, and a literal written by eval */
+        CHECK(eval_ok(v.ctx, "function g1(x) { return { yy1: x, yy2: 2, yy3: 3 } }\n"
+                             "function g2(x) { return { yy1: x, yy2: 'b', yy3: [3] } }\n"
+                             "var d = g1(1), e = g2(2), f = eval('({ yy1: 0, yy2: 0, yy3: 0 })'); void 0"),
+              "the script threw");
+        CHECK(shape_of(&v, "d") == shape_of(&v, "e") && shape_of(&v, "d") == shape_of(&v, "f"),
+              "cache %d: {yy1, yy2, yy3} in three places", cache);
+
+        /* the order of the keys and their flags are part of the shape */
+        CHECK(eval_ok(v.ctx, "var p = (() => ({ pp1: 1, pp2: 2 }))(), q = (() => ({ pp2: 1, pp1: 2 }))();\n"
+                             "var fl = {}; Object.defineProperty(fl, 'vv1', { value: 1, enumerable: true });\n"
+                             "var lit = (() => ({ vv1: 2 }))(); void 0"), "the script threw");
+        CHECK(shape_of(&v, "p") != shape_of(&v, "q"), "cache %d: keys in another order share a shape", cache);
+        CHECK(shape_of(&v, "fl") != shape_of(&v, "lit"), "cache %d: a key with other flags shares a shape", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify(Object.getOwnPropertyDescriptor(lit, 'vv1'))",
+                      "{\"value\":2,\"writable\":true,\"enumerable\":true,\"configurable\":true}"),
+              "the key of the literal");
+        CHECK(eval_is(v.ctx, "lit.vv1 = 5; delete lit.vv1; JSON.stringify(lit) + JSON.stringify(fl)", "{}{\"vv1\":1}"),
+              "the literal after a write and a delete");
+
+        /* a shape built key by key, with room for 6 properties, kept by its
+           object: the literal of 5 keys takes it, room and all, and keeps it
+           when the object grows on */
+        CHECK(eval_ok(v.ctx, "var kk = {}; kk.kk1 = 1; kk.kk2 = 2; kk.kk3 = 3; kk.kk4 = 4; kk.kk5 = 5;\n"
+                             "function lit5() { return { kk1: 'a', kk2: 'b', kk3: 'c', kk4: 'd', kk5: 'e' } }\n"
+                             "var l1 = lit5(); kk.kk6 = 6; kk.kk7 = 7; var l2 = lit5(); void 0"),
+              "the script threw");
+        CHECK(props_inline(&v, "kk", &room) == 0 && room > 6, "cache %d: kk grown: room %d", cache, room);
+        CHECK(props_inline(&v, "l1", &room) == 1 && room == 6,
+              "cache %d: the literal of the shape of kk: room %d", cache, room);
+        CHECK(shape_of(&v, "l1") == shape_of(&v, "l2") && shape_of(&v, "l1") != shape_of(&v, "kk"),
+              "cache %d: the literal kept its shape when kk grew", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([l1, l2, kk])",
+                      "[{\"kk1\":\"a\",\"kk2\":\"b\",\"kk3\":\"c\",\"kk4\":\"d\",\"kk5\":\"e\"},"
+                      "{\"kk1\":\"a\",\"kk2\":\"b\",\"kk3\":\"c\",\"kk4\":\"d\",\"kk5\":\"e\"},"
+                      "{\"kk1\":1,\"kk2\":2,\"kk3\":3,\"kk4\":4,\"kk5\":5,\"kk6\":6,\"kk7\":7}]"),
+              "values of the objects");
+        CHECK(eval_is(v.ctx, "l1.kk6 = 'f'; l1.kk7 = 'g'; Object.keys(l1) + ' ' + Object.keys(l2) + ' ' + l1.kk7",
+                      "kk1,kk2,kk3,kk4,kk5,kk6,kk7 kk1,kk2,kk3,kk4,kk5 g"), "the literal grows on its own");
+
+        /* an object of one literal that got a key turns off the room in the
+           block for the next objects of every literal of its shape */
+        CHECK(eval_ok(v.ctx, "function h1() { return { ww1: 1, ww2: 2 } }\n"
+                             "function h2() { return { ww1: 3, ww2: 4 } }\n"
+                             "var x1 = h1(), x2 = h2(); x1.ww3 = 3; var x3 = h2(); void 0"), "the script threw");
+        CHECK(props_inline(&v, "x2", &room) == 1, "cache %d: an object made before the key", cache);
+        CHECK(props_inline(&v, "x3", &room) == 0, "cache %d: an object of the other literal made after the key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([x1, x2, x3])",
+                      "[{\"ww1\":1,\"ww2\":2,\"ww3\":3},{\"ww1\":3,\"ww2\":4},{\"ww1\":3,\"ww2\":4}]"), "values of the objects");
+        vm_free(&v);
+    }
+}
+
 /* ---- the lists of the collector ---- */
 
 static void lists(VM *v, int *old, int *young, const char *when)
@@ -2290,6 +2375,7 @@ int main(void)
     test_object_inline_props();
     test_object_inline_oom();
     test_object_inline_limit();
+    test_object_lit_shared_shape();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();
