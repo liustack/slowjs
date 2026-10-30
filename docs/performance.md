@@ -563,6 +563,8 @@ A run of `r_react_ssr` compiles its bundle and then renders once, and the compil
 
 The memory of a VM does not change: the fused opcodes take the place of the first instruction of their run, and a `typeof` test takes as many bytes as before or fewer.
 
+On main after it took the reads of the interrupt flag in long string loops (bcd2eb1a), against that main, callgrind as above with the collector of Go off (`GOGC=off`): all three take 3.03% of the instructions off a render of the six workbench pages and 2.53% off the MUI pages, with the same HTML on the shop, store and MUI pages.
+
 ### Upstream commits and the scripts where the C engine was slower than C
 
 [upstream-commits.md](changes/upstream-commits.md) lists the commits of upstream QuickJS taken into the C tree and the ones tried and taken back, with their speed. Against main (`c4dcea91`) before the batch, all 37 scripts at 8 positions, 2 rounds: geometric mean 0.917, with `q_array_slice` at 0.085 and `c_array_methods` at 0.530 and the other 35 scripts together at 0.997. `r_react_ssr` took 0.977, within its noise.
