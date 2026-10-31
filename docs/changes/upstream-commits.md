@@ -44,6 +44,13 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `1ec58aa` Await the async iterator return() when a for-await loop breaks | a for await loop that leaves early waits for `return()`, and one that ends does not call it | without its `using` branch, with a check of the result added | `compare/for_await_close.js` |
 | `19d6bd8` fixed arbitrary module namespace names | `export { x as "a-b" }` and `export * as "name" from` | all of it, and test262 runs the feature | `compare/module_string_names.mjs` |
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` is a valid regexp | it was in the C tree already | `test_builtin.js` of upstream, which now has the line |
+| `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining slowjs's shape handling | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
+
+## Array truncation
+
+`3c4c6ed` prepares a private shape once, removes properties without moving the remaining entries, then compacts once. Previously compaction inside the deletion loop skipped entries, so writing an old index after truncation could leave the length unchanged. Non-configurable indices still stop truncation at the highest such index plus one. The regression compares emptying, refilling, accessors, non-index keys and another array with Node 24.13.0.
+
+The generated linux/amd64 engine took a median 2.616 ms before and 2.170 ms after (0.830 of the time) to truncate 100,000 elements at indices `i * 10` to zero. The old engine left 50,000 properties behind, the fixed engine left none. These are 21 samples per build, alternating three batches of seven on the GCP VM, confined to CPUs 3 and 7. Go's monotonic clock surrounded `Eval("a.length = 0")`, excluding construction and the subsequent count of own keys. This is a focused correctness workload, not a measurement of tifa rendering.
 
 ## Speed
 

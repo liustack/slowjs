@@ -420,6 +420,7 @@ func check_regexp_getter(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uint
 func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func close_var_refs(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func code_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func compact_properties(a0 uintptr, a1 uintptr, a2 uintptr)
 func compute_pc2line_info(a0 uintptr, a1 uintptr)
 func compute_register_count(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func compute_stack_size(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -450,6 +451,7 @@ func dbuf_put_u32(a0 uintptr, a1 uintptr, a2 uintptr)
 func dbuf_putstr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func define_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func delete_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func delete_property_no_move(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func dump_printf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func emit_atom(a0 uintptr, a1 uintptr, a2 uintptr)
 func emit_break(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr

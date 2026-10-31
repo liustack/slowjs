@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 修复
+
+- 稀疏数组截断会先删除所有应删的元素，再压缩属性表。截断后重新写入原有索引会正确更新长度（QuickJS `3c4c6ed`）。
+
 ## [v0.29.7] - 2026-11-01
 
 ### 变更
