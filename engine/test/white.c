@@ -499,6 +499,20 @@ const uint8_t *white_child_code(JSValueConst fun, int i, int *len)
     return c->byte_code_buf;
 }
 
+/* The number of local variables of the function i of the constant pool of
+   fun (the slots of its frame past the arguments), or -1. */
+int white_child_var_count(JSValueConst fun, int i)
+{
+    JSFunctionBytecode *b;
+
+    if (JS_VALUE_GET_TAG(fun) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = JS_VALUE_GET_PTR(fun);
+    if (i >= b->cpool_count || JS_VALUE_GET_TAG(b->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    return ((JSFunctionBytecode *)JS_VALUE_GET_PTR(b->cpool[i]))->var_count;
+}
+
 /* The places of the OP_nop of code in places, at most max: how many. */
 int white_nops(const uint8_t *code, int len, int *places, int max)
 {

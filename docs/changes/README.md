@@ -22,6 +22,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The end of a call skips the values with no reference count | Unreleased | [c-engine.md](c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count) |
 | A call sets its locals eight to a turn | Unreleased | [c-engine.md](c-engine.md#a-call-sets-its-locals-eight-to-a-turn) |
 | Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | Unreleased | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
+| Locals that are never live together share a slot of the frame | Unreleased | [c-engine.md](c-engine.md#locals-that-share-a-slot) |
 
 ## Commits of upstream QuickJS
 

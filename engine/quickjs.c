@@ -40615,6 +40615,10 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
     return 0;
 }
 
+/* the index of a set_loc_uninitialized that tdz_checks dropped: above every
+   local (JS_MAX_LOCAL_VARS) */
+#define LOC_DROPPED 0xffff
+
 /* tdz_checks drops the checks of the temporal dead zone that cannot fail
    from the code of a function after resolve_variables (phase 2), before
    resolve_labels. A get_loc_check or put_loc_check of a local variable
@@ -40644,9 +40648,10 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
    initialized, and a yield or an await goes on at the instruction after
    it. It is not a data flow analysis: one walk over the code, and for each
    variable a stretch that only grows. It gives up on code it does not know
-   the jumps of, and stops looking past a budget of labels. */
-static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s,
-                                 uint8_t **pdrop)
+   the jumps of, and stops looking past a budget of labels. A dropped
+   set_loc_uninitialized keeps its place with LOC_DROPPED for its index,
+   and resolve_labels leaves it out. */
+static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s)
 {
     typedef struct {
         int pos;   /* the label, or the place after an OP_gosub */
@@ -40673,7 +40678,6 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s,
     BOOL any = FALSE;
     const JSOpCode *oi;
 
-    *pdrop = NULL;
     for (pos = 0; pos < len; pos += opcode_info[op].size) {
         op = buf[pos];
         if (op == OP_get_loc_check || op == OP_put_loc_check)
@@ -40868,7 +40872,17 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s,
             }
         }
     }
-    *pdrop = drop;
+    if (drop) {
+        for (pos = 0; pos < len; pos += opcode_info[op].size) {
+            op = buf[pos];
+            if (op == OP_set_loc_uninitialized) {
+                idx = get_u16(buf + pos + 1);
+                if (idx < s->var_count && drop[idx])
+                    put_u16(buf + pos + 1, LOC_DROPPED);
+            }
+        }
+        js_free_rt(ctx->rt, drop);
+    }
  done:
     js_free_rt(ctx->rt, lmin);
     js_free_rt(ctx->rt, lmax);
@@ -40877,11 +40891,511 @@ static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s,
     js_free_rt(ctx->rt, points);
 }
 
+/* Whether nothing but the code of s reads or writes its locals and
+   arguments other than through their slots: no direct eval, no with block
+   (whose references to a variable may write it), no mapped arguments
+   object (whose elements are the arguments), and not the code of an eval or
+   a module. Then a local or an argument no closure captures changes only by
+   the instructions of s that name it, which share_local_slots relies on. */
+static BOOL js_frame_plain(JSFunctionDef *s)
+{
+    const uint8_t *buf = s->byte_code.buf;
+    int len = s->byte_code.size, pos, op;
+
+    if (s->has_eval_call || s->is_eval || s->module)
+        return FALSE;
+    if (s->arguments_var_idx >= 0 && !(s->js_mode & JS_MODE_STRICT) &&
+        s->has_simple_parameter_list)
+        return FALSE;
+    for (pos = 0; pos < len; pos += opcode_info[op].size) {
+        op = buf[pos];
+        switch (op) {
+        case OP_with_get_var:
+        case OP_with_put_var:
+        case OP_with_delete_var:
+        case OP_with_make_ref:
+        case OP_with_get_ref:
+        case OP_make_loc_ref:
+        case OP_make_arg_ref:
+        case OP_make_var_ref_ref:
+        case OP_eval:
+        case OP_apply_eval:
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/* the links of the locals of fd to the variables of their scope and the
+   scopes around it, from vars[].scope_level */
+static void link_var_scopes(JSFunctionDef *fd)
+{
+    int scope, idx;
+
+    for (scope = 0; scope < fd->scope_count; scope++) {
+        fd->scopes[scope].first = -1;
+    }
+    if (fd->has_parameter_expressions) {
+        /* special end of variable list marker for the argument scope */
+        fd->scopes[ARG_SCOPE_INDEX].first = ARG_SCOPE_END;
+    }
+    for (idx = 0; idx < fd->var_count; idx++) {
+        JSVarDef *vd = &fd->vars[idx];
+        vd->scope_next = fd->scopes[vd->scope_level].first;
+        fd->scopes[vd->scope_level].first = idx;
+    }
+    for (scope = 2; scope < fd->scope_count; scope++) {
+        JSVarScope *sd = &fd->scopes[scope];
+        if (sd->first < 0)
+            sd->first = fd->scopes[sd->parent].first;
+    }
+    for (idx = 0; idx < fd->var_count; idx++) {
+        JSVarDef *vd = &fd->vars[idx];
+        if (vd->scope_next < 0 && vd->scope_level > 1) {
+            scope = fd->scopes[vd->scope_level].parent;
+            vd->scope_next = fd->scopes[scope].first;
+        }
+    }
+}
+
+/* share_local_slots gives two locals of s one slot when no run of the code
+   needs both values at once, on the code of phase 2 after tdz_checks, for a
+   function js_frame_plain takes. A frame then has fewer slots to set and
+   free, and a value is freed when the next local that shares its slot is
+   written, where it lived until the end of the call.
+
+   A local is live at an instruction when some run from it reads the local
+   before it writes it (a data flow over the blocks of the code, back from
+   the reads). Two locals share a slot when neither is written where the
+   other is live: then each read finds the value the last write of its own
+   local left, or the undefined the frame starts with. Locals are taken in
+   the order of their index and given the first slot that none of the
+   locals they conflict with has, so that a local never gets a higher index
+   than it had.
+
+   A local keeps a slot of its own when something but the instructions that
+   name it reads or writes it: a closure (it is captured), the start of the
+   function (this, new.target, the home object, the active function,
+   arguments and the name of a function expression), a check of the
+   temporal dead zone (which reads the state of the slot, and names the
+   local in its error), close_loc, and a local of another kind than a
+   variable, a function declaration or the variable of a catch (the private
+   names of a class). So does a local live where a catch or a finally block
+   starts, as an exception can leave the code of its try anywhere. The
+   blocks after a gosub are all taken to follow each OP_ret. A yield or an
+   await goes on at the instruction after it, with the frame as it was.
+
+   The code, the indexes the function keeps (this_var_idx and the others),
+   the closure variables of the functions of its constant pool, compiled
+   already, that name its locals, and the list of its locals change
+   together. The pass gives up, with nothing changed, on code it does not
+   know, more than 1024 locals, and when it has no memory. */
+static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
+{
+    JSRuntime *rt = ctx->rt;
+    uint8_t *buf = s->byte_code.buf;
+    int len = s->byte_code.size, n = s->var_count, words;
+    int nb = 0, nl = 0, ncatch = 0, nret = 0, ncolors = 0;
+    int pos, op, idx, label, b, i, k, c, w, changed;
+    size_t budget;
+    const JSOpCode *oi;
+    uint8_t *lead = NULL, *pinned = NULL, *closed = NULL;
+    int *label_blk = NULL, *blk_last = NULL, *blk_loc = NULL;
+    int *locs = NULL, *ret_blk = NULL, *catch_label = NULL, *color = NULL, *forb = NULL;
+    uint64_t *gen = NULL, *kill = NULL, *in = NULL, *out = NULL, *adj = NULL, *live = NULL;
+
+    if (n < 2 || n > 1024)
+        return;
+    words = (n + 63) / 64;
+    lead = js_mallocz_rt(rt, len + 1);
+    pinned = js_mallocz_rt(rt, n);
+    label_blk = js_malloc_rt(rt, sizeof(int) * (s->label_count + 1));
+    if (!lead || !pinned || !label_blk)
+        goto done;
+    for (i = 0; i < s->label_count; i++)
+        label_blk[i] = -1;
+    /* the instructions that start a block, the instructions on locals, and
+       code the pass does not know */
+    lead[0] = 1;
+    for (pos = 0; pos < len; pos += oi->size) {
+        op = buf[pos];
+        oi = &opcode_info[op];
+        switch (oi->fmt) {
+        case OP_FMT_label:
+            label = get_u32(buf + pos + 1);
+            if (label < 0 || label >= s->label_count)
+                goto done;
+            if (op == OP_label)
+                lead[pos] = 1;
+            else if (op == OP_catch)
+                ncatch++;
+            else if (op == OP_gosub)
+                nret++;
+            else if (op != OP_goto && op != OP_if_false && op != OP_if_true)
+                goto done;
+            break;
+        case OP_FMT_loc:
+            idx = get_u16(buf + pos + 1);
+            if (idx == LOC_DROPPED)
+                break;
+            if (idx >= n)
+                goto done;
+            switch (op) {
+            case OP_get_loc:
+            case OP_put_loc:
+            case OP_set_loc:
+            case OP_set_loc_uninitialized:
+                break;
+            case OP_get_loc_check:
+            case OP_put_loc_check:
+            case OP_set_loc_check:
+            case OP_put_loc_check_init:
+            case OP_get_loc_checkthis:
+            case OP_close_loc:
+                pinned[idx] = 1;
+                break;
+            default:
+                goto done;
+            }
+            nl++;
+            break;
+        case OP_FMT_label8:
+        case OP_FMT_label16:
+        case OP_FMT_label_u16:
+        case OP_FMT_atom_label_u8:
+        case OP_FMT_atom_label_u16:
+        case OP_FMT_none_loc:
+        case OP_FMT_loc8:
+            /* none of these is in the code of phase 2 that
+               js_frame_plain takes */
+            goto done;
+        default:
+            break;
+        }
+        switch (op) {
+        case OP_goto:
+        case OP_if_false:
+        case OP_if_true:
+        case OP_gosub:
+        case OP_ret:
+        case OP_return:
+        case OP_return_undef:
+        case OP_return_async:
+        case OP_throw:
+        case OP_throw_error:
+        case OP_tail_call:
+        case OP_tail_call_method:
+            lead[pos + oi->size] = 1;
+            break;
+        }
+    }
+    for (pos = 0; pos < len; pos++)
+        nb += lead[pos];
+    if ((size_t)nb * words > (1 << 20))
+        goto done;
+    blk_last = js_malloc_rt(rt, sizeof(int) * nb);
+    blk_loc = js_malloc_rt(rt, sizeof(int) * (nb + 1));
+    locs = js_malloc_rt(rt, sizeof(int) * (nl + 1));
+    ret_blk = js_malloc_rt(rt, sizeof(int) * (nret + 1));
+    catch_label = js_malloc_rt(rt, sizeof(int) * (ncatch + 1));
+    gen = js_mallocz_rt(rt, sizeof(uint64_t) * nb * words);
+    kill = js_mallocz_rt(rt, sizeof(uint64_t) * nb * words);
+    in = js_mallocz_rt(rt, sizeof(uint64_t) * nb * words);
+    out = js_mallocz_rt(rt, sizeof(uint64_t) * nb * words);
+    adj = js_mallocz_rt(rt, sizeof(uint64_t) * n * words);
+    live = js_malloc_rt(rt, sizeof(uint64_t) * words);
+    color = js_malloc_rt(rt, sizeof(int) * n);
+    forb = js_malloc_rt(rt, sizeof(int) * n);
+    closed = js_mallocz_rt(rt, n);
+    if (!blk_last || !blk_loc || !locs || !ret_blk || !catch_label ||
+        !gen || !kill || !in || !out || !adj || !live || !color || !forb || !closed)
+        goto done;
+    /* the blocks, the labels they start at, the blocks after a gosub, the
+       targets of the catches, and what each block reads before it writes
+       (gen) and writes (kill) */
+    nb = nl = ncatch = nret = 0;
+    for (pos = 0; pos < len; pos += oi->size) {
+        op = buf[pos];
+        oi = &opcode_info[op];
+        if (lead[pos]) {
+            blk_loc[nb] = nl;
+            nb++;
+        }
+        b = nb - 1;
+        blk_last[b] = pos;
+        if (op == OP_label) {
+            label_blk[get_u32(buf + pos + 1)] = b;
+        } else if (op == OP_catch) {
+            catch_label[ncatch++] = get_u32(buf + pos + 1);
+        } else if (op == OP_gosub) {
+            if (pos + oi->size < len)
+                ret_blk[nret++] = nb;
+        } else if (oi->fmt == OP_FMT_loc) {
+            uint64_t bit, *g = gen + b * words, *kl = kill + b * words;
+            idx = get_u16(buf + pos + 1);
+            if (idx == LOC_DROPPED)
+                continue;
+            locs[nl++] = pos;
+            bit = (uint64_t)1 << (idx & 63);
+            switch (op) {
+            case OP_put_loc:
+            case OP_set_loc:
+            case OP_set_loc_uninitialized:
+            case OP_put_loc_check_init:
+                kl[idx >> 6] |= bit;
+                break;
+            case OP_close_loc:
+                break;
+            default:
+                /* a read, and the checks, which read the state of the slot */
+                if (!(kl[idx >> 6] & bit))
+                    g[idx >> 6] |= bit;
+                break;
+            }
+        }
+    }
+    blk_loc[nb] = nl;
+    for (i = 0; i < ncatch; i++) {
+        if (label_blk[catch_label[i]] < 0)
+            goto done;
+    }
+    /* what is live at the start and at the end of each block, back from the
+       reads until nothing changes */
+    budget = (size_t)64 * 1024 * 1024;
+    do {
+        changed = 0;
+        for (b = nb - 1; b >= 0; b--) {
+            uint64_t *o = out + b * words, *ib = in + b * words;
+            int succ[2], nsucc = 0, s1;
+            const uint64_t *src;
+
+            op = buf[blk_last[b]];
+            switch (op) {
+            case OP_goto:
+            case OP_gosub:
+                succ[nsucc++] = label_blk[get_u32(buf + blk_last[b] + 1)];
+                break;
+            case OP_if_false:
+            case OP_if_true:
+                succ[nsucc++] = label_blk[get_u32(buf + blk_last[b] + 1)];
+                if (b + 1 < nb)
+                    succ[nsucc++] = b + 1;
+                break;
+            case OP_ret:
+            case OP_return:
+            case OP_return_undef:
+            case OP_return_async:
+            case OP_throw:
+            case OP_throw_error:
+            case OP_tail_call:
+            case OP_tail_call_method:
+                break;
+            default:
+                if (b + 1 < nb)
+                    succ[nsucc++] = b + 1;
+                break;
+            }
+            for (k = 0; k < nsucc; k++) {
+                if (succ[k] < 0)
+                    goto done;
+                src = in + succ[k] * words;
+                for (w = 0; w < words; w++)
+                    o[w] |= src[w];
+            }
+            if (op == OP_ret) {
+                for (k = 0; k < nret; k++) {
+                    src = in + ret_blk[k] * words;
+                    for (w = 0; w < words; w++)
+                        o[w] |= src[w];
+                }
+            }
+            for (w = 0; w < words; w++) {
+                uint64_t v = gen[b * words + w] | (o[w] & ~kill[b * words + w]);
+                if (v != ib[w]) {
+                    ib[w] = v;
+                    changed = 1;
+                }
+            }
+            s1 = (nsucc + (op == OP_ret ? nret : 0) + 1) * words;
+            if (budget < (size_t)s1)
+                goto done;
+            budget -= s1;
+        }
+    } while (changed);
+    /* the locals that keep a slot of their own */
+    for (i = 0; i < n; i++) {
+        JSVarDef *vd = &s->vars[i];
+        if (vd->is_captured || (vd->var_kind != JS_VAR_NORMAL &&
+                                 vd->var_kind != JS_VAR_FUNCTION_DECL &&
+                                 vd->var_kind != JS_VAR_NEW_FUNCTION_DECL &&
+                                 vd->var_kind != JS_VAR_CATCH))
+            pinned[i] = 1;
+    }
+#define PIN_VAR(x) do { if ((x) >= 0 && (x) < n) pinned[x] = 1; } while (0)
+    PIN_VAR(s->var_object_idx);
+    PIN_VAR(s->arg_var_object_idx);
+    PIN_VAR(s->arguments_var_idx);
+    PIN_VAR(s->arguments_arg_idx);
+    PIN_VAR(s->func_var_idx);
+    PIN_VAR(s->eval_ret_idx);
+    PIN_VAR(s->this_var_idx);
+    PIN_VAR(s->new_target_var_idx);
+    PIN_VAR(s->this_active_func_var_idx);
+    PIN_VAR(s->home_object_var_idx);
+#undef PIN_VAR
+    for (i = 0; i < s->cpool_count; i++) {
+        JSValueConst v = s->cpool[i];
+        if (JS_VALUE_GET_TAG(v) == JS_TAG_FUNCTION_BYTECODE) {
+            JSFunctionBytecode *cb = JS_VALUE_GET_PTR(v);
+            for (k = 0; k < cb->closure_var_count; k++) {
+                JSClosureVar *cv = &cb->closure_var[k];
+                if (cv->closure_type == JS_CLOSURE_LOCAL) {
+                    if (cv->var_idx >= n)
+                        goto done;
+                    pinned[cv->var_idx] = 1;
+                }
+            }
+        }
+    }
+    for (i = 0; i < ncatch; i++) {
+        const uint64_t *src = in + label_blk[catch_label[i]] * words;
+        for (k = 0; k < n; k++) {
+            if (src[k >> 6] & ((uint64_t)1 << (k & 63)))
+                pinned[k] = 1;
+        }
+    }
+    /* the conflicts: a local written where another one is live */
+    for (b = 0; b < nb; b++) {
+        memcpy(live, out + b * words, sizeof(uint64_t) * words);
+        for (k = blk_loc[b + 1] - 1; k >= blk_loc[b]; k--) {
+            uint64_t bit, *row;
+            pos = locs[k];
+            op = buf[pos];
+            idx = get_u16(buf + pos + 1);
+            bit = (uint64_t)1 << (idx & 63);
+            row = adj + idx * words;
+            switch (op) {
+            case OP_put_loc:
+            case OP_set_loc:
+            case OP_set_loc_uninitialized:
+            case OP_put_loc_check_init:
+                for (w = 0; w < words; w++)
+                    row[w] |= live[w];
+                live[idx >> 6] &= ~bit;
+                break;
+            case OP_close_loc:
+                break;
+            default:
+                live[idx >> 6] |= bit;
+                break;
+            }
+        }
+    }
+    for (i = 0; i < n; i++) {
+        for (w = 0; w < words; w++) {
+            uint64_t m = adj[i * words + w];
+            while (m) {
+                k = w * 64 + ctz64(m);
+                m &= m - 1;
+                adj[k * words + (i >> 6)] |= (uint64_t)1 << (i & 63);
+            }
+        }
+    }
+    /* a slot for each local, in the order of their index */
+    for (i = 0; i < n; i++) {
+        forb[i] = -1;
+    }
+    for (i = 0; i < n; i++) {
+        if (pinned[i]) {
+            closed[ncolors] = 1;
+            color[i] = ncolors++;
+            continue;
+        }
+        for (w = 0; w <= (i >> 6); w++) {
+            uint64_t m = adj[i * words + w];
+            while (m) {
+                k = w * 64 + ctz64(m);
+                m &= m - 1;
+                if (k < i)
+                    forb[color[k]] = i;
+            }
+        }
+        for (c = 0; c < ncolors; c++) {
+            if (!closed[c] && forb[c] != i)
+                break;
+        }
+        if (c == ncolors)
+            ncolors++;
+        color[i] = c;
+    }
+    if (ncolors == n)
+        goto done;
+    /* the new indexes, in the code, the function and the closures of the
+       functions in its constant pool */
+    for (k = 0; k < nl; k++) {
+        pos = locs[k];
+        put_u16(buf + pos + 1, color[get_u16(buf + pos + 1)]);
+    }
+#define REMAP_VAR(x) do { if ((x) >= 0 && (x) < n) (x) = color[x]; } while (0)
+    REMAP_VAR(s->var_object_idx);
+    REMAP_VAR(s->arg_var_object_idx);
+    REMAP_VAR(s->arguments_var_idx);
+    REMAP_VAR(s->arguments_arg_idx);
+    REMAP_VAR(s->func_var_idx);
+    REMAP_VAR(s->eval_ret_idx);
+    REMAP_VAR(s->this_var_idx);
+    REMAP_VAR(s->new_target_var_idx);
+    REMAP_VAR(s->this_active_func_var_idx);
+    REMAP_VAR(s->home_object_var_idx);
+#undef REMAP_VAR
+    for (i = 0; i < s->cpool_count; i++) {
+        JSValueConst v = s->cpool[i];
+        if (JS_VALUE_GET_TAG(v) == JS_TAG_FUNCTION_BYTECODE) {
+            JSFunctionBytecode *cb = JS_VALUE_GET_PTR(v);
+            for (k = 0; k < cb->closure_var_count; k++) {
+                JSClosureVar *cv = &cb->closure_var[k];
+                if (cv->closure_type == JS_CLOSURE_LOCAL)
+                    cv->var_idx = color[cv->var_idx];
+            }
+        }
+    }
+    /* the first local of each slot stays, the others go */
+    memset(closed, 0, n);
+    for (i = 0; i < n; i++) {
+        c = color[i];
+        if (!closed[c]) {
+            closed[c] = 1;
+            s->vars[c] = s->vars[i];
+        } else {
+            JS_FreeAtom(ctx, s->vars[i].var_name);
+        }
+    }
+    s->var_count = ncolors;
+    link_var_scopes(s);
+ done:
+    js_free_rt(rt, lead);
+    js_free_rt(rt, pinned);
+    js_free_rt(rt, closed);
+    js_free_rt(rt, label_blk);
+    js_free_rt(rt, blk_last);
+    js_free_rt(rt, blk_loc);
+    js_free_rt(rt, locs);
+    js_free_rt(rt, ret_blk);
+    js_free_rt(rt, catch_label);
+    js_free_rt(rt, color);
+    js_free_rt(rt, forb);
+    js_free_rt(rt, gen);
+    js_free_rt(rt, kill);
+    js_free_rt(rt, in);
+    js_free_rt(rt, out);
+    js_free_rt(rt, adj);
+    js_free_rt(rt, live);
+}
+
 /* peephole optimizations and resolve goto/labels */
 static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 {
     int pos, pos_next, bc_len, op, op1, len, i, line_num;
-    uint8_t *tdz_drop = NULL;
     const uint8_t *bc_buf;
     DynBuf bc_out;
     LabelSlot *label_slots, *ls;
@@ -40916,7 +41430,9 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         s->line_number_last_pc = 0;
     }
     /* the checks of the temporal dead zone that cannot fail */
-    tdz_checks(ctx, s, &tdz_drop);
+    tdz_checks(ctx, s);
+    if (!ctx->rt->no_fused_ops && js_frame_plain(s))
+        share_local_slots(ctx, s);
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {
@@ -41000,7 +41516,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
             break;
 
         case OP_set_loc_uninitialized:
-            if (tdz_drop && tdz_drop[get_u16(bc_buf + pos + 1)])
+            if (get_u16(bc_buf + pos + 1) == LOC_DROPPED)
                 break;
             goto no_change;
 
@@ -41804,8 +42320,6 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     js_free(ctx, s->jump_slots);
     s->jump_slots = NULL;
 #endif
-    js_free_rt(ctx->rt, tdz_drop);
-    tdz_drop = NULL;
     /* a count in every long run of the code (JS_CallInternal) */
     if (insert_polls(ctx, s, &bc_out))
         goto fail;
@@ -41831,7 +42345,6 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     JS_ThrowOutOfMemory(ctx);
  fail:
     /* free the relocations of the labels not reached */
-    js_free_rt(ctx->rt, tdz_drop);
     for(i = 0; i < s->label_count; i++) {
         ls = &label_slots[i];
         for(re = ls->first_reloc; re != NULL; re = re_next) {
@@ -42250,7 +42763,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     JSFunctionBytecode *b;
     JSObjectLit *object_lits = NULL;
     struct list_head *el, *el1;
-    int stack_size, scope, idx;
+    int stack_size;
     int function_size, byte_code_offset, cpool_offset;
     int closure_var_offset, vardefs_offset;
     BOOL strip_var_debug;
@@ -42263,30 +42776,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     }
 
     /* recompute scope linkage */
-    for (scope = 0; scope < fd->scope_count; scope++) {
-        fd->scopes[scope].first = -1;
-    }
-    if (fd->has_parameter_expressions) {
-        /* special end of variable list marker for the argument scope */
-        fd->scopes[ARG_SCOPE_INDEX].first = ARG_SCOPE_END;
-    }
-    for (idx = 0; idx < fd->var_count; idx++) {
-        JSVarDef *vd = &fd->vars[idx];
-        vd->scope_next = fd->scopes[vd->scope_level].first;
-        fd->scopes[vd->scope_level].first = idx;
-    }
-    for (scope = 2; scope < fd->scope_count; scope++) {
-        JSVarScope *sd = &fd->scopes[scope];
-        if (sd->first < 0)
-            sd->first = fd->scopes[sd->parent].first;
-    }
-    for (idx = 0; idx < fd->var_count; idx++) {
-        JSVarDef *vd = &fd->vars[idx];
-        if (vd->scope_next < 0 && vd->scope_level > 1) {
-            scope = fd->scopes[vd->scope_level].parent;
-            vd->scope_next = fd->scopes[scope].first;
-        }
-    }
+    link_var_scopes(fd);
 
     /* if the function contains an eval call, the closure variables
        are used to compile the eval and they must be ordered by scope,
