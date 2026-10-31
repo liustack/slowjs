@@ -45,6 +45,11 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `19d6bd8` fixed arbitrary module namespace names | `export { x as "a-b" }` and `export * as "name" from` | all of it, and test262 runs the feature | `compare/module_string_names.mjs` |
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` is a valid regexp | it was in the C tree already | `test_builtin.js` of upstream, which now has the line |
 | `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining slowjs's shape handling | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
+| `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | an empty iterator without an initial accumulator throws without reading or calling `return` | all of it | `compare/iterator_reduce.js`, `TestUpstreamIteratorReduce` |
+
+## Empty iterator reduction
+
+`de4c9e0` takes the exception path that frees the accumulator and method without closing an exhausted iterator. A reducer callback that throws still closes its iterator. The regression compares ordinary and throwing return getters and methods, an initial accumulator and a failing callback with Node 24.13.0. No performance claim is made.
 
 ## Array truncation
 

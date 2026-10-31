@@ -1,0 +1,7 @@
+normal: TypeError,0,0,0
+initial: 42
+throw-get: TypeError,0,0,0
+initial: 42
+throw-call: TypeError,0,0,0
+initial: 42
+callback: RangeError,1

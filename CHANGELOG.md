@@ -6,6 +6,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ### Fixed
 
+- `Iterator.prototype.reduce` on an empty iterator without an initial accumulator throws without reading or calling `return` (QuickJS `de4c9e0`).
 - Sparse array truncation removes every eligible element before compacting the property table. Writing an old index after truncation updates the length correctly (QuickJS `3c4c6ed`).
 
 ## [v0.29.7] - 2026-11-01
