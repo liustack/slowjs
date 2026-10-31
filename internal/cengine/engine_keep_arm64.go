@@ -1296,6 +1296,7 @@ var goasmKeep = []any{
 	sum_precise_renorm,
 	tan,
 	tanh,
+	tdz_checks,
 	tlsf_add_pool,
 	tlsf_align_size,
 	tlsf_alloc_overhead,

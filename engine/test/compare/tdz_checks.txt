@@ -1,0 +1,88 @@
+after: 3
+after if: 6
+after else: 7
+after loop: 6
+in loop: 50
+after ternary: xx
+after and: 2
+nested blocks: 3
+assign after: 5
+declared without value: 4,true
+read before: ReferenceError
+write before: ReferenceError
+typeof before: ReferenceError
+read in own initializer: ReferenceError
+const in own initializer: ReferenceError
+class before: ReferenceError
+class in extends: ReferenceError
+read after throw in initializer: caught 1
+switch 0: a0
+switch 1: ReferenceError
+switch 2: ReferenceError
+switch 3: b3
+switch default: ReferenceError
+switch fall through: x,x
+switch jump past: ReferenceError
+switch default first: d
+switch default skipped: ReferenceError
+switch in loop: z0o1dz3o4dz6
+closure before: ReferenceError
+closure after: 1
+hoisted function before: ReferenceError
+hoisted function after: 2
+closure sets before: ReferenceError 1
+closure sets after: 5
+closures in a for loop: 0,1,2
+closures in a while loop: 0,2,4
+closure reads the next binding: number,number
+loop body redeclares: 0,ReferenceError,1,ReferenceError,2
+for head: 8
+for head reads itself: ReferenceError
+for of head: ab
+for of reads itself: ReferenceError
+for in head: pq
+for in reads itself: ReferenceError
+for with continue: 12
+labeled break: 1
+do while: 4
+try: 2
+try throws: 5
+catch reads try block: 1
+declared in catch: 8
+finally: 2
+finally reads: 32
+return in try of block: k
+throw before in try: ReferenceError
+finally after throw in initializer: f,x
+generator: 1,2,20
+generator before: ReferenceError
+generator loop: 0,2,4,6
+eval reads after: 6
+eval reads before: ReferenceError
+eval sets: 4
+eval in block before: ReferenceError
+with after: 3
+with shadows: 1
+with before: ReferenceError
+switch const: c0
+switch class: function
+switch const skipped: ReferenceError
+switch class skipped: ReferenceError
+case reads a later declaration: ReferenceError
+labeled continue through finally: 0,f0,f1,2,f2
+generator throw through finally: fin,x
+generator return through finally: f0,f1
+this before super: ReferenceError
+this after super: 2
+super twice: ReferenceError
+field initializer throws: f
+parameter reads a later one: ReferenceError
+parameter reads an earlier one: 2
+destructuring in with: 2,3
+destructuring before: ReferenceError
+many: 54
+many and a loop: 913
+many before: ReferenceError
+async before: ReferenceError
+async catch: no
+async: 4

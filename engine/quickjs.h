@@ -436,10 +436,11 @@ int JS_SetInternalDepth(JSRuntime *rt, int depth);
 int JS_SetDirectCCalls(JSContext *ctx, int on);
 /* For tests. The compiler joins a few pairs of instructions into one opcode
    that does both (fuse_code in quickjs.c, docs/changes/c-engine.md), and a
-   typeof test of any type name into typeof_is. With on 0 the runtime of ctx
-   compiles every pair apart, and typeof tests as before typeof_is, from then
-   on, and with 1 it joins them again. Code compiled before, or read by JS_ReadObject, stays
-   as it is. */
+   typeof test of any type name into typeof_is, and drops the checks of the
+   temporal dead zone that cannot fail (tdz_checks). With on 0 the runtime of
+   ctx compiles every pair apart, typeof tests as before typeof_is, and every
+   check, from then on, and with 1 it joins and drops them again. Code
+   compiled before, or read by JS_ReadObject, stays as it is. */
 void JS_SetFusedOps(JSContext *ctx, int on);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. An
