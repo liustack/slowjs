@@ -61,6 +61,9 @@ type ARM64Env struct {
 	// starts in a line of 64 bytes, which FuncPlace puts the function at in
 	// the lowered object.
 	Align64 map[string]int
+	// RegResult is LowerEnv.RegResult: the functions whose result a direct
+	// call takes from x0, x1 or d0, where they stored it from.
+	RegResult map[string]bool
 }
 
 var (
@@ -287,8 +290,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		return nil, fmt.Errorf("unplaced data %s", sym)
 	}
 	// adapter is the call-site glue: store the argument registers into the
-	// ABI0 area, call, load the result registers back.
-	adapter := func(sig Sig, call string, facts *CallFacts) error {
+	// ABI0 area, call, load the result registers back, unless regResult
+	// (CallRecord.RegResult) leaves the result in them.
+	adapter := func(sig Sig, call string, facts *CallFacts, regResult bool) error {
 		regs, err := a64ArgRegs(sig, true)
 		if err != nil {
 			return err
@@ -310,6 +314,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			}
 		}
 		out = append(out, call)
+		if regResult {
+			return nil
+		}
 		for k, r := range a64RetRegs(sig.Ret) {
 			out = append(out, fmt.Sprintf("ldr %s, [sp, #%d]", r, 8+retOff+8*k))
 		}
@@ -494,10 +501,11 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 				return fail("a register-entry leaf calls %s, which is no leaf", t)
 			}
 			sig, _ := callSig(t, fn, calleeSigs)
-			if err := adapter(sig, "bl go_"+t, facts); err != nil {
+			regResult := env.RegResult[t] && sig.Ret != Void
+			if err := adapter(sig, "bl go_"+t, facts, regResult); err != nil {
 				return fail("call to %s: %v", t, err)
 			}
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallUnified, Target: t, Sig: sig})
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallUnified, Target: t, Sig: sig, RegResult: regResult})
 			continue
 		}
 		if m := reA64BLR.FindStringSubmatch(l); m != nil {
@@ -521,7 +529,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if m[1] != "x9" {
 				out = append(out, "mov x9, "+m[1])
 			}
-			if err := adapter(sig, "blr x9", facts); err != nil {
+			if err := adapter(sig, "blr x9", facts, false); err != nil {
 				return fail("indirect call: %v", err)
 			}
 			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})

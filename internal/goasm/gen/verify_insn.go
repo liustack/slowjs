@@ -1733,6 +1733,9 @@ func (m *matcher) call(x insn, r *relAt) error {
 			}
 			return nil
 		}
+		if c.RegResult && c.Kind != CallUnified {
+			return fmt.Errorf("a call to the leaf %s that takes the result from registers", name)
+		}
 		if c.Kind == CallLeaf {
 			if !k.c.Leaves[name] {
 				return fmt.Errorf("a direct call to %s kept unmarshalled, which is not a register-entry leaf", name)
@@ -1766,10 +1769,18 @@ func (m *matcher) call(x insn, r *relAt) error {
 				return fmt.Errorf("llc passes the call's arguments in %v, %s reads them from %v", ca, name, pa)
 			}
 		}
-		return m.marshal(c.Sig, cf, direct)
+		if c.RegResult {
+			if err := m.regResult(name, cf); err != nil {
+				return err
+			}
+		}
+		return m.marshal(c.Sig, cf, c.RegResult, direct)
 	case x86asm.Reg:
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
+		}
+		if c.RegResult {
+			return fmt.Errorf("a call through %v that takes the result from registers", a)
 		}
 		bound, err := m.boundSig(x)
 		if err != nil {
@@ -1782,7 +1793,7 @@ func (m *matcher) call(x insn, r *relAt) error {
 			return fmt.Errorf("llc's facts give this call to %s, its signature symbol has type id %s", cf.Target, want)
 		}
 		m.icalls++
-		return m.marshal(c.Sig, cf, func(b insn) error {
+		return m.marshal(c.Sig, cf, false, func(b insn) error {
 			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
 			}
@@ -1830,8 +1841,10 @@ func sameSig(a, b Sig) bool {
 // call, the load of each result word into the register llc takes it from,
 // and the restores. llc's code reads nothing after the call before writing
 // it but the result and the saved registers: the callee, Go code or a
-// unified function, keeps no register.
-func (m *matcher) marshal(sig Sig, cf CallFacts, call func(insn) error) error {
+// unified function, keeps no register. With fromRegs (CallRecord.RegResult,
+// which regResult has held to its callee) there are no result loads: the
+// callee left the result in the registers llc takes it from.
+func (m *matcher) marshal(sig Sig, cf CallFacts, fromRegs bool, call func(insn) error) error {
 	r := m.r
 	for k, s := range r.Saved {
 		b, err := m.next("a register save")
@@ -1880,6 +1893,10 @@ func (m *matcher) marshal(sig Sig, cf CallFacts, call func(insn) error) error {
 	set := map[x86asm.Reg]bool{}
 	off := int64(8 * len(args))
 	for w, reg := range defs {
+		if fromRegs {
+			set[reg] = true
+			continue
+		}
 		b, err := m.next("a result load")
 		if err != nil {
 			return err
@@ -2452,4 +2469,39 @@ func readInt(b []byte, n int) int64 {
 		return int64(int32(binary.LittleEndian.Uint32(b)))
 	}
 	return int64(binary.LittleEndian.Uint64(b))
+}
+
+// regResult holds a call that takes the result of name from registers
+// (CallRecord.RegResult) to what makes them hold it after the callee's RET:
+// name is a lowered unified function, which this check holds at each return
+// to storing its result from the registers its probe returns it in and then
+// jumping to Go's epilogue (ret, goEpilogue), and those are the registers
+// llc's code takes the call's result from. A stub, a register-entry leaf or
+// Go code is held to nothing of the kind.
+func (m *matcher) regResult(name string, cf CallFacts) error {
+	unified := false
+	for _, f := range m.k.c.Metas {
+		if f.Name == name {
+			unified = f.Kind == Unified
+		}
+	}
+	if !unified {
+		return fmt.Errorf("call: takes the result of %s from its registers, which is no lowered unified function", name)
+	}
+	p, ok := m.k.c.Probes[ProbePrefix+name]
+	if !ok || len(p.Rets) != 1 {
+		return fmt.Errorf("call: takes the result of %s from its registers, which its probe does not give", name)
+	}
+	res, err := x86Regs(p.Rets[0])
+	if err != nil {
+		return err
+	}
+	defs, err := x86Regs(cf.Defs)
+	if err != nil {
+		return err
+	}
+	if fmt.Sprint(res) != fmt.Sprint(defs) {
+		return fmt.Errorf("call: llc takes the result from %v, %s returns it in %v", defs, name, res)
+	}
+	return nil
 }
