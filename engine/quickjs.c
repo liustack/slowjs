@@ -5597,6 +5597,24 @@ static const char *js_string_to_cstring(JSContext *ctx, size_t *plen,
     return NULL;
 }
 
+/* The bytes of p[0..n) at or above 0x80, eight at a time: the high bit of
+   each byte of a word, moved to the low bit and summed into the top byte by
+   the multiplication. */
+static inline int json_count_high_bytes(const uint8_t *p, int n)
+{
+    uint64_t w;
+    int i, count = 0;
+
+    for (i = 0; n - i >= 8; i += 8) {
+        w = get_u64(p + i) & 0x8080808080808080ULL;
+        if (w)
+            count += (int)(((w >> 7) * 0x0101010101010101ULL) >> 56);
+    }
+    for (; i < n; i++)
+        count += p[i] >> 7;
+    return count;
+}
+
 /* js_string_to_cstring for the text of JSON.parse, which reads the interrupt
    flag each time JS_ROPE_STEP characters have been looked at since the last
    reading, in the count of the 8-bit characters and in each of the loops that
@@ -5608,7 +5626,7 @@ static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
                                              JSValue val)
 {
     JSString *str, *str_new;
-    int pos, len, c, c1, mark;
+    int pos, len, c, c1, mark, end, i;
     uint8_t *q;
     BOOL cesu8 = FALSE;
 
@@ -5629,9 +5647,12 @@ static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
            strings, which is the most common case.
          */
         count = 0;
-        for (pos = 0; pos < len; pos++) {
-            count += src[pos] >> 7;
-            if (unlikely(poll) && (pos & (JS_ROPE_STEP - 1)) == JS_ROPE_STEP - 1) {
+        /* JS_ROPE_STEP characters at a time, with the flag read after each
+           whole step, as a loop of one character would read it */
+        for (pos = 0; pos < len; pos = end) {
+            end = len - pos > JS_ROPE_STEP ? pos + JS_ROPE_STEP : len;
+            count += json_count_high_bytes(src + pos, end - pos);
+            if (unlikely(poll) && end - pos == JS_ROPE_STEP) {
                 JS_WORK(JS_ROPE_STEP);
                 if (js_poll_interrupts(ctx)) {
                     JS_FreeValue(ctx, val);
@@ -5657,15 +5678,26 @@ static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
             goto fail;
         }
         q = str_new->u.str8;
-        for (pos = 0; pos < len; pos++) {
-            c = src[pos];
-            if (c < 0x80) {
-                *q++ = c;
-            } else {
-                *q++ = (c >> 6) | 0xc0;
-                *q++ = (c & 0x3f) | 0x80;
+        for (pos = 0; pos < len; pos = end) {
+            end = len - pos > JS_ROPE_STEP ? pos + JS_ROPE_STEP : len;
+            for (i = pos; i < end;) {
+                /* eight ASCII characters are copied as they are */
+                if (end - i >= 8 &&
+                    !(get_u64(src + i) & 0x8080808080808080ULL)) {
+                    put_u64(q, get_u64(src + i));
+                    q += 8;
+                    i += 8;
+                    continue;
+                }
+                c = src[i++];
+                if (c < 0x80) {
+                    *q++ = c;
+                } else {
+                    *q++ = (c >> 6) | 0xc0;
+                    *q++ = (c & 0x3f) | 0x80;
+                }
             }
-            if (unlikely(poll) && (pos & (JS_ROPE_STEP - 1)) == JS_ROPE_STEP - 1) {
+            if (unlikely(poll) && end - pos == JS_ROPE_STEP) {
                 JS_WORK(JS_ROPE_STEP);
                 if (js_poll_interrupts(ctx)) {
                     js_free_string(ctx->rt, str_new);
@@ -5704,10 +5736,17 @@ static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
                     goto fail;
                 }
             }
-            c = src[pos++];
-            if (c < 0x80) {
-                *q++ = c;
-            } else {
+            /* the characters up to the next reading of the flag, which
+               comes when JS_ROPE_STEP of them have gone by since the last
+               one: a pair of surrogates may go one past */
+            end = unlikely(poll) && len - mark > JS_ROPE_STEP ?
+                mark + JS_ROPE_STEP : len;
+            while (pos < end) {
+                c = src[pos++];
+                if (c < 0x80) {
+                    *q++ = c;
+                    continue;
+                }
                 if (is_hi_surrogate(c)) {
                     if (pos < len && !cesu8) {
                         c1 = src[pos];
@@ -26664,6 +26703,9 @@ typedef struct JSParseState {
     BOOL is_module; /* parsing a module */
     BOOL allow_html_comments;
     BOOL ext_json; /* JSON parsing: true if accepting JSON superset */
+    /* JSON parsing: the atoms of the keys read last (see json_key_atom),
+       NULL outside JS_ParseJSON3 */
+    struct JSONKeyCache *json_keys;
     GetLineColCache get_line_col_cache;
 } JSParseState;
 
@@ -27788,6 +27830,43 @@ static inline const uint8_t *json_run_limit(const uint8_t *p, const uint8_t *end
     return end - p > JS_STRING_LEN_MAX + 1 ? p + JS_STRING_LEN_MAX + 1 : end;
 }
 
+/* The end of the run of ASCII bytes from p that a JSON string of '"' takes as
+   they are: the first byte below 0x20 or above 0x7F, '"' or '\\', end, or
+   JS_ROPE_STEP - 1 bytes on, so that the run is shorter than the step after
+   which json_parse_string reads the interrupt flag. Eight bytes at a time,
+   read as a little-endian word (amd64 and arm64): each of the three tests
+   below sets the high bit of a byte it finds, and a borrow can only mark a
+   byte after one it found, so the lowest marked byte, with w marking the
+   bytes above 0x7F, is the first that ends the run. */
+static inline const uint8_t *json_plain_run(const uint8_t *p,
+                                            const uint8_t *end)
+{
+    const uint8_t *lim;
+    uint64_t w, wq, wb, m;
+    uint32_t c;
+
+    lim = end - p > JS_ROPE_STEP - 1 ? p + JS_ROPE_STEP - 1 : end;
+    while (lim - p >= 8) {
+        w = get_u64(p);
+        wq = w ^ 0x2222222222222222ULL; /* '"' */
+        wb = w ^ 0x5c5c5c5c5c5c5c5cULL; /* '\\' */
+        m = (((w - 0x2020202020202020ULL) & ~w) |
+             ((wq - 0x0101010101010101ULL) & ~wq) |
+             ((wb - 0x0101010101010101ULL) & ~wb) | w) &
+            0x8080808080808080ULL;
+        if (m)
+            return p + (ctz64(m) >> 3);
+        p += 8;
+    }
+    while (p < lim) {
+        c = *p;
+        if (c - 0x20 >= 0x60 || c == '"' || c == '\\')
+            break;
+        p++;
+    }
+    return p;
+}
+
 /* Put the run of characters from p, up to end, that json_parse_string takes
    as they are into b, and return where the run ends: at sep, '\\', a byte
    below 0x20, end, or a byte that does not start a character of 2, 3 or 4
@@ -27896,10 +27975,41 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
         } \
     } while (0)
 
+    p = *pp;
+    if (sep == '"') {
+        /* A string of ASCII characters with no escape is made at its length
+           from the text. Up to the byte that ends the run, this is what
+           json_string_run takes first, so a string that goes on with an
+           escape or a character of more bytes starts from that run. */
+        const uint8_t *q = json_plain_run(p, s->buf_end);
+        if (*q == '"' && q < s->buf_end) {
+            JSValue str;
+            JS_WORK(q - p);
+            str = js_new_string8_len(s->ctx, (const char *)p, q - p);
+            if (JS_IsException(str))
+                return -1;
+            s->token.val = TOK_STRING;
+            s->token.u.str.sep = sep;
+            s->token.u.str.str = str;
+            *pp = q + 1;
+            return 0;
+        }
+        if (q - p < JS_ROPE_STEP - 1) {
+            if (string_buffer_init(s->ctx, b, 32))
+                goto fail;
+            if (q > p) {
+                JS_WORK(q - p);
+                if (string_buffer_write8(b, p, q - p))
+                    goto fail;
+                work = q - p;
+                p = q;
+            }
+            goto run;
+        }
+    }
     if (string_buffer_init(s->ctx, b, 32))
         goto fail;
-
-    p = *pp;
+ run:
     for(;;) {
         /* the characters taken as they are, in one run */
         p = json_string_run(b, p, s->buf_end, sep, &work);
@@ -57886,6 +57996,93 @@ static void json_free_parse_record(JSContext *ctx, JSONParseRecord *pr)
     }
 }
 
+/* The atoms of the keys that one JS_ParseJSON3 read last, so that a key read
+   again, as in each row of a table, takes its atom with one comparison of
+   bytes. A slot holds a reference to its atom until json_key_cache_free,
+   at the end of the parse: nothing is kept from one parse to the next. A
+   slot is chosen by the length and three bytes of the key, and holds only
+   8-bit string atoms. */
+#define JSON_KEY_CACHE_SIZE 64
+
+typedef struct JSONKeyCache {
+    JSAtom atoms[JSON_KEY_CACHE_SIZE];
+} JSONKeyCache;
+
+static void json_key_cache_free(JSContext *ctx, JSONKeyCache *kc)
+{
+    int i;
+
+    for (i = 0; i < JSON_KEY_CACHE_SIZE; i++)
+        JS_FreeAtom(ctx, kc->atoms[i]);
+}
+
+/* Without the JSON superset, the key of the next member of an object and the
+   ':' after it, when the key is a string of ASCII characters with no escape
+   that does not start with a digit: s->buf_ptr is moved past the ':' and the
+   characters of the key are returned, with their count in *plen. NULL
+   otherwise, with nothing moved: the key is then read as a token. The token
+   is not changed: json_key_atom takes the atom where the loop of
+   json_parse_value1 takes it from the token, and the next json_next_token
+   reads the value. Such a key gives the same atom from its characters as
+   from its string (JS_NewAtomLen, with no index to look for), the token of
+   ':' cannot fail, and the whitespace skipped here is the whitespace
+   json_next_token skips without the superset, so the value is the same
+   token at the same place. */
+static const uint8_t *json_scan_key(JSParseState *s, int *plen)
+{
+    const uint8_t *p, *q, *r;
+
+    if (!s->json_keys)
+        return NULL;
+    p = s->buf_ptr;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
+        p++;
+    if (*p != '"' || is_digit(p[1]))
+        return NULL;
+    p++;
+    q = json_plain_run(p, s->buf_end);
+    if (*q != '"' || q >= s->buf_end)
+        return NULL;
+    r = q + 1;
+    while (*r == ' ' || *r == '\t' || *r == '\n' || *r == '\r')
+        r++;
+    if (*r != ':')
+        return NULL;
+    JS_WORK(q - p);
+    *plen = q - p;
+    s->buf_ptr = r + 1;
+    return p;
+}
+
+/* The atom of a key json_scan_key found, with a reference for the caller, or
+   JS_ATOM_NULL with the exception thrown */
+static JSAtom json_key_atom(JSParseState *s, const uint8_t *p, int len)
+{
+    JSContext *ctx = s->ctx;
+    JSONKeyCache *kc = s->json_keys;
+    JSAtomStruct *as;
+    JSAtom atom;
+    uint32_t h;
+
+    h = len ? len * 8 + p[0] * 5 + p[len >> 1] * 3 + p[len - 1] : 0;
+    h &= JSON_KEY_CACHE_SIZE - 1;
+    atom = kc->atoms[h];
+    if (atom != JS_ATOM_NULL) {
+        as = ctx->rt->atom_array[atom];
+        if (as->len == len && memcmp(as->u.str8, p, len) == 0)
+            return JS_DupAtom(ctx, atom);
+    }
+    atom = JS_NewAtomLen(ctx, (const char *)p, len);
+    if (atom == JS_ATOM_NULL)
+        return JS_ATOM_NULL;
+    as = ctx->rt->atom_array[atom];
+    if (!as->is_wide_char) {
+        JS_FreeAtom(ctx, kc->atoms[h]);
+        kc->atoms[h] = JS_DupAtom(ctx, atom);
+    }
+    return atom;
+}
+
 /* 'pr' can be NULL */
 static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr);
 static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
@@ -57904,9 +58101,13 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
             JSValue prop_val;
             JSAtom prop_name;
             JSONParseRecord *pr1;
-            int pr_size;
-            
-            if (json_next_token(s))
+            int pr_size, key_len;
+            const uint8_t *key;
+
+            /* key is the key json_scan_key found, or NULL when the token
+               is the key */
+            key = json_scan_key(s, &key_len);
+            if (!key && json_next_token(s))
                 goto fail;
             val = JS_NewObject(ctx);
             if (JS_IsException(val))
@@ -57915,9 +58116,13 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
                 json_parse_record_init_obj(ctx, pr, val);
                 pr_size = 0;
             }
-            if (s->token.val != '}') {
+            if (key || s->token.val != '}') {
                 for(;;) {
-                    if (s->token.val == TOK_STRING) {
+                    if (key) {
+                        prop_name = json_key_atom(s, key, key_len);
+                        if (prop_name == JS_ATOM_NULL)
+                            goto fail;
+                    } else if (s->token.val == TOK_STRING) {
                         prop_name = JS_ValueToAtom(ctx, s->token.u.str.str);
                         if (prop_name == JS_ATOM_NULL)
                             goto fail;
@@ -57927,10 +58132,16 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
                         js_parse_error(s, "expecting property name");
                         goto fail;
                     }
-                    if (json_next_token(s))
-                        goto fail1;
-                    if (json_parse_expect(s, ':'))
-                        goto fail1;
+                    if (key) {
+                        /* json_scan_key took the ':' */
+                        if (json_next_token(s))
+                            goto fail1;
+                    } else {
+                        if (json_next_token(s))
+                            goto fail1;
+                        if (json_parse_expect(s, ':'))
+                            goto fail1;
+                    }
                     if (pr) {
                         pr1 = json_parse_record_add(ctx, pr, prop_name, &pr_size);
                         if (!pr1)
@@ -57952,7 +58163,8 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
 
                     if (s->token.val != ',')
                         break;
-                    if (json_next_token(s))
+                    key = json_scan_key(s, &key_len);
+                    if (!key && json_next_token(s))
                         goto fail;
                     if (s->ext_json && s->token.val == '}')
                         break;
@@ -57965,10 +58177,11 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
     case '[':
         {
             JSValue el;
+            JSObject *p;
             uint32_t idx;
             JSONParseRecord *pr1;
             int pr_size;
-            
+
             if (json_next_token(s))
                 goto fail;
             val = JS_NewArray(ctx);
@@ -57993,7 +58206,22 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
                     el = json_parse_value(s, pr1);
                     if (JS_IsException(el))
                         goto fail;
-                    ret = JS_DefinePropertyValueUint32(ctx, val, idx, el, JS_PROP_C_W_E);
+                    p = JS_VALUE_GET_OBJ(val);
+                    if (likely(p->fast_array && p->extensible &&
+                               idx == p->u.array.count &&
+                               idx <= JS_ATOM_MAX_INT)) {
+                        /* the element after the last one of a fast array:
+                           what JS_DefinePropertyValueUint32 does then
+                           (JS_CreateProperty) */
+                        ret = add_fast_array_element(ctx, p, el,
+                                                     JS_PROP_C_W_E |
+                                                     JS_PROP_HAS_VALUE |
+                                                     JS_PROP_HAS_CONFIGURABLE |
+                                                     JS_PROP_HAS_WRITABLE |
+                                                     JS_PROP_HAS_ENUMERABLE);
+                    } else {
+                        ret = JS_DefinePropertyValueUint32(ctx, val, idx, el, JS_PROP_C_W_E);
+                    }
                     if (ret < 0)
                         goto fail;
                     if (s->token.val != ',')
@@ -58093,9 +58321,13 @@ JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
 {
     JSParseState s1, *s = &s1;
     JSValue val = JS_UNDEFINED;
+    JSONKeyCache keys;
 
     js_parse_init(ctx, s, buf, buf_len, filename);
     s->ext_json = ((flags & JS_PARSE_JSON_EXT) != 0);
+    memset(&keys, 0, sizeof(keys));
+    if (!s->ext_json)
+        s->json_keys = &keys;
     if (json_next_token(s))
         goto fail;
     val = json_parse_value(s, pr);
@@ -58107,8 +58339,10 @@ JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
             goto fail;
         }
     }
+    json_key_cache_free(ctx, &keys);
     return val;
  fail:
+    json_key_cache_free(ctx, &keys);
     JS_FreeValue(ctx, val);
     free_token(s, &s->token);
     return JS_EXCEPTION;
