@@ -1334,6 +1334,7 @@ func strstart(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func sum_precise_renorm(a0 uintptr, a1 uintptr)
 func tan(a0 uintptr, a1 float64) float64
 func tanh(a0 uintptr, a1 float64) float64
+func tdz_checks(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func tlsf_add_pool(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func tlsf_align_size(a0 uintptr) uintptr
 func tlsf_alloc_overhead(a0 uintptr) uintptr
