@@ -23,7 +23,7 @@ func fusedOps(m *VM, on bool) {
 // The scripts of engine/test/compare on the opcodes the compiler joins print
 // their file in the Go build of the engine too, with the opcodes and without.
 func TestFusedOps(t *testing.T) {
-	for _, name := range []string{"fused_ops", "typeof_is"} {
+	for _, name := range []string{"fused_ops", "typeof_is", "tdz_checks"} {
 		src, err := os.ReadFile(filepath.Join("engine", "test", "compare", name+".js"))
 		if err != nil {
 			t.Fatal(err)

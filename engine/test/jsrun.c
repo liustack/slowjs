@@ -36,7 +36,8 @@
    before the file runs, N entries and BYTES bytes, 0,0 for none.
 
    -no-fused-ops compiles the file with the instructions that the compiler
-   joins into one opcode left apart (JS_SetFusedOps).
+   joins into one opcode left apart, and every check of the temporal dead
+   zone kept (JS_SetFusedOps).
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
    GetAsyncContext and SetAsyncContext of the Go API, as globals, and six

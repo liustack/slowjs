@@ -7,6 +7,7 @@
 ### 性能
 
 - 生成的引擎调用自己的另一个函数时，直接从被调函数返回结果的寄存器里取结果，不再从 Go 栈读回。经指针的调用、调用 Go 代码（宿主回调）、调用没生成成功的函数，照旧读回。链接后的检查要求每个省掉读回的调用，被调函数都从这些寄存器存结果，之后只跑 Go 的收尾指令。tifa 示例应用的页面每次渲染少跑 0.37%（shop 工作台）到 0.65%（MUI）的指令，`r_react_ssr` 少跑 0.42%，linux/amd64 和 darwin/arm64 上 HTML 都不变。linux/amd64 上 shop 工作台用时是原来的 0.978，store 0.980，MUI 0.984，bench 页面 0.995，`r_react_ssr` 0.973（4 个代码位置、3 轮，都在 3% 以内），darwin/arm64 上是 0.990 到 0.997。生成的汇编小了 1.9%（amd64）和 2.1%（arm64）（数据见 [Performance](docs/performance.md#what-the-generated-code-costs-against-native-c)）。
+- 编译器去掉不可能失败的暂时性死区检查：`let`、`const`、`class` 局部变量在声明之后、而且没有跳转能绕过声明到达的代码里的读写，直接用 `get_loc` 和 `put_loc`。一个局部变量如果检查全没了、没被闭包捕获、所在函数也没有 `eval`，它的块开始时就不再置为未初始化，除非循环或 `finally` 会再跑一遍这个块。`switch` 的 case、闭包里或声明之前的读、循环头、`catch` 和 `finally` 之后的代码，检查照旧保留，该抛的 `ReferenceError` 一个不少。shop 工作台每次渲染少跑 0.61% 的指令，store 0.34%，MUI 0.77%，bench 页面 0.11%，`r_react_ssr` 的一次渲染 0.06%，HTML 不变。编译一个包会稍慢一点（`r_react_ssr` 的包多 66 万条指令），tifa 的 VM 不付这个钱。linux/amd64 上 shop 工作台用时是原来的 0.995，MUI 0.997，bench 页面 0.990（4 个代码位置、3 轮，都在 3% 以内）（数据见 [Performance](docs/performance.md#checks-of-the-temporal-dead-zone)）。
 
 ## [v0.29.5] - 2026-10-31
 
