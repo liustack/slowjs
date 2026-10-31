@@ -641,6 +641,64 @@ static void test_json_stringify_oom(void)
     vm_free(&v);
 }
 
+/* JSON.stringify with an array as its replacer copies the names of that
+   array into a list of its own. When adding a name to the list runs out of
+   memory, the stringify fails with the out of memory error: it used to go
+   on without that name and return a string that lacked its property, with
+   the error still pending. Each call of the allocator fails in turn, and
+   each call either throws the out of memory error or returns the whole
+   string with no error pending, and leaves as many objects and strings as
+   there were before it. */
+static void test_json_stringify_list_oom(void)
+{
+    static const char setup[] =
+        "globalThis.f = () => JSON.stringify({ x: { a: 1 }, y: [2], z: 3 }, ['x', 'y', 'a', new String('z')], ' ')\n"
+        "f(); f()";
+    static const char want[] = "{\n \"x\": {\n  \"a\": 1\n },\n \"y\": [\n  2\n ],\n \"z\": 3\n}";
+    VM v = vm_new();
+    JSValue g, f;
+    int fail, n = 0, ooms = 0;
+
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "f");
+    JS_FreeValue(v.ctx, g);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        JSMemoryUsage before, after;
+        int made;
+        JSValue r;
+
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &before);
+        r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "call %d failing: an exception that is not out of memory", fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            const char *s;
+
+            CHECK(!JS_HasException(v.ctx), "call %d failing: a result with an exception pending", fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            s = JS_ToCString(v.ctx, r);
+            CHECK(s && !strcmp(s, want), "call %d failing: %s", fail, s ? s : "(no string)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, r);
+        }
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &after);
+        CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count,
+              "call %d failing: %lld objects and %lld strings, before it %lld and %lld", fail,
+              (long long)after.obj_count, (long long)after.str_count, (long long)before.obj_count,
+              (long long)before.str_count);
+    }
+    CHECK(ooms > 10, "only %d of %d calls failed the stringify", ooms, n);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
 
 /* ---- pending stacks ---- */
 
@@ -3438,6 +3496,7 @@ int main(void)
     test_json_count_high_bytes();
     test_json_key_cache();
     test_json_stringify_oom();
+    test_json_stringify_list_oom();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();
