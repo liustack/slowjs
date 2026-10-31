@@ -54,6 +54,8 @@ var (
 	release   = flag.Bool("release", false, "formal build: refuse every switch made for surveys, tests and negative builds, and fail if any function would be a stub")
 	poisonF   = flag.Bool("poison", false, "negative build: write garbage into the registers at each entry, after each unified call and at each return (the engine's tests must still pass; the post-link check does not take it)")
 	pollOn    = flag.Bool("poll", true, "count every cycle of the code and call host_poll when the count runs out, where Go can stop the goroutine; -poll=false, which -release refuses, builds an engine without polls for comparison")
+	postLink  = flag.String("postlink-opt", "auto", "run the optimizer (-O2, gen.PostLinkOptArgs) over the linked module before the shadow-stack pass: on, off, or auto (on for the architectures measured, gen.PostLinkOptFor)")
+	postArgs  = flag.String("postlink-opt-args", strings.Join(gen.PostLinkOptArgs, " "), "the options of that optimizer run, separated by spaces (-release refuses a change)")
 	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl_<arch>.go records it)")
 	align64F  = flag.String("align64", engineAlign64, "functions whose body starts at a fixed place in a line of 64 bytes, as name:offset (a multiple of 8 below 64), comma separated (with -src the default is none)")
 )
@@ -118,11 +120,16 @@ func main() {
 	negative := keepNarrow || forceNoSplit != ""
 	if *release {
 		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
-			EditLowered: editLoweredEnv, ForceNoSplit: forceNoSplit, NonFormat: *nonFormat, NoPoll: !*pollOn}, *out); err != nil {
+			EditLowered: editLoweredEnv, ForceNoSplit: forceNoSplit, NonFormat: *nonFormat, NoPoll: !*pollOn,
+			PostLink: *postLink, PostArgs: *postArgs}, *out); err != nil {
 			die(err)
 		}
 	}
 	if err := archError(*arch, *mode, *poisonF, *looseVar); err != nil {
+		die(err)
+	}
+	postOn, err := postLinkOn(*postLink, *arch)
+	if err != nil {
 		die(err)
 	}
 	if err := gen.CheckPollOffset(*pollOff, *sizeLog2); err != nil {
@@ -249,6 +256,15 @@ func main() {
 	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
+	if postOn {
+		// The optimizer sees the calls from one file to another, which clang
+		// could not. It runs before the pass, so the pass takes the module as it
+		// stands: the functions inlined away are gone from it, and the ones the
+		// optimizer cloned (mark_children.specialized.2) are in it under new names.
+		linkedOpt := filepath.Join(*work, "engine.opt.ll")
+		must(gen.PostLinkOpt(*llvm, strings.Fields(*postArgs), linked, linkedOpt))
+		linked = linkedOpt
+	}
 	tCompile := time.Since(t0)
 
 	// 2. Rules the C breaks, as the IR shows them.
@@ -719,17 +735,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))
 		return
 	}
-	// llvm-link renames a static whose name another file also uses
-	// (cr_add_interval.156). It goes with the function of the plain name:
-	// the groups only bound the file sizes, so the file need not be its own.
-	reRenamed := regexp.MustCompile(`^(.+)\.\d+$`)
-	for _, m := range metas {
-		if _, ok := group[m.Name]; !ok {
-			if r := reRenamed.FindStringSubmatch(m.Name); r != nil {
-				group[m.Name] = group[r[1]]
-			}
-		}
-	}
+	// A copy goes with the function it is a copy of (cloneGroups).
+	cloneGroups(group, metas, stubs)
 	ee := gen.EngineEmit{Metas: metas, Names: gonames, Group: group,
 		MaxBytes: *maxFile, Stubs: stubs, NoStubs: *release, Plan: plan, Arch: *arch, Tag: *buildTag, Align64: align64}
 	emit := gen.EmitEngine
@@ -813,6 +820,7 @@ func archError(arch, mode string, poison, loose bool) error {
 type devSwitches struct {
 	KeepGoing, LooseVarargs, Poison, KeepNarrow, NoPoll bool
 	EditLowered, ForceNoSplit, NonFormat                string
+	PostLink, PostArgs                                  string
 }
 
 // releaseError says why -release cannot go on with these switches, or is nil.
@@ -832,6 +840,8 @@ func releaseError(d devSwitches, out string) error {
 	add(d.ForceNoSplit != "", "GEN_FORCE_NOSPLIT")
 	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
 	add(d.NoPoll, "an engine without polls (-poll=false)")
+	add(d.PostLink != "" && d.PostLink != "auto", "-postlink-opt other than auto")
+	add(d.PostArgs != "" && d.PostArgs != strings.Join(gen.PostLinkOptArgs, " "), "-postlink-opt-args")
 	if len(bad) > 0 {
 		return fmt.Errorf("-release refuses %s: they are for surveys and tests, not for the engine", strings.Join(bad, ", "))
 	}
@@ -839,6 +849,20 @@ func releaseError(d devSwitches, out string) error {
 		return fmt.Errorf("-release needs -out: a release build writes the package")
 	}
 	return nil
+}
+
+// postLinkOn says whether the optimizer runs over the linked module: on and off
+// say so, auto leaves it to gen.PostLinkOptFor.
+func postLinkOn(mode, arch string) (bool, error) {
+	switch mode {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	case "auto":
+		return gen.PostLinkOptFor(arch), nil
+	}
+	return false, fmt.Errorf("-postlink-opt %q: want on, off or auto", mode)
 }
 
 // negativeBuildFile is engine_negative_<arch>.go, which a negative build writes next
@@ -932,6 +956,42 @@ func allowAll(allow map[string]bool, rep *gen.Report) map[string]bool {
 		}
 	}
 	return m
+}
+
+// reClone matches what llvm-link and the optimizer add to the name of a copy of
+// a function: a number (llvm-link renames a static whose name another file
+// also uses, cr_add_interval.156) or .specialized and a number (the optimizer
+// clones a function for the constant argument of a call,
+// mark_children.specialized.2). More than one can follow, one on the other.
+var reClone = regexp.MustCompile(`^(.+?)(?:\.specialized)?\.\d+$`)
+
+// cloneOf gives the name of the function a copy was made from, or false for a
+// name that is not a copy.
+func cloneOf(name string) (string, bool) {
+	base, ok := name, false
+	for {
+		r := reClone.FindStringSubmatch(base)
+		if r == nil {
+			return base, ok
+		}
+		base, ok = r[1], true
+	}
+}
+
+// cloneGroups gives each copy (of the lowered functions and of the stubs) the
+// group of the function it is a copy of, when no file defined its name: the
+// groups only bound the file sizes, so the file need not be its own.
+func cloneGroups(group map[string]string, metas, stubs []gen.Meta) {
+	for _, ms := range [][]gen.Meta{metas, stubs} {
+		for _, m := range ms {
+			if _, ok := group[m.Name]; ok {
+				continue
+			}
+			if base, ok := cloneOf(m.Name); ok {
+				group[m.Name] = group[base]
+			}
+		}
+	}
 }
 
 // firstGroups gives each function the group of the first file that defines

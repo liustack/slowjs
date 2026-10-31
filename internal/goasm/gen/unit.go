@@ -195,6 +195,37 @@ func CompileUnit(cfg UnitConfig, cfile string) (*Unit, error) {
 	return u, nil
 }
 
+// PostLinkOptArgs are the options of the optimizer run over the linked module of
+// the whole engine (the driver, cmd/engine), after the files are linked and
+// before the shadow-stack pass. Each file was optimized alone by clang -O2, so
+// this second -O2 sees the calls from one file to another (libc, tlsf and heap
+// into the interpreter, the collector) and inlines the small functions it could
+// not, which saves 1.5% to 1.7% of the instructions of a page. The inline
+// threshold is the 400 of engine/test/flags.sh: the default 225 saves a little
+// less, and 1000 makes the interpreter bigger and its frame 32 bytes taller.
+//
+// The SLP vectorizer is off. -fno-slp-vectorize of EngineValueFlags is a clang
+// option, not an attribute of the functions, so the optimizer cannot see that
+// quickjs.c asked for it: with SLP on, a second -O2 joins the two 8-byte moves
+// of a JSValue into one 16-byte move again (52 vector operations in
+// JS_CallInternal), which EngineValueFlags exists to prevent. A threshold no
+// tree can reach turns it off. +slow-unaligned-mem-16 and the other target
+// options are attributes, so they stay with their file: quickjs.c and the small
+// libc differ in them, and LLVM inlines a callee into a caller whose features
+// include its own.
+var PostLinkOptArgs = []string{"-passes=default<O2>", "-inline-threshold=400", "-slp-threshold=1000000"}
+
+// PostLinkOptFor says whether the driver runs PostLinkOptArgs over the linked
+// module of arch by default. Only amd64 has been measured.
+func PostLinkOptFor(arch string) bool { return arch == "amd64" }
+
+// PostLinkOpt runs the optimizer with args over the IR file in and writes
+// the IR file out.
+func PostLinkOpt(llvmBin string, args []string, in, out string) error {
+	_, err := runTool(filepath.Join(llvmBin, "opt"), append(append([]string{}, args...), "-S", "-o", out, in)...)
+	return err
+}
+
 var reGlobl = regexp.MustCompile(`(?m)^\s*\.globl\s+(\w+)`)
 
 // Functions lists the global functions an assembly file defines.
