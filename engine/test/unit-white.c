@@ -52,6 +52,7 @@ const char *white_poll_scan(const uint8_t *code, int len);
 int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out, int cap);
 int white_code_shape(const uint8_t *code, int len, int *shape, int max);
 const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
+int white_child_var_count(JSValueConst fun, int i);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
@@ -2003,7 +2004,7 @@ static void test_fused_ops(void)
 {
     static const char five[] =
         "(function () { function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
-        "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }\n"
+        "  var s = a.k4 + e.k3 + (b, c, d, ''); switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }\n"
         "  return f({ k1: { k4: 'a' } }, { k2: 0, k3: 'a' }) + 10 * f({ k1: { k4: 'b' } }, { k3: 'b' }) +\n"
         "    100 * f({ k1: {} }, { k3: 'x' }) })";
     static const char *names[5] = { "get_arg0 get_field", "get_arg1 get_field", "get_loc0 get_field",
@@ -2018,11 +2019,12 @@ static void test_fused_ops(void)
     Code c;
 
     /* the inner function f, compiled alone, has each of the five; with the
-       pairs off, none */
+       pairs off, none. (b, c, d, '') reads b, c and d after e is written,
+       so that e keeps a slot of its own, past get_loc3 */
     for (on = 1; on >= 0; on--) {
         static const char inner[] =
             "function f(o, p) { var a = o.k1, b = p.k2, c = 1, d = 2, e = p;\n"
-            "  var s = a.k4 + e.k3; switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }";
+            "  var s = a.k4 + e.k3 + (b, c, d, ''); switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }";
         /* a case for each of the two strings */
         JS_SetFusedOps(v.ctx, on);
         CHECK(code_of(v.ctx, inner, &top, &code, &len) == 0, "compile f");
@@ -2297,6 +2299,123 @@ static int count_ops(JSContext *ctx, const char *src, int w)
         c += shape[2 * k] == white_op(w);
     JS_FreeValue(ctx, top);
     return n < 0 ? -1 : c;
+}
+
+/* The locals of a function share slots when no run of its code needs two of
+   them at once (share_local_slots): the slots each function gets with the
+   pass on and off, and what it gives, against Node. A local captured by a
+   closure, live where a catch or finally block starts, or in a function
+   with a mapped arguments object, a direct eval or a with block keeps its
+   own slot. A function with the slots shared and a closure that reads a
+   local past them reads back with JS_ReadObject and runs. */
+static void test_share_local_slots(void)
+{
+    static const struct {
+        const char *src, *call, *want;
+        int on, off; /* the locals of f with the pass on and off */
+    } cases[] = {
+        /* one block after another */
+        { "function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } { const c = o.z; o.r += c } return o.r }",
+          "f({ x: 1, y: 2, z: 3 })", "6", 1, 3 },
+        { "function f(o) { const a = o.x, b = o.y; return a + b }", "f({ x: 1, y: 2 })", "3", 2, 2 },
+        /* a write of a that nothing reads, where b is live */
+        { "function f(o) { let a = o.x; let b = o.y; a = 3; return b }", "f({ x: 1, y: 2 })", "2", 2, 2 },
+        /* a read before any write finds undefined: on the path that reads a,
+           b is never written */
+        { "function f(c) { var a; if (c) { var b = 1; return b } return a }", "f(0) + ',' + f(1)", "undefined,1", 1, 2 },
+        /* a read before the write in each turn of a loop */
+        { "function f(n) { var r = []; for (var i = 0; i < n; i++) { var a; r.push(a); var b = i; a = b } return r.join() }",
+          "f(3)", ",0,1", 3, 4 },
+        { "function f(n) { let s = ''; for (let i = 0; i < n; i++) { var t; s += t + ','; t = i } { const u = s.length; s += u } return s }",
+          "f(3)", "undefined,0,1,14", 3, 4 },
+        /* r is live where the catch starts, and keeps its slot */
+        { "function f(o) { var r = 0; try { const t = o.x.y; r = t } catch (e) { return 'caught ' + r } return r }",
+          "f({}) + ',' + f({ x: { y: 5 } })", "caught 0,5", 2, 3 },
+        /* the finally reads x after the return took it */
+        { "function f(o) { let x = o.x; try { return x } finally { o.seen = x; x = 9 } }",
+          "(() => { const o = { x: 1 }; return f(o) + ',' + o.seen })()", "1,1", 1, 1 },
+        /* captured: a and b keep their slots, c and d share one */
+        { "function f(o) { const a = o.x; { const b = o.y; o.g = () => a + b } { const c = o.z; o.h = c } { const d = o.w; o.h += d } return o.g() + o.h }",
+          "f({ x: 1, y: 2, z: 3, w: 4 })", "10", 3, 4 },
+        /* a closure reads c, whose index goes down */
+        { "function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } const c = o.z; return () => c + o.r }",
+          "f({ x: 1, y: 2, z: 3 })()", "6", 2, 3 },
+        { "function f(n) { const fs = []; for (let i = 0; i < n; i++) { const k = i * 2; fs.push(() => i + k) } { const z = fs.length; fs.push(z) } return fs.slice(0, n).map(h => h()).join() + ',' + fs[n] }",
+          "f(3)", "0,3,6,3", 4, 4 },
+        /* a switch whose value is on the stack where a case returns: a is
+           not read after b or c is made, so the three share a slot */
+        { "function f(v) { const a = 'A' + v; switch (v) { case 1: { const b = a + 'b'; return b } case 2: { const c = a + 'c'; return c } } return a }",
+          "f(1) + f(2) + f(3)", "A1bA2cA3", 1, 3 },
+        /* a yield and an await in the middle of a range */
+        { "function* f(o) { const a = o.x; yield 1; const b = o.y; yield a + b; const c = o.z; yield c }",
+          "[...f({ x: 1, y: 2, z: 3 })].join()", "1,3,3", 2, 3 },
+        { "async function f(o) { const a = await o.x; const b = a + 1; await null; const c = b * 2; return c }",
+          "typeof f", "function", 1, 3 },
+        /* the arguments object: mapped, nothing is shared; unmapped, it keeps
+           its own slot */
+        { "function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } return arguments.length + o.r }",
+          "f({ x: 1, y: 2 })", "4", 3, 3 },
+        { "function f(o) { 'use strict'; { const a = o.x; o.r = a } { const b = o.y; o.r += b } return arguments.length + o.r }",
+          "f({ x: 1, y: 2 })", "4", 2, 3 },
+        /* a direct eval and a with block see the locals */
+        { "function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } return eval('o.r') }",
+          "f({ x: 1, y: 2 })", "3", 6, 6 },
+        { "function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } with (o) { return r } }",
+          "f({ x: 1, y: 2 })", "3", 3, 3 },
+    };
+    static const char script[] =
+        "(function () { function f(o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b } const c = o.z;\n"
+        "    return () => c * 100 + o.r }\n"
+        "  return f({ x: 1, y: 2, z: 7 })() })";
+    char src[8192], *p;
+    VM v = vm_new();
+    JSValue top;
+    uint8_t *buf;
+    size_t size;
+    char got[256];
+    int i, k, n, on;
+
+    for (on = 1; on >= 0; on--) {
+        JS_SetFusedOps(v.ctx, on);
+        for (i = 0; i < (int)countof(cases); i++) {
+            top = JS_Eval(v.ctx, cases[i].src, strlen(cases[i].src), "<share>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+            n = white_child_var_count(top, 0);
+            JS_FreeValue(v.ctx, top);
+            CHECK(n == (on ? cases[i].on : cases[i].off), "on %d: %s: %d locals", on, cases[i].src, n);
+            snprintf(src, sizeof(src), "%s; %s", cases[i].src, cases[i].call);
+            CHECK(eval_is(v.ctx, src, cases[i].want), "on %d: %s: %s", on, cases[i].src, cases[i].call);
+        }
+    }
+    JS_SetFusedOps(v.ctx, 1);
+    /* a switch of 40 cases, each with a var of its own, as a renderer of
+       React has: the vars take one slot */
+    p = src;
+    p += sprintf(p, "function f(o, k) { const out = []; switch (k) {");
+    for (k = 0; k < 40; k++)
+        p += sprintf(p, " case %d: var v%d = o.p%d; out.push(v%d, k); break;", k, k, k, k);
+    sprintf(p, " } return out.join() }");
+    top = JS_Eval(v.ctx, src, strlen(src), "<share>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    n = white_child_var_count(top, 0);
+    JS_FreeValue(v.ctx, top);
+    CHECK(n == 2, "a switch of 40 vars: %d locals", n);
+    strcat(src, "; f({ p7: 'x', p39: 'y' }, 7) + f({ p7: 'x', p39: 'y' }, 39)");
+    CHECK(eval_is(v.ctx, src, "x,7y,39"), "a switch of 40 vars runs");
+    /* a check of the temporal dead zone left next to locals that share a
+       slot names its own local */
+    CHECK(eval_is(v.ctx, "(function (o) { { const a = o.x; o.r = a } { const b = o.y; o.r += b }\n"
+                  "  try { if (o.r) return z } catch (e) { return e.message } let z = 1; return z })({ x: 1, y: 2 })",
+                  "z is not initialized"), "the name of a local in its dead zone");
+    /* written and read back */
+    top = JS_Eval(v.ctx, script, strlen(script), "<share>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, top);
+    CHECK(buf != NULL, "write");
+    if (buf) {
+        run_read(v.ctx, buf, size, got, sizeof(got));
+        CHECK(strcmp(got, "ok 703") == 0, "read back: %s", got);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
 }
 
 /* fused_count: the fused opcodes of the first function of src, by kind
@@ -3102,6 +3221,7 @@ int main(void)
     test_tail_c_calls();
     test_fused_ops();
     test_typeof_is();
+    test_share_local_slots();
     test_tdz_checks();
     test_short_opcode_index();
     test_fused_edges();
